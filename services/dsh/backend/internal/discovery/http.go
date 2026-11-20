@@ -154,13 +154,15 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(segments) < 3 || segments[0] != "v1" || segments[1] != "public" || (segments[2] != "stores" && segments[2] != "verticals") {
+	if len(segments) < 3 || segments[0] != "v1" || segments[1] != "public" {
 		errorJSON(w, 404, "NOT_FOUND")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	switch {
+	case len(segments) == 3 && segments[2] == "cities":
+		s.listCities(ctx, w, r)
 	case len(segments) == 3 && segments[2] == "verticals":
 		s.listVerticals(ctx, w, r)
 	case len(segments) == 3 && segments[2] == "stores":

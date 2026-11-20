@@ -242,12 +242,12 @@ test("reject malformed PathItem reference without throwing", () => {
 
 // These tests exercise the hand-written public client against the *owner's*
 // OpenAPI 3.1 contract, not a generated-client file that does not exist.
-test("DSH public Store/Vertical/Offer client requests match owner OpenAPI operation paths and methods", async () => {
+test("DSH public City/Store/Vertical/Offer requests match owner OpenAPI operation paths and methods", async () => {
   const contractDir = path.join(root, "services", "dsh", "contracts", "openapi");
   const entrypoint = (await import("yaml")).default.parse(
     readFileSync(path.join(contractDir, "dsh.openapi.yaml"), "utf8"),
   );
-  const { listPublicStores, listPublicVerticals, getPublicStore, listPublicOffers } =
+  const { listPublicCities, listPublicStores, listPublicVerticals, getPublicStore, listPublicOffers } =
     await import("../../services/dsh/clients/index.ts");
   const responseStore = {
     id: "market-sanaa", name: "سوق", cityId: "sanaa", verticalId: "grocery",
@@ -259,6 +259,8 @@ test("DSH public Store/Vertical/Offer client requests match owner OpenAPI operat
     variantId: "variant-one", priceYer: 1200, available: true,
   };
   const cases = [
+    ["listPublicCities", "/v1/public/cities", () => listPublicCities("http://127.0.0.1:3202"),
+      { items: ["aden", "sanaa"], revision: 1 }],
     ["listPublicVerticals", "/v1/public/verticals", () => listPublicVerticals("http://127.0.0.1:3202", "sanaa"),
       { items: [responseVertical], revision: 1 }],
     ["listPublicStores", "/v1/public/stores", () => listPublicStores("http://127.0.0.1:3202", "sanaa"),

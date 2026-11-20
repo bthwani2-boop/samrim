@@ -131,6 +131,23 @@ function validateStoreId(storeId: string): void {
   if (!isPublicId(storeId)) throw new DshPublicError(400, "INVALID_STORE");
 }
 
+export async function listPublicCities(
+  baseUrl: string,
+  options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<PublicPage<string>> {
+  validatePublicPaging(options);
+  const url = endpoint(baseUrl, dshOperations.listPublicCities.path);
+  if (options.cursor !== undefined) url.searchParams.set("cursor", options.cursor);
+  if (options.limit !== undefined) url.searchParams.set("limit", String(options.limit));
+  const page = readPage(await ownerRead(url, options.signal), isPublicId);
+  if (page.items.length > (options.limit ?? 20) || new Set(page.items).size !== page.items.length ||
+    (page.nextCursor !== undefined && (!/^[A-Za-z0-9_-]{1,512}$/.test(page.nextCursor) ||
+      page.nextCursor === options.cursor || page.items.length === 0))) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return page;
+}
+
 export async function listPublicVerticals(
   baseUrl: string, cityId: string,
   options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},

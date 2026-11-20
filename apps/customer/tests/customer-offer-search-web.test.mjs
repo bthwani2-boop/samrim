@@ -16,6 +16,30 @@ function setup(t, reply = () => Response.json(page)) {
 }
 const request = (query) => new Request(`http://localhost:18101/v1/public/stores/market-sanaa/offers${query}`);
 
+test("Customer receives only current public city IDs through the same-origin BFF", async t => {
+  const directory = { items: ["sanaa"], revision: 7, nextCursor: "page-three" };
+  let body = directory;
+  const calls = setup(t, () => Response.json(body));
+  const response = await GET(new Request("http://localhost:18101/v1/public/cities?limit=1&cursor=page-two"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), directory);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(calls[0].url.pathname, "/v1/public/cities");
+  assert.equal(calls[0].url.searchParams.get("cursor"), "page-two");
+  for (const query of ["?city_id=sanaa", "?cursor=", "?limit=51", "?limit=1&limit=2"]) {
+    assert.equal((await GET(new Request(`http://localhost:18101/v1/public/cities${query}`))).status, 400);
+  }
+  assert.equal(calls.length, 1);
+  for (const invalid of [
+    { items: ["sanaa", "sanaa"], revision: 7 },
+    { items: ["sanaa"], revision: 7, nextCursor: "page-two" },
+    { items: [{ id: "sanaa" }], revision: 7 },
+  ]) {
+    body = invalid;
+    assert.equal((await GET(new Request("http://localhost:18101/v1/public/cities?cursor=page-two"))).status, 503);
+  }
+});
+
 test("Customer public vertical directory BFF forwards only bounded city and cursor", async t => {
   const data = { items: [{ id: "grocery", storeCount: 2 }], revision: 4 };
   const calls = setup(t, () => Response.json(data));

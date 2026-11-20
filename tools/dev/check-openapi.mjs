@@ -193,6 +193,7 @@ export function validate(owner, base = root) {
     }
     if (owner === "dsh" && method === "get") {
       const admitted = {
+        "/v1/public/cities": "listPublicCities",
         "/v1/public/verticals": "listPublicVerticals",
         "/v1/public/stores": "listPublicStores",
         "/v1/public/stores/{id}": "getPublicStore",

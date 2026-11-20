@@ -26,7 +26,7 @@ export {
 } from "./operator-captains.ts";
 export type { PublicOffer, PublicPage, PublicStore, PublicVertical } from "./public-discovery.ts";
 export {
-  DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
+  DshPublicError, getPublicStore, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
 } from "./public-discovery.ts";
 export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,

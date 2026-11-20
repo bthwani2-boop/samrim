@@ -31,7 +31,6 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const api = resolvePublicStoreOrigin();
   const params = useLocalSearchParams<{ city?: string | string[]; q?: string | string[]; vertical?: string | string[] }>();
   const initial = readStoreBrowseScope(params, INITIAL_CITY);
-  const [draftCity, setDraftCity] = React.useState(initial.city);
   const [cityId, setCityId] = React.useState(initial.city);
   const [showCityPicker, setShowCityPicker] = React.useState(false);
   const [showSearch, setShowSearch] = React.useState(variant === "directory" || Boolean(initial.q));
@@ -44,7 +43,6 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const [appliedRouteScope, setAppliedRouteScope] = React.useState(routeScope);
   React.useEffect(() => {
     if (appliedRouteScope === routeScope) return;
-    setDraftCity(initial.city);
     setCityId(initial.city);
     setDraftQuery(initial.q);
     setQuery(initial.q);
@@ -201,7 +199,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: showCityPicker }}
               accessibilityLabel={`تغيير مدينة التسوّق، ${serviceCityLabel(cityId)}`}
-              onPress={() => { setDraftCity(cityId); setShowCityPicker(value => !value); setShowSearch(false); }}
+              onPress={() => { setShowCityPicker(value => !value); setShowSearch(false); }}
               style={{ minHeight: 44, justifyContent: "center" }}>
               <Text style={{ color: theme.interactiveText, fontWeight: "600" }}>
                 مدينة التسوّق: {serviceCityLabel(cityId)}
@@ -215,7 +213,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
               <Text style={{ color: theme.interactiveText }}>مسح البحث</Text>
             </Pressable> : null}
           </View>
-          {showCityPicker ? <ServiceCityScope draftCity={draftCity} onDraftChange={setDraftCity}
+          {showCityPicker ? <ServiceCityScope key={api} origin={api} currentCity={cityId}
             onApply={nextCity => { setCityId(nextCity); setShowCityPicker(false); }} /> : null}
           {showSearch ? (
             <View style={{ flexDirection: "row", gap: 8 }}>

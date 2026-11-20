@@ -14,6 +14,7 @@ export const dshOperations = {
   getStoreOperationalAvailability: { method: "GET", path: "/v1/stores/{storeID}/availability" },
   listCurrentMerchantStores: { method: "GET", path: "/v1/stores/mine" },
   listOperatorCaptainStandings: { method: "GET", path: "/v1/operators/captains" },
+  listPublicCities: { method: "GET", path: "/v1/public/cities" },
   listPublicOffers: { method: "GET", path: "/v1/public/stores/{id}/offers" },
   listPublicStores: { method: "GET", path: "/v1/public/stores" },
   listPublicVerticals: { method: "GET", path: "/v1/public/verticals" },

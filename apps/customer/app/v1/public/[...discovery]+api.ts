@@ -1,4 +1,4 @@
-import { DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals } from "@bthwani/dsh";
+import { DshPublicError, getPublicStore, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals } from "@bthwani/dsh";
 
 // The isolated DSH port and Expo server share the same development host.
 const owner = "http://127.0.0.1:3202";
@@ -40,11 +40,12 @@ export async function GET(request: Request) {
   }
   if (request.method !== "GET") return fail(405, "METHOD_NOT_ALLOWED");
 
+  const cities = url.pathname === "/v1/public/cities";
   const verticals = url.pathname === "/v1/public/verticals";
   const path = discoveryPath.exec(url.pathname);
-  if (!path && !verticals) return fail(404, "NOT_FOUND");
+  if (!path && !verticals && !cities) return fail(404, "NOT_FOUND");
   const [, id, offers] = path ?? [];
-  const allowedKeys = verticals ? ["city_id", "limit", "cursor"] :
+  const allowedKeys = cities ? ["limit", "cursor"] : verticals ? ["city_id", "limit", "cursor"] :
     id ? (offers ? ["q", "limit", "cursor"] : []) : ["city_id", "q", "vertical_id", "limit", "cursor"];
   const params = url.searchParams;
   if (url.search.length > 4097 ||
@@ -65,7 +66,7 @@ export async function GET(request: Request) {
   const cursor = params.get("cursor");
   if (cursor !== null && !/^[A-Za-z0-9_-]{1,512}$/.test(cursor)) return fail(400, "INVALID_CURSOR");
   const city = params.get("city_id");
-  if (!id && (city === null || !publicId.test(city))) return fail(400, "INVALID_CITY");
+  if (!id && !cities && (city === null || !publicId.test(city))) return fail(400, "INVALID_CITY");
 
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
   const query = params.get("q");
@@ -74,6 +75,7 @@ export async function GET(request: Request) {
     ...(query === null ? {} : { query }),
     ...(vertical === null ? {} : { verticalId: vertical }) };
   try {
+    if (cities) return json(await listPublicCities(owner, page));
     if (verticals) return json(await listPublicVerticals(owner, city as string, page));
     if (id) return json(offers ? await listPublicOffers(owner, id, page) : await getPublicStore(owner, id, signal));
     return json(await listPublicStores(owner, city as string, page));
