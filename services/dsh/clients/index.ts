@@ -531,3 +531,7 @@ export {
   CaptainStandingError, captainStandingFrom, readApprovedCaptainStanding,
   readCaptainApplication, requestCaptainApplication,
 } from "./captain-standing.ts";
+
+// DSH-owned Merchant standing contract and transport.
+export type { MerchantOwnedStore, MerchantDSHStanding } from "./merchant-standing.ts";
+export { MerchantStandingError, standingFrom, readMerchantDSHStanding } from "./merchant-standing.ts";
