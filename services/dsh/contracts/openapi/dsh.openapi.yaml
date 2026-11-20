@@ -204,7 +204,7 @@ components:
           maxItems: 50
           items: { $ref: '#/components/schemas/PublicVertical' }
         revision: { type: integer, minimum: 0 }
-        nextCursor: { type: string, maxLength: 512 }
+        nextCursor: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
     StorePage:
       type: object
       additionalProperties: false
@@ -215,7 +215,7 @@ components:
           maxItems: 50
           items: { $ref: '#/components/schemas/PublicStore' }
         revision: { type: integer, minimum: 0 }
-        nextCursor: { type: string, maxLength: 512 }
+        nextCursor: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
     OfferPage:
       type: object
       additionalProperties: false
@@ -226,7 +226,7 @@ components:
           maxItems: 50
           items: { $ref: '#/components/schemas/PublicOffer' }
         revision: { type: integer, minimum: 0 }
-        nextCursor: { type: string, maxLength: 512 }
+        nextCursor: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
     Error:
       type: object
       required: [error]

@@ -10,8 +10,8 @@ import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
 
 const INITIAL_CITY = process.env.EXPO_PUBLIC_DSH_CITY_ID ?? "sanaa";
-type PageState = { scope: string; loading: boolean; loadingMore: boolean; items: PublicStore[]; cursor?: string | undefined; error?: string | undefined };
-type VerticalState = { city: string; loading: boolean; loadingMore: boolean; items: PublicVertical[]; cursor?: string | undefined; error?: string | undefined };
+type PageState = { scope: string; loading: boolean; loadingMore: boolean; items: PublicStore[]; revision?: number; cursor?: string | undefined; error?: string | undefined };
+type VerticalState = { city: string; loading: boolean; loadingMore: boolean; items: PublicVertical[]; revision?: number; cursor?: string | undefined; error?: string | undefined };
 const verticalLabels: Readonly<Record<string, string>> = { grocery: "المقاضي", restaurant: "المطاعم", pharmacy: "الصيدليات" };
 function verticalLabel(id: string) { return verticalLabels[id] ?? id; }
 function requiresFreshPage(code?: string) {
@@ -68,7 +68,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
       .then(page => {
         if (!abort.signal.aborted && verticalGeneration.current === current) {
           setVerticalState({ city: cityId, loading: false, loadingMore: false,
-            items: page.items, cursor: page.nextCursor });
+            items: page.items, cursor: page.nextCursor, revision: page.revision });
         }
       }).catch((error: unknown) => {
         if (!abort.signal.aborted && verticalGeneration.current === current) {
@@ -94,9 +94,15 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
       setVerticalState(old => {
         if (old.city !== cityId) return old;
         const seen = new Set(old.items.map(item => item.id));
+        if (page.revision !== old.revision ||
+          (page.nextCursor !== undefined && page.nextCursor === cursor) ||
+          page.items.some(item => seen.has(item.id)) ||
+          new Set(page.items.map(item => item.id)).size !== page.items.length) {
+          return { city: cityId, loading: false, loadingMore: false, items: [], error: "STALE_CURSOR" };
+        }
         return { ...old, loadingMore: false,
-          items: [...old.items, ...page.items.filter(item => !seen.has(item.id))],
-          cursor: page.nextCursor, error: undefined };
+          items: [...old.items, ...page.items], cursor: page.nextCursor,
+          revision: page.revision, error: undefined };
       });
     } catch (error) {
       if (abort.signal.aborted || current !== verticalGeneration.current) return;
@@ -121,7 +127,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     listPublicStores(api, cityId, { query, ...(vertical ? { verticalId: vertical } : {}), limit: 20, signal: abort.signal })
       .then((page) => {
         if (!abort.signal.aborted && generation.current === current)
-          setState({ scope, loading: false, loadingMore: false, items: page.items, cursor: page.nextCursor });
+          setState({ scope, loading: false, loadingMore: false, items: page.items, cursor: page.nextCursor, revision: page.revision });
       })
       .catch((error: unknown) => {
         if (!abort.signal.aborted && generation.current === current)
@@ -142,8 +148,18 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     try {
       const page: PublicPage<PublicStore> = await listPublicStores(api, scopedCity, { query, ...(vertical ? { verticalId: vertical } : {}), cursor: visible.cursor, limit: 20, signal: abort.signal });
       if (generation.current !== current || abort.signal.aborted) return;
-      setState((old) => old.scope !== scope ? old : {
-        ...old, loadingMore: false, items: [...old.items, ...page.items], cursor: page.nextCursor,
+      setState((old) => {
+        if (old.scope !== scope) return old;
+        const seen = new Set(old.items.map(item => item.id));
+        if (page.revision !== old.revision ||
+          page.nextCursor === visible.cursor && page.nextCursor !== undefined ||
+          page.items.some(item => seen.has(item.id)) ||
+          new Set(page.items.map(item => item.id)).size !== page.items.length) {
+          // Do not expose a mixed owner snapshot after an invalid continuation.
+          return { scope, loading: false, loadingMore: false, items: [], error: "STALE_CURSOR" };
+        }
+        return { ...old, loadingMore: false, items: [...old.items, ...page.items],
+          cursor: page.nextCursor, revision: page.revision };
       });
     } catch (error) {
       if (generation.current !== current || abort.signal.aborted) return;

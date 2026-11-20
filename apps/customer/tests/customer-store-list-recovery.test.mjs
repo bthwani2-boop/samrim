@@ -324,3 +324,46 @@ test("route change aborts an in-flight DSH read and discards its late response",
   await settle();
   assert.ok(byId(app.render(), "store-fresh"));
 });
+
+test("Customer Store directory rejects a repeated continuation or changed DSH revision before showing duplicate cards", async () => {
+  for (const scenario of ["duplicate", "new-revision"]) {
+    const app = harness();
+    app.render();
+    app.read().resolve({ items: [store("first")], nextCursor: "next-page", revision: 1 });
+    await settle();
+    const more = button(app.render(), "عرض المزيد").props.onPress();
+    const next = app.read();
+    next.resolve({ items: [store(scenario === "duplicate" ? "first" : "second")],
+      revision: scenario === "duplicate" ? 1 : 2, nextCursor: "third-page" });
+    await more;
+    const invalid = app.render();
+    assert.equal(byId(invalid, "store-first"), undefined, scenario);
+    assert.ok(byId(invalid, "stores-error"), scenario);
+    button(invalid, "إعادة المحاولة").props.onPress();
+    app.render();
+    const fresh = app.read();
+    assert.equal(fresh.cursor, undefined, scenario);
+  }
+});
+
+test("Customer vertical continuation invalidates a cross-page duplicate or changed revision", async () => {
+  for (const scenario of ["duplicate", "new-revision"]) {
+    const app = harness();
+    app.render();
+    const first = app.readCategory();
+    app.read().resolve({ items: [], revision: 1 });
+    first.resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1, nextCursor: "next" });
+    await settle();
+    const loading = byId(app.render(), "vertical-options-more").props.onPress();
+    const next = app.readCategory();
+    next.resolve({ items: [{ id: scenario === "duplicate" ? "grocery" : "pharmacy", storeCount: 1 }],
+      revision: scenario === "duplicate" ? 1 : 2, nextCursor: "more" });
+    await loading;
+    assert.equal(byId(app.render(), "vertical-option-grocery"), undefined, scenario);
+    assert.ok(byId(app.render(), "vertical-options-retry"), scenario);
+    byId(app.render(), "vertical-options-retry").props.onPress();
+    app.render();
+    const fresh = app.readCategory();
+    assert.equal(fresh.cursor, undefined, scenario);
+  }
+});

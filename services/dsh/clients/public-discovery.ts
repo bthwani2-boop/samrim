@@ -117,6 +117,18 @@ function readPage<T>(value: unknown, validate: (v: unknown) => v is T): PublicPa
   }
   return { items: v.items, revision: v.revision as number, ...(typeof v.nextCursor === "string" ? { nextCursor: v.nextCursor } : {}) };
 }
+// Pages carry DSH's revision-bound opaque keyset continuation. A duplicate
+// item or non-advancing cursor is never a safe next page for a Customer list.
+function validPublicContinuation<T>(
+  page: PublicPage<T>, cursor: string | undefined, identity: (item: T) => string,
+): boolean {
+  const ids = page.items.map(identity);
+  return new Set(ids).size === ids.length &&
+    (page.nextCursor === undefined ||
+      (page.items.length > 0 && page.nextCursor !== cursor &&
+        /^[A-Za-z0-9_-]{1,512}$/.test(page.nextCursor)));
+}
+
 function validatePublicPaging(options: { cursor?: string; limit?: number }): void {
   if (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 50)) {
     throw new DshPublicError(400, "INVALID_LIMIT");
@@ -139,9 +151,8 @@ export async function listPublicCities(
   if (options.cursor !== undefined) url.searchParams.set("cursor", options.cursor);
   if (options.limit !== undefined) url.searchParams.set("limit", String(options.limit));
   const page = readPage(await ownerRead(url, options.signal), isPublicId);
-  if (page.items.length > (options.limit ?? 20) || new Set(page.items).size !== page.items.length ||
-    (page.nextCursor !== undefined && (!/^[A-Za-z0-9_-]{1,512}$/.test(page.nextCursor) ||
-      page.nextCursor === options.cursor || page.items.length === 0))) {
+  if (page.items.length > (options.limit ?? 20) ||
+    !validPublicContinuation(page, options.cursor, id => id)) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   return page;
@@ -158,7 +169,10 @@ export async function listPublicVerticals(
   if (options.cursor) url.searchParams.set("cursor", options.cursor);
   if (options.limit !== undefined) url.searchParams.set("limit", String(options.limit));
   const page = readPage(await ownerRead(url, options.signal), isVertical);
-  if (page.items.length > (options.limit ?? 20)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  if (page.items.length > (options.limit ?? 20) ||
+    !validPublicContinuation(page, options.cursor, item => item.id)) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
   return page;
 }
 
@@ -179,6 +193,7 @@ export async function listPublicStores(
   if (options.limit) url.searchParams.set("limit", String(options.limit));
   const page = readPage(await ownerRead(url, options.signal), isStore);
   if (page.items.length > (options.limit ?? 20) ||
+    !validPublicContinuation(page, options.cursor, item => item.id) ||
     page.items.some((store) => store.cityId !== cityId ||
     (options.verticalId !== undefined && store.verticalId !== options.verticalId))) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
@@ -204,6 +219,7 @@ export async function listPublicOffers(
   if (options.limit) url.searchParams.set("limit", String(options.limit));
   const page = readPage(await ownerRead(url, options.signal), isOffer);
   if (page.items.length > (options.limit ?? 20) ||
+    !validPublicContinuation(page, options.cursor, item => item.id) ||
     page.items.some((offer) => offer.storeId !== storeId)) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }

@@ -39,9 +39,9 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
     resolvePublicStoreDetail(
       getPublicStore(api, id, abort.signal),
       listPublicOffers(api, id, { query, signal: abort.signal, limit: 20 }),
-    ).then(({ store, offers, nextCursor, offersError }) => {
+    ).then(({ store, offers, nextCursor, offersRevision, offersError }) => {
       if (!abort.signal.aborted && revision.current === current)
-        setState({ scope, loading: false, store, offers, cursor: nextCursor, offersError });
+        setState({ scope, loading: false, store, offers, cursor: nextCursor, offersRevision, offersError });
     }).catch((error: unknown) => {
         if (!abort.signal.aborted && revision.current === current)
           setState({ scope, loading: false, offers: [], error: error instanceof Error ? error.message : "UNKNOWN" });
@@ -60,8 +60,20 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
     setState((v) => ({ ...v, more: true, offersError: undefined }));
     try {
       const page = await listPublicOffers(api, id, { query, cursor: visible.cursor, limit: 20, signal: abort.signal });
-      if (!abort.signal.aborted && revision.current === current)
-        setState((v) => v.scope !== scope ? v : { ...v, more: false, offers: [...v.offers, ...page.items], cursor: page.nextCursor, offersError: undefined });
+      if (!abort.signal.aborted && revision.current === current) {
+        setState((v) => {
+          if (v.scope !== scope) return v;
+          const ids = new Set(v.offers.map(item => item.id));
+          if (page.revision !== v.offersRevision ||
+            (page.nextCursor !== undefined && page.nextCursor === visible.cursor) ||
+            page.items.some(item => ids.has(item.id)) ||
+            new Set(page.items.map(item => item.id)).size !== page.items.length) {
+            return recoverPublicStoreDetail(v, new Error("STALE_CURSOR"));
+          }
+          return { ...v, more: false, offers: [...v.offers, ...page.items],
+            cursor: page.nextCursor, offersRevision: page.revision, offersError: undefined };
+        });
+      }
     } catch (error) {
       if (!abort.signal.aborted && revision.current === current)
         setState((v) => v.scope !== scope ? v : recoverPublicStoreDetail(v, error));

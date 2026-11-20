@@ -205,3 +205,27 @@ test("first search read failure retains a retry that resubmits the same query an
   const retry = app.read(); assert.equal(retry.query, "ماء"); assert.equal(retry.cursor, undefined);
   app.unmount(); assert.equal(retry.signal.aborted, true);
 });
+
+test("Customer Offer detail invalidates reused IDs or revision-changed pages instead of repeating stale prices", async () => {
+  for (const scenario of ["duplicate", "new-revision"]) {
+    const app = harness();
+    await open(app, { items: [offer("first")], nextCursor: "next" });
+    const more = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress();
+    const next = app.read();
+    assert.equal(next.cursor, "next");
+    next.resolve({ items: [offer(scenario === "duplicate" ? "first" : "second")],
+      revision: scenario === "duplicate" ? 1 : 2, nextCursor: "third" });
+    await more;
+    assert.deepEqual(products(app.render()), [], scenario);
+    assert.ok(byId(app.render(), "offers-error"), scenario);
+    button(app.render(), "إعادة تحميل عروض المتجر").props.onPress();
+    app.render();
+    const retryStore = app.read("store");
+    const retry = app.read();
+    assert.equal(retry.cursor, undefined, scenario);
+    retryStore.resolve(store("store-a"));
+    retry.resolve({ items: [offer("fresh")], revision: 3 });
+    await settle();
+    assert.deepEqual(products(app.render()).map(item => item.id), ["fresh"], scenario);
+  }
+});

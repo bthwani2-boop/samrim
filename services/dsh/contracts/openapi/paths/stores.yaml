@@ -44,7 +44,7 @@ paths:
           in: query
           required: false
           description: Opaque continuation bound to the selected city and DSH public revision.
-          schema: { type: string, maxLength: 512 }
+          schema: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
       responses:
         '200':
           description: Bounded public vertical identity and Store count page
@@ -85,7 +85,7 @@ paths:
         - name: cursor
           in: query
           required: false
-          schema: { type: string, maxLength: 512 }
+          schema: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
       responses:
         '200':
           description: Bounded server-filtered Store page, with durable DSH read revision

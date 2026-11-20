@@ -487,3 +487,27 @@ test("Shared DSH parser respects strict Unicode byte caps in text-only Native fe
     globalThis.TextEncoder = saved;
   }
 });
+
+test("DSH public pages reject duplicate IDs, empty continuations and nonadvancing owner cursors", async () => {
+  const cases = [
+    { items: [store, store], call: () => listPublicStores(base, "sanaa") },
+    { items: [offer, offer], call: () => listPublicOffers(base, store.id) },
+    { items: [{ id: "grocery", storeCount: 2 }, { id: "grocery", storeCount: 2 }],
+      call: () => listPublicVerticals(base, "sanaa") },
+  ];
+  for (const { items, call } of cases) {
+    await withFetch(async () => json({ items, revision: 7 }),
+      () => rejectsAs(call, 502, "OWNER_RESPONSE_INVALID"));
+  }
+  for (const { item, call } of [
+    { item: store, call: () => listPublicStores(base, "sanaa", { cursor: "same" }) },
+    { item: offer, call: () => listPublicOffers(base, store.id, { cursor: "same" }) },
+    { item: { id: "grocery", storeCount: 2 },
+      call: () => listPublicVerticals(base, "sanaa", { cursor: "same" }) },
+  ]) {
+    await withFetch(async () => json({ items: [item], revision: 7, nextCursor: "same" }),
+      () => rejectsAs(call, 502, "OWNER_RESPONSE_INVALID"));
+    await withFetch(async () => json({ items: [], revision: 7, nextCursor: "next" }),
+      () => rejectsAs(call, 502, "OWNER_RESPONSE_INVALID"));
+  }
+});
