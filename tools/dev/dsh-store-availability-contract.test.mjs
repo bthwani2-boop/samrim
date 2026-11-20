@@ -88,3 +88,56 @@ test("client rejects unauthorized keys in outbound Store mutation before contact
   });
   assert.equal(networkCalls, 0, "forged client mutation fields must not cross the SDK boundary");
 });
+
+test("Store availability wire limits match owner OpenAPI Unicode length and timestamp constraints", async () => {
+  const unicodeReason = "😀".repeat(200);
+  const validUnicode = { ...availability, reason: unicodeReason };
+  await withFetch(async () => ownerJson(validUnicode), async () => {
+    assert.equal((await getStoreOperationalAvailability(base, storeId, bearer)).reason, unicodeReason);
+  });
+  let requests = 0;
+  await withFetch(async (_url, options) => {
+    requests++;
+    assert.equal(JSON.parse(options.body).reason, unicodeReason);
+    return ownerJson({ availability: validUnicode, replay: false });
+  }, async () => {
+    const result = await updateStoreOperationalAvailability(
+      base, storeId, bearer, { ...change, reason: unicodeReason },
+    );
+    assert.equal(result.availability.reason, unicodeReason);
+  });
+  assert.equal(requests, 1, "valid code-point length must not be rejected by UTF-16 length");
+
+  for (const invalid of [
+    { ...availability, timezone: "XY" },
+    { ...availability, timezone: "A".repeat(65) },
+    { ...availability, actingActorId: "actor-" + "x".repeat(129) },
+    { ...availability, reason: "x".repeat(301) },
+    { ...availability, pausedUntil: "not-a-date" },
+  ]) {
+    await withFetch(async () => ownerJson(invalid), () =>
+      rejectsAs(() => getStoreOperationalAvailability(base, storeId, bearer), "OWNER_RESPONSE_INVALID"));
+  }
+});
+
+test("Store PATCH rejects date-time and reason violations before request", async () => {
+  let requests = 0;
+  await withFetch(async () => {
+    requests++;
+    return ownerJson({ availability, replay: false });
+  }, async () => {
+    for (const invalid of [
+      { ...change, pausedUntil: 123 },
+      { ...change, pausedUntil: "not-a-date" },
+      { ...change, pausedUntil: "2026-11-20" },
+      { ...change, reason: "x".repeat(301) },
+    ]) {
+      await rejectsAs(() => updateStoreOperationalAvailability(base, storeId, bearer, invalid),
+        "INVALID_OPERATIONAL_CHANGE");
+    }
+    await updateStoreOperationalAvailability(base, storeId, bearer, {
+      ...change, pausedUntil: null,
+    });
+  });
+  assert.equal(requests, 1, "only the valid null-pause command may reach the owner");
+});

@@ -32,6 +32,11 @@ export interface StoreOperationalResult {
   availability: StoreOperationalAvailability;
   replay: boolean;
 }
+function isDateTime(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value));
+}
 function isStoreWeeklyWindow(value: unknown): value is StoreWeeklyWindow {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
@@ -44,12 +49,13 @@ function isStoreAvailability(value: unknown, storeId: string): value is StoreOpe
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const item = value as Record<string, unknown>;
   return onlyKeys(item, ["storeId", "timezone", "weekly", "pausedUntil", "preparationMinutes",
-    "version", "actingActorId", "reason"]) && item.storeId === storeId && typeof item.timezone === "string" && item.timezone !== "" &&
-    item.timezone !== "Local" && (item.weekly === null || (Array.isArray(item.weekly) && item.weekly.every(isStoreWeeklyWindow))) &&
-    (item.pausedUntil === undefined || typeof item.pausedUntil === "string") &&
+    "version", "actingActorId", "reason"]) && item.storeId === storeId && typeof item.timezone === "string" &&
+    item.timezone.length >= 3 && item.timezone.length <= 64 && item.timezone !== "Local" && (item.weekly === null || (Array.isArray(item.weekly) && item.weekly.every(isStoreWeeklyWindow))) &&
+    (item.pausedUntil === undefined || isDateTime(item.pausedUntil)) &&
     Number.isSafeInteger(item.preparationMinutes) && Number(item.preparationMinutes) >= 0 &&
     Number.isSafeInteger(item.version) && Number(item.version) >= 1 &&
-    typeof item.actingActorId === "string" && typeof item.reason === "string";
+    typeof item.actingActorId === "string" && Array.from(item.actingActorId).length <= 128 &&
+    typeof item.reason === "string" && Array.from(item.reason).length <= 300;
 }
 
 export async function getStoreOperationalAvailability(
@@ -72,7 +78,9 @@ export async function updateStoreOperationalAvailability(
     !/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
     !Number.isSafeInteger(change.expectedVersion) || change.expectedVersion < 1 ||
     !Number.isSafeInteger(change.preparationMinutes) || change.preparationMinutes < 0 ||
-    typeof change.reason !== "string" || change.reason.trim().length < 1 || change.reason.length > 300 ||
+    typeof change.reason !== "string" || change.reason.trim().length < 1 ||
+    Array.from(change.reason).length > 300 ||
+    (change.pausedUntil !== undefined && change.pausedUntil !== null && !isDateTime(change.pausedUntil)) ||
     (!Array.isArray(change.weekly) || !change.weekly.every(isStoreWeeklyWindow))) {
     throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
   }
