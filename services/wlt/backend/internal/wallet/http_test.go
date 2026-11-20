@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestWalletReadRequiresCurrentUncachedCustomer(t *testing.T) {
@@ -110,5 +111,98 @@ func TestWalletDiscardsBalanceOnOwnerChangeDuringRead(t *testing.T) {
 				t.Fatalf("expected undisclosed balance after owner change: %d %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestFundingHistoryRequiresCurrentCustomerAndNeverLeaksOnChange(t *testing.T) {
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{8}, 32))
+	const customer = `{"actorId":"wallet-one","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	const another = `{"actorId":"wallet-two","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	const merchant = `{"actorId":"wallet-one","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	for _, tc := range []struct {
+		name, first, next string
+		want              int
+		reads             int
+	}{
+		{"authorized", customer, customer, 200, 1},
+		{"switch actor", customer, another, 401, 1},
+		{"switch role", customer, merchant, 403, 1},
+		{"merchant first", merchant, merchant, 403, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				if calls.Add(1) == 1 {
+					_, _ = w.Write([]byte(tc.first))
+				} else {
+					_, _ = w.Write([]byte(tc.next))
+				}
+			}))
+			defer owner.Close()
+			reads := 0
+			handler, err := newHandlerWithHistory(owner.URL,
+				func(context.Context, string) (string, error) { return "0", nil },
+				func(_ context.Context, actor string) (fundingHistory, error) {
+					reads++
+					if actor != "wallet-one" {
+						t.Errorf("wrong actor: %s", actor)
+					}
+					return fundingHistory{ActorID: actor, Currency: "YER", Items: []fundingTransaction{
+						{FundingID: "funding-0001", AmountYER: "9", PostedAt: time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)},
+					}}, nil
+				})
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, "/v1/wallets/me/transactions", nil)
+			request.Header.Set("Authorization", token)
+			request.Header.Set("X-Actor-ID", "wallet-two")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != tc.want || reads != tc.reads {
+				t.Fatalf("history HTTP=%d reads=%d body=%s", response.Code, reads, response.Body.String())
+			}
+			if tc.want == 200 {
+				if calls.Load() != 2 || !strings.Contains(response.Body.String(), `"fundingId":"funding-0001"`) {
+					t.Fatalf("funding projection not read after two checks: %s", response.Body.String())
+				}
+			} else if strings.Contains(response.Body.String(), "funding-0001") {
+				t.Fatal("history leaked across principal change")
+			}
+		})
+	}
+}
+
+func TestFundingHistoryRejectsActorSelectionAndWrites(t *testing.T) {
+	identity := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"actorId":"wallet-one","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`))
+	}))
+	defer identity.Close()
+	handler, err := newHandlerWithHistory(identity.URL,
+		func(context.Context, string) (string, error) { return "0", nil },
+		func(context.Context, string) (fundingHistory, error) {
+			t.Fatal("untrusted history input reached the owner")
+			return fundingHistory{}, nil
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		method, path string
+		want         int
+	}{
+		{"GET", "/v1/wallets/me/transactions?actorId=wallet-two", 400},
+		{"POST", "/v1/wallets/me/transactions", 405},
+		{"GET", "/v1/wallets/me/transactions", 401},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(tc.method, tc.path, nil))
+		if response.Code != tc.want {
+			t.Errorf("%s %s: %d", tc.method, tc.path, response.Code)
+		}
 	}
 }

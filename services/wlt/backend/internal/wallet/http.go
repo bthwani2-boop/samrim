@@ -32,6 +32,24 @@ type identityReader struct {
 }
 
 type balanceReader func(context.Context, string) (string, error)
+type historyReader func(context.Context, string) (fundingHistory, error)
+
+type fundingTransaction struct {
+	FundingID string    `json:"fundingId"`
+	AmountYER string    `json:"amountYer"`
+	PostedAt  time.Time `json:"postedAt"`
+}
+
+type fundingHistory struct {
+	ActorID  string               `json:"actorId"`
+	Currency string               `json:"currency"`
+	Items    []fundingTransaction `json:"items"`
+	HasMore  bool                 `json:"hasMore"`
+}
+
+const historySQL = `SELECT funding_id, amount_yer::text, posted_at
+    FROM wlt.customer_funding_history WHERE actor_id = $1
+    ORDER BY posted_at DESC, funding_id DESC LIMIT 11`
 
 const balanceSQL = `SELECT COALESCE(
 	(SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id = $1), 0)::text`
@@ -40,14 +58,44 @@ func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
 	if db == nil {
 		return nil, errors.New("WLT balance reader unavailable")
 	}
-	return newHandler(identityOrigin, func(ctx context.Context, actorID string) (string, error) {
+	return newHandlerWithHistory(identityOrigin, func(ctx context.Context, actorID string) (string, error) {
 		var balance string
 		err := db.QueryRowContext(ctx, balanceSQL, actorID).Scan(&balance)
 		return balance, err
+	}, func(ctx context.Context, actorID string) (fundingHistory, error) {
+		result := fundingHistory{ActorID: actorID, Currency: "YER", Items: []fundingTransaction{}}
+		rows, err := db.QueryContext(ctx, historySQL, actorID)
+		if err != nil {
+			return result, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var entry fundingTransaction
+			if err := rows.Scan(&entry.FundingID, &entry.AmountYER, &entry.PostedAt); err != nil {
+				return result, err
+			}
+			if !decimalYER.MatchString(entry.AmountYER) || entry.AmountYER == "0" || entry.PostedAt.IsZero() {
+				return result, errors.New("invalid posted funding transaction")
+			}
+			if len(result.Items) == 10 {
+				result.HasMore = true
+				break
+			}
+			entry.PostedAt = entry.PostedAt.UTC()
+			result.Items = append(result.Items, entry)
+		}
+		if err := rows.Err(); err != nil {
+			return result, err
+		}
+		return result, nil
 	})
 }
 
 func newHandler(origin string, balance balanceReader) (http.Handler, error) {
+	return newHandlerWithHistory(origin, balance, nil)
+}
+
+func newHandlerWithHistory(origin string, balance balanceReader, history historyReader) (http.Handler, error) {
 	root, err := url.Parse(origin)
 	if err != nil || root.Scheme != "http" || root.Hostname() != "127.0.0.1" ||
 		root.Port() == "" || root.User != nil || root.Path != "" || root.ForceQuery ||
@@ -65,51 +113,74 @@ func newHandler(origin string, balance balanceReader) (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/wallets/me", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", "GET")
-			failure(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
-			return
-		}
-		if r.URL.ForceQuery || r.URL.RawQuery != "" || r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
-			failure(w, http.StatusBadRequest, "INVALID_REQUEST")
-			return
-		}
-		auth := r.Header.Values("Authorization")
-		if len(auth) != 1 || !validBearer(auth[0]) {
-			failure(w, http.StatusUnauthorized, "UNAUTHORIZED")
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
-		defer cancel()
-		actor, status := identity.read(ctx, auth[0])
-		if status != http.StatusOK {
-			identityFailure(w, status)
-			return
-		}
-		value, err := balance(ctx, actor.ActorID)
-		if err != nil || !decimalYER.MatchString(value) || ctx.Err() != nil {
-			failure(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
-			return
-		}
-		// PostgreSQL can block after the first Identity read. Recheck the
-		// current binding before disclosing the resulting balance.
-		current, status := identity.read(ctx, auth[0])
-		if status != http.StatusOK {
-			identityFailure(w, status)
-			return
-		}
-		now := time.Now()
-		if actor.ActorID != current.ActorID || !actor.Expires.After(now) || !current.Expires.After(now) {
-			failure(w, http.StatusUnauthorized, "UNAUTHORIZED")
-			return
-		}
-		reply(w, http.StatusOK, struct {
-			ActorID    string `json:"actorId"`
-			Currency   string `json:"currency"`
-			BalanceYER string `json:"balanceYer"`
-		}{actor.ActorID, "YER", value})
+		serveAuthorizedRead(w, r, identity, func(ctx context.Context, actorID string) (any, error) {
+			value, err := balance(ctx, actorID)
+			if err != nil {
+				return nil, err
+			}
+			if !decimalYER.MatchString(value) {
+				return nil, errors.New("invalid wallet balance")
+			}
+			return struct {
+				ActorID    string `json:"actorId"`
+				Currency   string `json:"currency"`
+				BalanceYER string `json:"balanceYer"`
+			}{actorID, "YER", value}, nil
+		})
+	})
+	mux.HandleFunc("/v1/wallets/me/transactions", func(w http.ResponseWriter, r *http.Request) {
+		serveAuthorizedRead(w, r, identity, func(ctx context.Context, actorID string) (any, error) {
+			if history == nil {
+				return nil, errors.New("funding history unavailable")
+			}
+			return history(ctx, actorID)
+		})
 	})
 	return mux, nil
+}
+
+// The same Identity bearer is verified before and after the PostgreSQL read.
+// No caller-supplied actor, role or other query input can choose the ledger scope.
+func serveAuthorizedRead(w http.ResponseWriter, r *http.Request, identity identityReader,
+	read func(context.Context, string) (any, error),
+) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		failure(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
+		return
+	}
+	if r.URL.ForceQuery || r.URL.RawQuery != "" || r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
+		failure(w, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	auth := r.Header.Values("Authorization")
+	if len(auth) != 1 || !validBearer(auth[0]) {
+		failure(w, http.StatusUnauthorized, "UNAUTHORIZED")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+	defer cancel()
+	actor, status := identity.read(ctx, auth[0])
+	if status != http.StatusOK {
+		identityFailure(w, status)
+		return
+	}
+	result, err := read(ctx, actor.ActorID)
+	if err != nil || ctx.Err() != nil {
+		failure(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
+		return
+	}
+	current, status := identity.read(ctx, auth[0])
+	if status != http.StatusOK {
+		identityFailure(w, status)
+		return
+	}
+	now := time.Now()
+	if actor.ActorID != current.ActorID || !actor.Expires.After(now) || !current.Expires.After(now) {
+		failure(w, http.StatusUnauthorized, "UNAUTHORIZED")
+		return
+	}
+	reply(w, http.StatusOK, result)
 }
 
 func validBearer(header string) bool {

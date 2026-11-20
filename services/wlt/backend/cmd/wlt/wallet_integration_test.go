@@ -40,6 +40,11 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	executeFixture(t, ctx, owner, string(migration))
+	historyMigration, err := os.ReadFile("/agent02/services/wlt/database/migrations/002_customer_funding_history.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	executeFixture(t, ctx, owner, string(historyMigration))
 	if err := checkDatabase(ctx, reader); err != nil {
 		t.Fatal(err)
 	}
@@ -148,6 +153,36 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 			t.Fatalf("unexpected durable read result: %s %v", response, err)
 		}
 	}
+	for _, check := range []struct {
+		token, actor string
+		count        int
+	}{
+		{one, "wallet-one", 2}, {two, "wallet-two", 1}, {empty, "wallet-empty", 0},
+	} {
+		body := readWallet(t, ctx, server.URL, check.token, "/v1/wallets/me/transactions", 200)
+		var actual struct {
+			ActorID  string `json:"actorId"`
+			Currency string `json:"currency"`
+			HasMore  bool   `json:"hasMore"`
+			Items    []struct {
+				FundingID string    `json:"fundingId"`
+				AmountYER string    `json:"amountYer"`
+				PostedAt  time.Time `json:"postedAt"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(body, &actual); err != nil || actual.ActorID != check.actor ||
+			actual.Currency != "YER" || actual.HasMore || len(actual.Items) != check.count ||
+			strings.Contains(string(body), "provider_reference") || strings.Contains(string(body), "synthetic-a") {
+			t.Fatalf("unexpected actor-bound history %q: %s (%v)", check.actor, body, err)
+		}
+		for _, entry := range actual.Items {
+			if entry.PostedAt.IsZero() || entry.FundingID == "" || entry.AmountYER == "" {
+				t.Fatalf("invalid transaction metadata: %+v", entry)
+			}
+		}
+	}
+	readWallet(t, ctx, server.URL, merchant, "/v1/wallets/me/transactions", 403)
+	readWallet(t, ctx, server.URL, one, "/v1/wallets/me/transactions?actorId=wallet-two", 400)
 	readWallet(t, ctx, server.URL, merchant, "/v1/wallets/me", 403)
 	readWallet(t, ctx, server.URL, one, "/v1/wallets/me?actorId=wallet-two", 400)
 	digest := sha256.Sum256(bytes.Repeat([]byte{1}, 32))
@@ -185,6 +220,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		}
 	})
 	readWallet(t, ctx, server.URL, one, "/v1/wallets/me", 401)
+	readWallet(t, ctx, server.URL, one, "/v1/wallets/me/transactions", 401)
 	t.Log("WLT durable wallet readback, in-flight revocation, balanced journal, duplicate rejection and least privilege verified")
 }
 

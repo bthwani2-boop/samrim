@@ -58,7 +58,7 @@ test("all current owner OpenAPI 3.1 documents parse with their admitted operatio
     const result = validate(owner);
     assert.deepEqual(result.errors, [], `${owner} has invalid OpenAPI`);
   }
-  assert.equal(validate("wlt").operations, 1);
+  assert.equal(validate("wlt").operations, 2);
   assert.ok(validate("identity").operations > 0);
   assert.ok(validate("dsh").operations > 0);
 });

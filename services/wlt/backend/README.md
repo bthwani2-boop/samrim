@@ -1,6 +1,7 @@
 # WLT Go owner
 
-`cmd/wlt` serves the Customer's posted balance in isolated development.
+`cmd/wlt` serves the Customer's posted balance and last ten posted funding
+transactions in isolated development. No funding write endpoint is exposed.
 Use the pinned Go toolchain and a fresh `bthwani_wlt_test` PostgreSQL database.
 The runtime requires all of these settings.
 
@@ -14,6 +15,7 @@ origin in the Surface preview. The route reads the existing preview cookie
 and the app confirms the current actor on both sides of the wallet request.
 
 The HTTP owner verifies the Customer with Identity before querying PostgreSQL,
-then checks the same binding again before releasing the balance. The [migration](../database/migrations/README.md)
+then checks the same binding again before releasing the balance or transaction
+history. `hasMore` indicates that the bounded read omits older entries. The [migration](../database/migrations/README.md)
 defines journal records and the reader's grant. Funding and provider operations
 require their own verified implementation.

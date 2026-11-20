@@ -3,13 +3,14 @@ import { Link, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
 import { readCustomerAdmission } from "../access/customer-session-transport";
-import { readVerifiedWallet, type WalletReadState } from "./wallet-read.web";
+import { readVerifiedWallet, readVerifiedWalletTransactions, type WalletReadState, type WalletTransactionsReadState } from "./wallet-read.web";
 
 const displayYER = new Intl.NumberFormat("ar-YE");
 
 export default function WalletScreen() {
   const { theme } = useMobileAppearance();
   const [state, setState] = useState<WalletReadState | null>(null);
+  const [history, setHistory] = useState<WalletTransactionsReadState | null>(null);
   const refreshBalance = useRef<(() => void) | null>(null);
 
   useFocusEffect(useCallback(() => {
@@ -19,6 +20,7 @@ export default function WalletScreen() {
       pending?.abort();
       clearTimeout(expiry);
       setState(null);
+      setHistory(null);
     }
     function refresh() {
       hide();
@@ -34,7 +36,29 @@ export default function WalletScreen() {
         }
         setState(result);
         if (result.kind === "ready") {
-          expiry = setTimeout(() => setState({ kind: "signed-out" }), Math.max(0, result.expiresAt - Date.now()));
+          expiry = setTimeout(() => {
+            setState({ kind: "signed-out" });
+            setHistory(null);
+          }, Math.max(0, result.expiresAt - Date.now()));
+          void readVerifiedWalletTransactions(readCustomerAdmission, deadline).then(historyResult => {
+            if (controller.signal.aborted || deadline.aborted) return;
+            if (historyResult.kind === "signed-out") {
+              clearTimeout(expiry);
+              setState({ kind: "signed-out" });
+              setHistory(null);
+              return;
+            }
+            setHistory(historyResult);
+            if (historyResult.kind === "ready") {
+              clearTimeout(expiry);
+              expiry = setTimeout(() => {
+                setState({ kind: "signed-out" });
+                setHistory(null);
+              }, Math.max(0, Math.min(result.expiresAt, historyResult.expiresAt) - Date.now()));
+            }
+          }).catch(() => {
+            if (!controller.signal.aborted) setHistory({ kind: "unavailable" });
+          });
         }
       }).catch(() => {
         if (!controller.signal.aborted) setState({ kind: "unavailable" });
@@ -76,6 +100,32 @@ export default function WalletScreen() {
             </Text>
           )}
         </View>
+        {state?.kind === "ready" ? (
+          <View style={{ padding: 20, gap: 10, borderRadius: 14, borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.surface }}>
+            <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 19, fontWeight: "700" }}>
+              آخر عمليات التمويل المنشورة
+            </Text>
+            {history?.kind === "ready" ? (
+              <>
+                {history.history.items.length === 0 ? (
+                  <Text style={{ color: theme.colorSecondary }}>لا توجد عمليات تمويل منشورة حتى الآن.</Text>
+                ) : history.history.items.map(item => (
+                  <View key={item.fundingId} style={{ gap: 4, paddingVertical: 6 }}>
+                    <Text style={{ color: theme.color }}>+ {displayYER.format(BigInt(item.amountYer))} ريال يمني</Text>
+                    <Text style={{ color: theme.colorSecondary }}>{new Date(item.postedAt).toLocaleDateString("ar-YE")}</Text>
+                  </View>
+                ))}
+                {history.history.hasMore ? (
+                  <Text style={{ color: theme.colorSecondary }}>توجد عمليات أقدم غير معروضة.</Text>
+                ) : null}
+              </>
+            ) : (
+              <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
+                {history?.kind === "unavailable" ? "تعذر تحميل سجل العمليات حاليًا." : "جارٍ التحقق من سجل العمليات."}
+              </Text>
+            )}
+          </View>
+        ) : null}
         {state?.kind === "signed-out" ? (
           <Link href="/account" style={{ color: theme.interactiveText }}>انتقال إلى الحساب</Link>
         ) : state ? (

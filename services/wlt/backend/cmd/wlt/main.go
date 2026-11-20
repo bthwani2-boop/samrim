@@ -38,7 +38,8 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 	err := db.QueryRowContext(ctx, `SELECT current_database() = 'bthwani_wlt_test'
 		AND current_user = 'bthwani_wlt_reader'
 		AND NOT has_table_privilege('wlt.customer_funding_journal', 'SELECT,INSERT,UPDATE,DELETE,TRUNCATE')
-		AND has_table_privilege('wlt.customer_wallet_balances', 'SELECT')`).Scan(&safe)
+		AND has_table_privilege('wlt.customer_wallet_balances', 'SELECT')
+        AND has_table_privilege('wlt.customer_funding_history', 'SELECT')`).Scan(&safe)
 	if err != nil || !safe {
 		return errors.New("WLT requires the isolated read-only role and applied journal migration")
 	}
