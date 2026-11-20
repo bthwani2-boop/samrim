@@ -210,7 +210,9 @@ export async function saveMerchantAvailability(
   const body = await result.json();
   signal.throwIfAborted();
   if (!result.ok) throw new DshPublicError(result.status, body.code);
-  if (typeof body?.replay !== "boolean" || body.availability?.storeId !== storeId) {
+  if (typeof body?.replay !== "boolean" || body.availability?.storeId !== storeId ||
+    !Number.isSafeInteger(body.availability.version) ||
+    body.availability.version !== change.expectedVersion + 1) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
 }

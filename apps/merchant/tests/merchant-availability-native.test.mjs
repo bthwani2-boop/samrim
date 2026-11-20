@@ -21,7 +21,7 @@ const availability = { storeId: "store-a", timezone: "Asia/Aden", weekly: null,
 const json = (value, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 
 function harness(t, { role = "merchant", initialBearer = bearer, marker = null, deletionFails = false,
-  identityStatus = 200, dshStatus = 200, platform = "android", change,
+  identityStatus = 200, dshStatus = 200, platform = "android", change, webReply,
   onDSH = () => {}, onIdentity = () => {} } = {}) {
   let stored = initialBearer;
   let pending = marker;
@@ -32,7 +32,9 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
       assert.equal(url, "/api/admission?availability=store-a");
       assert.equal(options.credentials, "same-origin");
       onDSH();
-      return json({ availability });
+      return json(webReply ?? (change
+        ? { availability: { ...availability, version: change.expectedVersion + 1 }, replay: false }
+        : { availability }));
     }
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     const target = new URL(url);
@@ -219,4 +221,24 @@ test("Native Merchant standing revokes the denied current bearer without invalid
   switched = harness(t, { dshStatus: 403, onDSH: () => switched.switchBearer() });
   await assert.rejects(switched.transport.readMerchantStanding(signal()), { code: "STORE_ACCESS_DENIED" });
   assert.notEqual(switched.current(), bearer, "late rejection may not delete replacement credential");
+});
+
+test("Web Merchant PATCH must not confirm a stale or implausible DSH version", async t => {
+  for (const version of [change.expectedVersion, change.expectedVersion + 2]) {
+    const h = harness(t, { platform: "web", change,
+      webReply: { availability: { ...availability, version }, replay: true } });
+    await assert.rejects(
+      h.transport.saveMerchantAvailability("store-a", "owner-a", change, signal()),
+      { code: "OPERATION_RESULT_UNKNOWN", status: 502 },
+    );
+    assert.equal(h.calls.length, 1, "uncertain write must not be retried automatically");
+  }
+});
+
+test("Web Merchant PATCH accepts only the next owner version for its original operation", async t => {
+  const h = harness(t, { platform: "web", change });
+  await h.transport.saveMerchantAvailability("store-a", "owner-a", change, signal());
+  assert.equal(h.calls.length, 1);
+  assert.equal(h.calls[0].options.method, "PATCH");
+  assert.deepEqual(JSON.parse(h.calls[0].options.body), change);
 });
