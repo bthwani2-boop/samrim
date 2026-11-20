@@ -34,6 +34,9 @@ export function serviceSourcePlacementIssues(base) {
       if (entry.isSymbolicLink() || (entry.isDirectory() && !owners.includes(entry.name))) {
         issues.push('services/' + entry.name + ': unapproved service owner or source link');
       }
+      if (entry.isFile()) {
+        issues.push('services/' + entry.name + ': unowned service root file');
+      }
     }
   }
   for (const owner of owners) {

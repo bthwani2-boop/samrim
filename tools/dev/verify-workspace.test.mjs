@@ -145,3 +145,23 @@ test('an untracked fourth business service cannot bypass the owner-placement gua
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+
+test('service placement rejects unowned source files directly under services/', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-orphan-service-file-'));
+  try {
+    const legal = path.join(directory, 'services', 'dsh', 'backend', 'internal', 'discovery', 'http.go');
+    mkdirSync(path.dirname(legal), { recursive: true });
+    writeFileSync(legal, 'package discovery\n');
+    assert.deepEqual(serviceSourcePlacementIssues(directory), []);
+
+    const orphan = path.join(directory, 'services', 'orphan-client.ts');
+    writeFileSync(orphan, 'export const duplicateOwner = true;\n');
+    const issues = serviceSourcePlacementIssues(directory);
+    assert.ok(issues.some(issue => issue.includes('services/orphan-client.ts: unowned service root file')),
+      issues.join('\n'));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
