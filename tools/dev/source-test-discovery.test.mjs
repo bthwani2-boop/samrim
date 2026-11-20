@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -91,6 +91,36 @@ test("new untracked infrastructure, tooling and package tests enter the actual w
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("linked source directories cannot hide untracked test suites from CI", (t) => fixture(({ root, folder }) => {
+  const outside = join(root, "hidden-tests");
+  mkdirSync(folder, { recursive: true });
+  mkdirSync(outside, { recursive: true });
+  writeFileSync(join(outside, "hidden.test.mjs"), "import test from 'node:test'; test('hidden', () => {});");
+  try {
+    symlinkSync(outside, join(folder, "orders"), "junction");
+  } catch (error) {
+    if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("source links unavailable");
+    throw error;
+  }
+  assert.throws(() => discoverNodeSourceTests(root, folder),
+    /UNSCANNED_SOURCE_LINK apps\/customer\/src\/features\/orders/);
+}));
+
+test("generated dependency symlinks remain excluded, without hiding authored source", (t) => fixture(({ root, folder }) => {
+  const generated = join(root, "installed-dependency");
+  mkdirSync(generated, { recursive: true });
+  mkdirSync(folder, { recursive: true });
+  writeFileSync(join(generated, "generated.test.mjs"), "export {};");
+  try {
+    symlinkSync(generated, join(folder, "node_modules"), "junction");
+  } catch (error) {
+    if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("source links unavailable");
+    throw error;
+  }
+  assert.deepEqual(discoverNodeSourceTests(root, folder), [],
+    "generated dependency links are deliberately out of the source test set");
+}));
 
 test("unsupported new tooling tests fail closed rather than disappear from CI", () => {
   const root = mkdtempSync(join(tmpdir(), "bthwani-tools-inclusion-"));
