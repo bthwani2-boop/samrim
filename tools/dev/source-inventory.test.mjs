@@ -76,12 +76,13 @@ test("classifies route entries, owner contracts, migrations and generated output
   const x = fixture(t);
   x.file("apps/customer/app/(tabs)/index.tsx", "export default function Page() { return null; }\n");
   x.file("apps/merchant/app/_layout.tsx", "export default function Layout() { return null; }\n");
-  x.file("services/identity/contracts/openapi/paths/sessions.yaml", "paths: {}\n");
-  x.file("services/dsh/database/migrations/001_create_store.sql", "select 1;\n");
+  x.file("services/identity/contracts/openapi/paths/sessions.yaml", "# Session contract\r\npaths: {}\r\n");
+  x.file("services/dsh/database/migrations/001_create_store.sql", "-- Store baseline\nselect 1;");
+  x.file("tools/dev/example.ps1", "# Example\r\nWrite-Output 1\r\n");
   x.file("apps/customer/src/fixtures/sample.ts", "export const data = true;\n");
   x.file("packages/design-system/generated/colors.ts", "export const generated = true;\n");
   const rows = inventory(x.root);
-  assert.equal(rows.length, 6);
+  assert.equal(rows.length, 7);
   const types = new Map(rows.map(row => [row.path, row.kind]));
   assert.equal(types.get("apps/customer/app/(tabs)/index.tsx"), "route-entry");
   assert.equal(types.get("apps/merchant/app/_layout.tsx"), "route-entry");
@@ -89,6 +90,11 @@ test("classifies route entries, owner contracts, migrations and generated output
   assert.equal(types.get("services/dsh/database/migrations/001_create_store.sql"), "migration");
   assert.equal(types.get("apps/customer/src/fixtures/sample.ts"), "test-fixture");
   assert.equal(types.get("packages/design-system/generated/colors.ts"), "generated");
+  for (const type of ["owner-contract", "migration", "tooling"]) {
+    const row = rows.find(row => row.kind === type);
+    assert.equal(row?.lines, 2, type);
+    assert.deepEqual(row.imports, [], type);
+  }
 });
 
 test("missing tracked source stays visible but is never read or treated as an executable consumer", t => {

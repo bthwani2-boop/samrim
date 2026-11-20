@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sourceExt = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".go"]);
+const scriptExt = new Set([".ps1", ".sh"]);
+const contractExt = new Set([".yaml", ".yml", ".json"]);
 const jsExt = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"];
 const generatedParts = new Set(["node_modules", ".git", ".next", ".expo", "dist", "build", "coverage", "generated"]);
 
@@ -54,7 +56,8 @@ function kind(pathname, ext) {
   if (parts[0] === "services" && parts[2] === "clients" && sourceExt.has(ext)) return "owner-client";
   if (parts[0] === "services" && parts[2] === "backend" && sourceExt.has(ext)) return "owner-backend";
   if (ext === ".sql") return "migration";
-  if (parts[0] === "tools" && sourceExt.has(ext)) return "tooling";
+  if ((parts[0] === "tools" && sourceExt.has(ext)) ||
+    (["tools", "infra"].includes(parts[0]) && scriptExt.has(ext))) return "tooling";
   if (ext === ".md") return "documentation";
   if (sourceExt.has(ext)) return "source";
   if ([".png", ".jpg", ".jpeg", ".webp", ".svg", ".ico"].includes(ext)) return "asset";
@@ -139,20 +142,22 @@ export function inventory(checkout = root) {
   const contents = new Map();
   for (const pathname of new Set([...tracked, ...untracked])) {
     const ext = extname(pathname).toLowerCase();
+    const type = kind(pathname, ext);
+    const source = sourceExt.has(ext);
+    const measure = source || ext === ".sql" || scriptExt.has(ext) ||
+      (type === "owner-contract" && contractExt.has(ext));
     const st = safeFileInfo(base, pathname);
     const file = Boolean(st?.isFile());
     let lines = null;
     let modules = [];
-    if (file && (sourceExt.has(ext) || ext === ".json")) {
+    if (file && (measure || ext === ".json")) {
       const text = readFileSync(join(base, pathname), "utf8");
-      contents.set(pathname, text);
-      if (sourceExt.has(ext)) {
-        lines = text.length === 0 ? 0 : text.split(/\r?\n/).length - Number(text.endsWith("\n"));
-        modules = imports(pathname, text);
-      }
+      if (source || ext === ".json") contents.set(pathname, text);
+      if (measure) lines = text.length === 0 ? 0 : text.split(/\r?\n/).length - Number(text.endsWith("\n"));
+      if (source) modules = imports(pathname, text);
     }
     rows.push({
-      path: pathname, owner: owner(pathname), kind: kind(pathname, ext),
+      path: pathname, owner: owner(pathname), kind: type,
       extension: ext, tracked: tracked.has(pathname), state: !st ? "missing-or-linked" :
         file ? "file" : "non-file", bytes: file ? st.size : null,
       lines, imports: modules, importedBy: [],
