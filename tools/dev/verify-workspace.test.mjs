@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -164,4 +164,31 @@ test('service placement rejects unowned source files directly under services/', 
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('service placement refuses a linked services root before traversing it', async (t) => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'bthwani-linked-service-root-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const base = path.join(dir, 'checkout');
+  const target = path.join(dir, 'outside');
+  mkdirSync(base);
+  mkdirSync(path.join(target, 'dsh'), { recursive: true });
+  symlinkSync(target, path.join(base, 'services'), 'junction');
+  assert.deepEqual(serviceSourcePlacementIssues(base),
+    ['services: service source root must be an actual directory']);
+});
+
+test('service placement reports an owner link without evaluating files outside the checkout', async (t) => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'bthwani-linked-owner-root-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const base = path.join(dir, 'checkout');
+  const target = path.join(dir, 'outside');
+  mkdirSync(path.join(base, 'services'), { recursive: true });
+  mkdirSync(target);
+  writeFileSync(path.join(target, 'misplaced.sql'), 'SELECT 1;');
+  symlinkSync(target, path.join(base, 'services', 'dsh'), 'junction');
+  assert.deepEqual(serviceSourcePlacementIssues(base),
+    ['services/dsh: unapproved service owner or source link']);
 });

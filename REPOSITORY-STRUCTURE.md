@@ -107,7 +107,14 @@ The following is **placement law**, not a requirement to create empty folders or
 
 **Go internal is deliberate:** Go's native `internal/` import boundary is preserved; the old DSH list of packages is *not* the new target. Current `session/`, `discovery/`, and `storeavailability/` remain legal. A deeper `stores/availability/` package would require a justified, tested move rather than a second implementation. No generic domain/application/infrastructure ladder, package count, or service `hr` is mandated. WLT keeps two tracked placement guides; `backend/Dockerfile` and `backend/project.json` become legal only alongside a real `go.mod` and `cmd/wlt/main.go`, with owner-backed acceptance still required.
 
-**Real enforcement:** application import boundaries use `tools/mobile/verify-application-boundaries.mjs` and its negative tests; executable owner OpenAPI is checked by `tools/dev/check-openapi.mjs` and its tests; Go and SQL rules belong to the affected owner code, migrations, and integration tests. CI tests the actual source and protected workflows. No archived document table or redundant workspace-wide scaffold validator is an execution prerequisite. These checks do not certify financial, legal or runtime acceptance.
+**Executable checks.** These checks run against the checkout, including new source on disk. Each owner supplies separate runtime evidence for the capabilities it operates.
+
+| Area | Check and regression suite |
+| --- | --- |
+| App routes, feature placement and private imports | [Application boundary guard](tools/mobile/verify-application-boundaries.mjs) and [its fixtures](tools/mobile/verify-application-boundaries.test.mjs) |
+| Service roots, Go packages, SQL and OpenAPI file placement | `pnpm check:workspace` runs the [service placement guard](tools/dev/check-service-placement.mjs). [Workspace fixtures](tools/dev/verify-workspace.test.mjs) cover valid paths, untracked misplacement and linked roots. |
+| Owner OpenAPI and SDK operation index | `pnpm check:contracts` runs the [contract guard](tools/dev/check-openapi.mjs) and compares generated method, path and operation ID metadata. |
+| Go, SQL and role enforcement | [Go Quality](.github/workflows/go-quality.yml) runs the owner tests, disposable PostgreSQL readback and the DSH restore rehearsal on applicable revisions. |
 
 ### Names which must not be conflated
 

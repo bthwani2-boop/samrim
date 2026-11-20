@@ -1,6 +1,6 @@
 // Enforce the existing service-source placement law, including newly authored files.
 // This is a structural guard; it does not validate runtime API/SQL behavior.
-import { existsSync, readdirSync } from 'node:fs';
+import { lstatSync, readdirSync } from 'node:fs';
 import { extname, join, relative } from 'node:path';
 
 const owners = ['identity', 'dsh', 'wlt'];
@@ -9,7 +9,6 @@ const goPackageName = /^[a-z][a-z0-9]*$/;
 const migrationName = /^\d{3}_[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.sql$/;
 
 function walk(folder, visit, issues, base) {
-  if (!existsSync(folder)) return;
   for (const entry of readdirSync(folder, { withFileTypes: true })) {
     if (ignored.has(entry.name)) continue;
     const full = join(folder, entry.name);
@@ -28,21 +27,22 @@ function walk(folder, visit, issues, base) {
 export function serviceSourcePlacementIssues(base) {
   const issues = [];
   const servicesRoot = join(base, 'services');
-  if (existsSync(servicesRoot)) {
-    for (const entry of readdirSync(servicesRoot, { withFileTypes: true })) {
-      if (ignored.has(entry.name)) continue;
-      if (entry.isSymbolicLink() || (entry.isDirectory() && !owners.includes(entry.name))) {
-        issues.push('services/' + entry.name + ': unapproved service owner or source link');
-      }
-      if (entry.isFile()) {
-        issues.push('services/' + entry.name + ': unowned service root file');
-      }
+  const rootInfo = lstatSync(servicesRoot, { throwIfNoEntry: false });
+  if (!rootInfo) return issues;
+  if (!rootInfo.isDirectory()) return ['services: service source root must be an actual directory'];
+  const localOwners = [];
+  for (const entry of readdirSync(servicesRoot, { withFileTypes: true })) {
+    if (ignored.has(entry.name)) continue;
+    if (entry.isDirectory() && owners.includes(entry.name)) {
+      localOwners.push(entry.name);
+    } else if (entry.isFile()) {
+      issues.push('services/' + entry.name + ': unowned service root file');
+    } else {
+      issues.push('services/' + entry.name + ': unapproved service owner or source link');
     }
   }
-  for (const owner of owners) {
-    const dir = join(base, 'services', owner);
-    if (!existsSync(dir)) continue;
-    walk(dir, (path, isDirectory) => {
+  for (const owner of localOwners) {
+    walk(join(servicesRoot, owner), (path, isDirectory) => {
       const prefix = 'services/' + owner + '/';
       const relativePath = path.slice(prefix.length);
       const parts = relativePath.split('/');
