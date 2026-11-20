@@ -25,5 +25,20 @@ The HTTP owner verifies the Customer with Identity before querying PostgreSQL,
 then checks the same binding again before releasing the balance or transaction
 history. `hasMore` and an optional `nextCursor` indicate older pages without
 an actor selector. The [migration](../database/migrations/README.md)
-defines journal records and the reader's grant. Funding and provider operations
-require their own verified implementation.
+defines journal records and the reader's grant.
+
+### Post synthetic Customer funding
+
+In the disposable PostgreSQL environment, provision the dedicated
+`bthwani_wlt_sandbox` role and apply migration `004` as
+`bthwani_wlt_owner`. Set `WLT_SANDBOX_DATABASE_URL` to the loopback database URL
+for that role. Use the existing isolation mode and Identity origin settings
+above. Run `wlt post-sandbox-funding <reference> <whole-yemeni-riyals>` and
+supply the current synthetic Customer session token through standard input.
+
+The command returns `POSTED` or `REPLAYED`. After a lost or uncertain result,
+submit the same reference, actor and amount. A changed actor or amount for
+an existing reference is rejected. The same Customer session must still be
+current immediately before the journal transaction commits. Use the existing
+wallet and history HTTP reads to verify the result. The synthetic posting
+operation is CLI-only and permits writes exclusively in `bthwani_wlt_test`.

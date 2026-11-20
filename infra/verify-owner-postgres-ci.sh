@@ -223,6 +223,7 @@ finish_stage
 start_stage bthwani-ci-wlt-pg bthwani_wlt_owner bthwani_wlt_test
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_wlt_test \
   -c "CREATE ROLE bthwani_wlt_reader LOGIN PASSWORD 'synthetic-only';" \
+  -c "CREATE ROLE bthwani_wlt_sandbox LOGIN PASSWORD 'synthetic-only';" \
   -c "CREATE ROLE bthwani_identity_fixture LOGIN PASSWORD 'synthetic-only';" \
   -c "GRANT CREATE ON DATABASE bthwani_wlt_test TO bthwani_identity_fixture;"
 docker exec "$current" mkdir -p /agent02/services/wlt/database
@@ -240,7 +241,7 @@ docker exec "$current" pg_restore --no-owner --exit-on-error --single-transactio
 for db in bthwani_wlt_test bthwani_wlt_restore; do
   totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT string_agg(actor_id || ':' || balance_yer, ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
-  [[ "$totals" == 'wallet-one:9007199254741062,wallet-two:41' ]] || { echo "WLT restored balances differ" >&2; exit 1; }
+  [[ "$totals" == 'wallet-one:9007199254741062,wallet-two:57' ]] || { echo "WLT restored balances differ" >&2; exit 1; }
   recent="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT string_agg(funding_id || ':' || amount_yer, ',' ORDER BY funding_id)
         FROM wlt.customer_funding_history WHERE actor_id = 'wallet-one'
@@ -256,7 +257,18 @@ for db in bthwani_wlt_test bthwani_wlt_restore; do
     exit 1
   fi
   grep -q '42501' "$scratch/wlt-reader-denial" || exit 1
+  journal_net="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
+    -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END)
+        FROM wlt.customer_funding_entries WHERE funding_id IN ('sandbox-concurrent-credit','sandbox-interrupted-credit');")"
+  [[ "$journal_net" == '4:0' ]] || { echo "WLT sandbox journal is not balanced" >&2; exit 1; }
 done
+if docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
+  -U bthwani_wlt_sandbox -d bthwani_wlt_restore \
+  -c "SELECT wlt.post_sandbox_customer_funding('restore-denial','wallet-two',9)" >/dev/null 2>"$scratch/wlt-sandbox-denial"; then
+  echo "WLT sandbox accepted a posting in the restore database" >&2
+  exit 1
+fi
+grep -q '42501' "$scratch/wlt-sandbox-denial" || exit 1
 echo 'WLT_DISPOSABLE_RESTORE_PASS real_postgresql=true restored_balance=true reader_scope=true'
 finish_stage
 

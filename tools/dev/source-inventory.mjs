@@ -9,6 +9,8 @@ const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sourceExt = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".go"]);
 const scriptExt = new Set([".ps1", ".sh"]);
 const contractExt = new Set([".yaml", ".yml", ".json"]);
+const expoApps = new Set(["customer", "merchant", "captain"]);
+const expoRouteExt = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const jsExt = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"];
 const generatedParts = new Set(["node_modules", ".git", ".next", ".expo", "dist", "build", "coverage", "generated"]);
 
@@ -50,8 +52,11 @@ function kind(pathname, ext) {
   if (parts.some(part => generatedParts.has(part)) || /\.generated\./.test(pathname)) return "generated";
   if (parts.some(part => ["fixtures", "__tests__"].includes(part)) ||
     /\.(test|spec)\.[mc]?[jt]sx?$/.test(pathname) || /_test\.go$/.test(pathname)) return "test-fixture";
-  if (parts[0] === "apps" && parts[2] === "app" &&
-    /^(?:_?layout|index|page|route|\+html)\.[jt]sx?$/.test(parts.at(-1))) return "route-entry";
+  if (parts[0] === "apps" && parts[2] === "app") {
+    const expoRoute = expoApps.has(parts[1]) && expoRouteExt.has(ext) && !pathname.endsWith(".d.ts");
+    const nextEntry = parts[1] === "control-panel" && /^(?:layout|page|route)\.[jt]sx?$/.test(parts.at(-1));
+    if (expoRoute || nextEntry) return "route-entry";
+  }
   if (parts[0] === "services" && parts.includes("contracts")) return "owner-contract";
   if (parts[0] === "services" && parts[2] === "clients" && sourceExt.has(ext)) return "owner-client";
   if (parts[0] === "services" && parts[2] === "backend" && sourceExt.has(ext)) return "owner-backend";

@@ -31,6 +31,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	const network = "@127.0.0.1:5432/bthwani_wlt_test?sslmode=disable"
 	const readerDSN = "postgres://bthwani_wlt_reader:synthetic-only" + network
 	const identityDSN = "postgres://bthwani_identity_fixture:synthetic-only" + network
+	const sandboxDSN = "postgres://bthwani_wlt_sandbox:synthetic-only" + network
 	owner := openTestDB(t, "postgres://bthwani_wlt_owner:synthetic-only"+network)
 	reader := openTestDB(t, readerDSN)
 	identity := openTestDB(t, identityDSN)
@@ -66,6 +67,11 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	executeFixture(t, ctx, owner, string(pageMigration))
+	sandboxMigration, err := os.ReadFile("/agent02/services/wlt/database/migrations/004_sandbox_customer_funding.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	executeFixture(t, ctx, owner, string(sandboxMigration))
 	if err := checkDatabase(ctx, reader); err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +306,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 			pending <- recorder
 		}()
 
-		waitForWalletQuery(t, ctx, reader)
+		waitForWalletQuery(t, ctx, reader, "wlt.customer_wallet_balances")
 		executeFixture(t, ctx, identity, "UPDATE identity_test_wlt.auth_sessions SET revoked_at=now() WHERE token_digest=$1", digest[:])
 		if err = lock.Rollback(); err != nil {
 			t.Fatal(err)
@@ -316,10 +322,13 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	})
 	readWallet(t, ctx, server.URL, one, "/v1/wallets/me", 401)
 	readWallet(t, ctx, server.URL, one, "/v1/wallets/me/transactions", 401)
+	t.Run("sandbox command posts once and recovers the same funding", func(t *testing.T) {
+		testSandboxFunding(t, ctx, reader, owner, identity, sandboxDSN, origin, server.URL, one, two, empty, merchant)
+	})
 	t.Log("WLT durable wallet readback, in-flight revocation, balanced journal, duplicate rejection and least privilege verified")
 }
 
-func waitForWalletQuery(t *testing.T, ctx context.Context, reader *sql.DB) {
+func waitForWalletQuery(t *testing.T, ctx context.Context, reader *sql.DB, statement string) {
 	t.Helper()
 	wait, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
@@ -329,7 +338,7 @@ func waitForWalletQuery(t *testing.T, ctx context.Context, reader *sql.DB) {
 		var blocked bool
 		err := reader.QueryRowContext(wait, `SELECT EXISTS (
 			SELECT 1 FROM pg_stat_activity WHERE usename = current_user AND wait_event_type = 'Lock'
-			AND query LIKE '%wlt.customer_wallet_balances%')`).Scan(&blocked)
+			AND strpos(query, $1) > 0)`, statement).Scan(&blocked)
 		if err != nil {
 			t.Fatal(err)
 		}

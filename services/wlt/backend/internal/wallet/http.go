@@ -146,14 +146,14 @@ func newHandler(origin string, balance balanceReader) (http.Handler, error) {
 	return newHandlerWithHistory(origin, balance, nil)
 }
 
-func newHandlerWithHistory(origin string, balance balanceReader, history historyReader) (http.Handler, error) {
+func newIdentityReader(origin string) (identityReader, error) {
 	root, err := url.Parse(origin)
 	if err != nil || root.Scheme != "http" || root.Hostname() != "127.0.0.1" ||
 		root.Port() == "" || root.User != nil || root.Path != "" || root.ForceQuery ||
 		root.RawQuery != "" || root.Fragment != "" || origin != root.String() {
-		return nil, errors.New("WLT requires the isolated Identity loopback origin")
+		return identityReader{}, errors.New("WLT requires the isolated Identity loopback origin")
 	}
-	identity := identityReader{
+	return identityReader{
 		endpoint: origin + "/v1/sessions/current",
 		client: &http.Client{
 			Timeout: 2 * time.Second,
@@ -161,6 +161,13 @@ func newHandlerWithHistory(origin string, balance balanceReader, history history
 				return http.ErrUseLastResponse
 			},
 		},
+	}, nil
+}
+
+func newHandlerWithHistory(origin string, balance balanceReader, history historyReader) (http.Handler, error) {
+	identity, err := newIdentityReader(origin)
+	if err != nil {
+		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/wallets/me", func(w http.ResponseWriter, r *http.Request) {

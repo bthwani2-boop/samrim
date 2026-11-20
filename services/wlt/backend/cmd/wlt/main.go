@@ -21,9 +21,13 @@ func validIsolation(mode, address, databaseURL string) bool {
 	if mode != "true" || err != nil || host != "127.0.0.1" || !validPort(port) {
 		return false
 	}
+	return isolatedDatabaseURL(databaseURL, "bthwani_wlt_reader")
+}
+
+func isolatedDatabaseURL(databaseURL, role string) bool {
 	u, err := url.Parse(databaseURL)
 	return err == nil && u.Scheme == "postgres" && u.Hostname() == "127.0.0.1" &&
-		validPort(u.Port()) && u.User != nil && u.User.Username() == "bthwani_wlt_reader" &&
+		validPort(u.Port()) && u.User != nil && u.User.Username() == role &&
 		u.Path == "/bthwani_wlt_test" && u.RawQuery == "sslmode=disable" &&
 		u.Fragment == "" && u.String() == databaseURL
 }
@@ -65,6 +69,18 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		if os.Args[1] != "post-sandbox-funding" {
+			log.Fatal("unknown WLT command")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		err := runSandboxFunding(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Getenv)
+		cancel()
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	address := os.Getenv("WLT_DEV_LISTEN_ADDR")
 	dsn := os.Getenv("WLT_TEST_DATABASE_URL")
 	if !validIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), address, dsn) {

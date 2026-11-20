@@ -23,10 +23,14 @@ projections; it cannot read raw provider references. Older entries are retrieved
 with a canonical keyset cursor instead of unsafe unbounded reads. The CI suite
 uses a separate Identity fixture role and a disposable PostgreSQL container.
 
-Provider verification, funding commands, checkout, withdrawals, reconciliation
-and production runtime remain pending. The suite's synthetic journal fixtures
-exercise the PostgreSQL constraints and balance read. They confer no authority
-to post money.
+The isolated WLT command can post synthetic Customer funding into the same
+journal. It verifies the Customer session with Identity and uses a dedicated
+database role. A replay with the same reference, actor and amount confirms the
+earlier posting. The Customer wallet reads the resulting balance and history
+through the existing API.
+
+External provider verification, checkout, withdrawals, reconciliation and
+production runtime remain pending.
 
 See the [API](contracts/openapi/wlt.openapi.yaml), [runtime](backend/README.md),
 [migration](database/migrations/README.md) and [finance policy](../../governance/finance.md).

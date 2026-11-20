@@ -75,17 +75,27 @@ test("resolves TypeScript relative, export, dynamic literal and package-export c
 test("classifies route entries, owner contracts, migrations and generated output separately", t => {
   const x = fixture(t);
   x.file("apps/customer/app/(tabs)/index.tsx", "export default function Page() { return null; }\n");
+  x.file("apps/customer/app/api/wallet+api.ts", "export function GET() {}\n");
   x.file("apps/merchant/app/_layout.tsx", "export default function Layout() { return null; }\n");
+  x.file("apps/merchant/app/orders/[id].tsx", "export { default } from './index';\n");
+  x.file("apps/captain/app/(tabs)/wallet.tsx", "export { default } from './index';\n");
+  x.file("apps/control-panel/app/orders/page.tsx", "export default function Page() {}\n");
+  x.file("apps/control-panel/app/orders/helpers.ts", "export const fields = [];\n");
   x.file("services/identity/contracts/openapi/paths/sessions.yaml", "# Session contract\r\npaths: {}\r\n");
   x.file("services/dsh/database/migrations/001_create_store.sql", "-- Store baseline\nselect 1;");
   x.file("tools/dev/example.ps1", "# Example\r\nWrite-Output 1\r\n");
   x.file("apps/customer/src/fixtures/sample.ts", "export const data = true;\n");
   x.file("packages/design-system/generated/colors.ts", "export const generated = true;\n");
   const rows = inventory(x.root);
-  assert.equal(rows.length, 7);
+  assert.equal(rows.length, 12);
   const types = new Map(rows.map(row => [row.path, row.kind]));
   assert.equal(types.get("apps/customer/app/(tabs)/index.tsx"), "route-entry");
+  assert.equal(types.get("apps/customer/app/api/wallet+api.ts"), "route-entry");
   assert.equal(types.get("apps/merchant/app/_layout.tsx"), "route-entry");
+  assert.equal(types.get("apps/merchant/app/orders/[id].tsx"), "route-entry");
+  assert.equal(types.get("apps/captain/app/(tabs)/wallet.tsx"), "route-entry");
+  assert.equal(types.get("apps/control-panel/app/orders/page.tsx"), "route-entry");
+  assert.equal(types.get("apps/control-panel/app/orders/helpers.ts"), "source");
   assert.equal(types.get("services/identity/contracts/openapi/paths/sessions.yaml"), "owner-contract");
   assert.equal(types.get("services/dsh/database/migrations/001_create_store.sql"), "migration");
   assert.equal(types.get("apps/customer/src/fixtures/sample.ts"), "test-fixture");
