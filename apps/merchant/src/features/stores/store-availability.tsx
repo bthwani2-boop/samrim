@@ -1,4 +1,4 @@
-import type { StoreOperationalAvailability, StoreOperationalChange } from "@bthwani/dsh";
+import type { StoreOperationalAvailability, StoreOperationalChange, StoreWeeklyWindow } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { randomUUID } from "expo-crypto";
 import { useEffect, useRef, useState } from "react";
@@ -15,6 +15,38 @@ type State = Readonly<{
 const weekdays = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 const clock = (minutes: number) =>
   `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+
+const latinDigits = (value: string) => value.replace(/[٠-٩۰-۹]/g, digit => String(digit.charCodeAt(0) & 15));
+
+type ScheduleDraft = {
+  periods: { id: string; weekday: number; opens: string; closes: string }[];
+  preparation: string;
+  closedWeek: boolean;
+};
+
+function parseClock(value: string, allowsMidnight: boolean): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(latinDigits(value).trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours === 24 && minutes === 0 && allowsMidnight) return 1440;
+  return hours < 24 && minutes < 60 ? hours * 60 + minutes : null;
+}
+
+function scheduleFields(draft: ScheduleDraft): Pick<StoreOperationalChange, "weekly" | "preparationMinutes"> | null {
+  const preparation = latinDigits(draft.preparation).trim();
+  if (!/^\d{1,4}$/.test(preparation) || Number(preparation) > 1440) return null;
+  if (draft.periods.length === 0 && !draft.closedWeek) return null;
+  const weekly: StoreWeeklyWindow[] = [];
+  for (const period of draft.periods) {
+    const opens = parseClock(period.opens, false);
+    const closes = parseClock(period.closes, true);
+    if (opens === null || closes === null || opens === closes) return null;
+    weekly.push({ weekday: period.weekday, opens, closes });
+  }
+  return { preparationMinutes: Number(preparation), weekly };
+}
+
 function pauseTime(snapshot: StoreOperationalAvailability): string {
   if (!snapshot.pausedUntil) return "لا يوجد إيقاف مؤقت مسجل";
   try {
@@ -36,6 +68,7 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
   const [saving, setSaving] = useState(false);
   const [pending, setPending] = useState<StoreOperationalChange | null>(null);
   const [notice, setNotice] = useState("");
+  const [schedule, setSchedule] = useState<ScheduleDraft | null>(null);
   const scope = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
   useEffect(() => {
@@ -48,6 +81,7 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
     setSaving(false);
     setPending(null);
     setNotice("");
+    setSchedule(null);
     return () => controller.abort();
   }, [storeId, actorId]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: A retry reloads the same selected Store from DSH.
@@ -69,23 +103,41 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
     ? state : { storeId, actorId, loading: true };
   const snapshot = visible.snapshot;
   const paused = Boolean(snapshot?.pausedUntil && Date.parse(snapshot.pausedUntil) > Date.now());
-  const asciiMinutes = minutes.replace(/[٠-٩۰-۹]/g, digit => String(digit.charCodeAt(0) & 15));
+  const asciiMinutes = latinDigits(minutes);
   const duration = Number(asciiMinutes);
   const validDuration = /^\d{1,6}$/.test(asciiMinutes) && duration > 0;
-  const canSave = !saving && Boolean(pending || (reason.trim() && (paused || validDuration)));
+  const newSchedule = schedule ? scheduleFields(schedule) : null;
+  const canSave = !saving && Boolean(pending || (reason.trim() && (schedule ? newSchedule : paused || validDuration)));
   const text = { color: theme.color };
   const secondary = { color: theme.colorSecondary };
   const control = { minHeight: 44, paddingHorizontal: 12, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 };
 
-  async function savePause() {
+  function editSchedule(current: StoreOperationalAvailability) {
+    setSchedule({
+      periods: (current.weekly ?? []).map(period => ({
+        id: randomUUID(), weekday: period.weekday, opens: clock(period.opens), closes: clock(period.closes),
+      })),
+      preparation: current.weekly === null ? "" : String(current.preparationMinutes),
+      closedWeek: current.weekly?.length === 0,
+    });
+    setReason("");
+    setNotice("");
+  }
+
+  async function saveAvailability() {
     const signal = scope.current?.signal;
-    if (!signal || signal.aborted || inFlight.current || !canSave || !snapshot?.weekly) return;
+    if (!signal || signal.aborted || inFlight.current || !canSave || !snapshot) return;
+    const fields = schedule ? newSchedule : snapshot.weekly === null ? null : {
+      weekly: snapshot.weekly,
+      preparationMinutes: snapshot.preparationMinutes,
+    };
+    if (!fields) return;
     const attempt = pending ?? {
       operationId: randomUUID(),
       expectedVersion: snapshot.version,
-      weekly: snapshot.weekly,
-      preparationMinutes: snapshot.preparationMinutes,
-      pausedUntil: paused ? null : new Date(Date.now() + duration * 60000).toISOString(),
+      ...fields,
+      pausedUntil: schedule ? (paused ? snapshot.pausedUntil ?? null : null)
+        : paused ? null : new Date(Date.now() + duration * 60000).toISOString(),
       reason: reason.trim(),
     };
     inFlight.current = true;
@@ -98,6 +150,7 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
       setPending(null);
       setReason("");
       setMinutes("");
+      setSchedule(null);
       // A replay may return the historical result. Display the current owner read.
       setState({ storeId, actorId, loading: true });
       setRetry(value => value + 1);
@@ -106,9 +159,12 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
       const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
       if (status === 400) {
         setPending(null);
-        setNotice("رفض DSH التغيير. راجع المدة والسبب وسياسة المدينة.");
+        setNotice(schedule ? "رفض DSH التغيير. راجع تداخل الفترات ومدة التجهيز وسياسة المدينة."
+          : "رفض DSH التغيير. راجع المدة والسبب وسياسة المدينة.");
       } else if (status === 401 || status === 403 || status === 404 || status === 409) {
         setPending(null);
+        setSchedule(null);
+        setReason("");
         setState({ storeId, actorId, loading: true });
         setNotice(status === 409 ? "تغيّر سجل الإتاحة أو سياسته. تحقّق من بيانات المتجر المُحدّثة قبل الحفظ."
           : "تعذّر حفظ التغيير بصلاحية الحساب الحالية.");
@@ -133,7 +189,7 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: "700" }}>ساعات العمل والإيقاف المؤقت</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="تحديث إتاحة المتجر"
-          disabled={visible.loading || saving || pending !== null} onPress={() => setRetry(value => value + 1)}
+          disabled={visible.loading || saving || pending !== null || schedule !== null} onPress={() => setRetry(value => value + 1)}
           style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12,
             borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
           <Text style={{ color: theme.interactiveText }}>تحديث</Text>
@@ -159,10 +215,71 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
         <Text style={secondary}>إصدار السجل: {visible.snapshot.version}</Text>
         {visible.snapshot.reason ? <Text style={secondary}>سبب آخر تعديل: {visible.snapshot.reason}</Text> : null}
         <Text style={secondary}>هذا جدول التشغيل المسجل؛ قبول الطلبات يعتمد أيضًا على جاهزية المتجر والخدمة لدى DSH.</Text>
-        {actorId && snapshot?.weekly !== null ? (
+        {actorId && snapshot && !schedule ? (
+          <Pressable accessibilityRole="button" disabled={saving || pending !== null}
+            onPress={() => editSchedule(snapshot)} style={{ ...control, alignSelf: "flex-start", justifyContent: "center" }}>
+            <Text style={{ color: theme.interactiveText }}>{snapshot.weekly === null ? "إعداد الدوام" : "تعديل الدوام والتجهيز"}</Text>
+          </Pressable>
+        ) : null}
+        {actorId && schedule ? (
+          <View style={{ gap: 12 }}>
+            <Text accessibilityRole="header" style={{ ...text, fontWeight: "700" }}>الدوام الأسبوعي</Text>
+            <Text style={secondary}>أدخل الأوقات بصيغة ٢٤ ساعة. حدّد الإغلاق إذا لم تكن هناك أي فترات عمل.</Text>
+            {weekdays.map((day, weekday) => (
+              <View key={day} style={{ gap: 8, paddingTop: 8, borderTopWidth: 1, borderColor: theme.borderColor }}>
+                <Text style={{ ...text, fontWeight: "600" }}>{day}</Text>
+                {schedule.periods.filter(period => period.weekday === weekday).map((period, index) => (
+                  <View key={period.id} style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+                    {(["opens", "closes"] as const).map(field => {
+                      const label = field === "opens" ? "الفتح" : "الإغلاق";
+                      return <TextInput key={field} editable={!pending} value={period[field]}
+                        accessibilityLabel={`وقت ${label} يوم ${day} للفترة ${index + 1}`}
+                        placeholder={label + " ٠٠:٠٠"} placeholderTextColor={theme.colorSecondary}
+                        maxLength={5} onChangeText={value => setSchedule(current => current && ({
+                          ...current, periods: current.periods.map(item => item.id === period.id
+                            ? { ...item, [field]: value } : item),
+                        }))} style={{ ...control, ...text, minWidth: 115 }} />;
+                    })}
+                    <Pressable accessibilityRole="button" accessibilityLabel={`حذف الفترة ${index + 1} يوم ${day}`}
+                      disabled={pending !== null} onPress={() => setSchedule(current => current && ({
+                        ...current, periods: current.periods.filter(item => item.id !== period.id),
+                      }))} style={{ ...control, justifyContent: "center" }}>
+                      <Text style={{ color: theme.dangerText }}>حذف</Text>
+                    </Pressable>
+                  </View>
+                ))}
+                <Pressable accessibilityRole="button" accessibilityLabel={`إضافة فترة يوم ${day}`}
+                  disabled={pending !== null} onPress={() => {
+                    const period = { id: randomUUID(), weekday, opens: "", closes: "" };
+                    setSchedule(current => current && ({
+                      ...current, periods: [...current.periods, period], closedWeek: false,
+                    }));
+                  }} style={{ ...control, alignSelf: "flex-start", justifyContent: "center" }}>
+                  <Text style={{ color: theme.interactiveText }}>إضافة فترة</Text>
+                </Pressable>
+              </View>
+            ))}
+            {schedule.periods.length === 0 ? (
+              <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: schedule.closedWeek }}
+                disabled={pending !== null} onPress={() => setSchedule(current => current && ({
+                  ...current, closedWeek: !current.closedWeek,
+                }))} style={{ ...control, alignSelf: "flex-start", justifyContent: "center" }}>
+                <Text style={text}>{schedule.closedWeek ? "✓ " : ""}إغلاق طوال الأسبوع</Text>
+              </Pressable>
+            ) : null}
+            <TextInput editable={!pending} value={schedule.preparation} keyboardType="number-pad" maxLength={4}
+              accessibilityLabel="مدة التجهيز بالدقائق" placeholder="مدة التجهيز بالدقائق"
+              placeholderTextColor={theme.colorSecondary}
+              onChangeText={value => setSchedule(current => current && ({ ...current, preparation: value }))}
+              style={{ ...control, ...text }} />
+          </View>
+        ) : null}
+        {actorId && snapshot && (schedule || snapshot.weekly !== null) ? (
           <View style={{ gap: 8 }}>
-            <Text accessibilityRole="header" style={{ ...text, fontWeight: "700" }}>{paused ? "إنهاء الإيقاف المؤقت" : "إيقاف استقبال الطلبات مؤقتًا"}</Text>
-            {!paused ? (
+            {!schedule ? <Text accessibilityRole="header" style={{ ...text, fontWeight: "700" }}>
+              {paused ? "إنهاء الإيقاف المؤقت" : "إيقاف استقبال الطلبات مؤقتًا"}
+            </Text> : null}
+            {!schedule && !paused ? (
               <TextInput value={minutes} onChangeText={setMinutes} editable={!pending}
                 accessibilityLabel="مدة الإيقاف بالدقائق" placeholder="مدة الإيقاف بالدقائق"
                 keyboardType="number-pad" maxLength={6} placeholderTextColor={theme.colorSecondary} style={{ ...control, ...text }} />
@@ -171,10 +288,18 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
               accessibilityLabel="سبب التغيير" placeholder="سبب التغيير" maxLength={300}
               placeholderTextColor={theme.colorSecondary} style={{ ...control, ...text }} />
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canSave, busy: saving }}
-              disabled={!canSave} onPress={savePause} style={{ ...control, justifyContent: "center",
+              disabled={!canSave} onPress={saveAvailability} style={{ ...control, justifyContent: "center",
                 alignSelf: "flex-start", backgroundColor: theme.actionBackground, opacity: canSave ? 1 : 0.6 }}>
-              <Text style={{ color: theme.onAction }}>{saving ? "جارٍ التحقق…" : pending ? "إعادة التحقق من الحفظ" : paused ? "إنهاء الإيقاف" : "تأكيد الإيقاف المؤقت"}</Text>
+              <Text style={{ color: theme.onAction }}>{saving ? "جارٍ التحقق…" : pending ? "إعادة التحقق من الحفظ"
+                : schedule ? "حفظ الدوام والتجهيز" : paused ? "إنهاء الإيقاف" : "تأكيد الإيقاف المؤقت"}</Text>
             </Pressable>
+            {schedule && !pending ? <Pressable accessibilityRole="button" onPress={() => {
+              setSchedule(null);
+              setReason("");
+              setNotice("");
+            }} style={{ ...control, alignSelf: "flex-start", justifyContent: "center" }}>
+              <Text style={{ color: theme.interactiveText }}>إلغاء تعديل الدوام</Text>
+            </Pressable> : null}
           </View>
         ) : null}
       </View> : null}

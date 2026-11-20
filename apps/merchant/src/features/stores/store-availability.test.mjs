@@ -23,6 +23,7 @@ function harness() {
   const reads = [];
   const writes = [];
   let index = 0;
+  let operationSequence = 0;
   const jsx = (type, props) => ({ type, props });
   const modules = {
     react: {
@@ -43,7 +44,7 @@ function harness() {
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "react-native": { ActivityIndicator: "Loading", Pressable: "Button", Text: "Text", TextInput: "Input", View: "View" },
-    "expo-crypto": { randomUUID: () => "synthetic-operation-id" },
+    "expo-crypto": { randomUUID: () => `synthetic-operation-${++operationSequence}` },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "../access/admission-transport": {
       readMerchantAvailability(storeId, signal) {
@@ -205,4 +206,39 @@ test("pausing preserves the owner schedule and reconciles an ambiguous write usi
   resumeAttempt.resolve();
   await resume;
   assert.equal(h.count(), 0);
+});
+
+test("a new Store saves multiple explicit periods with overnight and Arabic inputs", async () => {
+  const h = harness();
+  const render = () => h.render("store-a", "merchant-a");
+  const button = (label) => find(render(), item => item.type === "Button" && content(item) === label);
+  const input = (label, value) => find(render(), item => item.props?.accessibilityLabel === label).props.onChangeText(value);
+  const initial = { ...snapshot, weekly: null, version: 1, preparationMinutes: 0, reason: "" };
+  render(); h.read().resolve(initial); await settle();
+  button("إعداد الدوام").props.onPress();
+  input("مدة التجهيز بالدقائق", "١٥");
+  input("سبب التغيير", "إعداد دوام المتجر");
+  assert.equal(button("حفظ الدوام والتجهيز").props.disabled, true, "no implicit closure");
+  const add = () => find(render(), item => item.props?.accessibilityLabel === "إضافة فترة يوم الجمعة").props.onPress();
+  add();
+  input("وقت الفتح يوم الجمعة للفترة 1", "٠٩:٠٠");
+  input("وقت الإغلاق يوم الجمعة للفترة 1", "١٢:٠٠");
+  add();
+  input("وقت الفتح يوم الجمعة للفترة 2", "٢٢:٣٠");
+  input("وقت الإغلاق يوم الجمعة للفترة 2", "٢٥:٠٠");
+  assert.equal(button("حفظ الدوام والتجهيز").props.disabled, true, "invalid time");
+  input("وقت الإغلاق يوم الجمعة للفترة 2", "٠١:٣٠");
+  const first = button("حفظ الدوام والتجهيز").props.onPress();
+  const command = h.writes.shift();
+  assert.deepEqual(command.change.weekly, [{ weekday: 5, opens: 540, closes: 720 },
+    { weekday: 5, opens: 1350, closes: 90 }]);
+  assert.equal(command.change.preparationMinutes, 15);
+  assert.equal(command.change.pausedUntil, null);
+  assert.equal(command.change.expectedVersion, 1);
+  command.reject({ status: 409 });
+  await first;
+  render();
+  h.read().resolve({ ...snapshot, version: 2 }); await settle();
+  assert.match(content(render()), /تغيّر سجل الإتاحة/);
+  assert.ok(button("تعديل الدوام والتجهيز"), "reconciles latest version before editing again");
 });
