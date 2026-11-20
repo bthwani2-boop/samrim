@@ -43,6 +43,32 @@ test("a changed account after the wallet response cannot display the previous ba
   assert.deepEqual(result, { kind: "signed-out" });
 });
 
+test("a different role or expired Customer session cannot initiate a wallet read", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => {
+    assert.fail("rejected admission must not request the financial balance");
+  });
+  const signal = new AbortController().signal;
+  const merchant = { ...live("actor-a"), session: { ...live("actor-a").session, role: "merchant" } };
+  assert.deepEqual(await readVerifiedWallet(async () => merchant, signal), { kind: "signed-out" });
+  const expired = { ...live("actor-a"), session: {
+    ...live("actor-a").session, sessionExpiresAt: new Date(Date.now() - 1000).toISOString(),
+  } };
+  assert.deepEqual(await readVerifiedWallet(async () => expired, signal), { kind: "signed-out" });
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test("a role switch for the same Identity actor discards the pending wallet balance", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+      { headers: { "Cache-Control": "no-store" } }));
+  const customer = live("actor-a");
+  const merchant = { ...customer, session: { ...customer.session, role: "merchant" } };
+  const states = [customer, merchant];
+  const result = await readVerifiedWallet(async () => states.shift(), new AbortController().signal);
+  assert.deepEqual(result, { kind: "signed-out" });
+  assert.equal(globalThis.fetch.mock.callCount(), 1);
+});
+
 test("a wallet response after cancellation is discarded", async (t) => {
   const controller = new AbortController();
   t.mock.method(globalThis, "fetch", async () => {
