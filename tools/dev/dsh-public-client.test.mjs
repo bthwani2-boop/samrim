@@ -277,3 +277,12 @@ test("an owner response arriving after a context switch cannot revive a cancelle
     return json(store);
   }, () => rejectsAs(() => getPublicStore(base, store.id, controller.signal), 0, "OWNER_RESPONSE_STALE"));
 });
+
+test("owner SDK keeps helper functions private and shares one public error class", async () => {
+  const sdk = await import("../../services/dsh/clients/index.ts");
+  const discovery = await import("../../services/dsh/clients/public-discovery.ts");
+  assert.equal(sdk.DshPublicError, discovery.DshPublicError);
+  for (const name of ["endpoint", "onlyKeys"]) {
+    assert.equal(Object.hasOwn(sdk, name), false, name + " must not become a public SDK export");
+  }
+});
