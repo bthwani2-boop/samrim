@@ -134,6 +134,21 @@ test("semantic design source cannot depend on presentation or native renderers",
   assert.deepEqual(sourceBoundaryIssues(design, 'import { brandRoots } from "../brand/colors";', root), []);
 });
 
+test("presentation design and renderer configuration cannot import business owner SDKs", () => {
+  for (const packageName of ["design-system", "tamagui-config"]) {
+    const file = resolve(root, `packages/${packageName}/src/index.ts`);
+    for (const owner of ["identity", "dsh", "wlt"]) {
+      const invalid = sourceBoundaryIssues(file,
+        `import { BusinessState } from "@bthwani/${owner}";`, root);
+      assert.match(invalid.join(" "), /Presentation package cannot depend on a business owner/,
+        `${packageName} must remain presentation-only and independent of ${owner}`);
+    }
+    assert.deepEqual(sourceBoundaryIssues(file,
+      'import { colors } from "@bthwani/design-system";', root), [],
+      "public design token reuse remains allowed");
+  }
+});
+
 test("new TypeScript module variants are scanned and reject private imports", () => {
   const fixture = mkdtempSync(join(tmpdir(), "bthwani-module-boundary-"));
   try {

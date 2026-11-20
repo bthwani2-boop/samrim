@@ -86,6 +86,11 @@ export function sourceBoundaryIssues(file, source, base = root) {
   const references = moduleReferences(source);
   issues.push(...references.issues);
   for (const spec of references.specs) {
+    if ((current === "packages/design-system" || current === "packages/tamagui-config") &&
+        /^@bthwani\/(?:identity|dsh|wlt)(?:\/|$)/.test(spec)) {
+      issues.push("Presentation package cannot depend on a business owner: " + spec);
+      continue;
+    }
     // Renderer ownership: Expo uses Tamagui/native modules; Operator uses Ant/Next.
     if (current === "apps/control-panel" &&
         /^(?:tamagui(?:\/|$)|@tamagui\/|@bthwani\/tamagui-config(?:\/|$)|react-native(?:[-/]|$)|expo(?:[-/]|$)|@expo\/)/.test(spec)) {
