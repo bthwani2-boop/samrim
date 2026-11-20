@@ -304,12 +304,17 @@ export function validate(owner, base = root) {
           errors.push("Invalid HTTP response status " + status + " on " + method + " " + urlPath);
         }
         const resolved = validateResponse(response, sourceFile, method + " " + urlPath + " responses." + status);
-        if (/^2(?:[0-9]{2}|XX)$/.test(status) && status !== "204" &&
-            !(owner === "identity" && urlPath === "/health")) {
+        if (/^2(?:[0-9]{2}|XX)$/.test(status) && status !== "204") {
           const schema = resolved?.content?.["application/json"]?.schema;
           if (!isObject(schema) && typeof schema !== "boolean") {
             errors.push("Missing successful JSON response schema: " + method + " " + urlPath + " " + status);
           }
+        }
+        const bodylessHealthValidation = owner === "identity" && id === "getIdentityDevelopmentHealth" &&
+          urlPath === "/health" && method === "get" && status === "400" && resolved?.content === undefined;
+        if (/^[45](?:[0-9]{2}|XX)$/.test(status) && !bodylessHealthValidation &&
+            !isObject(resolved?.content?.["application/json"]?.schema)) {
+          errors.push("Missing JSON error response schema: " + method + " " + urlPath + " " + status);
         }
       }
       const declared = validateParameters(operation.parameters, sourceFile, names, method + " " + urlPath + " parameters");
@@ -373,7 +378,7 @@ export function validate(owner, base = root) {
   if (existsSync(path.join(base, "services", owner, "clients", "generated", owner + "-operations.ts"))) {
     const generatedPath = path.join(base, "services", owner, "clients", "generated", owner + "-operations.ts");
     const generated = readFileSync(generatedPath, "utf8");
-    if (path.resolve(base) === root && generated !== generatedOperationSource(owner, base)) {
+    if (errors.length === 0 && generated !== generatedOperationSource(owner, base)) {
       errors.push("Generated operation manifest is not deterministic from current owner OpenAPI: " + owner);
     }
     const generatedIds = new Map();
@@ -413,6 +418,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
         " refs=" + result.references + " errors=" + result.errors.length +
         " generatedOperationParity=" + (
           existsSync(path.join(root, "services", owner, "clients", "generated", owner + "-operations.ts")) ? "CHECKED" : "NOT_RUN") +
+        " normalizedContractFingerprint=" + (result.errors.length ? "NOT_PROVEN" : "CHECKED") +
         " fullGeneratedClientParity=NOT_RUN");
       for (const error of result.errors.slice(0, 40)) console.error("  " + error);
     }

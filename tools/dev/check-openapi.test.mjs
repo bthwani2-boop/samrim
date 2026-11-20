@@ -74,6 +74,20 @@ test("reject missing referenced modules", () => {
   hasError(result, "missing $ref file");
 });
 
+test("error responses keep their documented JSON schema after resolving owner references", () => {
+  const result = mutate("dsh", "dsh.openapi.yaml", source => source.replace(
+    /    OwnerUnavailable:[\s\S]*?(?=\n    \w+:|$)/,
+    "    OwnerUnavailable:\n      description: DSH unavailable\n",
+  ));
+  hasError(result, "Missing JSON error response schema: get /v1/public/cities 503");
+});
+
+test("Identity health has schemas for actual readiness and dependency failure", () => {
+  const result = mutate("identity", "paths/runtime.yaml", source =>
+    source.replace(/('503':[\s\S]*?)\n          content:[\s\S]*/, "$1\n"));
+  hasError(result, "Missing JSON error response schema: get /health 503");
+});
+
 test("reject duplicate operationId across path fragments", () => {
   const result = mutate("dsh", "paths/offers.yaml", (s) =>
     s.replace("operationId: listPublicOffers", "operationId: listPublicStores"));

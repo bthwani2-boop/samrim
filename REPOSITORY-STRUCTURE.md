@@ -113,7 +113,7 @@ The following is **placement law**, not a requirement to create empty folders or
 | --- | --- |
 | App routes, feature placement and private imports | [Application boundary guard](tools/mobile/verify-application-boundaries.mjs) and [its fixtures](tools/mobile/verify-application-boundaries.test.mjs) |
 | Service roots, Go packages, SQL and OpenAPI file placement | `pnpm check:workspace` runs the [service placement guard](tools/dev/check-service-placement.mjs). [Workspace fixtures](tools/dev/verify-workspace.test.mjs) cover valid paths, untracked misplacement and linked roots. |
-| Owner OpenAPI and SDK operation index | `pnpm check:contracts` runs the [contract guard](tools/dev/check-openapi.mjs) and compares generated method, path and operation ID metadata. |
+| Owner OpenAPI and SDK operation index | `pnpm check:contracts` verifies declared response schemas and compares generated method, path, operation ID and normalized owner contract fingerprints. The [contract guard](tools/dev/check-openapi.mjs) reports full generated client parity separately. |
 | Go, SQL and role enforcement | [Go Quality](.github/workflows/go-quality.yml) runs the owner tests, disposable PostgreSQL readback and the DSH restore rehearsal on applicable revisions. |
 
 ### Names which must not be conflated

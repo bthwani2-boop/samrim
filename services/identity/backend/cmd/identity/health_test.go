@@ -24,13 +24,14 @@ func TestIsolatedHealthReadiness(t *testing.T) {
 		name, method, path, body string
 		pingErr                  error
 		status, calls            int
+		response                 string
 	}{
-		{"ready", http.MethodGet, "/health", "", nil, http.StatusOK, 1},
-		{"db unavailable", http.MethodGet, "/health", "", errors.New("secret connection failure"), http.StatusServiceUnavailable, 1},
-		{"deny POST", http.MethodPost, "/health", "", nil, http.StatusMethodNotAllowed, 0},
-		{"deny query", http.MethodGet, "/health?debug=true", "", nil, http.StatusBadRequest, 0},
-		{"deny body", http.MethodGet, "/health", "payload", nil, http.StatusBadRequest, 0},
-		{"deny chunked body", http.MethodGet, "/health", "chunked-payload", nil, http.StatusBadRequest, 0},
+		{"ready", http.MethodGet, "/health", "", nil, http.StatusOK, 1, `{"status":"ok"}`},
+		{"db unavailable", http.MethodGet, "/health", "", errors.New("secret connection failure"), http.StatusServiceUnavailable, 1, `{"status":"unavailable"}`},
+		{"deny POST", http.MethodPost, "/health", "", nil, http.StatusMethodNotAllowed, 0, ""},
+		{"deny query", http.MethodGet, "/health?debug=true", "", nil, http.StatusBadRequest, 0, ""},
+		{"deny body", http.MethodGet, "/health", "payload", nil, http.StatusBadRequest, 0, ""},
+		{"deny chunked body", http.MethodGet, "/health", "chunked-payload", nil, http.StatusBadRequest, 0, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ping := &stubPinger{err: tc.pingErr}
@@ -47,8 +48,8 @@ func TestIsolatedHealthReadiness(t *testing.T) {
 			if ping.calls != tc.calls {
 				t.Fatalf("DB checks=%d want=%d", ping.calls, tc.calls)
 			}
-			if strings.Contains(recorder.Body.String(), "secret") {
-				t.Fatal("health response leaked database detail")
+			if recorder.Body.String() != tc.response {
+				t.Fatal("health response differs from its public body contract")
 			}
 			if recorder.Header().Get("Cache-Control") != "no-store" {
 				t.Fatal("health response must not be cached")

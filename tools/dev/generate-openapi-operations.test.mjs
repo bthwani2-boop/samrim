@@ -60,3 +60,36 @@ test("generator rejects operation IDs that collide across path fragments", t => 
   writeFileSync(file, source.replace("operationId: listPublicStores", "operationId: listPublicVerticals"));
   assert.throws(() => operationRows("dsh", base), /duplicate or unsafe operationId/);
 });
+
+test("owner fingerprints detect changes beyond operation names and routes", t => {
+  const { base, contract } = fixture(t, "wlt");
+  const baseline = generatedOperationSource("wlt", base);
+  const rows = operationRows("wlt", base);
+  const mutations = [
+    ["paths/wallets.yaml", "'403':", "'404':"],
+    ["paths/wallets.yaml", "const: no-store", "const: private"],
+    ["paths/wallets.yaml", "- OpaqueSession: []", "- OpaqueSession: [other]"],
+    ["paths/wallets.yaml", "#/components/schemas/Error", "#/components/schemas/CustomerWalletBalance"],
+    ["wlt.openapi.yaml", "additionalProperties: false", "additionalProperties: true"],
+  ];
+  for (const [file, before, after] of mutations) {
+    const filename = path.join(contract, file);
+    const source = readFileSync(filename, "utf8");
+    assert.ok(source.includes(before));
+    writeFileSync(filename, source.replace(before, after));
+    assert.deepEqual(operationRows("wlt", base), rows);
+    assert.notEqual(generatedOperationSource("wlt", base), baseline, before);
+    writeFileSync(filename, source);
+  }
+});
+
+test("fingerprints ignore YAML comments and mapping order", t => {
+  const { base, contract } = fixture(t, "wlt");
+  const baseline = generatedOperationSource("wlt", base);
+  const filename = path.join(contract, "paths", "wallets.yaml");
+  const source = readFileSync(filename, "utf8");
+  const changed = source.replace("type: string, const: no-store", "const: no-store, type: string");
+  assert.notEqual(changed, source);
+  writeFileSync(filename, "# comment outside the parsed contract\n" + changed);
+  assert.equal(generatedOperationSource("wlt", base), baseline);
+});

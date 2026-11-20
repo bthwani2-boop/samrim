@@ -8,5 +8,23 @@ paths:
       responses:
         '200':
           description: Isolated PostgreSQL connection responds
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { const: ok }
+        '400':
+          description: Health request contained a query or body (empty response)
         '503':
           description: Isolated PostgreSQL dependency is unavailable
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status]
+                properties:
+                  status: { const: unavailable }
