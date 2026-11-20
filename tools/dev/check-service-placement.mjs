@@ -44,6 +44,19 @@ export function serviceSourcePlacementIssues(base) {
         }
         return;
       }
+      if (/\.ya?ml$/.test(path)) {
+        const ownerEntrypoint = parts.length === 3 && parts[0] === 'contracts' &&
+          parts[1] === 'openapi' && parts[2] === owner + '.openapi.yaml';
+        const flatPathModule = parts.length === 4 && parts[0] === 'contracts' &&
+          parts[1] === 'openapi' && parts[2] === 'paths' &&
+          /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\.yaml$/.test(parts[3]);
+        // The deprecated path/ folder is already rejected at directory level.
+        const bannedLegacyTree = parts[0] === 'contracts' && parts[1] === 'openapi' &&
+          parts[2] === 'path';
+        if (!ownerEntrypoint && !flatPathModule && !bannedLegacyTree) {
+          issues.push(path + ': owner OpenAPI YAML belongs to its entrypoint or flat paths/ modules');
+        }
+      }
       if (extname(path) === '.go') {
         const inCommand = parts.length === 4 && parts[0] === 'backend' &&
           parts[1] === 'cmd' && parts[2] === owner;

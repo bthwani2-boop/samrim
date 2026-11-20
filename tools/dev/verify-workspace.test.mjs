@@ -54,6 +54,42 @@ test('existing owner Go and SQL source paths remain legal, including WLT when im
   }
 });
 
+test('owner OpenAPI YAML permits only its one entrypoint and flat paths modules', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-owner-openapi-placement-'));
+  try {
+    for (const file of [
+      'services/identity/contracts/openapi/identity.openapi.yaml',
+      'services/dsh/contracts/openapi/paths/store-access.yaml',
+      'services/wlt/contracts/openapi/paths/ledger.yaml',
+    ]) {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, 'paths: {}\\n');
+    }
+    assert.deepEqual(serviceSourcePlacementIssues(directory), [],
+      'canonical owner entrypoints and reserved flat fragments remain allowed');
+
+    for (const file of [
+      'services/identity/contracts/openapi/shadow.yaml',
+      'services/dsh/contracts/openapi/wlt.openapi.yaml',
+      'services/wlt/contracts/openapi/paths/nested/ledger.yaml',
+      'services/identity/contracts/alternate-sessions.yaml',
+    ]) {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, 'paths: {}\\n');
+    }
+    const issues = serviceSourcePlacementIssues(directory);
+    for (const name of ['shadow.yaml', 'wlt.openapi.yaml', 'nested/ledger.yaml', 'alternate-sessions.yaml']) {
+      assert.ok(issues.some(issue => issue.includes(name)),
+        `Non-canonical owner OpenAPI file escaped placement guard: ${name}`);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('service placement guard rejects wrong owners, unnamed SQL and duplicate contract path trees', async () => {
   const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
   const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-illegal-placement-'));
