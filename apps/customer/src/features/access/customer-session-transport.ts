@@ -88,7 +88,16 @@ export async function readCustomerAdmission(signal: AbortSignal): Promise<State>
   }
   try {
     const session = await readVerifiedIdentitySession(nativeOrigin, bearer, signal);
-    if (session.role === "customer") return { enabled: true, session };
+    if (session.role === "customer") {
+      // A verified old response is not authority to resurrect an actor after
+      // sign-out, token rotation or the start of a pending device cleanup.
+      const stillCurrent = await mutateNativeStorage(async () =>
+        !signal.aborted && bearer !== invalidNativeBearer &&
+        !await SecureStore.getItemAsync(pendingStorageKey, nativeOptions) &&
+        await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer
+      );
+      return { enabled: true, session: stillCurrent ? session : null };
+    }
   } catch (error) {
     if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) throw error;
   }
@@ -174,18 +183,53 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
 
 export async function signOutCustomer(signal: AbortSignal): Promise<void> {
   if (Platform.OS === "web") return webRequest<void>("DELETE", signal);
-  const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
-  if (!bearer) return;
-  if (bearer === invalidNativeBearer) {
-    await clearStoredBearerIfCurrent(bearer, signal);
-    return;
-  }
+  let bearer: string | null = null;
+  let previouslyInvalid = false;
   try {
-    const session = await readVerifiedIdentitySession(requiredNativeOrigin(), bearer, signal);
-    if (session.role === "customer") await revokeVerifiedIdentitySession(requiredNativeOrigin(), bearer, signal);
+    await mutateNativeStorage(async () => {
+      bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
+      if (!bearer) return;
+      previouslyInvalid = bearer === invalidNativeBearer;
+      // Persist quarantine BEFORE any owner network operation. A missing
+      // response or failed device deletion must never restore the old actor.
+      invalidNativeBearer = bearer;
+      await SecureStore.setItemAsync(pendingStorageKey, "sign-out", nativeOptions);
+    });
   } catch (error) {
-    if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) throw error;
+    // If the marker itself could not be committed, deleting the old token is
+    // still safer than leaving a known-active bearer on this device.
+    if (bearer) {
+      await mutateNativeStorage(async () => {
+        if (await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer) {
+          await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+        }
+      }).catch(() => undefined);
+    }
+    throw error;
   }
-  invalidNativeBearer = bearer;
-  await clearStoredBearerIfCurrent(bearer, signal);
+  if (!bearer) return;
+  let ownerFailure: unknown;
+  try {
+    if (!previouslyInvalid) {
+      const session = await readVerifiedIdentitySession(requiredNativeOrigin(), bearer, signal);
+      if (session.role === "customer") {
+        await revokeVerifiedIdentitySession(requiredNativeOrigin(), bearer, signal);
+      }
+    }
+  } catch (error) {
+    if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) {
+      ownerFailure = error;
+    }
+  }
+  // Local logout must complete even when the owner cannot confirm revocation.
+  // The marker remains if device deletion fails and protects a cold start.
+  await mutateNativeStorage(async () => {
+    if (await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer) {
+      await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+    }
+    if (!await SecureStore.getItemAsync(storageKey, nativeOptions)) {
+      await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => undefined);
+    }
+  });
+  if (ownerFailure !== undefined) throw ownerFailure;
 }

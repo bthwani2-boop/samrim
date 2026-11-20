@@ -303,3 +303,46 @@ test("Customer marker deletion pre-effect failure leaves cold start quarantined"
   assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
     { enabled: true, session: null });
 });
+
+test("late successful owner read cannot revive an actor after the local Customer bearer changed", async () => {
+  const h = harness();
+  let didStart;
+  const started = new Promise(resolve => { didStart = resolve; });
+  let finish;
+  const delayed = new Promise(resolve => { finish = resolve; });
+  h.setRead(async () => {
+    didStart();
+    await delayed;
+    return customer(original);
+  });
+  const pending = h.transport.readCustomerAdmission(new AbortController().signal);
+  await started;
+  h.setCurrent(next);
+  finish();
+  assert.deepEqual(await pending, { enabled: true, session: null },
+    "a response authorized for the previous bearer cannot render as the new actor");
+  assert.equal(h.current(), next, "an old read must not remove the replacement bearer");
+});
+
+test("native Customer logout clears local authorization despite an Identity read outage", async () => {
+  const h = harness();
+  h.setRead(async () => { throw new IdentityError(503, "OWNER_UNAVAILABLE"); });
+  await assert.rejects(h.transport.signOutCustomer(new AbortController().signal),
+    { status: 503, code: "OWNER_UNAVAILABLE" });
+  assert.equal(h.current(), null, "local logout must not retain the prior bearer on network failure");
+  assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
+    { enabled: true, session: null }, "restart cannot restore a bearer from a failed logout");
+});
+
+test("uncertain Customer owner revocation with failed device deletion stays quarantined after restart", async () => {
+  const h = harness({ storageDeletionFails: true });
+  h.setRevoke(async () => {
+    throw new IdentityError(0, "OPERATION_RESULT_UNKNOWN");
+  });
+  await assert.rejects(h.transport.signOutCustomer(new AbortController().signal),
+    error => error.code === "OPERATION_RESULT_UNKNOWN" || /device storage deletion/.test(String(error)));
+  assert.equal(h.current(), original, "mock storage still retains the physical bearer");
+  assert.equal(h.pending(), "sign-out", "a durable logout marker must block recovery");
+  assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
+    { enabled: true, session: null }, "a crash must not resurrect a bearer retained by device failure");
+});
