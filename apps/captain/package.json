@@ -16,6 +16,7 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
+    "@bthwani/dsh": "workspace:*",
     "@bthwani/identity": "workspace:*",
     "@bthwani/tamagui-config": "workspace:*",
     "@date-fns/tz": "catalog:",

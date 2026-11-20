@@ -356,3 +356,62 @@ test("DSH Store owner unavailability error is admitted by its documented respons
   assert.ok(schema.properties.code.enum.includes("STORE_OWNER_UNAVAILABLE"),
     "the 503 emitted by the Store listing handler must be contract-valid");
 });
+
+test("Captain DSH owner SDK exports match four authenticated OpenAPI operations and preserve write uncertainty", async () => {
+  const YAML = (await import("yaml")).default;
+  const base = "http://127.0.0.1:3202";
+  const actor = "captain-verified";
+  const bearer = "A".repeat(43);
+  const contractDir = path.join(root, "services", "dsh", "contracts", "openapi");
+  const entry = YAML.parse(readFileSync(path.join(contractDir, "dsh.openapi.yaml"), "utf8"));
+  const {
+    readApprovedCaptainStanding, readCaptainApplication, requestCaptainApplication,
+  } = await import("../../services/dsh/clients/index.ts");
+  const approved = { actorId: actor, status: "APPROVED", version: 2 };
+  const pending = { actorId: actor, status: "PENDING", version: 1 };
+  const cases = [
+    ["getCurrentCaptainStanding", "get", "/v1/captains/me/standing",
+      () => readApprovedCaptainStanding(base, bearer, "captain", actor), approved],
+    ["getCurrentCustomerCaptainEligibility", "get", "/v1/actors/me/captain-eligibility",
+      () => readApprovedCaptainStanding(base, bearer, "customer", actor), approved],
+    ["getCurrentCustomerCaptainApplication", "get", "/v1/actors/me/captain-application",
+      () => readCaptainApplication(base, bearer, actor), pending],
+    ["applyCurrentCustomerForCaptainStanding", "post", "/v1/actors/me/captain-application",
+      () => requestCaptainApplication(base, bearer, actor), pending],
+  ];
+  const originalFetch = globalThis.fetch;
+  try {
+    for (const [operationId, method, route, call, result] of cases) {
+      const [fragmentPath, pointer] = entry.paths[route].$ref.split("#");
+      const fragment = YAML.parse(readFileSync(path.resolve(contractDir, fragmentPath), "utf8"));
+      const pathItem = pointer.slice(1).split("/").filter(Boolean).reduce(
+        (node, key) => node[key.replaceAll("~1", "/").replaceAll("~0", "~")], fragment,
+      );
+      assert.equal(pathItem[method].operationId, operationId, "owner operationId drift");
+      assert.deepEqual(pathItem[method].security, [{ OpaqueSession: [] }], "owner auth scope drift");
+      assert.ok(pathItem[method].responses["200"], "expected owner readback/commit response");
+      let captured;
+      globalThis.fetch = async (url, options) => {
+        captured = { url: new URL(url), options };
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        });
+      };
+      await call();
+      assert.equal(captured.url.pathname, route);
+      assert.equal(captured.options.method, method.toUpperCase());
+      assert.equal(captured.options.headers.Authorization, `Bearer ${bearer}`);
+      assert.equal(captured.options.headers.Accept, "application/json");
+      assert.equal(captured.options.redirect, "error");
+      assert.equal(captured.options.credentials, "omit");
+      assert.equal(captured.options.cache, "no-store");
+      assert.equal(captured.options.body, undefined, "application uses DSH-authenticated bearer only");
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  const appBridge = readFileSync(path.join(root, "apps", "captain", "src", "features", "access", "captain-standing.ts"), "utf8");
+  assert.match(appBridge, /from "@bthwani\/dsh"/, "Captain must consume public DSH owner export");
+  assert.doesNotMatch(appBridge, /\bfetch\s*\(/, "Captain must not maintain an independent owner transport");
+});

@@ -524,3 +524,10 @@ export async function getOperatorCaptainStanding(
   if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   return body;
 }
+
+export type { CaptainApplicationStatus, CaptainStanding } from "./captain-standing.ts";
+// DSH-owned Captain eligibility and application transport. No client-side role grant.
+export {
+  CaptainStandingError, captainStandingFrom, readApprovedCaptainStanding,
+  readCaptainApplication, requestCaptainApplication,
+} from "./captain-standing.ts";
