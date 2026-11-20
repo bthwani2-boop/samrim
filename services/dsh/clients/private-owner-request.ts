@@ -1,49 +1,7 @@
 /** Shared authenticated DSH owner transport; domain clients validate changes before calling. */
-import { DshPublicError, endpoint } from "./client-core.ts";
+import { DshPublicError, endpoint, readBoundedOwnerJSON } from "./client-core.ts";
 
 const maxOwnerTextLength = 32 * 1024;
-// Preserve the existing UTF-16 text limit without treating multibyte JSON
-// fields as larger than equally long ASCII fields.
-const maxOwnerBodyBytes = 3 * maxOwnerTextLength;
-
-async function readOwnerJSON(response: Response): Promise<unknown> {
-  if (Number(response.headers.get("Content-Length")) > maxOwnerBodyBytes) {
-    void response.body?.cancel().catch(() => {});
-    throw new Error("Oversized DSH owner reply");
-  }
-  // React Native's fetch can expose text() without a ReadableStream.
-  if (!response.body?.getReader || typeof TextDecoder !== "function") {
-    const text = await response.text();
-    if (text.length > maxOwnerTextLength) throw new Error("Oversized DSH owner reply");
-    return JSON.parse(text) as unknown;
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxOwnerBodyBytes) throw new Error("Oversized DSH owner reply");
-      chunks.push(value);
-    }
-  } catch (error) {
-    void reader.cancel().catch(() => {});
-    throw error;
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  if (text.length > maxOwnerTextLength) throw new Error("Oversized DSH owner reply");
-  return JSON.parse(text) as unknown;
-}
 
 export async function privateOwnerRequest(
   baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH", change?: unknown, signal?: AbortSignal,
@@ -78,7 +36,7 @@ export async function privateOwnerRequest(
   if (!response.ok) {
     let code = "STORE_OPERATION_FAILED";
     try {
-      const err = await readOwnerJSON(response);
+      const err = await readBoundedOwnerJSON(response, maxOwnerTextLength);
       if (err && typeof err === "object") {
         if ("code" in err && typeof err.code === "string") code = err.code;
         else if ("error" in err && typeof err.error === "string") code = err.error;
@@ -100,7 +58,7 @@ export async function privateOwnerRequest(
   }
   let body: unknown;
   try {
-    body = await readOwnerJSON(response);
+    body = await readBoundedOwnerJSON(response, maxOwnerTextLength);
   } catch {
     stale();
     throw new DshPublicError(502, method === "PATCH" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");

@@ -2,7 +2,7 @@
  * Contract-bound DSH public discovery reads. No Store, price or financial writers.
  * Public wire format: paths/stores.yaml and paths/offers.yaml in the DSH OpenAPI owner.
  */
-import { DshPublicError, endpoint, onlyKeys } from "./client-core.ts";
+import { DshPublicError, endpoint, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export { DshPublicError } from "./client-core.ts";
@@ -46,7 +46,7 @@ async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
   if (!response.ok) {
     let code = "OWNER_READ_FAILED";
     try {
-      const data: unknown = await response.json();
+      const data: unknown = await readBoundedOwnerJSON(response, 4096);
       if (data && typeof data === "object" && "error" in data && typeof data.error === "string") code = data.error;
     } catch { /* keep the safe generic error */ }
     if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
@@ -62,10 +62,9 @@ async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
   }
   let body: unknown;
   try {
-    const raw = await response.text();
-    if (raw.length > 65536) throw new Error("public response exceeds safe bound");
-    body = JSON.parse(raw) as unknown;
+    body = await readBoundedOwnerJSON(response, 65536);
   } catch {
+    if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");

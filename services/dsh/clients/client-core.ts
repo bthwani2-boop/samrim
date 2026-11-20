@@ -46,3 +46,46 @@ export function isDateTime(value: unknown): value is string {
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
     Number.isFinite(Date.parse(value));
 }
+
+// One bounded JSON transport parser for DSH public and private owner replies.
+// A successful decode does not grant authority: domain clients still validate
+// every schema field and actor/Store binding after parsing.
+export async function readBoundedOwnerJSON(response: Response, maxTextLength: number): Promise<unknown> {
+  const maxBytes = 3 * maxTextLength; // UTF-8 bytes per UTF-16 code unit are at most 3.
+  if (Number(response.headers.get("Content-Length")) > maxBytes) {
+    void response.body?.cancel().catch(() => {});
+    throw new Error("Oversized DSH owner reply");
+  }
+  // React Native may expose only text() instead of a ReadableStream.
+  if (!response.body?.getReader || typeof TextDecoder !== "function") {
+    const text = await response.text();
+    if (text.length > maxTextLength) throw new Error("Oversized DSH owner reply");
+    return JSON.parse(text) as unknown;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxBytes) throw new Error("Oversized DSH owner reply");
+      chunks.push(value);
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => {});
+    throw error;
+  } finally {
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  if (text.length > maxTextLength) throw new Error("Oversized DSH owner reply");
+  return JSON.parse(text) as unknown;
+}

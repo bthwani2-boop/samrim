@@ -351,8 +351,8 @@ test("a late owner denial after Store/account switch is stale, never an error fo
 
   const bodyAbort = new AbortController();
   await withFetch(async () => ({
-    ok: false, status: 403,
-    json: async () => { bodyAbort.abort(); return { error: "FORBIDDEN" }; },
+    ok: false, status: 403, headers: new Headers({ "Content-Type": "application/json" }),
+    text: async () => { bodyAbort.abort(); return '{"error":"FORBIDDEN"}'; },
   }), () => rejectsAs(() => getPublicStore(base, store.id, bodyAbort.signal), 0, "OWNER_RESPONSE_STALE"));
 });
 
@@ -416,4 +416,54 @@ test("City operational policy PATCH confirms only the exact owner version increm
     });
   }
   assert.equal(requests, 3, "an uncertain write must not trigger an automatic second PATCH");
+});
+
+test("Public DSH Store browse stops an oversized streamed owner response before full consumption", async () => {
+  let pulls = 0;
+  let cancelled = false;
+  await withFetch(async () => new Response(new ReadableStream({
+    pull(controller) {
+      pulls++;
+      if (pulls <= 60) controller.enqueue(new Uint8Array(4096).fill(65));
+      else controller.close();
+    },
+    cancel() { cancelled = true; },
+  }), { status: 200, headers: { "Content-Type": "application/json" } }),
+  async () => rejectsAs(() => listPublicStores(base, "sanaa"), 502, "OWNER_RESPONSE_INVALID"));
+  assert.ok(pulls < 60, `oversized public response consumed ${pulls} complete chunks`);
+  assert.equal(cancelled, true, "public transport must cancel oversized body");
+});
+
+test("Public DSH rejects advertised oversized Store body without reading it", async () => {
+  let read = false;
+  await withFetch(async () => ({
+    ok: true, status: 200,
+    headers: new Headers({ "Content-Type": "application/json", "Content-Length": "999999" }),
+    body: { cancel: async () => {} },
+    text: async () => { read = true; return JSON.stringify(store); },
+  }), () => rejectsAs(() => getPublicStore(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
+  assert.equal(read, false);
+});
+
+test("Public DSH refuses invalid streaming UTF-8 for Store detail, while valid Unicode remains supported", async () => {
+  await withFetch(async () => new Response(new Uint8Array([0xff, 0xfe]), {
+    headers: { "Content-Type": "application/json" },
+  }), () => rejectsAs(() => getPublicStore(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
+  await withFetch(async () => json({ ...store, name: "متجر بثواني" }), async () => {
+    const result = await getPublicStore(base, store.id);
+    assert.equal(result.name, "متجر بثواني");
+  });
+});
+
+test("Public DSH owner error body is size-bounded and falls back to safe error code", async () => {
+  let pulls = 0;
+  await withFetch(async () => new Response(new ReadableStream({
+    pull(controller) {
+      pulls++;
+      if (pulls < 10) controller.enqueue(new Uint8Array(4096).fill(65));
+      else controller.close();
+    },
+  }), { status: 503, headers: { "Content-Type": "application/json" } }),
+  async () => rejectsAs(() => getPublicStore(base, store.id), 503, "OWNER_READ_FAILED"));
+  assert.ok(pulls <= 5, `error body must be capped at 12 KB, got ${pulls} chunks`);
 });

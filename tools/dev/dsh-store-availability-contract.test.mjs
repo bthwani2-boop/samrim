@@ -162,3 +162,26 @@ test("Store PATCH cannot confirm an unchanged or unexpected owner version", asyn
   });
   assert.equal(calls, 3, "an ambiguous write result must not trigger an automatic duplicate PATCH");
 });
+
+test("Store PATCH owner transport stops oversized streamed confirmations without retrying an uncertain write", async () => {
+  let writes = 0;
+  let chunks = 0;
+  let cancelled = false;
+  await withFetch(async (_url, options) => {
+    writes++;
+    assert.equal(options.method, "PATCH");
+    return new Response(new ReadableStream({
+      pull(controller) {
+        chunks++;
+        if (chunks <= 100) controller.enqueue(new Uint8Array(4096).fill(65));
+        else controller.close();
+      },
+      cancel() { cancelled = true; },
+    }), { status: 200, headers: { "Cache-Control": "no-store", "Content-Type": "application/json" } });
+  }, () => rejectsAs(() => updateStoreOperationalAvailability(
+    base, storeId, bearer, change,
+  ), "OPERATION_RESULT_UNKNOWN"));
+  assert.equal(writes, 1, "ambiguous owner confirmation must not create another mutation");
+  assert.ok(chunks < 100, "oversized private reply must be rejected while streaming");
+  assert.equal(cancelled, true);
+});
