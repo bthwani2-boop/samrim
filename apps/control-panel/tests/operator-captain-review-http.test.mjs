@@ -10,7 +10,10 @@ import { setTimeout as delay } from "node:timers/promises";
 const panel = path.resolve(import.meta.dirname, "..");
 const nextCli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
 const token = Buffer.alloc(32, 7).toString("base64url");
+const replacementToken = Buffer.alloc(32, 8).toString("base64url");
 const captain = "captain-synthetic";
+const operator = "operator-synthetic";
+const replacement = "operator-replacement";
 
 async function listen(server) {
   await new Promise((resolve, reject) => {
@@ -47,14 +50,16 @@ test("real Operator Next Captain review BFF enforces live scope, origin and owne
     response.setHeader("Cache-Control", "no-store");
     const send = (status, body) => { response.writeHead(status); response.end(JSON.stringify(body)); };
     if (!identityAvailable) return send(503, { error: "OWNER_UNAVAILABLE" });
-    if (request.headers.authorization !== `Bearer ${token}`) return send(401, { error: "UNAUTHORIZED" });
+    const actorId = request.headers.authorization === `Bearer ${token}` ? operator
+      : request.headers.authorization === `Bearer ${replacementToken}` ? replacement : null;
+    if (!actorId) return send(401, { error: "UNAUTHORIZED" });
     if (url.pathname === "/v1/sessions/current") {
-      return send(200, { actorId: "operator-synthetic", role: "operator", sessionExpiresAt: expiry });
+      return send(200, { actorId, role: "operator", sessionExpiresAt: expiry });
     }
     if (url.pathname.startsWith("/v1/operators/me/permissions/")) {
       const permission = url.pathname.split("/").at(-1);
       return allowed && permission === "operations"
-        ? send(200, { actorId: "operator-synthetic", permission })
+        ? send(200, { actorId, permission })
         : send(403, { error: "FORBIDDEN" });
     }
     return send(404, { error: "NOT_FOUND" });
@@ -65,7 +70,7 @@ test("real Operator Next Captain review BFF enforces live scope, origin and owne
     response.setHeader("Content-Type", "application/json");
     response.setHeader("Cache-Control", "no-store");
     const send = (status, body) => { response.writeHead(status); response.end(JSON.stringify(body)); };
-    if (request.headers.authorization !== `Bearer ${token}` || !allowed) {
+    if (![token, replacementToken].some(bearer => request.headers.authorization === `Bearer ${bearer}`) || !allowed) {
       return send(403, { error: "FORBIDDEN" });
     }
     if (url.pathname !== `/v1/operators/captains/${captain}/standing`) {
@@ -120,7 +125,7 @@ test("real Operator Next Captain review BFF enforces live scope, origin and owne
   app.stdout.on("data", chunk => { output = (output + chunk).slice(-2000); });
   app.stderr.on("data", chunk => { output = (output + chunk).slice(-2000); });
   const call = (url, init = {}) => fetch(url, {
-    ...init, headers: { cookie, ...(init.headers ?? {}) }, cache: "no-store",
+    ...init, headers: { cookie, "X-BThwani-Operator": operator, ...(init.headers ?? {}) }, cache: "no-store",
     signal: AbortSignal.timeout(7000),
   });
   const patch = (payload, headers = {}) => call(api, {
@@ -157,6 +162,15 @@ test("real Operator Next Captain review BFF enforces live scope, origin and owne
       status: "APPROVED", expectedVersion: 1,
       operationId: "captain-review-001", reason: "Synthetic document review",
     };
+    const replacementCookie = `bthwani_operator_session=${replacementToken}`;
+    response = await call(api, { headers: { cookie: replacementCookie } });
+    assert.equal(response.status, 403, "a detail opened by the old operator must not read under another session");
+    response = await patch(valid, { cookie: replacementCookie });
+    assert.equal(response.status, 403, "an old draft must not mutate under another operations-authorized session");
+    response = await fetch(api, { headers: { cookie }, signal: AbortSignal.timeout(7000) });
+    assert.equal(response.status, 403, "detail reads require the page's operator binding");
+    assert.equal(dshCalls.length, 1, "no DSH calls from a mismatched or missing operator binding");
+
     response = await patch(valid, { origin: "http://attacker.invalid" });
     assert.equal(response.status, 403);
     response = await patch({ ...valid, privateActor: "forged" });
@@ -169,11 +183,15 @@ test("real Operator Next Captain review BFF enforces live scope, origin and owne
 
     response = await patch(valid);
     assert.equal(response.status, 200, `owner approval must succeed: ${output}`);
+    assert.equal(response.headers.get("x-bthwani-operator"), operator);
     assert.deepEqual(await response.json(), { actorId: captain, status: "APPROVED", version: 2 });
     assert.equal(history.size, 1);
     response = await call(api);
     assert.equal(response.status, 200);
     assert.equal((await response.json()).version, 2, "independent readback of synthetic DSH state");
+    response = await call(api, { headers: { cookie: replacementCookie, "X-BThwani-Operator": replacement } });
+    assert.equal(response.status, 200, "the replacement can read through its own actor-bound page");
+    assert.equal(response.headers.get("x-bthwani-operator"), replacement);
 
     response = await patch(valid);
     assert.equal(response.status, 200, "stable replay is idempotent");

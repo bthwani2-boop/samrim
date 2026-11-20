@@ -226,7 +226,8 @@ func (s *Service) Change(ctx context.Context, bearer string, cmd Change) (Standi
 	if err != nil {
 		return Standing{}, err
 	}
-	if standing.ActorID != cmd.ActorID || standing.Status != cmd.Status || standing.Version < 1 {
+	if standing.ActorID != cmd.ActorID || standing.Status != cmd.Status ||
+		standing.Version < 2 || standing.Version-1 != cmd.ExpectedVersion {
 		return Standing{}, ErrOwnerUnavailable
 	}
 	return standing, nil

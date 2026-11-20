@@ -7,7 +7,8 @@ import {
   captainStatusLabels, isCaptainStanding, readCaptainJson,
 } from "./captains-read-client";
 
-export default function CaptainStandingDetail({ actorId }: Readonly<{ actorId: string }>) {
+export default function CaptainStandingDetail({ actorId, operatorId }: Readonly<{ actorId: string; operatorId: string }>) {
+  const operatorBinding = encodeURIComponent(operatorId);
   const [standing, setStanding] = useState<CaptainStanding | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -27,7 +28,7 @@ export default function CaptainStandingDetail({ actorId }: Readonly<{ actorId: s
     setStanding(null);
     try {
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]);
-      const value = await readCaptainJson(`/api/captains/${encodeURIComponent(actorId)}/standing`, signal);
+      const value = await readCaptainJson(`/api/captains/${encodeURIComponent(actorId)}/standing`, signal, operatorBinding);
       if (!isCaptainStanding(value) || value.actorId !== actorId) {
         throw new Error("استجابة تفاصيل الكابتن غير صالحة.");
       }
@@ -43,7 +44,7 @@ export default function CaptainStandingDetail({ actorId }: Readonly<{ actorId: s
       if (!controller.signal.aborted) setLoading(false);
       if (request.current === controller) request.current = null;
     }
-  }, [actorId]);
+  }, [actorId, operatorBinding]);
 
   useEffect(() => {
     void load();
@@ -59,13 +60,16 @@ export default function CaptainStandingDetail({ actorId }: Readonly<{ actorId: s
     try {
       const response = await fetch(`/api/captains/${encodeURIComponent(actorId)}/standing`, {
         method: "PATCH", credentials: "same-origin", cache: "no-store",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "X-BThwani-Operator": operatorBinding },
         body: JSON.stringify({ status: target, expectedVersion: standing.version, operationId, reason: reason.trim() }),
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10000)]),
       });
       if (!response.ok) {
-        if (response.status === 401) throw new Error("انتهت جلسة المشغّل؛ سجّل الدخول مجددًا.");
-        if (response.status === 403) throw new Error("ليس لديك إذن لتغيير حالة الكابتن.");
+        if (response.status === 401 || response.status === 403) {
+          setStanding(null);
+          throw new Error(response.status === 401 ? "انتهت جلسة المشغّل؛ سجّل الدخول مجددًا."
+            : "تعذّر تأكيد صلاحية جلسة المشغّل لهذه المراجعة. أعد فتح الملف.");
+        }
         if (response.status === 400) throw new Error("الطلب غير صالح؛ تحقق من السبب والحالة.");
         if (response.status === 409) {
           setWriteBlocked(true);
@@ -79,8 +83,8 @@ export default function CaptainStandingDetail({ actorId }: Readonly<{ actorId: s
         setWriteBlocked(true);
         throw new Error(`تعذر تأكيد نتيجة العملية (المعرف: ${operationId}). افحص حالة DSH.`);
       }
-      if (!isCaptainStanding(result) || result.actorId !== actorId || result.status !== target ||
-        result.version < standing.version) {
+      if (response.headers.get("X-BThwani-Operator") !== operatorBinding || !isCaptainStanding(result) ||
+        result.actorId !== actorId || result.status !== target || result.version !== standing.version + 1) {
         setWriteBlocked(true);
         throw new Error(`تعذر تأكيد نتيجة العملية (المعرف: ${operationId}). افحص حالة DSH.`);
       }
@@ -95,7 +99,7 @@ export default function CaptainStandingDetail({ actorId }: Readonly<{ actorId: s
         setWriteError(cause.message);
       }
     } finally { controller.abort(); setSubmitting(false); }
-  }, [actorId, reason, standing, submitting, target, writeBlocked]);
+  }, [actorId, operatorBinding, reason, standing, submitting, target, writeBlocked]);
 
   return (
     <main style={{ padding: 24, maxWidth: 900, marginInline: "auto" }} aria-labelledby="captain-detail-heading">

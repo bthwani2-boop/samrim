@@ -16,8 +16,8 @@ const privateHeaders = {
 };
 const error = (code: string, status: number) => NextResponse.json({ code }, { status, headers: privateHeaders });
 
-/** Fixed read routes only; the browser supplies neither an owner URL nor an
- * authenticated actor. The same HttpOnly bearer is checked and forwarded. */
+/** The HttpOnly bearer authenticates the operator. The detail page's binding
+ * prevents a read or draft from carrying over to a different operator. */
 export async function readCaptainReview(request: Request, actorId?: string) {
   const config = resolveIsolatedOperatorConfig(process.env);
   const owner = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
@@ -54,7 +54,11 @@ export async function readCaptainReview(request: Request, actorId?: string) {
   if (!bearer || !/^[A-Za-z0-9_-]{43}$/.test(bearer)) return error("UNAUTHORIZED", 401);
   const access = await readVerifiedOperatorAccess(config, bearer);
   if (!access) return error("UNAUTHORIZED", 401);
-  if (!access.grants.includes("operations")) return error("FORBIDDEN", 403);
+  const operatorBinding = encodeURIComponent(access.actorId);
+  if (!access.grants.includes("operations") ||
+    (actorId !== undefined && request.headers.get("X-BThwani-Operator") !== operatorBinding)) {
+    return error("FORBIDDEN", 403);
+  }
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
   try {
     let result: unknown;
@@ -100,7 +104,7 @@ export async function readCaptainReview(request: Request, actorId?: string) {
         : await getOperatorCaptainStanding(owner, actorId, bearer, signal);
     }
     return NextResponse.json(result, { status: 200, headers: {
-      ...privateHeaders, "X-BThwani-Operator": encodeURIComponent(access.actorId),
+      ...privateHeaders, "X-BThwani-Operator": operatorBinding,
     } });
   } catch (reason) {
     if (reason instanceof DshPublicError) {

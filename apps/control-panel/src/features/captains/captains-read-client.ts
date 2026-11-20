@@ -19,13 +19,19 @@ export function isCaptainStanding(value: unknown): value is CaptainStanding {
     Number.isSafeInteger((value as CaptainStanding).version) && (value as CaptainStanding).version > 0;
 }
 
-export async function readCaptainJson(url: string, signal: AbortSignal): Promise<unknown> {
-  const response = await fetch(url, { credentials: "same-origin", cache: "no-store", signal });
+export async function readCaptainJson(url: string, signal: AbortSignal, operatorBinding?: string): Promise<unknown> {
+  const response = await fetch(url, {
+    credentials: "same-origin", cache: "no-store", signal,
+    ...(operatorBinding === undefined ? {} : { headers: { "X-BThwani-Operator": operatorBinding } }),
+  });
   if (!response.ok) {
     if (response.status === 401) throw new Error("انتهت جلسة المشغّل. سجّل الدخول مجددًا.");
     if (response.status === 403) throw new Error("لا تملك صلاحية العمليات المطلوبة.");
     if (response.status === 404) throw new Error("لا يوجد طلب كابتن بهذا المعرّف.");
     throw new Error("تعذّر قراءة بيانات الكباتن من DSH. حاول مجددًا.");
+  }
+  if (operatorBinding !== undefined && response.headers.get("X-BThwani-Operator") !== operatorBinding) {
+    throw new Error("تعذّر ربط تفاصيل الكابتن بجلسة المشغّل الحالية.");
   }
   return response.json();
 }
