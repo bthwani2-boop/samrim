@@ -135,6 +135,23 @@ test("funding history rejects provider details, other actors, non-integer money 
   }
 });
 
+test("WLT funding SDK rejects duplicate, out-of-order and invalid calendar entries", () => {
+  const newer = { fundingId: "funding-0002", amountYer: "15",
+    postedAt: "2026-11-20T01:00:00.100000001Z" };
+  const older = { fundingId: "funding-0001", amountYer: "10",
+    postedAt: "2026-11-20T01:00:00.1Z" };
+  const valid = { ...history, items: [newer, older] };
+  assert.deepEqual(parseCustomerFundingHistory(valid), valid);
+  for (const invalid of [
+    { ...valid, items: [newer, newer] },
+    { ...valid, items: [older, newer] },
+    { ...valid, items: [older, { ...newer, fundingId: "funding-0003" }] },
+    { ...history, items: [{ ...history.items[0], postedAt: "2026-02-30T00:00:00Z" }] },
+  ]) {
+    assert.throws(() => parseCustomerFundingHistory(invalid), WltReadError);
+  }
+});
+
 test("funding history is tied to the current Customer before and after owner read", async (t) => {
   let admissions = 0;
   t.mock.method(globalThis, "fetch", async (path, options) => {

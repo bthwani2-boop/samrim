@@ -52,14 +52,26 @@ export function parseCustomerFundingHistory(value: unknown): CustomerFundingHist
     fields.hasMore !== (fields.nextCursor !== null) ||
     (fields.hasMore && fields.items.length !== 10)) throw new WltReadError(502);
   const items: CustomerFundingTransaction[] = [];
+  const seenFundingIds = new Set<string>();
+  let previousTimestamp: string | null = null;
   for (const raw of fields.items) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new WltReadError(502);
     const entry = raw as Record<string, unknown>;
+    const stamp = typeof entry.postedAt === "string"
+      ? /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/.exec(entry.postedAt)
+      : null;
+    const parsedTime = stamp ? Date.parse(entry.postedAt as string) : NaN;
     if (Object.keys(entry).length !== 3 || typeof entry.fundingId !== "string" ||
       !/^[A-Za-z0-9._-]{8,128}$/.test(entry.fundingId) || !amountValid(entry.amountYer, true) ||
-      typeof entry.postedAt !== "string" ||
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(entry.postedAt) ||
-      !Number.isFinite(Date.parse(entry.postedAt))) throw new WltReadError(502);
+      typeof entry.postedAt !== "string" || !stamp || !Number.isFinite(parsedTime) ||
+      new Date(parsedTime).toISOString().slice(0, 19) !== stamp[1] ||
+      seenFundingIds.has(entry.fundingId)) throw new WltReadError(502);
+    // Compare exact UTC nanoseconds, not JavaScript's millisecond precision.
+    // Funding IDs are unique; equal timestamps are legal under PostgreSQL.
+    const timestamp = stamp[1] + "." + (stamp[2] ?? "").padEnd(9, "0");
+    if (previousTimestamp !== null && timestamp > previousTimestamp) throw new WltReadError(502);
+    previousTimestamp = timestamp;
+    seenFundingIds.add(entry.fundingId);
     items.push({ fundingId: entry.fundingId, amountYer: entry.amountYer, postedAt: entry.postedAt });
   }
   return {
