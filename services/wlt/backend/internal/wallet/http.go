@@ -82,16 +82,8 @@ func newHandler(origin string, balance balanceReader) (http.Handler, error) {
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
 		actor, status := identity.read(ctx, auth[0])
-		switch status {
-		case http.StatusUnauthorized:
-			failure(w, status, "UNAUTHORIZED")
-			return
-		case http.StatusForbidden:
-			failure(w, status, "FORBIDDEN")
-			return
-		case http.StatusOK:
-		default:
-			failure(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
+		if status != http.StatusOK {
+			identityFailure(w, status)
 			return
 		}
 		value, err := balance(ctx, actor.ActorID)
@@ -99,7 +91,15 @@ func newHandler(origin string, balance balanceReader) (http.Handler, error) {
 			failure(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
 			return
 		}
-		if !actor.Expires.After(time.Now()) {
+		// PostgreSQL can block after the first Identity read. Recheck the
+		// current binding before disclosing the resulting balance.
+		current, status := identity.read(ctx, auth[0])
+		if status != http.StatusOK {
+			identityFailure(w, status)
+			return
+		}
+		now := time.Now()
+		if actor.ActorID != current.ActorID || !actor.Expires.After(now) || !current.Expires.After(now) {
 			failure(w, http.StatusUnauthorized, "UNAUTHORIZED")
 			return
 		}
@@ -164,6 +164,17 @@ func (identity identityReader) read(ctx context.Context, auth string) (principal
 
 func failure(w http.ResponseWriter, status int, code string) {
 	reply(w, status, map[string]string{"error": code})
+}
+
+func identityFailure(w http.ResponseWriter, status int) {
+	switch status {
+	case http.StatusUnauthorized:
+		failure(w, status, "UNAUTHORIZED")
+	case http.StatusForbidden:
+		failure(w, status, "FORBIDDEN")
+	default:
+		failure(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
+	}
 }
 
 func reply(w http.ResponseWriter, status int, body any) {

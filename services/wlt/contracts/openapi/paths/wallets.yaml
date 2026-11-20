@@ -3,7 +3,7 @@ paths:
     get:
       operationId: getCurrentCustomerWalletBalance
       summary: Read the verified Customer's posted balance
-      description: The isolated WLT owner resolves the active Identity Customer, then reads that actor's durable posted funding journal. Reject query parameters and request bodies.
+      description: The isolated WLT owner resolves the active Identity Customer, reads that actor's durable posted funding journal, and rechecks the current binding before returning the balance. Query parameters and request bodies are rejected.
       security:
         - OpaqueSession: []
       responses:

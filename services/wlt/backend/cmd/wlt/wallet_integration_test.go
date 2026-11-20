@@ -142,9 +142,66 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	readWallet(t, ctx, server.URL, merchant, "/v1/wallets/me", 403)
 	readWallet(t, ctx, server.URL, one, "/v1/wallets/me?actorId=wallet-two", 400)
 	digest := sha256.Sum256(bytes.Repeat([]byte{1}, 32))
-	executeFixture(t, ctx, identity, "UPDATE identity_test_wlt.auth_sessions SET revoked_at=now() WHERE token_digest=$1", digest[:])
+	t.Run("revoked while PostgreSQL read is blocked", func(t *testing.T) {
+		lock, err := owner.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Rollback()
+		if _, err = lock.ExecContext(ctx, "LOCK TABLE wlt.customer_funding_journal IN ACCESS EXCLUSIVE MODE"); err != nil {
+			t.Fatal(err)
+		}
+
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/wallets/me", nil)
+		req.Header.Set("Authorization", "Bearer "+one)
+		pending := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, req)
+			pending <- recorder
+		}()
+
+		waitForWalletQuery(t, ctx, reader)
+		executeFixture(t, ctx, identity, "UPDATE identity_test_wlt.auth_sessions SET revoked_at=now() WHERE token_digest=$1", digest[:])
+		if err = lock.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case response := <-pending:
+			if response.Code != http.StatusUnauthorized || strings.Contains(response.Body.String(), "balanceYer") {
+				t.Fatalf("a revoked session received the pending read: %d %s", response.Code, response.Body.String())
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+	})
 	readWallet(t, ctx, server.URL, one, "/v1/wallets/me", 401)
-	t.Log("WLT durable wallet readback, actor isolation, balanced journal, duplicate rejection and least privilege verified")
+	t.Log("WLT durable wallet readback, in-flight revocation, balanced journal, duplicate rejection and least privilege verified")
+}
+
+func waitForWalletQuery(t *testing.T, ctx context.Context, reader *sql.DB) {
+	t.Helper()
+	wait, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		var blocked bool
+		err := reader.QueryRowContext(wait, `SELECT EXISTS (
+			SELECT 1 FROM pg_stat_activity WHERE usename = current_user AND wait_event_type = 'Lock'
+			AND query LIKE '%wlt.customer_wallet_balances%')`).Scan(&blocked)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if blocked {
+			return
+		}
+		select {
+		case <-wait.Done():
+			t.Fatal("wallet query did not reach the PostgreSQL lock after initial Identity verification")
+		case <-tick.C:
+		}
+	}
 }
 
 func openTestDB(t *testing.T, dsn string) *sql.DB {

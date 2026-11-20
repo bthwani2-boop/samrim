@@ -13,6 +13,7 @@ For Customer Web, set `CUSTOMER_SYNTHETIC_WLT_ORIGIN` to the same WLT loopback
 origin in the Surface preview. The route reads the existing preview cookie
 and the app confirms the current actor on both sides of the wallet request.
 
-The HTTP owner offers balance reads. The [migration](../database/migrations/README.md)
+The HTTP owner verifies the Customer with Identity before querying PostgreSQL,
+then checks the same binding again before releasing the balance. The [migration](../database/migrations/README.md)
 defines journal records and the reader's grant. Funding and provider operations
 require their own verified implementation.

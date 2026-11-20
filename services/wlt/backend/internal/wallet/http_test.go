@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -65,6 +66,48 @@ func TestWalletReadRequiresCurrentUncachedCustomer(t *testing.T) {
 			handler.ServeHTTP(mutation, httptest.NewRequest("POST", "/v1/wallets/me", nil))
 			if mutation.Code != 405 {
 				t.Error("read-only wallet admitted a mutation")
+			}
+		})
+	}
+}
+
+func TestWalletDiscardsBalanceOnOwnerChangeDuringRead(t *testing.T) {
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	const session = `{"actorId":"verified-customer","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	for _, scenario := range []struct {
+		name, nextSession string
+		identity, want    int
+	}{
+		{"revoked", "", http.StatusUnauthorized, http.StatusUnauthorized},
+		{"owner unavailable", "", http.StatusServiceUnavailable, http.StatusServiceUnavailable},
+		{"different actor", strings.Replace(session, "verified-customer", "other-customer", 1), http.StatusOK, http.StatusUnauthorized},
+		{"role changed", strings.Replace(session, `"customer"`, `"merchant"`, 1), http.StatusOK, http.StatusForbidden},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			var calls atomic.Int32
+			identity := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				if calls.Add(1) == 1 {
+					_, _ = w.Write([]byte(session))
+					return
+				}
+				w.WriteHeader(scenario.identity)
+				_, _ = w.Write([]byte(scenario.nextSession))
+			}))
+			defer identity.Close()
+			handler, err := newHandler(identity.URL, func(context.Context, string) (string, error) {
+				return "100", nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest("GET", "/v1/wallets/me", nil)
+			req.Header.Set("Authorization", token)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, req)
+			if calls.Load() != 2 || response.Code != scenario.want || strings.Contains(response.Body.String(), "balanceYer") {
+				t.Fatalf("expected undisclosed balance after owner change: %d %s", response.Code, response.Body.String())
 			}
 		})
 	}
