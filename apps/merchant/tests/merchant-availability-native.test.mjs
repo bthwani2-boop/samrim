@@ -282,3 +282,14 @@ test("Web Merchant PATCH owner 5xx preserves the original operation as uncertain
   );
   assert.equal(h.calls.length, 1);
 });
+
+test("Native Merchant PATCH after an account switch keeps the committed result uncertain", async t => {
+  let h;
+  h = harness(t, { change, onDSH: () => h.switchBearer() });
+  await assert.rejects(
+    h.transport.saveMerchantAvailability("store-a", "owner-a", change, signal()),
+    { code: "OPERATION_RESULT_UNKNOWN", status: 0 },
+  );
+  assert.notEqual(h.current(), bearer, "a previous operation must not erase the replacement account");
+  assert.deepEqual(h.calls.map(call => call.options.method), ["GET", "PATCH"]);
+});

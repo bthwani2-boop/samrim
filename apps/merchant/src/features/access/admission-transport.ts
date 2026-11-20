@@ -161,7 +161,8 @@ export async function readMerchantAvailability(storeId: string, signal: AbortSig
     getStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, signal), actorId);
 }
 
-async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: string) => Promise<T>, actorId?: string): Promise<T> {
+async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: string) => Promise<T>, actorId?: string,
+  isWrite = false): Promise<T> {
   if (await clearPendingNativeAdmission(signal)) throw new IdentityClientError(401, "UNAUTHORIZED");
   const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
   if (!bearer || bearer === deniedNativeBearer) throw new IdentityClientError(401, "UNAUTHORIZED");
@@ -185,9 +186,9 @@ async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: s
   // A scoped 403 does not invalidate the Merchant's unrelated Store grants.
   const result = await run(bearer);
   const afterOwner = await SecureStore.getItemAsync(storageKey, nativeOptions);
-  if (signal.aborted || bearer === deniedNativeBearer ||
-      afterOwner !== bearer) {
-    throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  if (signal.aborted || bearer === deniedNativeBearer || afterOwner !== bearer) {
+    // A write may already have committed despite an account switch or abort.
+    throw new DshPublicError(0, isWrite ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
   }
   return result;
 }
@@ -199,7 +200,7 @@ export async function saveMerchantAvailability(
   signal.throwIfAborted();
   if (Platform.OS !== "web") {
     await withNativeMerchantSession(signal, bearer =>
-      updateStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, change, signal), actorId);
+      updateStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, change, signal), actorId, true);
     return;
   }
   let result: Response;
