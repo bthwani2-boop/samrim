@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DshPublicError, getPublicStore, listPublicOffers, listPublicStores,
+  DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
 } from "../../services/dsh/clients/index.ts";
 
 const base = "http://127.0.0.1:3202";
@@ -51,6 +51,46 @@ test("published marketplace pages preserve scoped city, cursor, limit and allowl
   assert.equal(requested.url.searchParams.get("cursor"), "opaque-current");
   assert.equal(requested.url.searchParams.get("limit"), "2");
   assert.equal(requested.options.headers.Accept, "application/json");
+});
+
+test("public DSH verticals are owner-sourced, city-scoped and strictly checked", async () => {
+  const categories = [{ id: "grocery", storeCount: 2 }, { id: "pharmacy", storeCount: 1 }];
+  let requests = 0;
+  await withFetch(async url => {
+    requests++;
+    const parsed = new URL(url);
+    assert.equal(parsed.pathname, "/v1/public/verticals");
+    assert.equal(parsed.searchParams.get("city_id"), "sanaa");
+    assert.equal(parsed.searchParams.get("limit"), "2");
+    assert.equal(parsed.searchParams.get("cursor"), "second");
+    return json({ items: categories, nextCursor: "next-page", revision: 3 });
+  }, async () => {
+    const result = await listPublicVerticals(base, "sanaa", { limit: 2, cursor: "second" });
+    assert.equal(result.items[0].storeCount, 2);
+    assert.equal(result.nextCursor, "next-page");
+  });
+  assert.equal(requests, 1);
+  let blockedCalls = 0;
+  await withFetch(async () => { blockedCalls++; return json({ items: categories, revision: 3 }); }, async () => {
+    for (const cityId of ["", "../sanaa", "SANAA"]) {
+      await rejectsAs(() => listPublicVerticals(base, cityId), 400, "INVALID_CITY");
+    }
+    for (const limit of [0, 51, 1.2]) {
+      await rejectsAs(() => listPublicVerticals(base, "sanaa", { limit }), 400, "INVALID_LIMIT");
+    }
+    await rejectsAs(() => listPublicVerticals(base, "sanaa", { cursor: "../private" }), 400, "INVALID_CURSOR");
+  });
+  assert.equal(blockedCalls, 0);
+  for (const item of [
+    { id: "grocery", storeCount: 0 }, { id: "grocery", storeCount: -1 },
+    { id: "grocery", storeCount: "2" }, { id: "grocery", storeCount: 1.3 },
+    { id: "PRIVATE", storeCount: 2 }, { id: "grocery", storeCount: 2, privateOwner: "secret" },
+  ]) {
+    await withFetch(async () => json({ items: [item], revision: 3 }),
+      () => rejectsAs(() => listPublicVerticals(base, "sanaa"), 502, "OWNER_RESPONSE_INVALID"));
+  }
+  await withFetch(async () => json({ items: categories, revision: 3 }),
+    () => rejectsAs(() => listPublicVerticals(base, "sanaa", { limit: 1 }), 502, "OWNER_RESPONSE_INVALID"));
 });
 
 test("Store search is encoded as owner query text and preserves page scope", async () => {

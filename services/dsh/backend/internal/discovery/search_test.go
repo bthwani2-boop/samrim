@@ -72,6 +72,90 @@ func TestVerticalFilterValidationAndCursorScope(t *testing.T) {
 	}
 }
 
+func TestPublicVerticalDirectoryValidatesCityAndLimitBeforeOwnerRead(t *testing.T) {
+	for _, raw := range []string{
+		"/v1/public/verticals", "/v1/public/verticals?city_id=../sanaa",
+		"/v1/public/verticals?city_id=Sanaa", "/v1/public/verticals?city_id=sanaa&limit=0",
+		"/v1/public/verticals?city_id=sanaa&limit=51",
+		"/v1/public/verticals?city_id=sanaa&internal=1",
+		"/v1/public/verticals?city_id=sanaa&q=private",
+		"/v1/public/verticals?city_id=sanaa&city_id=aden",
+	} {
+		w := httptest.NewRecorder()
+		(&Server{}).ServeHTTP(w, httptest.NewRequest("GET", raw, nil))
+		if w.Code != 400 {
+			t.Fatalf("vertical directory should reject %q: status=%d", raw, w.Code)
+		}
+	}
+}
+
+func TestOwnerBackedPublicVerticalDirectory(t *testing.T) {
+	owner, server := setupIntegratedOwner(t)
+	w, body := request(server, "/v1/public/verticals?city_id=sanaa")
+	if w.Code != 200 {
+		t.Fatalf("public verticals failed: %d %s", w.Code, w.Body.String())
+	}
+	items := results(t, body)
+	if len(items) != 1 || items[0].(map[string]any)["id"] != "grocery" ||
+		items[0].(map[string]any)["storeCount"] != float64(2) {
+		t.Fatalf("public vertical counts disclosed or omitted Stores: %s", w.Body.String())
+	}
+	ctx := context.Background()
+	t.Cleanup(func() {
+		if err := owner.ImportSynthetic(context.Background()); err != nil {
+			t.Errorf("restore isolated DSH Stores: %v", err)
+			return
+		}
+		cleanup, err := owner.beginScopedTx(context.Background(), nil)
+		if err != nil {
+			t.Errorf("restore isolated vertical: %v", err)
+			return
+		}
+		defer cleanup.Rollback()
+		if _, err = cleanup.ExecContext(context.Background(), "DELETE FROM verticals WHERE id='test-vertical-directory'"); err != nil {
+			t.Errorf("remove synthetic vertical: %v", err)
+			return
+		}
+		if err = cleanup.Commit(); err != nil {
+			t.Errorf("commit synthetic vertical cleanup: %v", err)
+		}
+	})
+	tx, err := owner.beginScopedTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	if _, err = tx.ExecContext(ctx, "INSERT INTO verticals(id,active) VALUES('test-vertical-directory',true)"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.ExecContext(ctx, "UPDATE stores SET vertical_id='test-vertical-directory' WHERE id='market-sanaa-paused'"); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	w, body = request(server, "/v1/public/verticals?city_id=sanaa&limit=1")
+	if w.Code != 200 || len(results(t, body)) != 1 || results(t, body)[0].(map[string]any)["id"] != "grocery" {
+		t.Fatalf("bad first vertical page: %s", w.Body.String())
+	}
+	cursor, ok := body["nextCursor"].(string)
+	if !ok || cursor == "" {
+		t.Fatal("missing category pagination cursor")
+	}
+	w, body = request(server, "/v1/public/verticals?city_id=sanaa&limit=1&cursor="+url.QueryEscape(cursor))
+	if w.Code != 200 || len(results(t, body)) != 1 || results(t, body)[0].(map[string]any)["id"] != "test-vertical-directory" {
+		t.Fatalf("bad second vertical page: %s", w.Body.String())
+	}
+	w, _ = request(server, "/v1/public/verticals?city_id=aden&cursor="+url.QueryEscape(cursor))
+	if w.Code != 400 {
+		t.Fatalf("cross-city vertical cursor accepted: %d", w.Code)
+	}
+	w, _ = request(server, "/v1/public/stores?city_id=sanaa&cursor="+url.QueryEscape(cursor))
+	if w.Code != 400 {
+		t.Fatalf("vertical cursor accepted for Stores: %d", w.Code)
+	}
+}
+
 func TestOwnerBackedVerticalFilter(t *testing.T) {
 	_, s := setupIntegratedOwner(t)
 	for _, tc := range []struct {

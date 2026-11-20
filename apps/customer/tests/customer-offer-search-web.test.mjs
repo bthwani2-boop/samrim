@@ -16,6 +16,31 @@ function setup(t, reply = () => Response.json(page)) {
 }
 const request = (query) => new Request(`http://localhost:18101/v1/public/stores/market-sanaa/offers${query}`);
 
+test("Customer public vertical directory BFF forwards only bounded city and cursor", async t => {
+  const data = { items: [{ id: "grocery", storeCount: 2 }], revision: 4 };
+  const calls = setup(t, () => Response.json(data));
+  const result = await GET(new Request("http://localhost:18101/v1/public/verticals?city_id=sanaa&limit=1&cursor=next"));
+  assert.equal(result.status, 200);
+  assert.deepEqual(await result.json(), data);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url.pathname, "/v1/public/verticals");
+  assert.equal(calls[0].url.searchParams.get("city_id"), "sanaa");
+  assert.equal(calls[0].url.searchParams.get("cursor"), "next");
+});
+
+test("Customer vertical directory rejects duplicate and unauthorised query fields before DSH", async t => {
+  const calls = setup(t);
+  for (const uri of [
+    "verticals", "verticals?city_id=../sanaa", "verticals?city_id=sanaa&q=private",
+    "verticals?city_id=sanaa&vertical_id=grocery",
+    "verticals?city_id=sanaa&city_id=aden",
+    "verticals?city_id=sanaa&limit=51",
+  ]) {
+    assert.equal((await GET(new Request(`http://localhost:18101/v1/public/${uri}`))).status, 400, uri);
+  }
+  assert.equal(calls.length, 0);
+});
+
 test("Customer Store BFF forwards the selected vertical to DSH without losing city and cursor", async t => {
   const calls = setup(t);
   const response = await GET(new Request("http://localhost:18101/v1/public/stores?city_id=sanaa&vertical_id=grocery&cursor=page-two&limit=2"));

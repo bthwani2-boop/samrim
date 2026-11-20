@@ -1,4 +1,36 @@
 paths:
+  /v1/public/verticals:
+    get:
+      operationId: listPublicVerticals
+      summary: List verticals with published MARKETPLACE Stores in one active Service City
+      description: Return only active DSH vertical identities and public Store counts. These are browse categories, not checkout eligibility or editable taxonomy.
+      security: []
+      parameters:
+        - name: city_id
+          in: query
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque continuation bound to the selected city and DSH public revision.
+          schema: { type: string, maxLength: 512 }
+      responses:
+        '200':
+          description: Bounded public vertical identity and Store count page
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/VerticalPage' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StaleCursor'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/OwnerUnavailable'
   /v1/public/stores:
     get:
       operationId: listPublicStores

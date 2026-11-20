@@ -6,6 +6,8 @@ info:
 paths:
   /health:
     $ref: './paths/runtime.yaml#/paths/~1health'
+  /v1/public/verticals:
+    $ref: './paths/stores.yaml#/paths/~1v1~1public~1verticals'
   /v1/public/stores:
     $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores'
   /v1/public/stores/{id}:
@@ -171,6 +173,24 @@ components:
         code:
           type: string
           enum: [UNAUTHENTICATED, IDENTITY_OWNER_UNAVAILABLE, STORE_OPERATION_FORBIDDEN, STORE_NOT_FOUND, STORE_AVAILABILITY_VERSION_CONFLICT, OPERATIONAL_POLICY_VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, INVALID_OPERATIONAL_CHANGE, OPERATION_RESULT_UNKNOWN, OPERATIONAL_POLICY_UNAVAILABLE, STORE_OWNER_UNAVAILABLE, OWNER_UNAVAILABLE]
+    PublicVertical:
+      type: object
+      additionalProperties: false
+      required: [id, storeCount]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        storeCount: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    VerticalPage:
+      type: object
+      additionalProperties: false
+      required: [items, revision]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PublicVertical' }
+        revision: { type: integer, minimum: 0 }
+        nextCursor: { type: string, maxLength: 512 }
     StorePage:
       type: object
       additionalProperties: false

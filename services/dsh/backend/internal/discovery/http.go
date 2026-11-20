@@ -79,6 +79,13 @@ func scanPublicStore(scan func(...any) error) (publicStore, error) {
 	return st, nil
 }
 
+// Public verticals are DSH-owned marketplace classifications visible in a
+// selected active Service City. Counts exclude drafts and DIRECT Stores.
+type publicVerticalSummary struct {
+	ID         string `json:"id"`
+	StoreCount int64  `json:"storeCount"`
+}
+
 type publicOffer struct {
 	ID        string `json:"id"`
 	StoreID   string `json:"storeId"`
@@ -147,18 +154,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(segments) < 3 || segments[0] != "v1" || segments[1] != "public" || segments[2] != "stores" {
+	if len(segments) < 3 || segments[0] != "v1" || segments[1] != "public" || (segments[2] != "stores" && segments[2] != "verticals") {
 		errorJSON(w, 404, "NOT_FOUND")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	switch {
-	case len(segments) == 3:
+	case len(segments) == 3 && segments[2] == "verticals":
+		s.listVerticals(ctx, w, r)
+	case len(segments) == 3 && segments[2] == "stores":
 		s.listStores(ctx, w, r)
-	case len(segments) == 4 && validID(segments[3]):
+	case len(segments) == 4 && segments[2] == "stores" && validID(segments[3]):
 		s.storeDetail(ctx, w, segments[3])
-	case len(segments) == 5 && validID(segments[3]) && segments[4] == "offers":
+	case len(segments) == 5 && segments[2] == "stores" && validID(segments[3]) && segments[4] == "offers":
 		s.listOffers(ctx, w, r, segments[3])
 	default:
 		errorJSON(w, 404, "NOT_FOUND")
@@ -227,6 +236,87 @@ func cursorError(w http.ResponseWriter, err error) {
 	}
 	errorJSON(w, 400, "INVALID_CURSOR")
 }
+
+// listVerticals projects the DSH vertical identities with currently published
+// MARKETPLACE Stores. It never creates a second taxonomy or checkout decision.
+func (s *Server) listVerticals(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	values, parseErr := url.ParseQuery(r.URL.RawQuery)
+	if parseErr != nil || len(values["city_id"]) != 1 ||
+		len(values["limit"]) > 1 || len(values["cursor"]) > 1 || len(values) > 3 {
+		errorJSON(w, 400, "INVALID_REQUEST")
+		return
+	}
+	for key := range values {
+		if key != "city_id" && key != "limit" && key != "cursor" {
+			errorJSON(w, 400, "INVALID_REQUEST")
+			return
+		}
+	}
+	city := values.Get("city_id")
+	if !validID(city) {
+		errorJSON(w, 400, "INVALID_CITY")
+		return
+	}
+	limit, ok := limitParam(r)
+	if !ok {
+		errorJSON(w, 400, "INVALID_LIMIT")
+		return
+	}
+	tx, err := s.Owner.viewTx(ctx)
+	if err != nil {
+		errorJSON(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	defer tx.Rollback()
+	rev, err := s.Owner.revision(ctx, tx)
+	if err != nil {
+		errorJSON(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	after, err := parseCursor(r.URL.Query().Get("cursor"), "verticals", city, rev)
+	if err != nil {
+		cursorError(w, err)
+		return
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT v.id, COUNT(s.id) FROM stores s
+		JOIN verticals v ON v.id=s.vertical_id
+		JOIN service_cities c ON c.id=s.city_id
+		WHERE s.city_id=$1 AND c.active AND v.active AND s.published
+		  AND s.relation='MARKETPLACE' AND v.id>$2
+		GROUP BY v.id ORDER BY v.id LIMIT $3`, city, after, limit+1)
+	if err != nil {
+		errorJSON(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	items := make([]publicVerticalSummary, 0, limit+1)
+	for rows.Next() {
+		var item publicVerticalSummary
+		if e := rows.Scan(&item.ID, &item.StoreCount); e != nil {
+			err = e
+			break
+		}
+		items = append(items, item)
+	}
+	if err == nil {
+		err = rows.Err()
+	}
+	rows.Close()
+	if err != nil {
+		errorJSON(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	if err = tx.Commit(); err != nil {
+		errorJSON(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	result := page[publicVerticalSummary]{Items: items, Revision: rev}
+	if len(items) > limit {
+		result.Items = items[:limit]
+		result.NextCursor = makeCursor(pageCursor{Kind: "verticals", Scope: city, After: items[limit-1].ID, Revision: rev})
+	}
+	jsonResponse(w, 200, result)
+}
+
 func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	search, scope, valid := publicSearch(r, r.URL.Query().Get("city_id"))
 	if !valid {

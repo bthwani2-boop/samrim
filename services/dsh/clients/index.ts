@@ -2,6 +2,10 @@
  * Contract-bound DSH public discovery reads. No Store, price or financial writers.
  * Public wire format: paths/stores.yaml and paths/offers.yaml in the DSH OpenAPI owner.
  */
+export interface PublicVertical {
+  id: string;
+  storeCount: number;
+}
 export interface PublicStore {
   id: string;
   name: string;
@@ -108,6 +112,12 @@ function isStore(value: unknown): value is PublicStore {
     ["OPEN_FOR_ORDERS", "CLOSED_BY_SCHEDULE", "PAUSED", "OPERATIONALLY_UNAVAILABLE"].includes(String(v.orderabilityStatus)) &&
     v.orderingAvailable === false;
 }
+function isVertical(value: unknown): value is PublicVertical {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return onlyKeys(v, ["id", "storeCount"]) && isPublicId(v.id) &&
+    Number.isSafeInteger(v.storeCount) && Number(v.storeCount) >= 1;
+}
 function isOffer(value: unknown): value is PublicOffer {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
@@ -130,6 +140,26 @@ function readPage<T>(value: unknown, validate: (v: unknown) => v is T): PublicPa
   }
   return { items: v.items, revision: v.revision as number, ...(typeof v.nextCursor === "string" ? { nextCursor: v.nextCursor } : {}) };
 }
+export async function listPublicVerticals(
+  baseUrl: string, cityId: string,
+  options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<PublicPage<PublicVertical>> {
+  if (!isPublicId(cityId)) throw new DshPublicError(400, "INVALID_CITY");
+  if (options.limit !== undefined && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 50)) {
+    throw new DshPublicError(400, "INVALID_LIMIT");
+  }
+  if (options.cursor !== undefined && !/^[A-Za-z0-9_-]{1,512}$/.test(options.cursor)) {
+    throw new DshPublicError(400, "INVALID_CURSOR");
+  }
+  const url = endpoint(baseUrl, "/v1/public/verticals");
+  url.searchParams.set("city_id", cityId);
+  if (options.cursor) url.searchParams.set("cursor", options.cursor);
+  if (options.limit !== undefined) url.searchParams.set("limit", String(options.limit));
+  const page = readPage(await ownerRead(url, options.signal), isVertical);
+  if (page.items.length > (options.limit ?? 20)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  return page;
+}
+
 export async function listPublicStores(
   baseUrl: string, cityId: string, options: { query?: string; verticalId?: string; cursor?: string; limit?: number; signal?: AbortSignal } = {},
 ): Promise<PublicPage<PublicStore>> {

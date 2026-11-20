@@ -27,6 +27,7 @@ try {
 function harness({ variant = "directory", params = {} } = {}) {
   const hooks = [];
   const requests = [];
+  const categoryRequests = [];
   let index = 0;
   const effects = new Map();
   const effectDeps = new Map();
@@ -37,6 +38,9 @@ function harness({ variant = "directory", params = {} } = {}) {
       DshPublicError,
       listPublicStores(_url, cityId, options) {
         return new Promise((resolve, reject) => requests.push({ cityId, ...options, resolve, reject }));
+      },
+      listPublicVerticals(_url, cityId, options) {
+        return new Promise((resolve, reject) => categoryRequests.push({ cityId, ...options, resolve, reject }));
       },
     },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
@@ -94,6 +98,10 @@ function harness({ variant = "directory", params = {} } = {}) {
     read() {
       assert.ok(requests.length, "expected a Store list request");
       return requests.shift();
+    },
+    readCategory() {
+      assert.ok(categoryRequests.length, "expected a DSH verticals read");
+      return categoryRequests.shift();
     },
   };
 }
@@ -188,6 +196,50 @@ test("a temporary continuation outage preserves the already read Store cards", a
   const failed = app.render();
   assert.ok(byId(failed, "store-first"));
   assert.ok(byId(failed, "stores-error"));
+});
+
+test("DSH-admitted vertical choices filter Stores without guessing the category ID", async () => {
+  const app = harness({ params: { city: "sanaa" } });
+  app.render();
+  const categories = app.readCategory();
+  assert.equal(categories.cityId, "sanaa");
+  app.read().resolve({ items: [], revision: 1 });
+  categories.resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1 });
+  await settle();
+  const ready = app.render();
+  assert.ok(byId(ready, "vertical-option-grocery"));
+  byId(ready, "vertical-option-grocery").props.onPress();
+  app.render();
+  const filtered = app.read();
+  assert.equal(filtered.cityId, "sanaa");
+  assert.equal(filtered.verticalId, "grocery");
+});
+
+test("Customer vertical choices paginate without treating a late city response as current", async () => {
+  const app = harness({ params: { city: "sanaa" } });
+  app.render();
+  const first = app.readCategory();
+  app.read().resolve({ items: [], revision: 1 });
+  first.resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1, nextCursor: "next-page" });
+  await settle();
+  const more = byId(app.render(), "vertical-options-more").props.onPress();
+  const continuation = app.readCategory();
+  assert.equal(continuation.cursor, "next-page");
+  continuation.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
+  await more;
+  assert.ok(byId(app.render(), "vertical-option-pharmacy"));
+
+  app.setParams({ city: "aden" });
+  app.render();
+  app.render();
+  const next = app.readCategory();
+  assert.equal(next.cityId, "aden");
+  assert.equal(continuation.signal.aborted, true);
+  assert.equal(byId(app.render(), "vertical-option-grocery"), undefined);
+  assert.equal(byId(app.render(), "vertical-option-pharmacy"), undefined);
+  next.resolve({ items: [{ id: "restaurant", storeCount: 3 }], revision: 2 });
+  await settle();
+  assert.ok(byId(app.render(), "vertical-option-restaurant"));
 });
 
 test("changing the Store vertical requests a fresh DSH page and never shows old classification results", async () => {

@@ -1,4 +1,4 @@
-import { DshPublicError, getPublicStore, listPublicOffers, listPublicStores } from "@bthwani/dsh";
+import { DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals } from "@bthwani/dsh";
 
 // The isolated DSH port and Expo server share the same development host.
 const owner = "http://127.0.0.1:3202";
@@ -40,10 +40,12 @@ export async function GET(request: Request) {
   }
   if (request.method !== "GET") return fail(405, "METHOD_NOT_ALLOWED");
 
+  const verticals = url.pathname === "/v1/public/verticals";
   const path = discoveryPath.exec(url.pathname);
-  if (!path) return fail(404, "NOT_FOUND");
-  const [, id, offers] = path;
-  const allowedKeys = id ? (offers ? ["q", "limit", "cursor"] : []) : ["city_id", "q", "vertical_id", "limit", "cursor"];
+  if (!path && !verticals) return fail(404, "NOT_FOUND");
+  const [, id, offers] = path ?? [];
+  const allowedKeys = verticals ? ["city_id", "limit", "cursor"] :
+    id ? (offers ? ["q", "limit", "cursor"] : []) : ["city_id", "q", "vertical_id", "limit", "cursor"];
   const params = url.searchParams;
   if (url.search.length > 4097 ||
       [...params.keys()].some(key => !allowedKeys.includes(key) || params.getAll(key).length > 1)) {
@@ -72,6 +74,7 @@ export async function GET(request: Request) {
     ...(query === null ? {} : { query }),
     ...(vertical === null ? {} : { verticalId: vertical }) };
   try {
+    if (verticals) return json(await listPublicVerticals(owner, city as string, page));
     if (id) return json(offers ? await listPublicOffers(owner, id, page) : await getPublicStore(owner, id, signal));
     return json(await listPublicStores(owner, city as string, page));
   } catch (error) {
