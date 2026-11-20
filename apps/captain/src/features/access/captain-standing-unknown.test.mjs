@@ -124,3 +124,38 @@ test("Customer readback is a no-write, actor-scoped GET and never self-grants Ca
   response = ownerResponse({ error: "CAPTAIN_NOT_ELIGIBLE" }, 403);
   await expectCode(() => readCaptainApplication(base, bearer, actor), "CAPTAIN_NOT_ELIGIBLE", 403);
 });
+
+test("Captain cancellation during response body never turns an uncertain POST into success", async t => {
+  const controller = new AbortController();
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return {
+      status: 200,
+      ok: true,
+      headers: new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" }),
+      text: async () => {
+        controller.abort();
+        return JSON.stringify(standing);
+      },
+    };
+  });
+  await expectCode(() => requestCaptainApplication(base, bearer, actor, controller.signal),
+    "OPERATION_RESULT_UNKNOWN", 0);
+  assert.equal(calls, 1, "a stale response must not trigger a second POST");
+});
+
+test("Captain cancellation during GET body yields a stale read, never approved access", async t => {
+  const controller = new AbortController();
+  t.mock.method(globalThis, "fetch", async () => ({
+    status: 200,
+    ok: true,
+    headers: new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" }),
+    text: async () => {
+      controller.abort();
+      return JSON.stringify({ actorId: actor, status: "APPROVED", version: 2 });
+    },
+  }));
+  await expectCode(() => readApprovedCaptainStanding(base, bearer, "captain", actor, controller.signal),
+    "OWNER_RESPONSE_STALE", 0);
+});

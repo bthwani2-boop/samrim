@@ -71,6 +71,10 @@ async function currentStanding(
   let raw: string;
   try { raw = await res.text(); }
   catch { throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID"); }
+  // The caller may have left this session while the response body was arriving.
+  // A late reply cannot authorize access or confirm a mutation in stale UI state.
+  if (signal?.aborted) throw new CaptainStandingError(0,
+    method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
   if (raw.length > 4096) throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   try { return JSON.parse(raw) as unknown; }
   catch { throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID"); }
