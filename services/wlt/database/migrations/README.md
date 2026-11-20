@@ -15,8 +15,9 @@ A journal row carries both funding legs in whole YER. Funding identity and
 provider reference uniqueness reject duplicate postings. Triggers reject
 changes to posted rows. Keep applied migrations immutable.
 
-The CI suite bootstraps this database from scratch, tests the reader's
-privileges and checks the journal and balance through separate connections.
+The CI suite bootstraps this database from scratch and posts a synthetic
+journal entry before applying `002` and `003`. It verifies the prior funds and
+new postings through separate connections and checks the reader's privileges.
 It restores all migrations and the journal into a second database in the same
 disposable container and verifies the projected amounts, funding history and
 reader scope there.
