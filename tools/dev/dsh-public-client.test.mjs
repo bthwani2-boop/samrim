@@ -282,7 +282,7 @@ test("owner SDK keeps helper functions private and shares one public error class
   const sdk = await import("../../services/dsh/clients/index.ts");
   const discovery = await import("../../services/dsh/clients/public-discovery.ts");
   assert.equal(sdk.DshPublicError, discovery.DshPublicError);
-  for (const name of ["endpoint", "onlyKeys"]) {
+  for (const name of ["endpoint", "onlyKeys", "privateOwnerRequest"]) {
     assert.equal(Object.hasOwn(sdk, name), false, name + " must not become a public SDK export");
   }
 });

@@ -2,6 +2,9 @@
  * Contract-bound DSH public discovery reads. No Store, price or financial writers.
  * Public wire format: paths/stores.yaml and paths/offers.yaml in the DSH OpenAPI owner.
  */
+import { DshPublicError, endpoint, onlyKeys } from "./client-core.ts";
+
+export { DshPublicError } from "./client-core.ts";
 export interface PublicVertical {
   id: string;
   storeCount: number;
@@ -26,31 +29,6 @@ export interface PublicPage<T> {
   items: T[];
   nextCursor?: string;
   revision: number;
-}
-export class DshPublicError extends Error {
-  readonly status: number;
-  readonly code: string;
-
-  constructor(status: number, code: string) {
-    super(code);
-    this.name = "DshPublicError";
-    this.status = status;
-    this.code = code;
-  }
-}
-export function endpoint(baseUrl: string, path: string): URL {
-  if (!baseUrl) throw new DshPublicError(0, "DSH_ENDPOINT_NOT_CONFIGURED");
-  let root: URL;
-  try {
-    root = new URL(baseUrl);
-  } catch {
-    throw new DshPublicError(0, "DSH_ENDPOINT_INVALID");
-  }
-  if (root.username || root.password || !(root.protocol === "https:" ||
-    (root.protocol === "http:" && ["localhost", "127.0.0.1", "10.0.2.2"].includes(root.hostname)))) {
-    throw new DshPublicError(0, "DSH_ENDPOINT_UNSAFE");
-  }
-  return new URL(path, root);
 }
 async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
   let response: Response;
@@ -99,9 +77,6 @@ function isPublicId(value: unknown): value is string {
 function boundedName(value: unknown, maxCodePoints: number): value is string {
   return typeof value === "string" && Array.from(value).length >= 1 &&
     Array.from(value).length <= maxCodePoints;
-}
-export function onlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  return Object.keys(value).every((key) => allowed.includes(key));
 }
 function isStore(value: unknown): value is PublicStore {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
