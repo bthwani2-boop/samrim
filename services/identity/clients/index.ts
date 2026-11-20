@@ -87,6 +87,7 @@ async function ownerRequest(
   payload?: Record<string, string>,
 ): Promise<unknown> {
   if (bearer !== null) assertBearer(bearer);
+  const mutation = method !== "GET"; // Revocation DELETE may commit before a transport failure.
   const root = originFor(baseUrl);
   const url = new URL(path, root);
   let response: Response;
@@ -102,13 +103,13 @@ async function ownerRequest(
       ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
-    throw new IdentityClientError(0, method === "POST" ? "OPERATION_RESULT_UNKNOWN" :
+    throw new IdentityClientError(0, mutation ? "OPERATION_RESULT_UNKNOWN" :
       signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_NETWORK_UNAVAILABLE");
   }
-  if (signal?.aborted) throw new IdentityClientError(0, method === "POST" ?
+  if (signal?.aborted) throw new IdentityClientError(0, mutation ?
     "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
   if (response.status !== expectedStatus) {
-    if (response.ok) throw new IdentityClientError(502, method === "POST" ?
+    if (response.ok) throw new IdentityClientError(502, mutation ?
       "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
     let code = "OWNER_REQUEST_FAILED";
     try {
@@ -118,8 +119,10 @@ async function ownerRequest(
         code = err.error;
       }
     } catch { /* Never display arbitrary owner error content. */ }
+    if (signal?.aborted) throw new IdentityClientError(0, mutation ?
+      "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
     throw new IdentityClientError(response.status,
-      method === "POST" && response.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
+      mutation && response.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
   }
   const cacheDirectives = response.headers.get("Cache-Control")
     ?.split(",").map(part => part.trim().toLowerCase()) ?? [];
@@ -129,7 +132,7 @@ async function ownerRequest(
     (/^\d+$/.test(contentLength) && Number(contentLength) <= 16384);
   if (response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
     !cacheDirectives.includes("no-store") || !boundedLength) {
-    throw new IdentityClientError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+    throw new IdentityClientError(502, mutation ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
   try {
     const text = await response.text();
@@ -138,7 +141,7 @@ async function ownerRequest(
     if (signal?.aborted) throw new Error("Stale response");
     return body;
   } catch {
-    throw new IdentityClientError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+    throw new IdentityClientError(502, mutation ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
 }
 export async function issueCustomerPhoneChallenge(

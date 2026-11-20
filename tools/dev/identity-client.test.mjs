@@ -130,8 +130,10 @@ test("phone proof carries exact JSON without credentials and logout requires a n
     assert.equal(options.headers.Authorization, "Bearer " + bearer);
     return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   }, async () => revokeVerifiedIdentitySession(origin, bearer));
+  // A no-body 204 without no-store cannot verify owner revocation, but the
+  // DELETE may already have committed: keep the outcome unknown.
   await withFetch(async () => new Response(null, { status: 204 }),
-    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
 });
 
 test("Merchant admission performs exact POST with verified Customer token and no implicit Store grant", async () => {
@@ -235,4 +237,49 @@ test("cancelled or stale readback never revives an old Identity session or rotat
     return response(admission(), 201);
   }, () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer, another.signal),
     0, "OPERATION_RESULT_UNKNOWN"));
+});
+
+test("Identity revocation never classifies an uncertain DELETE as an ordinary read outage", async () => {
+  await withFetch(async () => { throw new Error("connection lost after revocation"); },
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 0, "OPERATION_RESULT_UNKNOWN"));
+  await withFetch(async () => response({ error: "OWNER_UNAVAILABLE" }, 503),
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 503, "OPERATION_RESULT_UNKNOWN"));
+  await withFetch(async () => response({ unexpected: true }, 200),
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
+  await withFetch(async () => new Response(null, { status: 204 }),
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
+  const controller = new AbortController();
+  await withFetch(async () => {
+    controller.abort();
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }, () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer, controller.signal),
+    0, "OPERATION_RESULT_UNKNOWN"));
+});
+
+test("late Identity denial must not sign out a replacement account or confirm a cancelled POST", async () => {
+  const denied = new Response(JSON.stringify({ error: "UNAUTHORIZED" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+  const current = new AbortController();
+  denied.json = async () => {
+    current.abort();
+    return { error: "UNAUTHORIZED" };
+  };
+  await withFetch(async () => denied,
+    () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer, current.signal),
+      0, "OWNER_RESPONSE_STALE"));
+
+  const cancelledPost = new AbortController();
+  const failed = new Response(JSON.stringify({ error: "VERIFICATION_REQUIRED" }), {
+    status: 403,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+  failed.json = async () => {
+    cancelledPost.abort();
+    return { error: "VERIFICATION_REQUIRED" };
+  };
+  await withFetch(async () => failed,
+    () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer, cancelledPost.signal),
+      0, "OPERATION_RESULT_UNKNOWN"));
 });
