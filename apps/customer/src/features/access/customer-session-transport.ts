@@ -112,12 +112,13 @@ export async function readCustomerAdmission(signal: AbortSignal): Promise<State>
 // exposing the session token as UI state or creating another credential store.
 // Identity and SecureStore must still match after the owner result arrives.
 export async function withVerifiedNativeCustomerRead<T extends { actorId: string }>(
-  signal: AbortSignal, ownerRead: (bearer: string) => Promise<T>,
+  signal: AbortSignal, ownerRead: (bearer: string) => Promise<T>, expectedActorId?: string,
 ): Promise<{ kind: "ready"; value: T; expiresAt: number } | { kind: "signed-out" | "unavailable" }> {
   if (Platform.OS !== "android" || !nativeOrigin) return { kind: "unavailable" };
   const before = await readCustomerAdmission(signal);
   if (!before.enabled) return { kind: "unavailable" };
   if (before.session?.role !== "customer" ||
+    (expectedActorId !== undefined && before.session.actorId !== expectedActorId) ||
     Date.parse(before.session.sessionExpiresAt) <= Date.now()) return { kind: "signed-out" };
   const bearer = await mutateNativeStorage(async () => {
     if (signal.aborted || await SecureStore.getItemAsync(pendingStorageKey, nativeOptions)) return null;

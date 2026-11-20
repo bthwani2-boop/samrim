@@ -79,9 +79,9 @@ function harness() {
       readNativeWallet(signal) {
         return new Promise((resolve, reject) => requests.push({ kind: "wallet", signal, resolve, reject }));
       },
-      readNativeWalletTransactions(signal, cursor) {
+      readNativeWalletTransactions(signal, cursor, expectedActorId) {
         return new Promise((resolve, reject) => requests.push({
-          kind: "history", signal, cursor, resolve, reject,
+          kind: "history", signal, cursor, expectedActorId, resolve, reject,
         }));
       },
     },
@@ -139,6 +139,7 @@ test("Native Android wallet renders only WLT verified funds and requests older h
     app.read("wallet").resolve(wallet("actor-a"));
     await settle();
     const first = app.read("history");
+    assert.equal(first.expectedActorId, "actor-a");
     first.resolve(history("actor-a", [funding("funding-old")], "next-page"));
     await settle();
     const view = app.render();
@@ -147,6 +148,7 @@ test("Native Android wallet renders only WLT verified funds and requests older h
     byId(view, "native-wallet-more").props.onPress();
     const next = app.read("history");
     assert.equal(next.cursor, "next-page");
+    assert.equal(next.expectedActorId, "actor-a");
     next.resolve(history("actor-a", [funding("funding-new")]));
     await settle();
     const after = textOf(app.render());

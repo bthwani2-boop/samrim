@@ -25,11 +25,12 @@ function nativeWalletOrigin(): string | null {
 
 async function readNativeFinance<T extends { actorId: string }>(
   signal: AbortSignal, readOwner: (origin: string, bearer: string) => Promise<T>,
+  expectedActorId?: string,
 ): Promise<{ kind: "ready"; value: T; expiresAt: number } | { kind: "signed-out" | "unavailable" }> {
   const origin = nativeWalletOrigin();
   if (!origin) return { kind: "unavailable" };
   try {
-    return await withVerifiedNativeCustomerRead(signal, bearer => readOwner(origin, bearer));
+    return await withVerifiedNativeCustomerRead(signal, bearer => readOwner(origin, bearer), expectedActorId);
   } catch (error) {
     if (signal.aborted) throw error;
     if (error instanceof WltReadError && (error.status === 401 || error.status === 403)) {
@@ -47,10 +48,10 @@ export async function readNativeWallet(signal: AbortSignal): Promise<NativeWalle
 }
 
 export async function readNativeWalletTransactions(
-  signal: AbortSignal, cursor?: string,
+  signal: AbortSignal, cursor?: string, expectedActorId?: string,
 ): Promise<NativeWalletHistoryRead> {
-  const result = await readNativeFinance(signal, (origin, bearer) =>
-    readCurrentCustomerWalletTransactions(origin, bearer, signal, cursor));
+  const result = await readNativeFinance(signal,
+    (origin, bearer) => readCurrentCustomerWalletTransactions(origin, bearer, signal, cursor), expectedActorId);
   return result.kind === "ready"
     ? { kind: "ready", history: result.value, expiresAt: result.expiresAt } : result;
 }

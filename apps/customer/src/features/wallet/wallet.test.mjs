@@ -260,7 +260,7 @@ test("a verified Customer can request an older bounded WLT history page", async 
   const result = await readVerifiedWalletTransactions(async () => {
     admissionReads++;
     return live("actor-a");
-  }, new AbortController().signal, nextCursor);
+  }, new AbortController().signal, nextCursor, "actor-a");
   assert.equal(admissionReads, 2);
   assert.equal(result.kind, "ready");
   assert.equal(result.history.nextCursor, nextCursor);
@@ -274,6 +274,18 @@ test("a changed Customer cannot inherit an older wallet history page", async (t)
     async () => sessions.shift(), new AbortController().signal, nextCursor,
   );
   assert.deepEqual(result, { kind: "signed-out" });
+});
+
+test("wallet history stays bound to the Customer whose balance is already displayed", async (t) => {
+  t.mock.method(globalThis, "fetch", async () =>
+    Response.json({ ...pageOne, actorId: "actor-b" }, { headers: { "Cache-Control": "no-store" } }));
+  for (const cursor of [undefined, nextCursor]) {
+    const result = await readVerifiedWalletTransactions(
+      async () => live("actor-b"), new AbortController().signal, cursor, "actor-a",
+    );
+    assert.deepEqual(result, { kind: "signed-out" });
+  }
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
 });
 
 test("WLT SDK forwards only a canonical cursor to its isolated owner", async (t) => {

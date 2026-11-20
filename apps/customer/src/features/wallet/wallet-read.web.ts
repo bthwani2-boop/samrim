@@ -20,11 +20,12 @@ export type WalletTransactionsReadState =
 // A Store, Merchant or old Customer cannot be inherited from a previous view.
 async function readVerifiedFinance<T extends { actorId: string }>(
   path: string, parse: (body: unknown) => T,
-  readCustomerAdmission: AdmissionReader, signal: AbortSignal,
+  readCustomerAdmission: AdmissionReader, signal: AbortSignal, expectedActorId?: string,
 ): Promise<Result<T>> {
   const before = await readCustomerAdmission(signal);
   if (!before.enabled) return { kind: "unavailable" };
   if (before.session?.role !== "customer" ||
+    (expectedActorId !== undefined && before.session.actorId !== expectedActorId) ||
     Date.parse(before.session.sessionExpiresAt) <= Date.now()) return { kind: "signed-out" };
   const response = await fetch(path, {
     method: "GET", credentials: "same-origin", redirect: "error", cache: "no-store", signal,
@@ -54,6 +55,7 @@ export async function readVerifiedWallet(
 
 export async function readVerifiedWalletTransactions(
   readCustomerAdmission: AdmissionReader, signal: AbortSignal, cursor?: string,
+  expectedActorId?: string,
 ): Promise<WalletTransactionsReadState> {
   if (cursor !== undefined && !/^[A-Za-z0-9_-]{20,240}$/.test(cursor)) {
     return { kind: "unavailable" };
@@ -61,7 +63,7 @@ export async function readVerifiedWalletTransactions(
   const path = "/api/customer-auth/wallet-transactions" +
     (cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`);
   const result = await readVerifiedFinance(path,
-    parseCustomerFundingHistory, readCustomerAdmission, signal);
+    parseCustomerFundingHistory, readCustomerAdmission, signal, expectedActorId);
   return result.kind === "ready"
     ? { kind: "ready", history: result.value, expiresAt: result.expiresAt } : result;
 }

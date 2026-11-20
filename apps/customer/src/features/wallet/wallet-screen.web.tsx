@@ -21,6 +21,7 @@ export default function WalletScreen() {
     let pending: AbortController | undefined;
     let expiry: ReturnType<typeof setTimeout> | undefined;
     function expire() {
+      pending?.abort();
       loadMoreController.current?.abort();
       setState({ kind: "signed-out" });
       setHistory(null);
@@ -55,7 +56,7 @@ export default function WalletScreen() {
         setState(result);
         if (result.kind === "ready") {
           schedule(result.expiresAt);
-          void readVerifiedWalletTransactions(readCustomerAdmission, deadline).then(historyResult => {
+          void readVerifiedWalletTransactions(readCustomerAdmission, deadline, undefined, result.balance.actorId).then(historyResult => {
             if (controller.signal.aborted || deadline.aborted) return;
             if (historyResult.kind === "signed-out") {
               expire();
@@ -104,7 +105,7 @@ export default function WalletScreen() {
     setMoreError(false);
     try {
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(12000)]);
-      const next = await readVerifiedWalletTransactions(readCustomerAdmission, deadline, cursor);
+      const next = await readVerifiedWalletTransactions(readCustomerAdmission, deadline, cursor, state.balance.actorId);
       if (controller.signal.aborted) return;
       if (next.kind === "signed-out") {
         setState({ kind: "signed-out" });

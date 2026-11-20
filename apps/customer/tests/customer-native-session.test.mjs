@@ -377,6 +377,15 @@ test("native financial reader cannot send an unverified token changed between ad
   assert.equal(result.kind, "signed-out");
 });
 
+test("native financial reader refuses a different current Customer before sending a history request", async () => {
+  const h = harness();
+  let sends = 0;
+  const result = await h.transport.withVerifiedNativeCustomerRead(new AbortController().signal,
+    async () => { sends++; return { actorId: "actor-old" }; }, "actor-new");
+  assert.deepEqual(result, { kind: "signed-out" });
+  assert.equal(sends, 0);
+});
+
 test("native financial reader rejects a token rotated during an owner read, even to the same actor", async () => {
   const h = harness();
   let calls = 0;

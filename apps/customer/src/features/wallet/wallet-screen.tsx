@@ -59,7 +59,7 @@ export default function WalletScreen() {
           setBalance(result);
           if (result.kind !== "ready") return;
           scheduleExpiry(result.expiresAt);
-          const transactions = await readNativeWalletTransactions(controller.signal);
+          const transactions = await readNativeWalletTransactions(controller.signal, undefined, result.balance.actorId);
           if (controller.signal.aborted || generation.current !== current) return;
           if (transactions.kind === "signed-out") {
             hide();
@@ -108,7 +108,7 @@ export default function WalletScreen() {
     setLoadingMore(true);
     setMoreError(false);
     try {
-      const next = await readNativeWalletTransactions(controller.signal, cursor);
+      const next = await readNativeWalletTransactions(controller.signal, cursor, balance.balance.actorId);
       if (controller.signal.aborted || generation.current !== current) return;
       if (next.kind === "signed-out") {
         pending.current?.abort();
