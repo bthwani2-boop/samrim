@@ -201,11 +201,13 @@ container already running. Readiness always attaches to the *running* image ID.
 The SQL proof intentionally creates a **new disposable container** with a
 unique `bthwani-agent01-pgproof-*` name and the same pinned PostGIS image as
 the existing Compose stack. It has `--network none`, no published ports, no
-external volumes and tmpfs-only PostgreSQL storage. The script runs all five
-current DSH migrations in order, establishes a synthetic read-only role and
-asserts that its writes fail (SQLSTATE 42501), then makes a PostgreSQL backup,
-restores it into a second disposable database and compares schema/data counts.
-It stops only its own identity-verified scratch container at the end.
+external volumes and tmpfs-only PostgreSQL storage. The script runs the
+current DSH migrations in order, then restores a custom-format backup into a
+second database in the same disposable container. It compares columns,
+constraints, indexes, triggers and the discovery revision. The same synthetic
+reader must be able to read the revision and must receive SQLSTATE 42501 on
+update in both databases. The Go quality workflow runs this rehearsal with
+its local Docker context. The script stops only its own verified container.
 
 **Scope boundary:** This proves an *empty isolated fresh installation*,
 synthetic least-privilege example and local restore, not migration of existing

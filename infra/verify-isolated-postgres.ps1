@@ -5,6 +5,7 @@
 [CmdletBinding()]
 param([string]$DockerContext = 'bthwani-docker')
 $ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $compose = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'compose.yaml'))
 $imageMatch = [regex]::Match($compose, '(?m)^    image: (postgis/postgis:18-3\.6@sha256:[a-f0-9]{64})$')
@@ -33,8 +34,10 @@ try {
   }
   $ready = $false
   for ($attempt = 0; $attempt -lt 30; $attempt++) {
-    & docker --context $DockerContext exec $containerId pg_isready -q -U $user -d $db 2>$null
-    if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    # The image's bootstrap server can accept Unix socket connections before
+    # it stops and the final PostgreSQL TCP listener starts.
+    $identity = & docker --context $DockerContext exec $containerId psql -X -At -h 127.0.0.1 -v ON_ERROR_STOP=1 -U $user -d $db -c 'SELECT current_database()' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $identity -ceq $db) { $ready = $true; break }
     Start-Sleep -Milliseconds 600
   }
   if (!$ready) { throw 'Disposable PostgreSQL did not become ready' }
@@ -57,28 +60,59 @@ try {
     $grantResult = & docker --context $DockerContext exec $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $db -c $sql 2>&1
     if ($LASTEXITCODE -ne 0) { throw ('Cannot provision disposable least-privilege reader: ' + $sql + ' result=' + ($grantResult | Out-String)) }
   }
-  $readSql = 'BEGIN; SET LOCAL ROLE ' + $reader + '; SELECT count(*) FROM ' + $schema + '.public_revision; ROLLBACK;'
-  $readOutput = & docker --context $DockerContext exec $containerId psql -X -v ON_ERROR_STOP=1 -U $user -d $db -Atc $readSql 2>&1
-  if ($LASTEXITCODE -ne 0 -or !(@($readOutput | ForEach-Object { $_.ToString().Trim() }) -contains '1')) { throw 'Reader cannot read the intended synthetic table' }
-  $writeSql = 'BEGIN; SET LOCAL ROLE ' + $reader + '; INSERT INTO ' + $schema + '.public_revision(singleton,revision) VALUES(false,1); ROLLBACK;'
-  $denyOutput = & docker --context $DockerContext exec $containerId psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U $user -d $db -Atc $writeSql 2>&1
-  if ($LASTEXITCODE -eq 0 -or ($denyOutput | Out-String) -notmatch '42501') { throw 'Reader write-denial was not proven' }
-  Write-Output 'PG_READER_ACCESS=PASS select=allowed mutation=denied(sqlstate42501)'
+  function Assert-ReaderAccess([string]$Database) {
+    $readSql = "BEGIN; SET LOCAL ROLE $reader; SELECT revision FROM $schema.public_revision WHERE singleton; ROLLBACK;"
+    $readOutput = & docker --context $DockerContext exec $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -c $readSql 2>&1
+    if ($LASTEXITCODE -ne 0 -or ($readOutput | Out-String).Trim() -cne '0') {
+      throw "Reader cannot read the intended synthetic revision in $Database"
+    }
+    $writeSql = "BEGIN; SET LOCAL ROLE $reader; UPDATE $schema.public_revision SET revision=revision+1 WHERE singleton; ROLLBACK;"
+    $denyOutput = & docker --context $DockerContext exec $containerId psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U $user -d $Database -Atc $writeSql 2>&1
+    if ($LASTEXITCODE -eq 0 -or ($denyOutput | Out-String) -notmatch '42501') {
+      throw "Reader write-denial was not proven in $Database"
+    }
+  }
+  Assert-ReaderAccess $db
+  Write-Output 'PG_READER_ACCESS=PASS select=allowed update=denied(sqlstate42501)'
 
   $dump = '/tmp/agent01-dsh.dump'
   $null = & docker --context $DockerContext exec $containerId pg_dump -Fc --no-owner --schema=$schema -U $user -d $db -f $dump 2>&1
   if ($LASTEXITCODE -ne 0) { throw 'Synthetic backup failed' }
   $null = & docker --context $DockerContext exec $containerId createdb -U $user $restoreDb 2>&1
   if ($LASTEXITCODE -ne 0) { throw 'Cannot create disposable restore target' }
-  $null = & docker --context $DockerContext exec $containerId pg_restore --no-owner --no-privileges -U $user -d $restoreDb $dump 2>&1
+  # A fresh database in the same disposable cluster can restore the original
+  # schema and table grants to the synthetic reader.
+  $null = & docker --context $DockerContext exec $containerId pg_restore --no-owner --exit-on-error --single-transaction -U $user -d $restoreDb $dump 2>&1
   if ($LASTEXITCODE -ne 0) { throw 'Synthetic restore failed' }
-  $fingerprintSql = "SELECT (SELECT count(*) FROM pg_tables WHERE schemaname='$schema') || ':' || (SELECT count(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='$schema') || ':' || (SELECT count(*) FROM $schema.public_revision);"
-  $before = (& docker --context $DockerContext exec $containerId psql -X -U $user -d $db -Atc $fingerprintSql).Trim()
-  $after = (& docker --context $DockerContext exec $containerId psql -X -U $user -d $restoreDb -Atc $fingerprintSql).Trim()
-  if ($LASTEXITCODE -ne 0 -or !$before -or $before -ne $after) {
-    throw "Synthetic backup/restore readback mismatch (original=$before restored=$after)"
+  Assert-ReaderAccess $restoreDb
+  $fingerprintSql = @"
+SELECT jsonb_build_object(
+  'columns', (SELECT jsonb_agg(to_jsonb(c) - ARRAY['table_catalog','domain_catalog','udt_catalog','scope_catalog']
+                              ORDER BY table_name, ordinal_position)
+              FROM information_schema.columns c WHERE table_schema = '$schema'),
+  'constraints', (SELECT jsonb_agg(jsonb_build_array(cl.relname, c.conname, pg_get_constraintdef(c.oid))
+                                  ORDER BY cl.relname, c.conname)
+                  FROM pg_constraint c JOIN pg_class cl ON cl.oid = c.conrelid
+                  WHERE c.connamespace = '$schema'::regnamespace),
+  'indexes', (SELECT jsonb_agg(indexdef ORDER BY tablename, indexname)
+              FROM pg_indexes WHERE schemaname = '$schema'),
+  'triggers', (SELECT jsonb_agg(pg_get_triggerdef(t.oid) ORDER BY cl.relname, t.tgname)
+               FROM pg_trigger t JOIN pg_class cl ON cl.oid = t.tgrelid
+               WHERE cl.relnamespace = '$schema'::regnamespace AND NOT t.tgisinternal),
+  'revision', (SELECT revision FROM $schema.public_revision WHERE singleton)
+);
+"@
+  function Read-Fingerprint([string]$Database) {
+    $snapshot = & docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $Database -c $fingerprintSql
+    if ($LASTEXITCODE -ne 0 -or !$snapshot) { throw "Cannot inspect synthetic schema in $Database" }
+    return $snapshot
   }
-  Write-Output "PG_RESTORE_READBACK=PASS table:constraint:revision-count=$before"
+  $before = Read-Fingerprint $db
+  $after = Read-Fingerprint $restoreDb
+  if ($before -cne $after) {
+    throw 'Synthetic backup/restore schema or revision mismatch'
+  }
+  Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,revision,reader-grants'
   Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'
 } finally {
   if ($containerId -match '^[a-f0-9]{64}$') {

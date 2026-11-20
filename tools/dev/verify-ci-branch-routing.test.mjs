@@ -95,6 +95,15 @@ test("SQL migration changes trigger the existing Go quality and Nx dependency wo
   }
 });
 
+test("the disposable PostgreSQL job routes and runs the DSH restore rehearsal", () => {
+  const { content, push, pr } = events(workflows[2]);
+  const restoreScript = /^ {6}- 'infra\/verify-isolated-postgres\.ps1'$/m;
+  assert.match(push, restoreScript);
+  assert.match(pr, restoreScript);
+  const job = content.slice(content.indexOf("\n  owner-postgres-integration:\n"));
+  assert.match(job, /shell: pwsh\n {8}run: \.\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/);
+});
+
 test("CI retains real security and contract checks without the retired scaffold guard", () => {
   const { content } = events(workflows[0]);
   assert.doesNotMatch(content, /tools\/governance\/verify-foundation(?:\.test)?\.mjs/);
