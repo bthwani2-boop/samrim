@@ -11,9 +11,21 @@ test("operator public Store query accepts bounded city/search and preserves safe
   assert.deepEqual(parsePublicStoreBrowse({ city: undefined }), { city: "", query: "" });
 });
 
+test("Operator Store vertical stays scoped across search, detail and paging URLs", () => {
+  const scope = parsePublicStoreBrowse({ city: "sanaa", q: "market", vertical: "grocery", cursor: "next" });
+  assert.deepEqual(scope, { city: "sanaa", query: "market", vertical: "grocery", cursor: "next" });
+  assert.equal(publicStorePageHref(scope),
+    "/merchants/public-stores?city=sanaa&q=market&vertical=grocery&cursor=next");
+  assert.deepEqual(parsePublicStoreBrowse({ city: "sanaa", vertical: "grocery" }), {
+    city: "sanaa", query: "", vertical: "grocery",
+  });
+});
+
 test("invalid search scopes and duplicate parameters fail before any owner read", () => {
   for (const params of [
     { city: "Sanaa" }, { city: "../a" }, { city: ["sanaa", "aden"] },
+    { city: "sanaa", vertical: "GROCERY" }, { city: "sanaa", vertical: "" },
+    { city: "sanaa", vertical: "../private" }, { city: "sanaa", vertical: ["grocery", "pharmacy"] },
     { city: "sanaa", q: ["a", "b"] }, { city: "sanaa", q: "x".repeat(81) },
     { city: "sanaa", q: "\uD800" }, { city: "sanaa", cursor: "x".repeat(513) },
     { city: "sanaa", cursor: "invalid/" }, { city: "sanaa", extra: "data" },

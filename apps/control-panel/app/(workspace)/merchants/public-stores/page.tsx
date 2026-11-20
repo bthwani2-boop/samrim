@@ -36,6 +36,7 @@ export default async function PublicStoresMonitor({
     try {
       page = await listPublicStores(owner, scope.city, {
         ...(scope.query ? { query: scope.query } : {}),
+        ...(scope.vertical ? { verticalId: scope.vertical } : {}),
         ...(scope.cursor ? { cursor: scope.cursor } : {}),
         limit: 20,
         signal: AbortSignal.timeout(5000),
@@ -67,6 +68,12 @@ export default async function PublicStoresMonitor({
             defaultValue={scope?.query ?? ""} placeholder="اسم المتجر"
             style={{ minHeight: 44, width: "100%" }} />
         </label>
+        <label style={{ display: "grid", gap: "0.25rem" }}>
+          نوع النشاط لدى DSH
+          <input name="vertical" aria-label="رمز نوع النشاط" maxLength={64}
+            defaultValue={scope?.vertical ?? ""} placeholder="grocery"
+            pattern="[a-z0-9-]{1,64}" style={{ minHeight: 44 }} />
+        </label>
         <button type="submit" style={{ minHeight: 44, paddingInline: "1rem", cursor: "pointer" }}>
           عرض المتاجر
         </button>
@@ -81,7 +88,7 @@ export default async function PublicStoresMonitor({
               {page.items.map(store => (
                 <li key={store.id} className={styles.sectionCard}>
                   <strong>{store.name}</strong>
-                  <a href={publicStoreDetailHref(store.id, { city: scope.city, query: scope.query })}>
+                  <a href={publicStoreDetailHref(store.id, { city: scope.city, query: scope.query, vertical: scope.vertical })}>
                     عرض التفاصيل والعروض المنشورة
                   </a>
                   <span>المدينة: {store.cityId} — القطاع: {store.verticalId}</span>
@@ -92,11 +99,11 @@ export default async function PublicStoresMonitor({
             </ul>
           )}
           <nav aria-label="صفحات المتاجر" style={{ display: "flex", gap: "1rem", marginBlock: "1rem" }}>
-            {scope.cursor ? <a href={publicStorePageHref({ city: scope.city, query: scope.query })}>
+            {scope.cursor ? <a href={publicStorePageHref({ city: scope.city, query: scope.query, vertical: scope.vertical })}>
               العودة إلى أول صفحة
             </a> : null}
             {page.nextCursor ? <a href={publicStorePageHref({
-              city: scope.city, query: scope.query, cursor: page.nextCursor,
+              city: scope.city, query: scope.query, vertical: scope.vertical, cursor: page.nextCursor,
             })}>عرض الصفحة التالية</a> : null}
           </nav>
         </section>

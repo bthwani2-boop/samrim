@@ -1,6 +1,7 @@
 export type PublicStoreBrowse = Readonly<{
   city: string;
   query: string;
+  vertical?: string | undefined;
   cursor?: string;
 }>;
 
@@ -11,10 +12,10 @@ const publicCursor = /^[A-Za-z0-9_-]{1,512}$/;
 export function parsePublicStoreBrowse(
   params: Record<string, string | string[] | undefined>,
 ): PublicStoreBrowse | null {
-  if (Object.keys(params).some(key => !["city", "q", "cursor"].includes(key))) return null;
-  const { city, q, cursor } = params;
-  if ([city, q, cursor].some(value => Array.isArray(value))) return null;
-  if (city === undefined && q === undefined && cursor === undefined) {
+  if (Object.keys(params).some(key => !["city", "q", "vertical", "cursor"].includes(key))) return null;
+  const { city, q, vertical, cursor } = params;
+  if ([city, q, vertical, cursor].some(value => Array.isArray(value))) return null;
+  if (city === undefined && q === undefined && vertical === undefined && cursor === undefined) {
     return { city: "", query: "" };
   }
   if (typeof city !== "string" || !publicId.test(city)) return null;
@@ -24,13 +25,16 @@ export function parsePublicStoreBrowse(
         const point = char.codePointAt(0) ?? 0;
         return point < 32 || point === 127 || (point >= 0xD800 && point <= 0xDFFF);
       }))) return null;
+  if (vertical !== undefined && (typeof vertical !== "string" || !publicId.test(vertical))) return null;
   if (cursor !== undefined && (typeof cursor !== "string" || !publicCursor.test(cursor))) return null;
-  return { city, query, ...(typeof cursor === "string" ? { cursor } : {}) };
+  return { city, query, ...(typeof vertical === "string" ? { vertical } : {}),
+    ...(typeof cursor === "string" ? { cursor } : {}) };
 }
 
 export function publicStorePageHref(scope: PublicStoreBrowse): string {
   const params = new URLSearchParams({ city: scope.city });
   if (scope.query) params.set("q", scope.query);
+  if (scope.vertical) params.set("vertical", scope.vertical);
   if (scope.cursor) params.set("cursor", scope.cursor);
   return `/merchants/public-stores?${params.toString()}`;
 }

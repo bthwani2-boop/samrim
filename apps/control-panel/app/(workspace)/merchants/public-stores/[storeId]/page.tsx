@@ -42,8 +42,8 @@ export default async function PublicStoreOffers({
   } else {
     try {
       const verified = await getPublicStore(owner, scope.storeId, AbortSignal.timeout(5000));
-      if (verified.cityId !== scope.city) {
-        error = "المتجر لا ينتمي إلى المدينة المحددة. أعد البحث من الدليل.";
+      if (verified.cityId !== scope.city || (scope.vertical && verified.verticalId !== scope.vertical)) {
+        error = "المتجر لا ينتمي إلى المدينة أو نوع النشاط المحدد. أعد البحث من الدليل.";
       } else {
         store = verified;
       }
@@ -63,12 +63,12 @@ export default async function PublicStoreOffers({
     }
   }
 
-  const firstPage = scope ? publicStoreDetailHref(scope.storeId, { city: scope.city, query: scope.query }) : "";
+  const firstPage = scope ? publicStoreDetailHref(scope.storeId, { city: scope.city, query: scope.query, vertical: scope.vertical }) : "";
   return (
     <main className={styles.workspace} aria-labelledby="public-offers-heading">
       <h1 id="public-offers-heading">تفاصيل المتجر وعروضه العامة</h1>
       <p>بيانات منشورة مصدرها DSH مباشرة، للقراءة فقط؛ لا تمثل صلاحية إدارة المتجر أو تأكيد إنشاء طلب.</p>
-      <a href={scope ? publicStorePageHref({ city: scope.city, query: scope.query }) : "/merchants/public-stores"}>
+      <a href={scope ? publicStorePageHref({ city: scope.city, query: scope.query, vertical: scope.vertical }) : "/merchants/public-stores"}>
         العودة إلى دليل المتاجر
       </a>
       {error ? <p role="alert">{error}</p> : null}
@@ -102,7 +102,7 @@ export default async function PublicStoreOffers({
               }}>
                 {scope?.cursor ? <a href={firstPage}>أول صفحة عروض</a> : null}
                 {offers.nextCursor && scope ? <a href={publicStoreDetailHref(scope.storeId, {
-                  city: scope.city, query: scope.query, cursor: offers.nextCursor,
+                  city: scope.city, query: scope.query, vertical: scope.vertical, cursor: offers.nextCursor,
                 })}>عرض المزيد من العروض</a> : null}
               </nav>
             </>

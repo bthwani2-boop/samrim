@@ -4,7 +4,7 @@ import { DshPublicError, getPublicStore, listPublicOffers, listPublicStores } fr
 const owner = "http://127.0.0.1:3202";
 const publicId = /^[a-z0-9-]{1,64}$/;
 const discoveryPath = /^\/v1\/public\/stores(?:\/([a-z0-9-]{1,64})(\/offers)?)?$/;
-const badRequestCodes = new Set(["INVALID_REQUEST", "INVALID_CITY", "INVALID_LIMIT", "INVALID_CURSOR", "INVALID_SEARCH"]);
+const badRequestCodes = new Set(["INVALID_REQUEST", "INVALID_CITY", "INVALID_LIMIT", "INVALID_CURSOR", "INVALID_SEARCH", "INVALID_VERTICAL"]);
 
 function json(value: unknown, status = 200) {
   return Response.json(value, { status, headers: {
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
   const path = discoveryPath.exec(url.pathname);
   if (!path) return fail(404, "NOT_FOUND");
   const [, id, offers] = path;
-  const allowedKeys = id ? (offers ? ["q", "limit", "cursor"] : []) : ["city_id", "q", "limit", "cursor"];
+  const allowedKeys = id ? (offers ? ["q", "limit", "cursor"] : []) : ["city_id", "q", "vertical_id", "limit", "cursor"];
   const params = url.searchParams;
   if (url.search.length > 4097 ||
       [...params.keys()].some(key => !allowedKeys.includes(key) || params.getAll(key).length > 1)) {
@@ -67,8 +67,10 @@ export async function GET(request: Request) {
 
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
   const query = params.get("q");
+  const vertical = params.get("vertical_id");
   const page = { signal, ...(limit === undefined ? {} : { limit }), ...(cursor === null ? {} : { cursor }),
-    ...(query === null ? {} : { query }) };
+    ...(query === null ? {} : { query }),
+    ...(vertical === null ? {} : { verticalId: vertical }) };
   try {
     if (id) return json(offers ? await listPublicOffers(owner, id, page) : await getPublicStore(owner, id, signal));
     return json(await listPublicStores(owner, city as string, page));

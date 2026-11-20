@@ -16,6 +16,33 @@ function setup(t, reply = () => Response.json(page)) {
 }
 const request = (query) => new Request(`http://localhost:18101/v1/public/stores/market-sanaa/offers${query}`);
 
+test("Customer Store BFF forwards the selected vertical to DSH without losing city and cursor", async t => {
+  const calls = setup(t);
+  const response = await GET(new Request("http://localhost:18101/v1/public/stores?city_id=sanaa&vertical_id=grocery&cursor=page-two&limit=2"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), page);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url.pathname, "/v1/public/stores");
+  assert.equal(calls[0].url.searchParams.get("city_id"), "sanaa");
+  assert.equal(calls[0].url.searchParams.get("vertical_id"), "grocery");
+  assert.equal(calls[0].url.searchParams.get("cursor"), "page-two");
+});
+
+test("Customer Store BFF rejects invalid, duplicate and cross-route vertical filters before owner access", async t => {
+  const calls = setup(t);
+  for (const uri of [
+    "stores?city_id=sanaa&vertical_id=../private",
+    "stores?city_id=sanaa&vertical_id=",
+    "stores?city_id=sanaa&vertical_id=grocery&vertical_id=pharmacy",
+    "stores?city_id=sanaa&vertical_id=PHARMACY",
+    "stores/market-sanaa/offers?vertical_id=grocery",
+  ]) {
+    const response = await GET(new Request(`http://localhost:18101/v1/public/${uri}`));
+    assert.equal(response.status, 400, uri);
+  }
+  assert.equal(calls.length, 0);
+});
+
 test("Customer Offers BFF forwards literal text, fixed Store scope and pagination through the owner client", async t => {
   const calls = setup(t);
   const query = "دقيق %_ &";
