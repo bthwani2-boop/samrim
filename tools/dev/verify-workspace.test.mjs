@@ -118,3 +118,30 @@ test('service placement guard rejects wrong owners, unnamed SQL and duplicate co
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('the merged PR 193 coverage waiver cannot silently return to Sonar CI', async () => {
+  const { readFileSync } = await import('node:fs');
+  const sonar = readFileSync(new URL('../../.github/workflows/sonar-quality.yml', import.meta.url), 'utf8');
+  assert.doesNotMatch(sonar, /Temporary PR 193 coverage exception|sonar[.]coverage[.]exclusions/);
+  assert.ok(sonar.includes('-Dsonar.qualitygate.wait=true'));
+  assert.ok(sonar.includes('SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}'));
+});
+
+test('an untracked fourth business service cannot bypass the owner-placement guard', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-rogue-owner-'));
+  try {
+    const allowed = path.join(directory, 'services', 'wlt', 'backend', 'internal', 'ledger', 'entry.go');
+    mkdirSync(path.dirname(allowed), { recursive: true });
+    writeFileSync(allowed, 'package ledger\\n');
+    assert.deepEqual(serviceSourcePlacementIssues(directory), []);
+
+    const rogue = path.join(directory, 'services', 'payments', 'backend', 'internal', 'ledger', 'entry.go');
+    mkdirSync(path.dirname(rogue), { recursive: true });
+    writeFileSync(rogue, 'package ledger\\n');
+    const issues = serviceSourcePlacementIssues(directory);
+    assert.ok(issues.some(issue => issue.includes('services/payments: unapproved service owner')), issues.join('\\n'));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

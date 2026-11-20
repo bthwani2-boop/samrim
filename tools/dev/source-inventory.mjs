@@ -47,7 +47,7 @@ function kind(pathname, ext) {
   const parts = pathname.split("/");
   if (parts.some(part => generatedParts.has(part)) || /\.generated\./.test(pathname)) return "generated";
   if (parts.some(part => ["fixtures", "__tests__"].includes(part)) ||
-    /\.(test|spec)\.[mc]?[jt]sx?$/.test(pathname)) return "test-fixture";
+    /\.(test|spec)\.[mc]?[jt]sx?$/.test(pathname) || /_test\.go$/.test(pathname)) return "test-fixture";
   if (parts[0] === "apps" && parts[2] === "app" &&
     /^(?:_?layout|index|page|route|\+html)\.[jt]sx?$/.test(parts.at(-1))) return "route-entry";
   if (parts[0] === "services" && parts.includes("contracts")) return "owner-contract";
@@ -184,14 +184,50 @@ export function summary(rows) {
   };
 }
 
+// Human review candidates only: a file's length or name cannot prove poor cohesion.
+// Keep the inventory derived at invocation time; never create a second placement registry.
+export function reviewCandidates(rows) {
+  const candidates = [];
+  for (const row of rows) {
+    if (row.state !== "file") continue;
+    const parts = row.path.split("/");
+    const authored = ["source", "owner-client", "owner-backend", "tooling"].includes(row.kind);
+    if (authored && Number.isInteger(row.lines) && row.lines > 350) {
+      candidates.push({
+        kind: "cohesion-review", severity: row.lines > 700 ? "exception-required" :
+          row.lines > 500 ? "investigate" : "review",
+        path: row.path, owner: row.owner, lines: row.lines, consumers: row.importedBy.length,
+      });
+    }
+    if (authored && parts.some((part, index) =>
+      index > 1 && ["misc", "legacy", "common", "shared", "utils", "helpers"].includes(part))) {
+      candidates.push({
+        kind: "generic-directory-review", path: row.path, owner: row.owner,
+        consumers: row.importedBy.length,
+      });
+    }
+    const feature = parts.indexOf("features");
+    if (authored && feature >= 0 && parts[0] === "apps" && feature + 1 < parts.length &&
+        /[A-Z_]/.test(parts[feature + 1])) {
+      candidates.push({
+        kind: "feature-naming-review", path: row.path, owner: row.owner,
+        consumers: row.importedBy.length,
+      });
+    }
+  }
+  return candidates.sort((a, b) => a.path.localeCompare(b.path) || a.kind.localeCompare(b.kind));
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
-  if (args.some(arg => arg !== "--summary")) {
-    console.error("Usage: node tools/dev/source-inventory.mjs [--summary]");
+  if (args.length > 1 || (args.length === 1 && !["--summary", "--review"].includes(args[0]))) {
+    console.error("Usage: node tools/dev/source-inventory.mjs [--summary|--review]");
     process.exitCode = 2;
   } else {
     const rows = inventory();
-    if (args.includes("--summary")) console.log(JSON.stringify(summary(rows)));
-    else for (const row of rows) console.log(JSON.stringify(row));
+    if (args[0] === "--summary") console.log(JSON.stringify(summary(rows)));
+    else if (args[0] === "--review") {
+      for (const candidate of reviewCandidates(rows)) console.log(JSON.stringify(candidate));
+    } else for (const row of rows) console.log(JSON.stringify(row));
   }
 }

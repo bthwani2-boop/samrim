@@ -27,6 +27,15 @@ function walk(folder, visit, issues, base) {
 
 export function serviceSourcePlacementIssues(base) {
   const issues = [];
+  const servicesRoot = join(base, 'services');
+  if (existsSync(servicesRoot)) {
+    for (const entry of readdirSync(servicesRoot, { withFileTypes: true })) {
+      if (ignored.has(entry.name)) continue;
+      if (entry.isSymbolicLink() || (entry.isDirectory() && !owners.includes(entry.name))) {
+        issues.push('services/' + entry.name + ': unapproved service owner or source link');
+      }
+    }
+  }
   for (const owner of owners) {
     const dir = join(base, 'services', owner);
     if (!existsSync(dir)) continue;

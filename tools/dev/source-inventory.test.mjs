@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { inventory, summary } from "./source-inventory.mjs";
+import { inventory, reviewCandidates, summary } from "./source-inventory.mjs";
 
 function fixture(t) {
   const root = mkdtempSync(path.join(tmpdir(), "bthwani-source-inventory-"));
@@ -139,4 +139,43 @@ test("CLI rejects unsupported flags without generating a persistent inventory fi
   });
   assert.equal(command.status, 2);
   assert.match(command.stderr, /Usage: node tools\/dev\/source-inventory\.mjs/);
+});
+
+test("cohesion review reports authored candidates without failing short routes or generated and test files", t => {
+  const x = fixture(t);
+  x.file("services/dsh/clients/discovery.ts", "export const value = 1;\n".repeat(501));
+  x.file("services/dsh/backend/internal/discovery/http.go", "package discovery\n".repeat(701));
+  x.file("apps/customer/app/(tabs)/index.tsx", "export default function Page() { return null; }\n");
+  x.file("apps/customer/src/features/Orders/screen.tsx", "export const Screen = null;\n");
+  x.file("apps/customer/src/features/orders/tests/big.test.mjs", "export const testValue = 1;\n".repeat(801));
+  x.file("packages/design-system/generated/big.ts", "export const generated = 1;\n".repeat(901));
+  x.file("apps/merchant/src/features/orders/misc/client.ts", "export const misplaced = true;\n");
+  const candidates = reviewCandidates(inventory(x.root));
+  assert.ok(candidates.some(x => x.kind === "cohesion-review" &&
+    x.path === "services/dsh/clients/discovery.ts" && x.severity === "investigate"));
+  assert.ok(candidates.some(x => x.kind === "cohesion-review" &&
+    x.path.endsWith("/discovery/http.go") && x.severity === "exception-required"));
+  assert.ok(candidates.some(x => x.kind === "feature-naming-review" &&
+    x.path.includes("/Orders/")));
+  assert.ok(candidates.some(x => x.kind === "generic-directory-review" &&
+    x.path.includes("/misc/")));
+  assert.ok(candidates.every(x => !x.path.includes("generated/") &&
+    !x.path.includes(".test.mjs") && !x.path.includes("/app/")));
+});
+
+test("a legal small feature and owner SDK facade do not require a cohesion exception", t => {
+  const x = fixture(t);
+  x.file("services/dsh/clients/index.ts", "export { store } from './stores.ts';\n");
+  x.file("services/dsh/clients/stores.ts", "export const store = 1;\n");
+  x.file("apps/merchant/src/features/stores/standing.ts", "export const standing = true;\n");
+  assert.deepEqual(reviewCandidates(inventory(x.root)), []);
+});
+
+test("Go integration test files are fixtures, not oversized production sources", t => {
+  const x = fixture(t);
+  x.file("services/dsh/backend/internal/stores/postgres_integration_test.go",
+    "package stores\n".repeat(801));
+  const rows = inventory(x.root);
+  assert.equal(rows[0].kind, "test-fixture");
+  assert.deepEqual(reviewCandidates(rows), []);
 });
