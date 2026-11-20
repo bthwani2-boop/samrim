@@ -39,6 +39,7 @@ func TestIdentityHTTPVerifiesCurrentSessionOnEveryUse(t *testing.T) {
 			return
 		}
 		reads.Add(1)
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"actorId":          "merchant-one",
@@ -85,6 +86,7 @@ func TestIdentityHTTPRejectsUnverifiedAndMalformedOwnerResponses(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(tc.status)
 				_, _ = w.Write([]byte(tc.body))
@@ -97,6 +99,37 @@ func TestIdentityHTTPRejectsUnverifiedAndMalformedOwnerResponses(t *testing.T) {
 			actor, err := client.ResolveCurrentSession(context.Background(), token)
 			if !errors.Is(err, tc.want) || actor.Subject != "" {
 				t.Fatalf("untrusted owner response accepted: actor=%+v err=%v", actor, err)
+			}
+		})
+	}
+}
+
+func TestIdentityHTTPRequiresUncachedOwnerEvidence(t *testing.T) {
+	for _, cache := range [][]string{nil, {"max-age=60"}, {"no-store", "public"}} {
+		t.Run(strings.Join(cache, ","), func(t *testing.T) {
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				for _, value := range cache {
+					w.Header().Add("Cache-Control", value)
+				}
+				if r.URL.Path == "/v1/sessions/current" {
+					_, _ = w.Write([]byte(`{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`))
+					return
+				}
+				_, _ = w.Write([]byte(`{"actorId":"operator-a","permission":"operations"}`))
+			}))
+			defer owner.Close()
+			client, err := NewIdentitySessionHTTP(owner.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := testOpaqueIdentityToken()
+			actor, err := client.ResolveCurrentSession(t.Context(), token)
+			if !errors.Is(err, ErrIdentityUnavailable) || actor.Subject != "" {
+				t.Errorf("unverified cache policy identified an actor: actor=%+v err=%v", actor, err)
+			}
+			if err = client.RequireOperatorPermission(t.Context(), token, "operator-a", "operations"); !errors.Is(err, ErrIdentityUnavailable) {
+				t.Errorf("unverified cache policy granted an operation: %v", err)
 			}
 		})
 	}
@@ -128,6 +161,8 @@ func TestIdentityHTTPRejectsRedirectAndUntrustedEndpoint(t *testing.T) {
 		"http://example.org",
 		"http://user:pass@127.0.0.1:3302",
 		"http://127.0.0.1:3302/unexpected",
+		"http://127.0.0.1:3302?",
+		"http://127.0.0.1:3302/%2F",
 		"https://identity.example.org/extra",
 		"ftp://localhost:3302",
 	} {
@@ -142,6 +177,7 @@ func TestIdentityHTTPRevocationAndUnavailableNeverReusePreviousActor(t *testing.
 	var reads atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempt := reads.Add(1)
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
 		if attempt == 1 {
 			_ = json.NewEncoder(w).Encode(map[string]any{

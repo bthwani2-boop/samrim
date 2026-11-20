@@ -39,6 +39,7 @@ func TestOperatorRequiresCurrentIdentityPermissionOnEveryStoreChange(t *testing.
 		t.Run(tc.name, func(t *testing.T) {
 			sessionReads, permissionReads := 0, 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
 				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer "+token ||
 					r.Header.Get("Accept") != "application/json" || r.URL.RawQuery != "" {
 					t.Errorf("untrusted Identity request: %s %s", r.Method, r.URL)
@@ -99,6 +100,7 @@ func TestOperatorPermissionRedirectNeverLeaksBearer(t *testing.T) {
 	}))
 	defer attacker.Close()
 	identityOwner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		switch r.URL.Path {
 		case "/v1/sessions/current":
 			w.Header().Set("Content-Type", "application/json")
@@ -156,6 +158,7 @@ func TestIdentityHTTPPlatformPoliciesPermissionIsIndependentOfOperations(t *test
 		t.Run(tc.name, func(t *testing.T) {
 			var policyReads atomic.Int32
 			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
 				if r.Method != http.MethodGet || r.Header.Get("Authorization") != "Bearer "+token ||
 					r.URL.RawQuery != "" || r.Header.Get("Accept") != identityJSONMediaType {
 					t.Errorf("untrusted Identity request method=%s path=%s", r.Method, r.URL)

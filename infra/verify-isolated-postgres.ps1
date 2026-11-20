@@ -116,7 +116,15 @@ SELECT jsonb_build_object(
   foreach ($property in @('columns', 'constraints', 'indexes', 'triggers', 'revision')) {
     $original = ConvertTo-Json -Depth 12 -Compress -InputObject $before[$property]
     $restored = ConvertTo-Json -Depth 12 -Compress -InputObject $after[$property]
-    if ($original -cne $restored) { throw "Synthetic backup/restore mismatch in $property" }
+    if ($original -cne $restored) {
+      if ($property -eq 'constraints') {
+        $beforeRows = @($before[$property] | ForEach-Object { ConvertTo-Json -Compress -InputObject $_ })
+        $afterRows = @($after[$property] | ForEach-Object { ConvertTo-Json -Compress -InputObject $_ })
+        Compare-Object -ReferenceObject $beforeRows -DifferenceObject $afterRows -CaseSensitive |
+          ForEach-Object { Write-Host "Synthetic constraint $($_.SideIndicator) $($_.InputObject)" }
+      }
+      throw "Synthetic backup/restore mismatch in $property"
+    }
   }
   Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,revision,reader-grants'
   Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'

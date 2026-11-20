@@ -26,7 +26,7 @@ type IdentitySessionHTTP struct {
 func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
 	root, err := url.Parse(baseURL)
 	if err != nil || root.Host == "" || root.User != nil ||
-		root.RawQuery != "" || root.Fragment != "" || root.Opaque != "" ||
+		root.RawQuery != "" || root.ForceQuery || root.Fragment != "" || root.Opaque != "" ||
 		(root.Path != "" && root.Path != "/") {
 		return nil, ErrInvalidChange
 	}
@@ -48,6 +48,27 @@ func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
 			},
 		},
 	}, nil
+}
+
+func decodeIdentityOwnerJSON(response *http.Response, destination any) error {
+	cache := response.Header.Values("Cache-Control")
+	if len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") {
+		return ErrIdentityUnavailable
+	}
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || mediaType != identityJSONMediaType {
+		return ErrIdentityUnavailable
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
+	if err != nil || len(body) > 4096 {
+		return ErrIdentityUnavailable
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err = decoder.Decode(destination); err != nil || decoder.Decode(new(any)) != io.EOF {
+		return ErrIdentityUnavailable
+	}
+	return nil
 }
 
 func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, token string) (VerifiedActor, error) {
@@ -74,26 +95,13 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 	if response.StatusCode != http.StatusOK {
 		return VerifiedActor{}, ErrIdentityUnavailable
 	}
-	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || mediaType != identityJSONMediaType {
-		return VerifiedActor{}, ErrIdentityUnavailable
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-	if err != nil || len(body) > 4096 {
-		return VerifiedActor{}, ErrIdentityUnavailable
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
 	var verified struct {
 		ActorID          string    `json:"actorId"`
 		Role             string    `json:"role"`
 		SessionExpiresAt time.Time `json:"sessionExpiresAt"`
 	}
-	if err = decoder.Decode(&verified); err != nil {
-		return VerifiedActor{}, ErrIdentityUnavailable
-	}
-	if err = decoder.Decode(new(any)); err != io.EOF {
-		return VerifiedActor{}, ErrIdentityUnavailable
+	if err = decodeIdentityOwnerJSON(response, &verified); err != nil {
+		return VerifiedActor{}, err
 	}
 	if verified.ActorID == "" || len(verified.ActorID) > 128 ||
 		strings.TrimSpace(verified.ActorID) != verified.ActorID ||
@@ -154,25 +162,12 @@ func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Conte
 	default:
 		return ErrIdentityUnavailable
 	}
-	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || mediaType != identityJSONMediaType {
-		return ErrIdentityUnavailable
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-	if err != nil || len(body) > 4096 {
-		return ErrIdentityUnavailable
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
 	var grant struct {
 		ActorID    string `json:"actorId"`
 		Permission string `json:"permission"`
 	}
-	if err := decoder.Decode(&grant); err != nil {
-		return ErrIdentityUnavailable
-	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return ErrIdentityUnavailable
+	if err = decodeIdentityOwnerJSON(response, &grant); err != nil {
+		return err
 	}
 	if grant.ActorID != verifiedActorID || grant.Permission != permission {
 		return ErrForbidden
