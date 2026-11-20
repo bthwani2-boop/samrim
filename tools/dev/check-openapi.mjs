@@ -111,13 +111,23 @@ export function validate(owner, base = root) {
   // until their owner contract and tests explicitly admit them.
   function isOwnerPublicOperation(urlPath, method) {
     if (urlPath === "/health" && method === "get") return true;
-    if (owner === "dsh") return method === "get" && urlPath.startsWith("/v1/public/");
-    if (owner === "identity") {
-      return (method === "post" && urlPath.startsWith("/v1/customer-auth/")) ||
-        (method === "post" && [
-          "/v1/operators/passkey/authentication",
-          "/v1/operators/passkey/authentication/options",
-        ].includes(urlPath));
+    // A route prefix is not permission to publish new unauthenticated APIs.
+    // Explicit admissions must be reviewed together with the owner's contract.
+    if (owner === "dsh" && method === "get") {
+      return [
+        "/v1/public/verticals",
+        "/v1/public/stores",
+        "/v1/public/stores/{id}",
+        "/v1/public/stores/{id}/offers",
+      ].includes(urlPath);
+    }
+    if (owner === "identity" && method === "post") {
+      return [
+        "/v1/customer-auth/phone-challenges",
+        "/v1/customer-auth/phone-verification",
+        "/v1/operators/passkey/authentication",
+        "/v1/operators/passkey/authentication/options",
+      ].includes(urlPath);
     }
     return false;
   }

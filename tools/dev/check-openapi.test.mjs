@@ -24,6 +24,24 @@ function mutate(owner, name, transform) {
   }
 }
 
+function mutateOwnerFiles(owner, changes) {
+  const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-openapi-linked-"));
+  try {
+    const relative = `services/${owner}/contracts/openapi`;
+    cpSync(path.join(root, relative), path.join(tmp, relative), { recursive: true });
+    for (const [name, transform] of Object.entries(changes)) {
+      const file = path.join(tmp, relative, name);
+      const original = readFileSync(file, "utf8");
+      const next = transform(original);
+      assert.notEqual(original, next, `Fixture must change ${name}`);
+      writeFileSync(file, next, "utf8");
+    }
+    return validate(owner, tmp);
+  } finally {
+    rmSync(tmp, { recursive: true, force: true });
+  }
+}
+
 function hasError(result, fragment) {
   assert.ok(result.errors.some((error) => error.includes(fragment)),
     `Expected ${JSON.stringify(fragment)} in ${JSON.stringify(result.errors)}`);
@@ -542,6 +560,32 @@ test("remaining DSH authenticated client requests match owner OpenAPI operations
   }
 });
 
+
+test("new DSH public-prefixed endpoint is protected until explicitly admitted", () => {
+  const result = mutateOwnerFiles("dsh", {
+    "dsh.openapi.yaml": source => source.replace(
+      "/v1/public/stores:\n    $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores'",
+      "/v1/public/actor-private:\n    $ref: './paths/stores.yaml#/paths/~1v1~1public~1actor-private'",
+    ),
+    "paths/stores.yaml": source => source.replace(
+      "  /v1/public/stores:\n", "  /v1/public/actor-private:\n",
+    ),
+  });
+  hasError(result, "Protected operation must require OpaqueSession");
+});
+
+test("new Identity customer-auth-prefixed endpoint is protected until explicitly admitted", () => {
+  const result = mutateOwnerFiles("identity", {
+    "identity.openapi.yaml": source => source.replace(
+      "/v1/customer-auth/phone-challenges:\n    $ref: './paths/client-auth.yaml#/paths/~1v1~1customer-auth~1phone-challenges'",
+      "/v1/customer-auth/admin-reset:\n    $ref: './paths/client-auth.yaml#/paths/~1v1~1customer-auth~1admin-reset'",
+    ),
+    "paths/client-auth.yaml": source => source.replace(
+      "  /v1/customer-auth/phone-challenges:\n", "  /v1/customer-auth/admin-reset:\n",
+    ),
+  });
+  hasError(result, "Protected operation must require OpaqueSession");
+});
 
 test("owner contract cannot anonymously downgrade protected routes", () => {
   for (const [owner, fragment] of [
