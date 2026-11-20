@@ -68,6 +68,24 @@ test("reject undeclared authorization schemes", () => {
   hasError(result, "Unknown security scheme");
 });
 
+test("owner OpenAPI security schemes cannot downgrade opaque bearer authentication", () => {
+  for (const owner of ["identity", "dsh"]) {
+    const entry = owner + ".openapi.yaml";
+    const result = mutate(owner, entry, (source) =>
+      source.replace("type: http\n      scheme: bearer", "type: apiKey\n      name: X-Forged-Actor\n      in: header"));
+    hasError(result, "OpaqueSession must be HTTP bearer");
+    const basic = mutate(owner, entry, (source) =>
+      source.replace("type: http\n      scheme: bearer", "type: http\n      scheme: basic"));
+    hasError(basic, "OpaqueSession must be HTTP bearer");
+  }
+});
+
+test("OpenAPI 3.0 downgrade is rejected instead of silently accepted as 3.1", () => {
+  const result = mutate("identity", "identity.openapi.yaml", (source) =>
+    source.replace("openapi: 3.1.0", "openapi: 3.0.3"));
+  hasError(result, "OpenAPI 3.1");
+});
+
 test("reject missing required URI path parameter", () => {
   const result = mutate("dsh", "dsh.openapi.yaml", (s) =>
     s.replace("name: id", "name: mismatch"));

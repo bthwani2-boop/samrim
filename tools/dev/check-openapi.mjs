@@ -34,8 +34,8 @@ export function validate(owner, base = root) {
   if (errors.length) return { owner, errors };
 
   const entrypoint = documents.get(mainFile);
-  if (!entrypoint || !entrypoint.openapi?.startsWith("3.")) {
-    errors.push("No OpenAPI 3.x entrypoint: " + path.relative(base, mainFile));
+  if (!entrypoint || typeof entrypoint.openapi !== "string" || !/^3\.1\.\d+$/.test(entrypoint.openapi)) {
+    errors.push("No OpenAPI 3.1 entrypoint: " + path.relative(base, mainFile));
     return { owner, errors };
   }
 
@@ -125,6 +125,13 @@ export function validate(owner, base = root) {
   const supportedMethods = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
   const allowedPathItemKeys = new Set([...supportedMethods, "$ref", "summary", "description", "servers", "parameters"]);
   const schemeNames = new Set(Object.keys(entrypoint.components?.securitySchemes ?? {}));
+  const opaqueSession = entrypoint.components?.securitySchemes?.OpaqueSession;
+  // A declared name alone cannot prove that clients use Identity's bearer
+  // credential; an API key or Basic scheme would silently change auth behavior.
+  if ((owner !== "wlt" || opaqueSession !== undefined) &&
+      (opaqueSession?.type !== "http" || opaqueSession?.scheme !== "bearer")) {
+    errors.push("OpaqueSession must be HTTP bearer in " + owner);
+  }
   const operations = new Map();
   const usedModules = new Set();
   let pathCount = 0;
