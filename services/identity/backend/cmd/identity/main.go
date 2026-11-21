@@ -46,6 +46,15 @@ func isolatedVerifierTLS(isolated, container, schema, certPath, keyPath string) 
 }
 
 func main() {
+	// Offline first-Operator registration is an explicit separate command,
+	// never part of normal Identity server startup or an HTTP route.
+	if len(os.Args) != 1 {
+		if len(os.Args) == 2 && os.Args[1] == "issue-synthetic-root-ticket" {
+			runIsolatedInitialOperatorTicket()
+			return
+		}
+		log.Fatal("unknown Identity startup mode")
+	}
 	// Isolated development only. Direct Merchant admission still requires
 	// a verified Customer session.
 	schema := os.Getenv("IDENTITY_DB_SCHEMA")

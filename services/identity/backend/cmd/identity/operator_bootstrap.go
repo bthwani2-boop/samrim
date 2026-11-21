@@ -15,7 +15,7 @@ import (
 // This is an OFFLINE, explicitly invoked synthetic-development tool.
 // It refuses all existing Operator roles and protected Identity namespaces.
 // Do not run in CI, logs, automated startup, or shared production environments.
-func main() {
+func runIsolatedInitialOperatorTicket() {
 	if len(os.Args) != 2 || os.Args[1] != "issue-synthetic-root-ticket" ||
 		os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
 		os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") != "true" ||

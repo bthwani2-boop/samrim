@@ -46,7 +46,7 @@ automatically or approved against real/protected Identity data.
 
 Apply owner migration `008_operator_initial_bootstrap.sql` **only** to a
 verified, fresh, disposable `identity_test_*` schema, following 001–007.
-The CLI `go run ./cmd/operator-bootstrap issue-synthetic-root-ticket` is an
+The CLI `go run ./cmd/identity issue-synthetic-root-ticket` is an
 **offline authorized administration action** restricted to the dedicated
 disposable `refoundation_webauthn_s02` database, never invoked during server
 startup, CI or by a public request. It refuses any existing Operator role or
