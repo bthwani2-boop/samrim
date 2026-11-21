@@ -1,5 +1,5 @@
 import { WltReadError } from "@bthwani/wlt";
-import { bearerForCustomerRequest } from "../access/customer-session-cookie";
+import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 
 const headers = {
   "Cache-Control": "no-store",

@@ -21,9 +21,12 @@ export interface CustomerFundingHistory {
 }
 
 export class WltReadError extends Error {
-  constructor(readonly status: number) {
+  readonly status: number;
+
+  constructor(status: number) {
     super("WLT wallet read unavailable");
     this.name = "WltReadError";
+    this.status = status;
   }
 }
 
