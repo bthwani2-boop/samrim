@@ -1,7 +1,7 @@
 import { listPublicOffers, type PublicOffer, type PublicPage } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 
 type OffersState = {
@@ -31,6 +31,8 @@ export default function MerchantPublishedOffers({ actorId, stores }: Readonly<{
 }>) {
   const { theme } = useMobileAppearance();
   const [selectedId, setSelectedId] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<OffersState>({
     scope: "", loading: false, loadingMore: false, items: [],
@@ -40,7 +42,7 @@ export default function MerchantPublishedOffers({ actorId, stores }: Readonly<{
   const publishedStores = stores.filter(store => store.published);
   const selected = publishedStores.find(store => store.id === selectedId) ?? publishedStores[0];
   const storeId = selected?.id ?? "";
-  const scope = JSON.stringify([actorId, storeId]);
+  const scope = JSON.stringify([actorId, storeId, searchQuery]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry explicitly reloads the current owner-backed Store page.
   useEffect(() => {
@@ -53,7 +55,10 @@ export default function MerchantPublishedOffers({ actorId, stores }: Readonly<{
     const controller = new AbortController();
     activeRequest.current = controller;
     setState({ scope, loading: true, loadingMore: false, items: [] });
-    void listPublicOffers(origin, storeId, { limit: pageSize, signal: controller.signal })
+    void listPublicOffers(origin, storeId, {
+      limit: pageSize, signal: controller.signal,
+      ...(searchQuery ? { query: searchQuery } : {}),
+    })
       .then(page => {
         if (controller.signal.aborted || current !== generation.current) return;
         setState({ scope, loading: false, loadingMore: false, items: page.items,
@@ -91,6 +96,7 @@ export default function MerchantPublishedOffers({ actorId, stores }: Readonly<{
     try {
       const page: PublicPage<PublicOffer> = await listPublicOffers(origin, storeId, {
         cursor, limit: pageSize, signal: controller.signal,
+        ...(searchQuery ? { query: searchQuery } : {}),
       });
       if (controller.signal.aborted || generation.current !== current) return;
       setState(previous => {
@@ -136,6 +142,25 @@ export default function MerchantPublishedOffers({ actorId, stores }: Readonly<{
               </Pressable>
             ))}
           </View>
+          <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <TextInput testID="merchant-offers-search" accessibilityLabel="البحث في العروض المنشورة"
+              placeholder="ابحث عن عرض منشور" placeholderTextColor={theme.colorSecondary}
+              value={searchText} onChangeText={setSearchText} maxLength={80}
+              onSubmitEditing={() => setSearchQuery(searchText.trim())}
+              style={{ ...button, minWidth: 220, flexGrow: 1, backgroundColor: theme.surface, color: theme.color }} />
+            <Pressable accessibilityRole="button" onPress={() => setSearchQuery(searchText.trim())}
+              style={button}>
+              <Text style={{ color: theme.interactiveText }}>بحث</Text>
+            </Pressable>
+            {searchQuery || searchText ? (
+              <Pressable accessibilityRole="button" onPress={() => {
+                setSearchText("");
+                setSearchQuery("");
+              }} style={button}>
+                <Text style={{ color: theme.interactiveText }}>إلغاء البحث</Text>
+              </Pressable>
+            ) : null}
+          </View>
           {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المنتجات المنشورة" /> : (
             <>
               {visible.error ? (
@@ -145,7 +170,7 @@ export default function MerchantPublishedOffers({ actorId, stores }: Readonly<{
               ) : null}
               {!visible.error && visible.items.length === 0 ? (
                 <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
-                  لا توجد عروض منشورة لهذا المتجر حاليًا.
+                  {searchQuery ? "لا توجد عروض منشورة تطابق البحث لهذا المتجر." : "لا توجد عروض منشورة لهذا المتجر حاليًا."}
                 </Text>
               ) : null}
               {visible.items.map(offer => (

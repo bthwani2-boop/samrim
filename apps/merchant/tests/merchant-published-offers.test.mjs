@@ -19,3 +19,14 @@ test("verified Merchant products section renders real DSH published offers, not 
   assert.match(code, /page\.revision/, "pagination must keep the same owner revision");
   assert.doesNotMatch(code, /localStorage|AsyncStorage|SecureStore/, "no duplicate local catalogue");
 });
+
+test("Merchant published-offer search uses DSH query for every page and isolates Store/actor results", () => {
+  const code = readFileSync(component, "utf8");
+  assert.match(code, /TextInput/);
+  assert.match(code, /onSubmitEditing=/);
+  assert.match(code, /setSearchQuery\(/);
+  assert.match(code, /JSON\.stringify\(\[actorId, storeId, searchQuery\]\)/);
+  assert.match(code, /query: searchQuery/);
+  assert.match(code, /listPublicOffers\(origin, storeId/);
+  assert.match(code, /activeRequest\.current\?\.abort\(\)/);
+});

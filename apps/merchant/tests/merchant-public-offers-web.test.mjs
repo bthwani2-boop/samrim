@@ -78,3 +78,17 @@ test("Merchant published-offers Web calls only the same-origin Expo owner proxy"
   assert.match(code, /window\.location\.origin/);
   assert.match(code, /listPublicOffers\(origin/);
 });
+test("Merchant public Offer search forwards owner query and bounded pagination unchanged", async t => {
+  const calls = setup(t);
+  const q = encodeURIComponent("ماء");
+  const response = await GET(new Request(`${base}?q=${q}&limit=2`));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.equal(body.items.length, 1);
+  assert.equal(calls.length, 1);
+  const dest = new URL(calls[0].url);
+  assert.equal(dest.pathname, "/v1/public/stores/market-sanaa/offers");
+  assert.equal(dest.searchParams.get("q"), "ماء");
+  assert.equal(dest.searchParams.get("limit"), "2");
+  assert.equal(calls[0].options.headers.Authorization, undefined);
+});
