@@ -3,7 +3,16 @@
 -- Applied baseline files remain immutable; use this forward-only migration.
 DO $guard$
 BEGIN
-    IF current_database() <> 'bthwani_refoundation' OR current_user NOT IN ('bthwani_ci', 'bthwani_agent02') THEN
+    -- CI has two separate disposable owners: session-01 fresh-restore
+    -- rehearsal and the session-02 joined Customer Cart integration stage.
+    -- Neither a schema prefix nor arbitrary database names are sufficient.
+    IF NOT (
+        (current_database() = 'bthwani_refoundation'
+            AND current_user IN ('bthwani_ci', 'bthwani_agent02'))
+        OR
+        (current_database() = 'bthwani_agent01_synthetic'
+            AND current_user = 'bthwani_agent01_admin')
+    ) THEN
         RAISE EXCEPTION 'DSH Customer Cart migration requires isolated owner';
     END IF;
 END;
