@@ -91,7 +91,7 @@ export default async function PublicStoreOffers({
                   {offers.items.map(offer => (
                     <li key={offer.id} className={styles.sectionCard}>
                       <strong>{offer.name}</strong>
-                      <span>السعر الحالي من DSH: <b>{offer.priceYer.toLocaleString("ar-YE")} ر.ي</b></span>
+                      <span>السعر الحالي من DSH: <b>{BigInt(offer.priceYer).toLocaleString("ar-YE")} ر.ي</b></span>
                       <span>المعرّف: <code dir="ltr">{offer.id}</code></span>
                     </li>
                   ))}

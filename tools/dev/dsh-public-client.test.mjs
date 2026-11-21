@@ -246,9 +246,17 @@ test("Offer reads preserve integer YER prices and reject drafts or forged availa
     const response = await listPublicOffers(base, store.id);
     assert.equal(response.items[0].priceYer, 1200);
   });
+  await withFetch(async () => json({
+    items: [{ ...offer, priceYer: "9223372036854775807" }], revision: 4,
+  }), async () => {
+    const response = await listPublicOffers(base, store.id);
+    assert.equal(response.items[0].priceYer, "9223372036854775807");
+  });
   for (const value of [
     { ...offer, priceYer: 0 }, { ...offer, priceYer: -1 },
     { ...offer, priceYer: 100.4 }, { ...offer, priceYer: Number.MAX_SAFE_INTEGER + 1 },
+    { ...offer, priceYer: "9007199254740991" }, { ...offer, priceYer: "9223372036854775808" },
+    { ...offer, priceYer: "09".repeat(9) },
     { ...offer, available: false }, { ...offer, variantId: null },
   ]) {
     await withFetch(async () => json({ items: [value], revision: 1 }),

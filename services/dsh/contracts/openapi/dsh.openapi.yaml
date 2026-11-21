@@ -105,7 +105,11 @@ components:
         storeId: { $ref: '#/components/schemas/PublicId' }
         name: { type: string, minLength: 1, maxLength: 160 }
         variantId: { $ref: '#/components/schemas/PublicId' }
-        priceYer: { type: integer, minimum: 1, description: Exact positive integer YER value from DSH }
+        priceYer:
+          description: Exact whole YER. Safe JSON integers retain the numeric representation. Amounts above 9007199254740991 are canonical decimal strings, up to 9223372036854775807.
+          oneOf:
+            - { type: integer, minimum: 1, maximum: 9007199254740991 }
+            - { type: string, pattern: '^[1-9][0-9]{15,18}$' }
         available: { type: boolean, const: true }
     CityStoreOperationalPolicy:
       type: object

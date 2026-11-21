@@ -87,13 +87,25 @@ type publicVerticalSummary struct {
 }
 
 type publicOffer struct {
-	ID        string `json:"id"`
-	StoreID   string `json:"storeId"`
-	Name      string `json:"name"`
-	VariantID string `json:"variantId"`
-	PriceYER  int64  `json:"priceYer"`
-	Available bool   `json:"available"`
+	ID        string         `json:"id"`
+	StoreID   string         `json:"storeId"`
+	Name      string         `json:"name"`
+	VariantID string         `json:"variantId"`
+	PriceYER  publicPriceYER `json:"priceYer"`
+	Available bool           `json:"available"`
 }
+
+type publicPriceYER int64
+
+func (price publicPriceYER) MarshalJSON() ([]byte, error) {
+	const maxSafeJSONInteger = 1<<53 - 1
+	amount := strconv.FormatInt(int64(price), 10)
+	if price > maxSafeJSONInteger {
+		return json.Marshal(amount)
+	}
+	return []byte(amount), nil
+}
+
 type page[T any] struct {
 	Items      []T    `json:"items"`
 	NextCursor string `json:"nextCursor,omitempty"`

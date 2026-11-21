@@ -26,7 +26,7 @@ export {
 } from "./operator-captains.ts";
 export type { PublicOffer, PublicOfferEstimate, PublicPage, PublicStore, PublicVertical } from "./public-discovery.ts";
 export {
-  DshPublicError, estimatePublicOffer, getPublicStore, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
+  DshPublicError, estimatePublicOffer, getPublicStore, isPublicOfferPriceYer, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
   parseOfferEstimateQuantity,
 } from "./public-discovery.ts";
 export type {

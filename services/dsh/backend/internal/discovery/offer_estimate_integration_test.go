@@ -69,6 +69,22 @@ func TestOwnerBackedOfferEstimate(t *testing.T) {
 	if got.UnitYER != "9223372036854775807" || got.SubtotalYER != "18446744073709551614" {
 		t.Fatalf("stale or rounded price: %+v", got)
 	}
+	var offers struct {
+		Items []struct {
+			ID       string          `json:"id"`
+			PriceYER json.RawMessage `json:"priceYer"`
+		} `json:"items"`
+	}
+	read("/v1/public/stores/market-sanaa/offers", 200, &offers)
+	var listed json.RawMessage
+	for _, item := range offers.Items {
+		if item.ID == "of-flour" {
+			listed = item.PriceYER
+		}
+	}
+	if string(listed) != `"9223372036854775807"` {
+		t.Fatalf("the same Offer price is not exact in the list: %s", listed)
+	}
 	var unavailable map[string]string
 	read(route+"?quantity=3", 409, &unavailable)
 	if _, err := owner.DB.ExecContext(t.Context(), "UPDATE "+owner.Schema+

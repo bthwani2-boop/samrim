@@ -23,7 +23,7 @@ export interface PublicOffer {
   storeId: string;
   name: string;
   variantId: string;
-  priceYer: number;
+  priceYer: number | string;
   available: true;
 }
 export interface PublicOfferEstimate {
@@ -104,13 +104,23 @@ function isVertical(value: unknown): value is PublicVertical {
   return onlyKeys(v, ["id", "storeCount"]) && isPublicId(v.id) &&
     Number.isSafeInteger(v.storeCount) && Number(v.storeCount) >= 1;
 }
+const maxSafePriceYer = BigInt(Number.MAX_SAFE_INTEGER);
+const maxPriceYer = 9223372036854775807n;
+
+export function isPublicOfferPriceYer(value: unknown): value is PublicOffer["priceYer"] {
+  if (typeof value === "number") return Number.isSafeInteger(value) && value > 0;
+  if (typeof value !== "string" || !/^[1-9][0-9]{15,18}$/.test(value)) return false;
+  const amount = BigInt(value);
+  return amount > maxSafePriceYer && amount <= maxPriceYer;
+}
+
 function isOffer(value: unknown): value is PublicOffer {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
   return onlyKeys(v, ["id", "storeId", "name", "variantId", "priceYer", "available"]) &&
     isPublicId(v.id) && isPublicId(v.storeId) && boundedName(v.name, 160) &&
     isPublicId(v.variantId) &&
-    Number.isSafeInteger(v.priceYer) && (v.priceYer as number) > 0 && v.available === true;
+    isPublicOfferPriceYer(v.priceYer) && v.available === true;
 }
 function readPage<T>(value: unknown, validate: (v: unknown) => v is T): PublicPage<T> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {

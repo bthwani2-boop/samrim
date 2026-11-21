@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: 8d1f45ef4556e2a7fabb6806f70e9dbdff2219ccbaae942c5990359fcd6910fe
+// Normalized OpenAPI SHA-256: 30edd31b3228f4667ad295aad5d05087dd78a82fa1cc0348fb6c428db32f9887
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   applyCurrentCustomerForCaptainStanding: { method: "POST", path: "/v1/actors/me/captain-application" },
