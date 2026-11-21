@@ -1,9 +1,9 @@
-import { DshPublicError, getPublicStore, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals } from "@bthwani/dsh";
+import { DshPublicError, estimatePublicOffer, getPublicStore, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals, parseOfferEstimateQuantity } from "@bthwani/dsh";
 
 // The isolated DSH port and Expo server share the same development host.
 const owner = "http://127.0.0.1:3202";
 const publicId = /^[a-z0-9-]{1,64}$/;
-const discoveryPath = /^\/v1\/public\/stores(?:\/([a-z0-9-]{1,64})(\/offers)?)?$/;
+const discoveryPath = /^\/v1\/public\/stores(?:\/([a-z0-9-]{1,64})(\/offers(?:\/([a-z0-9-]{1,64})\/estimate)?)?)?$/;
 const badRequestCodes = new Set(["INVALID_REQUEST", "INVALID_CITY", "INVALID_LIMIT", "INVALID_CURSOR", "INVALID_SEARCH", "INVALID_VERTICAL"]);
 
 function json(value: unknown, status = 200) {
@@ -21,7 +21,7 @@ function ownerFailure(error: unknown) {
   if (error instanceof DshPublicError) {
     if (error.status === 400 && badRequestCodes.has(error.code)) return fail(400, error.code);
     if (error.status === 404 && error.code === "NOT_FOUND") return fail(404, error.code);
-    if (error.status === 409 && error.code === "STALE_CURSOR") return fail(409, error.code);
+    if (error.status === 409 && ["STALE_CURSOR", "INSUFFICIENT_AVAILABLE_QUANTITY"].includes(error.code)) return fail(409, error.code);
   }
   return fail(503, "OWNER_UNAVAILABLE");
 }
@@ -44,9 +44,9 @@ export async function GET(request: Request) {
   const verticals = url.pathname === "/v1/public/verticals";
   const path = discoveryPath.exec(url.pathname);
   if (!path && !verticals && !cities) return fail(404, "NOT_FOUND");
-  const [, id, offers] = path ?? [];
+  const [, id, offers, estimateId] = path ?? [];
   const allowedKeys = cities ? ["limit", "cursor"] : verticals ? ["city_id", "limit", "cursor"] :
-    id ? (offers ? ["q", "limit", "cursor"] : []) : ["city_id", "q", "vertical_id", "limit", "cursor"];
+    estimateId ? ["quantity"] : id ? (offers ? ["q", "limit", "cursor"] : []) : ["city_id", "q", "vertical_id", "limit", "cursor"];
   const params = url.searchParams;
   if (url.search.length > 4097 ||
       [...params.keys()].some(key => !allowedKeys.includes(key) || params.getAll(key).length > 1)) {
@@ -75,6 +75,11 @@ export async function GET(request: Request) {
     ...(query === null ? {} : { query }),
     ...(vertical === null ? {} : { verticalId: vertical }) };
   try {
+    if (id && estimateId) {
+      const quantity = parseOfferEstimateQuantity(params.get("quantity") ?? "");
+      if (quantity === null || request.body) return fail(400, "INVALID_REQUEST");
+      return json(await estimatePublicOffer(owner, id, estimateId, quantity, signal));
+    }
     if (cities) return json(await listPublicCities(owner, page));
     if (verticals) return json(await listPublicVerticals(owner, city as string, page));
     if (id) return json(offers ? await listPublicOffers(owner, id, page) : await getPublicStore(owner, id, signal));

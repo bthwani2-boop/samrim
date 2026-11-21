@@ -26,12 +26,20 @@ export interface PublicOffer {
   priceYer: number;
   available: true;
 }
+export interface PublicOfferEstimate {
+  storeId: string;
+  offerId: string;
+  variantId: string;
+  quantity: number;
+  unitYer: string;
+  subtotalYer: string;
+}
 export interface PublicPage<T> {
   items: T[];
   nextCursor?: string;
   revision: number;
 }
-async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
+async function ownerRead(url: URL, signal?: AbortSignal, requireCurrent = false): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(url.toString(), {
@@ -57,6 +65,7 @@ async function ownerRead(url: URL, signal?: AbortSignal): Promise<unknown> {
   const mediaType = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
   const contentLength = response.headers.get("Content-Length");
   if (mediaType !== "application/json" ||
+    (requireCurrent && (response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store")) ||
     (contentLength !== null && Number(contentLength) > 65536)) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
@@ -224,6 +233,36 @@ export async function listPublicOffers(
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   return page;
+}
+
+export function parseOfferEstimateQuantity(raw: string): number | null {
+  if (!/^[1-9][0-9]{0,9}$/.test(raw)) return null;
+  const quantity = Number(raw);
+  return quantity <= 2147483647 ? quantity : null;
+}
+
+export async function estimatePublicOffer(
+  baseUrl: string, storeId: string, offerId: string, quantity: number, signal?: AbortSignal,
+): Promise<PublicOfferEstimate> {
+  validateStoreId(storeId);
+  if (!isPublicId(offerId) || parseOfferEstimateQuantity(String(quantity)) !== quantity) {
+    throw new DshPublicError(400, "INVALID_REQUEST");
+  }
+  const path = dshOperations.estimatePublicOffer.path.replace("{id}", storeId).replace("{offerId}", offerId);
+  const url = endpoint(baseUrl, path);
+  url.searchParams.set("quantity", String(quantity));
+  const value = await ownerRead(url, signal, true);
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const body = value as Record<string, unknown>;
+    if (onlyKeys(body, ["storeId", "offerId", "variantId", "quantity", "unitYer", "subtotalYer"]) &&
+      body.storeId === storeId && body.offerId === offerId && isPublicId(body.variantId) &&
+      body.quantity === quantity && typeof body.unitYer === "string" && /^[1-9][0-9]{0,18}$/.test(body.unitYer) &&
+      typeof body.subtotalYer === "string" && /^[1-9][0-9]{0,28}$/.test(body.subtotalYer) &&
+      BigInt(body.unitYer) * BigInt(quantity) === BigInt(body.subtotalYer)) {
+      return { storeId, offerId, variantId: body.variantId, quantity, unitYer: body.unitYer, subtotalYer: body.subtotalYer };
+    }
+  }
+  throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
 }
 
 function validatePublicSearch(query: string | undefined): void {

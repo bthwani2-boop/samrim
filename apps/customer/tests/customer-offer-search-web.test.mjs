@@ -16,6 +16,28 @@ function setup(t, reply = () => Response.json(page)) {
 }
 const request = (query) => new Request(`http://localhost:18101/v1/public/stores/market-sanaa/offers${query}`);
 
+test("Offer estimate BFF accepts only a canonical quantity and relays current owner outcomes", async t => {
+  const estimate = { storeId: "market-sanaa", offerId: "of-flour", variantId: "v-p-flour",
+    quantity: 2, unitYer: "1200", subtotalYer: "2400" };
+  let unavailable = false;
+  const calls = setup(t, () => unavailable
+    ? Response.json({ error: "INSUFFICIENT_AVAILABLE_QUANTITY" }, { status: 409 })
+    : Response.json(estimate, { headers: { "Cache-Control": "no-store" } }));
+  for (const invalid of ["", "?quantity=0", "?quantity=02", "?quantity=2&unitYer=1", "?quantity=2&quantity=3"]) {
+    assert.equal((await GET(request(`/of-flour/estimate${invalid}`))).status, 400);
+  }
+  assert.equal(calls.length, 0);
+  const scope = "/of-flour/estimate?quantity=2";
+  const response = await GET(request(scope));
+  assert.deepEqual(await response.json(), estimate);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(calls[0].url.href, `http://127.0.0.1:3202/v1/public/stores/market-sanaa/offers${scope}`);
+  unavailable = true;
+  const denied = await GET(request(scope));
+  assert.equal(denied.status, 409);
+  assert.deepEqual(await denied.json(), { error: "INSUFFICIENT_AVAILABLE_QUANTITY" });
+});
+
 test("Customer receives only current public city IDs through the same-origin BFF", async t => {
   const directory = { items: ["sanaa"], revision: 7, nextCursor: "page-three" };
   let body = directory;

@@ -198,6 +198,7 @@ export function validate(owner, base = root) {
         "/v1/public/stores": "listPublicStores",
         "/v1/public/stores/{id}": "getPublicStore",
         "/v1/public/stores/{id}/offers": "listPublicOffers",
+        "/v1/public/stores/{id}/offers/{offerId}/estimate": "estimatePublicOffer",
       };
       return Object.hasOwn(admitted, urlPath) && admitted[urlPath] === operationId;
     }

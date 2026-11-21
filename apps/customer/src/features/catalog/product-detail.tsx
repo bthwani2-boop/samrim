@@ -1,6 +1,7 @@
 import type { PublicOffer } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Text, View } from "react-native";
+import OfferEstimate from "./offer-estimate";
 import ProductVariantPrice from "./product-variants";
 
 export default function ProductDetail({ offer }: Readonly<{ offer: PublicOffer }>) {
@@ -11,5 +12,6 @@ export default function ProductDetail({ offer }: Readonly<{ offer: PublicOffer }
   }}>
     <Text style={{ color: theme.color, fontWeight: "600", fontSize: 17 }}>{offer.name}</Text>
     <ProductVariantPrice priceYer={offer.priceYer} />
+    <OfferEstimate key={`${offer.storeId}:${offer.id}:${offer.variantId}`} offer={offer} />
   </View>;
 }

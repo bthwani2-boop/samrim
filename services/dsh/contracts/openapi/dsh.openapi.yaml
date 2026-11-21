@@ -16,6 +16,8 @@ paths:
     $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores~1{id}'
   /v1/public/stores/{id}/offers:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
+  /v1/public/stores/{id}/offers/{offerId}/estimate:
+    $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers~1{offerId}~1estimate'
   /v1/stores/mine:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
   /v1/stores/{storeID}/availability:
@@ -45,6 +47,17 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/PublicId' }
   schemas:
+    PublicOfferEstimate:
+      type: object
+      additionalProperties: false
+      required: [storeId, offerId, variantId, quantity, unitYer, subtotalYer]
+      properties:
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        offerId: { $ref: '#/components/schemas/PublicId' }
+        variantId: { $ref: '#/components/schemas/PublicId' }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+        unitYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        subtotalYer: { type: string, pattern: '^[1-9][0-9]{0,28}$' }
     PublicId:
       type: string
       pattern: '^[a-z0-9-]{1,64}$'

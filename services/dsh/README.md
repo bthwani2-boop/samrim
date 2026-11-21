@@ -8,6 +8,7 @@ DSH owns Stores, catalog, Offers, authoritative prices, carts, Orders, serviceab
 
 Current owner-local implementation (progressive development only; production remains blocked):
 - `clients/` — contract-bound public discovery, Merchant Store standing, Store availability, city policies and Captain application, standing and review. The SDK transports owner operations with per-request credentials.
+- Public Offer estimates read the current published Offer, Variant, quantity and price from one PostgreSQL snapshot. The Customer sees an exact YER merchandise subtotal before delivery fees. The estimate creates no cart, reservation, Order or WLT effect.
 - `package.json` and `tsconfig.json` — exact-pinned TypeScript workspace tooling; exported discovery reads must match the current DSH owner contract.
 - `backend/` — Go handlers for public discovery and the isolated private owner operations. Store availability, city policies and Captain operations use the current Identity session adapter, which requires uncached session and effective permission responses.
 - `contracts/openapi/` — one OpenAPI 3.1 entrypoint for the current executable operations, with owner fragments described in [the contract guide](contracts/openapi/README.md).

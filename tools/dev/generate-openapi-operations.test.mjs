@@ -16,7 +16,7 @@ function fixture(t, owner) {
   return { base, contract: path.join(base, dir) };
 }
 
-const counts = { identity: 13, dsh: 18, wlt: 2 };
+const counts = { identity: 13, dsh: 19, wlt: 2 };
 const samplePaths = { identity: "/v1/sessions/current:", dsh: "/v1/stores/mine:", wlt: "/v1/wallets/me:" };
 for (const owner of Object.keys(counts)) {
   test(owner + " operations are exactly reproducible and match owner OpenAPI", () => {

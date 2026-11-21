@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readBoundedOwnerJSON } from "../../services/dsh/clients/client-core.ts";
 import {
-  changeOperatorCaptainStanding, DshPublicError, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
+  changeOperatorCaptainStanding, DshPublicError, estimatePublicOffer, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
   replaceCityStoreOperationalPolicy,
 } from "../../services/dsh/clients/index.ts";
 
@@ -27,6 +27,29 @@ async function withFetch(fetcher, run) {
   globalThis.fetch = fetcher;
   try { return await run(); } finally { globalThis.fetch = original; }
 }
+
+test("an Offer estimate requires an uncached response bound to the requested Store, Offer and quantity", async () => {
+  const estimate = { storeId: store.id, offerId: offer.id, variantId: offer.variantId,
+    quantity: 2, unitYer: "9223372036854775807", subtotalYer: "18446744073709551614" };
+  const call = (quantity = 2) => estimatePublicOffer(base, store.id, offer.id, quantity);
+  let response = estimate;
+  let cache = "no-store";
+  await withFetch(async (url, init) => {
+    assert.equal(url, `${base}/v1/public/stores/${store.id}/offers/${offer.id}/estimate?quantity=2`);
+    assert.equal(init.credentials, "omit");
+    return Response.json(response, { headers: { "Cache-Control": cache } });
+  }, async () => {
+    assert.deepEqual(await call(), estimate);
+    for (const override of [{ storeId: "other" }, { offerId: "other" }, { quantity: 1 }, { subtotalYer: "3" }, { stock: 9 }]) {
+      response = { ...estimate, ...override };
+      await rejectsAs(() => call(), 502, "OWNER_RESPONSE_INVALID");
+    }
+    response = estimate;
+    cache = "public, max-age=60";
+    await rejectsAs(() => call(), 502, "OWNER_RESPONSE_INVALID");
+    await rejectsAs(() => call(2147483648), 400, "INVALID_REQUEST");
+  });
+});
 
 test("the DSH read client rejects missing, malformed, unsafe and credentialed endpoints", async () => {
   let calls = 0;

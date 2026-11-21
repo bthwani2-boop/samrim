@@ -24,9 +24,10 @@ export {
   captainStandingStatuses, changeOperatorCaptainStanding, getOperatorCaptainStanding,
   isCaptainStandingActorId, listOperatorCaptainStandings,
 } from "./operator-captains.ts";
-export type { PublicOffer, PublicPage, PublicStore, PublicVertical } from "./public-discovery.ts";
+export type { PublicOffer, PublicOfferEstimate, PublicPage, PublicStore, PublicVertical } from "./public-discovery.ts";
 export {
-  DshPublicError, getPublicStore, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
+  DshPublicError, estimatePublicOffer, getPublicStore, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
+  parseOfferEstimateQuantity,
 } from "./public-discovery.ts";
 export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,

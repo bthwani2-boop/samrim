@@ -171,6 +171,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.storeDetail(ctx, w, segments[3])
 	case len(segments) == 5 && segments[2] == "stores" && validID(segments[3]) && segments[4] == "offers":
 		s.listOffers(ctx, w, r, segments[3])
+	case len(segments) == 7 && segments[2] == "stores" && validID(segments[3]) &&
+		segments[4] == "offers" && validID(segments[5]) && segments[6] == "estimate":
+		s.estimateOffer(ctx, w, r, segments[3], segments[5])
 	default:
 		errorJSON(w, 404, "NOT_FOUND")
 	}
@@ -468,6 +471,13 @@ func (s *Server) storeDetail(ctx context.Context, w http.ResponseWriter, id stri
 	}
 	jsonResponse(w, 200, st)
 }
+
+const visibleOffersSQL = ` FROM offers o
+	JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
+	JOIN variants v ON v.id=o.variant_id AND v.product_id=o.product_id
+	WHERE o.store_id=$1 AND p.active AND v.sellable AND v.required_attributes_valid
+		AND o.published AND o.available AND o.price_yer>0 AND o.stock_units>0`
+
 func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.Request, id string) {
 	search, scope, valid := publicSearch(r, id)
 	if !valid {
@@ -504,13 +514,8 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		cursorError(w, err)
 		return
 	}
-	q := `SELECT o.id,o.store_id,p.name,o.variant_id,o.price_yer FROM offers o
-		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
-		JOIN variants v ON v.id=o.variant_id AND v.product_id=o.product_id
-		WHERE o.store_id=$1 AND o.id>$2 AND p.active AND v.sellable
-			AND v.required_attributes_valid AND o.published AND o.available
-			AND o.price_yer>0 AND o.stock_units>0
-			AND strpos(lower(p.name),lower($4))>0 ORDER BY o.id LIMIT $3`
+	q := `SELECT o.id,o.store_id,p.name,o.variant_id,o.price_yer` + visibleOffersSQL +
+		` AND o.id>$2 AND strpos(lower(p.name),lower($4))>0 ORDER BY o.id LIMIT $3`
 	rows, err := tx.QueryContext(ctx, q, id, after, limit+1, search)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
