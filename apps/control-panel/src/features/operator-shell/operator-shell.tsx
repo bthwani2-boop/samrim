@@ -6,15 +6,16 @@ import { findWorkspaceEntry, workspaceGroupLabels, workspaceSubsections } from "
 import { canEnterOperatorWorkspace, type OperatorPermission, operatorSectionTabs, visibleWorkspaceEntries } from "../session/operator-permissions";
 import styles from "./operator-shell.module.css";
 
-export default function OperatorShell({ children, verifiedGrants }: Readonly<{
+export default function OperatorShell({ children, verifiedGrants, originalOperator }: Readonly<{
   children: ReactNode;
   // This is a display input for verified grants supplied by a server access boundary.
   verifiedGrants: readonly OperatorPermission[] | null;
+  originalOperator: boolean;
 }>) {
   const pathname = usePathname();
   const [signOutState, setSignOutState] = useState<"idle" | "pending" | "unconfirmed">("idle");
-  const permitted = visibleWorkspaceEntries(verifiedGrants ?? []);
-  const sectionTabs = operatorSectionTabs(verifiedGrants ?? []);
+  const permitted = visibleWorkspaceEntries(verifiedGrants ?? [], originalOperator);
+  const sectionTabs = operatorSectionTabs(verifiedGrants ?? [], originalOperator);
   const publicLinks = [
     { href: "/", label: verifiedGrants === null ? "دخول المشغّل" : "الوصول إلى اللوحة" },
     { href: "/health", label: "حالة الواجهة" },

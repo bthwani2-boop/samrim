@@ -30,6 +30,14 @@ test("access: only current effective Identity grants allow mapped Operator route
   assert.equal(canEnterOperatorWorkspace(["platform_policies"], "/policies/stage-sla"), true);
 });
 
+test("access: the owner-confirmed original Operator enters without a delegated scope", () => {
+  assert.equal(canEnterOperatorWorkspace(["finance", "platform_policies"], "/access"), false);
+  assert.equal(canEnterOperatorWorkspace([], "/access", true), true);
+  assert.equal(canEnterOperatorWorkspace([], "/access/operators/operator-1", true), true);
+  assert.equal(canEnterOperatorWorkspace([], "/hr", true), false);
+  assert.deepEqual(operatorSectionTabs([], true).map(item => item.href), ["/access"]);
+});
+
 test("operator section tabs use only verified grants and one canonical target per section", () => {
   assert.deepEqual(operatorSectionTabs([]), []);
   assert.deepEqual(operatorSectionTabs(["operations"]).map(item => item.href), ["/workspace", "/operations"]);

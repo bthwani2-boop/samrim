@@ -6,6 +6,7 @@ import {
   issueCustomerPhoneChallenge,
   readVerifiedIdentitySession,
   resumeCurrentCustomerMerchantSession,
+  reviewOriginalOperatorPermissions,
   revokeVerifiedIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "../../services/identity/clients/index.ts";
@@ -79,6 +80,31 @@ test("verified-session GET uses no cookies, redirects, cached data or Caller-sup
     assert.equal("body" in options, false);
     return response(expected);
   }, async () => assert.deepEqual(await readVerifiedIdentitySession(origin, bearer), expected));
+});
+
+test("Operator permission review binds the result to a single target and accepts only known scope revisions", async () => {
+  const target = "operator-123";
+  const permission = { permission: "operations", state: "REVOKED", version: 2 };
+  const expected = { targetActorId: target, permissions: [permission] };
+  await withFetch(async (url, options) => {
+    assert.equal(new URL(url).pathname, "/v1/operators/operator-123/permissions");
+    assert.equal(options.method, "GET");
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    assert.equal(options.cache, "no-store");
+    return response(expected);
+  }, async () => {
+    assert.deepEqual(await reviewOriginalOperatorPermissions(origin, bearer, target), [permission]);
+    await rejectsAs(() => reviewOriginalOperatorPermissions(origin, bearer, "invalid/id"), 400, "INVALID_REQUEST");
+  });
+  for (const value of [
+    { ...expected, targetActorId: "operator-other" },
+    { ...expected, permissions: [permission, permission] },
+    { ...expected, permissions: [{ ...permission, permission: "partners" }] },
+    { ...expected, permissions: [{ ...permission, version: 0 }] },
+  ]) {
+    await withFetch(async () => response(value), () =>
+      rejectsAs(() => reviewOriginalOperatorPermissions(origin, bearer, target), 502, "OWNER_RESPONSE_INVALID"));
+  }
 });
 
 test("session scope is parsed from exactly the three owner fields and never implies Store rights", async () => {

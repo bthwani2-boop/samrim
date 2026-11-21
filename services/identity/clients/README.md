@@ -8,6 +8,7 @@ The `@bthwani/identity` workspace package exports these HTTP operations from `cl
 - `issueCustomerPhoneChallenge` and `verifyCustomerPhoneChallenge`: request and consume isolated phone proof using the two `/v1/customer-auth` endpoints.
 - `readVerifiedIdentitySession`: read only the actor, active Identity role and session expiry from `GET /v1/sessions/current`.
 - `revokeVerifiedIdentitySession`: revoke the current credential through `DELETE /v1/sessions/current`.
+- `reviewOriginalOperatorPermissions`: read an active Operator's assigned or revoked scope revisions through `GET /v1/operators/{actorId}/permissions`. Identity requires the current original Operator session.
 - `admitCurrentCustomerAsMerchant`: request initial Merchant role admission using an already verified Customer bearer from `POST /v1/actors/me/merchant-role`.
 - `resumeCurrentCustomerMerchantSession`: request owner-side rotation of an already active Merchant role session through `POST /v1/actors/me/merchant-session`.
 

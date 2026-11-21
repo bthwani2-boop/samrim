@@ -5,6 +5,15 @@ import { identityOperations } from "./generated/identity-operations.ts";
 
 export { identityOperations } from "./generated/identity-operations.ts";
 export type IdentityRole = "customer" | "merchant" | "captain" | "operator";
+export const identityOperatorPermissions = [
+  "operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies",
+] as const;
+export type IdentityOperatorPermission = (typeof identityOperatorPermissions)[number];
+export type OperatorPermissionRevision = {
+  permission: IdentityOperatorPermission;
+  state: "ACTIVE" | "REVOKED";
+  version: number;
+};
 export interface VerifiedIdentitySession {
   actorId: string;
   role: IdentityRole;
@@ -175,6 +184,43 @@ export async function readVerifiedIdentitySession(
   baseUrl: string, bearer: string, signal?: AbortSignal,
 ): Promise<VerifiedIdentitySession> {
   return sessionFrom(await ownerRequest(baseUrl, identityOperations.getVerifiedIdentitySession.path, bearer, "GET", 200, signal));
+}
+
+export function isOperatorActorId(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
+}
+
+/** Identity checks the current original Operator before reading the requested actor. */
+export async function reviewOriginalOperatorPermissions(
+  baseUrl: string, bearer: string, targetActorId: string, signal?: AbortSignal,
+): Promise<OperatorPermissionRevision[]> {
+  if (!isOperatorActorId(targetActorId)) throw new IdentityClientError(400, "INVALID_REQUEST");
+  const operation = identityOperations.reviewOriginalOperatorPermissions;
+  const body = await ownerRequest(baseUrl, operation.path.replace("{actorId}", targetActorId),
+    bearer, operation.method, 200, signal);
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+  }
+  const envelope = body as Record<string, unknown>;
+  if (!exactKeys(envelope, ["targetActorId", "permissions"]) || envelope.targetActorId !== targetActorId ||
+      !Array.isArray(envelope.permissions) || envelope.permissions.length > identityOperatorPermissions.length) {
+    throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+  }
+  const seen = new Set<IdentityOperatorPermission>();
+  return envelope.permissions.map((row: unknown) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) {
+      throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+    }
+    const record = row as Record<string, unknown>;
+    const permission = identityOperatorPermissions.find(item => item === record.permission);
+    if (!exactKeys(record, ["permission", "state", "version"]) || !permission || seen.has(permission) ||
+        (record.state !== "ACTIVE" && record.state !== "REVOKED") ||
+        typeof record.version !== "number" || !Number.isSafeInteger(record.version) || record.version < 1) {
+      throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+    }
+    seen.add(permission);
+    return { permission, state: record.state, version: record.version };
+  });
 }
 /** Requires a verified Customer session. Never implies a DSH Store grant. */
 export async function admitCurrentCustomerAsMerchant(

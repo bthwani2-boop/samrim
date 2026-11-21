@@ -123,6 +123,8 @@ func main() {
 	// A PATCH-specific mux pattern preserves the existing GET /operators/me permission read.
 	// No original Operator is created or reactivated by enabling this route.
 	if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN") == "true" {
+		routes.Handle("GET /v1/operators/{actorId}/permissions",
+			session.NewOperatorPermissionReviewHandler(reader))
 		routes.Handle("PATCH /v1/operators/{actorId}/permissions/{permission}",
 			session.NewOperatorPermissionManagementHandler(reader))
 	}
