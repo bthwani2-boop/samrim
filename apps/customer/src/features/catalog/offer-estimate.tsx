@@ -1,9 +1,11 @@
-import { DshPublicError, estimatePublicOffer, parseOfferEstimateQuantity, type PublicOffer, type PublicOfferEstimate } from "@bthwani/dsh";
+import { DshCartError, DshPublicError, estimatePublicOffer, parseOfferEstimateQuantity, type CustomerCartChange, type PublicOffer, type PublicOfferEstimate } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { useFocusEffect } from "expo-router";
+import * as Crypto from "expo-crypto";
+import { Link, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import { resolvePublicStoreOrigin } from "../stores/public-store-origin";
+import { readVerifiedCart, replaceVerifiedCart } from "../cart/cart-transport";
 
 const formatYER = new Intl.NumberFormat("ar-YE");
 
@@ -14,10 +16,19 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
   const [estimate, setEstimate] = useState<PublicOfferEstimate>();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [cartMessage, setCartMessage] = useState("");
+  const [savingCart, setSavingCart] = useState(false);
+  const cartOperation = useRef<{ storeId: string; actorId: string; change: CustomerCartChange } | null>(null);
+  const cartRequest = useRef<AbortController | null>(null);
   const pending = useRef<AbortController | null>(null);
   useFocusEffect(useCallback(() => () => {
     pending.current?.abort();
     pending.current = null;
+    cartRequest.current?.abort();
+    cartRequest.current = null;
+    cartOperation.current = null;
+    setCartMessage("");
+    setSavingCart(false);
     setEstimate(undefined);
     setError("");
     setBusy(false);
@@ -58,6 +69,79 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
     }
   }
 
+  async function addDraftToCart() {
+    if (!estimate || savingCart || cartRequest.current) return;
+    const requested = parseOfferEstimateQuantity(quantity);
+    if (requested === null) {
+      setCartMessage("الكمية غير صحيحة.");
+      return;
+    }
+    const controller = new AbortController();
+    cartRequest.current = controller;
+    setSavingCart(true);
+    setCartMessage("");
+    try {
+      let pendingChange = cartOperation.current;
+      if (pendingChange && pendingChange.storeId !== offer.storeId) {
+        setCartMessage("تحقق من العملية السابقة في متجرها أولًا.");
+        return;
+      }
+      if (!pendingChange) {
+        const current = await readVerifiedCart(offer.storeId, controller.signal);
+        if (current.kind !== "ready") {
+          setCartMessage(current.kind === "signed-out"
+            ? "سجّل الدخول بحساب العميل لإضافة المنتجات." : "السلة غير متاحة الآن.");
+          return;
+        }
+        const currentQuantity = current.cart.lines.find(item => item.offerId === offer.id)?.quantity ?? 0;
+        const nextQuantity = currentQuantity + requested;
+        if (!Number.isSafeInteger(nextQuantity) || nextQuantity > 2147483647) {
+          setCartMessage("وصلت الكمية إلى الحد المسموح.");
+          return;
+        }
+        const lines = current.cart.lines.filter(item => item.offerId !== offer.id)
+          .map(item => ({ offerId: item.offerId, quantity: item.quantity }));
+        lines.push({ offerId: offer.id, quantity: nextQuantity });
+        if (lines.length > 20) {
+          setCartMessage("لا يمكن إضافة أكثر من 20 منتجًا إلى مسودة السلة.");
+          return;
+        }
+        pendingChange = {
+          storeId: offer.storeId,
+          actorId: current.cart.actorId,
+          change: {
+            operationId: `cart-${Crypto.randomUUID()}`,
+            expectedVersion: current.cart.version,
+            lines,
+          },
+        };
+        cartOperation.current = pendingChange;
+      }
+      const next = await replaceVerifiedCart(
+        offer.storeId, pendingChange.change, pendingChange.actorId, controller.signal);
+      if (controller.signal.aborted) return;
+      cartOperation.current = null;
+      setCartMessage(next.replay ? "تم تأكيد إضافة المنتج إلى مسودة السلة."
+        : "أضيف المنتج إلى مسودة السلة.");
+    } catch (reason) {
+      if (controller.signal.aborted) return;
+      const code = reason instanceof DshCartError ? reason.code : "OPERATION_RESULT_UNKNOWN";
+      if (code !== "OPERATION_RESULT_UNKNOWN") cartOperation.current = null;
+      setCartMessage(code === "OPERATION_RESULT_UNKNOWN"
+        ? "لم تتأكد النتيجة. اضغط مرة أخرى للتحقق من العملية نفسها."
+        : code === "CART_VERSION_OR_OPERATION_CONFLICT"
+          ? "تغيّرت السلة. افتحها وحدّث بياناتها قبل الإضافة."
+          : code === "STORE_OR_OFFER_NOT_AVAILABLE"
+            ? "لم يعد المنتج متاحًا بهذه الكمية."
+            : "تعذرت إضافة المنتج إلى السلة.");
+    } finally {
+      if (cartRequest.current === controller) {
+        cartRequest.current = null;
+        setSavingCart(false);
+      }
+    }
+  }
+
   const control = { minHeight: 44, padding: 10, justifyContent: "center", borderWidth: 1,
     borderColor: theme.borderColor, borderRadius: 10 } as const;
   return <View style={{ gap: 8 }}>
@@ -82,6 +166,17 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
         </Text>
         <Text style={{ color: theme.colorSecondary }}>تقدير قبل رسوم التوصيل. السعر والكمية قابلان للتغيّر.</Text>
       </View> : null}
+      {estimate ? <Pressable accessibilityRole="button" disabled={savingCart}
+        onPress={() => void addDraftToCart()} style={control}>
+        <Text style={{ color: theme.interactiveText }}>
+          {savingCart ? "جارٍ التحقق" : cartOperation.current ? "تحقق من إضافة المنتج" : "أضف إلى سلة المسودة"}
+        </Text>
+      </Pressable> : null}
+      {cartMessage ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
+        {cartMessage}
+      </Text> : null}
+      <Link href={{ pathname: "/cart/[storeId]", params: { storeId: offer.storeId } }}
+        style={{ color: theme.interactiveText }}>عرض سلة المتجر</Link>
     </> : null}
   </View>;
 }

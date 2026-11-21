@@ -11,6 +11,8 @@ export type {
   CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyResult,
 } from "./city-policies.ts";
 export { getCityStoreOperationalPolicy, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
+export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartResult } from "./customer-cart.ts";
+export { DshCartError, parseCustomerCart, parseCustomerCartResult, readCurrentCustomerCart, replaceCurrentCustomerCart } from "./customer-cart.ts";
 export { dshOperations } from "./generated/dsh-operations.ts";
 // DSH-owned Merchant standing contract and transport.
 export type { MerchantDSHStanding, MerchantOwnedStore } from "./merchant-standing.ts";

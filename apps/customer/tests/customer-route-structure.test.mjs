@@ -53,7 +53,6 @@ test("protected feature routes delegate to feature-owned screens and fail closed
   const routes = {
     "addresses/index.tsx": "addresses/addresses-screen.tsx",
     "addresses/[id].tsx": "addresses/address-editor.tsx",
-    "cart/[storeId].tsx": "cart/cart-screen.tsx",
     "checkout/index.tsx": "checkout/checkout-screen.tsx",
     "multi-store-checkout.tsx": "multi-store-checkout/multi-store-checkout-screen.tsx",
     "(tabs)/orders/index.tsx": "orders/orders-screen.tsx",
@@ -68,6 +67,15 @@ test("protected feature routes delegate to feature-owned screens and fail closed
     assert.match(source, /CapabilityUnavailableScreen/, screen);
     assert.doesNotMatch(source, /fetch\(|checkout\(|confirm\(|credit\(/, screen);
   }
+  assert.match(read("cart/[storeId].tsx"), /export \{ default \} from/);
+  const cartScreen = readFeature("cart/cart-screen.tsx");
+  assert.match(cartScreen, /readVerifiedCart\(/);
+  assert.match(cartScreen, /replaceVerifiedCart\(/);
+  assert.doesNotMatch(cartScreen, /fetch\(|checkout\(|confirm\(|credit\(|debit\(/);
+  const cartTransport = readFeature("cart/cart-transport.ts");
+  assert.match(cartTransport, /readCurrentCustomerCart\(/);
+  assert.match(cartTransport, /replaceCurrentCustomerCart\(/);
+  assert.match(cartTransport, /OPERATION_RESULT_UNKNOWN/);
   const nativeWallet = readFeature("wallet/wallet-screen.tsx");
   assert.match(read("wallet/index.tsx"), /export \{ default \} from/);
   assert.match(nativeWallet, /readNativeWallet\(/);

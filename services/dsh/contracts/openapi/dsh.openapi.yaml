@@ -18,6 +18,8 @@ paths:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
   /v1/public/stores/{id}/offers/{offerId}/estimate:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers~1{offerId}~1estimate'
+  /v1/carts/{storeID}:
+    $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}'
   /v1/stores/mine:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
   /v1/stores/{storeID}/availability:
@@ -47,6 +49,62 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/PublicId' }
   schemas:
+    CustomerCartLine:
+      type: object
+      additionalProperties: false
+      required: [offerId, variantId, name, quantity, previewUnitYer, previewAvailable]
+      properties:
+        offerId: { $ref: '#/components/schemas/PublicId' }
+        variantId: { $ref: '#/components/schemas/PublicId' }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+        previewUnitYer: { type: string, pattern: '^[0-9]{1,19}$' }
+        previewAvailable: { type: boolean }
+    CustomerCart:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, version, lines]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        version: { type: integer, minimum: 0 }
+        lines:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CustomerCartLine' }
+    CustomerCartChangeLine:
+      type: object
+      additionalProperties: false
+      required: [offerId, quantity]
+      properties:
+        offerId: { $ref: '#/components/schemas/PublicId' }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+    CustomerCartChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, lines]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        expectedVersion: { type: integer, minimum: 0 }
+        lines:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CustomerCartChangeLine' }
+    CustomerCartResult:
+      type: object
+      additionalProperties: false
+      required: [cart, replay]
+      properties:
+        cart: { $ref: '#/components/schemas/CustomerCart' }
+        replay: { type: boolean }
+    CartError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [INVALID_REQUEST, UNAUTHORIZED_OR_OWNER_UNAVAILABLE, STORE_OR_OFFER_NOT_AVAILABLE, CART_VERSION_OR_OPERATION_CONFLICT, OPERATION_RESULT_UNKNOWN, OWNER_UNAVAILABLE]
     PublicOfferEstimate:
       type: object
       additionalProperties: false
@@ -294,6 +352,21 @@ components:
           enum: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, METHOD_NOT_ALLOWED, INVALID_REQUEST, CAPTAIN_NOT_ELIGIBLE, CAPTAIN_STANDING_VERSION_CONFLICT, OWNER_UNAVAILABLE, OPERATION_RESULT_UNKNOWN]
 
   responses:
+    CartUnauthorized:
+      description: Invalid, expired or revoked Customer session
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
+    CartForbidden:
+      description: Current session is not a Customer
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
+    CartUnavailableOffer:
+      description: DSH Store or Offer is not eligible for a draft Cart change
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
+    CartConflict:
+      description: Stale draft version or operation identity used for another payload
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
+    CartUnavailable:
+      description: Identity/DSH owner cannot confirm the draft or mutation outcome
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
     BadRequest:
       description: Invalid city, page, path or cursor
       content:

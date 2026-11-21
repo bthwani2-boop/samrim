@@ -51,8 +51,10 @@ declares `security: []`. It confers no private Merchant, Order, Identity
 or WLT permissions.
 
 The [source- and SHA-pinned inventory](../../../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md)
-is historical evidence, not a live API. `cart` will cover quote/checkout
-without duplicating the DSH Order owner. `financial-views` is a WLT-backed
+is historical evidence, not a live API. `paths/cart.yaml` now specifies authenticated
+Customer Cart **draft** GET/PUT only. Checkout/Order confirmation and financial
+allocation remain NOT_IMPLEMENTED, so cart operations cannot be used as payment
+authorization or a confirmed price promise. `financial-views` is a WLT-backed
 read projection only. Historical donor endpoints require source and Product
 reconciliation before any transfer.
 

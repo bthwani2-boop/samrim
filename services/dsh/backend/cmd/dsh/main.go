@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/customercart"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
@@ -65,6 +66,33 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 	mux := http.NewServeMux()
 	mux.Handle("/v1/stores/", storeAvailabilityCORS(private, allowedOrigins))
 	mux.Handle("/v1/operators/cities/", storePolicyCORS(policyRead, allowedOrigins))
+	mux.Handle("/", public)
+	return mux, nil
+}
+
+// The draft Cart is an isolated, owner-backed DSH capability. It can be
+// mounted only on loopback with the same current Identity session verifier.
+// No Cart request is an Order, checkout or financial mutation.
+func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http.Handler) (http.Handler, error) {
+	if os.Getenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART") != "true" {
+		return public, nil
+	}
+	host, _, err := net.SplitHostPort(address)
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
+		!strings.HasPrefix(schema, "dsh_test_") || len(schema) <= len("dsh_test_") ||
+		err != nil || (host != "127.0.0.1" && host != "::1") {
+		return nil, fmt.Errorf("Customer Cart requires isolated DSH schema and loopback-only transport")
+	}
+	identity, err := storeavailability.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
+	if err != nil {
+		return nil, fmt.Errorf("current Identity verifier is required for Customer Cart: %w", err)
+	}
+	cart, err := customercart.NewHandler(db, schema, identity)
+	if err != nil {
+		return nil, err
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/v1/carts/", cart)
 	mux.Handle("/", public)
 	return mux, nil
 }
@@ -189,6 +217,10 @@ func main() {
 		handler, err = isolatedMerchantStandingHandler(db, schema, addr, handler)
 		if err != nil {
 			log.Fatal("DSH protected Merchant standing cannot start: ", err)
+		}
+		handler, err = isolatedCustomerCartHandler(db, schema, addr, handler)
+		if err != nil {
+			log.Fatal("DSH Customer Cart cannot start: ", err)
 		}
 		server := &http.Server{
 			Addr:              addr,
