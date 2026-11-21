@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
+import MerchantPublishedOffers from "../catalog/merchant-published-offers";
 import MerchantStoreDirectory from "./merchant-store-directory";
 import {
   type MerchantSection,
@@ -128,7 +129,9 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
               </View>
               {showStores}
             </>
-          ) : section === "stores" ? <MerchantStoreDirectory actorId={actorId} stores={stores} /> : section === "more" ? (
+          ) : section === "stores" ? <MerchantStoreDirectory actorId={actorId} stores={stores} /> : section === "products" ? (
+            <MerchantPublishedOffers actorId={actorId} stores={stores} />
+          ) : section === "more" ? (
             <View style={{ gap: 10 }}>
               {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home")
                 .map(item => navigationButton(item))}
