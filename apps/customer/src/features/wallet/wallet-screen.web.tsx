@@ -112,7 +112,8 @@ export default function WalletScreen() {
         setHistory(null);
         return;
       }
-      if (next.kind !== "ready" || next.history.actorId !== previous.actorId) {
+      if (next.kind !== "ready" || next.history.actorId !== previous.actorId ||
+        (next.history.nextCursor !== null && next.history.nextCursor === cursor)) {
         setMoreError(true);
         return;
       }
