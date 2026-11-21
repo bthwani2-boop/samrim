@@ -23,7 +23,14 @@ export default function HomeDashboard({ grants }: Readonly<{ grants: readonly Op
           <ul className={styles.sectionGrid}>
             {section.entries.map(entry => (
               <li key={entry.href}>
-                <a className={styles.sectionCard} href={entry.href}>{entry.label}</a>
+                <a className={styles.sectionCard} href={entry.href}>
+                  {entry.href === "/policies" ? (
+                    <>
+                      <strong>سياسات إتاحة المتاجر</strong>
+                      <span>قراءة حدود الإيقاف والتحضير وتعديلها عبر خدمة DSH عند اتصالها.</span>
+                    </>
+                  ) : entry.label}
+                </a>
               </li>
             ))}
           </ul>
