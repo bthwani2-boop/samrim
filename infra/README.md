@@ -253,14 +253,20 @@ Before trusting a previously running Docker service after a source change, use:
 
 ```powershell
 node infra/verify-runtime-provenance.mjs --context bthwani-docker
+# When the optional WLT reader is running, attest all three canonical owners.
+node infra/verify-runtime-provenance.mjs --context bthwani-docker --include-wlt
 pwsh -NoProfile -File infra/verify-isolated-postgres.ps1 -DockerContext bthwani-docker
 ```
 
 The runtime check reads the actual Compose container image ID, non-secret source
 SHA labels, owner Git history/diff, health and owner worktree state. It fails on
-missing labels, changed owner source or an unproven container. It **does not**
-rebuild/restart a service, examine secrets, run SQL or prove login, session
-revocation, WLT, published client UX or production suitability. Building a
+missing labels, changed owner source or an unproven container. The
+`--include-wlt` switch additionally requires the optional WLT container
+and fails closed if its running image is stale, unhealthy or absent. Without
+that switch, the baseline DSH/Identity check remains usable before WLT opt-in.
+It **does not** rebuild/restart a service, examine secrets, run SQL or prove
+login, session revocation, ledger correctness, published client UX or
+production suitability. Building a
 new `sha-<commit>` image is a separate operation and does **not** update the
 container already running. Readiness always attaches to the *running* image ID.
 

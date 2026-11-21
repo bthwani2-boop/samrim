@@ -96,6 +96,34 @@ test("runtime attestation rejects a changed owner, a dirty checkout and non-ance
   assert.equal(ancestorRejected.calls.some((c) => c.command === "git" && c.args[0] === "diff"), false);
 });
 
+test("opt-in WLT attestation verifies the real owner container and WLT-only source changes", () => {
+  const fixture = serviceRecords({ owner: "wlt" });
+  const verified = readService("wlt", "isolated", sha, fixture.execute, () => true);
+  assert.deepEqual(verified, { revision: sha, errors: [], passed: true });
+  assert.equal(fixture.calls.find(c => c.command === "docker" && c.args[2] === "inspect")
+    ?.args.at(-1), "bthwani-refoundation-wlt-1");
+  assert.deepEqual(fixture.calls.filter(c => c.command === "git").map(c => c.args), [
+    ["diff", "--name-only", sha, sha, "--", "services/wlt"],
+    ["status", "--porcelain", "--", "services/wlt"],
+  ]);
+
+  const stale = serviceRecords({ owner: "wlt", sourceDiff: "services/wlt/backend/cmd/wlt/main.go" });
+  assert.ok(readService("wlt", "isolated", sha, stale.execute, () => true)
+    .errors.includes("owner source changed since image build"));
+  const wrongService = serviceRecords({ owner: "identity" });
+  assert.equal(readService("wlt", "isolated", sha, wrongService.execute, () => true).passed, false);
+  assert.throws(() => readService("unsupported", "isolated", sha, fixture.execute), /unknown owner/);
+  assert.throws(() => readService("wlt", "isolated", sha, (command, args) => {
+    if (command === "docker" && args[2] === "inspect") throw new Error("missing WLT container");
+    return fixture.execute(command, args);
+  }, () => true), /missing WLT container/);
+});
+
+test("runtime CLI rejects duplicate or malformed WLT opt-in arguments", () => {
+  assert.throws(() => main(["--include-wlt", "--include-wlt"]), /Usage/);
+  assert.throws(() => main(["--context", "isolated", "--include-wlt", "extra"]), /Usage/);
+});
+
 test("runtime attestation fails closed for missing, conflicting and invalid image revisions", () => {
   for (const revisions of [
     { revision: "", fallback: "" },

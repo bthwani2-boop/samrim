@@ -13,6 +13,7 @@ const gitExecutable = process.platform === "win32"
 const ownerServices = {
   dsh: "bthwani-refoundation-dsh-1",
   identity: "bthwani-refoundation-identity-1",
+  wlt: "bthwani-refoundation-wlt-1",
 };
 
 function checked(command, args) {
@@ -60,6 +61,7 @@ function gitAncestor(revision, head) {
 // Only the side-effect runner is injectable for isolated negative-path tests.
 export function readService(owner, dockerContext, head, execute = checked, isAncestor = gitAncestor) {
   const name = ownerServices[owner];
+  if (!name) throw new Error("unknown owner");
   const docker = (args) => execute("docker", ["--context", dockerContext, ...args]);
   // Templates intentionally extract only non-secret metadata.
   const containerRecord = docker(["inspect", "--format",
@@ -97,15 +99,20 @@ export function readService(owner, dockerContext, head, execute = checked, isAnc
 }
 
 export function main(argv = process.argv.slice(2)) {
-  if (argv.length > 2 || (argv[0] && argv[0] !== "--context") ||
-      (argv.length === 1 && argv[0] === "--context")) {
-    throw new Error("Usage: node infra/verify-runtime-provenance.mjs [--context CONTEXT]");
+  const withWlt = argv.includes("--include-wlt");
+  const contextArgs = argv.filter(arg => arg !== "--include-wlt");
+  if (argv.filter(arg => arg === "--include-wlt").length > 1 ||
+      contextArgs.length > 2 || (contextArgs[0] && contextArgs[0] !== "--context") ||
+      (contextArgs.length === 1 && contextArgs[0] === "--context")) {
+    throw new Error("Usage: node infra/verify-runtime-provenance.mjs [--context CONTEXT] [--include-wlt]");
   }
-  const context = argv.length === 2 ? argv[1] : checked("docker", ["context", "show"]);
+  const context = contextArgs.length === 2 ? contextArgs[1] : checked("docker", ["context", "show"]);
   if (!/^[a-zA-Z0-9._-]+$/.test(context)) throw new Error("invalid Docker context");
   const head = checked("git", ["rev-parse", "HEAD"]);
   let failures = 0;
-  for (const owner of Object.keys(ownerServices)) {
+  // WLT is an opt-in Docker reader; baseline environments do not require it.
+  const owners = withWlt ? Object.keys(ownerServices) : ["dsh", "identity"];
+  for (const owner of owners) {
     const state = readService(owner, context, head);
     if (!state.passed) failures++;
     console.log("RUNTIME_SOURCE_" + owner.toUpperCase() + "=" +
