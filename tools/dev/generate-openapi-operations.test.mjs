@@ -16,7 +16,7 @@ function fixture(t, owner) {
   return { base, contract: path.join(base, dir) };
 }
 
-const counts = { identity: 13, dsh: 21, wlt: 2 };
+const counts = { identity: 15, dsh: 21, wlt: 2 };
 const samplePaths = { identity: "/v1/sessions/current:", dsh: "/v1/stores/mine:", wlt: "/v1/wallets/me:" };
 for (const owner of Object.keys(counts)) {
   test(owner + " operations are exactly reproducible and match owner OpenAPI", () => {
@@ -28,6 +28,12 @@ for (const owner of Object.keys(counts)) {
     assert.equal(rows.length, counts[owner]);
     assert.equal(new Set(rows.map(row => row.id)).size, rows.length);
     assert.ok(rows.every(row => row.path.startsWith("/")));
+    if (owner === "identity") {
+      assert.ok(rows.some(row => row.id === "beginInitialOperatorPasskeyRegistration" &&
+        row.path === "/v1/operators/passkey/bootstrap/options" && row.method === "POST"));
+      assert.ok(rows.some(row => row.id === "finishInitialOperatorPasskeyRegistration" &&
+        row.path === "/v1/operators/passkey/bootstrap" && row.method === "POST"));
+    }
     if (owner === "dsh") {
       assert.ok(rows.some(row => row.id === "getCurrentCustomerCart" &&
         row.path === "/v1/carts/{storeID}" && row.method === "GET"));
