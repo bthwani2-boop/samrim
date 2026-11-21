@@ -230,19 +230,23 @@ import {
   validInitialOperatorPayload,
 } from "../src/server/operator-passkey-bff.ts";
 
-test("Root bootstrap requires a distinct explicitly isolated opt-in and exactly localhost:13000", () => {
-  assert.equal(resolveInitialOperatorBootstrapConfig(goodEnv),null);
+test("Root bootstrap requires a distinct opt-in and the exact origin for the selected isolated preview", () => {
+  const enabled = { ...goodEnv, OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF: "true" };
+  const surface = {
+    ...enabled,
+    BTHWANI_SURFACE_PREVIEW: "1",
+    OPERATOR_PASSKEY_BROWSER_ORIGIN: "http://localhost:23100",
+  };
+  assert.equal(resolveInitialOperatorBootstrapConfig(goodEnv), null);
+  assert.equal(resolveInitialOperatorBootstrapConfig(enabled)?.browserOrigin, "http://localhost:13000");
+  assert.equal(resolveInitialOperatorBootstrapConfig(surface)?.browserOrigin, "http://localhost:23100");
+  assert.equal(resolveInitialOperatorBootstrapConfig({ ...surface, BTHWANI_SURFACE_PREVIEW: "0" }), null);
   assert.equal(resolveInitialOperatorBootstrapConfig({
-    ...goodEnv,OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF:"true",
-  })?.browserOrigin,"http://localhost:13000");
+    ...surface, OPERATOR_PASSKEY_BROWSER_ORIGIN: "http://localhost:13000",
+  }), null);
   assert.equal(resolveInitialOperatorBootstrapConfig({
-    ...goodEnv,OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF:"true",
-    OPERATOR_PASSKEY_BROWSER_ORIGIN:"http://localhost:23100",
-  }),null);
-  assert.equal(resolveInitialOperatorBootstrapConfig({
-    ...goodEnv,OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF:"true",
-    BTHWANI_ISOLATED_TEST_MODE:"false",
-  }),null);
+    ...surface, BTHWANI_ISOLATED_TEST_MODE: "false",
+  }), null);
 });
 
 test("Root registration payloads can never supply an actor, role or permission", () => {

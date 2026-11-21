@@ -1,7 +1,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentOperatorAccess } from "../../server/current-operator-access";
-import { resolveIsolatedOperatorConfig } from "../../server/operator-passkey-bff";
+import {
+  resolveInitialOperatorBootstrapConfig, resolveIsolatedOperatorConfig,
+} from "../../server/operator-passkey-bff";
 import { workspaceRegistry } from "../navigation/workspace-registry";
 import styles from "../operator-shell/operator-shell.module.css";
 import OperatorBootstrapForm from "./operator-bootstrap-form";
@@ -24,7 +26,7 @@ export default async function OperatorEntryScreen() {
       ) : signInOnThisAddress ? (
         <>
           <OperatorPasskeyForm />
-          {process.env.OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF === "true" && <OperatorBootstrapForm />}
+          {resolveInitialOperatorBootstrapConfig(process.env) && <OperatorBootstrapForm />}
         </>
       ) : isolated ? (
         <>

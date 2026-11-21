@@ -208,6 +208,14 @@ the Customer preview origin and Identity to accept the Operator's exact
 `http://localhost:23100` WebAuthn origin. Only synthetic test phones and
 enrolled synthetic Operator credentials belong in this preview.
 
+To enroll the first synthetic Operator on Surface, start the Identity
+owner with the two isolated Passkey and bootstrap opt-ins, the exact
+`http://localhost:23100` origin, and the dedicated disposable WebAuthn
+database described in [Identity](../services/identity/README.md). Then start
+Control Panel using
+`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -Surface -App control-panel -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap`.
+The launcher requires both bootstrap routes on the local Identity owner.
+
 For a **synthetic Android emulator only**, the Customer can opt into WLT's
 read-only wallet and posted-funding history once **Identity, DSH and WLT** are
 running locally with isolated synthetic data. Start the Surface Customer

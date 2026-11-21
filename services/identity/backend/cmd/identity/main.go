@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
@@ -131,10 +130,7 @@ func main() {
 	// the isolated Identity owner opts in. No Operator account is provisioned,
 	// and no protected original-owner credential can be enrolled through them.
 	if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH") == "true" {
-		policy := session.OperatorPasskeyOriginPolicy{
-			RPID:    os.Getenv("IDENTITY_OPERATOR_PASSKEY_RPID"),
-			Origins: strings.Split(os.Getenv("IDENTITY_OPERATOR_PASSKEY_ORIGINS"), ","),
-		}
+		policy := operatorPasskeyOriginPolicy()
 		auth, err := session.NewOperatorPasskeyAuth(reader, policy, true)
 		if err != nil {
 			log.Fatal("Operator WebAuthn isolated relying-party configuration rejected")
@@ -145,6 +141,9 @@ func main() {
 		// Initial Root enrollment is a separate explicit opt-in, unavailable
 		// unless the existing isolated WebAuthn RP is configured.
 		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" {
+			if !policy.AllowsInitialOperatorBootstrap() || !isInitialOperatorDatabase(ctx, db) {
+				log.Fatal("initial Operator bootstrap requires one approved origin and the disposable WebAuthn database")
+			}
 			initial := session.NewOperatorInitialRegistrationHandler(auth)
 			routes.Handle(session.OperatorInitialRegistrationOptionsPath, initial)
 			routes.Handle(session.OperatorInitialRegistrationFinishPath, initial)

@@ -346,8 +346,10 @@ export async function readVerifiedOperatorAccess(
 /** Additional explicit opt-in: an isolated WebAuthn login flag NEVER enables Root creation. */
 export function resolveInitialOperatorBootstrapConfig(env: Settings): OperatorPasskeyConfig | null {
   const config = resolveIsolatedOperatorConfig(env);
+  const browserOrigin = env.BTHWANI_SURFACE_PREVIEW === "1"
+    ? "http://localhost:23100" : "http://localhost:13000";
   return config && env.OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF === "true" &&
-    config.browserOrigin === "http://localhost:13000" ? config : null;
+    config.browserOrigin === browserOrigin ? config : null;
 }
 
 export function validInitialOperatorPayload(value: unknown, finish: boolean): boolean {

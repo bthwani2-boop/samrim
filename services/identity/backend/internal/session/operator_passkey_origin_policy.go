@@ -18,6 +18,20 @@ type OperatorPasskeyOriginPolicy struct {
 	Origins []string
 }
 
+// AllowsInitialOperatorBootstrap requires exactly one supported preview origin.
+// The caller must separately establish isolated mode and database ownership.
+func (p OperatorPasskeyOriginPolicy) AllowsInitialOperatorBootstrap() bool {
+	if p.RPID != "localhost" || len(p.Origins) != 1 {
+		return false
+	}
+	switch p.Origins[0] {
+	case "http://localhost:13000", "http://localhost:23100":
+		return true
+	default:
+		return false
+	}
+}
+
 func operatorPasskeyDNSName(host string) bool {
 	if len(host) < 1 || len(host) > 253 || host != strings.ToLower(host) {
 		return false

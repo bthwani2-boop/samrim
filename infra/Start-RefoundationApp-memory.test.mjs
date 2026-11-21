@@ -38,10 +38,10 @@ test("the PowerShell launcher remains parseable without starting a shared app", 
   assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
 });
 
-test("Operator Passkey launcher opt-in fails closed outside verified isolated Lenovo owner", () => {
+test("tunneled Operator Passkey opt-in requires the verified isolated Lenovo owner", () => {
   assert.match(launcher, /\[switch\]\$EnableIsolatedOperatorPasskeyPreview/);
-  assert.match(launcher, /if \(\$EnableIsolatedOperatorPasskeyPreview\)/);
-  assert.match(launcher, /\$Surface -or \$App -ne 'control-panel'/);
+  assert.match(launcher, /if \(\$EnableIsolatedOperatorPasskeyPreview -and !\$Surface\)/);
+  assert.match(launcher, /\$EnableIsolatedOperatorPasskeyPreview -and \$App -ne 'control-panel'/);
   assert.match(launcher, /IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH=true/);
   assert.match(launcher, /IDENTITY_OPERATOR_PASSKEY_RPID=localhost/);
   assert.match(launcher, /IDENTITY_OPERATOR_PASSKEY_ORIGINS=http:\/\/localhost:13000/);
@@ -59,5 +59,7 @@ test("first Root WebAuthn enrollment is a second explicitly opted-in localhost-o
   assert.match(launcher, /IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true/);
   assert.match(launcher, /OPERATOR_ROOT_BOOTSTRAP_OWNER_NOT_OPTED_IN/);
   assert.match(launcher, /127\.0\.0\.1:3201\/v1\/operators\/passkey\/bootstrap\/options/);
+  assert.match(launcher, /if \(\$EnableIsolatedRootBootstrap\) \{\s+Assert-SurfaceCapability "\$identity\/v1\/operators\/passkey\/bootstrap\/options" 405\s+Assert-SurfaceCapability "\$identity\/v1\/operators\/passkey\/bootstrap" 405/);
+  assert.match(launcher, /\$env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='false'/);
   assert.match(launcher, /\$env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'/);
 });

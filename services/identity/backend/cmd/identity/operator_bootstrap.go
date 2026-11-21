@@ -6,21 +6,37 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 	_ "github.com/lib/pq"
 )
 
+const initialOperatorDatabase = "refoundation_webauthn_s02"
+
+func operatorPasskeyOriginPolicy() session.OperatorPasskeyOriginPolicy {
+	return session.OperatorPasskeyOriginPolicy{
+		RPID:    os.Getenv("IDENTITY_OPERATOR_PASSKEY_RPID"),
+		Origins: strings.Split(os.Getenv("IDENTITY_OPERATOR_PASSKEY_ORIGINS"), ","),
+	}
+}
+
+func isInitialOperatorDatabase(ctx context.Context, db *sql.DB) bool {
+	var actualDB string
+	err := db.QueryRowContext(ctx, "SELECT current_database()").Scan(&actualDB)
+	return err == nil && actualDB == initialOperatorDatabase
+}
+
 // This is an OFFLINE, explicitly invoked synthetic-development tool.
 // It refuses all existing Operator roles and protected Identity namespaces.
 // Do not run in CI, logs, automated startup, or shared production environments.
 func runIsolatedInitialOperatorTicket() {
+	policy := operatorPasskeyOriginPolicy()
 	if len(os.Args) != 2 || os.Args[1] != "issue-synthetic-root-ticket" ||
 		os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
 		os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") != "true" ||
-		os.Getenv("IDENTITY_OPERATOR_PASSKEY_RPID") != "localhost" ||
-		os.Getenv("IDENTITY_OPERATOR_PASSKEY_ORIGINS") != "http://localhost:13000" ||
+		!policy.AllowsInitialOperatorBootstrap() ||
 		!session.IsIsolatedTestSchema(os.Getenv("IDENTITY_DB_SCHEMA")) {
 		log.Fatal("initial Operator ticket issuance requires explicit isolated authorization")
 	}
@@ -42,18 +58,14 @@ func runIsolatedInitialOperatorTicket() {
 	// The offline issuer is only for the dedicated disposable WebAuthn
 	// development database. A synthetic schema name inside a protected
 	// shared database is NOT sufficient evidence of disposable authority.
-	var actualDB string
-	if err = db.QueryRowContext(ctx, "SELECT current_database()").Scan(&actualDB); err != nil ||
-		actualDB != "refoundation_webauthn_s02" {
+	if !isInitialOperatorDatabase(ctx, db) {
 		log.Fatal("offline Root ticket issuer refuses non-disposable database")
 	}
 	owner, err := session.NewPostgresReader(db, os.Getenv("IDENTITY_DB_SCHEMA"))
 	if err != nil {
 		log.Fatal("isolated Identity scope rejected")
 	}
-	auth, err := session.NewOperatorPasskeyAuth(owner, session.OperatorPasskeyOriginPolicy{
-		RPID: "localhost", Origins: []string{"http://localhost:13000"},
-	}, true)
+	auth, err := session.NewOperatorPasskeyAuth(owner, policy, true)
 	if err != nil {
 		log.Fatal("isolated WebAuthn relying-party invalid")
 	}

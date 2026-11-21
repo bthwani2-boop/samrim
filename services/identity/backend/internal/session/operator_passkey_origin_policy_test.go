@@ -2,6 +2,25 @@ package session
 
 import "testing"
 
+func TestInitialOperatorBootstrapRequiresOneApprovedOrigin(t *testing.T) {
+	for _, tc := range []struct {
+		origins []string
+		allowed bool
+	}{
+		{[]string{"http://localhost:13000"}, true},
+		{[]string{"http://localhost:23100"}, true},
+		{[]string{"http://localhost:13000", "http://localhost:23100"}, false},
+		{[]string{"http://127.0.0.1:23100"}, false},
+		{[]string{"http://localhost:3300"}, false},
+		{nil, false},
+	} {
+		policy := OperatorPasskeyOriginPolicy{RPID: "localhost", Origins: tc.origins}
+		if policy.AllowsInitialOperatorBootstrap() != tc.allowed {
+			t.Errorf("unexpected bootstrap policy for %v", tc.origins)
+		}
+	}
+}
+
 func TestOperatorPasskeyOriginPolicyRejectsUntrustedRPBinding(t *testing.T) {
 	valid := OperatorPasskeyOriginPolicy{
 		RPID:    "bthwani.com",

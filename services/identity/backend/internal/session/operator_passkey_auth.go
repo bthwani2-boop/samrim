@@ -48,7 +48,7 @@ func NewOperatorPasskeyAuth(owner *PostgresReader, policy OperatorPasskeyOriginP
 		return nil, fmt.Errorf("invalid WebAuthn RP configuration: %w", err)
 	}
 	rootOrigin := ""
-	if len(policy.Origins) == 1 && policy.Origins[0] == "http://localhost:13000" {
+	if policy.AllowsInitialOperatorBootstrap() {
 		rootOrigin = policy.Origins[0]
 	}
 	return &OperatorPasskeyAuth{owner: owner, rp: rp, rpID: policy.RPID, initialRootOrigin: rootOrigin}, nil

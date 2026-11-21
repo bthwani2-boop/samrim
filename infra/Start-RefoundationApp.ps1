@@ -77,11 +77,16 @@ if ($Surface) {
 if ($EnableIsolatedRootBootstrap -and !$EnableIsolatedOperatorPasskeyPreview) {
   throw 'OPERATOR_ROOT_BOOTSTRAP_REQUIRES_EXPLICIT_PASSKEY_PREVIEW'
 }
-# Only a deliberately opted-in, isolated Operator development process may
-# issue a localhost-bound WebAuthn request through the existing SSH tunnel.
+if ($EnableIsolatedOperatorPasskeyPreview -and $App -ne 'control-panel') {
+  throw 'OPERATOR_PASSKEY_PREVIEW_REQUIRES_CONTROL_PANEL'
+}
+if ($App -eq 'control-panel') {
+  $env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='false'
+}
+# The tunneled preview requires the verified Lenovo Identity owner.
 # Merely starting this application never creates or recovers an Operator.
-if ($EnableIsolatedOperatorPasskeyPreview) {
-  if ($Surface -or $App -ne 'control-panel' -or (hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
+  if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
     throw 'OPERATOR_PASSKEY_PREVIEW_REQUIRES_VERIFIED_LENOVO_OPERATOR'
   }
   $identityRuntime = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
@@ -171,6 +176,12 @@ if ($Surface) {
   }
   if ($App -eq 'control-panel') {
     Assert-SurfaceCapability "$identity/v1/operators/passkey/authentication/options" 405
+    if ($EnableIsolatedRootBootstrap) {
+      Assert-SurfaceCapability "$identity/v1/operators/passkey/bootstrap/options" 405
+      Assert-SurfaceCapability "$identity/v1/operators/passkey/bootstrap" 405
+      Assert-SurfaceCapability "$identity/v1/sessions/current" 401
+      $env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'
+    }
   } else {
     Assert-SurfaceCapability "$identity/v1/customer-auth/phone-challenges" 405
   }

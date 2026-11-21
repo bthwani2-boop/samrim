@@ -47,7 +47,7 @@ func decodeInitialProof(proof string) ([32]byte, bool) {
 
 func (s *OperatorPasskeyAuth) initialOwnerAvailable() bool {
 	return s != nil && s.owner != nil && s.rp != nil &&
-		s.rpID == "localhost" && s.initialRootOrigin == "http://localhost:13000" &&
+		s.initialRootOrigin != "" &&
 		IsIsolatedTestSchema(s.owner.schema)
 }
 

@@ -40,6 +40,13 @@ func TestInitialOperatorBootstrapRealPostgresAndWebAuthn(t *testing.T) {
 		u.User.Username() != "bthwani_fido_s02" || u.Query().Get("sslmode") != "disable" {
 		t.Fatal("refuse any database except dedicated disposable WebAuthn fixture")
 	}
+	for _, origin := range []string{"http://localhost:13000", "http://localhost:23100"} {
+		t.Run(origin, func(t *testing.T) { proveInitialOperatorBootstrap(t, dsn, origin) })
+	}
+}
+
+func proveInitialOperatorBootstrap(t *testing.T, dsn, origin string) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	db, err := sql.Open("postgres", dsn)
@@ -82,12 +89,12 @@ func TestInitialOperatorBootstrapRealPostgresAndWebAuthn(t *testing.T) {
 		t.Fatal(err)
 	}
 	auth, err := NewOperatorPasskeyAuth(owner, OperatorPasskeyOriginPolicy{
-		RPID: "localhost", Origins: []string{"http://localhost:13000"},
+		RPID: "localhost", Origins: []string{origin},
 	}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if auth.initialRootOrigin != "http://localhost:13000" {
+	if auth.initialRootOrigin != origin {
 		t.Fatal("strict initial RP origin missing")
 	}
 	// A preexisting (even synthetic) Operator forbids initial Root bootstrap.
@@ -192,7 +199,7 @@ func TestInitialOperatorBootstrapRealPostgresAndWebAuthn(t *testing.T) {
 	}
 	// Exact same challenge, with a genuine library-parsed COSE credential and
 	// user verification. Competing submissions race for a single Owner marker.
-	proof := buildCredential("http://localhost:13000", options.Options.Response.Challenge.String())
+	proof := buildCredential(origin, options.Options.Response.Challenge.String())
 	const contenders = 6
 	var succeeded atomic.Int32
 	var failed atomic.Int32
@@ -260,7 +267,7 @@ func TestInitialOperatorBootstrapRealPostgresAndWebAuthn(t *testing.T) {
 	}
 	clientData, err := json.Marshal(map[string]any{
 		"type": "webauthn.get", "challenge": login.Options.Response.Challenge,
-		"origin": "http://localhost:13000", "crossOrigin": false,
+		"origin": origin, "crossOrigin": false,
 	})
 	if err != nil {
 		t.Fatal(err)

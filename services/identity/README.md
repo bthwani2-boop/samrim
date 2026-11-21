@@ -40,16 +40,18 @@ The narrowly scoped first-Owner development path is deliberately disabled by def
 `IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH=true` and the *separate*
 `IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true` are required on the
 isolated Identity owner. The Operator BFF additionally requires
-`OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF=true` and the exact
-`http://localhost:13000` browser origin. None of these settings are enabled
-automatically or approved against real/protected Identity data.
+`OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF=true` and one exact browser
+origin shared with Identity: `http://localhost:23100` on Surface or
+`http://localhost:13000` through the development tunnel. Neither the
+server nor the offline issuer enables Root bootstrap outside the
+dedicated disposable WebAuthn database.
 
 Apply owner migration `008_operator_initial_bootstrap.sql` **only** to a
 verified, fresh, disposable `identity_test_*` schema, following 001–007.
 The CLI `go run ./cmd/identity issue-synthetic-root-ticket` is an
 **offline authorized administration action** restricted to the dedicated
-disposable `refoundation_webauthn_s02` database, never invoked during server
-startup, CI or by a public request. It refuses any existing Operator role or
+disposable `refoundation_webauthn_s02` database. The server and CI never
+invoke the CLI. It refuses any existing Operator role or
 Root marker; only a directly supervised owner can deliver the one-time
 10-minute claim secret to the intended test user's Windows Hello browser.
 
