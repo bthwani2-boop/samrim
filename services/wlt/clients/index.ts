@@ -76,7 +76,7 @@ export function parseCustomerFundingHistory(value: unknown): CustomerFundingHist
     (fields.hasMore && fields.items.length !== 10)) throw new WltReadError(502);
   const items: CustomerFundingTransaction[] = [];
   const seenFundingIds = new Set<string>();
-  let previousTimestamp: string | null = null;
+  let previousKey: { timestamp: string; fundingId: string } | null = null;
   for (const raw of fields.items) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new WltReadError(502);
     const entry = raw as Record<string, unknown>;
@@ -95,8 +95,13 @@ export function parseCustomerFundingHistory(value: unknown): CustomerFundingHist
     // Compare exact UTC nanoseconds, not JavaScript's millisecond precision.
     // Funding IDs are unique; equal timestamps are legal under PostgreSQL.
     const timestamp = stamp[1] + "." + (stamp[2] ?? "").padEnd(9, "0");
-    if (previousTimestamp !== null && timestamp > previousTimestamp) throw new WltReadError(502);
-    previousTimestamp = timestamp;
+    // Mirror the owner's (posted_at DESC, funding_id DESC) keyset ordering.
+    // Checking the timestamp alone can accept skipped entries when postings share one instant.
+    if (previousKey && (timestamp > previousKey.timestamp ||
+      (timestamp === previousKey.timestamp && entry.fundingId >= previousKey.fundingId))) {
+      throw new WltReadError(502);
+    }
+    previousKey = { timestamp, fundingId: entry.fundingId as string };
     seenFundingIds.add(entry.fundingId);
     const transaction = { fundingId: entry.fundingId, amountYer: entry.amountYer, postedAt: entry.postedAt };
     items.push(reversal && typeof originalId === "string"
@@ -174,7 +179,11 @@ async function readOwner(origin: string, bearer: string, method: "GET", path: st
       size += value.length;
     }
     signal.throwIfAborted();
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size))) as unknown;
+    try {
+      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size))) as unknown;
+    } catch {
+      throw new WltReadError(502);
+    }
   } finally {
     stream.releaseLock();
   }

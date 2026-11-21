@@ -92,8 +92,9 @@ func makeHistoryCursor(entry fundingTransaction) string {
 
 const historySQL = `SELECT funding_id, amount_yer::text, posted_at, reverses_funding_id
     FROM wlt.customer_funding_history
-    WHERE actor_id = $1 AND ($2::timestamptz IS NULL OR (posted_at, funding_id) < ($2::timestamptz, $3))
-    ORDER BY posted_at DESC, funding_id DESC LIMIT 11`
+    WHERE actor_id = $1 AND ($2::timestamptz IS NULL OR
+        (posted_at, funding_id COLLATE "C") < ($2::timestamptz, $3::text COLLATE "C"))
+    ORDER BY posted_at DESC, funding_id COLLATE "C" DESC LIMIT 11`
 
 const balanceSQL = `SELECT COALESCE(
 	(SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id = $1), 0)::text`

@@ -252,11 +252,20 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		}
 	}
 
-	// Twelve additional immutable postings prove keyset paging over ten rows.
-	// They are inserted after the initial balance assertion, only in the disposable database.
+	// Twelve immutable postings at one exact instant exercise the SQL secondary
+	// key (funding_id DESC) across the ten-row page boundary. Without it,
+	// equal-time rows can be silently skipped on continuation.
+	const tiedPost = `INSERT INTO wlt.customer_funding_journal
+		(funding_id,actor_id,provider_id,provider_reference,amount_yer,currency,posted_at)
+		VALUES ($1,$2,'synthetic',$3,$4,$5,$6)`
+	tiedAt := time.Now().UTC().Add(time.Minute)
 	for i := range 12 {
-		executeFixture(t, ctx, owner, post, fmt.Sprintf("funding-page-%02d", i),
-			"wallet-one", fmt.Sprintf("page-%02d", i), int64(1), "YER")
+		id := fmt.Sprintf("funding-page-%02d", i)
+		if i == 3 {
+			id = "funding-PAGE-03" // Mixed case must use the same bytewise collation as the SDK.
+		}
+		executeFixture(t, ctx, owner, tiedPost, id,
+			"wallet-one", fmt.Sprintf("page-%02d", i), int64(1), "YER", tiedAt)
 	}
 	type historyPage struct {
 		ActorID    string  `json:"actorId"`
@@ -281,6 +290,13 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		secondPage.ActorID != "wallet-one" || secondPage.HasMore ||
 		secondPage.NextCursor != nil || len(secondPage.Items) != 4 {
 		t.Fatalf("second durable funding page invalid: %s %v", body, err)
+	}
+	if firstPage.Items[0].FundingID != "funding-page-11" ||
+		firstPage.Items[9].FundingID != "funding-page-01" ||
+		secondPage.Items[0].FundingID != "funding-page-00" ||
+		secondPage.Items[1].FundingID != "funding-PAGE-03" {
+		t.Fatalf("equal-time keyset order changed across pages: first=%+v second=%+v",
+			firstPage.Items, secondPage.Items)
 	}
 	seen := make(map[string]bool)
 	for _, item := range append(firstPage.Items, secondPage.Items...) {

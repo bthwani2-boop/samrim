@@ -164,6 +164,23 @@ test("WLT funding SDK rejects duplicate, out-of-order and invalid calendar entri
   }
 });
 
+test("WLT funding keyset orders equal-time entries by descending funding ID", () => {
+  const newerId = { fundingId: "funding-0002", amountYer: "10",
+    postedAt: "2026-11-20T01:00:00Z" };
+  const olderId = { fundingId: "funding-0001", amountYer: "11",
+    postedAt: "2026-11-20T01:00:00.000000000Z" };
+  assert.deepEqual(parseCustomerFundingHistory({ ...history, items: [newerId, olderId] }),
+    { ...history, items: [newerId, olderId] });
+  assert.throws(() => parseCustomerFundingHistory({ ...history, items: [olderId, newerId] }),
+    WltReadError);
+  const lowerId = { ...olderId, fundingId: "funding-page-03" };
+  const mixedCase = { ...olderId, fundingId: "funding-PAGE-03" };
+  assert.deepEqual(parseCustomerFundingHistory({ ...history, items: [lowerId, mixedCase] }),
+    { ...history, items: [lowerId, mixedCase] });
+  assert.throws(() => parseCustomerFundingHistory({ ...history, items: [mixedCase, lowerId] }),
+    WltReadError);
+});
+
 test("funding history is tied to the current Customer before and after owner read", async (t) => {
   let admissions = 0;
   t.mock.method(globalThis, "fetch", async (path, options) => {
@@ -236,9 +253,9 @@ test("Customer wallet history BFF denies cross-site and arbitrary actor queries"
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
 
-const nextCursor = Buffer.from("2026-11-20T00:00:00Z|funding-page-09").toString("base64url");
+const nextCursor = Buffer.from("2026-11-20T00:00:00Z|funding-page-00").toString("base64url");
 const tenFunding = Array.from({ length: 10 }, (_, index) => ({
-  fundingId: `funding-page-${index.toString().padStart(2, "0")}`,
+  fundingId: `funding-page-${(9 - index).toString().padStart(2, "0")}`,
   amountYer: "1", postedAt: "2026-11-20T00:00:00Z",
 }));
 const pageOne = {
@@ -369,6 +386,25 @@ test("WLT read-only SDK admits only the Android emulator's isolated host bridge"
       new AbortController().signal), { status: 503 }, unsafe);
   }
   assert.equal(globalThis.fetch.mock.callCount(), 1);
+});
+
+test("WLT SDK rejects malformed or oversized streamed owner replies", async (t) => {
+  const { readCurrentCustomerWallet } = await import("@bthwani/wlt");
+  const token = Buffer.alloc(32, 7).toString("base64url");
+  const headers = { "Cache-Control": "no-store", "Content-Type": "application/json" };
+  let reply = new Response(Uint8Array.of(0xff), { headers });
+  t.mock.method(globalThis, "fetch", async () => reply);
+  const read = () => readCurrentCustomerWallet("http://127.0.0.1:23203",
+    token, new AbortController().signal);
+
+  await assert.rejects(read, { status: 502 }, "invalid UTF-8 must fail closed");
+  reply = new Response("{", { headers });
+  await assert.rejects(read, { status: 502 }, "invalid JSON must fail closed");
+  reply = new Response("x".repeat(4097), { headers });
+  await assert.rejects(read, { status: 502 }, "streamed JSON must have a byte limit");
+  reply = new Response("{}", { headers: { ...headers, "Content-Length": "4097" } });
+  await assert.rejects(read, { status: 502 }, "declared oversized content must be refused");
+  assert.equal(globalThis.fetch.mock.callCount(), 4);
 });
 
 test("WLT SDK reads bounded text-only Native replies without depending on TextDecoder or streaming", async (t) => {
