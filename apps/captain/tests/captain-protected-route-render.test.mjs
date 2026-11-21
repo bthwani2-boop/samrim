@@ -127,11 +127,15 @@ async function settle() {
   await Promise.resolve();
 }
 
-function approved() {
-  return { enabled: true, session: {
-    role: "captain", actorId: "synthetic-captain",
-    sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-  } };
+function approved(actorId = "synthetic-captain") {
+  return {
+    enabled: true,
+    session: {
+      role: "captain", actorId,
+      sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    },
+    standing: { actorId, status: "APPROVED", version: 2 },
+  };
 }
 
 test("initial pending, unavailable and background-aborted checks do not mount Captain content", async () => {
@@ -215,16 +219,14 @@ test("revalidation never reuses protected component state across Captain actors 
   const h = harness();
   h.render();
   h.startFocus();
-  const first = approved();
-  first.session.actorId = "captain-first";
+  const first = approved("captain-first");
   h.next().resolve(first);
   await settle();
   const firstHolder = nodes(h.render()).find(x => x.props?.children === h.child);
   assert.ok(firstHolder, "first verified Captain mounts protected subtree");
 
   h.periodic();
-  const second = approved();
-  second.session.actorId = "captain-second";
+  const second = approved("captain-second");
   h.next().resolve(second);
   await settle();
   const secondHolder = nodes(h.render()).find(x => x.props?.children === h.child);
@@ -233,8 +235,7 @@ test("revalidation never reuses protected component state across Captain actors 
     "different Captain actor must remount instead of retaining another actor's private UI state");
 
   h.periodic();
-  const rotated = approved();
-  rotated.session.actorId = "captain-second";
+  const rotated = approved("captain-second");
   rotated.session.sessionExpiresAt = new Date(Date.now() + 120_000).toISOString();
   h.next().resolve(rotated);
   await settle();
@@ -287,4 +288,26 @@ test("Captain logout conceals private screens immediately and retries the same a
   retry.resolve();
   await settle();
   assert.equal(h.render().type, "Redirect");
+});
+
+test("Captain route rejects an Identity-only session or an unrelated, revoked or invalid DSH approval", async () => {
+  const reference = approved();
+  const rejected = [
+    { enabled: true, session: reference.session },
+    { ...approved(), standing: undefined },
+    { ...approved(), standing: { ...reference.standing, actorId: "another-captain" } },
+    { ...approved(), standing: { ...reference.standing, status: "SUSPENDED" } },
+    { ...approved(), standing: { ...reference.standing, version: 0 } },
+    { ...approved(), standing: { ...reference.standing, version: NaN } },
+  ];
+  for (const [index, result] of rejected.entries()) {
+    const h = harness();
+    h.render();
+    h.startFocus();
+    h.next().resolve(result);
+    await settle();
+    const tree = h.render();
+    assert.equal(tree.type, "Redirect", "unsafe DSH standing at variant " + index);
+    assert.ok(!nodes(tree).includes(h.child), "no protected subtree for unsafe standing " + index);
+  }
 });

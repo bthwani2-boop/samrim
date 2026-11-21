@@ -90,14 +90,19 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
             setAccess("denied");
             return;
           }
-          // A different actor or renewed session expiry must not inherit the prior
-          // Captain component tree (including private in-memory screen state).
-          if (result.standing && (result.standing.actorId !== session.actorId ||
-            result.standing.status !== "APPROVED")) {
+          // Identity alone never admits a Captain workspace. DSH's current,
+          // actor-matched approval and revision are mandatory on every read.
+          const standing = result.standing;
+          if (!standing || standing.actorId !== session.actorId ||
+            standing.status !== "APPROVED" ||
+            !Number.isSafeInteger(standing.version) || standing.version < 1) {
+            setVerified(null);
             setAccess("denied");
             return;
           }
-          setVerified({ session, standing: result.standing ?? null });
+          // A different actor or renewed session expiry must not inherit the prior
+          // Captain component tree (including private in-memory screen state).
+          setVerified({ session, standing });
           setAccess("allowed");
           expiry = setTimeout(() => {
             current?.abort();
