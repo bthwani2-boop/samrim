@@ -34,6 +34,10 @@ paths:
     $ref: './paths/captain-standing.yaml#/paths/~1v1~1operators~1captains~1{actorId}~1standing'
   /v1/operators/captains:
     $ref: './paths/captain-standing.yaml#/paths/~1v1~1operators~1captains'
+  /v1/operators/employees:
+    $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees'
+  /v1/operators/employees/{id}:
+    $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}'
   /v1/operators/cities/{cityID}/store-availability-policy:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy'
 components:

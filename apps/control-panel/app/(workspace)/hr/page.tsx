@@ -1,3 +1,3 @@
-import HrWorkspace from "../../../src/features/hr/hr-workspace";
+import { redirect } from "next/navigation";
 
-export default function Page() { return <HrWorkspace title="الإدارة والموظفون" />; }
+export default function Page() { redirect("/hr/employees"); }

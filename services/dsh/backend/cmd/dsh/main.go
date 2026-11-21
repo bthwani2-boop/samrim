@@ -222,6 +222,10 @@ func main() {
 		if err != nil {
 			log.Fatal("DSH Customer Cart cannot start: ", err)
 		}
+		handler, err = isolatedEmployeeHandler(ctx, db, schema, addr, handler)
+		if err != nil {
+			log.Fatal("DSH employee directory cannot start: ", err)
+		}
 		server := &http.Server{
 			Addr:              addr,
 			Handler:           handler,

@@ -35,3 +35,5 @@ export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,
 } from "./store-availability.ts";
 export { getStoreOperationalAvailability, updateStoreOperationalAvailability } from "./store-availability.ts";
+export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.ts";
+export { getCompanyEmployee, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
