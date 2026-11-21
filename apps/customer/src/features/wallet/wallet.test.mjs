@@ -388,6 +388,55 @@ test("WLT read-only SDK admits only the Android emulator's isolated host bridge"
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
 
+test("WLT history accepts ten maximum-size postings without dropping a valid owner page", async (t) => {
+  const token = Buffer.alloc(32, 19).toString("base64url");
+  const postedAt = "2026-11-21T01:00:00.123456789Z";
+  const items = Array.from({ length: 10 }, (_, index) => ({
+    fundingId: "funding-" + "a".repeat(119) + (9 - index),
+    amountYer: "9".repeat(38),
+    postedAt,
+    reversesFundingId: "original" + "b".repeat(119) + (9 - index),
+  }));
+  const last = items.at(-1);
+  const page = {
+    actorId: "a".repeat(128), currency: "YER", items, hasMore: true,
+    nextCursor: Buffer.from(`${postedAt}|${last.fundingId}`).toString("base64url"),
+  };
+  const size = Buffer.byteLength(JSON.stringify(page));
+  assert.ok(size > 4096 && size <= 8192, "fixture must exceed the old cap and stay bounded");
+  let reply = Response.json(page, { headers: { "Cache-Control": "no-store" } });
+  t.mock.method(globalThis, "fetch", async () => reply);
+  const read = () => readCurrentCustomerWalletTransactions(
+    "http://127.0.0.1:23203", token, new AbortController().signal,
+  );
+  assert.deepEqual(await read(), page);
+
+  // The Android/Hermes response adapter may have text() but no stream or
+  // TextDecoder. Its byte counter must accept the same valid owner page.
+  const originalDecoder = globalThis.TextDecoder;
+  try {
+    globalThis.TextDecoder = undefined;
+    reply = {
+      status: 200, headers: new Headers({
+        "Cache-Control": "no-store", "Content-Type": "application/json",
+      }),
+      body: null, text: async () => JSON.stringify(page),
+    };
+    assert.deepEqual(await read(), page);
+  } finally {
+    globalThis.TextDecoder = originalDecoder;
+  }
+
+  reply = new Response("x".repeat(8193), { headers: {
+    "Cache-Control": "no-store", "Content-Type": "application/json",
+  } });
+  await assert.rejects(read, { status: 502 }, "an oversized streaming response must still fail");
+  reply = new Response("{}", { headers: {
+    "Cache-Control": "no-store", "Content-Type": "application/json", "Content-Length": "8193",
+  } });
+  await assert.rejects(read, { status: 502 }, "declared oversized pages must fail before parsing");
+});
+
 test("WLT SDK rejects malformed or oversized streamed owner replies", async (t) => {
   const { readCurrentCustomerWallet } = await import("@bthwani/wlt");
   const token = Buffer.alloc(32, 7).toString("base64url");

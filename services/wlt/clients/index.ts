@@ -127,6 +127,9 @@ async function readOwner(origin: string, bearer: string, method: "GET", path: st
   const isolated = /^http:\/\/(?:127\.0\.0\.1|10\.0\.2\.2):([1-9][0-9]{0,4})$/.exec(origin);
   if (!isolated || Number(isolated[1]) > 65535) throw new WltReadError(503);
   if (!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(bearer)) throw new WltReadError(401);
+  // Ten contract-valid funding entries, reversals and a keyset cursor can
+  // exceed 4 KiB. Keep the balance bound at 4 KiB and history at 8 KiB.
+  const maxBytes = path === wltOperations.listCurrentCustomerWalletTransactions.path ? 8192 : 4096;
   const requestURL = new URL(path, origin);
   if (cursor !== undefined) {
     if (typeof cursor !== "string" || !/^[A-Za-z0-9_-]{20,240}$/.test(cursor)) {
@@ -145,7 +148,7 @@ async function readOwner(origin: string, bearer: string, method: "GET", path: st
     throw new WltReadError(response.status === 401 || response.status === 403 ? response.status : 503);
   }
   const declaredSize = response.headers.get("Content-Length");
-  if (declaredSize !== null && (!/^[0-9]+$/.test(declaredSize) || Number(declaredSize) > 4096)) {
+  if (declaredSize !== null && (!/^[0-9]+$/.test(declaredSize) || Number(declaredSize) > maxBytes)) {
     void response.body?.cancel().catch(() => {});
     throw new WltReadError(502);
   }
@@ -158,14 +161,14 @@ async function readOwner(origin: string, bearer: string, method: "GET", path: st
     for (const rune of text) {
       const value = rune.codePointAt(0) ?? 0xfffd;
       bytes += value < 0x80 ? 1 : value < 0x800 ? 2 : value < 0x10000 ? 3 : 4;
-      if (bytes > 4096) throw new WltReadError(502);
+      if (bytes > maxBytes) throw new WltReadError(502);
     }
     signal.throwIfAborted();
     try { return JSON.parse(text) as unknown; }
     catch { throw new WltReadError(502); }
   }
   const stream = response.body.getReader();
-  const bytes = new Uint8Array(4096);
+  const bytes = new Uint8Array(maxBytes);
   let size = 0;
   try {
     for (;;) {
