@@ -1,4 +1,5 @@
 /** Verified Merchant Store standing from DSH. No client-owned grants or Store writes. */
+import { readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 export interface MerchantOwnedStore {
   id: string;
@@ -86,11 +87,10 @@ export async function readMerchantDSHStanding(origin: string, bearer: string, si
   }
   let body: unknown;
   try {
-    const text = await response.text();
-    // Up to 100 stores with 120-character Unicode names and JSON escapes.
-    // Bound the serialized envelope without rejecting contract-valid data.
-    if (text.length > 262144) throw new Error("oversized owner payload");
-    body = JSON.parse(text);
+    // The 100-Store Unicode envelope remains supported, but streaming owners
+    // must be stopped at the byte limit rather than drained into memory.
+    // Native text-only fetch is handled by the same bounded DSH owner parser.
+    body = await readBoundedOwnerJSON(response, 262144, 262144);
   } catch {
     throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
   }

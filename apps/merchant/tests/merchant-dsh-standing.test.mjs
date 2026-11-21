@@ -56,3 +56,42 @@ test("Merchant DSH response envelope stays bounded",async t=>{
   }));
   await assert.rejects(readMerchantDSHStanding("https://dsh.test",bearer),{code:"OWNER_RESPONSE_INVALID"});
 });
+
+test("Merchant standing stops oversized streamed owner replies before consuming the rest",async t=>{
+  let sent=0, cancelled=false;
+  const stream=new ReadableStream({
+    pull(controller) {
+      sent++;
+      controller.enqueue(new Uint8Array(65536).fill(32));
+      if(sent===10) controller.close();
+    },
+    cancel(){ cancelled=true; }
+  }, { highWaterMark: 0 });
+  t.mock.method(globalThis,"fetch",async()=>new Response(stream,{
+    headers:{"Content-Type":"application/json","Cache-Control":"no-store"}
+  }));
+  await assert.rejects(readMerchantDSHStanding("https://dsh.test",bearer),{code:"OWNER_RESPONSE_INVALID"});
+  assert.ok(cancelled,"oversized stream must be cancelled");
+  assert.ok(sent<=5,`stream was drained after exceeding the limit: ${sent}`);
+});
+
+test("Merchant standing refuses declared oversized replies without reading the body",async t=>{
+  let touched=false;
+  t.mock.method(globalThis,"fetch",async()=>({
+    status:200,ok:true,
+    headers:new Headers({"Content-Type":"application/json","Cache-Control":"no-store","Content-Length":"262145"}),
+    body:null,
+    async text(){touched=true;return JSON.stringify(owner);}
+  }));
+  await assert.rejects(readMerchantDSHStanding("https://dsh.test",bearer),{code:"OWNER_RESPONSE_INVALID"});
+  assert.equal(touched,false);
+});
+
+test("Merchant standing retains text-only Native fetch support with strict byte limit",async t=>{
+  t.mock.method(globalThis,"fetch",async()=>({
+    status:200,ok:true,body:null,
+    headers:new Headers({"Content-Type":"application/json","Cache-Control":"no-store"}),
+    async text(){return JSON.stringify(owner);}
+  }));
+  assert.deepEqual(await readMerchantDSHStanding("http://10.0.2.2:8080",bearer),owner);
+});
