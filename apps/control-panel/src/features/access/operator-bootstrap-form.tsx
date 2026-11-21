@@ -28,12 +28,13 @@ export default function OperatorBootstrapForm() {
   const [proof,setProof]=useState("");
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
-  const [registered,setRegistered]=useState(false);
+  const [enrollment, setEnrollment] = useState<"ready" | "confirmed" | "unconfirmed">("ready");
 
   async function enroll() {
-    if (busy || registered) return;
+    if (busy || enrollment !== "ready") return;
     setBusy(true);
     setMessage("");
+    let finishDispatched = false;
     try {
       if (!/^[A-Za-z0-9_-]{43}$/.test(proof)) throw new Error("رمز التهيئة المحلي غير صالح.");
       if (!window.isSecureContext || !navigator.credentials ||
@@ -65,18 +66,30 @@ export default function OperatorBootstrapForm() {
           typeof credential.toJSON!=="function") {
         throw new Error("لم يتم إنشاء اعتماد Windows Hello معتمد.");
       }
+      const finishBody = JSON.stringify({ proof, ceremonyId: body.ceremonyId, credential: credential.toJSON() });
+      finishDispatched = true;
       const done=await fetch("/api/auth/passkey/bootstrap",{
         method:"POST",headers:{"Content-Type":"application/json"},
         credentials:"same-origin",cache:"no-store",
-        body:JSON.stringify({proof,ceremonyId:body.ceremonyId,credential:credential.toJSON()}),
+        body: finishBody,
       });
-      if (!done.ok) throw new Error("لم تثبت Identity إتمام تسجيل المفتاح؛ لا توجد جلسة مشغّل.");
+      if (done.status === 400 || done.status === 401) {
+        finishDispatched = false;
+        throw new Error("رُفض طلب تسجيل المفتاح. تحقّق من الرمز أو جرّب الدخول إذا كنت قد سجّلت المفتاح سابقًا.");
+      }
+      if (done.status !== 201) throw new Error("لم يصل تأكيد Identity.");
       const result=await done.json() as {registered?:boolean};
       if(result.registered!==true) throw new Error("ردّ Identity غير مطابق.");
       setProof("");
-      setRegistered(true);
-      setMessage("سُجل مفتاح المرور في بيئة الاختبار. سجّل الدخول الآن بمفتاحك للتحقق من الجلسة والصلاحيات.");
+      setEnrollment("confirmed");
+      setMessage("سُجل مفتاح المرور في بيئة الاختبار. سجّل الدخول بالمفتاح نفسه للتحقق من الجلسة والصلاحيات.");
     } catch(error) {
+      if (finishDispatched) {
+        setProof("");
+        setEnrollment("unconfirmed");
+        setMessage("لم يصل تأكيد التسجيل. قد تكون Identity حفظت المفتاح. جرّب الدخول بالمفتاح نفسه ثم راجع مسؤول التهيئة إذا تعذّر الدخول.");
+        return;
+      }
       setMessage(error instanceof DOMException && error.name==="NotAllowedError"
         ? "أُلغيت نافذة Windows Hello أو لم يكتمل التحقق."
         : error instanceof Error?error.message:"تعذر تسجيل المفتاح.");
@@ -91,12 +104,13 @@ export default function OperatorBootstrapForm() {
       <p>تتطلب هذه الخطوة رمز تهيئة قصير الصلاحية صادرًا من Identity عبر إجراء إداري محلي معتمد. لا تدخل رمز تهيئة الإنتاج هنا.</p>
       <label htmlFor="operator-bootstrap-proof">رمز التهيئة المحلي</label>
       <Input.Password id="operator-bootstrap-proof" value={proof} onChange={event=>setProof(event.target.value)}
-        autoComplete="off" maxLength={43} disabled={busy || registered} />
-      <Button type="primary" loading={busy} disabled={busy || registered || proof.length!==43}
+        autoComplete="off" maxLength={43} disabled={busy || enrollment !== "ready"} />
+      <Button type="primary" loading={busy} disabled={busy || enrollment !== "ready" || proof.length!==43}
         htmlType="button" onClick={enroll}>
         تسجيل مفتاح المرور عبر Windows Hello
       </Button>
       {message && <p role="status">{message}</p>}
+      {enrollment === "unconfirmed" && <a href="#operator-passkey-sign-in">الانتقال إلى تسجيل الدخول</a>}
     </section>
   );
 }

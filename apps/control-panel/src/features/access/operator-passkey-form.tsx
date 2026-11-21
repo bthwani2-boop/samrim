@@ -103,7 +103,7 @@ export default function OperatorPasskeyForm() {
   return (
     <section aria-label="دخول المشغّل">
       <p>استخدم مفتاح المرور المسجّل لحسابك. تظهر مساحات العمل التي مُنحت صلاحية الوصول إليها.</p>
-      <Button type="primary" htmlType="button" loading={busy} disabled={busy} onClick={signIn}>
+      <Button id="operator-passkey-sign-in" type="primary" htmlType="button" loading={busy} disabled={busy} onClick={signIn}>
         تسجيل الدخول بمفتاح المرور
       </Button>
       {message && <p role="alert">{message}</p>}
