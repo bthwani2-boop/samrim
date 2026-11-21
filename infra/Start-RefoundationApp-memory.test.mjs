@@ -37,3 +37,17 @@ test("the PowerShell launcher remains parseable without starting a shared app", 
   });
   assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
 });
+
+test("Operator Passkey launcher opt-in fails closed outside verified isolated Lenovo owner", () => {
+  assert.match(launcher, /\[switch\]\$EnableIsolatedOperatorPasskeyPreview/);
+  assert.match(launcher, /if \(\$EnableIsolatedOperatorPasskeyPreview\)/);
+  assert.match(launcher, /\$Surface -or \$App -ne 'control-panel'/);
+  assert.match(launcher, /IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH=true/);
+  assert.match(launcher, /IDENTITY_OPERATOR_PASSKEY_RPID=localhost/);
+  assert.match(launcher, /IDENTITY_OPERATOR_PASSKEY_ORIGINS=http:\/\/localhost:13000/);
+  assert.ok(launcher.includes("'^identity_test_[a-z0-9_]+$'"));
+  assert.match(launcher, /OPERATOR_PASSKEY_IDENTITY_PORT_NOT_LOOPBACK/);
+  assert.match(launcher, /'http:\/\/127\.0\.0\.1:3201\/v1\/operators\/passkey\/authentication\/options' 405/);
+  assert.match(launcher, /\$env:OPERATOR_PASSKEY_BROWSER_ORIGIN='http:\/\/localhost:13000'/);
+  assert.doesNotMatch(launcher, /-EnableIsolatedOperatorPasskeyPreview -Apply/);
+});

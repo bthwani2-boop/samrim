@@ -11,7 +11,8 @@ param(
   [switch]$EnableAndroidWalletPreview,
   [ValidateRange(1024,65535)]
   [int]$WltPort=23203,
-  [switch]$EnableDockerWalletWebPreview
+  [switch]$EnableDockerWalletWebPreview,
+  [switch]$EnableIsolatedOperatorPasskeyPreview
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -71,6 +72,54 @@ if ($Surface) {
     $env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
     Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
   }
+}
+# Only a deliberately opted-in, isolated Operator development process may
+# issue a localhost-bound WebAuthn request through the existing SSH tunnel.
+# Merely starting this application never creates or recovers an Operator.
+if ($EnableIsolatedOperatorPasskeyPreview) {
+  if ($Surface -or $App -ne 'control-panel' -or (hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+    throw 'OPERATOR_PASSKEY_PREVIEW_REQUIRES_VERIFIED_LENOVO_OPERATOR'
+  }
+  $identityRuntime = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0 -or $identityRuntime.Count -ne 1) {
+    throw 'OPERATOR_PASSKEY_IDENTITY_RUNTIME_UNAVAILABLE'
+  }
+  $identityOwner = $identityRuntime[0]
+  if ($identityOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+      $identityOwner.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
+      $identityOwner.State.Health.Status -cne 'healthy') {
+    throw 'OPERATOR_PASSKEY_IDENTITY_OWNER_NOT_ISOLATED'
+  }
+  $ownerEnv = @($identityOwner.Config.Env)
+  foreach ($required in @(
+    'BTHWANI_ISOLATED_TEST_MODE=true',
+    'BTHWANI_ISOLATED_CONTAINER_MODE=true',
+    'IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH=true',
+    'IDENTITY_OPERATOR_PASSKEY_RPID=localhost',
+    'IDENTITY_OPERATOR_PASSKEY_ORIGINS=http://localhost:13000'
+  )) {
+    if ($ownerEnv -cnotcontains $required) {
+      throw 'OPERATOR_PASSKEY_IDENTITY_OWNER_NOT_OPTED_IN'
+    }
+  }
+  $schemas = @($ownerEnv | Where-Object { $_ -like 'IDENTITY_DB_SCHEMA=*' })
+  if ($schemas.Count -ne 1 -or
+      ($schemas[0] -split '=',2)[1] -cnotmatch '^identity_test_[a-z0-9_]+$') {
+    throw 'OPERATOR_PASSKEY_IDENTITY_SCHEMA_NOT_ISOLATED'
+  }
+  $bindings = @($identityOwner.HostConfig.PortBindings.'3302/tcp')
+  if ($bindings.Count -ne 1 -or $bindings[0].HostIp -cne '127.0.0.1' -or
+      $bindings[0].HostPort -cne '3201') {
+    throw 'OPERATOR_PASSKEY_IDENTITY_PORT_NOT_LOOPBACK'
+  }
+  Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/operators/passkey/authentication/options' 405
+  Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/operators/passkey/authentication' 405
+  Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
+  $env:BTHWANI_ISOLATED_TEST_MODE='true'
+  $env:OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF='true'
+  $env:OPERATOR_PASSKEY_BROWSER_ORIGIN='http://localhost:13000'
+  $env:OPERATOR_PASSKEY_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+  $env:OPERATOR_POLICY_DSH_ORIGIN='http://127.0.0.1:3202'
 }
 if(!(Test-Path -LiteralPath $node) -or !(Test-Path -LiteralPath (Join-Path $source 'pnpm-lock.yaml'))){
   throw 'REFOUNDATION_RUNTIME_SOURCE_OR_TOOLCHAIN_MISSING'

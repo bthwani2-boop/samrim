@@ -44,7 +44,10 @@ export default function OperatorPasskeyForm() {
         credentials: "same-origin",
         cache: "no-store",
       });
-      if (!optionsResponse.ok) throw new Error("لا يمكن بدء دخول المشغّل.");
+      if (optionsResponse.status === 503) {
+        throw new Error("خدمة الدخول بمفتاح المرور غير جاهزة في هذه البيئة. لا يمكن تخطي فحص Identity.");
+      }
+      if (!optionsResponse.ok) throw new Error("لا يمكن بدء دخول المشغّل. تحقق من عنوان الدخول المعتمد.");
       const options = await optionsResponse.json() as PasskeyOptions;
       const source = options.options.publicKey;
       if (source.rpId !== "localhost" || source.userVerification !== "required") {
@@ -72,7 +75,10 @@ export default function OperatorPasskeyForm() {
         cache: "no-store",
         body: JSON.stringify({ ceremonyId: options.ceremonyId, credential: proof }),
       });
-      if (!resultResponse.ok) throw new Error("فشل إثبات هوية المشغّل.");
+      if (resultResponse.status === 503) {
+        throw new Error("لم تتمكن Identity من إكمال التحقق الآمن. الجلسة غير مفعّلة.");
+      }
+      if (!resultResponse.ok) throw new Error("فشل إثبات مفتاح المرور المسجّل للمشغّل.");
       const readback = await fetch("/api/auth/session", {
         method: "GET",
         credentials: "same-origin",

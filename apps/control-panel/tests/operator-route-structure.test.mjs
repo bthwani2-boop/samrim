@@ -13,6 +13,12 @@ test("Operator workspace keeps control-panel identity and uses a real Next route
     assert.ok(existsSync(file(path)), path);
   }
   assert.match(read("app/page.tsx"), /OperatorEntryScreen/);
+  const entry = read("src/features/access/operator-entry-screen.tsx");
+  assert.match(entry, /متطلبات تفعيل الدخول/);
+  assert.match(entry, /مفتاح مرور موثّق لصاحب الحساب/);
+  assert.match(entry, /لا تظهر قبل تحقق الصلاحيات/);
+  const login = read("src/features/access/operator-passkey-form.tsx");
+  assert.match(login, /Identity من إكمال التحقق الآمن/);
   assert.match(read("app/(workspace)/workspace/page.tsx"), /OperatorDashboardPage/);
   assert.equal(existsSync(file("src/app")), false);
 });
