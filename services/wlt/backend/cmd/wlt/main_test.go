@@ -24,6 +24,33 @@ func TestSandboxCommandRejectsNonIsolatedDatabaseBeforeReadingSession(t *testing
 	}
 }
 
+func TestWalletContainerRuntimeRequiresExplicitIsolatedOwner(t *testing.T) {
+	const dsn = "postgres://bthwani_wlt_reader:synthetic-only@postgres:5432/bthwani_wlt_test?sslmode=disable"
+	for _, tc := range []struct {
+		name, mode, container, address, database, identity string
+		want                                               bool
+	}{
+		{"valid", "true", "true", "0.0.0.0:8080", dsn, "http://identity:3302", true},
+		{"no opt in", "", "true", "0.0.0.0:8080", dsn, "http://identity:3302", false},
+		{"no container opt in", "true", "", "0.0.0.0:8080", dsn, "http://identity:3302", false},
+		{"external bind", "true", "true", "0.0.0.0:8081", dsn, "http://identity:3302", false},
+		{"admin writer", "true", "true", "0.0.0.0:8080", strings.Replace(dsn, "bthwani_wlt_reader", "postgres", 1), "http://identity:3302", false},
+		{"alternate database", "true", "true", "0.0.0.0:8080", strings.Replace(dsn, "bthwani_wlt_test", "bthwani_refoundation", 1), "http://identity:3302", false},
+		{"external db", "true", "true", "0.0.0.0:8080", strings.Replace(dsn, "postgres:5432", "example.com:5432", 1), "http://identity:3302", false},
+		{"local db", "true", "true", "0.0.0.0:8080", strings.Replace(dsn, "postgres:5432", "127.0.0.1:5432", 1), "http://identity:3302", false},
+		{"dsn override", "true", "true", "0.0.0.0:8080", dsn + "&host=other", "http://identity:3302", false},
+		{"foreign identity", "true", "true", "0.0.0.0:8080", dsn, "http://example.com:3302", false},
+		{"loopback identity", "true", "true", "0.0.0.0:8080", dsn, "http://127.0.0.1:3302", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := validContainerIsolation(tc.mode, tc.container, tc.address, tc.database, tc.identity)
+			if got != tc.want {
+				t.Fatalf("container isolation=%t want=%t", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWalletRuntimeRequiresIsolatedReader(t *testing.T) {
 	const dsn = "postgres://bthwani_wlt_reader:synthetic-only@127.0.0.1:5432/bthwani_wlt_test?sslmode=disable"
 	for _, test := range []struct {

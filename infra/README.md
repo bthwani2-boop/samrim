@@ -12,6 +12,7 @@ This environment is synthetic development only, not production deployment. Legac
 | `media` | Fresh SeaweedFS mini, own media volume/credentials | 3233 |
 | `mailpit` | Local inbound test email capture | 3226 |
 | `payment-mock` | WireMock with fixed synthetic cash-in evidence (no production rails) | 3290 |
+| `wlt` (opt-in overlay) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
 | `dsh` (with optional Compose file) | Public discovery only; proven read-only Store/Offer API | 3202 |
 
 The `payment-mock` image is built from `infra/payment-mock/Dockerfile` using the existing
@@ -32,9 +33,9 @@ secrets, applied migrations and media are never copied or changed.
 ## Optional owner service roles and DSH public discovery
 
 `compose.apps.yaml` now contains **only** the two real DSH owner roles:
-`dsh` and opt-in `dsh-migrate`. Placeholder Identity/WLT services,
-nonexistent bootstrap commands and invalid old Dockerfiles are no longer
-advertised as runnable. Do not start the whole `implementation` profile.
+`dsh` and opt-in `dsh-migrate`. Placeholder Identity services and nonexistent bootstrap commands are not
+advertised as runnable. The separate `compose.wlt.yaml` now defines the real
+read-only WLT development owner; it is not activated by the DSH profile. Do not start the whole `implementation` profile.
 DSH public Store/Offer discovery is real; protected mutation and WLT/Order
 integration remain NOT_RUN.
 
@@ -53,6 +54,27 @@ Validate this invariant with `node --test infra/compose-policy.test.mjs` and
 service-start path. Existing running containers and persisted volumes are not
 recreated by this file change.
 Never reuse donor images, production data or `samrim-local` volumes.
+
+### Opt-in real WLT read-only container
+
+WLT has a separate `compose.wlt.yaml` overlay and a pinned service-owned
+Dockerfile. The refoundation database currently used by Identity/DSH is
+**not** renamed, erased or migrated. Provision `bthwani_wlt_test` explicitly
+using `pwsh -NoProfile -File infra/provision-wlt-test-db.ps1` only after
+confirming it and its three WLT roles do not already exist. That operation
+creates a new isolated database plus its own read-only runtime credentials
+inside ignored `infra/.env`. It must never be run automatically with Compose.
+
+After a source commit, build via
+`pwsh -NoProfile -File infra/build-wlt-image.ps1`, and configure with
+`docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.wlt.yaml --profile wlt-reader config --quiet`.
+Start only the admitted reader using the matching Compose invocation plus
+`up -d --no-deps wlt`. Port `3203` is bound to Lenovo loopback only;
+WLT uses the existing synthetic Identity verifier `identity:3302` and a
+separate read-only WLT database identity. A successful Docker healthcheck
+indicates only local process/SQL readiness; financial delivery, checkout and
+production remain disabled. The local executable loopback reader remains
+supported independently.
 
 ### Build and run real public DSH inside the same Compose project
 

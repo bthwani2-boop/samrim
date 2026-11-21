@@ -12,6 +12,26 @@ import (
 	"time"
 )
 
+func TestContainerIdentityRequiresExplicitTrustedService(t *testing.T) {
+	if _, err := newIdentityReader("http://identity:3302"); err == nil {
+		t.Fatal("local reader trusted container hostname")
+	}
+	if reader, err := newIdentityReader("http://identity:3302", true); err != nil ||
+		reader.endpoint != "http://identity:3302/v1/sessions/current" {
+		t.Fatalf("explicit container service origin denied: %v", err)
+	}
+	for _, candidate := range []string{
+		"http://identity:3303", "https://identity:3302",
+		"http://identity:3302/elsewhere", "http://identity.evil:3302",
+		"http://user@identity:3302", "http://identity:3302?redirect=1",
+		"http://127.0.0.1:3302",
+	} {
+		if _, err := newIdentityReader(candidate, true); err == nil && candidate != "http://127.0.0.1:3302" {
+			t.Fatalf("unexpected container trust: %s", candidate)
+		}
+	}
+}
+
 func TestWalletReadRequiresCurrentUncachedCustomer(t *testing.T) {
 	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
 	const session = `{"actorId":"verified-customer","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`

@@ -101,7 +101,7 @@ jobs:
         run: |
           set -euo pipefail
           expected_go="$(cat .go-version)"
-          for service in identity dsh; do
+          for service in identity dsh wlt; do
             image="bthwani-go-check-$service:$GITHUB_SHA"
             docker build --file "services/$service/backend/Dockerfile" \
               --build-arg "SAMRIM_SOURCE_REVISION=$GITHUB_SHA" \

@@ -100,10 +100,23 @@ const balanceSQL = `SELECT COALESCE(
 	(SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id = $1), 0)::text`
 
 func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
+	return newWalletHandler(db, identityOrigin, false)
+}
+
+// NewContainerHandler permits only the named, internal synthetic Identity service.
+// It does not expand the local CLI or preview origin trust boundary.
+func NewContainerHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
+	if identityOrigin != "http://identity:3302" {
+		return nil, errors.New("WLT requires the isolated container Identity origin")
+	}
+	return newWalletHandler(db, identityOrigin, true)
+}
+
+func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool) (http.Handler, error) {
 	if db == nil {
 		return nil, errors.New("WLT balance reader unavailable")
 	}
-	return newHandlerWithHistory(identityOrigin, func(ctx context.Context, actorID string) (string, error) {
+	return newHandlerWithHistoryMode(identityOrigin, func(ctx context.Context, actorID string) (string, error) {
 		var balance string
 		err := db.QueryRowContext(ctx, balanceSQL, actorID).Scan(&balance)
 		return balance, err
@@ -141,18 +154,19 @@ func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
 			return result, err
 		}
 		return result, nil
-	})
+	}, containerMode)
 }
 
 func newHandler(origin string, balance balanceReader) (http.Handler, error) {
 	return newHandlerWithHistory(origin, balance, nil)
 }
 
-func newIdentityReader(origin string) (identityReader, error) {
+func newIdentityReader(origin string, containerMode ...bool) (identityReader, error) {
+	allowedContainer := len(containerMode) == 1 && containerMode[0] && origin == "http://identity:3302"
 	root, err := url.Parse(origin)
-	if err != nil || root.Scheme != "http" || root.Hostname() != "127.0.0.1" ||
+	if err != nil || (!allowedContainer && (root.Scheme != "http" || root.Hostname() != "127.0.0.1" ||
 		root.Port() == "" || root.User != nil || root.Path != "" || root.ForceQuery ||
-		root.RawQuery != "" || root.Fragment != "" || origin != root.String() {
+		root.RawQuery != "" || root.Fragment != "" || origin != root.String())) {
 		return identityReader{}, errors.New("WLT requires the isolated Identity loopback origin")
 	}
 	return identityReader{
@@ -167,7 +181,11 @@ func newIdentityReader(origin string) (identityReader, error) {
 }
 
 func newHandlerWithHistory(origin string, balance balanceReader, history historyReader) (http.Handler, error) {
-	identity, err := newIdentityReader(origin)
+	return newHandlerWithHistoryMode(origin, balance, history, false)
+}
+
+func newHandlerWithHistoryMode(origin string, balance balanceReader, history historyReader, containerMode bool) (http.Handler, error) {
+	identity, err := newIdentityReader(origin, containerMode)
 	if err != nil {
 		return nil, err
 	}

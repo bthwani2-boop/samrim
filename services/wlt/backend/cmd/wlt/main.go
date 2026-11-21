@@ -32,6 +32,20 @@ func isolatedDatabaseURL(databaseURL, role string) bool {
 		u.Fragment == "" && u.String() == databaseURL
 }
 
+// Container mode is a separate explicit development admission. Local preview
+// still requires loopback and never accepts a Docker host by implication.
+func validContainerIsolation(mode, containerMode, address, databaseURL, identityOrigin string) bool {
+	if mode != "true" || containerMode != "true" || address != "0.0.0.0:8080" ||
+		identityOrigin != "http://identity:3302" {
+		return false
+	}
+	u, err := url.Parse(databaseURL)
+	return err == nil && u.Scheme == "postgres" && u.Host == "postgres:5432" &&
+		u.User != nil && u.User.Username() == "bthwani_wlt_reader" &&
+		u.Path == "/bthwani_wlt_test" && u.RawQuery == "sslmode=disable" &&
+		u.Fragment == "" && u.Opaque == "" && u.String() == databaseURL
+}
+
 func validPort(port string) bool {
 	value, err := strconv.ParseUint(port, 10, 16)
 	return err == nil && value > 0
@@ -82,8 +96,12 @@ func main() {
 	}
 	address := os.Getenv("WLT_DEV_LISTEN_ADDR")
 	dsn := os.Getenv("WLT_TEST_DATABASE_URL")
-	if !validIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), address, dsn) {
-		log.Fatal("WLT requires explicit isolated loopback configuration")
+	containerMode := os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true"
+	identityOrigin := os.Getenv("WLT_TEST_IDENTITY_ORIGIN")
+	if !validIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), address, dsn) &&
+		!validContainerIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"),
+			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), address, dsn, identityOrigin) {
+		log.Fatal("WLT requires an explicit isolated local or container configuration")
 	}
 	db, err := sql.Open("postgres", dsn)
 	if err != nil {
@@ -98,12 +116,55 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	handler, err := wallet.NewHandler(db, os.Getenv("WLT_TEST_IDENTITY_ORIGIN"))
+	var handler http.Handler
+	if containerMode {
+		handler, err = wallet.NewContainerHandler(db, identityOrigin)
+	} else {
+		handler, err = wallet.NewHandler(db, identityOrigin)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
+	mux := http.NewServeMux()
+	mux.Handle("/v1/", handler)
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		pingCtx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		if err := db.PingContext(pingCtx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if containerMode {
+			check, err := http.NewRequestWithContext(pingCtx, http.MethodGet, identityOrigin+"/health", nil)
+			if err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			client := &http.Client{
+				Timeout:       time.Second,
+				CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+			}
+			response, err := client.Do(check)
+			if err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			_ = response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+	})
 	server := &http.Server{
-		Addr: address, Handler: handler, ReadHeaderTimeout: 3 * time.Second,
+		Addr: address, Handler: mux, ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second,
 		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
 	}

@@ -29,6 +29,34 @@ test("database and mock integrations stay in one isolated project", () => {
   assert.ok(!base.services.wlt, "No fake WLT runtime until real ledger owner exists");
 });
 
+test("WLT is the real isolated read-only owner and never a migration service", () => {
+  const overlay = compose("compose.wlt.yaml");
+  assert.deepEqual(Object.keys(overlay.services), ["wlt"]);
+  const wlt = overlay.services.wlt;
+  assert.deepEqual(wlt.profiles, ["wlt-reader"]);
+  assert.equal(wlt.restart, "unless-stopped");
+  assert.equal(wlt.read_only, true);
+  assert.ok(wlt.cap_drop.includes("ALL"));
+  assert.ok(wlt.security_opt.includes("no-new-privileges:true"));
+  assert.deepEqual(wlt.networks, ["isolated", "loopback"]);
+  assert.deepEqual(wlt.depends_on.postgres, { condition: "service_healthy" });
+  assert.ok(wlt.ports.every((v) => v.startsWith("127.0.0.1:")));
+  assert.equal(wlt.environment.BTHWANI_ISOLATED_TEST_MODE, "true");
+  assert.equal(wlt.environment.BTHWANI_ISOLATED_CONTAINER_MODE, "true");
+  assert.equal(wlt.environment.WLT_TEST_IDENTITY_ORIGIN, "http://identity:3302");
+  assert.equal(wlt.environment.WLT_DEV_LISTEN_ADDR, "0.0.0.0:8080");
+  assert.equal(wlt.environment.WLT_TEST_DATABASE_URL,
+    "${REF_WLT_TEST_DATABASE_URL:?isolated WLT read-only PostgreSQL URL required}");
+  assert.ok(!wlt.environment.WLT_SANDBOX_DATABASE_URL);
+  assert.ok(!wlt.volumes?.length);
+  assert.ok(wlt.healthcheck.test.includes("wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"));
+  const dockerfile = readFileSync(path.join(infra, "../services/wlt/backend/Dockerfile"), "utf8");
+  assert.match(dockerfile, /^FROM golang:1\.27\.4-alpine@sha256:[a-f0-9]{64} AS build/m);
+  assert.match(dockerfile, /^USER 65532:65532/m);
+  assert.match(dockerfile, /^ENTRYPOINT \["\/usr\/local\/bin\/wlt"\]/m);
+  assert.doesNotMatch(dockerfile, /post-sandbox-funding|migrate|ENTRYPOINT \["\/bin\/sh"/);
+});
+
 test("a normal implementation profile can never implicitly run SQL migrations", () => {
   const apps = compose("compose.apps.yaml");
   const service = apps.services.dsh;

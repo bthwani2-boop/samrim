@@ -27,6 +27,37 @@ history. `hasMore` and an optional `nextCursor` indicate older pages without
 an actor selector. The [migration](../database/migrations/README.md)
 defines journal records and the reader's grant.
 
+### Isolated Docker development reader
+
+`infra/compose.wlt.yaml` defines the opt-in `wlt` service in the
+existing `bthwani-refoundation` Compose project. Its pinned `Dockerfile`
+runs the actual Go reader as UID 65532 with no writable filesystem or container
+capabilities and loopback-only host port `3203`. It uses an explicit
+`BTHWANI_ISOLATED_CONTAINER_MODE=true`, a *different* startup mode from the
+existing strict local/Android loopback mode. The only permitted endpoints are
+`postgres:5432/bthwani_wlt_test` under `bthwani_wlt_reader` and the
+synthetic `http://identity:3302` verifier. No ledger writes, funding command,
+automatic migrations, provider credentials or production services are enabled.
+
+The new `infra/provision-wlt-test-db.ps1` is an additive, explicit, one-time
+development-only provisioner. It refuses an existing WLT database, roles or
+credential entry, requires the verified refoundation PostgreSQL container, and
+creates `bthwani_wlt_test` plus no-login owner/sandbox roles and a unique
+read-only reader credential in the Git-ignored `infra/.env`. It applies the
+five existing immutable WLT migrations only to the new empty database and
+verifies journal emptiness, SELECT grants and write-denial. It never runs as
+part of Compose or on another database. If a step fails, inspect the actual
+durable database state before any attempted recovery; do not delete, reset or
+rerun the provisioner blindly.
+
+Build the committed WLT source image using `infra/build-wlt-image.ps1`,
+then use Compose with both `infra/compose.yaml` and
+`infra/compose.wlt.yaml`, selecting `--profile wlt-reader` and
+`--no-deps` for `wlt` only after Identity and PostgreSQL are confirmed
+healthy. Verify `/health`, unauthenticated `401` and
+read-only `405`, then real Identity session authorization/denial on
+`/v1/wallets/me`; health alone is not journey acceptance.
+
 ### Post synthetic Customer funding
 
 In the disposable PostgreSQL environment, provision the dedicated
