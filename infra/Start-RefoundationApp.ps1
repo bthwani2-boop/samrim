@@ -152,6 +152,20 @@ if ($Surface) {
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
 $env:PATH="$nodeDir;$env:PATH"
 $env:NODE_OPTIONS='--dns-result-order=ipv4first'
+# Expo Web/Metro exhausted Node's default ~4 GiB V8 heap on Lenovo (exit 134).
+# The ceiling is per process and does not reserve memory. Restrict the larger
+# heap to the two Web Metro owners on a verified >=24 GiB development host;
+# never alter Surface previews, Captain Metro or the Next.js Operator process.
+if (!$Surface -and $App -in @('customer','merchant')) {
+  if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+    throw 'WEB_METRO_HEAP_REQUIRES_VERIFIED_LENOVO'
+  }
+  $memory=Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+  if (!$memory -or [double]$memory.TotalVisibleMemorySize -lt (24 * 1MB)) {
+    throw 'WEB_METRO_HEAP_REQUIRES_24_GIB_RAM'
+  }
+  $env:NODE_OPTIONS += ' --max-old-space-size=6144'
+}
 $env:EXPO_NO_TELEMETRY='1'
 # Preserve Metro's incremental cache across routine starts. Use an explicitly
 # requested one-off cache reset only when diagnosing a verified stale bundle.
