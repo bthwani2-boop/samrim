@@ -1,3 +1,4 @@
+import { identityOperations } from "@bthwani/identity";
 import { NextResponse } from "next/server";
 import {
   boundedRequestBody,
@@ -46,8 +47,8 @@ export async function POST(request: Request) {
   try {
     const auth = await operatorIdentityRequest(
       config,
-      "/v1/operators/passkey/authentication",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: raw },
+      identityOperations.finishOperatorPasskeyAuthentication,
+      { headers: { "Content-Type": "application/json" }, body: raw },
     );
     if (auth.status === 401) {
       return NextResponse.json({ code: "UNAUTHORIZED" }, { status: 401, headers: privateHeaders });
@@ -61,8 +62,8 @@ export async function POST(request: Request) {
     }
     const owner = await operatorIdentityRequest(
       config,
-      "/v1/sessions/current",
-      { method: "GET", headers: { Authorization: `Bearer ${issued.accessToken}` } },
+      identityOperations.getVerifiedIdentitySession,
+      { headers: { Authorization: `Bearer ${issued.accessToken}` } },
     );
     if (owner.status !== 200 ||
         !parseVerifiedOperatorPrincipal(await boundedResponseJSON(owner), issued)) {

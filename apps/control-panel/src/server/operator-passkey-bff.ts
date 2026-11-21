@@ -1,3 +1,4 @@
+import { identityOperations } from "@bthwani/identity";
 import { type OperatorPermission, operatorPermissions } from "../features/session/operator-permissions.ts";
 
 // Only the explicitly isolated Operator test BFF uses these helpers.
@@ -135,21 +136,29 @@ export function parseVerifiedOperatorPrincipal(
   };
 }
 
-const allowedOwnerPaths = new Set([
-  "/v1/operators/passkey/authentication/options",
-  "/v1/operators/passkey/authentication",
-  "/v1/sessions/current",
-  ...operatorPermissions.map((permission) => `/v1/operators/me/permissions/${permission}`),
-]);
+function operatorPermissionOperation(permission: OperatorPermission) {
+  const operation = identityOperations.getEffectiveOperatorPermission;
+  return { method: operation.method, path: operation.path.replace("{permission}", permission) };
+}
+
+const allowedOwnerRequests = new Set([
+  identityOperations.beginOperatorPasskeyAuthentication,
+  identityOperations.finishOperatorPasskeyAuthentication,
+  identityOperations.getVerifiedIdentitySession,
+  identityOperations.revokeCurrentIdentitySession,
+  ...operatorPermissions.map(operatorPermissionOperation),
+].map(operation => `${operation.method} ${operation.path}`));
 
 export async function operatorIdentityRequest(
   config: OperatorPasskeyConfig,
-  path: string,
-  init: RequestInit,
+  operation: Readonly<{ path: string; method: string }>,
+  init: Omit<RequestInit, "method">,
 ): Promise<Response> {
-  if (!allowedOwnerPaths.has(path)) throw new Error("Unexpected Identity owner route");
+  const { method, path } = operation;
+  if (!allowedOwnerRequests.has(`${method} ${path}`)) throw new Error("Unexpected Identity owner operation");
   return fetch(config.identityOrigin + path, {
     ...init,
+    method,
     cache: "no-store",
     redirect: "error",
     signal: AbortSignal.timeout(5000),
@@ -294,8 +303,8 @@ export async function readVerifiedOperatorAccess(
   if (!/^[A-Za-z0-9_-]{43}$/.test(accessToken)) return null;
   try {
     const authorization = { Authorization: `Bearer ${accessToken}` };
-    const verified = await operatorIdentityRequest(config, "/v1/sessions/current", {
-      method: "GET", headers: authorization,
+    const verified = await operatorIdentityRequest(config, identityOperations.getVerifiedIdentitySession, {
+      headers: authorization,
     });
     if (verified.status !== 200) return null;
     const principalValue = await boundedResponseJSON(verified);
@@ -311,8 +320,7 @@ export async function readVerifiedOperatorAccess(
 
     const results = await Promise.all(operatorPermissions.map(async (permission) => {
       const reply = await operatorIdentityRequest(
-        config, `/v1/operators/me/permissions/${permission}`,
-        { method: "GET", headers: authorization },
+        config, operatorPermissionOperation(permission), { headers: authorization },
       );
       if (reply.status === 403) return false;
       if (reply.status !== 200) throw new Error("Identity permission read unavailable");

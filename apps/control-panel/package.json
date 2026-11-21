@@ -16,6 +16,7 @@
     "@ant-design/nextjs-registry": "1.3.0",
     "@bthwani/design-system": "workspace:*",
     "@bthwani/dsh": "workspace:*",
+    "@bthwani/identity": "workspace:*",
     "@date-fns/tz": "catalog:",
     "antd": "6.6.7",
     "date-fns": "catalog:",

@@ -1,3 +1,4 @@
+import { identityOperations } from "@bthwani/identity";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   boundedResponseJSON,
@@ -56,8 +57,8 @@ export async function GET(request: NextRequest) {
   try {
     const upstream = await operatorIdentityRequest(
       config,
-      "/v1/sessions/current",
-      { method: "GET", headers: { Authorization: `Bearer ${accessToken}` } },
+      identityOperations.getVerifiedIdentitySession,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     if (upstream.status === 401 || upstream.status === 403) {
       const response = NextResponse.json({ code: "UNAUTHORIZED" }, { status: 401, headers: privateHeaders });
@@ -108,8 +109,8 @@ export async function POST(request: NextRequest) {
   try {
     const upstream = await operatorIdentityRequest(
       config,
-      "/v1/sessions/current",
-      { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } },
+      identityOperations.revokeCurrentIdentitySession,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     if ([204, 401].includes(upstream.status)) return response;
     const unavailable = NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });
