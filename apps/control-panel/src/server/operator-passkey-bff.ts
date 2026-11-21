@@ -192,9 +192,9 @@ export async function boundedResponseJSON(response: Response): Promise<unknown> 
   return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(all));
 }
 
-export async function boundedRequestBody(request: Request): Promise<string | null> {
+export async function boundedRequestBody(request: Request, maxBytes = 65536): Promise<string | null> {
   const contentLength = request.headers.get("content-length");
-  if (contentLength && (!/^\d+$/.test(contentLength) || Number(contentLength) > 65536)) return null;
+  if (contentLength && (!/^\d+$/.test(contentLength) || Number(contentLength) > maxBytes)) return null;
   if (!request.body) return null;
   const reader = request.body.getReader();
   let size = 0;
@@ -207,7 +207,7 @@ export async function boundedRequestBody(request: Request): Promise<string | nul
       const { done, value } = await reader.read();
       if (done) return true;
       size += value.byteLength;
-      if (size > 65536) return false;
+      if (size > maxBytes) return false;
       chunks.push(value);
     }
   };

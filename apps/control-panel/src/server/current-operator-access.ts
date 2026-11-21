@@ -37,11 +37,13 @@ export async function reviewOperatorPermissions(actorId: string) {
     currentOperatorConnection(), currentOriginalOperatorPermissions(),
   ]);
   if (!connection || !original) return { status: "denied" } as const;
-  if (actorId === original.actorId) return { status: "available", permissions: original.permissions } as const;
+  if (actorId === original.actorId) {
+    return { status: "available", originalActorId: original.actorId, permissions: original.permissions } as const;
+  }
   try {
     const permissions = await reviewOriginalOperatorPermissions(connection.config.identityOrigin,
       connection.bearer, actorId, AbortSignal.timeout(4000));
-    return { status: "available", permissions } as const;
+    return { status: "available", originalActorId: original.actorId, permissions } as const;
   } catch (error) {
     if (error instanceof IdentityClientError) {
       if (error.status === 404) return { status: "notFound" } as const;

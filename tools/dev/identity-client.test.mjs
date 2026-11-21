@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   admitCurrentCustomerAsMerchant,
+  changeOriginalOperatorPermission,
   IdentityClientError,
   issueCustomerPhoneChallenge,
   readVerifiedIdentitySession,
@@ -105,6 +106,32 @@ test("Operator permission review binds the result to a single target and accepts
     await withFetch(async () => response(value), () =>
       rejectsAs(() => reviewOriginalOperatorPermissions(origin, bearer, target), 502, "OWNER_RESPONSE_INVALID"));
   }
+});
+
+test("Operator permission writes preserve the command and only acknowledge a matching owner receipt", async () => {
+  const actorId = "synthetic-operator";
+  const command = { state: "ACTIVE", expectedVersion: 0, operationId: "permission-op-1", reason: "سبب موثّق للاختبار" };
+  const receipt = { targetActorId: actorId, permission: "operations", state: "ACTIVE", version: 1 };
+  const send = () => changeOriginalOperatorPermission(origin, bearer, actorId, "operations", command);
+  await withFetch(async (url, options) => {
+    assert.equal(new URL(url).pathname, "/v1/operators/synthetic-operator/permissions/operations");
+    assert.equal(options.method, "PATCH");
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.redirect, "error");
+    assert.deepEqual(JSON.parse(options.body), command);
+    return response(receipt);
+  }, async () => assert.deepEqual(await send(), { permission: "operations", state: "ACTIVE", version: 1 }));
+  for (const mismatch of [
+    { targetActorId: "other-actor" }, { permission: "finance" }, { state: "REVOKED" }, { version: 2 },
+  ]) {
+    await withFetch(async () => response({ ...receipt, ...mismatch }),
+      () => rejectsAs(send, 502, "OPERATION_RESULT_UNKNOWN"));
+  }
+  await withFetch(async () => response({ error: "CONFLICT" }, 409),
+    () => rejectsAs(send, 409, "CONFLICT"));
+  await withFetch(async () => { throw new Error("interrupted after dispatch"); },
+    () => rejectsAs(send, 0, "OPERATION_RESULT_UNKNOWN"));
 });
 
 test("session scope is parsed from exactly the three owner fields and never implies Store rights", async () => {

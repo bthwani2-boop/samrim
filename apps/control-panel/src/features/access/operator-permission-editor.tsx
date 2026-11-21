@@ -1,6 +1,7 @@
 import { isOperatorActorId } from "@bthwani/identity";
 import { reviewOperatorPermissions } from "../../server/current-operator-access";
 import styles from "../operator-shell/operator-shell.module.css";
+import OperatorPermissionForm from "./operator-permission-form";
 import OperatorPermissionSummary from "./operator-permission-summary";
 import OperatorWorkspaceGate from "./operator-workspace-gate";
 
@@ -22,6 +23,10 @@ export default async function OperatorPermissionEditor({ actorId }: Readonly<{ a
         <>
           <p>معرّف المشغّل <bdi>{actorId}</bdi></p>
           <OperatorPermissionSummary permissions={review.permissions} />
+          {actorId !== review.originalActorId && (
+            <OperatorPermissionForm actorId={actorId} originalActorId={review.originalActorId}
+              permissions={review.permissions} />
+          )}
         </>
       ) : <p role="alert">{errors[review.status]}</p>}
     </main>

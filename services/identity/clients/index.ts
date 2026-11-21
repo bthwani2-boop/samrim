@@ -14,6 +14,12 @@ export type OperatorPermissionRevision = {
   state: "ACTIVE" | "REVOKED";
   version: number;
 };
+export type OperatorPermissionChange = {
+  state: OperatorPermissionRevision["state"];
+  expectedVersion: number;
+  operationId: string;
+  reason: string;
+};
 export interface VerifiedIdentitySession {
   actorId: string;
   role: IdentityRole;
@@ -38,7 +44,7 @@ const credential = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 const allowedErrors = new Set([
   "INVALID_REQUEST", "UNAUTHORIZED", "FORBIDDEN", "VERIFICATION_REQUIRED",
   "ALREADY_PROVISIONED", "MERCHANT_NOT_ACTIVE", "OWNER_UNAVAILABLE",
-  "NOT_FOUND", "METHOD_NOT_ALLOWED",
+  "NOT_FOUND", "METHOD_NOT_ALLOWED", "CONFLICT",
   "PHONE_CHALLENGE_LIMIT", "CAPTAIN_NOT_APPROVED", "CAPTAIN_NOT_ACTIVE",
 ]);
 const phoneTicket = /^[a-f0-9]{48}$/;
@@ -95,8 +101,8 @@ function issuedSessionFrom(value: unknown): IssuedRoleSession {
 }
 async function ownerRequest(
   baseUrl: string, path: string, bearer: string | null,
-  method: "GET" | "POST" | "DELETE", expectedStatus: number, signal?: AbortSignal,
-  payload?: Record<string, string>,
+  method: "GET" | "POST" | "PATCH" | "DELETE", expectedStatus: number, signal?: AbortSignal,
+  payload?: Record<string, string | number>,
 ): Promise<unknown> {
   if (bearer !== null) assertBearer(bearer);
   const mutation = method !== "GET"; // Revocation DELETE may commit before a transport failure.
@@ -188,6 +194,32 @@ export async function readVerifiedIdentitySession(
 
 export function isOperatorActorId(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value);
+}
+
+/** Identity independently verifies the original Operator and records each command once. */
+export async function changeOriginalOperatorPermission(
+  baseUrl: string, bearer: string, targetActorId: string, permission: IdentityOperatorPermission,
+  command: OperatorPermissionChange, signal?: AbortSignal,
+): Promise<OperatorPermissionRevision> {
+  const { state, expectedVersion, operationId, reason } = command;
+  if (!isOperatorActorId(targetActorId) || !identityOperatorPermissions.includes(permission) ||
+      (state !== "ACTIVE" && state !== "REVOKED") || !Number.isSafeInteger(expectedVersion) ||
+      expectedVersion < 0 || expectedVersion >= Number.MAX_SAFE_INTEGER ||
+      !/^[A-Za-z0-9][A-Za-z0-9_-]{7,63}$/.test(operationId) || typeof reason !== "string") {
+    throw new IdentityClientError(400, "INVALID_REQUEST");
+  }
+  const operation = identityOperations.manageOriginalOperatorPermission;
+  const path = operation.path.replace("{actorId}", targetActorId).replace("{permission}", permission);
+  const body = await ownerRequest(baseUrl, path, bearer, operation.method, 200, signal,
+    { state, expectedVersion, operationId, reason });
+  const record = body as Record<string, unknown> | null;
+  if (!record || typeof record !== "object" || Array.isArray(record) ||
+      !exactKeys(record, ["targetActorId", "permission", "state", "version"]) ||
+      record.targetActorId !== targetActorId || record.permission !== permission ||
+      record.state !== state || record.version !== expectedVersion + 1) {
+    throw new IdentityClientError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  return { permission, state, version: expectedVersion + 1 };
 }
 
 /** Identity checks the current original Operator before reading the requested actor. */

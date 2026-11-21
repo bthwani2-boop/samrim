@@ -9,12 +9,13 @@ The `@bthwani/identity` workspace package exports these HTTP operations from `cl
 - `readVerifiedIdentitySession`: read only the actor, active Identity role and session expiry from `GET /v1/sessions/current`.
 - `revokeVerifiedIdentitySession`: revoke the current credential through `DELETE /v1/sessions/current`.
 - `reviewOriginalOperatorPermissions`: read an active Operator's assigned or revoked scope revisions through `GET /v1/operators/{actorId}/permissions`. Identity requires the current original Operator session.
+- `changeOriginalOperatorPermission`: send a versioned grant or revocation with a reason and an operation ID to the existing Identity owner. After an uncertain result, resend the exact command to recover its receipt.
 - `admitCurrentCustomerAsMerchant`: request initial Merchant role admission using an already verified Customer bearer from `POST /v1/actors/me/merchant-role`.
 - `resumeCurrentCustomerMerchantSession`: request owner-side rotation of an already active Merchant role session through `POST /v1/actors/me/merchant-session`.
 
 Session authority, revocation and mutation remain on Identity's Go/PostgreSQL owner. Protected operations require a current Identity bearer. Store authorization and financial execution belong to their respective owners. The underlying API contracts are `contracts/openapi/paths/client-auth.yaml`, `contracts/openapi/paths/session.yaml` and `contracts/openapi/paths/managed-enrollment-auth.yaml`.
 
-The transport refuses unsafe non-HTTPS endpoints outside explicit development loopback addresses, malformed opaque tokens, expired or wrong-shaped responses, unsafe response caching, oversized declared response bodies and unexpected owner statuses. Write failures with unknown results are **not retried automatically**; the caller must verify owner state before retrying. Cancellation prevents a late result from being displayed as a current session.
+The transport refuses unsafe non-HTTPS endpoints outside explicit development loopback addresses, malformed opaque tokens, expired or wrong-shaped responses, unsafe response caching, oversized declared response bodies and unexpected owner statuses. Recovery is explicit. An uncertain versioned permission change is recoverable through its original operation ID and payload. Cancellation prevents a late result from being displayed as a current session.
 
 **Development admission only:** The Node client has owner-local positive/negative tests in `../../tools/dev/identity-client.test.mjs` and is TypeScript-checked. These tests include synthetic HTTP responses; they are not proof of first-factor login, a real app consumer, session persistence on a connected device, production activation or WLT financial access. Do not expose a protected workspace until real Identity and DSH scoped authorization is integrated and independently tested.
 

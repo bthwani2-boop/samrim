@@ -100,6 +100,17 @@ test("Operator routes and the browser session endpoint fail closed on the produc
       assert.match(response.headers.get("cache-control") ?? "", /no-store/, method);
       assert.equal((await response.json()).code, "OPERATOR_SESSION_UNAVAILABLE");
     }
+    const permissionChange = await fetch(`${base}/api/access/operators/synthetic/permissions/operations`, {
+      method: "PATCH",
+      headers: { Origin: base },
+      body: new URLSearchParams({
+        state: "ACTIVE", expectedVersion: "0", operationId: "permission-op-1", reason: "isolated check only",
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    assert.equal(permissionChange.status, 503);
+    assert.match(permissionChange.headers.get("cache-control") ?? "", /no-store/);
+    assert.deepEqual(await permissionChange.json(), { code: "OWNER_UNAVAILABLE" });
   } finally {
     if (child.exitCode === null) child.kill("SIGTERM");
     if (child.exitCode === null) {

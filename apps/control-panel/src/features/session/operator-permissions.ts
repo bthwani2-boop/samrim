@@ -5,6 +5,15 @@ import {
 
 export const operatorPermissions = identityOperatorPermissions;
 export type OperatorPermission = IdentityOperatorPermission;
+export const operatorPermissionLabels: Record<OperatorPermission, string> = {
+  operations: "العمليات",
+  merchant: "التجّار",
+  catalog: "الكتالوج",
+  marketing: "التسويق",
+  finance: "المالية",
+  hr: "الموظفون",
+  platform_policies: "سياسات المنصّة",
+};
 
 export function isOperatorPermission(value: unknown): value is OperatorPermission {
   return typeof value === "string" && operatorPermissions.some((item) => item === value);
