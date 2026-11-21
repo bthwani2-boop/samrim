@@ -311,3 +311,33 @@ test("a delayed old-actor 401 cannot quarantine a newly installed Captain creden
   const current = await instance.readCaptainAdmission(new AbortController().signal);
   assert.equal(current.session?.actorId, "new-captain-owner");
 });
+
+test("Current Captain home receives the exact owner-verified DSH standing revision", async () => {
+  const h = harness();
+  h.stored.set("bthwani.captain.synthetic-admission.v1", h.tokens.captain);
+  const standing = { actorId: "captain-owner-one", status: "APPROVED", version: 41 };
+  let reads = 0;
+  h.setStandingRead(async (_origin, token, role, actorId) => {
+    reads++;
+    assert.equal(token, h.tokens.captain);
+    assert.equal(role, "captain");
+    assert.equal(actorId, standing.actorId);
+    return standing;
+  });
+  const admission = await h.reload().readCaptainAdmission(new AbortController().signal);
+  assert.equal(admission.session?.actorId, standing.actorId);
+  assert.deepEqual(admission.standing, standing);
+  assert.equal(reads, 1, "one already-authorized DSH read supplies both admission and UI");
+});
+
+test("Captain actor switch during owner approval cannot leak the old standing", async () => {
+  const h = harness();
+  h.stored.set("bthwani.captain.synthetic-admission.v1", h.tokens.captain);
+  h.setStandingRead(async () => {
+    h.stored.delete("bthwani.captain.synthetic-admission.v1");
+    return { actorId: "captain-owner-one", status: "APPROVED", version: 41 };
+  });
+  const admission = await h.reload().readCaptainAdmission(new AbortController().signal);
+  assert.deepEqual(admission, { enabled: true, session: null });
+  assert.equal("standing" in admission, false, "old DSH status must not reach the next actor");
+});

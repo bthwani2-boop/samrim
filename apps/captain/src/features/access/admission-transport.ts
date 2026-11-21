@@ -10,7 +10,7 @@ import {
 } from "@bthwani/identity";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { CaptainStandingError, readApprovedCaptainStanding, readCaptainApplication, requestCaptainApplication } from "./captain-standing";
+import { type CaptainStanding, CaptainStandingError, readApprovedCaptainStanding, readCaptainApplication, requestCaptainApplication } from "./captain-standing";
 
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
 const key = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
@@ -104,6 +104,7 @@ async function reconcileCaptainAdmission(
 export type CaptainAdmissionState = Readonly<{
   enabled: boolean;
   session: VerifiedIdentitySession | null;
+  standing?: CaptainStanding;
 }>;
 
 export async function readCaptainAdmission(signal: AbortSignal): Promise<CaptainAdmissionState> {
@@ -118,7 +119,7 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
   try {
     const session = await readVerifiedIdentitySession(identityOrigin, bearer, signal);
     if (session.role !== "captain") throw new IdentityClientError(401, "UNAUTHORIZED");
-    await readApprovedCaptainStanding(dshOrigin, bearer, "captain", session.actorId, signal);
+    const standing = await readApprovedCaptainStanding(dshOrigin, bearer, "captain", session.actorId, signal);
     // Both owner replies may finish AFTER a concurrent sign-out or actor
     // switch. Only the credential still owned by this device can be rendered.
     const stillCurrent = await mutateNativeStorage(async () =>
@@ -126,7 +127,7 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
       !await SecureStore.getItemAsync(pendingKey, nativeOptions) &&
       await SecureStore.getItemAsync(key, nativeOptions) === bearer
     );
-    return { enabled: true, session: stillCurrent ? session : null };
+    return { enabled: true, session: stillCurrent ? session : null, ...(stillCurrent ? { standing } : {}) };
   } catch (error) {
     // Network uncertainty must not be represented as a signed-out or approved actor.
     const invalid = (error instanceof IdentityClientError && error.status === 401) ||

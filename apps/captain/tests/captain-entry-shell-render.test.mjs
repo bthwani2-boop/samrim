@@ -79,19 +79,25 @@ test("Captain compiled guest shell inherits direction and exposes four disabled 
 test("Captain workspace separates verified access from unavailable data and keeps real return links", () => {
   const screen = renderable("src/components/captain-capability-screen");
   const screenModule = { __esModule: true, default: screen };
+  let workspace = {
+    session: { actorId: "synthetic-captain", role: "captain",
+      sessionExpiresAt: "2099-11-22T19:10:00Z" },
+    standing: { actorId: "synthetic-captain", status: "APPROVED", version: 3 },
+  };
   const home = renderable("src/features/dispatch/captain-home-screen", {
-    "../../components/captain-capability-screen": screenModule,
+    "../access/protected-route": { useCaptainWorkspace: () => workspace },
   });
   const offers = renderable("app/offers", {
     "../src/components/captain-capability-screen": screenModule,
     "../src/features/access/protected-route": { __esModule: true, default: "CaptainProtectedRoute" },
   });
-  const dashboard = nodes(screen(home().props));
-  assert.equal(dashboard.find(node => node.props.testID === "captain-workspace-status")?.props.children,
-    "حساب الكابتن معتمد");
-  assert.ok(dashboard.some(node => node.props.testID === "captain-capability-unavailable"));
+  const dashboard = nodes(home());
+  assert.ok(dashboard.some(node => node.props.testID === "captain-standing-verified" &&
+    node.props.children.includes("3")));
+  assert.ok(dashboard.some(node => node.props.children?.includes?.("مهام التوصيل")));
   assert.deepEqual(dashboard.filter(node => node.type === "Link"), []);
-
+  workspace = null;
+  assert.equal(home(), null, "private Home does not render outside verified workspace");
   const guardedOffers = offers();
   assert.equal(guardedOffers.type, "CaptainProtectedRoute");
   const offerLinks = nodes(screen(guardedOffers.props.children.props)).filter(node => node.type === "Link");

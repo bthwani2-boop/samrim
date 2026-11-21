@@ -5,10 +5,12 @@ import { AppState, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { leaveCaptainAdmission, readCaptainAdmission } from "./admission-transport";
 import { type CaptainSessionView, hasActiveCaptainSession } from "./captain-session";
+import type { CaptainStanding } from "./captain-standing";
 
 type RouteAccess = "checking" | "allowed" | "denied" | "unavailable" | "signing-out" | "sign-out-unconfirmed";
 const CaptainWorkspace = createContext<Readonly<{
   session: CaptainSessionView;
+  standing: CaptainStanding | null;
   signOut: () => void;
 }> | null>(null);
 
@@ -24,7 +26,9 @@ export function useCaptainWorkspace() {
 export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
   const { theme } = useMobileAppearance();
   const [access, setAccess] = useState<RouteAccess>("checking");
-  const [verified, setVerified] = useState<CaptainSessionView | null>(null);
+  const [verified, setVerified] = useState<Readonly<{
+    session: CaptainSessionView; standing: CaptainStanding | null;
+  }> | null>(null);
   const retryCheck = useRef<() => void>(() => undefined);
   const closeSession = useRef<(actorId: string) => void>(() => undefined);
   const signingOutActor = useRef<string | null>(null);
@@ -88,7 +92,12 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
           }
           // A different actor or renewed session expiry must not inherit the prior
           // Captain component tree (including private in-memory screen state).
-          setVerified(session);
+          if (result.standing && (result.standing.actorId !== session.actorId ||
+            result.standing.status !== "APPROVED")) {
+            setAccess("denied");
+            return;
+          }
+          setVerified({ session, standing: result.standing ?? null });
           setAccess("allowed");
           expiry = setTimeout(() => {
             current?.abort();
@@ -138,8 +147,9 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
   // still mounts no protected content until Identity and DSH both approve.
   return <View style={{ flex: 1, backgroundColor: theme.background }}>
     {verified ? (
-      <CaptainWorkspace.Provider value={{ session: verified, signOut: () => closeSession.current(verified.actorId) }}>
-        <View key={JSON.stringify([verified.actorId, verified.sessionExpiresAt])}
+      <CaptainWorkspace.Provider value={{ session: verified.session, standing: verified.standing,
+          signOut: () => closeSession.current(verified.session.actorId) }}>
+        <View key={JSON.stringify([verified.session.actorId, verified.session.sessionExpiresAt])}
           style={visible ? { flex: 1 } : { display: "none" }}
           pointerEvents={visible ? "auto" : "none"}
           accessibilityElementsHidden={!visible}
