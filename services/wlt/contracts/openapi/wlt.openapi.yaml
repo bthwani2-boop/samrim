@@ -64,4 +64,4 @@ components:
       additionalProperties: false
       required: [error]
       properties:
-        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, OWNER_UNAVAILABLE] }
+        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, METHOD_NOT_ALLOWED, OWNER_UNAVAILABLE] }

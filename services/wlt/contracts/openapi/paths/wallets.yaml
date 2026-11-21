@@ -30,6 +30,11 @@ paths:
           content:
             application/json:
               schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: This read-only wallet resource permits GET only
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
         '503':
           description: Identity or WLT could not verify the current balance
           content:
@@ -70,6 +75,11 @@ paths:
               schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
         '403':
           description: The session does not carry the Customer role
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: This read-only wallet resource permits GET only
           content:
             application/json:
               schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
