@@ -170,6 +170,22 @@ func (o *Owner) ImportSynthetic(ctx context.Context) error {
 			return err
 		}
 	}
+	// The public-only schema predates the availability migration. Once it is
+	// installed, fill missing fixture timezones without replacing existing values.
+	var hasCityTimezone bool
+	if err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM pg_catalog.pg_attribute
+		WHERE attrelid=pg_catalog.to_regclass('service_cities')
+		  AND attname='timezone_name' AND NOT attisdropped
+	)`).Scan(&hasCityTimezone); err != nil {
+		return err
+	}
+	if hasCityTimezone {
+		if _, err = tx.ExecContext(ctx, `UPDATE service_cities SET timezone_name='Asia/Aden'
+			WHERE id IN ('sanaa','aden') AND timezone_name IS NULL`); err != nil {
+			return err
+		}
+	}
 	stores := []struct {
 		id, owner, city, vertical, relation, name string
 		published                                 bool

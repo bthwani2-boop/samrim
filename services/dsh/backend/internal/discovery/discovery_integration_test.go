@@ -121,13 +121,18 @@ func TestOwnerBackedPublicStoreOperationalStatus(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	if err := owner.ImportSynthetic(ctx); err != nil {
+		t.Fatal(err)
+	}
 	tx, err := owner.beginScopedTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, `UPDATE service_cities SET timezone_name='Asia/Aden' WHERE id IN ('sanaa','aden')`); err != nil {
-		t.Fatal(err)
+	var configuredCities int
+	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM service_cities
+		WHERE id IN ('sanaa','aden') AND timezone_name='Asia/Aden'`).Scan(&configuredCities); err != nil || configuredCities != 2 {
+		t.Fatalf("synthetic import configured %d city timezones, want 2: %v", configuredCities, err)
 	}
 	// Each isolated projection fixture has a distinct coverage case. Store
 	// mutation authorization and durable commands have their own tests.
