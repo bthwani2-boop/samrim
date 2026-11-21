@@ -122,6 +122,15 @@ test("production Operator UI rechecks isolated Identity grants on every document
     }
     assert.ok(ready, `Isolated Next never started: ${output}`);
 
+    const guestEntry = await fetch(`${base}/`, { signal: AbortSignal.timeout(7000) });
+    assert.equal(guestEntry.status, 200);
+    const guestHtml = await guestEntry.text();
+    const guestTabPreview = guestHtml.split('aria-label="معاينة الأقسام غير المتاحة قبل الدخول"')[1]?.split("</nav>")[0];
+    assert.ok(guestTabPreview, "guest should see a read-only workspace tab preview");
+    assert.match(guestTabPreview, /aria-disabled="true"/);
+    assert.match(guestTabPreview, /المالية/);
+    assert.doesNotMatch(guestTabPreview, /<(?:a|button)\\b/, "guest tab preview must not expose protected links");
+
     // This is a real empty browser-style POST: Next materializes its body as a
     // readable stream even when no bytes were sent. It must reach Identity.
     const passkeyOptions = await fetch(`${base}/api/auth/passkey/options`, {
@@ -178,7 +187,7 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.equal(verifiedSession.role, "operator");
     assert.doesNotMatch(JSON.stringify(verifiedSession), new RegExp(token));
 
-    const signedInRoot = await fetch(base + "/", {
+    const signedInRoot = await fetch(`${base}/`, {
       headers: { cookie: `bthwani_operator_session=${token}` },
       redirect: "manual", signal: AbortSignal.timeout(7000),
     });
@@ -206,7 +215,8 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.ok(calls.includes("/v1/operators/me/permissions/operations"));
     html = await read("/workspace");
     assert.match(html, /مساحة عمل المشغّل/);
-    assert.match(html, /أقسام بانتظار ربط الخدمة/);
+    assert.match(html, /تظهر الأقسام المسموح بها وفق صلاحيات Identity الحالية/);
+    assert.match(html, /العمليات/);
     assert.match(html, /href="\/operations"/);
     assert.match(html, /href="\/captains"/);
     assert.doesNotMatch(html, /href="\/(?:finance|access|policies)"/);

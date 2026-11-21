@@ -41,6 +41,8 @@ test("Operator links perform a new document request, not a cached layout-only tr
   const login = read("src/features/access/operator-passkey-form.tsx");
   const home = read("src/features/workspace/home-dashboard.tsx");
   assert.match(shell, /<a href={href}/);
+  assert.match(shell, /aria-label="معاينة الأقسام غير المتاحة قبل الدخول"/);
+  assert.match(shell, /aria-disabled="true"/);
   assert.match(login, /window\.location\.replace\("\/"\)/);
   assert.match(home, /<a className={styles\.sectionCard} href={entry\.href}/);
   assert.doesNotMatch(shell, /next\/link/);

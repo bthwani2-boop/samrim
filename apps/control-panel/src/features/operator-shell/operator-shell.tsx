@@ -115,6 +115,18 @@ export default function OperatorShell({ children, verifiedGrants }: Readonly<{
             )}
           </header>
         )}
+        {sectionTabs.length === 0 && (
+          <header className={styles.workspaceBar}>
+            <span className={styles.currentSection}>معاينة أقسام اللوحة — يلزم دخول مشغّل معتمد</span>
+            <nav aria-label="معاينة الأقسام غير المتاحة قبل الدخول" className={styles.sectionTabs}>
+              <ul>{Object.entries(workspaceGroupLabels).map(([group, label]) => (
+                <li key={group}>
+                  <span className={styles.lockedTab} aria-disabled="true">{label}</span>
+                </li>
+              ))}</ul>
+            </nav>
+          </header>
+        )}
         {children}
       </div></>}
     </div>

@@ -315,3 +315,30 @@
   font-size: 0.875rem;
   min-block-size: 2.25rem;
 }
+
+/* Informational-only tabs for visitors without verified Identity grants. */
+.lockedTab {
+  align-items: center;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 0.5rem;
+  color: var(--color-secondary);
+  display: inline-flex;
+  font-size: 0.875rem;
+  min-block-size: 2.5rem;
+  opacity: 0.75;
+  padding: 0.5rem 0.75rem;
+  white-space: nowrap;
+}
+
+.overview ul {
+  list-style: none;
+  padding: 0;
+}
+
+.overview li {
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.625rem;
+  color: var(--color-secondary);
+  padding: 0.875rem 1rem;
+}
