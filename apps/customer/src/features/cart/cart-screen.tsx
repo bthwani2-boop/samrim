@@ -198,6 +198,13 @@ export default function CartScreen() {
         {view?.kind === "signed-out" ? <Link href="/account" style={{ color: theme.interactiveText }}>
           الانتقال إلى الحساب
         </Link> : null}
+        {view?.kind === "ready" && view.cart.lines.length > 0 &&
+          !busy && !pending.current && !error ? (
+            <Link href={{ pathname: "/checkout", params: { storeId } }}
+              style={{ color: theme.interactiveText }}>
+              مراجعة السلة قبل الطلب
+            </Link>
+          ) : null}
         <Link href="/stores" style={{ color: theme.interactiveText }}>متابعة تصفح المتاجر</Link>
       </ScrollView>
     </SafeAreaView>

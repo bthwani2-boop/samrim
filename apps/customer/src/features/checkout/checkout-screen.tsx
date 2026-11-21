@@ -1,9 +1,168 @@
-import CapabilityUnavailableScreen from "../../components/capability-unavailable-screen";
-import FulfillmentChoice from "./fulfillment-choice";
-import PaymentSelection from "./payment-selection";
-import RecipientForm from "./recipient-form";
+import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
+import { useCallback, useRef, useState } from "react";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview";
+import { type CartReadState, readVerifiedCart } from "../cart/cart-transport";
 
+const formatYER = new Intl.NumberFormat("ar-YE");
+const storeRule = /^[a-z0-9-]{1,64}$/;
+
+type CurrentCart = Readonly<{ storeId: string; view: CartReadState }>;
+
+/**
+ * Read-only review of the current DSH-owned Store Cart.
+ * This is not a quote, checkout confirmation, inventory reservation or payment.
+ * Revisit this screen to re-read current Store Offer prices.
+ */
 export default function CheckoutScreen() {
-  return <><FulfillmentChoice /><RecipientForm /><PaymentSelection /><CapabilityUnavailableScreen title="تأكيد الطلب"
-    message="لا يمكن تأكيد أسعار السلة أو الدفع حاليًا." /></>;
+  const { theme } = useMobileAppearance();
+  const { storeId: param } = useLocalSearchParams<{ storeId?: string }>();
+  const storeId = typeof param === "string" && storeRule.test(param) ? param : "";
+  const [result, setResult] = useState<CurrentCart | null>(null);
+  const [retry, setRetry] = useState(0);
+  const generation = useRef(0);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retry deliberately refreshes the same DSH Store review.
+  useFocusEffect(useCallback(() => {
+    const epoch = ++generation.current;
+    const controller = new AbortController();
+    setResult(null);
+    if (storeId) {
+      void readVerifiedCart(storeId, controller.signal).then(view => {
+        if (!controller.signal.aborted && generation.current === epoch) {
+          setResult({ storeId, view });
+        }
+      }).catch(() => {
+        if (!controller.signal.aborted && generation.current === epoch) {
+          setResult({ storeId, view: { kind: "unavailable" } });
+        }
+      });
+    }
+    return () => {
+      controller.abort();
+      generation.current++;
+      setResult(null);
+    };
+  }, [storeId, retry]));
+
+  // Never render an old Store's result while a new Store/account is loading.
+  // readVerifiedCart independently verifies Identity before and after each DSH read.
+  const view = result?.storeId === storeId ? result.view : null;
+  const cart = view?.kind === "ready" && view.cart.storeId === storeId ? view.cart : null;
+  const preview = cart ? summarizeCartPreview(cart.lines) : null;
+  const action = {
+    minHeight: 44, justifyContent: "center" as const,
+    paddingHorizontal: 16, paddingVertical: 10,
+    borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
+  };
+  return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
+      <ScrollView contentContainerStyle={{
+        padding: 20, gap: 16, maxWidth: 720, width: "100%", alignSelf: "center",
+      }}>
+        <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 26, fontWeight: "700" }}>
+          مراجعة السلة قبل الطلب
+        </Text>
+        <Text style={{ color: theme.colorSecondary, lineHeight: 26 }}>
+          تعرض هذه الصفحة بيانات السلة والأسعار الحالية المقروءة من DSH للمتجر المحدد.
+          المبالغ تقديرية للبنود فقط ولا تشمل التوصيل أو الخصومات أو الرسوم أو الحجز.
+        </Text>
+        {!storeId ? (
+          <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
+            حدد متجرًا صحيحًا من سلة التسوق لعرض مراجعة الطلب.
+          </Text>
+        ) : !view ? (
+          <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
+            جارٍ قراءة سلتك الحالية من DSH...
+          </Text>
+        ) : view.kind === "signed-out" ? (
+          <View style={{ gap: 12 }}>
+            <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
+              سجل الدخول بحساب العميل لعرض السلة الخاصة بك.
+            </Text>
+            <Link href="/account" style={{ color: theme.interactiveText }}>الانتقال للحساب</Link>
+          </View>
+        ) : view.kind === "unavailable" || !cart ? (
+          <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
+            تعذر التحقق من السلة لدى Identity أو DSH. لا توجد أسعار معتمدة حاليًا.
+          </Text>
+        ) : cart.lines.length === 0 ? (
+          <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
+            السلة فارغة؛ أضف عروضًا من صفحة المتجر أولًا.
+          </Text>
+        ) : (
+          <View testID="checkout-cart-review" style={{ gap: 12 }}>
+            <Text style={{ color: theme.colorSecondary }}>
+              رقم نسخة السلة لدى DSH: {cart.version}
+            </Text>
+            {cart.lines.map(line => (
+              <View key={line.offerId} style={{
+                backgroundColor: theme.surface, padding: 14, gap: 8,
+                borderRadius: 12, borderWidth: 1, borderColor: theme.borderColor,
+              }}>
+                <Text style={{ color: theme.color, fontWeight: "700" }}>{line.name}</Text>
+                <Text style={{ color: theme.colorSecondary }}>
+                  الكمية: {line.quantity} — السعر المعروض للوحدة:
+                  {" "}{formatYER.format(BigInt(line.previewUnitYer))} ريال يمني
+                </Text>
+                <Text style={{ color: theme.colorSecondary }}>
+                  إجمالي البند المعروض:
+                  {" "}{formatYER.format(previewLineSubtotalYer(line))} ريال يمني
+                </Text>
+                {!line.previewAvailable ? (
+                  <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
+                    هذا العرض غير متاح للطلب حاليًا. راجع السلة.
+                  </Text>
+                ) : null}
+              </View>
+            ))}
+            {preview ? (
+              <View testID="checkout-preview-subtotal" style={{
+                padding: 16, gap: 8, borderRadius: 12,
+                backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderColor,
+              }}>
+                <Text style={{ color: theme.color, fontWeight: "700" }}>
+                  مجموع البنود المتاحة المعروض:
+                  {" "}{formatYER.format(preview.availableSubtotalYer)} ريال يمني
+                </Text>
+                {preview.unavailableLines > 0 ? (
+                  <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
+                    بنود غير متاحة: {preview.unavailableLines}. لا يمكن اعتماد الطلب.
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        )}
+        {storeId && view?.kind !== "signed-out" ? (
+          <Pressable accessibilityRole="button" style={{ ...action, alignSelf: "flex-start" }}
+            onPress={() => setRetry(value => value + 1)}>
+            <Text style={{ color: theme.interactiveText }}>تحديث المراجعة من DSH</Text>
+          </Pressable>
+        ) : null}
+        {storeId ? (
+          <Link href={{ pathname: "/cart/[storeId]", params: { storeId } }}
+            style={{ color: theme.interactiveText }}>
+            العودة إلى سلة المتجر
+          </Link>
+        ) : null}
+        <View style={{
+          padding: 16, gap: 8, borderRadius: 12,
+          borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.surface,
+        }}>
+          <Text accessibilityRole="alert" testID="checkout-confirmation-unavailable"
+            style={{ color: theme.warningText, fontWeight: "700", fontSize: 17 }}>
+            تأكيد الطلب والدفع غير متاحين
+          </Text>
+          <Text style={{ color: theme.color, lineHeight: 26 }}>
+            يلزم تسعير ومدة صلاحية عرض موثقان من DSH، والتحقق من العنوان وطريقة
+            التوصيل، وتخصيص الدفع لدى WLT، قبل السماح بتأكيد أي طلب.
+            هذه المراجعة لا تنشئ طلبًا ولا تخصم رصيدًا أو تحجز مخزونًا.
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
