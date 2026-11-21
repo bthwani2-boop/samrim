@@ -1,8 +1,9 @@
+import type { ReactNode } from "react";
 import { type WorkspaceGroup, workspaceGroupLabels } from "../navigation/workspace-registry";
 import styles from "../operator-shell/operator-shell.module.css";
 import { type OperatorPermission, visibleWorkspaceEntries } from "../session/operator-permissions";
 
-export default function HomeDashboard({ grants }: Readonly<{ grants: readonly OperatorPermission[] }>) {
+export default function HomeDashboard({ grants, marketOverview }: Readonly<{ grants: readonly OperatorPermission[]; marketOverview?: ReactNode }>) {
   const entries = visibleWorkspaceEntries(grants).filter(entry => entry.href !== "/workspace");
   const sections = (Object.keys(workspaceGroupLabels) as WorkspaceGroup[])
     .filter(group => group !== "home")
@@ -17,6 +18,7 @@ export default function HomeDashboard({ grants }: Readonly<{ grants: readonly Op
     <main className={styles.workspace} aria-labelledby="operator-home-title">
       <h1 id="operator-home-title">مساحة عمل المشغّل</h1>
       <p>تظهر الأقسام المسموح بها وفق صلاحيات Identity الحالية. تُقرأ بيانات كل قسم من خدمته المالكة عند فتحه؛ ظهور الرابط لا يعني أن الخدمة متصلة.</p>
+      {marketOverview}
       {sections.map(section => (
         <section key={section.group} aria-labelledby={`operator-section-${section.group}`}>
           <h2 id={`operator-section-${section.group}`}>{section.label}</h2>
