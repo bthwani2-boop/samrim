@@ -14,6 +14,12 @@ stable keyset pages; it neither changes posted funding nor grants new permission
 function. Provision `bthwani_wlt_sandbox` before applying it. The routine
 requires that database login and the disposable database name at execution
 time. The HTTP reader receives no additional grants.
+`005_sandbox_customer_funding_reversal.sql` appends at most one linked
+reversal for each original sandbox posting. PostgreSQL checks the original
+actor, reference, amount, currency and effective ordering, then projects the
+opposite debit and credit legs. The existing history projection includes the
+original funding ID on reversal entries. Deploy the updated reader and SDK
+together before recording reversals in a preview.
 
 A journal row carries both funding legs in whole YER. Funding identity and
 provider reference uniqueness reject duplicate postings. Triggers reject
@@ -24,6 +30,7 @@ journal entry before applying `002` and `003`. It verifies the prior funds and
 new postings through separate connections and checks the reader's privileges.
 It restores the schema and journal into a second database in the same
 disposable container. The restore checks projected amounts, funding history,
-journal balance, reader scope and refusal of sandbox posting in the restore.
+journal balance, reversal links, reader scope and refusal of sandbox writes
+in the restore.
 Historical financial migration requires independent reconciliation and
 restore evidence under [data and recovery policy](../../../../governance/safety.md).

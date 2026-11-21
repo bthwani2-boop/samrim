@@ -10,6 +10,7 @@ export interface CustomerFundingTransaction {
   fundingId: string;
   amountYer: string;
   postedAt: string;
+  reversesFundingId?: string;
 }
 export interface CustomerFundingHistory {
   actorId: string;
@@ -32,6 +33,8 @@ const actorValid = (id: unknown): id is string =>
 const amountValid = (value: unknown, positive: boolean): value is string =>
   typeof value === "string" &&
   (positive ? /^[1-9][0-9]{0,37}$/ : /^(0|[1-9][0-9]{0,37})$/).test(value);
+const fundingIdValid = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9._-]{8,128}$/.test(value);
 
 export function parseCustomerWalletBalance(value: unknown): CustomerWalletBalance {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new WltReadError(502);
@@ -61,8 +64,11 @@ export function parseCustomerFundingHistory(value: unknown): CustomerFundingHist
       ? /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/.exec(entry.postedAt)
       : null;
     const parsedTime = stamp ? Date.parse(entry.postedAt as string) : NaN;
-    if (Object.keys(entry).length !== 3 || typeof entry.fundingId !== "string" ||
-      !/^[A-Za-z0-9._-]{8,128}$/.test(entry.fundingId) || !amountValid(entry.amountYer, true) ||
+    const originalId = entry.reversesFundingId;
+    const reversal = Object.hasOwn(entry, "reversesFundingId");
+    if (Object.keys(entry).length !== (reversal ? 4 : 3) ||
+      (reversal && (!fundingIdValid(originalId) || originalId === entry.fundingId)) ||
+      !fundingIdValid(entry.fundingId) || !amountValid(entry.amountYer, true) ||
       typeof entry.postedAt !== "string" || !stamp || !Number.isFinite(parsedTime) ||
       new Date(parsedTime).toISOString().slice(0, 19) !== stamp[1] ||
       seenFundingIds.has(entry.fundingId)) throw new WltReadError(502);
@@ -72,7 +78,10 @@ export function parseCustomerFundingHistory(value: unknown): CustomerFundingHist
     if (previousTimestamp !== null && timestamp > previousTimestamp) throw new WltReadError(502);
     previousTimestamp = timestamp;
     seenFundingIds.add(entry.fundingId);
-    items.push({ fundingId: entry.fundingId, amountYer: entry.amountYer, postedAt: entry.postedAt });
+    const transaction = { fundingId: entry.fundingId, amountYer: entry.amountYer, postedAt: entry.postedAt };
+    items.push(reversal && typeof originalId === "string"
+      ? { ...transaction, reversesFundingId: originalId }
+      : transaction);
   }
   return {
     actorId: fields.actorId, currency: "YER", items, hasMore: fields.hasMore,

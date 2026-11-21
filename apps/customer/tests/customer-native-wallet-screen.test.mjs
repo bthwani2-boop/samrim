@@ -149,10 +149,11 @@ test("Native Android wallet renders only WLT verified funds and requests older h
     const next = app.read("history");
     assert.equal(next.cursor, "next-page");
     assert.equal(next.expectedActorId, "actor-a");
-    next.resolve(history("actor-a", [funding("funding-new")]));
+    next.resolve(history("actor-a", [{ ...funding("funding-new"), reversesFundingId: "funding-old" }]));
     await settle();
     const after = textOf(app.render());
     assert.match(after, /ريال يمني/);
+    assert.match(after, /عكس تمويل −/);
     assert.equal(after.includes("عرض المزيد من المعاملات"), false);
   } finally { app.unmount(); }
 });

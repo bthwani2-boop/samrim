@@ -12,17 +12,28 @@ import (
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/wallet"
 )
 
-func runSandboxFunding(ctx context.Context, args []string, input io.Reader, output io.Writer, getenv func(string) string) error {
+func runSandboxFunding(ctx context.Context, command string, args []string, input io.Reader, output io.Writer, getenv func(string) string) error {
 	dsn := getenv("WLT_SANDBOX_DATABASE_URL")
 	if getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || !isolatedDatabaseURL(dsn, "bthwani_wlt_sandbox") {
 		return errors.New("sandbox funding requires the dedicated isolated loopback database role")
 	}
-	if len(args) != 2 {
-		return errors.New("usage: wlt post-sandbox-funding <reference> <whole-yemeni-riyals>; provide the session token on stdin")
-	}
-	amount, err := strconv.ParseInt(args[1], 10, 64)
-	if err != nil || amount < 1 || strconv.FormatInt(amount, 10) != args[1] {
-		return errors.New("sandbox funding amount must be positive whole YER")
+	var amount int64
+	switch command {
+	case "post-sandbox-funding":
+		if len(args) != 2 {
+			return errors.New("usage: wlt post-sandbox-funding <reference> <whole-yemeni-riyals>; provide the session token on stdin")
+		}
+		value, err := strconv.ParseInt(args[1], 10, 64)
+		if err != nil || value < 1 || strconv.FormatInt(value, 10) != args[1] {
+			return errors.New("sandbox funding amount must be positive whole YER")
+		}
+		amount = value
+	case "reverse-sandbox-funding":
+		if len(args) != 1 {
+			return errors.New("usage: wlt reverse-sandbox-funding <original-reference>; provide the session token on stdin")
+		}
+	default:
+		return errors.New("unknown WLT command")
 	}
 	raw, err := io.ReadAll(io.LimitReader(input, 46))
 	if err != nil || len(raw) > 45 {
@@ -34,7 +45,13 @@ func runSandboxFunding(ctx context.Context, args []string, input io.Reader, outp
 		return errors.New("sandbox database connection rejected")
 	}
 	defer db.Close()
-	state, err := wallet.PostSandboxFunding(ctx, db, getenv("WLT_TEST_IDENTITY_ORIGIN"), token, args[0], amount)
+	origin := getenv("WLT_TEST_IDENTITY_ORIGIN")
+	var state string
+	if command == "reverse-sandbox-funding" {
+		state, err = wallet.ReverseSandboxFunding(ctx, db, origin, token, args[0])
+	} else {
+		state, err = wallet.PostSandboxFunding(ctx, db, origin, token, args[0], amount)
+	}
 	if err != nil {
 		return err
 	}

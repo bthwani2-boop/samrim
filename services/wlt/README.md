@@ -29,6 +29,11 @@ database role. A replay with the same reference, actor and amount confirms the
 earlier posting. The Customer wallet reads the resulting balance and history
 through the existing API.
 
+The sandbox reversal command takes the original reference and current Customer
+session. It appends one offsetting journal using the original amount and
+currency. The original remains visible in history, and both Customer previews
+label the reversal as a deduction.
+
 External provider verification, checkout, withdrawals, reconciliation and
 production runtime remain pending.
 

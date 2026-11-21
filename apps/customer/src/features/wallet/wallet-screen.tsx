@@ -178,7 +178,7 @@ export default function WalletScreen() {
                 ) : history.history.items.map(item => (
                   <View key={item.fundingId} style={{ gap: 4, paddingVertical: 6 }}>
                     <Text style={{ color: theme.color }}>
-                      + {displayYER.format(BigInt(item.amountYer))} ريال يمني
+                      {item.reversesFundingId ? "عكس تمويل −" : "+"} {displayYER.format(BigInt(item.amountYer))} ريال يمني
                     </Text>
                     <Text style={{ color: theme.colorSecondary }}>
                       {new Date(item.postedAt).toLocaleDateString("ar-YE")}

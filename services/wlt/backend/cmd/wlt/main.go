@@ -45,6 +45,8 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 		AND NOT has_database_privilege(current_database(), 'CREATE')
 		AND has_schema_privilege('wlt', 'USAGE')
 		AND NOT has_schema_privilege('wlt', 'CREATE,USAGE WITH GRANT OPTION')
+		AND NOT has_function_privilege('wlt.post_sandbox_customer_funding(text,text,bigint)'::regprocedure, 'EXECUTE')
+		AND NOT has_function_privilege('wlt.reverse_sandbox_customer_funding(text,text)'::regprocedure, 'EXECUTE')
 		AND NOT EXISTS (
 			SELECT 1
 			FROM (VALUES
@@ -70,11 +72,8 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 
 func main() {
 	if len(os.Args) > 1 {
-		if os.Args[1] != "post-sandbox-funding" {
-			log.Fatal("unknown WLT command")
-		}
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		err := runSandboxFunding(ctx, os.Args[2:], os.Stdin, os.Stdout, os.Getenv)
+		err := runSandboxFunding(ctx, os.Args[1], os.Args[2:], os.Stdin, os.Stdout, os.Getenv)
 		cancel()
 		if err != nil {
 			log.Fatal(err)

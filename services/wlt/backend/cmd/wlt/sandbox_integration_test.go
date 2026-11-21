@@ -21,7 +21,11 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 		"WLT_TEST_IDENTITY_ORIGIN":   identity,
 	}
 	run := func(token, reference, amount string, output io.Writer) error {
-		return runSandboxFunding(ctx, []string{reference, amount}, strings.NewReader(token+"\r\n"), output,
+		return runSandboxFunding(ctx, "post-sandbox-funding", []string{reference, amount}, strings.NewReader(token+"\r\n"), output,
+			func(key string) string { return env[key] })
+	}
+	reverse := func(token, reference string, output io.Writer) error {
+		return runSandboxFunding(ctx, "reverse-sandbox-funding", []string{reference}, strings.NewReader(token+"\r\n"), output,
 			func(key string) string { return env[key] })
 	}
 	command := "SELECT wlt.post_sandbox_customer_funding('denied-command', 'wallet-two', 9)"
@@ -100,6 +104,80 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 	if strings.Contains(string(body), "sandbox-") {
 		t.Fatal("another Customer received sandbox postings")
 	}
+
+	_, err = reader.ExecContext(ctx, "SELECT wlt.reverse_sandbox_customer_funding('interrupted-credit', 'wallet-two')")
+	assertSQLState(t, err, "42501")
+	for _, invalid := range []struct{ token, reference string }{
+		{other, "interrupted-credit"}, {merchant, "interrupted-credit"}, {revoked, "interrupted-credit"},
+		{customer, "missing-credit"}, {customer, "invalid-reference!"},
+	} {
+		if err := reverse(invalid.token, invalid.reference, io.Discard); err == nil {
+			t.Fatal("invalid or out-of-scope reversal succeeded")
+		}
+	}
+
+	_, err = owner.ExecContext(ctx, `INSERT INTO wlt.customer_funding_journal
+		(funding_id, actor_id, provider_id, provider_reference, amount_yer, reverses_funding_id)
+		VALUES ('reversal-invalid', 'wallet-two', 'sandbox-reversal', 'interrupted-credit', 8, 'sandbox-interrupted-credit')`)
+	assertSQLState(t, err, "23514")
+
+	if err := reverse(customer, "interrupted-credit", lostConfirmation{}); !errors.Is(err, io.ErrClosedPipe) {
+		t.Fatalf("expected lost reversal confirmation, got %v", err)
+	}
+	replay.Reset()
+	if err := reverse(customer, "interrupted-credit", &replay); err != nil || replay.String() != "REPLAYED\n" {
+		t.Fatalf("reversal recovery failed: %q %v", replay.String(), err)
+	}
+
+	reversals := make(chan string, attempts)
+	for range attempts {
+		group.Go(func() {
+			var out strings.Builder
+			if err := reverse(customer, "concurrent-credit", &out); err != nil {
+				t.Errorf("concurrent reversal failed: %v", err)
+			}
+			reversals <- strings.TrimSpace(out.String())
+		})
+	}
+	group.Wait()
+	close(reversals)
+	reversed := 0
+	for result := range reversals {
+		switch result {
+		case "REVERSED":
+			reversed++
+		case "REPLAYED":
+		default:
+			t.Errorf("unexpected reversal outcome %q", result)
+		}
+	}
+	if reversed != 1 {
+		t.Fatalf("expected one concurrent reversal, got %d", reversed)
+	}
+
+	body = readWallet(t, ctx, wallet, customer, "/v1/wallets/me", 200)
+	if err := json.Unmarshal(body, &balance); err != nil || balance["balanceYer"] != "41" {
+		t.Fatalf("sandbox reversals did not offset the credits exactly once: %s", body)
+	}
+	history = string(readWallet(t, ctx, wallet, customer, "/v1/wallets/me/transactions", 200))
+	for _, reference := range []string{"concurrent-credit", "interrupted-credit"} {
+		if strings.Count(history, `"reversesFundingId":"sandbox-`+reference+`"`) != 1 ||
+			strings.Count(history, `"fundingId":"sandbox-`+reference+`"`) != 1 {
+			t.Fatalf("history must contain the reversal and original %s exactly once", reference)
+		}
+	}
+	body = readWallet(t, ctx, wallet, other, "/v1/wallets/me/transactions", 200)
+	if strings.Contains(string(body), "reversesFundingId") {
+		t.Fatal("another Customer received the sandbox reversal")
+	}
+	var reversedEntries int
+	if err := owner.QueryRowContext(ctx, `SELECT count(*) FROM wlt.customer_funding_entries
+		WHERE funding_id = 'sandbox_reversal-interrupted-credit' AND amount_yer = 9 AND currency = 'YER'
+		  AND ((account = 'customer_wallet_liability' AND side = 'debit')
+		    OR (account = 'funding_clearing' AND side = 'credit'))`).Scan(&reversedEntries); err != nil || reversedEntries != 2 {
+		t.Fatalf("reversal did not post the two opposite legs: %d %v", reversedEntries, err)
+	}
+
 	lock, err := owner.BeginTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +206,7 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 		SELECT 1 FROM wlt.customer_funding_journal WHERE funding_id='sandbox-revoked-in-flight')`).Scan(&posted); err != nil || posted {
 		t.Fatalf("in-flight revocation did not prevent durable credit: %t %v", posted, err)
 	}
-	t.Log("WLT sandbox funding: Identity binding, privilege isolation, conflict, replay, lost confirmation and durable HTTP readback passed")
+	t.Log("WLT sandbox funding and reversal: Identity binding, least privilege, concurrency, lost confirmations and durable HTTP readback passed")
 }
 
 type lostConfirmation struct{}

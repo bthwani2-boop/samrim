@@ -35,9 +35,10 @@ type balanceReader func(context.Context, string) (string, error)
 type historyReader func(context.Context, string, *historyCursor) (fundingHistory, error)
 
 type fundingTransaction struct {
-	FundingID string    `json:"fundingId"`
-	AmountYER string    `json:"amountYer"`
-	PostedAt  time.Time `json:"postedAt"`
+	FundingID         string    `json:"fundingId"`
+	AmountYER         string    `json:"amountYer"`
+	PostedAt          time.Time `json:"postedAt"`
+	ReversesFundingID *string   `json:"reversesFundingId,omitempty"`
 }
 
 type fundingHistory struct {
@@ -89,7 +90,7 @@ func makeHistoryCursor(entry fundingTransaction) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(text))
 }
 
-const historySQL = `SELECT funding_id, amount_yer::text, posted_at
+const historySQL = `SELECT funding_id, amount_yer::text, posted_at, reverses_funding_id
     FROM wlt.customer_funding_history
     WHERE actor_id = $1 AND ($2::timestamptz IS NULL OR (posted_at, funding_id) < ($2::timestamptz, $3))
     ORDER BY posted_at DESC, funding_id DESC LIMIT 11`
@@ -120,7 +121,7 @@ func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
 		defer rows.Close()
 		for rows.Next() {
 			var entry fundingTransaction
-			if err := rows.Scan(&entry.FundingID, &entry.AmountYER, &entry.PostedAt); err != nil {
+			if err := rows.Scan(&entry.FundingID, &entry.AmountYER, &entry.PostedAt, &entry.ReversesFundingID); err != nil {
 				return result, err
 			}
 			if !decimalYER.MatchString(entry.AmountYER) || entry.AmountYER == "0" || entry.PostedAt.IsZero() {

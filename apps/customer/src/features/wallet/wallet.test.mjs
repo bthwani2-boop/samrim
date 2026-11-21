@@ -135,6 +135,18 @@ test("funding history rejects provider details, other actors, non-integer money 
   }
 });
 
+test("funding history identifies a debit by its original posting and keeps legacy credits", () => {
+  const reversal = { fundingId: "sandbox_reversal-example", amountYer: amount,
+    postedAt: "2026-11-21T00:00:00Z", reversesFundingId: "funding-0001" };
+  const result = { ...history, items: [reversal, ...history.items] };
+  assert.deepEqual(parseCustomerFundingHistory(result), result);
+  for (const id of [null, "short", reversal.fundingId]) {
+    assert.throws(() => parseCustomerFundingHistory({
+      ...history, items: [{ ...reversal, reversesFundingId: id }],
+    }), WltReadError);
+  }
+});
+
 test("WLT funding SDK rejects duplicate, out-of-order and invalid calendar entries", () => {
   const newer = { fundingId: "funding-0002", amountYer: "15",
     postedAt: "2026-11-20T01:00:00.100000001Z" };

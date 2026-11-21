@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -28,16 +29,28 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || os.Getenv("WLT_OWNER_CI_TEST") != "true" {
 		t.Skip("NOT_RUN: requires the disposable WLT PostgreSQL owner stage")
 	}
-	const network = "@127.0.0.1:5432/bthwani_wlt_test?sslmode=disable"
-	const readerDSN = "postgres://bthwani_wlt_reader:synthetic-only" + network
-	const identityDSN = "postgres://bthwani_identity_fixture:synthetic-only" + network
-	const sandboxDSN = "postgres://bthwani_wlt_sandbox:synthetic-only" + network
+	port := os.Getenv("WLT_OWNER_TEST_POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+	if !validPort(port) {
+		t.Fatal("invalid disposable PostgreSQL port")
+	}
+	fixtureRoot := os.Getenv("WLT_OWNER_TEST_FIXTURE_DIR")
+	if fixtureRoot == "" {
+		fixtureRoot = "/agent02"
+	}
+	network := "@127.0.0.1:" + port + "/bthwani_wlt_test?sslmode=disable"
+	readerDSN := "postgres://bthwani_wlt_reader:synthetic-only" + network
+	identityDSN := "postgres://bthwani_identity_fixture:synthetic-only" + network
+	sandboxDSN := "postgres://bthwani_wlt_sandbox:synthetic-only" + network
+	wltMigrations := filepath.Join(fixtureRoot, "services", "wlt", "database", "migrations")
 	owner := openTestDB(t, "postgres://bthwani_wlt_owner:synthetic-only"+network)
 	reader := openTestDB(t, readerDSN)
 	identity := openTestDB(t, identityDSN)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	migration, err := os.ReadFile("/agent02/services/wlt/database/migrations/001_customer_funding_journal.sql")
+	migration, err := os.ReadFile(filepath.Join(wltMigrations, "001_customer_funding_journal.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,21 +70,29 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	if err := checkDatabase(ctx, reader); err == nil {
 		t.Fatal("current runtime accepted a baseline without the funding history projection")
 	}
-	historyMigration, err := os.ReadFile("/agent02/services/wlt/database/migrations/002_customer_funding_history.sql")
+	historyMigration, err := os.ReadFile(filepath.Join(wltMigrations, "002_customer_funding_history.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	executeFixture(t, ctx, owner, string(historyMigration))
-	pageMigration, err := os.ReadFile("/agent02/services/wlt/database/migrations/003_customer_funding_history_paging.sql")
+	pageMigration, err := os.ReadFile(filepath.Join(wltMigrations, "003_customer_funding_history_paging.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	executeFixture(t, ctx, owner, string(pageMigration))
-	sandboxMigration, err := os.ReadFile("/agent02/services/wlt/database/migrations/004_sandbox_customer_funding.sql")
+	sandboxMigration, err := os.ReadFile(filepath.Join(wltMigrations, "004_sandbox_customer_funding.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	executeFixture(t, ctx, owner, string(sandboxMigration))
+	if err := checkDatabase(ctx, reader); err == nil {
+		t.Fatal("current runtime accepted a database without sandbox reversal support")
+	}
+	reversalMigration, err := os.ReadFile(filepath.Join(wltMigrations, "005_sandbox_customer_funding_reversal.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	executeFixture(t, ctx, owner, string(reversalMigration))
 	if err := checkDatabase(ctx, reader); err != nil {
 		t.Fatal(err)
 	}
@@ -90,6 +111,9 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		{"WLT schema creation",
 			"GRANT CREATE ON SCHEMA wlt TO bthwani_wlt_reader",
 			"REVOKE CREATE ON SCHEMA wlt FROM bthwani_wlt_reader"},
+		{"sandbox reversal execution",
+			"GRANT EXECUTE ON FUNCTION wlt.reverse_sandbox_customer_funding(text, text) TO bthwani_wlt_reader",
+			"REVOKE EXECUTE ON FUNCTION wlt.reverse_sandbox_customer_funding(text, text) FROM bthwani_wlt_reader"},
 	} {
 		t.Run(privilege.name, func(t *testing.T) {
 			executeFixture(t, ctx, owner, privilege.grant)
@@ -104,7 +128,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	}
 
 	const identitySchema = "identity_test_wlt"
-	identityMigration, err := os.ReadFile("/agent02/services/identity/database/migrations/001_session_verification.sql")
+	identityMigration, err := os.ReadFile(filepath.Join(fixtureRoot, "services", "identity", "database", "migrations", "001_session_verification.sql"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +202,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		journalCount != 3 || unbalanced != 0 {
 		t.Fatalf("journal count=%d unbalanced=%d err=%v", journalCount, unbalanced, err)
 	}
-	origin := startIdentity(t, ctx, identityDSN, identitySchema)
+	origin := startIdentity(t, ctx, filepath.Join(fixtureRoot, "bin", "identity"), identityDSN, identitySchema)
 	handler, err := wallet.NewHandler(reader, origin)
 	if err != nil {
 		t.Fatal(err)
@@ -378,7 +402,7 @@ func assertSQLState(t *testing.T, err error, state string) {
 	}
 }
 
-func startIdentity(t *testing.T, ctx context.Context, dsn, schema string) string {
+func startIdentity(t *testing.T, ctx context.Context, binary, dsn, schema string) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -386,7 +410,7 @@ func startIdentity(t *testing.T, ctx context.Context, dsn, schema string) string
 	}
 	addr := listener.Addr().String()
 	_ = listener.Close()
-	command := exec.CommandContext(ctx, "/agent02/bin/identity")
+	command := exec.CommandContext(ctx, binary)
 	command.Env = []string{"BTHWANI_ISOLATED_TEST_MODE=true", "IDENTITY_DEV_LISTEN_ADDR=" + addr,
 		"IDENTITY_DB_SCHEMA=" + schema, "IDENTITY_TEST_DATABASE_URL=" + dsn}
 	if err = command.Start(); err != nil {

@@ -175,7 +175,9 @@ export default function WalletScreen() {
                   <Text style={{ color: theme.colorSecondary }}>لا توجد عمليات تمويل منشورة حتى الآن.</Text>
                 ) : history.history.items.map(item => (
                   <View key={item.fundingId} style={{ gap: 4, paddingVertical: 6 }}>
-                    <Text style={{ color: theme.color }}>+ {displayYER.format(BigInt(item.amountYer))} ريال يمني</Text>
+                    <Text style={{ color: theme.color }}>
+                      {item.reversesFundingId ? "عكس تمويل −" : "+"} {displayYER.format(BigInt(item.amountYer))} ريال يمني
+                    </Text>
                     <Text style={{ color: theme.colorSecondary }}>{new Date(item.postedAt).toLocaleDateString("ar-YE")}</Text>
                   </View>
                 ))}

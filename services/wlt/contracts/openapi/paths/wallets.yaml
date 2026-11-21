@@ -40,7 +40,7 @@ paths:
     get:
       operationId: listCurrentCustomerWalletTransactions
       summary: Read a bounded page of the current Customer's posted funding history
-      description: Read-only isolated development projection. Identity is checked before and after the actor-scoped SQL read. The response excludes external provider identifiers; nextCursor permits older pages without choosing an account. Only a canonical cursor query is accepted; unknown keys and bodies are rejected.
+      description: Read-only isolated development projection of funding credits and their reversals. Identity is checked before and after the actor-scoped SQL read. The response excludes external provider identifiers; nextCursor permits older pages without choosing an account. Only a canonical cursor query is accepted; unknown keys and bodies are rejected.
       security:
         - OpaqueSession: []
       parameters:

@@ -14,7 +14,7 @@ func TestSandboxCommandRejectsNonIsolatedDatabaseBeforeReadingSession(t *testing
 		{"true", strings.Replace(dsn, "bthwani_wlt_test", "bthwani_wlt_restore", 1)},
 		{"true", strings.Replace(dsn, "bthwani_wlt_sandbox", "bthwani_wlt_reader", 1)},
 	} {
-		err := runSandboxFunding(t.Context(), []string{"fixture-reference", "9"}, strings.NewReader(""), io.Discard,
+		err := runSandboxFunding(t.Context(), "post-sandbox-funding", []string{"fixture-reference", "9"}, strings.NewReader(""), io.Discard,
 			func(name string) string {
 				return map[string]string{"BTHWANI_ISOLATED_TEST_MODE": tc.mode, "WLT_SANDBOX_DATABASE_URL": tc.database}[name]
 			})

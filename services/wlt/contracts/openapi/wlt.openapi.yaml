@@ -36,7 +36,12 @@ components:
         amountYer:
           type: string
           pattern: '^[1-9][0-9]{0,37}$'
+          description: Positive magnitude in whole YER. Entries with reversesFundingId debit the wallet.
         postedAt: { type: string, format: date-time }
+        reversesFundingId:
+          type: string
+          pattern: '^[A-Za-z0-9._-]{8,128}$'
+          description: Original posting ID when this entry reverses isolated sandbox funding.
     CustomerFundingHistory:
       type: object
       additionalProperties: false

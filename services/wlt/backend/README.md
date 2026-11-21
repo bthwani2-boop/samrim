@@ -30,7 +30,7 @@ defines journal records and the reader's grant.
 ### Post synthetic Customer funding
 
 In the disposable PostgreSQL environment, provision the dedicated
-`bthwani_wlt_sandbox` role and apply migration `004` as
+`bthwani_wlt_sandbox` role and apply migrations `004` and `005` as
 `bthwani_wlt_owner`. Set `WLT_SANDBOX_DATABASE_URL` to the loopback database URL
 for that role. Use the existing isolation mode and Identity origin settings
 above. Run `wlt post-sandbox-funding <reference> <whole-yemeni-riyals>` and
@@ -42,3 +42,9 @@ an existing reference is rejected. The same Customer session must still be
 current immediately before the journal transaction commits. Use the existing
 wallet and history HTTP reads to verify the result. The synthetic posting
 operation is CLI-only and permits writes exclusively in `bthwani_wlt_test`.
+
+Run `wlt reverse-sandbox-funding <original-reference>` with the current
+synthetic Customer session on standard input to offset that Customer's exact
+posted amount. The command returns `REVERSED` or `REPLAYED`. After a lost
+result, repeat the command with the same reference and Customer. Verify the net
+balance and the linked entries through the existing wallet reads.
