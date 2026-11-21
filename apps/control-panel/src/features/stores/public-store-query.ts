@@ -13,7 +13,9 @@ export function parsePublicStoreBrowse(
   params: Record<string, string | string[] | undefined>,
 ): PublicStoreBrowse | null {
   if (Object.keys(params).some(key => !["city", "q", "vertical", "cursor"].includes(key))) return null;
-  const { city, q, vertical, cursor } = params;
+  const { city, q, vertical: requestedVertical, cursor } = params;
+  // A native GET form submits blank optional fields. Blank means no filter.
+  const vertical = requestedVertical === "" ? undefined : requestedVertical;
   if ([city, q, vertical, cursor].some(value => Array.isArray(value))) return null;
   if (city === undefined && q === undefined && vertical === undefined && cursor === undefined) {
     return { city: "", query: "" };

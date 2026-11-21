@@ -74,6 +74,18 @@ test("unverified Operator never reads DSH Stores or vertical taxonomy", async ()
   assert.equal(find(view, node => node.type === "datalist"), undefined);
 });
 
+test("submitting the city with optional fields blank loads unfiltered DSH Stores", async () => {
+  const page = harness();
+  const htmlFormQuery = Object.fromEntries(new URLSearchParams("city=sanaa&q=&vertical="));
+  const view = await page.render(htmlFormQuery);
+  assert.deepEqual(page.calls.map(call => call.kind).sort(), ["stores", "verticals"]);
+  const storeRead = page.calls.find(call => call.kind === "stores");
+  assert.equal(storeRead.city, "sanaa");
+  assert.equal(Object.hasOwn(storeRead.opts, "query"), false);
+  assert.equal(Object.hasOwn(storeRead.opts, "verticalId"), false);
+  assert.ok(find(view, node => node.type === "strong" && node.props.children === "متجر أ"));
+});
+
 test("authorized Operator renders actual DSH verticals as suggestions without bypassing Store scope", async () => {
   const page = harness();
   const view = await page.render();

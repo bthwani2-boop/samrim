@@ -19,12 +19,16 @@ test("Operator Store vertical stays scoped across search, detail and paging URLs
   assert.deepEqual(parsePublicStoreBrowse({ city: "sanaa", vertical: "grocery" }), {
     city: "sanaa", query: "", vertical: "grocery",
   });
+  assert.deepEqual(parsePublicStoreBrowse({ city: "sanaa", q: "", vertical: "" }), {
+    city: "sanaa", query: "",
+  });
 });
 
 test("invalid search scopes and duplicate parameters fail before any owner read", () => {
   for (const params of [
     { city: "Sanaa" }, { city: "../a" }, { city: ["sanaa", "aden"] },
-    { city: "sanaa", vertical: "GROCERY" }, { city: "sanaa", vertical: "" },
+    { city: "sanaa", vertical: "GROCERY" }, { city: "sanaa", vertical: " " },
+    { city: "sanaa", vertical: ["", "grocery"] },
     { city: "sanaa", vertical: "../private" }, { city: "sanaa", vertical: ["grocery", "pharmacy"] },
     { city: "sanaa", q: ["a", "b"] }, { city: "sanaa", q: "x".repeat(81) },
     { city: "sanaa", q: "\uD800" }, { city: "sanaa", cursor: "x".repeat(513) },
