@@ -340,6 +340,40 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 	t.Logf("DSH_CART_OWNER_POSTGRES_PASS version=%d commands=%d lines=%d replay_and_actor_isolation=true", version, commands, lines)
 }
 
+// The public contract requires an explicit optimistic version. Without it,
+// Go's zero value would silently turn a malformed first write into version 0.
+func TestCustomerCartRequiresExplicitExpectedVersion(t *testing.T) {
+	handler := &Handler{}
+	router := http.NewServeMux()
+	router.HandleFunc("PUT /v1/carts/{storeID}", handler.put)
+	cases := []struct {
+		name    string
+		version any
+		omit    bool
+		want    int
+	}{
+		{name: "missing", omit: true, want: http.StatusBadRequest},
+		{name: "null", version: nil, want: http.StatusBadRequest},
+		{name: "fractional", version: 0.5, want: http.StatusBadRequest},
+		{name: "negative", version: -1, want: http.StatusBadRequest},
+		{name: "explicit zero", version: 0, want: http.StatusUnauthorized},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			payload := map[string]any{
+				"operationId": "cart-explicit-version-001",
+				"lines":       []any{},
+			}
+			if !tc.omit {
+				payload["expectedVersion"] = tc.version
+			}
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, jsonCartRequest(t, http.MethodPut, "store-a", "", payload))
+			assertCartStatus(t, response.Code, tc.want, response.Body.Bytes())
+		})
+	}
+}
+
 func TestCustomerCartRequiresCurrentVerifiedCustomer(t *testing.T) {
 	if _, err := NewHandler(nil, "dsh_test_cart_ci", cartSessionAdapter{&testSession{}}); err == nil {
 		t.Fatal("nil Cart owner database accepted")
@@ -347,9 +381,10 @@ func TestCustomerCartRequiresCurrentVerifiedCustomer(t *testing.T) {
 	if _, err := NewHandler(&sql.DB{}, "dsh_test_cart_ci", nil); err == nil {
 		t.Fatal("nil Identity verifier accepted")
 	}
+	negativeVersion := int64(-1)
 	changes := []Change{
 		{},
-		{OperationID: "cart-12345", ExpectedVersion: -1, Lines: []struct {
+		{OperationID: "cart-12345", ExpectedVersion: &negativeVersion, Lines: []struct {
 			OfferID  string `json:"offerId"`
 			Quantity int64  `json:"quantity"`
 		}{}},

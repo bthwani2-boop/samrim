@@ -36,7 +36,7 @@ type Snapshot struct {
 }
 type Change struct {
 	OperationID     string `json:"operationId"`
-	ExpectedVersion int64  `json:"expectedVersion"`
+	ExpectedVersion *int64 `json:"expectedVersion"`
 	Lines           []struct {
 		OfferID  string `json:"offerId"`
 		Quantity int64  `json:"quantity"`
@@ -219,7 +219,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	reply(w, value)
 }
 func validChange(change Change) bool {
-	if !operationRule.MatchString(change.OperationID) || change.ExpectedVersion < 0 ||
+	if !operationRule.MatchString(change.OperationID) || change.ExpectedVersion == nil || *change.ExpectedVersion < 0 ||
 		change.Lines == nil || len(change.Lines) > 20 {
 		return false
 	}
@@ -318,7 +318,7 @@ func (h *Handler) change(ctx context.Context, actor, store, token string, change
 		}
 		return ChangeResult{Cart: result, Replay: true}, 200
 	}
-	if current != change.ExpectedVersion {
+	if current != *change.ExpectedVersion {
 		return ChangeResult{}, 409
 	}
 	// Replays of an already committed draft must be possible after a Store
