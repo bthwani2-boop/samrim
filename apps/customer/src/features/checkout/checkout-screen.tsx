@@ -5,6 +5,9 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview";
 import { type CartReadState, readVerifiedCart } from "../cart/cart-transport";
+import FulfillmentChoice from "./fulfillment-choice";
+import PaymentSelection from "./payment-selection";
+import RecipientForm from "./recipient-form";
 
 const formatYER = new Intl.NumberFormat("ar-YE");
 const storeRule = /^[a-z0-9-]{1,64}$/;
@@ -156,6 +159,11 @@ export default function CheckoutScreen() {
             style={{ color: theme.warningText, fontWeight: "700", fontSize: 17 }}>
             تأكيد الطلب والدفع غير متاحين
           </Text>
+          <View style={{ gap: 10 }}>
+            <RecipientForm label="المستلم والعنوان: لم يصدر بعد تحقق DSH من بيانات التسليم لهذا الطلب." />
+            <FulfillmentChoice label="طريقة الاستلام أو التوصيل: لم تعتمد DSH أهلية أي طريقة لهذا الطلب." />
+            <PaymentSelection label="الدفع: لم يصدر تخصيص مالي معتمد من WLT لهذا الطلب." />
+          </View>
           <Text style={{ color: theme.color, lineHeight: 26 }}>
             يلزم تسعير ومدة صلاحية عرض موثقان من DSH، والتحقق من العنوان وطريقة
             التوصيل، وتخصيص الدفع لدى WLT، قبل السماح بتأكيد أي طلب.

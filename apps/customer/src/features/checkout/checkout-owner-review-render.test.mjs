@@ -88,6 +88,9 @@ function harness(startStore = "store-one") {
     },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "../cart/cart-preview": { previewLineSubtotalYer, summarizeCartPreview },
+    "./fulfillment-choice": { __esModule: true, default: "FulfillmentChoice" },
+    "./payment-selection": { __esModule: true, default: "PaymentSelection" },
+    "./recipient-form": { __esModule: true, default: "RecipientForm" },
     "../cart/cart-transport": {
       readVerifiedCart(store, signal) {
         const call = { store, signal };
@@ -137,6 +140,11 @@ test("Customer checkout review renders real DSH Cart, exact BigInt totals and un
   const exactAmount = new Intl.NumberFormat("ar-YE").format(9007199254740993n * 2n);
   assert.ok(flatten(view).includes(exactAmount), "DSH YER preview must not lose integer precision");
   assert.ok(nodes(view).some(n => n.props?.testID === "checkout-confirmation-unavailable"));
+  for (const component of ["RecipientForm", "FulfillmentChoice", "PaymentSelection"]) {
+    const item = nodes(view).find(n => n.type === component);
+    assert.ok(item, `${component} remains in the read-only review`);
+    assert.ok(item.props.label?.includes("لم"), `${component} cannot claim an approved decision`);
+  }
   const links = nodes(view).filter(n => n.type === "Link").map(n => n.props.href);
   assert.deepEqual(links, [{ pathname: "/cart/[storeId]", params: { storeId: "store-one" } }]);
   assert.ok(!nodes(view).some(n => n.type === "Pressable" &&
