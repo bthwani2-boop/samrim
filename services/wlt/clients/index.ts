@@ -36,6 +36,23 @@ const amountValid = (value: unknown, positive: boolean): value is string =>
 const fundingIdValid = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9._-]{8,128}$/.test(value);
 
+// Match WLT's RFC3339Nano|fundingId keyset cursor without Node-only Buffer
+// or browser-only btoa (the Customer SDK also runs in React Native).
+function encodeFundingCursor(last: CustomerFundingTransaction): string {
+  const value = `${last.postedAt}|${last.fundingId}`;
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  let encoded = "";
+  for (let i = 0; i < value.length; i += 3) {
+    const first = value.charCodeAt(i);
+    const second = i + 1 < value.length ? value.charCodeAt(i + 1) : 0;
+    const third = i + 2 < value.length ? value.charCodeAt(i + 2) : 0;
+    encoded += alphabet.charAt(first >>> 2) + alphabet.charAt(((first & 3) << 4) | (second >>> 4));
+    if (i + 1 < value.length) encoded += alphabet.charAt(((second & 15) << 2) | (third >>> 6));
+    if (i + 2 < value.length) encoded += alphabet.charAt(third & 63);
+  }
+  return encoded;
+}
+
 export function parseCustomerWalletBalance(value: unknown): CustomerWalletBalance {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new WltReadError(502);
   const fields = value as Record<string, unknown>;
@@ -82,6 +99,12 @@ export function parseCustomerFundingHistory(value: unknown): CustomerFundingHist
     items.push(reversal && typeof originalId === "string"
       ? { ...transaction, reversesFundingId: originalId }
       : transaction);
+  }
+  // An unrelated yet syntactically valid cursor would silently skip or repeat
+  // posted financial history. WLT must resume strictly after the last item.
+  const lastItem = items.at(-1);
+  if (fields.hasMore && (!lastItem || fields.nextCursor !== encodeFundingCursor(lastItem))) {
+    throw new WltReadError(502);
   }
   return {
     actorId: fields.actorId, currency: "YER", items, hasMore: fields.hasMore,

@@ -236,7 +236,7 @@ test("Customer wallet history BFF denies cross-site and arbitrary actor queries"
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
 
-const nextCursor = Buffer.from("2026-11-20T00:00:00Z|funding-0001").toString("base64url");
+const nextCursor = Buffer.from("2026-11-20T00:00:00Z|funding-page-09").toString("base64url");
 const tenFunding = Array.from({ length: 10 }, (_, index) => ({
   fundingId: `funding-page-${index.toString().padStart(2, "0")}`,
   amountYer: "1", postedAt: "2026-11-20T00:00:00Z",
@@ -253,6 +253,8 @@ test("WLT funding page envelopes require matching nextCursor and hasMore with a 
     { ...pageOne, nextCursor: null },
     { ...pageOne, nextCursor: "?" },
     { ...pageOne, nextCursor: nextCursor + "@" },
+    { ...pageOne, nextCursor: Buffer.from("2026-11-20T00:00:00Z|funding-page-08").toString("base64url") },
+    { ...pageOne, nextCursor: Buffer.from("2026-11-20T00:00:00Z|another-actor").toString("base64url") },
     { ...pageOne, items: tenFunding.slice(0, 9) },
     { ...history, hasMore: true },
     { ...history, nextCursor },
