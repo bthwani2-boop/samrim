@@ -16,7 +16,13 @@ export async function handleWalletOwnerRead<T>(
   const url = new URL(request.url);
   const site = request.headers.get("Sec-Fetch-Site");
   const origin = process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN;
-  if (process.env.BTHWANI_SURFACE_PREVIEW !== "1" || !origin ||
+  const dockerRequested = process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW === "1";
+  const surfacePreview = !dockerRequested && process.env.BTHWANI_SURFACE_PREVIEW === "1";
+  // Docker-mode Web preview is server-only and can reach precisely the
+  // verified Lenovo loopback WLT reader, never an arbitrary local service.
+  const dockerPreview = dockerRequested && process.env.BTHWANI_ISOLATED_TEST_MODE === "true" &&
+    origin === "http://127.0.0.1:3203";
+  if ((!surfacePreview && !dockerPreview) || !origin ||
     !["localhost", "127.0.0.1"].includes(url.hostname)) {
     return Response.json({ error: "OWNER_UNAVAILABLE" }, { status: 503, headers });
   }

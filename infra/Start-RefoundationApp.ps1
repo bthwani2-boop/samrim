@@ -10,12 +10,16 @@ param(
   [int]$DshPort=23202,
   [switch]$EnableAndroidWalletPreview,
   [ValidateRange(1024,65535)]
-  [int]$WltPort=23203
+  [int]$WltPort=23203,
+  [switch]$EnableDockerWalletWebPreview
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 if ($EnableAndroidWalletPreview -and (!$Surface -or $App -ne 'customer')) {
   throw 'NATIVE_WALLET_PREVIEW_REQUIRES_SURFACE_CUSTOMER'
+}
+if ($EnableDockerWalletWebPreview -and ($Surface -or $App -ne 'customer' -or $EnableAndroidWalletPreview)) {
+  throw 'DOCKER_WALLET_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
 }
 
 function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
@@ -44,6 +48,29 @@ if ($Surface) {
   $nodeDir=Join-Path $runner 'tools\node-v24.22.1-refoundation'
   $node=Join-Path $nodeDir 'node.exe'
   $logs=Join-Path $runner 'logs'
+  if ($EnableDockerWalletWebPreview) {
+    if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+      throw 'DOCKER_WALLET_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
+    }
+    foreach ($owner in @(
+      @{ Name='bthwani-refoundation-identity-1'; Capability='identity-synthetic-session-verifier' },
+      @{ Name='bthwani-refoundation-wlt-1'; Capability='customer-wallet-read-only' }
+    )) {
+      $proof=(& docker inspect $owner.Name --format '{{index .Config.Labels "com.bthwani.capability"}}|{{index .Config.Labels "com.bthwani.environment"}}|{{.State.Health.Status}}').Trim()
+      if ($LASTEXITCODE -ne 0 -or $proof -cne ($owner.Capability + '|refoundation|healthy')) {
+        throw 'DOCKER_WALLET_WEB_PREVIEW_OWNER_NOT_VERIFIED'
+      }
+    }
+    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
+    Assert-SurfaceCapability 'http://127.0.0.1:3203/v1/wallets/me' 401
+    $env:BTHWANI_SURFACE_PREVIEW='0'
+    $env:BTHWANI_ISOLATED_TEST_MODE='true'
+    $env:BTHWANI_DOCKER_WALLET_WEB_PREVIEW='1'
+    $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+    $env:CUSTOMER_SYNTHETIC_WLT_ORIGIN='http://127.0.0.1:3203'
+    $env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
+    Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
+  }
 }
 if(!(Test-Path -LiteralPath $node) -or !(Test-Path -LiteralPath (Join-Path $source 'pnpm-lock.yaml'))){
   throw 'REFOUNDATION_RUNTIME_SOURCE_OR_TOOLCHAIN_MISSING'

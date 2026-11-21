@@ -219,6 +219,27 @@ for both Identity and WLT; the Web BFF continues using `127.0.0.1`.
 Absent owner, revoked session, wrong role and physical-device/private-LAN
 origins keep the Native finance display closed. No Cash-In, payment, protected
 database migration or real-user finance access is activated by this flag.
+
+### Opt-in Lenovo Customer Web wallet
+
+The active Lenovo Customer Web server is **not** silently reconfigured when
+Docker WLT appears. With its existing default launcher environment, its
+`/api/customer-auth/wallet` and `/wallet-transactions` routes remain disabled
+(`503`). Once the isolated `identity` and `wlt` containers are healthy,
+a **separately controlled Customer Web start** on Lenovo can use
+`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -App customer -EnableDockerWalletWebPreview`
+from the verified runtime source. Only this opt-in sets the Web BFF's private
+`BTHWANI_DOCKER_WALLET_WEB_PREVIEW` flag, explicit isolated-test mode,
+and fixed local Identity `3201`
+and WLT `3203` owner origins. The launcher validates the actual Docker
+container capability labels, health and unauthenticated route denial before
+starting Expo. It refuses Surface/native previews and all other applications;
+the browser session is still an HttpOnly same-origin Customer cookie.
+The public/native Expo preview flags stay disabled and the BFF refuses any
+other wallet port even if other preview flags are set. **Do not restart the
+shared running Customer task to opt in without checking its ownership and
+other active sessions.** Only the synthetic development customer can sign in
+through Mailpit. No payment mutation is enabled.
 Neither an Expo Android JS export nor source tests prove actual emulator/device
 execution; test its complete network and session behavior separately.
 
