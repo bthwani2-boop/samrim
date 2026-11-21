@@ -1,11 +1,12 @@
-import { DshCartError, type CustomerCartChange } from "@bthwani/dsh";
+import { type CustomerCartChange, DshCartError } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import * as Crypto from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { readVerifiedCart, replaceVerifiedCart, type CartReadState } from "./cart-transport";
+import { previewLineSubtotalYer, summarizeCartPreview } from "./cart-preview";
+import { type CartReadState, readVerifiedCart, replaceVerifiedCart } from "./cart-transport";
 
 const formatYER = new Intl.NumberFormat("ar-YE");
 type Pending = { actorId: string; change: CustomerCartChange };
@@ -100,6 +101,7 @@ export default function CartScreen() {
     void apply(change, cart.actorId);
   }
 
+  const preview = view?.kind === "ready" ? summarizeCartPreview(view.cart.lines) : null;
   const buttonStyle = {
     borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
     minHeight: 44, paddingHorizontal: 14, justifyContent: "center" as const,
@@ -125,6 +127,9 @@ export default function CartScreen() {
                 <Text style={{ color: theme.colorSecondary }}>
                   {formatYER.format(BigInt(line.previewUnitYer))} ريال يمني للوحدة — معاينة فقط
                 </Text>
+                <Text style={{ color: theme.colorSecondary }}>
+                  مجموع الصنف التقديري: {formatYER.format(previewLineSubtotalYer(line))} ريال يمني
+                </Text>
                 {!line.previewAvailable ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
                   المنتج غير متاح الآن، ولا يمكن تأكيد الطلب.
                 </Text> : null}
@@ -147,6 +152,24 @@ export default function CartScreen() {
                 </View>
               </View>
             ))}
+            {preview ? (
+              <View testID="cart-preview-summary" style={{
+                padding: 14, borderWidth: 1, borderColor: theme.borderColor,
+                borderRadius: 12, backgroundColor: theme.surface, gap: 8,
+              }}>
+                <Text style={{ color: theme.color, fontWeight: "700" }}>
+                  الإجمالي التقديري للعروض المتاحة: {formatYER.format(preview.availableSubtotalYer)} ريال يمني
+                </Text>
+                {preview.unavailableLines > 0 ? (
+                  <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
+                    عروض غير متاحة: {preview.unavailableLines}. لم تدخل في الإجمالي التقديري.
+                  </Text>
+                ) : null}
+                <Text style={{ color: theme.colorSecondary }}>
+                  التسعير النهائي والرسوم وصلاحية العروض يحددها DSH عند تأكيد الطلب، وليس هذا التقدير.
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : (
           <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>

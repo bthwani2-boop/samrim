@@ -1,7 +1,7 @@
 import { listPublicOffers, type PublicOffer, type PublicPage } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 
 type OffersState = {
@@ -15,8 +15,9 @@ type OffersState = {
 };
 
 const pageSize = 20;
-const origin = process.env.EXPO_PUBLIC_DSH_API_URL ??
-  process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN ?? "";
+const origin = Platform.OS === "web"
+  ? (typeof window === "undefined" ? "" : window.location.origin)
+  : process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN ?? "";
 
 function formatPrice(value: PublicOffer["priceYer"]): string {
   return (typeof value === "string" ? BigInt(value) : value).toLocaleString("ar-YE");
