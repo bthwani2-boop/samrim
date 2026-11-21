@@ -144,6 +144,8 @@ function operatorPermissionOperation(permission: OperatorPermission) {
 const allowedOwnerRequests = new Set([
   identityOperations.beginOperatorPasskeyAuthentication,
   identityOperations.finishOperatorPasskeyAuthentication,
+  identityOperations.beginInitialOperatorPasskeyRegistration,
+  identityOperations.finishInitialOperatorPasskeyRegistration,
   identityOperations.getVerifiedIdentitySession,
   identityOperations.revokeCurrentIdentitySession,
   ...operatorPermissions.map(operatorPermissionOperation),
@@ -339,4 +341,43 @@ export async function readVerifiedOperatorAccess(
   } catch {
     return null;
   }
+}
+
+/** Additional explicit opt-in: an isolated WebAuthn login flag NEVER enables Root creation. */
+export function resolveInitialOperatorBootstrapConfig(env: Settings): OperatorPasskeyConfig | null {
+  const config = resolveIsolatedOperatorConfig(env);
+  return config && env.OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF === "true" &&
+    config.browserOrigin === "http://localhost:13000" ? config : null;
+}
+
+export function validInitialOperatorPayload(value: unknown, finish: boolean): boolean {
+  const body = object(value);
+  if (!body) return false;
+  const keys = Object.keys(body).sort();
+  if (keys.join(",") !== (finish ? "ceremonyId,credential,proof" : "proof")) return false;
+  if (typeof body.proof !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.proof)) return false;
+  if (!finish) return true;
+  if (typeof body.ceremonyId !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.ceremonyId)) return false;
+  const credential = object(body.credential);
+  return credential?.type === "public-key" &&
+    typeof credential.id === "string" && credential.id.length > 0 && credential.id.length <= 2048 &&
+    typeof credential.rawId === "string" && credential.rawId.length > 0 && credential.rawId.length <= 2048 &&
+    object(credential.response) !== null;
+}
+
+export function parseInitialOperatorOptions(value: unknown): unknown | null {
+  const body = object(value);
+  const opts = object(body?.options);
+  const key = object(opts?.publicKey);
+  const rp = object(key?.rp);
+  const selection = object(key?.authenticatorSelection);
+  const user = object(key?.user);
+  if (typeof body?.ceremonyId !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.ceremonyId) ||
+      typeof key?.challenge !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(key.challenge) ||
+      rp?.id !== "localhost" || selection?.userVerification !== "required" ||
+      selection?.residentKey !== "required" ||
+      typeof user?.id !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(user.id)) {
+    return null;
+  }
+  return value;
 }

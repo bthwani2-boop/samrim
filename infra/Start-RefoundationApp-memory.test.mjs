@@ -51,3 +51,13 @@ test("Operator Passkey launcher opt-in fails closed outside verified isolated Le
   assert.match(launcher, /\$env:OPERATOR_PASSKEY_BROWSER_ORIGIN='http:\/\/localhost:13000'/);
   assert.doesNotMatch(launcher, /-EnableIsolatedOperatorPasskeyPreview -Apply/);
 });
+
+test("first Root WebAuthn enrollment is a second explicitly opted-in localhost-only capability", () => {
+  assert.match(launcher, /\[switch\]\$EnableIsolatedRootBootstrap/);
+  assert.match(launcher, /\$EnableIsolatedRootBootstrap -and !\$EnableIsolatedOperatorPasskeyPreview/);
+  assert.match(launcher, /OPERATOR_ROOT_BOOTSTRAP_REQUIRES_EXPLICIT_PASSKEY_PREVIEW/);
+  assert.match(launcher, /IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true/);
+  assert.match(launcher, /OPERATOR_ROOT_BOOTSTRAP_OWNER_NOT_OPTED_IN/);
+  assert.match(launcher, /127\.0\.0\.1:3201\/v1\/operators\/passkey\/bootstrap\/options/);
+  assert.match(launcher, /\$env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'/);
+});

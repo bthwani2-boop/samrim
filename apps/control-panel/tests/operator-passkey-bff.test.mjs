@@ -224,3 +224,56 @@ test("Operator workspace owner mismatch, role spoof, revoked session and outage 
   assert.equal(await readVerifiedOperatorAccess(config, "forged"), null);
   assert.equal(calls, before, "malformed cookie cannot trigger Identity calls");
 });
+import {
+  parseInitialOperatorOptions,
+  resolveInitialOperatorBootstrapConfig,
+  validInitialOperatorPayload,
+} from "../src/server/operator-passkey-bff.ts";
+
+test("Root bootstrap requires a distinct explicitly isolated opt-in and exactly localhost:13000", () => {
+  assert.equal(resolveInitialOperatorBootstrapConfig(goodEnv),null);
+  assert.equal(resolveInitialOperatorBootstrapConfig({
+    ...goodEnv,OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF:"true",
+  })?.browserOrigin,"http://localhost:13000");
+  assert.equal(resolveInitialOperatorBootstrapConfig({
+    ...goodEnv,OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF:"true",
+    OPERATOR_PASSKEY_BROWSER_ORIGIN:"http://localhost:23100",
+  }),null);
+  assert.equal(resolveInitialOperatorBootstrapConfig({
+    ...goodEnv,OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF:"true",
+    BTHWANI_ISOLATED_TEST_MODE:"false",
+  }),null);
+});
+
+test("Root registration payloads can never supply an actor, role or permission", () => {
+  const proof="A".repeat(43);
+  const ceremonyId="B".repeat(43);
+  const credential={type:"public-key",id:"abc",rawId:"abc",response:{}};
+  assert.equal(validInitialOperatorPayload({proof},false),true);
+  assert.equal(validInitialOperatorPayload({proof,actorId:"root"},false),false);
+  assert.equal(validInitialOperatorPayload({proof,role:"operator"},false),false);
+  assert.equal(validInitialOperatorPayload({proof,permissions:["finance"]},false),false);
+  assert.equal(validInitialOperatorPayload({proof,ceremonyId,credential},true),true);
+  assert.equal(validInitialOperatorPayload({proof,ceremonyId,credential,role:"operator"},true),false);
+  assert.equal(validInitialOperatorPayload({proof,ceremonyId,credential:{...credential,type:"password"}},true),false);
+  assert.equal(validInitialOperatorPayload({proof:"bad"},false),false);
+});
+
+test("Root Passkey options require resident user-verified localhost WebAuthn RP", () => {
+  const valid={
+    ceremonyId:"A".repeat(43),
+    options:{publicKey:{
+      challenge:"B".repeat(43),rp:{id:"localhost",name:"BThwani Operator"},
+      user:{id:"C".repeat(43),name:"Owner",displayName:"Owner"},
+      authenticatorSelection:{residentKey:"required",userVerification:"required"},
+    }},
+  };
+  assert.deepEqual(parseInitialOperatorOptions(valid),valid);
+  assert.equal(parseInitialOperatorOptions({...valid,ceremonyId:"bad"}),null);
+  assert.equal(parseInitialOperatorOptions({...valid,options:{publicKey:{
+    ...valid.options.publicKey,rp:{id:"evil.example"},
+  }}}),null);
+  assert.equal(parseInitialOperatorOptions({...valid,options:{publicKey:{
+    ...valid.options.publicKey,authenticatorSelection:{residentKey:"preferred",userVerification:"required"},
+  }}}),null);
+});

@@ -208,6 +208,10 @@ export function validate(owner, base = root) {
         "/v1/customer-auth/phone-verification": "verifyCustomerPhoneChallenge",
         "/v1/operators/passkey/authentication": "finishOperatorPasskeyAuthentication",
         "/v1/operators/passkey/authentication/options": "beginOperatorPasskeyAuthentication",
+        // Offline-issued, expiring 256-bit proof authorizes these opt-in
+        // synthetic enrollment ceremonies, never an implicit Operator role.
+        "/v1/operators/passkey/bootstrap/options": "beginInitialOperatorPasskeyRegistration",
+        "/v1/operators/passkey/bootstrap": "finishInitialOperatorPasskeyRegistration",
       };
       return Object.hasOwn(admitted, urlPath) && admitted[urlPath] === operationId;
     }

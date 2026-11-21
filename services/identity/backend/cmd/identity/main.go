@@ -133,6 +133,15 @@ func main() {
 		handler := session.NewOperatorPasskeyHandler(auth)
 		routes.Handle(session.OperatorPasskeyOptionsPath, handler)
 		routes.Handle(session.OperatorPasskeyFinishPath, handler)
+		// Initial Root enrollment is a separate explicit opt-in, unavailable
+		// unless the existing isolated WebAuthn RP is configured.
+		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" {
+			initial := session.NewOperatorInitialRegistrationHandler(auth)
+			routes.Handle(session.OperatorInitialRegistrationOptionsPath, initial)
+			routes.Handle(session.OperatorInitialRegistrationFinishPath, initial)
+		}
+	} else if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" {
+		log.Fatal("initial Operator bootstrap requires the isolated WebAuthn owner")
 	}
 	verifier := session.NewHandler(session.NewVerifier(reader))
 	routes.Handle("/", verifier)

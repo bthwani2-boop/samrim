@@ -34,3 +34,39 @@ Real isolated PostgreSQL transaction tests exercise phone proof contention, stab
 **NOT_CLOSED:** real phone-provider verification, Captain admission and DSH standing, Operator Passkey and original Root Operator continuity, Operator permission administration/audit, session-family recovery and rotation, DSH Store-grant authentication and independent critical security review.
 
 **Isolated synthetic scope only:** this document grants no authority to alter protected accounts, balances, real sessions or applied migrations. Governance: `governance/identity.md`.
+## First Operator — isolated synthetic bootstrap only
+
+The narrowly scoped first-Owner development path is deliberately disabled by default:
+`IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH=true` and the *separate*
+`IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true` are required on the
+isolated Identity owner. The Operator BFF additionally requires
+`OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF=true` and the exact
+`http://localhost:13000` browser origin. None of these settings are enabled
+automatically or approved against real/protected Identity data.
+
+Apply owner migration `008_operator_initial_bootstrap.sql` **only** to a
+verified, fresh, disposable `identity_test_*` schema, following 001–007.
+The CLI `go run ./cmd/operator-bootstrap issue-synthetic-root-ticket` is an
+**offline authorized administration action** restricted to the dedicated
+disposable `refoundation_webauthn_s02` database, never invoked during server
+startup, CI or by a public request. It refuses any existing Operator role or
+Root marker; only a directly supervised owner can deliver the one-time
+10-minute claim secret to the intended test user's Windows Hello browser.
+
+`POST /v1/operators/passkey/bootstrap/options` and
+`POST /v1/operators/passkey/bootstrap` accept only the claim secret and a
+valid user-verified resident WebAuthn registration. One atomic Identity
+transaction persists the actor, role, seven canonical Operator grants,
+immutable original Root marker, credential and append-only audit.
+Enrollment does not issue a bearer. The separately registered Passkey must
+then complete the normal authentication flow before any workspace is shown.
+A pending/used claim, a second Root, or a preexisting Operator prevents the
+initial route from granting authority.
+
+The live synthetic cryptographic test is
+`TestInitialOperatorBootstrapRealPostgresAndWebAuthn`; it requires a
+separately authorized disposable PostgreSQL container and an exact opt-in.
+**No** real user contact details should be seeded in these fixtures.
+Historical original-Operator continuity, real verified contact binding,
+credential recovery, human Windows Hello exercise, current production
+migration and independent critical risk review remain **NOT_CLOSED**.

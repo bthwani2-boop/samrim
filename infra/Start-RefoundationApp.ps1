@@ -12,7 +12,8 @@ param(
   [ValidateRange(1024,65535)]
   [int]$WltPort=23203,
   [switch]$EnableDockerWalletWebPreview,
-  [switch]$EnableIsolatedOperatorPasskeyPreview
+  [switch]$EnableIsolatedOperatorPasskeyPreview,
+  [switch]$EnableIsolatedRootBootstrap
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -73,6 +74,9 @@ if ($Surface) {
     Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
   }
 }
+if ($EnableIsolatedRootBootstrap -and !$EnableIsolatedOperatorPasskeyPreview) {
+  throw 'OPERATOR_ROOT_BOOTSTRAP_REQUIRES_EXPLICIT_PASSKEY_PREVIEW'
+}
 # Only a deliberately opted-in, isolated Operator development process may
 # issue a localhost-bound WebAuthn request through the existing SSH tunnel.
 # Merely starting this application never creates or recovers an Operator.
@@ -120,6 +124,14 @@ if ($EnableIsolatedOperatorPasskeyPreview) {
   $env:OPERATOR_PASSKEY_BROWSER_ORIGIN='http://localhost:13000'
   $env:OPERATOR_PASSKEY_IDENTITY_ORIGIN='http://127.0.0.1:3201'
   $env:OPERATOR_POLICY_DSH_ORIGIN='http://127.0.0.1:3202'
+  if ($EnableIsolatedRootBootstrap) {
+    if ($ownerEnv -cnotcontains 'IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true') {
+      throw 'OPERATOR_ROOT_BOOTSTRAP_OWNER_NOT_OPTED_IN'
+    }
+    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/operators/passkey/bootstrap/options' 405
+    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/operators/passkey/bootstrap' 405
+    $env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'
+  }
 }
 if(!(Test-Path -LiteralPath $node) -or !(Test-Path -LiteralPath (Join-Path $source 'pnpm-lock.yaml'))){
   throw 'REFOUNDATION_RUNTIME_SOURCE_OR_TOOLCHAIN_MISSING'

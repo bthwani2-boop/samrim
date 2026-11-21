@@ -32,6 +32,8 @@ services:
       # Explicit isolated-only WebAuthn: never enrolls or recovers an Operator.
       # Enabling requires migration 006 and a separately authorized real Passkey.
       IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH: "${REF_IDENTITY_OPERATOR_PASSKEY_AUTH:-false}"
+      # Separate explicit approval required for first-Owner registration.
+      IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP: "${REF_IDENTITY_OPERATOR_BOOTSTRAP:-false}"
       IDENTITY_OPERATOR_PASSKEY_RPID: "${REF_IDENTITY_OPERATOR_PASSKEY_RPID:-}"
       IDENTITY_OPERATOR_PASSKEY_ORIGINS: "${REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS:-}"
     ports:

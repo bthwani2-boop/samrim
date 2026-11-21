@@ -88,6 +88,8 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
   assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_SMTP, "mailpit:1025");
   assert.equal(id.environment.IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH,
     "${REF_IDENTITY_OPERATOR_PASSKEY_AUTH:-false}", "Passkey must not be on by default");
+  assert.equal(id.environment.IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP,
+    "${REF_IDENTITY_OPERATOR_BOOTSTRAP:-false}", "Root bootstrap must not be on by default");
   assert.equal(id.environment.IDENTITY_OPERATOR_PASSKEY_RPID,
     "${REF_IDENTITY_OPERATOR_PASSKEY_RPID:-}");
   assert.equal(id.environment.IDENTITY_OPERATOR_PASSKEY_ORIGINS,

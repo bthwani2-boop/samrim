@@ -4,6 +4,7 @@ import { currentOperatorAccess } from "../../server/current-operator-access";
 import { resolveIsolatedOperatorConfig } from "../../server/operator-passkey-bff";
 import { workspaceRegistry } from "../navigation/workspace-registry";
 import styles from "../operator-shell/operator-shell.module.css";
+import OperatorBootstrapForm from "./operator-bootstrap-form";
 import OperatorPasskeyForm from "./operator-passkey-form";
 
 export default async function OperatorEntryScreen() {
@@ -21,7 +22,10 @@ export default async function OperatorEntryScreen() {
           تم التحقق من حسابك. اطلب من مسؤول الوصول منحك صلاحية لمساحة العمل المطلوبة.
         </p>
       ) : signInOnThisAddress ? (
-        <OperatorPasskeyForm />
+        <>
+          <OperatorPasskeyForm />
+          {process.env.OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF === "true" && <OperatorBootstrapForm />}
+        </>
       ) : isolated ? (
         <>
           <p>يتطلب مفتاح المرور استخدام عنوان الدخول المحلي المعتمد.</p>
