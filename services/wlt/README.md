@@ -34,8 +34,11 @@ session. It appends one offsetting journal using the original amount and
 currency. The original remains visible in history, and both Customer previews
 label the reversal as a deduction.
 
-External provider verification, checkout, withdrawals, reconciliation and
-production runtime remain pending.
+Synthetic external-provider **status verification** is available through an
+isolated WLT CLI command and fixed WireMock fixtures. It reuses the existing
+sandbox posting ledger and is not a real external rail or a Customer funding
+write API. Provider authentication, production-grade evidence retention,
+checkout, withdrawals, reconciliation and production runtime remain pending.
 
 See the [API](contracts/openapi/wlt.openapi.yaml), [runtime](backend/README.md),
 [migration](database/migrations/README.md) and [finance policy](../../governance/finance.md).

@@ -19,9 +19,9 @@ func runSandboxFunding(ctx context.Context, command string, args []string, input
 	}
 	var amount int64
 	switch command {
-	case "post-sandbox-funding":
+	case "post-sandbox-funding", "verify-sandbox-provider-funding":
 		if len(args) != 2 {
-			return errors.New("usage: wlt post-sandbox-funding <reference> <whole-yemeni-riyals>; provide the session token on stdin")
+			return errors.New("usage: wlt " + command + " <reference> <whole-yemeni-riyals>; provide the session token on stdin")
 		}
 		value, err := strconv.ParseInt(args[1], 10, 64)
 		if err != nil || value < 1 || strconv.FormatInt(value, 10) != args[1] {
@@ -49,6 +49,8 @@ func runSandboxFunding(ctx context.Context, command string, args []string, input
 	var state string
 	if command == "reverse-sandbox-funding" {
 		state, err = wallet.ReverseSandboxFunding(ctx, db, origin, token, args[0])
+	} else if command == "verify-sandbox-provider-funding" {
+		state, err = wallet.VerifySandboxProviderFunding(ctx, db, origin, getenv("WLT_SANDBOX_PROVIDER_ORIGIN"), token, args[0], amount)
 	} else {
 		state, err = wallet.PostSandboxFunding(ctx, db, origin, token, args[0], amount)
 	}

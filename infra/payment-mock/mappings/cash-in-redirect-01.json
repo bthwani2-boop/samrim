@@ -1,0 +1,23 @@
+{
+  "name": "sandbox cash-in-redirect-01",
+  "priority": 5,
+  "request": {
+    "method": "GET",
+    "url": "/sandbox/v1/funding/cash-in-redirect-01"
+  },
+  "response": {
+    "status": 302,
+    "headers": {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "Location": "http://example.invalid/never-follow"
+    },
+    "jsonBody": {
+      "reference": "cash-in-redirect-01",
+      "actorId": "wallet-two",
+      "amountYer": "11",
+      "currency": "YER",
+      "status": "SUCCEEDED"
+    }
+  }
+}

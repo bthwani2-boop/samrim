@@ -20,6 +20,7 @@ on:
       - 'services/**/.dockerignore'
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
+      - 'infra/payment-mock/**'
       - 'infra/verify-owner-postgres-ci.sh'
       - 'infra/verify-isolated-postgres.ps1'
       - 'infra/test-owner-postgres-output.sh'
@@ -39,6 +40,7 @@ on:
       - 'services/**/.dockerignore'
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
+      - 'infra/payment-mock/**'
       - 'infra/verify-owner-postgres-ci.sh'
       - 'infra/verify-isolated-postgres.ps1'
       - 'infra/test-owner-postgres-output.sh'
@@ -115,6 +117,9 @@ jobs:
             go version -m "$binary" | grep -F "go$expected_go"
             rm -f "$binary"
           done
+      - name: Exercise synthetic payment provider in disposable Docker
+        shell: bash
+        run: bash infra/payment-mock/smoke.sh
       - name: State validation limits
         run: echo 'This Go source job does not prove PostgreSQL integration; see the separate disposable owner-postgres-integration job. NOT_RUN - govulncheck, golangci-lint, gosec and fuzz campaigns'
 

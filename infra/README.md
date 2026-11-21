@@ -11,8 +11,16 @@ This environment is synthetic development only, not production deployment. Legac
 | `postgres` | Fresh PostgreSQL 18 + PostGIS, own empty database | internal 5432 only, not exposed |
 | `media` | Fresh SeaweedFS mini, own media volume/credentials | 3233 |
 | `mailpit` | Local inbound test email capture | 3226 |
-| `payment-mock` | Empty WireMock, no provider mappings | 3290 |
+| `payment-mock` | WireMock with fixed synthetic cash-in evidence (no production rails) | 3290 |
 | `dsh` (with optional Compose file) | Public discovery only; proven read-only Store/Offer API | 3202 |
+
+The `payment-mock` image is built from `infra/payment-mock/Dockerfile` using the existing
+pinned WireMock base and fixed, synthetic funding-status mappings. Only the
+listed `GET /sandbox/v1/funding/{reference}` test identities return evidence.
+Unknown operations return 404. The simulator never owns wallets, posts money,
+or exercises a production payment rail. It has no mounted host data or provider
+secrets. The image build and any controlled replacement of the already-running
+container are separate operations; merely editing Compose does not refresh it.
 
 `compose.yaml` defines exactly these four foundational dependencies. The project-scoped `isolated` bridge
 is internal and keeps PostgreSQL inaccessible from the host. A second private

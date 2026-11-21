@@ -36,6 +36,20 @@ for that role. Use the existing isolation mode and Identity origin settings
 above. Run `wlt post-sandbox-funding <reference> <whole-yemeni-riyals>` and
 supply the current synthetic Customer session token through standard input.
 
+An additional **development-only, provider-confirmed** command,
+`wlt verify-sandbox-provider-funding <reference> <whole-yemeni-riyals>`,
+requires `WLT_SANDBOX_PROVIDER_ORIGIN=http://127.0.0.1:<port>` in addition
+to the isolated sandbox credentials. With the existing synthetic Customer
+session on standard input, WLT checks the sandbox provider's
+`GET /sandbox/v1/funding/{reference}` response before using its *existing*
+immutable synthetic journal function. It accepts only an exact successful
+YER amount, provider reference and current Identity actor. A missing,
+pending, failed, mismatched, redirected, malformed, oversized or unreachable
+response fails without a new credit. The simulator and this command are **not**
+a production provider verification scheme; no external funds are transferred.
+The WLT process must reach the simulator through a separately authorized
+local loopback endpoint or tunnel, never a LAN-open financial port.
+
 The command returns `POSTED` or `REPLAYED`. After a lost or uncertain result,
 submit the same reference, actor and amount. A changed actor or amount for
 an existing reference is rejected. The same Customer session must still be

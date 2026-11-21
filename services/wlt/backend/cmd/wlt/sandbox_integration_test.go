@@ -206,7 +206,10 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 		SELECT 1 FROM wlt.customer_funding_journal WHERE funding_id='sandbox-revoked-in-flight')`).Scan(&posted); err != nil || posted {
 		t.Fatalf("in-flight revocation did not prevent durable credit: %t %v", posted, err)
 	}
-	t.Log("WLT sandbox funding and reversal: Identity binding, least privilege, concurrency, lost confirmations and durable HTTP readback passed")
+	t.Run("confirmed synthetic provider funding only", func(t *testing.T) {
+		testVerifiedSandboxProviderFunding(t, ctx, owner, sandboxDSN, identity, wallet, customer, revoked, merchant)
+	})
+	t.Log("WLT sandbox funding, reversal and provider-confirmed credit: Identity binding, least privilege, concurrency, lost confirmations and durable HTTP readback passed")
 }
 
 type lostConfirmation struct{}
