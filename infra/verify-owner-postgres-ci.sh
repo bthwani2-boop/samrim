@@ -245,7 +245,7 @@ docker exec "$current" pg_restore --no-owner --exit-on-error --single-transactio
 for db in bthwani_wlt_test bthwani_wlt_restore; do
   totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT string_agg(actor_id || ':' || balance_yer, ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
-  [[ "$totals" == 'wallet-one:9007199254741062,wallet-two:41' ]] || { echo "WLT restored balances differ" >&2; exit 1; }
+  [[ "$totals" == 'wallet-one:9007199254741062,wallet-two:58' ]] || { echo "WLT restored balances differ after verified sandbox provider credit" >&2; exit 1; }
   recent="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT string_agg(funding_id || ':' || amount_yer, ',' ORDER BY funding_id)
         FROM wlt.customer_funding_history WHERE actor_id = 'wallet-one'
@@ -255,6 +255,17 @@ for db in bthwani_wlt_test bthwani_wlt_restore; do
   history_count="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT count(*) FROM wlt.customer_funding_history WHERE actor_id='wallet-one';")"
   [[ "$history_count" == '14' ]] || { echo "WLT restored paging journal differs" >&2; exit 1; }
+  provider_credit="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
+    -c "SELECT count(*) || ':' || coalesce(sum(amount_yer), 0)
+        FROM wlt.customer_funding_journal WHERE provider_id='sandbox'
+          AND provider_reference='cash-in-accepted-01' AND actor_id='wallet-two'
+          AND amount_yer=17 AND currency='YER';")"
+  [[ "$provider_credit" == '1:17' ]] || { echo "WLT verified provider posting missing or duplicated after restore" >&2; exit 1; }
+  provider_legs="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
+    -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END)
+        FROM wlt.customer_funding_entries
+        WHERE funding_id='sandbox-cash-in-accepted-01';")"
+  [[ "$provider_legs" == '2:0' ]] || { echo "WLT verified provider journal was not balanced after restore" >&2; exit 1; }
   if docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U bthwani_wlt_reader -d "$db" \
     -c 'SELECT provider_reference FROM wlt.customer_funding_journal;' >/dev/null 2>"$scratch/wlt-reader-denial"; then
     echo "WLT restore exposed the private funding journal" >&2
