@@ -43,7 +43,7 @@ export function Providers({ children, cspNonce }: Readonly<{ children: ReactNode
     algorithm: dark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
     token: { colorPrimary: colors.actionBackground, colorText: colors.color, colorBgBase: colors.background, colorBorder: colors.borderColor },
   }}>
-    <section data-theme-preference={pref} style={{ minHeight: "100vh", background: colors.background, color: colors.color, padding: 24, fontFamily: "system-ui" }}>
+    <section data-theme-preference={pref} style={{ minHeight: "100vh", background: "var(--surface-warm)", color: "var(--color-primary)", padding: 24, fontFamily: "system-ui" }}>
       <nav aria-label="خيارات المظهر" style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
         <Segmented
           aria-label="اختيار المظهر"

@@ -49,3 +49,25 @@ test("Operator links perform a new document request, not a cached layout-only tr
   assert.doesNotMatch(login, /next\/link/);
   assert.doesNotMatch(home, /next\/link/);
 });
+
+
+test("Operator SSR shell paints from the same semantic CSS theme as its text before hydration", () => {
+  const provider = read("app/providers.tsx");
+  // When the OS prefers dark and React has not hydrated yet, its initial
+  // `systemDark=false` must not force a light inline background under dark CSS text.
+  assert.match(provider, /background:\s*"var\(--surface-warm\)"/);
+  assert.match(provider, /color:\s*"var\(--color-primary\)"/);
+  assert.doesNotMatch(provider, /background:\s*colors\.background/);
+  assert.doesNotMatch(provider, /color:\s*colors\.color/);
+
+  const themeCss = read("../../packages/design-system/theme.css");
+  const darkIndex = themeCss.indexOf("@media (prefers-color-scheme: dark)");
+  assert.notEqual(darkIndex, -1, "canonical dark-system CSS roles are required before JS mounts");
+  const darkMedia = themeCss.slice(darkIndex);
+  for (const role of ["--surface-warm", "--color-primary"]) {
+    assert.match(themeCss, new RegExp(`${role}:\\s*#[0-9A-Fa-f]{6}`));
+    assert.match(darkMedia, new RegExp(`${role}:\\s*#[0-9A-Fa-f]{6}`));
+  }
+  assert.match(provider, /document\.documentElement\.dataset\.theme\s*=/,
+    "hydration must still honor the user-selected light/dark theme");
+});
