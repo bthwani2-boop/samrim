@@ -124,10 +124,12 @@ this isolated workflow; do not build production email verification just to
 exercise the local Control Panel.
 
 The existing development PostgreSQL database (`bthwani_refoundation`) and
-Identity schema (`identity_test_docker_2e1e6ae0ba6b`) already contain
-synthetic `operator-docker-*` actors. They must be preserved. The ordinary
-disposable `refoundation_webauthn_s02` first-Owner path still refuses
-*every* preexisting Operator.
+Identity schema (`identity_test_docker_2e1e6ae0ba6b`) originally contained
+five synthetic `operator-docker-*` actors. They were removed by explicit
+human authorization after verified backup and cross-owner reference checks.
+The authoritative readback now shows zero Operators and zero original Owners.
+The ordinary disposable `refoundation_webauthn_s02` first-Owner path still
+refuses *every* preexisting Operator.
 
 The **separate, disabled-by-default** local development path can create exactly
 one original Owner despite those known synthetic actors, only when:
@@ -169,11 +171,20 @@ Merchant role and no newly issued session or permission. This is **not**
 production activation or a live authenticated Owner.
 
 The running Identity container still uses the older verifier image with
-Passkey and bootstrap switches disabled. Its scoped PostgreSQL login lacks
-the required write/read rights on the protected Operator tables and cannot
-perform first-Owner enrollment as currently configured. No runtime DB grants,
-credential replacement or service restart was authorized or attempted in
-this increment. A separately reviewed least-privilege Identity owner grant
-change, disposable signed-WebAuthn and concurrency integration, controlled
-runtime cutover, human Windows Hello ceremony, durable permission/session
-readback and independent security review remain required. `JOURNEY_CLOSED=NO`.
+Passkey and bootstrap switches disabled. On 2026-11-23 the authorized
+local-only Identity PostgreSQL role
+`identity_runtime_docker_2e1e6ae0ba6b` received scoped table/column grants
+in the existing `bthwani_refoundation` database: first-Owner enrollment,
+Passkey authentication, session issuance/revocation and Operator permission
+management, without DSH/WLT grants, schema creation, protected-history DELETE
+or Passkey-audit UPDATE. The exact guarded grant script was tested under
+transactional rollback, applied once with checksum verification and confirmed
+by independent PostgreSQL ACL readback and actual restricted-role INSERT in
+a separate rolled-back test transaction. No Operator, credential, session or
+permission row was issued by those tests.
+
+The isolated real signed-WebAuthn/concurrency integration, controlled runtime
+cutover, human Windows Hello ceremony, durable permission/session readback
+and independent security review remain required before first-Owner admission.
+The saved pre-upgrade database archive is retained on Lenovo.
+`JOURNEY_CLOSED=NO`; `PRODUCTION_ACTIVATION=BLOCKED`.
