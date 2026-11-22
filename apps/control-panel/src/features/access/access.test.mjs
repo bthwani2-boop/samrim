@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -69,5 +69,28 @@ test("function tabs point to existing pages under their canonical permissioned s
     assert.equal(canEnterOperatorWorkspace([], section.href), false);
     assert.equal(canEnterOperatorWorkspace([parent.permission], section.href), true);
     assert.ok(existsSync(path.join(panelRoot, "app", "(workspace)", section.href.slice(1), "page.tsx")), section.href);
+  }
+});
+
+test("merchant navigation and page headings use canonical trader/store terminology without altering grants", () => {
+  const merchant = workspaceRegistry.find((entry) => entry.href === "/merchants");
+  assert.equal(merchant?.label, "التجار والمتاجر");
+  assert.equal(merchant?.permission, "merchant");
+  assert.deepEqual(workspaceSubsections.filter((entry) => entry.parent === "/merchants").slice(0, 2).map((entry) => entry.label), [
+    "طلبات انضمام التجار",
+    "إضافة تاجر",
+  ]);
+  const panelRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+  for (const [relative, text] of [
+    ["app/(workspace)/merchants/page.tsx", "إدارة التجار والمتاجر"],
+    ["src/features/stores/stores-workspace.tsx", "التجار والمتاجر"],
+    ["app/(workspace)/finance/merchant-store-commissions/page.tsx", "عمولات المتاجر"],
+    ["app/(workspace)/finance/merchant-commission-receivables/page.tsx", "ذمم عمولات التجار"],
+    ["app/(workspace)/merchants/public-stores/page.tsx", "صلاحية إدارة التجار"],
+    ["app/(workspace)/merchants/public-stores/[storeId]/page.tsx", "صلاحية إدارة التجار"],
+  ]) {
+    const source = readFileSync(path.join(panelRoot, relative), "utf8");
+    assert.ok(source.includes(text), relative);
+    assert.doesNotMatch(source, /الشركاء|شريك/, relative);
   }
 });

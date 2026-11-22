@@ -21,7 +21,7 @@ export default async function PublicStoresMonitor({
   // The layout gate alone is not an authorization check for parallel RSC rendering.
   const access = await currentOperatorAccess();
   if (!access?.grants.includes("merchant")) {
-    return <WorkspaceUnavailable title="المتاجر المنشورة" description="يتطلب هذا العرض صلاحية الشركاء الحالية من Identity." owner="Identity" />;
+    return <WorkspaceUnavailable title="المتاجر المنشورة" description="يتطلب هذا العرض صلاحية إدارة التجار الحالية من Identity." owner="Identity" />;
   }
 
   const scope = parsePublicStoreBrowse(await searchParams);

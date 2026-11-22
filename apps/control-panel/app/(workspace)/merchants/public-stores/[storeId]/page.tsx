@@ -25,7 +25,7 @@ export default async function PublicStoreOffers({
 }>) {
   const access = await currentOperatorAccess();
   if (!access?.grants.includes("merchant")) {
-    return <WorkspaceUnavailable title="العروض العامة" description="تتطلب هذه القراءة صلاحية الشركاء الحالية من Identity." owner="Identity" />;
+    return <WorkspaceUnavailable title="العروض العامة" description="تتطلب هذه القراءة صلاحية إدارة التجار الحالية من Identity." owner="Identity" />;
   }
 
   const { storeId } = await params;

@@ -1,6 +1,6 @@
 import styles from "../operator-shell/operator-shell.module.css";
 
-export default function StoresWorkspace({ title = "الشركاء والمتاجر" }: Readonly<{ title?: string }>) {
+export default function StoresWorkspace({ title = "التجار والمتاجر" }: Readonly<{ title?: string }>) {
   return (
     <main className={styles.workspace} aria-labelledby="stores-workspace-heading">
       <h1 id="stores-workspace-heading">{title}</h1>
