@@ -197,6 +197,51 @@ func proveInitialOperatorBootstrap(t *testing.T, dsn, origin string) {
 		buildCredential("https://evil.example", options.Options.Response.Challenge.String())); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("forged WebAuthn origin accepted: %v", err)
 	}
+	// A challenge from another ceremony must not enroll an Operator, even
+	// with a syntactically correct credential and the approved local Origin.
+	foreignChallenge, err := operatorPasskeyRandom32()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = auth.FinishInitialOperatorRegistration(ctx, ticket, options.CeremonyID,
+		buildCredential(origin, base64.RawURLEncoding.EncodeToString(foreignChallenge))); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("foreign WebAuthn challenge accepted: %v", err)
+	}
+	// User presence is insufficient: a credible attestation lacking the UV
+	// flag must not initialize a privileged account or burn the legal ticket.
+	attestationWithUV := attestation
+	authData[32] = 0x41 // UP + attested credential data, deliberately no UV
+	attestation, err = cbor.Marshal(map[string]any{
+		"fmt": "none", "attStmt": map[string]any{}, "authData": authData,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = auth.FinishInitialOperatorRegistration(ctx, ticket, options.CeremonyID,
+		buildCredential(origin, options.Options.Response.Challenge.String())); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("attestation without user verification accepted: %v", err)
+	}
+	attestation = attestationWithUV
+	authData[32] = 0x45
+	// The authorized 10-minute bootstrap ticket cannot be finished past its
+	// database deadline; restore only synthetic fixture timestamps afterward.
+	_, err = db.ExecContext(ctx, "UPDATE "+schema+".operator_initial_bootstrap SET "+
+		"created_at=clock_timestamp()-interval '9 minutes', "+
+		"expires_at=clock_timestamp()-interval '1 second' "+
+		"WHERE singleton=true AND consumed_at IS NULL")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = auth.FinishInitialOperatorRegistration(ctx, ticket, options.CeremonyID,
+		buildCredential(origin, options.Options.Response.Challenge.String())); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expired one-time Root ticket accepted: %v", err)
+	}
+	_, err = db.ExecContext(ctx, "UPDATE "+schema+".operator_initial_bootstrap SET "+
+		"created_at=clock_timestamp(), expires_at=clock_timestamp()+interval '9 minutes' "+
+		"WHERE singleton=true AND consumed_at IS NULL")
+	if err != nil {
+		t.Fatal(err)
+	}
 	// Exact same challenge, with a genuine library-parsed COSE credential and
 	// user verification. Competing submissions race for a single Owner marker.
 	proof := buildCredential(origin, options.Options.Response.Challenge.String())
@@ -318,5 +363,29 @@ func proveInitialOperatorBootstrap(t *testing.T, dsn, origin string) {
 	}
 	if err = auth.FinishInitialOperatorRegistration(ctx, ticket, options.CeremonyID, proof); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("consumed original ticket was reusable: %v", err)
+	}
+	// Logout must revoke the exact real bearer in the authoritative Identity
+	// database, without ever reactivating the first-Owner ticket or grants.
+	if err = owner.Revoke(ctx, issuedDigest); err != nil {
+		t.Fatalf("original Operator's logout failed: %v", err)
+	}
+	var revoked int
+	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+q("auth_sessions")+
+		" WHERE actor_id=$1 AND revoked_at IS NOT NULL", rootID).Scan(&revoked); err != nil {
+		t.Fatal(err)
+	}
+	if revoked != 1 {
+		t.Fatalf("original Operator session revocation not durable: %d", revoked)
+	}
+	if _, err = NewVerifier(owner).Verify(ctx, "Bearer "+issued.AccessToken); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("logged-out original Operator remained authenticated: %v", err)
+	}
+	for _, scope := range []string{"operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies"} {
+		if _, err = owner.LookupPermission(ctx, issuedDigest, scope); !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("logged-out Root retained usable %s grant: %v", scope, err)
+		}
+	}
+	if err = owner.Revoke(ctx, issuedDigest); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("revoked Operator session accepted a replay: %v", err)
 	}
 }

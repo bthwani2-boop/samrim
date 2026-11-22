@@ -217,7 +217,9 @@ finish_stage
 
 start_stage bthwani-session02-webauthn-pg bthwani_fido_s02 refoundation_webauthn_s02
 run_test "$current" /agent02/services/identity/backend/internal/session \
-  /agent02/bin/identity-session.test '^TestOperatorPasskeyRealWebAuthnSignatureSQL$' 'TestOperatorPasskeyRealWebAuthnSignatureSQL' \
+  /agent02/bin/identity-session.test \
+  '^(TestOperatorPasskeyRealWebAuthnSignatureSQL|TestInitialOperatorBootstrapRealPostgresAndWebAuthn)$' \
+  'TestOperatorPasskeyRealWebAuthnSignatureSQL,TestInitialOperatorBootstrapRealPostgresAndWebAuthn' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e BTHWANI_OPERATOR_PASSKEY_INTEGRATION=true \
   -e BTHWANI_OPERATOR_PASSKEY_CONTAINER=bthwani-session02-webauthn-pg \
   -e BTHWANI_OPERATOR_PASSKEY_DATABASE_URL='postgres://bthwani_fido_s02:synthetic-only@127.0.0.1:5432/refoundation_webauthn_s02?sslmode=disable'
