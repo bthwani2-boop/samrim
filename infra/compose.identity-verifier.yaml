@@ -34,6 +34,9 @@ services:
       IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH: "${REF_IDENTITY_OPERATOR_PASSKEY_AUTH:-false}"
       # Separate explicit approval required for first-Owner registration.
       IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP: "${REF_IDENTITY_OPERATOR_BOOTSTRAP:-false}"
+      # Local refoundation first Owner with preexisting synthetic Operator rows.
+      # Explicit opt-in; defaults to false and never activates production.
+      IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR: "${REF_IDENTITY_LOCAL_DEV_FIRST_OPERATOR:-false}"
       IDENTITY_OPERATOR_PASSKEY_RPID: "${REF_IDENTITY_OPERATOR_PASSKEY_RPID:-}"
       IDENTITY_OPERATOR_PASSKEY_ORIGINS: "${REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS:-}"
     ports:

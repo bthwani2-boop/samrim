@@ -23,6 +23,9 @@ type OperatorPasskeyAuth struct {
 	rpID  string
 	// Initial Root enrollment is a narrower opt-in than ordinary Passkey login.
 	initialRootOrigin string
+	// Exact local refoundation development only; never bypasses the original
+	// owner singleton, WebAuthn verification or protected database gates.
+	allowExistingSyntheticOperators bool
 }
 
 type OperatorPasskeyAssertionOptions struct {

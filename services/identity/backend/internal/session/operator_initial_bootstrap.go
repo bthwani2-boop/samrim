@@ -61,19 +61,38 @@ func lockInitialBootstrap(ctx context.Context, tx *sql.Tx) error {
 	return err
 }
 
-func noExistingInitialOperator(ctx context.Context, tx *sql.Tx) (bool, error) {
+// Local-only bootstrap may coexist with known synthetic Operator fixtures,
+// but never with another original Owner, an unknown Operator or an enrolled
+// Passkey. The ordinary sandbox path retains its stronger empty-role guard.
+func (s *OperatorPasskeyAuth) noExistingInitialOperator(ctx context.Context, tx *sql.Tx) (bool, error) {
 	var count int
-	err := tx.QueryRowContext(ctx,
-		"SELECT (SELECT count(*) FROM actor_roles WHERE role='operator') + (SELECT count(*) FROM operator_bootstrap)").
-		Scan(&count)
+	err := tx.QueryRowContext(ctx, `SELECT
+  (SELECT count(*) FROM operator_bootstrap)
+  + (SELECT count(*) FROM actor_roles WHERE role='operator'
+      AND ($1=false OR actor_id !~ '^operator-docker-[A-Za-z0-9_-]+$'))
+  + (SELECT count(*) FROM operator_passkey_credentials WHERE $1=true)`,
+		s.allowExistingSyntheticOperators).Scan(&count)
 	return count == 0, err
+}
+
+// Only the existing development Identity schema and local WebAuthn RP may
+// enable coexistence. The caller must ALSO prove the exact local database
+// identity and explicit local-development configuration before invoking this.
+func (s *OperatorPasskeyAuth) AllowLocalDevelopmentFirstOwner() error {
+	if s == nil || s.owner == nil || s.owner.db == nil || s.rp == nil ||
+		s.owner.schema != "identity_test_docker_2e1e6ae0ba6b" ||
+		s.rpID != "localhost" || s.initialRootOrigin != "http://localhost:13000" {
+		return ErrInitialOperatorBootstrapUnavailable
+	}
+	s.allowExistingSyntheticOperators = true
+	return nil
 }
 
 // IssueInitialOperatorTicket is an OFFLINE ONLY administration method. It
 // must never be exposed by a public HTTP handler or called from server start.
 // The caller must verify the human owner separately and hand the one-time
-// secret directly to that owner. It refuses a namespace containing any
-// Operator role, including synthetic fixtures from an earlier run.
+// secret directly to that owner. The ordinary sandbox rejects any Operator;
+// exact local-development mode permits only its known synthetic fixtures.
 func (s *OperatorPasskeyAuth) IssueInitialOperatorTicket(ctx context.Context) (string, error) {
 	if !s.initialOwnerAvailable() {
 		return "", ErrInitialOperatorBootstrapUnavailable
@@ -100,7 +119,7 @@ func (s *OperatorPasskeyAuth) IssueInitialOperatorTicket(ctx context.Context) (s
 	if err = lockInitialBootstrap(ctx, tx); err != nil {
 		return "", err
 	}
-	empty, err := noExistingInitialOperator(ctx, tx)
+	empty, err := s.noExistingInitialOperator(ctx, tx)
 	if err != nil {
 		return "", err
 	}
@@ -154,7 +173,7 @@ func (s *OperatorPasskeyAuth) BeginInitialOperatorRegistration(ctx context.Conte
 	if err = lockInitialBootstrap(ctx, tx); err != nil {
 		return OperatorInitialRegistrationOptions{}, err
 	}
-	empty, err := noExistingInitialOperator(ctx, tx)
+	empty, err := s.noExistingInitialOperator(ctx, tx)
 	if err != nil {
 		return OperatorInitialRegistrationOptions{}, err
 	}
@@ -235,7 +254,7 @@ func (s *OperatorPasskeyAuth) FinishInitialOperatorRegistration(ctx context.Cont
 	if err = lockInitialBootstrap(ctx, tx); err != nil {
 		return err
 	}
-	empty, err := noExistingInitialOperator(ctx, tx)
+	empty, err := s.noExistingInitialOperator(ctx, tx)
 	if err != nil {
 		return err
 	}

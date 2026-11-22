@@ -48,7 +48,8 @@ func main() {
 	// Offline first-Operator registration is an explicit separate command,
 	// never part of normal Identity server startup or an HTTP route.
 	if len(os.Args) != 1 {
-		if len(os.Args) == 2 && os.Args[1] == "issue-synthetic-root-ticket" {
+		if len(os.Args) == 2 && (os.Args[1] == "issue-synthetic-root-ticket" ||
+			os.Args[1] == "issue-local-dev-root-ticket") {
 			runIsolatedInitialOperatorTicket()
 			return
 		}
@@ -143,8 +144,20 @@ func main() {
 		// Initial Root enrollment is a separate explicit opt-in, unavailable
 		// unless the existing isolated WebAuthn RP is configured.
 		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" {
-			if !policy.AllowsInitialOperatorBootstrap() || !isInitialOperatorDatabase(ctx, db) {
-				log.Fatal("initial Operator bootstrap requires one approved origin and the disposable WebAuthn database")
+			localDevelopment := os.Getenv("IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR") == "true"
+			if !policy.AllowsInitialOperatorBootstrap() {
+				log.Fatal("initial Operator bootstrap requires one approved WebAuthn origin")
+			}
+			if localDevelopment {
+				if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") != "true" ||
+					!isLocalDevelopmentFirstOperatorDatabase(ctx, db, schema) {
+					log.Fatal("local First Operator requires exact authorized development database and schema")
+				}
+				if err := auth.AllowLocalDevelopmentFirstOwner(); err != nil {
+					log.Fatal("local First Operator guard refused")
+				}
+			} else if !isInitialOperatorDatabase(ctx, db) {
+				log.Fatal("initial Operator bootstrap requires the disposable WebAuthn database")
 			}
 			initial := session.NewOperatorInitialRegistrationHandler(auth)
 			routes.Handle(session.OperatorInitialRegistrationOptionsPath, initial)

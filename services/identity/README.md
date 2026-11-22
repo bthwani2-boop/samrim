@@ -114,3 +114,53 @@ The current deliverable is implementation plus unit/contract checks;
 a genuinely preauthorized proof, disposable PostgreSQL signed-WebAuthn
 integration, Windows Hello registration, session/revocation readback, and
 independent security review are still required before activation. **NOT_CLOSED**.
+
+
+## Local development: first Operator in the existing refoundation Identity
+
+This is **local development**, not a production identity admission flow. An
+administrative Gmail address is not an authentication or ownership proof for
+this isolated workflow; do not build production email verification just to
+exercise the local Control Panel.
+
+The existing development PostgreSQL database (`bthwani_refoundation`) and
+Identity schema (`identity_test_docker_2e1e6ae0ba6b`) already contain
+synthetic `operator-docker-*` actors. They must be preserved. The ordinary
+disposable `refoundation_webauthn_s02` first-Owner path still refuses
+*every* preexisting Operator.
+
+The **separate, disabled-by-default** local development path can create exactly
+one original Owner despite those known synthetic actors, only when:
+
+- The Identity service and offline ticket issuer both target that exact
+  database and schema; the existing container remains `bthwani-refoundation`.
+- `BTHWANI_ISOLATED_TEST_MODE=true`,
+  `BTHWANI_ISOLATED_CONTAINER_MODE=true`, and the exact WebAuthn RP
+  `localhost` with origin `http://localhost:13000` are verified.
+- Both `IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH=true` and
+  `IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true` are explicitly enabled,
+  with the **additional** `IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR=true`.
+- Migration 008 is reviewed and explicitly applied additively to this
+  development schema; never auto-run it against shared data.
+- The owner readback confirms no original Owner, no registered Operator
+  Passkeys, and no unknown Operator actor IDs. An existing `operator-root-*`
+  or any non-fixture Operator **blocks** this path.
+- A human on the authorized device explicitly runs the *offline*
+  `identity issue-local-dev-root-ticket` command and keeps its single-use
+  ten-minute token out of logs, Git, URLs and chat.
+- The human completes real Windows Hello registration using the matching
+  browser origin, then signs in **separately**. Identity alone creates the
+  original actor, seven finite grants, singleton marker, credential and
+  immutable audit within one transaction. No synthetic role is deleted or
+  reassigned, and enrollment alone never returns a session.
+
+Do not reuse the earlier disposable sandbox ticket or paste an exposed token.
+Do not treat the user-provided email address as proof of ownership; local
+Windows Hello is the directly supervised step here. This code is NOT a
+production first-admin workflow.
+
+**Current state:** source and unit tests only. The running Identity container
+has the Passkey and initial-Owner toggles disabled; migration 008 has not been
+applied. A real database-backed concurrent two-attempt test, negative actor
+isolation, human Windows Hello ceremony, owner database readback and security
+review must pass before `JOURNEY_CLOSED` or environment acceptance.
