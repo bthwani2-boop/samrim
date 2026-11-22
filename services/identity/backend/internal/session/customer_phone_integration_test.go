@@ -21,7 +21,7 @@ func verifyPhoneAdmissionIntegration(t *testing.T, ctx context.Context, independ
 	if _, err := rand.Read(key); err != nil {
 		t.Fatal(err)
 	}
-	const phone = "+12025550132"
+	const phone = "+967770000032"
 	ticket, code, err := owner.issuePhoneChallenge(ctx, key, phone)
 	if err != nil {
 		t.Fatal(err)
@@ -99,7 +99,7 @@ func verifyPhoneAdmissionIntegration(t *testing.T, ctx context.Context, independ
 	// An SMTP error occurs after the challenge was committed but before its
 	// ticket was returned. The unknown-delivery ticket must be unusable, and
 	// the caller must be able to retry promptly without evading send limits.
-	const undeliveredPhone = "+12025550133"
+	const undeliveredPhone = "+967770000033"
 	failedTicket, failedCode, err := owner.issuePhoneChallenge(ctx, key, undeliveredPhone)
 	if err != nil {
 		t.Fatal(err)
@@ -137,11 +137,24 @@ func verifyPhoneAdmissionIntegration(t *testing.T, ctx context.Context, independ
 	}
 	deliveryTarget := listener.Addr().String()
 	_ = listener.Close()
-	handler, err := NewCustomerPhoneHandler(owner, hex.EncodeToString(key), deliveryTarget, false)
+	const unavailablePhone = "+967770000034"
+	handler, err := NewCustomerPhoneHandler(owner, hex.EncodeToString(key), deliveryTarget, false, unavailablePhone)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const unavailablePhone = "+12025550134"
+	for _, rejected := range []string{"+967770000035", "+12025550134"} {
+		req := httptest.NewRequest(http.MethodPost, PhoneChallengePath, strings.NewReader(`{"phone":"`+rejected+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, req)
+		if recorder.Code != http.StatusBadRequest {
+			t.Fatalf("unapproved number must fail before challenge creation: %d", recorder.Code)
+		}
+		var attempts int
+		if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".customer_phone_challenges WHERE phone=$1", rejected).Scan(&attempts); err != nil || attempts != 0 {
+			t.Fatalf("unapproved number wrote a challenge: rows=%d err=%v", attempts, err)
+		}
+	}
 	req := httptest.NewRequest(http.MethodPost, PhoneChallengePath,
 		strings.NewReader(`{"phone":"`+unavailablePhone+`"}`))
 	req.Header.Set("Content-Type", "application/json")

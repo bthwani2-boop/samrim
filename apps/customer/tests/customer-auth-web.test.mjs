@@ -73,7 +73,7 @@ test("Merchant bearer cannot be accepted as Customer session", async t => {
 
 test("Cross-site POST and DELETE cannot mutate Customer sessions", async t => {
   const calls = mockOwner(t, () => assert.fail("cross-site must not reach Identity"));
-  assert.equal((await POST(request("POST", { phone: "+12025550177" }, { origin: "https://attacker.example" }))).status, 403);
+  assert.equal((await POST(request("POST", { phone: "+967770000077" }, { origin: "https://attacker.example" }))).status, 403);
   assert.equal((await DELETE(request("DELETE", undefined, { origin: "https://attacker.example" }))).status, 403);
   assert.equal(calls.length, 0);
 });
@@ -83,10 +83,10 @@ test("Customer phone challenge uses bounded local BFF and returns no session", a
     assert.equal(path, "/v1/customer-auth/phone-challenges");
     assert.equal(opts.method, "POST");
     assert.equal(opts.headers.Authorization, undefined);
-    assert.deepEqual(JSON.parse(opts.body), { phone: "+12025550177" });
+    assert.deepEqual(JSON.parse(opts.body), { phone: "+967770000077" });
     return Response.json({ ticket }, { status: 201, headers: { "Cache-Control": "no-store" } });
   });
-  const res = await POST(request("POST", { phone: "+12025550177" }, { cookie: false }));
+  const res = await POST(request("POST", { phone: "+967770000077" }, { cookie: false }));
   assert.equal(res.status, 201);
   assert.deepEqual(await res.json(), { ticket });
   assert.equal(res.headers.get("Set-Cookie"), null);

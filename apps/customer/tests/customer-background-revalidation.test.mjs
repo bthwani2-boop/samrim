@@ -64,7 +64,7 @@ function harness() {
     borderColor: "#444", interactiveText: "#fff", warningText: "#fff", surface: "#222",
   };
   const fake = {
-    "@bthwani/identity": { IdentityClientError: class extends Error {} },
+    "@bthwani/identity": { IdentityClientError: class extends Error {}, normalizeYemeniMobile: () => undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme }) },
     "expo-router": { Link: "Link" },
     react,

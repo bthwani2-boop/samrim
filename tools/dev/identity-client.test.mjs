@@ -5,12 +5,23 @@ import {
   changeOriginalOperatorPermission,
   IdentityClientError,
   issueCustomerPhoneChallenge,
+  normalizeYemeniMobile,
   readVerifiedIdentitySession,
   resumeCurrentCustomerMerchantSession,
   reviewOriginalOperatorPermissions,
   revokeVerifiedIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "../../services/identity/clients/index.ts";
+
+test("Yemeni mobile input becomes one canonical owner number", () => {
+  for (const input of ["770000001", "+967770000001", "٧٧٠٠٠٠٠٠١", " ۷۷۰۰۰۰۰۰۱ "]) {
+    assert.equal(normalizeYemeniMobile(input), "+967770000001");
+  }
+  assert.equal(normalizeYemeniMobile("720000001"), "+967720000001");
+  for (const input of ["+12025550100", "790000001", "77000001", "abc770000001"]) {
+    assert.equal(normalizeYemeniMobile(input), undefined);
+  }
+});
 
 const origin = "https://identity.bthwani.test";
 const bearer = Buffer.alloc(32, 17).toString("base64url");
@@ -169,7 +180,7 @@ test("verified Identity actor IDs follow Go's UTF-8 byte and Unicode control lim
 });
 
 test("phone proof carries exact JSON without credentials and logout requires a no-store 204", async () => {
-  const phone = "+12025550133";
+  const phone = "+967770000033";
   const ticket = "a".repeat(48);
   const code = "123456";
   await withFetch(async (url, options) => {
@@ -355,7 +366,7 @@ test("malformed successful Identity POST responses never certify that a mutation
     assert.equal(options.method, "POST");
     return response({ ticket: "malformed-proof-ticket" }, 201);
   }, async () => {
-    await rejectsAs(() => issueCustomerPhoneChallenge(origin, "+12025550133"),
+    await rejectsAs(() => issueCustomerPhoneChallenge(origin, "+967770000033"),
       502, "OPERATION_RESULT_UNKNOWN");
   });
   assert.equal(requests, 1, "the client must not silently send the SMS challenge twice");

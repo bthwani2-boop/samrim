@@ -158,7 +158,9 @@ Set `REF_IDENTITY_SYNTHETIC_PHONE_AUTH=true` only after applying the Identity
 phone migration in the synthetic schema and verifying the runtime role's scoped
 write privileges. Supply a fresh 32-byte hex `REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY`
 through the Identity-only local settings. Delivery stays on the project's
-`mailpit:1025` network endpoint and accepts only the reserved test phone range.
+`mailpit:1025` network endpoint. Apply migration 009 for the Yemeni phone format
+and set `REF_IDENTITY_SYNTHETIC_YEMEN_PHONES` to the allowed test numbers in
+international format. The Compose default is `+967770000001`.
 The local Merchant development Web endpoint checks synthetic phone availability
 at `127.0.0.1:3201` on each admission retry. For alternate isolated hosts, set
 `MERCHANT_SYNTHETIC_IDENTITY_ORIGIN` and `MERCHANT_SYNTHETIC_DSH_ORIGIN` explicitly.
@@ -172,8 +174,9 @@ to the base, Identity and DSH Compose files. It requires two dedicated volumes.
 The Identity TLS volume contains `server.pem` and `server-key.pem`, with the key
 readable only by Identity's UID 65532. The separate DSH trust volume contains
 `ca.pem`. Issue the leaf for DNS name `identity`, keep the CA signing key off the
-containers, and never publish port 3343. The overlay enables only the authenticated
-owned-Store read and does not enable Store availability mutations.
+containers, and never publish port 3343. The overlay enables authenticated Store
+standing and policy-bound registration. Store availability mutations have a
+separate opt-in.
 The opt-in deployment sequence is:
 
 ```powershell

@@ -1,4 +1,4 @@
-import { IdentityClientError, type VerifiedIdentitySession } from "@bthwani/identity";
+import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
@@ -34,6 +34,7 @@ export default function MerchantIdentityGate() {
   const [standingError, setStandingError] = useState("");
   const [standingLoading, setStandingLoading] = useState(false);
   const [phone, setPhone] = useState("");
+  const phoneNumber = normalizeYemeniMobile(phone);
   const [ticket, setTicket] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -152,7 +153,8 @@ export default function MerchantIdentityGate() {
 
   function requestCode() {
     void run(async signal => {
-      const nextTicket = await requestAdmissionCode(phone.trim(), signal);
+      if (!phoneNumber) return;
+      const nextTicket = await requestAdmissionCode(phoneNumber, signal);
       if (!signal.aborted) {
         setTicket(nextTicket);
         setCode("");
@@ -207,7 +209,7 @@ export default function MerchantIdentityGate() {
         <View style={{ backgroundColor: theme.surface, padding: 22, gap: 14, borderRadius: 16,
           borderColor: theme.borderColor, borderWidth: 1 }}>
           <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 27, fontWeight: "700" }}>
-            إنشاء حساب تاجر أو تسجيل الدخول
+            {session ? "متاجر حسابك" : "تسجيل الدخول أو الانضمام"}
           </Text>
           {busy ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>جارٍ التحقق…</Text> : null}
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
@@ -243,15 +245,12 @@ export default function MerchantIdentityGate() {
           {enabled && !session && !entryUncertain && !ticket ? (
             <>
               <Text style={{ color: theme.colorSecondary }}>
-                يُتحقق من هويتك لدى Identity. إذا كنت تاجرًا جديدًا يُضاف دور التاجر إلى حسابك نفسه؛
-                أما التاجر الحالي فيستعيد دخوله. بعد ذلك تعرض DSH متاجرك أو خيار إنشاء متجر غير منشور.
-              </Text>
-              <Text style={{ color: theme.colorSecondary }}>
-                هذه بيئة تطوير معزولة: استخدم رقم الاختبار المخصص، وليس رقم هاتف حقيقيًا.
+                أدخل رقم الاختبار اليمني المسموح به. رمز التحقق يصل إلى Mailpit.
               </Text>
               <TextInput accessibilityLabel="رقم هاتف الاختبار" value={phone} onChangeText={setPhone}
-                keyboardType="phone-pad" autoComplete="tel" editable={!busy} maxLength={12} style={fieldStyle} />
-              {button("إرسال رمز التحقق", requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()), true)}
+                placeholder="770000001" keyboardType="phone-pad" autoComplete="tel" editable={!busy}
+                maxLength={13} style={fieldStyle} />
+              {button("إرسال رمز التحقق", requestCode, busy || !phoneNumber, true)}
             </>
           ) : null}
           {enabled && !session && !entryUncertain && ticket ? (

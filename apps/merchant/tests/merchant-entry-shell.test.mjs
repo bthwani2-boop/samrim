@@ -22,74 +22,22 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
-function renderShell(desktop) {
-  const jsx = (type, props) => ({ type, props: props ?? {} });
+test("Merchant entry contains only the login card inside the safe area", () => {
+  const jsx = (type, props) => ({ type, props });
   const mock = {
-    "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {
-      background: "#000", surface: "#111", color: "#fff", colorSecondary: "#ccc",
-      interactiveText: "#fff", borderColor: "#444",
-    } }) },
-    "@bthwani/tamagui-config/navigation": { usePrimaryNavigation: () => ({ desktop }) },
-    "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": { ScrollView: "ScrollView", Text: "Text", View: "View" },
+    "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: { background: "#000" } }) },
+    "react/jsx-runtime": { jsx },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
-    "./merchant-workspace-model": {
-      merchantNavigation: [
-        { id: "home", label: "الرئيسية" },
-        { id: "stores", label: "المتاجر" },
-        { id: "orders", label: "الطلبات" },
-        { id: "products", label: "المنتجات" },
-        { id: "wallet", label: "المحفظة" },
-        { id: "more", label: "المزيد" },
-      ],
-      merchantMobileSections: ["home", "orders", "products", "wallet", "more"],
-    },
   };
   const mod = { exports: {} };
   new Function("require", "module", "exports", compiled)(
     name => {
-      assert.ok(Object.hasOwn(mock, name), `unexpected dependency ${name}`);
+      assert.ok(Object.hasOwn(mock, name), "unexpected dependency " + name);
       return mock[name];
     }, mod, mod.exports,
   );
-  return mod.exports.default({ children: jsx("LoginForm", { testID: "safe-identity-gate" }) });
-}
-
-function walk(node, visit) {
-  if (Array.isArray(node)) {
-    node.forEach(child => { walk(child, visit); });
-    return;
-  }
-  if (node === null || typeof node !== "object") return;
-  visit(node);
-  walk(node.props?.children, visit);
-}
-
-for (const desktop of [false, true]) {
-  test(`Guest Merchant shell exposes basic layout without protected access (desktop=${desktop})`, () => {
-    const view = renderShell(desktop);
-    const labels = [];
-    const pressables = [];
-    let loginFound = false;
-    let lockedNoticeFound = false;
-    let sideFound = false;
-    let mobileFound = false;
-    walk(view, node => {
-      if (typeof node.props?.children === "string") labels.push(node.props.children);
-      if (node.type === "Pressable") pressables.push(node);
-      if (node.type === "LoginForm") loginFound = true;
-      if (node.props?.testID === "merchant-guest-sidebar") sideFound = true;
-      if (node.props?.testID === "merchant-guest-mobile-tabs") mobileFound = true;
-      if (node.props?.testID === "merchant-guest-locked-notice") lockedNoticeFound = true;
-    });
-    assert.equal(loginFound, true, "existing Identity form remains usable");
-    assert.equal(lockedNoticeFound, true, "guest area explicitly says authorization is required");
-    assert.equal(sideFound, desktop);
-    assert.equal(mobileFound, !desktop);
-    const selectedLabels = desktop
-      ? ["الرئيسية", "المتاجر", "الطلبات", "المنتجات", "المحفظة", "المزيد"]
-      : ["الرئيسية", "الطلبات", "المنتجات", "المحفظة", "المزيد"];
-    for (const name of selectedLabels) assert.ok(labels.includes(name), name);
-    assert.deepEqual(pressables, [], "guest navigation must never offer protected clickable actions");
-  });
-}
+  const form = jsx("LoginForm", { testID: "safe-identity-gate" });
+  const shell = mod.exports.default({ children: form });
+  assert.equal(shell.type, "SafeAreaView");
+  assert.equal(shell.props.children, form, "no workspace navigation or notice may surround the login card");
+});

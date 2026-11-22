@@ -111,6 +111,13 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(phoneMigration), "__SCHEMA__", schema)); err != nil {
 		t.Fatal("isolated phone verification migration failed:", err)
 	}
+	yemenMigration, err := os.ReadFile(filepath.Join(filepath.Dir(verificationPath), "009_yemeni_synthetic_phone.sql"))
+	if err != nil {
+		t.Fatal("isolated Yemeni phone migration unavailable:", err)
+	}
+	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(yemenMigration), "__SCHEMA__", schema)); err != nil {
+		t.Fatal("isolated Yemeni phone migration failed:", err)
+	}
 	// Keep test scope explicit. Only SQL identifiers derived from local random
 	// bytes are interpolated; all actor IDs, digests and values use binds.
 	exec := func(query string, args ...any) {

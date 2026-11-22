@@ -1,4 +1,4 @@
-import { IdentityClientError, type VerifiedIdentitySession } from "@bthwani/identity";
+import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -37,6 +37,7 @@ export default function CaptainIdentityGate() {
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
   const [pending, setPending] = useState(false);
   const [phone, setPhone] = useState("");
+  const phoneNumber = normalizeYemeniMobile(phone);
   const [ticket, setTicket] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,7 +121,8 @@ export default function CaptainIdentityGate() {
 
   function requestCode() {
     void run(async signal => {
-      const issuedTicket = await requestCaptainPhoneCode(phone.trim(), signal);
+      if (!phoneNumber) return;
+      const issuedTicket = await requestCaptainPhoneCode(phoneNumber, signal);
       if (!signal.aborted) { setTicket(issuedTicket); setCode(""); setPending(false); }
     });
   }
@@ -203,10 +205,10 @@ export default function CaptainIdentityGate() {
                 <Text style={{ color: theme.color, fontWeight: "600" }}>رقم الهاتف التجريبي</Text>
                 <TextInput accessibilityLabel="رقم الهاتف التجريبي" keyboardType="phone-pad"
                   autoComplete="tel" value={phone} editable={!busy} onChangeText={setPhone}
-                  maxLength={12} style={input} />
+                  maxLength={13} style={input} />
               </View>
               {button(pending ? "التحقق مجددًا من الموافقة" : "إرسال رمز التحقق",
-                requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()), true)}
+                requestCode, busy || !phoneNumber, true)}
             </>
           ) : null}
           {enabled && !verified && ticket ? (

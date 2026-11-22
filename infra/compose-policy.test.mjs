@@ -84,6 +84,7 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
   assert.equal(id.environment.BTHWANI_ISOLATED_TEST_MODE, "true");
   assert.equal(id.environment.BTHWANI_ISOLATED_CONTAINER_MODE, "true");
   assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_AUTH, "${REF_IDENTITY_SYNTHETIC_PHONE_AUTH:-false}");
+  assert.equal(id.environment.IDENTITY_SYNTHETIC_YEMEN_PHONES, "${REF_IDENTITY_SYNTHETIC_YEMEN_PHONES:-+967770000001}");
   assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_HMAC_KEY, "${REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY:-}");
   assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_SMTP, "mailpit:1025");
   assert.equal(id.environment.IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH,

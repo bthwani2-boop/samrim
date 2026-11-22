@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/identity/contracts/openapi/identity.openapi.yaml.
-// Normalized OpenAPI SHA-256: ef3a1e39f60f49eff41b3082ce8520a9578a31e4f70a031fae4db3c5732f4e99
+// Normalized OpenAPI SHA-256: 1434160d669d28552705a7f9363e43257433b807d1fda7a3c98e674c8fff1ca4
 // DTO and runtime validation remain the owner's responsibility.
 export const identityOperations = {
   admitVerifiedCurrentCustomerAsMerchant: { method: "POST", path: "/v1/actors/me/merchant-role" },

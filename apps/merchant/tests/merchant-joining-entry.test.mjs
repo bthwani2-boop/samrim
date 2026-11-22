@@ -20,9 +20,8 @@ test("joining only reveals Store admission after both Identity and DSH owner sta
   const gate = read("src/features/access/identity-gate.tsx");
   const workspace = read("src/features/navigation/merchant-workspace.tsx");
   assert.match(gate, /standing\s*\?/);
-  assert.match(gate, /إنشاء حساب تاجر أو تسجيل الدخول/);
-  assert.match(gate, /إذا كنت تاجرًا جديدًا يُضاف دور التاجر إلى حسابك نفسه/);
-  assert.match(gate, /متاجرك أو خيار إنشاء متجر غير منشور/);
+  assert.match(gate, /تسجيل الدخول أو الانضمام/);
+  assert.match(gate, /standing\?\.session === session/);
   assert.match(gate, /<MerchantWorkspace actorId=\{standing\.session\.actorId\}/);
   assert.match(workspace, /stores\.length === 0 \? <MerchantStoreRegistration actorId=\{actorId\}/);
   assert.match(workspace, /<MerchantStoreRegistration actorId=\{actorId\} onCreated=\{onRefresh\}/);

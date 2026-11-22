@@ -104,7 +104,7 @@ func main() {
 	if os.Getenv("IDENTITY_SYNTHETIC_PHONE_AUTH") == "true" {
 		phone, err := session.NewCustomerPhoneHandler(reader,
 			os.Getenv("IDENTITY_SYNTHETIC_PHONE_HMAC_KEY"), os.Getenv("IDENTITY_SYNTHETIC_PHONE_SMTP"),
-			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true")
+			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true", os.Getenv("IDENTITY_SYNTHETIC_YEMEN_PHONES"))
 		if err != nil {
 			log.Fatal("Identity synthetic phone verification misconfigured")
 		}
@@ -181,9 +181,10 @@ func main() {
 	verifier := session.NewHandler(session.NewVerifier(reader))
 	routes.Handle("/", verifier)
 	if tlsConfig != nil {
-		// Only the owner-to-owner session read is needed on the private TLS port.
+		// DSH verifies sessions and effective Operator scopes over private TLS.
 		secureRoutes := http.NewServeMux()
 		secureRoutes.Handle("GET /v1/sessions/current", verifier)
+		secureRoutes.Handle("GET /v1/operators/me/permissions/{permission}", verifier)
 		secureServer := &http.Server{
 			Handler: secureRoutes, TLSConfig: tlsConfig,
 			ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second, WriteTimeout: 6 * time.Second,

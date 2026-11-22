@@ -171,6 +171,14 @@ async function ownerRequest(
     throw new IdentityClientError(502, mutation ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
 }
+/** Accept local or international Yemeni mobile input and return the owner format. */
+export function normalizeYemeniMobile(value: string): string | undefined {
+  const digits = value.trim().replace(/[٠-٩۰-۹]/g, digit =>
+    String(digit.charCodeAt(0) - (digit <= "٩" ? 0x660 : 0x6f0)));
+  const canonical = /^7[01237][0-9]{7}$/.test(digits) ? "+967" + digits : digits;
+  return /^\+9677[01237][0-9]{7}$/.test(canonical) ? canonical : undefined;
+}
+
 export async function issueCustomerPhoneChallenge(
   baseUrl: string, phone: string, signal?: AbortSignal,
 ): Promise<string> {

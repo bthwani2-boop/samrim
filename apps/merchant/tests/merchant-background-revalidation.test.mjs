@@ -45,7 +45,7 @@ function harness() {
   };
   const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
   const mocks = {
-    "@bthwani/identity": { IdentityClientError: class extends Error {} },
+    "@bthwani/identity": { IdentityClientError: class extends Error {}, normalizeYemeniMobile: () => undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {
       background: "black", surface: "black", color: "white",
       colorSecondary: "white", interactiveText: "white", warningText: "red",

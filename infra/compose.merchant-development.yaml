@@ -1,4 +1,4 @@
-# Explicitly isolated activation of the read-only Merchant standing endpoint.
+# Explicit isolated activation of Merchant standing and policy-bound registration.
 services:
   identity:
     environment:
