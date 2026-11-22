@@ -13,6 +13,28 @@ test("the Android Expo manifest check identifies the native platform", () => {
   assert.match(opener, /\$manifest=Probe[^\r\n]*'application\/expo\+json'\s+'android'/);
 });
 
+test("Chrome reuses the intended customer, merchant and operator tabs when Expo shows a URL title", () => {
+  const opener = readFileSync(new URL("./open-dev-apps.ps1", import.meta.url), "utf8");
+  const expected = opener.match(/\$expected=@\(([\s\S]*?)\r?\n\s*\)/);
+  assert.ok(expected, "Chrome tab signatures must be declared");
+  const patterns = [...expected[1].matchAll(/'([^']+)'/g)]
+    .map(([, source]) => new RegExp(source.replace(/^\(\?i\)/, ""), "i"));
+  assert.equal(patterns.length, 3);
+
+  const validTitles = [
+    "127.0.0.1:18101 - Memory usage - 30 MB",
+    "بثواني — التاجر",
+    "بثواني — لوحة التحكم",
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    assert.match(validTitles[i], patterns[i]);
+    assert.doesNotMatch(validTitles[(i + 1) % patterns.length], patterns[i]);
+  }
+  assert.match("بثواني — الرئيسية", patterns[0]);
+  assert.match("127.0.0.1:18102", patterns[1]);
+  assert.match("127.0.0.1:13000", patterns[2]);
+});
+
 test("the unified dev launcher and each embedded PowerShell block parse on Windows", {
   skip: process.platform !== "win32",
 }, () => {

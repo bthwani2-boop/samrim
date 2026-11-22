@@ -78,7 +78,15 @@ public static class BthwaniChromeWindowLocator {
       $tabs=$window.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
       if($tabs.Count -ne 3){continue}
       $names=@($tabs | ForEach-Object {[string]$_.Current.Name})
-      if(@($names | Where-Object {$_ -match 'بثواني|bthwani'}).Count -eq 3){return $handle.ToInt64()}
+      # Expo Web can temporarily expose its local URL as the Chrome tab title.
+      # Match each expected app in tab order, not just the branded page titles.
+      $expected=@(
+        '(?i)(بثواني.*(الرئيسية|العميل)|bthwani.*customer|127\.0\.0\.1:18101)',
+        '(?i)(بثواني.*التاجر|bthwani.*merchant|127\.0\.0\.1:18102)',
+        '(?i)(بثواني.*لوحة التحكم|bthwani.*control|127\.0\.0\.1:13000)'
+      )
+      if(($names[0] -match $expected[0]) -and ($names[1] -match $expected[1]) -and
+          ($names[2] -match $expected[2])){return $handle.ToInt64()}
     } catch {}
   }
   return 0
