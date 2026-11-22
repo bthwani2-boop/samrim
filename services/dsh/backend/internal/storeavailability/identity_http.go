@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 const identityJSONMediaType = "application/json"
@@ -50,6 +52,13 @@ func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
 	}, nil
 }
 
+// Every DSH consumer must accept only a canonical Identity actor identifier.
+// A corrupt upstream response is never proof of session or permission scope.
+func validIdentityActorID(id string) bool {
+	return id != "" && len(id) <= 128 && utf8.ValidString(id) &&
+		strings.TrimSpace(id) == id && !strings.ContainsFunc(id, unicode.IsControl)
+}
+
 func decodeIdentityOwnerJSON(response *http.Response, destination any) error {
 	cache := response.Header.Values("Cache-Control")
 	if len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") {
@@ -60,7 +69,7 @@ func decodeIdentityOwnerJSON(response *http.Response, destination any) error {
 		return ErrIdentityUnavailable
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-	if err != nil || len(body) > 4096 {
+	if err != nil || len(body) > 4096 || !utf8.Valid(body) {
 		return ErrIdentityUnavailable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
@@ -103,9 +112,7 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 	if err = decodeIdentityOwnerJSON(response, &verified); err != nil {
 		return VerifiedActor{}, err
 	}
-	if verified.ActorID == "" || len(verified.ActorID) > 128 ||
-		strings.TrimSpace(verified.ActorID) != verified.ActorID ||
-		strings.ContainsAny(verified.ActorID, "\r\n\t") ||
+	if !validIdentityActorID(verified.ActorID) ||
 		!verified.SessionExpiresAt.After(time.Now()) {
 		return VerifiedActor{}, ErrUnauthorized
 	}
@@ -132,9 +139,8 @@ func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Conte
 	if identity == nil || identity.client == nil {
 		return ErrIdentityUnavailable
 	}
-	if (permission != "operations" && permission != "platform_policies" && permission != "hr") || verifiedActorID == "" ||
-		len(verifiedActorID) > 128 || strings.TrimSpace(verifiedActorID) != verifiedActorID ||
-		strings.ContainsAny(verifiedActorID, "\r\n\t") {
+	if (permission != "operations" && permission != "platform_policies" && permission != "hr") ||
+		!validIdentityActorID(verifiedActorID) {
 		return ErrForbidden
 	}
 	if token == "" || strings.TrimSpace(token) != token ||

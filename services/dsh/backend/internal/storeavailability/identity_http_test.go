@@ -80,6 +80,10 @@ func TestIdentityHTTPRejectsUnverifiedAndMalformedOwnerResponses(t *testing.T) {
 		{"expired", 200, `{"actorId":"merchant-one","role":"merchant","sessionExpiresAt":"2020-01-01T00:00:00Z"}`, ErrUnauthorized},
 		{"unknown field", 200, `{"actorId":"merchant-one","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z","admin":true}`, ErrIdentityUnavailable},
 		{"empty actor", 200, `{"actorId":"","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrUnauthorized},
+		{"NUL actor", 200, `{"actorId":"merchant-\u0000","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrUnauthorized},
+		{"DEL actor", 200, `{"actorId":"merchant-\u007f","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrUnauthorized},
+		{"Unicode control actor", 200, `{"actorId":"merchant-\u0085other","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrUnauthorized},
+		{"invalid UTF-8 owner bytes", 200, "{\"actorId\":\"merchant-\xff\",\"role\":\"merchant\",\"sessionExpiresAt\":\"2099-01-01T00:00:00Z\"}", ErrIdentityUnavailable},
 		{"bad JSON", 200, `{"actorId":`, ErrIdentityUnavailable},
 		{"oversized", 200, strings.Repeat("x", 4097), ErrIdentityUnavailable},
 	}

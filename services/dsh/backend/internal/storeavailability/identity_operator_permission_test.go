@@ -221,3 +221,15 @@ func TestIdentityHTTPRejectsUnapprovedPolicyPermissionStringsBeforeNetwork(t *te
 		}
 	}
 }
+
+func TestIdentityHTTPRejectsMalformedActorBeforePermissionOwnerCall(t *testing.T) {
+	consumer, err := NewIdentitySessionHTTP("http://127.0.0.1:19999")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, actorID := range []string{"operator-a\x00other", "operator-a\x7fother", "operator-a\u0085other", "operator-a\xffother"} {
+		if err := consumer.RequireOperatorPermission(t.Context(), testOpaqueIdentityToken(), actorID, "hr"); !errors.Is(err, ErrForbidden) {
+			t.Fatalf("malformed Identity actor reached the permission owner: %v", err)
+		}
+	}
+}
