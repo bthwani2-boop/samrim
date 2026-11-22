@@ -1,6 +1,8 @@
-import MerchantCapabilityScreen from "../../components/merchant-capability-screen";
+import MerchantIdentityGate from "../access/identity-gate";
 
-// Presentation only. Owner contracts are not yet connected; no local business mutation.
+// Public joining entry reuses the only authenticated Merchant boundary.
+// A verified Merchant with no Stores can register the first DSH-owned Store
+// from the workspace; this screen never grants a role or creates a Store.
 export default function MerchantApplication() {
-  return <MerchantCapabilityScreen title="طلب الانضمام" message="يتطلب تقديم الطلب اتصالًا مع DSH والتحقق من هوية مقدم الطلب عبر Identity؛ لا يتم حفظ طلب تجريبي." />;
+  return <MerchantIdentityGate />;
 }
