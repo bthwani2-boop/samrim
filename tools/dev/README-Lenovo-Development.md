@@ -13,6 +13,14 @@ From Surface PowerShell in `D:\samrim` run **`pnpm dev`**. This is the fast defa
 
 When Lenovo is unreachable on TCP port 22, the fast command reports a specific `BLOCKED` error instead of running lengthy Docker checks. The preexisting Scheduled Tasks keep retrying their SSH tunnels. Check Lenovo power/network before repeating a failed start; never launch a duplicate watcher or tunnel.
 
+## Operator login is a separate Identity acceptance gate
+
+The canonical **WebAuthn/Passkey browser origin is `http://localhost:13000`**, not `127.0.0.1:13000`; the latter redirects to the canonical entry. The URL is forwarded over the existing Surface SSH tunnel to Lenovo's Next.js port `23010`. `localhost:23100` belongs to a **different, optional Surface-only preview** and is not evidence of a logged-in Lenovo Operator.
+
+`pnpm dev` reports `OPERATOR_AUTH` separately from `LAUNCH`. A successful app launch or an HTTP 200 does not prove Operator identity, enrollment, a verified cookie, or any of the seven Identity-owned grants. A `503` session response means the isolated login BFF or its owner is unavailable; do not restart Identity or bypass the gate automatically.
+
+For a genuinely usable **isolated** Operator login, independently verify that the existing Identity test schema is disposable, its required owner migrations are applied, its Passkey origin/RP ID and authentication opt-ins are correct, and the actual Lenovo Control task is launched with `-EnableIsolatedOperatorPasskeyPreview`. The one-time initial Root bootstrap is a **separate protected operation**, never inferred from UI readiness. A real user must enroll their own Passkey; only Identity-owned current session and permission readback permits the workspace. Never fabricate a Root, re-enroll another identity or expose a bootstrap ticket in logs. See `governance/identity.md` and `services/identity/README.md` for owner authorization and recovery requirements.
+
 ## Single existing owners
 - SSH tunnels: four Scheduled Tasks invoke `tools/dev/Start-AppTunnel.ps1`. Customer uses Surface 18101 → Lenovo 28111 and Merchant uses 18102 → 28112. Optional local overrides use `SAMRIM_APP_CUSTOMER_METRO_PORT` and `SAMRIM_APP_MERCHANT_METRO_PORT`. Captain uses 18103 → 28113 and Control Panel uses 13000 → 23010.
 - Source sync: the existing Scheduled Task BThwani Lenovo Source Sync directly runs pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch. Its direct process ownership ensures stopping the task also stops its Node watcher, without orphan duplicates. The scheduled task directly owns the sole watch process; no manual wrapper or second watcher is necessary.

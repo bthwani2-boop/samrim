@@ -37,6 +37,12 @@ function localOrigin(raw: string | undefined, allowedHosts: Set<string>): string
   }
 }
 
+// WebAuthn RP ID is localhost; the 127.0.0.1 alias is not a valid login origin.
+// The only automatic redirect is between the two fixed loopback addresses.
+export function canonicalOperatorEntryRedirect(host: string | null): string | null {
+  return host === "127.0.0.1:13000" ? "http://localhost:13000/" : null;
+}
+
 export function resolveIsolatedOperatorConfig(env: Settings): OperatorPasskeyConfig | null {
   if (env.BTHWANI_ISOLATED_TEST_MODE !== "true" ||
       env.OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF !== "true") return null;

@@ -52,7 +52,7 @@ $chromeProfile='Profile 1'
 $urls=@(
   'http://127.0.0.1:18101/',
   'http://127.0.0.1:18102/',
-  'http://127.0.0.1:13000/'
+  'http://localhost:13000/'
 )
 $android=@(
   @{Name='customer'; Package='com.bthwani.customer'; Scheme='exp+customer'; Port=18101},
@@ -494,7 +494,7 @@ public static class BthwaniChromeWindowLocator {
       $expected=@(
         '(?i)(بثواني.*(الرئيسية|العميل)|bthwani.*customer|127\.0\.0\.1:18101)',
         '(?i)(بثواني.*التاجر|bthwani.*merchant|127\.0\.0\.1:18102)',
-        '(?i)(بثواني.*لوحة التحكم|bthwani.*control|127\.0\.0\.1:13000)'
+        '(?i)(بثواني.*لوحة التحكم|bthwani.*control|localhost:13000|127\.0\.0\.1:13000)'
       )
       $matched=[Collections.Generic.HashSet[int]]::new()
       foreach($signature in $expected){
@@ -515,7 +515,7 @@ function Open-Browser {
   $statusUrls=@(
     'http://127.0.0.1:18101/status',
     'http://127.0.0.1:18102/status',
-    'http://127.0.0.1:13000/'
+    'http://localhost:13000/'
   )
   for($i=0;$i -lt $statusUrls.Count;$i++){
     $state=Probe-App $statusUrls[$i]
@@ -597,6 +597,21 @@ function Open-Android {
   Say 'ANDROID_VISUAL' 'NOT_RUN (native activity launch is not proof of rendered application)'
   if($blocked -gt 0) { throw ('ANDROID_LAUNCH_INCOMPLETE blocked='+$blocked+'; inspect Expo native manifest and app logs') }
 }
+function Show-OperatorAuthReadiness {
+  # A missing browser cookie should return 401 only when the isolated BFF is configured.
+  # This check never enrolls a credential, creates a session or grants an Operator scope.
+  $state = Probe-App 'http://localhost:13000/api/auth/session' 'application/json'
+  if($state.Exit -ne 0) {
+    Say 'OPERATOR_AUTH' 'BLOCKED control-panel tunnel or server unavailable'
+  } elseif($state.Code -eq '503') {
+    Say 'OPERATOR_AUTH' 'BLOCKED Identity/Passkey runtime configuration or owner unavailable'
+  } elseif($state.Code -eq '401') {
+    Say 'OPERATOR_AUTH' 'BFF_READY; Identity ownership, enrollment and browser session NOT_VERIFIED'
+  } else {
+    Say 'OPERATOR_AUTH' ('NOT_VERIFIED status='+$state.Code)
+  }
+}
+
 function Open-AppSurfaces {
   Assert-Ok ($env:COMPUTERNAME -ieq $expectedSurface) 'SURFACE_ONLY'
   $selection = $Mode
@@ -621,7 +636,7 @@ function Open-AppSurfaces {
 function Invoke-AppAction {
   if($DockerAction -eq 'help'){Show-AppsHelp;return}
   if($DockerAction -eq 'android'){Inspect-AppAndroid;return}
-  if($DockerAction -eq 'open'){Open-AppSurfaces;return}
+  if($DockerAction -eq 'open'){Open-AppSurfaces;Show-OperatorAuthReadiness;return}
   Check-Ssh
   switch($DockerAction.ToLowerInvariant()){
     'status' {Inspect-AppOwners}
@@ -806,6 +821,7 @@ try {
       Start-LocalTasks
       Start-LenovoTasks
       Open-AppSurfaces
+      Show-OperatorAuthReadiness
       Say 'LAUNCH' 'PASS (existing app tasks and source watcher; screens opened where available)'
       break
     }
@@ -832,6 +848,7 @@ try {
       Show-Docker
       Wait-AppStatus
       try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
+      Show-OperatorAuthReadiness
       Say 'IDENTITY' 'NOT_AUTOSTARTED (owner-backed runtime security/SQL acceptance required)'
       break
     }
@@ -847,6 +864,7 @@ try {
       Show-Docker
       Wait-AppStatus
       try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
+      Show-OperatorAuthReadiness
       Say 'WARM' 'DONE without builds, migrations, and container recreation'
       break
     }

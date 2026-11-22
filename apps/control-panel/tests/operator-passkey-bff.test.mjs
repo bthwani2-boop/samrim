@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   boundedRequestBody,
+  canonicalOperatorEntryRedirect,
   cookieLifetimeSeconds,
   isEmptyRequestBody,
   isTrustedOperatorRequest,
@@ -24,6 +25,13 @@ const goodEnv = {
 };
 const now = Date.parse("2026-11-18T12:00:00Z");
 const token = "A".repeat(43);
+
+test("Operator entry canonicalizes the loopback alias without widening WebAuthn scope", () => {
+  assert.equal(canonicalOperatorEntryRedirect("127.0.0.1:13000"), "http://localhost:13000/");
+  for (const host of ["localhost:13000", "127.0.0.1:23010", "localhost:23100", "evil.example:13000", null]) {
+    assert.equal(canonicalOperatorEntryRedirect(host), null);
+  }
+});
 
 test("Operator browser BFF is opt-in and bound to exact local origins", () => {
   assert.equal(resolveIsolatedOperatorConfig({ ...goodEnv, BTHWANI_ISOLATED_TEST_MODE: "false" }), null);

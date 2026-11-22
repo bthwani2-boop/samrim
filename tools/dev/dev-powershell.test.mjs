@@ -44,6 +44,15 @@ test("Chrome reuses the intended customer, merchant and operator tabs when Expo 
   assert.doesNotMatch(opener, /bthwani2@gmail\.com/);
 });
 
+test("Operator opens at the exact WebAuthn localhost origin and reports auth readiness separately", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  assert.match(launcher, /'http:\/\/localhost:13000\/'/);
+  assert.match(launcher, /function Show-OperatorAuthReadiness\b/);
+  assert.match(launcher, /'http:\/\/localhost:13000\/api\/auth\/session'/);
+  assert.match(launcher, /'OPERATOR_AUTH'/);
+  assert.match(launcher, /'launch'\s*\{[\s\S]*?Open-AppSurfaces\s+Show-OperatorAuthReadiness/);
+});
+
 test("one dev command opens existing app surfaces after the owner tasks are ready", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   assert.match(launcher, /function Open-AppSurfaces\b/);
@@ -54,7 +63,7 @@ test("one dev command opens existing app surfaces after the owner tasks are read
   assert.doesNotMatch(fastPath[1], /Docker|Start-Base|Show-Docker|Assert-Compose/);
   assert.match(launcher, /'up'\s*\{[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
   assert.match(launcher, /'warm'\s*\{[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
-  assert.match(launcher, /if\s*\(\$DockerAction -eq 'open'\)\s*\{Open-AppSurfaces;return\}/);
+  assert.match(launcher, /if\s*\(\$DockerAction -eq 'open'\)\s*\{Open-AppSurfaces;Show-OperatorAuthReadiness;return\}/);
   assert.match(launcher, /if\s*\(\$selection -eq 'All'\)/);
   assert.match(launcher, /'SAMSUNG' 'SKIPPED/);
 });

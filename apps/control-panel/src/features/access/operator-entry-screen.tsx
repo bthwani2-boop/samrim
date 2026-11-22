@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentOperatorAccessState } from "../../server/current-operator-access";
 import {
-  resolveInitialOperatorBootstrapConfig, resolveIsolatedOperatorConfig,
+  canonicalOperatorEntryRedirect, resolveInitialOperatorBootstrapConfig, resolveIsolatedOperatorConfig,
 } from "../../server/operator-passkey-bff";
 import { workspaceGroupLabels } from "../navigation/workspace-registry";
 import styles from "../operator-shell/operator-shell.module.css";
@@ -11,7 +11,10 @@ import OperatorPasskeyForm from "./operator-passkey-form";
 import { operatorIdentityUnavailableMessage } from "./operator-workspace-gate";
 
 export default async function OperatorEntryScreen() {
-  const [state, requestHeaders] = await Promise.all([currentOperatorAccessState(), headers()]);
+  const requestHeaders = await headers();
+  const canonicalEntry = canonicalOperatorEntryRedirect(requestHeaders.get("host"));
+  if (canonicalEntry) redirect(canonicalEntry);
+  const state = await currentOperatorAccessState();
   if (state.status === "verified" && state.access.grants.length) redirect("/workspace");
 
   const isolated = resolveIsolatedOperatorConfig(process.env);
