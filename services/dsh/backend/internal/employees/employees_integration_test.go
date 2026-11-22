@@ -1,6 +1,7 @@
 package employees
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -167,7 +168,58 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 	if json.Unmarshal(list.Body.Bytes(), &shown) != nil || len(shown.Items) != 1 || shown.Items[0].ID != id {
 		t.Fatalf("company list was not scoped: %s", list.Body)
 	}
+	// Identity may revoke a session or HR grant while the real PostgreSQL
+	// list/detail query is in progress. Never disclose its completed result.
+	for _, tc := range []struct {
+		name         string
+		path         string
+		grantRevoked bool
+		want         int
+	}{
+		{"list session revoked", root, false, 401},
+		{"detail session revoked", root + "/" + id, false, 401},
+		{"list HR grant revoked", root, true, 403},
+		{"detail HR grant revoked", root + "/" + id, true, 403},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			transition := &employeeReadTransition{grantRevoked: tc.grantRevoked}
+			protected, err := NewHandler(t.Context(), db, schema, transition)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			request.Header.Set("Authorization", "Bearer hr-current")
+			response := httptest.NewRecorder()
+			protected.ServeHTTP(response, request)
+			if response.Code != tc.want || transition.calls.Load() != 2 ||
+				strings.Contains(response.Body.String(), "موظف تجريبي") {
+				t.Fatalf("revoked read leaked owner data: status=%d calls=%d body=%s",
+					response.Code, transition.calls.Load(), response.Body.String())
+			}
+		})
+	}
 	revoked.Store(true)
 	expect("GET", root+"/"+id, "hr-current", "", 401)
 	expect("POST", root, "hr-current", data, 401)
+}
+
+// The first session and permission check passes; the second decision changes
+// only after the DSH owner has completed its read.
+type employeeReadTransition struct {
+	calls        atomic.Int32
+	grantRevoked bool
+}
+
+func (identity *employeeReadTransition) ResolveCurrentSession(_ context.Context, _ string) (storeavailability.VerifiedActor, error) {
+	if identity.calls.Add(1) > 1 && !identity.grantRevoked {
+		return storeavailability.VerifiedActor{}, storeavailability.ErrUnauthorized
+	}
+	return storeavailability.VerifiedActor{Subject: "hr-current", Role: storeavailability.OperatorRole}, nil
+}
+
+func (identity *employeeReadTransition) RequireOperatorPermission(_ context.Context, _, _, _ string) error {
+	if identity.grantRevoked && identity.calls.Load() > 1 {
+		return storeavailability.ErrForbidden
+	}
+	return nil
 }

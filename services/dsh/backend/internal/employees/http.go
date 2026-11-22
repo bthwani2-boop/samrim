@@ -21,6 +21,37 @@ type identitySessions interface {
 	RequireOperatorPermission(context.Context, string, string, string) error
 }
 
+type employeeReadActorKey struct{}
+
+// A successful database read is not authority to disclose the result after
+// Identity revokes the session or its HR grant while the query is in flight.
+func verifyEmployeeReadAuthorization(w http.ResponseWriter, r *http.Request, identity identitySessions) bool {
+	originalActor, ok := r.Context().Value(employeeReadActorKey{}).(string)
+	if !ok || originalActor == "" {
+		failure(w, http.StatusServiceUnavailable, "IDENTITY_OWNER_UNAVAILABLE")
+		return false
+	}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	current, err := identity.ResolveCurrentSession(r.Context(), token)
+	if err != nil {
+		identityFailure(w, err)
+		return false
+	}
+	if current.Subject != originalActor {
+		failure(w, http.StatusUnauthorized, "UNAUTHENTICATED")
+		return false
+	}
+	if current.Role != storeavailability.OperatorRole {
+		failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
+		return false
+	}
+	if err := identity.RequireOperatorPermission(r.Context(), token, originalActor, "hr"); err != nil {
+		identityFailure(w, err)
+		return false
+	}
+	return true
+}
+
 func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identitySessions) (http.Handler, error) {
 	if db == nil || !isolatedSchema.MatchString(schema) || identity == nil {
 		return nil, errors.New("employee directory requires an isolated DSH schema and Identity")
@@ -46,6 +77,9 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 			failure(w, http.StatusServiceUnavailable, "EMPLOYEE_OWNER_UNAVAILABLE")
 			return
 		}
+		if !verifyEmployeeReadAuthorization(w, r, identity) {
+			return
+		}
 		reply(w, http.StatusOK, result)
 	})
 	mux.HandleFunc("GET /v1/operators/employees/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -55,14 +89,18 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 			return
 		}
 		record, err := owner.get(r.Context(), id)
-		switch {
-		case errors.Is(err, sql.ErrNoRows):
-			failure(w, http.StatusNotFound, "EMPLOYEE_NOT_FOUND")
-		case err != nil:
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			failure(w, http.StatusServiceUnavailable, "EMPLOYEE_OWNER_UNAVAILABLE")
-		default:
-			reply(w, http.StatusOK, record)
+			return
 		}
+		if !verifyEmployeeReadAuthorization(w, r, identity) {
+			return
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			failure(w, http.StatusNotFound, "EMPLOYEE_NOT_FOUND")
+			return
+		}
+		reply(w, http.StatusOK, record)
 	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -86,6 +124,7 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 			identityFailure(w, err)
 			return
 		}
+		r = r.WithContext(context.WithValue(r.Context(), employeeReadActorKey{}, actor.Subject))
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/operators/employees" {
 			register(w, r, owner, actor.Subject)
 			return
