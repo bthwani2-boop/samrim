@@ -6,11 +6,14 @@ import {
   isEmptyRequestBody,
   isTrustedOperatorRequest,
   OPERATOR_COOKIE,
+  parseInitialOperatorOptions,
   parseIssuedOperatorToken,
   parsePasskeyOptions,
   parseVerifiedOperatorPrincipal,
+  resolveInitialOperatorBootstrapConfig,
   resolveIsolatedOperatorConfig,
   validAssertion,
+  validInitialOperatorPayload,
 } from "../src/server/operator-passkey-bff.ts";
 
 const goodEnv = {
@@ -224,12 +227,6 @@ test("Operator workspace owner mismatch, role spoof, revoked session and outage 
   assert.equal(await readVerifiedOperatorAccess(config, "forged"), null);
   assert.equal(calls, before, "malformed cookie cannot trigger Identity calls");
 });
-import {
-  parseInitialOperatorOptions,
-  resolveInitialOperatorBootstrapConfig,
-  validInitialOperatorPayload,
-} from "../src/server/operator-passkey-bff.ts";
-
 test("Root bootstrap requires a distinct opt-in and the exact origin for the selected isolated preview", () => {
   const enabled = { ...goodEnv, OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF: "true" };
   const surface = {
@@ -280,4 +277,27 @@ test("Root Passkey options require resident user-verified localhost WebAuthn RP"
   assert.equal(parseInitialOperatorOptions({...valid,options:{publicKey:{
     ...valid.options.publicKey,authenticatorSelection:{residentKey:"preferred",userVerification:"required"},
   }}}),null);
+});
+
+test("Operator principal and token obey exact Identity response schemas", () => {
+  const issued = { accessToken: token, sessionExpiresAt: "2026-11-18T12:30:00Z" };
+  const principal = { actorId: "root-synthetic", role: "operator", sessionExpiresAt: issued.sessionExpiresAt };
+  assert.equal(parseIssuedOperatorToken({ ...issued, debug: "internal" }, now), null,
+    "Identity's additionalProperties=false must fail closed");
+  assert.equal(parseVerifiedOperatorPrincipal({ ...principal, debug: true }, issued, now), null);
+  for (const actorId of [" leading", "trailing ", "root\nother", "root\u0000other",
+    "root\u007fother", "x".repeat(129), "م".repeat(65), "\ud800"]) {
+    assert.equal(parseVerifiedOperatorPrincipal({ ...principal, actorId }, issued, now), null,
+      "untrusted or impossible Identity actor identifier must not enter Operator permissions");
+  }
+  const ownerDate = "Wed, 18 Nov 2026 12:30:00 GMT";
+  assert.equal(parseIssuedOperatorToken({ ...issued, sessionExpiresAt: ownerDate }, now), null,
+    "Identity contract requires RFC3339 date-time, not Date.parse guesses");
+  assert.equal(parseVerifiedOperatorPrincipal({ ...principal, sessionExpiresAt: ownerDate },
+    { ...issued, sessionExpiresAt: ownerDate }, now), null);
+  assert.deepEqual(parseIssuedOperatorToken(issued, now), issued);
+  assert.deepEqual(parseVerifiedOperatorPrincipal(principal, issued, now), principal);
+  assert.deepEqual(parseVerifiedOperatorPrincipal({ ...principal, actorId: "مشغّل" }, issued, now),
+    { ...principal, actorId: "مشغّل" },
+    "valid UTF-8 Identity actor IDs must remain supported");
 });

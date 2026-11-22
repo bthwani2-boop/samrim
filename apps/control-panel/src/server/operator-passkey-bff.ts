@@ -73,6 +73,29 @@ function object(value: unknown): Record<string, unknown> | null {
     ? value as Record<string, unknown> : null;
 }
 
+function exactKeys(value: Record<string, unknown>, fields: readonly string[]): boolean {
+  return Object.keys(value).length === fields.length &&
+    fields.every(field => Object.hasOwn(value, field));
+}
+
+function validOwnerDateTime(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/.test(value) &&
+    Number.isFinite(Date.parse(value));
+}
+
+function validOwnerActorId(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.trim() !== value ||
+      new TextEncoder().encode(value).length > 128) return false;
+  // Identity rejects Unicode control code points and malformed UTF-8.
+  // A lone UTF-16 surrogate would be silently replaced by TextEncoder.
+  return Array.from(value).every(char => {
+    const point = char.codePointAt(0);
+    return point !== undefined && point >= 32 &&
+      (point < 127 || point > 159) && (point < 0xd800 || point > 0xdfff);
+  });
+}
+
 function validBinary(value: unknown, minimum = 1): value is string {
   return typeof value === "string" && value.length >= minimum &&
     value.length <= 1024 && validBase64Url.test(value);
@@ -111,8 +134,9 @@ export function parseIssuedOperatorToken(
   now = Date.now(),
 ): IssuedOperatorToken | null {
   const body = object(value);
-  if (!body || !validBinary(body.accessToken, 43) ||
-      body.accessToken.length !== 43 || typeof body.sessionExpiresAt !== "string") return null;
+  if (!body || !exactKeys(body, ["accessToken", "sessionExpiresAt"]) ||
+      !validBinary(body.accessToken, 43) ||
+      body.accessToken.length !== 43 || !validOwnerDateTime(body.sessionExpiresAt)) return null;
   const lifetime = Date.parse(body.sessionExpiresAt) - now;
   if (!Number.isFinite(lifetime) || lifetime <= 0 || lifetime > 31 * 60 * 1000) return null;
   return { accessToken: body.accessToken, sessionExpiresAt: body.sessionExpiresAt };
@@ -124,9 +148,9 @@ export function parseVerifiedOperatorPrincipal(
   now = Date.now(),
 ): VerifiedOperatorPrincipal | null {
   const principal = object(value);
-  if (!principal || typeof principal.actorId !== "string" || principal.actorId.length < 1 ||
-      principal.actorId.length > 256 || principal.role !== "operator" ||
-      typeof principal.sessionExpiresAt !== "string" ||
+  if (!principal || !exactKeys(principal, ["actorId", "role", "sessionExpiresAt"]) ||
+      !validOwnerActorId(principal.actorId) || principal.role !== "operator" ||
+      !validOwnerDateTime(principal.sessionExpiresAt) ||
       Date.parse(principal.sessionExpiresAt) !== Date.parse(token.sessionExpiresAt) ||
       cookieLifetimeSeconds(principal.sessionExpiresAt, now) <= 0) return null;
   return {
