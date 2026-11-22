@@ -12,6 +12,7 @@ param(
   [ValidateRange(1024,65535)]
   [int]$WltPort=23203,
   [switch]$EnableDockerWalletWebPreview,
+  [switch]$EnableDockerCustomerAndroidIdentityPreview,
   [switch]$EnableIsolatedOperatorPasskeyPreview,
   [switch]$EnableIsolatedRootBootstrap
 )
@@ -23,6 +24,10 @@ if ($EnableAndroidWalletPreview -and (!$Surface -or $App -ne 'customer')) {
 if ($EnableDockerWalletWebPreview -and ($Surface -or $App -ne 'customer' -or $EnableAndroidWalletPreview)) {
   throw 'DOCKER_WALLET_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
 }
+if ($EnableDockerCustomerAndroidIdentityPreview -and ($Surface -or $App -ne 'customer')) {
+  throw 'DOCKER_ANDROID_IDENTITY_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
+}
+Remove-Item Env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW -ErrorAction SilentlyContinue
 
 function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
   try {
@@ -72,6 +77,31 @@ if ($Surface) {
     $env:CUSTOMER_SYNTHETIC_WLT_ORIGIN='http://127.0.0.1:3203'
     $env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
     Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
+  }
+  if ($EnableDockerCustomerAndroidIdentityPreview) {
+    if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+      throw 'DOCKER_ANDROID_IDENTITY_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
+    }
+    $identity = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
+    if ($LASTEXITCODE -ne 0 -or $identity.Count -ne 1) { throw 'DOCKER_ANDROID_IDENTITY_OWNER_UNAVAILABLE' }
+    $owner = $identity[0]
+    $ownerEnv = @($owner.Config.Env)
+    $schema = @($ownerEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
+    $binding = @($owner.HostConfig.PortBindings.'3302/tcp')
+    if ($owner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+        $owner.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
+        $owner.State.Health.Status -cne 'healthy' -or
+        $ownerEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
+        $ownerEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
+        $ownerEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
+        $schema.Count -ne 1 -or $schema[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
+        $binding.Count -ne 1 -or $binding[0].HostIp -cne '127.0.0.1' -or $binding[0].HostPort -cne '3201') {
+      throw 'DOCKER_ANDROID_IDENTITY_OWNER_NOT_ISOLATED'
+    }
+    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
+    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
+    $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+    $env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW='1'
   }
 }
 if ($EnableIsolatedRootBootstrap -and !$EnableIsolatedOperatorPasskeyPreview) {

@@ -25,7 +25,7 @@ class IdentityError extends Error {
 const customer = bearer => ({ actorId: bearer === original ? "actor-old" : "actor-new",
   role: "customer", sessionExpiresAt: expiry });
 
-function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false } = {}) {
+function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false, lenovoPreview, platform = "android" } = {}) {
   let bearer = stored;
   let pendingMarker = null;
   let read = async value => ({ ...customer(value), role: ownerRole });
@@ -33,9 +33,13 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
   let revoke = async value => { revoked.push(value); };
   let onStorageWrite = () => {};
   const revoked = [];
+  const storageReads = [];
   const secure = {
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "this-device",
-    async getItemAsync(key) { return key.endsWith(".pending.v1") ? pendingMarker : bearer; },
+    async getItemAsync(key) {
+      storageReads.push(key);
+      return key.endsWith(".pending.v1") ? pendingMarker : bearer;
+    },
     async setItemAsync(key, value) {
       if (key.endsWith(".pending.v1")) { pendingMarker = value; return; }
       bearer = value;
@@ -60,18 +64,21 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
       verifyCustomerPhoneChallenge: (_origin, ticket, code, signal) => codeVerification(ticket, code, signal),
     },
     "expo-secure-store": secure,
-    "react-native": { Platform: { OS: "android" } },
+    "react-native": { Platform: { OS: platform } },
   };
   const mount = () => {
     const module = { exports: {} };
     new Function("require", "module", "exports", "process", compiled)(
       key => { assert.ok(Object.hasOwn(fake, key)); return fake[key]; },
-      module, module.exports, { env: { EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin } },
+      module, module.exports, { env: {
+        EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin,
+        EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW: lenovoPreview,
+      } },
     );
     return module.exports;
   };
   return {
-    transport: mount(), reload: mount, revoked, pending: () => pendingMarker,
+    transport: mount(), reload: mount, revoked, storageReads, pending: () => pendingMarker,
     current: () => bearer,
     setCurrent(value) { bearer = value; },
     setRead(fn) { read = fn; },
@@ -80,6 +87,25 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
     setOnStorageWrite(fn) { onStorageWrite = fn; },
   };
 }
+
+test("Lenovo Android admission uses its own storage and accepts only the opted-in USB loopback origin", async () => {
+  const signal = new AbortController().signal;
+  const nativeOrigin = "http://127.0.0.1:3201";
+  const approved = harness({ nativeOrigin, lenovoPreview: "1" });
+  assert.deepEqual(await approved.transport.readCustomerAdmission(signal), { enabled: true, session: customer(original) });
+  assert.ok(approved.storageReads.length > 0);
+  assert.ok(approved.storageReads.every(key => key.startsWith("bthwani.customer.synthetic-identity.lenovo-android.v1")));
+
+  for (const settings of [
+    { nativeOrigin: "http://127.0.0.1:33221", lenovoPreview: "1" },
+    { nativeOrigin, lenovoPreview: "1", platform: "ios" },
+  ]) {
+    const rejected = harness(settings);
+    assert.deepEqual(await rejected.transport.readCustomerAdmission(signal), { enabled: false, session: null });
+    await rejected.transport.signOutCustomer(signal);
+    assert.deepEqual(rejected.storageReads, []);
+  }
+});
 
 test("Customer role-scoped native admission reads only current Identity actor", async () => {
   const h = harness();

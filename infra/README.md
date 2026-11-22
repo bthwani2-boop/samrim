@@ -251,6 +251,15 @@ through Mailpit. No payment mutation is enabled.
 Neither an Expo Android JS export nor source tests prove actual emulator/device
 execution; test its complete network and session behavior separately.
 
+### Opt-in Lenovo Customer Android sign-in
+
+Use `-EnableDockerCustomerAndroidIdentityPreview` on the Customer launcher.
+The isolated Identity owner must be published on Lenovo loopback port `3201`.
+Forward that owner over the approved private SSH connection to a Surface
+loopback port and map device port `3201` to that Surface port with ADB reverse.
+This preview uses a separate Android session namespace and synthetic phones.
+The Web wallet option can coexist with it and continues to use its own cookie.
+
 For Android development clients, add ADB reverse mappings for the selected app's
 Metro port and the two owner ports. Keep any existing mappings. The preview
 uses separate names for browser cookies and native session storage.

@@ -9,9 +9,14 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 
-const nativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN;
-const storageKey = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
-  ? "bthwani.customer.synthetic-identity.surface.v1" : "bthwani.customer.synthetic-identity.v1";
+const lenovoAndroidPreview = process.env.EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW === "1";
+const configuredNativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN;
+const nativeOrigin = !lenovoAndroidPreview ||
+  (Platform.OS === "android" && configuredNativeOrigin === "http://127.0.0.1:3201")
+  ? configuredNativeOrigin : undefined;
+const storageScope = lenovoAndroidPreview ? ".lenovo-android"
+  : process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1" ? ".surface" : "";
+const storageKey = `bthwani.customer.synthetic-identity${storageScope}.v1`;
 // Survives a process restart when a device write cannot be confirmed or undone.
 const pendingStorageKey = `${storageKey}.pending.v1`;
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
@@ -229,6 +234,7 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
 
 export async function signOutCustomer(signal: AbortSignal): Promise<void> {
   if (Platform.OS === "web") return webRequest<void>("DELETE", signal);
+  if (lenovoAndroidPreview && !nativeOrigin) return;
   let bearer: string | null = null;
   let previouslyInvalid = false;
   try {

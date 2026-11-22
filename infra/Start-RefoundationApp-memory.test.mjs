@@ -38,6 +38,17 @@ test("the PowerShell launcher remains parseable without starting a shared app", 
   assert.equal(result.status, 0, result.stderr || result.stdout || result.error?.message);
 });
 
+test("Lenovo Android Customer Identity rejects a different app or Surface preview before startup", (t) => {
+  if (process.platform !== "win32") return t.skip("PowerShell launcher checked on Surface");
+  for (const selection of [["-App", "merchant"], ["-App", "customer", "-Surface"]]) {
+    const result = spawnSync("pwsh", [
+      "-NoProfile", "-File", file, ...selection, "-EnableDockerCustomerAndroidIdentityPreview",
+    ], { encoding: "utf8", timeout: 12000, windowsHide: true });
+    assert.equal(result.status, 1, result.error?.message);
+    assert.match(result.stderr, /DOCKER_ANDROID_IDENTITY_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY/);
+  }
+});
+
 test("tunneled Operator Passkey opt-in requires the verified isolated Lenovo owner", () => {
   assert.match(launcher, /\[switch\]\$EnableIsolatedOperatorPasskeyPreview/);
   assert.match(launcher, /if \(\$EnableIsolatedOperatorPasskeyPreview -and !\$Surface\)/);
