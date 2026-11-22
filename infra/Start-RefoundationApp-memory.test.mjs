@@ -49,6 +49,12 @@ test("Lenovo Android Customer Identity rejects a different app or Surface previe
   }
 });
 
+test("Lenovo Android Customer manifest advertises the tunnel instead of the server's listen port", () => {
+  const preview = launcher.split("if ($EnableDockerCustomerAndroidIdentityPreview) {")[1];
+  assert.ok(preview);
+  assert.match(preview, /\$env:EXPO_PACKAGER_PROXY_URL='http:\/\/127\.0\.0\.1:18101'/);
+});
+
 test("tunneled Operator Passkey opt-in requires the verified isolated Lenovo owner", () => {
   assert.match(launcher, /\[switch\]\$EnableIsolatedOperatorPasskeyPreview/);
   assert.match(launcher, /if \(\$EnableIsolatedOperatorPasskeyPreview -and !\$Surface\)/);

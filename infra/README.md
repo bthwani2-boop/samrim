@@ -253,7 +253,8 @@ execution; test its complete network and session behavior separately.
 
 ### Opt-in Lenovo Customer Android sign-in
 
-Use `-EnableDockerCustomerAndroidIdentityPreview` on the Customer launcher.
+Use `-EnableDockerCustomerAndroidIdentityPreview` on the Customer launcher
+with the standard Customer Metro tunnel and ADB reverse on port `18101`.
 The isolated Identity owner must be published on Lenovo loopback port `3201`.
 Forward that owner over the approved private SSH connection to a Surface
 loopback port and map device port `3201` to that Surface port with ADB reverse.

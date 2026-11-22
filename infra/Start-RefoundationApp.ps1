@@ -102,6 +102,8 @@ if ($Surface) {
     Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
     $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
     $env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW='1'
+    # Android reaches this Metro server through the standard Surface USB tunnel.
+    $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18101'
   }
 }
 if ($EnableIsolatedRootBootstrap -and !$EnableIsolatedOperatorPasskeyPreview) {
