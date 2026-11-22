@@ -15,7 +15,8 @@ import (
 func (s *Server) listVerticals(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	values, parseErr := url.ParseQuery(r.URL.RawQuery)
 	if parseErr != nil || len(values["city_id"]) != 1 ||
-		len(values["limit"]) > 1 || len(values["cursor"]) > 1 || len(values) > 3 {
+		len(values["limit"]) > 1 || len(values["cursor"]) > 1 || len(values) > 3 ||
+		(values.Has("cursor") && values.Get("cursor") == "") {
 		errorJSON(w, 400, "INVALID_REQUEST")
 		return
 	}
@@ -98,7 +99,7 @@ func validPublicListSelectors(r *http.Request, stores bool) bool {
 		return false
 	}
 	for key, supplied := range values {
-		if len(supplied) != 1 {
+		if len(supplied) != 1 || (key == "cursor" && supplied[0] == "") {
 			return false
 		}
 		switch key {

@@ -37,3 +37,25 @@ func TestPublicStoreAndOfferQueriesRejectUnknownOrDuplicateSelectors(t *testing.
 		})
 	}
 }
+
+func TestPublicDirectoriesRejectExplicitEmptyPagingSelectors(t *testing.T) {
+	for _, path := range []string{
+		"/v1/public/cities?limit=",
+		"/v1/public/verticals?city_id=sanaa&limit=",
+		"/v1/public/verticals?city_id=sanaa&cursor=",
+		"/v1/public/stores?city_id=sanaa&limit=",
+		"/v1/public/stores?city_id=sanaa&cursor=",
+		"/v1/public/stores/store-a/offers?limit=",
+		"/v1/public/stores/store-a/offers?cursor=",
+	} {
+		t.Run(path, func(t *testing.T) {
+			writer := httptest.NewRecorder()
+			(&Server{Owner: &Owner{}}).ServeHTTP(writer,
+				httptest.NewRequest(http.MethodGet, path, nil))
+			if writer.Code != http.StatusBadRequest {
+				t.Fatalf("explicit empty paging value reached owner: %s => %d %s",
+					path, writer.Code, writer.Body.String())
+			}
+		})
+	}
+}

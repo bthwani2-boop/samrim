@@ -208,11 +208,14 @@ func errorJSON(w http.ResponseWriter, status int, code string) {
 	jsonResponse(w, status, map[string]string{"error": code})
 }
 func limitParam(r *http.Request) (int, bool) {
-	v := r.URL.Query().Get("limit")
-	if v == "" {
+	values, present := r.URL.Query()["limit"]
+	if !present {
 		return 20, true
 	}
-	n, e := strconv.Atoi(v)
+	if len(values) != 1 {
+		return 0, false
+	}
+	n, e := strconv.Atoi(values[0])
 	return n, e == nil && n >= 1 && n <= 50
 }
 func makeCursor(c pageCursor) string {
