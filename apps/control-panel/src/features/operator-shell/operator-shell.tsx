@@ -2,7 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
-import { findWorkspaceEntry, workspaceGroupLabels, workspaceSubsections } from "../navigation/workspace-registry";
+import { findWorkspaceEntry, workspaceGroupLabels, workspaceRegistry, workspaceSubsections } from "../navigation/workspace-registry";
 import { canEnterOperatorWorkspace, type OperatorPermission, visibleWorkspaceEntries } from "../session/operator-permissions";
 import styles from "./operator-shell.module.css";
 
@@ -46,6 +46,11 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
     </li>
   );
 
+  // The login route is a standalone screen. Never render admin navigation before authorization.
+  if (pathname === "/" && signOutState === "idle") {
+    return <div className={styles.loginOnly}>{children}</div>;
+  }
+
   return (
     <div className={hasWorkspace ? styles.shell : `${styles.shell} ${styles.publicShell}`}>
       {signOutState !== "idle" ? (
@@ -60,12 +65,15 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
         <header className={styles.brand}>لوحة تحكم بثواني</header>
         <nav aria-label="التنقل الرئيسي" className={styles.navigation}>
           {hasWorkspace ? Object.entries(workspaceGroupLabels).map(([group, label]) => {
-            const entries = permitted.filter(entry => entry.group === group);
+            const entries = workspaceRegistry.filter(entry => entry.group === group);
             if (entries.length === 0) return null;
             return (
               <div key={group}>
                 {entries.length > 1 ? <span className={styles.groupLabel}>{label}</span> : null}
-                <ul>{entries.map(entry => navigationLink(entry, activeHref))}</ul>
+                <ul>{entries.map(entry => permitted.some(item => item.href === entry.href)
+                  ? navigationLink(entry, activeHref)
+                  : <li key={entry.href}><span className={styles.lockedNavigationItem}
+                      aria-disabled="true" title="يتطلب صلاحية من Identity">{entry.label} — غير مصرح</span></li>)}</ul>
               </div>
             );
           }) : <ul>{publicLinks.map(entry => navigationLink(entry, pathname))}</ul>}

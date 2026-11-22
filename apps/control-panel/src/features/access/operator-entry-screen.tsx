@@ -1,12 +1,8 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentOperatorAccessState } from "../../server/current-operator-access";
-import {
-  canonicalOperatorEntryRedirect, resolveInitialOperatorBootstrapConfig, resolveIsolatedOperatorConfig,
-} from "../../server/operator-passkey-bff";
-import { workspaceGroupLabels } from "../navigation/workspace-registry";
+import { canonicalOperatorEntryRedirect, resolveIsolatedOperatorConfig } from "../../server/operator-passkey-bff";
 import styles from "../operator-shell/operator-shell.module.css";
-import OperatorBootstrapForm from "./operator-bootstrap-form";
 import OperatorPasskeyForm from "./operator-passkey-form";
 import { operatorIdentityUnavailableMessage } from "./operator-workspace-gate";
 
@@ -34,10 +30,7 @@ export default async function OperatorEntryScreen() {
             تم التحقق من حسابك. اطلب من مسؤول الوصول منحك صلاحية لمساحة العمل المطلوبة.
           </p>
         ) : signInOnThisAddress ? (
-          <>
-            <OperatorPasskeyForm />
-            {resolveInitialOperatorBootstrapConfig(process.env) && <OperatorBootstrapForm />}
-          </>
+          <OperatorPasskeyForm />
         ) : isolated ? (
           <>
             <p>يتطلب مفتاح المرور استخدام عنوان الدخول المحلي المعتمد.</p>
@@ -59,15 +52,6 @@ export default async function OperatorEntryScreen() {
             </details>
           </>
         )}
-      </section>
-      <section className={styles.overview} aria-labelledby="operator-sections-title">
-        <h2 id="operator-sections-title">أقسام لوحة التحكم</h2>
-        <p>تفتح الأقسام المسموحة بعد التحقق من صلاحيات حسابك.</p>
-        <ul>
-          {Object.entries(workspaceGroupLabels).filter(([group]) => group !== "home").map(([group, label]) => (
-            <li key={group}>{label}</li>
-          ))}
-        </ul>
       </section>
     </main>
   );

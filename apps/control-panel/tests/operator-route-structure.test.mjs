@@ -16,7 +16,8 @@ test("Operator workspace keeps control-panel identity and uses a real Next route
   const entry = read("src/features/access/operator-entry-screen.tsx");
   assert.match(entry, /متطلبات تفعيل الدخول/);
   assert.match(entry, /مفتاح مرور موثّق لصاحب الحساب/);
-  assert.match(entry, /تفتح الأقسام المسموحة بعد التحقق من صلاحيات حسابك/);
+  assert.doesNotMatch(entry, /operator-sections-title|workspaceGroupLabels/);
+  assert.match(read("src/features/operator-shell/operator-shell.tsx"), /pathname === "\/" && signOutState === "idle"/);
   const login = read("src/features/access/operator-passkey-form.tsx");
   assert.match(login, /Identity من إكمال التحقق الآمن/);
   assert.match(read("app/(workspace)/workspace/page.tsx"), /OperatorDashboardPage/);
