@@ -11,10 +11,11 @@ const orderabilityLabels: Record<PublicStore["orderabilityStatus"], string> = {
   OPERATIONALLY_UNAVAILABLE: "غير متاح تشغيليًا",
 };
 
-export default async function PublicMarketOverview({ searchParams, canVisitStores, canVisitCatalog }: Readonly<{
+export default async function PublicMarketOverview({ searchParams, canVisitStores, canVisitCatalog, action = "/workspace" }: Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
   canVisitStores: boolean;
   canVisitCatalog: boolean;
+  action?: "/workspace" | "/merchants";
 }>) {
   // The workspace page is already protected by Identity, but this view
   // contains public DSH facts only. Never infer management grants from them.
@@ -54,7 +55,7 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
     <section aria-labelledby="operator-public-market-heading">
       <h2 id="operator-public-market-heading">لمحة السوق المنشور</h2>
       <p>بيانات عامة للقراءة فقط من DSH. الأعداد المعروضة تخص الصفحة المحدودة، وليست إجمالي الطلبات أو المتاجر أو الإيرادات.</p>
-      <form method="get" action="/workspace" style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: "0.75rem" }}>
+      <form method="get" action={action} style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: "0.75rem" }}>
         <label style={{ display: "grid", gap: "0.25rem" }}>
           مدينة منشورة
           <input type="text" name="city" list="operator-home-cities" defaultValue={city ?? ""}
