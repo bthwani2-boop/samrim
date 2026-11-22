@@ -67,6 +67,7 @@ func NewHandler(db *sql.DB, schema string, identity Identity) (http.Handler, err
 	h := &Handler{db: db, schema: schema, identity: identity}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/carts/{storeID}", h.get)
+	mux.HandleFunc("GET /v1/carts/{storeID}/merchandise-estimate", h.merchandiseEstimate)
 	mux.HandleFunc("PUT /v1/carts/{storeID}", h.put)
 	return mux, nil
 }

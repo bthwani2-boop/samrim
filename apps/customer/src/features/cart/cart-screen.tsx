@@ -1,12 +1,12 @@
-import { type CustomerCartChange, DshCartError } from "@bthwani/dsh";
+import { type CustomerCartChange, type CustomerCartMerchandiseEstimate, DshCartError } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import * as Crypto from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { previewLineSubtotalYer, summarizeCartPreview } from "./cart-preview";
-import { type CartReadState, readVerifiedCart, replaceVerifiedCart } from "./cart-transport";
+import { type CartReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate, replaceVerifiedCart } from "./cart-transport";
 
 const formatYER = new Intl.NumberFormat("ar-YE");
 type Pending = { actorId: string; change: CustomerCartChange };
@@ -17,6 +17,7 @@ export default function CartScreen() {
   const storeId = typeof storeParam === "string" ? storeParam : "";
   const [view, setView] = useState<CartReadState | null>(null);
   const [error, setError] = useState("");
+  const [ownerMerchandise, setOwnerMerchandise] = useState<CustomerCartMerchandiseEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = useRef<(() => void) | null>(null);
   const pending = useRef<Pending | null>(null);
@@ -52,12 +53,34 @@ export default function CartScreen() {
     };
   }, [storeId]));
 
+  useEffect(() => {
+    if (view?.kind !== "ready" || view.cart.lines.length === 0) {
+      setOwnerMerchandise(null);
+      return;
+    }
+    const controller = new AbortController();
+    const actor = view.cart.actorId;
+    const version = view.cart.version;
+    setOwnerMerchandise(null);
+    void readVerifiedCartMerchandiseEstimate(storeId, version, actor, controller.signal)
+      .then(result => {
+        if (!controller.signal.aborted && result.kind === "ready") {
+          setOwnerMerchandise(result.estimate);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setOwnerMerchandise(null);
+      });
+    return () => controller.abort();
+  }, [storeId, view]);
+
   async function apply(change: CustomerCartChange, actorId: string) {
     if (mutation.current) return;
     const controller = new AbortController();
     const epoch = generation.current;
     mutation.current = controller;
     setBusy(true);
+    setOwnerMerchandise(null);
     setError("");
     try {
       const result = await replaceVerifiedCart(storeId, change, actorId, controller.signal);
@@ -165,8 +188,19 @@ export default function CartScreen() {
                     عروض غير متاحة: {preview.unavailableLines}. لم تدخل في الإجمالي التقديري.
                   </Text>
                 ) : null}
+                {ownerMerchandise && ownerMerchandise.cartVersion === view.cart.version &&
+                  ownerMerchandise.actorId === view.cart.actorId && !busy && !pending.current ? (
+                    <Text testID="cart-dsh-merchandise-estimate" style={{ color: theme.color }}>
+                      مجموع البضائع المحسوب لدى DSH لهذه النسخة: {formatYER.format(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني.
+                    </Text>
+                  ) : (
+                    <Text style={{ color: theme.colorSecondary }}>
+                      لا يوجد تقدير بضائع حديث ومتحقق من DSH لهذه النسخة.
+                    </Text>
+                  )}
                 <Text style={{ color: theme.colorSecondary }}>
-                  التسعير النهائي والرسوم وصلاحية العروض يحددها DSH عند تأكيد الطلب، وليس هذا التقدير.
+                  هذه القيمة للبضائع فقط؛ لا تشمل التوصيل والرسوم ولا تُعد عرض دفع أو تأكيد طلب.
+                  يتحقق DSH وWLT من الإجمالي النهائي عند تفعيل رحلة الطلب.
                 </Text>
               </View>
             ) : null}

@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -112,6 +113,16 @@ func runCart(t *testing.T, h http.Handler, method, store, token string, body any
 	h.ServeHTTP(rec, jsonCartRequest(t, method, store, token, body))
 	return rec.Code, rec.Body.Bytes()
 }
+func runEstimate(t *testing.T, h http.Handler, store, token string, version int64) (int, []byte) {
+	t.Helper()
+	request := jsonCartRequest(t, http.MethodGet, store, token, nil)
+	request.URL.Path += "/merchandise-estimate"
+	request.URL.RawQuery = "expectedVersion=" + strconv.FormatInt(version, 10)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, request)
+	return rec.Code, rec.Body.Bytes()
+}
+
 func assertCartStatus(t *testing.T, got, want int, body []byte) {
 	t.Helper()
 	if got != want {
@@ -216,6 +227,29 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 		first.Cart.Lines[0].Quantity != 2 || !first.Cart.Lines[0].PreviewAvailable {
 		t.Fatalf("invalid Cart owner result: %s", body)
 	}
+	// A new DSH read endpoint derives exact merchandise value from one real
+	// PostgreSQL snapshot. It cannot claim delivery fees, a confirmed Order,
+	// a WLT allocation or a checkout-ready state.
+	status, amountBody := runEstimate(t, handler, "store-a", "customer-a", 1)
+	assertCartStatus(t, status, 200, amountBody)
+	var amount MerchandiseEstimate
+	if err = json.Unmarshal(amountBody, &amount); err != nil ||
+		amount.CartVersion != 1 || amount.MerchandiseSubtotalYER != "1100" ||
+		len(amount.Lines) != 1 || amount.Lines[0].UnitYER != "550" ||
+		amount.Lines[0].LineTotalYER != "1100" || amount.CheckoutReady {
+		t.Fatalf("DSH owner merchandise estimate is not an exact read: %s %v", amountBody, err)
+	}
+	for _, denied := range []struct {
+		token   string
+		version int64
+		status  int
+	}{
+		{"merchant-a", 1, 403}, {"customer-b", 1, 409}, {"customer-a", 0, 409},
+		{"", 1, 401},
+	} {
+		got, response := runEstimate(t, handler, "store-a", denied.token, denied.version)
+		assertCartStatus(t, got, denied.status, response)
+	}
 	status, body = runCart(t, handler, "PUT", "store-a", "customer-a", input)
 	assertCartStatus(t, status, 200, body)
 	var replay ChangeResult
@@ -289,6 +323,8 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 	if err = json.Unmarshal(body, &preview); err != nil || len(preview.Lines) != 1 || preview.Lines[0].PreviewAvailable {
 		t.Fatalf("stale stock was displayed as available: %s", body)
 	}
+	status, amountBody = runEstimate(t, handler, "store-a", "customer-a", 2)
+	assertCartStatus(t, status, 409, amountBody) // never quote unavailable stock
 	noStock := map[string]any{"operationId": "cart-unavailable", "expectedVersion": 2,
 		"lines": []map[string]any{{"offerId": "offer-a", "quantity": 5}}}
 	status, body = runCart(t, handler, "PUT", "store-a", "customer-a", noStock)

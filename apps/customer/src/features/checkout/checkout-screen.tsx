@@ -5,6 +5,8 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview";
 import { type CartReadState, readVerifiedCart } from "../cart/cart-transport";
+import { readCheckoutFunding } from "./checkout-funding";
+import type { CheckoutFundingState } from "./checkout-funding-state";
 import FulfillmentChoice from "./fulfillment-choice";
 import PaymentSelection from "./payment-selection";
 import RecipientForm from "./recipient-form";
@@ -13,6 +15,7 @@ const formatYER = new Intl.NumberFormat("ar-YE");
 const storeRule = /^[a-z0-9-]{1,64}$/;
 
 type CurrentCart = Readonly<{ storeId: string; view: CartReadState }>;
+type CurrentFunding = Readonly<{ storeId: string; actorId: string; proof: CheckoutFundingState }>;
 
 /**
  * Read-only review of the current DSH-owned Store Cart.
@@ -24,6 +27,7 @@ export default function CheckoutScreen() {
   const { storeId: param } = useLocalSearchParams<{ storeId?: string }>();
   const storeId = typeof param === "string" && storeRule.test(param) ? param : "";
   const [result, setResult] = useState<CurrentCart | null>(null);
+  const [funding, setFunding] = useState<CurrentFunding | null>(null);
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
 
@@ -31,12 +35,38 @@ export default function CheckoutScreen() {
   useFocusEffect(useCallback(() => {
     const epoch = ++generation.current;
     const controller = new AbortController();
+    let expires: ReturnType<typeof setTimeout> | undefined;
     setResult(null);
+    setFunding(null);
     if (storeId) {
       void readVerifiedCart(storeId, controller.signal).then(view => {
-        if (!controller.signal.aborted && generation.current === epoch) {
-          setResult({ storeId, view });
-        }
+        if (controller.signal.aborted || generation.current !== epoch) return;
+        setResult({ storeId, view });
+        if (view.kind !== "ready") return;
+        const actorId = view.cart.actorId;
+        // WLT must independently verify this exact Customer before any
+        // wallet balance appears alongside the DSH Cart. No financial write.
+        void readCheckoutFunding(actorId, controller.signal).then(proof => {
+          if (controller.signal.aborted || generation.current !== epoch) return;
+          if (proof.kind === "signed-out") {
+            setResult({ storeId, view: { kind: "signed-out" } });
+            setFunding(null);
+            return;
+          }
+          setFunding({ storeId, actorId, proof });
+          if (proof.kind === "ready") {
+            expires = setTimeout(() => {
+              if (!controller.signal.aborted && generation.current === epoch) {
+                setFunding(null);
+                setResult({ storeId, view: { kind: "signed-out" } });
+              }
+            }, Math.max(0, proof.expiresAt - Date.now()));
+          }
+        }).catch(() => {
+          if (!controller.signal.aborted && generation.current === epoch) {
+            setFunding({ storeId, actorId, proof: { kind: "unavailable" } });
+          }
+        });
       }).catch(() => {
         if (!controller.signal.aborted && generation.current === epoch) {
           setResult({ storeId, view: { kind: "unavailable" } });
@@ -45,8 +75,10 @@ export default function CheckoutScreen() {
     }
     return () => {
       controller.abort();
+      if (expires) clearTimeout(expires);
       generation.current++;
       setResult(null);
+      setFunding(null);
     };
   }, [storeId, retry]));
 
@@ -55,6 +87,8 @@ export default function CheckoutScreen() {
   const view = result?.storeId === storeId ? result.view : null;
   const cart = view?.kind === "ready" && view.cart.storeId === storeId ? view.cart : null;
   const preview = cart ? summarizeCartPreview(cart.lines) : null;
+  const currentFunding = cart && funding?.storeId === storeId && funding.actorId === cart.actorId
+    ? funding.proof : null;
   const action = {
     minHeight: 44, justifyContent: "center" as const,
     paddingHorizontal: 16, paddingVertical: 10,
@@ -121,6 +155,22 @@ export default function CheckoutScreen() {
                 ) : null}
               </View>
             ))}
+            <View testID="checkout-wlt-balance-review" style={{
+              padding: 16, gap: 8, borderRadius: 12,
+              backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderColor,
+            }}>
+              <Text style={{ color: theme.color, fontWeight: "700" }}>رصيد المحفظة للمراجعة فقط</Text>
+              <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
+                {currentFunding?.kind === "ready"
+                  ? `رصيد WLT التجريبي الحالي: ${formatYER.format(BigInt(currentFunding.balance.balanceYer))} ريال يمني.`
+                  : currentFunding?.kind === "unavailable"
+                    ? "تعذّر التحقق من رصيد المحفظة؛ لا يمكن الاعتماد عليه."
+                    : "جارٍ التحقق من رصيد هذا الحساب لدى WLT."}
+              </Text>
+              <Text style={{ color: theme.colorSecondary }}>
+                الرصيد المعروض ليس حجزًا أو تخصيصًا لهذا الطلب؛ الدفع وتأكيد الطلب غير متاحين.
+              </Text>
+            </View>
             {preview ? (
               <View testID="checkout-preview-subtotal" style={{
                 padding: 16, gap: 8, borderRadius: 12,
