@@ -73,14 +73,23 @@ function validDate(value: unknown): value is string {
 function exactKeys(v: Record<string, unknown>, fields: readonly string[]): boolean {
   return Object.keys(v).length === fields.length && Object.keys(v).every(k => fields.includes(k));
 }
+function validOwnerActorId(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 ||
+      value.trim() !== value || new TextEncoder().encode(value).length > 128) return false;
+  // Match Identity Go's utf8.ValidString and unicode.IsControl checks.
+  return Array.from(value).every(char => {
+    const point = char.codePointAt(0);
+    return point !== undefined && point >= 32 &&
+      (point < 127 || point > 159) && (point < 0xd800 || point > 0xdfff);
+  });
+}
 function sessionFrom(value: unknown): VerifiedIdentitySession {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
   }
   const v = value as Record<string, unknown>;
   if (!exactKeys(v, ["actorId", "role", "sessionExpiresAt"]) ||
-    typeof v.actorId !== "string" || v.actorId.length < 1 || v.actorId.length > 128 ||
-    v.actorId.trim() !== v.actorId || /[\r\n\t]/.test(v.actorId) ||
+    !validOwnerActorId(v.actorId) ||
     typeof v.role !== "string" || !["customer", "merchant", "captain", "operator"].includes(v.role) ||
     !validDate(v.sessionExpiresAt)) {
     throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");

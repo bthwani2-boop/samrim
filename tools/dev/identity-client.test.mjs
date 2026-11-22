@@ -158,6 +158,16 @@ test("session scope is parsed from exactly the three owner fields and never impl
   }
 });
 
+test("verified Identity actor IDs follow Go's UTF-8 byte and Unicode control limits", async () => {
+  const allowed = { ...principal(), actorId: "ع".repeat(64) };
+  await withFetch(async () => response(allowed),
+    async () => assert.deepEqual(await readVerifiedIdentitySession(origin, bearer), allowed));
+  for (const actorId of ["ع".repeat(65), "actor\u0001name", "actor\u0085name", "actor\ud800name"]) {
+    await withFetch(async () => response({ ...principal(), actorId }),
+      () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+  }
+});
+
 test("phone proof carries exact JSON without credentials and logout requires a no-store 204", async () => {
   const phone = "+12025550133";
   const ticket = "a".repeat(48);
