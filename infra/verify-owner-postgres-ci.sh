@@ -47,11 +47,12 @@ trap cleanup EXIT
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-storeavailability.test" ./internal/storeavailability && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-captainstanding.test" ./internal/captainstanding && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-customercart.test" ./internal/customercart && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-employees.test" ./internal/employees && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/dsh" ./cmd/dsh)
 (cd services/wlt/backend && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/wlt-wallet.test" ./cmd/wlt)
 [[ -s "$scratch/wlt-wallet.test" ]] || { echo "Missing compiled WLT owner test" >&2; exit 1; }
-for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh; do
+for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh; do
   [[ -s "$scratch/$executable" ]] || { echo "Missing compiled owner: $executable" >&2; exit 1; }
 done
 
@@ -101,10 +102,11 @@ start_stage() {
     /agent02/services/dsh/database \
     /agent02/services/dsh/backend/internal/discovery \
     /agent02/services/dsh/backend/internal/storeavailability \
-    /agent02/services/dsh/backend/internal/captainstanding
+    /agent02/services/dsh/backend/internal/captainstanding \
+    /agent02/services/dsh/backend/internal/employees
   docker cp services/identity/database/migrations "$name:/agent02/services/identity/database/migrations"
   docker cp services/dsh/database/migrations "$name:/agent02/services/dsh/database/migrations"
-  for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh; do
+  for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh; do
     docker cp "$scratch/$executable" "$name:/agent02/bin/$executable"
   done
   # Joined tests use only these fresh binaries and localhost within --network none.
@@ -173,6 +175,11 @@ run_test "$current" /agent02/services/dsh/backend/internal/discovery \
 run_test "$current" /agent02/bin /agent02/bin/dsh-customercart.test \
   '^TestRealCustomerCartPostgres$' 'TestRealCustomerCartPostgres' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_CART_CI_TEST=true
+run_test "$current" /agent02/services/dsh/backend/internal/employees \
+  /agent02/bin/dsh-employees.test '^TestCompanyEmployeeDirectoryPostgres$' 'TestCompanyEmployeeDirectoryPostgres' \
+  -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_EMPLOYEES_TEST=true \
+  -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD=synthetic-only \
+  -e REF_POSTGRES_DB=bthwani_refoundation -e DSH_DB_HOST=127.0.0.1
 finish_stage
 
 start_stage bthwani-session02-orderability-pg bthwani_agent02 orderability_agent02
