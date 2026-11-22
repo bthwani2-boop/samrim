@@ -1,0 +1,76 @@
+paths:
+  /v1/operators/cities/{cityID}/store-registration-policy/{relation}:
+    parameters:
+      - in: path
+        name: cityID
+        required: true
+        schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      - in: path
+        name: relation
+        required: true
+        schema: { type: string, enum: [MARKETPLACE, DIRECT] }
+    get:
+      operationId: getOperatorStoreRegistrationPolicy
+      summary: Read the current DSH Store registration policy for one city and relation
+      description: Requires a current Identity Operator bearer with platform_policies authority. An unconfigured policy returns version zero and enabled=false. No separate registration engine or implicit approval is created.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: DSH-owned current policy, including versioned immutable registration terms
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationPolicy' }
+        '400':
+          description: Invalid city or relation
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+    patch:
+      operationId: changeOperatorStoreRegistrationPolicy
+      summary: Versioned and audited DSH owner update to one Store registration admission policy
+      description: Only a currently authorized Operator with platform_policies may enable or disable new Store registration. DSH checks current version, active city and immutable terms text atomically. This never publishes existing Stores, changes Identity roles or grants financial rights. Same actor and operation ID with an identical payload replays the original result.
+      security:
+        - OpaqueSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationPolicyChange' }
+      responses:
+        '200':
+          description: Applied or idempotently replayed Store registration admission policy
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationPolicyResult' }
+        '400':
+          description: Invalid policy change or missing consent text
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '409':
+          description: Stale version, duplicate operation key with a different payload, or immutable terms mismatch
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '503':
+          description: Current Identity or DSH policy owner unavailable or write result unknown
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }

@@ -44,6 +44,8 @@ paths:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees'
   /v1/operators/employees/{id}:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}'
+  /v1/operators/cities/{cityID}/store-registration-policy/{relation}:
+    $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}'
   /v1/operators/cities/{cityID}/store-availability-policy:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy'
 components:
@@ -170,6 +172,38 @@ components:
           enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE]
           description: DSH can show PAUSED or CLOSED_BY_SCHEDULE while checkout remains unavailable. The public response omits the schedule, pause timestamps, reason and actor details.
         orderingAvailable: { type: boolean, const: false, description: "The checkout/fulfillment journey is not activated" }
+    StoreRegistrationPolicy:
+      type: object
+      additionalProperties: false
+      required: [cityId, relation, version, enabled]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        version: { type: integer, minimum: 0 }
+        enabled: { type: boolean }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        termsText: { type: string, minLength: 1, maxLength: 4000 }
+        changedByActor: { type: string, minLength: 1, maxLength: 128 }
+        changeReason: { type: string, minLength: 1, maxLength: 300 }
+        updatedAt: { type: string, format: date-time }
+    StoreRegistrationPolicyChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, enabled, termsVersion, termsText, reason]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        expectedVersion: { type: integer, minimum: 0 }
+        enabled: { type: boolean }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        termsText: { type: string, minLength: 1, maxLength: 4000 }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+    StoreRegistrationPolicyResult:
+      type: object
+      additionalProperties: false
+      required: [policy, replay]
+      properties:
+        policy: { $ref: '#/components/schemas/StoreRegistrationPolicy' }
+        replay: { type: boolean }
     MerchantRegistrationChoice:
       type: object
       additionalProperties: false
@@ -222,7 +256,7 @@ components:
       properties:
         code:
           type: string
-          enum: [INVALID_STORE_REGISTRATION, STORE_REGISTRATION_CLOSED, STORE_REGISTRATION_POLICY_CHANGED, IDEMPOTENCY_KEY_REUSED, UNAUTHENTICATED, STORE_OPERATION_FORBIDDEN, IDENTITY_OWNER_UNAVAILABLE, STORE_OWNER_UNAVAILABLE, OPERATION_RESULT_UNKNOWN]
+          enum: [INVALID_STORE_REGISTRATION, STORE_REGISTRATION_CLOSED, STORE_REGISTRATION_POLICY_CHANGED, OPERATIONAL_POLICY_VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, UNAUTHENTICATED, STORE_OPERATION_FORBIDDEN, IDENTITY_OWNER_UNAVAILABLE, STORE_OWNER_UNAVAILABLE, OPERATION_RESULT_UNKNOWN]
     MerchantOwnedStore:
       type: object
       additionalProperties: false

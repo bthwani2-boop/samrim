@@ -60,6 +60,7 @@ export const workspaceSubsections: readonly WorkspaceSubsection[] = [
   { parent: "/finance", href: "/finance/merchant-store-commissions", label: "عمولات المتاجر" },
   { parent: "/finance", href: "/finance/merchant-commission-receivables", label: "مستحقات العمولات" },
   { parent: "/hr", href: "/hr/employees", label: "الموظفون" },
+  { parent: "/policies", href: "/policies/store-registration", label: "قبول المتاجر الجديدة" },
   { parent: "/policies", href: "/policies/stage-sla", label: "أزمنة المراحل" },
 ];
 

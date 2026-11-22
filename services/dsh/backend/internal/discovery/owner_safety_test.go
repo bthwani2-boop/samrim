@@ -154,6 +154,8 @@ func TestReviewedMigrationSourcesOnly(t *testing.T) {
 		"006_captain_standing.sql",
 		"007_customer_cart.sql",
 		"008_employees.sql",
+		"009_merchant_store_registration.sql",
+		"010_store_registration_policy_commands.sql",
 	} {
 		t.Run(name, func(t *testing.T) {
 			source, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", name))
