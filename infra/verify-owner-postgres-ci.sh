@@ -225,7 +225,7 @@ finish_stage
 
 start_stage bthwani-session01-merchant-pg bthwani_session01 merchant_agent01
 run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
-  /agent02/bin/dsh-storeavailability.test '^TestMerchantOwnedStoresRealPostgresAndHTTPReadback$' 'TestMerchantOwnedStoresRealPostgresAndHTTPReadback' \
+  /agent02/bin/dsh-storeavailability.test '^(TestMerchantOwnedStoresRealPostgresAndHTTPReadback|TestMerchantStoreRegistrationIsolatedPostgresDurability)$' 'TestMerchantOwnedStoresRealPostgresAndHTTPReadback,TestMerchantStoreRegistrationIsolatedPostgresDurability' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_MERCHANT_TEST_CONTAINER=bthwani-session01-merchant-pg \
   -e BTHWANI_MERCHANT_TEST_DATABASE_URL='postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable'
