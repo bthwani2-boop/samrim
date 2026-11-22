@@ -98,6 +98,12 @@ function harness(startStore = "store-one") {
         return new Promise((resolve, reject) => { call.resolve = resolve; call.reject = reject; });
       },
     },
+    "./checkout-funding": {
+      // This isolated UI harness deliberately supplies no WLT balance. The
+      // real WLT adapter is tested independently; unavailable must not hide
+      // an otherwise current DSH Cart or suggest payment authorization.
+      readCheckoutFunding() { return Promise.resolve({ kind: "unavailable" }); },
+    },
   };
   const module = { exports: {} };
   new Function("require", "module", "exports", compiled)(name => {

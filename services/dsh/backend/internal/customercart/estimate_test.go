@@ -42,6 +42,9 @@ func TestEstimateFailsClosedOnUnavailableAndOverflow(t *testing.T) {
 			{PreviewUnitYER: "9223372036854775800", Quantity: 1, PreviewAvailable: true},
 			{PreviewUnitYER: "10", Quantity: 1, PreviewAvailable: true},
 		}}, "MERCHANDISE_AMOUNT_OUT_OF_RANGE"},
+		{"uncommitted version", Snapshot{Version: 0, Lines: []Line{
+			{PreviewUnitYER: "1", Quantity: 1, PreviewAvailable: true},
+		}}, "CART_VERSION_CONFLICT"},
 		{"unsafe version", Snapshot{Version: maxJSONSafeInteger + 1, Lines: []Line{
 			{PreviewUnitYER: "1", Quantity: 1, PreviewAvailable: true},
 		}}, "CART_VERSION_CONFLICT"},
@@ -69,6 +72,8 @@ func TestEstimateRequiresExactlyOneCanonicalVersion(t *testing.T) {
 		{"/v1/carts/store-a/merchandise-estimate?expectedVersion=01", false},
 		{"/v1/carts/store-a/merchandise-estimate?expectedVersion=-1", false},
 		{"/v1/carts/store-a/merchandise-estimate?expectedVersion=1&expectedVersion=2", false},
+		{"/v1/carts/store-a/merchandise-estimate?expectedVersion=1&bad%ZZ=1", false},
+		{"/v1/carts/store-a/merchandise-estimate?expectedVersion=1;ignored=1", false},
 		{"/v1/carts/store-a/merchandise-estimate?storeId=store-b", false},
 		{"/v1/carts/store-a/merchandise-estimate", false},
 		{"/v1/carts/store-a/merchandise-estimate?expectedVersion=9007199254740992", false},

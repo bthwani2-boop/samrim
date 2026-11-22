@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 )
@@ -32,11 +33,11 @@ const maxJSONSafeInteger = 9007199254740991
 // Only DSH's canonical current Offer values, read in one repeatable-read
 // transaction, contribute to this non-payable merchandise estimate.
 func estimateFromSnapshot(cart Snapshot) (MerchandiseEstimate, string) {
-	if cart.Version < 0 || cart.Version > maxJSONSafeInteger {
-		return MerchandiseEstimate{}, "CART_VERSION_CONFLICT"
-	}
 	if len(cart.Lines) == 0 || len(cart.Lines) > 20 {
 		return MerchandiseEstimate{}, "CART_EMPTY_OR_TOO_LARGE"
+	}
+	if cart.Version < 1 || cart.Version > maxJSONSafeInteger {
+		return MerchandiseEstimate{}, "CART_VERSION_CONFLICT"
 	}
 	estimate := MerchandiseEstimate{
 		ActorID: cart.ActorID, StoreID: cart.StoreID, CartVersion: cart.Version,
@@ -74,8 +75,9 @@ func validExpectedVersion(r *http.Request) (int64, bool) {
 		r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
 		return 0, false
 	}
-	params := r.URL.Query()
-	if len(params) != 1 || len(params["expectedVersion"]) != 1 {
+	// Reject malformed encoded selectors; URL.Query silently drops errors.
+	params, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil || len(params) != 1 || len(params["expectedVersion"]) != 1 {
 		return 0, false
 	}
 	raw := params.Get("expectedVersion")

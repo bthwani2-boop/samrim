@@ -30,6 +30,7 @@ test("customer cart UI labels preview subtotal as non-authoritative and counts u
   assert.match(source, /summarizeCartPreview\(view\.cart\.lines\)/);
   assert.match(source, /previewLineSubtotalYer\(line\)/);
   assert.match(source, /الإجمالي التقديري للعروض المتاحة/);
-  assert.match(source, /التسعير النهائي/);
+  assert.match(source, /هذه القيمة للبضائع فقط/);
+  assert.match(source, /لا تشمل التوصيل والرسوم/);
   assert.match(source, /preview\.unavailableLines/);
 });

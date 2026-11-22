@@ -2,7 +2,7 @@ import {
   DshCartError, readCurrentCustomerCartMerchandiseEstimate,
 } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
-import { bearerForCustomerRequest } from "../access/customer-session-cookie";
+import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 
 const safeHeaders = {
   "Cache-Control": "no-store",
