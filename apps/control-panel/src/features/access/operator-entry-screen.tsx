@@ -1,8 +1,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentOperatorAccessState } from "../../server/current-operator-access";
-import { canonicalOperatorEntryRedirect, resolveIsolatedOperatorConfig } from "../../server/operator-passkey-bff";
+import { canonicalOperatorEntryRedirect, resolveIsolatedOperatorConfig, resolveOperatorRecoveryConfig } from "../../server/operator-passkey-bff";
 import styles from "../operator-shell/operator-shell.module.css";
+import OperatorBootstrapForm from "./operator-bootstrap-form";
 import OperatorPasskeyForm from "./operator-passkey-form";
 import { operatorIdentityUnavailableMessage } from "./operator-workspace-gate";
 
@@ -14,6 +15,7 @@ export default async function OperatorEntryScreen() {
   if (state.status === "verified" && state.access.grants.length) redirect("/workspace");
 
   const isolated = resolveIsolatedOperatorConfig(process.env);
+  const recovery = resolveOperatorRecoveryConfig(process.env);
   const signInOnThisAddress = isolated &&
     requestHeaders.get("host") === new URL(isolated.browserOrigin).host;
   return (
@@ -30,7 +32,10 @@ export default async function OperatorEntryScreen() {
             تم التحقق من حسابك. اطلب من مسؤول الوصول منحك صلاحية لمساحة العمل المطلوبة.
           </p>
         ) : signInOnThisAddress ? (
-          <OperatorPasskeyForm />
+          <>
+            <OperatorPasskeyForm />
+            {recovery && <OperatorBootstrapForm mode="recovery" />}
+          </>
         ) : isolated ? (
           <>
             <p>يتطلب مفتاح المرور استخدام عنوان الدخول المحلي المعتمد.</p>

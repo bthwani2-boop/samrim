@@ -11,15 +11,16 @@ const orderabilityLabels: Record<PublicStore["orderabilityStatus"], string> = {
   OPERATIONALLY_UNAVAILABLE: "غير متاح تشغيليًا",
 };
 
-export default async function PublicMarketOverview({ searchParams, canVisitStores, canVisitCatalog, action = "/workspace" }: Readonly<{
+export default async function PublicMarketOverview({ searchParams, canVisitStores, canVisitCatalog, canViewPublicMarket = false, action = "/workspace" }: Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
   canVisitStores: boolean;
   canVisitCatalog: boolean;
-  action?: "/workspace" | "/merchants";
+  canViewPublicMarket?: boolean;
+  action?: "/workspace" | "/merchants" | "/marketing";
 }>) {
   // The workspace page is already protected by Identity, but this view
   // contains public DSH facts only. Never infer management grants from them.
-  if (!canVisitStores && !canVisitCatalog) return null;
+  if (!canVisitStores && !canVisitCatalog && !canViewPublicMarket) return null;
   const city = parseOperatorHomeCity(await searchParams);
   const origin = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
   let cities: PublicPage<string> | null = null;

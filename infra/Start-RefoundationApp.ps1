@@ -14,7 +14,8 @@ param(
   [switch]$EnableDockerWalletWebPreview,
   [switch]$EnableDockerCustomerAndroidIdentityPreview,
   [switch]$EnableIsolatedOperatorPasskeyPreview,
-  [switch]$EnableIsolatedRootBootstrap
+  [switch]$EnableIsolatedRootBootstrap,
+  [switch]$UseDisposableOperatorSandbox
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
@@ -106,6 +107,9 @@ if ($Surface) {
     $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18101'
   }
 }
+if ($UseDisposableOperatorSandbox -and (!$EnableIsolatedOperatorPasskeyPreview -or $Surface -or $App -ne 'control-panel')) {
+  throw 'OPERATOR_SANDBOX_REQUIRES_LENOVO_CONTROL_PASSKEY_PREVIEW'
+}
 if ($EnableIsolatedRootBootstrap -and !$EnableIsolatedOperatorPasskeyPreview) {
   throw 'OPERATOR_ROOT_BOOTSTRAP_REQUIRES_EXPLICIT_PASSKEY_PREVIEW'
 }
@@ -121,13 +125,18 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
   if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
     throw 'OPERATOR_PASSKEY_PREVIEW_REQUIRES_VERIFIED_LENOVO_OPERATOR'
   }
-  $identityRuntime = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
+  $identityName = if ($UseDisposableOperatorSandbox) { 'bthwani-operator-webauthn-s02-identity-1' } else { 'bthwani-refoundation-identity-1' }
+  $identityPort = if ($UseDisposableOperatorSandbox) { 3241 } else { 3201 }
+  $identityOrigin = "http://127.0.0.1:$identityPort"
+  $identityRuntime = @(& docker inspect $identityName | ConvertFrom-Json)
   if ($LASTEXITCODE -ne 0 -or $identityRuntime.Count -ne 1) {
     throw 'OPERATOR_PASSKEY_IDENTITY_RUNTIME_UNAVAILABLE'
   }
   $identityOwner = $identityRuntime[0]
-  if ($identityOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
-      $identityOwner.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
+  $expectedEnvironment = if ($UseDisposableOperatorSandbox) { 'operator-webauthn-sandbox' } else { 'refoundation' }
+  $expectedCapability = if ($UseDisposableOperatorSandbox) { 'identity-synthetic-operator-bootstrap' } else { 'identity-synthetic-session-verifier' }
+  if ($identityOwner.Config.Labels.'com.bthwani.environment' -cne $expectedEnvironment -or
+      $identityOwner.Config.Labels.'com.bthwani.capability' -cne $expectedCapability -or
       $identityOwner.State.Health.Status -cne 'healthy') {
     throw 'OPERATOR_PASSKEY_IDENTITY_OWNER_NOT_ISOLATED'
   }
@@ -148,25 +157,30 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
       ($schemas[0] -split '=',2)[1] -cnotmatch '^identity_test_[a-z0-9_]+$') {
     throw 'OPERATOR_PASSKEY_IDENTITY_SCHEMA_NOT_ISOLATED'
   }
+  if ($UseDisposableOperatorSandbox -and (
+      $schemas[0] -cne 'IDENTITY_DB_SCHEMA=identity_test_operator_s02' -or
+      @($ownerEnv | Where-Object { $_ -cmatch '^IDENTITY_TEST_DATABASE_URL=postgres://bthwani_fido_s02:[a-f0-9]{64}@postgres:5432/refoundation_webauthn_s02\?sslmode=disable$' }).Count -ne 1)) {
+    throw 'OPERATOR_SANDBOX_DATABASE_IDENTITY_MISMATCH'
+  }
   $bindings = @($identityOwner.HostConfig.PortBindings.'3302/tcp')
   if ($bindings.Count -ne 1 -or $bindings[0].HostIp -cne '127.0.0.1' -or
-      $bindings[0].HostPort -cne '3201') {
+      $bindings[0].HostPort -cne "$identityPort") {
     throw 'OPERATOR_PASSKEY_IDENTITY_PORT_NOT_LOOPBACK'
   }
-  Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/operators/passkey/authentication/options' 405
-  Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/operators/passkey/authentication' 405
-  Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
+  Assert-SurfaceCapability "$identityOrigin/v1/operators/passkey/authentication/options" 405
+  Assert-SurfaceCapability "$identityOrigin/v1/operators/passkey/authentication" 405
+  Assert-SurfaceCapability "$identityOrigin/v1/sessions/current" 401
   $env:BTHWANI_ISOLATED_TEST_MODE='true'
   $env:OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF='true'
   $env:OPERATOR_PASSKEY_BROWSER_ORIGIN='http://localhost:13000'
-  $env:OPERATOR_PASSKEY_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+  $env:OPERATOR_PASSKEY_IDENTITY_ORIGIN=$identityOrigin
   $env:OPERATOR_POLICY_DSH_ORIGIN='http://127.0.0.1:3202'
   if ($EnableIsolatedRootBootstrap) {
     if ($ownerEnv -cnotcontains 'IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true') {
       throw 'OPERATOR_ROOT_BOOTSTRAP_OWNER_NOT_OPTED_IN'
     }
-    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/operators/passkey/bootstrap/options' 405
-    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/operators/passkey/bootstrap' 405
+    Assert-SurfaceCapability "$identityOrigin/v1/operators/passkey/bootstrap/options" 405
+    Assert-SurfaceCapability "$identityOrigin/v1/operators/passkey/bootstrap" 405
     $env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'
   }
 }

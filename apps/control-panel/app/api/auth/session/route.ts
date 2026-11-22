@@ -4,6 +4,7 @@ import {
   boundedResponseJSON,
   cookieLifetimeSeconds,
   isEmptyRequestBody,
+  isTrustedOperatorLoopbackTarget,
   isTrustedOperatorRequest,
   OPERATOR_COOKIE,
   operatorIdentityRequest,
@@ -22,18 +23,6 @@ const privateHeaders = {
   "Referrer-Policy": "no-referrer",
 };
 
-function validLoopbackRead(request: NextRequest, expectedOrigin: string): boolean {
-  const url = new URL(request.url);
-  if (url.origin !== expectedOrigin || url.search ||
-      request.headers.get("host") !== url.host) return false;
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  if (forwardedHost && forwardedHost !== url.host) return false;
-  for (const claim of ["authorization", "x-actor-id", "x-operator-role", "x-role"]) {
-    if (request.headers.has(claim)) return false;
-  }
-  return true;
-}
-
 function clearOperatorCookie(response: NextResponse) {
   response.cookies.set(OPERATOR_COOKIE, "", {
     path: "/",
@@ -47,7 +36,7 @@ function clearOperatorCookie(response: NextResponse) {
 export async function GET(request: NextRequest) {
   const config = resolveIsolatedOperatorConfig(process.env);
   if (!config) return unavailableSessionResponse();
-  if (!validLoopbackRead(request, config.browserOrigin)) {
+  if (!isTrustedOperatorLoopbackTarget(request, config.browserOrigin)) {
     return NextResponse.json({ code: "INVALID_REQUEST" }, { status: 400, headers: privateHeaders });
   }
   const accessToken = request.cookies.get(OPERATOR_COOKIE)?.value;

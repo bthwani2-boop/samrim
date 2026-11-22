@@ -5,6 +5,7 @@ import {
   canonicalOperatorEntryRedirect,
   cookieLifetimeSeconds,
   isEmptyRequestBody,
+  isTrustedOperatorLoopbackTarget,
   isTrustedOperatorRequest,
   OPERATOR_COOKIE,
   parseInitialOperatorOptions,
@@ -70,6 +71,32 @@ test("browser mutations require exact same-origin Host and Origin, never client 
   assert.equal(isTrustedOperatorRequest(patch, config), false);
   patch.headers.set("origin", "http://127.0.0.1:13000");
   assert.equal(isTrustedOperatorRequest(patch, config, "PATCH"), false);
+});
+
+test("SSH control-panel tunnel has one exact internal origin without admitting forged browser origins", () => {
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  assert.ok(config);
+  const internal = "http://localhost:23010/api/auth/session";
+  const valid = { host: "localhost:13000", origin: "http://localhost:13000" };
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(internal, { headers: valid }), config.browserOrigin), true);
+  assert.equal(isTrustedOperatorRequest(new Request(internal, { method: "POST", headers: valid }), config), true);
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(internal, {
+    headers: { host: "localhost:13000", "x-forwarded-host": "localhost:13000" },
+  }), config.browserOrigin), true);
+  for (const [url, headers] of [
+    [internal, { ...valid, origin: "https://evil.example" }],
+    [internal, { ...valid, host: "127.0.0.1:23010" }],
+    [internal, { ...valid, "x-forwarded-host": "evil.example" }],
+    [internal, { ...valid, authorization: "Bearer forged" }],
+    ["http://127.0.0.1:28112/api/auth/session", valid],
+    ["http://127.0.0.1:23010/api/auth/session", valid],
+    ["http://localhost:23010/api/auth/session?x=1", valid],
+  ]) {
+    const req = new Request(url, { method: "POST", headers });
+    assert.equal(isTrustedOperatorRequest(req, config), false, url);
+  }
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(internal, { headers: valid }),
+    "http://localhost:23100"), false);
 });
 
 test("empty POST streams are valid logout requests, but bytes and transfer streams are rejected", async () => {

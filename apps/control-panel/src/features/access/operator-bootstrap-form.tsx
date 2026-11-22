@@ -24,7 +24,7 @@ function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(atob(encoded),letter=>letter.codePointAt(0)??0);
 }
 
-export default function OperatorBootstrapForm() {
+export default function OperatorBootstrapForm({ mode = "initial" }: Readonly<{ mode?: "initial" | "recovery" }>) {
   const [proof,setProof]=useState("");
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
@@ -41,11 +41,13 @@ export default function OperatorBootstrapForm() {
           typeof PublicKeyCredential==="undefined") {
         throw new Error("Windows Hello / WebAuthn غير متاح في هذا المتصفح.");
       }
-      const reply=await fetch("/api/auth/passkey/bootstrap/options",{
+      const reply=await fetch(mode==="recovery" ? "/api/auth/passkey/recovery/options" : "/api/auth/passkey/bootstrap/options",{
         method:"POST",headers:{"Content-Type":"application/json"},
         credentials:"same-origin",cache:"no-store",body:JSON.stringify({proof}),
       });
-      if (!reply.ok) throw new Error("تعذّر بدء تهيئة المالك الأول. تحقق من التفويض والبيئة المعزولة.");
+      if (!reply.ok) throw new Error(mode==="recovery"
+        ? "تعذّر بدء الاستعادة. يجب أن يصدر رمز استعادة لحسابك الأصلي بعد التحقق من ملكيته."
+        : "تعذّر بدء تهيئة المالك الأول. تحقق من التفويض والبيئة المعزولة.");
       const body=await reply.json() as RegistrationOptions;
       const options=body.options.publicKey;
       if (options.rp.id!=="localhost" || options.authenticatorSelection.userVerification!=="required" ||
@@ -68,7 +70,7 @@ export default function OperatorBootstrapForm() {
       }
       const finishBody = JSON.stringify({ proof, ceremonyId: body.ceremonyId, credential: credential.toJSON() });
       finishDispatched = true;
-      const done=await fetch("/api/auth/passkey/bootstrap",{
+      const done=await fetch(mode==="recovery" ? "/api/auth/passkey/recovery" : "/api/auth/passkey/bootstrap",{
         method:"POST",headers:{"Content-Type":"application/json"},
         credentials:"same-origin",cache:"no-store",
         body: finishBody,
@@ -77,12 +79,15 @@ export default function OperatorBootstrapForm() {
         finishDispatched = false;
         throw new Error("رُفض طلب تسجيل المفتاح. تحقّق من الرمز أو جرّب الدخول إذا كنت قد سجّلت المفتاح سابقًا.");
       }
-      if (done.status !== 201) throw new Error("لم يصل تأكيد Identity.");
-      const result=await done.json() as {registered?:boolean};
-      if(result.registered!==true) throw new Error("ردّ Identity غير مطابق.");
+      if (done.status !== (mode==="recovery" ? 200 : 201)) throw new Error("لم يصل تأكيد Identity.");
+      const result=await done.json() as {registered?:boolean;recovered?:boolean};
+      if(mode==="recovery" ? result.recovered!==true : result.registered!==true)
+        throw new Error("ردّ Identity غير مطابق.");
       setProof("");
       setEnrollment("confirmed");
-      setMessage("سُجل مفتاح المرور في بيئة الاختبار. سجّل الدخول بالمفتاح نفسه للتحقق من الجلسة والصلاحيات.");
+      setMessage(mode==="recovery"
+        ? "سُجل مفتاح مرور جديد لحساب المشغّل القائم. سجّل الدخول به للتحقق من الجلسة وصلاحيات Identity."
+        : "سُجل مفتاح المرور في بيئة الاختبار. سجّل الدخول بالمفتاح نفسه للتحقق من الجلسة والصلاحيات.");
     } catch(error) {
       if (finishDispatched) {
         setProof("");
@@ -98,16 +103,20 @@ export default function OperatorBootstrapForm() {
     }
   }
 
+  const titleId = mode === "recovery" ? "operator-passkey-recovery-title" : "operator-root-bootstrap-title";
   return (
-    <section aria-labelledby="operator-root-bootstrap-title">
-      <h2 id="operator-root-bootstrap-title">تسجيل مفتاح المالك الأول — بيئة اختبار معزولة</h2>
-      <p>تتطلب هذه الخطوة رمز تهيئة قصير الصلاحية صادرًا من Identity عبر إجراء إداري محلي معتمد. لا تدخل رمز تهيئة الإنتاج هنا.</p>
-      <label htmlFor="operator-bootstrap-proof">رمز التهيئة المحلي</label>
+    <section aria-labelledby={titleId}>
+      <h2 id={titleId}>{mode === "recovery"
+        ? "استعادة مفتاح مرور المشغّل" : "تسجيل مفتاح المالك الأول — بيئة اختبار معزولة"}</h2>
+      <p>{mode === "recovery"
+        ? "تتطلب الاستعادة رمزًا مستقلًا من Identity بعد التحقق من ملكية الحساب الأصلي. رمز تهيئة المالك الأول الاختباري لا يصلح."
+        : "تتطلب هذه الخطوة رمز تهيئة قصير الصلاحية صادرًا من Identity عبر إجراء إداري محلي معتمد. لا تدخل رمز تهيئة الإنتاج هنا."}</p>
+      <label htmlFor="operator-bootstrap-proof">{mode === "recovery" ? "رمز الاستعادة المعتمد" : "رمز التهيئة المحلي"}</label>
       <Input.Password id="operator-bootstrap-proof" value={proof} onChange={event=>setProof(event.target.value)}
         autoComplete="off" maxLength={43} disabled={busy || enrollment !== "ready"} />
       <Button type="primary" loading={busy} disabled={busy || enrollment !== "ready" || proof.length!==43}
         htmlType="button" onClick={enroll}>
-        تسجيل مفتاح المرور عبر Windows Hello
+        {mode === "recovery" ? "تسجيل مفتاح جديد عبر Windows Hello" : "تسجيل مفتاح المرور عبر Windows Hello"}
       </Button>
       {message && <p role="status">{message}</p>}
       {enrollment === "unconfirmed" && <a href="#operator-passkey-sign-in">الانتقال إلى تسجيل الدخول</a>}

@@ -57,21 +57,42 @@ export function resolveIsolatedOperatorConfig(env: Settings): OperatorPasskeyCon
   return browserOrigin && identityOrigin ? { browserOrigin, identityOrigin } : null;
 }
 
-export function isTrustedOperatorRequest(
-  request: Request, config: OperatorPasskeyConfig, method: "POST" | "PATCH" = "POST",
-): boolean {
-  if (request.method !== method || request.headers.get("origin") !== config.browserOrigin) return false;
+// Existing-account recovery is independently disabled until the canonical
+// Identity owner and the control panel both explicitly opt in. This never
+// enables first-Owner bootstrap or grants any new Operator permission.
+export function resolveOperatorRecoveryConfig(env: Settings): OperatorPasskeyConfig | null {
+  return env.OPERATOR_ENABLE_ISOLATED_PASSKEY_RECOVERY_BFF === "true"
+    ? resolveIsolatedOperatorConfig(env) : null;
+}
+
+// Next.js normalizes request.url to its own loopback listen origin when an
+// existing SSH TCP tunnel forwards localhost:13000 to the server's localhost:23010 URL.
+// Only the exact fixed tunnel may use that internal URL. The actual HTTP
+// Host, browser Origin (for mutations), and RP ID remain externally bound.
+export function isTrustedOperatorLoopbackTarget(request: Request, browserOrigin: string): boolean {
   const target = new URL(request.url);
-  if (target.origin !== config.browserOrigin || target.search !== "" ||
-      request.headers.get("host") !== target.host) return false;
+  const browserHost = new URL(browserOrigin).host;
+  const internalTunnel = browserOrigin === "http://localhost:13000" &&
+    target.origin === "http://localhost:23010";
+  if ((target.origin !== browserOrigin && !internalTunnel) ||
+      target.search !== "" || target.hash !== "" ||
+      request.headers.get("host") !== browserHost) return false;
   const forwardedHost = request.headers.get("x-forwarded-host");
-  if (forwardedHost && forwardedHost !== target.host) return false;
+  if (forwardedHost && forwardedHost !== browserHost) return false;
   const forwardedProto = request.headers.get("x-forwarded-proto");
   if (forwardedProto && forwardedProto !== "http") return false;
   for (const key of ["authorization", "x-actor-id", "x-operator-role", "x-role"]) {
     if (request.headers.has(key)) return false;
   }
   return true;
+}
+
+export function isTrustedOperatorRequest(
+  request: Request, config: OperatorPasskeyConfig, method: "POST" | "PATCH" = "POST",
+): boolean {
+  return request.method === method &&
+    request.headers.get("origin") === config.browserOrigin &&
+    isTrustedOperatorLoopbackTarget(request, config.browserOrigin);
 }
 
 function object(value: unknown): Record<string, unknown> | null {
@@ -176,6 +197,8 @@ const allowedOwnerRequests = new Set([
   identityOperations.finishOperatorPasskeyAuthentication,
   identityOperations.beginInitialOperatorPasskeyRegistration,
   identityOperations.finishInitialOperatorPasskeyRegistration,
+  identityOperations.beginExistingOperatorPasskeyRecovery,
+  identityOperations.finishExistingOperatorPasskeyRecovery,
   identityOperations.getVerifiedIdentitySession,
   identityOperations.revokeCurrentIdentitySession,
   ...operatorPermissions.map(operatorPermissionOperation),

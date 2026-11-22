@@ -64,7 +64,7 @@ test("tunneled Operator Passkey opt-in requires the verified isolated Lenovo own
   assert.match(launcher, /IDENTITY_OPERATOR_PASSKEY_ORIGINS=http:\/\/localhost:13000/);
   assert.ok(launcher.includes("'^identity_test_[a-z0-9_]+$'"));
   assert.match(launcher, /OPERATOR_PASSKEY_IDENTITY_PORT_NOT_LOOPBACK/);
-  assert.match(launcher, /'http:\/\/127\.0\.0\.1:3201\/v1\/operators\/passkey\/authentication\/options' 405/);
+  assert.match(launcher, /Assert-SurfaceCapability "\$identityOrigin\/v1\/operators\/passkey\/authentication\/options" 405/);
   assert.match(launcher, /\$env:OPERATOR_PASSKEY_BROWSER_ORIGIN='http:\/\/localhost:13000'/);
   assert.doesNotMatch(launcher, /-EnableIsolatedOperatorPasskeyPreview -Apply/);
 });
@@ -75,7 +75,7 @@ test("first Root WebAuthn enrollment is a second explicitly opted-in localhost-o
   assert.match(launcher, /OPERATOR_ROOT_BOOTSTRAP_REQUIRES_EXPLICIT_PASSKEY_PREVIEW/);
   assert.match(launcher, /IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true/);
   assert.match(launcher, /OPERATOR_ROOT_BOOTSTRAP_OWNER_NOT_OPTED_IN/);
-  assert.match(launcher, /127\.0\.0\.1:3201\/v1\/operators\/passkey\/bootstrap\/options/);
+  assert.match(launcher, /\$identityOrigin\/v1\/operators\/passkey\/bootstrap\/options/);
   assert.match(launcher, /if \(\$EnableIsolatedRootBootstrap\) \{\s+Assert-SurfaceCapability "\$identity\/v1\/operators\/passkey\/bootstrap\/options" 405\s+Assert-SurfaceCapability "\$identity\/v1\/operators\/passkey\/bootstrap" 405/);
   assert.match(launcher, /\$env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='false'/);
   assert.match(launcher, /\$env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'/);
