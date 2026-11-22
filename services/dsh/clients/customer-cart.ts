@@ -56,6 +56,7 @@ const storeRule = /^[a-z0-9-]{1,64}$/;
 const operationRule = /^[A-Za-z0-9._-]{8,128}$/;
 const bearerRule = /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/;
 const yerRule = /^(0|[1-9][0-9]{0,18})$/;
+const maxOwnerYER = 9223372036854775807n;
 const ownerError = () => new DshCartError(502, "OWNER_RESPONSE_INVALID");
 
 function exactKeys(value: Record<string, unknown>, allowed: string[]): boolean {
@@ -81,6 +82,7 @@ function cartFrom(value: unknown, expectedStore: string, expectedActor: string):
       !Number.isSafeInteger(line.quantity) || (line.quantity as number) < 1 ||
       (line.quantity as number) > 2147483647 ||
       typeof line.previewUnitYer !== "string" || !yerRule.test(line.previewUnitYer) ||
+      BigInt(line.previewUnitYer) > maxOwnerYER ||
       typeof line.previewAvailable !== "boolean" || ids.has(line.offerId)) throw ownerError();
     ids.add(line.offerId);
     lines.push(line as unknown as CustomerCartLine);
@@ -101,7 +103,7 @@ function estimateFrom(value: unknown, expectedStore: string, expectedActor: stri
   }
   const seen = new Set<string>();
   let sum = 0n;
-  const max = 9223372036854775807n;
+  const max = maxOwnerYER;
   const lines: CustomerCartMerchandiseEstimateLine[] = [];
   for (const raw of estimate.lines) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw ownerError();

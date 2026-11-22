@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DshCartError, parseCustomerCartMerchandiseEstimate,
-  readCurrentCustomerCartMerchandiseEstimate } from "./customer-cart.ts";
+import { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate,
+  parseCustomerCartResult, readCurrentCustomerCartMerchandiseEstimate } from "./customer-cart.ts";
 
 const bearer = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA";
 const valid = {
@@ -14,6 +14,21 @@ function reply(body, status = 200) {
     status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }
+test("DSH cart preview rejects amounts beyond the owner int64 YER bound", () => {
+  const cart = {
+    actorId: "customer-a", storeId: "store-a", version: 1,
+    lines: [{
+      offerId: "offer-a", variantId: "variant-a", name: "Rice",
+      quantity: 1, previewUnitYer: "9223372036854775808", previewAvailable: true,
+    }],
+  };
+  assert.throws(() => parseCustomerCart(cart, "store-a", "customer-a"),
+    error => error instanceof DshCartError && error.code === "OWNER_RESPONSE_INVALID");
+  assert.throws(() => parseCustomerCartResult({ cart, replay: false }, "store-a", "customer-a", 0),
+    error => error instanceof DshCartError && error.code === "OWNER_RESPONSE_INVALID");
+  const boundary = { ...cart, lines: [{ ...cart.lines[0], previewUnitYer: "9223372036854775807" }] };
+  assert.deepEqual(parseCustomerCart(boundary, "store-a", "customer-a"), boundary);
+});
 test("merchandise estimate validates exact owner totals and refuses forged checkout eligibility", () => {
   assert.deepEqual(parseCustomerCartMerchandiseEstimate(valid, "store-a", "customer-a", 4), valid);
   for (const tampered of [
