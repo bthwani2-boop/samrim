@@ -90,6 +90,31 @@ func (s *Server) listVerticals(ctx context.Context, w http.ResponseWriter, r *ht
 	jsonResponse(w, 200, result)
 }
 
+// Public list endpoints accept only their documented, single-valued query
+// selectors. Unknown keys and duplicate scopes must never reach owner SQL.
+func validPublicListSelectors(r *http.Request, stores bool) bool {
+	values, err := url.ParseQuery(r.URL.RawQuery)
+	if err != nil {
+		return false
+	}
+	for key, supplied := range values {
+		if len(supplied) != 1 {
+			return false
+		}
+		switch key {
+		case "q", "limit", "cursor":
+			// Both Store and Offer listings support these bounded selectors.
+		case "city_id", "vertical_id":
+			if !stores {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 	search, scope, valid := publicSearch(r, r.URL.Query().Get("city_id"))
 	if !valid {
@@ -102,6 +127,10 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		return
 	}
 	scope = scopedStoreCursor(scope, vertical)
+	if !validPublicListSelectors(r, true) {
+		errorJSON(w, 400, "INVALID_REQUEST")
+		return
+	}
 	city := r.URL.Query().Get("city_id")
 	if !validID(city) {
 		errorJSON(w, 400, "INVALID_CITY")

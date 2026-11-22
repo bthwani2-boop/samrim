@@ -49,6 +49,10 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 400, "INVALID_SEARCH")
 		return
 	}
+	if !validPublicListSelectors(r, false) {
+		errorJSON(w, 400, "INVALID_REQUEST")
+		return
+	}
 	limit, ok := limitParam(r)
 	if !ok {
 		errorJSON(w, 400, "INVALID_LIMIT")
