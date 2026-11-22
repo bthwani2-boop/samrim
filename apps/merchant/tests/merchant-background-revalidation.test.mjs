@@ -131,6 +131,27 @@ async function settle() {
   await Promise.resolve();
 }
 
+function findNode(node, matches) {
+  if (Array.isArray(node)) return node.map(child => findNode(child, matches)).find(Boolean);
+  if (node && typeof node === "object") {
+    return matches(node) ? node : findNode(node.props?.children, matches);
+  }
+}
+
+test("sending without a typed phone explains the missing input", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: null });
+  await settle();
+  const send = findNode(h.render(), node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إرسال رمز التحقق");
+  assert.ok(send);
+  assert.equal(send.props.disabled, false);
+  send.props.onPress();
+  assert.ok(findNode(h.render(), node => node.props.accessibilityRole === "alert" &&
+    node.props.children === "اكتب رقم الهاتف اليمني للاختبار، مثل 770000001."));
+});
+
 test("Merchant workspace is concealed immediately when app enters background", async () => {
   const h = harness();
   h.mount();

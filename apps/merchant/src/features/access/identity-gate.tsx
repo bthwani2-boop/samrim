@@ -19,7 +19,7 @@ function errorMessage(error: unknown) {
     if (error.code === "UNAUTHORIZED") return "الرمز غير صالح أو انتهت محاولاته. تحقّق منه أو اطلب رمزًا جديدًا.";
     if (error.code === "MERCHANT_NOT_ACTIVE") return "دخول التاجر غير متاح لهذا الحساب. تواصل مع الدعم.";
     if (error.code === "SIGN_OUT_REQUIRED") return "توجد جلسة مفتوحة. سجّل الخروج قبل تبديل الحساب.";
-    if (error.code === "INVALID_REQUEST") return "تحقّق من صيغة الرقم أو الرمز.";
+    if (error.code === "INVALID_REQUEST") return "رفضت خدمة الهوية رقم الاختبار أو رمز التحقق.";
     if (error.code === "OPERATION_RESULT_UNKNOWN") return "تعذّر تأكيد النتيجة. أعد فتح الدخول أو اطلب رمزًا جديدًا.";
   }
   return "تعذّر الاتصال بخدمة تسجيل الدخول. حاول مجددًا.";
@@ -152,8 +152,11 @@ export default function MerchantIdentityGate() {
   }, [refresh, session]);
 
   function requestCode() {
+    if (!phoneNumber) {
+      setMessage("اكتب رقم الهاتف اليمني للاختبار، مثل 770000001.");
+      return;
+    }
     void run(async signal => {
-      if (!phoneNumber) return;
       const nextTicket = await requestAdmissionCode(phoneNumber, signal);
       if (!signal.aborted) {
         setTicket(nextTicket);
@@ -248,9 +251,9 @@ export default function MerchantIdentityGate() {
                 أدخل رقم الاختبار اليمني المسموح به. رمز التحقق يصل إلى Mailpit.
               </Text>
               <TextInput accessibilityLabel="رقم هاتف الاختبار" value={phone} onChangeText={setPhone}
-                placeholder="770000001" keyboardType="phone-pad" autoComplete="tel" editable={!busy}
+                placeholder="مثال: 770000001" keyboardType="phone-pad" autoComplete="tel" editable={!busy}
                 maxLength={13} style={fieldStyle} />
-              {button("إرسال رمز التحقق", requestCode, busy || !phoneNumber, true)}
+              {button("إرسال رمز التحقق", requestCode, busy, true)}
             </>
           ) : null}
           {enabled && !session && !entryUncertain && ticket ? (
