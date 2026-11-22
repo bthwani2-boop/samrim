@@ -150,8 +150,20 @@ func main() {
 			routes.Handle(session.OperatorInitialRegistrationOptionsPath, initial)
 			routes.Handle(session.OperatorInitialRegistrationFinishPath, initial)
 		}
-	} else if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" {
-		log.Fatal("initial Operator bootstrap requires the isolated WebAuthn owner")
+		// Existing-actor recovery is explicitly opt-in. The HTTP handler only
+		// consumes an independently authorized, owner-bound recovery proof;
+		// it has no issuer, role creation, grant or session-issuance capability.
+		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY") == "true" {
+			if !policy.AllowsInitialOperatorBootstrap() || !isInitialOperatorDatabase(ctx, db) {
+				log.Fatal("Operator recovery requires the exact isolated localhost WebAuthn origin and disposable database")
+			}
+			recovery := session.NewOperatorPasskeyRecoveryHandler(auth)
+			routes.Handle(session.OperatorPasskeyRecoveryOptionsPath, recovery)
+			routes.Handle(session.OperatorPasskeyRecoveryFinishPath, recovery)
+		}
+	} else if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" ||
+		os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY") == "true" {
+		log.Fatal("Operator bootstrap/recovery requires the isolated WebAuthn owner")
 	}
 	verifier := session.NewHandler(session.NewVerifier(reader))
 	routes.Handle("/", verifier)

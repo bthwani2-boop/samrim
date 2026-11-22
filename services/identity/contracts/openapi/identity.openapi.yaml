@@ -28,6 +28,10 @@ paths:
     $ref: './paths/operator-passkey-access.yaml#/paths/~1v1~1operators~1passkey~1bootstrap~1options'
   /v1/operators/passkey/bootstrap:
     $ref: './paths/operator-passkey-access.yaml#/paths/~1v1~1operators~1passkey~1bootstrap'
+  /v1/operators/passkey/recovery/options:
+    $ref: './paths/operator-passkey-recovery.yaml#/paths/~1v1~1operators~1passkey~1recovery~1options'
+  /v1/operators/passkey/recovery:
+    $ref: './paths/operator-passkey-recovery.yaml#/paths/~1v1~1operators~1passkey~1recovery'
   /v1/operators/me/permissions/{permission}:
     $ref: './paths/internal-actor-administration.yaml#/paths/~1v1~1operators~1me~1permissions~1{permission}'
   /v1/operators/{actorId}/permissions:

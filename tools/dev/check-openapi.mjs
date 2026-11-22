@@ -212,6 +212,10 @@ export function validate(owner, base = root) {
         // synthetic enrollment ceremonies, never an implicit Operator role.
         "/v1/operators/passkey/bootstrap/options": "beginInitialOperatorPasskeyRegistration",
         "/v1/operators/passkey/bootstrap": "finishInitialOperatorPasskeyRegistration",
+        // Recovery is proof-bound to an existing Operator by an independently
+        // authorized Identity owner row, never a browser-selected actor.
+        "/v1/operators/passkey/recovery/options": "beginExistingOperatorPasskeyRecovery",
+        "/v1/operators/passkey/recovery": "finishExistingOperatorPasskeyRecovery",
       };
       return Object.hasOwn(admitted, urlPath) && admitted[urlPath] === operationId;
     }

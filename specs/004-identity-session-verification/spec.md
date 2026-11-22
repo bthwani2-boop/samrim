@@ -58,3 +58,37 @@ The canonical Identity owner now has an **explicitly disabled by default** one-t
 - The opt-in routes and BFF must remain unavailable on current shared/production services; applying migration 008 to an existing protected database, reenrolling the historical Owner, actual Windows Hello device proof, human-verification/recovery, and independent critical security review remain distinct **NOT_CLOSED** gates.
 
 Acceptance of this **synthetic** increment requires exact Go unit/negative tests, strict OpenAPI/generated operation parity, UI type/build checks, and a real disposable PostgreSQL cryptographic WebAuthn fixture that proves one-winner concurrency, durable Owner marker/grants/credential/audit, independent signed login, revoked/invalid replay refusal and zero session on enrollment. It does **not** close protected original Owner continuity or production readiness.
+
+## Separate existing-Operator Passkey recovery increment — STAGED / NOT_CLOSED
+
+This is a distinct progressive increment beyond FR-001–FR-011. It does not
+retroactively close the original Operator continuity requirement.
+
+- FR-R01: An offline, separately authorized identity-continuity proof is
+  required and bound by SHA-256 digest to one existing ACTIVE Operator.
+  Browser requests cannot choose an actor, mint a proof, create a role,
+  set grants or create an original-Owner marker.
+- FR-R02: Identity allows a single-use, user-verified, resident WebAuthn
+  registration challenge under one exact localhost RP and origin. The
+  challenge expires within four minutes and the approved proof cannot
+  remain valid beyond ten minutes after issuance.
+- FR-R03: Successful recovery replaces credentials, revokes older Operator
+  sessions, invalidates other outstanding recovery claims and records
+  append-only owner audit in one SQL transaction, retaining the same actor,
+  Operator role and permission rows. It issues no session.
+- FR-R04: Identity and the Control Panel each require an independent explicit
+  recovery opt-in; current shared runtime remains disabled.
+- AC-R01: Invalid, replayed, revoked, expired, unverified, cross-actor,
+  inactive-role and concurrent proofs never grant session or privilege.
+- AC-R02: A disposable real PostgreSQL and WebAuthn integration proves
+  replacement, counter-signature verification, replay safety, other-actor
+  isolation, rollback and owner readback; the user then registers through
+  Windows Hello and performs separate login.
+- AC-R03: Critical independent security review covers proof issuance and
+  original actor continuity; no protected Identity changes until approved.
+
+Status: Go unit checks, OpenAPI owner-contract checks and control-panel
+type/security checks are available. AC-R01/02/03 are not complete: verified
+human continuity, approved proof issuance, disposable SQL/WebAuthn integration
+and independent review are missing. No credential has been issued to the
+current original owner. JOURNEY_CLOSED=NO, PRODUCTION_READY=NO.

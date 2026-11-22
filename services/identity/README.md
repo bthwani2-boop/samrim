@@ -74,3 +74,43 @@ separately authorized disposable PostgreSQL container and an exact opt-in.
 Historical original-Operator continuity, real verified contact binding,
 credential recovery, human Windows Hello exercise, current production
 migration and independent critical risk review remain **NOT_CLOSED**.
+
+## Existing Operator Passkey recovery — implementation staged, not activated
+
+The canonical Identity owner now contains a separate, **disabled-by-default**
+existing-actor WebAuthn recovery handler. It reuses migration 006 tables
+(`operator_passkey_recovery_proofs`, `operator_passkey_ceremonies`,
+`operator_passkey_users`, `operator_passkey_credentials`, immutable audit).
+It does not need a new service, a new Operator actor, new permissions, or an
+additional database schema.
+
+Both the Identity option `IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY=true`
+and the Control Panel option `OPERATOR_ENABLE_ISOLATED_PASSKEY_RECOVERY_BFF=true`
+require the existing isolated Passkey configuration and the exact approved
+`localhost` WebAuthn origin. The Identity startup additionally refuses any
+database other than the dedicated disposable `refoundation_webauthn_s02`;
+an `identity_test_*` schema inside the shared `bthwani_refoundation` database
+is not authority to recover an existing Operator. Neither option is enabled in
+the current `bthwani-refoundation` runtime.
+
+**Critical precondition:** the recovery proof must already be a digest-bound,
+unexpired, ten-minute-or-less proof for a confirmed existing ACTIVE Operator,
+issued **outside HTTP** after independently authorized human identity
+continuity. This repository does not yet have a verified issuance/approval
+procedure for original historical Operators. The recovery API and browser
+cannot select an actor or mint that proof; do not insert an arbitrary actor ID,
+reuse a first-Owner bootstrap ticket, or create a second Root. No protected
+database is to be changed to test this path.
+
+After a valid proof, `POST /v1/operators/passkey/recovery/options` begins a
+four-minute user-verified WebAuthn registration, and
+`POST /v1/operators/passkey/recovery` atomically registers the replacement
+credential, invalidates other recovery proofs and ceremonies, revokes prior
+Operator credentials and sessions, and writes immutable audit. It preserves
+the actor, all role grants and the original-Owner marker. **No session is
+returned**; the user must separately sign in with the registered key.
+
+The current deliverable is implementation plus unit/contract checks;
+a genuinely preauthorized proof, disposable PostgreSQL signed-WebAuthn
+integration, Windows Hello registration, session/revocation readback, and
+independent security review are still required before activation. **NOT_CLOSED**.

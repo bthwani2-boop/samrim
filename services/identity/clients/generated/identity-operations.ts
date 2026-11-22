@@ -1,12 +1,14 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/identity/contracts/openapi/identity.openapi.yaml.
-// Normalized OpenAPI SHA-256: 9c55d7c15e1352fc8285038264d10667c296a1a17abe326cd9a849dd88fd408d
+// Normalized OpenAPI SHA-256: ef3a1e39f60f49eff41b3082ce8520a9578a31e4f70a031fae4db3c5732f4e99
 // DTO and runtime validation remain the owner's responsibility.
 export const identityOperations = {
   admitVerifiedCurrentCustomerAsMerchant: { method: "POST", path: "/v1/actors/me/merchant-role" },
   admitVerifiedCustomerAsApprovedCaptain: { method: "POST", path: "/v1/actors/me/captain-role" },
+  beginExistingOperatorPasskeyRecovery: { method: "POST", path: "/v1/operators/passkey/recovery/options" },
   beginInitialOperatorPasskeyRegistration: { method: "POST", path: "/v1/operators/passkey/bootstrap/options" },
   beginOperatorPasskeyAuthentication: { method: "POST", path: "/v1/operators/passkey/authentication/options" },
+  finishExistingOperatorPasskeyRecovery: { method: "POST", path: "/v1/operators/passkey/recovery" },
   finishInitialOperatorPasskeyRegistration: { method: "POST", path: "/v1/operators/passkey/bootstrap" },
   finishOperatorPasskeyAuthentication: { method: "POST", path: "/v1/operators/passkey/authentication" },
   getEffectiveOperatorPermission: { method: "GET", path: "/v1/operators/me/permissions/{permission}" },
