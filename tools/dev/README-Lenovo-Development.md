@@ -1,7 +1,17 @@
 # BThwani Surface-to-Lenovo development operations
 
 One canonical source: Surface D:\samrim; Lenovo BTHWANI-DOCKER runs the apps.
-Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-docker with strict host-key checks.
+Surface hostname BTHWANI; Lenovo hostname BTHWANI-DOCKER. The SSH target alias is bthwani-docker with strict host-key checks; resolve its current network address rather than treating historical DHCP assignments as permanent.
+
+## Daily launch — one command
+
+From Surface PowerShell in `D:\samrim` run **`pnpm dev`**. This is the fast default: it verifies the existing Lenovo SSH endpoint, reuses the existing Surface sync/tunnel and Lenovo app tasks, and opens the three Chrome tabs plus Customer/Merchant/Captain on a connected Samsung. It never launches a second watcher or another Expo/Next server, and does not recreate Docker containers or touch data.
+
+- `pnpm dev apps open` — reopen the existing Chrome window and connected Android apps without touching their servers. Use `-Mode Browser` when Samsung is disconnected.
+- `pnpm dev apps status` / `pnpm dev apps verify` — targeted diagnostics, not required at every launch.
+- `pnpm dev up` — explicit, slower isolated infrastructure startup when the development Docker containers need starting; it preserves protected Identity/WLT state.
+
+When Lenovo is unreachable on TCP port 22, the fast command reports a specific `BLOCKED` error instead of running lengthy Docker checks. The preexisting Scheduled Tasks keep retrying their SSH tunnels. Check Lenovo power/network before repeating a failed start; never launch a duplicate watcher or tunnel.
 
 ## Single existing owners
 - SSH tunnels: four Scheduled Tasks invoke `tools/dev/Start-AppTunnel.ps1`. Customer uses Surface 18101 → Lenovo 28111 and Merchant uses 18102 → 28112. Optional local overrides use `SAMRIM_APP_CUSTOMER_METRO_PORT` and `SAMRIM_APP_MERCHANT_METRO_PORT`. Captain uses 18103 → 28113 and Control Panel uses 13000 → 23010.

@@ -15,7 +15,7 @@ $PSNativeCommandUseErrorActionPreference=$false
 $surface='BTHWANI'
 $device='R5CX14S4PZW'
 $chrome='C:\Program Files\Google\Chrome\Application\chrome.exe'
-$chromeProfile='Profile 1' # Chrome profile signed in as bthwani2@gmail.com (verified at launch)
+$chromeProfile='Profile 1' # Reuse the existing local Chrome profile without requiring Google sign-in.
 $urls=@(
   'http://127.0.0.1:18101/',
   'http://127.0.0.1:18102/',
@@ -76,17 +76,25 @@ public static class BthwaniChromeWindowLocator {
     try {
       $window=[Windows.Automation.AutomationElement]::FromHandle($handle)
       $tabs=$window.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
-      if($tabs.Count -ne 3){continue}
+      if($tabs.Count -lt 3){continue}
       $names=@($tabs | ForEach-Object {[string]$_.Current.Name})
       # Expo Web can temporarily expose its local URL as the Chrome tab title.
-      # Match each expected app in tab order, not just the branded page titles.
+      # Match the three expected apps regardless of tab order or extra Chrome tabs.
       $expected=@(
         '(?i)(بثواني.*(الرئيسية|العميل)|bthwani.*customer|127\.0\.0\.1:18101)',
         '(?i)(بثواني.*التاجر|bthwani.*merchant|127\.0\.0\.1:18102)',
         '(?i)(بثواني.*لوحة التحكم|bthwani.*control|127\.0\.0\.1:13000)'
       )
-      if(($names[0] -match $expected[0]) -and ($names[1] -match $expected[1]) -and
-          ($names[2] -match $expected[2])){return $handle.ToInt64()}
+      $matched=[Collections.Generic.HashSet[int]]::new()
+      foreach($signature in $expected){
+        for($i=0;$i -lt $names.Count;$i++){
+          if(-not $matched.Contains($i) -and $names[$i] -match $signature){
+            [void]$matched.Add($i)
+            break
+          }
+        }
+      }
+      if($matched.Count -eq $expected.Count){return $handle.ToInt64()}
     } catch {}
   }
   return 0
@@ -106,7 +114,7 @@ function Open-Browser {
   Require (Test-Path -LiteralPath $localState -PathType Leaf) 'CHROME_PROFILE_METADATA_MISSING'
   $profiles=Get-Content -LiteralPath $localState -Raw | ConvertFrom-Json
   $selectedProfile=$profiles.profile.info_cache.PSObject.Properties[$chromeProfile]
-  Require ($null -ne $selectedProfile -and [string]$selectedProfile.Value.user_name -ieq 'bthwani2@gmail.com') 'CHROME_ACCOUNT_PROFILE_MISMATCH'
+  Require ($null -ne $selectedProfile) 'CHROME_PROFILE_MISSING'
   # Reuse the existing three-tab app window, if present; do not create duplicates.
   $existingWindow=Get-AppChromeWindow
   if($existingWindow -ne 0){
@@ -161,7 +169,7 @@ function Open-Android {
       Report 'ANDROID_APP' ($name+' FAIL app_launch')
       continue
     }
-    Start-Sleep -Seconds 3
+    Start-Sleep -Milliseconds 250
     $top=@(& $adb.Source '-s' $device 'shell' 'dumpsys' 'activity' 'activities' | Where-Object{$_.ToString() -match 'topResumedActivity'} | Select-Object -First 1)
     if(@($top|Where-Object{$_.ToString() -match 'DevLauncherErrorActivity'}).Count){
       $blocked++

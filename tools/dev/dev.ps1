@@ -1,26 +1,28 @@
 #Requires -Version 7.0
 <#
 BThwani canonical development orchestration, Surface only.
-Download and run: .\BThwani-Install-Unified-Dev.ps1 Install -Apply
-This same file is installed as D:\samrim\tools\dev\dev.ps1 and called by pnpm dev.
+Run from D:\samrim: pnpm dev (fast app launch) or pnpm dev up (full isolated infrastructure).
+This existing Surface launcher reuses Lenovo Scheduled Tasks, source sync and loopback SSH tunnels.
 Never runs SQL migrations, operator bootstrap, Identity activation, WLT, image builds,
 Docker volume deletion, branch changes, Git commits/pushes, or credential modifications.
 #>
 [CmdletBinding()]
 param(
   [Parameter(Position=0)]
-  [ValidateSet('Install','Up','Warm','Status','Down','Verify','Migrations','Docker','Apps')]
-  [string]$Action = 'Up',
+  [ValidateSet('Launch','Up','Warm','Status','Down','Verify','Migrations','Docker','Apps')]
+  [string]$Action = 'Launch',
   [switch]$Apply,
   [switch]$DeepSql,
   [Parameter(Position=1)]
-  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','start','restart','android')]
+  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','start','restart','android','open')]
   [string]$DockerAction = 'help',
   [Parameter(Position=2)]
   [ValidateSet('dsh','identity','postgres','media','mailpit','payment-mock')]
   [string]$DockerService = 'dsh',
   [ValidateSet('customer','merchant','captain','control-panel')]
-  [string]$App = ''
+  [string]$App = '',
+  [ValidateSet('Browser','Android','All')]
+  [string]$Mode = 'All'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -76,6 +78,14 @@ function Check-LocalIdentity {
   Say 'SOURCE_HEAD' $head
 }
 function Check-Ssh {
+  $client = [Net.Sockets.TcpClient]::new()
+  $connected = $false
+  try {
+    $pending = $client.ConnectAsync('bthwani-docker',22)
+    $connected = $pending.Wait(2000) -and $client.Connected
+  } catch { $connected = $false }
+  finally { $client.Dispose() }
+  Assert-Ok $connected 'Lenovo TCP/22 unreachable; existing tunnel tasks will keep retrying'
   $rows = @(& $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'hostname' 2>&1)
   Assert-Ok ($LASTEXITCODE -eq 0 -and @($rows | Where-Object { $_.ToString().Trim() -ieq $expectedLenovo }).Count -eq 1) 'SSH verified host or authentication unavailable'
   Say 'SSH_AUTH' 'PASS host=BTHWANI-DOCKER strictHostKey=yes'
@@ -204,6 +214,9 @@ function Show-AppsHelp {
   Write-Output 'pnpm dev apps status                   # read-only task, listener, process owner and mirror check'
   Write-Output 'pnpm dev apps verify                   # above plus Web and Metro HTTP, not visual Fast Refresh'
   Write-Output 'pnpm dev apps android                  # inspect ADB device and reverse mappings, no changes'
+  Write-Output 'pnpm dev apps open                     # reuse Chrome tabs and open Samsung; no server duplication'
+  Write-Output 'pnpm dev apps open -Mode Browser       # Chrome only, no Android connection needed'
+  Write-Output 'pnpm dev                             # start/reuse tasks, then open available screens'
   Write-Output 'pnpm dev apps logs -App customer       # last 20 log lines, redacted'
   Write-Output 'pnpm dev apps start -App merchant      # preflight/dry run only'
   Write-Output 'pnpm dev apps start -App merchant -Apply # start only stopped and port-free task'
@@ -414,9 +427,33 @@ throw ('APP_LISTENER_NOT_READY '+$app)
   $body=$body.Replace('__APP__',$App).Replace('__MODE__',$operation).Replace('__LOCK__',$lockHash)
   Invoke-Lenovo $body
 }
+function Open-AppSurfaces {
+  $opener = Join-Path $repo 'tools\dev\open-dev-apps.ps1'
+  Assert-Ok (Test-Path -LiteralPath $opener -PathType Leaf) 'canonical app opener missing'
+  $selection = $Mode
+  if ($selection -eq 'All') {
+    $adb = Get-Command adb.exe -ErrorAction SilentlyContinue
+    $connected = $false
+    if ($adb) {
+      $devices = @(& $adb.Source devices 2>&1)
+      $connected = $LASTEXITCODE -eq 0 -and
+        @($devices | Where-Object { $_.ToString() -match '^R5CX14S4PZW\s+device\b' }).Count -eq 1
+    }
+    if (-not $connected) {
+      $selection = 'Browser'
+      Say 'SAMSUNG' 'SKIPPED (not connected; Chrome opens independently)'
+    }
+  }
+  $output = @(& pwsh.exe -NoProfile -NonInteractive -File $opener -Mode $selection 2>&1)
+  $status = $LASTEXITCODE
+  foreach ($line in $output) { Write-Output $line }
+  Assert-Ok ($status -eq 0) ('opening '+$selection+' failed; existing app servers and tunnels preserved')
+}
+
 function Invoke-AppAction {
   if($DockerAction -eq 'help'){Show-AppsHelp;return}
   if($DockerAction -eq 'android'){Inspect-AppAndroid;return}
+  if($DockerAction -eq 'open'){Open-AppSurfaces;return}
   Check-Ssh
   switch($DockerAction.ToLowerInvariant()){
     'status' {Inspect-AppOwners}
@@ -452,7 +489,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker networks       # project-scoped networks'
   Write-Output 'pnpm dev docker config         # validate base and DSH Compose safely'
   Write-Output 'pnpm dev docker verify         # strict DSH + Identity live image provenance'
-  Write-Output 'pnpm dev | pnpm dev warm | pnpm dev status | pnpm dev down'
+  Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=use infra/build-dsh-image.ps1 or infra/build-identity-verifier-image.ps1 explicitly'
   Write-Output 'UNSUPPORTED=prune, down -v, SQL migration execution, bootstrap, protected state operations'
@@ -577,83 +614,33 @@ function Verify-Checks {
   } else { Say 'SQL_PROOF' 'NOT_RUN (optional: pnpm dev verify -DeepSql)' }
   Say 'VERIFY' 'PASS static/policy only; live Identity, Android and finance remain separate gates'
 }
-function Install-CLI {
-  $source = (Resolve-Path -LiteralPath $PSCommandPath).Path
-  $target = Join-Path $repo 'tools\dev\dev.ps1'
-  $package = Join-Path $repo 'package.json'
-  $expected = 'pwsh -NoProfile -File tools/dev/dev.ps1'
-  # Other worktree changes do not block installation; guard owned targets only.
-  $packageHashBefore = (Get-FileHash -Algorithm SHA256 -LiteralPath $package).Hash
-  $packageBefore = [IO.File]::ReadAllText($package)
-  $json = $packageBefore | ConvertFrom-Json
-  $oldDev = $json.scripts.PSObject.Properties['dev']
-  if ($oldDev) { Assert-Ok ($oldDev.Value -eq $expected) 'existing pnpm dev owner differs; refusing overwrite' }
-  $exists = Test-Path -LiteralPath $target -PathType Leaf
-  if ($exists) {
-    $a = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
-    $b = (Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash
-    Assert-Ok ($a -eq $b) 'existing tools/dev/dev.ps1 differs; refusing overwrite'
-  }
-  if ($exists -and $oldDev) { Say 'INSTALL' 'ALREADY_INSTALLED'; return }
-
-  if (-not $oldDev) {
-    $matcher = [regex]::new('(?m)^\s*"scripts"\s*:\s*\{')
-    Assert-Ok ($matcher.IsMatch($packageBefore)) 'package.json script insertion point missing'
-    $packageAfter = $matcher.Replace($packageBefore,{param($m) $m.Value + "`r`n    `"dev`": `"$expected`","},1)
-    $newJson = $packageAfter | ConvertFrom-Json
-    Assert-Ok ($newJson.scripts.dev -eq $expected) 'generated package.json invalid'
-  } else { $packageAfter = $packageBefore }
-  $tokens=$null;$errors=$null
-  $null=[System.Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
-  Assert-Ok ($errors.Count -eq 0) ('PowerShell parse failed: '+($errors -join ' | '))
-  Banner 'INSTALL PLAN'
-  Say 'SOURCE' $source
-  Say 'TARGET' $target
-  Say 'PACKAGE_CHANGE' (-not [bool]$oldDev)
-  Say 'RUNNER_COPY' (-not $exists)
-  if(-not $Apply) { Say 'INSTALL' 'DRY_RUN (use Install -Apply)'; return }
-  # Check only owned targets immediately before writing; preserve unrelated modifications.
-  Assert-Ok ((Get-FileHash -Algorithm SHA256 -LiteralPath $package).Hash -eq $packageHashBefore) 'package.json changed during installation; protect concurrent writer'
-  Assert-Ok ((Test-Path -LiteralPath $target -PathType Leaf) -eq $exists) 'tools/dev/dev.ps1 appeared/disappeared during installation'
-  if ($exists) {
-    Assert-Ok ((Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash -eq (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash) 'tools/dev/dev.ps1 changed during installation'
-  }
-  $backup = Join-Path $logRoot ('package-backup-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
-  New-Item -ItemType Directory -Force -Path $backup | Out-Null
-  Copy-Item -LiteralPath $package -Destination (Join-Path $backup 'package.json')
-  try {
-    if(-not $exists) { Copy-Item -LiteralPath $source -Destination $target }
-    if(-not $oldDev) {
-      $temp = Join-Path $repo 'package.json.bthwani-atomic.tmp'
-      [IO.File]::WriteAllText($temp,$packageAfter,[Text.UTF8Encoding]::new($false))
-      Move-Item -LiteralPath $temp -Destination $package -Force
-    }
-    $actual = (Get-Content -LiteralPath $package -Raw | ConvertFrom-Json).scripts.dev
-    Assert-Ok ($actual -eq $expected) 'package readback mismatch'
-    Assert-Ok ((Get-FileHash -LiteralPath $target).Hash -eq (Get-FileHash -LiteralPath $source).Hash) 'runner readback mismatch'
-    Say 'INSTALL' 'PASS verified file hashes and package.json; local changes are not committed or pushed'
-    Say 'NEXT' 'pnpm dev status | pnpm dev | pnpm dev warm | pnpm dev verify | pnpm dev down'
-  } catch {
-    Copy-Item -LiteralPath (Join-Path $backup 'package.json') -Destination $package -Force
-    if(-not $exists -and (Test-Path -LiteralPath $target)){Remove-Item -LiteralPath $target -Force}
-    throw
-  }
-}
 
 try {
-  try { $hasMutex = $mutex.WaitOne(0) }
-  catch [Threading.AbandonedMutexException] { $hasMutex = $true }
-  Assert-Ok $hasMutex 'another unified dev operation is in progress'
+  $readOnlyOperation = $Action -in @('Status','Verify','Migrations') -or
+    ($Action -eq 'Apps' -and $DockerAction -in @('help','status','verify','logs','android')) -or
+    ($Action -eq 'Docker' -and $DockerAction -in @('help','status','ps','logs','images','volumes','networks','config','verify'))
+  if (-not $readOnlyOperation) {
+    try { $hasMutex = $mutex.WaitOne(0) }
+    catch [Threading.AbandonedMutexException] { $hasMutex = $true }
+    Assert-Ok $hasMutex 'another unified dev operation is in progress'
+  }
   New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
-  $logFile = Join-Path $logRoot ('dev-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.log')
+  $logFile = Join-Path $logRoot ('dev-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff')+'-'+$PID+'.log')
   Start-Transcript -Path $logFile -ErrorAction Stop | Out-Null
   $transcript = $true
   Say 'ACTION' $Action
   Check-LocalIdentity
   switch ($Action.ToLowerInvariant()) {
-    'install' { Install-CLI; break }
     'docker' { Invoke-ScopedDocker; break }
     'apps' { Invoke-AppAction; break }
+    'launch' {
+      Check-Ssh
+      Start-LocalTasks
+      Start-LenovoTasks
+      Open-AppSurfaces
+      Say 'LAUNCH' 'PASS (existing app tasks and source watcher; screens opened where available)'
+      break
+    }
     'status' {
       Check-Ssh
       Show-LocalTasks
@@ -676,6 +663,7 @@ try {
       Show-LenovoTasks
       Show-Docker
       Wait-AppStatus
+      try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
       Say 'IDENTITY' 'NOT_AUTOSTARTED (owner-backed runtime security/SQL acceptance required)'
       break
     }
@@ -690,6 +678,7 @@ try {
       Banner 'POST-WARM STATUS'
       Show-Docker
       Wait-AppStatus
+      try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
       Say 'WARM' 'DONE without builds, migrations, and container recreation'
       break
     }
