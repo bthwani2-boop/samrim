@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { type ReactNode, useState } from "react";
 import { findWorkspaceEntry, workspaceGroupLabels, workspaceSubsections } from "../navigation/workspace-registry";
-import { canEnterOperatorWorkspace, type OperatorPermission, operatorSectionTabs, visibleWorkspaceEntries } from "../session/operator-permissions";
+import { canEnterOperatorWorkspace, type OperatorPermission, visibleWorkspaceEntries } from "../session/operator-permissions";
 import styles from "./operator-shell.module.css";
 
 export default function OperatorShell({ children, verifiedGrants, originalOperator }: Readonly<{
@@ -15,7 +15,7 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
   const pathname = usePathname();
   const [signOutState, setSignOutState] = useState<"idle" | "pending" | "unconfirmed">("idle");
   const permitted = visibleWorkspaceEntries(verifiedGrants ?? [], originalOperator);
-  const sectionTabs = operatorSectionTabs(verifiedGrants ?? [], originalOperator);
+  const hasWorkspace = permitted.length > 0;
   const publicLinks = [
     { href: "/", label: verifiedGrants === null ? "دخول المشغّل" : "الوصول إلى اللوحة" },
     { href: "/health", label: "حالة الواجهة" },
@@ -47,7 +47,7 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
   );
 
   return (
-    <div className={styles.shell}>
+    <div className={hasWorkspace ? styles.shell : `${styles.shell} ${styles.publicShell}`}>
       {signOutState !== "idle" ? (
         <main className={styles.signOutStatus} role="status">
           <h1>تسجيل الخروج</h1>
@@ -56,10 +56,10 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
             : "لم يتم تأكيد إبطال الجلسة لدى Identity. أُخفيت محتويات مساحة العمل؛ لا تعتبر الجلسة منتهية على الخادم."}</p>
           {signOutState === "unconfirmed" && <a href="/">العودة إلى صفحة الدخول</a>}
         </main>
-      ) : <><aside className={styles.sidebar}>
+      ) : <><aside className={hasWorkspace ? styles.sidebar : styles.publicBar}>
         <header className={styles.brand}>لوحة تحكم بثواني</header>
         <nav aria-label="التنقل الرئيسي" className={styles.navigation}>
-          {permitted.length > 0 ? Object.entries(workspaceGroupLabels).map(([group, label]) => {
+          {hasWorkspace ? Object.entries(workspaceGroupLabels).map(([group, label]) => {
             const entries = permitted.filter(entry => entry.group === group);
             if (entries.length === 0) return null;
             return (
@@ -68,18 +68,7 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
                 <ul>{entries.map(entry => navigationLink(entry, activeHref))}</ul>
               </div>
             );
-          }) : <>
-            <ul>{publicLinks.map(entry => navigationLink(entry, pathname))}</ul>
-            <section className={styles.lockedSections} aria-label="الأقسام الرئيسية (تتطلب تسجيل الدخول)">
-              <h2>الأقسام الرئيسية</h2>
-              <ul>
-                {Object.entries(workspaceGroupLabels).filter(([group]) => group !== "home").map(([group, label]) => (
-                  <li key={group}>{label}</li>
-                ))}
-              </ul>
-              <p>روابط الأقسام تظهر بعد التحقق من جلسة المشغّل وصلاحياته.</p>
-            </section>
-          </>}
+          }) : <ul>{publicLinks.map(entry => navigationLink(entry, pathname))}</ul>}
         </nav>
         {verifiedGrants !== null && (
           <button type="button" className={styles.logout} onClick={signOut}>
@@ -88,43 +77,19 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
         )}
       </aside>
       <div className={styles.content}>
-        {sectionTabs.length > 0 && (
+        {subsectionLinks.length > 0 && activeEntry && (
           <header className={styles.workspaceBar}>
-            <span className={styles.currentSection}>{activeEntry?.label ?? "لوحة تحكم بثواني"}</span>
-            <nav aria-label="تبويبات الأقسام" className={styles.sectionTabs}>
-              <ul>{sectionTabs.map((tab) => (
-                <li key={tab.group}>
-                  <a href={tab.href} aria-current={activeEntry?.group === tab.group ? "page" : undefined}>
-                    {workspaceGroupLabels[tab.group]}
-                  </a>
-                </li>
-              ))}</ul>
-            </nav>
-            {subsectionLinks.length > 0 && activeEntry && (
-              <nav aria-label="تبويبات الوظائف" className={styles.subsectionTabs}>
-                <ul>
-                  <li><a href={activeEntry.href} aria-current={pathname === activeEntry.href ? "page" : undefined}>نظرة عامة</a></li>
-                  {subsectionLinks.map(item => (
-                    <li key={item.href}>
-                      <a href={item.href} aria-current={pathname === item.href || pathname?.startsWith(`${item.href}/`) ? "page" : undefined}>
-                        {item.label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </nav>
-            )}
-          </header>
-        )}
-        {sectionTabs.length === 0 && (
-          <header className={styles.workspaceBar}>
-            <span className={styles.currentSection}>معاينة أقسام اللوحة — يلزم دخول مشغّل معتمد</span>
-            <nav aria-label="معاينة الأقسام غير المتاحة قبل الدخول" className={styles.sectionTabs}>
-              <ul>{Object.entries(workspaceGroupLabels).map(([group, label]) => (
-                <li key={group}>
-                  <span className={styles.lockedTab} aria-disabled="true">{label}</span>
-                </li>
-              ))}</ul>
+            <nav aria-label="تبويبات الوظائف" className={styles.subsectionTabs}>
+              <ul>
+                <li><a href={activeEntry.href} aria-current={pathname === activeEntry.href ? "page" : undefined}>نظرة عامة</a></li>
+                {subsectionLinks.map(item => (
+                  <li key={item.href}>
+                    <a href={item.href} aria-current={pathname === item.href || pathname?.startsWith(`${item.href}/`) ? "page" : undefined}>
+                      {item.label}
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </nav>
           </header>
         )}

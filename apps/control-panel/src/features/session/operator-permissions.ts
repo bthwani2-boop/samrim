@@ -1,4 +1,4 @@
-import { identityOperatorPermissions, type IdentityOperatorPermission } from "@bthwani/identity";
+import { type IdentityOperatorPermission, identityOperatorPermissions } from "@bthwani/identity";
 import {
   findWorkspaceEntry, type WorkspaceEntry, workspaceRegistry,
 } from "../navigation/workspace-registry.ts";
@@ -52,16 +52,4 @@ export function visibleWorkspaceEntries(
   grants: readonly OperatorPermission[], originalOperator = false,
 ): WorkspaceEntry[] {
   return workspaceRegistry.filter(entry => canOpenWorkspaceEntry(grants, entry, originalOperator));
-}
-
-/** One tab per permitted section, derived from the same permission-filtered route registry. */
-export function operatorSectionTabs(
-  grants: readonly OperatorPermission[], originalOperator = false,
-): WorkspaceEntry[] {
-  const seen = new Set<WorkspaceEntry["group"]>();
-  return visibleWorkspaceEntries(grants, originalOperator).filter((entry) => {
-    if (seen.has(entry.group)) return false;
-    seen.add(entry.group);
-    return true;
-  });
 }

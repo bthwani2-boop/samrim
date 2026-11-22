@@ -16,7 +16,7 @@ test("Operator workspace keeps control-panel identity and uses a real Next route
   const entry = read("src/features/access/operator-entry-screen.tsx");
   assert.match(entry, /متطلبات تفعيل الدخول/);
   assert.match(entry, /مفتاح مرور موثّق لصاحب الحساب/);
-  assert.match(entry, /لا تظهر قبل تحقق الصلاحيات/);
+  assert.match(entry, /تفتح الأقسام المسموحة بعد التحقق من صلاحيات حسابك/);
   const login = read("src/features/access/operator-passkey-form.tsx");
   assert.match(login, /Identity من إكمال التحقق الآمن/);
   assert.match(read("app/(workspace)/workspace/page.tsx"), /OperatorDashboardPage/);
@@ -38,7 +38,7 @@ test("Operator workspace only renders protected children after owner-verified ac
   assert.match(gate, /غير متاح/);
   assert.doesNotMatch(gate, /fetch\(|getOrder\(|useSession\(/);
   const entry = read("src/features/access/operator-entry-screen.tsx");
-  assert.match(entry, /لوحة تحكم بثواني/);
+  assert.match(entry, /دخول المشغّل/);
   assert.doesNotMatch(entry, /setSession\(|localStorage|mock/i);
 });
 
@@ -47,8 +47,8 @@ test("Operator links perform a new document request, not a cached layout-only tr
   const login = read("src/features/access/operator-passkey-form.tsx");
   const home = read("src/features/workspace/home-dashboard.tsx");
   assert.match(shell, /<a href={href}/);
-  assert.match(shell, /aria-label="معاينة الأقسام غير المتاحة قبل الدخول"/);
-  assert.match(shell, /aria-disabled="true"/);
+  assert.doesNotMatch(shell, /معاينة الأقسام|تبويبات الأقسام/);
+  assert.match(shell, /aria-label="تبويبات الوظائف"/);
   assert.match(login, /window\.location\.replace\("\/"\)/);
   assert.match(home, /<a className={styles\.sectionCard} href={entry\.href}/);
   assert.doesNotMatch(shell, /next\/link/);

@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { findWorkspaceEntry, workspaceGroupLabels, workspaceRegistry, workspaceSubsections } from "../navigation/workspace-registry.ts";
-import { canEnterOperatorWorkspace, canShowNavigation, operatorSectionTabs } from "../session/operator-permissions.ts";
+import { canEnterOperatorWorkspace, canShowNavigation, visibleWorkspaceEntries } from "../session/operator-permissions.ts";
 
 test("access: routes have the expected navigation permission boundary", () => {
   for (const path of ["/access","/access/operators/abc"]) {
@@ -35,19 +35,19 @@ test("access: the owner-confirmed original Operator enters without a delegated s
   assert.equal(canEnterOperatorWorkspace([], "/access", true), true);
   assert.equal(canEnterOperatorWorkspace([], "/access/operators/operator-1", true), true);
   assert.equal(canEnterOperatorWorkspace([], "/hr", true), false);
-  assert.deepEqual(operatorSectionTabs([], true).map(item => item.href), ["/access"]);
+  assert.deepEqual(visibleWorkspaceEntries([], true).map(item => item.href), ["/access"]);
 });
 
-test("operator section tabs use only verified grants and one canonical target per section", () => {
-  assert.deepEqual(operatorSectionTabs([]), []);
-  assert.deepEqual(operatorSectionTabs(["operations"]).map(item => item.href), ["/workspace", "/operations"]);
-  assert.deepEqual(operatorSectionTabs(["marketing"]).map(item => item.href), ["/workspace", "/marketing"]);
+test("Operator navigation retains all routes allowed by the current grants", () => {
+  assert.deepEqual(visibleWorkspaceEntries([]), []);
+  assert.deepEqual(visibleWorkspaceEntries(["operations"]).map(item => item.href), ["/workspace", "/operations", "/captains"]);
+  assert.deepEqual(visibleWorkspaceEntries(["marketing"]).map(item => item.href), ["/workspace", "/marketing", "/studio"]);
   const grants = ["operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies"];
-  const entries = operatorSectionTabs(grants);
-  assert.deepEqual(entries.map(item => item.group), [
+  const entries = visibleWorkspaceEntries(grants);
+  assert.deepEqual([...new Set(entries.map(item => item.group))], [
     "home", "operations", "stores", "catalog", "marketing", "finance", "administration", "policies",
   ]);
-  assert.equal(new Set(entries.map(item => item.group)).size, entries.length);
+  assert.equal(new Set(entries.map(item => item.href)).size, entries.length);
   for (const entry of entries) {
     assert.ok(workspaceGroupLabels[entry.group]);
     assert.equal(canEnterOperatorWorkspace(grants, entry.href), true);

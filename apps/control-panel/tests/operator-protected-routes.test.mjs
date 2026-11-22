@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { workspaceRegistry } from "../src/features/navigation/workspace-registry.ts";
+import { workspaceGroupLabels, workspaceRegistry } from "../src/features/navigation/workspace-registry.ts";
 
 const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const cli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
@@ -58,19 +58,14 @@ test("Operator routes and the browser session endpoint fail closed on the produc
     const entryHtml = await entry.text();
     assert.match(entryHtml, /تسجيل دخول المشغّلين غير متاح على هذه النسخة/);
     assert.doesNotMatch(entryHtml, /تسجيل الدخول بمفتاح المرور/);
-    const lockedSections = entryHtml.match(/<section\b[^>]*aria-label="الأقسام الرئيسية \(تتطلب تسجيل الدخول\)"[^>]*>(.*?)<\/section>/s)?.[1];
-    assert.ok(lockedSections, "guest must see a read-only section map in the sidebar");
-    assert.match(lockedSections, /العمليات/);
-    assert.match(lockedSections, /المالية/);
-    assert.doesNotMatch(lockedSections, /<(?:a|button)\\b/, "no disabled section may become a protected action");
-    assert.doesNotMatch(entryHtml, /aria-label="تبويبات الأقسام"/, "tabs require verified grants");
+    assert.doesNotMatch(entryHtml, /الأقسام الرئيسية \(تتطلب تسجيل الدخول\)|معاينة الأقسام غير المتاحة قبل الدخول|aria-label="تبويبات الوظائف"/);
     const overview = entryHtml.match(/<section\b[^>]*aria-labelledby="operator-sections-title"[^>]*>(.*?)<\/section>/s)?.[1];
     assert.ok(overview, "the guest landing must show the public section overview");
-    assert.match(overview, /تظهر روابط الأقسام بعد التحقق من صلاحيات حسابك/);
+    assert.match(overview, /تفتح الأقسام المسموحة بعد التحقق من صلاحيات حسابك/);
     assert.doesNotMatch(overview, /<(?:a|button)\b/);
     assert.deepEqual(
       Array.from(overview.matchAll(/<li>([^<]+)<\/li>/g), item => item[1]),
-      workspaceRegistry.filter(item => item.permission !== null).map(item => item.label),
+      Object.entries(workspaceGroupLabels).filter(([group]) => group !== "home").map(([, label]) => label),
     );
     for (const { href } of workspaceRegistry) {
       assert.ok(!entryHtml.includes(`href="${href}"`), `guest entry exposed ${href}`);
