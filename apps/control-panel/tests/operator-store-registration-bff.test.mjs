@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { validOperatorStoreRegistrationChange as validateDSHPolicyChange } from "../../../services/dsh/clients/operator-store-registration-policy.ts";
 
 const file = fileURLToPath(new URL("../app/api/policies/cities/[cityid]/store-registration/[relation]/route.ts", import.meta.url));
 const source = readFileSync(file, "utf8");
@@ -14,7 +15,7 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
   "\nmodule.exports = { GET, PATCH };";
 const browser = "http://localhost:13000";
 const bearer = Buffer.alloc(32, 8).toString("base64url");
-const url = browser + "/api/policies/cities/sanaa/store-registration/MARKETPLACE";
+const url = `${browser}/api/policies/cities/sanaa/store-registration/MARKETPLACE`;
 const policy = { cityId: "sanaa", relation: "MARKETPLACE", version: 1, enabled: true,
   termsVersion: "terms-v1", termsText: "Verified terms", changedByActor: "operator-a",
   changeReason: "Policy granted", updatedAt: new Date().toISOString() };
@@ -47,12 +48,11 @@ function harness(t) {
     async changeOperatorStoreRegistrationPolicy(...args) {
       state.dshCalls.push(["PATCH", ...args]);
       if (state.dshError) throw state.dshError;
-      return { policy: { ...policy, changedByActor: state.dshResultActor }, replay: false };
+      const change = args[4];
+      return { policy: { ...policy, termsVersion: change.termsVersion, termsText: change.termsText,
+        changeReason: change.reason, changedByActor: state.dshResultActor }, replay: false };
     },
-    validOperatorStoreRegistrationChange(value) {
-      return value && typeof value === "object" && !Array.isArray(value) &&
-        JSON.stringify(Object.keys(value).sort()) === JSON.stringify(Object.keys(command).sort());
-    },
+    validOperatorStoreRegistrationChange: validateDSHPolicyChange,
   };
   const mocks = {
     "@bthwani/dsh": owner,
@@ -66,7 +66,11 @@ function harness(t) {
     },
     "../../../../../../../src/server/operator-passkey-bff": {
       OPERATOR_COOKIE: "bthwani_operator_session",
-      boundedRequestBody: request => request.text(),
+      boundedRequestBody: async (request, maxBytes) => {
+        state.maxCommandBytes = maxBytes;
+        const body = await request.text();
+        return Buffer.byteLength(body, "utf8") <= maxBytes ? body : null;
+      },
       resolveIsolatedOperatorConfig: () => state.enabled ? { browserOrigin: browser } : null,
     },
     "../../../../../../../src/server/request-security": {
@@ -76,7 +80,7 @@ function harness(t) {
   const module = { exports: {} };
   new Function("require", "module", "exports", "process", compiled)(
     key => {
-      assert.ok(Object.hasOwn(mocks, key), "unexpected BFF import " + key);
+      assert.ok(Object.hasOwn(mocks, key), `unexpected BFF import ${key}`);
       return mocks[key];
     },
     module, module.exports, process,
@@ -148,4 +152,16 @@ test("Operator BFF preserves conflict status and disables itself without isolate
   assert.equal((await h.PATCH(h.request("PATCH", {}, command), h.context)).status, 409);
   h.state.enabled = false;
   assert.equal((await h.GET(h.request(), h.context)).status, 503);
+});
+
+test("Operator policy BFF accepts the full 4,000-codepoint Unicode terms contract without truncation", async t => {
+  const h = harness(t);
+  const extensive = { ...command, termsText: "😀".repeat(4000) };
+  assert.ok(Buffer.byteLength(JSON.stringify(extensive), "utf8") > 8192,
+    "regression requires a valid request larger than the old 8 KiB limit");
+  const reply = await h.PATCH(h.request("PATCH", {}, extensive), h.context);
+  assert.equal(reply.status, 200);
+  assert.equal(h.state.maxCommandBytes, 24576);
+  assert.equal(h.state.dshCalls.length, 1);
+  assert.equal(h.state.dshCalls[0][5].termsText, extensive.termsText);
 });

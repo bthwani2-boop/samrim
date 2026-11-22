@@ -51,8 +51,9 @@ async function boundedChange(request: NextRequest): Promise<OperatorStoreRegistr
   if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
     return null;
   }
-  const raw = await boundedRequestBody(request);
-  if (!raw || Buffer.byteLength(raw, "utf8") > 8192) return null;
+  // Up to 4,000 Unicode terms characters plus bounded command metadata.
+  const raw = await boundedRequestBody(request, 24576);
+  if (!raw || Buffer.byteLength(raw, "utf8") > 24576) return null;
   try {
     const data: unknown = JSON.parse(raw);
     return validOperatorStoreRegistrationChange(data) ? data : null;

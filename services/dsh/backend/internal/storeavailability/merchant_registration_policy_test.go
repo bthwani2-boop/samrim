@@ -28,6 +28,11 @@ func TestRegistrationPolicyValidationAndOperatorAuthorization(t *testing.T) {
 	if !validStoreRegistrationPolicyChange(valid) {
 		t.Fatal("valid policy rejected")
 	}
+	unicode := valid
+	unicode.TermsText = strings.Repeat("😀", 4000)
+	if !validStoreRegistrationPolicyChange(unicode) {
+		t.Fatal("four thousand Unicode terms codepoints must be admitted")
+	}
 	for _, mutate := range []func(*StoreRegistrationPolicyChange){
 		func(v *StoreRegistrationPolicyChange) { v.OperationID = "bad" },
 		func(v *StoreRegistrationPolicyChange) { v.CityID = "sanaa/other" },

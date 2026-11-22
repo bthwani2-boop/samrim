@@ -261,7 +261,8 @@ func NewStoreRegistrationPolicyHandler(s *MerchantStoreRegistrar) (http.Handler,
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 8192)
+		// Match the bounded Web adapter; 4,000 UTF-8 terms characters may exceed 8 KiB.
+		r.Body = http.MaxBytesReader(w, r.Body, 24576)
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		var input StoreRegistrationPolicyChange
