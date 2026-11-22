@@ -51,13 +51,13 @@ func (s *OperatorPasskeyAuth) initialOwnerAvailable() bool {
 		IsIsolatedTestSchema(s.owner.schema)
 }
 
-// lockInitialBootstrap serializes both issuing and consuming the one-time
-// claim with any concurrent initial Operator creation. No app/HTTP route
-// accepts an actor ID or permission; only a privileged local CLI may issue a
-// claim, and the Owner creates all seven grants after WebAuthn verification.
+// lockInitialBootstrap serializes every writer of the first Operator and its
+// claim, including issuance before the singleton row exists. Locking the
+// claim table lets the restricted Identity role acquire the lock without
+// granting extra access to actor roles or the immutable original-owner marker.
 func lockInitialBootstrap(ctx context.Context, tx *sql.Tx) error {
 	_, err := tx.ExecContext(ctx,
-		"LOCK TABLE operator_initial_bootstrap, operator_bootstrap, actor_roles IN SHARE ROW EXCLUSIVE MODE")
+		"LOCK TABLE operator_initial_bootstrap IN SHARE ROW EXCLUSIVE MODE")
 	return err
 }
 

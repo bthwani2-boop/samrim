@@ -5,7 +5,7 @@
 # Do NOT start until the Identity owner has verified safe Docker-network
 # listening in explicit isolated mode and the identity_test_* PostgreSQL
 # schema, scoped database role and real negative tests are independently proven.
-# No real issuer, operator bootstrap, Passkey flow or production credentials.
+# Operator features require separate explicit development opt-ins.
 services:
   identity:
     profiles: [identity-verifier]
@@ -37,6 +37,7 @@ services:
       # Local refoundation first Owner with preexisting synthetic Operator rows.
       # Explicit opt-in; defaults to false and never activates production.
       IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR: "${REF_IDENTITY_LOCAL_DEV_FIRST_OPERATOR:-false}"
+      IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN: "${REF_IDENTITY_OPERATOR_PERMISSION_ADMIN:-false}"
       IDENTITY_OPERATOR_PASSKEY_RPID: "${REF_IDENTITY_OPERATOR_PASSKEY_RPID:-}"
       IDENTITY_OPERATOR_PASSKEY_ORIGINS: "${REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS:-}"
     ports:

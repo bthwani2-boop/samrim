@@ -1,7 +1,12 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentOperatorAccessState } from "../../server/current-operator-access";
-import { canonicalOperatorEntryRedirect, resolveIsolatedOperatorConfig, resolveOperatorRecoveryConfig } from "../../server/operator-passkey-bff";
+import {
+  canonicalOperatorEntryRedirect,
+  resolveInitialOperatorBootstrapConfig,
+  resolveIsolatedOperatorConfig,
+  resolveOperatorRecoveryConfig,
+} from "../../server/operator-passkey-bff";
 import styles from "../operator-shell/operator-shell.module.css";
 import OperatorBootstrapForm from "./operator-bootstrap-form";
 import OperatorPasskeyForm from "./operator-passkey-form";
@@ -15,6 +20,7 @@ export default async function OperatorEntryScreen() {
   if (state.status === "verified" && state.access.grants.length) redirect("/workspace");
 
   const isolated = resolveIsolatedOperatorConfig(process.env);
+  const bootstrap = resolveInitialOperatorBootstrapConfig(process.env);
   const recovery = resolveOperatorRecoveryConfig(process.env);
   const signInOnThisAddress = isolated &&
     requestHeaders.get("host") === new URL(isolated.browserOrigin).host;
@@ -34,6 +40,7 @@ export default async function OperatorEntryScreen() {
         ) : signInOnThisAddress ? (
           <>
             <OperatorPasskeyForm />
+            {bootstrap && <OperatorBootstrapForm mode="initial" />}
             {recovery && <OperatorBootstrapForm mode="recovery" />}
           </>
         ) : isolated ? (

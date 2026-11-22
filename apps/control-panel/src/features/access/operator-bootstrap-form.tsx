@@ -104,6 +104,7 @@ export default function OperatorBootstrapForm({ mode = "initial" }: Readonly<{ m
   }
 
   const titleId = mode === "recovery" ? "operator-passkey-recovery-title" : "operator-root-bootstrap-title";
+  const proofId = mode === "recovery" ? "operator-recovery-proof" : "operator-bootstrap-proof";
   return (
     <section aria-labelledby={titleId}>
       <h2 id={titleId}>{mode === "recovery"
@@ -111,8 +112,8 @@ export default function OperatorBootstrapForm({ mode = "initial" }: Readonly<{ m
       <p>{mode === "recovery"
         ? "تتطلب الاستعادة رمزًا مستقلًا من Identity بعد التحقق من ملكية الحساب الأصلي. رمز تهيئة المالك الأول الاختباري لا يصلح."
         : "تتطلب هذه الخطوة رمز تهيئة قصير الصلاحية صادرًا من Identity عبر إجراء إداري محلي معتمد. لا تدخل رمز تهيئة الإنتاج هنا."}</p>
-      <label htmlFor="operator-bootstrap-proof">{mode === "recovery" ? "رمز الاستعادة المعتمد" : "رمز التهيئة المحلي"}</label>
-      <Input.Password id="operator-bootstrap-proof" value={proof} onChange={event=>setProof(event.target.value)}
+      <label htmlFor={proofId}>{mode === "recovery" ? "رمز الاستعادة المعتمد" : "رمز التهيئة المحلي"}</label>
+      <Input.Password id={proofId} value={proof} onChange={event=>setProof(event.target.value)}
         autoComplete="off" maxLength={43} disabled={busy || enrollment !== "ready"} />
       <Button type="primary" loading={busy} disabled={busy || enrollment !== "ready" || proof.length!==43}
         htmlType="button" onClick={enroll}>

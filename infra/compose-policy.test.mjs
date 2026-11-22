@@ -94,8 +94,8 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
     "${REF_IDENTITY_OPERATOR_PASSKEY_RPID:-}");
   assert.equal(id.environment.IDENTITY_OPERATOR_PASSKEY_ORIGINS,
     "${REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS:-}");
-  assert.equal(id.environment.IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN, undefined,
-    "Login opt-in must never grant permission administration");
+  assert.equal(id.environment.IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN,
+    "${REF_IDENTITY_OPERATOR_PERMISSION_ADMIN:-false}", "Permission administration requires its own opt-in");
   assert.ok(id.ports.every((v) => v.startsWith("127.0.0.1:")));
   assert.equal(id.depends_on.postgres.condition, "service_healthy");
   assert.ok(id.healthcheck.test.includes("wget -q -O /dev/null http://127.0.0.1:3302/health || exit 1"));

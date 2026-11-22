@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/lib/pq"
 )
 
 func TestInitialOperatorBootstrapRealPostgresAndWebAuthn(t *testing.T) {
@@ -96,6 +97,19 @@ func proveInitialOperatorBootstrap(t *testing.T, dsn, origin string) {
 	}
 	if auth.initialRootOrigin != origin {
 		t.Fatal("strict initial RP origin missing")
+	}
+	q := func(table string) string { return schema + "." + table }
+	if _, err = db.ExecContext(ctx, "INSERT INTO "+q("actors")+
+		"(id,status) VALUES('customer-fixture','ACTIVE'),('merchant-fixture','ACTIVE'); "+
+		"INSERT INTO "+q("actor_roles")+"(actor_id,role,status) VALUES"+
+		"('customer-fixture','customer','ACTIVE'),('merchant-fixture','merchant','ACTIVE')"); err != nil {
+		t.Fatal(err)
+	}
+	fixtureSnapshot := "SELECT jsonb_agg(jsonb_build_array(to_jsonb(a),to_jsonb(r)) ORDER BY a.id)::text FROM " +
+		q("actors") + " a JOIN " + q("actor_roles") + " r ON r.actor_id=a.id WHERE r.role IN ('customer','merchant')"
+	var fixturesBefore string
+	if err = db.QueryRowContext(ctx, fixtureSnapshot).Scan(&fixturesBefore); err != nil {
+		t.Fatal(err)
 	}
 	// A preexisting (even synthetic) Operator forbids initial Root bootstrap.
 	// These rows belong exclusively to this disposable per-test schema.
@@ -242,9 +256,39 @@ func proveInitialOperatorBootstrap(t *testing.T, dsn, origin string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Exact same challenge, with a genuine library-parsed COSE credential and
-	// user verification. Competing submissions race for a single Owner marker.
 	proof := buildCredential(origin, options.Options.Response.Challenge.String())
+	// Fail the final claim update after the actor, grants, credential and
+	// audit inserts. The valid ceremony must remain usable after rollback.
+	const rollbackConstraint = "test_reject_claim_consumption"
+	initialClaim := q("operator_initial_bootstrap")
+	if _, err = db.ExecContext(ctx, "ALTER TABLE "+initialClaim+
+		" ADD CONSTRAINT "+rollbackConstraint+" CHECK (consumed_at IS NULL)"); err != nil {
+		t.Fatal(err)
+	}
+	var constraintError *pq.Error
+	if err = auth.FinishInitialOperatorRegistration(ctx, ticket, options.CeremonyID, proof); !errors.As(err, &constraintError) ||
+		constraintError.Constraint != rollbackConstraint {
+		t.Fatalf("expected final claim update to fail: %v", err)
+	}
+	var partialWrites int
+	var pending bool
+	err = db.QueryRowContext(ctx, "SELECT "+
+		"(SELECT count(*) FROM "+q("actors")+" WHERE id LIKE 'operator-root-%') + "+
+		"(SELECT count(*) FROM "+q("actor_roles")+" WHERE role='operator') + "+
+		"(SELECT count(*) FROM "+q("operator_permissions")+") + "+
+		"(SELECT count(*) FROM "+q("operator_bootstrap")+") + "+
+		"(SELECT count(*) FROM "+q("operator_passkey_users")+") + "+
+		"(SELECT count(*) FROM "+q("operator_passkey_credentials")+") + "+
+		"(SELECT count(*) FROM "+q("operator_passkey_audit")+"), "+
+		"EXISTS (SELECT FROM "+initialClaim+" WHERE consumed_at IS NULL AND session_data IS NOT NULL)").Scan(&partialWrites, &pending)
+	if err != nil || partialWrites != 0 || !pending {
+		t.Fatalf("partial enrollment survived rollback: rows=%d pending=%t err=%v", partialWrites, pending, err)
+	}
+	if _, err = db.ExecContext(ctx, "ALTER TABLE "+initialClaim+" DROP CONSTRAINT "+rollbackConstraint); err != nil {
+		t.Fatal(err)
+	}
+
+	// Competing submissions race for a single Owner marker.
 	const contenders = 6
 	var succeeded atomic.Int32
 	var failed atomic.Int32
@@ -275,7 +319,10 @@ func proveInitialOperatorBootstrap(t *testing.T, dsn, origin string) {
 	defer independent.Close()
 	var rootID string
 	var grants, credentials, audit, completed, sessions int
-	q := func(table string) string { return schema + "." + table }
+	var fixturesAfter string
+	if err = independent.QueryRowContext(ctx, fixtureSnapshot).Scan(&fixturesAfter); err != nil || fixturesAfter != fixturesBefore {
+		t.Fatalf("first Operator bootstrap changed existing Customer/Merchant actor or role rows: %v", err)
+	}
 	if err = independent.QueryRowContext(ctx, "SELECT actor_id FROM "+q("operator_bootstrap")+
 		" WHERE singleton=true").Scan(&rootID); err != nil {
 		t.Fatal(err)
