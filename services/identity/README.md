@@ -159,8 +159,21 @@ Do not treat the user-provided email address as proof of ownership; local
 Windows Hello is the directly supervised step here. This code is NOT a
 production first-admin workflow.
 
-**Current state:** source and unit tests only. The running Identity container
-has the Passkey and initial-Owner toggles disabled; migration 008 has not been
-applied. A real database-backed concurrent two-attempt test, negative actor
-isolation, human Windows Hello ceremony, owner database readback and security
-review must pass before `JOURNEY_CLOSED` or environment acceptance.
+**Current state (local development, verified 2026-11-23):** the existing
+`bthwani_refoundation` Identity test schema now has the empty
+`operator_initial_bootstrap` table, created by an explicitly guarded,
+additive local compatibility upgrade after a rolled-back eight-migration
+probe. The pre-upgrade schema backup remains on Lenovo. Independent owner
+readback showed zero Operators/Owners/credentials, three Customer roles, one
+Merchant role and no newly issued session or permission. This is **not**
+production activation or a live authenticated Owner.
+
+The running Identity container still uses the older verifier image with
+Passkey and bootstrap switches disabled. Its scoped PostgreSQL login lacks
+the required write/read rights on the protected Operator tables and cannot
+perform first-Owner enrollment as currently configured. No runtime DB grants,
+credential replacement or service restart was authorized or attempted in
+this increment. A separately reviewed least-privilege Identity owner grant
+change, disposable signed-WebAuthn and concurrency integration, controlled
+runtime cutover, human Windows Hello ceremony, durable permission/session
+readback and independent security review remain required. `JOURNEY_CLOSED=NO`.
