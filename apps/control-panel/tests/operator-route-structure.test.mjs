@@ -20,7 +20,7 @@ test("Operator workspace keeps control-panel identity and uses a real Next route
   assert.match(entry, /\{bootstrap && <OperatorBootstrapForm mode="initial" \/>\}/);
   assert.match(entry, /\{recovery && <OperatorBootstrapForm mode="recovery" \/>\}/);
   assert.doesNotMatch(entry, /operator-sections-title|workspaceGroupLabels/);
-  assert.match(read("src/features/operator-shell/operator-shell.tsx"), /pathname === "\/" && signOutState === "idle"/);
+  assert.match(read("src/features/operator-shell/operator-shell.tsx"), /pathname === "\/" && verifiedGrants === null && signOutState === "idle"/);
   const login = read("src/features/access/operator-passkey-form.tsx");
   assert.match(login, /Identity من إكمال التحقق الآمن/);
   assert.match(read("app/(workspace)/workspace/page.tsx"), /OperatorDashboardPage/);

@@ -123,6 +123,7 @@ test("production Operator UI rechecks isolated Identity grants on every document
       ...process.env, NEXT_TELEMETRY_DISABLED: "1", NODE_ENV: "production",
       BTHWANI_ISOLATED_TEST_MODE: "true",
       OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF: "true",
+      OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF: "true",
       OPERATOR_PASSKEY_BROWSER_ORIGIN: base,
       OPERATOR_PASSKEY_IDENTITY_ORIGIN: `http://127.0.0.1:${ownerPort}`,
       OPERATOR_POLICY_DSH_ORIGIN: `http://127.0.0.1:${ownerPort}`,
@@ -150,10 +151,10 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.equal(guestEntry.status, 200);
     const guestHtml = await guestEntry.text();
     assert.match(guestHtml, /تسجيل الدخول بمفتاح المرور/);
-    const overview = guestHtml.match(/<section\b[^>]*aria-labelledby="operator-sections-title"[^>]*>(.*?)<\/section>/s)?.[1];
-    assert.ok(overview, "guest should see one informational section map");
-    assert.match(overview, /المالية/);
-    assert.doesNotMatch(overview, /<(?:a|button)\b/, "guest section map must not expose protected links");
+    assert.doesNotMatch(guestHtml, /operator-sections-title|aria-label="التنقل الرئيسي"/,
+      "the standalone sign-in page must not expose workspace navigation");
+    assert.doesNotMatch(guestHtml, /id="operator-bootstrap-proof"/,
+      "a bootstrap opt-in cannot permit enrollment at an unapproved origin");
     const guestWorkspace = await fetch(`${base}/workspace?city=sanaa`, { signal: AbortSignal.timeout(7000) });
     const guestWorkspaceHtml = await guestWorkspace.text();
     assert.equal(guestWorkspace.status, 200);

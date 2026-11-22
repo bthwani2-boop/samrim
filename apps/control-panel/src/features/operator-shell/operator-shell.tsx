@@ -46,8 +46,8 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
     </li>
   );
 
-  // The login route is a standalone screen. Never render admin navigation before authorization.
-  if (pathname === "/" && signOutState === "idle") {
+  // Keep signed-out entry standalone and keep logout available to verified Operators.
+  if (pathname === "/" && verifiedGrants === null && signOutState === "idle") {
     return <div className={styles.loginOnly}>{children}</div>;
   }
 
