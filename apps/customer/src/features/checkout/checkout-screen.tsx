@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview";
-import { type CartReadState, readVerifiedCart } from "../cart/cart-transport";
+import { type CartReadState, type MerchandiseEstimateReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate } from "../cart/cart-transport";
 import { readCheckoutFunding } from "./checkout-funding";
 import type { CheckoutFundingState } from "./checkout-funding-state";
 import FulfillmentChoice from "./fulfillment-choice";
@@ -16,6 +16,7 @@ const storeRule = /^[a-z0-9-]{1,64}$/;
 
 type CurrentCart = Readonly<{ storeId: string; view: CartReadState }>;
 type CurrentFunding = Readonly<{ storeId: string; actorId: string; proof: CheckoutFundingState }>;
+type CurrentMerchandise = Readonly<{ storeId: string; actorId: string; cartVersion: number; read: MerchandiseEstimateReadState }>;
 
 /**
  * Read-only review of the current DSH-owned Store Cart.
@@ -28,6 +29,7 @@ export default function CheckoutScreen() {
   const storeId = typeof param === "string" && storeRule.test(param) ? param : "";
   const [result, setResult] = useState<CurrentCart | null>(null);
   const [funding, setFunding] = useState<CurrentFunding | null>(null);
+  const [merchandise, setMerchandise] = useState<CurrentMerchandise | null>(null);
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
 
@@ -38,12 +40,35 @@ export default function CheckoutScreen() {
     let expires: ReturnType<typeof setTimeout> | undefined;
     setResult(null);
     setFunding(null);
+    setMerchandise(null);
     if (storeId) {
       void readVerifiedCart(storeId, controller.signal).then(view => {
         if (controller.signal.aborted || generation.current !== epoch) return;
         setResult({ storeId, view });
         if (view.kind !== "ready") return;
         const actorId = view.cart.actorId;
+        const cartVersion = view.cart.version;
+        // This is the DSH-owned, version-bound merchandise read, not a
+        // payable quote. A late response cannot survive focus/account changes.
+        void readVerifiedCartMerchandiseEstimate(storeId, cartVersion, actorId, controller.signal)
+          .then(read => {
+            if (controller.signal.aborted || generation.current !== epoch) return;
+            if (read.kind === "signed-out") {
+              setResult({ storeId, view: { kind: "signed-out" } });
+              setFunding(null);
+              setMerchandise(null);
+              return;
+            }
+            const valid = read.kind !== "ready" ||
+              (read.estimate.actorId === actorId && read.estimate.storeId === storeId &&
+                read.estimate.cartVersion === cartVersion && read.estimate.checkoutReady === false);
+            setMerchandise({ storeId, actorId, cartVersion,
+              read: valid ? read : { kind: "unavailable" } });
+          }).catch(() => {
+            if (!controller.signal.aborted && generation.current === epoch) {
+              setMerchandise({ storeId, actorId, cartVersion, read: { kind: "unavailable" } });
+            }
+          });
         // WLT must independently verify this exact Customer before any
         // wallet balance appears alongside the DSH Cart. No financial write.
         void readCheckoutFunding(actorId, controller.signal).then(proof => {
@@ -51,6 +76,7 @@ export default function CheckoutScreen() {
           if (proof.kind === "signed-out") {
             setResult({ storeId, view: { kind: "signed-out" } });
             setFunding(null);
+            setMerchandise(null);
             return;
           }
           setFunding({ storeId, actorId, proof });
@@ -79,6 +105,7 @@ export default function CheckoutScreen() {
       generation.current++;
       setResult(null);
       setFunding(null);
+      setMerchandise(null);
     };
   }, [storeId, retry]));
 
@@ -89,6 +116,15 @@ export default function CheckoutScreen() {
   const preview = cart ? summarizeCartPreview(cart.lines) : null;
   const currentFunding = cart && funding?.storeId === storeId && funding.actorId === cart.actorId
     ? funding.proof : null;
+  const currentMerchandise = cart && merchandise?.storeId === storeId &&
+    merchandise.actorId === cart.actorId && merchandise.cartVersion === cart.version
+    ? merchandise.read : null;
+  const ownerMerchandise = cart && currentMerchandise?.kind === "ready" &&
+    currentMerchandise.estimate.storeId === storeId &&
+    currentMerchandise.estimate.actorId === cart.actorId &&
+    currentMerchandise.estimate.cartVersion === cart.version &&
+    currentMerchandise.estimate.checkoutReady === false
+    ? currentMerchandise.estimate : null;
   const action = {
     minHeight: 44, justifyContent: "center" as const,
     paddingHorizontal: 16, paddingVertical: 10,
@@ -187,6 +223,32 @@ export default function CheckoutScreen() {
                 ) : null}
               </View>
             ) : null}
+            <View testID="checkout-dsh-merchandise-estimate" style={{
+              padding: 16, gap: 8, borderRadius: 12,
+              backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderColor,
+            }}>
+              <Text style={{ color: theme.color, fontWeight: "700" }}>
+                تقدير البضائع لدى DSH للنسخة الحالية
+              </Text>
+              {ownerMerchandise ? (
+                <Text testID="checkout-owner-merchandise-subtotal" style={{ color: theme.color }}>
+                  مجموع البضائع المتحقق من DSH:{" "}
+                  {formatYER.format(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني
+                </Text>
+              ) : (
+                <Text accessibilityRole={currentMerchandise?.kind === "unavailable" ||
+                  currentMerchandise?.kind === "ready" ? "alert" : undefined}
+                  style={{ color: theme.colorSecondary }}>
+                  {currentMerchandise?.kind === "unavailable" || currentMerchandise?.kind === "ready"
+                    ? "تعذّر التحقق من تقدير البضائع؛ راجع السلة وحاول التحديث."
+                    : "جارٍ التحقق من تقدير البضائع لدى DSH."}
+                </Text>
+              )}
+              <Text style={{ color: theme.colorSecondary }}>
+                التقدير للبضائع فقط ولا يشمل التوصيل أو الرسوم أو الدفع أو حجز المخزون،
+                ولا يتيح تأكيد الطلب.
+              </Text>
+            </View>
           </View>
         )}
         {storeId && view?.kind !== "signed-out" ? (

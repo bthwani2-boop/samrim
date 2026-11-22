@@ -56,6 +56,7 @@ function harness(startStore = "store-one") {
   const hooks = [];
   let index = 0;
   const calls = [];
+  const estimates = [];
   const react = {
     useState(initial) {
       const at = index++;
@@ -97,6 +98,11 @@ function harness(startStore = "store-one") {
         calls.push(call);
         return new Promise((resolve, reject) => { call.resolve = resolve; call.reject = reject; });
       },
+      readVerifiedCartMerchandiseEstimate(store, version, actor, signal) {
+        const call = { store, version, actor, signal };
+        estimates.push(call);
+        return new Promise((resolve, reject) => { call.resolve = resolve; call.reject = reject; });
+      },
     },
     "./checkout-funding": {
       // This isolated UI harness deliberately supplies no WLT balance. The
@@ -115,7 +121,7 @@ function harness(startStore = "store-one") {
     return module.exports.default();
   }
   return {
-    render, get calls() { return calls; },
+    render, get calls() { return calls; }, get estimates() { return estimates; },
     focus() { cleanup = focus(); },
     blur() { cleanup?.(); },
     store(next) { storeId = next; },
@@ -208,4 +214,93 @@ test("Signed-out, owner failure, cross-Store and missing identifier never show p
   await settle();
   assert.ok(flatten(h.render()).includes("تعذر التحقق"));
   assert.ok(!nodes(h.render()).some(n => n.props?.testID === "checkout-cart-review"));
+});
+
+
+function merchandise(storeId = "store-one", actorId = "customer-one", version = 8,
+  amount = "18014398509481986") {
+  return { actorId, storeId, cartVersion: version,
+    lines: [{ offerId: "offer-water", variantId: "variant-water", quantity: 2,
+      unitYer: "9007199254740993", lineTotalYer: "18014398509481986" }],
+    merchandiseSubtotalYer: amount, checkoutReady: false };
+}
+
+test("Checkout requests the exact current DSH cart version and shows no owner amount until verified", async () => {
+  const h = harness("store-one");
+  h.render(); h.focus();
+  h.calls[0].resolve({ kind: "ready", cart: fixture("store-one") });
+  await settle();
+  assert.equal(h.estimates.length, 1);
+  assert.deepEqual([h.estimates[0].store, h.estimates[0].version, h.estimates[0].actor],
+    ["store-one", 8, "customer-one"]);
+  assert.ok(!nodes(h.render()).some(n => n.props?.testID === "checkout-owner-merchandise-subtotal"));
+  h.estimates[0].resolve({ kind: "ready", estimate: merchandise() });
+  await settle();
+  const view = h.render();
+  const amount = new Intl.NumberFormat("ar-YE").format(18014398509481986n);
+  const subtotal = nodes(view).find(n => n.props?.testID === "checkout-owner-merchandise-subtotal");
+  assert.ok(subtotal, "DSH owner-derived amount appears independently of the local Cart preview");
+  assert.ok(flatten(subtotal).includes(amount));
+  assert.ok(nodes(view).some(n => n.props?.testID === "checkout-confirmation-unavailable"));
+  h.blur();
+});
+
+test("Cross-actor or stale-version DSH estimates cannot be displayed as verified", async () => {
+  const h = harness("store-one");
+  h.render(); h.focus();
+  h.calls[0].resolve({ kind: "ready", cart: fixture("store-one") });
+  await settle();
+  h.estimates[0].resolve({ kind: "ready", estimate: merchandise("store-one", "another-customer") });
+  await settle();
+  assert.ok(!nodes(h.render()).some(n => n.props?.testID === "checkout-owner-merchandise-subtotal"));
+  h.blur();
+
+  h.render(); h.focus();
+  h.calls[1].resolve({ kind: "ready", cart: fixture("store-one") });
+  await settle();
+  h.estimates[1].resolve({ kind: "ready", estimate: merchandise("store-one", "customer-one", 7) });
+  await settle();
+  assert.ok(!nodes(h.render()).some(n => n.props?.testID === "checkout-owner-merchandise-subtotal"));
+  h.blur();
+});
+
+test("Changing Store aborts in-flight estimates and late results never appear for another Store", async () => {
+  const h = harness("store-a");
+  h.render(); h.focus();
+  h.calls[0].resolve({ kind: "ready", cart: fixture("store-a") });
+  await settle();
+  const prior = h.estimates[0];
+  h.blur();
+  h.store("store-b"); h.render(); h.focus();
+  assert.equal(prior.signal.aborted, true);
+  prior.resolve({ kind: "ready", estimate: merchandise("store-a") });
+  await settle();
+  assert.ok(!nodes(h.render()).some(n => n.props?.testID === "checkout-owner-merchandise-subtotal"));
+  h.calls[1].resolve({ kind: "ready", cart: fixture("store-b") });
+  await settle();
+  h.estimates[1].resolve({ kind: "ready", estimate: merchandise("store-b") });
+  await settle();
+  assert.ok(nodes(h.render()).some(n => n.props?.testID === "checkout-owner-merchandise-subtotal"));
+  h.blur();
+});
+
+test("Owner estimate rejection remains unavailable, and Identity sign-out clears checkout review", async () => {
+  const h = harness("store-one");
+  h.render(); h.focus();
+  h.calls[0].resolve({ kind: "ready", cart: fixture("store-one") });
+  await settle();
+  h.estimates[0].reject(new Error("DSH stock or version changed"));
+  await settle();
+  assert.ok(flatten(h.render()).includes("تعذّر التحقق من تقدير البضائع"));
+  assert.ok(!nodes(h.render()).some(n => n.props?.testID === "checkout-owner-merchandise-subtotal"));
+  h.blur();
+
+  h.render(); h.focus();
+  h.calls[1].resolve({ kind: "ready", cart: fixture("store-one") });
+  await settle();
+  h.estimates[1].resolve({ kind: "signed-out" });
+  await settle();
+  assert.ok(flatten(h.render()).includes("سجل الدخول"));
+  assert.ok(!nodes(h.render()).some(n => n.props?.testID === "checkout-cart-review"));
+  h.blur();
 });
