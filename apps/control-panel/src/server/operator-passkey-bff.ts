@@ -353,7 +353,8 @@ export async function readVerifiedOperatorAccess(
       const value = await boundedResponseJSON(reply);
       const record = value && typeof value === "object" && !Array.isArray(value)
         ? value as Record<string, unknown> : null;
-      if (record?.actorId !== principal.actorId || record?.permission !== permission) {
+      if (!record || !exactKeys(record, ["actorId", "permission"]) ||
+          record.actorId !== principal.actorId || record.permission !== permission) {
         throw new Error("Inconsistent Identity permission owner response");
       }
       return true;

@@ -218,9 +218,12 @@ test("Operator workspace owner mismatch, role spoof, revoked session and outage 
       return Response.json({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
     }
     const permission = path.split("/").at(-1);
-    return Response.json({ actorId: mode === "different-actor" ? "operator-two" : "operator-one", permission });
+    return Response.json({
+      actorId: mode === "different-actor" ? "operator-two" : "operator-one", permission,
+      ...(mode === "extra-field" ? { granted: false } : {}),
+    });
   });
-  for (mode of ["different-actor", "role-spoof", "revoked", "outage"]) {
+  for (mode of ["different-actor", "role-spoof", "revoked", "outage", "extra-field"]) {
     assert.equal(await readVerifiedOperatorAccess(config, token), null, mode);
   }
   const before = calls;
