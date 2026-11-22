@@ -1,10 +1,11 @@
-import { DshPublicError, listPublicOffers } from "@bthwani/dsh";
+import { DshPublicError, getPublicStore, listPublicOffers } from "@bthwani/dsh";
 
-// Isolated development only: public Store Offers, never draft catalog, tokens,
+// Isolated development only: public Stores and Offers, never draft catalog, tokens,
 // merchant grants or financial writes. The browser cannot reach the owner-only
 // Docker port across the Surface/Lenovo SSH forward.
 const localDSH = "http://127.0.0.1:3202";
 const offersPath = /^\/v1\/public\/stores\/([a-z0-9-]{1,64})\/offers$/;
+const storePath = /^\/v1\/public\/stores\/([a-z0-9-]{1,64})$/;
 const publicErrors = new Set(["INVALID_SEARCH", "INVALID_CURSOR", "INVALID_LIMIT", "INVALID_REQUEST"]);
 
 function respond(value: unknown, status = 200) {
@@ -33,7 +34,10 @@ export async function GET(request: Request) {
   }
   if (request.method !== "GET") return respond({ error: "METHOD_NOT_ALLOWED" }, 405);
   const match = offersPath.exec(url.pathname);
-  if (!match) return respond({ error: "NOT_FOUND" }, 404);
+  const store = storePath.exec(url.pathname);
+  // /stores/mine is a private owner route, never a public Store ID alias.
+  if (!match && (!store || store[1] === "mine")) return respond({ error: "NOT_FOUND" }, 404);
+  if (store && url.search) return respond({ error: "INVALID_REQUEST" }, 400);
   if (url.search.length > 4097 ||
     [...url.searchParams.keys()].some(key =>
       !["q", "limit", "cursor"].includes(key) || url.searchParams.getAll(key).length !== 1)) {
@@ -53,11 +57,14 @@ export async function GET(request: Request) {
     return respond({ error: "INVALID_CURSOR" }, 400);
   }
   try {
+    const owner = process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN ?? localDSH;
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
+    if (store) return respond(await getPublicStore(owner, store[1] as string, signal));
     return respond(await listPublicOffers(
-      process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN ?? localDSH,
-      match[1] as string,
+      owner,
+      match?.[1] as string,
       {
-        signal: AbortSignal.any([request.signal, AbortSignal.timeout(5000)]),
+        signal,
         ...(rawLimit === null ? {} : { limit: Number(rawLimit) }),
         ...(cursor === null ? {} : { cursor }),
         ...(url.searchParams.has("q") ? { query: url.searchParams.get("q") as string } : {}),

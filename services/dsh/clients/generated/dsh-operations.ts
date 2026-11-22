@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: 3f0d931730c8102cca69cba2bea9db29d81a8529473790ae121d25bd8ad3f479
+// Normalized OpenAPI SHA-256: 9ebbce6bd61f5395e66f7555f423f7525803a2b95e68db86003b8901ece35e0b
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   applyCurrentCustomerForCaptainStanding: { method: "POST", path: "/v1/actors/me/captain-application" },
@@ -14,6 +14,7 @@ export const dshOperations = {
   getCurrentCustomerCaptainApplication: { method: "GET", path: "/v1/actors/me/captain-application" },
   getCurrentCustomerCaptainEligibility: { method: "GET", path: "/v1/actors/me/captain-eligibility" },
   getCurrentCustomerCart: { method: "GET", path: "/v1/carts/{storeID}" },
+  getMerchantStoreRegistrationOptions: { method: "GET", path: "/v1/stores/registration-options" },
   getOperatorCaptainStanding: { method: "GET", path: "/v1/operators/captains/{actorId}/standing" },
   getPublicStore: { method: "GET", path: "/v1/public/stores/{id}" },
   getStoreOperationalAvailability: { method: "GET", path: "/v1/stores/{storeID}/availability" },
@@ -25,6 +26,7 @@ export const dshOperations = {
   listPublicStores: { method: "GET", path: "/v1/public/stores" },
   listPublicVerticals: { method: "GET", path: "/v1/public/verticals" },
   registerCompanyEmployee: { method: "POST", path: "/v1/operators/employees" },
+  registerMerchantStore: { method: "POST", path: "/v1/stores" },
   replaceCityStoreOperationalPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/store-availability-policy" },
   replaceCurrentCustomerCart: { method: "PUT", path: "/v1/carts/{storeID}" },
   updateStoreOperationalAvailability: { method: "PATCH", path: "/v1/stores/{storeID}/availability" },

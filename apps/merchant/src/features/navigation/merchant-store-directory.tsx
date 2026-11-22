@@ -2,6 +2,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantOwnedStore } from "../access/dsh-standing";
+import MerchantPublicLink from "../stores/merchant-public-link";
 import StoreAvailability from "../stores/store-availability";
 import { filterMerchantStores, type MerchantPublicationFilter } from "./merchant-workspace-model";
 
@@ -55,6 +56,8 @@ export default function MerchantStoreDirectory({ actorId, stores }: Readonly<{
           <Text style={secondary}>{relationLabel(selected)}</Text>
           <Text selectable accessibilityLabel={`معرّف المتجر ${selected.id}`} style={secondary}>{selected.id}</Text>
         </View>
+        <MerchantPublicLink key={`${actorId}:${selected.id}:public`} actorId={actorId}
+          storeId={selected.id} published={selected.published} />
         <StoreAvailability key={selected.id} storeId={selected.id} actorId={actorId} />
       </View>
     );

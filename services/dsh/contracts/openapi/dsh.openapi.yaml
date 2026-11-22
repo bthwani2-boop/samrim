@@ -24,6 +24,10 @@ paths:
     $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}~1merchandise-estimate'
   /v1/stores/mine:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
+  /v1/stores/registration-options:
+    $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores~1registration-options'
+  /v1/stores:
+    $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores'
   /v1/stores/{storeID}/availability:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
   /v1/captains/me/standing:
@@ -166,6 +170,59 @@ components:
           enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE]
           description: DSH can show PAUSED or CLOSED_BY_SCHEDULE while checkout remains unavailable. The public response omits the schedule, pause timestamps, reason and actor details.
         orderingAvailable: { type: boolean, const: false, description: "The checkout/fulfillment journey is not activated" }
+    MerchantRegistrationChoice:
+      type: object
+      additionalProperties: false
+      required: [cityId, relation, policyVersion, termsVersion, termsText]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        policyVersion: { type: integer, minimum: 1 }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        termsText: { type: string, minLength: 1, maxLength: 4000, description: Append-only DSH terms snapshot actually shown to the Merchant before consent }
+    MerchantRegistrationOptions:
+      type: object
+      additionalProperties: false
+      required: [choices, verticals]
+      properties:
+        choices:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/MerchantRegistrationChoice' }
+        verticals:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/PublicId' }
+    MerchantStoreRegistration:
+      type: object
+      additionalProperties: false
+      required: [operationId, name, cityId, verticalId, relation, latitude, longitude, policyVersion, termsVersion, acceptedTerms]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        verticalId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        policyVersion: { type: integer, minimum: 1 }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        acceptedTerms: { type: boolean, const: true }
+    MerchantStoreRegistrationResult:
+      type: object
+      additionalProperties: false
+      required: [store, replay]
+      properties:
+        store: { $ref: '#/components/schemas/MerchantOwnedStore' }
+        replay: { type: boolean }
+    StoreRegistrationError:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [INVALID_STORE_REGISTRATION, STORE_REGISTRATION_CLOSED, STORE_REGISTRATION_POLICY_CHANGED, IDEMPOTENCY_KEY_REUSED, UNAUTHENTICATED, STORE_OPERATION_FORBIDDEN, IDENTITY_OWNER_UNAVAILABLE, STORE_OWNER_UNAVAILABLE, OPERATION_RESULT_UNKNOWN]
     MerchantOwnedStore:
       type: object
       additionalProperties: false

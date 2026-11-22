@@ -5,6 +5,7 @@ import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 import MerchantPublishedOffers from "../catalog/merchant-published-offers";
+import MerchantStoreRegistration from "../onboarding/merchant-store-registration";
 import MerchantStoreDirectory from "./merchant-store-directory";
 import {
   type MerchantSection,
@@ -128,8 +129,14 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
                 {metric("غير المنشورة", summary.unpublished)}
               </View>
               {showStores}
+              {stores.length === 0 ? <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} /> : null}
             </>
-          ) : section === "stores" ? <MerchantStoreDirectory actorId={actorId} stores={stores} /> : section === "products" ? (
+          ) : section === "stores" ? (
+            <>
+              <MerchantStoreDirectory actorId={actorId} stores={stores} />
+              <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} />
+            </>
+          ) : section === "products" ? (
             <MerchantPublishedOffers actorId={actorId} stores={stores} />
           ) : section === "more" ? (
             <View style={{ gap: 10 }}>

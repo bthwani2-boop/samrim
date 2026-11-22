@@ -11,13 +11,16 @@ export type {
   CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyResult,
 } from "./city-policies.ts";
 export { getCityStoreOperationalPolicy, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
-export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartResult, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine } from "./customer-cart.ts";
-export { DshCartError, parseCustomerCart, parseCustomerCartResult, parseCustomerCartMerchandiseEstimate, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
+export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";
+export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
+export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.ts";
+export { getCompanyEmployee, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
 export { dshOperations } from "./generated/dsh-operations.ts";
+export type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantRegistrationResult, MerchantStoreRegistration } from "./merchant-registration.ts";
+export { parseMerchantRegistrationOptions, parseMerchantRegistrationResult, readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration } from "./merchant-registration.ts";
 // DSH-owned Merchant standing contract and transport.
 export type { MerchantDSHStanding, MerchantOwnedStore } from "./merchant-standing.ts";
 export { MerchantStandingError, readMerchantDSHStanding, standingFrom } from "./merchant-standing.ts";
-
 export type {
   CaptainStandingStatus, OperatorCaptainStanding, OperatorCaptainStandingChange,
   OperatorCaptainStandingPage,
@@ -35,5 +38,3 @@ export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,
 } from "./store-availability.ts";
 export { getStoreOperationalAvailability, updateStoreOperationalAvailability } from "./store-availability.ts";
-export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.ts";
-export { getCompanyEmployee, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";

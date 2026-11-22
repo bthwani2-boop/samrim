@@ -92,3 +92,59 @@ test("Merchant public Offer search forwards owner query and bounded pagination u
   assert.equal(dest.searchParams.get("limit"), "2");
   assert.equal(calls[0].options.headers.Authorization, undefined);
 });
+
+test("Merchant public Store detail is read from DSH, without Merchant bearer or private grants", async t => {
+  const publicStore = {
+    id: "market-sanaa", name: "متجر صنعاء", cityId: "sanaa", verticalId: "grocery",
+    orderabilityStatus: "OPERATIONALLY_UNAVAILABLE", orderingAvailable: false,
+  };
+  const calls = setup(t, () => Response.json(publicStore, {
+    headers: { "Cache-Control": "no-store" },
+  }));
+  const reply = await GET(new Request("http://localhost:18102/v1/public/stores/market-sanaa"));
+  assert.equal(reply.status, 200);
+  assert.equal(reply.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await reply.json(), publicStore);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "http://127.0.0.1:3202/v1/public/stores/market-sanaa");
+  assert.equal(calls[0].options.credentials, "omit");
+  assert.equal(calls[0].options.redirect, "error");
+  assert.equal(calls[0].options.headers.Authorization, undefined);
+});
+
+test("Merchant public Store detail rejects private aliases, queries and cross-origin access without owner traffic", async t => {
+  const calls = setup(t);
+  const root = "http://localhost:18102/v1/public/stores/";
+  for (const target of [
+    "mine", "market-sanaa/availability", "market-sanaa/preview",
+    "MARKET", "market%2Fsanaa", "market-sanaa?limit=1",
+    "market-sanaa?actorId=other", "market-sanaa?cursor=old",
+    "market-sanaa?utm_source=x",
+  ]) {
+    const reply = await GET(new Request(root + target));
+    assert.ok([400, 404].includes(reply.status), target);
+  }
+  assert.equal((await GET(new Request(`${root}market-sanaa`, {
+    headers: { Origin: "https://untrusted.example" },
+  }))).status, 403);
+  assert.equal(calls.length, 0);
+});
+
+test("Merchant public Store detail refuses malformed and unpublished DSH results", async t => {
+  let answer = "wrong-id";
+  const calls = setup(t, () => {
+    if (answer === "missing") return Response.json({ error: "NOT_FOUND" }, { status: 404 });
+    const body = { id: answer === "wrong-id" ? "other-store" : "market-sanaa",
+      name: "متجر", cityId: "sanaa", verticalId: "grocery",
+      orderabilityStatus: "PAUSED", orderingAvailable: false,
+      ...(answer === "private-fields" ? { ownerActorId: "private-actor" } : {}) };
+    return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+  });
+  const url = "http://localhost:18102/v1/public/stores/market-sanaa";
+  assert.equal((await GET(new Request(url))).status, 503);
+  answer = "private-fields";
+  assert.equal((await GET(new Request(url))).status, 503);
+  answer = "missing";
+  assert.equal((await GET(new Request(url))).status, 404);
+  assert.equal(calls.length, 3);
+});

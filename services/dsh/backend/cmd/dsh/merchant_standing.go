@@ -32,10 +32,18 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 	if err != nil {
 		return nil, err
 	}
+	registrar, err := storeavailability.NewMerchantStoreRegistrar(identity, reader)
+	if err != nil {
+		return nil, err
+	}
 	routes := http.NewServeMux()
-	// This opt-in registers only the BFF's exact read endpoint. Queries that
-	// reach it still require an authoritative current Merchant bearer.
+	// Identity verifies the Merchant, and DSH is the only Store writer.
+	// Every registration still checks an explicitly enabled city/relation policy
+	// within the same owner SQL transaction as the new unpublished Store.
 	routes.Handle("GET /v1/stores/mine", storeavailability.NewMerchantStandingHandler(identity, reader))
+	registration := storeavailability.NewMerchantRegistrationHandler(registrar)
+	routes.Handle("GET /v1/stores/registration-options", registration)
+	routes.Handle("POST /v1/stores", registration)
 	routes.Handle("/", existing)
 	return routes, nil
 }

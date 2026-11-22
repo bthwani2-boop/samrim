@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability, type StoreOperationalChange, updateStoreOperationalAvailability } from "@bthwani/dsh";
+import { DshPublicError, getStoreOperationalAvailability, type MerchantStoreRegistration, readMerchantRegistrationOptions, registerMerchantStore, type StoreOperationalChange, updateStoreOperationalAvailability } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -64,6 +64,9 @@ function isLocalMutation(request: Request) {
 }
 
 function ownerError(error: unknown) {
+  if (error instanceof DshPublicError && error.code === "OPERATION_RESULT_UNKNOWN") {
+    return response({ code: error.code }, 503);
+  }
   if ((error instanceof IdentityClientError || error instanceof MerchantStandingError || error instanceof DshPublicError) &&
       error.status >= 400 && error.status < 500) {
     return response({ code: error.code }, error.status);
@@ -74,19 +77,28 @@ function ownerError(error: unknown) {
 export async function GET(request: Request) {
   const query = new URL(request.url).searchParams;
   const stores = query.size === 1 && query.get("stores") === "mine";
+  const registration = query.size === 1 && query.get("registration") === "options";
   const storeId = query.size === 1 ? query.get("availability") : null;
   const availability = storeId !== null && /^[a-z0-9-]{1,64}$/.test(storeId);
-  if (query.size > 0 && !stores && !availability) return response({ code: "INVALID_REQUEST" }, 400);
+  if (query.size > 0 && !stores && !availability && !registration) return response({ code: "INVALID_REQUEST" }, 400);
   const origin = await configuredOrigin(request);
-  if (!origin) return stores || availability ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
+  if (!origin) return stores || availability || registration ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
     response({ enabled: false, session: null });
   const bearer = bearerFrom(request);
-  if (!bearer) return stores || availability ? response({ code: "UNAUTHENTICATED" }, 401) :
+  if (!bearer) return stores || availability || registration ? response({ code: "UNAUTHENTICATED" }, 401) :
     response({ enabled: true, session: null });
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
     const session = await readVerifiedIdentitySession(origin, bearer, signal);
     if (session.role === "merchant") {
+      if (registration) {
+        const actorId = request.headers.get("X-Merchant-Context");
+        if (actorId !== null && actorId !== session.actorId) {
+          return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+        }
+        return response({ options: await readMerchantRegistrationOptions(
+          standingOrigin(origin), bearer, signal) });
+      }
       if (availability) {
         const actorId = request.headers.get("X-Merchant-Context");
         if (actorId !== null && actorId !== session.actorId) {
@@ -116,7 +128,7 @@ export async function GET(request: Request) {
     }
     if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
   }
-  return stores || availability ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
+  return stores || availability || registration ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
     response({ enabled: true, session: null }, 200, sessionCookie(request, "", 0));
 }
 
@@ -182,13 +194,33 @@ export async function POST(request: Request) {
   const origin = await configuredOrigin(request);
   if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
-  const input = await readMutationBody(request, 512);
+  const query = new URL(request.url).searchParams;
+  const registration = query.size === 1 && query.get("registration") === "create";
+  if (query.size > 0 && !registration) return response({ code: "INVALID_REQUEST" }, 400);
+  const input = await readMutationBody(request, registration ? 4096 : 512);
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
   const data = input as Record<string, unknown>;
   try {
-    const signal = AbortSignal.timeout(15000);
+    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(15000)]);
+    if (registration) {
+      if (Object.keys(data).length !== 1 || !data.storeRegistration ||
+        typeof data.storeRegistration !== "object" || Array.isArray(data.storeRegistration)) {
+        return response({ code: "INVALID_STORE_REGISTRATION" }, 400);
+      }
+      const bearer = bearerFrom(request);
+      if (!bearer) return response({ code: "UNAUTHENTICATED" }, 401);
+      const session = await readVerifiedIdentitySession(origin, bearer, signal);
+      if (session.role !== "merchant") return response({ code: "STORE_OPERATION_FORBIDDEN" }, 403);
+      const actingActor = request.headers.get("X-Merchant-Context");
+      if (actingActor !== null && actingActor !== session.actorId) {
+        return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+      }
+      const result = await registerMerchantStore(standingOrigin(origin), bearer,
+        data.storeRegistration as MerchantStoreRegistration, signal);
+      return response({ registration: result }, result.replay ? 200 : 201);
+    }
     if (Object.keys(data).length === 1 && typeof data.phone === "string") {
       const ticket = await issueCustomerPhoneChallenge(origin, data.phone, signal);
       return response({ ticket }, 201);
