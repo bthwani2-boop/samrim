@@ -1,6 +1,6 @@
 import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Link } from "expo-router";
+import { Link, type Href } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -222,6 +222,16 @@ export default function CaptainIdentityGate() {
               {button("التحقق من حساب الكابتن", verify, busy || !/^\d{6}$/.test(code), true)}
               {button("تعديل رقم الهاتف", () => { setTicket(""); setCode(""); })}
             </>
+          ) : null}
+          {!verified ? (
+            <Link href={"/join" as Href} asChild>
+              <Pressable accessibilityRole="link" testID="captain-one-way-registration-link"
+                style={{ ...actionStyle, justifyContent: "center" }}>
+                <Text style={{ color: theme.interactiveText, textAlign: "center", fontWeight: "600" }}>
+                  انضم إلى كباتن بثواني
+                </Text>
+              </Pressable>
+            </Link>
           ) : null}
           {__DEV__ ? <Link href="/health" style={{ color: theme.interactiveText }}>فحص التطوير</Link> : null}
         </View>

@@ -75,6 +75,7 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
         <Select aria-label="تصفية حالة الكباتن" value={status} style={{ minWidth: 180 }}
           options={[...statuses]} onChange={(value: Status) => { setStatus(value); setCursor(""); setPage(null); setSelected(null); }} />
         <Button onClick={refresh} disabled={loading}>تحديث</Button>
+        <a href="/captains/registrations">تسجيلات الراغبين بالانضمام</a>
       </Space>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
       <Card title="سجل طلبات الكباتن">

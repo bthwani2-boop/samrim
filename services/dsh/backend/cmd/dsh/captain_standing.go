@@ -32,6 +32,19 @@ func isolatedCaptainStandingHandler(db *sql.DB, schema string, next http.Handler
 	handler := captainstanding.NewHTTPHandler(captainstanding.NewService(identity, repo))
 	private := captainStandingCORS(handler, origins)
 	mux := http.NewServeMux()
+	// One-way public intake is an independent, explicit isolated opt-in.
+	// Existing authenticated Captain standing must not expose it implicitly.
+	if os.Getenv("DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST") == "true" {
+		interestRepo, err := captainstanding.NewPostgresInterestRepository(db, schema)
+		if err != nil {
+			return nil, err
+		}
+		interest := captainStandingCORS(
+			captainstanding.NewInterestHTTPHandler(captainstanding.NewInterestService(identity, interestRepo)), origins)
+		mux.Handle(captainstanding.CaptainInterestPath, interest)
+		mux.Handle(captainstanding.OperatorCaptainInterestPath, interest)
+		mux.Handle(captainstanding.OperatorCaptainInterestPath+"/", interest)
+	}
 	mux.Handle(captainstanding.CaptainStandingPath, private)
 	mux.Handle(captainstanding.CaptainEligibilityPath, private)
 	mux.Handle(captainstanding.CaptainApplicationPath, private)

@@ -1,0 +1,78 @@
+paths:
+  /v1/captain-interest:
+    post:
+      operationId: submitPublicCaptainInterest
+      summary: One-way public contact registration for prospective Captains
+      description: No Identity actor or Captain standing is created; duplicate phone registrations return the same receipt. Intake is isolated and bounded.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CaptainInterestInput' }
+      responses:
+        '202':
+          description: Received with no application status or account
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CaptainInterestReceived' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/Invalid' }
+        '429':
+          description: Public intake rate limited
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CaptainInterestError' } } }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
+  /v1/operators/captain-interest:
+    get:
+      operationId: listOperatorCaptainInterest
+      summary: Search bounded candidate registrations for authorized Operations staff
+      description: Current Identity operator with operations grant required on each request. Contact data is private; results are not Captain standing or an identity application.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
+        - { name: before, in: query, schema: { type: integer, minimum: 1 } }
+        - { name: city, in: query, schema: { type: string, minLength: 2, maxLength: 80 } }
+        - { name: vehicle, in: query, schema: { type: string, enum: [MOTORCYCLE, ELECTRIC, BICYCLE, NONE] } }
+        - { name: contacted, in: query, schema: { type: boolean } }
+      responses:
+        '200':
+          description: Privacy-restricted candidate rows
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CaptainInterestPage' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/Invalid' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }
+  /v1/operators/captain-interest/{id}/contact:
+    patch:
+      operationId: markOperatorCaptainInterestContacted
+      summary: Mark one candidate as contacted internally without notification or admission
+      security:
+        - OpaqueSession: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [contacted]
+              properties:
+                contacted: { type: boolean, const: true }
+      responses:
+        '200':
+          description: The updated candidate record
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CaptainInterestRecord' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/Invalid' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/Unauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/Forbidden' }
+        '404': { $ref: '../dsh.openapi.yaml#/components/responses/NotFound' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/Unavailable' }

@@ -202,6 +202,12 @@ export function validate(owner, base = root) {
       };
       return Object.hasOwn(admitted, urlPath) && admitted[urlPath] === operationId;
     }
+    // Public Captain interest is intake-only: DSH stores contact details without
+    // creating an Identity actor or granting Captain standing. Operator reads
+    // and contact writes remain bearer-protected.
+    if (owner === "dsh" && method === "post" &&
+        urlPath === "/v1/captain-interest" &&
+        operationId === "submitPublicCaptainInterest") return true;
     if (owner === "identity" && method === "post") {
       const admitted = {
         "/v1/customer-auth/phone-challenges": "issueCustomerPhoneChallenge",

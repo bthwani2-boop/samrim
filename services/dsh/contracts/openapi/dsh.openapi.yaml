@@ -30,6 +30,12 @@ paths:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores'
   /v1/stores/{storeID}/availability:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
+  /v1/captain-interest:
+    $ref: './paths/captain-interest.yaml#/paths/~1v1~1captain-interest'
+  /v1/operators/captain-interest:
+    $ref: './paths/captain-interest.yaml#/paths/~1v1~1operators~1captain-interest'
+  /v1/operators/captain-interest/{id}/contact:
+    $ref: './paths/captain-interest.yaml#/paths/~1v1~1operators~1captain-interest~1{id}~1contact'
   /v1/captains/me/standing:
     $ref: './paths/captain-standing.yaml#/paths/~1v1~1captains~1me~1standing'
   /v1/actors/me/captain-eligibility:
@@ -464,6 +470,59 @@ components:
         expectedVersion: { type: integer, minimum: 1 }
         operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
         reason: { type: string, minLength: 1, maxLength: 300 }
+    CaptainInterestInput:
+      type: object
+      additionalProperties: false
+      required: [name, phone, city, district, vehicleType, phoneType, experienced]
+      properties:
+        name: { type: string, minLength: 4, maxLength: 100 }
+        phone: { type: string, pattern: '^([+]967|967)?7[0-9]{8}$' }
+        city: { type: string, minLength: 2, maxLength: 80 }
+        district: { type: string, minLength: 2, maxLength: 100 }
+        vehicleType: { type: string, enum: [MOTORCYCLE, ELECTRIC, BICYCLE, NONE] }
+        plateRegistered: { type: boolean }
+        phoneType: { type: string, enum: [SMART, BASIC, NONE] }
+        experienced: { type: boolean }
+        experienceDetails: { type: string, maxLength: 200 }
+    CaptainInterestReceived:
+      type: object
+      additionalProperties: false
+      required: [received]
+      properties:
+        received: { type: boolean, const: true }
+    CaptainInterestRecord:
+      type: object
+      additionalProperties: false
+      required: [id, name, phone, city, district, vehicleType, phoneType, experienced, contacted, createdAt]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 4, maxLength: 100 }
+        phone: { type: string, pattern: '^7[0-9]{8}$' }
+        city: { type: string, minLength: 2, maxLength: 80 }
+        district: { type: string, minLength: 2, maxLength: 100 }
+        vehicleType: { type: string, enum: [MOTORCYCLE, ELECTRIC, BICYCLE, NONE] }
+        plateRegistered: { type: boolean }
+        phoneType: { type: string, enum: [SMART, BASIC, NONE] }
+        experienced: { type: boolean }
+        experienceDetails: { type: string, maxLength: 200 }
+        contacted: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    CaptainInterestPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CaptainInterestRecord' }
+        nextCursor: { type: string, pattern: '^[0-9]+$' }
+    CaptainInterestError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { type: string, enum: [RATE_LIMITED] }
     CaptainError:
       type: object
       additionalProperties: false

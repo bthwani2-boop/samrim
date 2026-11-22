@@ -2,6 +2,8 @@
 
 
 export type { CaptainApplicationStatus, CaptainStanding } from "./captain-standing.ts";
+export type { CaptainInterestInput, CaptainPhoneType, CaptainVehicleType, OperatorCaptainInterest, OperatorCaptainInterestFilter, OperatorCaptainInterestPage } from "./captain-interest.ts";
+export { captainVehicleTypes, captainPhoneTypes, validCaptainInterest, isOperatorCaptainInterest, submitCaptainInterest, listOperatorCaptainInterest, markOperatorCaptainInterestContacted } from "./captain-interest.ts";
 // DSH-owned Captain eligibility and application transport. No client-side role grant.
 export {
   CaptainStandingError, captainStandingFrom, readApprovedCaptainStanding,
