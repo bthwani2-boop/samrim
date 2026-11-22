@@ -138,6 +138,10 @@ func TestSessionReaderCannotApproveExpiredOrMalformedPrincipal(t *testing.T) {
 		{"unknown role", "actor-a", "superuser", time.Now().UTC().Add(time.Hour)},
 		{"missing actor", "", "merchant", time.Now().UTC().Add(time.Hour)},
 		{"control character in actor", "actor-a\nother", "merchant", time.Now().UTC().Add(time.Hour)},
+		{"NUL in actor", "actor-a\x00other", "merchant", time.Now().UTC().Add(time.Hour)},
+		{"DEL in actor", "actor-a\x7fother", "merchant", time.Now().UTC().Add(time.Hour)},
+		{"Unicode control in actor", "actor-a\u0085other", "merchant", time.Now().UTC().Add(time.Hour)},
+		{"invalid UTF-8 in actor", "actor-a\xffother", "merchant", time.Now().UTC().Add(time.Hour)},
 		{"oversized actor", strings.Repeat("a", 129), "merchant", time.Now().UTC().Add(time.Hour)},
 	}
 	for _, tc := range cases {

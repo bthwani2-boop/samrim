@@ -7,6 +7,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // A Principal comes exclusively from canonical Identity actor/role/session state.
@@ -80,9 +82,9 @@ func (v *Verifier) Verify(ctx context.Context, authorization string) (Principal,
 // An unexpected, incomplete, or expired owner response is never a
 // current authenticated principal, even when an adapter returns nil error.
 func validPrincipal(p Principal) bool {
-	if p.ActorID == "" || len(p.ActorID) > 128 ||
+	if p.ActorID == "" || len(p.ActorID) > 128 || !utf8.ValidString(p.ActorID) ||
 		strings.TrimSpace(p.ActorID) != p.ActorID ||
-		strings.ContainsAny(p.ActorID, "\r\n\t") ||
+		strings.ContainsFunc(p.ActorID, unicode.IsControl) ||
 		!p.ExpiresAt.After(time.Now().UTC()) {
 		return false
 	}
