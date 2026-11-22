@@ -46,6 +46,19 @@ $ownerTasks = @(
   @{Name='BThwani Control Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'}
 )
 $localPorts = @(18101,18102,18103,13000)
+$device='R5CX14S4PZW'
+$chrome='C:\Program Files\Google\Chrome\Application\chrome.exe'
+$chromeProfile='Profile 1'
+$urls=@(
+  'http://127.0.0.1:18101/',
+  'http://127.0.0.1:18102/',
+  'http://127.0.0.1:13000/'
+)
+$android=@(
+  @{Name='customer'; Package='com.bthwani.customer'; Scheme='exp+customer'; Port=18101},
+  @{Name='merchant'; Package='com.bthwani.merchant'; Scheme='exp+merchant'; Port=18102},
+  @{Name='captain'; Package='com.bthwani.captain'; Scheme='exp+app-captain'; Port=18103}
+)
 $logRoot = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\UnifiedDev'
 $mutex = [System.Threading.Mutex]::new($false,'Local\BThwaniUnifiedDevV1')
 $hasMutex = $false
@@ -427,9 +440,165 @@ throw ('APP_LISTENER_NOT_READY '+$app)
   $body=$body.Replace('__APP__',$App).Replace('__MODE__',$operation).Replace('__LOCK__',$lockHash)
   Invoke-Lenovo $body
 }
+function Probe-App([string]$url,[string]$accept='text/html',[string]$platform='') {
+  $curl=Join-Path $env:WINDIR 'System32\curl.exe'
+  Assert-Ok (Test-Path -LiteralPath $curl -PathType Leaf) 'WINDOWS_CURL_MISSING'
+  $platformHeader=if($platform){@('--header',('Expo-Platform: '+$platform))}else{@()}
+  $response=@(& $curl '--silent' '--max-time' '7' '--output' 'NUL' '--write-out' '%{http_code}|%{content_type}' '--header' ('Accept: '+$accept) @platformHeader $url 2>$null)
+  $exitCode=$LASTEXITCODE
+  $parts=($response -join '').Trim().Split('|')
+  return @{ Code=$(if($parts.Count){$parts[0]}else{'000'}); Mime=$(if($parts.Count -gt 1){$parts[1]}else{''}); Exit=$exitCode }
+}
+function Get-AppChromeWindow {
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  if(-not ('BthwaniChromeWindowLocator' -as [type])){
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class BthwaniChromeWindowLocator {
+  public delegate bool Callback(IntPtr handle, IntPtr param);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(Callback callback, IntPtr parameter);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr handle);
+  [DllImport("user32.dll")] public static extern int GetClassName(IntPtr handle, StringBuilder result, int size);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+}
+'@
+  }
+  $handles=[Collections.Generic.List[IntPtr]]::new()
+  $callback=[BthwaniChromeWindowLocator+Callback] {
+    param([IntPtr]$h,[IntPtr]$lp)
+    $class=[Text.StringBuilder]::new(80)
+    [void][BthwaniChromeWindowLocator]::GetClassName($h,$class,80)
+    if($class.ToString() -eq 'Chrome_WidgetWin_1' -and [BthwaniChromeWindowLocator]::IsWindowVisible($h)){
+      [uint32]$chromeProcessId=0
+      [void][BthwaniChromeWindowLocator]::GetWindowThreadProcessId($h,[ref]$chromeProcessId)
+      if((Get-Process -Id $chromeProcessId -ErrorAction SilentlyContinue).ProcessName -eq 'chrome'){$handles.Add($h)}
+    }
+    return $true
+  }
+  [void][BthwaniChromeWindowLocator]::EnumWindows($callback,[IntPtr]::Zero)
+  $condition=[Windows.Automation.PropertyCondition]::new(
+    [Windows.Automation.AutomationElement]::ControlTypeProperty,
+    [Windows.Automation.ControlType]::TabItem
+  )
+  foreach($handle in $handles){
+    try {
+      $window=[Windows.Automation.AutomationElement]::FromHandle($handle)
+      $tabs=$window.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
+      if($tabs.Count -lt 3){continue}
+      $names=@($tabs | ForEach-Object {[string]$_.Current.Name})
+      # Expo Web can temporarily expose its local URL as the Chrome tab title.
+      # Match the three expected apps regardless of tab order or extra Chrome tabs.
+      $expected=@(
+        '(?i)(بثواني.*(الرئيسية|العميل)|bthwani.*customer|127\.0\.0\.1:18101)',
+        '(?i)(بثواني.*التاجر|bthwani.*merchant|127\.0\.0\.1:18102)',
+        '(?i)(بثواني.*لوحة التحكم|bthwani.*control|127\.0\.0\.1:13000)'
+      )
+      $matched=[Collections.Generic.HashSet[int]]::new()
+      foreach($signature in $expected){
+        for($i=0;$i -lt $names.Count;$i++){
+          if(-not $matched.Contains($i) -and $names[$i] -match $signature){
+            [void]$matched.Add($i)
+            break
+          }
+        }
+      }
+      if($matched.Count -eq $expected.Count){return $handle.ToInt64()}
+    } catch {}
+  }
+  return 0
+}
+function Open-Browser {
+  Assert-Ok (Test-Path -LiteralPath $chrome -PathType Leaf) 'GOOGLE_CHROME_MISSING'
+  $statusUrls=@(
+    'http://127.0.0.1:18101/status',
+    'http://127.0.0.1:18102/status',
+    'http://127.0.0.1:13000/'
+  )
+  for($i=0;$i -lt $statusUrls.Count;$i++){
+    $state=Probe-App $statusUrls[$i]
+    Assert-Ok ($state.Exit -eq 0 -and $state.Code -eq '200') ('BROWSER_APP_NOT_READY '+$urls[$i])
+  }
+  $localState=Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data\Local State'
+  Assert-Ok (Test-Path -LiteralPath $localState -PathType Leaf) 'CHROME_PROFILE_METADATA_MISSING'
+  $profiles=Get-Content -LiteralPath $localState -Raw | ConvertFrom-Json
+  $selectedProfile=$profiles.profile.info_cache.PSObject.Properties[$chromeProfile]
+  Assert-Ok ($null -ne $selectedProfile) 'CHROME_PROFILE_MISSING'
+  # Reuse the existing three-tab app window, if present; do not create duplicates.
+  $existingWindow=Get-AppChromeWindow
+  if($existingWindow -ne 0){
+    Say 'CHROME_APPS' ('PASS already_open window='+$existingWindow+' profile='+$chromeProfile+' tabs=customer,merchant,control-panel')
+    return
+  }
+  # All three URLs are passed to ONE Chrome invocation: one window, three tabs.
+  # Other Chrome windows and profiles are left untouched.
+  $profileArg='--profile-directory="' + $chromeProfile + '"'
+  $null=Start-Process -FilePath $chrome -ArgumentList (@($profileArg,'--new-window','--no-first-run')+$urls) -PassThru -ErrorAction Stop
+  $actualWindow=0
+  for($attempt=0;$attempt -lt 12 -and $actualWindow -eq 0;$attempt++){
+    Start-Sleep -Milliseconds 500
+    $actualWindow=Get-AppChromeWindow
+  }
+  Assert-Ok ($actualWindow -ne 0) 'CHROME_ONE_WINDOW_THREE_APP_TABS_NOT_PROVEN'
+  Say 'CHROME_APPS' ('PASS opened_window='+$actualWindow+' profile='+$chromeProfile+' tabs=customer,merchant,control-panel')
+  Say 'BROWSER_VISUAL' 'NOT_RUN (requires actual page inspection; HTTP 200 is not UI acceptance)'
+}
+function Open-Android {
+  $adb=Get-Command adb.exe -ErrorAction SilentlyContinue
+  Assert-Ok ([bool]$adb) 'ADB_NOT_INSTALLED'
+  $devices=@(& $adb.Source 'devices' | ForEach-Object {$_.ToString()})
+  Assert-Ok (@($devices|Where-Object{$_ -match ('^'+[regex]::Escape($device)+'\s+device\s*$')}).Count -eq 1) 'EXPECTED_SAMSUNG_NOT_CONNECTED'
+  $existing=@(& $adb.Source '-s' $device 'reverse' '--list' | ForEach-Object{$_.ToString()})
+  foreach($entry in $android){
+    $p=$entry.Port
+    $same=@($existing|Where-Object {$_ -match ('\btcp:'+$p+'\s+tcp:'+$p+'\b')}).Count -gt 0
+    $collision=@($existing|Where-Object {$_ -match ('\btcp:'+$p+'\s+') -and $_ -notmatch ('\btcp:'+$p+'\s+tcp:'+$p+'\b')}).Count -gt 0
+    Assert-Ok (-not $collision) ('ADB_REVERSE_COLLISION '+$p)
+    if(-not $same){
+      $null=@(& $adb.Source '-s' $device 'reverse' ('tcp:'+$p) ('tcp:'+$p) 2>&1)
+      Assert-Ok ($LASTEXITCODE -eq 0) ('ADB_REVERSE_SETUP_FAILED '+$p)
+      Say 'ADB_REVERSE' ('CREATED port='+$p)
+    } else {Say 'ADB_REVERSE' ('REUSED port='+$p)}
+  }
+  $blocked=0
+  foreach($entry in $android){
+    $name=[string]$entry.Name
+    $port=[int]$entry.Port
+    # Native development builds need Expo's manifest, not merely web HTML or /status.
+    $manifest=Probe-App ('http://127.0.0.1:'+$port+'/') 'application/expo+json' 'android'
+    if($manifest.Exit -ne 0 -or $manifest.Code -ne '200' -or $manifest.Mime -notmatch '^application/expo\+json'){
+      $blocked++
+      Say 'ANDROID_APP' ($name+' BLOCKED native_manifest status='+$manifest.Code+' content_type='+$manifest.Mime)
+      continue
+    }
+    $uri=[string]$entry.Scheme+'://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A'+$port
+    $resolution=@(& $adb.Source '-s' $device 'shell' 'cmd' 'package' 'query-activities' '--brief' '-a' 'android.intent.action.VIEW' '-c' 'android.intent.category.BROWSABLE' '-d' $uri '-p' $entry.Package)
+    Assert-Ok ($LASTEXITCODE -eq 0 -and @($resolution|Where-Object {$_.ToString().Contains($entry.Package+'/.MainActivity')}).Count -eq 1) ('ANDROID_INTENT_UNAVAILABLE '+$name)
+    $result=@(& $adb.Source '-s' $device 'shell' 'am' 'start' '-W' '-a' 'android.intent.action.VIEW' '-c' 'android.intent.category.BROWSABLE' '-d' $uri '-p' $entry.Package)
+    $status=$LASTEXITCODE
+    if($status -ne 0 -or -not (@($result|Where-Object{$_.ToString() -match 'Status:\s+ok'}).Count)){
+      $blocked++
+      Say 'ANDROID_APP' ($name+' FAIL app_launch')
+      continue
+    }
+    Start-Sleep -Milliseconds 250
+    $top=@(& $adb.Source '-s' $device 'shell' 'dumpsys' 'activity' 'activities' | Where-Object{$_.ToString() -match 'topResumedActivity'} | Select-Object -First 1)
+    if(@($top|Where-Object{$_.ToString() -match 'DevLauncherErrorActivity'}).Count){
+      $blocked++
+      Say 'ANDROID_APP' ($name+' FAIL dev_launcher_error')
+    } elseif(@($top|Where-Object {$_.ToString().Contains($entry.Package)}).Count){
+      Say 'ANDROID_APP' ($name+' INTENT_ACCEPTED foreground_activity='+$entry.Package)
+    } else {
+      Say 'ANDROID_APP' ($name+' INTENT_ACCEPTED foreground_unverified')
+    }
+  }
+  Say 'ANDROID_VISUAL' 'NOT_RUN (native activity launch is not proof of rendered application)'
+  if($blocked -gt 0) { throw ('ANDROID_LAUNCH_INCOMPLETE blocked='+$blocked+'; inspect Expo native manifest and app logs') }
+}
 function Open-AppSurfaces {
-  $opener = Join-Path $repo 'tools\dev\open-dev-apps.ps1'
-  Assert-Ok (Test-Path -LiteralPath $opener -PathType Leaf) 'canonical app opener missing'
+  Assert-Ok ($env:COMPUTERNAME -ieq $expectedSurface) 'SURFACE_ONLY'
   $selection = $Mode
   if ($selection -eq 'All') {
     $adb = Get-Command adb.exe -ErrorAction SilentlyContinue
@@ -444,10 +613,9 @@ function Open-AppSurfaces {
       Say 'SAMSUNG' 'SKIPPED (not connected; Chrome opens independently)'
     }
   }
-  $output = @(& pwsh.exe -NoProfile -NonInteractive -File $opener -Mode $selection 2>&1)
-  $status = $LASTEXITCODE
-  foreach ($line in $output) { Write-Output $line }
-  Assert-Ok ($status -eq 0) ('opening '+$selection+' failed; existing app servers and tunnels preserved')
+  if($selection -in @('Browser','All')){ Open-Browser }
+  if($selection -in @('Android','All')){ Open-Android }
+  Say 'OPEN_DEV_SURFACES' 'DONE'
 }
 
 function Invoke-AppAction {

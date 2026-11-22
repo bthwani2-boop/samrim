@@ -1,21 +1,25 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "dev.ps1");
 
+test("opening Chrome and Android is owned by the single dev launcher", () => {
+  assert.equal(existsSync(new URL("./open-dev-apps.ps1", import.meta.url)), false);
+});
+
 test("the Android Expo manifest check identifies the native platform", () => {
-  const opener = readFileSync(new URL("./open-dev-apps.ps1", import.meta.url), "utf8");
+  const opener = readFileSync(scriptPath, "utf8");
   assert.match(opener, /'Expo-Platform: '\s*\+\s*\$platform/);
   assert.match(opener, /\$manifest=Probe[^\r\n]*'application\/expo\+json'\s+'android'/);
   assert.doesNotMatch(opener, /Start-Sleep -Seconds 3/);
 });
 
 test("Chrome reuses the intended customer, merchant and operator tabs when Expo shows a URL title", () => {
-  const opener = readFileSync(new URL("./open-dev-apps.ps1", import.meta.url), "utf8");
+  const opener = readFileSync(scriptPath, "utf8");
   const expected = opener.match(/\$expected=@\(([\s\S]*?)\r?\n\s*\)/);
   assert.ok(expected, "Chrome tab signatures must be declared");
   const patterns = [...expected[1].matchAll(/'([^']+)'/g)]
@@ -90,7 +94,7 @@ test("the unified dev launcher and each embedded PowerShell block parse on Windo
     "if($errors.Count){throw ('ROOT_PARSE '+($errors -join '|'))}",
     "$blocks=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.StringConstantType.ToString() -eq 'SingleQuotedHereString'},$true))",
     "if($blocks.Count -lt 6){throw ('MISSING_EMBEDDED_BLOCKS '+$blocks.Count)}",
-    "foreach($block in $blocks){$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($block.Value,[ref]$t,[ref]$e);if($e.Count){throw ('EMBEDDED_PARSE '+($e -join '|'))}}",
+    "foreach($block in $blocks){if($block.Value.TrimStart().StartsWith('using System;')){if($block.Value -notmatch 'BthwaniChromeWindowLocator'){throw 'CHROME_CSHARP_BLOCK_CHANGED'};continue};$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($block.Value,[ref]$t,[ref]$e);if($e.Count){throw ('EMBEDDED_PARSE '+($e -join '|'))}}",
     "Write-Output ('EMBEDDED_PARSE_PASS blocks='+$blocks.Count)",
   ].join("; ");
   const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], {
