@@ -33,7 +33,7 @@ test("Operator workspace only renders protected children after owner-verified ac
   assert.match(proxy, /requestHeaders\.set\("x-bthwani-route", request\.nextUrl\.pathname\)/);
   const server = read("src/server/current-operator-access.ts");
   assert.match(server, /cache\(async/);
-  assert.match(server, /readVerifiedOperatorAccess/);
+  assert.match(server, /readOperatorAccessState/);
   const gate = read("src/features/access/operator-workspace-gate.tsx");
   assert.match(gate, /غير متاح/);
   assert.doesNotMatch(gate, /fetch\(|getOrder\(|useSession\(/);

@@ -3,7 +3,7 @@ import { IdentityClientError, reviewOriginalOperatorPermissions } from "@bthwani
 import { cookies } from "next/headers";
 import { cache } from "react";
 import {
-  OPERATOR_COOKIE, readVerifiedOperatorAccess, resolveIsolatedOperatorConfig,
+  OPERATOR_COOKIE, type OperatorAccessState, readOperatorAccessState, resolveIsolatedOperatorConfig,
 } from "./operator-passkey-bff";
 
 // React cache is scoped to one server render/request, not a shared actor cache.
@@ -15,10 +15,15 @@ const currentOperatorConnection = cache(async () => {
   return bearer ? { config, bearer } : null;
 });
 
-export const currentOperatorAccess = cache(async () => {
+export const currentOperatorAccessState = cache(async (): Promise<OperatorAccessState> => {
   const connection = await currentOperatorConnection();
-  return connection ? readVerifiedOperatorAccess(connection.config, connection.bearer) : null;
+  return connection ? readOperatorAccessState(connection.config, connection.bearer) : { status: "signed-out" };
 });
+
+export async function currentOperatorAccess() {
+  const result = await currentOperatorAccessState();
+  return result.status === "verified" ? result.access : null;
+}
 
 export const currentOriginalOperatorPermissions = cache(async () => {
   const [connection, access] = await Promise.all([currentOperatorConnection(), currentOperatorAccess()]);

@@ -202,7 +202,7 @@ test("Operator workspace grants require fresh Identity session and seven owner p
 });
 
 test("Operator workspace owner mismatch, role spoof, revoked session and outage all fail closed", async t => {
-  const { readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
+  const { readOperatorAccessState, readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
   const config = resolveIsolatedOperatorConfig(goodEnv);
   assert.ok(config);
   const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
@@ -218,6 +218,8 @@ test("Operator workspace owner mismatch, role spoof, revoked session and outage 
       return Response.json({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
     }
     const permission = path.split("/").at(-1);
+    if (mode === "no-grants") return Response.json({ error: "FORBIDDEN" }, { status: 403 });
+    if (mode === "revoked-during-read") return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
     return Response.json({
       actorId: mode === "different-actor" ? "operator-two" : "operator-one", permission,
       ...(mode === "extra-field" ? { granted: false } : {}),
@@ -226,6 +228,16 @@ test("Operator workspace owner mismatch, role spoof, revoked session and outage 
   for (mode of ["different-actor", "role-spoof", "revoked", "outage", "extra-field"]) {
     assert.equal(await readVerifiedOperatorAccess(config, token), null, mode);
   }
+  for (mode of ["different-actor", "outage", "extra-field"]) {
+    assert.deepEqual(await readOperatorAccessState(config, token), { status: "unavailable" }, mode);
+  }
+  for (mode of ["role-spoof", "revoked", "revoked-during-read"]) {
+    assert.deepEqual(await readOperatorAccessState(config, token), { status: "signed-out" }, mode);
+  }
+  mode = "no-grants";
+  assert.deepEqual(await readOperatorAccessState(config, token), {
+    status: "verified", access: { actorId: "operator-one", grants: [] },
+  });
   const before = calls;
   assert.equal(await readVerifiedOperatorAccess(config, "forged"), null);
   assert.equal(calls, before, "malformed cookie cannot trigger Identity calls");

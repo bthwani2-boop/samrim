@@ -313,7 +313,12 @@ test("production Operator UI rechecks isolated Identity grants on every document
     ownerAvailable = false;
     html = await read("/operations");
     assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "owner outage cannot grant permission");
+    assert.match(html, /تعذّر التحقق من الجلسة والصلاحيات لدى Identity/);
+    assert.doesNotMatch(html, /href="\/(?:workspace|operations|captains)"/);
+    html = await read("/");
+    assert.match(html, /تعذّر التحقق من الجلسة والصلاحيات لدى Identity/);
     ownerAvailable = true;
+    assert.match(await read("/operations"), /href="\/captains"/, "owner recovery restores current grants");
 
     const rejected = await fetch(`${base}/api/auth/session`, {
       method: "POST",

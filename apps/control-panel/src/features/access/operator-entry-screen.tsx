@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { currentOperatorAccess } from "../../server/current-operator-access";
+import { currentOperatorAccessState } from "../../server/current-operator-access";
 import {
   resolveInitialOperatorBootstrapConfig, resolveIsolatedOperatorConfig,
 } from "../../server/operator-passkey-bff";
@@ -8,10 +8,11 @@ import { workspaceRegistry } from "../navigation/workspace-registry";
 import styles from "../operator-shell/operator-shell.module.css";
 import OperatorBootstrapForm from "./operator-bootstrap-form";
 import OperatorPasskeyForm from "./operator-passkey-form";
+import { operatorIdentityUnavailableMessage } from "./operator-workspace-gate";
 
 export default async function OperatorEntryScreen() {
-  const [access, requestHeaders] = await Promise.all([currentOperatorAccess(), headers()]);
-  if (access?.grants.length) redirect("/workspace");
+  const [state, requestHeaders] = await Promise.all([currentOperatorAccessState(), headers()]);
+  if (state.status === "verified" && state.access.grants.length) redirect("/workspace");
 
   const isolated = resolveIsolatedOperatorConfig(process.env);
   const signInOnThisAddress = isolated &&
@@ -19,7 +20,9 @@ export default async function OperatorEntryScreen() {
   return (
     <main className={styles.landing} aria-labelledby="operator-entry-title">
       <h1 id="operator-entry-title">لوحة تحكم بثواني</h1>
-      {access ? (
+      {state.status === "unavailable" ? (
+        <p role="alert">{operatorIdentityUnavailableMessage}</p>
+      ) : state.status === "verified" ? (
         <p role="status">
           تم التحقق من حسابك. اطلب من مسؤول الوصول منحك صلاحية لمساحة العمل المطلوبة.
         </p>
