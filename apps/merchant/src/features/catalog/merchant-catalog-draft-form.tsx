@@ -38,18 +38,18 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
   const rawStock = digits(quantity).trim();
   const normalizedPrice = digits(price).trim();
   const parsedStock = /^[0-9]{1,10}$/.test(rawStock) ? Number(rawStock) : -1;
-  const proposed: MerchantCatalogDraftEditChange = {
+  const proposed: MerchantCatalogDraftChange = {
     operationId: "preview-draft-0001", name: name.trim(),
     priceYer: normalizedPrice, stockUnits: parsedStock,
-    expectedVersion: draft?.draftVersion ?? 1,
   };
-  const valid = draft ? validMerchantCatalogDraftEdit(proposed) : validMerchantCatalogDraft(proposed);
+  const proposedEdit = draft ? { ...proposed, expectedVersion: draft.draftVersion } : null;
+  const valid = proposedEdit ? validMerchantCatalogDraftEdit(proposedEdit) : validMerchantCatalogDraft(proposed);
   async function submit() {
     if (!actorId || !storeId || inFlight.current || session.current?.signal.aborted ||
       (!pending && !valid)) return;
     const controller = session.current;
     if (!controller) return;
-    const change = pending ?? { ...proposed, operationId: randomUUID() };
+    const change = pending ?? { ...(proposedEdit ?? proposed), operationId: randomUUID() };
     inFlight.current = true;
     setSaving(true);
     setPending(change);

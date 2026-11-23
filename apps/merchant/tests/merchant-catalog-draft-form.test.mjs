@@ -111,6 +111,7 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     assert.equal(pending.length, 1);
     assert.equal(pending[0].change.priceYer, "1500");
     assert.equal(pending[0].change.operationId, "draft-operation-1");
+    assert.deepEqual(Object.keys(pending[0].change).sort(), ["name", "operationId", "priceYer", "stockUnits"]);
     const first = pending[0];
     first.reject(new Error("ack lost after COMMIT"));
     await new Promise(setImmediate);
