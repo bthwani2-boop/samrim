@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -158,13 +159,15 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		cursorError(w, err)
 		return
 	}
-	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicHoursSQL() + ` FROM stores s
-		JOIN service_cities c ON c.id=s.city_id
-		JOIN verticals v ON v.id=s.vertical_id
-		WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE'
+	const byCity = publicStoreScopeSQL + ` AND s.relation='MARKETPLACE'
 			AND s.city_id=$1 AND s.id>$2 AND strpos(lower(s.name),lower($4))>0
 			AND ($5='' OR s.vertical_id=$5) ORDER BY s.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, city, after, limit+1, search, vertical)
+	var rows *sql.Rows
+	if s.StoreAvailabilityEnabled {
+		rows, err = tx.QueryContext(ctx, publicStoreWithHoursSQL+byCity, city, after, limit+1, search, vertical)
+	} else {
+		rows, err = tx.QueryContext(ctx, publicStoreWithoutHoursSQL+byCity, city, after, limit+1, search, vertical)
+	}
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return

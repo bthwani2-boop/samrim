@@ -8,11 +8,11 @@ import (
 )
 
 func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
-	q := `SELECT s.id,s.name,s.city_id,s.vertical_id,` + s.publicHoursSQL() + ` FROM stores s
-		JOIN service_cities c ON c.id=s.city_id
-		JOIN verticals v ON v.id=s.vertical_id
-		WHERE s.id=$1 AND s.published AND c.active AND v.active`
-	return scanPublicStore(tx.QueryRowContext(ctx, q, id).Scan)
+	const byID = publicStoreScopeSQL + ` AND s.id=$1`
+	if s.StoreAvailabilityEnabled {
+		return scanPublicStore(tx.QueryRowContext(ctx, publicStoreWithHoursSQL+byID, id).Scan)
+	}
+	return scanPublicStore(tx.QueryRowContext(ctx, publicStoreWithoutHoursSQL+byID, id).Scan)
 }
 func (s *Server) storeDetail(ctx context.Context, w http.ResponseWriter, id string) {
 	tx, e := s.Owner.viewTx(ctx)

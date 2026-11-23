@@ -30,11 +30,9 @@ type publicStore struct {
 	OrderingAvailable  bool   `json:"orderingAvailable"`
 }
 
-func (s *Server) publicHoursSQL() string {
-	if !s.StoreAvailabilityEnabled {
-		return "NULL::jsonb, transaction_timestamp()"
-	}
-	return `(SELECT CASE
+const publicStoreFieldsSQL = `SELECT s.id,s.name,s.city_id,s.vertical_id,`
+const publicStoreWithoutHoursSQL = publicStoreFieldsSQL + `NULL::jsonb, transaction_timestamp()`
+const publicStoreWithHoursSQL = publicStoreFieldsSQL + `(SELECT CASE
 		WHEN a.paused_until > transaction_timestamp() THEN jsonb_build_object('paused', true)
 		WHEN a.preparation_minutes IS NOT NULL AND a.store_timezone=c.timezone_name THEN
 			jsonb_build_object('timezone', a.store_timezone, 'weekly', COALESCE(
@@ -44,7 +42,10 @@ func (s *Server) publicHoursSQL() string {
 				'[]'::jsonb))
 		END FROM store_operational_availability a WHERE a.store_id=s.id),
 	transaction_timestamp()`
-}
+const publicStoreScopeSQL = ` FROM stores s
+	JOIN service_cities c ON c.id=s.city_id
+	JOIN verticals v ON v.id=s.vertical_id
+	WHERE s.published AND c.active AND v.active`
 
 func scanPublicStore(scan func(...any) error) (publicStore, error) {
 	var st publicStore
