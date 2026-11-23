@@ -8,6 +8,7 @@ import { Platform } from "react-native";
 import {
   readCustomerAdmission, withVerifiedNativeCustomerRead,
 } from "../access/customer-session-transport";
+import { withPendingCartChange } from "./cart-session";
 
 export type CartReadState = { kind: "ready"; cart: CustomerCart } |
   { kind: "signed-out" | "unavailable" };
@@ -68,9 +69,16 @@ export async function replaceVerifiedCart(storeId: string, change: CustomerCartC
   expectedActorId: string, signal: AbortSignal): Promise<CustomerCartResult> {
   requireStore(storeId);
   const state = await admission(signal);
-  if (state.kind !== "ready" || state.session.actorId !== expectedActorId) {
+  if (signal.aborted || state.kind !== "ready" || state.session.actorId !== expectedActorId) {
     throw new DshCartError(401, "UNAUTHORIZED");
   }
+  if (Platform.OS !== "web" && !nativeOwner) throw new DshCartError(503, "OWNER_UNAVAILABLE");
+  return withPendingCartChange(expectedActorId, storeId, change, original =>
+    sendVerifiedCartChange(storeId, original, expectedActorId, signal));
+}
+
+async function sendVerifiedCartChange(storeId: string, change: CustomerCartChange,
+  actorId: string, signal: AbortSignal): Promise<CustomerCartResult> {
   if (Platform.OS === "web") {
     if (typeof window === "undefined") throw new DshCartError(503, "OWNER_UNAVAILABLE");
     let response: Response;
@@ -79,7 +87,7 @@ export async function replaceVerifiedCart(storeId: string, change: CustomerCartC
         method: "PUT", signal, credentials: "same-origin", redirect: "error", cache: "no-store",
         headers: {
           "Content-Type": "application/json", Origin: window.location.origin,
-          "X-Customer-Context": expectedActorId,
+          "X-Customer-Context": actorId,
         },
         body: JSON.stringify(change),
       });
@@ -95,9 +103,9 @@ export async function replaceVerifiedCart(storeId: string, change: CustomerCartC
     let value: unknown;
     try { value = await response.json(); } catch { throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN"); }
     let result: CustomerCartResult;
-    try { result = parseCustomerCartResult(value, storeId, state.session.actorId, change.expectedVersion); }
+    try { result = parseCustomerCartResult(value, storeId, actorId, change.expectedVersion); }
     catch { throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN"); }
-    if (!await currentAfter(signal, state.session.actorId)) throw new DshCartError(0, "OPERATION_RESULT_UNKNOWN");
+    if (!await currentAfter(signal, actorId)) throw new DshCartError(0, "OPERATION_RESULT_UNKNOWN");
     return result;
   }
   if (!nativeOwner) throw new DshCartError(503, "OWNER_UNAVAILABLE");
@@ -107,9 +115,9 @@ export async function replaceVerifiedCart(storeId: string, change: CustomerCartC
   const verified = await withVerifiedNativeCustomerRead(signal, async bearer => {
     dispatched = true;
     const result = await replaceCurrentCustomerCart(
-      nativeOwner, bearer, storeId, state.session.actorId, change, signal);
+      nativeOwner, bearer, storeId, actorId, change, signal);
     return { ...result.cart, replay: result.replay };
-  }, state.session.actorId).catch(error => {
+  }, actorId).catch(error => {
     if (dispatched && !(error instanceof DshCartError)) {
       throw new DshCartError(0, "OPERATION_RESULT_UNKNOWN");
     }

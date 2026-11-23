@@ -4,6 +4,7 @@ import * as Crypto from "expo-crypto";
 import { Link, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
+import { pendingCartChange } from "../cart/cart-session";
 import { readVerifiedCart, replaceVerifiedCart } from "../cart/cart-transport";
 import { resolvePublicStoreOrigin } from "../stores/public-store-origin";
 import { formatPublicEstimateYer } from "./price-format";
@@ -17,7 +18,7 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
   const [busy, setBusy] = useState(false);
   const [cartMessage, setCartMessage] = useState("");
   const [savingCart, setSavingCart] = useState(false);
-  const cartOperation = useRef<{ storeId: string; actorId: string; change: CustomerCartChange } | null>(null);
+  const [recoveryActor, setRecoveryActor] = useState<string | null>(null);
   const cartRequest = useRef<AbortController | null>(null);
   const pending = useRef<AbortController | null>(null);
   useFocusEffect(useCallback(() => () => {
@@ -25,7 +26,7 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
     pending.current = null;
     cartRequest.current?.abort();
     cartRequest.current = null;
-    cartOperation.current = null;
+    setRecoveryActor(null);
     setCartMessage("");
     setSavingCart(false);
     setEstimate(undefined);
@@ -69,9 +70,9 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
   }
 
   async function addDraftToCart() {
-    if (!estimate || savingCart || cartRequest.current) return;
+    if ((!estimate && !recoveryActor) || savingCart || cartRequest.current) return;
     const requested = parseOfferEstimateQuantity(quantity);
-    if (requested === null) {
+    if (!recoveryActor && requested === null) {
       setCartMessage("الكمية غير صحيحة.");
       return;
     }
@@ -79,17 +80,27 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
     cartRequest.current = controller;
     setSavingCart(true);
     setCartMessage("");
+    let actorId: string | undefined;
     try {
-      let pendingChange = cartOperation.current;
-      if (pendingChange && pendingChange.storeId !== offer.storeId) {
-        setCartMessage("تحقق من العملية السابقة في متجرها أولًا.");
+      const current = await readVerifiedCart(offer.storeId, controller.signal);
+      if (controller.signal.aborted) return;
+      if (current.kind !== "ready") {
+        setRecoveryActor(null);
+        setCartMessage(current.kind === "signed-out"
+          ? "سجّل الدخول بحساب العميل لإضافة المنتجات." : "السلة غير متاحة الآن.");
         return;
       }
-      if (!pendingChange) {
-        const current = await readVerifiedCart(offer.storeId, controller.signal);
-        if (current.kind !== "ready") {
-          setCartMessage(current.kind === "signed-out"
-            ? "سجّل الدخول بحساب العميل لإضافة المنتجات." : "السلة غير متاحة الآن.");
+      actorId = current.cart.actorId;
+      let change = pendingCartChange(actorId, offer.storeId);
+      if (change && recoveryActor !== actorId) {
+        setRecoveryActor(actorId);
+        setCartMessage("توجد نتيجة غير مؤكدة على سلة هذا المتجر. تحقّق منها أولًا.");
+        return;
+      }
+      if (!change) {
+        if (recoveryActor || requested === null) {
+          setRecoveryActor(null);
+          setCartMessage("حدّثت السلة. راجع الكمية قبل إرسال إضافة جديدة.");
           return;
         }
         const currentQuantity = current.cart.lines.find(item => item.offerId === offer.id)?.quantity ?? 0;
@@ -105,29 +116,25 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
           setCartMessage("لا يمكن إضافة أكثر من 20 منتجًا إلى مسودة السلة.");
           return;
         }
-        pendingChange = {
-          storeId: offer.storeId,
-          actorId: current.cart.actorId,
-          change: {
-            operationId: `cart-${Crypto.randomUUID()}`,
-            expectedVersion: current.cart.version,
-            lines,
-          },
+        const addition: CustomerCartChange = {
+          operationId: `cart-${Crypto.randomUUID()}`,
+          expectedVersion: current.cart.version,
+          lines,
         };
-        cartOperation.current = pendingChange;
+        change = addition;
       }
-      const next = await replaceVerifiedCart(
-        offer.storeId, pendingChange.change, pendingChange.actorId, controller.signal);
+      const next = await replaceVerifiedCart(offer.storeId, change, actorId, controller.signal);
       if (controller.signal.aborted) return;
-      cartOperation.current = null;
-      setCartMessage(next.replay ? "تم تأكيد إضافة المنتج إلى مسودة السلة."
+      setRecoveryActor(null);
+      setCartMessage(recoveryActor || next.replay ? "تم تأكيد آخر تعديل على مسودة السلة."
         : "أضيف المنتج إلى مسودة السلة.");
     } catch (reason) {
       if (controller.signal.aborted) return;
-      const code = reason instanceof DshCartError ? reason.code : "OPERATION_RESULT_UNKNOWN";
-      if (code !== "OPERATION_RESULT_UNKNOWN") cartOperation.current = null;
-      setCartMessage(code === "OPERATION_RESULT_UNKNOWN"
-        ? "لم تتأكد النتيجة. اضغط مرة أخرى للتحقق من العملية نفسها."
+      const code = reason instanceof DshCartError ? reason.code : undefined;
+      const unresolved = actorId && code !== "UNAUTHORIZED" && pendingCartChange(actorId, offer.storeId);
+      setRecoveryActor(unresolved ? actorId ?? null : null);
+      setCartMessage(unresolved
+        ? "لم تتأكد النتيجة. تحقّق من العملية نفسها قبل إرسال تعديل آخر."
         : code === "CART_VERSION_OR_OPERATION_CONFLICT"
           ? "تغيّرت السلة. افتحها وحدّث بياناتها قبل الإضافة."
           : code === "STORE_OR_OFFER_NOT_AVAILABLE"
@@ -165,10 +172,10 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
         </Text>
         <Text style={{ color: theme.colorSecondary }}>تقدير قبل رسوم التوصيل. السعر والكمية قابلان للتغيّر.</Text>
       </View> : null}
-      {estimate ? <Pressable accessibilityRole="button" disabled={savingCart}
+      {estimate || recoveryActor ? <Pressable accessibilityRole="button" disabled={savingCart}
         onPress={() => void addDraftToCart()} style={control}>
         <Text style={{ color: theme.interactiveText }}>
-          {savingCart ? "جارٍ التحقق" : cartOperation.current ? "تحقق من إضافة المنتج" : "أضف إلى سلة المسودة"}
+          {savingCart ? "جارٍ التحقق" : recoveryActor ? "تحقق من آخر تعديل على السلة" : "أضف إلى سلة المسودة"}
         </Text>
       </Pressable> : null}
       {cartMessage ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>

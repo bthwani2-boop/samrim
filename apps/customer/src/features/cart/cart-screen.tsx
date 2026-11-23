@@ -7,22 +7,22 @@ import { AppState, Platform, Pressable, ScrollView, Text, View } from "react-nat
 import { SafeAreaView } from "react-native-safe-area-context";
 import { formatExactYer } from "../../components/format-exact-yer";
 import { previewLineSubtotalYer, summarizeCartPreview } from "./cart-preview";
+import { pendingCartChange } from "./cart-session";
 import { type CartReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate, replaceVerifiedCart } from "./cart-transport";
-
-type Pending = { actorId: string; change: CustomerCartChange };
 
 export default function CartScreen() {
   const { theme } = useMobileAppearance();
   const { storeId: storeParam } = useLocalSearchParams<{ storeId?: string }>();
   const storeId = typeof storeParam === "string" ? storeParam : "";
-  const [view, setView] = useState<CartReadState | null>(null);
+  const [snapshot, setView] = useState<CartReadState | null>(null);
   const [error, setError] = useState("");
   const [ownerMerchandise, setOwnerMerchandise] = useState<CustomerCartMerchandiseEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = useRef<(() => void) | null>(null);
-  const pending = useRef<Pending | null>(null);
   const mutation = useRef<AbortController | null>(null);
   const generation = useRef(0);
+  const view = snapshot?.kind === "ready" && snapshot.cart.storeId !== storeId ? null : snapshot;
+  const pending = view?.kind === "ready" ? pendingCartChange(view.cart.actorId, storeId) : undefined;
 
   useEffect(() => {
     const reload = () => refresh.current?.();
@@ -39,7 +39,6 @@ export default function CartScreen() {
   useFocusEffect(useCallback(() => {
     const epoch = ++generation.current;
     const controller = new AbortController();
-    pending.current = null;
     setView(null);
     setError("");
     setBusy(false);
@@ -97,15 +96,14 @@ export default function CartScreen() {
     try {
       const result = await replaceVerifiedCart(storeId, change, actorId, controller.signal);
       if (controller.signal.aborted || generation.current !== epoch) return;
-      pending.current = null;
       setView({ kind: "ready", cart: result.cart });
     } catch (reason) {
       if (controller.signal.aborted || generation.current !== epoch) return;
       const code = reason instanceof DshCartError ? reason.code : "OPERATION_RESULT_UNKNOWN";
-      if (code === "OPERATION_RESULT_UNKNOWN") {
+      if (code === "OPERATION_RESULT_UNKNOWN" || code === "CART_PENDING_RECONCILIATION") {
         setError("لم تتأكد نتيجة التعديل. أعد تأكيد نفس العملية قبل إجراء تعديل جديد.");
       } else {
-        pending.current = null;
+        if (code === "UNAUTHORIZED") setView({ kind: "signed-out" });
         setError(code === "CART_VERSION_OR_OPERATION_CONFLICT"
           ? "تغيّرت السلة. حدّث البيانات قبل إعادة التعديل."
           : code === "STORE_OR_OFFER_NOT_AVAILABLE"
@@ -122,7 +120,7 @@ export default function CartScreen() {
   }
 
   function changeQuantity(offerId: string, quantity: number) {
-    if (view?.kind !== "ready" || pending.current || busy) return;
+    if (view?.kind !== "ready" || pendingCartChange(view.cart.actorId, storeId) || busy) return;
     const cart = view.cart;
     const lines = cart.lines.filter(item => item.offerId !== offerId)
       .map(item => ({ offerId: item.offerId, quantity: item.quantity }));
@@ -132,7 +130,6 @@ export default function CartScreen() {
       expectedVersion: cart.version,
       lines,
     };
-    pending.current = { actorId: cart.actorId, change };
     void apply(change, cart.actorId);
   }
 
@@ -170,17 +167,17 @@ export default function CartScreen() {
                 </Text> : null}
                 <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   <Pressable accessibilityRole="button" accessibilityLabel="تقليل الكمية"
-                    disabled={busy || !!pending.current}
+                    disabled={busy || !!pending}
                     onPress={() => changeQuantity(line.offerId, line.quantity - 1)} style={buttonStyle}>
                     <Text style={{ color: theme.interactiveText }}>−</Text>
                   </Pressable>
                   <Text style={{ color: theme.color }}>{line.quantity}</Text>
                   <Pressable accessibilityRole="button" accessibilityLabel="زيادة الكمية"
-                    disabled={busy || !!pending.current || line.quantity >= 2147483647}
+                    disabled={busy || !!pending || line.quantity >= 2147483647}
                     onPress={() => changeQuantity(line.offerId, line.quantity + 1)} style={buttonStyle}>
                     <Text style={{ color: theme.interactiveText }}>+</Text>
                   </Pressable>
-                  <Pressable accessibilityRole="button" disabled={busy || !!pending.current}
+                  <Pressable accessibilityRole="button" disabled={busy || !!pending}
                     onPress={() => changeQuantity(line.offerId, 0)} style={buttonStyle}>
                     <Text style={{ color: theme.interactiveText }}>إزالة</Text>
                   </Pressable>
@@ -201,7 +198,7 @@ export default function CartScreen() {
                   </Text>
                 ) : null}
                 {ownerMerchandise && ownerMerchandise.cartVersion === view.cart.version &&
-                  ownerMerchandise.actorId === view.cart.actorId && !busy && !pending.current ? (
+                  ownerMerchandise.actorId === view.cart.actorId && !busy && !pending ? (
                     <Text testID="cart-dsh-merchandise-estimate" style={{ color: theme.color }}>
                       مجموع البضائع المحسوب لدى DSH لهذه النسخة: {formatExactYer(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني.
                     </Text>
@@ -225,17 +222,15 @@ export default function CartScreen() {
           </Text>
         )}
         {error ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>{error}</Text> : null}
-        {pending.current ? (
-          <Pressable disabled={busy} accessibilityRole="button" style={buttonStyle} onPress={() => {
-            const next = pending.current;
-            if (next) void apply(next.change, next.actorId);
-          }}>
+        {view?.kind === "ready" && pending ? (
+          <Pressable disabled={busy} accessibilityRole="button" style={buttonStyle}
+            onPress={() => void apply(pending, view.cart.actorId)}>
             <Text style={{ color: theme.interactiveText }}>
               {busy ? "جارٍ التأكيد" : "التحقق من نتيجة آخر تعديل"}
             </Text>
           </Pressable>
         ) : null}
-        {!pending.current && (view?.kind === "unavailable" || !!error) ? (
+        {!pending && (view?.kind === "unavailable" || !!error) ? (
           <Pressable accessibilityRole="button" disabled={busy} style={buttonStyle}
             onPress={() => refresh.current?.()}>
             <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>
@@ -245,7 +240,7 @@ export default function CartScreen() {
           الانتقال إلى الحساب
         </Link> : null}
         {view?.kind === "ready" && view.cart.lines.length > 0 &&
-          !busy && !pending.current && !error ? (
+          !busy && !pending && !error ? (
             <Link href={{ pathname: "/checkout", params: { storeId } }}
               style={{ color: theme.interactiveText }}>
               مراجعة السلة قبل الطلب
