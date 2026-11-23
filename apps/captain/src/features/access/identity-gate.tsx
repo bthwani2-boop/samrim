@@ -7,7 +7,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import {
   leaveCaptainAdmission, readCaptainAdmission, requestCaptainPhoneCode, verifyCaptainCode,
 } from "./admission-transport";
-import CaptainEntryShell from "./captain-entry-shell";
 import { hasActiveCaptainSession } from "./captain-session";
 import { CaptainStandingError } from "./captain-standing";
 
@@ -179,7 +178,7 @@ export default function CaptainIdentityGate() {
           {!busy && (enabled === null || (enabled && !verified && message && !ticket))
             ? button("إعادة التحقق", refresh) : null}
           {enabled === false ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
-            دخول الكابتن غير متاح في هذه النسخة.
+            تعذّر تهيئة الاتصال بخدمة الهوية في هذه البيئة.
           </Text> : null}
           {enabled && verified ? (
             <>
@@ -233,13 +232,8 @@ export default function CaptainIdentityGate() {
               </Pressable>
             </Link>
           ) : null}
-          {__DEV__ ? <Link href="/health" style={{ color: theme.interactiveText }}>فحص التطوير</Link> : null}
         </View>
       </ScrollView>
-      {!verified ? (
-        <CaptainEntryShell color={theme.colorSecondary} borderColor={theme.borderColor}
-          backgroundColor={theme.surface} />
-      ) : null}
     </SafeAreaView>
   );
 }

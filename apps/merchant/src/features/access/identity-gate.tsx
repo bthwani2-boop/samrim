@@ -219,7 +219,7 @@ export default function MerchantIdentityGate() {
           {enabled === null && !busy ? button("إعادة المحاولة", refresh) : null}
           {enabled === false ? (
             <>
-              <Text accessibilityRole="alert" style={{ color: theme.warningText }}>تسجيل دخول التاجر غير متاح في هذه البيئة.</Text>
+              <Text accessibilityRole="alert" style={{ color: theme.warningText }}>تعذّر تهيئة الاتصال بخدمة الهوية في هذه البيئة.</Text>
               {button("إعادة التحقق من تسجيل الدخول", refresh)}
             </>
           ) : null}

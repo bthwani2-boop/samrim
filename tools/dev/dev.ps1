@@ -328,7 +328,7 @@ function Inspect-AppAndroid {
   Say 'ANDROID_ADB' ('SAMSUNG_DEVICE='+$devicePresent)
   $reverses=@(& $adb.Source 'reverse' '--list' 2>&1)
   Assert-Ok ($LASTEXITCODE -eq 0) 'adb reverse list failed'
-  foreach($port in @(18101,18102,18103)){
+  foreach($port in @(18101,18102,18103,3201,3202)){
     $mapped=@($reverses | Where-Object {$_.ToString() -match ('tcp:'+$port+'\s+tcp:'+$port+'\b')}).Count -gt 0
     Say 'ANDROID_REVERSE' ('port='+$port+' configured='+$mapped)
   }
@@ -551,8 +551,17 @@ function Open-Android {
   $devices=@(& $adb.Source 'devices' | ForEach-Object {$_.ToString()})
   Assert-Ok (@($devices|Where-Object{$_ -match ('^'+[regex]::Escape($device)+'\s+device\s*$')}).Count -eq 1) 'EXPECTED_SAMSUNG_NOT_CONNECTED'
   $existing=@(& $adb.Source '-s' $device 'reverse' '--list' | ForEach-Object{$_.ToString()})
-  foreach($entry in $android){
-    $p=$entry.Port
+  $nativePorts = @($android | ForEach-Object { [int]$_.Port }) + @(3201,3202)
+  foreach($p in $nativePorts){
+    if ($p -in @(3201,3202)) {
+      $listeners=@(Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $p -ErrorAction SilentlyContinue)
+      Assert-Ok ($listeners.Count -eq 1) ('NATIVE_OWNER_SSH_TUNNEL_NOT_LISTENING '+$p)
+      $owner=Get-CimInstance Win32_Process -Filter ('ProcessId=' + $listeners[0].OwningProcess)
+      $forward='127.0.0.1:'+$p+':127.0.0.1:'+$p
+      Assert-Ok ($owner -and $owner.Name -eq 'ssh.exe' -and
+        $owner.CommandLine.Contains($forward) -and
+        $owner.CommandLine.Contains('bthwani-docker')) ('NATIVE_OWNER_SSH_TUNNEL_UNVERIFIED '+$p)
+    }
     $same=@($existing|Where-Object {$_ -match ('\btcp:'+$p+'\s+tcp:'+$p+'\b')}).Count -gt 0
     $collision=@($existing|Where-Object {$_ -match ('\btcp:'+$p+'\s+') -and $_ -notmatch ('\btcp:'+$p+'\s+tcp:'+$p+'\b')}).Count -gt 0
     Assert-Ok (-not $collision) ('ADB_REVERSE_COLLISION '+$p)

@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const captain = path.join(root, "apps/captain");
-const sources = ["src/features/access/captain-entry-shell", "src/components/captain-capability-screen",
+const sources = ["src/components/captain-capability-screen",
   "src/features/dispatch/captain-home-screen", "app/(tabs)/account", "app/offers"];
 const temporary = mkdtempSync(path.join(tmpdir(), "bthwani-captain-guest-navigation-"));
 const compiled = new Map();
@@ -46,36 +46,6 @@ function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
-test("Captain compiled guest shell inherits direction and exposes four disabled tabs without navigation", () => {
-  const rendered = renderable("src/features/access/captain-entry-shell")({
-    color: "secondary-token", borderColor: "border-token", backgroundColor: "surface-token",
-  });
-  const all = nodes(rendered);
-  assert.equal(rendered.props.testID, "captain-guest-shell");
-  assert.equal(rendered.props.style.backgroundColor, "surface-token");
-  const row = all.find(n => n.props?.style?.flexDirection === "row");
-  assert.ok(row, "guest preview uses one row in the application direction");
-  assert.equal(Object.hasOwn(row.props.style, "direction"), false);
-  const tabs = all.filter(node => node.props?.testID?.startsWith("captain-guest-tab-"));
-  assert.deepEqual(tabs.map(node => node.props.testID), [
-    "captain-guest-tab-home", "captain-guest-tab-deliveries",
-    "captain-guest-tab-wallet", "captain-guest-tab-account",
-  ]);
-  assert.deepEqual(tabs.map(node => node.props.accessibilityLabel), [
-    "الرئيسية — غير متاح", "التوصيلات — غير متاح",
-    "المحفظة — غير متاح", "حسابي — غير متاح",
-  ]);
-  for (const tab of tabs) {
-    assert.equal(tab.props.accessibilityRole, "tab");
-    assert.equal(tab.props.accessibilityState.disabled, true);
-    assert.equal(tab.props.accessible, true);
-    assert.ok(!Object.hasOwn(tab.props, "onPress"), "guest tab must not navigate");
-    assert.ok(!Object.hasOwn(tab.props, "href"), "guest tab cannot open protected route");
-  }
-  assert.equal(all.some(node => typeof node.props?.onPress === "function"), false);
-  assert.equal(all.some(node => node.props?.href), false);
-});
-
 test("Captain workspace separates verified access from unavailable data and keeps real return links", () => {
   const screen = renderable("src/components/captain-capability-screen");
   const screenModule = { __esModule: true, default: screen };

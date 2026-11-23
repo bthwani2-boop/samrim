@@ -106,6 +106,56 @@ if ($Surface) {
     # Android reaches this Metro server through the standard Surface USB tunnel.
     $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18101'
   }
+  if ($App -in @('merchant','captain')) {
+    # Existing Lenovo development tasks need a real Native owner connection.
+    # Reject unknown, stale or non-isolated targets instead of minting a bypass.
+    if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+      throw 'DOCKER_ROLE_ANDROID_IDENTITY_REQUIRES_VERIFIED_LENOVO'
+    }
+    $identity = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
+    $dsh = @(& docker inspect bthwani-refoundation-dsh-1 | ConvertFrom-Json)
+    if ($LASTEXITCODE -ne 0 -or $identity.Count -ne 1 -or $dsh.Count -ne 1) {
+      throw 'DOCKER_ROLE_ANDROID_OWNER_UNAVAILABLE'
+    }
+    $identityOwner = $identity[0]
+    $dshOwner = $dsh[0]
+    $identityEnv = @($identityOwner.Config.Env)
+    $dshEnv = @($dshOwner.Config.Env)
+    $identitySchemas = @($identityEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
+    $dshSchemas = @($dshEnv | Where-Object { $_ -clike 'DSH_DB_SCHEMA=*' })
+    $identityPorts = @($identityOwner.HostConfig.PortBindings.'3302/tcp')
+    $dshPorts = @($dshOwner.HostConfig.PortBindings.'8080/tcp')
+    if ($identityOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+        $identityOwner.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
+        $identityOwner.State.Health.Status -cne 'healthy' -or
+        $identityEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
+        $identityEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
+        $identityEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
+        $identitySchemas.Count -ne 1 -or $identitySchemas[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
+        $identityPorts.Count -ne 1 -or $identityPorts[0].HostIp -cne '127.0.0.1' -or
+        $identityPorts[0].HostPort -cne '3201' -or
+        $dshOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+        $dshOwner.Config.Labels.'com.bthwani.capability' -cne 'customer-store-catalog' -or
+        $dshOwner.State.Health.Status -cne 'healthy' -or
+        $dshSchemas.Count -ne 1 -or $dshSchemas[0] -cnotmatch '^DSH_DB_SCHEMA=dsh_test_[a-z0-9_]+$' -or
+        $dshPorts.Count -ne 1 -or $dshPorts[0].HostIp -cne '127.0.0.1' -or
+        $dshPorts[0].HostPort -cne '3202') {
+      throw 'DOCKER_ROLE_ANDROID_OWNERS_NOT_ISOLATED'
+    }
+    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
+    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
+    if ($App -eq 'merchant') {
+      Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/stores/mine' 401
+      $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+      $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
+      $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18102'
+    } else {
+      Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/captains/me/standing' 401
+      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
+      $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18103'
+    }
+  }
 }
 if ($UseDisposableOperatorSandbox -and (!$EnableIsolatedOperatorPasskeyPreview -or $Surface -or $App -ne 'control-panel')) {
   throw 'OPERATOR_SANDBOX_REQUIRES_LENOVO_CONTROL_PASSKEY_PREVIEW'

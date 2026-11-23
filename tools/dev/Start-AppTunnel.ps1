@@ -54,9 +54,17 @@ $argsList = @(
   '-o', 'ConnectionAttempts=1',
   '-o', 'ServerAliveInterval=15',
   '-o', 'ServerAliveCountMax=3',
-  '-L', ('127.0.0.1:' + $localPort + ':127.0.0.1:' + $remotePort),
-  $target
+  '-L', ('127.0.0.1:' + $localPort + ':127.0.0.1:' + $remotePort)
 )
+# Reuse the existing Customer SSH task for the two isolated owner ports.
+# No extra SSH process or network-facing listener is created.
+if ($App -eq 'customer') {
+  if ($localPort -in @(3201,3202)) { throw 'APP_TUNNEL_OWNER_PORT_COLLISION' }
+  foreach ($ownerPort in @(3201,3202)) {
+    $argsList += @('-L', ('127.0.0.1:' + $ownerPort + ':127.0.0.1:' + $ownerPort))
+  }
+}
+$argsList += $target
 if ($ValidateOnly) {
   Write-Output ('TUNNEL_CONFIG_PASS app=' + $App + ' localPort=' + $localPort + ' remotePort=' + $remotePort)
   return

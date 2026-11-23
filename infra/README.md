@@ -264,9 +264,16 @@ loopback port and map device port `3201` to that Surface port with ADB reverse.
 This preview uses a separate Android session namespace and synthetic phones.
 The Web wallet option can coexist with it and continues to use its own cookie.
 
-For Android development clients, add ADB reverse mappings for the selected app's
-Metro port and the two owner ports. Keep any existing mappings. The preview
-uses separate names for browser cookies and native session storage.
+The existing Surface development launcher adds ADB reverse mappings for the
+three Metro ports and the two owner ports (Identity 3201, DSH 3202) only after
+verifying that the latter are listening through the canonical loopback SSH
+tunnel. The existing Customer SSH tunnel carries both owner forwards; do not
+start another SSH process for them or replace an unrelated ADB mapping.
+A change to tunnel arguments requires a separately controlled reload of that
+existing task before the new mappings can be used. The Lenovo Merchant and
+Captain launchers enable Native Identity/DSH origins only when both running
+owners are healthy and explicitly isolated in synthetic test schemas; otherwise
+they fail closed. Browser cookies and native SecureStore remain separate.
 
 ## Non-invasive runtime attestation and disposable PostgreSQL proof
 

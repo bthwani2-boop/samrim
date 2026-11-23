@@ -55,6 +55,30 @@ test("Lenovo Android Customer manifest advertises the tunnel instead of the serv
   assert.match(preview, /\$env:EXPO_PACKAGER_PROXY_URL='http:\/\/127\.0\.0\.1:18101'/);
 });
 
+test("Lenovo Merchant and Captain Native sign-in requires isolated Identity and DSH owners", () => {
+  assert.match(launcher, /if \(\$App -in @\('merchant','captain'\)\)/);
+  assert.match(launcher, /DOCKER_ROLE_ANDROID_IDENTITY_REQUIRES_VERIFIED_LENOVO/);
+  assert.match(launcher, /DOCKER_ROLE_ANDROID_OWNERS_NOT_ISOLATED/);
+  assert.match(launcher, /IDENTITY_SYNTHETIC_PHONE_AUTH=true/);
+  assert.match(launcher, /IDENTITY_DB_SCHEMA=identity_test_/);
+  assert.match(launcher, /DSH_DB_SCHEMA=dsh_test_/);
+  assert.match(launcher, /EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN='http:\/\/127\.0\.0\.1:3201'/);
+  assert.match(launcher, /EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN='http:\/\/127\.0\.0\.1:3202'/);
+  assert.match(launcher, /EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http:\/\/127\.0\.0\.1:3201'/);
+  assert.match(launcher, /EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN='http:\/\/127\.0\.0\.1:3202'/);
+});
+
+test("Lenovo-only role admission rejects an unauthorized Surface launch before startup", (t) => {
+  if (process.platform !== "win32") return t.skip("PowerShell launcher checked on Surface");
+  for (const role of ["merchant", "captain"]) {
+    const result = spawnSync("pwsh", ["-NoProfile", "-File", file, "-App", role], {
+      encoding: "utf8", timeout: 12000, windowsHide: true,
+    });
+    assert.equal(result.status, 1, result.stderr || result.error?.message);
+    assert.match(result.stderr, /DOCKER_ROLE_ANDROID_IDENTITY_REQUIRES_VERIFIED_LENOVO/);
+  }
+});
+
 test("tunneled Operator Passkey opt-in requires the verified isolated Lenovo owner", () => {
   assert.match(launcher, /\[switch\]\$EnableIsolatedOperatorPasskeyPreview/);
   assert.match(launcher, /if \(\$EnableIsolatedOperatorPasskeyPreview -and !\$Surface\)/);

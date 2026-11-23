@@ -141,8 +141,9 @@ export default function CustomerIdentityGate() {
       }}>
         <View style={{ borderRadius: 16, borderWidth: 1, borderColor: theme.borderColor,
           padding: 20, backgroundColor: theme.surface, gap: 14 }}>
-          <Text accessibilityRole="header" style={{ fontSize: 26, fontWeight: "700", color: theme.color }}>
-            بثواني — التحقق من حساب العميل
+          <Text style={{ fontSize: 17, fontWeight: "700", color: theme.interactiveText }}>بثواني</Text>
+          <Text accessibilityRole="header" style={{ fontSize: 23, fontWeight: "700", color: theme.color }}>
+            التحقق من حساب العميل
           </Text>
           {busy ? <Text style={{ color: theme.colorSecondary }}>جارٍ التحقق…</Text> : null}
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}

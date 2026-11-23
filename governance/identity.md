@@ -22,6 +22,8 @@ CAPABILITY_ID: IDENTITY_ACTIVATION_SESSIONS
 
 **Sessions and isolation:** A context switch, permission revocation, logout or stale async response must never expose previous actor/Store's money, private orders, files or administrative state, including while pending GET/POST or during delayed failure recovery. All UI caches and policy previews are scoped to the verified Identity session; server-side authorization never trusts UI state, old scopes or supplied actor headers alone.
 
+**Public authentication presentation:** Customer, Merchant, Captain and Operator entry screens show only the actions appropriate to their current verified or pending admission state. Unauthenticated users must not see decorative copies of protected navigation tabs or simulated disabled workspace controls; real workspace navigation mounts only after the owner-backed role and resource-scope checks succeed. Developer inspection affordances must not obstruct the authentication form and are never an authorization bypass. Web and native entry routes may adapt layout to viewport, but must preserve the same admission states, accessible actions and failure semantics.
+
 **Failure and proof:** Unauthorized actor, expired session, Store IDOR, revoked grant, cross-city access, forged actor header, stale cache and concurrent permission change all fail safely. Prove with two real distinct actors/Stores and canonical Identity/DSH/WLT reads, not only hidden buttons or a mocked HTTP response. Keep privacy-safe evidence and avoid exporting secrets.
 
 ## Operator authentication and policy-control admission

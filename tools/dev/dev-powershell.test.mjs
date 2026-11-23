@@ -68,6 +68,20 @@ test("one dev command opens existing app surfaces after the owner tasks are read
   assert.match(launcher, /'SAMSUNG' 'SKIPPED/);
 });
 
+test("native owner traffic reuses the verified SSH tunnel and cannot take over an arbitrary ADB port", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  const tunnel = readFileSync(new URL("./Start-AppTunnel.ps1", import.meta.url), "utf8");
+  assert.match(tunnel, /if \(\$App -eq 'customer'\)/);
+  assert.match(tunnel, /foreach \(\$ownerPort in @\(3201,3202\)\)/);
+  assert.match(tunnel, /'127\.0\.0\.1:' \+ \$ownerPort/);
+  assert.match(tunnel, /\$argsList \+= \$target/);
+  assert.match(launcher, /\$nativePorts = @\(\$android \| ForEach-Object/);
+  assert.match(launcher, /NATIVE_OWNER_SSH_TUNNEL_NOT_LISTENING/);
+  assert.match(launcher, /NATIVE_OWNER_SSH_TUNNEL_UNVERIFIED/);
+  assert.match(launcher, /ADB_REVERSE_COLLISION/);
+  assert.match(launcher, /18101,18102,18103,3201,3202/);
+});
+
 test("read-only diagnostics do not monopolize the global app lifecycle mutex", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   assert.match(launcher, /\$readOnlyOperation\s*=/);
