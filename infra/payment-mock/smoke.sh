@@ -9,6 +9,7 @@ cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
+[[ "$(docker exec "$container" id -u)" == '1000' ]] || { echo 'Simulator must run as non-root' >&2; exit 1; }
 port="$(docker port "$container" '8080/tcp' | sed -n 's/^127\.0\.0\.1://p' | head -n 1)"
 [[ "$port" =~ ^[0-9]+$ ]] || { echo 'Simulator not loopback-bound' >&2; exit 1; }
 origin="http://127.0.0.1:$port/sandbox/v1/funding"

@@ -16,6 +16,7 @@ test("synthetic payment image owns only fixed evidence fixtures", () => {
   const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
   assert.match(dockerfile, /^FROM wiremock\/wiremock:3\.13\.2-2/m);
   assert.match(dockerfile, /^COPY mappings\/ \/home\/wiremock\/mappings\//m);
+  assert.match(dockerfile, /^USER 1000:1000$/m);
   const mappings = allMappings();
   assert.equal(mappings.length, 9);
   const urls = new Set();
