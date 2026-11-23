@@ -49,11 +49,9 @@ func TestFreshBaselineDeniedWithoutIsolatedOwnerOrCanonicalDirectory(t *testing.
 	}
 }
 
-func TestOwnerBootstrapFreshRollsBackIncompleteSchema(t *testing.T) {
-	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
-		t.Skip("only in explicitly isolated PostgreSQL owner integration")
-	}
-	db, err := OpenFromEnvironment()
+func TestFreshBaselineRejectsModifiedSourceBeforeDatabase(t *testing.T) {
+	t.Setenv("BTHWANI_ISOLATED_TEST_MODE", "true")
+	db, err := sql.Open("postgres", "host=127.0.0.1 port=1 user=unused dbname=unused sslmode=disable connect_timeout=1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,8 +84,32 @@ func TestOwnerBootstrapFreshRollsBackIncompleteSchema(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	if err := owner.BootstrapFresh(ctx, fixture); err == nil ||
-		!strings.Contains(err.Error(), "60_employees.sql") {
-		t.Fatalf("incomplete bootstrap did not reject the failing domain: %v", err)
+		!strings.Contains(err.Error(), "unreviewed DSH baseline bytes") {
+		t.Fatalf("modified source was not rejected before database access: %v", err)
+	}
+}
+
+func TestOwnerBootstrapFreshRollsBackIncompleteSchema(t *testing.T) {
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
+		t.Skip("only in explicitly isolated PostgreSQL owner integration")
+	}
+	db, err := OpenFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	owner, err := New(db, fmt.Sprintf("dsh_test_failed_%x", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	files := []freshBaselineSource{
+		{name: "first.sql", sql: "CREATE SCHEMA " + owner.Schema},
+		{name: "failing.sql", sql: "SELECT missing_column FROM nonexistent_dsh_table"},
+	}
+	if err := owner.applyFreshBaseline(ctx, files); err == nil || !strings.Contains(err.Error(), "failing.sql") {
+		t.Fatalf("expected failure inside bootstrap transaction: %v", err)
 	}
 	var exists bool
 	if err := db.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname=$1)", owner.Schema).Scan(&exists); err != nil || exists {
