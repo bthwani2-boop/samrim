@@ -150,9 +150,26 @@ if ($Surface) {
       $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
       $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18102'
     } else {
-      Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/captains/me/standing' 401
-      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
-      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
+      # An isolated DSH may be running without the opt-in Captain routes.
+      # Keep the public Expo shell available, but never present a Native
+      # admission path until the authoritative standing read denies 401.
+      $captainStandingReady=$false
+      try {
+        Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/captains/me/standing' 401
+        $captainStandingReady=$true
+      } catch {
+        if ($_.Exception.Message -notmatch '^SURFACE_PREVIEW_CAPABILITY_NOT_READY uri=http://127[.]0[.]0[.]1:3202/v1/captains/me/standing status=404$') {
+          throw
+        }
+        Write-Warning 'CAPTAIN_NATIVE_ADMISSION_DISABLED_DSH_ROUTE_NOT_ACTIVATED'
+      }
+      if ($captainStandingReady) {
+        $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+        $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
+      } else {
+        Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN -ErrorAction SilentlyContinue
+        Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN -ErrorAction SilentlyContinue
+      }
       $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18103'
     }
   }

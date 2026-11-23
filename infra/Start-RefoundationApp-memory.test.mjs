@@ -66,6 +66,11 @@ test("Lenovo Merchant and Captain Native sign-in requires isolated Identity and 
   assert.match(launcher, /EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN='http:\/\/127\.0\.0\.1:3202'/);
   assert.match(launcher, /EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http:\/\/127\.0\.0\.1:3201'/);
   assert.match(launcher, /EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN='http:\/\/127\.0\.0\.1:3202'/);
+  assert.match(launcher, /CAPTAIN_NATIVE_ADMISSION_DISABLED_DSH_ROUTE_NOT_ACTIVATED/);
+  assert.match(launcher, /status=404\$/);
+  assert.match(launcher, /if \(\$captainStandingReady\)/);
+  assert.match(launcher, /Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN/);
+  assert.match(launcher, /Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN/);
 });
 
 test("Lenovo-only role admission rejects an unauthorized Surface launch before startup", (t) => {

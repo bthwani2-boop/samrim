@@ -271,9 +271,15 @@ tunnel. The existing Customer SSH tunnel carries both owner forwards; do not
 start another SSH process for them or replace an unrelated ADB mapping.
 A change to tunnel arguments requires a separately controlled reload of that
 existing task before the new mappings can be used. The Lenovo Merchant and
-Captain launchers enable Native Identity/DSH origins only when both running
-owners are healthy and explicitly isolated in synthetic test schemas; otherwise
-they fail closed. Browser cookies and native SecureStore remain separate.
+Captain launchers require healthy, isolated Identity and DSH owners before
+considering native admission. Merchant admission stays blocked when its owner
+endpoint is unavailable. If the isolated DSH has not enabled Captain standing
+and returns exactly HTTP 404, the Captain launcher starts its public Expo shell
+but explicitly removes both native admission origins; its login remains closed.
+Any other unexpected Captain owner response aborts startup. Once the DSH owner
+is migrated and independently enabled, an unauthenticated standing read must
+return HTTP 401 before Captain native admission can be configured. Browser
+cookies and native SecureStore remain separate.
 
 ## Non-invasive runtime attestation and disposable PostgreSQL proof
 
