@@ -56,7 +56,7 @@ test("Docker-only Customer Cart Web uses current Identity and DSH without exposi
   assert.deepEqual(await read.json(), cart);
   const write = await PUT(new Request(`${base}cart?storeId=store-a`, {
     method: "PUT", headers: { ...headers, Origin: "http://localhost:28111",
-      "Content-Type": "application/json" },
+      "Content-Type": "application/json", "X-Customer-Context": "customer-a" },
     body: JSON.stringify({ operationId: "docker-cart-001", expectedVersion: 1,
       lines: [{ offerId: "offer-a", quantity: 1 }] }),
   }));

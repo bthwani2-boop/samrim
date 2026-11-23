@@ -83,6 +83,8 @@ export async function handleCustomerCart(request: Request, method: "GET" | "PUT"
   }
   const change = method === "PUT" ? await boundedChange(request) : null;
   if (method === "PUT" && !change) return result({ error: "INVALID_REQUEST" }, 400);
+  const expectedActor = request.headers.get("X-Customer-Context");
+  if (method === "PUT" && !expectedActor) return result({ error: "INVALID_REQUEST" }, 400);
   const bearer = bearerForCustomerRequest(request);
   if (!bearer) return result({ error: "UNAUTHORIZED" }, 401);
   let dispatched = false;
@@ -90,6 +92,9 @@ export async function handleCustomerCart(request: Request, method: "GET" | "PUT"
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10500)]);
     const before = await readVerifiedIdentitySession(identityOrigin, bearer, signal);
     if (before.role !== "customer") return result({ error: "FORBIDDEN" }, 403);
+    if (method === "PUT" && before.actorId !== expectedActor) {
+      return result({ error: "CUSTOMER_CONTEXT_CHANGED" }, 403);
+    }
     dispatched = method === "PUT";
     const value = method === "GET"
       ? await readCurrentCustomerCart(origin, bearer, storeId, before.actorId, signal)

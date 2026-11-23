@@ -1,8 +1,8 @@
 import {
-  DshCartError, parseCustomerCart, parseCustomerCartResult,
-  readCurrentCustomerCart, replaceCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate,
-  parseCustomerCartMerchandiseEstimate,
-  type CustomerCart, type CustomerCartChange, type CustomerCartResult, type CustomerCartMerchandiseEstimate,
+  type CustomerCart, type CustomerCartChange, type CustomerCartMerchandiseEstimate,
+  type CustomerCartResult, DshCartError, parseCustomerCart,
+  parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart,
+  readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart,
 } from "@bthwani/dsh";
 import { Platform } from "react-native";
 import {
@@ -77,7 +77,10 @@ export async function replaceVerifiedCart(storeId: string, change: CustomerCartC
     try {
       response = await fetch(cartPath(storeId), {
         method: "PUT", signal, credentials: "same-origin", redirect: "error", cache: "no-store",
-        headers: { "Content-Type": "application/json", Origin: window.location.origin },
+        headers: {
+          "Content-Type": "application/json", Origin: window.location.origin,
+          "X-Customer-Context": expectedActorId,
+        },
         body: JSON.stringify(change),
       });
     } catch { throw new DshCartError(0, "OPERATION_RESULT_UNKNOWN"); }

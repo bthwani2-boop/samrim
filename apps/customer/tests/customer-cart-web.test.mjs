@@ -30,7 +30,10 @@ function request(method, data = undefined, headers = credentials()) {
   return new Request(base, {
     method, headers: {
       ...headers,
-      ...(method === "PUT" ? { Origin: "http://localhost:18101", "Content-Type": "application/json" } : {}),
+      ...(method === "PUT" ? {
+        Origin: "http://localhost:18101", "Content-Type": "application/json",
+        "X-Customer-Context": "customer-a",
+      } : {}),
     },
     ...(data === undefined ? {} : { body: JSON.stringify(data) }),
   });
@@ -71,6 +74,27 @@ test("Customer Cart Web BFF preserves owner-only payload and operation identity"
   assert.equal(result.status, 200);
   assert.equal((await result.json()).cart.actorId, "customer-a");
   assert.deepEqual(transmitted, change);
+});
+
+test("a stale Customer tab cannot send a Cart update with the new account's cookie", async t => {
+  const paths = [];
+  t.mock.method(globalThis, "fetch", async url => {
+    const path = new URL(url).pathname;
+    paths.push(path);
+    return path === "/v1/sessions/current" ? identitySession("customer-b") :
+      okJSON({ cart: { ...cart, actorId: "customer-b" }, replay: false });
+  });
+  const result = await PUT(request("PUT", change, credentials({ "X-Customer-Context": "customer-a" })));
+  assert.equal(result.status, 403);
+  assert.deepEqual(await result.json(), { error: "CUSTOMER_CONTEXT_CHANGED" });
+  assert.deepEqual(paths, ["/v1/sessions/current"]);
+  const withoutContext = new Request(base, {
+    method: "PUT",
+    headers: credentials({ Origin: "http://localhost:18101", "Content-Type": "application/json" }),
+    body: JSON.stringify(change),
+  });
+  assert.equal((await PUT(withoutContext)).status, 400);
+  assert.deepEqual(paths, ["/v1/sessions/current"]);
 });
 
 test("Customer Cart Web BFF rejects CSRF, extra actors, duplicate selectors and missing sessions before owner reads", async t => {
