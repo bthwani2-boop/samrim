@@ -95,7 +95,7 @@ function imports(pathname, source) {
       for (const match of cleaned.matchAll(pattern)) found.add(match[1]);
     }
   }
-  return [...found].sort();
+  return [...found].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
 function exportedPackages(rows, contents) {
@@ -178,12 +178,12 @@ export function inventory(checkout = root) {
       if (target && target !== row.path) lookup.get(target).importedBy.push(row.path);
     }
   }
-  for (const row of rows) row.importedBy = [...new Set(row.importedBy)].sort();
+  for (const row of rows) row.importedBy = [...new Set(row.importedBy)].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
   return rows;
 }
 
 export function summary(rows) {
-  const tally = items => Object.fromEntries([...new Set(items)].sort().map(key =>
+  const tally = items => Object.fromEntries([...new Set(items)].sort((a, b) => a < b ? -1 : a > b ? 1 : 0).map(key =>
     [key, items.filter(item => item === key).length]));
   return {
     files: rows.length,

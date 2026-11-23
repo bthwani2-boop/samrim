@@ -432,7 +432,7 @@ export function resolveInitialOperatorBootstrapConfig(env: Settings): OperatorPa
 export function validInitialOperatorPayload(value: unknown, finish: boolean): boolean {
   const body = object(value);
   if (!body) return false;
-  const keys = Object.keys(body).sort();
+  const keys = Object.keys(body).sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
   if (keys.join(",") !== (finish ? "ceremonyId,credential,proof" : "proof")) return false;
   if (typeof body.proof !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(body.proof)) return false;
   if (!finish) return true;

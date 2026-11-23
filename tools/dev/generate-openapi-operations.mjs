@@ -78,7 +78,7 @@ function readOwnerContract(owner, base) {
     path.relative(folder, filename).split(path.sep).join("/"), document,
   ]));
   const normalized = JSON.stringify(files, (_key, value) => value && typeof value === "object" && !Array.isArray(value)
-    ? Object.fromEntries(Object.keys(value).sort().map(key => [key, value[key]]))
+    ? Object.fromEntries(Object.keys(value).sort((a, b) => a < b ? -1 : a > b ? 1 : 0).map(key => [key, value[key]]))
     : value);
   const digest = createHash("sha256").update(normalized).digest("hex");
   return { rows, digest };
