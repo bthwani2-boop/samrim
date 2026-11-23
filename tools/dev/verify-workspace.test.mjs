@@ -192,3 +192,47 @@ test('service placement reports an owner link without evaluating files outside t
   assert.deepEqual(serviceSourcePlacementIssues(base),
     ['services/dsh: unapproved service owner or source link']);
 });
+
+test('deep owner paths reject misplaced Go, SQL and OpenAPI while preserving legal modules', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-deep-owner-placement-'));
+  try {
+    const put = file => {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, '// isolated fixture\n');
+    };
+    for (const valid of [
+      'services/identity/backend/internal/session/recovery/replay.go',
+      'services/dsh/backend/internal/storeavailability/policy/current.go',
+      'services/wlt/backend/internal/ledger/reversal.go',
+      'services/wlt/database/migrations/012_reverse_posting.sql',
+      'services/dsh/contracts/openapi/paths/captain-interest.yaml',
+    ]) put(valid);
+    assert.deepEqual(serviceSourcePlacementIssues(directory), [],
+      'meaningful nested domains and legal owner artifacts remain valid');
+
+    for (const invalid of [
+      'services/dsh/backend/internal/storeavailability/misc/legacy.go',
+      'services/dsh/backend/internal/store-availability/snapshot.go',
+      'services/identity/backend/cmd/dsh/other-owner.go',
+      'services/wlt/database/migrations/012.sql',
+      'services/dsh/contracts/openapi/paths/checkout/shadow.yaml',
+    ]) put(invalid);
+    const issues = serviceSourcePlacementIssues(directory);
+    assert.equal(issues.length, 6, issues.join('\n'),
+      'the illegal Go directory and its source file are separate placement violations');
+    for (const fragment of [
+      'storeavailability/misc/legacy.go',
+      'store-availability/snapshot.go',
+      'backend/cmd/dsh/other-owner.go',
+      'migrations/012.sql',
+      'paths/checkout/shadow.yaml',
+    ]) {
+      assert.ok(issues.some(issue => issue.includes(fragment)),
+        `Untracked deeply nested owner violation escaped guard: ${fragment}`);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

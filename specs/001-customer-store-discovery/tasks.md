@@ -2,7 +2,7 @@
 
 **Input**: spec.md and plan.md in this directory.
 **Status**: IN_PROGRESS — real isolated DSH/PostgreSQL read, Web and Android discovery smoke implemented and tested; mandatory security, Identity, orderability, cross-context race/checkout and current Lenovo mirror acceptance not complete.
-**Branch**: refoundation/clean-house-20261112 (reuse, never create feature branch).
+**Branch evidence**: `refoundation/clean-house-20261112` is historical provenance only. Resolve the active authorized checkout, branch and HEAD for each new acceptance run; never create a branch merely to follow an old checklist.
 **Ownership**: DSH for Store/catalog/read contract; Identity for actor; Customer Expo for presentation; WLT untouched.
 **Execution rule**: A checkbox becomes complete only with actual tested evidence and matching SHA. T001 scopes and reconciles this journey; it does not require 100% global governance cutover.
 
