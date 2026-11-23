@@ -90,3 +90,55 @@ export async function listMerchantCatalog(
     bearer, "GET", undefined, options.signal);
   return parseMerchantCatalogPage(body, actorId, storeId);
 }
+
+export type MerchantCatalogDraftChange = Readonly<{
+  operationId: string;
+  name: string;
+  priceYer: string;
+  stockUnits: number;
+}>;
+export type MerchantCatalogDraftResult = Readonly<{
+  offer: MerchantCatalogOffer;
+  replay: boolean;
+}>;
+const operation = /^[A-Za-z0-9._-]{8,128}$/;
+
+export function validMerchantCatalogDraft(input: MerchantCatalogDraftChange): boolean {
+  if (!input || typeof input.name !== "string" || typeof input.operationId !== "string") return false;
+  const name = input.name.trim();
+  return operation.test(input.operationId) &&
+    name.length > 0 && [...name].length <= 160 &&
+    ![...name].some(char => { const code = char.codePointAt(0) ?? 0; return code < 32 || code === 127; }) &&
+    typeof input.priceYer === "string" && /^[1-9][0-9]{0,18}$/.test(input.priceYer) &&
+    BigInt(input.priceYer) <= 9223372036854775807n &&
+    typeof input.stockUnits === "number" && Number.isInteger(input.stockUnits) &&
+    input.stockUnits >= 0 && input.stockUnits <= 2147483647;
+}
+export function parseMerchantCatalogDraftResult(
+  payload: unknown, storeId: string, input: MerchantCatalogDraftChange,
+): MerchantCatalogDraftResult {
+  const value = object(payload);
+  if (!value || !exactKeys(value, ["offer", "replay"]) ||
+    typeof value.replay !== "boolean" || !validOffer(value.offer, storeId)) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  const offer = value.offer;
+  if (offer.name !== input.name.trim() ||
+    offer.priceYer !== input.priceYer || offer.stockUnits !== input.stockUnits ||
+    offer.published || offer.available || offer.productActive ||
+    offer.variantSellable || offer.requiredAttributesValid) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  return value as MerchantCatalogDraftResult;
+}
+export async function createMerchantCatalogDraft(
+  origin: string, storeId: string, bearer: string, change: MerchantCatalogDraftChange,
+  signal?: AbortSignal,
+): Promise<MerchantCatalogDraftResult> {
+  if (!key.test(storeId) || !validMerchantCatalogDraft(change)) {
+    throw new DshPublicError(400, "INVALID_STORE_DRAFT");
+  }
+  const path = dshOperations.createCurrentMerchantCatalogDraft.path.replace("{storeID}", storeId);
+  const body = await privateOwnerRequest(origin, path, bearer, "POST", change, signal, [200, 201]);
+  return parseMerchantCatalogDraftResult(body, storeId, change);
+}

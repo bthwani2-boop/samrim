@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GET } from "../app/api/admission+api.ts";
+import { GET, POST } from "../app/api/admission+api.ts";
 
 const origin = "http://127.0.0.1:13310";
 const dsh = "http://127.0.0.1:13311";
@@ -22,7 +22,7 @@ function request(search = "?catalog=store-a&limit=20", actor = "merchant-a", tok
     },
   });
 }
-function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog } = {}) {
+function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false } = {}) {
   const env = {
     MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN,
     MERCHANT_SYNTHETIC_DSH_ORIGIN: process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN,
@@ -48,6 +48,15 @@ function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catal
     }
     assert.equal(target.origin, dsh);
     assert.equal(target.pathname, "/v1/stores/store-a/catalog");
+    if (draft) {
+      assert.equal(config.method, "POST");
+      assert.equal(target.search, "");
+      assert.deepEqual(JSON.parse(config.body), create);
+      return Response.json({
+        offer: { ...offer, id: "of-new", name: "مسودة جديدة", priceYer: "2500", stockUnits: 4 },
+        replay: ownerStatus === 200,
+      }, { status: ownerStatus, headers: { "Cache-Control": "no-store" } });
+    }
     assert.equal(target.search, "?limit=20");
     return Response.json(ownerStatus === 200 ? ownerPage : { code: "STORE_OPERATION_FORBIDDEN" },
       { status: ownerStatus, headers: { "Cache-Control": "no-store" } });
@@ -98,4 +107,57 @@ test("invalid, duplicated and injected catalog selectors never reach owners", as
     assert.equal((await GET(request(query))).status, 400, query);
   }
   assert.equal(calls.length, 0);
+});
+
+const create = { operationId: "create-draft-0001", name: "مسودة جديدة", priceYer: "2500", stockUnits: 4 };
+function draftRequest(actor = "merchant-a", data = create) {
+  return new Request("http://localhost:18102/api/admission?catalog=store-a", {
+    method: "POST",
+    headers: {
+      Cookie: "bthwani_merchant_admission=" + bearer,
+      "X-Merchant-Context": actor, "Content-Type": "application/json",
+      Origin: "http://localhost:18102",
+    },
+    body: JSON.stringify(data),
+  });
+}
+test("Merchant draft creation confirms the same DSH owner transaction, without publication", async t => {
+  const calls = ownerMocks(t, { draft: true, ownerStatus: 201 });
+  const reply = await POST(draftRequest());
+  assert.equal(reply.status, 201);
+  const { draft } = await reply.json();
+  assert.equal(draft.replay, false);
+  assert.equal(draft.offer.published, false);
+  assert.deepEqual(calls, ["/v1/sessions/current", "/v1/stores/store-a/catalog"]);
+});
+test("Merchant draft replay is one existing result, not a new operation", async t => {
+  const calls = ownerMocks(t, { draft: true, ownerStatus: 200 });
+  const reply = await POST(draftRequest());
+  assert.equal(reply.status, 200);
+  assert.equal((await reply.json()).draft.replay, true);
+  assert.equal(calls.length, 2);
+});
+test("Merchant draft rejects foreign actor and never calls DSH", async t => {
+  const calls = ownerMocks(t, { draft: true, ownerStatus: 201 });
+  const reply = await POST(draftRequest("merchant-b"));
+  assert.equal(reply.status, 403);
+  assert.deepEqual(calls, ["/v1/sessions/current"]);
+});
+test("Merchant draft rejects malformed or excessive stock before contacting owner", async t => {
+  const calls = ownerMocks(t, { draft: true, ownerStatus: 201 });
+  for (const change of [
+    { ...create, stockUnits: 2147483648 },
+    { ...create, operationId: "short" },
+    { ...create, extra: "operator" },
+    { ...create, priceYer: "9223372036854775808" },
+  ]) {
+    assert.equal((await POST(draftRequest("merchant-a", change))).status, 400);
+  }
+  assert.equal(calls.length, 0);
+});
+test("Merchant draft cannot accept a successful but published owner result", async t => {
+  const calls = ownerMocks(t, { draft: true, ownerStatus: 201 });
+  const reply = await POST(draftRequest());
+  assert.equal(reply.status, 201);
+  assert.equal(calls.length, 2);
 });

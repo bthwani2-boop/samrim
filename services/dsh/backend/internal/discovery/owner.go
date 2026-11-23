@@ -84,7 +84,8 @@ func isReviewedMigrationSource(source []byte) bool {
 		"62773deea76a59623e8cfe0320ef2300c09d232ec5544f9f40121e78b51cff1d", // 008_employees.sql
 		"d9becbbe44f64d65108c0bfda45fe37e4f48d2203d6ec6336805a6771963b4be", // 009_merchant_store_registration.sql
 		"32b85351725f79fcd02d8e577e8a8ffaf5566389fadb3817c3c3a8c682d8e3f4", // 010_store_registration_policy_commands.sql
-		"3bcd50742d738b378563aa9a294d2113eb37ec55e0bf101318417a72a3cd8518": // 011_captain_interest.sql
+		"3bcd50742d738b378563aa9a294d2113eb37ec55e0bf101318417a72a3cd8518", // 011_captain_interest.sql
+		"86f8d79701a02d49e1f4d4c5d63937b5861e29013ef3dde8b00e7cdd29f99b76": // 012_catalog_draft_commands.sql
 		return true
 	default:
 		return false

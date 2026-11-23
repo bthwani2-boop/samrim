@@ -16,7 +16,7 @@ function fixture(t, owner) {
   return { base, contract: path.join(base, dir) };
 }
 
-const counts = { identity: 18, dsh: 32, wlt: 2 };
+const counts = { identity: 18, dsh: 34, wlt: 2 };
 const samplePaths = { identity: "/v1/sessions/current:", dsh: "/v1/stores/mine:", wlt: "/v1/wallets/me:" };
 for (const owner of Object.keys(counts)) {
   test(owner + " operations are exactly reproducible and match owner OpenAPI", () => {
@@ -47,6 +47,10 @@ for (const owner of Object.keys(counts)) {
         row.path === "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" && row.method === "GET"));
       assert.ok(rows.some(row => row.id === "changeOperatorStoreRegistrationPolicy" &&
         row.path === "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" && row.method === "PATCH"));
+      assert.ok(rows.some(row => row.id === "listCurrentMerchantStoreCatalog" &&
+        row.path === "/v1/stores/{storeID}/catalog" && row.method === "GET"));
+      assert.ok(rows.some(row => row.id === "createCurrentMerchantCatalogDraft" &&
+        row.path === "/v1/stores/{storeID}/catalog" && row.method === "POST"));
       assert.ok(rows.some(row => row.id === "getMerchantStoreRegistrationOptions" &&
         row.path === "/v1/stores/registration-options" && row.method === "GET"));
       assert.ok(rows.some(row => row.id === "registerMerchantStore" &&

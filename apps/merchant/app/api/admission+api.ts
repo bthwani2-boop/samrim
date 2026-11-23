@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, type MerchantStoreRegistration, readMerchantRegistrationOptions, registerMerchantStore, type StoreOperationalChange, updateStoreOperationalAvailability } from "@bthwani/dsh";
+import { createMerchantCatalogDraft, DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, type MerchantCatalogDraftChange, type MerchantStoreRegistration, readMerchantRegistrationOptions, registerMerchantStore, type StoreOperationalChange, updateStoreOperationalAvailability, validMerchantCatalogDraft } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -218,14 +218,31 @@ export async function POST(request: Request) {
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
   const query = new URL(request.url).searchParams;
   const registration = query.size === 1 && query.get("registration") === "create";
-  if (query.size > 0 && !registration) return response({ code: "INVALID_REQUEST" }, 400);
-  const input = await readMutationBody(request, registration ? 4096 : 512);
+  const catalogStore = query.size === 1 ? query.get("catalog") : null;
+  const catalogDraft = catalogStore !== null && /^[a-z0-9-]{1,64}$/.test(catalogStore);
+  if (query.size > 0 && !registration && !catalogDraft) return response({ code: "INVALID_REQUEST" }, 400);
+  const input = await readMutationBody(request, registration ? 4096 : catalogDraft ? 8192 : 512);
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
   const data = input as Record<string, unknown>;
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(15000)]);
+    if (catalogDraft) {
+      if (!Object.keys(data).every(key => ["operationId", "name", "priceYer", "stockUnits"].includes(key)) ||
+        Object.keys(data).length !== 4 || !validMerchantCatalogDraft(data as MerchantCatalogDraftChange)) {
+        return response({ code: "INVALID_STORE_DRAFT" }, 400);
+      }
+      const bearer = bearerFrom(request);
+      if (!bearer) return response({ code: "UNAUTHENTICATED" }, 401);
+      const session = await readVerifiedIdentitySession(origin, bearer, signal);
+      if (session.role !== "merchant") return response({ code: "STORE_OPERATION_FORBIDDEN" }, 403);
+      const actor = request.headers.get("X-Merchant-Context");
+      if (!actor || actor !== session.actorId) return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+      const draft = await createMerchantCatalogDraft(standingOrigin(origin), catalogStore ?? "", bearer,
+        data as MerchantCatalogDraftChange, signal);
+      return response({ draft }, draft.replay ? 200 : 201);
+    }
     if (registration) {
       if (Object.keys(data).length !== 1 || !data.storeRegistration ||
         typeof data.storeRegistration !== "object" || Array.isArray(data.storeRegistration)) {

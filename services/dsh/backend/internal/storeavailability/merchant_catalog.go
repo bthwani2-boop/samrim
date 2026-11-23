@@ -139,13 +139,13 @@ func merchantCatalogPageParameters(r *http.Request) (int, string, bool) {
 
 func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, storeID string, limit int, cursor string) (MerchantCatalogPage, error) {
 	result := MerchantCatalogPage{ActorID: actorID, StoreID: storeID, Items: []MerchantCatalogOffer{}}
-	tx, err := beginScopedStoreTx(ctx, db, schema, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	tx, err := beginScopedStoreTx(ctx, db, schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return result, ErrStoreOwnerUnavailable
 	}
 	defer tx.Rollback()
 	var owner string
-	if err := tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1", storeID).Scan(&owner); err != nil {
+	if err := tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1 FOR SHARE", storeID).Scan(&owner); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return result, ErrForbidden
 		}

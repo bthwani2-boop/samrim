@@ -1,8 +1,9 @@
 import {
-  DshPublicError, getStoreOperationalAvailability, listMerchantCatalog,type MerchantCatalogPage,
+  createMerchantCatalogDraft, DshPublicError, getStoreOperationalAvailability, listMerchantCatalog,
+  type MerchantCatalogDraftChange, type MerchantCatalogDraftResult, type MerchantCatalogPage,
   type MerchantRegistrationOptions, type MerchantRegistrationResult,
   type MerchantStoreRegistration,
-  parseMerchantCatalogPage,
+  parseMerchantCatalogDraftResult, parseMerchantCatalogPage,
   parseMerchantRegistrationOptions, parseMerchantRegistrationResult,
   readMerchantRegistrationOptions,
   registerMerchantStore, type StoreOperationalAvailability,
@@ -290,6 +291,45 @@ async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: s
     throw new DshPublicError(0, isWrite ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
   }
   return result;
+}
+
+
+/** A lost acknowledgement is unknown: the caller retains and retries one stable operation ID. */
+export async function submitMerchantCatalogDraft(
+  storeId: string, actorId: string, change: MerchantCatalogDraftChange, signal: AbortSignal,
+): Promise<MerchantCatalogDraftResult> {
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId || signal.aborted) {
+    throw new DshPublicError(400, "INVALID_STORE_DRAFT");
+  }
+  if (Platform.OS !== "web") {
+    return withNativeMerchantSession(signal, bearer =>
+      createMerchantCatalogDraft(nativeDSHOrigin ?? "", storeId, bearer, change, signal), actorId, true);
+  }
+  let reply: Response;
+  try {
+    reply = await fetch(`/api/admission?catalog=${encodeURIComponent(storeId)}`, {
+      method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error", signal,
+      headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
+      body: JSON.stringify(change),
+    });
+  } catch { throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"); }
+  let json: unknown;
+  try { json = await reply.json(); }
+  catch { throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN"); }
+  if (signal.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
+  if (!reply.ok) {
+    const body = json && typeof json === "object" && !Array.isArray(json) ? json as Record<string, unknown> : {};
+    throw new DshPublicError(reply.status, reply.status >= 500 ? "OPERATION_RESULT_UNKNOWN" :
+      typeof body.code === "string" ? body.code : "INVALID_STORE_DRAFT");
+  }
+  const document = json && typeof json === "object" && !Array.isArray(json) ? json as Record<string, unknown> : {};
+  if (![200, 201].includes(reply.status) ||
+    reply.headers.get("Cache-Control")?.toLowerCase().split(",").map(part => part.trim()).includes("no-store") !== true) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  const draft = parseMerchantCatalogDraftResult(document.draft, storeId, change);
+  if (draft.replay !== (reply.status === 200)) throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  return draft;
 }
 
 export async function saveMerchantAvailability(

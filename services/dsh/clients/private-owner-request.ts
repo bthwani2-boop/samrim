@@ -5,6 +5,7 @@ const maxOwnerTextLength = 32 * 1024;
 
 export async function privateOwnerRequest(
   baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH" | "POST", change?: unknown, signal?: AbortSignal,
+  acceptedStatuses: readonly number[] = [200],
 ): Promise<unknown> {
   // Only fixed owner-authored paths assembled by the public functions below
   // reach this uncached transport. A user cannot supply an arbitrary URL.
@@ -51,7 +52,7 @@ export async function privateOwnerRequest(
   }
   const directives = response.headers.get("Cache-Control")
     ?.toLowerCase().split(",").map(value => value.trim()) ?? [];
-  if (response.status !== 200 ||
+  if (!acceptedStatuses.includes(response.status) ||
     response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
     !directives.includes("no-store")) {
     void response.body?.cancel().catch(() => {});

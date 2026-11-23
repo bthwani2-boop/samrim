@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -126,6 +128,13 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(source), "__SCHEMA__", schema)); err != nil {
 		t.Fatal(err)
 	}
+	draftMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "012_catalog_draft_commands.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(draftMigration), "__SCHEMA__", schema)); err != nil {
+		t.Fatal(err)
+	}
 	defer db.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 	statements := []string{
 		"INSERT INTO " + schema + ".service_cities(id,active) VALUES('sanaa',true)",
@@ -195,4 +204,122 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".offers WHERE store_id='catalog-a'").Scan(&rows); err != nil || rows != 2 {
 		t.Fatalf("owner data unexpectedly changed: count=%d err=%v", rows, err)
 	}
+
+	registrar := &MerchantStoreRegistrar{identity: merchant, grants: &PostgresStoreGrants{db: db, schema: schema}}
+	command := MerchantCatalogDraftChange{
+		OperationID: "create-draft-0001", Name: "  مسودة جديدة  ", PriceYER: "2300", StockUnits: 4,
+	}
+	responses := make(chan MerchantCatalogDraftResult, 12)
+	errorsFound := make(chan error, 12)
+	var group sync.WaitGroup
+	for i := 0; i < 12; i++ {
+		group.Add(1)
+		go func() {
+			defer group.Done()
+			value, e := registrar.CreateCatalogDraft(ctx, "synthetic", "catalog-a", command)
+			if e != nil {
+				errorsFound <- e
+				return
+			}
+			responses <- value
+		}()
+	}
+	group.Wait()
+	close(responses)
+	close(errorsFound)
+	for e := range errorsFound {
+		t.Errorf("idempotent concurrent draft failed: %v", e)
+	}
+	var draftOfferID string
+	created, replayed := 0, 0
+	for value := range responses {
+		if value.Offer.StoreID != "catalog-a" || value.Offer.Name != "مسودة جديدة" ||
+			value.Offer.PriceYER != "2300" || value.Offer.Published || value.Offer.Available ||
+			value.Offer.ProductActive || value.Offer.VariantSellable || value.Offer.RequiredAttributesValid {
+			t.Fatalf("unsafe published draft: %+v", value)
+		}
+		if draftOfferID != "" && draftOfferID != value.Offer.ID {
+			t.Fatalf("duplicate draft generated: %s vs %s", draftOfferID, value.Offer.ID)
+		}
+		draftOfferID = value.Offer.ID
+		if value.Replay {
+			replayed++
+		} else {
+			created++
+		}
+	}
+	if created != 1 || replayed != 11 {
+		t.Fatalf("expected one write, 11 replays; created=%d replay=%d", created, replayed)
+	}
+	conflict := command
+	conflict.PriceYER = "9999"
+	if _, e := registrar.CreateCatalogDraft(ctx, "synthetic", "catalog-a", conflict); !errors.Is(e, ErrOperationConflict) {
+		t.Fatalf("operation key reused with different price: %v", e)
+	}
+	if _, e := registrar.CreateCatalogDraft(ctx, "synthetic", "catalog-b", command); !errors.Is(e, ErrForbidden) {
+		t.Fatalf("another Store created draft: %v", e)
+	}
+	otherRegistrar := &MerchantStoreRegistrar{identity: fakeIdentity{actor: VerifiedActor{Subject: "merchant-b", Role: MerchantRole}},
+		grants: &PostgresStoreGrants{db: db, schema: schema}}
+	if _, e := otherRegistrar.CreateCatalogDraft(ctx, "synthetic", "catalog-a", command); !errors.Is(e, ErrForbidden) {
+		t.Fatalf("another Merchant created draft: %v", e)
+	}
+	// HTTP and SQL use the same owner command; replay never creates another record.
+	draftHTTP, err := NewMerchantCatalogDraftHandler(registrar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	post := func(input string) (int, MerchantCatalogDraftResult) {
+		request := httptest.NewRequest("POST", "/v1/stores/catalog-a/catalog", strings.NewReader(input))
+		request.Header.Set("Authorization", "Bearer synthetic")
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("X-Actor-ID", "merchant-b")
+		response := httptest.NewRecorder()
+		mux := http.NewServeMux()
+		mux.Handle("POST /v1/stores/{storeID}/catalog", draftHTTP)
+		mux.ServeHTTP(response, request)
+		var result MerchantCatalogDraftResult
+		if response.Code == 200 && json.Unmarshal(response.Body.Bytes(), &result) != nil {
+			t.Fatal("draft HTTP invalid JSON")
+		}
+		return response.Code, result
+	}
+	encoded, _ := json.Marshal(command)
+	if code, replay := post(string(encoded)); code != 200 || !replay.Replay || replay.Offer.ID != draftOfferID {
+		t.Fatalf("HTTP replay mismatch code=%d body=%+v", code, replay)
+	}
+	if code, _ := post(`{"operationId":"create-draft-0001","OperationID":"changed","name":"X","priceYer":"999","stockUnits":0}`); code != 400 {
+		t.Fatalf("duplicate command identity reached SQL: %d", code)
+	}
+	newHTTP := command
+	newHTTP.OperationID = "create-draft-http-0002"
+	newHTTP.Name = "HTTP draft"
+	payloadHTTP, _ := json.Marshal(newHTTP)
+	if code, created := post(string(payloadHTTP)); code != 201 || created.Replay ||
+		created.Offer.StoreID != "catalog-a" || created.Offer.Name != "HTTP draft" ||
+		created.Offer.Published || created.Offer.Available {
+		t.Fatalf("HTTP did not create one unpublished DSH draft: code=%d result=%+v", code, created)
+	}
+	var records, offers, products, variants int
+	for _, check := range []struct {
+		sql  string
+		dest *int
+	}{
+		{"SELECT count(*) FROM " + schema + ".catalog_draft_commands WHERE actor_id='merchant-a'", &records},
+		{"SELECT count(*) FROM " + schema + ".offers WHERE store_id='catalog-a'", &offers},
+		{"SELECT count(*) FROM " + schema + ".products WHERE store_id='catalog-a'", &products},
+		{"SELECT count(*) FROM " + schema + ".variants v JOIN " + schema + ".products p ON p.id=v.product_id WHERE p.store_id='catalog-a'", &variants},
+	} {
+		if e := independent.QueryRowContext(ctx, check.sql).Scan(check.dest); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if records != 2 || offers != 4 || products != 4 || variants != 4 {
+		t.Fatalf("duplicate or missing durable DSH draft records commands=%d offers=%d products=%d variants=%d", records, offers, products, variants)
+	}
+	// Immutable command history must not allow rewriting an accepted operation key.
+	if _, e := independent.ExecContext(ctx, "UPDATE "+schema+".catalog_draft_commands SET request_hash=repeat('0',64) WHERE actor_id='merchant-a'"); e == nil {
+		t.Fatal("DSH command audit can be rewritten")
+	}
+
 }

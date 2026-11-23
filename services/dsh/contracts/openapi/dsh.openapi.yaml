@@ -69,6 +69,22 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/PublicId' }
   schemas:
+    MerchantCatalogDraftChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, name, priceYer, stockUnits]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        priceYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        stockUnits: { type: integer, minimum: 0, maximum: 2147483647 }
+    MerchantCatalogDraftResult:
+      type: object
+      additionalProperties: false
+      required: [offer, replay]
+      properties:
+        offer: { $ref: '#/components/schemas/MerchantCatalogOffer' }
+        replay: { type: boolean }
     MerchantCatalogOffer:
       type: object
       additionalProperties: false

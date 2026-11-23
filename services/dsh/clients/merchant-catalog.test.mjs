@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { listMerchantCatalog, parseMerchantCatalogPage } from "./merchant-catalog.ts";
+import { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, validMerchantCatalogDraft } from "./merchant-catalog.ts";
 
 const offer = {
   id: "of-a", storeId: "store-a", productId: "p-a", name: "مادة تجريبية",
@@ -52,4 +52,70 @@ test("owner failure, cacheable response and account switches fail closed", async
     "store-a", "merchant-a", "synthetic-bearer"));
   await assert.rejects(() => listMerchantCatalog("http://127.0.0.1:3202",
     "store-a", "merchant-b", "synthetic-bearer"));
+});
+
+const draftCommand = { operationId: "create-draft-0001", name: "مسودة", priceYer: "2400", stockUnits: 3 };
+const draftOffer = {
+  ...offer, id: "of-new", name: "مسودة", priceYer: "2400", stockUnits: 3,
+};
+test("creating a Store draft sends an idempotent POST with bearer and no cookies", async () => {
+  let seen = 0;
+  globalThis.fetch = async (url, init) => {
+    seen++;
+    assert.equal(url, "http://127.0.0.1:3202/v1/stores/store-a/catalog");
+    assert.equal(init.method, "POST");
+    assert.equal(init.credentials, "omit");
+    assert.equal(init.headers.Authorization, "Bearer synthetic-bearer");
+    assert.deepEqual(JSON.parse(init.body), draftCommand);
+    return Response.json({ offer: draftOffer, replay: false }, {
+      status: 201, headers: { "Cache-Control": "no-store" },
+    });
+  };
+  const result = await createMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "synthetic-bearer", draftCommand);
+  assert.equal(result.offer.id, "of-new");
+  assert.equal(result.replay, false);
+  assert.equal(seen, 1);
+});
+test("idempotent replay returns the same owner Offer and no duplicate", async () => {
+  globalThis.fetch = async () => Response.json({ offer: draftOffer, replay: true }, {
+    status: 200, headers: { "Cache-Control": "no-store" },
+  });
+  assert.deepEqual(await createMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "synthetic-bearer", draftCommand), {
+    offer: draftOffer, replay: true,
+  });
+});
+test("invalid or unsafe Merchant draft is denied before dispatch", async () => {
+  let called = 0;
+  globalThis.fetch = async () => { called++; throw Error("should never dispatch"); };
+  for (const change of [
+    { ...draftCommand, operationId: "short" },
+    { ...draftCommand, name: "" },
+    { ...draftCommand, priceYer: "0" },
+    { ...draftCommand, priceYer: "9223372036854775808" },
+    { ...draftCommand, stockUnits: -1 },
+    { ...draftCommand, stockUnits: 2147483648 },
+  ]) {
+    assert.equal(validMerchantCatalogDraft(change), false);
+    await assert.rejects(() => createMerchantCatalogDraft(
+      "http://127.0.0.1:3202", "store-a", "synthetic-bearer", change));
+  }
+  assert.equal(called, 0);
+});
+test("owner cannot claim a draft was published or for another Store", async () => {
+  globalThis.fetch = async () => Response.json({
+    offer: { ...draftOffer, published: true }, replay: false,
+  }, { status: 201, headers: { "Cache-Control": "no-store" } });
+  await assert.rejects(() => createMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "synthetic-bearer", draftCommand), {
+    message: "OPERATION_RESULT_UNKNOWN",
+  });
+});
+test("lost draft write acknowledgment stays unknown and must reuse the operation ID", async () => {
+  globalThis.fetch = async () => { throw Error("connection closed after commit"); };
+  await assert.rejects(() => createMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "synthetic-bearer", draftCommand), {
+    message: "OPERATION_RESULT_UNKNOWN",
+  });
 });

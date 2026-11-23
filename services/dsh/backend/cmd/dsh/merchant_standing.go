@@ -46,6 +46,11 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 		return nil, err
 	}
 	routes.Handle("GET /v1/stores/{storeID}/catalog", catalog)
+	draft, err := storeavailability.NewMerchantCatalogDraftHandler(registrar)
+	if err != nil {
+		return nil, err
+	}
+	routes.Handle("POST /v1/stores/{storeID}/catalog", draft)
 	registration := storeavailability.NewMerchantRegistrationHandler(registrar)
 	routes.Handle("GET /v1/stores/registration-options", registration)
 	routes.Handle("POST /v1/stores", registration)

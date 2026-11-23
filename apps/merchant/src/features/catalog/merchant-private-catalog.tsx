@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, View } from "react-native";
 import { readMerchantCatalogPage } from "../access/admission-transport";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
+import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
 
 type CatalogState = {
   scope: string;
@@ -116,6 +117,8 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
           <Text style={{ color: theme.color }}>{store.name}</Text>
         </Pressable>)}
       </View>}
+    {storeId && actorId ? <MerchantCatalogDraftForm key={scope} actorId={actorId} storeId={storeId}
+      onCreated={() => setRetry(value => value + 1)} /> : null}
     {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة كتالوج المتجر" /> : null}
     {visible.error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
       {visible.error}
