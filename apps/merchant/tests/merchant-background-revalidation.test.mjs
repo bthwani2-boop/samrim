@@ -53,6 +53,7 @@ function harness() {
     } }) },
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+    "expo-router": { Link: "Link" },
     "react-native": {
       AppState: {
         currentState: "active",
@@ -90,7 +91,7 @@ function harness() {
   const render = () => {
     index = 0;
     effects.length = 0;
-    return mod.exports.default();
+    return mod.exports.default({});
   };
   return {
     render,
