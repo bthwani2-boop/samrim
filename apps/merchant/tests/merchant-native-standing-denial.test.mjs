@@ -24,6 +24,7 @@ class OwnerError extends Error {
 
 function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = false, initialBearer = oldBearer } = {}) {
   let stored = initialBearer;
+  let refresh = null;
   let pendingMarker = null;
   let onStorageWrite = null;
   let ownerRead = async () => { throw new OwnerError(401); };
@@ -36,10 +37,13 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
   const secureStore = {
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device-only",
     async getItemAsync(key) {
-      return key.endsWith(".pending.v1") ? pendingMarker : stored;
+      if (key.endsWith(".pending.v1")) return pendingMarker;
+      if (key.endsWith(".refresh.v1")) return refresh;
+      return stored;
     },
     async setItemAsync(key, value) {
       if (key.endsWith(".pending.v1")) { pendingMarker = value; return; }
+      if (key.endsWith(".refresh.v1")) { refresh = value; return; }
       stored = value;
       onStorageWrite?.();
     },
@@ -50,6 +54,7 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
       }
       if (storageDeletionFails) throw new Error("device storage temporarily unavailable");
       if (key.endsWith(".pending.v1")) pendingMarker = null;
+      else if (key.endsWith(".refresh.v1")) refresh = null;
       else stored = null;
     },
   };
@@ -58,6 +63,15 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
     "@bthwani/identity": {
       IdentityClientError: OwnerError,
       async readVerifiedIdentitySession(_origin, bearer) { return identityRead(bearer); },
+      async readPersistentIdentityRole(_origin, bearer, token, role) {
+        assert.equal(token, null, "fixture must not invent a refresh grant");
+        const session = await identityRead(bearer);
+        if (session.role !== role) throw new OwnerError(403, "FORBIDDEN");
+        return { session, bearer };
+      },
+      async revokePersistentIdentitySession() {
+        throw new Error("no persistent credential issued in this fixture");
+      },
       async revokeVerifiedIdentitySession(_origin, bearer) { return ownerRevoke(bearer); },
       async issueCustomerPhoneChallenge() { return "ticket"; },
     },

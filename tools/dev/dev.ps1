@@ -927,9 +927,9 @@ try {
     }
     'migrations' {
       Say 'MIGRATIONS' 'NOT_EXECUTED; owner approval and database role/schema/version verification required'
-      Say 'DSH_SQL' 'services/dsh/database/migrations (read/review only)'
-      Say 'IDENTITY_SQL' 'services/identity/database/migrations (read/review only)'
-      Say 'WLT_SQL' 'services/wlt/database/migrations (isolated development only, read/review)'
+      Say 'DSH_SQL' 'fresh: services/dsh/database/schema; retained upgrades: services/dsh/database/migrations (read/review only)'
+      Say 'IDENTITY_SQL' 'fresh: services/identity/database/schema; retained upgrades: services/identity/database/migrations (read/review only)'
+      Say 'WLT_SQL' 'fresh: services/wlt/database/schema; test-only: services/wlt/database/sandbox; retained upgrades: services/wlt/database/migrations (read/review only)'
       break
     }
   }

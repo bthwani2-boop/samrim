@@ -27,6 +27,7 @@ const customer = bearer => ({ actorId: bearer === original ? "actor-old" : "acto
 
 function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false, lenovoPreview, platform = "android" } = {}) {
   let bearer = stored;
+  let refresh = null;
   let pendingMarker = null;
   let read = async value => ({ ...customer(value), role: ownerRole });
   let codeVerification = async () => ({ accessToken: next, sessionExpiresAt: expiry });
@@ -38,10 +39,13 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "this-device",
     async getItemAsync(key) {
       storageReads.push(key);
-      return key.endsWith(".pending.v1") ? pendingMarker : bearer;
+      if (key.endsWith(".pending.v1")) return pendingMarker;
+      if (key.endsWith(".refresh.v1")) return refresh;
+      return bearer;
     },
     async setItemAsync(key, value) {
       if (key.endsWith(".pending.v1")) { pendingMarker = value; return; }
+      if (key.endsWith(".refresh.v1")) { refresh = value; return; }
       bearer = value;
       onStorageWrite();
     },
@@ -52,6 +56,7 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
       }
       if (storageDeletionFails) throw new Error("device storage deletion temporarily unavailable");
       if (key.endsWith(".pending.v1")) pendingMarker = null;
+      else if (key.endsWith(".refresh.v1")) refresh = null;
       else bearer = null;
     },
   };
@@ -60,6 +65,17 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
       IdentityClientError: IdentityError,
       issueCustomerPhoneChallenge: async () => "ticket",
       readVerifiedIdentitySession: (_origin, value, signal) => read(value, signal),
+      async readPersistentIdentityRole(_origin, value, token, role, signal) {
+        // Legacy access tests exercise current role verification. The refresh
+        // client and rotation are tested separately against their owner contract.
+        assert.equal(token, null, "fixture must not mistake a bearer for a refresh credential");
+        const session = await read(value, signal);
+        if (session.role !== role) throw new IdentityError(403, "FORBIDDEN");
+        return { session, bearer: value };
+      },
+      async revokePersistentIdentitySession() {
+        throw new Error("no refresh credential was issued in this fixture");
+      },
       revokeVerifiedIdentitySession: (_origin, value, signal) => revoke(value, signal),
       verifyCustomerPhoneChallenge: (_origin, ticket, code, signal) => codeVerification(ticket, code, signal),
     },
@@ -350,14 +366,17 @@ test("late successful owner read cannot revive an actor after the local Customer
   assert.equal(h.current(), next, "an old read must not remove the replacement bearer");
 });
 
-test("native Customer logout clears local authorization despite an Identity read outage", async () => {
+test("native Customer logout quarantines the bearer on Identity outage until owner revocation can be reconciled", async () => {
   const h = harness();
   h.setRead(async () => { throw new IdentityError(503, "OWNER_UNAVAILABLE"); });
   await assert.rejects(h.transport.signOutCustomer(new AbortController().signal),
     { status: 503, code: "OWNER_UNAVAILABLE" });
-  assert.equal(h.current(), null, "local logout must not retain the prior bearer on network failure");
+  assert.equal(h.current(), original, "the bearer stays available for safe owner revocation retry");
+  assert.equal(h.pending(), "sign-out", "durable quarantine must precede an uncertain owner response");
   assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
-    { enabled: true, session: null }, "restart cannot restore a bearer from a failed logout");
+    { enabled: true, session: null }, "restart cannot authorize a quarantined bearer");
+  assert.equal(h.current(), null, "cleanup may delete the bearer only after the test owner recovers");
+  assert.equal(h.pending(), null);
 });
 
 test("uncertain Customer owner revocation with failed device deletion stays quarantined after restart", async () => {

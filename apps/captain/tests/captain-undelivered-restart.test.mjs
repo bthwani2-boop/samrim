@@ -67,6 +67,18 @@ function harness() {
         ownerReads++;
         return readIdentity(_origin, bearer);
       },
+      async readPersistentIdentityRole(origin, bearer, refresh, role) {
+        // This fixture exercises the existing access-token path; persistence
+        // and refresh rotation are owner-client integration responsibilities.
+        assert.equal(refresh, null, "legacy access tests must not invent refresh credentials");
+        ownerReads++;
+        const session = await readIdentity(origin, bearer);
+        if (session.role !== role) throw new OwnerError(403, "FORBIDDEN");
+        return { session, bearer };
+      },
+      async revokePersistentIdentitySession() {
+        throw new Error("unexpected persistent token in access-only fixture");
+      },
       async admitCurrentCustomerAsCaptain() { ownerAdmissions++; return { accessToken: tokens.captain }; },
       async revokeVerifiedIdentitySession(_origin, bearer) {
         if (bearer === tokens.captain) {
