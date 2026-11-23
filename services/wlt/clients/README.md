@@ -11,3 +11,7 @@ requests without account selection, cross-role data reuse or automatic retries.
 Generate the method and path index from the owner contract with
 `node tools/dev/generate-openapi-operations.mjs wlt`. The [contract](../contracts/openapi/wlt.openapi.yaml)
 defines the supported statuses and response fields.
+
+## Source module placement
+
+`clients/index.ts` is the stable public export boundary of `@bthwani/wlt`. `types.ts` contains the read DTOs; `errors.ts` and `validation.ts` contain the existing bounded error and field checks. `transport.ts` owns the isolated loopback GET response handling. `wallet-balance.ts` parses and reads Customer balance; `funding-history.ts` parses and reads bounded funding history, including exact UTC keyset cursor validation. The contract-derived operation index stays in `generated/wlt-operations.ts`. This is only a source organization change: WLT remains the sole financial writer and the SDK remains read-only.
