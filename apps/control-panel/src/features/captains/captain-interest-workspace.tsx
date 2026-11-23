@@ -42,6 +42,17 @@ export default function CaptainInterestWorkspace() {
     setBinding("");
     setRevision(value => value + 1);
   }, []);
+  useEffect(() => {
+    const onReturn = () => {
+      if (document.visibilityState === "visible" && mutationController.current === null) refresh();
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+    };
+  }, [refresh]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: revision explicitly refetches the current page.
   useEffect(() => {
     const controller = new AbortController();
@@ -99,12 +110,7 @@ export default function CaptainInterestWorkspace() {
         !isOperatorCaptainInterest(updated) || updated.id !== id || !updated.contacted) {
         throw new Error("لم يتم تأكيد تحديث التسجيل من مالك البيانات.");
       }
-      if (!controller.signal.aborted) {
-        setPage(current => current ? {
-          ...current,
-          items: current.items.map(row => row.id === id ? updated : row),
-        } : current);
-      }
+      if (!controller.signal.aborted) refresh();
     } catch (cause) {
       if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "تعذّر الحفظ.");
     } finally {
@@ -135,10 +141,10 @@ export default function CaptainInterestWorkspace() {
             { value: "true", label: "تم الاتصال" }]}
           onChange={value => { setContacted(value); setCursor(""); }} />
         <Button onClick={() => { setChosenCity(city.trim()); setCursor(""); }}>بحث</Button>
-        <Button onClick={refresh}>تحديث</Button>
         <a href="/captains">الكباتن المعتمدون</a>
       </Space>
-      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
+      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }}
+        action={<Button onClick={refresh} disabled={loading || updating !== null}>إعادة المحاولة</Button>} />}
       <Card title="استمارات التسجيل">
         <Table<OperatorCaptainInterest> rowKey="id" loading={loading}
           dataSource={page?.items ?? []} pagination={false} size="middle"

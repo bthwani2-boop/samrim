@@ -3,7 +3,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import * as Crypto from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { AppState, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { previewLineSubtotalYer, summarizeCartPreview } from "./cart-preview";
 import { type CartReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate, replaceVerifiedCart } from "./cart-transport";
@@ -23,6 +23,18 @@ export default function CartScreen() {
   const pending = useRef<Pending | null>(null);
   const mutation = useRef<AbortController | null>(null);
   const generation = useRef(0);
+
+  useEffect(() => {
+    const reload = () => refresh.current?.();
+    if (Platform.OS === "web") {
+      window.addEventListener("focus", reload);
+      return () => window.removeEventListener("focus", reload);
+    }
+    const listener = AppState.addEventListener("change", status => {
+      if (status === "active") reload();
+    });
+    return () => listener.remove();
+  }, []);
 
   useFocusEffect(useCallback(() => {
     const epoch = ++generation.current;
@@ -223,10 +235,10 @@ export default function CartScreen() {
             </Text>
           </Pressable>
         ) : null}
-        {!pending.current && view?.kind !== "signed-out" ? (
+        {!pending.current && (view?.kind === "unavailable" || !!error) ? (
           <Pressable accessibilityRole="button" disabled={busy} style={buttonStyle}
             onPress={() => refresh.current?.()}>
-            <Text style={{ color: theme.interactiveText }}>تحديث السلة</Text>
+            <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>
           </Pressable>
         ) : null}
         {view?.kind === "signed-out" ? <Link href="/account" style={{ color: theme.interactiveText }}>

@@ -1,7 +1,7 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
-import { useCallback, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview";
 import { type CartReadState, type MerchandiseEstimateReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate } from "../cart/cart-transport";
@@ -32,6 +32,18 @@ export default function CheckoutScreen() {
   const [merchandise, setMerchandise] = useState<CurrentMerchandise | null>(null);
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
+
+  useEffect(() => {
+    const reload = () => setRetry(value => value + 1);
+    if (Platform.OS === "web") {
+      window.addEventListener("focus", reload);
+      return () => window.removeEventListener("focus", reload);
+    }
+    const listener = AppState.addEventListener("change", status => {
+      if (status === "active") reload();
+    });
+    return () => listener.remove();
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry deliberately refreshes the same DSH Store review.
   useFocusEffect(useCallback(() => {
@@ -251,10 +263,11 @@ export default function CheckoutScreen() {
             </View>
           </View>
         )}
-        {storeId && view?.kind !== "signed-out" ? (
+        {storeId && (view?.kind === "unavailable" || currentFunding?.kind === "unavailable" ||
+          currentMerchandise?.kind === "unavailable") ? (
           <Pressable accessibilityRole="button" style={{ ...action, alignSelf: "flex-start" }}
             onPress={() => setRetry(value => value + 1)}>
-            <Text style={{ color: theme.interactiveText }}>تحديث المراجعة من DSH</Text>
+            <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>
           </Pressable>
         ) : null}
         {storeId ? (

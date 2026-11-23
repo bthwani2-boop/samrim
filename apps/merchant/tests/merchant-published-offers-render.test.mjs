@@ -82,7 +82,16 @@ test("Merchant published-offer search uses live owner query, aborts stale reques
     };
     const module = { exports: {} };
     const previousWindow = globalThis.window;
-    globalThis.window = { location: { origin: "http://localhost:18102" } };
+    let focusListener;
+    globalThis.window = {
+      location: { origin: "http://localhost:18102" },
+      addEventListener(type, listener) {
+        if (type === "focus") focusListener = listener;
+      },
+      removeEventListener(type, listener) {
+        if (type === "focus" && focusListener === listener) focusListener = null;
+      },
+    };
     try {
       new Function("require", "module", "exports", compiled)(name => {
         assert.ok(Object.hasOwn(mocks, name), ["unexpected dependency ", name].join(""));
@@ -144,6 +153,17 @@ test("Merchant published-offer search uses live owner query, aborts stale reques
       assert.equal(requests.length, 3, "no owner request without a verified Store");
       assert.ok(!nodes(tree).some(n => n.props?.children === "ماء"),
         "old actor's catalogue is never displayed");
+
+      tree = render("actor-one", stores);
+      assert.equal(requests.length, 4);
+      assert.ok(!nodes(tree).some(n => n.props?.children === "تحديث المنتجات"),
+        "a permanent refresh button must not be rendered");
+      assert.ok(focusListener, "return to the browser must be observed");
+      focusListener();
+      tree = render("actor-one", stores);
+      assert.equal(requests.length, 5, "return to browser refetches owner-backed products");
+      assert.equal(requests[3].options.signal.aborted, true,
+        "return refresh aborts the prior request");
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;

@@ -18,6 +18,7 @@ export default function CaptainStandingDetail({ actorId, operatorId }: Readonly<
   const [writeError, setWriteError] = useState("");
   const [writeBlocked, setWriteBlocked] = useState(false);
   const request = useRef<AbortController | null>(null);
+  const submittingRef = useRef(false);
 
   const load = useCallback(async () => {
     request.current?.abort();
@@ -48,11 +49,21 @@ export default function CaptainStandingDetail({ actorId, operatorId }: Readonly<
 
   useEffect(() => {
     void load();
-    return () => request.current?.abort();
+    const onReturn = () => {
+      if (document.visibilityState === "visible" && !submittingRef.current) void load();
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+      request.current?.abort();
+    };
   }, [load]);
 
   const updateStanding = useCallback(async () => {
     if (!standing || submitting || writeBlocked || !reason.trim() || reason.trim().length > 300) return;
+    submittingRef.current = true;
     setSubmitting(true);
     setWriteError("");
     const controller = new AbortController();
@@ -91,6 +102,7 @@ export default function CaptainStandingDetail({ actorId, operatorId }: Readonly<
       setStanding(result);
       setTarget(result.status === "APPROVED" ? "SUSPENDED" : "APPROVED");
       setReason("");
+      void load();
     } catch (cause) {
       if (!(cause instanceof Error) || cause.name === "TimeoutError" || cause.name === "AbortError" || cause instanceof TypeError) {
         setWriteBlocked(true);
@@ -98,20 +110,27 @@ export default function CaptainStandingDetail({ actorId, operatorId }: Readonly<
       } else {
         setWriteError(cause.message);
       }
-    } finally { controller.abort(); setSubmitting(false); }
-  }, [actorId, operatorBinding, reason, standing, submitting, target, writeBlocked]);
+    } finally {
+      controller.abort();
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }, [actorId, load, operatorBinding, reason, standing, submitting, target, writeBlocked]);
 
   return (
     <main style={{ padding: 24, maxWidth: 900, marginInline: "auto" }} aria-labelledby="captain-detail-heading">
       <Space wrap style={{ marginBottom: 16 }}>
         <a href="/captains">العودة إلى قائمة الكباتن</a>
-        <Button onClick={() => { void load(); }} disabled={loading || submitting}>تحديث الحالة</Button>
       </Space>
       <Typography.Title level={2} id="captain-detail-heading">ملف الكابتن</Typography.Title>
       <Typography.Paragraph>حالة الكابتن تُقرأ وتُراجع لدى DSH. قرارات المراجعة تسجل سببًا وإصدارًا، ولا تمنح دور Identity تلقائيًا.</Typography.Paragraph>
       {loading && <Spin tip="جارٍ قراءة الحالة" size="large"><div style={{ minHeight: 80 }} /></Spin>}
       {error && <Alert type="error" showIcon message={error} />}
       {writeError && <Alert type="error" showIcon message={writeError} style={{ marginBottom: 16 }} />}
+      {(error || writeBlocked) && <Button onClick={() => { void load(); }}
+        disabled={loading || submitting} style={{ marginBottom: 16 }}>
+        {writeBlocked ? "التحقق من الحالة لدى DSH" : "إعادة المحاولة"}
+      </Button>}
       {standing && (
         <Card title="الحالة التشغيلية">
           <Typography.Paragraph>معرّف الكابتن: <Typography.Text copyable>{standing.actorId}</Typography.Text></Typography.Paragraph>

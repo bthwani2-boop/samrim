@@ -2,7 +2,7 @@ import type { StoreOperationalAvailability, StoreOperationalChange, StoreWeeklyW
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { randomUUID } from "expo-crypto";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import { readMerchantAvailability, saveMerchantAvailability } from "../access/admission-transport";
 
 type State = Readonly<{
@@ -71,6 +71,21 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
   const [schedule, setSchedule] = useState<ScheduleDraft | null>(null);
   const scope = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
+  useEffect(() => {
+    const reload = () => {
+      if (!inFlight.current && !saving && pending === null && schedule === null) {
+        setRetry(value => value + 1);
+      }
+    };
+    if (Platform.OS === "web") {
+      window.addEventListener("focus", reload);
+      return () => window.removeEventListener("focus", reload);
+    }
+    const listener = AppState.addEventListener("change", status => {
+      if (status === "active") reload();
+    });
+    return () => listener.remove();
+  }, [pending, saving, schedule]);
   useEffect(() => {
     if (!storeId || !actorId) return;
     const controller = new AbortController();
@@ -188,18 +203,19 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
     }}>
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <Text accessibilityRole="header" style={{ ...text, fontSize: 20, fontWeight: "700" }}>ساعات العمل والإيقاف المؤقت</Text>
-        <Pressable accessibilityRole="button" accessibilityLabel="تحديث إتاحة المتجر"
-          disabled={visible.loading || saving || pending !== null || schedule !== null} onPress={() => setRetry(value => value + 1)}
-          style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12,
-            borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
-          <Text style={{ color: theme.interactiveText }}>تحديث</Text>
-        </Pressable>
       </View>
       {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة إتاحة المتجر" color={theme.interactiveText} /> : null}
       {visible.error ? <Text testID="merchant-availability-error" accessibilityRole="alert" style={{ color: theme.dangerText }}>
         {visible.error === "DENIED" ? "لا تتوفر صلاحية قراءة إتاحة هذا المتجر. أعد التحقق من حسابك ومتاجرك."
-          : "تعذّر تأكيد إتاحة المتجر. حاول التحديث مجددًا."}
+          : "تعذّر تأكيد إتاحة المتجر. أعد المحاولة عند استعادة الاتصال."}
       </Text> : null}
+      {visible.error ? (
+        <Pressable accessibilityRole="button" accessibilityLabel="إعادة محاولة قراءة إتاحة المتجر"
+          disabled={visible.loading || saving} onPress={() => setRetry(value => value + 1)}
+          style={{ ...control, alignSelf: "flex-start", justifyContent: "center" }}>
+          <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>
+        </Pressable>
+      ) : null}
       {notice ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{notice}</Text> : null}
       {visible.snapshot ? <View testID="merchant-availability-snapshot" style={{ gap: 10 }}>
         <Text style={secondary}>الأوقات حسب المنطقة الزمنية للمتجر: {visible.snapshot.timezone}</Text>

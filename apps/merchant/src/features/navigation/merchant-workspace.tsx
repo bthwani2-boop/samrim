@@ -105,12 +105,6 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
                 <Text style={{ color: theme.colorSecondary, textAlign: "auto" }}>{selected.description}</Text>
               </View>
               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                <Pressable accessibilityRole="button" onPress={onRefresh} style={{
-                  paddingVertical: 11, paddingHorizontal: 13, borderRadius: 10,
-                  borderWidth: 1, borderColor: theme.borderColor, minHeight: 44,
-                }}>
-                  <Text style={{ color: theme.interactiveText }}>تحديث</Text>
-                </Pressable>
                 <Pressable accessibilityRole="button" onPress={onSignOut} style={{
                   paddingVertical: 11, paddingHorizontal: 13, borderRadius: 10,
                   borderWidth: 1, borderColor: theme.borderColor, minHeight: 44,

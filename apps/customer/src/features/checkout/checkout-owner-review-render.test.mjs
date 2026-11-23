@@ -69,6 +69,10 @@ function harness(startStore = "store-one") {
       return hooks[at];
     },
     useCallback(callback) { index++; return callback; },
+    useEffect(callback) {
+      const at = index++;
+      if (!(at in hooks)) hooks[at] = { cleanup: callback() };
+    },
   };
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const mocks = {
@@ -85,6 +89,8 @@ function harness(startStore = "store-one") {
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     "react-native": {
+      AppState: { addEventListener() { return { remove() {} }; } },
+      Platform: { OS: "android" },
       Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", View: "View",
     },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
@@ -161,10 +167,8 @@ test("Customer checkout review renders real DSH Cart, exact BigInt totals and un
   assert.deepEqual(links, [{ pathname: "/cart/[storeId]", params: { storeId: "store-one" } }]);
   assert.ok(!nodes(view).some(n => n.type === "Pressable" &&
     /تأكيد|دفع|شراء/.test(flatten(n))));
-  const refresh = nodes(view).find(n => n.type === "Pressable" &&
-    flatten(n).includes("تحديث المراجعة"));
-  assert.ok(refresh, "manual refresh re-reads the current owner");
-  refresh.props.onPress();
+  assert.ok(!nodes(view).some(n => n.type === "Pressable" &&
+    flatten(n).includes("تحديث المراجعة")), "checkout must not require a permanent refresh button");
   h.blur();
   h.render(); h.focus();
   assert.equal(h.calls.length, 2);

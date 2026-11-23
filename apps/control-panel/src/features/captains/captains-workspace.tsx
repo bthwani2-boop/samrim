@@ -21,6 +21,18 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
 
   const refresh = useCallback(() => { setCursor(""); setSelected(null); setPage(null); setRevision(value => value + 1); }, []);
 
+  useEffect(() => {
+    const onReturn = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onReturn);
+    window.addEventListener("focus", onReturn);
+    return () => {
+      document.removeEventListener("visibilitychange", onReturn);
+      window.removeEventListener("focus", onReturn);
+    };
+  }, [refresh]);
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: refresh revision deliberately refetches the current page.
   useEffect(() => {
     const controller = new AbortController();
@@ -74,10 +86,10 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
       <Space wrap style={{ marginBottom: 16 }}>
         <Select aria-label="تصفية حالة الكباتن" value={status} style={{ minWidth: 180 }}
           options={[...statuses]} onChange={(value: Status) => { setStatus(value); setCursor(""); setPage(null); setSelected(null); }} />
-        <Button onClick={refresh} disabled={loading}>تحديث</Button>
         <a href="/captains/registrations">تسجيلات الراغبين بالانضمام</a>
       </Space>
-      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }} />}
+      {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }}
+        action={<Button onClick={refresh} disabled={loading}>إعادة المحاولة</Button>} />}
       <Card title="سجل طلبات الكباتن">
         <Table<Standing> rowKey="actorId" size="middle" loading={loading} dataSource={page?.items ?? []}
           pagination={false} locale={{ emptyText: "لا توجد سجلات في هذه الحالة." }}

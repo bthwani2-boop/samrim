@@ -209,7 +209,7 @@ export default function WalletScreen() {
         ) : null}
         {balance?.kind === "signed-out" ? (
           <Link href="/account" style={{ color: theme.interactiveText }}>الانتقال إلى الحساب</Link>
-        ) : balance ? (
+        ) : balance?.kind === "unavailable" || history?.kind === "unavailable" ? (
           <Pressable accessibilityRole="button" onPress={() => refreshRef.current?.()}>
             <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>
           </Pressable>

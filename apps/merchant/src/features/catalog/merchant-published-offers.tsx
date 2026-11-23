@@ -1,7 +1,7 @@
 import { listPublicOffers, type PublicOffer, type PublicPage } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, Platform, Pressable, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 
 type OffersState = {
@@ -43,6 +43,18 @@ export default function MerchantPublishedOffers({ actorId, stores }: Readonly<{
   const selected = publishedStores.find(store => store.id === selectedId) ?? publishedStores[0];
   const storeId = selected?.id ?? "";
   const scope = JSON.stringify([actorId, storeId, searchQuery]);
+
+  useEffect(() => {
+    const reload = () => setRetry(value => value + 1);
+    if (Platform.OS === "web") {
+      window.addEventListener("focus", reload);
+      return () => window.removeEventListener("focus", reload);
+    }
+    const listener = AppState.addEventListener("change", status => {
+      if (status === "active") reload();
+    });
+    return () => listener.remove();
+  }, []);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: Retry explicitly reloads the current owner-backed Store page.
   useEffect(() => {
@@ -191,10 +203,12 @@ export default function MerchantPublishedOffers({ actorId, stores }: Readonly<{
                   </Text>
                 </Pressable>
               ) : null}
-              <Pressable accessibilityRole="button" onPress={() => setRetry(value => value + 1)}
-                style={{ ...button, alignSelf: "flex-start" }}>
-                <Text style={{ color: theme.interactiveText }}>تحديث المنتجات</Text>
-              </Pressable>
+              {visible.error ? (
+                <Pressable accessibilityRole="button" onPress={() => setRetry(value => value + 1)}
+                  style={{ ...button, alignSelf: "flex-start" }}>
+                  <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>
+                </Pressable>
+              ) : null}
             </>
           )}
         </>
