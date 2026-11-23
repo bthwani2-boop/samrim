@@ -284,10 +284,26 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
       ($schemas[0] -split '=',2)[1] -cnotmatch '^identity_test_[a-z0-9_]+$') {
     throw 'OPERATOR_PASSKEY_IDENTITY_SCHEMA_NOT_ISOLATED'
   }
-  if ($UseDisposableOperatorSandbox -and (
-      $schemas[0] -cne 'IDENTITY_DB_SCHEMA=identity_test_operator_s02' -or
-      @($ownerEnv | Where-Object { $_ -cmatch '^IDENTITY_TEST_DATABASE_URL=postgres://bthwani_fido_s02:[a-f0-9]{64}@postgres:5432/refoundation_webauthn_s02\?sslmode=disable$' }).Count -ne 1)) {
-    throw 'OPERATOR_SANDBOX_DATABASE_IDENTITY_MISMATCH'
+  if ($UseDisposableOperatorSandbox) {
+    $databaseEnv = @($ownerEnv | Where-Object { $_ -clike 'IDENTITY_TEST_DATABASE_URL=*' })
+    $databaseMatches = $false
+    if ($databaseEnv.Count -eq 1) {
+      $dsn = $databaseEnv[0].Substring('IDENTITY_TEST_DATABASE_URL='.Length)
+      try {
+        $parsed = [Uri]::new($dsn)
+        $databaseMatches = ($parsed.Scheme -ceq 'postgres' -and
+          $parsed.Host -ceq 'postgres' -and $parsed.Port -eq 5432 -and
+          $parsed.AbsolutePath -ceq '/refoundation_webauthn_s02' -and
+          $parsed.Query -ceq '?sslmode=disable' -and $parsed.Fragment -ceq '' -and
+          $parsed.UserInfo -cmatch "^bthwani_fido_s02:[a-f0-9]{64}$" -and
+          $parsed.OriginalString -ceq ('postgres://' + $parsed.UserInfo + '@postgres:5432/refoundation_webauthn_s02?sslmode=disable'))
+      } catch {
+        $databaseMatches = $false
+      }
+    }
+    if ($schemas[0] -cne 'IDENTITY_DB_SCHEMA=identity_test_operator_s02' -or -not $databaseMatches) {
+      throw 'OPERATOR_SANDBOX_DATABASE_IDENTITY_MISMATCH'
+    }
   }
   $bindings = @($identityOwner.HostConfig.PortBindings.'3302/tcp')
   if ($bindings.Count -ne 1 -or $bindings[0].HostIp -cne '127.0.0.1' -or

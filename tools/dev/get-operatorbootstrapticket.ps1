@@ -44,8 +44,22 @@ foreach ($flag in $flags) {
     if (@($identity.Config.Env) -cnotcontains $flag) { throw 'IDENTITY_ISOLATION_OR_WEBAUTHN_CONFIG_MISMATCH' }
 }
 $dbURL = @($identity.Config.Env | Where-Object { $_ -clike 'IDENTITY_TEST_DATABASE_URL=*' })
-if ($dbURL.Count -ne 1 -or
-    $dbURL[0] -cnotmatch '^IDENTITY_TEST_DATABASE_URL=postgres://bthwani_fido_s02:[a-f0-9]{64}@postgres:5432/refoundation_webauthn_s02\?sslmode=disable$') {
+$dbMatches = $false
+if ($dbURL.Count -eq 1) {
+    $rawURL = $dbURL[0].Substring('IDENTITY_TEST_DATABASE_URL='.Length)
+    try {
+        $parsed = [Uri]::new($rawURL)
+        $dbMatches = ($parsed.Scheme -ceq 'postgres' -and
+            $parsed.Host -ceq 'postgres' -and $parsed.Port -eq 5432 -and
+            $parsed.AbsolutePath -ceq '/refoundation_webauthn_s02' -and
+            $parsed.Query -ceq '?sslmode=disable' -and $parsed.Fragment -ceq '' -and
+            $parsed.UserInfo -cmatch "^bthwani_fido_s02:[a-f0-9]{64}$" -and
+            $parsed.OriginalString -ceq ('postgres://' + $parsed.UserInfo + '@postgres:5432/refoundation_webauthn_s02?sslmode=disable'))
+    } catch {
+        $dbMatches = $false
+    }
+}
+if (-not $dbMatches) {
     throw 'IDENTITY_DATABASE_SCOPE_MISMATCH'
 }
 $containers = @(& docker --context $dockerContext inspect $postgresName 2>$null | ConvertFrom-Json)
