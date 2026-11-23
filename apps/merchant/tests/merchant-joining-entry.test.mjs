@@ -10,7 +10,9 @@ test("joining and setup share the canonical Identity Merchant gate, not an inert
     "src/features/onboarding/store-setup-screen.tsx"]) {
     const text = read(route);
     assert.match(text, /import MerchantIdentityGate from "\.\.\/access\/identity-gate";/);
-    assert.match(text, /return <MerchantIdentityGate \/>;/);
+    assert.match(text, route.includes("merchant-application")
+      ? /return <MerchantIdentityGate mode="join" \/>;/
+      : /return <MerchantIdentityGate \/>;/);
     assert.doesNotMatch(text, /MerchantCapabilityScreen|registerMerchantStore\(|fetch\(/);
   }
   assert.match(read("app/apply.tsx"), /onboarding\/merchant-application/);
@@ -26,4 +28,16 @@ test("joining only reveals Store admission after both Identity and DSH owner sta
   assert.match(workspace, /stores\.length === 0 \? <MerchantStoreRegistration actorId=\{actorId\}/);
   assert.match(workspace, /<MerchantStoreRegistration actorId=\{actorId\} onCreated=\{onRefresh\}/);
   assert.doesNotMatch(read("src/features/onboarding/merchant-application.tsx"), /storeRegistration:|role:\s*["']merchant/);
+});
+
+test("merchant login visibly links to the dedicated public joining entry on web and Android", () => {
+  const gate = read("src/features/access/identity-gate.tsx");
+  const entry = read("src/features/onboarding/merchant-application.tsx");
+  assert.match(gate, /<Link href="\/apply" asChild>/);
+  assert.match(gate, /انضم كتاجر/);
+  assert.match(gate, /<Link href="\/" asChild>/);
+  assert.match(gate, /العودة إلى تسجيل الدخول/);
+  assert.match(gate, /mode === "join"/);
+  assert.match(entry, /<MerchantIdentityGate mode="join" \/>/);
+  assert.doesNotMatch(entry, /registerMerchantStore\(|fetch\(/);
 });

@@ -1,5 +1,6 @@
 import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { Link } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import MerchantEntryShell from "../navigation/merchant-entry-shell";
@@ -25,7 +26,7 @@ function errorMessage(error: unknown) {
   return "تعذّر الاتصال بخدمة تسجيل الدخول. حاول مجددًا.";
 }
 
-export default function MerchantIdentityGate() {
+export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode?: "login" | "join" }>) {
   const { theme } = useMobileAppearance();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
@@ -212,7 +213,7 @@ export default function MerchantIdentityGate() {
         <View style={{ backgroundColor: theme.surface, padding: 22, gap: 14, borderRadius: 16,
           borderColor: theme.borderColor, borderWidth: 1 }}>
           <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 27, fontWeight: "700" }}>
-            {session ? "متاجر حسابك" : "تسجيل الدخول أو الانضمام"}
+            {session ? "متاجر حسابك" : mode === "join" ? "الانضمام كتاجر" : "تسجيل الدخول أو الانضمام"}
           </Text>
           {busy ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>جارٍ التحقق…</Text> : null}
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
@@ -248,12 +249,31 @@ export default function MerchantIdentityGate() {
           {enabled && !session && !entryUncertain && !ticket ? (
             <>
               <Text style={{ color: theme.colorSecondary }}>
-                أدخل رقم الاختبار اليمني المسموح به. رمز التحقق يصل إلى Mailpit.
+                {mode === "join"
+                  ? "للانضمام، تحقق أولًا من رقم الاختبار اليمني، ثم أكمل تسجيل متجرك غير المنشور لدى DSH. يصل الرمز إلى Mailpit."
+                  : "أدخل رقم الاختبار اليمني المسموح به. رمز التحقق يصل إلى Mailpit."}
               </Text>
               <TextInput accessibilityLabel="رقم هاتف الاختبار" value={phone} onChangeText={setPhone}
                 placeholder="مثال: 770000001" keyboardType="phone-pad" autoComplete="tel" editable={!busy}
                 maxLength={13} style={fieldStyle} />
               {button("إرسال رمز التحقق", requestCode, busy, true)}
+              {mode === "join" ? (
+                <Link href="/" asChild>
+                  <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center" }}>
+                    <Text style={{ color: theme.interactiveText, fontWeight: "600", textAlign: "center" }}>
+                      العودة إلى تسجيل الدخول
+                    </Text>
+                  </Pressable>
+                </Link>
+              ) : (
+                <Link href="/apply" asChild>
+                  <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center" }}>
+                    <Text style={{ color: theme.interactiveText, fontWeight: "600", textAlign: "center" }}>
+                      ليس لديك متجر؟ انضم كتاجر
+                    </Text>
+                  </Pressable>
+                </Link>
+              )}
             </>
           ) : null}
           {enabled && !session && !entryUncertain && ticket ? (
