@@ -48,7 +48,7 @@ export default function CaptainInterestScreen() {
     borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
     color: theme.color, padding: 12, fontSize: 16, minHeight: 48,
   } as const;
-  const labelStyle = { color: theme.color, fontWeight: "600" as const, textAlign: "right" as const };
+  const labelStyle = { color: theme.color, fontWeight: "600" as const };
   const options = <T extends string>(values: ReadonlyArray<{value: T; label: string}>,
     selected: T, choose: (v: T) => void) => (
     <View style={{ gap: 8 }}>
@@ -58,7 +58,7 @@ export default function CaptainInterestScreen() {
           onPress={() => choose(item.value)}
           style={{ borderWidth: 1, borderColor: item.value === selected ? theme.actionBackground : theme.borderColor,
             borderRadius: 10, padding: 12, minHeight: 44 }}>
-          <Text style={{ color: theme.color, textAlign: "right" }}>{item.value === selected ? "◉  " : "○  "}{item.label}</Text>
+          <Text style={{ color: theme.color }}>{item.value === selected ? "◉  " : "○  "}{item.label}</Text>
         </Pressable>
       ))}
     </View>
@@ -92,44 +92,44 @@ export default function CaptainInterestScreen() {
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ padding: 20, gap: 15, maxWidth: 560, alignSelf: "center", width: "100%" }}>
-        <Link href="/" accessibilityRole="link" style={{ color: theme.interactiveText, textAlign: "right" }}>
+        <Link href="/" accessibilityRole="link" style={{ color: theme.interactiveText }}>
           العودة إلى تسجيل الدخول
         </Link>
-        <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 26, fontWeight: "700", textAlign: "right" }}>
+        <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 26, fontWeight: "700" }}>
           انضم إلى كباتن بثواني
         </Text>
         {received ? (
           <View style={{ backgroundColor: theme.surface, padding: 18, borderRadius: 12 }}>
             <Text accessibilityRole="alert" testID="captain-interest-received"
-              style={{ color: theme.successText, fontSize: 17, textAlign: "right" }}>
+              style={{ color: theme.successText, fontSize: 17 }}>
               تم استلام بياناتك بنجاح. سيتم التواصل هاتفيًا مع الأشخاص المناسبين عند توفر الفرص.
             </Text>
           </View>
         ) : (
           <View style={{ gap: 14 }}>
-            <Text style={{ color: theme.colorSecondary, textAlign: "right" }}>
+            <Text style={{ color: theme.colorSecondary }}>
               سجّل بياناتك مرة واحدة. التسجيل لا يعني القبول، وسنتواصل هاتفيًا مع المناسبين فقط.
             </Text>
             <View style={{ gap: 5 }}>
               <Text style={labelStyle}>الاسم الكامل *</Text>
               <TextInput accessibilityLabel="الاسم الكامل" style={fieldStyle} value={name}
-                onChangeText={setName} maxLength={100} editable={!busy} textAlign="right" />
+                onChangeText={setName} maxLength={100} editable={!busy} />
             </View>
             <View style={{ gap: 5 }}>
               <Text style={labelStyle}>رقم الهاتف *</Text>
               <TextInput accessibilityLabel="رقم الهاتف" style={fieldStyle} value={phone}
                 onChangeText={setPhone} maxLength={13} keyboardType="phone-pad"
-                autoComplete="tel" editable={!busy} textAlign="right" placeholder="77XXXXXXX" />
+                autoComplete="tel" editable={!busy} placeholder="77XXXXXXX" />
             </View>
             <View style={{ gap: 5 }}>
               <Text style={labelStyle}>المدينة *</Text>
               <TextInput accessibilityLabel="المدينة" style={fieldStyle} value={city}
-                onChangeText={setCity} maxLength={80} editable={!busy} textAlign="right" />
+                onChangeText={setCity} maxLength={80} editable={!busy} />
             </View>
             <View style={{ gap: 5 }}>
               <Text style={labelStyle}>الحي أو منطقة السكن *</Text>
               <TextInput accessibilityLabel="الحي أو منطقة السكن" style={fieldStyle} value={district}
-                onChangeText={setDistrict} maxLength={100} editable={!busy} textAlign="right" />
+                onChangeText={setDistrict} maxLength={100} editable={!busy} />
             </View>
             <View style={{ gap: 5 }}>
               <Text style={labelStyle}>نوع الدراجة *</Text>
@@ -178,15 +178,15 @@ export default function CaptainInterestScreen() {
                 <Text style={labelStyle}>تفاصيل الخبرة (اختياري)</Text>
                 <TextInput accessibilityLabel="تفاصيل الخبرة" style={fieldStyle}
                   value={experienceDetails} onChangeText={setExperienceDetails}
-                  editable={!busy} maxLength={200} textAlign="right" multiline />
+                  editable={!busy} maxLength={200} multiline />
               </View>
             ) : null}
-            <Text style={{ color: theme.colorSecondary, textAlign: "right", fontSize: 12 }}>
+            <Text style={{ color: theme.colorSecondary, fontSize: 12 }}>
               يعتمد التعاون على أجر المشوار وفق سياسة بثواني. تستخدم بياناتك لغرض التواصل
               بشأن فرص الانضمام، ويُسمح بالاطلاع عليها للمسؤولين المخولين فقط.
             </Text>
-            {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText, textAlign: "right" }}>{message}</Text> : null}
-            {!dshOrigin ? <Text style={{ color: theme.warningText, textAlign: "right" }}>
+            {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
+            {!dshOrigin ? <Text style={{ color: theme.warningText }}>
               استمارة التسجيل غير متاحة في هذه البيئة حاليًا.
             </Text> : null}
             <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canSubmit }}
