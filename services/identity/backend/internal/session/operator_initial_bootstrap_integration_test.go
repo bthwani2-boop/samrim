@@ -15,8 +15,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -64,20 +62,7 @@ func proveInitialOperatorBootstrap(t *testing.T, dsn, origin string) {
 		t.Fatal(err)
 	}
 	schema := fmt.Sprintf("identity_test_root_s02_%x", nonce[:4])
-	for _, filename := range []string{
-		"001_session_verification.sql", "002_operator_permission_read.sql",
-		"003_verified_customer_merchant_admission.sql", "004_customer_phone_verification.sql",
-		"005_operator_permission_management.sql", "006_operator_passkey_credentials.sql",
-		"007_operator_merchant_permission_cutover.sql", "008_operator_initial_bootstrap.sql",
-	} {
-		raw, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", filename))
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(raw), "__SCHEMA__", schema)); e != nil {
-			t.Fatalf("isolated Owner migration %s: %v", filename, e)
-		}
-	}
+	initializeFreshIdentityFixture(t, ctx, db, schema)
 	// Remove only the newly random, disposable schema after independent
 	// readback. Never touch an already-existing shared Identity namespace.
 	defer func() {

@@ -109,7 +109,6 @@ start_stage() {
     /agent02/services/dsh/backend/internal/storeavailability \
     /agent02/services/dsh/backend/internal/captainstanding \
     /agent02/services/dsh/backend/internal/employees
-  docker cp services/identity/database/migrations "$name:/agent02/services/identity/database/migrations"
   docker cp services/identity/database/schema "$name:/agent02/services/identity/database/schema"
   docker cp services/dsh/database/schema "$name:/agent02/services/dsh/database/schema"
   for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh; do

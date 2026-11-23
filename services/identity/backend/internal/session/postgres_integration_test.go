@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -71,53 +70,7 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname=$1", schema).Scan(&preexisting); err != nil || preexisting != 0 {
 		t.Fatal("synthetic namespace collides with preexisting schema")
 	}
-	migrationPath := os.Getenv("IDENTITY_SESSION_MIGRATION_SQL_PATH")
-	if migrationPath == "" {
-		migrationPath = filepath.Join("..", "..", "..", "database", "migrations", "001_session_verification.sql")
-	}
-	source, err := os.ReadFile(migrationPath)
-	if err != nil {
-		t.Fatal("Identity migration unavailable")
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(source), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("synthetic Identity namespace bootstrap failed:", err)
-	}
-	permissionMigrationPath := os.Getenv("IDENTITY_OPERATOR_PERMISSION_MIGRATION_SQL_PATH")
-	if permissionMigrationPath == "" {
-		permissionMigrationPath = filepath.Join("..", "..", "..", "database", "migrations", "002_operator_permission_read.sql")
-	}
-	permissionMigration, err := os.ReadFile(permissionMigrationPath)
-	if err != nil {
-		t.Fatal("Identity effective permissions migration unavailable")
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(permissionMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("synthetic effective Operator permission bootstrap failed:", err)
-	}
-	verificationPath := os.Getenv("IDENTITY_MERCHANT_ADMISSION_MIGRATION_SQL_PATH")
-	if verificationPath == "" {
-		verificationPath = filepath.Join("..", "..", "..", "database", "migrations", "003_verified_customer_merchant_admission.sql")
-	}
-	verificationMigration, err := os.ReadFile(verificationPath)
-	if err != nil {
-		t.Fatal("Identity verified Customer prerequisite unavailable")
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(verificationMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("isolated verified Customer migration failed:", err)
-	}
-	phoneMigration, err := os.ReadFile(filepath.Join(filepath.Dir(verificationPath), "004_customer_phone_verification.sql"))
-	if err != nil {
-		t.Fatal("isolated phone verification migration unavailable:", err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(phoneMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("isolated phone verification migration failed:", err)
-	}
-	yemenMigration, err := os.ReadFile(filepath.Join(filepath.Dir(verificationPath), "009_yemeni_synthetic_phone.sql"))
-	if err != nil {
-		t.Fatal("isolated Yemeni phone migration unavailable:", err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(yemenMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("isolated Yemeni phone migration failed:", err)
-	}
+	initializeFreshIdentityFixture(t, ctx, db, schema)
 	// Keep test scope explicit. Only SQL identifiers derived from local random
 	// bytes are interpolated; all actor IDs, digests and values use binds.
 	exec := func(query string, args ...any) {

@@ -156,10 +156,10 @@ in the ignored `infra/.env.identity-verifier.local`. Keep the shared
 `infra/.env` untouched. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
 image; default `:dev` remains compatible with existing development commands.
 Set `REF_IDENTITY_SYNTHETIC_PHONE_AUTH=true` only after applying the Identity
-phone migration in the synthetic schema and verifying the runtime role's scoped
+phone verification baseline in a new synthetic schema (or confirming the compatible retained schema) and verifying the runtime role's scoped
 write privileges. Supply a fresh 32-byte hex `REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY`
 through the Identity-only local settings. Delivery stays on the project's
-`mailpit:1025` network endpoint. Apply migration 009 for the Yemeni phone format
+`mailpit:1025` network endpoint. Verify the Yemeni phone format constraint from `database/schema/10_verification.sql`
 and set `REF_IDENTITY_SYNTHETIC_YEMEN_PHONES` to the allowed test numbers in
 international format. The Compose default is `+967770000001`.
 The local Merchant development Web endpoint checks synthetic phone availability

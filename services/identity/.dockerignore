@@ -8,6 +8,6 @@
 !backend/internal/
 !backend/internal/**
 !database/
-!database/migrations/
-!database/migrations/*.sql
+!database/schema/
+!database/schema/*.sql
 **/*_test.go

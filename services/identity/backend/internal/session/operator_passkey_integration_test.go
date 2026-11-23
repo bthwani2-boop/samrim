@@ -18,8 +18,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -65,20 +63,7 @@ func TestOperatorPasskeyRealWebAuthnSignatureSQL(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := fmt.Sprintf("identity_test_webauthn_s02_%x", nonce[:4])
-	for _, name := range []string{
-		"001_session_verification.sql", "002_operator_permission_read.sql",
-		"003_verified_customer_merchant_admission.sql", "004_customer_phone_verification.sql",
-		"005_operator_permission_management.sql", "006_operator_passkey_credentials.sql",
-		"007_operator_merchant_permission_cutover.sql",
-	} {
-		raw, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", name))
-		if e != nil {
-			t.Fatalf("owner SQL missing %s: %v", name, e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(raw), "__SCHEMA__", schema)); e != nil {
-			t.Fatalf("synthetic migration %s rejected: %v", name, e)
-		}
-	}
+	initializeFreshIdentityFixture(t, ctx, db, schema)
 	owner, err := NewPostgresReader(db, schema)
 	if err != nil {
 		t.Fatal(err)

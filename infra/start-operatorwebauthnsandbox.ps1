@@ -67,27 +67,34 @@ $schema = 'identity_test_operator_s02'
 $check = (& docker --context bthwani-docker exec $pg psql -X -q -A -t -U $user -d $db -c "SELECT current_database()||'|'||current_user||'|'||(SELECT count(*) FROM pg_namespace WHERE nspname='$schema')").Trim()
 if ($LASTEXITCODE -ne 0) { throw 'OPERATOR_SANDBOX_DATABASE_READ_FAILED' }
 if ($check -ceq "$db|$user|0") {
+  # New isolated namespaces use the current Identity-owned schema, not replayed
+  # upgrade history. Its strict CREATE SCHEMA also refuses a racing creator.
+  $schemaDir = Join-Path $root 'services/identity/database/schema'
+  $expected = @('00_identity.sql','10_verification.sql','20_sessions.sql','30_operator_permissions.sql','40_operator_passkeys.sql')
+  $files = @(Get-ChildItem -LiteralPath $schemaDir -Force | Sort-Object Name)
+  if (($files.Name -join '|') -cne ($expected -join '|')) {
+    throw 'OPERATOR_SANDBOX_BASELINE_INCOMPLETE_OR_UNREVIEWED'
+  }
   $sql = [System.Text.StringBuilder]::new()
-  foreach ($n in 1..8) {
-    $filename = ('{0:D3}' -f $n) + '_' + @(
-      'session_verification','operator_permission_read',
-      'verified_customer_merchant_admission','customer_phone_verification',
-      'operator_permission_management','operator_passkey_credentials',
-      'operator_merchant_permission_cutover','operator_initial_bootstrap'
-    )[$n-1] + '.sql'
-    $path = Join-Path $root ('services/identity/database/migrations/' + $filename)
-    [void]$sql.AppendLine(([IO.File]::ReadAllText($path)).Replace('__SCHEMA__',$schema))
+  foreach ($file in $files) {
+    if ($file.PSIsContainer -or ($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -or $file.Length -gt 524288) {
+      throw 'OPERATOR_SANDBOX_BASELINE_UNSAFE_FILE'
+    }
+    $source = [IO.File]::ReadAllText($file.FullName)
+    if (!$source.Contains('__SCHEMA__')) { throw 'OPERATOR_SANDBOX_BASELINE_SCHEMA_MARKER_MISSING' }
+    [void]$sql.AppendLine($source.Replace('__SCHEMA__',$schema))
   }
   $sql.ToString() | & docker --context bthwani-docker exec -i $pg psql -X -q -v ON_ERROR_STOP=1 --single-transaction -U $user -d $db
-  if ($LASTEXITCODE -ne 0) { throw 'OPERATOR_SANDBOX_MIGRATIONS_FAILED' }
-  Write-Output 'MIGRATIONS=APPLIED_001_TO_008'
+  if ($LASTEXITCODE -ne 0) { throw 'OPERATOR_SANDBOX_FRESH_BASELINE_FAILED' }
+  Write-Output 'IDENTITY_SQL=FRESH_BASELINE_APPLIED'
 } elseif ($check -ceq "$db|$user|1") {
-  Write-Output 'MIGRATIONS=PREEXISTING_SCHEMA_VERIFICATION'
+  # Retained sessions and owner credentials are never overwritten by a baseline.
+  Write-Output 'IDENTITY_SQL=RETAINED_SCHEMA_VERIFICATION_ONLY'
 } else {
   throw 'OPERATOR_SANDBOX_DATABASE_IDENTITY_MISMATCH'
 }
-$tables = (& docker --context bthwani-docker exec $pg psql -X -q -A -t -U $user -d $db -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_name IN ('actors','actor_roles','auth_sessions','operator_permissions','operator_bootstrap','operator_passkey_credentials','operator_initial_bootstrap')").Trim()
-if ($LASTEXITCODE -ne 0 -or $tables -cne '7') { throw 'OPERATOR_SANDBOX_MIGRATION_READBACK_FAILED' }
+$tables = (& docker --context bthwani-docker exec $pg psql -X -q -A -t -v ON_ERROR_STOP=1 -U $user -d $db -c "SELECT count(*) FROM information_schema.tables WHERE table_schema='$schema' AND table_type='BASE TABLE' AND table_name IN ('actors','actor_roles','customer_phone_challenges','auth_sessions','auth_session_families','auth_refresh_tokens','operator_permissions','operator_bootstrap','operator_permission_commands','operator_passkey_users','operator_passkey_credentials','operator_passkey_ceremonies','operator_passkey_recovery_proofs','operator_passkey_audit','operator_initial_bootstrap')").Trim()
+if ($LASTEXITCODE -ne 0 -or $tables -cne '15') { throw 'OPERATOR_SANDBOX_SCHEMA_INCOMPLETE_REVIEWED_UPGRADE_REQUIRED' }
 $operatorCount = (& docker --context bthwani-docker exec $pg psql -X -q -A -t -U $user -d $db -c "SELECT (SELECT count(*) FROM $schema.actor_roles WHERE role='operator')||'|'||(SELECT count(*) FROM $schema.operator_bootstrap)||'|'||(SELECT count(*) FROM $schema.operator_initial_bootstrap)").Trim()
 if ($LASTEXITCODE -ne 0 -or $operatorCount -cne '0|0|0') {
   throw 'OPERATOR_SANDBOX_EXISTING_OWNER_OR_CLAIM_REFUSED'

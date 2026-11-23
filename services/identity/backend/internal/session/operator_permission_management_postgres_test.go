@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -58,18 +57,7 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := fmt.Sprintf("identity_test_operator_admin_%x", nonce)
-	for _, file := range []string{"001_session_verification.sql", "002_operator_permission_read.sql",
-		"003_verified_customer_merchant_admission.sql", "004_customer_phone_verification.sql",
-		"005_operator_permission_management.sql", "007_operator_merchant_permission_cutover.sql"} {
-		raw, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", file))
-		if e != nil {
-			t.Fatalf("missing owner migration %s: %v", file, e)
-		}
-		sqlSource := strings.ReplaceAll(string(raw), "__SCHEMA__", schema)
-		if _, e = db.ExecContext(ctx, sqlSource); e != nil {
-			t.Fatalf("synthetic migration %s: %v", file, e)
-		}
-	}
+	initializeFreshIdentityFixture(t, ctx, db, schema)
 	reader, err := NewPostgresReader(db, schema)
 	if err != nil {
 		t.Fatal(err)

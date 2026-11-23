@@ -10,7 +10,6 @@ import (
 	"errors"
 	_ "github.com/lib/pq"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -54,15 +53,7 @@ func TestPersistentIdentityPostgres(t *testing.T) {
 			t.Errorf("cannot clean up disposable Identity test schema: %v", e)
 		}
 	}()
-	for _, file := range []string{"001_session_verification.sql", "010_persistent_sessions.sql"} {
-		source, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", file))
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(source), "__SCHEMA__", schema)); e != nil {
-			t.Fatal(file, e)
-		}
-	}
+	initializeFreshIdentityFixture(t, ctx, db, schema)
 	owner, e := NewPostgresReader(db, schema)
 	if e != nil {
 		t.Fatal(e)
