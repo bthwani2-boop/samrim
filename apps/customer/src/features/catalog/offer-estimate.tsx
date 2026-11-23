@@ -1,13 +1,12 @@
-import { DshCartError, DshPublicError, estimatePublicOffer, parseOfferEstimateQuantity, type CustomerCartChange, type PublicOffer, type PublicOfferEstimate } from "@bthwani/dsh";
+import { type CustomerCartChange, DshCartError, DshPublicError, estimatePublicOffer, type PublicOffer, type PublicOfferEstimate, parseOfferEstimateQuantity } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import * as Crypto from "expo-crypto";
 import { Link, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
-import { resolvePublicStoreOrigin } from "../stores/public-store-origin";
 import { readVerifiedCart, replaceVerifiedCart } from "../cart/cart-transport";
-
-const formatYER = new Intl.NumberFormat("ar-YE");
+import { resolvePublicStoreOrigin } from "../stores/public-store-origin";
+import { formatPublicEstimateYer } from "./price-format";
 
 export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }>) {
   const { theme } = useMobileAppearance();
@@ -160,9 +159,9 @@ export default function OfferEstimate({ offer }: Readonly<{ offer: PublicOffer }
       </Pressable>
       {error ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>{error}</Text> : null}
       {estimate ? <View style={{ gap: 4 }} accessibilityLiveRegion="polite">
-        <Text style={{ color: theme.color }}>سعر الوحدة الحالي {formatYER.format(BigInt(estimate.unitYer))} ريال يمني</Text>
+        <Text style={{ color: theme.color }}>سعر الوحدة الحالي {formatPublicEstimateYer(estimate.unitYer)} ريال يمني</Text>
         <Text testID="offer-estimate-subtotal" style={{ color: theme.color, fontWeight: "700" }}>
-          إجمالي الأصناف {formatYER.format(BigInt(estimate.subtotalYer))} ريال يمني
+          إجمالي الأصناف {formatPublicEstimateYer(estimate.subtotalYer)} ريال يمني
         </Text>
         <Text style={{ color: theme.colorSecondary }}>تقدير قبل رسوم التوصيل. السعر والكمية قابلان للتغيّر.</Text>
       </View> : null}
