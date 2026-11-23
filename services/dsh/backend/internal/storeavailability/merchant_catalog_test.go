@@ -379,10 +379,14 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if _, e := otherRegistrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", draftOfferID, winning); !errors.Is(e, ErrForbidden) {
 		t.Fatalf("cross-actor draft edit accepted: %v", e)
 	}
-	if _, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", "of-b", winning); !errors.Is(e, ErrForbidden) {
+	publishedAttempt := winning
+	publishedAttempt.OperationID = "edit-draft-published-0004"
+	if _, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", "of-b", publishedAttempt); !errors.Is(e, ErrForbidden) {
 		t.Fatalf("published offer editable as draft: %v", e)
 	}
-	if _, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", "of-a", winning); !errors.Is(e, ErrForbidden) {
+	foreignDraftAttempt := winning
+	foreignDraftAttempt.OperationID = "edit-draft-unregistered-0005"
+	if _, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", "of-a", foreignDraftAttempt); !errors.Is(e, ErrForbidden) {
 		t.Fatalf("non-DSH-created draft editable: %v", e)
 	}
 	malformed := winning
