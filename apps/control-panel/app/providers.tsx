@@ -39,10 +39,10 @@ export function Providers({ children, cspNonce, operatorActorId }: Readonly<{
   operatorActorId: string | null;
 }>) {
   const [storedPreference, setStoredPreference] = useState<{ actorId: string | null; value: AppearancePreference }>({
-    actorId: operatorActorId, value: "system",
+    actorId: operatorActorId, value: operatorActorId ? "light" : "system",
   });
   // An actor change cannot project another actor's stale visual preference.
-  const pref = storedPreference.actorId === operatorActorId ? storedPreference.value : "system";
+  const pref = storedPreference.actorId === operatorActorId ? storedPreference.value : (operatorActorId ? "light" : "system");
   const [systemDark, setSystemDark] = useState(false);
   useEffect(() => {
     if (!operatorActorId) {
@@ -51,10 +51,10 @@ export function Providers({ children, cspNonce, operatorActorId }: Readonly<{
     }
     try {
       const stored = window.localStorage.getItem(preferenceKey(operatorActorId));
-      setStoredPreference({ actorId: operatorActorId, value: isPreference(stored) ? stored : "system" });
+      setStoredPreference({ actorId: operatorActorId, value: isPreference(stored) ? stored : "light" });
     } catch {
       // Keep the system default when browser storage is unavailable.
-      setStoredPreference({ actorId: operatorActorId, value: "system" });
+      setStoredPreference({ actorId: operatorActorId, value: "light" });
     }
   }, [operatorActorId]);
   const selectPreference = (value: AppearancePreference) => {

@@ -170,7 +170,7 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     const dashboard = await call(`${base}/workspace`);
     assert.equal(dashboard.status, 200);
     const dashboardHtml = await dashboard.text();
-    assert.match(dashboardHtml, /مساحة عمل المشغّل/);
+    assert.match(dashboardHtml, /مرحبًا بك في لوحة تحكم بثواني/);
     assert.match(dashboardHtml, /href="\/policies"[^>]*><strong>سياسات إتاحة المتاجر<\/strong>/);
     assert.doesNotMatch(dashboardHtml, /href="\/(?:finance|operations)"|أقسام بانتظار ربط الخدمة/);
 

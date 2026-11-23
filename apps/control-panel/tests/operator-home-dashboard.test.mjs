@@ -19,6 +19,7 @@ function render(grants) {
   const mod = { exports: {} };
   const dependencies = {
     "../navigation/workspace-registry": { workspaceRegistry, workspaceGroupLabels },
+    "../operator-shell/operator-icon": { OperatorIcon: ({ name }) => jsx("OperatorIcon", { name }) },
     "../operator-shell/operator-shell.module.css": { workspace: "workspace", sectionGrid: "sectionGrid", sectionCard: "sectionCard" },
     "./home-dashboard.module.css": { hero: "hero", rightsSummary: "rights-summary" },
     "../session/operator-permissions": {

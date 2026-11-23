@@ -246,8 +246,8 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.doesNotMatch(html, /aria-label="تبويبات الوظائف"/);
     assert.ok(calls.includes("/v1/operators/me/permissions/operations"));
     html = await read("/workspace");
-    assert.match(html, /مساحة عمل المشغّل/);
-    assert.match(html, /تظهر الأقسام المسموح بها وفق صلاحيات Identity الحالية/);
+    assert.match(html, /مرحبًا بك في لوحة تحكم بثواني/);
+    assert.match(html, /إدارة العمل من مساحة واحدة، وفق صلاحياتك المؤكدة من Identity/);
     assert.match(html, /العمليات/);
     assert.match(html, /href="\/operations"/);
     assert.match(html, /href="\/captains"/);

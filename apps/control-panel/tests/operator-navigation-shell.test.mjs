@@ -21,7 +21,7 @@ function render(grants, pathname = "/marketing") {
   new Function("require", "module", "exports", compiled)(name => {
     const deps = {
       "next/navigation": { usePathname: () => pathname },
-      react: { useState: () => ["idle", () => {}] },
+      react: { useState: () => ["idle", () => {}], useEffect: () => {}, useRef: () => ({ current: null }) },
       "../navigation/workspace-registry": {
         workspaceRegistry, workspaceGroupLabels, workspaceSubsections,
         findWorkspaceEntry: path => workspaceRegistry.find(entry => entry.href === path) ?? null,
@@ -32,6 +32,8 @@ function render(grants, pathname = "/marketing") {
           : [],
         canEnterOperatorWorkspace: () => false,
       },
+      "./operator-icon": { OperatorIcon: ({ name }) => jsx("OperatorIcon", { name }) },
+      "./operator-navigation-search": { default: ({ entries }) => jsx("NavigationSearch", { entries }) },
       "./operator-shell.module.css": {
         shell: "shell", publicShell: "public", sidebar: "sidebar", publicBar: "public-bar",
         brand: "brand", navigation: "navigation", groupLabel: "group-label",
@@ -67,8 +69,8 @@ test("verified Marketing-only operator sees all section labels without unauthori
   assert.ok(!allowed.includes("/access"));
   assert.ok(!allowed.includes("/merchants"));
   const locked = walk(tree, node => node.type === "span" && node.props["aria-disabled"] === "true");
-  assert.ok(locked.some(node => String(node.props.children).includes("المالية")));
-  assert.ok(locked.some(node => String(node.props.children).includes("التجار")));
+  assert.ok(locked.some(node => JSON.stringify(node.props.children).includes("المالية")));
+  assert.ok(locked.some(node => JSON.stringify(node.props.children).includes("التجار")));
 });
 
 test("login screen renders only its form before authentication, without navigation or sidebar", () => {
