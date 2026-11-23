@@ -3,6 +3,7 @@ import {
 } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
+import { customerCartOwnerOrigins } from "./cart-owner-origins.ts";
 
 const safeHeaders = {
   "Cache-Control": "no-store",
@@ -19,12 +20,9 @@ function result(value: unknown, status = 200): Response {
 /** Cookie-only Customer Web adapter. DSH owns amounts; Identity owns actors. */
 export async function handleCustomerMerchandiseEstimate(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  const dsh = process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN;
-  const identity = process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN;
-  if (process.env.BTHWANI_SURFACE_PREVIEW !== "1" || !dsh || !identity ||
-    !["localhost", "127.0.0.1"].includes(url.hostname)) {
-    return result({ error: "OWNER_UNAVAILABLE" }, 503);
-  }
+  const owners = customerCartOwnerOrigins(url);
+  if (!owners) return result({ error: "OWNER_UNAVAILABLE" }, 503);
+  const { dsh, identity } = owners;
   const site = request.headers.get("Sec-Fetch-Site");
   if (site && site !== "same-origin") return result({ error: "FORBIDDEN" }, 403);
   if (request.method !== "GET" || request.body || request.headers.get("Content-Length")) {

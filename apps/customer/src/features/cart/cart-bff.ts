@@ -4,6 +4,7 @@ import {
 } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
+import { customerCartOwnerOrigins } from "./cart-owner-origins.ts";
 
 const noStore = {
   "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",
@@ -65,12 +66,9 @@ async function boundedChange(request: Request): Promise<CustomerCartChange | nul
 export async function handleCustomerCart(request: Request, method: "GET" | "PUT"): Promise<Response> {
   const url = new URL(request.url);
   const storeIds = url.searchParams.getAll("storeId");
-  const origin = process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN;
-  const identityOrigin = process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN;
-  if (process.env.BTHWANI_SURFACE_PREVIEW !== "1" || !origin || !identityOrigin ||
-    !["localhost", "127.0.0.1"].includes(url.hostname)) {
-    return result({ error: "OWNER_UNAVAILABLE" }, 503);
-  }
+  const owners = customerCartOwnerOrigins(url);
+  if (!owners) return result({ error: "OWNER_UNAVAILABLE" }, 503);
+  const { dsh: origin, identity: identityOrigin } = owners;
   const storeId = storeIds[0];
   if (url.searchParams.size !== 1 || storeIds.length !== 1 || !storeId || !storeRule.test(storeId)) {
     return result({ error: "INVALID_REQUEST" }, 400);

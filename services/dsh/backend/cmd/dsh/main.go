@@ -71,16 +71,23 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 }
 
 // The draft Cart is an isolated, owner-backed DSH capability. It can be
-// mounted only on loopback with the same current Identity session verifier.
+// exposed only on verified development loopback (including host-only Docker
+// publishing) with the same current Identity session verifier.
 // No Cart request is an Order, checkout or financial mutation.
 func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http.Handler) (http.Handler, error) {
 	if os.Getenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART") != "true" {
 		return public, nil
 	}
 	host, _, err := net.SplitHostPort(address)
+	// Inside the isolated Docker network, the listener must bind 0.0.0.0:8080
+	// to be reachable through Compose's host-loopback-only published port.
+	// Outside that explicit container contract, only loopback is admitted.
+	dockerLoopback := address == "0.0.0.0:8080" &&
+		os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" &&
+		os.Getenv("DSH_IDENTITY_VERIFIER_URL") == isolatedDSHVerifierURL
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
 		!strings.HasPrefix(schema, "dsh_test_") || len(schema) <= len("dsh_test_") ||
-		err != nil || (host != "127.0.0.1" && host != "::1") {
+		err != nil || (!dockerLoopback && host != "127.0.0.1" && host != "::1") {
 		return nil, fmt.Errorf("Customer Cart requires isolated DSH schema and loopback-only transport")
 	}
 	identity, err := storeavailability.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))

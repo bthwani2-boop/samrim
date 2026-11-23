@@ -12,6 +12,7 @@ param(
   [ValidateRange(1024,65535)]
   [int]$WltPort=23203,
   [switch]$EnableDockerWalletWebPreview,
+  [switch]$EnableDockerCartWebPreview,
   [switch]$EnableDockerCustomerAndroidIdentityPreview,
   [switch]$EnableIsolatedOperatorPasskeyPreview,
   [switch]$EnableIsolatedRootBootstrap,
@@ -25,10 +26,14 @@ if ($EnableAndroidWalletPreview -and (!$Surface -or $App -ne 'customer')) {
 if ($EnableDockerWalletWebPreview -and ($Surface -or $App -ne 'customer' -or $EnableAndroidWalletPreview)) {
   throw 'DOCKER_WALLET_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
 }
+if ($EnableDockerCartWebPreview -and ($Surface -or $App -ne 'customer' -or $EnableAndroidWalletPreview)) {
+  throw 'DOCKER_CART_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
+}
 if ($EnableDockerCustomerAndroidIdentityPreview -and ($Surface -or $App -ne 'customer')) {
   throw 'DOCKER_ANDROID_IDENTITY_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
 }
 Remove-Item Env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW -ErrorAction SilentlyContinue
+Remove-Item Env:BTHWANI_DOCKER_CART_WEB_PREVIEW -ErrorAction SilentlyContinue
 
 function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
   try {
@@ -78,6 +83,59 @@ if ($Surface) {
     $env:CUSTOMER_SYNTHETIC_WLT_ORIGIN='http://127.0.0.1:3203'
     $env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
     Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
+  }
+  if ($EnableDockerCartWebPreview) {
+    if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+      throw 'DOCKER_CART_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
+    }
+    $identityOwner = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
+    if ($LASTEXITCODE -ne 0 -or $identityOwner.Count -ne 1) {
+      throw 'DOCKER_CART_WEB_IDENTITY_OWNER_UNAVAILABLE'
+    }
+    $dshOwner = @(& docker inspect bthwani-refoundation-dsh-1 | ConvertFrom-Json)
+    if ($LASTEXITCODE -ne 0 -or $dshOwner.Count -ne 1) {
+      throw 'DOCKER_CART_WEB_DSH_OWNER_UNAVAILABLE'
+    }
+    $identityRuntime = $identityOwner[0]
+    $dshRuntime = $dshOwner[0]
+    $identityEnv = @($identityRuntime.Config.Env)
+    $dshEnv = @($dshRuntime.Config.Env)
+    $identitySchemas = @($identityEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
+    $dshSchemas = @($dshEnv | Where-Object { $_ -clike 'DSH_DB_SCHEMA=*' })
+    $identityBindings = @($identityRuntime.HostConfig.PortBindings.'3302/tcp')
+    $dshBindings = @($dshRuntime.HostConfig.PortBindings.'8080/tcp')
+    if ($identityRuntime.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+        $identityRuntime.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
+        $identityRuntime.State.Health.Status -cne 'healthy' -or
+        $dshRuntime.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+        $dshRuntime.Config.Labels.'com.bthwani.capability' -cne 'customer-store-catalog' -or
+        $dshRuntime.State.Health.Status -cne 'healthy' -or
+        $identityEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
+        $identityEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
+        $identityEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
+        $dshEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
+        $dshEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
+        $dshEnv -cnotcontains 'DSH_ENABLE_ISOLATED_CUSTOMER_CART=true' -or
+        $dshEnv -cnotcontains 'DSH_IDENTITY_VERIFIER_URL=https://identity:3343' -or
+        $dshEnv -cnotcontains 'DSH_LISTEN_ADDR=0.0.0.0:8080' -or
+        $identitySchemas.Count -ne 1 -or $identitySchemas[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
+        $dshSchemas.Count -ne 1 -or $dshSchemas[0] -cnotmatch '^DSH_DB_SCHEMA=dsh_test_[a-z0-9_]+$' -or
+        $identityBindings.Count -ne 1 -or $identityBindings[0].HostIp -cne '127.0.0.1' -or
+        $identityBindings[0].HostPort -cne '3201' -or
+        $dshBindings.Count -ne 1 -or $dshBindings[0].HostIp -cne '127.0.0.1' -or
+        $dshBindings[0].HostPort -cne '3202') {
+      throw 'DOCKER_CART_WEB_OWNERS_NOT_ISOLATED'
+    }
+    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
+    Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/carts/store-a' 401
+    Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/carts/store-a/merchandise-estimate?expectedVersion=0' 401
+    $env:BTHWANI_SURFACE_PREVIEW='0'
+    $env:BTHWANI_ISOLATED_TEST_MODE='true'
+    $env:BTHWANI_DOCKER_CART_WEB_PREVIEW='1'
+    $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+    $env:CUSTOMER_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
+    $env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
+    Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN -ErrorAction SilentlyContinue
   }
   if ($EnableDockerCustomerAndroidIdentityPreview) {
     if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
