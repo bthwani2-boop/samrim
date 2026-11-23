@@ -22,6 +22,7 @@ function harness() {
   const effects = [];
   const reads = [];
   const writes = [];
+  const resumeListeners = new Set();
   let index = 0;
   let operationSequence = 0;
   const jsx = (type, props) => ({ type, props });
@@ -39,11 +40,23 @@ function harness() {
       },
       useRef(initial) {
         const at = index++;
-        return hooks[at] ??= { current: initial };
+        if (!(at in hooks)) hooks[at] = { current: initial };
+        return hooks[at];
       },
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": { ActivityIndicator: "Loading", Pressable: "Button", Text: "Text", TextInput: "Input", View: "View" },
+    "react-native": {
+      ActivityIndicator: "Loading",
+      AppState: {
+        addEventListener(event, callback) {
+          assert.equal(event, "change");
+          resumeListeners.add(callback);
+          return { remove() { resumeListeners.delete(callback); } };
+        },
+      },
+      Platform: { OS: "android" },
+      Pressable: "Button", Text: "Text", TextInput: "Input", View: "View",
+    },
     "expo-crypto": { randomUUID: () => `synthetic-operation-${++operationSequence}` },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "../access/admission-transport": {
@@ -70,6 +83,7 @@ function harness() {
     },
     read() { assert.ok(reads.length, "a selected Store must trigger a fresh read"); return reads.shift(); },
     writes,
+    resume() { for (const listener of [...resumeListeners]) listener("active"); },
     count: () => reads.length,
     unmount() { hooks.forEach(hook => { hook?.cleanup?.(); }); },
   };
@@ -143,14 +157,16 @@ for (const status of [401, 403, 503]) {
     const h = harness(); h.render("store-a");
     h.read().resolve(snapshot); await settle();
     let view = h.render("store-a");
-    const refresh = () => find(view, node => node.props?.accessibilityLabel === "تحديث إتاحة المتجر").props.onPress();
+    const refresh = () => h.resume();
     refresh(); h.render("store-a");
     h.read().reject({ status }); await settle();
     view = h.render("store-a");
     assert.equal(byID(view, "merchant-availability-snapshot"), undefined);
     assert.ok(byID(view, "merchant-availability-error"));
     assert.ok(content(view).includes(status === 503 ? "تعذّر تأكيد" : "لا تتوفر صلاحية"));
-    refresh(); h.render("store-a"); h.read().resolve(snapshot); await settle();
+    const retry = find(view, node => node.props?.accessibilityLabel === "إعادة محاولة قراءة إتاحة المتجر");
+    assert.ok(retry);
+    retry.props.onPress(); h.render("store-a"); h.read().resolve(snapshot); await settle();
     view = h.render("store-a");
     assert.ok(byID(view, "merchant-availability-snapshot"));
     assert.equal(byID(view, "merchant-availability-error"), undefined);
