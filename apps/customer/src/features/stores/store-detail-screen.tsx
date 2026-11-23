@@ -4,7 +4,8 @@ import { type Href, Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import StoreProducts from "../catalog/store-products";
+import { useStoreCart } from "../cart/use-store-cart";
+import StoreProducts, { StoreCartBar } from "../catalog/store-products";
 import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
@@ -49,6 +50,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
     return () => { abort.abort(); revision.current++; };
   }, [api, id, query, scope, retry]);
   const visible: PublicStoreDetailState = state.scope === scope ? state : { scope, loading: true, offers: [] };
+  const cartSession = useStoreCart(visible.store?.id);
   const textStyle = { color: theme.color };
   const availability = visible.store ? describeStoreOrderability(visible.store) : undefined;
   const more = async () => {
@@ -132,7 +134,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
               <Text style={{ color: theme.interactiveText, textAlign: "center" }}>إعادة تحميل العروض</Text>
             </Pressable>
           </View> : null}
-          <StoreProducts offers={visible.offers} />
+          <StoreProducts store={visible.store} offers={visible.offers} session={cartSession} />
           {visible.cursor && !visible.offersError ? <Pressable accessibilityRole="button" accessibilityLabel="عرض المزيد من عروض المتجر" onPress={more} disabled={visible.more}
             style={{ padding: 14, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
             <Text style={{ color: theme.interactiveText, textAlign: "center" }}>{visible.more ? "جارٍ التحميل" : "عرض المزيد"}</Text>
@@ -148,6 +150,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
           </Pressable>
         </> : null}
       </ScrollView>
+      {visible.store ? <StoreCartBar storeId={id} session={cartSession} /> : null}
     </SafeAreaView>
   );
 }

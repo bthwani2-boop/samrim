@@ -42,7 +42,8 @@ function harness({ params = {}, id = "store-a" } = {}) {
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "react-native": Object.fromEntries(["ActivityIndicator", "Pressable", "ScrollView", "Text", "TextInput", "View"].map(type => [type, type])),
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
-    "../catalog/store-products": { __esModule: true, default: "StoreProducts" },
+    "../cart/use-store-cart": { useStoreCart: () => ({}) },
+    "../catalog/store-products": { __esModule: true, default: "StoreProducts", StoreCartBar: "StoreCartBar" },
     "../location/serviceability": serviceability,
     "../sharing/store-share": { publicStorefrontPath: storeId => `/s/${storeId}` },
     "./orderability": { describeStoreOrderability: () => ({}) },
@@ -92,6 +93,14 @@ test("Store browse q stays a return-link context and does not filter the Store's
   assert.equal(byId(view, "offers-search").props.value, "");
   assert.deepEqual(find(view, node => node.type === "Link" && node.props.href?.pathname === "/stores").props.href.params,
     { city: "sanaa", q: "متجر" });
+});
+
+test("the offer list receives current Store orderability so browsing cannot expose an unverified cart action", async () => {
+  const app = harness();
+  await open(app);
+  const list = find(app.render(), node => node.type === "StoreProducts");
+  assert.equal(list?.props.store?.id, "store-a");
+  assert.equal(list?.props.store?.orderabilityStatus, "OPERATIONALLY_UNAVAILABLE");
 });
 
 test("Offer search submits actual text, pages with that query and retries the same failed continuation", async () => {
