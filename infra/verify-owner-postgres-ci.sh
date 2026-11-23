@@ -37,6 +37,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# An ephemeral credential prevents a checked-in reusable role password. Each
+# stage exists only inside this network-disabled, volume-free CI runner.
+ci_password="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
+[[ "$ci_password" =~ ^[a-f0-9]{64}$ ]] || { echo "Missing secure CI entropy" >&2; exit 2; }
+
 # Static Go test executables run inside each isolated PostgreSQL container;
 # no host DB connection or external test-network grant is necessary.
 (cd services/identity/backend && \
@@ -78,7 +83,7 @@ start_stage() {
   done
   [[ "$ready" == yes ]] || { echo "Disposable PostgreSQL not ready" >&2; exit 1; }
   docker exec "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-    -c "CREATE ROLE $role LOGIN PASSWORD 'synthetic-only';"
+    -c "CREATE ROLE $role LOGIN PASSWORD '$ci_password';"
   docker exec "$name" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
     -c "CREATE DATABASE $db OWNER $role;"
   # The image's temporary init server accepts local Unix sockets before the
@@ -87,7 +92,7 @@ start_stage() {
   # can report a bootstrap process that is about to restart.
   local tcp_ready=no
   for attempt in $(seq 1 45); do
-    if [[ "$(docker exec -e PGPASSWORD=synthetic-only "$name" psql -X -A -t \
+    if [[ "$(docker exec -e PGPASSWORD="$ci_password" "$name" psql -X -A -t \
       -h 127.0.0.1 -p 5432 -U "$role" -d "$db" -v ON_ERROR_STOP=1 \
       -c 'SELECT 1' 2>/dev/null || true)" == "1" ]]; then
       tcp_ready=yes
@@ -160,7 +165,8 @@ docker exec "$current" sh -c \
 run_test "$current" /agent02/services/identity/backend/internal/session \
   /agent02/bin/identity-session.test '^TestPostgresIdentitySessionReadback$' 'TestPostgresIdentitySessionReadback' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e IDENTITY_RESTORE_CI_TEST=true \
-  -e IDENTITY_TEST_DATABASE_URL='postgres://bthwani_ci:synthetic-only@127.0.0.1:5432/bthwani_refoundation?sslmode=disable'
+  -e BTHWANI_CI_DISPOSABLE_PASSWORD="$ci_password" \
+  -e IDENTITY_TEST_DATABASE_URL="postgres://bthwani_ci:${ci_password}@127.0.0.1:5432/bthwani_refoundation?sslmode=disable"
 restored_identity="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_ci \
   -d bthwani_refoundation_identity_restore \
   -c "SELECT count(*) FROM pg_namespace WHERE nspname ~ '^identity_test_agent03_[a-f0-9]{16}$';")"
@@ -169,7 +175,7 @@ echo 'IDENTITY_DISPOSABLE_RESTORE_PASS real_postgresql=true active_and_revoked_a
 run_test "$current" /agent02/services/dsh/backend/internal/discovery \
   /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped)' 'TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedCaptainStandingMigration,TestOwnerBackedActiveCityDirectory,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch,TestOwnerBackedOfferEstimate' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_TEST_SEED_BOUNDARY=true \
-  -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD=synthetic-only \
+  -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD="$ci_password" \
   -e REF_POSTGRES_DB=bthwani_refoundation \
   -e DSH_DB_HOST=127.0.0.1 -e DSH_DB_SCHEMA=dsh_test_ci
 run_test "$current" /agent02/bin /agent02/bin/dsh-customercart.test \
@@ -178,7 +184,7 @@ run_test "$current" /agent02/bin /agent02/bin/dsh-customercart.test \
 run_test "$current" /agent02/services/dsh/backend/internal/employees \
   /agent02/bin/dsh-employees.test '^TestCompanyEmployeeDirectoryPostgres$' 'TestCompanyEmployeeDirectoryPostgres' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_EMPLOYEES_TEST=true \
-  -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD=synthetic-only \
+  -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD="$ci_password" \
   -e REF_POSTGRES_DB=bthwani_refoundation -e DSH_DB_HOST=127.0.0.1
 finish_stage
 
@@ -188,7 +194,7 @@ run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
   '^(TestRealPostgresVersionIdempotencyAuditAndReadback|TestRealPostgresVersionedCityPolicyWriterAndConcurrency|TestIsolatedRealIdentityAndDshAvailability|TestMerchantCatalogRealPostgresOwnerReadback)$' 'TestRealPostgresVersionIdempotencyAuditAndReadback,TestRealPostgresVersionedCityPolicyWriterAndConcurrency,TestIsolatedRealIdentityAndDshAvailability,TestMerchantCatalogRealPostgresOwnerReadback' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_DSH_TEST_CONTAINER=bthwani-session02-orderability-pg \
-  -e BTHWANI_DSH_TEST_DATABASE_URL='postgres://bthwani_agent02:synthetic-only@127.0.0.1:5432/orderability_agent02?sslmode=disable' \
+  -e BTHWANI_DSH_TEST_DATABASE_URL="postgres://bthwani_agent02:${ci_password}@127.0.0.1:5432/orderability_agent02?sslmode=disable" \
   -e BTHWANI_IDENTITY_TEST_BINARY=/agent02/bin/identity \
   -e BTHWANI_IDENTITY_TEST_SQL_DIR=/agent02/services/identity/database/migrations
 finish_stage
@@ -198,13 +204,13 @@ run_test "$current" /agent02/services/identity/backend/internal/session \
   /agent02/bin/identity-session.test '^TestCaptainIdentityVerifiedAdmissionRealPostgres$' 'TestCaptainIdentityVerifiedAdmissionRealPostgres' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_CAPTAIN_TEST_CONTAINER=bthwani-session02-captain-pg \
-  -e BTHWANI_CAPTAIN_TEST_DATABASE_URL='postgres://bt_cap_s02:synthetic-only@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable'
+  -e BTHWANI_CAPTAIN_TEST_DATABASE_URL="postgres://bt_cap_s02:${ci_password}@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable"
 run_test "$current" /agent02/services/dsh/backend/internal/captainstanding \
   /agent02/bin/dsh-captainstanding.test \
   '^(TestCaptainStandingRealPostgresOwnerLifecycle|TestCaptainJoinedRealHTTPAndPostgres)$' 'TestCaptainStandingRealPostgresOwnerLifecycle,TestCaptainJoinedRealHTTPAndPostgres' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e BTHWANI_CAPTAIN_JOINED_HTTP_TEST=true \
   -e BTHWANI_CAPTAIN_TEST_CONTAINER=bthwani-session02-captain-pg \
-  -e BTHWANI_CAPTAIN_TEST_DATABASE_URL='postgres://bt_cap_s02:synthetic-only@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable'
+  -e BTHWANI_CAPTAIN_TEST_DATABASE_URL="postgres://bt_cap_s02:${ci_password}@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable"
 finish_stage
 
 start_stage bthwani-session02-operator-pg bt_op_s02 refoundation_operator_agent02
@@ -212,7 +218,7 @@ run_test "$current" /agent02/services/identity/backend/internal/session \
   /agent02/bin/identity-session.test '^TestOperatorPermissionManagementRealPostgresAndHTTP$' 'TestOperatorPermissionManagementRealPostgresAndHTTP' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e BTHWANI_OPERATOR_ADMIN_TEST=true \
   -e BTHWANI_OPERATOR_TEST_CONTAINER=bthwani-session02-operator-pg \
-  -e BTHWANI_OPERATOR_TEST_DATABASE_URL='postgres://bt_op_s02:synthetic-only@127.0.0.1:5432/refoundation_operator_agent02?sslmode=disable'
+  -e BTHWANI_OPERATOR_TEST_DATABASE_URL="postgres://bt_op_s02:${ci_password}@127.0.0.1:5432/refoundation_operator_agent02?sslmode=disable"
 finish_stage
 
 start_stage bthwani-session02-webauthn-pg bthwani_fido_s02 refoundation_webauthn_s02
@@ -222,7 +228,7 @@ run_test "$current" /agent02/services/identity/backend/internal/session \
   'TestOperatorPasskeyRealWebAuthnSignatureSQL,TestInitialOperatorBootstrapRealPostgresAndWebAuthn' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e BTHWANI_OPERATOR_PASSKEY_INTEGRATION=true \
   -e BTHWANI_OPERATOR_PASSKEY_CONTAINER=bthwani-session02-webauthn-pg \
-  -e BTHWANI_OPERATOR_PASSKEY_DATABASE_URL='postgres://bthwani_fido_s02:synthetic-only@127.0.0.1:5432/refoundation_webauthn_s02?sslmode=disable'
+  -e BTHWANI_OPERATOR_PASSKEY_DATABASE_URL="postgres://bthwani_fido_s02:${ci_password}@127.0.0.1:5432/refoundation_webauthn_s02?sslmode=disable"
 finish_stage
 
 start_stage bthwani-session01-merchant-pg bthwani_session01 merchant_agent01
@@ -230,14 +236,14 @@ run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
   /agent02/bin/dsh-storeavailability.test '^(TestMerchantOwnedStoresRealPostgresAndHTTPReadback|TestMerchantStoreRegistrationIsolatedPostgresDurability|TestStoreRegistrationPolicyRealPostgresAuthorizationAndReconciliation)$' 'TestMerchantOwnedStoresRealPostgresAndHTTPReadback,TestMerchantStoreRegistrationIsolatedPostgresDurability,TestStoreRegistrationPolicyRealPostgresAuthorizationAndReconciliation' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_MERCHANT_TEST_CONTAINER=bthwani-session01-merchant-pg \
-  -e BTHWANI_MERCHANT_TEST_DATABASE_URL='postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable'
+  -e BTHWANI_MERCHANT_TEST_DATABASE_URL="postgres://bthwani_session01:${ci_password}@127.0.0.1:5432/merchant_agent01?sslmode=disable"
 finish_stage
 
 start_stage bthwani-ci-wlt-pg bthwani_wlt_owner bthwani_wlt_test
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_wlt_test \
-  -c "CREATE ROLE bthwani_wlt_reader LOGIN PASSWORD 'synthetic-only';" \
-  -c "CREATE ROLE bthwani_wlt_sandbox LOGIN PASSWORD 'synthetic-only';" \
-  -c "CREATE ROLE bthwani_identity_fixture LOGIN PASSWORD 'synthetic-only';" \
+  -c "CREATE ROLE bthwani_wlt_reader LOGIN PASSWORD '$ci_password';" \
+  -c "CREATE ROLE bthwani_wlt_sandbox LOGIN PASSWORD '$ci_password';" \
+  -c "CREATE ROLE bthwani_identity_fixture LOGIN PASSWORD '$ci_password';" \
   -c "GRANT CREATE ON DATABASE bthwani_wlt_test TO bthwani_identity_fixture;"
 docker exec "$current" mkdir -p /agent02/services/wlt/database
 docker cp services/wlt/database/migrations "$current:/agent02/services/wlt/database/migrations"

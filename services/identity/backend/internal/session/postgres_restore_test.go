@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"testing"
 )
 
@@ -17,7 +18,11 @@ func verifyIdentityRestore(t *testing.T, ctx context.Context, source, schema, re
 	t.Helper()
 	const sourceDB = "bthwani_refoundation"
 	const targetDB = "bthwani_refoundation_identity_restore"
-	const prefix = "postgres://bthwani_ci:synthetic-only@127.0.0.1:5432/"
+	password := os.Getenv("BTHWANI_CI_DISPOSABLE_PASSWORD")
+	if !regexp.MustCompile("^[a-f0-9]{64}$").MatchString(password) {
+		t.Fatal("Identity restore requires a valid ephemeral CI credential")
+	}
+	prefix := "postgres://bthwani_ci:" + password + "@127.0.0.1:5432/"
 	const suffix = "?sslmode=disable"
 	if source != prefix+sourceDB+suffix || !IsIsolatedTestSchema(schema) {
 		t.Fatal("Identity restore requires the isolated CI source and schema")
@@ -27,7 +32,7 @@ func verifyIdentityRestore(t *testing.T, ctx context.Context, source, schema, re
 		t.Helper()
 		connection := []string{"--host=127.0.0.1", "--port=5432", "--username=bthwani_ci", "--no-password"}
 		command := exec.CommandContext(ctx, binary, append(connection, args...)...)
-		command.Env = append(os.Environ(), "PGPASSWORD=synthetic-only")
+		command.Env = append(os.Environ(), "PGPASSWORD="+password)
 		if output, err := command.CombinedOutput(); err != nil {
 			t.Fatalf("%s failed: %v\n%s", binary, err, output)
 		}
