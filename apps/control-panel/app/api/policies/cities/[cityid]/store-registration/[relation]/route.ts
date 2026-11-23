@@ -8,7 +8,7 @@ import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { currentOperatorAccess } from "../../../../../../../src/server/current-operator-access";
 import {
-  boundedRequestBody, OPERATOR_COOKIE, resolveIsolatedOperatorConfig,
+  boundedRequestBody, isTrustedOperatorLoopbackTarget, OPERATOR_COOKIE, resolveIsolatedOperatorConfig,
 } from "../../../../../../../src/server/operator-passkey-bff";
 import { unavailableSessionResponse } from "../../../../../../../src/server/request-security";
 
@@ -40,16 +40,12 @@ function isolatedDshOrigin(raw: string | undefined): string | null {
 }
 function trustedRequest(request: NextRequest, browserOrigin: string, mutation: boolean) {
   const url = new URL(request.url);
-  if (url.origin !== browserOrigin || request.headers.get("host") !== url.host ||
-    (url.search && (mutation || !historyQuery.test(url.search))) ||
-    (mutation && request.headers.get("origin") !== browserOrigin) ||
-    request.headers.get("sec-fetch-site") === "cross-site") return false;
-  if (request.headers.has("x-forwarded-host") &&
-    request.headers.get("x-forwarded-host") !== url.host) return false;
-  if (request.headers.has("x-forwarded-proto") &&
-    request.headers.get("x-forwarded-proto") !== "http") return false;
-  return !["authorization", "x-actor-id", "x-operator-role", "x-role"].some(
-    key => request.headers.has(key));
+  const queryOK = url.search === "" || (!mutation && historyQuery.test(url.search));
+  return queryOK &&
+    request.method === (mutation ? "PATCH" : "GET") &&
+    (!mutation || request.headers.get("origin") === browserOrigin) &&
+    request.headers.get("sec-fetch-site") !== "cross-site" &&
+    isTrustedOperatorLoopbackTarget(request, browserOrigin, !mutation);
 }
 async function boundedChange(request: NextRequest): Promise<OperatorStoreRegistrationChange | null> {
   if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {

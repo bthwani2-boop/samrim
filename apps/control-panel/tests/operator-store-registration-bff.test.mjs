@@ -4,15 +4,18 @@ import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { validOperatorStoreRegistrationChange as validateDSHPolicyChange } from "../../../services/dsh/clients/operator-store-registration-policy.ts";
+import { isTrustedOperatorLoopbackTarget } from "../src/server/operator-passkey-config.ts";
 
 const file = fileURLToPath(new URL("../app/api/policies/cities/[cityid]/store-registration/[relation]/route.ts", import.meta.url));
 const source = readFileSync(file, "utf8");
-const compiled = stripTypeScriptTypes(source, { mode: "transform" })
+function compileRoute(source) { return stripTypeScriptTypes(source, { mode: "transform" })
   .replace(/import\s+\{([^}]*)\}\s+from\s+["\x27]([^"\x27]+)["\x27];/gs,
     (_match, names, moduleName) => `const {${names}} = require("${moduleName}");`)
   .replace(/export const (runtime|dynamic) =/g, "const $1 =")
   .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = { GET, PATCH };";
+  "\nmodule.exports = { GET, PATCH };"; }
+const compiled = compileRoute(source);
+const cityCompiled = compileRoute(readFileSync(new URL("../app/api/policies/cities/[cityid]/route.ts", import.meta.url), "utf8"));
 const browser = "http://localhost:13000";
 const bearer = Buffer.alloc(32, 8).toString("base64url");
 const url = `${browser}/api/policies/cities/sanaa/store-registration/MARKETPLACE`;
@@ -29,7 +32,7 @@ class OwnerError extends Error {
     this.code = code;
   }
 }
-function harness(t) {
+function harness(t, cityRoute = false) {
   const previous = process.env.OPERATOR_POLICY_DSH_ORIGIN;
   process.env.OPERATOR_POLICY_DSH_ORIGIN = "http://127.0.0.1:33222";
   t.after(() => {
@@ -75,7 +78,8 @@ function harness(t) {
     },
     "../../../../../../../src/server/operator-passkey-bff": {
       OPERATOR_COOKIE: "bthwani_operator_session",
-      boundedRequestBody: async (request, maxBytes) => {
+      isTrustedOperatorLoopbackTarget,
+      boundedRequestBody: async (request, maxBytes = 8192) => {
         state.maxCommandBytes = maxBytes;
         const body = await request.text();
         return Buffer.byteLength(body, "utf8") <= maxBytes ? body : null;
@@ -86,16 +90,29 @@ function harness(t) {
       unavailableSessionResponse: () => Response.json({ code: "OPERATOR_SESSION_UNAVAILABLE" }, { status: 503 }),
     },
   };
+  if (cityRoute) {
+    owner.getCityStoreOperationalPolicy = owner.getOperatorStoreRegistrationPolicy;
+    owner.listCityStoreOperationalPolicyHistory = owner.listOperatorStoreRegistrationPolicyHistory;
+    owner.replaceCityStoreOperationalPolicy = async (...args) => {
+      state.dshCalls.push(["PATCH", ...args]);
+      return { policy, replay: false };
+    };
+    for (const [key, value] of Object.entries(mocks)) {
+      if (key.startsWith("../../../../../../../src/")) {
+        mocks[key.replace("../../../../../../../src/", "../../../../../src/")] = value;
+      }
+    }
+  }
   const module = { exports: {} };
-  new Function("require", "module", "exports", "process", compiled)(
+  new Function("require", "module", "exports", "process", cityRoute ? cityCompiled : compiled)(
     key => {
       assert.ok(Object.hasOwn(mocks, key), `unexpected BFF import ${key}`);
       return mocks[key];
     },
     module, module.exports, process,
   );
-  function request(method = "GET", headers = {}, body) {
-    return new Request(url, {
+  function request(method = "GET", headers = {}, body, target = url) {
+    return new Request(target, {
       method,
       headers: { Host: "localhost:13000", "X-BThwani-Operator": "operator-a",
         ...(method === "PATCH" ? { Origin: browser, "Content-Type": "application/json" } : {}),
@@ -212,4 +229,47 @@ test("Operator BFF history rejects unauthorized query selectors and does not fab
   assert.equal(h.state.dshCalls.length, 0);
   h.state.dshError = new OwnerError(503);
   assert.equal((await h.GET(build("?history=1&limit=10"), h.context)).status, 503);
+});
+
+test("Operator policy routes accept only the canonical normalized SSH tunnel target", async t => {
+  const h = harness(t);
+  const target = url.replace("localhost:13000", "localhost:23010");
+  assert.equal((await h.GET(h.request("GET", {}, undefined, target), h.context)).status, 200);
+  assert.equal((await h.PATCH(h.request("PATCH", {}, command, target), h.context)).status, 200);
+  assert.equal((await h.GET(h.request("GET", {}, undefined, target + "?history=1&limit=10"), h.context)).status, 200);
+  const validCalls = h.state.dshCalls.length;
+  for (const [method, headers, candidate] of [
+    ["GET", { Host: "localhost:23010" }, target],
+    ["GET", { "X-Forwarded-Host": "evil.invalid" }, target],
+    ["GET", { "X-Forwarded-Proto": "https" }, target],
+    ["GET", { "Sec-Fetch-Site": "cross-site" }, target],
+    ["PATCH", { Origin: "http://localhost:23010" }, target],
+    ["PATCH", {}, target + "?history=1"],
+    ["GET", {}, target.replace("23010", "23011")],
+    ["GET", {}, target + "?history=1&limit=10&limit=11"],
+  ]) {
+    assert.equal((await h[method](h.request(method, headers, method === "PATCH" ? command : undefined, candidate), h.context)).status, 400);
+  }
+  assert.equal(h.state.dshCalls.length, validCalls);
+});
+test("City policy BFF honors the same exact tunnel and rejects cross-site or invalid history", async t => {
+  const h = harness(t, true);
+  const target = browser.replace("13000", "23010") + "/api/policies/cities/sanaa";
+  assert.equal((await h.GET(h.request("GET", {}, undefined, target), h.context)).status, 200);
+  assert.equal((await h.PATCH(h.request("PATCH", {}, { operationId: "city-change-001", expectedVersion: 1, maxPauseSeconds: 1800, maxPreparationMinutes: 20, reason: "Test policy" }, target), h.context)).status, 200);
+  assert.equal((await h.GET(h.request("GET", {}, undefined, target + "?history=1&limit=10"), h.context)).status, 200);
+  const calls = h.state.dshCalls.length;
+  for (const [headers, candidate] of [
+    [{ "Sec-Fetch-Site": "cross-site" }, target],
+    [{ "X-Forwarded-Host": "evil.invalid" }, target],
+    [{ Host: "localhost:23010" }, target],
+    [{ Authorization: "Bearer forged" }, target],
+    [{}, target + "?history=1&limit=11"],
+    [{}, target + "?history=1&limit=10&beforeVersion=0"],
+    [{}, target.replace("23010", "23011")],
+  ]) {
+    assert.equal((await h.GET(h.request("GET", headers, undefined, candidate), h.context)).status, 400);
+  }
+  assert.equal((await h.PATCH(h.request("PATCH", {}, {}, target + "?history=1&limit=10"), h.context)).status, 400);
+  assert.equal(h.state.dshCalls.length, calls);
 });
