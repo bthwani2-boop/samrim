@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -20,6 +19,9 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 )
 
 // Tests the actual separate Identity process and the DSH HTTP/PostgreSQL owners.
@@ -152,7 +154,7 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	if !ready {
 		t.Fatal("real Identity process did not verify isolated session; process logs:", output.String())
 	}
-	identity, err := NewIdentitySessionHTTP(identityURL)
+	identity, err := identityaccess.NewIdentitySessionHTTP(identityURL)
 	if err != nil {
 		t.Fatal(err)
 	}

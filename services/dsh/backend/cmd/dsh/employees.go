@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/employees"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 func isolatedEmployeeHandler(ctx context.Context, db *sql.DB, schema, listen string, existing http.Handler) (http.Handler, error) {
@@ -21,7 +21,7 @@ func isolatedEmployeeHandler(ctx context.Context, db *sql.DB, schema, listen str
 		err != nil || (host != "127.0.0.1" && host != "::1") {
 		return nil, errors.New("employee directory requires loopback and explicit DSH isolation")
 	}
-	identity, err := storeavailability.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
+	identity, err := identityaccess.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
 	if err != nil {
 		return nil, err
 	}

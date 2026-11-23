@@ -1,4 +1,4 @@
-package storeavailability
+package identityaccess
 
 import (
 	"bytes"
@@ -30,11 +30,11 @@ func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
 	if err != nil || root.Host == "" || root.User != nil ||
 		root.RawQuery != "" || root.ForceQuery || root.Fragment != "" || root.Opaque != "" ||
 		(root.Path != "" && root.Path != "/") {
-		return nil, ErrInvalidChange
+		return nil, ErrInvalidOrigin
 	}
 	if root.Scheme != "https" &&
 		!(root.Scheme == "http" && (root.Hostname() == "127.0.0.1" || root.Hostname() == "localhost")) {
-		return nil, ErrInvalidChange
+		return nil, ErrInvalidOrigin
 	}
 	root.Path = "/v1/operators/me/permissions/"
 	permissionBase := root.String()
@@ -52,9 +52,9 @@ func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
 	}, nil
 }
 
-// Every DSH consumer must accept only a canonical Identity actor identifier.
+// ValidActorID accepts only a canonical Identity actor identifier.
 // A corrupt upstream response is never proof of session or permission scope.
-func validIdentityActorID(id string) bool {
+func ValidActorID(id string) bool {
 	return id != "" && len(id) <= 128 && utf8.ValidString(id) &&
 		strings.TrimSpace(id) == id && !strings.ContainsFunc(id, unicode.IsControl)
 }
@@ -112,7 +112,7 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 	if err = decodeIdentityOwnerJSON(response, &verified); err != nil {
 		return VerifiedActor{}, err
 	}
-	if !validIdentityActorID(verified.ActorID) ||
+	if !ValidActorID(verified.ActorID) ||
 		!verified.SessionExpiresAt.After(time.Now()) {
 		return VerifiedActor{}, ErrUnauthorized
 	}
@@ -123,9 +123,9 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 	case "operator":
 		role = OperatorRole
 	case "customer":
-		role = ActorRole("CUSTOMER")
+		role = CustomerRole
 	case "captain":
-		role = ActorRole("CAPTAIN")
+		role = CaptainRole
 	default:
 		return VerifiedActor{}, ErrUnauthorized
 	}
@@ -133,14 +133,14 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 }
 
 // RequireOperatorPermission checks the current effective Identity grant for
-// the SAME actor already verified via /v1/sessions/current by Service.authorize.
+// the SAME actor already verified via /v1/sessions/current by the consumer.
 // No role-to-permission inference, cache, redirect, or client-supplied actor ID.
 func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Context, token, verifiedActorID, permission string) error {
 	if identity == nil || identity.client == nil {
 		return ErrIdentityUnavailable
 	}
 	if (permission != "operations" && permission != "platform_policies" && permission != "hr" && permission != "merchant") ||
-		!validIdentityActorID(verifiedActorID) {
+		!ValidActorID(verifiedActorID) {
 		return ErrForbidden
 	}
 	if token == "" || strings.TrimSpace(token) != token ||

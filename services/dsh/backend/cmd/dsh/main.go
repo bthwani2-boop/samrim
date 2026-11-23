@@ -14,6 +14,7 @@ import (
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/customercart"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
@@ -42,7 +43,7 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 			return nil, err
 		}
 	}
-	identity, err := storeavailability.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
+	identity, err := identityaccess.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
 	if err != nil {
 		return nil, fmt.Errorf("current Identity verifier is required: %w", err)
 	}
@@ -97,7 +98,7 @@ func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http
 		err != nil || (!dockerLoopback && host != "127.0.0.1" && host != "::1") {
 		return nil, fmt.Errorf("Customer Cart requires isolated DSH schema and loopback-only transport")
 	}
-	identity, err := storeavailability.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
+	identity, err := identityaccess.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
 	if err != nil {
 		return nil, fmt.Errorf("current Identity verifier is required for Customer Cart: %w", err)
 	}

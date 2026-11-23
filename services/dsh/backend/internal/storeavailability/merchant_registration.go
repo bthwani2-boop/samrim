@@ -15,6 +15,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 var (
@@ -76,7 +78,7 @@ func (s *MerchantStoreRegistrar) actor(ctx context.Context, token string) (strin
 	if err != nil {
 		return "", ErrUnauthorized
 	}
-	if !validIdentityActorID(a.Subject) {
+	if !identityaccess.ValidActorID(a.Subject) {
 		return "", ErrUnauthorized
 	}
 	if a.Role != MerchantRole {

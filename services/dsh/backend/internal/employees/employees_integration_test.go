@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
@@ -67,7 +67,7 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 		}
 	}))
 	defer identityOwner.Close()
-	identity, err := storeavailability.NewIdentitySessionHTTP(identityOwner.URL)
+	identity, err := identityaccess.NewIdentitySessionHTTP(identityOwner.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,16 +204,16 @@ type employeeReadTransition struct {
 	grantRevoked bool
 }
 
-func (identity *employeeReadTransition) ResolveCurrentSession(_ context.Context, _ string) (storeavailability.VerifiedActor, error) {
+func (identity *employeeReadTransition) ResolveCurrentSession(_ context.Context, _ string) (identityaccess.VerifiedActor, error) {
 	if identity.calls.Add(1) > 1 && !identity.grantRevoked {
-		return storeavailability.VerifiedActor{}, storeavailability.ErrUnauthorized
+		return identityaccess.VerifiedActor{}, identityaccess.ErrUnauthorized
 	}
-	return storeavailability.VerifiedActor{Subject: "hr-current", Role: storeavailability.OperatorRole}, nil
+	return identityaccess.VerifiedActor{Subject: "hr-current", Role: identityaccess.OperatorRole}, nil
 }
 
 func (identity *employeeReadTransition) RequireOperatorPermission(_ context.Context, _, _, _ string) error {
 	if identity.grantRevoked && identity.calls.Load() > 1 {
-		return storeavailability.ErrForbidden
+		return identityaccess.ErrForbidden
 	}
 	return nil
 }

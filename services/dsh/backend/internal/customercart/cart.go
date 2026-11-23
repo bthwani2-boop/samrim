@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 // A Customer cart is a DSH-owned draft. It is neither an Order nor a price,
@@ -47,7 +47,7 @@ type ChangeResult struct {
 	Replay bool     `json:"replay"`
 }
 type Identity interface {
-	ResolveCurrentSession(context.Context, string) (storeavailability.VerifiedActor, error)
+	ResolveCurrentSession(context.Context, string) (identityaccess.VerifiedActor, error)
 }
 type Handler struct {
 	db       *sql.DB
@@ -101,11 +101,11 @@ func (h *Handler) actor(ctx context.Context, token string) (string, int) {
 	}
 	subject, err := h.identity.ResolveCurrentSession(ctx, token)
 	switch {
-	case errors.Is(err, storeavailability.ErrIdentityUnavailable):
+	case errors.Is(err, identityaccess.ErrIdentityUnavailable):
 		return "", http.StatusServiceUnavailable
 	case err != nil:
 		return "", http.StatusUnauthorized
-	case subject.Role != storeavailability.ActorRole("CUSTOMER"):
+	case subject.Role != identityaccess.CustomerRole:
 		return "", http.StatusForbidden
 	case subject.Subject == "" || len(subject.Subject) > 128 || strings.TrimSpace(subject.Subject) != subject.Subject:
 		return "", http.StatusUnauthorized

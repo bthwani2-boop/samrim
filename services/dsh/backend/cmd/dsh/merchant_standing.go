@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
@@ -24,7 +25,7 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 		os.Getenv("DSH_IDENTITY_VERIFIER_URL") != isolatedDSHVerifierURL {
 		return nil, fmt.Errorf("Merchant standing requires an isolated Docker schema and trusted Identity TLS")
 	}
-	identity, err := storeavailability.NewIdentitySessionHTTP(isolatedDSHVerifierURL)
+	identity, err := identityaccess.NewIdentitySessionHTTP(isolatedDSHVerifierURL)
 	if err != nil {
 		return nil, err
 	}

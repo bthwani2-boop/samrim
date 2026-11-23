@@ -14,6 +14,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 // DSH is the single authority for the admission policy governing all Store
@@ -100,7 +102,7 @@ func (s *MerchantStoreRegistrar) ReadRegistrationPolicy(
 func (s *MerchantStoreRegistrar) ApplyRegistrationPolicy(
 	ctx context.Context, actorID string, change StoreRegistrationPolicyChange,
 ) (StoreRegistrationPolicyResult, error) {
-	if !validIdentityActorID(actorID) || !validStoreRegistrationPolicyChange(change) {
+	if !identityaccess.ValidActorID(actorID) || !validStoreRegistrationPolicyChange(change) {
 		return StoreRegistrationPolicyResult{}, ErrRegistrationInvalid
 	}
 	change.Reason = strings.TrimSpace(change.Reason)

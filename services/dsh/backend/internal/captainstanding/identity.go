@@ -4,17 +4,17 @@ import (
 	"context"
 	"errors"
 
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 // IdentityAdapter reuses DSH's canonical uncached current-session HTTP client.
 // The role and Operator permission come only from Identity, not request headers.
 type IdentityAdapter struct {
-	client *storeavailability.IdentitySessionHTTP
+	client *identityaccess.IdentitySessionHTTP
 }
 
 func NewIdentityAdapter(baseURL string) (*IdentityAdapter, error) {
-	client, err := storeavailability.NewIdentitySessionHTTP(baseURL)
+	client, err := identityaccess.NewIdentitySessionHTTP(baseURL)
 	if err != nil {
 		return nil, ErrInvalidChange
 	}
@@ -23,9 +23,9 @@ func NewIdentityAdapter(baseURL string) (*IdentityAdapter, error) {
 
 func ownerIdentityError(err error) error {
 	switch {
-	case errors.Is(err, storeavailability.ErrUnauthorized):
+	case errors.Is(err, identityaccess.ErrUnauthorized):
 		return ErrUnauthorized
-	case errors.Is(err, storeavailability.ErrForbidden):
+	case errors.Is(err, identityaccess.ErrForbidden):
 		return ErrForbidden
 	default:
 		return ErrOwnerUnavailable
@@ -43,15 +43,15 @@ func (a *IdentityAdapter) Resolve(ctx context.Context, bearer string) (Actor, er
 	return Actor{ID: actor.Subject, Role: roleString(actor.Role)}, nil
 }
 
-func roleString(role storeavailability.ActorRole) string {
+func roleString(role identityaccess.ActorRole) string {
 	switch role {
-	case storeavailability.MerchantRole:
+	case identityaccess.MerchantRole:
 		return "merchant"
-	case storeavailability.OperatorRole:
+	case identityaccess.OperatorRole:
 		return "operator"
-	case storeavailability.ActorRole("CUSTOMER"):
+	case identityaccess.CustomerRole:
 		return "customer"
-	case storeavailability.ActorRole("CAPTAIN"):
+	case identityaccess.CaptainRole:
 		return "captain"
 	default:
 		return ""

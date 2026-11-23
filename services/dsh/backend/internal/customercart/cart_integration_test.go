@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 	_ "github.com/lib/pq"
 )
 
@@ -39,21 +39,21 @@ type testSession struct {
 	revoked bool
 }
 
-func (s *testSession) ResolveCurrentSession(_ context.Context, token string) (storeavailability.VerifiedActor, error) {
+func (s *testSession) ResolveCurrentSession(_ context.Context, token string) (identityaccess.VerifiedActor, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.revoked || token == "revoked" {
-		return storeavailability.VerifiedActor{}, storeavailability.ErrUnauthorized
+		return identityaccess.VerifiedActor{}, identityaccess.ErrUnauthorized
 	}
 	switch token {
 	case "customer-a":
-		return storeavailability.VerifiedActor{Subject: "customer-a", Role: "CUSTOMER"}, nil
+		return identityaccess.VerifiedActor{Subject: "customer-a", Role: "CUSTOMER"}, nil
 	case "customer-b":
-		return storeavailability.VerifiedActor{Subject: "customer-b", Role: "CUSTOMER"}, nil
+		return identityaccess.VerifiedActor{Subject: "customer-b", Role: "CUSTOMER"}, nil
 	case "merchant-a":
-		return storeavailability.VerifiedActor{Subject: "merchant-a", Role: "MERCHANT"}, nil
+		return identityaccess.VerifiedActor{Subject: "merchant-a", Role: "MERCHANT"}, nil
 	}
-	return storeavailability.VerifiedActor{}, storeavailability.ErrUnauthorized
+	return identityaccess.VerifiedActor{}, identityaccess.ErrUnauthorized
 }
 func jsonCartRequest(t *testing.T, method, store, token string, body any) *http.Request {
 	t.Helper()
@@ -88,7 +88,7 @@ func cartTestBearer(key string) string {
 		return "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA"
 	}
 }
-func (s *testSession) ResolveSessionByBearer(token string) (storeavailability.VerifiedActor, error) {
+func (s *testSession) ResolveSessionByBearer(token string) (identityaccess.VerifiedActor, error) {
 	switch token {
 	case cartTestBearer("customer-a"):
 		return s.ResolveCurrentSession(context.Background(), "customer-a")
@@ -97,13 +97,13 @@ func (s *testSession) ResolveSessionByBearer(token string) (storeavailability.Ve
 	case cartTestBearer("merchant-a"):
 		return s.ResolveCurrentSession(context.Background(), "merchant-a")
 	default:
-		return storeavailability.VerifiedActor{}, storeavailability.ErrUnauthorized
+		return identityaccess.VerifiedActor{}, identityaccess.ErrUnauthorized
 	}
 }
 
 type cartSessionAdapter struct{ s *testSession }
 
-func (a cartSessionAdapter) ResolveCurrentSession(_ context.Context, token string) (storeavailability.VerifiedActor, error) {
+func (a cartSessionAdapter) ResolveCurrentSession(_ context.Context, token string) (identityaccess.VerifiedActor, error) {
 	return a.s.ResolveSessionByBearer(token)
 }
 func runCart(t *testing.T, h http.Handler, method, store, token string, body any) (int, []byte) {

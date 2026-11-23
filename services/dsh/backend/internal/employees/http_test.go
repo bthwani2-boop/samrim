@@ -8,16 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 type employeeRecheckIdentity struct {
-	actor    storeavailability.VerifiedActor
+	actor    identityaccess.VerifiedActor
 	readErr  error
 	grantErr error
 }
 
-func (fake employeeRecheckIdentity) ResolveCurrentSession(context.Context, string) (storeavailability.VerifiedActor, error) {
+func (fake employeeRecheckIdentity) ResolveCurrentSession(context.Context, string) (identityaccess.VerifiedActor, error) {
 	return fake.actor, fake.readErr
 }
 
@@ -26,7 +26,7 @@ func (fake employeeRecheckIdentity) RequireOperatorPermission(context.Context, s
 }
 
 func TestEmployeeReadRequiresCurrentSameActorAndHRGrant(t *testing.T) {
-	operator := storeavailability.VerifiedActor{Subject: "operator-a", Role: storeavailability.OperatorRole}
+	operator := identityaccess.VerifiedActor{Subject: "operator-a", Role: identityaccess.OperatorRole}
 	tests := []struct {
 		name   string
 		state  employeeRecheckIdentity
@@ -34,11 +34,11 @@ func TestEmployeeReadRequiresCurrentSameActorAndHRGrant(t *testing.T) {
 		permit bool
 	}{
 		{"current authorized operator", employeeRecheckIdentity{actor: operator}, 200, true},
-		{"session revoked while reading", employeeRecheckIdentity{readErr: storeavailability.ErrUnauthorized}, 401, false},
-		{"identity owner unavailable", employeeRecheckIdentity{readErr: storeavailability.ErrIdentityUnavailable}, 503, false},
-		{"token changed actor", employeeRecheckIdentity{actor: storeavailability.VerifiedActor{Subject: "operator-b", Role: storeavailability.OperatorRole}}, 401, false},
-		{"operator role revoked", employeeRecheckIdentity{actor: storeavailability.VerifiedActor{Subject: "operator-a", Role: storeavailability.MerchantRole}}, 403, false},
-		{"HR grant revoked", employeeRecheckIdentity{actor: operator, grantErr: storeavailability.ErrForbidden}, 403, false},
+		{"session revoked while reading", employeeRecheckIdentity{readErr: identityaccess.ErrUnauthorized}, 401, false},
+		{"identity owner unavailable", employeeRecheckIdentity{readErr: identityaccess.ErrIdentityUnavailable}, 503, false},
+		{"token changed actor", employeeRecheckIdentity{actor: identityaccess.VerifiedActor{Subject: "operator-b", Role: identityaccess.OperatorRole}}, 401, false},
+		{"operator role revoked", employeeRecheckIdentity{actor: identityaccess.VerifiedActor{Subject: "operator-a", Role: identityaccess.MerchantRole}}, 403, false},
+		{"HR grant revoked", employeeRecheckIdentity{actor: operator, grantErr: identityaccess.ErrForbidden}, 403, false},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

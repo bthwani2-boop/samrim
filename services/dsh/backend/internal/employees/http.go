@@ -13,11 +13,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 type identitySessions interface {
-	ResolveCurrentSession(context.Context, string) (storeavailability.VerifiedActor, error)
+	ResolveCurrentSession(context.Context, string) (identityaccess.VerifiedActor, error)
 	RequireOperatorPermission(context.Context, string, string, string) error
 }
 
@@ -41,7 +41,7 @@ func verifyEmployeeReadAuthorization(w http.ResponseWriter, r *http.Request, ide
 		failure(w, http.StatusUnauthorized, "UNAUTHENTICATED")
 		return false
 	}
-	if current.Role != storeavailability.OperatorRole {
+	if current.Role != identityaccess.OperatorRole {
 		failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
 		return false
 	}
@@ -116,7 +116,7 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 			identityFailure(w, err)
 			return
 		}
-		if actor.Role != storeavailability.OperatorRole {
+		if actor.Role != identityaccess.OperatorRole {
 			failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
 			return
 		}
@@ -177,9 +177,9 @@ func normalizeText(value *string, limit int) bool {
 
 func identityFailure(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, storeavailability.ErrUnauthorized):
+	case errors.Is(err, identityaccess.ErrUnauthorized):
 		failure(w, http.StatusUnauthorized, "UNAUTHENTICATED")
-	case errors.Is(err, storeavailability.ErrForbidden):
+	case errors.Is(err, identityaccess.ErrForbidden):
 		failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
 	default:
 		failure(w, http.StatusServiceUnavailable, "IDENTITY_OWNER_UNAVAILABLE")
