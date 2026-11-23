@@ -47,16 +47,22 @@ async function boundedRequestBody(request: Request): Promise<Record<string, unkn
   if (request.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") return null;
   const reader = request.body?.getReader();
   if (!reader) return null;
+  const readSignal = AbortSignal.any([request.signal, AbortSignal.timeout(2000)]);
+  let onAbort: (() => void) | undefined;
+  const interrupted = new Promise<null>(resolve => {
+    onAbort = () => resolve(null);
+    if (readSignal.aborted) resolve(null);
+    else readSignal.addEventListener("abort", onAbort, { once: true });
+  });
   const bytes = new Uint8Array(256);
   let size = 0;
   try {
     while (true) {
-      const { done, value } = await reader.read();
+      const next = await Promise.race([reader.read(), interrupted]);
+      if (next === null) return null;
+      const { done, value } = next;
       if (done) break;
-      if (size + value.length > bytes.length) {
-        await reader.cancel();
-        return null;
-      }
+      if (size + value.length > bytes.length) return null;
       bytes.set(value, size);
       size += value.length;
     }
@@ -64,6 +70,10 @@ async function boundedRequestBody(request: Request): Promise<Record<string, unkn
     return data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : null;
   } catch {
     return null;
+  } finally {
+    if (onAbort) readSignal.removeEventListener("abort", onAbort);
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }
 

@@ -172,3 +172,55 @@ test("Unknown query parameters, unconfigured host and oversized body fail closed
   const remote = new Request("https://bthwani.example/api/customer-auth");
   assert.deepEqual(await (await GET(remote)).json(), { enabled: false, session: null });
 });
+
+test("Customer phone POST abandons an aborted stalled JSON body before Identity", async t => {
+  const calls = mockOwner(t, () => assert.fail("incomplete body must not reach Identity"));
+  let streamController;
+  const pendingBody = new ReadableStream({
+    start(controller) { streamController = controller; },
+  });
+  const abort = new AbortController();
+  const request = new Request(`${host}/api/customer-auth`, {
+    method: "POST", duplex: "half", signal: abort.signal,
+    headers: { Origin: host, "Content-Type": "application/json" },
+    body: pendingBody,
+  });
+  const pending = POST(request);
+  abort.abort();
+  const outcome = await Promise.race([
+    pending,
+    new Promise(resolve => setTimeout(() => resolve("STALLED"), 1000)),
+  ]);
+  if (outcome === "STALLED") {
+    streamController.close();
+    await pending;
+  }
+  assert.notEqual(outcome, "STALLED");
+  assert.equal(outcome.status, 400);
+  assert.equal(calls.length, 0);
+});
+
+test("Customer phone POST expires an unfinished JSON stream without forwarding any proof", async t => {
+  const calls = mockOwner(t, () => assert.fail("partial JSON must never reach Identity"));
+  let streamController;
+  const body = new ReadableStream({
+    start(controller) { streamController = controller; },
+  });
+  const request = new Request(`${host}/api/customer-auth`, {
+    method: "POST", duplex: "half",
+    headers: { Origin: host, "Content-Type": "application/json" },
+    body,
+  });
+  const pending = POST(request);
+  const outcome = await Promise.race([
+    pending,
+    new Promise(resolve => setTimeout(() => resolve("DEADLINE_MISSED"), 3500)),
+  ]);
+  if (outcome === "DEADLINE_MISSED") {
+    streamController.close();
+    await pending;
+  }
+  assert.notEqual(outcome, "DEADLINE_MISSED");
+  assert.equal(outcome.status, 400);
+  assert.equal(calls.length, 0);
+});
