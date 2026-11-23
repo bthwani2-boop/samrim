@@ -22,5 +22,6 @@ test("Customer can navigate from committed Store Cart to the same-Store read-onl
   const code = readFileSync(cart, "utf8");
   assert.match(code, /pathname: "\/checkout"/);
   assert.match(code, /params: \{ storeId \}/);
-  assert.match(code, /!pending\.current/);
+  assert.match(code, /const pending = view\?\.kind === "ready" \? pendingCartChange\(view\.cart\.actorId, storeId\) : undefined/);
+  assert.match(code, /view\?\.kind === "ready" && view\.cart\.lines\.length > 0 &&\s*!busy && !pending && !error \? \(\s*<Link href=\{\{ pathname: "\/checkout", params: \{ storeId \} \}\}/);
 });
