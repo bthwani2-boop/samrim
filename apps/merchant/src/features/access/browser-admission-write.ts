@@ -110,6 +110,8 @@ export async function POST(request: Request) {
       return response({ ticket }, 201);
     }
     if (Object.keys(data).length === 2 && typeof data.ticket === "string" && typeof data.code === "string") {
+      // An expired access cookie does not end its persistent Identity family.
+      if (refreshFrom(request)) return response({ code: "SIGN_OUT_REQUIRED" }, 409);
       const currentBearer = bearerFrom(request);
       if (currentBearer) {
         try {

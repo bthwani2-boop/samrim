@@ -65,7 +65,7 @@ export function appendSessionCookies(result: Response, request: Request,
   result.headers.append("Set-Cookie", sessionCookie(request, access,
     Math.max(0,Math.floor((Date.parse(accessExpiry)-Date.now())/1000))));
   if (refresh) result.headers.append("Set-Cookie",refreshCookie(request,refresh.refreshToken,refresh.refreshExpiresAt));
-  else if (!access) result.headers.append("Set-Cookie",refreshCookie(request,"",new Date(0).toISOString()));
+  else result.headers.append("Set-Cookie",refreshCookie(request,"",new Date(0).toISOString()));
   return result;
 }
 export function bearerFrom(request: Request) {
@@ -94,21 +94,32 @@ export async function readMutationBody(request: Request, limit: number): Promise
   }
   const reader = request.body?.getReader();
   if (!reader) return null;
+  const readSignal = AbortSignal.any([request.signal, AbortSignal.timeout(2000)]);
+  let onAbort: (() => void) | undefined;
+  const interrupted = new Promise<null>(resolve => {
+    onAbort = () => resolve(null);
+    if (readSignal.aborted) resolve(null);
+    else readSignal.addEventListener("abort", onAbort, { once: true });
+  });
   const bytes = new Uint8Array(limit);
   let length = 0;
   try {
+    if (readSignal.aborted) return null;
     for (;;) {
-      const { done, value } = await reader.read();
+      const next = await Promise.race([reader.read(), interrupted]);
+      if (next === null || readSignal.aborted) return null;
+      const { done, value } = next;
       if (done) break;
-      if (value.length + length > bytes.length) {
-        await reader.cancel();
-        return null;
-      }
+      if (value.length + length > bytes.length) return null;
       bytes.set(value, length);
       length += value.length;
     }
     return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)));
   } catch {
     return null;
+  } finally {
+    if (onAbort) readSignal.removeEventListener("abort", onAbort);
+    void reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }

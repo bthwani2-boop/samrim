@@ -1,11 +1,11 @@
 import {
+  establishPersistentIdentitySession,
   IdentityClientError,
   issueCustomerPhoneChallenge,
-  establishPersistentIdentitySession,
-  rotatePersistentIdentitySession,
-  revokePersistentIdentitySession,
   readVerifiedIdentitySession,
+  revokePersistentIdentitySession,
   revokeVerifiedIdentitySession,
+  rotatePersistentIdentitySession,
   type VerifiedIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "@bthwani/identity";
@@ -50,7 +50,7 @@ function bothCookies(request: Request, bearer: string, seconds: number, refresh:
   const headers = new Headers(noStore);
   headers.append("Set-Cookie", cookieFor(request, bearer, seconds));
   if (refresh) headers.append("Set-Cookie", refreshCookieFor(request, refresh.refreshToken, refresh.refreshExpiresAt));
-  else if (!bearer) headers.append("Set-Cookie", refreshCookieFor(request, "", new Date(0).toISOString()));
+  else headers.append("Set-Cookie", refreshCookieFor(request, "", new Date(0).toISOString()));
   return headers;
 }
 async function resumeWithRefresh(request: Request, origin: string): Promise<Response> {
@@ -168,6 +168,8 @@ export async function POST(request: Request) {
     if (Object.keys(body).length !== 2 || typeof body.ticket !== "string" || typeof body.code !== "string") {
       return json({ code: "INVALID_REQUEST" }, 400);
     }
+    // A live or recoverable family must be explicitly revoked before changing accounts.
+    if (refreshFrom(request)) return json({ code: "SIGN_OUT_REQUIRED" }, 409);
     const existing = bearerFor(request);
     if (existing) {
       try {

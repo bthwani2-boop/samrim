@@ -319,3 +319,40 @@ test("Concurrent Customer refresh conflict leaves session cookies intact for the
   assert.equal(res.status,409);
   assert.equal(res.headers.get("Set-Cookie"),null);
 });
+
+test("Customer must explicitly sign out before phone verification when only a refresh cookie remains", async t => {
+  const calls = mockOwner(t, () => assert.fail("existing session family must not consume another proof"));
+  const refresh = Buffer.alloc(32, 67).toString("base64url");
+  for (const existing of ["", cookie + "; "]) {
+    const res = await POST(new Request(host + "/api/customer-auth", {
+      method: "POST",
+      headers: { Origin: host, "Content-Type": "application/json",
+        Cookie: existing + "bthwani_customer_auth.refresh=" + refresh },
+      body: JSON.stringify({ ticket, code: "123456" }),
+    }));
+    assert.equal(res.status, 409);
+    assert.deepEqual(await res.json(), { code: "SIGN_OUT_REQUIRED" });
+    assert.equal(res.headers.get("Set-Cookie"), null);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test("Fresh Customer proof clears an unusable old refresh cookie when persistent enrollment fails", async t => {
+  const calls = mockOwner(t, (path, opts) => {
+    if (path === "/v1/customer-auth/phone-verification") return success({ accessToken: token, sessionExpiresAt: expiry });
+    if (path === "/v1/sessions/current") return success(verified);
+    if (path === "/v1/sessions/persistent") return Response.json({ error: "OWNER_UNAVAILABLE" },
+      { status: 503, headers: { "Cache-Control": "no-store" } });
+    assert.fail(path);
+  });
+  const res = await POST(new Request(host + "/api/customer-auth", {
+    method: "POST",
+    headers: { Origin: host, "Content-Type": "application/json", Cookie: "bthwani_customer_auth.refresh=invalid" },
+    body: JSON.stringify({ ticket, code: "123456" }),
+  }));
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { session: verified });
+  assert.ok(res.headers.getSetCookie().some(value => value.startsWith("bthwani_customer_auth=" + token + ";")));
+  assert.ok(res.headers.getSetCookie().some(value => value.startsWith("bthwani_customer_auth.refresh=;") && value.includes("Max-Age=0")));
+  assert.deepEqual(calls.map(x => x.path), ["/v1/customer-auth/phone-verification", "/v1/sessions/current", "/v1/sessions/persistent"]);
+});
