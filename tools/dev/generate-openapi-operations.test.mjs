@@ -16,7 +16,7 @@ function fixture(t, owner) {
   return { base, contract: path.join(base, dir) };
 }
 
-const counts = { identity: 18, dsh: 35, wlt: 2 };
+const counts = { identity: 21, dsh: 36, wlt: 2 };
 const samplePaths = { identity: "/v1/sessions/current:", dsh: "/v1/stores/mine:", wlt: "/v1/wallets/me:" };
 for (const owner of Object.keys(counts)) {
   test(owner + " operations are exactly reproducible and match owner OpenAPI", () => {
@@ -35,6 +35,14 @@ for (const owner of Object.keys(counts)) {
         row.path === "/v1/operators/passkey/bootstrap" && row.method === "POST"));
       assert.ok(rows.some(row => row.id === "reviewOriginalOperatorPermissions" &&
         row.path === "/v1/operators/{actorId}/permissions" && row.method === "GET"));
+      for (const [id, method, endpoint] of [
+        ["establishPersistentIdentitySession", "POST", "/v1/sessions/persistent"],
+        ["rotatePersistentIdentitySession", "POST", "/v1/sessions/refresh"],
+        ["revokePersistentIdentitySession", "DELETE", "/v1/sessions/refresh"],
+      ]) {
+        assert.ok(rows.some(row => row.id === id && row.method === method && row.path === endpoint),
+          "persistent session operation missing from verified Identity contract: " + id);
+      }
     }
     if (owner === "dsh") {
       assert.ok(rows.some(row => row.id === "submitPublicCaptainInterest" &&
@@ -47,6 +55,8 @@ for (const owner of Object.keys(counts)) {
         row.path === "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" && row.method === "GET"));
       assert.ok(rows.some(row => row.id === "changeOperatorStoreRegistrationPolicy" &&
         row.path === "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" && row.method === "PATCH"));
+      assert.ok(rows.some(row => row.id === "listOperatorStoreRegistrationPolicyHistory" &&
+        row.path === "/v1/operators/cities/{cityID}/store-registration-policy/{relation}/history" && row.method === "GET"));
       assert.ok(rows.some(row => row.id === "listCurrentMerchantStoreCatalog" &&
         row.path === "/v1/stores/{storeID}/catalog" && row.method === "GET"));
       assert.ok(rows.some(row => row.id === "createCurrentMerchantCatalogDraft" &&
