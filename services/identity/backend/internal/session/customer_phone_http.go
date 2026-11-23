@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/smtp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -130,6 +131,16 @@ func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
 	if !syntheticPhone.MatchString(phone) || !phoneCode.MatchString(code) {
 		return errors.New("invalid synthetic phone verification payload")
 	}
+	// Reconstruct the fixed-format Yemeni test number and six-digit code from
+	// parsed integers, so request text cannot enter SMTP message content.
+	phoneSuffix, err := strconv.ParseUint(phone[4:], 10, 32)
+	if err != nil {
+		return errors.New("invalid synthetic phone verification payload")
+	}
+	verificationCode, err := strconv.ParseUint(code, 10, 32)
+	if err != nil {
+		return errors.New("invalid synthetic phone verification payload")
+	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		return err
@@ -156,7 +167,7 @@ func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(payload, "From: %s\r\nTo: %s\r\nSubject: BThwani synthetic phone verification\r\n\r\nPhone: %s\r\nCode: %s\r\n", sender, inbox, phone, code)
+	_, err = fmt.Fprintf(payload, "From: %s\r\nTo: %s\r\nSubject: BThwani synthetic phone verification\r\n\r\nPhone: +967%09d\r\nCode: %06d\r\n", sender, inbox, phoneSuffix, verificationCode)
 	if err != nil {
 		return err
 	}
