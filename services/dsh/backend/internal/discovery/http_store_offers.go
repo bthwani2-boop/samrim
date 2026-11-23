@@ -8,15 +8,25 @@ import (
 )
 
 func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
-	const (
-		byID             = publicStoreScopeSQL + ` AND s.id=$1`
-		byIDWithHours    = publicStoreWithHoursSQL + byID
-		byIDWithoutHours = publicStoreWithoutHoursSQL + byID
-	)
-	if s.StoreAvailabilityEnabled {
-		return scanPublicStore(tx.QueryRowContext(ctx, byIDWithHours, id).Scan)
+	if !validID(id) {
+		return publicStore{}, sql.ErrNoRows
 	}
-	return scanPublicStore(tx.QueryRowContext(ctx, byIDWithoutHours, id).Scan)
+	rows, err := s.queryPublicStores(ctx, tx, publicStoreSelection{id: id, limit: 1})
+	if err != nil {
+		return publicStore{}, err
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return publicStore{}, err
+		}
+		return publicStore{}, sql.ErrNoRows
+	}
+	store, err := scanPublicStore(rows.Scan)
+	if err != nil {
+		return publicStore{}, err
+	}
+	return store, rows.Close()
 }
 func (s *Server) storeDetail(ctx context.Context, w http.ResponseWriter, id string) {
 	tx, e := s.Owner.viewTx(ctx)

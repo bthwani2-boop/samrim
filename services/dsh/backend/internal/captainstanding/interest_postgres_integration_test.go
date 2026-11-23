@@ -167,5 +167,26 @@ func TestCaptainInterestIsolatedPostgresDurability(t *testing.T) {
 		Scan(&persistentContact); err != nil || !persistentContact {
 		t.Fatalf("HTTP contact update missing from independent database readback: %t %v", persistentContact, err)
 	}
+
+	// Keep a temporary relation on the same pooled connection. It must never
+	// substitute for a missing canonical owner relation or shadow a real one.
+	reader.SetMaxOpenConns(1)
+	if _, err = reader.ExecContext(ctx, "CREATE TEMP TABLE captain_interest AS SELECT * FROM "+escaped+".captain_interest"); err != nil {
+		t.Fatal(err)
+	}
+	missing, err := NewPostgresInterestRepository(reader, schema+"_missing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = missing.List(ctx, InterestFilter{Limit: 20}); !errors.Is(err, ErrOwnerUnavailable) {
+		t.Fatalf("missing canonical schema resolved to a temporary table: %v", err)
+	}
+	if _, err = reader.ExecContext(ctx, "DELETE FROM pg_temp.captain_interest"); err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := stored.List(ctx, InterestFilter{Limit: 20})
+	if err != nil || len(canonical.Items) != 2 {
+		t.Fatalf("temporary table shadowed owner relation: %+v %v", canonical, err)
+	}
 }
 func boolPtr(v bool) *bool { return &v }

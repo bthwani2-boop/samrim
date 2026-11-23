@@ -30,22 +30,47 @@ type publicStore struct {
 	OrderingAvailable  bool   `json:"orderingAvailable"`
 }
 
-const publicStoreFieldsSQL = `SELECT s.id,s.name,s.city_id,s.vertical_id,`
-const publicStoreWithoutHoursSQL = publicStoreFieldsSQL + `NULL::jsonb, transaction_timestamp()`
-const publicStoreWithHoursSQL = publicStoreFieldsSQL + `(SELECT CASE
-		WHEN a.paused_until > transaction_timestamp() THEN jsonb_build_object('paused', true)
-		WHEN a.preparation_minutes IS NOT NULL AND a.store_timezone=c.timezone_name THEN
-			jsonb_build_object('timezone', a.store_timezone, 'weekly', COALESCE(
-				(SELECT jsonb_agg(jsonb_build_object('weekday', h.weekday,
-					'opens', h.opens_minute, 'closes', h.closes_minute))
-				 FROM store_operational_weekly_hours h WHERE h.store_id=a.store_id),
-				'[]'::jsonb))
-		END FROM store_operational_availability a WHERE a.store_id=s.id),
-	transaction_timestamp()`
-const publicStoreScopeSQL = ` FROM stores s
-	JOIN service_cities c ON c.id=s.city_id
-	JOIN verticals v ON v.id=s.vertical_id
-	WHERE s.published AND c.active AND v.active`
+type publicStoreSelection struct {
+	id, city, after, search, vertical string
+	limit                             int
+}
+
+// The same published/active boundary serves a direct Store link and the
+// marketplace listing. Only bound selectors vary; hours-disabled deployments
+// must not reference operational tables that have not been installed.
+func (s *Server) queryPublicStores(ctx context.Context, tx *sql.Tx, selection publicStoreSelection) (*sql.Rows, error) {
+	args := []any{selection.id, selection.city, selection.after, selection.search, selection.vertical, selection.limit}
+	if s.StoreAvailabilityEnabled {
+		return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,(SELECT CASE
+			WHEN a.paused_until > transaction_timestamp() THEN jsonb_build_object('paused', true)
+			WHEN a.preparation_minutes IS NOT NULL AND a.store_timezone=c.timezone_name THEN
+				jsonb_build_object('timezone', a.store_timezone, 'weekly', COALESCE(
+					(SELECT jsonb_agg(jsonb_build_object('weekday', h.weekday,
+						'opens', h.opens_minute, 'closes', h.closes_minute))
+					 FROM store_operational_weekly_hours h WHERE h.store_id=a.store_id),
+					'[]'::jsonb))
+			END FROM store_operational_availability a WHERE a.store_id=s.id),
+			transaction_timestamp()
+			FROM stores s
+			JOIN service_cities c ON c.id=s.city_id
+			JOIN verticals v ON v.id=s.vertical_id
+			WHERE s.published AND c.active AND v.active
+			  AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
+				AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
+				AND ($5='' OR s.vertical_id=$5)))
+			ORDER BY s.id LIMIT $6`, args...)
+	}
+	return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,
+		NULL::jsonb, transaction_timestamp()
+		FROM stores s
+		JOIN service_cities c ON c.id=s.city_id
+		JOIN verticals v ON v.id=s.vertical_id
+		WHERE s.published AND c.active AND v.active
+		  AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
+			AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
+			AND ($5='' OR s.vertical_id=$5)))
+		ORDER BY s.id LIMIT $6`, args...)
+}
 
 func scanPublicStore(scan func(...any) error) (publicStore, error) {
 	var st publicStore

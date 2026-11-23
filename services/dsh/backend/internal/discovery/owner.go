@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	_ "github.com/lib/pq"
 )
 
@@ -74,17 +75,7 @@ func (o *Owner) beginScopedTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx
 	if o == nil || o.DB == nil || !identifier.MatchString(o.Schema) {
 		return nil, errors.New("invalid DSH owner schema")
 	}
-	tx, err := o.DB.BeginTx(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	_, err = tx.ExecContext(ctx,
-		"SELECT pg_catalog.set_config('search_path', 'pg_catalog,' || pg_catalog.quote_ident($1) || ',pg_temp', true)", o.Schema)
-	if err != nil {
-		_ = tx.Rollback()
-		return nil, err
-	}
-	return tx, nil
+	return dbscope.Begin(ctx, o.DB, o.Schema, opts)
 }
 
 func (o *Owner) revision(ctx context.Context, tx *sql.Tx) (int64, error) {

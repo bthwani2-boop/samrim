@@ -7,9 +7,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"regexp"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 var (
@@ -18,8 +19,6 @@ var (
 	errConflict    = errors.New("employee registration operation already used")
 )
 
-const companyScope = "employer_kind='COMPANY' AND employer_id='bthwani'"
-const employeeColumns = "id, display_name, department, job_title, start_date, end_date"
 const pageSize = 30
 
 type employee struct {
@@ -63,8 +62,20 @@ func scanEmployee(row rowScanner) (employee, error) {
 }
 
 func (d directory) get(ctx context.Context, id string) (employee, error) {
-	query := fmt.Sprintf("SELECT %s FROM %s.employees WHERE %s AND id=$1", employeeColumns, d.schema, companyScope)
-	return scanEmployee(d.db.QueryRowContext(ctx, query, id))
+	tx, err := dbscope.Begin(ctx, d.db, d.schema, &sql.TxOptions{ReadOnly: true}, "employees")
+	if err != nil {
+		return employee{}, err
+	}
+	defer tx.Rollback()
+	record, err := scanEmployee(tx.QueryRowContext(ctx, `SELECT id,display_name,department,job_title,start_date,end_date
+		FROM employees WHERE employer_kind='COMPANY' AND employer_id='bthwani' AND id=$1`, id))
+	if err != nil {
+		return employee{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return employee{}, err
+	}
+	return record, nil
 }
 
 type page struct {
@@ -73,14 +84,14 @@ type page struct {
 }
 
 func (d directory) list(ctx context.Context, cursor string) (page, error) {
-	query := fmt.Sprintf("SELECT %s FROM %s.employees WHERE %s", employeeColumns, d.schema, companyScope)
-	var args []any
-	if cursor != "" {
-		query += " AND id>$1"
-		args = append(args, cursor)
+	tx, err := dbscope.Begin(ctx, d.db, d.schema, &sql.TxOptions{ReadOnly: true}, "employees")
+	if err != nil {
+		return page{}, err
 	}
-	query += fmt.Sprintf(" ORDER BY id LIMIT %d", pageSize+1)
-	rows, err := d.db.QueryContext(ctx, query, args...)
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT id,display_name,department,job_title,start_date,end_date
+		FROM employees WHERE employer_kind='COMPANY' AND employer_id='bthwani'
+		AND ($1='' OR id>NULLIF($1,'')::uuid) ORDER BY id LIMIT $2`, cursor, pageSize+1)
 	if err != nil {
 		return page{}, err
 	}
@@ -97,7 +108,16 @@ func (d directory) list(ctx context.Context, cursor string) (page, error) {
 		result.Items = result.Items[:pageSize]
 		result.NextCursor = &result.Items[pageSize-1].ID
 	}
-	return result, rows.Err()
+	if err = rows.Err(); err != nil {
+		return page{}, err
+	}
+	if err = rows.Close(); err != nil {
+		return page{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return page{}, err
+	}
+	return result, nil
 }
 
 func (d directory) register(ctx context.Context, actor string, input registration) (string, error) {
@@ -106,7 +126,7 @@ func (d directory) register(ctx context.Context, actor string, input registratio
 		return "", err
 	}
 	hash := sha256.Sum256(body)
-	tx, err := d.db.BeginTx(ctx, nil)
+	tx, err := dbscope.Begin(ctx, d.db, d.schema, nil, "employees", "employee_registration_audit")
 	if err != nil {
 		return "", err
 	}
@@ -120,8 +140,9 @@ func (d directory) register(ctx context.Context, actor string, input registratio
 	}
 	var id string
 	var recordedHash []byte
-	read := fmt.Sprintf("SELECT employee_id, request_hash FROM %s.employee_registration_audit WHERE %s AND acting_actor_id=$1 AND operation_id=$2", d.schema, companyScope)
-	err = tx.QueryRowContext(ctx, read, actor, input.OperationID).Scan(&id, &recordedHash)
+	err = tx.QueryRowContext(ctx, `SELECT employee_id,request_hash FROM employee_registration_audit
+		WHERE employer_kind='COMPANY' AND employer_id='bthwani' AND acting_actor_id=$1 AND operation_id=$2`,
+		actor, input.OperationID).Scan(&id, &recordedHash)
 	if err == nil {
 		if !bytes.Equal(hash[:], recordedHash) {
 			return "", errConflict
@@ -132,15 +153,14 @@ func (d directory) register(ctx context.Context, actor string, input registratio
 		return "", err
 	}
 
-	insert := fmt.Sprintf(`INSERT INTO %s.employees (employer_kind, employer_id, display_name, department, job_title, start_date)
-		VALUES ('COMPANY','bthwani',$1,$2,$3,$4) RETURNING id`, d.schema)
-	if err = tx.QueryRowContext(ctx, insert, input.DisplayName, input.Department, input.JobTitle, input.StartDate).Scan(&id); err != nil {
+	if err = tx.QueryRowContext(ctx, `INSERT INTO employees (employer_kind, employer_id, display_name, department, job_title, start_date)
+		VALUES ('COMPANY','bthwani',$1,$2,$3,$4) RETURNING id`,
+		input.DisplayName, input.Department, input.JobTitle, input.StartDate).Scan(&id); err != nil {
 		return "", err
 	}
-	audit := fmt.Sprintf(`INSERT INTO %s.employee_registration_audit
+	if _, err = tx.ExecContext(ctx, `INSERT INTO employee_registration_audit
 		(employer_kind, employer_id, employee_id, acting_actor_id, operation_id, request_hash)
-		VALUES ('COMPANY','bthwani',$1,$2,$3,$4)`, d.schema)
-	if _, err = tx.ExecContext(ctx, audit, id, actor, input.OperationID, hash[:]); err != nil {
+		VALUES ('COMPANY','bthwani',$1,$2,$3,$4)`, id, actor, input.OperationID, hash[:]); err != nil {
 		return "", err
 	}
 	if err = tx.Commit(); err != nil {

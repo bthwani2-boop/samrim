@@ -6,6 +6,7 @@ import (
 	"errors"
 	"regexp"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/lib/pq"
 )
 
@@ -27,17 +28,7 @@ func beginScopedStoreTx(ctx context.Context, db *sql.DB, schema string, options 
 	if db == nil || !postgresSchemaRule.MatchString(schema) {
 		return nil, ErrInvalidChange
 	}
-	tx, err := db.BeginTx(ctx, options)
-	if err != nil {
-		return nil, err
-	}
-	_, err = tx.ExecContext(ctx,
-		"SELECT pg_catalog.set_config('search_path', 'pg_catalog,' || pg_catalog.quote_ident($1) || ',pg_temp', true)", schema)
-	if err != nil {
-		_ = tx.Rollback()
-		return nil, err
-	}
-	return tx, nil
+	return dbscope.Begin(ctx, db, schema, options)
 }
 
 func NewPostgresRepository(db *sql.DB, schema string) (*PostgresRepository, error) {

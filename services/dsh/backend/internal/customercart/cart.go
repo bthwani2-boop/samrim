@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
@@ -141,7 +142,7 @@ func (h *Handler) begin(ctx context.Context, write bool) (*sql.Tx, error) {
 		_ = tx.Rollback()
 		return nil, errors.New("Customer Cart requires an isolated DSH database and role")
 	}
-	if _, err = tx.ExecContext(ctx, "SELECT pg_catalog.set_config('search_path', 'pg_catalog,' || pg_catalog.quote_ident($1) || ',pg_temp', true)", h.schema); err != nil {
+	if err = dbscope.Bind(ctx, tx, h.schema); err != nil {
 		_ = tx.Rollback()
 		return nil, err
 	}
