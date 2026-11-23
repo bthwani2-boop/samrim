@@ -96,12 +96,18 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 }
 
 func authorizeCityPolicyOperator(w http.ResponseWriter, r *http.Request, identity IdentitySessions) (string, bool) {
+	return authorizePolicyOperator(w, r, identity, r.URL.RawQuery == "")
+}
+
+// queryAllowed is determined at the endpoint boundary: writes reject all
+// selectors, while history reads accept only validated pagination selectors.
+func authorizePolicyOperator(w http.ResponseWriter, r *http.Request, identity IdentitySessions, queryAllowed bool) (string, bool) {
 	token, ok := bearerToken(r)
 	if !ok {
 		writeFailure(w, ErrUnauthorized)
 		return "", false
 	}
-	if r.URL.RawQuery != "" || !cityPolicyIDRule.MatchString(r.PathValue("cityID")) {
+	if !queryAllowed || !cityPolicyIDRule.MatchString(r.PathValue("cityID")) {
 		writeFailure(w, ErrInvalidChange)
 		return "", false
 	}

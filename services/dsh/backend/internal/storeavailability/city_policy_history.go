@@ -74,11 +74,7 @@ func cityPolicyHistoryHandler(identity IdentitySessions, reader CityPolicyHistor
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
-		authRequest := r.Clone(r.Context())
-		cleanURL := *r.URL
-		cleanURL.RawQuery = ""
-		authRequest.URL = &cleanURL
-		actor, ok := authorizeCityPolicyOperator(w, authRequest, identity)
+		actor, ok := authorizePolicyOperator(w, r, identity, ok)
 		if !ok {
 			return
 		}
@@ -87,7 +83,7 @@ func cityPolicyHistoryHandler(identity IdentitySessions, reader CityPolicyHistor
 			writeFailure(w, err)
 			return
 		}
-		current, ok := authorizeCityPolicyOperator(w, authRequest, identity)
+		current, ok := authorizePolicyOperator(w, r, identity, ok)
 		if !ok {
 			return
 		}

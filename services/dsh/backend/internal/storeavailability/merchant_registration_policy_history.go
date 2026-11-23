@@ -123,15 +123,9 @@ func storeRegistrationPolicyHistoryHandler(s *MerchantStoreRegistrar) http.Handl
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
-		// The shared Operator authorizer rejects *any* query as part of its
-		// write-policy boundary. The read-only audit endpoint validates the
-		// only permitted pagination selectors first, then authorizes the
-		// identical bearer, city and relation with no raw query attached.
-		authRequest := r.Clone(r.Context())
-		cleanURL := *r.URL
-		cleanURL.RawQuery = ""
-		authRequest.URL = &cleanURL
-		actor, allowed := authorizeCityPolicyOperator(w, authRequest, s.identity)
+		// Pagination selectors were validated above; authorize the original
+		// request without rewriting its URL or relaxing the write boundary.
+		actor, allowed := authorizePolicyOperator(w, r, s.identity, ok)
 		if !allowed {
 			return
 		}
@@ -145,7 +139,7 @@ func storeRegistrationPolicyHistoryHandler(s *MerchantStoreRegistrar) http.Handl
 			}
 			return
 		}
-		current, allowed := authorizeCityPolicyOperator(w, authRequest, s.identity)
+		current, allowed := authorizePolicyOperator(w, r, s.identity, ok)
 		if !allowed {
 			return
 		}

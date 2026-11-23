@@ -60,6 +60,8 @@ func TestCityPolicyHistoryAuthorizationAndCursor(t *testing.T) {
 		want, reads               int
 	}{
 		{"authorized", cityAuditURL, "GET", "token", OperatorRole, false, 200, 1},
+		{"authorized pagination", cityAuditURL + "?limit=2&beforeVersion=3", "GET", "token", OperatorRole, false, 200, 1},
+		{"revoked paginated read", cityAuditURL + "?limit=2&beforeVersion=3", "GET", "token", OperatorRole, true, 403, 1},
 		{"anonymous", cityAuditURL, "GET", "", OperatorRole, false, 401, 0},
 		{"merchant", cityAuditURL, "GET", "token", MerchantRole, false, 403, 0},
 		{"revoked after read", cityAuditURL, "GET", "token", OperatorRole, true, 403, 1},
