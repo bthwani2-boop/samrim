@@ -5,9 +5,12 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -129,6 +132,48 @@ func TestCaptainInterestIsolatedPostgresDurability(t *testing.T) {
 	if err = reader.QueryRowContext(ctx, "SELECT contacted_by_actor FROM "+escaped+".captain_interest WHERE id=$1",
 		page.Items[0].ID).Scan(&contactedBy); err != nil || contactedBy != "operator-1" {
 		t.Fatalf("contact actor audit not retained: %q %v", contactedBy, err)
+	}
+
+	// Exercise the actual HTTP envelope against the same isolated PostgreSQL,
+	// including no Identity role grant and current operator-only read/mutation.
+	handler := NewInterestHTTPHandler(NewInterestService(interestIdentity{allow: true}, repo))
+	submission := strings.Replace(validInterestJSON, "771234567", "778888888", 1)
+	accepted := interestCall(handler, http.MethodPost, CaptainInterestPath, submission, "")
+	if accepted.Code != http.StatusAccepted || !strings.Contains(accepted.Body.String(), `"received":true`) {
+		t.Fatalf("anonymous intake HTTP response: %d %s", accepted.Code, accepted.Body)
+	}
+	unauthorized := interestCall(handler, http.MethodGet, OperatorCaptainInterestPath, "", "")
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("candidate private data accessible without bearer: %d", unauthorized.Code)
+	}
+	listed := interestCall(handler, http.MethodGet, OperatorCaptainInterestPath, "", "operator-test-token")
+	if listed.Code != http.StatusOK {
+		t.Fatalf("authorized operator HTTP read failed: %d %s", listed.Code, listed.Body)
+	}
+	var response InterestPage
+	if err = json.Unmarshal(listed.Body.Bytes(), &response); err != nil || len(response.Items) != 2 {
+		t.Fatalf("two persisted candidate HTTP rows expected: %+v %v", response, err)
+	}
+	var newID int64
+	for _, item := range response.Items {
+		if item.Phone == "778888888" {
+			newID = item.ID
+		}
+	}
+	if newID < 1 {
+		t.Fatal("public form submission missing from owner-backed operator HTTP list")
+	}
+	marked := interestCall(handler, http.MethodPatch,
+		OperatorCaptainInterestPath+"/"+strconv.FormatInt(newID, 10)+"/contact",
+		`{"contacted":true}`, "operator-test-token")
+	if marked.Code != http.StatusOK {
+		t.Fatalf("authorized operator HTTP contact update failed: %d %s", marked.Code, marked.Body)
+	}
+	var persistentContact bool
+	if err = reader.QueryRowContext(ctx,
+		"SELECT contacted_at IS NOT NULL FROM "+escaped+".captain_interest WHERE id=$1", newID).
+		Scan(&persistentContact); err != nil || !persistentContact {
+		t.Fatalf("HTTP contact update missing from independent database readback: %t %v", persistentContact, err)
 	}
 }
 func boolPtr(v bool) *bool { return &v }
