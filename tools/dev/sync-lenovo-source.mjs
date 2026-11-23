@@ -7,6 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -87,22 +88,6 @@ function remote(code) {
     "-NonInteractive", "-EncodedCommand", Buffer.from(code, "utf16le").toString("base64")
   ], 30000);
 }
-function parseRemoteHashes(output, expected) {
-  const entries = new Map();
-  const requested = new Set(expected);
-  for (const line of output.split(/\r?\n/).filter(Boolean)) {
-    const divider = line.lastIndexOf("|");
-    const rel = line.slice(0, divider);
-    const digest = line.slice(divider + 1);
-    if (divider < 0 || !requested.has(rel) || entries.has(rel) ||
-        (digest !== "MISSING" && !/^[0-9A-F]{64}$/.test(digest))) {
-      throw new Error("REMOTE_HASH_RESPONSE_INVALID");
-    }
-    entries.set(rel, digest);
-  }
-  if (entries.size !== requested.size) throw new Error("REMOTE_HASH_RESPONSE_INCOMPLETE");
-  return entries;
-}
 function remoteHashes(paths) {
   if (!paths.length) return new Map();
   for (const rel of paths) if (!allowed(rel)) throw new Error("REMOTE_HASH_PATH_INVALID");
@@ -173,12 +158,6 @@ function remoteHashes(paths) {
       } catch {}
     }
   }
-}
-function needsReconcile(state, current, currentHead, remoteFiles, currentBranch = state?.branch) {
-  if (state && state.branch !== currentBranch) return true;
-  if (!isUnchanged(state, current, currentHead)) return true;
-  return [...remoteFiles].some(([rel, digest]) =>
-    current.has(rel) ? current.get(rel) !== digest : digest !== "MISSING");
 }
 function appendLogFile(file, message, limit = 1048576) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -276,9 +255,6 @@ function remoteReady() {
       path.win32.normalize(root).toLowerCase() !== "d:\\samrim") {
     throw new Error("SOURCE_SYNC_MUST_RUN_ON_SURFACE_CANONICAL");
   }
-}
-function remoteConflict(actual, desired, previous) {
-  return actual !== desired && actual !== "MISSING" && actual !== previous;
 }
 function buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, root = targetRoot}) {
   const code = [
@@ -447,34 +423,7 @@ function baseline(current, observed) {
   return { version: 1, branch: branch(), host: targetIdentity, target: targetRoot, head: head(), files };
 }
 const remoteAuditMs = 30_000;
-function remoteAuditDue(previous, deadline, now = Date.now()) {
-  // An active editing session must not indefinitely postpone full drift checks.
-  return !previous || now >= deadline;
-}
-const branchTransitionPins = Object.freeze([
-  ".node-version", "pnpm-lock.yaml", "package.json",
-  "apps/customer/package.json", "apps/merchant/package.json",
-  "apps/captain/package.json", "apps/control-panel/package.json",
-  "services/identity/package.json", "services/dsh/package.json", "services/wlt/package.json",
-]);
 let nextRemoteAudit = 0;
-function assertCompatibleBranchTransition(previous, current, currentBranch) {
-  if (!currentBranch || currentBranch.startsWith("archive/")) {
-    throw new Error("SOURCE_SYNC_BRANCH_UNAUTHORIZED");
-  }
-  if (!previous || previous.branch === currentBranch) return false;
-  // The mirror follows the active source branch; dependency installation is
-  // a separate Lenovo operation, never a prerequisite for copying source.
-  return true;
-}
-function isUnchanged(state, current, currentHead) {
-  return Boolean(
-    state &&
-      state.head === currentHead &&
-      Object.keys(state.files).length === current.size &&
-      [...current].every(([rel, digest]) => state.files[rel] === digest),
-  );
-}
 function reconcile() {
   const currentBranch = branch();
   const currentHead = head();
@@ -566,4 +515,5 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
 }
 
-export { buildManagedDeleteCode, buildPublishCode, remoteAuditDue, allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, publish, remoteConflict, remoteHashes };
+export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict } from "./sync-lenovo-reconciliation.mjs";
+export { allowed, appendLogFile, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, persistAt, publish, remoteHashes };
