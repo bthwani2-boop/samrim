@@ -156,7 +156,7 @@ func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch
 }
 
 func main() {
-	mode := flag.String("mode", "serve", "serve, migrate, or isolated-seed")
+	mode := flag.String("mode", "serve", "serve, migrate, bootstrap, or isolated-seed")
 	migrations := flag.String("migration", "database/migrations/001_public_discovery.sql", "explicit reviewed SQL migration path")
 	flag.Parse()
 	schema := os.Getenv("DSH_DB_SCHEMA")
@@ -192,6 +192,11 @@ func main() {
 			log.Fatal(err)
 		}
 		fmt.Println("DSH_PUBLIC_MIGRATION_PASS schema=" + schema)
+	case "bootstrap":
+		if err := owner.BootstrapFresh(ctx, "database/schema"); err != nil {
+			log.Fatal("fresh DSH baseline denied: ", err)
+		}
+		fmt.Println("DSH_FRESH_BASELINE_PASS schema=" + schema)
 	case "isolated-seed":
 		if err := owner.ImportSynthetic(ctx); err != nil {
 			log.Fatal(err)
