@@ -16,69 +16,90 @@ function fixture(t, owner) {
   return { base, contract: path.join(base, dir) };
 }
 
-const counts = { identity: 21, dsh: 36, wlt: 2 };
+// Compatibility floor, not another source of current operations. New owner operations
+// need not change a count; deleting or changing a previously admitted endpoint
+// requires deliberate consumer migration and an explicit compatibility-test update.
+const retainedOperations = {
+  identity: [
+    ["admitVerifiedCurrentCustomerAsMerchant", "POST", "/v1/actors/me/merchant-role"],
+    ["admitVerifiedCustomerAsApprovedCaptain", "POST", "/v1/actors/me/captain-role"],
+    ["beginExistingOperatorPasskeyRecovery", "POST", "/v1/operators/passkey/recovery/options"],
+    ["beginInitialOperatorPasskeyRegistration", "POST", "/v1/operators/passkey/bootstrap/options"],
+    ["beginOperatorPasskeyAuthentication", "POST", "/v1/operators/passkey/authentication/options"],
+    ["establishPersistentIdentitySession", "POST", "/v1/sessions/persistent"],
+    ["finishExistingOperatorPasskeyRecovery", "POST", "/v1/operators/passkey/recovery"],
+    ["finishInitialOperatorPasskeyRegistration", "POST", "/v1/operators/passkey/bootstrap"],
+    ["finishOperatorPasskeyAuthentication", "POST", "/v1/operators/passkey/authentication"],
+    ["getEffectiveOperatorPermission", "GET", "/v1/operators/me/permissions/{permission}"],
+    ["getIdentityDevelopmentHealth", "GET", "/health"],
+    ["getVerifiedIdentitySession", "GET", "/v1/sessions/current"],
+    ["issueCustomerPhoneChallenge", "POST", "/v1/customer-auth/phone-challenges"],
+    ["manageOriginalOperatorPermission", "PATCH", "/v1/operators/{actorId}/permissions/{permission}"],
+    ["resumeApprovedCaptainRoleSession", "POST", "/v1/actors/me/captain-session"],
+    ["resumeVerifiedCurrentCustomerMerchantSession", "POST", "/v1/actors/me/merchant-session"],
+    ["reviewOriginalOperatorPermissions", "GET", "/v1/operators/{actorId}/permissions"],
+    ["revokeCurrentIdentitySession", "DELETE", "/v1/sessions/current"],
+    ["revokePersistentIdentitySession", "DELETE", "/v1/sessions/refresh"],
+    ["rotatePersistentIdentitySession", "POST", "/v1/sessions/refresh"],
+    ["verifyCustomerPhoneChallenge", "POST", "/v1/customer-auth/phone-verification"],
+  ],
+  dsh: [
+    ["applyCurrentCustomerForCaptainStanding", "POST", "/v1/actors/me/captain-application"],
+    ["changeCaptainStandingByAuthorizedOperator", "PATCH", "/v1/operators/captains/{actorId}/standing"],
+    ["changeOperatorStoreRegistrationPolicy", "PATCH", "/v1/operators/cities/{cityID}/store-registration-policy/{relation}"],
+    ["createCurrentMerchantCatalogDraft", "POST", "/v1/stores/{storeID}/catalog"],
+    ["dshHealth", "GET", "/health"],
+    ["estimateCurrentCustomerCartMerchandise", "GET", "/v1/carts/{storeID}/merchandise-estimate"],
+    ["estimatePublicOffer", "GET", "/v1/public/stores/{id}/offers/{offerId}/estimate"],
+    ["getCityStoreOperationalPolicy", "GET", "/v1/operators/cities/{cityID}/store-availability-policy"],
+    ["getCompanyEmployee", "GET", "/v1/operators/employees/{id}"],
+    ["getCurrentCaptainStanding", "GET", "/v1/captains/me/standing"],
+    ["getCurrentCustomerCaptainApplication", "GET", "/v1/actors/me/captain-application"],
+    ["getCurrentCustomerCaptainEligibility", "GET", "/v1/actors/me/captain-eligibility"],
+    ["getCurrentCustomerCart", "GET", "/v1/carts/{storeID}"],
+    ["getMerchantStoreRegistrationOptions", "GET", "/v1/stores/registration-options"],
+    ["getOperatorCaptainStanding", "GET", "/v1/operators/captains/{actorId}/standing"],
+    ["getOperatorStoreRegistrationPolicy", "GET", "/v1/operators/cities/{cityID}/store-registration-policy/{relation}"],
+    ["getPublicStore", "GET", "/v1/public/stores/{id}"],
+    ["getStoreOperationalAvailability", "GET", "/v1/stores/{storeID}/availability"],
+    ["listCompanyEmployees", "GET", "/v1/operators/employees"],
+    ["listCurrentMerchantStoreCatalog", "GET", "/v1/stores/{storeID}/catalog"],
+    ["listCurrentMerchantStores", "GET", "/v1/stores/mine"],
+    ["listOperatorCaptainInterest", "GET", "/v1/operators/captain-interest"],
+    ["listOperatorCaptainStandings", "GET", "/v1/operators/captains"],
+    ["listOperatorStorePublicationReview", "GET", "/v1/operators/cities/{cityID}/store-publication-review/{relation}"],
+    ["listOperatorStoreRegistrationPolicyHistory", "GET", "/v1/operators/cities/{cityID}/store-registration-policy/{relation}/history"],
+    ["listPublicCities", "GET", "/v1/public/cities"],
+    ["listPublicOffers", "GET", "/v1/public/stores/{id}/offers"],
+    ["listPublicStores", "GET", "/v1/public/stores"],
+    ["listPublicVerticals", "GET", "/v1/public/verticals"],
+    ["markOperatorCaptainInterestContacted", "PATCH", "/v1/operators/captain-interest/{id}/contact"],
+    ["registerCompanyEmployee", "POST", "/v1/operators/employees"],
+    ["registerMerchantStore", "POST", "/v1/stores"],
+    ["replaceCityStoreOperationalPolicy", "PATCH", "/v1/operators/cities/{cityID}/store-availability-policy"],
+    ["replaceCurrentCustomerCart", "PUT", "/v1/carts/{storeID}"],
+    ["submitPublicCaptainInterest", "POST", "/v1/captain-interest"],
+    ["updateCurrentMerchantCatalogDraft", "PATCH", "/v1/stores/{storeID}/catalog/{offerID}"],
+    ["updateStoreOperationalAvailability", "PATCH", "/v1/stores/{storeID}/availability"],
+  ],
+  wlt: [
+    ["getCurrentCustomerWalletBalance", "GET", "/v1/wallets/me"],
+    ["listCurrentCustomerWalletTransactions", "GET", "/v1/wallets/me/transactions"],
+  ],
+};
 const samplePaths = { identity: "/v1/sessions/current:", dsh: "/v1/stores/mine:", wlt: "/v1/wallets/me:" };
-for (const owner of Object.keys(counts)) {
+for (const owner of Object.keys(retainedOperations)) {
   test(owner + " operations are exactly reproducible and match owner OpenAPI", () => {
     const first = generatedOperationSource(owner);
     const second = generatedOperationSource(owner);
     assert.equal(first, second);
     assert.equal(first, readFileSync(generatedOperationsPath(owner), "utf8"));
     const rows = operationRows(owner);
-    assert.equal(rows.length, counts[owner]);
     assert.equal(new Set(rows.map(row => row.id)).size, rows.length);
     assert.ok(rows.every(row => row.path.startsWith("/")));
-    if (owner === "identity") {
-      assert.ok(rows.some(row => row.id === "beginInitialOperatorPasskeyRegistration" &&
-        row.path === "/v1/operators/passkey/bootstrap/options" && row.method === "POST"));
-      assert.ok(rows.some(row => row.id === "finishInitialOperatorPasskeyRegistration" &&
-        row.path === "/v1/operators/passkey/bootstrap" && row.method === "POST"));
-      assert.ok(rows.some(row => row.id === "reviewOriginalOperatorPermissions" &&
-        row.path === "/v1/operators/{actorId}/permissions" && row.method === "GET"));
-      for (const [id, method, endpoint] of [
-        ["establishPersistentIdentitySession", "POST", "/v1/sessions/persistent"],
-        ["rotatePersistentIdentitySession", "POST", "/v1/sessions/refresh"],
-        ["revokePersistentIdentitySession", "DELETE", "/v1/sessions/refresh"],
-      ]) {
-        assert.ok(rows.some(row => row.id === id && row.method === method && row.path === endpoint),
-          "persistent session operation missing from verified Identity contract: " + id);
-      }
-    }
-    if (owner === "dsh") {
-      assert.ok(rows.some(row => row.id === "submitPublicCaptainInterest" &&
-        row.path === "/v1/captain-interest" && row.method === "POST"));
-      assert.ok(rows.some(row => row.id === "listOperatorCaptainInterest" &&
-        row.path === "/v1/operators/captain-interest" && row.method === "GET"));
-      assert.ok(rows.some(row => row.id === "markOperatorCaptainInterestContacted" &&
-        row.path === "/v1/operators/captain-interest/{id}/contact" && row.method === "PATCH"));
-      assert.ok(rows.some(row => row.id === "getOperatorStoreRegistrationPolicy" &&
-        row.path === "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" && row.method === "GET"));
-      assert.ok(rows.some(row => row.id === "changeOperatorStoreRegistrationPolicy" &&
-        row.path === "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" && row.method === "PATCH"));
-      assert.ok(rows.some(row => row.id === "listOperatorStoreRegistrationPolicyHistory" &&
-        row.path === "/v1/operators/cities/{cityID}/store-registration-policy/{relation}/history" && row.method === "GET"));
-      assert.ok(rows.some(row => row.id === "listCurrentMerchantStoreCatalog" &&
-        row.path === "/v1/stores/{storeID}/catalog" && row.method === "GET"));
-      assert.ok(rows.some(row => row.id === "createCurrentMerchantCatalogDraft" &&
-        row.path === "/v1/stores/{storeID}/catalog" && row.method === "POST"));
-      assert.ok(rows.some(row => row.id === "updateCurrentMerchantCatalogDraft" &&
-        row.path === "/v1/stores/{storeID}/catalog/{offerID}" && row.method === "PATCH"));
-      assert.ok(rows.some(row => row.id === "getMerchantStoreRegistrationOptions" &&
-        row.path === "/v1/stores/registration-options" && row.method === "GET"));
-      assert.ok(rows.some(row => row.id === "registerMerchantStore" &&
-        row.path === "/v1/stores" && row.method === "POST"));
-      assert.ok(rows.some(row => row.id === "getCurrentCustomerCart" &&
-        row.path === "/v1/carts/{storeID}" && row.method === "GET"));
-      assert.ok(rows.some(row => row.id === "replaceCurrentCustomerCart" &&
-        row.path === "/v1/carts/{storeID}" && row.method === "PUT"));
-      assert.ok(rows.some(row => row.id === "estimateCurrentCustomerCartMerchandise" &&
-        row.path === "/v1/carts/{storeID}/merchandise-estimate" && row.method === "GET"));
-      assert.ok(rows.some(row => row.id === "listCompanyEmployees" &&
-        row.path === "/v1/operators/employees" && row.method === "GET"));
-      assert.ok(rows.some(row => row.id === "registerCompanyEmployee" &&
-        row.path === "/v1/operators/employees" && row.method === "POST"));
-      assert.ok(rows.some(row => row.id === "getCompanyEmployee" &&
-        row.path === "/v1/operators/employees/{id}" && row.method === "GET"));
+    for (const [id, method, endpoint] of retainedOperations[owner]) {
+      assert.ok(rows.some(row => row.id === id && row.method === method && row.path === endpoint),
+        "previously admitted operation missing or changed: " + id);
     }
   });
 
