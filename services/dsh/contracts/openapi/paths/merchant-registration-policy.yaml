@@ -74,3 +74,46 @@ paths:
           content:
             application/json:
               schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+  /v1/operators/cities/{cityID}/store-registration-policy/{relation}/history:
+    parameters:
+      - in: path
+        name: cityID
+        required: true
+        schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      - in: path
+        name: relation
+        required: true
+        schema: { type: string, enum: [MARKETPLACE, DIRECT] }
+    get:
+      operationId: listOperatorStoreRegistrationPolicyHistory
+      summary: Page through immutable Store registration admission policy commands
+      description: Requires a current Identity Operator session with platform_policies. Entries cover recorded commands only; versions preceding the audit migration are not fabricated. Read-only and scoped to city and relation.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - in: query
+          name: beforeVersion
+          schema: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+      responses:
+        '200':
+          description: Descending immutable audit entries with an optional older-version cursor
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationPolicyHistoryPage' }
+        '400':
+          description: Invalid city, relation or cursor
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'

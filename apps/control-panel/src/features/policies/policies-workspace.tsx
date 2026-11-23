@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Space, Typography } from "antd";
+import Link from "next/link";
 import { useState } from "react";
 import {
   type CityPolicy, type CityPolicyChange, parseCityPolicy, reconcileCityPolicy,
@@ -139,6 +140,45 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
         إدارة حدود إتاحة المتاجر لكل مدينة عبر DSH. تتطلب جلسة Operator وصلاحية
         <code> platform_policies </code> مؤكَّدتين من Identity؛ ولا تغيّر الطلبات أو الاتفاقيات المالية.
       </Typography.Paragraph>
+      <section aria-label="خريطة السياسات المعتمدة" style={{
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+        gap: 12, marginBlockEnd: 22,
+      }}>
+        <Card title="الانضمام والمتاجر — DSH">
+          <Typography.Paragraph>
+            قبول المتاجر المباشرة ومتاجر السوق مستقل لكل مدينة ونموذج، مع شروط وإصدار
+            وتسجيل من غيّر السياسة. الإتاحة لا تعني النشر أو إبرام اتفاق مالي.
+          </Typography.Paragraph>
+          <Link href="/policies/store-registration">إدارة قبول المتاجر: المباشر والسوق</Link>
+        </Card>
+        <Card title="التشغيل والأهلية — DSH">
+          <Typography.Paragraph>
+            سياسة توقف المتاجر ووقت التحضير حسب المدينة، دون منح المتجر صلاحية نشر جديدة.
+          </Typography.Paragraph>
+          <Link href="#city-availability-policy">إدارة سياسة إتاحة المتاجر أدناه</Link>
+        </Card>
+        <Card title="الطلبات والتوصيل — DSH">
+          <Typography.Paragraph>
+            أزمنة مراحل الطلبات متاحة للتحرير من صفحة مستقلة. رسوم التوصيل
+            وطريقة الإسناد ليستا جزءًا من سياسة تسجيل المتجر.
+          </Typography.Paragraph>
+          <Link href="/policies/stage-sla">إدارة أزمنة مراحل الطلبات</Link>
+        </Card>
+        <Card title="المالية والاتفاقيات — WLT">
+          <Typography.Paragraph>
+            العمولة والاشتراك والتحصيل والتسويات يملكها WLT، ولا يحددها
+            اختيار DIRECT أو MARKETPLACE. لم تُوصل هنا واجهة تحرير مالية معتمدة؛
+            لا يمكن إنشاء اتفاق أو تغيير مستحقات من إعداد قبول المتاجر.
+          </Typography.Paragraph>
+        </Card>
+        <Card title="السريان وسجل التغييرات">
+          <Typography.Paragraph>
+            راجع الإصدار والمشغّل والسبب وتاريخ التحديث في شاشة السياسة نفسها.
+            لا توجد في هذه الصفحة واجهة لتعديل الأثر المالي أو استرجاع تاريخ محذوف.
+          </Typography.Paragraph>
+        </Card>
+      </section>
+      <section id="city-availability-policy" aria-label="سياسة إتاحة المتاجر حسب المدينة">
       <Card title="قراءة سياسة المدينة" style={{ marginBlockEnd: 16 }}>
         <Form layout="vertical" onFinish={() => void readCurrent()}>
           <Form.Item label="معرّف المدينة المعتمد في DSH">
@@ -208,6 +248,7 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
           {uncertain ? " — احتفظ به؛ لا تغير الأمر إلى أن تتضح النتيجة." : null}
         </Typography.Paragraph>}
       </Card>
+      </section>
       {message && <Alert type="success" showIcon message={message} role="status" />}
       {errorMessage && <Alert type="error" showIcon message={errorMessage} role="alert" />}
     </main>

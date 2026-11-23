@@ -11,10 +11,9 @@ import {
   type PendingMerchantRegistration,
   parsePendingMerchantRegistration,
 } from "./merchant-registration-attempt";
+import StoreRelationChoice from "./store-relation-choice";
 
 const optionKey = (choice: MerchantRegistrationChoice) => `${choice.cityId}:${choice.relation}`;
-const relationLabel = (relation: string) =>
-  relation === "MARKETPLACE" ? "داخل سوق بثواني" : "متجر مباشر";
 
 const attemptStoragePrefix = "bthwani.merchant.store-registration.pending.v1.";
 const secureOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
@@ -91,6 +90,8 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
     const controller = new AbortController();
     setLoading(true);
     setOptions(null);
+    setChoiceKey("");
+    setAccepted(false);
     setMessage("");
     void readMerchantStoreRegistrationOptions(actorId, controller.signal).then(value => {
       if (!controller.signal.aborted) setOptions(value);
@@ -239,21 +240,12 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
       ) : null}
       {options && options.choices.length > 0 ? (
         <>
-          <Text style={{ color: theme.color, fontWeight: "700" }}>المدينة وطريقة عمل المتجر</Text>
-          <View style={{ gap: 6 }}>
-            {options.choices.map(item => (
-              <Pressable key={optionKey(item)} accessibilityRole="radio"
-                accessibilityState={{ checked: choiceKey === optionKey(item) }}
-                disabled={locked} onPress={() => { setChoiceKey(optionKey(item)); setAccepted(false); setMessage(""); }}
-                style={{ minHeight: 44, borderRadius: 10, borderWidth: 1, padding: 12,
-                  borderColor: theme.borderColor, backgroundColor: choiceKey === optionKey(item) ?
-                    theme.actionSoft : theme.surface }}>
-                <Text style={{ color: theme.color }}>
-                  {item.cityId} — {relationLabel(item.relation)}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
+          <StoreRelationChoice choices={options.choices} selectedKey={choiceKey}
+            disabled={locked} onSelect={key => {
+              setChoiceKey(key);
+              setAccepted(false);
+              setMessage("");
+            }} />
           <Text style={{ color: theme.color, fontWeight: "700" }}>النشاط التجاري</Text>
           {options.verticals.map(id => (
             <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: verticalId === id }}

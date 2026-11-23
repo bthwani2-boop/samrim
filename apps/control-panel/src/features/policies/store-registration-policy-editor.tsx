@@ -2,12 +2,18 @@
 
 import type {
   OperatorStoreRegistrationChange, OperatorStoreRegistrationPolicy,
+  OperatorStoreRegistrationPolicyHistoryPage,
   StoreRegistrationRelation,
 } from "@bthwani/dsh";
 import { Alert, Button, Card, Checkbox, Form, Input, Radio, Space, Typography } from "antd";
 import { useState } from "react";
 import {
-  matchesPendingPolicy, readStoreRegistrationPolicy, reconcileRegistrationPolicy,
+  matchesPendingPolicy,
+  type RegistrationOverview,
+  readRegistrationHistory,
+  readRegistrationOverview,
+  readStoreRegistrationPolicy,
+  reconcileRegistrationPolicy,
 } from "./store-registration-command";
 
 const validCity = /^[a-z0-9-]{1,64}$/;
@@ -16,6 +22,11 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
   const [city, setCity] = useState("");
   const [relation, setRelation] = useState<StoreRegistrationRelation>("MARKETPLACE");
   const [policy, setPolicy] = useState<OperatorStoreRegistrationPolicy | null>(null);
+  const [overview, setOverview] = useState<RegistrationOverview | null>(null);
+  const [overviewBusy, setOverviewBusy] = useState(false);
+  const [history, setHistory] = useState<OperatorStoreRegistrationPolicyHistoryPage | null>(null);
+  const [historyBusy, setHistoryBusy] = useState(false);
+  const [historyError, setHistoryError] = useState("");
   const [enabled, setEnabled] = useState(false);
   const [termsVersion, setTermsVersion] = useState("");
   const [termsText, setTermsText] = useState("");
@@ -31,14 +42,17 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
   const endpoint = validCity.test(city)
     ? `/api/policies/cities/${city}/store-registration/${relation}`
     : null;
-  const locked = busy || pending !== null;
-  const canWrite = !!endpoint && !needsRead && !busy && policy !== null &&
+  const locked = busy || overviewBusy || historyBusy || pending !== null;
+  const canWrite = !!endpoint && !needsRead && !busy && !overviewBusy && !historyBusy && policy !== null &&
     /^[a-z0-9._-]{3,80}$/.test(termsVersion) &&
     termsText.trim().length >= 1 && [...termsText].length <= 4000 &&
     reason.trim().length >= 1 && [...reason].length <= 300 &&
     (!enabled || reviewed);
 
   function resetScope() {
+    setHistory(null);
+    setHistoryError("");
+    setOverview(null);
     setPolicy(null);
     setPending(null);
     setUnknown(false);
@@ -52,10 +66,13 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
     setError("");
   }
   async function refresh() {
-    if (!endpoint || busy) return;
+    if (!endpoint || busy || overviewBusy || historyBusy) return;
     setBusy(true);
     setMessage("");
     setError("");
+    setOverview(null);
+    setHistory(null);
+    setHistoryError("");
     try {
       const current = await readStoreRegistrationPolicy(endpoint, city, relation, actorId);
       setPolicy(current);
@@ -97,6 +114,38 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
       setBusy(false);
     }
   }
+  async function checkBothModels() {
+    if (!validCity.test(city) || locked) return;
+    setOverviewBusy(true);
+    setOverview(null);
+    setError("");
+    try {
+      setOverview(await readRegistrationOverview(city, actorId));
+    } catch {
+      setError("تعذر قراءة حالتي تسجيل المتاجر من DSH. لم تُفترض أي حالة إتاحة.");
+    } finally {
+      setOverviewBusy(false);
+    }
+  }
+
+  async function viewHistory(older = false) {
+    if (!endpoint || locked || (older && !history?.nextBeforeVersion)) return;
+    const cursor = older ? history?.nextBeforeVersion : undefined;
+    setHistoryBusy(true);
+    setHistoryError("");
+    try {
+      const page = await readRegistrationHistory(endpoint, city, relation, actorId, cursor);
+      setHistory(older && history ? {
+        entries: [...history.entries, ...page.entries],
+        ...(page.nextBeforeVersion ? { nextBeforeVersion: page.nextBeforeVersion } : {}),
+      } : page);
+    } catch {
+      setHistoryError("تعذرت قراءة سجل السياسات من DSH؛ لم تُعرض سجلات تقديرية.");
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
   async function save() {
     if (!endpoint || busy || (!pending && !canWrite)) return;
     const change: OperatorStoreRegistrationChange = pending ?? {
@@ -111,6 +160,9 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
     setBusy(true);
     setMessage("");
     setError("");
+    setOverview(null);
+    setHistory(null);
+    setHistoryError("");
     const result = await reconcileRegistrationPolicy(endpoint, city, relation, actorId, change);
     setBusy(false);
     if (result.status === "confirmed") {
@@ -154,6 +206,9 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
         ولا تمنح دور التاجر في Identity، ولا تفعّل الطلبات أو أي تسوية لدى WLT.
         لا يستطيع تغييرها إلا مشغّل مفوّض بصلاحية <code>platform_policies</code>.
       </Typography.Paragraph>
+      <Alert type="info" showIcon style={{ marginBlockEnd: 16 }}
+        message="نموذجان، سياسة قبول مستقلة لكل منهما"
+        description="المباشر: ظهور صفحة المتجر عبر الرابط بعد النشر. السوق: أهلية الظهور في سوق بثواني بعد المراجعة. فتح التسجيل لا يوافق تلقائيًا على نشر المتجر أو اتفاقية WLT؛ العمولة والاشتراك والتحصيل والتوصيل ليست مشتقة من النموذج." />
       <Card title="تحديد المدينة وطريقة عمل المتجر" style={{ marginBlockEnd: 16 }}>
         <Form layout="vertical" onFinish={() => void refresh()}>
           <Form.Item label="معرّف المدينة في DSH">
@@ -172,14 +227,97 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
               <Radio value="DIRECT">متجر مباشر</Radio>
             </Radio.Group>
           </Form.Item>
-          <Button htmlType="submit" disabled={!endpoint || busy} loading={busy}>قراءة السياسة من DSH</Button>
+          <Button htmlType="submit" disabled={!endpoint || busy || overviewBusy} loading={busy}>قراءة السياسة من DSH</Button>
         </Form>
-        {policy && (
-          <Typography.Paragraph style={{ marginBlockStart: 14 }}>
-            الإصدار: <strong>{policy.version}</strong> — الحالة: {policy.enabled ? "قبول التسجيل مفعّل" : "قبول التسجيل مغلق"}
-            {policy.changedByActor ? ` — آخر مشغّل: ${policy.changedByActor}` : ""}
-          </Typography.Paragraph>
+        <Button style={{ marginBlockStart: 12 }} disabled={!validCity.test(city) || locked}
+          loading={overviewBusy} onClick={() => void checkBothModels()}>
+          عرض حالة قبول المباشر والسوق معًا
+        </Button>
+        {overview && (
+          <section aria-label="حالة قبول النموذجين لدى DSH" style={{
+            display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: 10, marginBlockStart: 12,
+          }}>
+            {(["DIRECT", "MARKETPLACE"] as const).map(model => {
+              const entry = overview[model];
+              return (
+                <Card size="small" key={model} title={model === "DIRECT" ? "المباشر" : "سوق بثواني"}>
+                  {entry.status === "unavailable" ? (
+                    <Typography.Text type="warning">تعذرت القراءة؛ الإتاحة غير مؤكدة.</Typography.Text>
+                  ) : entry.policy.version === 0 ? (
+                    <Typography.Text>غير مُهيأ؛ التسجيل غير متاح.</Typography.Text>
+                  ) : (
+                    <>
+                      <Typography.Paragraph>
+                        {entry.policy.enabled ? "التسجيل متاح" : "التسجيل مغلق"}
+                      </Typography.Paragraph>
+                      <Typography.Text type="secondary">
+                        السياسة {entry.policy.version} — الشروط {entry.policy.termsVersion}
+                      </Typography.Text>
+                    </>
+                  )}
+                </Card>
+              );
+            })}
+          </section>
         )}
+        {policy && (
+          <section aria-label="السياسة الفعلية لدى DSH" style={{ marginBlockStart: 14 }}>
+            <Typography.Paragraph>
+              المدينة: {policy.cityId} — النموذج: {policy.relation === "DIRECT" ? "المباشر" : "السوق"} —
+              الإصدار: <strong>{policy.version}</strong> —
+              الحالة: {policy.enabled ? "قبول التسجيل متاح" : "قبول التسجيل مغلق"}
+            </Typography.Paragraph>
+            {policy.version > 0 ? (
+              <>
+                <Typography.Paragraph>إصدار الشروط: {policy.termsVersion}</Typography.Paragraph>
+                <Typography.Paragraph style={{ whiteSpace: "pre-wrap" }}>{policy.termsText}</Typography.Paragraph>
+                <Typography.Paragraph>
+                  آخر تعديل: {policy.changedByActor} — {policy.updatedAt}
+                </Typography.Paragraph>
+                <Typography.Paragraph>سبب التعديل: {policy.changeReason}</Typography.Paragraph>
+              </>
+            ) : (
+              <Typography.Paragraph>
+                لا توجد سياسة مسجلة لهذا النموذج في المدينة؛ التسجيل غير متاح حتى اعتماد السياسة.
+              </Typography.Paragraph>
+            )}
+          </section>
+        )}
+      </Card>
+      <Card title="سجل قرارات قبول المتاجر — DSH" style={{ marginBlockEnd: 16 }}>
+        <Typography.Paragraph>
+          سجل قراءة فقط للتغييرات المحفوظة في DSH. لا تُختلق إصدارات أقدم من بدء سجل الأوامر
+          غير القابل للتعديل، ولا يغيّر العرض الحقوق أو تسجيل المتاجر.
+        </Typography.Paragraph>
+        <Button disabled={!endpoint || locked} loading={historyBusy}
+          onClick={() => void viewHistory(false)}>
+          عرض سجل هذا النموذج والمدينة
+        </Button>
+        {history && (
+          <section aria-label="سجل سياسات التسجيل" style={{ marginBlockStart: 12 }}>
+            {history.entries.length === 0 ? (
+              <Typography.Paragraph>لا توجد أوامر تغيير محفوظة لهذا النموذج.</Typography.Paragraph>
+            ) : history.entries.map(entry => (
+              <Card key={entry.version} size="small" style={{ marginBlockEnd: 8 }}>
+                <Typography.Text strong>الإصدار {entry.version} — {entry.enabled ? "السماح بالتسجيل" : "إغلاق التسجيل"}</Typography.Text>
+                <Typography.Paragraph style={{ marginBlockEnd: 0 }}>
+                  الشروط: {entry.termsVersion} — المشغّل: {entry.changedByActor}
+                </Typography.Paragraph>
+                <Typography.Paragraph style={{ marginBlockEnd: 0 }}>السبب: {entry.changeReason}</Typography.Paragraph>
+                <Typography.Text type="secondary">التاريخ: {entry.updatedAt}</Typography.Text>
+              </Card>
+            ))}
+            {history.nextBeforeVersion && (
+              <Button disabled={locked} loading={historyBusy}
+                onClick={() => void viewHistory(true)}>
+                عرض الإصدارات الأقدم
+              </Button>
+            )}
+          </section>
+        )}
+        {historyError && <Alert type="error" showIcon role="alert" message={historyError}
+          style={{ marginBlockStart: 12 }} />}
       </Card>
       <Card title="تحديث سياسة التسجيل">
         <Form layout="vertical" onFinish={() => void save()}>

@@ -1,5 +1,6 @@
 import {
   changeOperatorStoreRegistrationPolicy, DshPublicError,getOperatorStoreRegistrationPolicy,
+  listOperatorStoreRegistrationPolicyHistory,
   type OperatorStoreRegistrationChange,
   validOperatorStoreRegistrationChange,
 } from "@bthwani/dsh";
@@ -16,6 +17,8 @@ export const dynamic = "force-dynamic";
 
 type Context = Readonly<{ params: Promise<{ cityid: string; relation: string }> }>;
 const cityRule = /^[a-z0-9-]{1,64}$/;
+const historyQuery = /^\?history=1(?:&limit=([1-9]|[1-4][0-9]|50))?(?:&beforeVersion=([1-9][0-9]{0,18}))?$/;
+
 const privateHeaders = {
   "Cache-Control": "private, no-store, max-age=0",
   "Pragma": "no-cache",
@@ -38,7 +41,8 @@ function isolatedDshOrigin(raw: string | undefined): string | null {
 function trustedRequest(request: NextRequest, browserOrigin: string, mutation: boolean) {
   const url = new URL(request.url);
   if (url.origin !== browserOrigin || request.headers.get("host") !== url.host ||
-    url.search || (mutation && request.headers.get("origin") !== browserOrigin) ||
+    (url.search && (mutation || !historyQuery.test(url.search))) ||
+    (mutation && request.headers.get("origin") !== browserOrigin) ||
     request.headers.get("sec-fetch-site") === "cross-site") return false;
   if (request.headers.has("x-forwarded-host") &&
     request.headers.get("x-forwarded-host") !== url.host) return false;
@@ -78,13 +82,19 @@ async function forward(request: NextRequest, context: Context, mutation: boolean
   }
   const bearer = (await cookies()).get(OPERATOR_COOKIE)?.value;
   if (!bearer || !/^[A-Za-z0-9_-]{43}$/.test(bearer)) return replyError("UNAUTHORIZED", 401);
+  const historyMatch = !mutation && new URL(request.url).search ?
+    historyQuery.exec(new URL(request.url).search) : null;
   const change = mutation ? await boundedChange(request) : null;
   if (mutation && !change) return replyError("INVALID_REQUEST", 400);
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(8000)]);
-    const result = change
-      ? await changeOperatorStoreRegistrationPolicy(dshOrigin, cityid, relation as "MARKETPLACE" | "DIRECT", bearer, change, signal)
-      : await getOperatorStoreRegistrationPolicy(dshOrigin, cityid, relation as "MARKETPLACE" | "DIRECT", bearer, signal);
+    const result = historyMatch
+      ? await listOperatorStoreRegistrationPolicyHistory(dshOrigin, cityid,
+          relation as "MARKETPLACE" | "DIRECT", bearer,
+          historyMatch[1] ? Number(historyMatch[1]) : 20, historyMatch[2], signal)
+      : change
+        ? await changeOperatorStoreRegistrationPolicy(dshOrigin, cityid, relation as "MARKETPLACE" | "DIRECT", bearer, change, signal)
+        : await getOperatorStoreRegistrationPolicy(dshOrigin, cityid, relation as "MARKETPLACE" | "DIRECT", bearer, signal);
     if (change && result && "policy" in result && result.policy.changedByActor !== access.actorId) {
       return replyError("DSH_OWNER_UNAVAILABLE", 503);
     }

@@ -53,6 +53,15 @@ function harness(t) {
         changeReason: change.reason, changedByActor: state.dshResultActor }, replay: false };
     },
     validOperatorStoreRegistrationChange: validateDSHPolicyChange,
+    async listOperatorStoreRegistrationPolicyHistory(...args) {
+      state.dshCalls.push(["HISTORY", ...args]);
+      if (state.dshError) throw state.dshError;
+      return { entries: [{
+        version: 2, enabled: false, termsVersion: "merchant-terms-v1",
+        changedByActor: "operator-a", changeReason: "Synthetic closure",
+        updatedAt: "2026-11-23T00:00:00Z",
+      }] };
+    },
   };
   const mocks = {
     "@bthwani/dsh": owner,
@@ -164,4 +173,43 @@ test("Operator policy BFF accepts the full 4,000-codepoint Unicode terms contrac
   assert.equal(h.state.maxCommandBytes, 24576);
   assert.equal(h.state.dshCalls.length, 1);
   assert.equal(h.state.dshCalls[0][5].termsText, extensive.termsText);
+});
+
+test("Operator BFF read-only history enforces the same current Identity rights", async t => {
+  const h = harness(t);
+  const query = "?history=1&limit=10&beforeVersion=3";
+  const historyRequest = () => new Request(h.request().url + query, {
+    method: "GET",
+    headers: { Host: "localhost:13000", "X-BThwani-Operator": "operator-a" },
+  });
+  const reply = await h.GET(historyRequest(), h.context);
+  assert.equal(reply.status, 200);
+  assert.equal(reply.headers.get("Cache-Control"), "private, no-store, max-age=0");
+  assert.equal((await reply.json()).entries[0].version, 2);
+  assert.equal(h.state.dshCalls.length, 1);
+  assert.equal(h.state.dshCalls[0][0], "HISTORY");
+  assert.equal(h.state.dshCalls[0][4], bearer);
+  assert.equal(h.state.dshCalls[0][5], 10);
+  assert.equal(h.state.dshCalls[0][6], "3");
+  h.state.access.grants = [];
+  assert.equal((await h.GET(historyRequest(), h.context)).status, 403);
+  h.state.access = null;
+  assert.equal((await h.GET(historyRequest(), h.context)).status, 401);
+  assert.equal(h.state.dshCalls.length, 1);
+});
+
+test("Operator BFF history rejects unauthorized query selectors and does not fabricate status", async t => {
+  const h = harness(t);
+  const build = search => new Request(h.request().url + search, {
+    headers: { Host: "localhost:13000", "X-BThwani-Operator": "operator-a" },
+  });
+  for (const query of [
+    "?admin=1", "?history=1&limit=0", "?history=1&limit=51",
+    "?history=1&beforeVersion=0", "?history=1&beforeVersion=0002",
+    "?history=1&limit=10&actorId=other", "?history=1&limit=2&limit=3",
+    "?history=1&limit=20&beforeVersion=%2F",
+  ]) assert.equal((await h.GET(build(query), h.context)).status, 400, query);
+  assert.equal(h.state.dshCalls.length, 0);
+  h.state.dshError = new OwnerError(503);
+  assert.equal((await h.GET(build("?history=1&limit=10"), h.context)).status, 503);
 });

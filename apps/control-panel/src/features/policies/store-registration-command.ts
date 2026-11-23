@@ -1,5 +1,7 @@
 import {isOperatorStoreRegistrationPolicy,
+  isStoreRegistrationPolicyHistoryPage,
   type OperatorStoreRegistrationChange, type OperatorStoreRegistrationPolicy,
+  type OperatorStoreRegistrationPolicyHistoryPage,
   type StoreRegistrationRelation,
   validOperatorStoreRegistrationChange,
 } from "@bthwani/dsh";
@@ -37,6 +39,57 @@ export async function readStoreRegistrationPolicy(
   const policy = parseRegistrationPolicy(await response.json(), cityId, relation);
   if (!policy) throw new Error("DSH policy owner response invalid");
   return policy;
+}
+
+export type RegistrationOverviewEntry =
+  | { status: "current"; policy: OperatorStoreRegistrationPolicy }
+  | { status: "unavailable" };
+export type RegistrationOverview = Record<StoreRegistrationRelation, RegistrationOverviewEntry>;
+
+// Two independent DSH GETs: a failed read is UNKNOWN, never interpreted as closed admission.
+export async function readRegistrationOverview(cityId: string, actorId: string): Promise<RegistrationOverview> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityId)) throw new Error("Invalid DSH city");
+  const relations = ["MARKETPLACE", "DIRECT"] as const;
+  const settled = await Promise.allSettled(relations.map(relation =>
+    readStoreRegistrationPolicy(
+      `/api/policies/cities/${cityId}/store-registration/${relation}`, cityId, relation, actorId,
+    ),
+  ));
+  const result = (index: number): RegistrationOverviewEntry => {
+    const entry = settled[index];
+    return entry?.status === "fulfilled"
+      ? { status: "current", policy: entry.value }
+      : { status: "unavailable" };
+  };
+  return { MARKETPLACE: result(0), DIRECT: result(1) };
+}
+
+export async function readRegistrationHistory(
+  endpoint: string, cityId: string, relation: StoreRegistrationRelation,
+  actorId: string, beforeVersion?: string,
+): Promise<OperatorStoreRegistrationPolicyHistoryPage> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityId) ||
+    !["DIRECT", "MARKETPLACE"].includes(relation) ||
+    endpoint !== "/api/policies/cities/" + cityId + "/store-registration/" + relation ||
+    (beforeVersion !== undefined && !/^[1-9][0-9]{0,18}$/.test(beforeVersion))) {
+    throw new Error("Invalid DSH history scope");
+  }
+  const query = `?history=1&limit=10${beforeVersion ? `&beforeVersion=${beforeVersion}` : ""}`;
+  const response = await fetch(endpoint + query, {
+    method: "GET", cache: "no-store", credentials: "same-origin", redirect: "error",
+    headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
+  });
+  if (!response.ok) throw new Error(response.status === 401 || response.status === 403
+    ? "Identity rejected the current policy grant" : "DSH policy audit unavailable");
+  const result: unknown = await response.json();
+  if (!isStoreRegistrationPolicyHistoryPage(result, 10)) {
+    throw new Error("DSH policy audit owner response invalid");
+  }
+  if (beforeVersion !== undefined && result.entries.some(entry =>
+    entry.version >= Number(beforeVersion))) {
+    throw new Error("DSH policy audit cursor mismatch");
+  }
+  return result;
 }
 
 /** An uncertain write keeps its original operationId and full payload. */

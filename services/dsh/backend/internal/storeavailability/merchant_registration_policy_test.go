@@ -266,6 +266,30 @@ func TestStoreRegistrationPolicyRealPostgresAuthorizationAndReconciliation(t *te
 	if err != nil || commands != 2 {
 		t.Fatalf("replay wrote duplicate audit rows: %d %v", commands, err)
 	}
+	// The immutable audit rows must be visible through the same owner with
+	// scoped keyset pagination. Replay and rejected writes add no history.
+	newest, err := operator.ReadRegistrationPolicyHistory(ctx, "sanaa", "MARKETPLACE", 1, 0)
+	if err != nil || len(newest.Entries) != 1 || newest.Entries[0].Version != 2 ||
+		newest.Entries[0].Enabled || newest.NextBeforeVersion != "2" {
+		t.Fatalf("bad latest policy history: %+v %v", newest, err)
+	}
+	older, err := operator.ReadRegistrationPolicyHistory(ctx, "sanaa", "MARKETPLACE", 1, 2)
+	if err != nil || len(older.Entries) != 1 || older.Entries[0].Version != 1 ||
+		!older.Entries[0].Enabled || older.NextBeforeVersion != "" {
+		t.Fatalf("bad older policy history: %+v %v", older, err)
+	}
+	unrelated, err := operator.ReadRegistrationPolicyHistory(ctx, "sanaa", "DIRECT", 10, 0)
+	if err != nil || len(unrelated.Entries) != 0 {
+		t.Fatalf("history crossed Store relation: %+v %v", unrelated, err)
+	}
+	historyRequest := httptest.NewRequest("GET", endpoint+"/history?limit=1", nil)
+	historyRequest.Header.Set("Authorization", "Bearer synthetic")
+	historyResponse := httptest.NewRecorder()
+	handler.ServeHTTP(historyResponse, historyRequest)
+	if historyResponse.Code != 200 || historyResponse.Header().Get("Cache-Control") != "no-store" ||
+		!bytes.Contains(historyResponse.Body.Bytes(), []byte(`"nextBeforeVersion":"2"`)) {
+		t.Fatalf("Operator policy history GET failed: %d %s", historyResponse.Code, historyResponse.Body.String())
+	}
 	var enabled bool
 	var version int64
 	err = independent.QueryRowContext(ctx, "SELECT version,enabled FROM "+schema+".store_registration_policies WHERE city_id='sanaa' AND relation='MARKETPLACE'").Scan(&version, &enabled)

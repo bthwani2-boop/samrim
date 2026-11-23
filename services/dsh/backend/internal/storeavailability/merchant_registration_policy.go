@@ -292,5 +292,6 @@ func NewStoreRegistrationPolicyHandler(s *MerchantStoreRegistrar) (http.Handler,
 		handle(w, r)
 	})
 	mux.HandleFunc("PATCH "+path, handle)
+	mux.HandleFunc("GET "+path+"/history", storeRegistrationPolicyHistoryHandler(s))
 	return mux, nil
 }

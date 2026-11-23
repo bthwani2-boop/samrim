@@ -66,6 +66,7 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 	const policyPath = "/v1/operators/cities/{cityID}/store-registration-policy/{relation}"
 	routes.Handle("GET "+policyPath, operatorRegistrationPolicy)
 	routes.Handle("PATCH "+policyPath, operatorRegistrationPolicy)
+	routes.Handle("GET "+policyPath+"/history", operatorRegistrationPolicy)
 	routes.Handle("/", existing)
 	return routes, nil
 }

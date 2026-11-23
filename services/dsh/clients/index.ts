@@ -35,6 +35,8 @@ export {
 } from "./operator-captains.ts";
 export type { OperatorStoreRegistrationChange, OperatorStoreRegistrationPolicy, OperatorStoreRegistrationResult, StoreRegistrationRelation } from "./operator-store-registration-policy.ts";
 export { changeOperatorStoreRegistrationPolicy, getOperatorStoreRegistrationPolicy, isOperatorStoreRegistrationPolicy, validOperatorStoreRegistrationChange } from "./operator-store-registration-policy.ts";
+export type { OperatorStoreRegistrationPolicyHistoryEntry, OperatorStoreRegistrationPolicyHistoryPage } from "./operator-store-registration-policy-history.ts";
+export { isStoreRegistrationPolicyHistoryPage, listOperatorStoreRegistrationPolicyHistory } from "./operator-store-registration-policy-history.ts";
 export type { PublicOffer, PublicOfferEstimate, PublicPage, PublicStore, PublicVertical } from "./public-discovery.ts";
 export {
   DshPublicError, estimatePublicOffer, getPublicStore, isPublicOfferPriceYer, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
