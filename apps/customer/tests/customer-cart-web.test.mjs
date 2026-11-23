@@ -5,6 +5,7 @@ process.env.BTHWANI_SURFACE_PREVIEW = "1";
 process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN = "http://127.0.0.1:33222";
 process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN = "http://127.0.0.1:33221";
 const { GET, PUT } = await import("../app/api/customer-auth/cart+api.ts");
+const { GET: ESTIMATE } = await import("../app/api/customer-auth/cart-estimate+api.ts");
 const bearer = Buffer.alloc(32, 14).toString("base64url");
 const base = "http://localhost:18101/api/customer-auth/cart?storeId=store-a";
 const cookie = `bthwani_surface_customer_auth=${bearer}`;
@@ -121,4 +122,56 @@ test("Owner returned a cross-account Cart, so no original Customer data is expos
   const result = await GET(request("GET"));
   assert.equal(result.status, 503);
   assert.deepEqual(await result.json(), { error: "OWNER_UNAVAILABLE" });
+});
+
+test("Customer merchandise estimate BFF returns only the owner amount for a verified actor and Cart version", async t => {
+  const estimate = {
+    actorId: "customer-a", storeId: "store-a", cartVersion: 2,
+    lines: [{ offerId: "offer-a", variantId: "variant-a", quantity: 2,
+      unitYer: "5", lineTotalYer: "10" }],
+    merchandiseSubtotalYer: "10", checkoutReady: false,
+  };
+  const routes = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const path = new URL(url).pathname;
+    routes.push(path);
+    if (path === "/v1/sessions/current") return identitySession();
+    assert.equal(options.method, "GET");
+    assert.equal(options.credentials, "omit");
+    assert.ok(path.includes("store-a"));
+    return okJSON(estimate);
+  });
+  const response = await ESTIMATE(new Request(
+    "http://localhost:18101/api/customer-auth/cart-estimate?storeId=store-a&expectedVersion=2",
+    { headers: credentials() }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await response.json(), estimate);
+  assert.equal(routes.filter(path => path === "/v1/sessions/current").length, 2);
+  assert.equal(routes.length, 3);
+});
+
+test("Customer merchandise estimate rejects account switches and spoofed selectors", async t => {
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async (url) => {
+    if (new URL(url).pathname === "/v1/sessions/current") {
+      reads++;
+      return identitySession(reads === 2 ? "customer-b" : "customer-a");
+    }
+    return okJSON({
+      actorId: "customer-a", storeId: "store-a", cartVersion: 2,
+      lines: [{ offerId: "offer-a", variantId: "variant-a",
+        quantity: 2, unitYer: "5", lineTotalYer: "10" }],
+      merchandiseSubtotalYer: "10", checkoutReady: false,
+    });
+  });
+  const baseEstimate = "http://localhost:18101/api/customer-auth/cart-estimate?storeId=store-a&expectedVersion=2";
+  for (const url of [`${baseEstimate}&actorId=customer-b`, `${baseEstimate}&storeId=store-b`]) {
+    const rejected = await ESTIMATE(new Request(url, { headers: credentials() }));
+    assert.equal(rejected.status, 400);
+  }
+  assert.equal(reads, 0);
+  const swapped = await ESTIMATE(new Request(baseEstimate, { headers: credentials() }));
+  assert.equal(swapped.status, 401);
+  assert.deepEqual(await swapped.json(), { error: "UNAUTHORIZED" });
 });

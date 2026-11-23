@@ -1,9 +1,9 @@
 import {
-  DshCartError, readCurrentCustomerCart, replaceCurrentCustomerCart,
   type CustomerCartChange,
+  DshCartError, readCurrentCustomerCart, replaceCurrentCustomerCart,
 } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
-import { bearerForCustomerRequest } from "../access/customer-session-cookie";
+import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 
 const noStore = {
   "Cache-Control": "no-store", "Referrer-Policy": "no-referrer",

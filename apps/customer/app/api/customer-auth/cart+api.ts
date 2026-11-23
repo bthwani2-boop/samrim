@@ -1,4 +1,4 @@
-import { handleCustomerCart } from "../../../src/features/cart/cart-bff";
+import { handleCustomerCart } from "../../../src/features/cart/cart-bff.ts";
 
 export function GET(request: Request): Promise<Response> {
   return handleCustomerCart(request, "GET");
