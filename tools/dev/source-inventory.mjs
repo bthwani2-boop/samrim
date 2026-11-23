@@ -6,6 +6,10 @@ import { extname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
+// Match the repository secret scanner: never resolve executable Git from caller PATH.
+const gitExecutable = process.platform === "win32"
+  ? "C:\\Program Files\\Git\\cmd\\git.exe"
+  : "/usr/bin/git";
 const sourceExt = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".go"]);
 const scriptExt = new Set([".ps1", ".sh"]);
 const contractExt = new Set([".yaml", ".yml", ".json"]);
@@ -15,7 +19,7 @@ const jsExt = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".j
 const generatedParts = new Set(["node_modules", ".git", ".next", ".expo", "dist", "build", "coverage", "generated"]);
 
 function listGitPaths(checkout, mode) {
-  const cmd = spawnSync("git", ["-C", checkout, "ls-files", "-z", ...mode], {
+  const cmd = spawnSync(gitExecutable, ["-C", checkout, "ls-files", "-z", ...mode], {
     encoding: "buffer", windowsHide: true, maxBuffer: 16 * 1024 * 1024,
   });
   if (cmd.status !== 0 || cmd.error) throw new Error("Git source enumeration failed");

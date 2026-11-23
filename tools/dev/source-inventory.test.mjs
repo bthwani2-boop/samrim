@@ -214,3 +214,17 @@ test("resolves literal require.resolve and import.meta.resolve consumers during 
     );
   }
 });
+
+test("source enumeration does not execute Git from the caller PATH", t => {
+  const x = fixture(t);
+  x.file("services/dsh/clients/index.ts", "export const owner = 1;\n");
+  x.stage("services/dsh/clients/index.ts");
+  const previous = process.env.PATH;
+  try {
+    process.env.PATH = x.root;
+    assert.deepEqual(inventory(x.root).map(row => row.path), ["services/dsh/clients/index.ts"]);
+  } finally {
+    if (previous === undefined) delete process.env.PATH;
+    else process.env.PATH = previous;
+  }
+});
