@@ -39,14 +39,8 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "008_employees.sql"} {
-		source, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := owner.Migrate(t.Context(), source); err != nil {
-			t.Fatal(err)
-		}
+	if err := owner.BootstrapFresh(t.Context(), filepath.Join("..", "..", "..", "database", "schema")); err != nil {
+		t.Fatal(err)
 	}
 	var revoked atomic.Bool
 	identityOwner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

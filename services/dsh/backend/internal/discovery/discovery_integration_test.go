@@ -3,12 +3,14 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func setupIntegratedOwner(t *testing.T) (*Owner, *Server) {
@@ -21,23 +23,15 @@ func setupIntegratedOwner(t *testing.T) (*Owner, *Server) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	schema := os.Getenv("DSH_DB_SCHEMA")
-	if !strings.HasPrefix(schema, "dsh_test_") {
+	if !strings.HasPrefix(os.Getenv("DSH_DB_SCHEMA"), "dsh_test_") {
 		t.Fatal("owner-backed integration requires an explicitly isolated dsh_test_* schema")
 	}
-	owner, err := New(db, schema)
+	owner, err := New(db, fmt.Sprintf("dsh_test_discovery_%x", time.Now().UnixNano()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	migrationPath := os.Getenv("DSH_DISCOVERY_MIGRATION_FILE")
-	if migrationPath == "" {
-		migrationPath = filepath.Join("..", "..", "..", "database", "migrations", "001_public_discovery.sql")
-	}
-	migration, err := os.ReadFile(migrationPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = owner.Migrate(context.Background(), migration); err != nil {
+	baseline := filepath.Join("..", "..", "..", "database", "schema")
+	if err = owner.BootstrapFresh(t.Context(), baseline); err != nil {
 		t.Fatal(err)
 	}
 	if err = owner.ImportSynthetic(context.Background()); err != nil {
@@ -112,18 +106,6 @@ func TestOwnerBackedMarketplaceVisibility(t *testing.T) {
 func TestOwnerBackedPublicStoreOperationalStatus(t *testing.T) {
 	owner, server := setupIntegratedOwner(t)
 	ctx := context.Background()
-	for _, name := range []string{"002_store_orderability.sql", "003_service_city_timezone.sql"} {
-		migration, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", name))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err = owner.Migrate(ctx, migration); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := owner.ImportSynthetic(ctx); err != nil {
-		t.Fatal(err)
-	}
 	tx, err := owner.beginScopedTx(ctx, nil)
 	if err != nil {
 		t.Fatal(err)

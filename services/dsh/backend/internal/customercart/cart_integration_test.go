@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"testing"
@@ -149,25 +148,16 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 		t.Fatal("Customer Cart fixture attempted a non-isolated database")
 	}
 	const schema = "dsh_test_cart_ci"
-	root := os.Getenv("DSH_CART_TEST_MIGRATION_DIR")
-	if root == "" {
-		root = "/agent02/services/dsh/database/migrations"
-	}
+	root := "/agent02/services/dsh/database/schema"
 	owner, err := discovery.New(db, schema)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, file := range []string{"001_public_discovery.sql", "007_customer_cart.sql"} {
-		data, readErr := os.ReadFile(filepath.Join(root, file))
-		if readErr != nil {
-			t.Fatal(readErr)
-		}
-		if err = owner.Migrate(ctx, data); err != nil {
-			t.Fatalf("reviewed DSH owner migration %s: %v", file, err)
-		}
+	if err = owner.BootstrapFresh(ctx, root); err != nil {
+		t.Fatalf("reviewed DSH owner baseline: %v", err)
 	}
 	statements := []string{
-		"INSERT INTO " + schema + ".service_cities VALUES ('sanaa',true)",
+		"INSERT INTO " + schema + ".service_cities(id,active) VALUES ('sanaa',true)",
 		"INSERT INTO " + schema + ".verticals VALUES ('grocery',true)",
 		"INSERT INTO " + schema + ".stores(id,owner_actor_id,city_id,vertical_id,relation,name,published) VALUES ('store-a','merchant-a','sanaa','grocery','MARKETPLACE','Test Store',true),('store-b','merchant-a','sanaa','grocery','DIRECT','Other Store',true)",
 		"INSERT INTO " + schema + ".products(id,store_id,name,active) VALUES ('product-a','store-a','Test Product',true),('product-b','store-b','Other Product',true)",
