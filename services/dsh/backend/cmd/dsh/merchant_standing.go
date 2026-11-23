@@ -59,6 +59,7 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 	registration := storeavailability.NewMerchantRegistrationHandler(registrar)
 	routes.Handle("GET /v1/stores/registration-options", registration)
 	routes.Handle("POST /v1/stores", registration)
+	routes.Handle("GET /v1/operators/cities/{cityID}/store-publication-review/{relation}", storeavailability.NewOperatorPublicationReviewHandler(identity, reader))
 	operatorRegistrationPolicy, err := storeavailability.NewStoreRegistrationPolicyHandler(registrar)
 	if err != nil {
 		return nil, err

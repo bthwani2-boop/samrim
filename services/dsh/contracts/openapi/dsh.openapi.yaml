@@ -54,6 +54,8 @@ paths:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees'
   /v1/operators/employees/{id}:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}'
+  /v1/operators/cities/{cityID}/store-publication-review/{relation}:
+    $ref: './paths/merchant-registration.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-publication-review~1{relation}'
   /v1/operators/cities/{cityID}/store-registration-policy/{relation}:
     $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}'
   /v1/operators/cities/{cityID}/store-registration-policy/{relation}/history:
@@ -247,6 +249,32 @@ components:
           enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE]
           description: DSH can show PAUSED or CLOSED_BY_SCHEDULE while checkout remains unavailable. The public response omits the schedule, pause timestamps, reason and actor details.
         orderingAvailable: { type: boolean, const: false, description: "The checkout/fulfillment journey is not activated" }
+    PublicationReviewItem:
+      type: object
+      additionalProperties: false
+      required: [id, name, verticalId, cityActive, verticalActive, locationRecorded, registrationTermsRecorded, weeklyHoursRecorded, catalogRecorded]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        verticalId: { $ref: '#/components/schemas/PublicId' }
+        cityActive: { type: boolean }
+        verticalActive: { type: boolean }
+        locationRecorded: { type: boolean }
+        registrationTermsRecorded: { type: boolean }
+        weeklyHoursRecorded: { type: boolean }
+        catalogRecorded: { type: boolean }
+    PublicationReviewPage:
+      type: object
+      additionalProperties: false
+      required: [cityId, relation, items]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/PublicationReviewItem' }
+        nextCursor: { $ref: '#/components/schemas/PublicId' }
     StoreRegistrationPolicy:
       type: object
       additionalProperties: false

@@ -69,3 +69,43 @@ paths:
           content:
             application/json:
               schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+  /v1/operators/cities/{cityID}/store-publication-review/{relation}:
+    parameters:
+      - in: path
+        name: cityID
+        required: true
+        schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      - in: path
+        name: relation
+        required: true
+        schema: { type: string, enum: [DIRECT, MARKETPLACE] }
+    get:
+      operationId: listOperatorStorePublicationReview
+      summary: Read unpublished Store evidence for Operator publication review
+      description: Requires current Identity Operator merchant permission before and after DSH read. Returns existing unpublished Stores scoped to city and relation, not a submitted case, approval, financial eligibility or checkout permission. Fixed page size of 20, ordered by Store ID; no writes.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - in: query
+          name: after
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: DSH owner facts only, no financial or publication approval
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicationReviewPage' }
+        '400':
+          description: Invalid scope or cursor
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'

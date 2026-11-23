@@ -139,7 +139,7 @@ func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Conte
 	if identity == nil || identity.client == nil {
 		return ErrIdentityUnavailable
 	}
-	if (permission != "operations" && permission != "platform_policies" && permission != "hr") ||
+	if (permission != "operations" && permission != "platform_policies" && permission != "hr" && permission != "merchant") ||
 		!validIdentityActorID(verifiedActorID) {
 		return ErrForbidden
 	}

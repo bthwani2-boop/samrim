@@ -150,6 +150,9 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
             وتسجيل من غيّر السياسة. الإتاحة لا تعني النشر أو إبرام اتفاق مالي.
           </Typography.Paragraph>
           <Link href="/policies/store-registration">إدارة قبول المتاجر: المباشر والسوق</Link>
+          <Typography.Paragraph style={{ marginBlockStart: 8 }}>
+            <Link href="/merchants/joining">مراجعة حقائق المتاجر غير المنشورة (صلاحية إدارة التجار)</Link>
+          </Typography.Paragraph>
         </Card>
         <Card title="التشغيل والأهلية — DSH">
           <Typography.Paragraph>
@@ -159,10 +162,10 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
         </Card>
         <Card title="الطلبات والتوصيل — DSH">
           <Typography.Paragraph>
-            أزمنة مراحل الطلبات متاحة للتحرير من صفحة مستقلة. رسوم التوصيل
+            أزمنة مراحل الطلبات لم تُوصل بعد إلى مالك تنفيذي. رسوم التوصيل
             وطريقة الإسناد ليستا جزءًا من سياسة تسجيل المتجر.
           </Typography.Paragraph>
-          <Link href="/policies/stage-sla">إدارة أزمنة مراحل الطلبات</Link>
+          <Link href="/policies/stage-sla">حالة توفر سياسات أزمنة مراحل الطلبات</Link>
         </Card>
         <Card title="المالية والاتفاقيات — WLT">
           <Typography.Paragraph>

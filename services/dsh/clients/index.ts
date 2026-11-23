@@ -33,6 +33,8 @@ export {
   captainStandingStatuses, changeOperatorCaptainStanding, getOperatorCaptainStanding,
   isCaptainStandingActorId, listOperatorCaptainStandings,
 } from "./operator-captains.ts";
+export type { PublicationReviewItem, PublicationReviewPage } from "./operator-publication-review.ts";
+export { isPublicationReviewPage, listOperatorStorePublicationReview } from "./operator-publication-review.ts";
 export type { OperatorStoreRegistrationChange, OperatorStoreRegistrationPolicy, OperatorStoreRegistrationResult, StoreRegistrationRelation } from "./operator-store-registration-policy.ts";
 export { changeOperatorStoreRegistrationPolicy, getOperatorStoreRegistrationPolicy, isOperatorStoreRegistrationPolicy, validOperatorStoreRegistrationChange } from "./operator-store-registration-policy.ts";
 export type { OperatorStoreRegistrationPolicyHistoryEntry, OperatorStoreRegistrationPolicyHistoryPage } from "./operator-store-registration-policy-history.ts";

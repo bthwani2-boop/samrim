@@ -135,7 +135,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
 
   function submit() {
     if (active.current || !attemptReady || busy || done || !choice || !verticalId ||
-      !name.trim() || !latitude.trim() || !longitude.trim() || !accepted) return;
+      !options?.verticals.includes(verticalId) || !name.trim() || !latitude.trim() || !longitude.trim() || !accepted) return;
     const lat = Number(latitude.trim());
     const lon = Number(longitude.trim());
     if (!Number.isFinite(lat) || !Number.isFinite(lon) ||
@@ -199,9 +199,23 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         if (error instanceof DshPublicError &&
           ["STORE_REGISTRATION_POLICY_CHANGED", "STORE_REGISTRATION_CLOSED"].includes(error.code)) {
           // A definitive owner policy rejection has no committed Store to replay.
-          await writeStoredAttempt(actorId, null).catch(() => {});
+          try {
+            await writeStoredAttempt(actorId, null);
+          } catch {
+            if (controller.signal.aborted) return;
+            // Never mint a replacement ID while the durable previous record remains.
+            setUnknown(true);
+            setRestored(false);
+            setMessage("رفض DSH السياسة السابقة، لكن تعذّر تحديث سجل المحاولة. تحقق من متاجرك قبل المتابعة.");
+            return;
+          }
+          if (controller.signal.aborted) return;
           attempt.current = null;
           setUnknown(false);
+          setRestored(false);
+          setOptions(null);
+          setChoiceKey("");
+          setAccepted(false);
           setMessage(error.code === "STORE_REGISTRATION_CLOSED"
             ? "أوقف DSH استقبال المتاجر لهذه المدينة وطريقة العمل."
             : "تغيّرت سياسة التسجيل. أعد تحميل الخيارات قبل المحاولة مرة أخرى.");
@@ -232,7 +246,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         الحساب موثّق عبر Identity. يُنشئ DSH المتجر مستقلًا عن الحساب، غير منشور ولا يقبل طلبات قبل الاعتماد.
       </Text>
       {loading ? <Text style={{ color: theme.colorSecondary }}>جارٍ قراءة سياسة التسجيل…</Text> : null}
-      {!loading && !options ? button("إعادة التحقق من إتاحة التسجيل", () => setReload(n => n + 1)) : null}
+      {!loading && (!options || options.choices.length === 0) ? button("إعادة التحقق من إتاحة التسجيل", () => setReload(n => n + 1), busy || unknown) : null}
       {!loading && options?.choices.length === 0 ? (
         <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
           تسجيل المتاجر مغلق حاليًا لدى DSH؛ يجب اعتماد سياسة المدينة وطريقة عمل المتجر أولًا.
@@ -275,7 +289,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
           ) : null}
           {button(busy ? "جارٍ حفظ المتجر…" : unknown ? "إعادة نفس العملية دون تكرار" :
             done ? "تم الحفظ" : "إنشاء متجر غير منشور", submit,
-            busy || done || !choice || !verticalId || !name.trim() ||
+            busy || done || !attemptReady || !choice || !verticalId || !options.verticals.includes(verticalId) || !name.trim() ||
             !latitude.trim() || !longitude.trim() || !accepted)}
         </>
       ) : null}
