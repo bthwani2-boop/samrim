@@ -159,14 +159,18 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		cursorError(w, err)
 		return
 	}
-	const byCity = publicStoreScopeSQL + ` AND s.relation='MARKETPLACE'
+	const (
+		byCity = publicStoreScopeSQL + ` AND s.relation='MARKETPLACE'
 			AND s.city_id=$1 AND s.id>$2 AND strpos(lower(s.name),lower($4))>0
 			AND ($5='' OR s.vertical_id=$5) ORDER BY s.id LIMIT $3`
+		byCityWithHours    = publicStoreWithHoursSQL + byCity
+		byCityWithoutHours = publicStoreWithoutHoursSQL + byCity
+	)
 	var rows *sql.Rows
 	if s.StoreAvailabilityEnabled {
-		rows, err = tx.QueryContext(ctx, publicStoreWithHoursSQL+byCity, city, after, limit+1, search, vertical)
+		rows, err = tx.QueryContext(ctx, byCityWithHours, city, after, limit+1, search, vertical)
 	} else {
-		rows, err = tx.QueryContext(ctx, publicStoreWithoutHoursSQL+byCity, city, after, limit+1, search, vertical)
+		rows, err = tx.QueryContext(ctx, byCityWithoutHours, city, after, limit+1, search, vertical)
 	}
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
