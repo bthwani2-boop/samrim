@@ -279,7 +279,7 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 		mux.Handle("POST /v1/stores/{storeID}/catalog", draftHTTP)
 		mux.ServeHTTP(response, request)
 		var result MerchantCatalogDraftResult
-		if response.Code == 200 && json.Unmarshal(response.Body.Bytes(), &result) != nil {
+		if (response.Code == 200 || response.Code == 201) && json.Unmarshal(response.Body.Bytes(), &result) != nil {
 			t.Fatal("draft HTTP invalid JSON")
 		}
 		return response.Code, result
