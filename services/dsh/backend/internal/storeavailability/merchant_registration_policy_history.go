@@ -29,7 +29,7 @@ type StoreRegistrationPolicyHistoryPage struct {
 
 var policyPositiveDecimal = regexp.MustCompile(`^[1-9][0-9]{0,18}$`)
 
-func storeRegistrationPolicyHistoryParams(raw string) (limit int, before int64, ok bool) {
+func policyHistoryParams(raw string) (limit int, before int64, ok bool) {
 	values, err := url.ParseQuery(raw)
 	if err != nil {
 		return 0, 0, false
@@ -117,7 +117,7 @@ func storeRegistrationPolicyHistoryHandler(s *MerchantStoreRegistrar) http.Handl
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		limit, before, ok := storeRegistrationPolicyHistoryParams(r.URL.RawQuery)
+		limit, before, ok := policyHistoryParams(r.URL.RawQuery)
 		if !ok || !registrationPublicID.MatchString(r.PathValue("cityID")) ||
 			!validRegistrationRelation(r.PathValue("relation")) {
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
@@ -131,7 +131,7 @@ func storeRegistrationPolicyHistoryHandler(s *MerchantStoreRegistrar) http.Handl
 		cleanURL := *r.URL
 		cleanURL.RawQuery = ""
 		authRequest.URL = &cleanURL
-		_, allowed := authorizeCityPolicyOperator(w, authRequest, s.identity)
+		actor, allowed := authorizeCityPolicyOperator(w, authRequest, s.identity)
 		if !allowed {
 			return
 		}
@@ -143,6 +143,14 @@ func storeRegistrationPolicyHistoryHandler(s *MerchantStoreRegistrar) http.Handl
 			} else {
 				writeFailure(w, err)
 			}
+			return
+		}
+		current, allowed := authorizeCityPolicyOperator(w, authRequest, s.identity)
+		if !allowed {
+			return
+		}
+		if current != actor {
+			writeFailure(w, ErrForbidden)
 			return
 		}
 		writeJSON(w, http.StatusOK, result)

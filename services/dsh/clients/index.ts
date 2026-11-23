@@ -10,9 +10,9 @@ export {
   readCaptainApplication, requestCaptainApplication,
 } from "./captain-standing.ts";
 export type {
-  CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyResult,
+  CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult,
 } from "./city-policies.ts";
-export { getCityStoreOperationalPolicy, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
+export { getCityStoreOperationalPolicy, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
 export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";
 export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
 export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.ts";

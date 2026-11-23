@@ -32,7 +32,7 @@ func TestStoreRegistrationPolicyHistoryParamsRejectUnsafeSelectors(t *testing.T)
 		{"limit=+2", 0, 0, false},
 	} {
 		t.Run(strings.ReplaceAll(tc.query, "=", "_"), func(t *testing.T) {
-			limit, before, ok := storeRegistrationPolicyHistoryParams(tc.query)
+			limit, before, ok := policyHistoryParams(tc.query)
 			if ok != tc.ok || (ok && (limit != tc.limit || before != tc.before)) {
 				t.Fatalf("params(%q) => %d %d %v; expected %d %d %v",
 					tc.query, limit, before, ok, tc.limit, tc.before, tc.ok)

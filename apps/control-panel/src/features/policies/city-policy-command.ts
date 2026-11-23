@@ -1,9 +1,11 @@
 export type {
   CityStoreOperationalPolicy as CityPolicy, CityStoreOperationalPolicyChange as CityPolicyChange,
 } from "@bthwani/dsh";
+
 import type {
   CityStoreOperationalPolicy as CityPolicy, CityStoreOperationalPolicyChange as CityPolicyChange,
 } from "@bthwani/dsh";
+import { type CityStoreOperationalPolicyHistoryPage, isCityStoreOperationalPolicyHistoryPage } from "@bthwani/dsh";
 
 export function parseCityPolicy(value: unknown, cityId: string): CityPolicy | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -61,4 +63,24 @@ export async function reconcileCityPolicy(
   } catch {
     return { status: "unknown" };
   }
+}
+
+export async function readCityPolicyHistory(
+  endpoint: string, city: string, actorId: string, beforeVersion?: string, signal?: AbortSignal,
+): Promise<CityStoreOperationalPolicyHistoryPage> {
+  if (!/^[a-z0-9-]{1,64}$/.test(city) || endpoint !== "/api/policies/cities/" + city ||
+      (beforeVersion !== undefined && (!/^[1-9][0-9]{0,15}$/.test(beforeVersion) ||
+       !Number.isSafeInteger(Number(beforeVersion))))) throw new Error("INVALID_HISTORY_SCOPE");
+  const query = new URLSearchParams({ history: "1", limit: "10" });
+  if (beforeVersion) query.set("beforeVersion", beforeVersion);
+  const response = await fetch(endpoint + "?" + query.toString(), {
+    method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: { "X-BThwani-Operator": encodeURIComponent(actorId) }, signal: signal ?? null,
+  });
+  if (!response.ok || signal?.aborted) throw new Error("HISTORY_UNAVAILABLE");
+  const data: unknown = await response.json();
+  if (signal?.aborted || !isCityStoreOperationalPolicyHistoryPage(data, city, 10, beforeVersion)) {
+    throw new Error("INVALID_HISTORY_RESPONSE");
+  }
+  return data;
 }

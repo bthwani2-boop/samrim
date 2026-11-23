@@ -60,6 +60,8 @@ paths:
     $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}'
   /v1/operators/cities/{cityID}/store-registration-policy/{relation}/history:
     $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}~1history'
+  /v1/operators/cities/{cityID}/store-availability-policy/history:
+    $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy~1history'
   /v1/operators/cities/{cityID}/store-availability-policy:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy'
 components:
@@ -427,6 +429,17 @@ components:
         changedByActor: { type: string, minLength: 1, maxLength: 128 }
         changeReason: { type: string, minLength: 1, maxLength: 300 }
         updatedAt: { type: string, format: date-time }
+    CityStoreOperationalPolicyHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [cityId, entries]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        entries:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CityStoreOperationalPolicy' }
+        nextBeforeVersion: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
     CityStoreOperationalPolicyChange:
       type: object
       additionalProperties: false

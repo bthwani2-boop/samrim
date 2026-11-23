@@ -43,6 +43,9 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 		}
 		writeJSON(w, http.StatusOK, current)
 	})
+	if history, ok := policies.(CityPolicyHistoryReader); ok {
+		mux.HandleFunc("GET "+path+"/history", cityPolicyHistoryHandler(identity, history))
+	}
 	if writer != nil {
 		mux.HandleFunc("PATCH "+path, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")

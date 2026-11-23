@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   type CityPolicy, type CityPolicyChange, parseCityPolicy, reconcileCityPolicy,
 } from "./city-policy-command";
+import CityPolicyHistory from "./city-policy-history";
 
 const validCity = /^[a-z0-9-]{1,64}$/;
 
@@ -209,6 +210,8 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
           </section>
         )}
       </Card>
+      {endpoint && !busy && !uncertain && <CityPolicyHistory key={actorId + ":" + city + ":" + (policy?.version ?? 0)}
+        actorId={actorId} city={city} endpoint={endpoint} />}
       <Card title="تغيير سياسة إتاحة المتاجر" style={{ marginBlockEnd: 16 }}>
         {!policy && (
           <Checkbox checked={provision} disabled={busy || uncertain || requiresRead} onChange={event => {

@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: f1abfd228ca41061e1342451a37995729c983542f3e03e2ab6fc7f0d95e390fe
+// Normalized OpenAPI SHA-256: 7bf26228e7dedaeee9f2c60e3f9b9d734b37693d907d51d485aab617e11170d5
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   applyCurrentCustomerForCaptainStanding: { method: "POST", path: "/v1/actors/me/captain-application" },
@@ -21,6 +21,7 @@ export const dshOperations = {
   getOperatorStoreRegistrationPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" },
   getPublicStore: { method: "GET", path: "/v1/public/stores/{id}" },
   getStoreOperationalAvailability: { method: "GET", path: "/v1/stores/{storeID}/availability" },
+  listCityStoreOperationalPolicyHistory: { method: "GET", path: "/v1/operators/cities/{cityID}/store-availability-policy/history" },
   listCompanyEmployees: { method: "GET", path: "/v1/operators/employees" },
   listCurrentMerchantStoreCatalog: { method: "GET", path: "/v1/stores/{storeID}/catalog" },
   listCurrentMerchantStores: { method: "GET", path: "/v1/stores/mine" },

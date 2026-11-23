@@ -1,6 +1,6 @@
 import {
   type CityStoreOperationalPolicyChange, DshPublicError, getCityStoreOperationalPolicy,
-  replaceCityStoreOperationalPolicy,
+  listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy,
 } from "@bthwani/dsh";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
@@ -42,7 +42,9 @@ function isolatedDshOrigin(raw: string | undefined): string | null {
 
 function trustedRequest(request: NextRequest, browserOrigin: string, mutation: boolean) {
   const url = new URL(request.url);
-  if (url.origin !== browserOrigin || url.search !== "" ||
+  const queryOK = url.search === "" || (!mutation &&
+    /^\?history=1&limit=10(?:&beforeVersion=[1-9][0-9]{0,15})?$/.test(url.search));
+  if (url.origin !== browserOrigin || !queryOK ||
       request.headers.get("host") !== url.host ||
       (mutation && request.headers.get("origin") !== browserOrigin)) return false;
   if (request.headers.has("x-forwarded-host") &&
@@ -96,6 +98,12 @@ async function forward(
 
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
+    const history = new URL(request.url).searchParams;
+    if (!mutation && history.has("history")) {
+      const result = await listCityStoreOperationalPolicyHistory(dshOrigin, cityId, bearer, 10,
+        history.get("beforeVersion") ?? undefined, signal);
+      return NextResponse.json(result, { status: 200, headers: privateHeaders });
+    }
     const result = change
       ? await replaceCityStoreOperationalPolicy(dshOrigin, cityId, bearer, change, signal)
       : await getCityStoreOperationalPolicy(dshOrigin, cityId, bearer, signal);

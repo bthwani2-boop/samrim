@@ -92,3 +92,48 @@ export async function replaceCityStoreOperationalPolicy(
   if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
   return result as unknown as CityStoreOperationalPolicyResult;
 }
+
+export interface CityStoreOperationalPolicyHistoryPage {
+  cityId: string;
+  entries: CityStoreOperationalPolicy[];
+  nextBeforeVersion?: string;
+}
+
+const validHistoryVersion = (value: string) =>
+  /^[1-9][0-9]{0,15}$/.test(value) && Number.isSafeInteger(Number(value));
+
+export function isCityStoreOperationalPolicyHistoryPage(
+  value: unknown, cityId: string, limit: number, beforeVersion?: string,
+): value is CityStoreOperationalPolicyHistoryPage {
+  if (!value || typeof value !== "object" || Array.isArray(value) ||
+      !Number.isSafeInteger(limit) || limit < 1 || limit > 50 ||
+      (beforeVersion !== undefined && !validHistoryVersion(beforeVersion))) return false;
+  const page = value as Record<string, unknown>;
+  if (!onlyKeys(page, ["cityId", "entries", "nextBeforeVersion"]) || page.cityId !== cityId ||
+      !Array.isArray(page.entries) || page.entries.length > limit) return false;
+  let previous = beforeVersion === undefined ? Number.POSITIVE_INFINITY : Number(beforeVersion);
+  for (const item of page.entries) {
+    if (!isCityStoreOperationalPolicy(item, cityId) || item.version >= previous) return false;
+    previous = item.version;
+  }
+  return page.nextBeforeVersion === undefined ||
+    (page.entries.length === limit && typeof page.nextBeforeVersion === "string" &&
+      validHistoryVersion(page.nextBeforeVersion) && page.nextBeforeVersion === String(previous));
+}
+
+export async function listCityStoreOperationalPolicyHistory(
+  baseUrl: string, cityId: string, bearer: string, limit = 20, beforeVersion?: string, signal?: AbortSignal,
+): Promise<CityStoreOperationalPolicyHistoryPage> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityId) || !Number.isSafeInteger(limit) || limit < 1 || limit > 50 ||
+      (beforeVersion !== undefined && !validHistoryVersion(beforeVersion))) {
+    throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
+  }
+  const path = dshOperations.listCityStoreOperationalPolicyHistory.path.replace("{cityID}", cityId);
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (beforeVersion) params.set("beforeVersion", beforeVersion);
+  const page = await privateOwnerRequest(baseUrl, path + "?" + params.toString(), bearer, "GET", undefined, signal);
+  if (!isCityStoreOperationalPolicyHistoryPage(page, cityId, limit, beforeVersion)) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return page;
+}
