@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability, type MerchantStoreRegistration, readMerchantRegistrationOptions, registerMerchantStore, type StoreOperationalChange, updateStoreOperationalAvailability } from "@bthwani/dsh";
+import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, type MerchantStoreRegistration, readMerchantRegistrationOptions, registerMerchantStore, type StoreOperationalChange, updateStoreOperationalAvailability } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -80,12 +80,23 @@ export async function GET(request: Request) {
   const registration = query.size === 1 && query.get("registration") === "options";
   const storeId = query.size === 1 ? query.get("availability") : null;
   const availability = storeId !== null && /^[a-z0-9-]{1,64}$/.test(storeId);
-  if (query.size > 0 && !stores && !availability && !registration) return response({ code: "INVALID_REQUEST" }, 400);
+  const catalogId = query.get("catalog");
+  const validCatalogKeys = [...query.keys()].every(key =>
+    ["catalog", "cursor", "limit"].includes(key) && query.getAll(key).length === 1);
+  const limitValue = query.get("limit");
+  const cursorValue = query.get("cursor");
+  const catalog = catalogId !== null && /^[a-z0-9-]{1,64}$/.test(catalogId) &&
+    validCatalogKeys && query.size <= 3 &&
+    (limitValue === null || /^(?:[1-9]|[1-4][0-9]|50)$/.test(limitValue)) &&
+    (cursorValue === null || /^[a-z0-9-]{1,64}$/.test(cursorValue));
+  if (query.size > 0 && !stores && !availability && !registration && !catalog) {
+    return response({ code: "INVALID_REQUEST" }, 400);
+  }
   const origin = await configuredOrigin(request);
-  if (!origin) return stores || availability || registration ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
+  if (!origin) return stores || availability || registration || catalog ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
     response({ enabled: false, session: null });
   const bearer = bearerFrom(request);
-  if (!bearer) return stores || availability || registration ? response({ code: "UNAUTHENTICATED" }, 401) :
+  if (!bearer) return stores || availability || registration || catalog ? response({ code: "UNAUTHENTICATED" }, 401) :
     response({ enabled: true, session: null });
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
@@ -98,6 +109,17 @@ export async function GET(request: Request) {
         }
         return response({ options: await readMerchantRegistrationOptions(
           standingOrigin(origin), bearer, signal) });
+      }
+      if (catalog) {
+        const actorId = request.headers.get("X-Merchant-Context");
+        if (actorId !== null && actorId !== session.actorId) {
+          return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+        }
+        return response({ catalog: await listMerchantCatalog(
+          standingOrigin(origin), catalogId ?? "", session.actorId, bearer,
+          { signal, ...(limitValue ? { limit: Number(limitValue) } : {}),
+            ...(cursorValue ? { cursor: cursorValue } : {}) },
+        ) });
       }
       if (availability) {
         const actorId = request.headers.get("X-Merchant-Context");
@@ -128,7 +150,7 @@ export async function GET(request: Request) {
     }
     if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
   }
-  return stores || availability || registration ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
+  return stores || availability || registration || catalog ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
     response({ enabled: true, session: null }, 200, sessionCookie(request, "", 0));
 }
 

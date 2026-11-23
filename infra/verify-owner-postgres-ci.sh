@@ -185,7 +185,7 @@ finish_stage
 start_stage bthwani-session02-orderability-pg bthwani_agent02 orderability_agent02
 run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
   /agent02/bin/dsh-storeavailability.test \
-  '^(TestRealPostgresVersionIdempotencyAuditAndReadback|TestRealPostgresVersionedCityPolicyWriterAndConcurrency|TestIsolatedRealIdentityAndDshAvailability)$' 'TestRealPostgresVersionIdempotencyAuditAndReadback,TestRealPostgresVersionedCityPolicyWriterAndConcurrency,TestIsolatedRealIdentityAndDshAvailability' \
+  '^(TestRealPostgresVersionIdempotencyAuditAndReadback|TestRealPostgresVersionedCityPolicyWriterAndConcurrency|TestIsolatedRealIdentityAndDshAvailability|TestMerchantCatalogRealPostgresOwnerReadback)$' 'TestRealPostgresVersionIdempotencyAuditAndReadback,TestRealPostgresVersionedCityPolicyWriterAndConcurrency,TestIsolatedRealIdentityAndDshAvailability,TestMerchantCatalogRealPostgresOwnerReadback' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_DSH_TEST_CONTAINER=bthwani-session02-orderability-pg \
   -e BTHWANI_DSH_TEST_DATABASE_URL='postgres://bthwani_agent02:synthetic-only@127.0.0.1:5432/orderability_agent02?sslmode=disable' \

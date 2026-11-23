@@ -1,9 +1,9 @@
 /** DSH SDK entrypoint: preserve the package's public exports and owner boundaries. */
 
 
-export type { CaptainApplicationStatus, CaptainStanding } from "./captain-standing.ts";
 export type { CaptainInterestInput, CaptainPhoneType, CaptainVehicleType, OperatorCaptainInterest, OperatorCaptainInterestFilter, OperatorCaptainInterestPage } from "./captain-interest.ts";
-export { captainVehicleTypes, captainPhoneTypes, validCaptainInterest, isOperatorCaptainInterest, submitCaptainInterest, listOperatorCaptainInterest, markOperatorCaptainInterestContacted } from "./captain-interest.ts";
+export { captainPhoneTypes, captainVehicleTypes, isOperatorCaptainInterest, listOperatorCaptainInterest, markOperatorCaptainInterestContacted, submitCaptainInterest, validCaptainInterest } from "./captain-interest.ts";
+export type { CaptainApplicationStatus, CaptainStanding } from "./captain-standing.ts";
 // DSH-owned Captain eligibility and application transport. No client-side role grant.
 export {
   CaptainStandingError, captainStandingFrom, readApprovedCaptainStanding,
@@ -18,6 +18,8 @@ export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, 
 export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.ts";
 export { getCompanyEmployee, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
 export { dshOperations } from "./generated/dsh-operations.ts";
+export type { MerchantCatalogOffer, MerchantCatalogPage } from "./merchant-catalog.ts";
+export { listMerchantCatalog, parseMerchantCatalogPage } from "./merchant-catalog.ts";
 export type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantRegistrationResult, MerchantStoreRegistration } from "./merchant-registration.ts";
 export { parseMerchantRegistrationOptions, parseMerchantRegistrationResult, readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration } from "./merchant-registration.ts";
 // DSH-owned Merchant standing contract and transport.

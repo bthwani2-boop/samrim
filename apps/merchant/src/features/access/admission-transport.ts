@@ -1,7 +1,8 @@
 import {
-  DshPublicError, getStoreOperationalAvailability,
+  DshPublicError, getStoreOperationalAvailability, listMerchantCatalog,type MerchantCatalogPage,
   type MerchantRegistrationOptions, type MerchantRegistrationResult,
   type MerchantStoreRegistration,
+  parseMerchantCatalogPage,
   parseMerchantRegistrationOptions, parseMerchantRegistrationResult,
   readMerchantRegistrationOptions,
   registerMerchantStore, type StoreOperationalAvailability,
@@ -206,6 +207,36 @@ export async function createMerchantStore(
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   return result;
+}
+
+/** The private catalog includes drafts; DSH verifies the current Store owner on every page. */
+export async function readMerchantCatalogPage(
+  storeId: string, actorId: string, signal: AbortSignal,
+  options: { limit?: number; cursor?: string } = {},
+): Promise<MerchantCatalogPage> {
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId || signal.aborted) {
+    throw new DshPublicError(400, "INVALID_REQUEST");
+  }
+  if (Platform.OS !== "web") return withNativeMerchantSession(signal, bearer =>
+    listMerchantCatalog(nativeDSHOrigin ?? "", storeId, actorId, bearer,
+      { ...options, signal }), actorId);
+  const query = new URLSearchParams({ catalog: storeId });
+  if (options.limit !== undefined) query.set("limit", String(options.limit));
+  if (options.cursor !== undefined) query.set("cursor", options.cursor);
+  const reply = await fetch(`/api/admission?${query}`, {
+    method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: { "X-Merchant-Context": actorId },
+  });
+  if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  let payload: unknown;
+  try { payload = await reply.json(); }
+  catch { throw new DshPublicError(502, "OWNER_RESPONSE_INVALID"); }
+  if (!reply.ok) {
+    const v = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+    throw new DshPublicError(reply.status, typeof v.code === "string" ? v.code : "OWNER_UNAVAILABLE");
+  }
+  const body = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+  return parseMerchantCatalogPage(body.catalog, actorId, storeId);
 }
 
 /** Read-only Store projection. Identity proves the role; DSH authorizes the Store. */

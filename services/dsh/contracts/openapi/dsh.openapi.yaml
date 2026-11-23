@@ -24,6 +24,8 @@ paths:
     $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}~1merchandise-estimate'
   /v1/stores/mine:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
+  /v1/stores/{storeID}/catalog:
+    $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog'
   /v1/stores/registration-options:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores~1registration-options'
   /v1/stores:
@@ -67,6 +69,35 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/PublicId' }
   schemas:
+    MerchantCatalogOffer:
+      type: object
+      additionalProperties: false
+      required: [id, storeId, productId, name, variantId, priceYer, stockUnits, productActive, variantSellable, requiredAttributesValid, published, available]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        productId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        variantId: { type: string, minLength: 1, maxLength: 128 }
+        priceYer: { type: string, pattern: '^[0-9]{1,19}$' }
+        stockUnits: { type: integer, minimum: 0 }
+        productActive: { type: boolean }
+        variantSellable: { type: boolean }
+        requiredAttributesValid: { type: boolean }
+        published: { type: boolean }
+        available: { type: boolean }
+    MerchantCatalogPage:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, items]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/MerchantCatalogOffer' }
+        nextCursor: { $ref: '#/components/schemas/PublicId' }
     CustomerCartLine:
       type: object
       additionalProperties: false

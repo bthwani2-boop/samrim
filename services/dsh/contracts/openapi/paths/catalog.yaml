@@ -1,1 +1,40 @@
-paths: {}
+paths:
+  /v1/stores/{storeID}/catalog:
+    get:
+      operationId: listCurrentMerchantStoreCatalog
+      summary: Read private draft and published Product/Variant/Offer facts for one owned Store
+      description: >
+        Current Identity Merchant session and DSH Store ownership are required.
+        Returns a bounded keyset page from the one DSH catalog, including unpublished
+        items. No orderability, editing or publication permission is implied.
+        A revoked session, foreign Store and invalid selector fail closed.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: One DSH Store-owner private catalog page
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogPage' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
