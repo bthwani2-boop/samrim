@@ -10,6 +10,9 @@ import {
   resumeCurrentCustomerMerchantSession,
   reviewOriginalOperatorPermissions,
   revokeVerifiedIdentitySession,
+  establishPersistentIdentitySession,
+  rotatePersistentIdentitySession,
+  revokePersistentIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "../../services/identity/clients/index.ts";
 
@@ -380,4 +383,43 @@ test("malformed successful Identity POST responses never certify that a mutation
       502, "OPERATION_RESULT_UNKNOWN");
   });
   assert.equal(requests, 2, "a consumed proof must not be replayed after an invalid owner reply");
+});
+
+test("Persistent Identity lifecycle uses isolated owner paths, exact secret schemas and no browser cookies",async()=>{
+  const refresh=Buffer.alloc(32,35).toString("base64url");
+  const newer=Buffer.alloc(32,36).toString("base64url");
+  const durableExpiry=new Date(Date.now()+30*24*60*60_000).toISOString();
+  const verifyRequest=(url,opts,path,method,token)=>{
+    assert.equal(new URL(url).pathname,path);
+    assert.equal(opts.method,method);
+    assert.equal(opts.headers.Authorization,"Bearer "+token);
+    assert.equal(opts.credentials,"omit");
+    assert.equal(opts.cache,"no-store");
+    assert.equal("body" in opts,false);
+  };
+  await withFetch(async (url,opts)=>{
+    verifyRequest(url,opts,"/v1/sessions/persistent","POST",bearer);
+    return response({refreshToken:refresh,refreshExpiresAt:durableExpiry},201);
+  },async()=>assert.deepEqual(await establishPersistentIdentitySession(origin,bearer),
+    {refreshToken:refresh,refreshExpiresAt:durableExpiry}));
+  const rotated={accessToken:rotatedBearer,sessionExpiresAt:expires(),refreshToken:newer,refreshExpiresAt:durableExpiry};
+  await withFetch(async(url,opts)=>{
+    verifyRequest(url,opts,"/v1/sessions/refresh","POST",refresh);
+    return response(rotated);
+  },async()=>assert.deepEqual(await rotatePersistentIdentitySession(origin,refresh),rotated));
+  await withFetch(async(url,opts)=>{
+    verifyRequest(url,opts,"/v1/sessions/refresh","DELETE",newer);
+    return new Response(null,{status:204,headers:{"Cache-Control":"no-store"}});
+  },async()=>assert.equal(await revokePersistentIdentitySession(origin,newer),undefined));
+  for (const malformed of [
+    {...rotated,debug:"actor"},
+    {...rotated,refreshToken:"forged"},
+    {...rotated,refreshExpiresAt:new Date(Date.now()-100).toISOString()},
+    {...rotated,sessionExpiresAt:"today"},
+  ]){
+    await withFetch(async()=>response(malformed),()=>
+      rejectsAs(()=>rotatePersistentIdentitySession(origin,refresh),502,"OPERATION_RESULT_UNKNOWN"));
+  }
+  await withFetch(async()=>response({error:"UNAUTHORIZED"},401),
+    ()=>rejectsAs(()=>rotatePersistentIdentitySession(origin,refresh),401,"UNAUTHORIZED"));
 });

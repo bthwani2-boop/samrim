@@ -178,6 +178,10 @@ func main() {
 		os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY") == "true" {
 		log.Fatal("Operator bootstrap/recovery requires the isolated WebAuthn owner")
 	}
+	// Persistent device sessions are issued and rotated only by canonical Identity.
+	persistent := session.NewPersistentSessionHandler(reader)
+	routes.Handle(session.PersistentStartPath, persistent)
+	routes.Handle(session.PersistentRefreshPath, persistent)
 	verifier := session.NewHandler(session.NewVerifier(reader))
 	routes.Handle("/", verifier)
 	if tlsConfig != nil {

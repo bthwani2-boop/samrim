@@ -103,7 +103,15 @@ export default function CaptainIdentityGate() {
     if (!session) return;
     const ms = Date.parse(session.sessionExpiresAt) - Date.now();
     const expiry = setTimeout(() => setSession(null), Math.max(0, ms));
-    return () => clearTimeout(expiry);
+    // Renew through Identity before the short-lived access token expires.
+    // The actual Captain standing remains a fresh, mandatory DSH check.
+    const revalidate = setInterval(() => {
+      if (AppState.currentState === "active") refresh();
+    }, 30_000);
+    return () => {
+      clearTimeout(expiry);
+      clearInterval(revalidate);
+    };
   }, [session]);
 
   const verified = hasActiveCaptainSession(session);

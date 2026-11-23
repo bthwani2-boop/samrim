@@ -1,4 +1,4 @@
-import { identityOperations } from "@bthwani/identity";
+import { establishPersistentIdentitySession, identityOperations } from "@bthwani/identity";
 import { NextResponse } from "next/server";
 import {
   boundedRequestBody,
@@ -6,6 +6,7 @@ import {
   cookieLifetimeSeconds,
   isTrustedOperatorRequest,
   OPERATOR_COOKIE,
+  OPERATOR_REFRESH_COOKIE,
   operatorIdentityRequest,
   parseIssuedOperatorToken,
   parseVerifiedOperatorPrincipal,
@@ -70,6 +71,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });
     }
     const response = NextResponse.json({ authenticated: true }, { status: 200, headers: privateHeaders });
+    const persistent = await establishPersistentIdentitySession(config.identityOrigin, issued.accessToken,
+      AbortSignal.timeout(5000)).catch(() => null);
+    if (persistent) response.cookies.set(OPERATOR_REFRESH_COOKIE, persistent.refreshToken, {
+      path: "/", httpOnly: true, secure: false, sameSite: "strict",
+      maxAge: Math.max(0,Math.floor((Date.parse(persistent.refreshExpiresAt)-Date.now())/1000)),
+    });
     response.cookies.set(OPERATOR_COOKIE, issued.accessToken, {
       path: "/",
       httpOnly: true,

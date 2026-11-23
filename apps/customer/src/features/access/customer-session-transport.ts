@@ -2,6 +2,8 @@ import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
   readVerifiedIdentitySession,
+  readPersistentIdentityRole,
+  revokePersistentIdentitySession,
   revokeVerifiedIdentitySession,
   type VerifiedIdentitySession,
   verifyCustomerPhoneChallenge,
@@ -19,6 +21,7 @@ const storageScope = lenovoAndroidPreview ? ".lenovo-android"
 const storageKey = `bthwani.customer.synthetic-identity${storageScope}.v1`;
 // Survives a process restart when a device write cannot be confirmed or undone.
 const pendingStorageKey = `${storageKey}.pending.v1`;
+const refreshStorageKey = `${storageKey}.refresh.v1`;
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
 type State = { enabled: boolean; session: VerifiedIdentitySession | null };
 
@@ -32,8 +35,18 @@ function mutateNativeStorage<T>(operation: () => Promise<T>): Promise<T> {
 }
 async function clearPendingCustomerAdmission(signal: AbortSignal): Promise<boolean> {
   return mutateNativeStorage(async () => {
-    if (!await SecureStore.getItemAsync(pendingStorageKey, nativeOptions)) return false;
+    const pending = await SecureStore.getItemAsync(pendingStorageKey, nativeOptions);
+    if (!pending) return false;
     if (signal.aborted) return true;
+    {
+      const refresh = await SecureStore.getItemAsync(refreshStorageKey, nativeOptions);
+      if (refresh) {
+        try { await revokePersistentIdentitySession(requiredNativeOrigin(), refresh, signal); }
+        catch (error) {
+          if (!(error instanceof IdentityClientError && error.status === 401)) throw error;
+        }
+      }
+    }
     const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
     if (bearer) {
       invalidNativeBearer = bearer;
@@ -43,6 +56,7 @@ async function clearPendingCustomerAdmission(signal: AbortSignal): Promise<boole
         return true;
       }
     }
+    await SecureStore.deleteItemAsync(refreshStorageKey, nativeOptions).catch(() => {});
     await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => {});
     return true;
   });
@@ -53,7 +67,38 @@ async function clearStoredBearerIfCurrent(bearer: string, signal: AbortSignal) {
     if (signal.aborted) return;
     if (await SecureStore.getItemAsync(storageKey, nativeOptions) !== bearer || signal.aborted) return;
     await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+    await SecureStore.deleteItemAsync(refreshStorageKey, nativeOptions).catch(() => {});
   });
+}
+
+let durableCustomerInFlight: Promise<Awaited<ReturnType<typeof readPersistentIdentityRole>>> | null = null;
+async function readDurableCustomer(bearer: string, signal: AbortSignal) {
+  if (durableCustomerInFlight) return durableCustomerInFlight;
+  const pending = (async () => {
+  const refresh = await SecureStore.getItemAsync(refreshStorageKey, nativeOptions);
+  return readPersistentIdentityRole(requiredNativeOrigin(), bearer, refresh, "customer", signal,
+    () => mutateNativeStorage(async () => {
+      if (signal.aborted || await SecureStore.getItemAsync(pendingStorageKey, nativeOptions) ||
+          await SecureStore.getItemAsync(storageKey, nativeOptions) !== bearer) {
+        throw new IdentityClientError(0, "OWNER_RESPONSE_STALE");
+      }
+      await SecureStore.setItemAsync(pendingStorageKey, "refreshing", nativeOptions);
+    }),
+    (issued, before, rotated) => mutateNativeStorage(async () => {
+      const pending = await SecureStore.getItemAsync(pendingStorageKey, nativeOptions);
+      if (signal.aborted || await SecureStore.getItemAsync(storageKey, nativeOptions) !== before ||
+          (pending && (!rotated || pending !== "refreshing"))) return false;
+      await SecureStore.setItemAsync(refreshStorageKey, issued.refreshToken, nativeOptions);
+      if (rotated) {
+        await SecureStore.setItemAsync(storageKey, issued.accessToken, nativeOptions);
+        await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions);
+      }
+      return true;
+    }));
+  })();
+  durableCustomerInFlight = pending;
+  try { return await pending; }
+  finally { if (durableCustomerInFlight === pending) durableCustomerInFlight = null; }
 }
 
 async function webRequest<T>(method: "GET" | "POST" | "DELETE", signal: AbortSignal, data?: object): Promise<T> {
@@ -84,6 +129,7 @@ export async function readCustomerAdmission(signal: AbortSignal): Promise<State>
     }
   }
   if (!nativeOrigin) return { enabled: false, session: null };
+  if (durableCustomerInFlight) await durableCustomerInFlight.catch(() => undefined);
   if (await clearPendingCustomerAdmission(signal)) return { enabled: true, session: null };
   const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
   if (!bearer) return { enabled: true, session: null };
@@ -92,14 +138,15 @@ export async function readCustomerAdmission(signal: AbortSignal): Promise<State>
     return { enabled: true, session: null };
   }
   try {
-    const session = await readVerifiedIdentitySession(nativeOrigin, bearer, signal);
+    const read = await readDurableCustomer(bearer, signal);
+    const session = read.session;
     if (session.role === "customer") {
       // A verified old response is not authority to resurrect an actor after
       // sign-out, token rotation or the start of a pending device cleanup.
       const stillCurrent = await mutateNativeStorage(async () =>
         !signal.aborted && bearer !== invalidNativeBearer &&
         !await SecureStore.getItemAsync(pendingStorageKey, nativeOptions) &&
-        await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer
+        await SecureStore.getItemAsync(storageKey, nativeOptions) === read.bearer
       );
       return { enabled: true, session: stillCurrent ? session : null };
     }
@@ -133,21 +180,22 @@ export async function withVerifiedNativeCustomerRead<T extends { actorId: string
   if (!bearer) return { kind: "signed-out" };
   // Reading the token after the first admission can race an account switch.
   // Reverify that exact credential before transmitting it to the finance owner.
-  const confirmed = await readVerifiedIdentitySession(nativeOrigin, bearer, signal);
+  const confirmedRead = await readDurableCustomer(bearer, signal);
+  const confirmed = confirmedRead.session;
   signal.throwIfAborted();
   if (confirmed.role !== "customer" || confirmed.actorId !== before.session.actorId ||
     Date.parse(confirmed.sessionExpiresAt) <= Date.now()) return { kind: "signed-out" };
   const beforeDispatch = await mutateNativeStorage(async () =>
     !signal.aborted && bearer !== invalidNativeBearer &&
     !await SecureStore.getItemAsync(pendingStorageKey, nativeOptions) &&
-    await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer);
+    await SecureStore.getItemAsync(storageKey, nativeOptions) === confirmedRead.bearer);
   if (!beforeDispatch) return { kind: "signed-out" };
-  const value = await ownerRead(bearer);
+  const value = await ownerRead(confirmedRead.bearer);
   const after = await readCustomerAdmission(signal);
   const stillCurrent = await mutateNativeStorage(async () =>
     !signal.aborted && bearer !== invalidNativeBearer &&
     !await SecureStore.getItemAsync(pendingStorageKey, nativeOptions) &&
-    await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer);
+    await SecureStore.getItemAsync(storageKey, nativeOptions) === confirmedRead.bearer);
   signal.throwIfAborted();
   if (!stillCurrent || after.session?.role !== "customer" ||
     after.session.actorId !== before.session.actorId ||
@@ -176,6 +224,7 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
   nativeVerificationInFlight = true;
   try {
     const origin = requiredNativeOrigin();
+    if (durableCustomerInFlight) await durableCustomerInFlight.catch(() => undefined);
     if (await clearPendingCustomerAdmission(signal) &&
         await SecureStore.getItemAsync(pendingStorageKey, nativeOptions)) {
       throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
@@ -183,8 +232,8 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
     const previousBearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
     if (previousBearer && previousBearer !== invalidNativeBearer) {
       try {
-        const active = await readVerifiedIdentitySession(origin, previousBearer, signal);
-        if (active.role === "customer") throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+        const active = await readDurableCustomer(previousBearer, signal);
+        if (active.session.role === "customer") throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
         invalidNativeBearer = previousBearer;
         await clearStoredBearerIfCurrent(previousBearer, signal).catch(() => {});
       } catch (error) {
@@ -261,6 +310,13 @@ export async function signOutCustomer(signal: AbortSignal): Promise<void> {
   }
   if (!bearer) return;
   let ownerFailure: unknown;
+  const refresh = await SecureStore.getItemAsync(refreshStorageKey, nativeOptions);
+  if (refresh) {
+    try { await revokePersistentIdentitySession(requiredNativeOrigin(), refresh, signal); }
+    catch (error) {
+      if (!(error instanceof IdentityClientError && error.status === 401)) ownerFailure = error;
+    }
+  }
   try {
     if (!previouslyInvalid) {
       const session = await readVerifiedIdentitySession(requiredNativeOrigin(), bearer, signal);
@@ -275,11 +331,12 @@ export async function signOutCustomer(signal: AbortSignal): Promise<void> {
   }
   // Local logout must complete even when the owner cannot confirm revocation.
   // The marker remains if device deletion fails and protects a cold start.
-  await mutateNativeStorage(async () => {
+  if (ownerFailure === undefined) await mutateNativeStorage(async () => {
     if (await SecureStore.getItemAsync(storageKey, nativeOptions) === bearer) {
       await SecureStore.deleteItemAsync(storageKey, nativeOptions);
     }
     if (!await SecureStore.getItemAsync(storageKey, nativeOptions)) {
+      await SecureStore.deleteItemAsync(refreshStorageKey, nativeOptions).catch(() => undefined);
       await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => undefined);
     }
   });

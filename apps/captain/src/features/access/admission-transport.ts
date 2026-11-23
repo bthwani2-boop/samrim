@@ -3,6 +3,8 @@ import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
   readVerifiedIdentitySession,
+  readPersistentIdentityRole,
+  revokePersistentIdentitySession,
   resumeCurrentCustomerCaptainSession,
   revokeVerifiedIdentitySession,
   type VerifiedIdentitySession,
@@ -18,6 +20,7 @@ const key = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
 // A persisted bearer with uncertain delivery must stay quarantined after a
 // JavaScript process restart, even when owner revocation and deletion fail.
 const pendingKey = `${key}.pending.v1`;
+const refreshKey = `${key}.refresh.v1`;
 let nativeAdmissionInFlight = false;
 let storageMutation: Promise<void> = Promise.resolve();
 function mutateNativeStorage<T>(operation: () => Promise<T>): Promise<T> {
@@ -75,6 +78,16 @@ async function reconcileCaptainAdmission(
       if (signOut) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
       return true;
     }
+    const refresh = await SecureStore.getItemAsync(refreshKey, nativeOptions);
+    if (refresh) {
+      try { await revokePersistentIdentitySession(identityOrigin, refresh, signal); }
+      catch (error) {
+        if (!(error instanceof IdentityClientError && error.status === 401)) {
+          if (signOut) throw error;
+          return true;
+        }
+      }
+    }
     if (bearer && pending !== "owner-denied") {
       try {
         // Retry owner revocation after network recovery instead of merely
@@ -96,9 +109,40 @@ async function reconcileCaptainAdmission(
         return true;
       }
     }
+    await SecureStore.deleteItemAsync(refreshKey, nativeOptions).catch(() => undefined);
     await SecureStore.deleteItemAsync(pendingKey, nativeOptions).catch(() => undefined);
     return true;
   });
+}
+
+let durableCaptainInFlight: Promise<Awaited<ReturnType<typeof readPersistentIdentityRole>>> | null = null;
+async function readDurableCaptain(bearer: string, signal: AbortSignal) {
+  if (durableCaptainInFlight) return durableCaptainInFlight;
+  const pending = (async () => {
+  const refresh = await SecureStore.getItemAsync(refreshKey, nativeOptions);
+  return readPersistentIdentityRole(identityOrigin, bearer, refresh, "captain", signal,
+    () => mutateNativeStorage(async () => {
+      if (signal.aborted || await SecureStore.getItemAsync(pendingKey, nativeOptions) ||
+          await SecureStore.getItemAsync(key, nativeOptions) !== bearer) {
+        throw new IdentityClientError(0, "OWNER_RESPONSE_STALE");
+      }
+      await SecureStore.setItemAsync(pendingKey, "refreshing", nativeOptions);
+    }),
+    (issued, before, rotated) => mutateNativeStorage(async () => {
+      const pending = await SecureStore.getItemAsync(pendingKey, nativeOptions);
+      if (signal.aborted || await SecureStore.getItemAsync(key, nativeOptions) !== before ||
+          (pending && (!rotated || pending !== "refreshing"))) return false;
+      await SecureStore.setItemAsync(refreshKey, issued.refreshToken, nativeOptions);
+      if (rotated) {
+        await SecureStore.setItemAsync(key, issued.accessToken, nativeOptions);
+        await SecureStore.deleteItemAsync(pendingKey, nativeOptions);
+      }
+      return true;
+    }));
+  })();
+  durableCaptainInFlight = pending;
+  try { return await pending; }
+  finally { if (durableCaptainInFlight === pending) durableCaptainInFlight = null; }
 }
 
 export type CaptainAdmissionState = Readonly<{
@@ -117,21 +161,23 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
   if (!dshOrigin) {
     return { enabled: true, standingReady: false, session: null };
   }
+  if (durableCaptainInFlight) await durableCaptainInFlight.catch(() => undefined);
   if (nativeAdmissionInFlight || await reconcileCaptainAdmission(signal)) {
     return { enabled: true, standingReady: true, session: null };
   }
   const bearer = await SecureStore.getItemAsync(key, nativeOptions);
   if (!bearer) return { enabled: true, standingReady: true, session: null };
   try {
-    const session = await readVerifiedIdentitySession(identityOrigin, bearer, signal);
+    const current = await readDurableCaptain(bearer, signal);
+    const session = current.session;
     if (session.role !== "captain") throw new IdentityClientError(401, "UNAUTHORIZED");
-    const standing = await readApprovedCaptainStanding(dshOrigin, bearer, "captain", session.actorId, signal);
+    const standing = await readApprovedCaptainStanding(dshOrigin, current.bearer, "captain", session.actorId, signal);
     // Both owner replies may finish AFTER a concurrent sign-out or actor
     // switch. Only the credential still owned by this device can be rendered.
     const stillCurrent = await mutateNativeStorage(async () =>
       !signal.aborted &&
       !await SecureStore.getItemAsync(pendingKey, nativeOptions) &&
-      await SecureStore.getItemAsync(key, nativeOptions) === bearer
+      await SecureStore.getItemAsync(key, nativeOptions) === current.bearer
     );
     return { enabled: true, standingReady: true, session: stillCurrent ? session : null, ...(stillCurrent ? { standing } : {}) };
   } catch (error) {
@@ -147,6 +193,7 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
         await SecureStore.setItemAsync(pendingKey, "owner-denied", nativeOptions);
         if (await SecureStore.getItemAsync(key, nativeOptions) === bearer) {
           await SecureStore.deleteItemAsync(key, nativeOptions).catch(() => undefined);
+          await SecureStore.deleteItemAsync(refreshKey, nativeOptions).catch(() => undefined);
         }
         if (!await SecureStore.getItemAsync(key, nativeOptions)) {
           await SecureStore.deleteItemAsync(pendingKey, nativeOptions).catch(() => undefined);
@@ -177,6 +224,7 @@ export async function verifyCaptainCode(
   try {
     // A previous issued bearer or an unresolved device write must never be
     // replaced by another phone proof. Check before consuming that proof.
+    if (durableCaptainInFlight) await durableCaptainInFlight.catch(() => undefined);
     if (await reconcileCaptainAdmission(signal) ||
         await SecureStore.getItemAsync(key, nativeOptions)) {
       throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");

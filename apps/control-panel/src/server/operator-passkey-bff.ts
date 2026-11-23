@@ -3,6 +3,8 @@ import { type OperatorPermission, operatorPermissions } from "../features/sessio
 
 // Only the explicitly isolated Operator test BFF uses these helpers.
 // A bearer issued by Identity is never delivered to browser JavaScript.
+export const OPERATOR_REFRESH_COOKIE = process.env.BTHWANI_SURFACE_PREVIEW === "1"
+  ? "bthwani_surface_operator_refresh" : "bthwani_operator_refresh";
 export const OPERATOR_COOKIE = process.env.BTHWANI_SURFACE_PREVIEW === "1"
   ? "bthwani_surface_operator_session" : "bthwani_operator_session";
 

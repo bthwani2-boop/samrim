@@ -2,6 +2,9 @@ import { createMerchantCatalogDraft, DshPublicError, getStoreOperationalAvailabi
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
+  establishPersistentIdentitySession,
+  rotatePersistentIdentitySession,
+  revokePersistentIdentitySession,
   readVerifiedIdentitySession,
   revokeVerifiedIdentitySession,
 } from "@bthwani/identity";
@@ -54,6 +57,25 @@ function sessionCookie(request: Request, bearer: string, maxAge: number) {
   return `${cookieName}=${bearer}; Path=/api/admission; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure}`;
 }
 
+const refreshCookieName = `${cookieName}.refresh`;
+function refreshFrom(request: Request) {
+  const result = request.headers.get("cookie")?.split(";").map(entry => entry.trim())
+    .find(entry => entry.startsWith(refreshCookieName + "="))?.slice(refreshCookieName.length + 1);
+  return result && /^[A-Za-z0-9_-]{43}$/.test(result) ? result : null;
+}
+function refreshCookie(request: Request, token: string, expiry: string) {
+  const seconds = Math.max(0, Math.floor((Date.parse(expiry)-Date.now()) / 1000));
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return `${refreshCookieName}=${token}; Path=/api/admission; HttpOnly; SameSite=Strict; Max-Age=${seconds}${secure}`;
+}
+function appendSessionCookies(result: Response, request: Request,
+    access: string, accessExpiry: string, refresh: {refreshToken:string;refreshExpiresAt:string} | null) {
+  result.headers.append("Set-Cookie", sessionCookie(request, access,
+    Math.max(0,Math.floor((Date.parse(accessExpiry)-Date.now())/1000))));
+  if (refresh) result.headers.append("Set-Cookie",refreshCookie(request,refresh.refreshToken,refresh.refreshExpiresAt));
+  else if (!access) result.headers.append("Set-Cookie",refreshCookie(request,"",new Date(0).toISOString()));
+  return result;
+}
 function bearerFrom(request: Request) {
   return request.headers.get("cookie")?.split(";").map(entry => entry.trim())
     .find(entry => entry.startsWith(cookieName + "="))?.slice(cookieName.length + 1);
@@ -74,7 +96,34 @@ function ownerError(error: unknown) {
   return response({ code: "OWNER_UNAVAILABLE" }, 503);
 }
 
-export async function GET(request: Request) {
+async function resumeMerchantBrowser(
+  request: Request, origin: string, protectedRead: boolean,
+): Promise<Response> {
+  const refresh = refreshFrom(request);
+  if (!refresh) return protectedRead ? response({ code: "UNAUTHENTICATED" }, 401)
+    : response({ enabled: true, session: null });
+  try {
+    const rotated = await rotatePersistentIdentitySession(origin, refresh, AbortSignal.timeout(5000));
+    const verified = await readVerifiedIdentitySession(origin, rotated.accessToken, AbortSignal.timeout(5000));
+    if (verified.role !== "merchant") throw new IdentityClientError(403,"FORBIDDEN");
+    const headers = new Headers(request.headers);
+    const old = request.headers.get("cookie")?.split(";").map(value => value.trim()).filter(value =>
+      !value.startsWith(cookieName+"=") && !value.startsWith(refreshCookieName+"=")) ?? [];
+    headers.set("cookie", [...old, cookieName+"="+rotated.accessToken,
+      refreshCookieName+"="+rotated.refreshToken].join("; "));
+    const forwarded = new Request(request,{headers});
+    const result = await merchantGet(forwarded,true);
+    return appendSessionCookies(result,request,rotated.accessToken,verified.sessionExpiresAt,rotated);
+  } catch (error) {
+    if (!(error instanceof IdentityClientError && [401,403].includes(error.status))) return ownerError(error);
+    const result = protectedRead ? response({ code: "UNAUTHENTICATED" }, 401)
+      : response({ enabled: true, session: null });
+    return appendSessionCookies(result,request,"",new Date(0).toISOString(),null);
+  }
+}
+
+export async function GET(request: Request) { return merchantGet(request, false); }
+async function merchantGet(request: Request, alreadyRotated: boolean): Promise<Response> {
   const query = new URL(request.url).searchParams;
   const stores = query.size === 1 && query.get("stores") === "mine";
   const registration = query.size === 1 && query.get("registration") === "options";
@@ -96,8 +145,11 @@ export async function GET(request: Request) {
   if (!origin) return stores || availability || registration || catalog ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
     response({ enabled: false, session: null });
   const bearer = bearerFrom(request);
-  if (!bearer) return stores || availability || registration || catalog ? response({ code: "UNAUTHENTICATED" }, 401) :
-    response({ enabled: true, session: null });
+  if (!bearer) {
+    if (!alreadyRotated && refreshFrom(request)) return resumeMerchantBrowser(request, origin, stores || availability || registration || catalog);
+    return stores || availability || registration || catalog ? response({ code: "UNAUTHENTICATED" }, 401) :
+      response({ enabled: true, session: null });
+  }
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
     const session = await readVerifiedIdentitySession(origin, bearer, signal);
@@ -149,6 +201,7 @@ export async function GET(request: Request) {
       return response({ code: error.code }, error.status, sessionCookie(request, "", 0));
     }
     if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
+    if (!alreadyRotated && refreshFrom(request)) return resumeMerchantBrowser(request, origin, stores || availability || registration || catalog);
   }
   return stores || availability || registration || catalog ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
     response({ enabled: true, session: null }, 200, sessionCookie(request, "", 0));
@@ -294,7 +347,9 @@ export async function POST(request: Request) {
       }
       const { bearer, session } = await verifyMerchantAdmission(origin, data.ticket, data.code, signal);
       const remaining = Math.max(0, Math.floor((Date.parse(session.sessionExpiresAt) - Date.now()) / 1000));
-      return response({ session }, 200, sessionCookie(request, bearer, remaining));
+      const result = response({ session }, 200);
+      const persistent = await establishPersistentIdentitySession(origin, bearer, signal).catch(() => null);
+      return appendSessionCookies(result,request,bearer,session.sessionExpiresAt,persistent);
     }
     return response({ code: "INVALID_REQUEST" }, 400);
   } catch (error) {
@@ -307,6 +362,13 @@ export async function DELETE(request: Request) {
   if (!origin) return response({ code: "OWNER_UNAVAILABLE" }, 503);
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
   const bearer = bearerFrom(request);
+  const refresh = refreshFrom(request);
+  if (refresh) {
+    try { await revokePersistentIdentitySession(origin, refresh, AbortSignal.timeout(5000)); }
+    catch (error) {
+      if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
+    }
+  }
   if (bearer) {
     try {
       await revokeVerifiedIdentitySession(origin, bearer, AbortSignal.timeout(5000));
@@ -316,8 +378,6 @@ export async function DELETE(request: Request) {
       }
     }
   }
-  return new Response(null, {
-    status: 204,
-    headers: { ...noStoreHeaders, "Set-Cookie": sessionCookie(request, "", 0) },
-  });
+  return appendSessionCookies(new Response(null, { status: 204, headers: noStoreHeaders }),
+    request,"",new Date(0).toISOString(),null);
 }

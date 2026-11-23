@@ -20,3 +20,7 @@ The transport refuses unsafe non-HTTPS endpoints outside explicit development lo
 **Development admission only:** The Node client has owner-local positive/negative tests in `../../tools/dev/identity-client.test.mjs` and is TypeScript-checked. These tests include synthetic HTTP responses; they are not proof of first-factor login, a real app consumer, session persistence on a connected device, production activation or WLT financial access. Do not expose a protected workspace until real Identity and DSH scoped authorization is integrated and independently tested.
 
 The service's Go backend, OpenAPI and SQL are owned under `backend/`, `contracts/openapi/` and `database/` respectively. This file describes only its client transport, not another identity session engine or decision source.
+
+## Client module boundaries
+
+`clients/index.ts` remains the stable public export boundary of `@bthwani/identity`. `types.ts` holds shared contracts; `transport.ts` exclusively handles request validation, HTTP exchange and owner-response errors. `phone-challenge.ts`, `sessions.ts`, `persistent-sessions.ts`, `role-admission.ts` and `operator-permissions.ts` each implement their named operations. All use the existing contract-derived `generated/identity-operations.ts`; no second Identity engine, permission writer or alternative session store is introduced. Native applications remain responsible for secure device storage and account-switch serialization.

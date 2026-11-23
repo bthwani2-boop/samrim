@@ -209,3 +209,60 @@ test("Merchant Web logout does not discard cookie on Identity outage", async t =
   assert.equal(result.status, 503);
   assert.equal(result.headers.get("Set-Cookie"), null);
 });
+
+test("Merchant browser restores an expired session through Identity without re-entering the phone",async t=>{
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=identity;
+  const oldRefresh=Buffer.alloc(32,38).toString("base64url");
+  const newAccess=Buffer.alloc(32,39).toString("base64url");
+  const newRefresh=Buffer.alloc(32,40).toString("base64url");
+  const newExpiry=new Date(Date.now()+15*60_000).toISOString();
+  const paths=[];
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+    const path=new URL(url).pathname;
+    paths.push(path);
+    if(path==="/v1/sessions/current" && options.headers.Authorization==="Bearer "+bearer)
+      return Response.json({error:"UNAUTHORIZED"},{status:401,headers:{"Cache-Control":"no-store"}});
+    if(path==="/v1/sessions/refresh"){
+      assert.equal(options.method,"POST");
+      assert.equal(options.headers.Authorization,"Bearer "+oldRefresh);
+      return json({accessToken:newAccess,sessionExpiresAt:newExpiry,refreshToken:newRefresh,
+        refreshExpiresAt:new Date(Date.now()+30*24*60*60_000).toISOString()});
+    }
+    if(path==="/v1/sessions/current" && options.headers.Authorization==="Bearer "+newAccess)
+      return json({actorId:"owner-a",role:"merchant",sessionExpiresAt:newExpiry});
+    assert.fail(path);
+  });
+  const req=new Request("http://localhost:18102/api/admission",{
+    headers:{Cookie:"bthwani_merchant_admission="+bearer+"; bthwani_merchant_admission.refresh="+oldRefresh}});
+  const result=await GET(req);
+  assert.equal(result.status,200);
+  assert.deepEqual(await result.json(),{enabled:true,session:{actorId:"owner-a",role:"merchant",sessionExpiresAt:newExpiry}});
+  const cookie=result.headers.get("Set-Cookie")??"";
+  assert.match(cookie,/bthwani_merchant_admission=/);
+  assert.ok(cookie.includes("bthwani_merchant_admission.refresh="));
+  assert.deepEqual(paths,["/v1/sessions/current","/v1/sessions/refresh","/v1/sessions/current","/v1/sessions/current"]);
+});
+
+test("Merchant logout revokes its persistent refresh family before clearing cookies",async t=>{
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=identity;
+  const refresh=Buffer.alloc(32,41).toString("base64url");
+  const methods=[];
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+    methods.push(options.method+" "+new URL(url).pathname);
+    if(options.method==="DELETE" && new URL(url).pathname==="/v1/sessions/refresh"){
+      assert.equal(options.headers.Authorization,"Bearer "+refresh);
+      return new Response(null,{status:204,headers:{"Cache-Control":"no-store"}});
+    }
+    if(options.method==="DELETE" && new URL(url).pathname==="/v1/sessions/current"){
+      assert.equal(options.headers.Authorization,"Bearer "+bearer);
+      return Response.json({error:"UNAUTHORIZED"},{status:401,headers:{"Cache-Control":"no-store"}});
+    }
+    assert.fail(url);
+  });
+  const req=new Request("http://localhost:18102/api/admission",{method:"DELETE",headers:{
+    Origin:"http://localhost:18102",Cookie:"bthwani_merchant_admission="+bearer+"; bthwani_merchant_admission.refresh="+refresh}});
+  const response=await DELETE(req);
+  assert.equal(response.status,204);
+  assert.deepEqual(methods,["DELETE /v1/sessions/refresh","DELETE /v1/sessions/current"]);
+  assert.ok((response.headers.get("Set-Cookie")??"").includes("bthwani_merchant_admission.refresh=;"));
+});
