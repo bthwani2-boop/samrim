@@ -69,13 +69,15 @@ export function resolveOperatorRecoveryConfig(env: Settings): OperatorPasskeyCon
 // existing SSH TCP tunnel forwards localhost:13000 to the server's localhost:23010 URL.
 // Only the exact fixed tunnel may use that internal URL. The actual HTTP
 // Host, browser Origin (for mutations), and RP ID remain externally bound.
-export function isTrustedOperatorLoopbackTarget(request: Request, browserOrigin: string): boolean {
+export function isTrustedOperatorLoopbackTarget(
+  request: Request, browserOrigin: string, allowQuery = false,
+): boolean {
   const target = new URL(request.url);
   const browserHost = new URL(browserOrigin).host;
   const internalTunnel = browserOrigin === "http://localhost:13000" &&
     target.origin === "http://localhost:23010";
   if ((target.origin !== browserOrigin && !internalTunnel) ||
-      target.search !== "" || target.hash !== "" ||
+      (!allowQuery && target.search !== "") || target.hash !== "" ||
       request.headers.get("host") !== browserHost) return false;
   const forwardedHost = request.headers.get("x-forwarded-host");
   if (forwardedHost && forwardedHost !== browserHost) return false;

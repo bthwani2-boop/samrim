@@ -6,6 +6,7 @@ import {
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
+  isTrustedOperatorLoopbackTarget,
   OPERATOR_COOKIE, readVerifiedOperatorAccess, resolveIsolatedOperatorConfig,
 } from "../../server/operator-passkey-bff";
 import { isolatedPublicDshOrigin } from "../stores/public-store-query";
@@ -28,14 +29,11 @@ export async function readCaptainInterestForOperator(request: Request, candidate
   const site = request.headers.get("sec-fetch-site");
   const changing = candidateId !== undefined;
   if (request.method !== (changing ? "PATCH" : "GET")) return fail("METHOD_NOT_ALLOWED", 405);
-  if (url.origin !== config.browserOrigin || request.headers.get("host") !== url.host ||
-    origin !== null && origin !== config.browserOrigin ||
-    site !== null && site !== "same-origin" && site !== "none" ||
-    request.headers.has("x-forwarded-host") &&
-      request.headers.get("x-forwarded-host") !== url.host ||
-    request.headers.has("x-forwarded-proto") &&
-      request.headers.get("x-forwarded-proto") !== "http" ||
-    ["authorization","x-actor-id","x-role","x-operator-role"].some(key => request.headers.has(key))) {
+  // Reuse the exact Operator SSH tunnel trust check; candidate filter and
+  // mutation parameters are validated separately before reaching DSH.
+  if (!isTrustedOperatorLoopbackTarget(request, config.browserOrigin, true) ||
+    (origin !== null && origin !== config.browserOrigin) ||
+    (site !== null && site !== "same-origin" && site !== "none")) {
     return fail("FORBIDDEN", 403);
   }
   if (changing && (origin !== config.browserOrigin ||
@@ -46,7 +44,7 @@ export async function readCaptainInterestForOperator(request: Request, candidate
       !Number.isSafeInteger(Number(candidateId)))) {
     return fail("INVALID_REQUEST", 400);
   }
-  if (url.search.length > 512 || changing && !!url.search) return fail("INVALID_REQUEST", 400);
+  if (url.search.length > 512 || (changing && url.search !== "")) return fail("INVALID_REQUEST", 400);
   const query = url.searchParams;
   if (!changing && [...query.keys()].some(key =>
       !["limit", "before", "city", "vehicle", "contacted"].includes(key) ||

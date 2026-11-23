@@ -145,7 +145,7 @@ export default function CaptainInterestWorkspace() {
       </Space>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }}
         action={<Button onClick={refresh} disabled={loading || updating !== null}>إعادة المحاولة</Button>} />}
-      <Card title="استمارات التسجيل">
+      {(loading || (page !== null && !error)) && <Card title="استمارات التسجيل">
         <Table<OperatorCaptainInterest> rowKey="id" loading={loading}
           dataSource={page?.items ?? []} pagination={false} size="middle"
           locale={{ emptyText: "لا توجد تسجيلات مطابقة." }}
@@ -174,7 +174,7 @@ export default function CaptainInterestWorkspace() {
           ]} />
         {page?.nextCursor && <Button style={{ marginTop: 16 }} disabled={loading}
           onClick={() => setCursor(page.nextCursor ?? "")}>الصفحة التالية</Button>}
-      </Card>
+      </Card>}
     </main>
   );
 }

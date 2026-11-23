@@ -97,6 +97,20 @@ test("SSH control-panel tunnel has one exact internal origin without admitting f
   }
   assert.equal(isTrustedOperatorLoopbackTarget(new Request(internal, { headers: valid }),
     "http://localhost:23100"), false);
+  const captainList = "http://localhost:23010/api/captains?status=PENDING&limit=20";
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(captainList, { headers: valid }),
+    config.browserOrigin), false, "auth endpoints must still reject query parameters by default");
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(captainList, { headers: valid }),
+    config.browserOrigin, true), true, "Captain owner BFF accepts query after its own parameter validation");
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(captainList, {
+    headers: { ...valid, host: "localhost:23010" },
+  }), config.browserOrigin, true), false, "internal host cannot impersonate the browser");
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(captainList, {
+    headers: { ...valid, "x-forwarded-host": "evil.example" },
+  }), config.browserOrigin, true), false, "forged forwarded host is rejected");
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request("http://127.0.0.1:23010/api/captains?status=PENDING", {
+    headers: valid,
+  }), config.browserOrigin, true), false, "only the exact pre-authorized SSH origin is allowed");
 });
 
 test("empty POST streams are valid logout requests, but bytes and transfer streams are rejected", async () => {

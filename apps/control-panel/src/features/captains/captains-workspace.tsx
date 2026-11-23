@@ -90,7 +90,7 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
       </Space>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }}
         action={<Button onClick={refresh} disabled={loading}>إعادة المحاولة</Button>} />}
-      <Card title="سجل طلبات الكباتن">
+      {(loading || (page !== null && !error)) && <Card title="سجل أهلية الكباتن">
         <Table<Standing> rowKey="actorId" size="middle" loading={loading} dataSource={page?.items ?? []}
           pagination={false} locale={{ emptyText: "لا توجد سجلات في هذه الحالة." }}
           columns={[
@@ -106,7 +106,7 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
           ]} />
         {page?.nextCursor && <Button style={{ marginTop: 16 }} disabled={loading}
           onClick={() => setCursor(page.nextCursor ?? "")}>الصفحة التالية</Button>}
-      </Card>
+      </Card>}
       {selected && <Card style={{ marginTop: 16 }} title="الحالة الحالية للكابتن" extra={<Button onClick={() => setSelected(null)}>إغلاق</Button>}>
         <Typography.Paragraph>المعرّف: <Typography.Text copyable>{selected.actorId}</Typography.Text></Typography.Paragraph>
         <Typography.Paragraph>الحالة: {labels[selected.status]}</Typography.Paragraph>

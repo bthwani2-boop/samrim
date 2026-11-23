@@ -67,6 +67,8 @@ function harness() {
       readCaptainAdmission(signal) {
         return new Promise((resolve, reject) => pending.push({ signal, resolve, reject }));
       },
+      async requestCaptainPhoneCode() { return "issued-ticket"; },
+      async verifyCaptainCode() { return { state: "pending" }; },
     },
     "./captain-session": {
       hasActiveCaptainSession(session) { return session?.role === "captain"; },
@@ -160,6 +162,44 @@ test("Identity-only Captain entry shows phone login without consuming OTP or mou
     node.props.children.props.children === "إرسال رمز التحقق");
   assert.equal(enabledSend.props.accessibilityState.disabled, false,
     "ready Identity and DSH expose the active authentication flow");
+});
+
+test("confirmed pending application retains phone and explains proof-bound recheck", async () => {
+  const h = harness();
+  h.mount();
+  h.next().resolve({ enabled: true, standingReady: true, session: null });
+  await settle();
+  const phoneInput = nodes(h.render()).find(node =>
+    node.type === "TextInput" && node.props.accessibilityLabel === "رقم الهاتف التجريبي");
+  assert.ok(phoneInput);
+  phoneInput.props.onChangeText("770000001");
+  const send = nodes(h.render()).find(node => node.type === "Pressable" &&
+    node.props.children?.props?.children === "إرسال رمز التحقق");
+  assert.ok(send);
+  send.props.onPress();
+  await settle();
+  const otpInput = nodes(h.render()).find(node =>
+    node.type === "TextInput" && node.props.accessibilityLabel === "رمز التحقق");
+  assert.ok(otpInput);
+  otpInput.props.onChangeText("123456");
+  const confirm = nodes(h.render()).find(node => node.type === "Pressable" &&
+    node.props.children?.props?.children === "التحقق من حساب الكابتن");
+  assert.ok(confirm);
+  confirm.props.onPress();
+  await settle();
+
+  const pendingScreen = nodes(h.render());
+  assert.ok(pendingScreen.some(node => node.props?.testID === "captain-admission-pending"),
+    "only DSH-confirmed pending state produces the waiting message");
+  const preservedPhone = pendingScreen.find(node => node.type === "TextInput" &&
+    node.props.accessibilityLabel === "رقم الهاتف التجريبي");
+  assert.equal(preservedPhone?.props.value, "770000001");
+  const recheck = pendingScreen.find(node => node.type === "Pressable" &&
+    node.props.children?.props?.children === "إرسال رمز جديد للتحقق من حالة الطلب");
+  assert.ok(recheck, "a new OTP is required for the next status check");
+  assert.equal(recheck.props.accessibilityState.disabled, false);
+  assert.equal(verifiedUI(h.render()), false);
+  assert.equal(guestNavigation(h.render()), false);
 });
 
 test("background aborts in-flight Captain admission and foreground forces fresh owner read", async () => {

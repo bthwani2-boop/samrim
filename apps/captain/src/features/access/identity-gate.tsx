@@ -136,11 +136,13 @@ export default function CaptainIdentityGate() {
         if (signal.aborted) return;
         setTicket("");
         setCode("");
-        setPhone("");
         if (result.state === "pending") {
+          // Keep the phone for the next verified check in this app session;
+          // the short-lived Customer proof has already been revoked.
           setPending(true);
           setSession(null);
         } else {
+          setPhone("");
           setPending(false);
           setSession(result.session);
         }
@@ -202,7 +204,7 @@ export default function CaptainIdentityGate() {
           ) : null}
           {enabled && !verified && pending ? (
             <Text testID="captain-admission-pending" style={{ color: theme.color }}>
-              طلبك بانتظار الموافقة. يمكنك التحقق من حالته برقم هاتفك.
+              تم تسجيل طلب أهليتك لدى DSH وهو بانتظار اعتماد المشغّل. لإعادة فحص الموافقة يلزم رمز تحقق جديد؛ رقم الهاتف وحده لا يفتح حساب الكابتن.
             </Text>
           ) : null}
           {enabled && !verified && !ticket ? (
@@ -214,7 +216,7 @@ export default function CaptainIdentityGate() {
                   autoComplete="tel" value={phone} editable={!busy} onChangeText={setPhone}
                   maxLength={13} style={input} />
               </View>
-              {button(pending ? "التحقق مجددًا من الموافقة" : "إرسال رمز التحقق",
+              {button(pending ? "إرسال رمز جديد للتحقق من حالة الطلب" : "إرسال رمز التحقق",
                 requestCode, busy || !phoneNumber || !standingReady, true)}
             </>
           ) : null}
