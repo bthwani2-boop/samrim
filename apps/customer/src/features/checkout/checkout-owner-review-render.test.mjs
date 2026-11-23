@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { formatExactYer } from "../../components/format-exact-yer.ts";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../..");
@@ -94,6 +95,7 @@ function harness(startStore = "store-one") {
       Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", View: "View",
     },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
+    "../../components/format-exact-yer": { formatExactYer },
     "../cart/cart-preview": { previewLineSubtotalYer, summarizeCartPreview },
     "./fulfillment-choice": { __esModule: true, default: "FulfillmentChoice" },
     "./payment-selection": { __esModule: true, default: "PaymentSelection" },

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { formatExactYer } from "../src/components/format-exact-yer.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const source = fileURLToPath(new URL("../src/features/wallet/wallet-screen.web.tsx", import.meta.url));
@@ -65,6 +66,7 @@ function harness() {
     },
     "react/jsx-runtime":{jsx,jsxs:jsx},
     "react-native":Object.fromEntries(["Pressable","SafeAreaView","ScrollView","Text","View"].map(t=>[t,t])),
+    "../../components/format-exact-yer": { formatExactYer },
     "../access/customer-session-transport":{readCustomerAdmission(){}},
     "./wallet-read.web":{
       readVerifiedWallet(admission,signal){

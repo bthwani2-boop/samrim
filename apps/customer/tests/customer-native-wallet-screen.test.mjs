@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { formatExactYer } from "../src/components/format-exact-yer.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const entry = fileURLToPath(new URL("../src/features/wallet/wallet-screen.tsx", import.meta.url));
@@ -75,6 +76,7 @@ function harness() {
         .map(type => [type, type]),
     ]),
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
+    "../../components/format-exact-yer": { formatExactYer },
     "./wallet-read": {
       readNativeWallet(signal) {
         return new Promise((resolve, reject) => requests.push({ kind: "wallet", signal, resolve, reject }));

@@ -3,12 +3,12 @@ import { Link, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { AppState, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { formatExactYer } from "../../components/format-exact-yer";
 import {
   type NativeWalletHistoryRead, type NativeWalletRead,
   readNativeWallet, readNativeWalletTransactions,
 } from "./wallet-read";
 
-const displayYER = new Intl.NumberFormat("ar-YE");
 
 // Android read-only wallet: Identity is verified on each owner read and WLT
 // remains the only money writer. No Cash-In/payment mutation is exposed.
@@ -154,7 +154,7 @@ export default function WalletScreen() {
             <>
               <Text style={{ color: theme.colorSecondary }}>رصيدك المتاح من التمويل المؤكد</Text>
               <Text testID="native-wallet-balance" style={{ color: theme.color, fontSize: 30, fontWeight: "700" }}>
-                {displayYER.format(BigInt(balance.balance.balanceYer))} ريال يمني
+                {formatExactYer(BigInt(balance.balance.balanceYer))} ريال يمني
               </Text>
             </>
           ) : (
@@ -178,7 +178,7 @@ export default function WalletScreen() {
                 ) : history.history.items.map(item => (
                   <View key={item.fundingId} style={{ gap: 4, paddingVertical: 6 }}>
                     <Text style={{ color: theme.color }}>
-                      {item.reversesFundingId ? "عكس تمويل −" : "+"} {displayYER.format(BigInt(item.amountYer))} ريال يمني
+                      {item.reversesFundingId ? "عكس تمويل −" : "+"} {formatExactYer(BigInt(item.amountYer))} ريال يمني
                     </Text>
                     <Text style={{ color: theme.colorSecondary }}>
                       {new Date(item.postedAt).toLocaleDateString("ar-YE")}

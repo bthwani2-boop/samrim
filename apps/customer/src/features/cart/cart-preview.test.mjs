@@ -3,6 +3,19 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { previewLineSubtotalYer, summarizeCartPreview } from "./cart-preview.ts";
 
+test("Customer amount screens never coerce BigInt through Intl.NumberFormat on Hermes", () => {
+  for (const relative of [
+    "./cart-screen.tsx",
+    "../checkout/checkout-screen.tsx",
+    "../wallet/wallet-screen.tsx",
+    "../wallet/wallet-screen.web.tsx",
+  ]) {
+    const source = readFileSync(new URL(relative, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /(?:formatYER|displayYER)\.format\(/, `${relative} must preserve exact amounts`);
+    assert.match(source, /formatExactYer\(/, `${relative} must use exact shared YER formatter`);
+  }
+});
+
 test("cart read-only preview keeps large DSH integer YER amounts exact", () => {
   const first = { previewUnitYer: "9007199254740993", quantity: 2147483647, previewAvailable: true };
   const second = { previewUnitYer: "150", quantity: 2, previewAvailable: true };

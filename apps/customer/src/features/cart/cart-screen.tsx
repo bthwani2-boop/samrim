@@ -5,10 +5,10 @@ import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { formatExactYer } from "../../components/format-exact-yer";
 import { previewLineSubtotalYer, summarizeCartPreview } from "./cart-preview";
 import { type CartReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate, replaceVerifiedCart } from "./cart-transport";
 
-const formatYER = new Intl.NumberFormat("ar-YE");
 type Pending = { actorId: string; change: CustomerCartChange };
 
 export default function CartScreen() {
@@ -160,10 +160,10 @@ export default function CartScreen() {
               }}>
                 <Text style={{ color: theme.color, fontWeight: "700" }}>{line.name}</Text>
                 <Text style={{ color: theme.colorSecondary }}>
-                  {formatYER.format(BigInt(line.previewUnitYer))} ريال يمني للوحدة — معاينة فقط
+                  {formatExactYer(BigInt(line.previewUnitYer))} ريال يمني للوحدة — معاينة فقط
                 </Text>
                 <Text style={{ color: theme.colorSecondary }}>
-                  مجموع الصنف التقديري: {formatYER.format(previewLineSubtotalYer(line))} ريال يمني
+                  مجموع الصنف التقديري: {formatExactYer(previewLineSubtotalYer(line))} ريال يمني
                 </Text>
                 {!line.previewAvailable ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
                   المنتج غير متاح الآن، ولا يمكن تأكيد الطلب.
@@ -193,7 +193,7 @@ export default function CartScreen() {
                 borderRadius: 12, backgroundColor: theme.surface, gap: 8,
               }}>
                 <Text style={{ color: theme.color, fontWeight: "700" }}>
-                  الإجمالي التقديري للعروض المتاحة: {formatYER.format(preview.availableSubtotalYer)} ريال يمني
+                  الإجمالي التقديري للعروض المتاحة: {formatExactYer(preview.availableSubtotalYer)} ريال يمني
                 </Text>
                 {preview.unavailableLines > 0 ? (
                   <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
@@ -203,7 +203,7 @@ export default function CartScreen() {
                 {ownerMerchandise && ownerMerchandise.cartVersion === view.cart.version &&
                   ownerMerchandise.actorId === view.cart.actorId && !busy && !pending.current ? (
                     <Text testID="cart-dsh-merchandise-estimate" style={{ color: theme.color }}>
-                      مجموع البضائع المحسوب لدى DSH لهذه النسخة: {formatYER.format(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني.
+                      مجموع البضائع المحسوب لدى DSH لهذه النسخة: {formatExactYer(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني.
                     </Text>
                   ) : (
                     <Text style={{ color: theme.colorSecondary }}>

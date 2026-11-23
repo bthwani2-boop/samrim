@@ -2,10 +2,10 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import { formatExactYer } from "../../components/format-exact-yer";
 import { readCustomerAdmission } from "../access/customer-session-transport";
 import { readVerifiedWallet, readVerifiedWalletTransactions, type WalletReadState, type WalletTransactionsReadState } from "./wallet-read.web";
 
-const displayYER = new Intl.NumberFormat("ar-YE");
 
 export default function WalletScreen() {
   const { theme } = useMobileAppearance();
@@ -154,7 +154,7 @@ export default function WalletScreen() {
             <>
               <Text style={{ color: theme.colorSecondary }}>الرصيد المسجّل في البيئة التجريبية</Text>
               <Text testID="wallet-balance" style={{ color: theme.color, fontSize: 30, fontWeight: "700" }}>
-                {displayYER.format(BigInt(state.balance.balanceYer))} ريال يمني
+                {formatExactYer(BigInt(state.balance.balanceYer))} ريال يمني
               </Text>
             </>
           ) : (
@@ -177,7 +177,7 @@ export default function WalletScreen() {
                 ) : history.history.items.map(item => (
                   <View key={item.fundingId} style={{ gap: 4, paddingVertical: 6 }}>
                     <Text style={{ color: theme.color }}>
-                      {item.reversesFundingId ? "عكس تمويل −" : "+"} {displayYER.format(BigInt(item.amountYer))} ريال يمني
+                      {item.reversesFundingId ? "عكس تمويل −" : "+"} {formatExactYer(BigInt(item.amountYer))} ريال يمني
                     </Text>
                     <Text style={{ color: theme.colorSecondary }}>{new Date(item.postedAt).toLocaleDateString("ar-YE")}</Text>
                   </View>

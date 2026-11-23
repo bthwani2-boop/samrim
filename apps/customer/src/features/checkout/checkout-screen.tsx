@@ -3,6 +3,7 @@ import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { formatExactYer } from "../../components/format-exact-yer";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview";
 import { type CartReadState, type MerchandiseEstimateReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate } from "../cart/cart-transport";
 import { readCheckoutFunding } from "./checkout-funding";
@@ -11,7 +12,6 @@ import FulfillmentChoice from "./fulfillment-choice";
 import PaymentSelection from "./payment-selection";
 import RecipientForm from "./recipient-form";
 
-const formatYER = new Intl.NumberFormat("ar-YE");
 const storeRule = /^[a-z0-9-]{1,64}$/;
 
 type CurrentCart = Readonly<{ storeId: string; view: CartReadState }>;
@@ -190,11 +190,11 @@ export default function CheckoutScreen() {
                 <Text style={{ color: theme.color, fontWeight: "700" }}>{line.name}</Text>
                 <Text style={{ color: theme.colorSecondary }}>
                   الكمية: {line.quantity} — السعر المعروض للوحدة:
-                  {" "}{formatYER.format(BigInt(line.previewUnitYer))} ريال يمني
+                  {" "}{formatExactYer(BigInt(line.previewUnitYer))} ريال يمني
                 </Text>
                 <Text style={{ color: theme.colorSecondary }}>
                   إجمالي البند المعروض:
-                  {" "}{formatYER.format(previewLineSubtotalYer(line))} ريال يمني
+                  {" "}{formatExactYer(previewLineSubtotalYer(line))} ريال يمني
                 </Text>
                 {!line.previewAvailable ? (
                   <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
@@ -210,7 +210,7 @@ export default function CheckoutScreen() {
               <Text style={{ color: theme.color, fontWeight: "700" }}>رصيد المحفظة للمراجعة فقط</Text>
               <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
                 {currentFunding?.kind === "ready"
-                  ? `رصيد WLT التجريبي الحالي: ${formatYER.format(BigInt(currentFunding.balance.balanceYer))} ريال يمني.`
+                  ? `رصيد WLT التجريبي الحالي: ${formatExactYer(BigInt(currentFunding.balance.balanceYer))} ريال يمني.`
                   : currentFunding?.kind === "unavailable"
                     ? "تعذّر التحقق من رصيد المحفظة؛ لا يمكن الاعتماد عليه."
                     : "جارٍ التحقق من رصيد هذا الحساب لدى WLT."}
@@ -226,7 +226,7 @@ export default function CheckoutScreen() {
               }}>
                 <Text style={{ color: theme.color, fontWeight: "700" }}>
                   مجموع البنود المتاحة المعروض:
-                  {" "}{formatYER.format(preview.availableSubtotalYer)} ريال يمني
+                  {" "}{formatExactYer(preview.availableSubtotalYer)} ريال يمني
                 </Text>
                 {preview.unavailableLines > 0 ? (
                   <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
@@ -245,7 +245,7 @@ export default function CheckoutScreen() {
               {ownerMerchandise ? (
                 <Text testID="checkout-owner-merchandise-subtotal" style={{ color: theme.color }}>
                   مجموع البضائع المتحقق من DSH:{" "}
-                  {formatYER.format(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني
+                  {formatExactYer(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني
                 </Text>
               ) : (
                 <Text accessibilityRole={currentMerchandise?.kind === "unavailable" ||
