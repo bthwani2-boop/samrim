@@ -59,6 +59,8 @@ test("WLT contracts and new isolated migrations affect the financial reader and 
   for (const file of [
     "services/wlt/contracts/openapi/paths/wallets.yaml",
     "services/wlt/database/migrations/999_future_wallet_test.sql",
+    "services/wlt/database/schema/00_ledger.sql",
+    "services/wlt/database/sandbox/20_test_reversal.sql",
   ]) {
     const projects = affected(file);
     for (const name of ["@bthwani/wlt", "wlt-backend", "@bthwani/customer"]) {
@@ -100,6 +102,19 @@ test("new untracked DSH SQL migration affects its owner, not Identity", () => {
   const projects = affected("services/dsh/database/migrations/999_future_order_test.sql");
   assert.ok(projects.has("dsh-backend"));
   assert.ok(!projects.has("identity-backend"));
+});
+
+test("DSH fresh SQL baseline affects its owner without pulling unrelated Identity", () => {
+  const projects = affected("services/dsh/database/schema/10_catalog.sql");
+  assert.ok(projects.has("@bthwani/dsh"));
+  assert.ok(projects.has("dsh-backend"));
+  assert.ok(!projects.has("identity-backend"));
+});
+
+test("Identity fresh baseline invalidates its own Go owner", () => {
+  const projects = affected("services/identity/database/schema/20_sessions.sql");
+  assert.ok(projects.has("identity-backend"));
+  assert.ok(!projects.has("dsh-backend"));
 });
 
 test("new Merchant Feature changes only its own app", () => {

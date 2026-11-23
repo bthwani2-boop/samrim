@@ -24,8 +24,9 @@ and the app confirms the current actor on both sides of the wallet request.
 The HTTP owner verifies the Customer with Identity before querying PostgreSQL,
 then checks the same binding again before releasing the balance or transaction
 history. `hasMore` and an optional `nextCursor` indicate older pages without
-an actor selector. The [migration](../database/migrations/README.md)
-defines journal records and the reader's grant.
+an actor selector. The [fresh owner schema](../database/schema/) defines journal records and the
+reader's grant. Numbered [migrations](../database/migrations/README.md) remain
+only for retained upgrade compatibility.
 
 ### Isolated Docker development reader
 
@@ -43,9 +44,11 @@ The new `infra/provision-wlt-test-db.ps1` is an additive, explicit, one-time
 development-only provisioner. It refuses an existing WLT database, roles or
 credential entry, requires the verified refoundation PostgreSQL container, and
 creates `bthwani_wlt_test` plus no-login owner/sandbox roles and a unique
-read-only reader credential in the Git-ignored `infra/.env`. It applies the
-five existing immutable WLT migrations only to the new empty database and
-verifies journal emptiness, SELECT grants and write-denial. It never runs as
+read-only reader credential in the Git-ignored `infra/.env`. It applies the current three domain baseline files from `database/schema/` and
+synthetic funding commands from `database/sandbox/` only to a NEW empty
+isolated database; it verifies journal emptiness, SELECT grants and write-denial.
+Historical numbered SQL files remain in `database/migrations/` solely for
+retained upgrade/compatibility testing; never replay the baseline over one. It never runs as
 part of Compose or on another database. If a step fails, inspect the actual
 durable database state before any attempted recovery; do not delete, reset or
 rerun the provisioner blindly.
@@ -60,9 +63,11 @@ read-only `405`, then real Identity session authorization/denial on
 
 ### Post synthetic Customer funding
 
-In the disposable PostgreSQL environment, provision the dedicated
-`bthwani_wlt_sandbox` role and apply migrations `004` and `005` as
-`bthwani_wlt_owner`. Set `WLT_SANDBOX_DATABASE_URL` to the loopback database URL
+In an existing disposable PostgreSQL environment that has only the historical
+schema, provision the dedicated `bthwani_wlt_sandbox` role and apply the retained
+upgrade migrations `004` and `005` as `bthwani_wlt_owner` if absent. For new,
+empty databases, the owner-only fresh baseline has already installed the
+sandbox functions from `database/sandbox/`; never apply them again. Set `WLT_SANDBOX_DATABASE_URL` to the loopback database URL
 for that role. Use the existing isolation mode and Identity origin settings
 above. Run `wlt post-sandbox-funding <reference> <whole-yemeni-riyals>` and
 supply the current synthetic Customer session token through standard input.

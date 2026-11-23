@@ -7,6 +7,7 @@ const owners = ['identity', 'dsh', 'wlt'];
 const ignored = new Set(['node_modules', 'dist', 'build', 'coverage', '.git']);
 const goPackageName = /^[a-z][a-z0-9]*$/;
 const migrationName = /^\d{3}_[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.sql$/;
+const baselineName = /^\d{2}_[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.sql$/;
 
 function walk(folder, visit, issues, base) {
   for (const entry of readdirSync(folder, { withFileTypes: true })) {
@@ -81,9 +82,15 @@ export function serviceSourcePlacementIssues(base) {
             '/ or backend/internal/<domain>/');
         }
       }
-      if (extname(path) === '.sql' && !(parts.length === 3 && parts[0] === 'database' &&
-          parts[1] === 'migrations' && migrationName.test(parts[2]))) {
-        issues.push(path + ': SQL belongs in numbered descriptive owner migrations/');
+      if (extname(path) === '.sql') {
+        const validSqlPath = parts.length === 3 && parts[0] === 'database' && (
+          (parts[1] === 'migrations' && migrationName.test(parts[2])) ||
+          (parts[1] === 'schema' && baselineName.test(parts[2])) ||
+          (owner === 'wlt' && parts[1] === 'sandbox' && baselineName.test(parts[2]))
+        );
+        if (!validSqlPath) {
+          issues.push(path + ': SQL belongs in numbered owner schema/, migrations/, or WLT sandbox/');
+        }
       }
     }, issues, base);
   }

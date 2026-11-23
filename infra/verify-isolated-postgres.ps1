@@ -1,5 +1,5 @@
 #requires -Version 7.0
-# Fresh DSH migrations, least-privilege read denial and backup/restore proof.
+# Fresh DSH, Identity and WLT baselines, DSH restore, and owner permissions.
 # Creates only an ephemeral, network-disabled PostgreSQL with tmpfs storage.
 # Never attaches to the project's existing database, volumes or service ports.
 [CmdletBinding()]
@@ -41,14 +41,14 @@ try {
     Start-Sleep -Milliseconds 600
   }
   if (!$ready) { throw 'Disposable PostgreSQL did not become ready' }
-  $migrations = @(Get-ChildItem (Join-Path $root 'services/dsh/database/migrations') -Filter '*.sql' -File | Sort-Object Name)
-  if ($migrations.Count -lt 5) { throw 'Missing a required DSH baseline migration in this bounded test' }
-  foreach ($migration in $migrations) {
-    $sql = [IO.File]::ReadAllText($migration.FullName).Replace('__SCHEMA__', $schema)
+  $baseline = @(Get-ChildItem (Join-Path $root 'services/dsh/database/schema') -Filter '*.sql' -File | Sort-Object Name)
+  if ($baseline.Count -lt 7) { throw 'Missing essential DSH baseline domain files' }
+  foreach ($file in $baseline) {
+    $sql = [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__', $schema)
     $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $db -f - 2>&1
-    if ($LASTEXITCODE -ne 0) { throw ('Fresh migration failed: ' + $migration.Name + ' ' + ($output | Out-String)) }
+    if ($LASTEXITCODE -ne 0) { throw ('Fresh DSH baseline failed: ' + $file.Name + ' ' + ($output | Out-String)) }
   }
-  Write-Output "PG_FRESH_MIGRATIONS=PASS count=$($migrations.Count) ephemeral=yes"
+  Write-Output "PG_FRESH_DSH_BASELINE=PASS count=$($baseline.Count) ephemeral=yes"
 
   # The database owner retains migration rights; a new isolated reader must not.
   $grants = @(
@@ -143,6 +143,87 @@ SELECT jsonb_build_object(
     }
   }
   Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,revision,reader-grants,city-timezone-constraint'
+
+  # Reuse the SAME network-disabled/tmpfs container to prove fresh Identity and
+  # WLT baselines. Never connect these tests to retained or shared databases.
+  $identitySchema = 'identity_test_fresh_baseline'
+  $identityFiles = @(Get-ChildItem (Join-Path $root 'services/identity/database/schema') -Filter '*.sql' -File | Sort-Object Name)
+  if ($identityFiles.Count -lt 5) { throw 'Missing essential Identity baseline domain files' }
+  foreach ($file in $identityFiles) {
+    $sql = [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__', $identitySchema)
+    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $db -f - 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ('Fresh Identity baseline failed: ' + $file.Name + ' ' + ($output | Out-String)) }
+  }
+  $identityCheck = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $db -c @"
+SELECT CASE WHEN
+  (SELECT count(*) FROM information_schema.tables WHERE table_schema='$identitySchema' AND table_type='BASE TABLE') = 15
+  AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='$identitySchema' AND table_name='auth_refresh_tokens')
+  AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='$identitySchema' AND table_name='operator_merchant_scope_cutover_audit')
+  AND EXISTS (SELECT 1 FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+    JOIN pg_namespace n ON n.oid=t.relnamespace
+    WHERE n.nspname='$identitySchema' AND t.relname='operator_permissions'
+      AND c.conname='operator_permissions_permission_check'
+      AND pg_get_constraintdef(c.oid) LIKE '%merchant%'
+      AND pg_get_constraintdef(c.oid) NOT LIKE '%partners%')
+THEN 'PASS' ELSE 'FAIL' END;
+"@ | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $identityCheck -cne 'PASS') { throw 'Identity baseline object or canonical permission readback failed' }
+  Write-Output "PG_FRESH_IDENTITY_BASELINE=PASS count=$($identityFiles.Count) tables=15 canonical-merchant-only=yes"
+
+  foreach ($role in @('bthwani_wlt_owner NOLOGIN', 'bthwani_wlt_reader LOGIN', 'bthwani_wlt_sandbox LOGIN')) {
+    $null = & docker --context $DockerContext exec $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d postgres -c "CREATE ROLE $role"
+    if ($LASTEXITCODE -ne 0) { throw 'WLT disposable role bootstrap failed' }
+  }
+  $wltDb = 'bthwani_wlt_test'
+  $null = & docker --context $DockerContext exec $containerId createdb -U $user -O bthwani_wlt_owner $wltDb
+  if ($LASTEXITCODE -ne 0) { throw 'WLT disposable database bootstrap failed' }
+  $wltSchemaFiles = @(Get-ChildItem (Join-Path $root 'services/wlt/database/schema') -Filter '*.sql' -File | Sort-Object Name)
+  $wltSandboxFiles = @(Get-ChildItem (Join-Path $root 'services/wlt/database/sandbox') -Filter '*.sql' -File | Sort-Object Name)
+  if ($wltSchemaFiles.Count -lt 3 -or $wltSandboxFiles.Count -lt 2) { throw 'WLT baseline or sandbox source incomplete' }
+  foreach ($file in $wltSchemaFiles) {
+    $sql = "SET ROLE bthwani_wlt_owner;`n" + [IO.File]::ReadAllText($file.FullName)
+    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $wltDb -f - 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ('Fresh WLT core schema failed: ' + $file.Name + ' ' + ($output | Out-String)) }
+  }
+  $sandboxAbsent = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c @"
+SELECT CASE WHEN
+  to_regprocedure('wlt.post_sandbox_customer_funding(text,text,bigint)') IS NULL
+  AND to_regprocedure('wlt.reverse_sandbox_customer_funding(text,text)') IS NULL
+  AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='customer_funding_reversal_provider')
+THEN 'PASS' ELSE 'FAIL' END;
+"@ | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $sandboxAbsent -cne 'PASS') { throw 'WLT core schema unexpectedly exposes synthetic financial commands' }
+  foreach ($file in $wltSandboxFiles) {
+    $sql = "SET ROLE bthwani_wlt_owner;`n" + [IO.File]::ReadAllText($file.FullName)
+    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $wltDb -f - 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ('Fresh WLT sandbox schema failed: ' + $file.Name + ' ' + ($output | Out-String)) }
+  }
+  $wltPrivileges = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c @"
+SELECT CASE WHEN
+  (SELECT count(*) FROM wlt.customer_funding_journal) = 0
+  AND has_table_privilege('bthwani_wlt_reader','wlt.customer_wallet_balances','SELECT')
+  AND has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_history','SELECT')
+  AND NOT has_any_column_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT')
+  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE')
+  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.reverse_sandbox_customer_funding(text,text)','EXECUTE')
+THEN 'PASS' ELSE 'FAIL' END;
+"@ | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $wltPrivileges -cne 'PASS') { throw 'WLT baseline grants, owner or empty journal readback failed' }
+  $denied = & docker --context $DockerContext exec $containerId psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U bthwani_wlt_reader -d $wltDb -c 'SELECT provider_reference FROM wlt.customer_funding_journal' 2>&1
+  if ($LASTEXITCODE -eq 0 -or ($denied | Out-String) -notmatch '42501') { throw 'WLT private ledger reader denial not proven' }
+  $reference = 'fresh-baseline-001'
+  $testCustomer = 'synthetic-baseline-actor'
+  $funding = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_sandbox -d $wltDb -c "SELECT wlt.post_sandbox_customer_funding('$reference','$testCustomer',53)" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $funding -cne 'POSTED') { throw 'WLT sandbox new posting failed' }
+  $fundingReplay = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_sandbox -d $wltDb -c "SELECT wlt.post_sandbox_customer_funding('$reference','$testCustomer',53)" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $fundingReplay -cne 'REPLAYED') { throw 'WLT sandbox posting replay failed' }
+  $reversal = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_sandbox -d $wltDb -c "SELECT wlt.reverse_sandbox_customer_funding('$reference','$testCustomer')" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $reversal -cne 'REVERSED') { throw 'WLT sandbox reversal failed' }
+  $reversalReplay = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_sandbox -d $wltDb -c "SELECT wlt.reverse_sandbox_customer_funding('$reference','$testCustomer')" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $reversalReplay -cne 'REPLAYED') { throw 'WLT sandbox reversal replay failed' }
+  $moneyReadback = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries WHERE actor_id='$testCustomer'" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $moneyReadback -cne '4:0') { throw 'WLT double-entry balance or idempotency readback failed' }
+  Write-Output 'PG_FRESH_WLT_BASELINE=PASS schema=3 sandbox=2 privilege-isolation=yes posting-replay=yes reversal-replay=yes entries=4 net=0'
   Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'
 } finally {
   if ($containerId -match '^[a-f0-9]{64}$') {

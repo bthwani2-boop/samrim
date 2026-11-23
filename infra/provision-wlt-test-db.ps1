@@ -55,12 +55,13 @@ GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader;
 $grants | & docker --context $DockerContext exec -i $pg psql -X -q -v ON_ERROR_STOP=1 -U $admin -d postgres -f -
 if ($LASTEXITCODE -ne 0) { throw 'Database grants failed; inspect durable state before retry' }
 
-$migrations = @(Get-ChildItem (Join-Path $root 'services/wlt/database/migrations') -Filter '*.sql' -File | Where-Object { $_.Name -match '^[0-9]{3}_' } | Sort-Object Name)
-if ($migrations.Count -ne 5) { throw 'Refusing missing or additional synthetic WLT migrations' }
-foreach ($migration in $migrations) {
-  $sql = "SET ROLE bthwani_wlt_owner;`n" + [IO.File]::ReadAllText($migration.FullName)
+$baseline = @(Get-ChildItem (Join-Path $root 'services/wlt/database/schema') -Filter '*.sql' -File | Sort-Object Name)
+$sandbox = @(Get-ChildItem (Join-Path $root 'services/wlt/database/sandbox') -Filter '*.sql' -File | Sort-Object Name)
+if ($baseline.Count -lt 3 -or $sandbox.Count -lt 2) { throw 'WLT baseline or sandbox source incomplete' }
+foreach ($file in @($baseline) + @($sandbox)) {
+  $sql = "SET ROLE bthwani_wlt_owner;`n" + [IO.File]::ReadAllText($file.FullName)
   $sql | & docker --context $DockerContext exec -i $pg psql -X -q -v ON_ERROR_STOP=1 -U $admin -d bthwani_wlt_test -f -
-  if ($LASTEXITCODE -ne 0) { throw ('Migration failed: ' + $migration.Name + '; inspect durable state before retry') }
+  if ($LASTEXITCODE -ne 0) { throw ('Fresh WLT baseline failed: ' + $file.Name + '; inspect durable state before retry') }
 }
 $proof = AdminSql 'bthwani_wlt_test' @"
 SELECT CASE WHEN

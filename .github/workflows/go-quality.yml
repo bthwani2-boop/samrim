@@ -17,6 +17,8 @@ on:
       - 'services/**/backend/**'
       - 'services/**/contracts/openapi/**'
       - 'services/**/database/migrations/**'
+      - 'services/**/database/schema/**'
+      - 'services/wlt/database/sandbox/**'
       - 'services/**/.dockerignore'
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
@@ -37,6 +39,8 @@ on:
       - 'services/**/backend/**'
       - 'services/**/contracts/openapi/**'
       - 'services/**/database/migrations/**'
+      - 'services/**/database/schema/**'
+      - 'services/wlt/database/sandbox/**'
       - 'services/**/.dockerignore'
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
@@ -150,6 +154,6 @@ jobs:
       - name: Run isolated, network-disabled owner PostgreSQL tests
         shell: bash
         run: bash infra/verify-owner-postgres-ci.sh
-      - name: Restore fresh DSH migrations and verify schema and least-privilege access
+      - name: Verify fresh Identity, DSH and WLT baselines, restore and least-privilege access
         shell: pwsh
         run: ./infra/verify-isolated-postgres.ps1 -DockerContext default

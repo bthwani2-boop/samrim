@@ -87,11 +87,17 @@ test("CI must reject unadmitted new tests before coverage and fast-guard", () =>
   assert.match(content, /^      - name: Reject unadmitted new Feature tests\n        run: pnpm check:test-inclusion$/m);
 });
 
-test("SQL migration changes trigger the existing Go quality and Nx dependency workflows", () => {
+test("SQL baseline, sandbox and retained migration changes trigger Go quality and Nx dependency workflows", () => {
   for (const file of [workflows[1], workflows[2]]) {
     const { push, pr } = events(file);
-    assert.match(push, /^      - 'services\/\*\*\/database\/migrations\/\*\*'$/m, file + ": missing SQL push path");
-    assert.match(pr, /^      - 'services\/\*\*\/database\/migrations\/\*\*'$/m, file + ": missing SQL PR path");
+    for (const pattern of [
+      "services/**/database/migrations/**",
+      "services/**/database/schema/**",
+      "services/wlt/database/sandbox/**",
+    ]) {
+      assert.ok(push.includes("      - '" + pattern + "'"), file + ": missing push " + pattern);
+      assert.ok(pr.includes("      - '" + pattern + "'"), file + ": missing PR " + pattern);
+    }
   }
 });
 

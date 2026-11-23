@@ -1,4 +1,11 @@
-# WLT PostgreSQL migrations
+# WLT PostgreSQL migrations — retained upgrade history
+
+New, empty, isolated WLT development databases are now built from the current
+`../schema/` domain baseline followed by the strictly isolated `../sandbox/`
+functions, not by replaying the numbered historical files below. The existing
+numbered migrations remain immutable compatibility and upgrade fixtures; they
+are not a competing definition of the fresh schema. See also
+`infra/verify-isolated-postgres.ps1` for the actual disposable baseline test.
 
 `001_customer_funding_journal.sql` is a fresh baseline for the disposable
 `bthwani_wlt_test` database. Provision the separate `bthwani_wlt_owner` and

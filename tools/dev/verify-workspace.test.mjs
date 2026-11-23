@@ -43,12 +43,39 @@ test('existing owner Go and SQL source paths remain legal, including WLT when im
       'services/dsh/backend/internal/storeavailability/tests/replay_test.go',
       'services/wlt/backend/internal/ledger/entry.go',
       'services/wlt/database/migrations/001_ledger_entries.sql',
+      'services/identity/database/schema/00_identity.sql',
+      'services/dsh/database/schema/10_catalog.sql',
+      'services/wlt/database/schema/00_ledger.sql',
+      'services/wlt/database/sandbox/10_test_funding.sql',
     ]) {
       const target = path.join(directory, file);
       mkdirSync(path.dirname(target), { recursive: true });
       writeFileSync(target, '// synthetic fixture');
     }
     assert.deepEqual(serviceSourcePlacementIssues(directory), []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('fresh owner SQL rejects misplaced sandbox and noncanonical baseline names', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-sql-baseline-placement-'));
+  try {
+    for (const file of [
+      'services/dsh/database/sandbox/20_test_reversal.sql',
+      'services/identity/database/schema/001_wrong_width.sql',
+      'services/wlt/database/schema/legacy.sql',
+    ]) {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, '-- deliberately invalid SQL placement fixture');
+    }
+    const problems = serviceSourcePlacementIssues(directory);
+    assert.equal(problems.length, 3, problems.join('\n'));
+    for (const name of ['20_test_reversal.sql', '001_wrong_width.sql', 'legacy.sql']) {
+      assert.ok(problems.some(issue => issue.includes(name)), name);
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
