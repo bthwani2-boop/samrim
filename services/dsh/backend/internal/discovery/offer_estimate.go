@@ -39,8 +39,15 @@ func (s *Server) estimateOffer(ctx context.Context, w http.ResponseWriter, r *ht
 	}
 	result := offerEstimate{StoreID: storeID, OfferID: offerID, Quantity: quantity}
 	var available bool
-	query := `SELECT o.variant_id, o.price_yer::text, (o.price_yer::numeric * $3::integer)::text, o.stock_units >= $3::integer` +
-		visibleOffersSQL + ` AND o.id=$2`
+	// The estimate shares the same Store, product and Offer eligibility as listing.
+	query := `SELECT o.variant_id, o.price_yer::text,
+		(o.price_yer::numeric * $3::integer)::text, o.stock_units >= $3::integer
+		FROM offers o
+		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
+		JOIN variants v ON v.id=o.variant_id AND v.product_id=o.product_id
+		WHERE o.store_id=$1 AND p.active AND v.sellable AND v.required_attributes_valid
+			AND o.published AND o.available AND o.price_yer>0 AND o.stock_units>0
+			AND o.id=$2`
 	if err := tx.QueryRowContext(ctx, query, storeID, offerID, quantity).
 		Scan(&result.VariantID, &result.UnitYER, &result.SubtotalYER, &available); err != nil {
 		estimateReadError(w, err)
