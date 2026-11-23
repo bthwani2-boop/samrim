@@ -10,7 +10,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const src = fileURLToPath(new URL("../src/features/catalog/merchant-private-catalog.tsx", import.meta.url));
 const offer = (id, name) => ({
   id, storeId: "store-b", productId: "p-a", name,
-  variantId: "v-a", priceYer: "1500", stockUnits: 2,
+  variantId: "v-a", priceYer: "1500", stockUnits: 2, draftVersion: 1,
   productActive: true, variantSellable: true, requiredAttributesValid: true,
   published: false, available: false,
 });

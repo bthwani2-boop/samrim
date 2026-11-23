@@ -80,3 +80,46 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+
+  /v1/stores/{storeID}/catalog/{offerID}:
+    patch:
+      operationId: updateCurrentMerchantCatalogDraft
+      summary: Change one inactive, unpublished Store-owned draft with optimistic version and immutable replay
+      description: >
+        DSH requires current Merchant Identity session and Store ownership.
+        Only a previously DSH-created inactive Product/Variant/Offer draft can
+        change. CAS expectedVersion, owner row locks and one immutable operation
+        journal prevent lost updates and duplicate mutations. The mutation
+        cannot publish the Product or Offer or create an Order/WLT effect.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: offerID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogDraftEditChange' }
+      responses:
+        '200':
+          description: One committed draft edit or immutable historical retry result
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogDraftEditResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'

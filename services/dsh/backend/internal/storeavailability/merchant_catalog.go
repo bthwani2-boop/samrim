@@ -22,6 +22,7 @@ type MerchantCatalogOffer struct {
 	VariantID               string `json:"variantId"`
 	PriceYER                string `json:"priceYer"`
 	StockUnits              int64  `json:"stockUnits"`
+	DraftVersion            int64  `json:"draftVersion"`
 	ProductActive           bool   `json:"productActive"`
 	VariantSellable         bool   `json:"variantSellable"`
 	RequiredAttributesValid bool   `json:"requiredAttributesValid"`
@@ -155,7 +156,7 @@ func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, store
 		return result, ErrForbidden
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT o.id,p.id,p.name,v.id,o.price_yer::text,
-		o.stock_units,p.active,v.sellable,v.required_attributes_valid,o.published,o.available
+		o.stock_units,o.draft_version,p.active,v.sellable,v.required_attributes_valid,o.published,o.available
 		FROM offers o
 		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
 		JOIN variants v ON v.id=o.variant_id AND v.product_id=p.id
@@ -168,7 +169,7 @@ func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, store
 		var item MerchantCatalogOffer
 		item.StoreID = storeID
 		if err = rows.Scan(&item.ID, &item.ProductID, &item.Name, &item.VariantID,
-			&item.PriceYER, &item.StockUnits, &item.ProductActive, &item.VariantSellable,
+			&item.PriceYER, &item.StockUnits, &item.DraftVersion, &item.ProductActive, &item.VariantSellable,
 			&item.RequiredAttributesValid, &item.Published, &item.Available); err != nil {
 			break
 		}

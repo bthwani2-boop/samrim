@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, validMerchantCatalogDraft } from "./merchant-catalog.ts";
+import { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
 
 const offer = {
   id: "of-a", storeId: "store-a", productId: "p-a", name: "مادة تجريبية",
-  variantId: "v-a", priceYer: "1200", stockUnits: 0, productActive: false,
+  variantId: "v-a", priceYer: "1200", stockUnits: 0, draftVersion: 1, productActive: false,
   variantSellable: false, requiredAttributesValid: false, published: false, available: false,
 };
 const page = { actorId: "merchant-a", storeId: "store-a", items: [offer] };
@@ -118,4 +118,74 @@ test("lost draft write acknowledgment stays unknown and must reuse the operation
     "http://127.0.0.1:3202", "store-a", "synthetic-bearer", draftCommand), {
     message: "OPERATION_RESULT_UNKNOWN",
   });
+});
+
+const edited = {
+  operationId: "edit-draft-0001", expectedVersion: 1,
+  name: "مسودة معدلة", priceYer: "3500", stockUnits: 5,
+};
+const editedOffer = { ...draftOffer, name: edited.name, priceYer: edited.priceYer,
+  stockUnits: edited.stockUnits, draftVersion: 2 };
+test("private merchant draft edit targets exact Store/Offer with CAS and authenticated bearer", async () => {
+  let calls = 0;
+  globalThis.fetch = async (url, init) => {
+    calls++;
+    assert.equal(url, "http://127.0.0.1:3202/v1/stores/store-a/catalog/of-new");
+    assert.equal(init.method, "PATCH");
+    assert.equal(init.credentials, "omit");
+    assert.equal(init.headers.Authorization, "Bearer synthetic-bearer");
+    assert.deepEqual(JSON.parse(init.body), edited);
+    return Response.json({ offer: editedOffer, replay: false }, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  };
+  const result = await updateMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "of-new", "synthetic-bearer", edited);
+  assert.equal(result.offer.draftVersion, 2);
+  assert.equal(calls, 1);
+});
+test("same draft edit key replays immutable historical version", async () => {
+  globalThis.fetch = async () => Response.json({ offer: editedOffer, replay: true }, {
+    headers: { "Cache-Control": "no-store" },
+  });
+  const result = await updateMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "of-new", "synthetic-bearer", edited);
+  assert.equal(result.replay, true);
+  assert.equal(result.offer.draftVersion, 2);
+});
+test("edit rejects unapproved or malformed version and cross-Store response before displaying", async () => {
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return Response.json({ offer: { ...editedOffer, storeId: "store-b" }, replay: false }, {
+      headers: { "Cache-Control": "no-store" },
+    });
+  };
+  for (const change of [
+    { ...edited, expectedVersion: 0 }, { ...edited, expectedVersion: 1.5 },
+    { ...edited, expectedVersion: Number.MAX_SAFE_INTEGER + 2 },
+    { ...edited, priceYer: "0" }, { ...edited, stockUnits: -1 },
+  ]) {
+    assert.equal(validMerchantCatalogDraftEdit(change), false);
+    await assert.rejects(() => updateMerchantCatalogDraft(
+      "http://127.0.0.1:3202", "store-a", "of-new", "synthetic-bearer", change));
+  }
+  assert.equal(calls, 0);
+  await assert.rejects(() => updateMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "of-new", "synthetic-bearer", edited), {
+    message: "OPERATION_RESULT_UNKNOWN",
+  });
+  assert.equal(calls, 1);
+});
+test("owner version conflict is explicit and a lost edit acknowledgement remains unknown", async () => {
+  globalThis.fetch = async () => Response.json({ code: "CATALOG_DRAFT_VERSION_CONFLICT" }, {
+    status: 409, headers: { "Cache-Control": "no-store" },
+  });
+  await assert.rejects(() => updateMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "of-new", "synthetic-bearer", edited),
+    { message: "CATALOG_DRAFT_VERSION_CONFLICT" });
+  globalThis.fetch = async () => { throw Error("connection closed after PostgreSQL COMMIT"); };
+  await assert.rejects(() => updateMerchantCatalogDraft(
+    "http://127.0.0.1:3202", "store-a", "of-new", "synthetic-bearer", edited),
+    { message: "OPERATION_RESULT_UNKNOWN" });
 });

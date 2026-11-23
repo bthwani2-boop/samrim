@@ -135,6 +135,13 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(draftMigration), "__SCHEMA__", schema)); err != nil {
 		t.Fatal(err)
 	}
+	editMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "013_catalog_draft_edits.sql"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(editMigration), "__SCHEMA__", schema)); err != nil {
+		t.Fatal(err)
+	}
 	defer db.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 	statements := []string{
 		"INSERT INTO " + schema + ".service_cities(id,active) VALUES('sanaa',true)",
@@ -322,4 +329,123 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 		t.Fatal("DSH command audit can be rewritten")
 	}
 
+	firstEdit := MerchantCatalogDraftEditChange{
+		OperationID: "edit-draft-0001", ExpectedVersion: 1, Name: "مسودة معدلة", PriceYER: "2500", StockUnits: 8,
+	}
+	secondEdit := MerchantCatalogDraftEditChange{
+		OperationID: "edit-draft-0002", ExpectedVersion: 1, Name: "مسودة متنافسة", PriceYER: "2700", StockUnits: 5,
+	}
+	type editOutcome struct {
+		result MerchantCatalogDraftEditResult
+		err    error
+	}
+	edits := make(chan editOutcome, 2)
+	for _, input := range []MerchantCatalogDraftEditChange{firstEdit, secondEdit} {
+		group.Add(1)
+		go func(input MerchantCatalogDraftEditChange) {
+			defer group.Done()
+			value, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", draftOfferID, input)
+			edits <- editOutcome{result: value, err: e}
+		}(input)
+	}
+	group.Wait()
+	close(edits)
+	var winning MerchantCatalogDraftEditChange
+	success, conflicts := 0, 0
+	for outcome := range edits {
+		switch {
+		case outcome.err == nil:
+			success++
+			if outcome.result.Offer.DraftVersion != 2 || outcome.result.Replay || outcome.result.Offer.Published {
+				t.Fatalf("first draft edit not one safe increment: %+v", outcome.result)
+			}
+			if outcome.result.Offer.Name == firstEdit.Name {
+				winning = firstEdit
+			} else {
+				winning = secondEdit
+			}
+		case errors.Is(outcome.err, ErrCatalogDraftVersionConflict):
+			conflicts++
+		default:
+			t.Fatalf("unexpected concurrent edit result: %v", outcome.err)
+		}
+	}
+	if success != 1 || conflicts != 1 {
+		t.Fatalf("lost-update protection failed: successes=%d conflicts=%d", success, conflicts)
+	}
+	if _, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-b", draftOfferID, winning); !errors.Is(e, ErrForbidden) {
+		t.Fatalf("cross-Store draft edit accepted: %v", e)
+	}
+	if _, e := otherRegistrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", draftOfferID, winning); !errors.Is(e, ErrForbidden) {
+		t.Fatalf("cross-actor draft edit accepted: %v", e)
+	}
+	if _, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", "of-b", winning); !errors.Is(e, ErrForbidden) {
+		t.Fatalf("published offer editable as draft: %v", e)
+	}
+	if _, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", "of-a", winning); !errors.Is(e, ErrForbidden) {
+		t.Fatalf("non-DSH-created draft editable: %v", e)
+	}
+	malformed := winning
+	malformed.PriceYER = "9999"
+	if _, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", draftOfferID, malformed); !errors.Is(e, ErrOperationConflict) {
+		t.Fatalf("same edit operation mutated on retry: %v", e)
+	}
+	next := MerchantCatalogDraftEditChange{
+		OperationID: "edit-draft-0003", ExpectedVersion: 2, Name: "مرحلة ثالثة", PriceYER: "3000", StockUnits: 2,
+	}
+	third, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", draftOfferID, next)
+	if e != nil || third.Replay || third.Offer.DraftVersion != 3 {
+		t.Fatalf("second versioned edit not durable: %+v err=%v", third, e)
+	}
+	replay, e := registrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", draftOfferID, winning)
+	if e != nil || !replay.Replay || replay.Offer.DraftVersion != 2 ||
+		replay.Offer.Name != winning.Name || replay.Offer.PriceYER != winning.PriceYER {
+		t.Fatalf("historical edit replay changed after later edit: %+v err=%v", replay, e)
+	}
+	original, e := registrar.CreateCatalogDraft(ctx, "synthetic", "catalog-a", command)
+	if e != nil || !original.Replay || original.Offer.DraftVersion != 1 ||
+		original.Offer.Name != "مسودة جديدة" || original.Offer.PriceYER != "2300" {
+		t.Fatalf("original creation replay drifted after edit: %+v err=%v", original, e)
+	}
+	var durableName, durablePrice string
+	var durableStock, durableVersion int64
+	e = independent.QueryRowContext(ctx, `SELECT p.name,o.price_yer::text,o.stock_units,o.draft_version
+	 FROM `+schema+`.offers o JOIN `+schema+`.products p ON p.id=o.product_id
+	 WHERE o.id=$1`, draftOfferID).Scan(&durableName, &durablePrice, &durableStock, &durableVersion)
+	if e != nil || durableName != next.Name || durablePrice != next.PriceYER ||
+		durableStock != next.StockUnits || durableVersion != 3 {
+		t.Fatalf("independent DSH current edit readback failed: name=%s price=%s stock=%d version=%d err=%v", durableName, durablePrice, durableStock, durableVersion, e)
+	}
+	if e = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".catalog_draft_edit_commands WHERE actor_id='merchant-a'").Scan(&records); e != nil || records != 2 {
+		t.Fatalf("edit replay wrote unexpected journal count=%d err=%v", records, e)
+	}
+	if _, e = independent.ExecContext(ctx, "UPDATE "+schema+".catalog_draft_edit_commands SET result_price_yer=1 WHERE actor_id='merchant-a'"); e == nil {
+		t.Fatal("draft edit journal can be rewritten")
+	}
+	editHandler, e := NewMerchantCatalogEditHandler(registrar)
+	if e != nil {
+		t.Fatal(e)
+	}
+	patch := func(path, body string) (int, MerchantCatalogDraftEditResult) {
+		req := httptest.NewRequest("PATCH", path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer synthetic")
+		req.Header.Set("Content-Type", "application/json")
+		result := httptest.NewRecorder()
+		router := http.NewServeMux()
+		router.Handle("PATCH /v1/stores/{storeID}/catalog/{offerID}", editHandler)
+		router.ServeHTTP(result, req)
+		var value MerchantCatalogDraftEditResult
+		if result.Code == 200 && json.Unmarshal(result.Body.Bytes(), &value) != nil {
+			t.Fatalf("invalid edit JSON: %s", result.Body.String())
+		}
+		return result.Code, value
+	}
+	editBody, _ := json.Marshal(next)
+	if status, retried := patch("/v1/stores/catalog-a/catalog/"+draftOfferID, string(editBody)); status != 200 || !retried.Replay || retried.Offer.DraftVersion != 3 {
+		t.Fatalf("HTTP edit retry failed: status=%d result=%+v", status, retried)
+	}
+	if status, _ := patch("/v1/stores/catalog-a/catalog/"+draftOfferID,
+		`{"operationId":"edit-draft-0003","ExpectedVersion":100,"expectedVersion":2,"name":"x","priceYer":"3","stockUnits":2}`); status != 400 {
+		t.Fatalf("duplicate version JSON reached writer status=%d", status)
+	}
 }

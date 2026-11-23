@@ -11,6 +11,7 @@ export type MerchantCatalogOffer = Readonly<{
   variantId: string;
   priceYer: string;
   stockUnits: number;
+  draftVersion: number;
   productActive: boolean;
   variantSellable: boolean;
   requiredAttributesValid: boolean;
@@ -36,7 +37,7 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boo
 function validOffer(value: unknown, storeId: string): value is MerchantCatalogOffer {
   const v = object(value);
   if (!v || !exactKeys(v, [
-    "id", "storeId", "productId", "name", "variantId", "priceYer", "stockUnits",
+    "id", "storeId", "productId", "name", "variantId", "priceYer", "stockUnits", "draftVersion",
     "productActive", "variantSellable", "requiredAttributesValid", "published", "available",
   ])) return false;
   return typeof v.id === "string" && key.test(v.id) &&
@@ -48,6 +49,7 @@ function validOffer(value: unknown, storeId: string): value is MerchantCatalogOf
     typeof v.priceYer === "string" && money.test(v.priceYer) &&
     BigInt(v.priceYer) <= 9223372036854775807n &&
     typeof v.stockUnits === "number" && Number.isSafeInteger(v.stockUnits) && v.stockUnits >= 0 &&
+    typeof v.draftVersion === "number" && Number.isSafeInteger(v.draftVersion) && v.draftVersion >= 1 &&
     ["productActive", "variantSellable", "requiredAttributesValid", "published", "available"]
       .every(k => typeof v[k] === "boolean");
 }
@@ -125,7 +127,7 @@ export function parseMerchantCatalogDraftResult(
   const offer = value.offer;
   if (offer.name !== input.name.trim() ||
     offer.priceYer !== input.priceYer || offer.stockUnits !== input.stockUnits ||
-    offer.published || offer.available || offer.productActive ||
+    offer.draftVersion !== 1 || offer.published || offer.available || offer.productActive ||
     offer.variantSellable || offer.requiredAttributesValid) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
@@ -141,4 +143,46 @@ export async function createMerchantCatalogDraft(
   const path = dshOperations.createCurrentMerchantCatalogDraft.path.replace("{storeID}", storeId);
   const body = await privateOwnerRequest(origin, path, bearer, "POST", change, signal, [200, 201]);
   return parseMerchantCatalogDraftResult(body, storeId, change);
+}
+
+export type MerchantCatalogDraftEditChange = Readonly<MerchantCatalogDraftChange & {
+  expectedVersion: number;
+}>;
+export type MerchantCatalogDraftEditResult = MerchantCatalogDraftResult;
+
+export function validMerchantCatalogDraftEdit(input: MerchantCatalogDraftEditChange): boolean {
+  return validMerchantCatalogDraft(input) &&
+    Number.isSafeInteger(input.expectedVersion) && input.expectedVersion >= 1 && input.expectedVersion < Number.MAX_SAFE_INTEGER;
+}
+export function parseMerchantCatalogDraftEditResult(
+  payload: unknown, storeId: string, offerId: string,
+  input: MerchantCatalogDraftEditChange,
+): MerchantCatalogDraftEditResult {
+  const value = object(payload);
+  if (!value || !exactKeys(value, ["offer", "replay"]) ||
+    typeof value.replay !== "boolean" || !validOffer(value.offer, storeId)) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  const offer = value.offer;
+  if (offer.id !== offerId ||
+    offer.draftVersion !== input.expectedVersion + 1 ||
+    offer.name !== input.name.trim() ||
+    offer.priceYer !== input.priceYer || offer.stockUnits !== input.stockUnits ||
+    offer.published || offer.available || offer.productActive ||
+    offer.variantSellable || offer.requiredAttributesValid) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  return value as MerchantCatalogDraftEditResult;
+}
+export async function updateMerchantCatalogDraft(
+  origin: string, storeId: string, offerId: string, bearer: string,
+  change: MerchantCatalogDraftEditChange, signal?: AbortSignal,
+): Promise<MerchantCatalogDraftEditResult> {
+  if (!key.test(storeId) || !key.test(offerId) || !validMerchantCatalogDraftEdit(change)) {
+    throw new DshPublicError(400, "INVALID_STORE_DRAFT");
+  }
+  const path = dshOperations.updateCurrentMerchantCatalogDraft.path
+    .replace("{storeID}", storeId).replace("{offerID}", offerId);
+  const body = await privateOwnerRequest(origin, path, bearer, "PATCH", change, signal);
+  return parseMerchantCatalogDraftEditResult(body, storeId, offerId, change);
 }

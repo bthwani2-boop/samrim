@@ -56,12 +56,12 @@ func catalogDraftSnapshot(ctx context.Context, tx *sql.Tx, storeID, offerID stri
 	var item MerchantCatalogOffer
 	item.StoreID = storeID
 	err := tx.QueryRowContext(ctx, `SELECT o.id,p.id,p.name,v.id,o.price_yer::text,
-  o.stock_units,p.active,v.sellable,v.required_attributes_valid,o.published,o.available
+  o.stock_units,o.draft_version,p.active,v.sellable,v.required_attributes_valid,o.published,o.available
   FROM offers o JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
   JOIN variants v ON v.id=o.variant_id AND v.product_id=p.id
   WHERE o.store_id=$1 AND o.id=$2`, storeID, offerID).
 		Scan(&item.ID, &item.ProductID, &item.Name, &item.VariantID, &item.PriceYER,
-			&item.StockUnits, &item.ProductActive, &item.VariantSellable,
+			&item.StockUnits, &item.DraftVersion, &item.ProductActive, &item.VariantSellable,
 			&item.RequiredAttributesValid, &item.Published, &item.Available)
 	if err != nil {
 		return MerchantCatalogOffer{}, ErrStoreOwnerUnavailable
@@ -123,6 +123,14 @@ func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 		if readErr != nil {
 			return MerchantCatalogDraftResult{}, readErr
 		}
+		// Replays return the ORIGINAL committed result, even after a later
+		// authorized draft edit, not an unrelated current Product snapshot.
+		offer.Name = input.Name
+		offer.PriceYER = input.PriceYER
+		offer.StockUnits = input.StockUnits
+		offer.DraftVersion = 1
+		offer.ProductActive, offer.VariantSellable, offer.RequiredAttributesValid = false, false, false
+		offer.Published, offer.Available = false, false
 		if _, readErr = s.actor(ctx, token); readErr != nil {
 			return MerchantCatalogDraftResult{}, ErrUnknownResult
 		}
@@ -173,7 +181,7 @@ func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 	}
 	return MerchantCatalogDraftResult{Offer: MerchantCatalogOffer{
 		ID: offerID, StoreID: storeID, ProductID: productID, Name: input.Name,
-		VariantID: variantID, PriceYER: input.PriceYER, StockUnits: input.StockUnits,
+		VariantID: variantID, PriceYER: input.PriceYER, StockUnits: input.StockUnits, DraftVersion: 1,
 		ProductActive: false, VariantSellable: false, RequiredAttributesValid: false,
 		Published: false, Available: false,
 	}, Replay: false}, nil

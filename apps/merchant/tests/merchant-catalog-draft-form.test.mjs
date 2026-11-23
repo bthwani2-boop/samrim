@@ -54,6 +54,9 @@ test("Merchant draft form retries the identical operation after unknown outcome 
         validMerchantCatalogDraft(input) {
           return input.name.length > 0 && Number(input.priceYer) > 0 && input.stockUnits >= 0;
         },
+        validMerchantCatalogDraftEdit(input) {
+          return input.expectedVersion >= 1 && input.name.length > 0 && Number(input.priceYer) > 0;
+        },
       },
       "@bthwani/tamagui-config/appearance": {
         useMobileAppearance: () => ({ theme: {
@@ -66,6 +69,11 @@ test("Merchant draft form retries the identical operation after unknown outcome 
       "../access/admission-transport": {
         submitMerchantCatalogDraft(storeId, actorId, change, signal) {
           const request = { storeId, actorId, change, signal };
+          pending.push(request);
+          return new Promise((resolve, reject) => { request.resolve = resolve; request.reject = reject; });
+        },
+        submitMerchantCatalogDraftEdit(storeId, offerId, actorId, change, signal) {
+          const request = { storeId, offerId, actorId, change, signal };
           pending.push(request);
           return new Promise((resolve, reject) => { request.resolve = resolve; request.reject = reject; });
         },
@@ -82,10 +90,10 @@ test("Merchant draft form retries the identical operation after unknown outcome 
       return mocks[name];
     }, mod, mod.exports);
     let created = 0;
-    function render(actorId = "merchant-a", storeId = "store-a") {
+    function render(actorId = "merchant-a", storeId = "store-a", draft) {
       hooksCursor = 0;
       scheduled = [];
-      const tree = mod.exports.default({ actorId, storeId, onCreated: () => { created++; } });
+      const tree = mod.exports.default({ actorId, storeId, draft, onCreated: () => { created++; } });
       for (const effect of scheduled) effect();
       return tree;
     }
@@ -124,6 +132,41 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     tree = render("merchant-b", "store-b");
     assert.equal(pending.length, 2);
     assert.ok(!nodes(tree).some(n => n.props?.children === "منتج جديد"));
+
+    const existingDraft = {
+      id: "of-1234567890abcdef1234567890abcdef", storeId: "store-a",
+      name: "مسودة أصلية", priceYer: "5000", stockUnits: 2, draftVersion: 1,
+      published: false, available: false, productActive: false,
+      variantSellable: false, requiredAttributesValid: false,
+    };
+    render("merchant-a", "store-a", existingDraft);
+    tree = render("merchant-a", "store-a", existingDraft);
+    assert.equal(namedInput(tree, "اسم المنتج").props.value, "مسودة أصلية");
+    assert.equal(namedInput(tree, "السعر بالريال اليمني").props.value, "5000");
+    namedInput(tree, "اسم المنتج").props.onChangeText("مسودة معدلة");
+    tree = render("merchant-a", "store-a", existingDraft);
+    const update = nodes(tree).find(n => n.type === "Pressable" &&
+      n.props.accessibilityLabel === "حفظ تعديل المسودة");
+    assert.ok(update && !update.props.disabled);
+    update.props.onPress();
+    assert.equal(pending.length, 3);
+    assert.equal(pending[2].offerId, existingDraft.id);
+    assert.equal(pending[2].change.expectedVersion, 1);
+    assert.equal(pending[2].change.name, "مسودة معدلة");
+    assert.equal(pending[2].change.operationId, "draft-operation-2");
+    pending[2].reject(new Error("edit commit acknowledged by SQL but network failed"));
+    await new Promise(setImmediate);
+    tree = render("merchant-a", "store-a", existingDraft);
+    const retryEdit = nodes(tree).find(n => n.type === "Pressable" &&
+      n.props.accessibilityLabel === "إعادة تأكيد إنشاء المسودة");
+    assert.ok(retryEdit);
+    retryEdit.props.onPress();
+    assert.equal(pending.length, 4);
+    assert.deepEqual(pending[3].change, pending[2].change);
+    assert.equal(idCount, 2);
+    pending[3].resolve({ replay: true });
+    await new Promise(setImmediate);
+    assert.equal(created, 2);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

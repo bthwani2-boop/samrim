@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { GET, POST } from "../app/api/admission+api.ts";
+import { GET, PATCH, POST } from "../app/api/admission+api.ts";
 
 const origin = "http://127.0.0.1:13310";
 const dsh = "http://127.0.0.1:13311";
@@ -8,7 +8,7 @@ const bearer = Buffer.alloc(32, 12).toString("base64url");
 const offer = {
   id: "of-draft", storeId: "store-a", productId: "product-a",
   name: "مسودة متجر", variantId: "variant-a", priceYer: "1200",
-  stockUnits: 0, productActive: false, variantSellable: false,
+  stockUnits: 0, draftVersion: 1, productActive: false, variantSellable: false,
   requiredAttributesValid: false, published: false, available: false,
 };
 const catalog = { actorId: "merchant-a", storeId: "store-a", items: [offer] };
@@ -22,7 +22,7 @@ function request(search = "?catalog=store-a&limit=20", actor = "merchant-a", tok
     },
   });
 }
-function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false } = {}) {
+function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false } = {}) {
   const env = {
     MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN,
     MERCHANT_SYNTHETIC_DSH_ORIGIN: process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN,
@@ -47,6 +47,19 @@ function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catal
         new Date(Date.now()+120000).toISOString() }, { headers: { "Cache-Control": "no-store" } });
     }
     assert.equal(target.origin, dsh);
+    if (edit) {
+      assert.equal(target.pathname, "/v1/stores/store-a/catalog/of-draft");
+      assert.equal(config.method, "PATCH");
+      assert.equal(target.search, "");
+      assert.deepEqual(JSON.parse(config.body), editChange);
+      return Response.json(ownerStatus===200 ? {
+        offer: { ...offer, name: editChange.name, priceYer: editChange.priceYer,
+          stockUnits: editChange.stockUnits, draftVersion: 2 },
+        replay: false,
+      } : { code: "CATALOG_DRAFT_VERSION_CONFLICT" }, {
+        status: ownerStatus, headers: { "Cache-Control": "no-store" },
+      });
+    }
     assert.equal(target.pathname, "/v1/stores/store-a/catalog");
     if (draft) {
       assert.equal(config.method, "POST");
@@ -159,5 +172,66 @@ test("Merchant draft cannot accept a successful but published owner result", asy
   const calls = ownerMocks(t, { draft: true, ownerStatus: 201 });
   const reply = await POST(draftRequest());
   assert.equal(reply.status, 201);
+  assert.equal(calls.length, 2);
+});
+
+const editChange = {
+  operationId: "edit-draft-0001", expectedVersion: 1,
+  name: "مسودة معدلة", priceYer: "3500", stockUnits: 2,
+};
+function editRequest(actor = "merchant-a", data = editChange, query = "?catalog=store-a&offer=of-draft") {
+  return new Request("http://localhost:18102/api/admission" + query, {
+    method: "PATCH",
+    headers: {
+      Cookie: "bthwani_merchant_admission=" + bearer,
+      "X-Merchant-Context": actor, "Content-Type": "application/json",
+      Origin: "http://localhost:18102",
+    },
+    body: JSON.stringify(data),
+  });
+}
+test("verified Merchant draft edit uses original actor, owner and expected version", async t => {
+  const calls = ownerMocks(t, { edit: true });
+  const reply = await PATCH(editRequest());
+  assert.equal(reply.status, 200);
+  const { edit } = await reply.json();
+  assert.equal(edit.offer.draftVersion, 2);
+  assert.equal(edit.offer.published, false);
+  assert.deepEqual(calls, ["/v1/sessions/current", "/v1/stores/store-a/catalog/of-draft"]);
+});
+test("wrong Merchant actor never reaches draft editor", async t => {
+  const calls = ownerMocks(t, { edit: true });
+  assert.equal((await PATCH(editRequest("merchant-b"))).status, 403);
+  assert.deepEqual(calls, ["/v1/sessions/current"]);
+});
+test("missing, repeated and injected edit selectors reject without owner calls", async t => {
+  const calls = ownerMocks(t, { edit: true });
+  for (const query of [
+    "?catalog=store-a", "?catalog=store-a&offer=of-draft&offer=foreign",
+    "?catalog=store-a&offer=../foreign",
+    "?catalog=store-a&offer=of-draft&actor=merchant-b",
+    "?catalog=store-a&catalog=store-b",
+  ]) assert.equal((await PATCH(editRequest("merchant-a", editChange, query))).status, 400, query);
+  assert.equal(calls.length, 0);
+});
+test("malformed draft edit version never reaches Identity or DSH", async t => {
+  const calls = ownerMocks(t, { edit: true });
+  for (const body of [
+    { ...editChange, expectedVersion: 0 },
+    { ...editChange, expectedVersion: "1" },
+    { ...editChange, priceYer: "0" },
+    { ...editChange, extra: "operator" },
+  ]) {
+    const reply = await PATCH(editRequest("merchant-a", body));
+    assert.equal(reply.status, 400);
+  }
+  // The HTTP BFF authenticates the actor before validating the operation, but never writes DSH.
+  assert.equal(calls.filter(path => path.endsWith("catalog/of-draft")).length, 0);
+});
+test("DSH draft conflict stays 409 instead of inventing the next version", async t => {
+  const calls = ownerMocks(t, { edit: true, ownerStatus: 409 });
+  const reply = await PATCH(editRequest());
+  assert.equal(reply.status, 409);
+  assert.deepEqual(await reply.json(), { code: "CATALOG_DRAFT_VERSION_CONFLICT" });
   assert.equal(calls.length, 2);
 });

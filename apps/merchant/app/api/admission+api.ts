@@ -1,4 +1,4 @@
-import { createMerchantCatalogDraft, DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, type MerchantCatalogDraftChange, type MerchantStoreRegistration, readMerchantRegistrationOptions, registerMerchantStore, type StoreOperationalChange, updateStoreOperationalAvailability, validMerchantCatalogDraft } from "@bthwani/dsh";
+import { createMerchantCatalogDraft, DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantStoreRegistration, readMerchantRegistrationOptions, registerMerchantStore, type StoreOperationalChange, updateMerchantCatalogDraft, updateStoreOperationalAvailability, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
@@ -183,8 +183,13 @@ export async function PATCH(request: Request) {
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
   const query = new URL(request.url).searchParams;
   const storeId = query.size === 1 ? query.get("availability") : null;
+  const editStore = query.size === 2 ? query.get("catalog") : null;
+  const editOffer = query.size === 2 ? query.get("offer") : null;
+  const catalogEdit = editStore !== null && editOffer !== null &&
+    /^[a-z0-9-]{1,64}$/.test(editStore) && /^[a-z0-9-]{1,64}$/.test(editOffer) &&
+    [...query.keys()].every(key => (key === "catalog" || key === "offer") && query.getAll(key).length === 1);
   const actorId = request.headers.get("X-Merchant-Context");
-  if (!storeId || !/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId) {
+  if ((!storeId || !/^[a-z0-9-]{1,64}$/.test(storeId)) && !catalogEdit || !actorId) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
   const bearer = bearerFrom(request);
@@ -201,8 +206,21 @@ export async function PATCH(request: Request) {
     if (session.role !== "merchant" || session.actorId !== actorId) {
       return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
     }
+    if (catalogEdit) {
+      const data = input as Record<string, unknown>;
+      if (Object.keys(data).length !== 5 ||
+        !Object.keys(data).every(key => ["operationId", "expectedVersion", "name", "priceYer", "stockUnits"].includes(key)) ||
+        !validMerchantCatalogDraftEdit(data as MerchantCatalogDraftEditChange)) {
+        return response({ code: "INVALID_STORE_DRAFT" }, 400);
+      }
+      const edit = await updateMerchantCatalogDraft(
+        standingOrigin(origin), editStore ?? "", editOffer ?? "", bearer,
+        data as MerchantCatalogDraftEditChange, signal,
+      );
+      return response({ edit });
+    }
     return response(await updateStoreOperationalAvailability(
-      standingOrigin(origin), storeId, bearer, input as StoreOperationalChange, signal,
+      standingOrigin(origin), storeId ?? "", bearer, input as StoreOperationalChange, signal,
     ));
   } catch (error) {
     if (error instanceof DshPublicError && error.code === "OPERATION_RESULT_UNKNOWN") {

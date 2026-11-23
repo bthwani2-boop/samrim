@@ -21,6 +21,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
 }>) {
   const { theme } = useMobileAppearance();
   const [selectedId, setSelectedId] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<CatalogState>({
     scope: "", loading: false, more: false, items: [],
@@ -45,6 +46,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
   useEffect(() => {
     const epoch = ++generation.current;
     active.current?.abort();
+    setEditingId(null);
     if (!actorId || !storeId) {
       setState({ scope, loading: false, more: false, items: [] });
       return;
@@ -138,6 +140,20 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
       <Text style={{ color: offer.published ? theme.successText : theme.warningText }}>
         {offer.published ? "عرض منشور" : "عرض غير منشور"} · {offer.available ? "متاح" : "موقوف"}
       </Text>
+      {!offer.published && !offer.available && !offer.productActive &&
+        !offer.variantSellable && !offer.requiredAttributesValid &&
+        /^of-[a-f0-9]{32}$/.test(offer.id) ?
+        <Pressable accessibilityRole="button" accessibilityLabel={`تعديل ${offer.name}`}
+          style={button} onPress={() => setEditingId(current => current === offer.id ? null : offer.id)}>
+          <Text style={{ color: theme.interactiveText }}>
+            {editingId === offer.id ? "إغلاق تعديل المسودة" : "تعديل المسودة"}
+          </Text>
+        </Pressable> : null}
+      {editingId === offer.id && !offer.published && !offer.available && !offer.productActive &&
+        !offer.variantSellable && !offer.requiredAttributesValid ?
+        <MerchantCatalogDraftForm key={`${scope}:${offer.id}:${offer.draftVersion}`}
+          actorId={actorId} storeId={storeId} draft={offer}
+          onCreated={() => { setEditingId(null); setRetry(value => value + 1); }} /> : null}
       {!offer.productActive || !offer.variantSellable || !offer.requiredAttributesValid ?
         <Text style={{ color: theme.dangerText }}>المنتج أو الصنف غير مؤهل للبيع حاليًا.</Text> : null}
     </View>)}

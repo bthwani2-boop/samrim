@@ -1,21 +1,22 @@
-import { type MerchantCatalogDraftChange, validMerchantCatalogDraft } from "@bthwani/dsh";
+import { type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantCatalogOffer, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { randomUUID } from "expo-crypto";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
-import { submitMerchantCatalogDraft } from "../access/admission-transport";
+import { submitMerchantCatalogDraft, submitMerchantCatalogDraftEdit } from "../access/admission-transport";
 
 // An uncertain write retains the ORIGINAL payload and operationId. Never
 // construct a fresh id until the previous outcome has been confirmed.
 const digits = (value: string) => value.replace(/[٠-٩۰-۹]/g, char => String(char.charCodeAt(0) & 15));
-export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated }: Readonly<{
+export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, draft }: Readonly<{
   actorId: string; storeId: string; onCreated: () => void;
+  draft?: MerchantCatalogOffer;
 }>) {
   const { theme } = useMobileAppearance();
-  const [name, setName] = useState("");
-  const [price, setPrice] = useState("");
-  const [quantity, setQuantity] = useState("0");
-  const [pending, setPending] = useState<MerchantCatalogDraftChange | null>(null);
+  const [name, setName] = useState(draft?.name ?? "");
+  const [price, setPrice] = useState(draft?.priceYer ?? "");
+  const [quantity, setQuantity] = useState(draft ? String(draft.stockUnits) : "0");
+  const [pending, setPending] = useState<MerchantCatalogDraftChange | MerchantCatalogDraftEditChange | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const session = useRef<AbortController | null>(null);
@@ -24,24 +25,25 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated }
   useEffect(() => {
     session.current?.abort();
     inFlight.current = false;
-    setName("");
-    setPrice("");
-    setQuantity("0");
+    setName(draft?.name ?? "");
+    setPrice(draft?.priceYer ?? "");
+    setQuantity(draft ? String(draft.stockUnits) : "0");
     setPending(null);
     setSaving(false);
     setMessage("");
     const controller = new AbortController();
     session.current = controller;
     return () => { controller.abort(); };
-  }, [actorId, storeId]);
+  }, [actorId, storeId, draft?.id, draft?.draftVersion]);
   const rawStock = digits(quantity).trim();
   const normalizedPrice = digits(price).trim();
   const parsedStock = /^[0-9]{1,10}$/.test(rawStock) ? Number(rawStock) : -1;
-  const proposed: MerchantCatalogDraftChange = {
+  const proposed: MerchantCatalogDraftEditChange = {
     operationId: "preview-draft-0001", name: name.trim(),
     priceYer: normalizedPrice, stockUnits: parsedStock,
+    expectedVersion: draft?.draftVersion ?? 1,
   };
-  const valid = validMerchantCatalogDraft(proposed);
+  const valid = draft ? validMerchantCatalogDraftEdit(proposed) : validMerchantCatalogDraft(proposed);
   async function submit() {
     if (!actorId || !storeId || inFlight.current || session.current?.signal.aborted ||
       (!pending && !valid)) return;
@@ -53,13 +55,20 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated }
     setPending(change);
     setMessage("");
     try {
-      await submitMerchantCatalogDraft(storeId, actorId, change, controller.signal);
+      if (draft) {
+        if (draft.storeId !== storeId || draft.published || draft.available ||
+          draft.productActive || draft.variantSellable || draft.requiredAttributesValid) return;
+        await submitMerchantCatalogDraftEdit(storeId, draft.id, actorId,
+          change as MerchantCatalogDraftEditChange, controller.signal);
+      } else {
+        await submitMerchantCatalogDraft(storeId, actorId, change, controller.signal);
+      }
       if (controller.signal.aborted) return;
       setPending(null);
       setName("");
       setPrice("");
       setQuantity("0");
-      setMessage("حُفظت مسودة غير منشورة لدى DSH. يلزم استكمال الأهلية قبل البيع.");
+      setMessage(draft ? "حُفظ تعديل المسودة لدى DSH، وبقيت غير منشورة." : "حُفظت مسودة غير منشورة لدى DSH. يلزم استكمال الأهلية قبل البيع.");
       onCreated();
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -71,7 +80,7 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated }
       } else if (status === 401 || status === 403) {
         setMessage("انتهت الجلسة أو صلاحية المتجر. لا يمكن تأكيد هذه العملية بهذا الحساب.");
       } else {
-        setMessage("نتيجة الإنشاء غير مؤكدة. أعد المحاولة بالعملية نفسها؛ لن يُنشأ معرّف جديد.");
+        setMessage("نتيجة الكتابة غير مؤكدة. أعد المحاولة بمفتاح العملية نفسه؛ لن يُنشأ معرّف جديد.");
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -82,10 +91,10 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated }
   }
   const input = { color: theme.color, borderWidth: 1, borderColor: theme.borderColor,
     borderRadius: 10, paddingHorizontal: 12, minHeight: 44, backgroundColor: theme.surface };
-  return <View testID="merchant-create-catalog-draft" style={{ gap: 10,
+  return <View testID={draft ? "merchant-edit-catalog-draft" : "merchant-create-catalog-draft"} style={{ gap: 10,
     padding: 15, borderWidth: 1, borderRadius: 12, borderColor: theme.borderColor }}>
     <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 19, fontWeight: "700" }}>
-      إضافة منتج كمسودة
+      {draft ? "تعديل مسودة المنتج" : "إضافة منتج كمسودة"}
     </Text>
     <Text style={{ color: theme.colorSecondary }}>
       المسودة محفوظة في DSH فقط؛ لا تظهر للعميل ولا تقبل الطلبات حتى تُستكمل شروط النشر.
@@ -102,12 +111,12 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated }
     <TextInput accessibilityLabel="عدد الوحدات" style={input}
       value={pending ? String(pending.stockUnits) : quantity}
       keyboardType="number-pad" onChangeText={setQuantity} editable={!pending && !saving} />
-    <Pressable accessibilityRole="button" accessibilityLabel={pending ? "إعادة تأكيد إنشاء المسودة" : "حفظ مسودة المنتج"}
+    <Pressable accessibilityRole="button" accessibilityLabel={pending ? "إعادة تأكيد إنشاء المسودة" : draft ? "حفظ تعديل المسودة" : "حفظ مسودة المنتج"}
       disabled={saving || (!pending && !valid)} onPress={() => void submit()}
       style={{ borderRadius: 10, minHeight: 48, justifyContent: "center",
         paddingHorizontal: 16, backgroundColor: theme.actionBackground, opacity: saving ? 0.6 : 1 }}>
       <Text style={{ color: theme.onAction, fontWeight: "700", textAlign: "center" }}>
-        {saving ? "جارٍ التأكيد لدى DSH..." : pending ? "إعادة التأكيد بنفس العملية" : "حفظ مسودة غير منشورة"}
+        {saving ? "جارٍ التأكيد لدى DSH..." : pending ? "إعادة التأكيد بنفس العملية" : draft ? "حفظ تعديل المسودة" : "حفظ مسودة غير منشورة"}
       </Text>
     </Pressable>
     {message ? <Text accessibilityRole="alert" style={{

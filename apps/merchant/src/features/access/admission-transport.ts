@@ -1,13 +1,14 @@
 import {
   createMerchantCatalogDraft, DshPublicError, getStoreOperationalAvailability, listMerchantCatalog,
-  type MerchantCatalogDraftChange, type MerchantCatalogDraftResult, type MerchantCatalogPage,
+  type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantCatalogDraftEditResult, type MerchantCatalogDraftResult, type MerchantCatalogPage,
   type MerchantRegistrationOptions, type MerchantRegistrationResult,
-  type MerchantStoreRegistration,
+  type MerchantStoreRegistration,parseMerchantCatalogDraftEditResult,
   parseMerchantCatalogDraftResult, parseMerchantCatalogPage,
   parseMerchantRegistrationOptions, parseMerchantRegistrationResult,
   readMerchantRegistrationOptions,
   registerMerchantStore, type StoreOperationalAvailability,
-  type StoreOperationalChange, updateStoreOperationalAvailability,
+  type StoreOperationalChange,
+  updateMerchantCatalogDraft,updateStoreOperationalAvailability,
   validMerchantStoreRegistration,
 } from "@bthwani/dsh";
 import {
@@ -459,4 +460,41 @@ export async function signOutOfAdmission(signal: AbortSignal): Promise<void> {
     if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) throw error;
   }
   await clearNativeBearerIfCurrent(bearer, signal);
+}
+
+/** Versioned, idempotent edit of a DSH-owned inactive draft. No new operation key on retry. */
+export async function submitMerchantCatalogDraftEdit(
+  storeId: string, offerId: string, actorId: string,
+  change: MerchantCatalogDraftEditChange, signal: AbortSignal,
+): Promise<MerchantCatalogDraftEditResult> {
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !/^[a-z0-9-]{1,64}$/.test(offerId) ||
+    !actorId || signal.aborted) throw new DshPublicError(400, "INVALID_STORE_DRAFT");
+  if (Platform.OS !== "web") {
+    return withNativeMerchantSession(signal, bearer =>
+      updateMerchantCatalogDraft(nativeDSHOrigin ?? "", storeId, offerId, bearer, change, signal), actorId, true);
+  }
+  let reply: Response;
+  try {
+    reply = await fetch(`/api/admission?catalog=${encodeURIComponent(storeId)}&offer=${encodeURIComponent(offerId)}`, {
+      method: "PATCH", credentials: "same-origin", cache: "no-store",
+      redirect: "error", signal,
+      headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
+      body: JSON.stringify(change),
+    });
+  } catch { throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"); }
+  let payload: unknown;
+  try { payload = await reply.json(); }
+  catch { throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN"); }
+  if (signal.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
+  if (!reply.ok) {
+    const body = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+    throw new DshPublicError(reply.status, reply.status >= 500 ? "OPERATION_RESULT_UNKNOWN" :
+      typeof body.code === "string" ? body.code : "INVALID_STORE_DRAFT");
+  }
+  const document = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+  if (reply.status !== 200 ||
+    reply.headers.get("Cache-Control")?.toLowerCase().split(",").map(part => part.trim()).includes("no-store") !== true) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  return parseMerchantCatalogDraftEditResult(document.edit, storeId, offerId, change);
 }
