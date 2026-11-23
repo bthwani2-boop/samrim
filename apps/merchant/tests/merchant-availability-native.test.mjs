@@ -25,6 +25,9 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
   onDSH = () => {}, onIdentity = () => {} } = {}) {
   let stored = initialBearer;
   let pending = marker;
+  // This suite exercises DSH Store authorization with an already-persisted,
+  // still-valid native Identity session. Initial refresh enrollment has separate tests.
+  let refreshStored = initialBearer && !marker ? Buffer.alloc(32, 54).toString("base64url") : null;
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url, options) => {
     calls.push({ url: String(url), options });
@@ -43,7 +46,7 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
       assert.equal(options.method, "GET");
       onIdentity();
       return identityStatus === 200 ? json({ actorId: "owner-a", role,
-        sessionExpiresAt: new Date(Date.now() + 120000).toISOString() }) : json({ error: "FORBIDDEN" }, identityStatus);
+        sessionExpiresAt: new Date(Date.now() + 15 * 60000).toISOString() }) : json({ error: "FORBIDDEN" }, identityStatus);
     }
     if (target.pathname === "/v1/stores/mine") {
       assert.equal(options.method, "GET");
@@ -63,10 +66,19 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
     "@bthwani/identity": identityClient,
     "expo-secure-store": {
       WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device-only",
-      async getItemAsync(key) { return key.endsWith(".pending.v1") ? pending : stored; },
+      async getItemAsync(key) {
+        return key.endsWith(".pending.v1") ? pending :
+          key.endsWith(".refresh.v1") ? refreshStored : stored;
+      },
+      async setItemAsync(key, value) {
+        if (key.endsWith(".pending.v1")) pending = value;
+        else if (key.endsWith(".refresh.v1")) refreshStored = value;
+        else stored = value;
+      },
       async deleteItemAsync(key) {
         if (deletionFails) throw new Error("storage unavailable");
         if (key.endsWith(".pending.v1")) pending = null;
+        else if (key.endsWith(".refresh.v1")) refreshStored = null;
         else stored = null;
       },
     },

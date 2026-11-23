@@ -30,6 +30,11 @@ type PersistentOwner interface {
 }
 
 var ErrPersistenceExists = errors.New("persistent session already registered")
+var ErrRecentRefreshConflict = errors.New("refresh credential was just consumed")
+
+// Reject a racing duplicate without revoking a legitimate successful rotation.
+// A later reuse remains evidence of credential replay and revokes the family.
+const refreshReplayGrace = time.Minute
 
 func randomPersistentToken() (string, [32]byte, error) {
 	var secret [32]byte
@@ -165,6 +170,9 @@ func (r *PostgresReader) RotatePersistent(ctx context.Context, digest [32]byte) 
 	// A consumed refresh token is a confirmed replay. Revoke the whole family
 	// including the replacement access token; do not expose the new credential.
 	if consumed.Valid && !familyRevoked.Valid {
+		if !now.Before(consumed.Time) && now.Sub(consumed.Time) < refreshReplayGrace {
+			return PersistentRotation{}, ErrRecentRefreshConflict
+		}
 		if _, err = tx.ExecContext(ctx, `UPDATE auth_session_families SET revoked_at=clock_timestamp()
         WHERE id=$1::uuid AND revoked_at IS NULL`, familyID); err != nil {
 			return PersistentRotation{}, err
@@ -283,6 +291,15 @@ func (r *PostgresReader) EndPersistent(ctx context.Context, digest [32]byte) err
 	}
 	if revoked.Valid || !bytes.Equal(currentAccess, observedAccess) {
 		return ErrUnauthorized
+	}
+	if consumed.Valid {
+		var now time.Time
+		if err = tx.QueryRowContext(ctx, "SELECT clock_timestamp()").Scan(&now); err != nil {
+			return err
+		}
+		if now.Before(consumed.Time) || now.Sub(consumed.Time) >= refreshReplayGrace {
+			return ErrUnauthorized
+		}
 	}
 	// A caller holding the just-consumed refresh token can still explicitly
 	// sign out the family after a response was lost during rotation.

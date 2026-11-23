@@ -266,3 +266,24 @@ test("Merchant logout revokes its persistent refresh family before clearing cook
   assert.deepEqual(methods,["DELETE /v1/sessions/refresh","DELETE /v1/sessions/current"]);
   assert.ok((response.headers.get("Set-Cookie")??"").includes("bthwani_merchant_admission.refresh=;"));
 });
+
+test("Concurrent Merchant refresh conflict preserves both cookies", async t => {
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=identity;
+  const refresh=Buffer.alloc(32,59).toString("base64url");
+  t.mock.method(globalThis,"fetch",async(url,opts)=>{
+    const path=new URL(url).pathname;
+    if(path==="/v1/sessions/current") return Response.json({error:"UNAUTHORIZED"},{
+      status:401,headers:{"Cache-Control":"no-store"}});
+    if(path==="/v1/sessions/refresh") {
+      assert.equal(opts.headers.Authorization,"Bearer "+refresh);
+      return Response.json({error:"CONFLICT"},{status:409,headers:{"Cache-Control":"no-store"}});
+    }
+    assert.fail(path);
+  });
+  const req=new Request("http://localhost:18102/api/admission",{
+    headers:{Cookie:"bthwani_merchant_admission="+bearer+"; bthwani_merchant_admission.refresh="+refresh},
+  });
+  const reply=await GET(req);
+  assert.equal(reply.status,409);
+  assert.equal(reply.headers.get("Set-Cookie"),null);
+});

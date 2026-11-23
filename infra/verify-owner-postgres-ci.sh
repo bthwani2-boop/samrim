@@ -167,6 +167,10 @@ run_test "$current" /agent02/services/identity/backend/internal/session \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e IDENTITY_RESTORE_CI_TEST=true \
   -e BTHWANI_CI_DISPOSABLE_PASSWORD="$ci_password" \
   -e IDENTITY_TEST_DATABASE_URL="postgres://bthwani_ci:${ci_password}@127.0.0.1:5432/bthwani_refoundation?sslmode=disable"
+run_test "$current" /agent02/services/identity/backend/internal/session \
+  /agent02/bin/identity-session.test '^TestPersistentIdentityPostgres$' 'TestPersistentIdentityPostgres' \
+  -e BTHWANI_ISOLATED_TEST_MODE=true \
+  -e IDENTITY_TEST_DATABASE_URL="postgres://bthwani_ci:${ci_password}@127.0.0.1:5432/bthwani_refoundation?sslmode=disable"
 restored_identity="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_ci \
   -d bthwani_refoundation_identity_restore \
   -c "SELECT count(*) FROM pg_namespace WHERE nspname ~ '^identity_test_agent03_[a-f0-9]{16}$';")"

@@ -298,3 +298,24 @@ test("Customer failed refresh never destroys a recoverable cookie on temporary I
   assert.equal(res.status,503);
   assert.equal(res.headers.get("Set-Cookie"),null);
 });
+
+test("Concurrent Customer refresh conflict leaves session cookies intact for the winning request", async t => {
+  const refresh = Buffer.alloc(32, 58).toString("base64url");
+  mockOwner(t,(path, options) => {
+    if (path==="/v1/sessions/current") return Response.json({ error: "UNAUTHORIZED" }, {
+      status:401, headers:{"Cache-Control":"no-store"},
+    });
+    if (path==="/v1/sessions/refresh") {
+      assert.equal(options.method,"POST");
+      assert.equal(options.headers.Authorization,"Bearer "+refresh);
+      return Response.json({error:"CONFLICT"},{status:409,headers:{"Cache-Control":"no-store"}});
+    }
+    assert.fail(path);
+  });
+  const req=new Request(host+"/api/customer-auth",{headers:{
+    Cookie:cookie+"; bthwani_customer_auth.refresh="+refresh,
+  }});
+  const res=await GET(req);
+  assert.equal(res.status,409);
+  assert.equal(res.headers.get("Set-Cookie"),null);
+});

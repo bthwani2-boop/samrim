@@ -13,6 +13,7 @@ import (
 
 type persistentFake struct {
 	startCalls, rotateCalls, endCalls int
+	rotationErr                       error
 }
 
 func (f *persistentFake) StartPersistent(_ context.Context, _ [32]byte) (PersistentGrant, error) {
@@ -21,6 +22,9 @@ func (f *persistentFake) StartPersistent(_ context.Context, _ [32]byte) (Persist
 }
 func (f *persistentFake) RotatePersistent(_ context.Context, _ [32]byte) (PersistentRotation, error) {
 	f.rotateCalls++
+	if f.rotationErr != nil {
+		return PersistentRotation{}, f.rotationErr
+	}
 	return PersistentRotation{}, ErrUnauthorized
 }
 func (f *persistentFake) EndPersistent(_ context.Context, _ [32]byte) error { f.endCalls++; return nil }
@@ -58,6 +62,23 @@ func TestPersistentHTTPRejectsBadCredentialsAndBody(t *testing.T) {
 		t.Fatalf("unexpected owner calls %+v", f)
 	}
 }
+func TestPersistentHTTPRecentDuplicateIsConflictWithoutNewCredential(t *testing.T) {
+	f := &persistentFake{rotationErr: ErrRecentRefreshConflict}
+	h := NewPersistentSessionHandler(f)
+	secret := sha256.Sum256([]byte("independent-refresh-test"))
+	token := base64.RawURLEncoding.EncodeToString(secret[:])
+	request := httptest.NewRequest("POST", PersistentRefreshPath, nil)
+	request.Header.Set("Authorization", "Bearer "+token)
+	response := httptest.NewRecorder()
+	h.ServeHTTP(response, request)
+	if response.Code != 409 || response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("recent duplicate status=%d, cache=%q", response.Code, response.Header().Get("Cache-Control"))
+	}
+	if f.rotateCalls != 1 || strings.Contains(response.Body.String(), token) {
+		t.Fatal("duplicate response leaked a credential or skipped owner")
+	}
+}
+
 func TestPersistentLifetimeRoleBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		role           string

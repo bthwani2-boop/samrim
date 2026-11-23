@@ -45,6 +45,15 @@ func TestPersistentIdentityPostgres(t *testing.T) {
 	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_namespace WHERE nspname=$1", schema).Scan(&exists); err != nil || exists != 0 {
 		t.Fatal("namespace not absent")
 	}
+	// Register cleanup before any migration. Defer runs before the earlier
+	// db.Close, unlike t.Cleanup, so the test-owned schema can actually be dropped.
+	defer func() {
+		cleanupCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
+		defer done()
+		if _, e := db.ExecContext(cleanupCtx, "DROP SCHEMA IF EXISTS "+schema+" CASCADE"); e != nil {
+			t.Errorf("cannot clean up disposable Identity test schema: %v", e)
+		}
+	}()
 	for _, file := range []string{"001_session_verification.sql", "010_persistent_sessions.sql"} {
 		source, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", file))
 		if e != nil {
@@ -54,12 +63,6 @@ func TestPersistentIdentityPostgres(t *testing.T) {
 			t.Fatal(file, e)
 		}
 	}
-	t.Cleanup(func() {
-		cleanupCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
-		defer done()
-		// This schema was randomly generated, proved absent, and created by this test.
-		_, _ = db.ExecContext(cleanupCtx, "DROP SCHEMA "+schema+" CASCADE")
-	})
 	owner, e := NewPostgresReader(db, schema)
 	if e != nil {
 		t.Fatal(e)
@@ -119,12 +122,28 @@ func TestPersistentIdentityPostgres(t *testing.T) {
 	if e = db.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".auth_refresh_tokens WHERE token_digest=$1 AND consumed_at IS NOT NULL", grantDigest[:]).Scan(&consumedCount); e != nil || consumedCount != 1 {
 		t.Fatal("rotation consumption not durable", e, consumedCount)
 	}
-	// Confirmed replay revokes the entire active family, including its NEW access.
+	// A racing duplicate must be denied without destroying a successfully
+	// rotated session. Once the bounded grace expires, replay is compromise.
+	if _, e = owner.RotatePersistent(ctx, grantDigest); !errors.Is(e, ErrRecentRefreshConflict) {
+		t.Fatalf("racing duplicate unexpectedly accepted: %v", e)
+	}
+	if e = oldLookupErr(rotatedAccess); e != nil {
+		t.Fatalf("duplicate cancelled the winner: %v", e)
+	}
+	// Age both fixture timestamps together so the database invariant
+	// consumed_at >= issued_at remains intact while exercising late replay.
+	exec("UPDATE "+schema+".auth_refresh_tokens SET issued_at=issued_at-interval '2 minutes', consumed_at=consumed_at-interval '2 minutes' WHERE token_digest=$1", grantDigest[:])
+	if e = owner.EndPersistent(ctx, grantDigest); !errors.Is(e, ErrUnauthorized) {
+		t.Fatalf("old consumed credential could sign out the active family: %v", e)
+	}
+	if e = oldLookupErr(rotatedAccess); e != nil {
+		t.Fatalf("old consumed logout revoked a current session: %v", e)
+	}
 	if _, e = owner.RotatePersistent(ctx, grantDigest); !errors.Is(e, ErrUnauthorized) {
-		t.Fatalf("replay accepted: %v", e)
+		t.Fatalf("old replay accepted: %v", e)
 	}
 	if !errors.Is(oldLookupErr(rotatedAccess), ErrUnauthorized) {
-		t.Fatal("replay failed to revoke new access")
+		t.Fatal("old replay failed to revoke new access")
 	}
 	// Revoke a family through its refresh secret and independently read back access.
 	_, operatorDigest := issue("persistent-operator", "operator")
@@ -139,11 +158,20 @@ func TestPersistentIdentityPostgres(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
+	operatorRotated, e := owner.RotatePersistent(ctx, opRefresh)
+	if e != nil {
+		t.Fatal(e)
+	}
+	operatorCurrent, e := bearerDigest("Bearer " + operatorRotated.AccessToken)
+	if e != nil {
+		t.Fatal(e)
+	}
+	// Lost refresh responses can still be signed out using the recently consumed credential.
 	if e = owner.EndPersistent(ctx, opRefresh); e != nil {
 		t.Fatal(e)
 	}
-	if !errors.Is(oldLookupErr(operatorDigest), ErrUnauthorized) {
-		t.Fatal("explicit logout did not revoke access")
+	if !errors.Is(oldLookupErr(operatorCurrent), ErrUnauthorized) {
+		t.Fatal("explicit logout did not revoke current access")
 	}
 	// A role suspension or auth version change must block refresh, even if
 	// the refresh secret itself has not expired.
@@ -160,8 +188,8 @@ func TestPersistentIdentityPostgres(t *testing.T) {
 	if _, e = owner.RotatePersistent(ctx, merchantRefresh); !errors.Is(e, ErrUnauthorized) {
 		t.Fatalf("suspended actor renewed: %v", e)
 	}
-	// Concurrent refresh calls cannot both mint usable tokens. Reuse triggers
-	// family compromise and invalidates whichever one succeeded.
+	// Concurrent refresh requests can issue at most one pair. The losing
+	// request is rejected with conflict, without revoking the winning access.
 	_, captainDigest := issue("persistent-captain", "captain")
 	captainGrant, e := owner.StartPersistent(ctx, captainDigest)
 	if e != nil {
@@ -180,17 +208,22 @@ func TestPersistentIdentityPostgres(t *testing.T) {
 			result, e := owner.RotatePersistent(ctx, captainRefresh)
 			if e == nil {
 				successes <- result
-			} else if !errors.Is(e, ErrUnauthorized) {
+			} else if !errors.Is(e, ErrRecentRefreshConflict) {
 				t.Errorf("unexpected race error: %v", e)
 			}
 		}()
 	}
 	wg.Wait()
 	close(successes)
+	winnerCount := 0
 	for result := range successes {
+		winnerCount++
 		dig, _ := bearerDigest("Bearer " + result.AccessToken)
-		if !errors.Is(oldLookupErr(dig), ErrUnauthorized) {
-			t.Fatal("replayed family retained usable access")
+		if e = oldLookupErr(dig); e != nil {
+			t.Fatalf("concurrent loser revoked winning access: %v", e)
 		}
+	}
+	if winnerCount != 1 {
+		t.Fatalf("concurrent refresh issued %d credentials, want exactly one", winnerCount)
 	}
 }

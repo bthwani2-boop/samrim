@@ -76,7 +76,7 @@ func (h *persistentHTTP) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusUnauthorized, map[string]string{"error": "UNAUTHORIZED"})
 		return
 	}
-	if errors.Is(err, ErrPersistenceExists) {
+	if errors.Is(err, ErrPersistenceExists) || errors.Is(err, ErrRecentRefreshConflict) {
 		respond(w, http.StatusConflict, map[string]string{"error": "CONFLICT"})
 		return
 	}
