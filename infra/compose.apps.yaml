@@ -14,6 +14,7 @@ services:
       REF_POSTGRES_DB: "${REF_POSTGRES_DB:?missing isolated database}"
       DSH_DB_HOST: postgres
       DSH_DB_SCHEMA: "${REF_DSH_DISCOVERY_SCHEMA:?choose verified isolated dsh_test_* schema}"
+      BTHWANI_ISOLATED_TEST_MODE: "true"
     depends_on:
       postgres:
         condition: service_healthy

@@ -108,9 +108,12 @@ The public DSH image serves `/health` and the public Store discovery routes.
 The Compose healthcheck requires the configured DSH discovery revision row to
 be readable. A migrated schema with an empty catalog is ready. The database
 schema must have the reviewed DSH SQL migrations applied separately in the
-isolated namespace before serving. The `dsh-migrate` service can explicitly run
-migration 001 only after reviewing the target schema; it does not silently
-seed or upgrade 002/003/004/005. It is isolated under the `migration` profile,
+isolated namespace before serving. The `dsh-migrate` service supports an explicitly selected, reviewed
+migration file through the existing owner binary's `-migration` argument.
+It sets the required isolated-test mode itself, but does not auto-migrate:
+check the exact target schema and existing objects before each invocation.
+Never repeat a migration against an existing table. It does not silently
+seed or upgrade any migration. It is isolated under the `migration` profile,
 not included in routine `implementation` startup. Inspect the exact applied
 migration versions and target role before any separately authorized migration. Do not treat HTTP health as evidence of checkout,
 merchant permissions, identity authentication or finance correctness.

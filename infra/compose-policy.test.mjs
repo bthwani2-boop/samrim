@@ -66,6 +66,10 @@ test("a normal implementation profile can never implicitly run SQL migrations", 
   assert.ok(!migration.profiles.some((p) => service.profiles.includes(p)));
   assert.deepEqual(migration.entrypoint, ["/usr/local/bin/dsh", "-mode=migrate"]);
   assert.equal(migration.restart, "no");
+  assert.equal(migration.environment.BTHWANI_ISOLATED_TEST_MODE, "true",
+    "reviewed migrations must pass the owner's explicit isolation gate");
+  assert.deepEqual(migration.networks, ["isolated"]);
+  assert.equal(migration.ports, undefined, "one-shot migrations never expose a public port");
   assert.equal(service.read_only, true);
   assert.ok(service.cap_drop.includes("ALL"));
   assert.ok(service.ports.every((v) => v.startsWith("127.0.0.1:")));
