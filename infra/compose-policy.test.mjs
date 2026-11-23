@@ -57,19 +57,20 @@ test("WLT is the real isolated read-only owner and never a migration service", (
   assert.doesNotMatch(dockerfile, /post-sandbox-funding|migrate|ENTRYPOINT \["\/bin\/sh"/);
 });
 
-test("a normal implementation profile can never implicitly run SQL migrations", () => {
+test("a normal implementation profile can never implicitly bootstrap SQL", () => {
   const apps = compose("compose.apps.yaml");
   const service = apps.services.dsh;
-  const migration = apps.services["dsh-migrate"];
+  const bootstrap = apps.services["dsh-bootstrap"];
+  assert.equal(apps.services["dsh-migrate"], undefined);
   assert.deepEqual(service.profiles, ["implementation"]);
-  assert.deepEqual(migration.profiles, ["migration"]);
-  assert.ok(!migration.profiles.some((p) => service.profiles.includes(p)));
-  assert.deepEqual(migration.entrypoint, ["/usr/local/bin/dsh", "-mode=migrate"]);
-  assert.equal(migration.restart, "no");
-  assert.equal(migration.environment.BTHWANI_ISOLATED_TEST_MODE, "true",
-    "reviewed migrations must pass the owner's explicit isolation gate");
-  assert.deepEqual(migration.networks, ["isolated"]);
-  assert.equal(migration.ports, undefined, "one-shot migrations never expose a public port");
+  assert.deepEqual(bootstrap.profiles, ["bootstrap"]);
+  assert.ok(!bootstrap.profiles.some((p) => service.profiles.includes(p)));
+  assert.deepEqual(bootstrap.entrypoint, ["/usr/local/bin/dsh", "-mode=bootstrap"]);
+  assert.equal(bootstrap.restart, "no");
+  assert.equal(bootstrap.environment.BTHWANI_ISOLATED_TEST_MODE, "true",
+    "reviewed baseline must pass the owner's explicit isolation gate");
+  assert.deepEqual(bootstrap.networks, ["isolated"]);
+  assert.equal(bootstrap.ports, undefined, "one-shot bootstrap never exposes a public port");
   assert.equal(service.read_only, true);
   assert.ok(service.cap_drop.includes("ALL"));
   assert.ok(service.ports.every((v) => v.startsWith("127.0.0.1:")));

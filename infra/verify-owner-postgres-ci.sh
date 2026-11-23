@@ -110,6 +110,7 @@ start_stage() {
     /agent02/services/dsh/backend/internal/captainstanding \
     /agent02/services/dsh/backend/internal/employees
   docker cp services/identity/database/migrations "$name:/agent02/services/identity/database/migrations"
+  docker cp services/identity/database/schema "$name:/agent02/services/identity/database/schema"
   docker cp services/dsh/database/migrations "$name:/agent02/services/dsh/database/migrations"
   docker cp services/dsh/database/schema "$name:/agent02/services/dsh/database/schema"
   for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh; do
@@ -251,7 +252,8 @@ docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_wlt_
   -c "CREATE ROLE bthwani_identity_fixture LOGIN PASSWORD '$ci_password';" \
   -c "GRANT CREATE ON DATABASE bthwani_wlt_test TO bthwani_identity_fixture;"
 docker exec "$current" mkdir -p /agent02/services/wlt/database
-docker cp services/wlt/database/migrations "$current:/agent02/services/wlt/database/migrations"
+docker cp services/wlt/database/schema "$current:/agent02/services/wlt/database/schema"
+docker cp services/wlt/database/sandbox "$current:/agent02/services/wlt/database/sandbox"
 docker cp "$scratch/wlt-wallet.test" "$current:/agent02/bin/wlt-wallet.test"
 run_test "$current" /agent02/bin /agent02/bin/wlt-wallet.test \
   '^TestWalletOwnerPostgresAndIdentity$' 'TestWalletOwnerPostgresAndIdentity' \

@@ -44,55 +44,43 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	readerDSN := "postgres://bthwani_wlt_reader:synthetic-only" + network
 	identityDSN := "postgres://bthwani_identity_fixture:synthetic-only" + network
 	sandboxDSN := "postgres://bthwani_wlt_sandbox:synthetic-only" + network
-	wltMigrations := filepath.Join(fixtureRoot, "services", "wlt", "database", "migrations")
+	wltRoot := filepath.Join(fixtureRoot, "services", "wlt", "database")
 	owner := openTestDB(t, "postgres://bthwani_wlt_owner:synthetic-only"+network)
 	reader := openTestDB(t, readerDSN)
 	identity := openTestDB(t, identityDSN)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
-	migration, err := os.ReadFile(filepath.Join(wltMigrations, "001_customer_funding_journal.sql"))
-	if err != nil {
-		t.Fatal(err)
+	apply := func(dir, name string) {
+		t.Helper()
+		source, err := os.ReadFile(filepath.Join(wltRoot, dir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		executeFixture(t, ctx, owner, string(source))
 	}
-	executeFixture(t, ctx, owner, string(migration))
-	// Preserve an existing posting through both forward migrations. Only the
-	// disposable fixture owner can post it. The HTTP runtime is read-only.
+	apply("schema", "00_ledger.sql")
+	if err := checkDatabase(ctx, reader); err == nil {
+		t.Fatal("current runtime accepted a ledger without reader projections")
+	}
+	apply("schema", "10_projections.sql")
+	apply("schema", "20_permissions.sql")
+	// Post only from the isolated fixture owner; the HTTP runtime stays read-only.
+	// Preserve this exact posting while installing the separate sandbox.
 	const post = `INSERT INTO wlt.customer_funding_journal
 		(funding_id,actor_id,provider_id,provider_reference,amount_yer,currency)
 		VALUES ($1,$2,'synthetic',$3,$4,$5)`
 	executeFixture(t, ctx, owner, post, "funding-0001", "wallet-one", "synthetic-a", int64(9007199254740993), "YER")
 	var baselineBalance string
-	err = reader.QueryRowContext(ctx,
+	err := reader.QueryRowContext(ctx,
 		"SELECT balance_yer::text FROM wlt.customer_wallet_balances WHERE actor_id = $1", "wallet-one").Scan(&baselineBalance)
 	if err != nil || baselineBalance != "9007199254740993" {
-		t.Fatalf("pre-upgrade Customer balance=%q err=%v", baselineBalance, err)
+		t.Fatalf("fresh Customer balance=%q err=%v", baselineBalance, err)
 	}
-	if err := checkDatabase(ctx, reader); err == nil {
-		t.Fatal("current runtime accepted a baseline without the funding history projection")
-	}
-	historyMigration, err := os.ReadFile(filepath.Join(wltMigrations, "002_customer_funding_history.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	executeFixture(t, ctx, owner, string(historyMigration))
-	pageMigration, err := os.ReadFile(filepath.Join(wltMigrations, "003_customer_funding_history_paging.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	executeFixture(t, ctx, owner, string(pageMigration))
-	sandboxMigration, err := os.ReadFile(filepath.Join(wltMigrations, "004_sandbox_customer_funding.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	executeFixture(t, ctx, owner, string(sandboxMigration))
+	apply("sandbox", "10_test_funding.sql")
 	if err := checkDatabase(ctx, reader); err == nil {
 		t.Fatal("current runtime accepted a database without sandbox reversal support")
 	}
-	reversalMigration, err := os.ReadFile(filepath.Join(wltMigrations, "005_sandbox_customer_funding_reversal.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	executeFixture(t, ctx, owner, string(reversalMigration))
+	apply("sandbox", "20_test_reversal.sql")
 	if err := checkDatabase(ctx, reader); err != nil {
 		t.Fatal(err)
 	}
@@ -128,11 +116,13 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	}
 
 	const identitySchema = "identity_test_wlt"
-	identityMigration, err := os.ReadFile(filepath.Join(fixtureRoot, "services", "identity", "database", "migrations", "001_session_verification.sql"))
-	if err != nil {
-		t.Fatal(err)
+	for _, name := range []string{"00_identity.sql", "10_verification.sql", "20_sessions.sql", "30_operator_permissions.sql", "40_operator_passkeys.sql"} {
+		source, err := os.ReadFile(filepath.Join(fixtureRoot, "services", "identity", "database", "schema", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		executeFixture(t, ctx, identity, strings.ReplaceAll(string(source), "__SCHEMA__", identitySchema))
 	}
-	executeFixture(t, ctx, identity, strings.ReplaceAll(string(identityMigration), "__SCHEMA__", identitySchema))
 	executeFixture(t, ctx, identity, `INSERT INTO identity_test_wlt.actors(id,status)
 		VALUES ('wallet-one','ACTIVE'),('wallet-two','ACTIVE'),('wallet-empty','ACTIVE')`)
 	executeFixture(t, ctx, identity, `INSERT INTO identity_test_wlt.actor_roles(actor_id,role,status)
@@ -149,7 +139,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	one, two := session("wallet-one", "customer", 1), session("wallet-two", "customer", 2)
 	empty, merchant := session("wallet-empty", "customer", 3), session("wallet-one", "merchant", 4)
 
-	// Add postings after the upgrade and verify they coexist with the prior one.
+	// Add postings after sandbox setup and verify they coexist with the original one.
 	executeFixture(t, ctx, owner, post, "funding-0002", "wallet-two", "synthetic-b", int64(41), "YER")
 	const attempts = 8
 	results := make(chan error, attempts)

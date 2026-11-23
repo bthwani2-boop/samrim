@@ -41,4 +41,4 @@ write API. Provider authentication, production-grade evidence retention,
 checkout, withdrawals, reconciliation and production runtime remain pending.
 
 See the [API](contracts/openapi/wlt.openapi.yaml), [runtime](backend/README.md),
-[migration](database/migrations/README.md) and [finance policy](../../governance/finance.md).
+[owner baseline](database/schema/) and [finance policy](../../governance/finance.md).

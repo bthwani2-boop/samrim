@@ -33,7 +33,7 @@ secrets, applied migrations and media are never copied or changed.
 ## Optional owner service roles and DSH public discovery
 
 `compose.apps.yaml` now contains **only** the two real DSH owner roles:
-`dsh` and opt-in `dsh-migrate`. Placeholder Identity services and nonexistent bootstrap commands are not
+`dsh` and opt-in `dsh-bootstrap`. Placeholder Identity services and nonexistent bootstrap commands are not
 advertised as runnable. The separate `compose.wlt.yaml` now defines the real
 read-only WLT development owner; it is not activated by the DSH profile. Do not start the whole `implementation` profile.
 DSH public Store/Offer discovery is real; protected mutation and WLT/Order
@@ -45,12 +45,12 @@ The two overlays may be combined with the same `compose.yaml` without
 competing service definitions. The [WLT Customer balance reader](../services/wlt/backend/README.md)
 runs only as an isolated loopback process with its read-only database role.
 
-The DSH migration command now uses its own `migration` Compose profile,
+The fresh DSH bootstrap command uses its own `bootstrap` Compose profile,
 separate from `implementation`. Normal `implementation` startup cannot start
-`dsh-migrate`; migration remains an explicit, separately reviewed operation.
+`dsh-bootstrap`; bootstrap remains an explicit, separately verified operation on a new empty schema.
 Validate this invariant with `node --test infra/compose-policy.test.mjs` and
 `docker compose ... --profile implementation config --services`. Never use
-`--profile '*'`, `--profile migration up` or automatic migrations in the normal
+`--profile '*'`, `--profile bootstrap up` or automatic schema changes in the normal
 service-start path. Existing running containers and persisted volumes are not
 recreated by this file change.
 Never reuse donor images, production data or `samrim-local` volumes.
@@ -106,16 +106,14 @@ docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.y
 
 The public DSH image serves `/health` and the public Store discovery routes.
 The Compose healthcheck requires the configured DSH discovery revision row to
-be readable. A migrated schema with an empty catalog is ready. The database
-schema must have the reviewed DSH SQL migrations applied separately in the
-isolated namespace before serving. The `dsh-migrate` service supports an explicitly selected, reviewed
-migration file through the existing owner binary's `-migration` argument.
-It sets the required isolated-test mode itself, but does not auto-migrate:
-check the exact target schema and existing objects before each invocation.
-Never repeat a migration against an existing table. It does not silently
-seed or upgrade any migration. It is isolated under the `migration` profile,
-not included in routine `implementation` startup. Inspect the exact applied
-migration versions and target role before any separately authorized migration. Do not treat HTTP health as evidence of checkout,
+be readable. A freshly initialized schema with an empty catalog is ready. For a
+new verified absent `dsh_test_*` namespace, explicitly run the `dsh-bootstrap`
+one-shot service in the `bootstrap` profile after building the matching owner
+image. It uses the reviewed ordered `database/schema/` files in one transaction,
+refuses existing schemas, and does not seed or upgrade. Never run it against
+retained state or as part of normal `implementation` startup. A retained
+schema must keep its existing applied history and any separately authorized
+upgrade path until its compatibility obligations are resolved. Do not treat HTTP health as evidence of checkout,
 merchant permissions, identity authentication or finance correctness.
 
 
