@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,8 +27,8 @@ func TestCaptainJoinedOwnerMigrationSourcePaths(t *testing.T) {
 	for _, entry := range []struct {
 		owner, name string
 	}{
-		{"identity", "001_session_verification.sql"},
-		{"dsh", "006_captain_standing.sql"},
+		{"identity", "20_sessions.sql"},
+		{"dsh", "50_captains.sql"},
 	} {
 		file := filepath.Join(captainJoinedMigrationDir(entry.owner), entry.name)
 		if _, err := os.Stat(file); err != nil {
@@ -40,9 +41,9 @@ func TestCaptainJoinedOwnerMigrationSourcePaths(t *testing.T) {
 // relative to this package, not relative to the DSH service root.
 func captainJoinedMigrationDir(owner string) string {
 	if owner == "identity" {
-		return filepath.Join("..", "..", "..", "..", "identity", "database", "migrations")
+		return filepath.Join("..", "..", "..", "..", "identity", "database", "schema")
 	}
-	return filepath.Join("..", "..", "..", "database", "migrations")
+	return filepath.Join("..", "..", "..", "database", "schema")
 }
 
 // The opt-in joined acceptance test starts TWO real Go owner servers against
@@ -89,30 +90,8 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	suffix := fmt.Sprintf("%x", nonce)
 	identitySchema := "identity_test_captain_joined_" + suffix
 	dshSchema := "dsh_test_captain_joined_" + suffix
-	for _, entry := range []struct {
-		schema, root string
-		files        []string
-	}{
-		{identitySchema, "identity", []string{
-			"001_session_verification.sql", "002_operator_permission_read.sql",
-			"003_verified_customer_merchant_admission.sql", "004_customer_phone_verification.sql"}},
-		{dshSchema, "dsh", []string{
-			"001_public_discovery.sql", "002_store_orderability.sql",
-			"003_service_city_timezone.sql", "004_store_availability_city_limits.sql",
-			"005_store_operational_policy_commands.sql", "006_captain_standing.sql"}},
-	} {
-		ownerDir := captainJoinedMigrationDir(entry.root)
-		for _, file := range entry.files {
-			sqlBytes, e := os.ReadFile(filepath.Join(ownerDir, file))
-			if e != nil {
-				t.Fatalf("missing %s owner migration %s: %v", entry.root, file, e)
-			}
-			migration := strings.ReplaceAll(string(sqlBytes), "__SCHEMA__", entry.schema)
-			if _, e = db.ExecContext(ctx, migration); e != nil {
-				t.Fatalf("%s migration %s failed: %v", entry.root, file, e)
-			}
-		}
-	}
+	testfixture.Fresh(t, ctx, db, "identity", identitySchema, captainJoinedMigrationDir("identity"))
+	testfixture.Fresh(t, ctx, db, "dsh", dshSchema, captainJoinedMigrationDir("dsh"))
 
 	actors := identitySchema + ".actors"
 	roles := identitySchema + ".actor_roles"

@@ -163,8 +163,7 @@ func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch
 }
 
 func main() {
-	mode := flag.String("mode", "serve", "serve, migrate, bootstrap, or isolated-seed")
-	migrations := flag.String("migration", "database/migrations/001_public_discovery.sql", "explicit reviewed SQL migration path")
+	mode := flag.String("mode", "serve", "serve, bootstrap, or isolated-seed")
 	flag.Parse()
 	schema := os.Getenv("DSH_DB_SCHEMA")
 	if schema == "" {
@@ -187,18 +186,6 @@ func main() {
 		log.Fatal("DSH owner DB unavailable")
 	}
 	switch *mode {
-	case "migrate":
-		if !strings.HasPrefix(schema, "dsh_test_") {
-			log.Fatal("migration denied: choose a verified isolated dsh_test_* schema for this development slice")
-		}
-		data, err := os.ReadFile(*migrations)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err = owner.Migrate(ctx, data); err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println("DSH_PUBLIC_MIGRATION_PASS schema=" + schema)
 	case "bootstrap":
 		if err := owner.BootstrapFresh(ctx, "database/schema"); err != nil {
 			log.Fatal("fresh DSH baseline denied: ", err)

@@ -927,7 +927,7 @@ try {
     }
     'migrations' {
       Say 'MIGRATIONS' 'NOT_EXECUTED; owner approval and database role/schema/version verification required'
-      Say 'DSH_SQL' 'fresh: services/dsh/database/schema; retained upgrades: services/dsh/database/migrations (read/review only)'
+      Say 'DSH_SQL' 'fresh: services/dsh/database/schema; historical experimental upgrades: Git only'
       Say 'IDENTITY_SQL' 'fresh: services/identity/database/schema; retained upgrades: services/identity/database/migrations (read/review only)'
       Say 'WLT_SQL' 'fresh: services/wlt/database/schema; test-only: services/wlt/database/sandbox; historical experiments: Git history (read/review only)'
       break

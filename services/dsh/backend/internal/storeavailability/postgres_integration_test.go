@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -50,18 +51,8 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 	if err = db.PingContext(ctx); err != nil {
 		t.Fatal(err)
 	}
-	schema := "dsh_orderability_agent02"
-	for _, file := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "003_service_city_timezone.sql", "004_store_availability_city_limits.sql"} {
-		path := filepath.Join("..", "..", "..", "database", "migrations", file)
-		contents, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		sqlText := strings.ReplaceAll(string(contents), "__SCHEMA__", schema)
-		if _, err = db.ExecContext(ctx, sqlText); err != nil {
-			t.Fatalf("migration %s: %v", file, err)
-		}
-	}
+	schema := fmt.Sprintf("dsh_test_orderability_%d", time.Now().UnixNano())
+	testfixture.Fresh(t, ctx, db, "dsh", schema, filepath.Join("..", "..", "..", "database", "schema"))
 	id := fmt.Sprintf("synthetic-a02-%d", time.Now().UnixNano())
 	cityID := fmt.Sprintf("sanaa-a02-%d", time.Now().UnixNano())
 	_, err = db.ExecContext(ctx, fmt.Sprintf(`INSERT INTO %s.service_cities(id,active,timezone_name)

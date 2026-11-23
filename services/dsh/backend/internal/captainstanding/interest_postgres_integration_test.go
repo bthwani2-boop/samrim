@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -53,9 +54,7 @@ func TestCaptainInterestIsolatedPostgresDurability(t *testing.T) {
 	}
 	schema := "dsh_test_interest_" + hex.EncodeToString(suffix)
 	escaped := pq.QuoteIdentifier(schema)
-	if _, err = db.ExecContext(ctx, "CREATE SCHEMA "+escaped); err != nil {
-		t.Fatal(err)
-	}
+	testfixture.Fresh(t, ctx, db, "dsh", schema, filepath.Join("..", "..", "..", "database", "schema"))
 	defer func() {
 		cleanup, done := context.WithTimeout(context.Background(), 5*time.Second)
 		defer done()
@@ -63,13 +62,6 @@ func TestCaptainInterestIsolatedPostgresDurability(t *testing.T) {
 			t.Errorf("failed to drop only test-owned synthetic schema: %v", e)
 		}
 	}()
-	migration, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "011_captain_interest.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(migration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("DSH Captain interest migration failed: ", err)
-	}
 	repo, err := NewPostgresInterestRepository(db, schema)
 	if err != nil {
 		t.Fatal(err)

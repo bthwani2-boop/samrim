@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -127,16 +128,8 @@ func TestMerchantStoreRegistrationIsolatedPostgresDurability(t *testing.T) {
 	if err = db.QueryRowContext(ctx, "SELECT current_database()").Scan(&database); err != nil || database != "merchant_agent01" {
 		t.Fatalf("disposable database mismatch: %q %v", database, err)
 	}
-	schema := fmt.Sprintf("merchant_registration_%d", time.Now().UnixNano())
-	for _, file := range []string{"001_public_discovery.sql", "009_merchant_store_registration.sql"} {
-		data, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", file))
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(data), "__SCHEMA__", schema)); e != nil {
-			t.Fatalf("migration %s failed: %v", file, e)
-		}
-	}
+	schema := fmt.Sprintf("dsh_test_merchant_registration_%d", time.Now().UnixNano())
+	testfixture.Fresh(t, ctx, db, "dsh", schema, filepath.Join("..", "..", "..", "database", "schema"))
 	defer db.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 	if _, err = db.ExecContext(ctx, "INSERT INTO "+schema+".service_cities(id,active) VALUES('sanaa',true)"); err != nil {
 		t.Fatal(err)

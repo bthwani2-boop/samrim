@@ -26,7 +26,7 @@ type freshBaselineSource struct{ name, sql string }
 
 // BootstrapFresh installs the current DSH domain definitions in one transaction,
 // but only into a verified, entirely absent, isolated dsh_test_* schema.
-// Existing schemas remain on the immutable reviewed migration/upgrade path.
+// Existing schemas are never changed by this command.
 // baselineDirectory is the current owner's source-controlled database/schema dir.
 func (o *Owner) BootstrapFresh(ctx context.Context, baselineDirectory string) error {
 	if !o.isIsolatedTestOwner() {

@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -52,17 +52,7 @@ func TestRealPostgresVersionedCityPolicyWriterAndConcurrency(t *testing.T) {
 	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_namespace WHERE nspname=$1", schema).Scan(&preexisting); err != nil || preexisting != 0 {
 		t.Fatal("synthetic policy schema collision")
 	}
-	for _, file := range []string{"001_public_discovery.sql", "002_store_orderability.sql",
-		"003_service_city_timezone.sql", "004_store_availability_city_limits.sql",
-		"005_store_operational_policy_commands.sql"} {
-		contents, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", file))
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(contents), "__SCHEMA__", schema)); e != nil {
-			t.Fatalf("real policy migration %s failed: %v", file, e)
-		}
-	}
+	testfixture.Fresh(t, ctx, db, "dsh", schema, filepath.Join("..", "..", "..", "database", "schema"))
 	city := "policy-city-a02"
 	if _, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s.service_cities(id,active,timezone_name) VALUES ($1,true,'Asia/Aden')", schema), city); err != nil {
 		t.Fatal(err)

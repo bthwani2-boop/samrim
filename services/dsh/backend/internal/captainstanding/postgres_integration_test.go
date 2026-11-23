@@ -7,10 +7,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -51,22 +51,7 @@ func TestCaptainStandingRealPostgresOwnerLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := "dsh_test_captain_s02_" + hex.EncodeToString(random)
-	for _, migration := range []string{
-		"001_public_discovery.sql",
-		"002_store_orderability.sql",
-		"003_service_city_timezone.sql",
-		"004_store_availability_city_limits.sql",
-		"005_store_operational_policy_commands.sql",
-		"006_captain_standing.sql",
-	} {
-		sqlBytes, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", migration))
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(sqlBytes), "__SCHEMA__", schema)); e != nil {
-			t.Fatalf("DSH Captain migration %s failed: %v", migration, e)
-		}
-	}
+	testfixture.Fresh(t, ctx, db, "dsh", schema, filepath.Join("..", "..", "..", "database", "schema"))
 	repo, err := NewPostgresRepository(db, schema)
 	if err != nil {
 		t.Fatal(err)

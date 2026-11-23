@@ -11,13 +11,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -37,7 +37,7 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 		uri.User.Username() != "bthwani_agent02" || uri.Path != "/orderability_agent02" ||
 		os.Getenv("BTHWANI_DSH_TEST_CONTAINER") != "bthwani-session02-orderability-pg" ||
 		identityBinary != "/agent02/bin/identity" ||
-		sqlDir != "/agent02/services/identity/database/migrations" {
+		sqlDir != "/agent02/services/identity/database/schema" {
 		t.Fatal("refusing non-agent02 synthetic test environment")
 	}
 	db, err := sql.Open("postgres", dsn)
@@ -66,27 +66,11 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_namespace WHERE nspname=$1", identitySchema).Scan(&preexisting); err != nil || preexisting != 0 {
 		t.Fatal("Identity synthetic schema must be new")
 	}
-	for _, f := range []string{"001_session_verification.sql", "002_operator_permission_read.sql", "003_verified_customer_merchant_admission.sql"} {
-		source, e := os.ReadFile(filepath.Join(sqlDir, f))
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(source), "__SCHEMA__", identitySchema)); e != nil {
-			t.Fatalf("Identity migration %s: %v", f, e)
-		}
-	}
+	testfixture.Fresh(t, ctx, db, "identity", identitySchema, sqlDir)
 	// Each proof gets a fresh synthetic DSH schema. The actual DSH process
 	// intentionally accepts only explicitly opted-in dsh_test_* namespaces.
 	dshSchema := "dsh_test_a02_" + suffix
-	for _, f := range []string{"001_public_discovery.sql", "002_store_orderability.sql", "003_service_city_timezone.sql", "004_store_availability_city_limits.sql", "005_store_operational_policy_commands.sql"} {
-		source, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", f))
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(source), "__SCHEMA__", dshSchema)); e != nil {
-			t.Fatalf("DSH migration %s: %v", f, e)
-		}
-	}
+	testfixture.Fresh(t, ctx, db, "dsh", dshSchema, filepath.Join("..", "..", "..", "database", "schema"))
 
 	merchantA, merchantB := "merchant-a-"+suffix, "merchant-b-"+suffix
 	customer, operator := "customer-"+suffix, "operator-"+suffix

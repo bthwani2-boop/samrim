@@ -50,18 +50,6 @@ try {
   }
   Write-Output "PG_FRESH_DSH_BASELINE=PASS count=$($baseline.Count) ephemeral=yes"
 
-  # Reconstruct the retained migration history in a DIFFERENT empty namespace of
-  # this same network-disabled, tmpfs-only cluster. Keep historical files intact
-  # and compare the resulting owner objects with the canonical fresh baseline.
-  $historicSchema = 'dsh_test_history'
-  $historicalFiles = @(Get-ChildItem (Join-Path $root 'services/dsh/database/migrations') -Filter '*.sql' -File | Sort-Object Name)
-  if ($historicalFiles.Count -lt 13) { throw 'Required historical DSH upgrade fixtures are missing' }
-  foreach ($file in $historicalFiles) {
-    $sql = [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__', $historicSchema)
-    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $db -f - 2>&1
-    if ($LASTEXITCODE -ne 0) { throw ('Retained DSH historical migration failed: ' + $file.Name + ' ' + ($output | Out-String)) }
-  }
-
   # The database owner retains migration rights; a new isolated reader must not.
   $grants = @(
     "CREATE ROLE $reader NOLOGIN",
@@ -158,21 +146,6 @@ SELECT jsonb_build_object(
     }
   }
   Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,functions,revision,reader-grants,city-timezone-constraint'
-  $historicQuery = $fingerprintSql.Replace($schema, $historicSchema)
-  $historicalJson = & docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $db -c $historicQuery
-  if ($LASTEXITCODE -ne 0 -or !$historicalJson) { throw 'Cannot inspect retained historical DSH schema' }
-  $historical = ConvertFrom-Json -AsHashtable -InputObject ($historicalJson.Replace($historicSchema, $schema))
-  foreach ($property in @('columns', 'constraints', 'indexes', 'triggers', 'functions', 'revision')) {
-    $fresh = ConvertTo-Json -Depth 15 -Compress -InputObject $before[$property]
-    $retained = ConvertTo-Json -Depth 15 -Compress -InputObject $historical[$property]
-    if ($fresh -cne $retained) {
-      $difference = Compare-Object -ReferenceObject @($before[$property] | ForEach-Object { ConvertTo-Json -Compress -Depth 15 -InputObject $_ }) -DifferenceObject @($historical[$property] | ForEach-Object { ConvertTo-Json -Compress -Depth 15 -InputObject $_ })
-      $difference | Select-Object -First 8 | ForEach-Object { Write-Output "DSH_HISTORY_DIFF $($_.SideIndicator) $($_.InputObject)" }
-      throw "Fresh DSH baseline diverges from historical upgrade in $property"
-    }
-  }
-  Write-Output "PG_DSH_HISTORY_EQUIVALENCE=PASS migrations=$($historicalFiles.Count) columns,keys,indexes,triggers,functions,revision=equal"
-
   # Reuse the SAME network-disabled/tmpfs container to prove fresh Identity and
   # WLT baselines. Never connect these tests to retained or shared databases.
   $identitySchema = 'identity_test_fresh_baseline'

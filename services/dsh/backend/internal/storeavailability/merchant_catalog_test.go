@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -121,27 +122,7 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 		t.Fatalf("isolated database not verified: %v", err)
 	}
 	schema := fmt.Sprintf("dsh_test_catalog_%d", time.Now().UnixNano())
-	source, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "001_public_discovery.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(source), "__SCHEMA__", schema)); err != nil {
-		t.Fatal(err)
-	}
-	draftMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "012_catalog_draft_commands.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(draftMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal(err)
-	}
-	editMigration, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "013_catalog_draft_edits.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(editMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal(err)
-	}
+	testfixture.Fresh(t, ctx, db, "dsh", schema, filepath.Join("..", "..", "..", "database", "schema"))
 	defer db.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 	statements := []string{
 		"INSERT INTO " + schema + ".service_cities(id,active) VALUES('sanaa',true)",

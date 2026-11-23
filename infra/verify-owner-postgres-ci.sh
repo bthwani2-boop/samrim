@@ -111,7 +111,6 @@ start_stage() {
     /agent02/services/dsh/backend/internal/employees
   docker cp services/identity/database/migrations "$name:/agent02/services/identity/database/migrations"
   docker cp services/identity/database/schema "$name:/agent02/services/identity/database/schema"
-  docker cp services/dsh/database/migrations "$name:/agent02/services/dsh/database/migrations"
   docker cp services/dsh/database/schema "$name:/agent02/services/dsh/database/schema"
   for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh; do
     docker cp "$scratch/$executable" "$name:/agent02/bin/$executable"
@@ -163,7 +162,7 @@ docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -c "CREATE DATABASE bthwani_dsh_boundary_fixture OWNER bthwani_ci;" \
   -c "CREATE DATABASE bthwani_refoundation_identity_restore OWNER bthwani_ci;"
 docker exec "$current" sh -c \
-  "sed 's/__SCHEMA__/dsh_test_seed_boundary/g' /agent02/services/dsh/database/migrations/001_public_discovery.sql | psql -X -q -v ON_ERROR_STOP=1 -U bthwani_ci -d bthwani_dsh_boundary_fixture"
+  "set -e; for f in /agent02/services/dsh/database/schema/*.sql; do sed 's/__SCHEMA__/dsh_test_seed_boundary/g' \"\$f\" | psql -X -q -v ON_ERROR_STOP=1 -U bthwani_ci -d bthwani_dsh_boundary_fixture; done"
 run_test "$current" /agent02/services/identity/backend/internal/session \
   /agent02/bin/identity-session.test '^TestPostgresIdentitySessionReadback$' 'TestPostgresIdentitySessionReadback' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e IDENTITY_RESTORE_CI_TEST=true \
@@ -179,7 +178,7 @@ restored_identity="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bt
 [[ "$restored_identity" == '1' ]] || { echo "Identity restore must produce one isolated schema" >&2; exit 1; }
 echo 'IDENTITY_DISPOSABLE_RESTORE_PASS real_postgresql=true active_and_revoked_authorizations=true'
 run_test "$current" /agent02/services/dsh/backend/internal/discovery \
-  /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped)' 'TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedCaptainStandingMigration,TestOwnerBackedActiveCityDirectory,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch,TestOwnerBackedOfferEstimate' \
+  /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped|TestOwnerBootstrapFresh)' 'TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedCaptainStandingFreshBaseline,TestOwnerBootstrapFreshRollsBackIncompleteSchema,TestOwnerBootstrapFreshInstallsRealDSHAndRefusesReapply,TestOwnerBackedActiveCityDirectory,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch,TestOwnerBackedOfferEstimate' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_TEST_SEED_BOUNDARY=true \
   -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD="$ci_password" \
   -e REF_POSTGRES_DB=bthwani_refoundation \
@@ -202,7 +201,7 @@ run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
   -e BTHWANI_DSH_TEST_CONTAINER=bthwani-session02-orderability-pg \
   -e BTHWANI_DSH_TEST_DATABASE_URL="postgres://bthwani_agent02:${ci_password}@127.0.0.1:5432/orderability_agent02?sslmode=disable" \
   -e BTHWANI_IDENTITY_TEST_BINARY=/agent02/bin/identity \
-  -e BTHWANI_IDENTITY_TEST_SQL_DIR=/agent02/services/identity/database/migrations
+  -e BTHWANI_IDENTITY_TEST_SQL_DIR=/agent02/services/identity/database/schema
 finish_stage
 
 start_stage bthwani-session02-captain-pg bt_cap_s02 refoundation_captain_agent02
@@ -213,7 +212,7 @@ run_test "$current" /agent02/services/identity/backend/internal/session \
   -e BTHWANI_CAPTAIN_TEST_DATABASE_URL="postgres://bt_cap_s02:${ci_password}@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable"
 run_test "$current" /agent02/services/dsh/backend/internal/captainstanding \
   /agent02/bin/dsh-captainstanding.test \
-  '^(TestCaptainStandingRealPostgresOwnerLifecycle|TestCaptainJoinedRealHTTPAndPostgres)$' 'TestCaptainStandingRealPostgresOwnerLifecycle,TestCaptainJoinedRealHTTPAndPostgres' \
+  '^(TestCaptainStandingRealPostgresOwnerLifecycle|TestCaptainJoinedRealHTTPAndPostgres|TestCaptainInterestIsolatedPostgresDurability)$' 'TestCaptainStandingRealPostgresOwnerLifecycle,TestCaptainJoinedRealHTTPAndPostgres,TestCaptainInterestIsolatedPostgresDurability' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e BTHWANI_CAPTAIN_JOINED_HTTP_TEST=true \
   -e BTHWANI_CAPTAIN_TEST_CONTAINER=bthwani-session02-captain-pg \
   -e BTHWANI_CAPTAIN_TEST_DATABASE_URL="postgres://bt_cap_s02:${ci_password}@127.0.0.1:5432/refoundation_captain_agent02?sslmode=disable"

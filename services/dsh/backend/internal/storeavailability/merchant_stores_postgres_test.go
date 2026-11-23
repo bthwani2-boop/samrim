@@ -6,13 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 )
@@ -91,14 +91,8 @@ func TestMerchantOwnedStoresRealPostgresAndHTTPReadback(t *testing.T) {
 		t.Fatalf("unexpected database %q, err=%v", database, err)
 	}
 
-	schema := fmt.Sprintf("merchant_session01_%d", time.Now().UnixNano())
-	baseline, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "001_public_discovery.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(baseline), "__SCHEMA__", schema)); err != nil {
-		t.Fatalf("synthetic DSH schema migration: %v", err)
-	}
+	schema := fmt.Sprintf("dsh_test_merchant_session01_%d", time.Now().UnixNano())
+	testfixture.Fresh(t, ctx, db, "dsh", schema, filepath.Join("..", "..", "..", "database", "schema"))
 	defer db.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 
 	if _, err = db.ExecContext(ctx, "INSERT INTO "+schema+".service_cities(id,active) VALUES('sanaa-merchant01',true)"); err != nil {
