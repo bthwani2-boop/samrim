@@ -50,6 +50,18 @@ try {
   }
   Write-Output "PG_FRESH_DSH_BASELINE=PASS count=$($baseline.Count) ephemeral=yes"
 
+  # Reconstruct the retained migration history in a DIFFERENT empty namespace of
+  # this same network-disabled, tmpfs-only cluster. Keep historical files intact
+  # and compare the resulting owner objects with the canonical fresh baseline.
+  $historicSchema = 'dsh_test_history'
+  $historicalFiles = @(Get-ChildItem (Join-Path $root 'services/dsh/database/migrations') -Filter '*.sql' -File | Sort-Object Name)
+  if ($historicalFiles.Count -lt 13) { throw 'Required historical DSH upgrade fixtures are missing' }
+  foreach ($file in $historicalFiles) {
+    $sql = [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__', $historicSchema)
+    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $db -f - 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ('Retained DSH historical migration failed: ' + $file.Name + ' ' + ($output | Out-String)) }
+  }
+
   # The database owner retains migration rights; a new isolated reader must not.
   $grants = @(
     "CREATE ROLE $reader NOLOGIN",
@@ -117,6 +129,9 @@ SELECT jsonb_build_object(
   'triggers', (SELECT jsonb_agg(pg_get_triggerdef(t.oid) ORDER BY cl.relname, t.tgname)
                FROM pg_trigger t JOIN pg_class cl ON cl.oid = t.tgrelid
                WHERE cl.relnamespace = '$schema'::regnamespace AND NOT t.tgisinternal),
+  'functions', (SELECT jsonb_agg(jsonb_build_array(p.proname, pg_get_function_identity_arguments(p.oid),
+                      pg_get_functiondef(p.oid)) ORDER BY p.proname, pg_get_function_identity_arguments(p.oid))
+                 FROM pg_proc p WHERE p.pronamespace = '$schema'::regnamespace),
   'revision', (SELECT revision FROM $schema.public_revision WHERE singleton)
 );
 "@
@@ -129,7 +144,7 @@ SELECT jsonb_build_object(
   $after = Read-Fingerprint $restoreDb
   # Column nullability is compared directly. PostgreSQL 18 can generate new
   # internal constraint names for inline NOT NULL while recreating a table.
-  foreach ($property in @('columns', 'constraints', 'indexes', 'triggers', 'revision')) {
+  foreach ($property in @('columns', 'constraints', 'indexes', 'triggers', 'functions', 'revision')) {
     $original = ConvertTo-Json -Depth 12 -Compress -InputObject $before[$property]
     $restored = ConvertTo-Json -Depth 12 -Compress -InputObject $after[$property]
     if ($original -cne $restored) {
@@ -142,7 +157,21 @@ SELECT jsonb_build_object(
       throw "Synthetic backup/restore mismatch in $property"
     }
   }
-  Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,revision,reader-grants,city-timezone-constraint'
+  Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,functions,revision,reader-grants,city-timezone-constraint'
+  $historicQuery = $fingerprintSql.Replace($schema, $historicSchema)
+  $historicalJson = & docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $db -c $historicQuery
+  if ($LASTEXITCODE -ne 0 -or !$historicalJson) { throw 'Cannot inspect retained historical DSH schema' }
+  $historical = ConvertFrom-Json -AsHashtable -InputObject ($historicalJson.Replace($historicSchema, $schema))
+  foreach ($property in @('columns', 'constraints', 'indexes', 'triggers', 'functions', 'revision')) {
+    $fresh = ConvertTo-Json -Depth 15 -Compress -InputObject $before[$property]
+    $retained = ConvertTo-Json -Depth 15 -Compress -InputObject $historical[$property]
+    if ($fresh -cne $retained) {
+      $difference = Compare-Object -ReferenceObject @($before[$property] | ForEach-Object { ConvertTo-Json -Compress -Depth 15 -InputObject $_ }) -DifferenceObject @($historical[$property] | ForEach-Object { ConvertTo-Json -Compress -Depth 15 -InputObject $_ })
+      $difference | Select-Object -First 8 | ForEach-Object { Write-Output "DSH_HISTORY_DIFF $($_.SideIndicator) $($_.InputObject)" }
+      throw "Fresh DSH baseline diverges from historical upgrade in $property"
+    }
+  }
+  Write-Output "PG_DSH_HISTORY_EQUIVALENCE=PASS migrations=$($historicalFiles.Count) columns,keys,indexes,triggers,functions,revision=equal"
 
   # Reuse the SAME network-disabled/tmpfs container to prove fresh Identity and
   # WLT baselines. Never connect these tests to retained or shared databases.
