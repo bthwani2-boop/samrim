@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,6 +25,17 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const srcCode = readFileSync(path.join(tmp, "merchant-catalog-draft-form.js"), "utf8");
     let idCount = 0;
+    const storage = new Map();
+    let failWrite = false;
+    const localStorage = {
+      getItem: key => storage.get(key) ?? null,
+      setItem(key, value) {
+        if (failWrite) throw new Error("storage blocked");
+        storage.set(key, value);
+      },
+      removeItem: key => storage.delete(key),
+    };
+    const platform = { OS: "web" };
     const pending = [];
     const hooks = [];
     const effects = [];
@@ -65,7 +77,16 @@ test("Merchant draft form retries the identical operation after unknown outcome 
           warningText: "warn", successText: "good",
         } }),
       },
-      "expo-crypto": { randomUUID: () => `draft-operation-${++idCount}` },
+      "expo-crypto": {
+        randomUUID: () => `draft-operation-${++idCount}`,
+        CryptoDigestAlgorithm: { SHA256: "sha256" },
+        digestStringAsync: async (algorithm, value) => createHash(algorithm).update(value).digest("hex"),
+      },
+      "expo-secure-store": {
+        getItemAsync: async key => localStorage.getItem(key),
+        setItemAsync: async (key, value) => localStorage.setItem(key, value),
+        deleteItemAsync: async key => localStorage.removeItem(key),
+      },
       "../access/admission-transport": {
         submitMerchantCatalogDraft(storeId, actorId, change, signal) {
           const request = { storeId, actorId, change, signal };
@@ -81,14 +102,14 @@ test("Merchant draft form retries the identical operation after unknown outcome 
       react,
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
       "react-native": {
-        Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View",
+        Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View", Platform: platform,
       },
     };
     const mod = { exports: {} };
-    new Function("require", "module", "exports", srcCode)(name => {
-      assert.ok(Object.hasOwn(mocks, name), "unexpected module: " + name);
+    new Function("require", "module", "exports", "window", srcCode)(name => {
+      assert.ok(Object.hasOwn(mocks, name), `unexpected module: ${name}`);
       return mocks[name];
-    }, mod, mod.exports);
+    }, mod, mod.exports, { localStorage });
     let created = 0;
     function render(actorId = "merchant-a", storeId = "store-a", draft) {
       hooksCursor = 0;
@@ -100,6 +121,14 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     function namedInput(tree, label) {
       return nodes(tree).find(n => n.type === "TextInput" && n.props.accessibilityLabel === label);
     }
+    function restart() {
+      for (const effect of effects) effect?.cleanup?.();
+      hooks.length = 0;
+      effects.length = 0;
+    }
+    const settle = () => new Promise(setImmediate);
+    render();
+    await settle();
     let tree = render();
     namedInput(tree, "اسم المنتج").props.onChangeText("منتج جديد");
     namedInput(render(), "السعر بالريال اليمني").props.onChangeText("١٥٠٠");
@@ -108,25 +137,45 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     const save = nodes(tree).find(n => n.type === "Pressable" && n.props.accessibilityLabel === "حفظ مسودة المنتج");
     assert.ok(save && !save.props.disabled);
     save.props.onPress();
+    await settle();
     assert.equal(pending.length, 1);
     assert.equal(pending[0].change.priceYer, "1500");
     assert.equal(pending[0].change.operationId, "draft-operation-1");
     assert.deepEqual(Object.keys(pending[0].change).sort(), ["name", "operationId", "priceYer", "stockUnits"]);
+    assert.equal(storage.size, 1, "save the operation before dispatch");
+    assert.doesNotMatch([...storage.values()][0], /منتج جديد|1500|store-a|merchant-a/);
     const first = pending[0];
     first.reject(new Error("ack lost after COMMIT"));
     await new Promise(setImmediate);
     tree = render();
     const retry = nodes(tree).find(n => n.type === "Pressable" &&
-      n.props.accessibilityLabel === "إعادة تأكيد إنشاء المسودة");
+      n.props.accessibilityLabel === "إعادة تأكيد المسودة");
     assert.ok(retry, "uncertain mutation must offer same-key retry");
     assert.equal(namedInput(tree, "اسم المنتج").props.editable, false);
-    retry.props.onPress();
+    restart();
+    render("merchant-b", "store-a");
+    await settle();
+    assert.ok(!nodes(render("merchant-b", "store-a")).some(n => n.props?.accessibilityLabel === "إعادة تأكيد المسودة"));
+    render();
+    await settle();
+    const restore = nodes(render()).find(n => n.props?.accessibilityLabel === "إعادة تأكيد المسودة");
+    assert.ok(restore, "restored account must recover the pending operation");
+    namedInput(render(), "اسم المنتج").props.onChangeText("منتج مختلف");
+    namedInput(render(), "السعر بالريال اليمني").props.onChangeText("1500");
+    namedInput(render(), "عدد الوحدات").props.onChangeText("3");
+    nodes(render()).find(n => n.props?.accessibilityLabel === "إعادة تأكيد المسودة").props.onPress();
+    await settle();
+    assert.equal(pending.length, 1, "a different payload must not replace an uncertain command");
+    namedInput(render(), "اسم المنتج").props.onChangeText("منتج جديد");
+    nodes(render()).find(n => n.props?.accessibilityLabel === "إعادة تأكيد المسودة").props.onPress();
+    await settle();
     assert.equal(pending.length, 2);
     assert.deepEqual(pending[1].change, first.change);
     assert.equal(idCount, 1);
     pending[1].resolve({ replay: true });
     await new Promise(setImmediate);
     assert.equal(created, 1);
+    assert.equal(storage.size, 0, "clear the replay marker after owner confirmation");
     tree = render();
     assert.equal(namedInput(tree, "اسم المنتج").props.value, "");
     assert.ok(nodes(tree).some(n => n.props?.accessibilityLabel === "حفظ مسودة المنتج"));
@@ -140,7 +189,10 @@ test("Merchant draft form retries the identical operation after unknown outcome 
       published: false, available: false, productActive: false,
       variantSellable: false, requiredAttributesValid: false,
     };
+    restart();
+    platform.OS = "android";
     render("merchant-a", "store-a", existingDraft);
+    await settle();
     tree = render("merchant-a", "store-a", existingDraft);
     assert.equal(namedInput(tree, "اسم المنتج").props.value, "مسودة أصلية");
     assert.equal(namedInput(tree, "السعر بالريال اليمني").props.value, "5000");
@@ -149,25 +201,51 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     const update = nodes(tree).find(n => n.type === "Pressable" &&
       n.props.accessibilityLabel === "حفظ تعديل المسودة");
     assert.ok(update && !update.props.disabled);
+    failWrite = true;
     update.props.onPress();
+    await settle();
+    assert.equal(pending.length, 2, "a failed write to recovery storage must prevent dispatch");
+    failWrite = false;
+    nodes(render("merchant-a", "store-a", existingDraft))
+      .find(n => n.props?.accessibilityLabel === "حفظ تعديل المسودة").props.onPress();
+    await settle();
     assert.equal(pending.length, 3);
     assert.equal(pending[2].offerId, existingDraft.id);
     assert.equal(pending[2].change.expectedVersion, 1);
     assert.equal(pending[2].change.name, "مسودة معدلة");
-    assert.equal(pending[2].change.operationId, "draft-operation-2");
+    assert.equal(pending[2].change.operationId, "draft-operation-3");
     pending[2].reject(new Error("edit commit acknowledged by SQL but network failed"));
     await new Promise(setImmediate);
-    tree = render("merchant-a", "store-a", existingDraft);
+    restart();
+    const updatedDraft = { ...existingDraft, draftVersion: 2 };
+    render("merchant-a", "store-a", updatedDraft);
+    await settle();
+    namedInput(render("merchant-a", "store-a", updatedDraft), "اسم المنتج").props.onChangeText("مسودة معدلة");
+    tree = render("merchant-a", "store-a", updatedDraft);
     const retryEdit = nodes(tree).find(n => n.type === "Pressable" &&
-      n.props.accessibilityLabel === "إعادة تأكيد إنشاء المسودة");
+      n.props.accessibilityLabel === "إعادة تأكيد المسودة");
     assert.ok(retryEdit);
     retryEdit.props.onPress();
+    await settle();
     assert.equal(pending.length, 4);
     assert.deepEqual(pending[3].change, pending[2].change);
-    assert.equal(idCount, 2);
+    assert.equal(idCount, 3);
     pending[3].resolve({ replay: true });
     await new Promise(setImmediate);
     assert.equal(created, 2);
+
+    restart();
+    render("merchant-a", "store-a", updatedDraft);
+    await settle();
+    namedInput(render("merchant-a", "store-a", updatedDraft), "اسم المنتج").props.onChangeText("تعديل متزامن");
+    nodes(render("merchant-a", "store-a", updatedDraft))
+      .find(n => n.props?.accessibilityLabel === "حفظ تعديل المسودة").props.onPress();
+    await settle();
+    pending[4].reject({ status: 409, code: "CATALOG_DRAFT_VERSION_CONFLICT" });
+    await settle();
+    assert.equal(storage.size, 0, "DSH confirmed this version conflict did not apply the edit");
+    assert.ok(nodes(render("merchant-a", "store-a", updatedDraft))
+      .some(n => n.props?.accessibilityLabel === "تحديث مسودة الكتالوج"));
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
