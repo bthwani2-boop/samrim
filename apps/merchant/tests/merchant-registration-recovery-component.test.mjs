@@ -6,6 +6,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import {
+  matchingPendingMerchantRegistration,
+  parsePendingMerchantRegistration,
+} from "../src/features/onboarding/merchant-registration-attempt.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const source = fileURLToPath(new URL("../src/features/onboarding/merchant-store-registration.tsx", import.meta.url));
@@ -112,16 +116,8 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
       },
     },
     "./merchant-registration-attempt": {
-      parsePendingMerchantRegistration(raw) {
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        if (!/^[a-f0-9]{64}$/.test(parsed.fingerprint) ||
-          !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parsed.operationId)) return null;
-        return parsed;
-      },
-      matchingPendingMerchantRegistration(pending, fingerprint) {
-        return !pending || pending.fingerprint === fingerprint;
-      },
+      parsePendingMerchantRegistration,
+      matchingPendingMerchantRegistration,
     },
   };
   const mod = { exports: {} };
