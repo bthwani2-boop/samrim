@@ -17,9 +17,17 @@ func isolatedCaptainStandingHandler(db *sql.DB, schema string, next http.Handler
 	if os.Getenv("DSH_ENABLE_ISOLATED_CAPTAIN_STANDING") != "true" {
 		return next, nil
 	}
-	host, _, err := net.SplitHostPort(os.Getenv("DSH_LISTEN_ADDR"))
-	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || (host != "127.0.0.1" && host != "::1") || err != nil {
-		return nil, fmt.Errorf("Captain standing endpoint requires isolated loopback development")
+	listen := os.Getenv("DSH_LISTEN_ADDR")
+	host, _, err := net.SplitHostPort(listen)
+	loopback := err == nil && (host == "127.0.0.1" || host == "::1")
+	// The only permitted container variant is the existing isolated DSH
+	// runtime, whose host port is published on Lenovo loopback by Compose.
+	container := os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" &&
+		listen == "0.0.0.0:8080" &&
+		os.Getenv("DSH_IDENTITY_VERIFIER_URL") == isolatedDSHVerifierURL
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
+		!isolatedDSHSchema.MatchString(schema) || (!loopback && !container) {
+		return nil, fmt.Errorf("Captain standing requires isolated DSH schema and verified transport")
 	}
 	repo, err := captainstanding.NewPostgresRepository(db, schema)
 	if err != nil {

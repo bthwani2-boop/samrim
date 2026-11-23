@@ -107,6 +107,10 @@ test("Merchant development overlay adds only private TLS and read-side standing"
   assert.deepEqual(Object.keys(overlay.services).sort(), ["dsh", "identity"]);
   const { dsh, identity } = overlay.services;
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_MERCHANT_STANDING, "true");
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_STANDING,
+    "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING:-false}");
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST,
+    "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST:-false}");
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_STORE_AVAILABILITY, undefined);
   assert.equal(dsh.environment.DSH_IDENTITY_VERIFIER_URL, "https://identity:3343");
   assert.equal(dsh.environment.SSL_CERT_FILE, "/run/identity-ca/ca.pem");
