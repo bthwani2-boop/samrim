@@ -148,7 +148,7 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
 
   return (
     <main style={{ maxWidth: 900, marginInline: "auto", paddingBlock: 24 }} dir="rtl">
-      <Typography.Title level={2}>سياسة قبول المتاجر الجديدة</Typography.Title>
+      <Typography.Title level={1}>سياسة قبول المتاجر الجديدة</Typography.Title>
       <Typography.Paragraph>
         يملك DSH قبول المتاجر الجديدة لكل مدينة وطريقة عمل. هذه السياسة لا تنشر متجرًا،
         ولا تمنح دور التاجر في Identity، ولا تفعّل الطلبات أو أي تسوية لدى WLT.

@@ -134,7 +134,7 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
 
   return (
     <main style={{ maxWidth: 900, marginInline: "auto", paddingBlock: 24 }}>
-      <Typography.Title level={2}>السياسات</Typography.Title>
+      <Typography.Title level={1}>السياسات</Typography.Title>
       <Typography.Paragraph>
         إدارة حدود إتاحة المتاجر لكل مدينة عبر DSH. تتطلب جلسة Operator وصلاحية
         <code> platform_policies </code> مؤكَّدتين من Identity؛ ولا تغيّر الطلبات أو الاتفاقيات المالية.

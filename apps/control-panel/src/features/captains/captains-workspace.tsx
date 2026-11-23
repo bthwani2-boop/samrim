@@ -81,7 +81,7 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
 
   return (
     <main style={{ padding: 24, maxWidth: 1100, marginInline: "auto" }} aria-labelledby="captains-heading">
-      <Typography.Title level={2} id="captains-heading">{title}</Typography.Title>
+      <Typography.Title level={1} id="captains-heading">{title}</Typography.Title>
       <Typography.Paragraph>مراجعة الحالة التشغيلية الحالية لدى DSH. هذه شاشة قراءة فقط؛ لا تمنح صلاحيات الكابتن ولا تغيّر حالته.</Typography.Paragraph>
       <Space wrap style={{ marginBottom: 16 }}>
         <Select aria-label="تصفية حالة الكباتن" value={status} style={{ minWidth: 180 }}

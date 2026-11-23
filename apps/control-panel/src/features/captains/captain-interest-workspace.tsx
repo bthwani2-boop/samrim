@@ -123,7 +123,7 @@ export default function CaptainInterestWorkspace() {
 
   return (
     <main style={{ padding: 24, maxWidth: 1220, marginInline: "auto" }} aria-labelledby="captain-interest-heading">
-      <Typography.Title level={2} id="captain-interest-heading">تسجيلات الراغبين بالانضمام ككباتن</Typography.Title>
+      <Typography.Title level={1} id="captain-interest-heading">تسجيلات الراغبين بالانضمام ككباتن</Typography.Title>
       <Typography.Paragraph>
         بيانات اتصال داخلية فقط. لا تُنشئ حساب كابتن ولا يتلقى المتقدم تحديثات.
         اختر من تريد التواصل معه هاتفيًا.
