@@ -119,7 +119,8 @@ test("Merchant development overlay adds only private TLS and read-side standing"
     "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING:-false}");
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST,
     "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST:-false}");
-  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_STORE_AVAILABILITY, undefined);
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_STORE_AVAILABILITY,
+    "${REF_DSH_ENABLE_ISOLATED_STORE_AVAILABILITY:-false}", "Store operations and policy history require their own explicit opt-in");
   assert.equal(dsh.environment.DSH_IDENTITY_VERIFIER_URL, "https://identity:3343");
   assert.equal(dsh.environment.SSL_CERT_FILE, "/run/identity-ca/ca.pem");
   assert.deepEqual(dsh.volumes, ["merchant-identity-ca:/run/identity-ca:ro"]);

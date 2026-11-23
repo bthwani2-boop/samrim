@@ -25,15 +25,22 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 		return public, nil
 	}
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
-		!strings.HasPrefix(schema, "dsh_test_") || len(schema) <= len("dsh_test_") {
+		!isolatedDSHSchema.MatchString(schema) {
 		return nil, fmt.Errorf("protected Store operations require a dedicated dsh_test_* database schema")
 	}
-	// A protected development endpoint must not inherit the public :8080
-	// wildcard bind. This opt-in is loopback-only until a separately reviewed
-	// container deployment with explicit network isolation exists.
-	listenHost, _, parseErr := net.SplitHostPort(os.Getenv("DSH_LISTEN_ADDR"))
-	if parseErr != nil || (listenHost != "127.0.0.1" && listenHost != "::1") {
-		return nil, fmt.Errorf("isolated Store availability requires explicit loopback DSH_LISTEN_ADDR")
+	listen := os.Getenv("DSH_LISTEN_ADDR")
+	if !isolatedAvailabilityTransport(listen, os.Getenv) {
+		return nil, fmt.Errorf("isolated Store availability requires explicit loopback or the verified isolated container transport")
+	}
+	// An explicit container opt-in must also prove the real owner database and
+	// required tables. A similarly named namespace or a missing audit does not
+	// qualify, and no bootstrap/upgrade is run from the serving process.
+	if listen == "0.0.0.0:8080" {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		if err := verifyAvailabilityContainerDatabase(ctx, db, schema); err != nil {
+			return nil, err
+		}
 	}
 	identity, err := storeavailability.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
 	if err != nil {

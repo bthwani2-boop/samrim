@@ -11,7 +11,10 @@ services:
       BTHWANI_ISOLATED_TEST_MODE: "true"
       BTHWANI_ISOLATED_CONTAINER_MODE: "true"
       DSH_ENABLE_ISOLATED_MERCHANT_STANDING: "true"
-      # Additional roles require separate opt-in and verified DSH migrations.
+      # Separate isolated Store availability / city-policy capability. The
+      # serving process verifies the existing owner schema; it never installs it.
+      DSH_ENABLE_ISOLATED_STORE_AVAILABILITY: "${REF_DSH_ENABLE_ISOLATED_STORE_AVAILABILITY:-false}"
+      # Additional roles require separate opt-in and verified DSH owner schema.
       DSH_ENABLE_ISOLATED_CAPTAIN_STANDING: "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING:-false}"
       DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST: "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST:-false}"
       DSH_LISTEN_ADDR: "0.0.0.0:8080"
