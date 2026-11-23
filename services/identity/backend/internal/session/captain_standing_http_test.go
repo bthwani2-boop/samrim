@@ -2,10 +2,15 @@ package session
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -81,5 +86,53 @@ func TestCaptainDSHTransportFailureIsOwnerUnavailable(t *testing.T) {
 	cancel()
 	if got := client.Approved(ctx, "customer-bearer", "verified-id"); !errors.Is(got, ErrCaptainStandingOwnerUnavailable) {
 		t.Fatalf("cancelled owner read incorrectly treated as an eligibility denial: %v", got)
+	}
+}
+
+func TestCaptainContainerPeerAndDedicatedTLSRoots(t *testing.T) {
+	s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, "{\"actorId\":\"verified-id\",\"status\":\"APPROVED\",\"version\":1}")
+	}))
+	defer s.Close()
+	dir := t.TempDir()
+	ca := filepath.Join(dir, "ca.pem")
+	if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: s.Certificate().Raw}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, origin := range []string{"http://dsh:3344", "https://other:3344", "https://dsh:3344/path", "http://127.0.0.1:3344", "https://dsh:3345"} {
+		if _, err := NewContainerCaptainStandingHTTP(origin, ca); err == nil {
+			t.Fatalf("unsafe origin accepted: %s", origin)
+		}
+	}
+	for _, path := range []string{"", filepath.Join(dir, "absent")} {
+		if _, err := NewContainerCaptainStandingHTTP("https://dsh:3344", path); err == nil {
+			t.Fatal("missing CA accepted")
+		}
+	}
+	peer, err := NewContainerCaptainStandingHTTP("https://dsh:3344", ca)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport, ok := peer.client.Transport.(*http.Transport)
+	if !ok || transport.TLSClientConfig.InsecureSkipVerify || transport.TLSClientConfig.MinVersion < tls.VersionTLS12 || transport.Proxy != nil {
+		t.Fatal("insecure container transport")
+	}
+	// Exercise the same transport against a real TLS server, including hostname
+	// and trust failures; the public constructor above pins the container origin.
+	trusted, err := newCaptainStandingHTTP(s.URL, transport.TLSClientConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = trusted.Approved(context.Background(), "opaque-bearer", "verified-id"); err != nil {
+		t.Fatal(err)
+	}
+	wrongRoots, _ := newCaptainStandingHTTP(s.URL, &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: x509.NewCertPool()})
+	if err = wrongRoots.Approved(context.Background(), "opaque-bearer", "verified-id"); !errors.Is(err, ErrCaptainStandingOwnerUnavailable) {
+		t.Fatalf("untrusted peer accepted: %v", err)
+	}
+	wrongName, _ := newCaptainStandingHTTP(s.URL, &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: transport.TLSClientConfig.RootCAs, ServerName: "wrong.invalid"})
+	if err = wrongName.Approved(context.Background(), "opaque-bearer", "verified-id"); !errors.Is(err, ErrCaptainStandingOwnerUnavailable) {
+		t.Fatalf("wrong peer name accepted: %v", err)
 	}
 }

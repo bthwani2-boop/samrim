@@ -400,3 +400,17 @@ names before/after. Check a fresh database contains no business tables.
 HTTP 200 and healthy Docker containers do NOT prove Go implementation,
 authorization, ledger invariants, Android/iOS journeys or production readiness.
 Production and GitHub merge remain separately blocked until their gates pass.
+
+### Isolated Captain admission
+
+Layer compose.captain-development.yaml after the existing Merchant TLS overlay
+only in the explicitly approved synthetic development project. DSH serves only
+GET /v1/actors/me/captain-eligibility on its private TLS listener 3344; the same
+DSH handler verifies the current Customer with the existing Identity TLS
+listener. Identity accepts only https://dsh:3344 in container mode and uses a
+dedicated DSH trust anchor, not insecure TLS or caller-supplied standing.
+Provision the external captain-dsh-tls volume with server.pem (DNS SAN dsh)
+and server-key.pem (readable only by UID 65532), and the captain-dsh-ca volume
+with ca.pem. Keep CA signing material outside both runtime containers.
+Do not publish 3344 or change the existing Identity TLS mounts. The overlay
+does not create, approve, reactivate, or seed any Captain account.

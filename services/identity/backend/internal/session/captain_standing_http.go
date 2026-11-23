@@ -3,12 +3,15 @@ package session
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -28,6 +31,27 @@ type CaptainStandingHTTP struct {
 }
 
 func NewCaptainStandingHTTP(base string) (*CaptainStandingHTTP, error) {
+	return newCaptainStandingHTTP(base, nil)
+}
+
+// Container admission has one exact private DSH peer and a dedicated trust
+// anchor. Local loopback integration retains the existing constructor.
+func NewContainerCaptainStandingHTTP(base, caPath string) (*CaptainStandingHTTP, error) {
+	if base != "https://dsh:3344" || caPath == "" {
+		return nil, errors.New("Captain standing requires the isolated DSH TLS peer")
+	}
+	pem, err := os.ReadFile(caPath)
+	if err != nil {
+		return nil, errors.New("Captain standing trust anchor unavailable")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(pem) {
+		return nil, errors.New("Captain standing trust anchor invalid")
+	}
+	return newCaptainStandingHTTP(base, &tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots})
+}
+
+func newCaptainStandingHTTP(base string, config *tls.Config) (*CaptainStandingHTTP, error) {
 	root, err := url.Parse(base)
 	if err != nil || root.Host == "" || root.User != nil || root.Opaque != "" ||
 		root.Fragment != "" || root.RawQuery != "" || (root.Path != "" && root.Path != "/") ||
@@ -36,7 +60,12 @@ func NewCaptainStandingHTTP(base string) (*CaptainStandingHTTP, error) {
 		return nil, errors.New("unsafe DSH Captain standing origin")
 	}
 	root.Path = "/v1/actors/me/captain-eligibility"
+	var transport http.RoundTripper
+	if config != nil {
+		transport = &http.Transport{TLSClientConfig: config}
+	}
 	return &CaptainStandingHTTP{endpoint: root.String(), client: &http.Client{
+		Transport:     transport,
 		Timeout:       3 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil

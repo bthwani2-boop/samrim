@@ -233,6 +233,17 @@ func main() {
 		if err != nil {
 			log.Fatal("DSH employee directory cannot start: ", err)
 		}
+		secureCaptain, err := isolatedCaptainTLS(schema, os.Getenv, handler)
+		if err != nil {
+			log.Fatal("DSH private Captain standing TLS cannot start: ", err)
+		}
+		if secureCaptain != nil {
+			listener, err := net.Listen("tcp", secureCaptain.Addr)
+			if err != nil {
+				log.Fatal("DSH private Captain standing TLS listener unavailable")
+			}
+			go func() { log.Fatal(secureCaptain.ServeTLS(listener, "", "")) }()
+		}
 		server := &http.Server{
 			Addr:              addr,
 			Handler:           handler,

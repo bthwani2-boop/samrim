@@ -128,3 +128,20 @@ test("Merchant development overlay adds only private TLS and read-side standing"
   assert.equal(identity.ports, undefined);
   assert.equal(dsh.ports, undefined);
 });
+
+test("Captain admission uses only the private DSH TLS owner and a dedicated trust volume", () => {
+  const overlay = compose("compose.captain-development.yaml");
+  const { identity, dsh } = overlay.services;
+  assert.equal(identity.environment.IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION, "true");
+  assert.equal(identity.environment.IDENTITY_DSH_CAPTAIN_STANDING_URL, "https://dsh:3344");
+  assert.equal(identity.environment.IDENTITY_DSH_CAPTAIN_STANDING_CA, "/run/dsh-captain-ca/ca.pem");
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_STANDING, "true");
+  assert.equal(dsh.environment.DSH_ISOLATED_CAPTAIN_TLS_CERT, "/run/dsh-captain-tls/server.pem");
+  assert.equal(dsh.environment.DSH_ISOLATED_CAPTAIN_TLS_KEY, "/run/dsh-captain-tls/server-key.pem");
+  assert.deepEqual(identity.volumes, ["captain-dsh-ca:/run/dsh-captain-ca:ro"]);
+  assert.deepEqual(dsh.volumes, ["captain-dsh-tls:/run/dsh-captain-tls:ro"]);
+  assert.equal(identity.ports, undefined);
+  assert.equal(dsh.ports, undefined);
+  assert.equal(overlay.volumes["captain-dsh-ca"].external, true);
+  assert.equal(overlay.volumes["captain-dsh-tls"].external, true);
+});
