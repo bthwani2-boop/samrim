@@ -163,11 +163,13 @@ if ($Surface) {
         }
         Write-Warning 'CAPTAIN_NATIVE_ADMISSION_DISABLED_DSH_ROUTE_NOT_ACTIVATED'
       }
+      # Identity's isolated phone entry is independent of DSH standing.
+      # Keep the real phone form visible but do not permit code consumption
+      # or workspace admission until DSH's owner endpoint is available.
+      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
       if ($captainStandingReady) {
-        $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
         $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
       } else {
-        Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN -ErrorAction SilentlyContinue
         Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN -ErrorAction SilentlyContinue
       }
       $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18103'

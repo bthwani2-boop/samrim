@@ -103,19 +103,25 @@ async function reconcileCaptainAdmission(
 
 export type CaptainAdmissionState = Readonly<{
   enabled: boolean;
+  standingReady: boolean;
   session: VerifiedIdentitySession | null;
   standing?: CaptainStanding;
 }>;
 
 export async function readCaptainAdmission(signal: AbortSignal): Promise<CaptainAdmissionState> {
-  if (Platform.OS === "web" || !identityOrigin || !dshOrigin) {
-    return { enabled: false, session: null };
+  if (Platform.OS === "web" || !identityOrigin) {
+    return { enabled: false, standingReady: false, session: null };
+  }
+  // Identity may serve the public form before DSH enables Captain standing.
+  // No stored bearer is read, admitted or exposed without both owners.
+  if (!dshOrigin) {
+    return { enabled: true, standingReady: false, session: null };
   }
   if (nativeAdmissionInFlight || await reconcileCaptainAdmission(signal)) {
-    return { enabled: true, session: null };
+    return { enabled: true, standingReady: true, session: null };
   }
   const bearer = await SecureStore.getItemAsync(key, nativeOptions);
-  if (!bearer) return { enabled: true, session: null };
+  if (!bearer) return { enabled: true, standingReady: true, session: null };
   try {
     const session = await readVerifiedIdentitySession(identityOrigin, bearer, signal);
     if (session.role !== "captain") throw new IdentityClientError(401, "UNAUTHORIZED");
@@ -127,7 +133,7 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
       !await SecureStore.getItemAsync(pendingKey, nativeOptions) &&
       await SecureStore.getItemAsync(key, nativeOptions) === bearer
     );
-    return { enabled: true, session: stillCurrent ? session : null, ...(stillCurrent ? { standing } : {}) };
+    return { enabled: true, standingReady: true, session: stillCurrent ? session : null, ...(stillCurrent ? { standing } : {}) };
   } catch (error) {
     // Network uncertainty must not be represented as a signed-out or approved actor.
     const invalid = (error instanceof IdentityClientError && error.status === 401) ||
@@ -146,7 +152,7 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
           await SecureStore.deleteItemAsync(pendingKey, nativeOptions).catch(() => undefined);
         }
       });
-      return { enabled: true, session: null };
+      return { enabled: true, standingReady: true, session: null };
     }
     throw error;
   }

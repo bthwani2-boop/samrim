@@ -1,6 +1,6 @@
 import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Link, type Href } from "expo-router";
+import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -33,6 +33,7 @@ function admissionError(error: unknown) {
 export default function CaptainIdentityGate() {
   const { theme } = useMobileAppearance();
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [standingReady, setStandingReady] = useState(false);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
   const [pending, setPending] = useState(false);
   const [phone, setPhone] = useState("");
@@ -70,6 +71,7 @@ export default function CaptainIdentityGate() {
       const state = await readCaptainAdmission(signal);
       if (!signal.aborted) {
         setEnabled(state.enabled);
+        setStandingReady(state.standingReady !== false);
         setSession(state.session);
       }
     });
@@ -86,6 +88,7 @@ export default function CaptainIdentityGate() {
         controller.current = null;
         setSession(null);
         setEnabled(null);
+        setStandingReady(false);
         setBusy(false);
       }
     });
@@ -180,6 +183,10 @@ export default function CaptainIdentityGate() {
           {enabled === false ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
             تعذّر تهيئة الاتصال بخدمة الهوية في هذه البيئة.
           </Text> : null}
+          {enabled && !standingReady ? <Text testID="captain-standing-service-unavailable"
+            accessibilityRole="alert" style={{ color: theme.warningText }}>
+            تسجيل الدخول للكابتن ينتظر تفعيل خدمة الأهلية. يمكنك إدخال رقم الهاتف، لكن إرسال الرمز والدخول محجوبان حتى جاهزية DSH.
+          </Text> : null}
           {enabled && verified ? (
             <>
               <Text testID="captain-admission-verified" style={{ color: theme.successText, fontWeight: "700" }}>
@@ -200,6 +207,7 @@ export default function CaptainIdentityGate() {
           ) : null}
           {enabled && !verified && !ticket ? (
             <>
+              <Text style={{ color: theme.color, fontWeight: "700", fontSize: 20 }}>تسجيل دخول الكابتن</Text>
               <View style={{ gap: 6 }}>
                 <Text style={{ color: theme.color, fontWeight: "600" }}>رقم الهاتف التجريبي</Text>
                 <TextInput accessibilityLabel="رقم الهاتف التجريبي" keyboardType="phone-pad"
@@ -207,7 +215,7 @@ export default function CaptainIdentityGate() {
                   maxLength={13} style={input} />
               </View>
               {button(pending ? "التحقق مجددًا من الموافقة" : "إرسال رمز التحقق",
-                requestCode, busy || !phoneNumber, true)}
+                requestCode, busy || !phoneNumber || !standingReady, true)}
             </>
           ) : null}
           {enabled && !verified && ticket ? (

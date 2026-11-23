@@ -274,11 +274,14 @@ existing task before the new mappings can be used. The Lenovo Merchant and
 Captain launchers require healthy, isolated Identity and DSH owners before
 considering native admission. Merchant admission stays blocked when its owner
 endpoint is unavailable. If the isolated DSH has not enabled Captain standing
-and returns exactly HTTP 404, the Captain launcher starts its public Expo shell
-but explicitly removes both native admission origins; its login remains closed.
-Any other unexpected Captain owner response aborts startup. Once the DSH owner
-is migrated and independently enabled, an unauthenticated standing read must
-return HTTP 401 before Captain native admission can be configured. Browser
+and returns exactly HTTP 404, the Captain launcher keeps the verified isolated
+Identity origin so the public phone login form remains visible, but removes
+the DSH origin. The Captain form explains that code submission is disabled
+until owner standing is available; it never consumes OTP or grants workspace
+access while DSH is missing. Any other unexpected Captain owner response aborts
+startup. Once the DSH owner is migrated and independently enabled, an
+unauthenticated standing read must return HTTP 401 before Captain native
+admission can be configured. Browser
 cookies and native SecureStore remain separate.
 
 ## Non-invasive runtime attestation and disposable PostgreSQL proof

@@ -10,7 +10,44 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
   .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
     (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
   .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = { verifyCaptainCode };";
+  "\nmodule.exports = { verifyCaptainCode, readCaptainAdmission, requestCaptainPhoneCode };";
+
+test("Identity-only Captain entry cannot read stored credentials or consume phone proof", async () => {
+  let storedReads = 0;
+  let networkCalls = 0;
+  class OwnerError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
+  const mocks = {
+    "@bthwani/identity": {
+      IdentityClientError: OwnerError,
+      issueCustomerPhoneChallenge: async () => { networkCalls++; return "ticket"; },
+    },
+    "expo-secure-store": {
+      WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device",
+      getItemAsync: async () => { storedReads++; return "old-bearer"; },
+    },
+    "react-native": { Platform: { OS: "android" } },
+    "./captain-standing": {},
+  };
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", "process", compiled)(
+    name => {
+      assert.ok(Object.hasOwn(mocks, name), `unexpected import: ${name}`);
+      return mocks[name];
+    }, mod, mod.exports, {
+      env: { EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201" },
+    },
+  );
+  const state = await mod.exports.readCaptainAdmission(new AbortController().signal);
+  assert.deepEqual(state, { enabled: true, standingReady: false, session: null });
+  assert.equal(storedReads, 0, "no old Captain bearer may be exposed without DSH");
+  await assert.rejects(
+    mod.exports.requestCaptainPhoneCode("+967770000001", new AbortController().signal),
+    error => error.code === "OWNER_UNAVAILABLE" && error.status === 503,
+  );
+  assert.equal(networkCalls, 0, "no OTP issuance before DSH is ready");
+});
 
 test("Captain post-verification cleanup revokes using a fresh bounded signal", async () => {
   const calls = [];

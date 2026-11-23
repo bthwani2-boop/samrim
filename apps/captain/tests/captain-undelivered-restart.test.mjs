@@ -122,7 +122,7 @@ test("Surface preview never reads or revokes the installed app session", async (
   h.stored.set(legacyKey, h.tokens.captain);
   const preview = h.reload({ preview: true });
   const signal = new AbortController().signal;
-  assert.deepEqual(await preview.readCaptainAdmission(signal), { enabled: true, session: null });
+  assert.deepEqual(await preview.readCaptainAdmission(signal), { enabled: true, standingReady: true, session: null });
   await preview.leaveCaptainAdmission(signal);
   assert.equal(h.ownerReads, 0);
   assert.equal(h.captainRevocationAttempts, 0);
@@ -154,7 +154,7 @@ test("Captain undelivered bearer must not resurrect after restart, even when sto
   assert.ok(h.pending(), "durable quarantine must survive despite failed cleanup");
   const before = h.ownerReads;
   const restored = await h.reload().readCaptainAdmission(new AbortController().signal);
-  assert.deepEqual(restored, { enabled: true, session: null });
+  assert.deepEqual(restored, { enabled: true, standingReady: true, session: null });
   assert.equal(h.ownerReads, before, "quarantined token never reaches owner as admitted bearer");
 });
 
@@ -178,7 +178,7 @@ test("Captain marker deletion before effect leaves approved local response but c
   assert.equal(result.state, "approved");
   assert.ok(h.pending());
   assert.deepEqual(await h.reload().readCaptainAdmission(new AbortController().signal),
-    { enabled: true, session: null });
+    { enabled: true, standingReady: true, session: null });
 });
 
 test("Captain normal admission survives process restart and pending recovery blocks proof reuse", async () => {
@@ -202,7 +202,7 @@ test("Captain signout must remain fail closed after owner outage and device dele
   assert.ok(h.pending(), "signout uncertainty must remain visible to next process");
   const before = h.ownerReads;
   assert.deepEqual(await h.reload().readCaptainAdmission(new AbortController().signal),
-    { enabled: true, session: null });
+    { enabled: true, standingReady: true, session: null });
   assert.equal(h.ownerReads, before);
 });
 
@@ -215,7 +215,7 @@ test("Captain signout on outage retries owner revocation when connectivity retur
   assert.ok(h.pending(), "owner outage must quarantine the bearer even when local deletion is available");
   h.setRevokeCaptainFails(false);
   const restored = await h.reload().readCaptainAdmission(new AbortController().signal);
-  assert.deepEqual(restored, { enabled: true, session: null });
+  assert.deepEqual(restored, { enabled: true, standingReady: true, session: null });
   assert.equal(h.captainRevocationAttempts, 2, "recovery must retry actual Identity revocation");
   assert.equal(h.readToken(), null);
   assert.equal(h.pending(), null);
@@ -338,6 +338,6 @@ test("Captain actor switch during owner approval cannot leak the old standing", 
     return { actorId: "captain-owner-one", status: "APPROVED", version: 41 };
   });
   const admission = await h.reload().readCaptainAdmission(new AbortController().signal);
-  assert.deepEqual(admission, { enabled: true, session: null });
+  assert.deepEqual(admission, { enabled: true, standingReady: true, session: null });
   assert.equal("standing" in admission, false, "old DSH status must not reach the next actor");
 });

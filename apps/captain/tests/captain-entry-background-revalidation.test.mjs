@@ -44,7 +44,8 @@ function harness() {
   };
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const mocks = {
-    "@bthwani/identity": { IdentityClientError: class extends Error {}, normalizeYemeniMobile: () => undefined },
+    "@bthwani/identity": { IdentityClientError: class extends Error {},
+      normalizeYemeniMobile: value => /^7\d{8}$/.test(value) ? "+967" + value : undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {
       background: "black", surface: "black", color: "white",
       colorSecondary: "white", interactiveText: "white", warningText: "red",
@@ -127,6 +128,39 @@ function approved() {
     sessionExpiresAt: new Date(Date.now() + 120_000).toISOString(),
   } };
 }
+
+test("Identity-only Captain entry shows phone login without consuming OTP or mounting workspace", async () => {
+  const h = harness();
+  h.mount();
+  h.next().resolve({ enabled: true, standingReady: false, session: null });
+  await settle();
+
+  const guest = nodes(h.render());
+  assert.ok(guest.some(node => node.props?.children === "تسجيل دخول الكابتن"));
+  assert.ok(guest.some(node => node.props?.testID === "captain-standing-service-unavailable"));
+  assert.equal(verifiedUI(h.render()), false);
+  assert.equal(guestNavigation(h.render()), false);
+  assert.equal(homeLink(h.render()), undefined);
+
+  const phone = guest.find(node => node.type === "TextInput" &&
+    node.props.accessibilityLabel === "رقم الهاتف التجريبي");
+  assert.ok(phone, "Identity-only state keeps the real phone input visible");
+  phone.props.onChangeText("770000001");
+  const send = nodes(h.render()).find(node => node.type === "Pressable" &&
+    node.props.children.props.children === "إرسال رمز التحقق");
+  assert.equal(send.props.accessibilityState.disabled, true,
+    "no phone challenge can be issued without DSH standing");
+
+  h.emit("active");
+  h.next().resolve({ enabled: true, standingReady: true, session: null });
+  await settle();
+  const ready = nodes(h.render());
+  assert.equal(ready.some(node => node.props?.testID === "captain-standing-service-unavailable"), false);
+  const enabledSend = ready.find(node => node.type === "Pressable" &&
+    node.props.children.props.children === "إرسال رمز التحقق");
+  assert.equal(enabledSend.props.accessibilityState.disabled, false,
+    "ready Identity and DSH expose the active authentication flow");
+});
 
 test("background aborts in-flight Captain admission and foreground forces fresh owner read", async () => {
   const h = harness();
