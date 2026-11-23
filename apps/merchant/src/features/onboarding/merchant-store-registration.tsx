@@ -5,7 +5,7 @@ import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, TextInput, View } from "react-native";
-import { createMerchantStore, readMerchantStoreRegistrationOptions } from "../access/admission-transport";
+import { createMerchantStore, readMerchantStoreRegistrationOptions } from "./store-registration-transport";
 import {
   matchingPendingMerchantRegistration,
   type PendingMerchantRegistration,

@@ -1,20 +1,7 @@
-import {
-  createMerchantCatalogDraft, DshPublicError, getStoreOperationalAvailability, listMerchantCatalog,
-  type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantCatalogDraftEditResult, type MerchantCatalogDraftResult, type MerchantCatalogPage,
-  type MerchantRegistrationOptions, type MerchantRegistrationResult,
-  type MerchantStoreRegistration,parseMerchantCatalogDraftEditResult,
-  parseMerchantCatalogDraftResult, parseMerchantCatalogPage,
-  parseMerchantRegistrationOptions, parseMerchantRegistrationResult,
-  readMerchantRegistrationOptions,
-  registerMerchantStore, type StoreOperationalAvailability,
-  type StoreOperationalChange,
-  updateMerchantCatalogDraft,updateStoreOperationalAvailability,
-  validMerchantStoreRegistration,
-} from "@bthwani/dsh";
+import { DshPublicError } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
-  readVerifiedIdentitySession,
   readPersistentIdentityRole,
   revokePersistentIdentitySession,
   revokeVerifiedIdentitySession,
@@ -202,117 +189,7 @@ export async function readMerchantStanding(signal: AbortSignal) {
   });
 }
 
-/** Registration choices come from the DSH policy owner, not app constants. */
-export async function readMerchantStoreRegistrationOptions(
-  actorId: string, signal: AbortSignal,
-): Promise<MerchantRegistrationOptions> {
-  if (Platform.OS !== "web") return withNativeMerchantSession(signal, bearer =>
-    readMerchantRegistrationOptions(nativeDSHOrigin ?? "", bearer, signal), actorId);
-  const reply = await fetch("/api/admission?registration=options", {
-    method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
-    headers: { "X-Merchant-Context": actorId },
-  });
-  const body = await reply.json();
-  if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-  if (!reply.ok) throw new DshPublicError(reply.status, body?.code ?? "OWNER_UNAVAILABLE");
-  return parseMerchantRegistrationOptions(body?.options);
-}
-
-/** Register a DSH Store under the live Merchant actor, never the caller's claimed actor ID. */
-export async function createMerchantStore(
-  actorId: string, input: MerchantStoreRegistration, signal: AbortSignal,
-): Promise<MerchantRegistrationResult> {
-  if (!actorId || !validMerchantStoreRegistration(input)) {
-    throw new DshPublicError(400, "INVALID_STORE_REGISTRATION");
-  }
-  signal.throwIfAborted();
-  if (Platform.OS !== "web") return withNativeMerchantSession(signal, bearer =>
-    registerMerchantStore(nativeDSHOrigin ?? "", bearer, input, signal), actorId, true);
-  let reply: Response;
-  try {
-    reply = await fetch("/api/admission?registration=create", {
-      method: "POST", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
-      headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
-      body: JSON.stringify({ storeRegistration: input }),
-    });
-  } catch {
-    // The DSH transaction may have committed before the network failed.
-    throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-  }
-  let body: unknown;
-  try {
-    body = await reply.json();
-  } catch {
-    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-  if (signal.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-  if (!reply.ok) {
-    const code = body && typeof body === "object" && !Array.isArray(body) &&
-      "code" in body && typeof body.code === "string" ? body.code : "OWNER_UNAVAILABLE";
-    throw new DshPublicError(reply.status, reply.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
-  }
-  const result = body && typeof body === "object" && !Array.isArray(body) &&
-    "registration" in body ? parseMerchantRegistrationResult(body.registration) :
-    (() => { throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN"); })();
-  if (![200, 201].includes(reply.status) || (reply.status === 201) === result.replay ||
-      result.store.relation !== input.relation) {
-    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-  return result;
-}
-
-/** The private catalog includes drafts; DSH verifies the current Store owner on every page. */
-export async function readMerchantCatalogPage(
-  storeId: string, actorId: string, signal: AbortSignal,
-  options: { limit?: number; cursor?: string } = {},
-): Promise<MerchantCatalogPage> {
-  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId || signal.aborted) {
-    throw new DshPublicError(400, "INVALID_REQUEST");
-  }
-  if (Platform.OS !== "web") return withNativeMerchantSession(signal, bearer =>
-    listMerchantCatalog(nativeDSHOrigin ?? "", storeId, actorId, bearer,
-      { ...options, signal }), actorId);
-  const query = new URLSearchParams({ catalog: storeId });
-  if (options.limit !== undefined) query.set("limit", String(options.limit));
-  if (options.cursor !== undefined) query.set("cursor", options.cursor);
-  const reply = await fetch(`/api/admission?${query}`, {
-    method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
-    headers: { "X-Merchant-Context": actorId },
-  });
-  if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-  let payload: unknown;
-  try { payload = await reply.json(); }
-  catch { throw new DshPublicError(502, "OWNER_RESPONSE_INVALID"); }
-  if (!reply.ok) {
-    const v = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
-    throw new DshPublicError(reply.status, typeof v.code === "string" ? v.code : "OWNER_UNAVAILABLE");
-  }
-  const body = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
-  return parseMerchantCatalogPage(body.catalog, actorId, storeId);
-}
-
-/** Read-only Store projection. Identity proves the role; DSH authorizes the Store. */
-export async function readMerchantAvailability(storeId: string, signal: AbortSignal, actorId?: string): Promise<StoreOperationalAvailability> {
-  if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(400, "STORE_ID_INVALID");
-  if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-  if (Platform.OS === "web") {
-    const result = await fetch(`/api/admission?availability=${encodeURIComponent(storeId)}`, {
-      method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
-      ...(actorId ? { headers: { "X-Merchant-Context": actorId } } : {}),
-    });
-    const body = await result.json();
-    if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-    if (!result.ok) throw new DshPublicError(result.status, body.code);
-    if (!body?.availability || body.availability.storeId !== storeId) {
-      throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
-    }
-    return body.availability as StoreOperationalAvailability;
-  }
-  return withNativeMerchantSession(signal, bearer =>
-    getStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, signal), actorId);
-}
-
-async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: string) => Promise<T>, actorId?: string,
+export async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: string, origin: string) => Promise<T>, actorId?: string,
   isWrite = false): Promise<T> {
   if (durableMerchantInFlight) await durableMerchantInFlight.catch(() => undefined);
   if (await clearPendingNativeAdmission(signal)) throw new IdentityClientError(401, "UNAUTHORIZED");
@@ -339,7 +216,7 @@ async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: s
     throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   }
   // A scoped 403 does not invalidate the Merchant's unrelated Store grants.
-  const result = await run(effectiveBearer);
+  const result = await run(effectiveBearer, nativeDSHOrigin ?? "");
   const afterOwner = await SecureStore.getItemAsync(storageKey, nativeOptions);
   if (signal.aborted || bearer === deniedNativeBearer || afterOwner !== effectiveBearer) {
     // A write may already have committed despite an account switch or abort.
@@ -348,88 +225,6 @@ async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: s
   return result;
 }
 
-
-/** A lost acknowledgement is unknown: the caller retains and retries one stable operation ID. */
-export async function submitMerchantCatalogDraft(
-  storeId: string, actorId: string, change: MerchantCatalogDraftChange, signal: AbortSignal,
-): Promise<MerchantCatalogDraftResult> {
-  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId || signal.aborted) {
-    throw new DshPublicError(400, "INVALID_STORE_DRAFT");
-  }
-  if (Platform.OS !== "web") {
-    return withNativeMerchantSession(signal, bearer =>
-      createMerchantCatalogDraft(nativeDSHOrigin ?? "", storeId, bearer, change, signal), actorId, true);
-  }
-  let reply: Response;
-  try {
-    reply = await fetch(`/api/admission?catalog=${encodeURIComponent(storeId)}`, {
-      method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error", signal,
-      headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
-      body: JSON.stringify(change),
-    });
-  } catch { throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"); }
-  let json: unknown;
-  try { json = await reply.json(); }
-  catch { throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN"); }
-  if (signal.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-  if (!reply.ok) {
-    const body = json && typeof json === "object" && !Array.isArray(json) ? json as Record<string, unknown> : {};
-    throw new DshPublicError(reply.status, reply.status >= 500 ? "OPERATION_RESULT_UNKNOWN" :
-      typeof body.code === "string" ? body.code : "INVALID_STORE_DRAFT");
-  }
-  const document = json && typeof json === "object" && !Array.isArray(json) ? json as Record<string, unknown> : {};
-  if (![200, 201].includes(reply.status) ||
-    reply.headers.get("Cache-Control")?.toLowerCase().split(",").map(part => part.trim()).includes("no-store") !== true) {
-    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-  const draft = parseMerchantCatalogDraftResult(document.draft, storeId, change);
-  if (draft.replay !== (reply.status === 200)) throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
-  return draft;
-}
-
-export async function saveMerchantAvailability(
-  storeId: string, actorId: string, change: StoreOperationalChange, signal: AbortSignal,
-): Promise<void> {
-  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId) throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
-  signal.throwIfAborted();
-  if (Platform.OS !== "web") {
-    await withNativeMerchantSession(signal, bearer =>
-      updateStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, change, signal), actorId, true);
-    return;
-  }
-  let result: Response;
-  try {
-    result = await fetch(`/api/admission?availability=${encodeURIComponent(storeId)}`, {
-      method: "PATCH", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
-      headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
-      body: JSON.stringify(change),
-    });
-  } catch {
-    // Dispatch may have committed before the connection failed.
-    throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-  }
-  let body: unknown;
-  try {
-    body = await result.json();
-  } catch {
-    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-  if (signal.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-  if (!result.ok) {
-    const code = body && typeof body === "object" && !Array.isArray(body) &&
-      "code" in body && typeof body.code === "string" ? body.code : "OPERATION_RESULT_UNKNOWN";
-    throw new DshPublicError(result.status, result.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
-  }
-  const availability = body && typeof body === "object" && !Array.isArray(body) &&
-    "availability" in body && body.availability && typeof body.availability === "object" &&
-    !Array.isArray(body.availability) ? body.availability as Record<string, unknown> : null;
-  if (!body || typeof body !== "object" || Array.isArray(body) ||
-    !("replay" in body) || typeof body.replay !== "boolean" ||
-    availability?.storeId !== storeId || !Number.isSafeInteger(availability.version) ||
-    availability.version !== change.expectedVersion + 1) {
-    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-}
 
 export async function requestAdmissionCode(phone: string, signal: AbortSignal): Promise<string> {
   if (Platform.OS === "web") return (await webRequest<{ ticket: string }>("POST", signal, { phone })).ticket;
@@ -531,41 +326,4 @@ export async function signOutOfAdmission(signal: AbortSignal): Promise<void> {
     await SecureStore.deleteItemAsync(refreshStorageKey, nativeOptions);
     await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions);
   });
-}
-
-/** Versioned, idempotent edit of a DSH-owned inactive draft. No new operation key on retry. */
-export async function submitMerchantCatalogDraftEdit(
-  storeId: string, offerId: string, actorId: string,
-  change: MerchantCatalogDraftEditChange, signal: AbortSignal,
-): Promise<MerchantCatalogDraftEditResult> {
-  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !/^[a-z0-9-]{1,64}$/.test(offerId) ||
-    !actorId || signal.aborted) throw new DshPublicError(400, "INVALID_STORE_DRAFT");
-  if (Platform.OS !== "web") {
-    return withNativeMerchantSession(signal, bearer =>
-      updateMerchantCatalogDraft(nativeDSHOrigin ?? "", storeId, offerId, bearer, change, signal), actorId, true);
-  }
-  let reply: Response;
-  try {
-    reply = await fetch(`/api/admission?catalog=${encodeURIComponent(storeId)}&offer=${encodeURIComponent(offerId)}`, {
-      method: "PATCH", credentials: "same-origin", cache: "no-store",
-      redirect: "error", signal,
-      headers: { "Content-Type": "application/json", "X-Merchant-Context": actorId },
-      body: JSON.stringify(change),
-    });
-  } catch { throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"); }
-  let payload: unknown;
-  try { payload = await reply.json(); }
-  catch { throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN"); }
-  if (signal.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-  if (!reply.ok) {
-    const body = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
-    throw new DshPublicError(reply.status, reply.status >= 500 ? "OPERATION_RESULT_UNKNOWN" :
-      typeof body.code === "string" ? body.code : "INVALID_STORE_DRAFT");
-  }
-  const document = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
-  if (reply.status !== 200 ||
-    reply.headers.get("Cache-Control")?.toLowerCase().split(",").map(part => part.trim()).includes("no-store") !== true) {
-    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-  return parseMerchantCatalogDraftEditResult(document.edit, storeId, offerId, change);
 }

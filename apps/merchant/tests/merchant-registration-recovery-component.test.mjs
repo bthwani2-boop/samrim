@@ -14,16 +14,18 @@ import {
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const source = fileURLToPath(new URL("../src/features/onboarding/merchant-store-registration.tsx", import.meta.url));
 const helper = fileURLToPath(new URL("../src/features/onboarding/merchant-registration-attempt.ts", import.meta.url));
+const relationSource = fileURLToPath(new URL("../src/features/onboarding/store-relation-choice.tsx", import.meta.url));
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-merchant-registration-recovery-"));
-let formCode;
+let formCode, relationCode;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), source, helper,
+    path.join(root, "node_modules/typescript/bin/tsc"), source, helper, relationSource,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
   ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   formCode = readFileSync(path.join(temp, "merchant-store-registration.js"), "utf8");
+  relationCode = readFileSync(path.join(temp, "store-relation-choice.js"), "utf8");
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }
@@ -49,7 +51,8 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
   const effects = [];
   let createCount = 0;
   let created = 0;
-  const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
+  let relationChoice;
+  const jsx = (type, props, key) => type === relationChoice && relationChoice ? relationChoice(props) : ({ type, props: props ?? {}, key });
   const react = {
     useState(initial) {
       const index = hookIndex++;
@@ -106,7 +109,7 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
       Platform: { OS: platform },
       Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View",
     },
-    "../access/admission-transport": {
+    "./store-registration-transport": {
       async readMerchantStoreRegistrationOptions() { return options; },
       async createMerchantStore(actor, input, signal) {
         createCount++;
@@ -120,6 +123,15 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
       matchingPendingMerchantRegistration,
     },
   };
+  const relationModule = { exports: {} };
+  new Function("require", "module", "exports", relationCode)(
+    name => {
+      assert.ok(Object.hasOwn(mocks, name), `Unexpected relation dependency ${name}`);
+      return mocks[name];
+    }, relationModule, relationModule.exports,
+  );
+  relationChoice = relationModule.exports.default;
+  mocks["./store-relation-choice"] = relationModule.exports;
   const mod = { exports: {} };
   new Function("require", "module", "exports", formCode)(
     name => {

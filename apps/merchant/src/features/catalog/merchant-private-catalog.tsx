@@ -2,7 +2,7 @@ import type { MerchantCatalogOffer, MerchantCatalogPage } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, View } from "react-native";
-import { readMerchantCatalogPage } from "../access/admission-transport";
+import { readMerchantCatalogPage } from "./catalog-transport";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
 

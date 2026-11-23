@@ -4,7 +4,7 @@ import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from "expo-crypt
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, TextInput, View } from "react-native";
-import { submitMerchantCatalogDraft, submitMerchantCatalogDraftEdit } from "../access/admission-transport";
+import { submitMerchantCatalogDraft, submitMerchantCatalogDraftEdit } from "./catalog-transport";
 
 // An uncertain write retains the ORIGINAL payload and operationId. Never
 // construct a fresh id until the previous outcome has been confirmed.

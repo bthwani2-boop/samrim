@@ -5,14 +5,18 @@ import { test } from "node:test";
 import * as dshClient from "../../../services/dsh/clients/index.ts";
 import * as identityClient from "../../../services/identity/clients/index.ts";
 
-const source = readFileSync(new URL("../src/features/access/admission-transport.ts", import.meta.url), "utf8");
-const compiled = stripTypeScriptTypes(source, { mode: "transform" })
+function compileTransport(relativePath, exports) {
+  const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
+  return stripTypeScriptTypes(source, { mode: "transform" })
   .replace(/import\s+\{([^}]*)\}\s+from\s+["']([^"']+)["'];/gs,
     (_match, names, moduleName) => `const {${names}} = require("${moduleName}");`)
   .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
     (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
   .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = {readAdmission, readMerchantStanding, readMerchantAvailability, saveMerchantAvailability};";
+  "\nmodule.exports = {" + exports.join(",") + "};";
+}
+const compiled = compileTransport("../src/features/access/admission-transport.ts", ["readAdmission", "readMerchantStanding", "withNativeMerchantSession"]);
+const compiledAvailability = compileTransport("../src/features/stores/store-availability-transport.ts", ["readMerchantAvailability", "saveMerchantAvailability"]);
 const bearer = Buffer.alloc(32, 8).toString("base64url");
 const identity = "http://127.0.0.1:13009";
 const dsh = "http://127.0.0.1:13010";
@@ -90,7 +94,15 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
     name => { assert.ok(Object.hasOwn(dependencies, name), name); return dependencies[name]; }, module, module.exports,
     { env: { EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: identity, EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: dsh } },
   );
-  return { transport: module.exports, calls, current: () => stored, switchBearer: () => { stored = Buffer.alloc(32, 9).toString("base64url"); } };
+  const availabilityModule = { exports: {} };
+  new Function("require", "module", "exports", compiledAvailability)(
+    name => {
+      if (name === "../access/admission-transport") return module.exports;
+      assert.ok(Object.hasOwn(dependencies, name), name);
+      return dependencies[name];
+    }, availabilityModule, availabilityModule.exports,
+  );
+  return { transport: { ...module.exports, ...availabilityModule.exports }, calls, current: () => stored, switchBearer: () => { stored = Buffer.alloc(32, 9).toString("base64url"); } };
 }
 const signal = () => new AbortController().signal;
 

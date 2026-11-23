@@ -87,7 +87,7 @@ test("Merchant draft form retries the identical operation after unknown outcome 
         setItemAsync: async (key, value) => localStorage.setItem(key, value),
         deleteItemAsync: async key => localStorage.removeItem(key),
       },
-      "../access/admission-transport": {
+      "./catalog-transport": {
         submitMerchantCatalogDraft(storeId, actorId, change, signal) {
           const request = { storeId, actorId, change, signal };
           pending.push(request);

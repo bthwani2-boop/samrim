@@ -3,7 +3,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { randomUUID } from "expo-crypto";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
-import { readMerchantAvailability, saveMerchantAvailability } from "../access/admission-transport";
+import { readMerchantAvailability, saveMerchantAvailability } from "./store-availability-transport";
 
 type State = Readonly<{
   storeId: string;

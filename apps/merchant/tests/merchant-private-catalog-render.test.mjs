@@ -66,7 +66,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         } }),
       },
       "./merchant-catalog-draft-form": { default: "DraftForm" },
-      "../access/admission-transport": {
+      "./catalog-transport": {
         readMerchantCatalogPage(storeId, actorId, signal, options) {
           const request = { storeId, actorId, signal, options };
           requests.push(request);

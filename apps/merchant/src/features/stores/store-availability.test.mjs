@@ -59,7 +59,7 @@ function harness() {
     },
     "expo-crypto": { randomUUID: () => `synthetic-operation-${++operationSequence}` },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
-    "../access/admission-transport": {
+    "./store-availability-transport": {
       readMerchantAvailability(storeId, signal) {
         return new Promise((resolve, reject) => reads.push({ storeId, signal, resolve, reject }));
       },
