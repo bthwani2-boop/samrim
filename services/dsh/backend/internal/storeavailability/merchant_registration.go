@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"math"
 	"mime"
 	"net/http"
@@ -330,11 +329,8 @@ func NewMerchantRegistrationHandler(service *MerchantStoreRegistrar) http.Handle
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 4096)
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
 		var request MerchantRegistrationRequest
-		if decoder.Decode(&request) != nil || decoder.Decode(new(any)) != io.EOF {
+		if decodeUniqueJSON(w, r, 4096, &request) != nil {
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}

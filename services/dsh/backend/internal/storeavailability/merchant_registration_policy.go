@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"io"
 	"math"
 	"mime"
 	"net/http"
@@ -262,11 +261,8 @@ func NewStoreRegistrationPolicyHandler(s *MerchantStoreRegistrar) (http.Handler,
 			return
 		}
 		// Match the bounded Web adapter; 4,000 UTF-8 terms characters may exceed 8 KiB.
-		r.Body = http.MaxBytesReader(w, r.Body, 24576)
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
 		var input StoreRegistrationPolicyChange
-		if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
+		if decodeUniqueJSON(w, r, 24576, &input) != nil {
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}

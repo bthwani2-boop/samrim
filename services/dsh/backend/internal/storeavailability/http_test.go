@@ -24,6 +24,8 @@ func TestHTTPRequiresVerifiedAuthAndRejectsUnknownInput(t *testing.T) {
 		{"unauthenticated PATCH", "PATCH", `{}`, "", 401},
 		{"invalid JWT header", "GET", "", "Bearer whitespace token", 401},
 		{"unknown field", "PATCH", `{"operationId":"merchant-0001","admin":true}`, "Bearer valid-token", 400},
+		{"duplicate operation identity", "PATCH", `{"operationId":"merchant-0001","OperationID":"merchant-0002","expectedVersion":1,"weekly":[{"weekday":1,"opens":600,"closes":1200}],"preparationMinutes":25,"reason":"Schedule update"}`, "Bearer valid-token", 400},
+		{"duplicate nested schedule selector", "PATCH", `{"operationId":"merchant-0001","expectedVersion":1,"weekly":[{"weekday":1,"Weekday":2,"opens":600,"closes":1200}],"preparationMinutes":25,"reason":"Schedule update"}`, "Bearer valid-token", 400},
 		{"invalid JSON", "PATCH", `{"operationId":`, "Bearer valid-token", 400},
 		{"oversized request", "PATCH", strings.Repeat("x", 20*1024), "Bearer valid-token", 400},
 		{"JSON trailing text", "PATCH", `{}{"another":1}`, "Bearer valid-token", 400},
@@ -58,6 +60,43 @@ func TestHTTPRequiresVerifiedAuthAndRejectsUnknownInput(t *testing.T) {
 	handler.ServeHTTP(duplicateResult, duplicate)
 	if duplicateResult.Code != http.StatusUnauthorized {
 		t.Fatalf("duplicate authorization header returned %d", duplicateResult.Code)
+	}
+}
+
+// Each of the Store, city-policy, and registration adapters uses the same
+// bounded strict parser before invoking its DSH owner writer.
+func TestDecodeUniqueJSONRejectsAmbiguousAndOversizeChanges(t *testing.T) {
+	for _, tc := range []struct {
+		name, body string
+		limit      int64
+		valid      bool
+	}{
+		{"valid bounded object", `{"operationId":"merchant-0001","expectedVersion":1}`, 128, true},
+		{"duplicate exact", `{"operationId":"first","operationId":"second"}`, 128, false},
+		{"duplicate case-insensitive", `{"operationId":"first","OperationID":"second"}`, 128, false},
+		{"nested duplicate", `{"weekly":[{"weekday":1,"Weekday":2}]}`, 128, false},
+		{"trailing document", `{"operationId":"first"} {}`, 128, false},
+		{"unknown field", `{"operationId":"first","unexpected":1}`, 128, false},
+		{"oversized", `{"operationId":"first"}`, 5, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPatch, "/v1/stores/store-one/availability", strings.NewReader(tc.body))
+			res := httptest.NewRecorder()
+			var input struct {
+				OperationID     string `json:"operationId"`
+				ExpectedVersion int64  `json:"expectedVersion"`
+				Weekly          []struct {
+					Weekday int `json:"weekday"`
+				} `json:"weekly"`
+			}
+			err := decodeUniqueJSON(res, req, tc.limit, &input)
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v error=%v", tc.valid, err)
+			}
+			if tc.valid && (input.OperationID != "merchant-0001" || input.ExpectedVersion != 1) {
+				t.Fatalf("validated object corrupted: %+v", input)
+			}
+		})
 	}
 }
 

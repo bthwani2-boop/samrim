@@ -1,9 +1,7 @@
 package storeavailability
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"mime"
 	"net/http"
 	"strings"
@@ -57,9 +55,6 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 				writeFailure(w, ErrInvalidChange)
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
 			var input struct {
 				OperationID           string `json:"operationId"`
 				ExpectedVersion       *int64 `json:"expectedVersion"`
@@ -67,8 +62,7 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 				MaxPreparationMinutes *int   `json:"maxPreparationMinutes"`
 				Reason                string `json:"reason"`
 			}
-			if err = decoder.Decode(&input); err != nil ||
-				decoder.Decode(new(any)) != io.EOF ||
+			if decodeUniqueJSON(w, r, 8*1024, &input) != nil ||
 				input.ExpectedVersion == nil || input.MaxPauseSeconds == nil || input.MaxPreparationMinutes == nil {
 				writeFailure(w, ErrInvalidChange)
 				return
