@@ -24,16 +24,22 @@ async function boundedChange(request: Request): Promise<CustomerCartChange | nul
   if (declared && (!/^[0-9]+$/.test(declared) || Number(declared) > textSize)) return null;
   const reader = request.body?.getReader();
   if (!reader) return null;
+  const readSignal = AbortSignal.any([request.signal, AbortSignal.timeout(2000)]);
+  let onAbort: (() => void) | undefined;
+  const interrupted = new Promise<null>(resolve => {
+    onAbort = () => resolve(null);
+    if (readSignal.aborted) resolve(null);
+    else readSignal.addEventListener("abort", onAbort, { once: true });
+  });
   const bytes = new Uint8Array(textSize);
   let used = 0;
   try {
     for (;;) {
-      const { done, value } = await reader.read();
+      const next = await Promise.race([reader.read(), interrupted]);
+      if (next === null) return null;
+      const { done, value } = next;
       if (done) break;
-      if (used + value.length > bytes.length) {
-        await reader.cancel();
-        return null;
-      }
+      if (used + value.length > bytes.length) return null;
       bytes.set(value, used);
       used += value.length;
     }
@@ -49,6 +55,8 @@ async function boundedChange(request: Request): Promise<CustomerCartChange | nul
   } catch {
     return null;
   } finally {
+    if (onAbort) readSignal.removeEventListener("abort", onAbort);
+    void reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }

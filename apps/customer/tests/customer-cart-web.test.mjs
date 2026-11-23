@@ -175,3 +175,63 @@ test("Customer merchandise estimate rejects account switches and spoofed selecto
   assert.equal(swapped.status, 401);
   assert.deepEqual(await swapped.json(), { error: "UNAUTHORIZED" });
 });
+
+test("Customer Cart PUT stops waiting for a stalled body after request cancellation", async t => {
+  let streamController;
+  const pendingBody = new ReadableStream({
+    start(controller) { streamController = controller; },
+  });
+  const controller = new AbortController();
+  const req = new Request(base, {
+    method: "PUT", signal: controller.signal, duplex: "half",
+    headers: { ...credentials(), Origin: "http://localhost:18101", "Content-Type": "application/json" },
+    body: pendingBody,
+  });
+  let reads = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    reads++;
+    throw new Error("invalid body must not contact Identity or DSH");
+  });
+  const pending = PUT(req);
+  controller.abort();
+  const race = await Promise.race([
+    pending,
+    new Promise(resolve => setTimeout(() => resolve("STALLED"), 1000)),
+  ]);
+  if (race === "STALLED") {
+    streamController.close();
+    await pending;
+  }
+  assert.notEqual(race, "STALLED", "aborted upload must not hold a server handler open");
+  assert.equal(race.status, 400);
+  assert.equal(reads, 0);
+});
+
+test("Customer Cart PUT rejects an unfinished body within the bounded read deadline", async t => {
+  let streamController;
+  const stream = new ReadableStream({
+    start(controller) { streamController = controller; },
+  });
+  const request = new Request(base, {
+    method: "PUT", duplex: "half",
+    headers: { ...credentials(), Origin: "http://localhost:18101", "Content-Type": "application/json" },
+    body: stream,
+  });
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    throw new Error("stalled upload must not reach owner");
+  });
+  const pending = PUT(request);
+  const outcome = await Promise.race([
+    pending,
+    new Promise(resolve => setTimeout(() => resolve("DEADLINE_MISSED"), 3500)),
+  ]);
+  if (outcome === "DEADLINE_MISSED") {
+    streamController.close();
+    await pending;
+  }
+  assert.notEqual(outcome, "DEADLINE_MISSED");
+  assert.equal(outcome.status, 400);
+  assert.equal(calls, 0);
+});
