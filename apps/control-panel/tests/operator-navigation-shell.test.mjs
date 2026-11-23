@@ -43,7 +43,8 @@ function render(grants, pathname = "/marketing") {
     return deps[name];
   }, mod, mod.exports);
   return mod.exports.default({ children: jsx("p", { children: "protected" }),
-    verifiedGrants: grants, originalOperator: false });
+    verifiedGrants: grants, originalOperator: false,
+    appearanceControl: jsx("AppearanceControl", { "aria-label": "اختيار المظهر" }) });
 }
 
 function walk(node, predicate, out = []) {
@@ -82,6 +83,27 @@ test("login screen renders only its form before authentication, without navigati
 test("unauthenticated visitor sees no privileged links or locked admin items", () => {
   const tree = render(null);
   const links = walk(tree, node => node.type === "a").map(node => node.props.href);
-  assert.deepEqual(links.sort(), ["/", "/health"]);
+  assert.deepEqual(links.filter(href => href.startsWith("/")).sort(), ["/", "/health"]);
+  assert.ok(links.includes("#operator-content"), "the public screen retains a keyboard skip link");
   assert.equal(walk(tree, node => node.type === "span" && node.props["aria-disabled"] === "true").length, 0);
+});
+
+
+test("verified operator has a unified accessible toolbar with current location and appearance control", () => {
+  const tree = render(["marketing"], "/marketing");
+  const bars = walk(tree, node => node.type === "section" && node.props["aria-label"] === "شريط أدوات لوحة التحكم");
+  assert.equal(bars.length, 1);
+  assert.equal(walk(bars[0], node => node.type === "AppearanceControl").length, 1);
+  assert.equal(walk(bars[0], node => node.type === "span" && node.props.children === "التسويق والتصميم").length, 1);
+  assert.equal(walk(tree, node => node.type === "section" && node.props["aria-label"] === "التسويق والتصميم").length, 1);
+  assert.ok(walk(tree, node => node.type === "a" && node.props.href === "#operator-content").length === 1);
+  assert.ok(walk(tree, node => node.props.id === "operator-content").length === 1);
+});
+
+test("unauthenticated entry does not render a privileged toolbar or appearance controls", () => {
+  for (const path of ["/", "/marketing"]) {
+    const tree = render(null, path);
+    assert.equal(walk(tree, node => node.type === "section" && node.props["aria-label"] === "شريط أدوات لوحة التحكم").length, 0);
+    assert.equal(walk(tree, node => node.type === "AppearanceControl").length, 0);
+  }
 });

@@ -46,6 +46,7 @@ function harness({ permitted = true, origin = "http://127.0.0.1:3202", failStore
       },
     },
     "../operator-shell/operator-shell.module.css": { workspace: "workspace", sectionGrid: "sectionGrid", sectionCard: "sectionCard" },
+    "./published-offers.module.css": { intro: "intro", eyebrow: "eyebrow", filters: "filters", results: "results", table: "table" },
     "../operator-shell/workspace-unavailable": () => null,
     "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
     "../../server/current-operator-access": {
@@ -130,4 +131,23 @@ test("catalog never invents Offers after an owner failure or empty result", asyn
   const tree = await empty.render();
   assert.ok(find(tree, node => node.props?.children === "لا توجد عروض منشورة مطابقة للبحث."));
   assert.equal(find(tree, node => node.type === "strong" && node.props.children === publishedOffer.name), undefined);
+});
+
+test("catalog renders an accessible DSH-backed results table without inventing global totals", async () => {
+  const view = harness();
+  const tree = await view.render();
+  const table = find(tree, node => node.type === "table" && node.props["aria-label"] === "العروض المنشورة");
+  assert.ok(table, "published Offers use a comparison table, not a grid of unrelated cards");
+  const heading = find(table, node => node.type === "th" && node.props.children === "السعر المنشور");
+  assert.ok(heading);
+  assert.equal(find(tree, node => node.props?.children === "4,892"), undefined);
+});
+
+test("catalog offers a permitted Store discovery route when no Store ID is known", async () => {
+  const view = harness();
+  const tree = await view.render({});
+  assert.equal(view.calls.length, 0);
+  const link = find(tree, node => node.type === "a" && node.props.href === "/workspace");
+  assert.ok(link, "catalog should link to the existing Identity-gated DSH market directory");
+  assert.match(link.props.children, /المتجر/);
 });

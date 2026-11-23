@@ -2,28 +2,66 @@
 import { themes } from "@bthwani/design-system/theme";
 import { theme as antTheme, ConfigProvider, Segmented } from "antd";
 import arEG from "antd/locale/ar_EG";
-import { type ReactNode, useEffect, useState } from "react";
+import { createContext, type ReactNode, useContext, useEffect, useState } from "react";
 
 export type AppearancePreference = "system" | "light" | "dark";
-const previewPreferenceKey = "bthwani.stage4.operator.theme";
+type AppearanceContextValue = {
+  preference: AppearancePreference;
+  onChange: (value: AppearancePreference) => void;
+};
+
+const AppearanceContext = createContext<AppearanceContextValue | null>(null);
+const preferenceKey = (actorId: string) => `bthwani.stage4.operator.theme:${actorId}`;
 const isPreference = (value: string | null): value is AppearancePreference =>
   value === "system" || value === "light" || value === "dark";
 
-export function Providers({ children, cspNonce }: Readonly<{ children: ReactNode; cspNonce: string }>) {
-  const [pref, setPref] = useState<AppearancePreference>("system");
+// The shell displays the existing preference writer; it must not create another one.
+export function OperatorAppearanceControl() {
+  const appearance = useContext(AppearanceContext);
+  if (!appearance) return null;
+  return (
+    <Segmented
+      aria-label="اختيار المظهر"
+      value={appearance.preference}
+      onChange={value => appearance.onChange(value as AppearancePreference)}
+      options={[
+        { label: "النظام", value: "system" },
+        { label: "فاتح", value: "light" },
+        { label: "داكن", value: "dark" },
+      ]}
+    />
+  );
+}
+
+export function Providers({ children, cspNonce, operatorActorId }: Readonly<{
+  children: ReactNode;
+  cspNonce: string;
+  operatorActorId: string | null;
+}>) {
+  const [storedPreference, setStoredPreference] = useState<{ actorId: string | null; value: AppearancePreference }>({
+    actorId: operatorActorId, value: "system",
+  });
+  // An actor change cannot project another actor's stale visual preference.
+  const pref = storedPreference.actorId === operatorActorId ? storedPreference.value : "system";
   const [systemDark, setSystemDark] = useState(false);
   useEffect(() => {
+    if (!operatorActorId) {
+      setStoredPreference({ actorId: null, value: "system" });
+      return;
+    }
     try {
-      const stored = window.localStorage.getItem(previewPreferenceKey);
-      if (isPreference(stored)) setPref(stored);
+      const stored = window.localStorage.getItem(preferenceKey(operatorActorId));
+      setStoredPreference({ actorId: operatorActorId, value: isPreference(stored) ? stored : "system" });
     } catch {
       // Keep the system default when browser storage is unavailable.
+      setStoredPreference({ actorId: operatorActorId, value: "system" });
     }
-  }, []);
+  }, [operatorActorId]);
   const selectPreference = (value: AppearancePreference) => {
-    setPref(value);
+    if (!operatorActorId) return;
+    setStoredPreference({ actorId: operatorActorId, value });
     try {
-      window.localStorage.setItem(previewPreferenceKey, value);
+      window.localStorage.setItem(preferenceKey(operatorActorId), value);
     } catch {
       // Persisting a visual preference must never block Operator rendering.
     }
@@ -43,20 +81,12 @@ export function Providers({ children, cspNonce }: Readonly<{ children: ReactNode
     algorithm: dark ? antTheme.darkAlgorithm : antTheme.defaultAlgorithm,
     token: { colorPrimary: colors.actionBackground, colorText: colors.color, colorBgBase: colors.background, colorBorder: colors.borderColor },
   }}>
-    <section data-theme-preference={pref} style={{ minHeight: "100vh", background: "var(--surface-warm)", color: "var(--color-primary)", padding: 24, fontFamily: "system-ui" }}>
-      <nav aria-label="خيارات المظهر" style={{ display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap" }}>
-        <Segmented
-          aria-label="اختيار المظهر"
-          value={pref}
-          onChange={value => selectPreference(value as AppearancePreference)}
-          options={[
-            { label: "النظام", value: "system" },
-            { label: "فاتح", value: "light" },
-            { label: "داكن", value: "dark" },
-          ]}
-        />
-      </nav>
-      {children}
-    </section>
+    <AppearanceContext.Provider value={{ preference: pref, onChange: selectPreference }}>
+      <section data-theme-preference={pref} style={{
+        minHeight: "100dvh", background: "var(--surface-warm)", color: "var(--color-primary)", fontFamily: "system-ui",
+      }}>
+        {children}
+      </section>
+    </AppearanceContext.Provider>
   </ConfigProvider>;
 }

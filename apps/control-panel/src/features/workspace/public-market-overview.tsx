@@ -86,6 +86,11 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
                 <strong>{store.name}</strong>
                 <span>{orderabilityLabels[store.orderabilityStatus]}</span>
                 <span>نوع النشاط: {store.verticalId}</span>
+                {canVisitCatalog && /^[a-z0-9-]{1,64}$/.test(store.id) && (
+                  <a className={styles.primaryLink} href={`/catalog?store=${encodeURIComponent(store.id)}`}>
+                    عرض العروض المنشورة
+                  </a>
+                )}
               </li>)}
             </ul>}
           {stores.nextCursor && <p>توجد متاجر أخرى؛ المعروض ليس إجمالي المدينة.</p>}

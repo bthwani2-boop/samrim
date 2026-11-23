@@ -4,6 +4,7 @@ import styles from "../operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../operator-shell/workspace-unavailable";
 import { resolvePublicDshOrigin } from "../stores/public-store-query";
 import { parsePublishedOfferQuery, publishedOfferHref } from "./published-offer-query";
+import catalogStyles from "./published-offers.module.css";
 
 export default async function PublishedOffers({ searchParams }: Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -25,7 +26,7 @@ export default async function PublishedOffers({ searchParams }: Readonly<{
     error = "اتصال DSH غير مهيأ؛ لا توجد عروض مؤكدة.";
   } else if (scope.storeId && owner) {
     try {
-      // A public Store read is not a Store-management grant or a checkout decision.
+      // Public Store/Offer reads do not confer Store management or publication authority.
       store = await getPublicStore(owner, scope.storeId, AbortSignal.timeout(5000));
       offers = await listPublicOffers(owner, scope.storeId, {
         ...(scope.query ? { query: scope.query } : {}),
@@ -42,48 +43,75 @@ export default async function PublishedOffers({ searchParams }: Readonly<{
 
   return (
     <main className={styles.workspace} aria-labelledby="operator-catalog-title">
-      <h1 id="operator-catalog-title">الكتالوج المركزي — العروض المنشورة</h1>
-      <p>هذا العرض قراءة مباشرة من DSH لعروض متجر منشور علنًا فقط. لا يشمل المسودات
-        أو المنتجات الداخلية أو المخزون الخاص، ولا يسمح بتعديل الأسعار أو النشر أو إنشاء طلب.</p>
-      <form action="/catalog" method="get" style={{
-        display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "end", marginBlock: "1rem",
-      }}>
-        <label style={{ display: "grid", gap: "0.25rem" }}>
+      <header className={catalogStyles.intro}>
+        <span className={catalogStyles.eyebrow}>الكتالوج</span>
+        <h1 id="operator-catalog-title">الكتالوج المركزي — العروض المنشورة</h1>
+        <p>استعرض العروض العامة المؤكدة من DSH لمتجر محدد. لا تعرض هذه الصفحة المسودات أو المخزون الخاص،
+          ولا تمنح صلاحية تعديل السعر أو النشر أو إنشاء طلب.</p>
+      </header>
+
+      <form action="/catalog" method="get" className={catalogStyles.filters} aria-label="تصفية العروض المنشورة">
+        <label className={catalogStyles.field}>
           معرّف المتجر المنشور
           <input name="store" aria-label="معرّف المتجر المنشور" required
             pattern="[a-z0-9-]{1,64}" maxLength={64} placeholder="market-sanaa"
-            defaultValue={scope?.storeId ?? ""} style={{ minHeight: 44 }} />
+            defaultValue={scope?.storeId ?? ""} autoComplete="off" />
         </label>
-        <label style={{ display: "grid", gap: "0.25rem", flex: "1 1 12rem" }}>
+        <label className={catalogStyles.field}>
           البحث في العروض المنشورة
           <input name="q" aria-label="البحث في العروض" maxLength={80}
-            defaultValue={scope?.query ?? ""} placeholder="اسم المنتج"
-            style={{ width: "100%", minHeight: 44 }} />
+            defaultValue={scope?.query ?? ""} placeholder="اسم المنتج" />
         </label>
-        <button type="submit" style={{ minHeight: 44, paddingInline: "1rem", cursor: "pointer" }}>
-          قراءة العروض من DSH
-        </button>
+        <button type="submit" className={catalogStyles.submit}>عرض العروض</button>
       </form>
+
       {scope && !scope.storeId && !error ? (
-        <p role="status">أدخل معرّف متجر منشور لعرض عروضه العامة.</p>
+        <div role="status" className={catalogStyles.empty}>
+          <p>أدخل معرّف متجر منشور لعرض عروضه العامة، أو اختر المتجر من دليل السوق المنشور لدى DSH.</p>
+          <a href="/workspace">اختيار المتجر من لمحة السوق</a>
+        </div>
       ) : null}
-      {error ? <p role="alert">{error}</p> : null}
+      {error ? <p role="alert" className={catalogStyles.error}>{error}</p> : null}
+
       {store && offers && scope ? (
-        <section aria-label="العروض المنشورة لدى DSH">
-          <h2>{store.name}</h2>
-          <p role="status">عدد العروض في هذه الصفحة: {offers.items.length} — مراجعة DSH: {offers.revision}</p>
-          {offers.items.length === 0 ? <p>لا توجد عروض منشورة مطابقة للبحث.</p> : (
-            <ul className={styles.sectionGrid}>
-              {offers.items.map(offer => (
-                <li key={offer.id} className={styles.sectionCard}>
-                  <strong>{offer.name}</strong>
-                  <span>السعر المنشور: <code dir="ltr">{String(offer.priceYer)} YER</code></span>
-                  <span>معرّف العرض: <code dir="ltr">{offer.id}</code></span>
-                </li>
-              ))}
-            </ul>
+        <section className={catalogStyles.results} aria-label="العروض المنشورة لدى DSH">
+          <div className={catalogStyles.resultsHeader}>
+            <div>
+              <h2>{store.name}</h2>
+              <p role="status">العروض المعروضة في هذه الصفحة: {offers.items.length} من أصل صفحة محدودة بحد أقصى 20 عرضًا.</p>
+            </div>
+          </div>
+          {offers.items.length === 0 ? (
+            <p className={catalogStyles.empty}>لا توجد عروض منشورة مطابقة للبحث.</p>
+          ) : (
+            <div className={catalogStyles.tableScroll}>
+              <table className={catalogStyles.table} aria-label="العروض المنشورة">
+                <thead>
+                  <tr>
+                    <th scope="col">المنتج</th>
+                    <th scope="col">حالة العرض</th>
+                    <th scope="col">السعر المنشور</th>
+                    <th scope="col">رقم العرض</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {offers.items.map(offer => (
+                    <tr key={offer.id}>
+                      <td><strong>{offer.name}</strong></td>
+                      <td>
+                        <span className={offer.available ? catalogStyles.available : catalogStyles.unavailable}>
+                          {offer.available ? "متاح" : "غير متاح"}
+                        </span>
+                      </td>
+                      <td><code dir="ltr">{String(offer.priceYer)} YER</code></td>
+                      <td><code dir="ltr">{offer.id}</code></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-          <nav aria-label="صفحات العروض" style={{ display: "flex", flexWrap: "wrap", gap: "1rem", marginBlock: "1rem" }}>
+          <nav aria-label="صفحات العروض" className={catalogStyles.pagination}>
             {scope.cursor ? <a href={publishedOfferHref({ storeId: scope.storeId, query: scope.query })}>
               العودة إلى أول صفحة
             </a> : null}

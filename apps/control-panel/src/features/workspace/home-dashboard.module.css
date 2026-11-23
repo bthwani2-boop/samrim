@@ -1,0 +1,104 @@
+.hero {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-block-end: 1.5rem;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+}
+.heroCopy {
+  flex: 1 1 22rem;
+}
+.eyebrow {
+  display: inline-block;
+  margin-block-end: 0.75rem;
+  color: var(--interactive-text);
+  font-weight: 700;
+  font-size: 0.875rem;
+}
+.hero h1 {
+  margin: 0 0 0.625rem;
+}
+.hero p {
+  max-inline-size: 65ch;
+  margin: 0;
+  line-height: 1.8;
+  color: var(--color-secondary);
+}
+.rightsSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  flex: 0 1 19rem;
+}
+.rightsSummary div {
+  display: grid;
+  gap: 0.5rem;
+  min-inline-size: 0;
+  padding: 1rem;
+  background: var(--surface-warm);
+  border: 1px solid var(--border-subtle);
+  border-radius: 0.875rem;
+}
+.rightsSummary strong {
+  font-size: 1.75rem;
+  color: var(--color-primary);
+}
+.rightsSummary span {
+  font-size: 0.8125rem;
+  color: var(--color-secondary);
+}
+.marketPanel {
+  margin-block-end: 1.5rem;
+  padding: clamp(1rem, 3vw, 1.5rem);
+  background: var(--surface-base);
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+}
+.sections {
+  display: grid;
+  gap: 1rem;
+}
+.sections > h2 {
+  margin-block: 0.25rem 0.5rem;
+  color: var(--color-primary);
+  font-size: 1.25rem;
+}
+.group {
+  border: 1px solid var(--border-subtle);
+  border-radius: 1rem;
+  background: var(--surface-base);
+  padding: clamp(1rem, 2vw, 1.5rem);
+}
+.groupHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-block-end: 1rem;
+}
+.groupHeading h3 {
+  margin: 0;
+  color: var(--color-primary);
+  font-size: 1.125rem;
+}
+.groupHeading span {
+  color: var(--color-secondary);
+  font-size: 0.8125rem;
+}
+.noAccess {
+  padding: 1.5rem;
+  border: 1px dashed var(--border-strong);
+  border-radius: 0.875rem;
+  color: var(--color-secondary);
+}
+@media (width < 48rem) {
+  .rightsSummary {
+    flex-basis: 100%;
+  }
+}

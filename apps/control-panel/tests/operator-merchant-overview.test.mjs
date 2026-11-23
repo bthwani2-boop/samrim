@@ -102,8 +102,8 @@ function marketHarness({ cityFailure = false, storeFailure = false } = {}) {
     "./operator-home-city": { parseOperatorHomeCity },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   });
-  return { calls, render: (city = {}, canVisitStores = true) => render({
-    searchParams: Promise.resolve(city), canVisitStores, canVisitCatalog: false, action: "/merchants",
+  return { calls, render: (city = {}, canVisitStores = true, canVisitCatalog = false) => render({
+    searchParams: Promise.resolve(city), canVisitStores, canVisitCatalog, action: "/merchants",
   }) };
 }
 
@@ -140,4 +140,15 @@ test("DSH outage and malformed city never create fictional published Store resul
   const denied = marketHarness();
   assert.equal(await denied.render({ city: "sanaa" }, false), null);
   assert.equal(denied.calls.length, 0);
+});
+
+test("Catalog-granted Operator can open DSH-confirmed Store offers without typing a Store ID", async () => {
+  const permitted = marketHarness();
+  const tree = await permitted.render({ city: "sanaa" }, true, true);
+  const link = find(tree, node => node.type === "a" && node.props.href === "/catalog?store=store-sanaa");
+  assert.ok(link, "store card should link to the exact DSH-confirmed public Store");
+  assert.match(link.props.children, /العروض/);
+  const merchantOnly = marketHarness();
+  const noCatalog = await merchantOnly.render({ city: "sanaa" });
+  assert.equal(find(noCatalog, node => node.type === "a" && node.props.href?.startsWith("/catalog?")), undefined);
 });

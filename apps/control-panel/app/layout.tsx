@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import OperatorShell from "../src/features/operator-shell/operator-shell";
 import { currentOperatorAccess, currentOriginalOperatorPermissions } from "../src/server/current-operator-access";
-import { Providers } from "./providers";
+import { OperatorAppearanceControl, Providers } from "./providers";
 
 export const metadata = { title: "بثواني — لوحة التحكم", robots: { index: false, follow: false } };
 
@@ -19,8 +19,9 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
     <html lang="ar" dir="rtl">
       <body style={{ margin: 0 }}>
         <AntdRegistry>
-          <Providers cspNonce={nonce}>
-            <OperatorShell verifiedGrants={verifiedOperator?.grants ?? null} originalOperator={originalOperator !== null}>
+          <Providers cspNonce={nonce} operatorActorId={verifiedOperator?.actorId ?? null}>
+            <OperatorShell verifiedGrants={verifiedOperator?.grants ?? null} originalOperator={originalOperator !== null}
+              appearanceControl={<OperatorAppearanceControl />}>
               {children}
             </OperatorShell>
           </Providers>
