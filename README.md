@@ -4,6 +4,10 @@ The canonical checkout is `D:\samrim` on the current authorized development bran
 
 Compiled brand roots and semantic light/dark roles belong only to `packages/design-system/src/brand/colors.ts` and `src/semantics/themes.ts`. `src/web/css-projection.ts` generates browser semantic variables; numeric layout, font sizing, radius, motion and overlay tokens are owned by Tamagui for Expo and Ant Design for Operator, rather than duplicated in the brand package. The minimal React Native SYSTEM/LIGHT/DARK appearance controller now lives at `packages/tamagui-config/src/appearance.tsx` and consumes the same semantic source. No second UI picker or Studio publisher was introduced.
 
+## Daily app launch (Surface)
+
+From the canonical `D:\samrim` checkout, use `pnpm dev` to reuse the existing app, sync and SSH tunnel tasks and open Customer/Merchant/Operator in Chrome and the connected Customer/Merchant/Captain Android builds. The fast command does **not** mutate Docker or application data. Use `pnpm dev apps open` to reopen the same screens, and `pnpm dev up` only when isolated infrastructure must be started. For ownership, offline recovery and diagnostics, see [the canonical development instructions](tools/dev/README-Lenovo-Development.md).
+
 ## Validations
 
 Run these commands from the repository root. Use the Node and Go versions in `.node-version` and `.go-version` and the pnpm version in `package.json`.

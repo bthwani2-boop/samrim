@@ -2,6 +2,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantOwnedStore } from "../access/dsh-standing";
+import MerchantPublicLink from "../stores/merchant-public-link";
 import StoreAvailability from "../stores/store-availability";
 import { filterMerchantStores, type MerchantPublicationFilter } from "./merchant-workspace-model";
 
@@ -19,7 +20,8 @@ function relationLabel(store: MerchantOwnedStore) {
   return store.relation === "MARKETPLACE" ? "ضمن سوق بثواني" : "متجر مباشر";
 }
 
-export default function MerchantStoreDirectory({ stores }: Readonly<{
+export default function MerchantStoreDirectory({ actorId, stores }: Readonly<{
+  actorId: string;
   stores: readonly MerchantOwnedStore[];
 }>) {
   const { theme } = useMobileAppearance();
@@ -54,7 +56,9 @@ export default function MerchantStoreDirectory({ stores }: Readonly<{
           <Text style={secondary}>{relationLabel(selected)}</Text>
           <Text selectable accessibilityLabel={`معرّف المتجر ${selected.id}`} style={secondary}>{selected.id}</Text>
         </View>
-        <StoreAvailability key={selected.id} storeId={selected.id} />
+        <MerchantPublicLink key={`${actorId}:${selected.id}:public`} actorId={actorId}
+          storeId={selected.id} published={selected.published} />
+        <StoreAvailability key={selected.id} storeId={selected.id} actorId={actorId} />
       </View>
     );
   }

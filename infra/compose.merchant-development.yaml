@@ -1,4 +1,4 @@
-# Explicitly isolated activation of the read-only Merchant standing endpoint.
+# Explicit isolated activation of Merchant standing and policy-bound registration.
 services:
   identity:
     environment:
@@ -11,6 +11,12 @@ services:
       BTHWANI_ISOLATED_TEST_MODE: "true"
       BTHWANI_ISOLATED_CONTAINER_MODE: "true"
       DSH_ENABLE_ISOLATED_MERCHANT_STANDING: "true"
+      # Separate isolated Store availability / city-policy capability. The
+      # serving process verifies the existing owner schema; it never installs it.
+      DSH_ENABLE_ISOLATED_STORE_AVAILABILITY: "${REF_DSH_ENABLE_ISOLATED_STORE_AVAILABILITY:-false}"
+      # Additional roles require separate opt-in and verified DSH owner schema.
+      DSH_ENABLE_ISOLATED_CAPTAIN_STANDING: "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING:-false}"
+      DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST: "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST:-false}"
       DSH_LISTEN_ADDR: "0.0.0.0:8080"
       DSH_IDENTITY_VERIFIER_URL: "https://identity:3343"
       SSL_CERT_FILE: /run/identity-ca/ca.pem

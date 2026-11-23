@@ -1,6 +1,7 @@
-import MerchantCapabilityScreen from "../../components/merchant-capability-screen";
+import MerchantIdentityGate from "../access/identity-gate";
 
-// Presentation only. Owner contracts are not yet connected; no local business mutation.
+// Store setup is part of the single Identity-verified Merchant workspace.
+// DSH remains the sole Store writer; setup never implies publication.
 export default function StoreSetupScreen() {
-  return <MerchantCapabilityScreen title="إعداد المتجر" message="لا يمكن إنشاء متجر أو نشره دون التحقق من هوية التاجر وشروط التسجيل وصلاحيات DSH." />;
+  return <MerchantIdentityGate />;
 }

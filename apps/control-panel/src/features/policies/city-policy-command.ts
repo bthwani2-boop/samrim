@@ -1,20 +1,11 @@
-export type CityPolicy = {
-  cityId: string;
-  version: number;
-  maxPauseSeconds: number;
-  maxPreparationMinutes: number;
-  changedByActor: string;
-  changeReason: string;
-  updatedAt: string;
-};
+export type {
+  CityStoreOperationalPolicy as CityPolicy, CityStoreOperationalPolicyChange as CityPolicyChange,
+} from "@bthwani/dsh";
 
-export type CityPolicyChange = {
-  operationId: string;
-  expectedVersion: number;
-  maxPauseSeconds: number;
-  maxPreparationMinutes: number;
-  reason: string;
-};
+import type {
+  CityStoreOperationalPolicy as CityPolicy, CityStoreOperationalPolicyChange as CityPolicyChange,
+} from "@bthwani/dsh";
+import { type CityStoreOperationalPolicyHistoryPage, isCityStoreOperationalPolicyHistoryPage } from "@bthwani/dsh";
 
 export function parseCityPolicy(value: unknown, cityId: string): CityPolicy | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -33,12 +24,13 @@ type CommandResult =
   | { status: "conflict" | "denied" | "rejected" | "unknown" };
 
 export async function reconcileCityPolicy(
-  endpoint: string, city: string, change: CityPolicyChange,
+  endpoint: string, city: string, actorId: string, change: CityPolicyChange,
 ): Promise<CommandResult> {
   try {
+    const binding = { "X-BThwani-Operator": encodeURIComponent(actorId) };
     const response = await fetch(endpoint, {
       method: "PATCH", credentials: "same-origin", cache: "no-store",
-      headers: { "Content-Type": "application/json" },
+      headers: { ...binding, "Content-Type": "application/json" },
       body: JSON.stringify(change),
     });
     if (response.status === 409) return { status: "conflict" };
@@ -48,7 +40,7 @@ export async function reconcileCityPolicy(
 
     const result = await response.json() as { policy?: unknown; replay?: unknown } | null;
     const committed = parseCityPolicy(result?.policy, city);
-    if (!committed || typeof result?.replay !== "boolean" ||
+    if (!committed || committed.changedByActor !== actorId || typeof result?.replay !== "boolean" ||
         committed.version !== change.expectedVersion + 1 ||
         committed.maxPauseSeconds !== change.maxPauseSeconds ||
         committed.maxPreparationMinutes !== change.maxPreparationMinutes) {
@@ -57,6 +49,7 @@ export async function reconcileCityPolicy(
 
     const verify = await fetch(endpoint, {
       method: "GET", credentials: "same-origin", cache: "no-store",
+      headers: binding,
     });
     const current = verify.ok ? parseCityPolicy(await verify.json(), city) : null;
     if (!current || current.version < committed.version ||
@@ -70,4 +63,24 @@ export async function reconcileCityPolicy(
   } catch {
     return { status: "unknown" };
   }
+}
+
+export async function readCityPolicyHistory(
+  endpoint: string, city: string, actorId: string, beforeVersion?: string, signal?: AbortSignal,
+): Promise<CityStoreOperationalPolicyHistoryPage> {
+  if (!/^[a-z0-9-]{1,64}$/.test(city) || endpoint !== "/api/policies/cities/" + city ||
+      (beforeVersion !== undefined && (!/^[1-9][0-9]{0,15}$/.test(beforeVersion) ||
+       !Number.isSafeInteger(Number(beforeVersion))))) throw new Error("INVALID_HISTORY_SCOPE");
+  const query = new URLSearchParams({ history: "1", limit: "10" });
+  if (beforeVersion) query.set("beforeVersion", beforeVersion);
+  const response = await fetch(endpoint + "?" + query.toString(), {
+    method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: { "X-BThwani-Operator": encodeURIComponent(actorId) }, signal: signal ?? null,
+  });
+  if (!response.ok || signal?.aborted) throw new Error("HISTORY_UNAVAILABLE");
+  const data: unknown = await response.json();
+  if (signal?.aborted || !isCityStoreOperationalPolicyHistoryPage(data, city, 10, beforeVersion)) {
+    throw new Error("INVALID_HISTORY_RESPONSE");
+  }
+  return data;
 }

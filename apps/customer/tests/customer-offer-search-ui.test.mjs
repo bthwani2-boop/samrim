@@ -40,8 +40,10 @@ function harness({ params = {}, id = "store-a" } = {}) {
         if (!old || next.some((value, i) => value !== old[i])) { deps.set(at, next); effects.set(at, effect); } },
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": Object.fromEntries(["ActivityIndicator", "Pressable", "SafeAreaView", "ScrollView", "Text", "TextInput", "View"].map(type => [type, type])),
-    "../catalog/store-products": { __esModule: true, default: "StoreProducts" },
+    "react-native": Object.fromEntries(["ActivityIndicator", "Pressable", "ScrollView", "Text", "TextInput", "View"].map(type => [type, type])),
+    "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
+    "../cart/use-store-cart": { useStoreCart: () => ({}) },
+    "../catalog/store-products": { __esModule: true, default: "StoreProducts", StoreCartBar: "StoreCartBar" },
     "../location/serviceability": serviceability,
     "../sharing/store-share": { publicStorefrontPath: storeId => `/s/${storeId}` },
     "./orderability": { describeStoreOrderability: () => ({}) },
@@ -91,6 +93,14 @@ test("Store browse q stays a return-link context and does not filter the Store's
   assert.equal(byId(view, "offers-search").props.value, "");
   assert.deepEqual(find(view, node => node.type === "Link" && node.props.href?.pathname === "/stores").props.href.params,
     { city: "sanaa", q: "متجر" });
+});
+
+test("the offer list receives current Store orderability so browsing cannot expose an unverified cart action", async () => {
+  const app = harness();
+  await open(app);
+  const list = find(app.render(), node => node.type === "StoreProducts");
+  assert.equal(list?.props.store?.id, "store-a");
+  assert.equal(list?.props.store?.orderabilityStatus, "OPERATIONALLY_UNAVAILABLE");
 });
 
 test("Offer search submits actual text, pages with that query and retries the same failed continuation", async () => {
@@ -203,4 +213,28 @@ test("first search read failure retains a retry that resubmits the same query an
   button(app.render(), "إعادة تحميل عروض المتجر").props.onPress(); app.render();
   const retry = app.read(); assert.equal(retry.query, "ماء"); assert.equal(retry.cursor, undefined);
   app.unmount(); assert.equal(retry.signal.aborted, true);
+});
+
+test("Customer Offer detail invalidates reused IDs or revision-changed pages instead of repeating stale prices", async () => {
+  for (const scenario of ["duplicate", "new-revision"]) {
+    const app = harness();
+    await open(app, { items: [offer("first")], nextCursor: "next" });
+    const more = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress();
+    const next = app.read();
+    assert.equal(next.cursor, "next");
+    next.resolve({ items: [offer(scenario === "duplicate" ? "first" : "second")],
+      revision: scenario === "duplicate" ? 1 : 2, nextCursor: "third" });
+    await more;
+    assert.deepEqual(products(app.render()), [], scenario);
+    assert.ok(byId(app.render(), "offers-error"), scenario);
+    button(app.render(), "إعادة تحميل عروض المتجر").props.onPress();
+    app.render();
+    const retryStore = app.read("store");
+    const retry = app.read();
+    assert.equal(retry.cursor, undefined, scenario);
+    retryStore.resolve(store("store-a"));
+    retry.resolve({ items: [offer("fresh")], revision: 3 });
+    await settle();
+    assert.deepEqual(products(app.render()).map(item => item.id), ["fresh"], scenario);
+  }
 });

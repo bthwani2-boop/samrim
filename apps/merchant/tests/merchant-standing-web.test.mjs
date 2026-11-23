@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DELETE, GET } from "../app/api/admission+api.ts";
+import { DELETE, GET, POST } from "../app/api/admission+api.ts";
 
 const bearer=Buffer.alloc(32,8).toString("base64url");
 const expires=new Date(Date.now()+120000).toISOString();
@@ -208,4 +208,202 @@ test("Merchant Web logout does not discard cookie on Identity outage", async t =
   }));
   assert.equal(result.status, 503);
   assert.equal(result.headers.get("Set-Cookie"), null);
+});
+
+test("Merchant browser restores an expired session through Identity without re-entering the phone",async t=>{
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=identity;
+  const oldRefresh=Buffer.alloc(32,38).toString("base64url");
+  const newAccess=Buffer.alloc(32,39).toString("base64url");
+  const newRefresh=Buffer.alloc(32,40).toString("base64url");
+  const newExpiry=new Date(Date.now()+15*60_000).toISOString();
+  const paths=[];
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+    const path=new URL(url).pathname;
+    paths.push(path);
+    if(path==="/v1/sessions/current" && options.headers.Authorization==="Bearer "+bearer)
+      return Response.json({error:"UNAUTHORIZED"},{status:401,headers:{"Cache-Control":"no-store"}});
+    if(path==="/v1/sessions/refresh"){
+      assert.equal(options.method,"POST");
+      assert.equal(options.headers.Authorization,"Bearer "+oldRefresh);
+      return json({accessToken:newAccess,sessionExpiresAt:newExpiry,refreshToken:newRefresh,
+        refreshExpiresAt:new Date(Date.now()+30*24*60*60_000).toISOString()});
+    }
+    if(path==="/v1/sessions/current" && options.headers.Authorization==="Bearer "+newAccess)
+      return json({actorId:"owner-a",role:"merchant",sessionExpiresAt:newExpiry});
+    assert.fail(path);
+  });
+  const req=new Request("http://localhost:18102/api/admission",{
+    headers:{Cookie:"bthwani_merchant_admission="+bearer+"; bthwani_merchant_admission.refresh="+oldRefresh}});
+  const result=await GET(req);
+  assert.equal(result.status,200);
+  assert.deepEqual(await result.json(),{enabled:true,session:{actorId:"owner-a",role:"merchant",sessionExpiresAt:newExpiry}});
+  const cookie=result.headers.get("Set-Cookie")??"";
+  assert.match(cookie,/bthwani_merchant_admission=/);
+  assert.ok(cookie.includes("bthwani_merchant_admission.refresh="));
+  assert.deepEqual(paths,["/v1/sessions/current","/v1/sessions/refresh","/v1/sessions/current","/v1/sessions/current"]);
+});
+
+test("Merchant logout revokes its persistent refresh family before clearing cookies",async t=>{
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=identity;
+  const refresh=Buffer.alloc(32,41).toString("base64url");
+  const methods=[];
+  t.mock.method(globalThis,"fetch",async(url,options)=>{
+    methods.push(options.method+" "+new URL(url).pathname);
+    if(options.method==="DELETE" && new URL(url).pathname==="/v1/sessions/refresh"){
+      assert.equal(options.headers.Authorization,"Bearer "+refresh);
+      return new Response(null,{status:204,headers:{"Cache-Control":"no-store"}});
+    }
+    if(options.method==="DELETE" && new URL(url).pathname==="/v1/sessions/current"){
+      assert.equal(options.headers.Authorization,"Bearer "+bearer);
+      return Response.json({error:"UNAUTHORIZED"},{status:401,headers:{"Cache-Control":"no-store"}});
+    }
+    assert.fail(url);
+  });
+  const req=new Request("http://localhost:18102/api/admission",{method:"DELETE",headers:{
+    Origin:"http://localhost:18102",Cookie:"bthwani_merchant_admission="+bearer+"; bthwani_merchant_admission.refresh="+refresh}});
+  const response=await DELETE(req);
+  assert.equal(response.status,204);
+  assert.deepEqual(methods,["DELETE /v1/sessions/refresh","DELETE /v1/sessions/current"]);
+  assert.ok((response.headers.get("Set-Cookie")??"").includes("bthwani_merchant_admission.refresh=;"));
+});
+
+test("Concurrent Merchant refresh conflict preserves both cookies", async t => {
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=identity;
+  const refresh=Buffer.alloc(32,59).toString("base64url");
+  t.mock.method(globalThis,"fetch",async(url,opts)=>{
+    const path=new URL(url).pathname;
+    if(path==="/v1/sessions/current") return Response.json({error:"UNAUTHORIZED"},{
+      status:401,headers:{"Cache-Control":"no-store"}});
+    if(path==="/v1/sessions/refresh") {
+      assert.equal(opts.headers.Authorization,"Bearer "+refresh);
+      return Response.json({error:"CONFLICT"},{status:409,headers:{"Cache-Control":"no-store"}});
+    }
+    assert.fail(path);
+  });
+  const req=new Request("http://localhost:18102/api/admission",{
+    headers:{Cookie:"bthwani_merchant_admission="+bearer+"; bthwani_merchant_admission.refresh="+refresh},
+  });
+  const reply=await GET(req);
+  assert.equal(reply.status,409);
+  assert.equal(reply.headers.get("Set-Cookie"),null);
+});
+
+test("Merchant must explicitly sign out before phone verification with a retained refresh family", async t => {
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+  const refresh = Buffer.alloc(32, 68).toString("base64url");
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    assert.fail("existing session family must not consume another proof");
+  });
+  const host = "http://localhost:18102";
+  for (const existing of ["", "bthwani_merchant_admission=" + bearer + "; "]) {
+    const reply = await POST(new Request(host + "/api/admission", {
+      method: "POST", headers: { Origin: host, "Content-Type": "application/json",
+        Cookie: existing + "bthwani_merchant_admission.refresh=" + refresh },
+      body: JSON.stringify({ ticket: "f".repeat(48), code: "123456" }),
+    }));
+    assert.equal(reply.status, 409);
+    assert.deepEqual(await reply.json(), { code: "SIGN_OUT_REQUIRED" });
+    assert.equal(reply.headers.get("Set-Cookie"), null);
+  }
+  assert.equal(calls, 0);
+});
+
+test("Merchant admission abandons an aborted stalled JSON body without contacting Identity", async t => {
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; assert.fail("owner contacted"); });
+  const abort = new AbortController();
+  let cancelled = false;
+  let fallback;
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"ticket":'));
+      fallback = setTimeout(() => controller.close(), 250);
+    },
+    cancel() { cancelled = true; clearTimeout(fallback); },
+  });
+  const host = "http://localhost:18102";
+  const pending = POST(new Request(host + "/api/admission", {
+    method: "POST", headers: { Origin: host, "Content-Type": "application/json" },
+    body: stream, duplex: "half", signal: abort.signal,
+  }));
+  abort.abort();
+  try {
+    const reply = await pending;
+    assert.equal(reply.status, 400);
+    assert.equal(cancelled, true);
+    assert.equal(calls, 0);
+  } finally {
+    clearTimeout(fallback);
+  }
+});
+
+test("Fresh Merchant proof clears an unusable old refresh cookie when enrollment fails", async t => {
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+  const customer = Buffer.alloc(32, 70).toString("base64url");
+  const merchant = Buffer.alloc(32, 71).toString("base64url");
+  const sessionExpiresAt = new Date(Date.now() + 120000).toISOString();
+  const verified = { actorId: "merchant-new", role: "merchant", sessionExpiresAt };
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const path = new URL(url).pathname;
+    const credential = options.headers.Authorization;
+    calls.push(options.method + " " + path);
+    if (path === "/v1/customer-auth/phone-verification") return json({ accessToken: customer, sessionExpiresAt });
+    if (path === "/v1/actors/me/merchant-role") {
+      assert.equal(credential, "Bearer " + customer);
+      return Response.json({ accessToken: merchant, sessionExpiresAt }, { status: 201, headers: {"Cache-Control":"no-store"} });
+    }
+    if (path === "/v1/sessions/current") {
+      if (options.method === "DELETE") {
+        assert.equal(credential, "Bearer " + customer);
+        return new Response(null, { status: 204, headers: {"Cache-Control":"no-store"} });
+      }
+      return json(credential === "Bearer " + customer ? { ...verified, role: "customer" } : verified);
+    }
+    if (path === "/v1/sessions/persistent") {
+      assert.equal(credential, "Bearer " + merchant);
+      return Response.json({ error: "OWNER_UNAVAILABLE" }, { status: 503, headers: {"Cache-Control":"no-store"} });
+    }
+    assert.fail(path);
+  });
+  const host = "http://localhost:18102";
+  const reply = await POST(new Request(host + "/api/admission", {
+    method: "POST", headers: { Origin: host, "Content-Type": "application/json", Cookie: "bthwani_merchant_admission.refresh=invalid" },
+    body: JSON.stringify({ ticket: "f".repeat(48), code: "123456" }),
+  }));
+  assert.equal(reply.status, 200);
+  assert.deepEqual(await reply.json(), { session: verified });
+  assert.ok(reply.headers.getSetCookie().some(value => value.startsWith("bthwani_merchant_admission=" + merchant + ";")));
+  assert.ok(reply.headers.getSetCookie().some(value => value.startsWith("bthwani_merchant_admission.refresh=;") && value.includes("Max-Age=0")));
+  assert.deepEqual(calls, ["POST /v1/customer-auth/phone-verification", "GET /v1/sessions/current",
+    "POST /v1/actors/me/merchant-role", "GET /v1/sessions/current", "DELETE /v1/sessions/current", "POST /v1/sessions/persistent"]);
+});
+
+test("Merchant body deadline rejects an unfinished JSON stream even without caller cancellation", async t => {
+  process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
+  t.mock.method(globalThis, "fetch", async () => assert.fail("owner contacted"));
+  let streamController;
+  let cancelled = false;
+  const stream = new ReadableStream({
+    start(controller) { streamController = controller; },
+    cancel() { cancelled = true; },
+  });
+  const host = "http://localhost:18102";
+  const pending = POST(new Request(host + "/api/admission", {
+    method: "POST", headers: { Origin: host, "Content-Type": "application/json" },
+    body: stream, duplex: "half",
+  }));
+  let fallback;
+  const reply = await Promise.race([pending, new Promise(resolve => { fallback = setTimeout(() => resolve(null), 3500); })]);
+  clearTimeout(fallback);
+  if (reply === null) {
+    streamController.close();
+    await pending;
+  }
+  assert.ok(reply, "body read exceeded its deadline");
+  assert.equal(reply.status, 400);
+  assert.equal(cancelled, true);
 });

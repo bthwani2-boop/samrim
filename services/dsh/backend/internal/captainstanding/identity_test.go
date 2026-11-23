@@ -18,6 +18,7 @@ func TestCaptainStandingIdentityAdapterUsesCurrentOwnerSessionAndOperationsPermi
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
 		switch r.URL.Path {
 		case "/v1/sessions/current":
 			fmt.Fprintf(w, `{"actorId":"actor-17","role":"%s","sessionExpiresAt":"%s"}`, actorRole, time.Now().UTC().Add(time.Minute).Format(time.RFC3339))

@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -58,18 +57,7 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := fmt.Sprintf("identity_test_operator_admin_%x", nonce)
-	for _, file := range []string{"001_session_verification.sql", "002_operator_permission_read.sql",
-		"003_verified_customer_merchant_admission.sql", "004_customer_phone_verification.sql",
-		"005_operator_permission_management.sql", "007_operator_merchant_permission_cutover.sql"} {
-		raw, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", file))
-		if e != nil {
-			t.Fatalf("missing owner migration %s: %v", file, e)
-		}
-		sqlSource := strings.ReplaceAll(string(raw), "__SCHEMA__", schema)
-		if _, e = db.ExecContext(ctx, sqlSource); e != nil {
-			t.Fatalf("synthetic migration %s: %v", file, e)
-		}
-	}
+	initializeFreshIdentityFixture(t, ctx, db, schema)
 	reader, err := NewPostgresReader(db, schema)
 	if err != nil {
 		t.Fatal(err)
@@ -125,10 +113,48 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 	outsideBearer := makeBearer(outsider, 1)
 	otherBearer := makeBearer(independentTarget, 1)
 
-	srv := httptest.NewServer(NewOperatorPermissionManagementHandler(reader))
+	routes := http.NewServeMux()
+	routes.Handle("GET /v1/operators/{actorId}/permissions", NewOperatorPermissionReviewHandler(reader))
+	routes.Handle("PATCH /v1/operators/{actorId}/permissions/{permission}", NewOperatorPermissionManagementHandler(reader))
+	srv := httptest.NewServer(routes)
 	defer srv.Close()
 	client := &http.Client{Timeout: 5 * time.Second}
 	path := "/v1/operators/" + target + "/permissions/operations"
+	review := func(bearer, actor string, want int) []OperatorPermissionRevision {
+		t.Helper()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+			srv.URL+"/v1/operators/"+actor+"/permissions", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != want || response.Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("review status=%d want=%d cache=%s", response.StatusCode, want, response.Header.Get("Cache-Control"))
+		}
+		if want != 200 {
+			return nil
+		}
+		var result OperatorPermissionReview
+		if err := json.NewDecoder(io.LimitReader(response.Body, 2048)).Decode(&result); err != nil {
+			t.Fatal(err)
+		}
+		if result.TargetActorID != actor || result.Permissions == nil {
+			t.Fatalf("wrong or incomplete Operator permission review: %+v", result)
+		}
+		return result.Permissions
+	}
+	review(outsideBearer, target, 403)
+	review(outsideBearer, "unknown-operator", 403)
+	review(rootBearer, "unknown-operator", 404)
+	review(rootBearer, original, 200)
+	if got := review(rootBearer, target, 200); len(got) != 0 {
+		t.Fatalf("unassigned scopes must have no revision: %+v", got)
+	}
 	call := func(bearer string, command OperatorPermissionCommand, want int) OperatorPermissionResult {
 		t.Helper()
 		raw, e := json.Marshal(struct {
@@ -183,6 +209,10 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 	if result.State != "ACTIVE" || result.Version != 1 || result.TargetActorID != target {
 		t.Fatalf("owner grant mismatch: %+v", result)
 	}
+	if got := review(rootBearer, target, 200); len(got) != 1 || got[0] != (OperatorPermissionRevision{"operations", "ACTIVE", 1}) {
+		t.Fatalf("read after grant did not match the durable owner version: %+v", got)
+	}
+	review(targetBearer, original, 401)
 	if _, err = NewVerifier(reader).Verify(ctx, "Bearer "+targetBearer); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("target stale Operator bearer not revoked after grant: %v", err)
 	}
@@ -203,6 +233,7 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 	if suspendedRepeat != result {
 		t.Fatal("suspended target changed a recorded operation's historical reply")
 	}
+	review(rootBearer, target, 404)
 	blocked := command
 	blocked.OperationID = "operator-s02-blocked-suspended"
 	blocked.State = "REVOKED"
@@ -272,6 +303,9 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 	if successes != 1 || conflicts != contenders-1 {
 		t.Fatalf("concurrent permissions expected one writer: wins=%d conflicts=%d", successes, conflicts)
 	}
+	if got := review(rootBearer, target, 200); len(got) != 1 || got[0] != (OperatorPermissionRevision{"operations", "REVOKED", 2}) {
+		t.Fatalf("read after concurrent revoke did not match the durable owner version: %+v", got)
+	}
 	if _, err = NewVerifier(reader).Verify(ctx, "Bearer "+newTargetBearer); !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("target bearer survived grant revocation: %v", err)
 	}
@@ -291,6 +325,7 @@ func TestOperatorPermissionManagementRealPostgresAndHTTP(t *testing.T) {
 	again.OperationID = "operator-s02-deny-suspended"
 	again.ExpectedVersion = 2
 	call(rootBearer, again, 403)
+	review(rootBearer, target, 401)
 
 	verifyDB, err := sql.Open("postgres", dsn)
 	if err != nil {

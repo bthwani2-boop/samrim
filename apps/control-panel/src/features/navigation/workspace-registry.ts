@@ -26,7 +26,7 @@ export const workspaceRegistry: readonly WorkspaceEntry[] = [
   { href: "/workspace", label: "الرئيسية", group: "home", permission: null, owner: "multiple" },
   { href: "/operations", label: "العمليات والطلبات", group: "operations", permission: "operations", owner: "DSH" },
   { href: "/captains", label: "الكباتن", group: "operations", permission: "operations", owner: "DSH" },
-  { href: "/merchants", label: "الشركاء والمتاجر", group: "stores", permission: "merchant", owner: "DSH" },
+  { href: "/merchants", label: "التجار والمتاجر", group: "stores", permission: "merchant", owner: "DSH" },
   { href: "/catalog", label: "الكتالوج", group: "catalog", permission: "catalog", owner: "DSH" },
   { href: "/marketing", label: "التسويق", group: "marketing", permission: "marketing", owner: "DSH" },
   { href: "/studio", label: "استوديو التصميم", group: "marketing", permission: "marketing", owner: "DSH" },
@@ -43,8 +43,8 @@ export type WorkspaceSubsection = Readonly<{ parent: string; href: string; label
 // Existing pages only. Every subsection inherits the parent route's Identity gate;
 // this is navigation metadata and never grants authorization by itself.
 export const workspaceSubsections: readonly WorkspaceSubsection[] = [
-  { parent: "/merchants", href: "/merchants/joining", label: "طلبات انضمام الشركاء" },
-  { parent: "/merchants", href: "/merchants/new", label: "إضافة شريك" },
+  { parent: "/merchants", href: "/merchants/joining", label: "طلبات انضمام التجار" },
+  { parent: "/merchants", href: "/merchants/new", label: "إضافة تاجر" },
   { parent: "/merchants", href: "/merchants/store-access", label: "صلاحيات المتاجر" },
   { parent: "/merchants", href: "/merchants/public-stores", label: "متاجر السوق" },
   { parent: "/catalog", href: "/catalog/products", label: "المنتجات" },
@@ -60,6 +60,7 @@ export const workspaceSubsections: readonly WorkspaceSubsection[] = [
   { parent: "/finance", href: "/finance/merchant-store-commissions", label: "عمولات المتاجر" },
   { parent: "/finance", href: "/finance/merchant-commission-receivables", label: "مستحقات العمولات" },
   { parent: "/hr", href: "/hr/employees", label: "الموظفون" },
+  { parent: "/policies", href: "/policies/store-registration", label: "قبول المتاجر الجديدة" },
   { parent: "/policies", href: "/policies/stage-sla", label: "أزمنة المراحل" },
 ];
 

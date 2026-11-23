@@ -1,46 +1,92 @@
+import { DshPublicError, listPublicCities } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { useState } from "react";
-import { Pressable, Text, TextInput, View } from "react-native";
-import { normalizeServiceCityId } from "./serviceability";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { serviceCityLabel } from "./serviceability";
 
 type Props = Readonly<{
-  draftCity: string;
-  onDraftChange: (value: string) => void;
+  origin: string;
+  currentCity: string;
   onApply: (cityId: string) => void;
 }>;
+type Directory = {
+  items: string[];
+  loading: boolean;
+  error?: string | undefined;
+  nextCursor?: string;
+  revision?: number;
+};
 
-export default function ServiceCityScope({ draftCity, onDraftChange, onApply }: Props) {
+export default function ServiceCityScope({ origin, currentCity, onApply }: Props) {
   const { theme } = useMobileAppearance();
-  const [invalid, setInvalid] = useState(false);
-  const apply = () => {
-    const city = normalizeServiceCityId(draftCity);
-    if (!city) {
-      setInvalid(true);
-      return;
+  const [directory, setDirectory] = useState<Directory>({ items: [], loading: true });
+  const pending = useRef<AbortController | null>(null);
+
+  const load = useCallback(async (previous?: Directory) => {
+    if (pending.current) return;
+    const abort = new AbortController();
+    pending.current = abort;
+    const items = previous?.items ?? [];
+    const nextCursor = previous?.nextCursor;
+    setDirectory({ ...previous, items, loading: true, error: undefined });
+    try {
+      const page = await listPublicCities(origin, {
+        signal: abort.signal, ...(nextCursor ? { cursor: nextCursor } : {}),
+      });
+      if (abort.signal.aborted) return;
+      if (previous && (page.revision !== previous.revision || page.items.some(id => items.includes(id)))) {
+        throw new DshPublicError(409, "STALE_CURSOR");
+      }
+      setDirectory({ ...page, items: [...items, ...page.items], loading: false });
+    } catch (error) {
+      if (abort.signal.aborted) return;
+      const stale = error instanceof DshPublicError && error.code === "STALE_CURSOR";
+      setDirectory(stale
+        ? { items: [], loading: false, error: "تغيّرت المدن المتاحة. حدّث القائمة." }
+        : { ...previous, items, loading: false, error: "تعذّر تحميل المدن المتاحة." });
+    } finally {
+      if (pending.current === abort) pending.current = null;
     }
-    setInvalid(false);
-    onApply(city);
+  }, [origin]);
+
+  useEffect(() => {
+    void load();
+    return () => {
+      pending.current?.abort();
+      pending.current = null;
+    };
+  }, [load]);
+
+  const buttonStyle = {
+    minHeight: 44, justifyContent: "center" as const, paddingHorizontal: 12,
+    borderRadius: 10, borderWidth: 1, borderColor: theme.borderColor,
   };
-  return <>
-    <View style={{ flexDirection: "row", gap: 8 }}>
-      <TextInput testID="city-input" accessibilityLabel="رمز مدينة الخدمة" value={draftCity}
-        onChangeText={value => { setInvalid(false); onDraftChange(value); }}
-        placeholder="رمز المدينة، مثل sanaa" placeholderTextColor={theme.colorSecondary}
-        autoCapitalize="none" autoCorrect={false} returnKeyType="search"
-        onSubmitEditing={apply} style={{
-          color: theme.color, flex: 1, minWidth: 0, minHeight: 44, padding: 10, borderWidth: 1,
-          borderRadius: 10, borderColor: invalid ? theme.dangerText : theme.borderColor,
-        }} />
-      <Pressable accessibilityRole="button" accessibilityLabel="تغيير مدينة الخدمة" onPress={apply}
-        style={{
-          padding: 14, borderRadius: 12, borderWidth: 1,
-          borderColor: theme.borderColor, backgroundColor: theme.actionSoft,
-        }}>
-        <Text style={{ color: theme.interactiveText }}>عرض</Text>
-      </Pressable>
+  return (
+    <View style={{ gap: 8 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {directory.items.map(id => (
+          <Pressable key={id} accessibilityRole="button" accessibilityState={{ selected: id === currentCity }}
+            onPress={() => onApply(id)}
+            style={{ ...buttonStyle, backgroundColor: id === currentCity ? theme.actionSoft : "transparent" }}>
+            <Text style={{ color: theme.interactiveText }}>{serviceCityLabel(id)}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {directory.loading ? <ActivityIndicator color={theme.interactiveText} accessibilityLabel="جارٍ تحميل المدن" /> : null}
+      {directory.error ? (
+        <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>{directory.error}</Text>
+      ) : null}
+      {!directory.loading && !directory.error && directory.items.length === 0 ? (
+        <Text style={{ color: theme.colorSecondary }}>لا توجد مدن متاحة للتسوّق حاليًا.</Text>
+      ) : null}
+      {!directory.loading && (directory.error || directory.nextCursor) ? (
+        <Pressable accessibilityRole="button" onPress={() => void load(directory.nextCursor ? directory : undefined)}
+          style={{ ...buttonStyle, alignSelf: "flex-end" }}>
+          <Text style={{ color: theme.interactiveText }}>
+            {directory.error ? "إعادة المحاولة" : "عرض المزيد من المدن"}
+          </Text>
+        </Pressable>
+      ) : null}
     </View>
-    {invalid ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
-      أدخل رمز المدينة بالأحرف اللاتينية، مثل sanaa.
-    </Text> : null}
-  </>;
+  );
 }

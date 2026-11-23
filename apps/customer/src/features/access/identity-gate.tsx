@@ -1,4 +1,4 @@
-import { IdentityClientError, type VerifiedIdentitySession } from "@bthwani/identity";
+import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -27,6 +27,7 @@ export default function CustomerIdentityGate() {
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
   const [phone, setPhone] = useState("");
+  const phoneNumber = normalizeYemeniMobile(phone);
   const [ticket, setTicket] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -100,7 +101,8 @@ export default function CustomerIdentityGate() {
   }, [refresh, session]);
 
   const requestCode = () => void run(async signal => {
-    const next = await requestCustomerCode(phone.trim(), signal);
+    if (!phoneNumber) return;
+    const next = await requestCustomerCode(phoneNumber, signal);
     if (!signal.aborted) {
       setTicket(next);
       setCode("");
@@ -139,8 +141,9 @@ export default function CustomerIdentityGate() {
       }}>
         <View style={{ borderRadius: 16, borderWidth: 1, borderColor: theme.borderColor,
           padding: 20, backgroundColor: theme.surface, gap: 14 }}>
-          <Text accessibilityRole="header" style={{ fontSize: 26, fontWeight: "700", color: theme.color }}>
-            بثواني — التحقق من حساب العميل
+          <Text style={{ fontSize: 17, fontWeight: "700", color: theme.interactiveText }}>بثواني</Text>
+          <Text accessibilityRole="header" style={{ fontSize: 23, fontWeight: "700", color: theme.color }}>
+            التحقق من حساب العميل
           </Text>
           {busy ? <Text style={{ color: theme.colorSecondary }}>جارٍ التحقق…</Text> : null}
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
@@ -162,8 +165,8 @@ export default function CustomerIdentityGate() {
                 هذه تجربة معزولة؛ استخدم رقم الهاتف الاختباري المخصص فقط.
               </Text>
               <TextInput accessibilityLabel="رقم هاتف الاختبار" value={phone} onChangeText={setPhone}
-                keyboardType="phone-pad" autoComplete="tel" editable={!busy} maxLength={12} style={field} />
-              {button("إرسال رمز التحقق", requestCode, busy || !/^\+120255501\d{2}$/.test(phone.trim()))}
+                keyboardType="phone-pad" autoComplete="tel" editable={!busy} maxLength={13} style={field} />
+              {button("إرسال رمز التحقق", requestCode, busy || !phoneNumber)}
             </>
           ) : null}
           {enabled && !session && ticket ? (

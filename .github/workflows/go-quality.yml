@@ -1,4 +1,4 @@
-name: Go Quality (source checks only)
+name: Go Quality and Isolated Owner PostgreSQL
 
 on:
   workflow_dispatch:
@@ -17,9 +17,15 @@ on:
       - 'services/**/backend/**'
       - 'services/**/contracts/openapi/**'
       - 'services/**/database/migrations/**'
+      - 'services/**/database/schema/**'
+      - 'services/wlt/database/sandbox/**'
       - 'services/**/.dockerignore'
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
+      - 'infra/payment-mock/**'
+      - 'infra/verify-owner-postgres-ci.sh'
+      - 'infra/verify-isolated-postgres.ps1'
+      - 'infra/test-owner-postgres-output.sh'
       - 'nx.json'
   # Main is the protected integration target; branch names are never pinned.
   pull_request:
@@ -33,9 +39,15 @@ on:
       - 'services/**/backend/**'
       - 'services/**/contracts/openapi/**'
       - 'services/**/database/migrations/**'
+      - 'services/**/database/schema/**'
+      - 'services/wlt/database/sandbox/**'
       - 'services/**/.dockerignore'
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
+      - 'infra/payment-mock/**'
+      - 'infra/verify-owner-postgres-ci.sh'
+      - 'infra/verify-isolated-postgres.ps1'
+      - 'infra/test-owner-postgres-output.sh'
       - 'nx.json'
 
 permissions:
@@ -93,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           expected_go="$(cat .go-version)"
-          for service in identity dsh; do
+          for service in identity dsh wlt; do
             image="bthwani-go-check-$service:$GITHUB_SHA"
             docker build --file "services/$service/backend/Dockerfile" \
               --build-arg "SAMRIM_SOURCE_REVISION=$GITHUB_SHA" \
@@ -109,5 +121,39 @@ jobs:
             go version -m "$binary" | grep -F "go$expected_go"
             rm -f "$binary"
           done
+      - name: Exercise synthetic payment provider in disposable Docker
+        shell: bash
+        run: bash infra/payment-mock/smoke.sh
       - name: State validation limits
-        run: echo 'NOT_RUN - isolated PostgreSQL integration, govulncheck, golangci-lint, gosec and fuzz campaigns'
+        run: echo 'This Go source job does not prove PostgreSQL integration; see the separate disposable owner-postgres-integration job. NOT_RUN - govulncheck, golangci-lint, gosec and fuzz campaigns'
+
+
+  owner-postgres-integration:
+    name: Disposable PostgreSQL owner authorization, concurrency and readback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      GOTOOLCHAIN: local
+      GOWORK: 'off'
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Use pinned Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          check-latest: false
+          cache: false
+      - name: Validate expected owner test names and reject incomplete passing output
+        shell: bash
+        run: bash infra/test-owner-postgres-output.sh
+      - name: Run isolated, network-disabled owner PostgreSQL tests
+        shell: bash
+        run: bash infra/verify-owner-postgres-ci.sh
+      - name: Verify fresh Identity, DSH and WLT baselines, restore and least-privilege access
+        shell: pwsh
+        run: ./infra/verify-isolated-postgres.ps1 -DockerContext default

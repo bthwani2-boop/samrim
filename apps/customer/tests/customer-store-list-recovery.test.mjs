@@ -27,6 +27,7 @@ try {
 function harness({ variant = "directory", params = {} } = {}) {
   const hooks = [];
   const requests = [];
+  const categoryRequests = [];
   let index = 0;
   const effects = new Map();
   const effectDeps = new Map();
@@ -37,6 +38,9 @@ function harness({ variant = "directory", params = {} } = {}) {
       DshPublicError,
       listPublicStores(_url, cityId, options) {
         return new Promise((resolve, reject) => requests.push({ cityId, ...options, resolve, reject }));
+      },
+      listPublicVerticals(_url, cityId, options) {
+        return new Promise((resolve, reject) => categoryRequests.push({ cityId, ...options, resolve, reject }));
       },
     },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
@@ -94,6 +98,10 @@ function harness({ variant = "directory", params = {} } = {}) {
     read() {
       assert.ok(requests.length, "expected a Store list request");
       return requests.shift();
+    },
+    readCategory() {
+      assert.ok(categoryRequests.length, "expected a DSH verticals read");
+      return categoryRequests.shift();
     },
   };
 }
@@ -190,6 +198,93 @@ test("a temporary continuation outage preserves the already read Store cards", a
   assert.ok(byId(failed, "stores-error"));
 });
 
+test("DSH-admitted vertical choices filter Stores without guessing the category ID", async () => {
+  const app = harness({ params: { city: "sanaa" } });
+  app.render();
+  const categories = app.readCategory();
+  assert.equal(categories.cityId, "sanaa");
+  app.read().resolve({ items: [], revision: 1 });
+  categories.resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1 });
+  await settle();
+  const ready = app.render();
+  assert.ok(byId(ready, "vertical-option-grocery"));
+  byId(ready, "vertical-option-grocery").props.onPress();
+  app.render();
+  const filtered = app.read();
+  assert.equal(filtered.cityId, "sanaa");
+  assert.equal(filtered.verticalId, "grocery");
+});
+
+test("Customer vertical choices paginate without treating a late city response as current", async () => {
+  const app = harness({ params: { city: "sanaa" } });
+  app.render();
+  const first = app.readCategory();
+  app.read().resolve({ items: [], revision: 1 });
+  first.resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1, nextCursor: "next-page" });
+  await settle();
+  const more = byId(app.render(), "vertical-options-more").props.onPress();
+  const continuation = app.readCategory();
+  assert.equal(continuation.cursor, "next-page");
+  continuation.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
+  await more;
+  assert.ok(byId(app.render(), "vertical-option-pharmacy"));
+
+  app.setParams({ city: "aden" });
+  app.render();
+  app.render();
+  const next = app.readCategory();
+  assert.equal(next.cityId, "aden");
+  assert.equal(continuation.signal.aborted, true);
+  assert.equal(byId(app.render(), "vertical-option-grocery"), undefined);
+  assert.equal(byId(app.render(), "vertical-option-pharmacy"), undefined);
+  next.resolve({ items: [{ id: "restaurant", storeCount: 3 }], revision: 2 });
+  await settle();
+  assert.ok(byId(app.render(), "vertical-option-restaurant"));
+});
+
+test("changing the Store vertical requests a fresh DSH page and never shows old classification results", async () => {
+  const app = harness({ params: { city: "sanaa", vertical: "grocery" } });
+  app.render();
+  const initial = app.read();
+  assert.equal(initial.cityId, "sanaa");
+  assert.equal(initial.verticalId, "grocery");
+  initial.resolve({ items: [store("grocery-store")], nextCursor: "grocery-cursor", revision: 1 });
+  await settle();
+  const prior = app.render();
+  assert.ok(byId(prior, "store-grocery-store"));
+  const detailLink = find(prior, node => node.type === "Link" && node.props.href?.pathname === "/store/[id]");
+  assert.equal(detailLink.props.href.params.vertical, "grocery");
+
+  byId(prior, "vertical-filter-input").props.onChangeText("pharmacy");
+  byId(app.render(), "vertical-filter-apply").props.onPress();
+  const changing = app.render();
+  assert.equal(byId(changing, "store-grocery-store"), undefined);
+  assert.equal(initial.signal.aborted, true);
+  const current = app.read();
+  assert.equal(current.verticalId, "pharmacy");
+  assert.equal(current.cursor, undefined);
+  current.resolve({ items: [{ ...store("pharmacy-store"), verticalId: "pharmacy" }], revision: 2 });
+  await settle();
+  const filtered = app.render();
+  assert.ok(byId(filtered, "store-pharmacy-store"));
+  assert.equal(byId(filtered, "store-grocery-store"), undefined);
+
+  byId(filtered, "vertical-filter-clear").props.onPress();
+  app.render();
+  assert.equal(app.read().verticalId, undefined);
+});
+
+test("an invalid Store vertical is not submitted to DSH", () => {
+  const app = harness();
+  app.render();
+  app.read();
+  byId(app.render(), "vertical-filter-input").props.onChangeText("../private");
+  byId(app.render(), "vertical-filter-apply").props.onPress();
+  const invalid = app.render();
+  assert.ok(find(invalid, node => node.props.accessibilityRole === "alert"));
+  assert.equal(byId(invalid, "vertical-filter-clear"), undefined);
+});
+
 test("route navigation changes the DSH Store query without exposing old-city results", async () => {
   const app = harness({ params: { city: "sanaa", q: "old" } });
   app.render();
@@ -228,4 +323,47 @@ test("route change aborts an in-flight DSH read and discards its late response",
   next.resolve({ items: [{ ...store("fresh"), cityId: "aden" }], revision: 2 });
   await settle();
   assert.ok(byId(app.render(), "store-fresh"));
+});
+
+test("Customer Store directory rejects a repeated continuation or changed DSH revision before showing duplicate cards", async () => {
+  for (const scenario of ["duplicate", "new-revision"]) {
+    const app = harness();
+    app.render();
+    app.read().resolve({ items: [store("first")], nextCursor: "next-page", revision: 1 });
+    await settle();
+    const more = button(app.render(), "عرض المزيد").props.onPress();
+    const next = app.read();
+    next.resolve({ items: [store(scenario === "duplicate" ? "first" : "second")],
+      revision: scenario === "duplicate" ? 1 : 2, nextCursor: "third-page" });
+    await more;
+    const invalid = app.render();
+    assert.equal(byId(invalid, "store-first"), undefined, scenario);
+    assert.ok(byId(invalid, "stores-error"), scenario);
+    button(invalid, "إعادة المحاولة").props.onPress();
+    app.render();
+    const fresh = app.read();
+    assert.equal(fresh.cursor, undefined, scenario);
+  }
+});
+
+test("Customer vertical continuation invalidates a cross-page duplicate or changed revision", async () => {
+  for (const scenario of ["duplicate", "new-revision"]) {
+    const app = harness();
+    app.render();
+    const first = app.readCategory();
+    app.read().resolve({ items: [], revision: 1 });
+    first.resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1, nextCursor: "next" });
+    await settle();
+    const loading = byId(app.render(), "vertical-options-more").props.onPress();
+    const next = app.readCategory();
+    next.resolve({ items: [{ id: scenario === "duplicate" ? "grocery" : "pharmacy", storeCount: 1 }],
+      revision: scenario === "duplicate" ? 1 : 2, nextCursor: "more" });
+    await loading;
+    assert.equal(byId(app.render(), "vertical-option-grocery"), undefined, scenario);
+    assert.ok(byId(app.render(), "vertical-options-retry"), scenario);
+    byId(app.render(), "vertical-options-retry").props.onPress();
+    app.render();
+    const fresh = app.readCategory();
+    assert.equal(fresh.cursor, undefined, scenario);
+  }
 });

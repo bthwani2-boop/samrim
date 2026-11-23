@@ -117,3 +117,125 @@ paths:
           content:
             application/json:
               schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+  /v1/operators/passkey/bootstrap/options:
+    post:
+      operationId: beginInitialOperatorPasskeyRegistration
+      summary: Begin one-time first Operator WebAuthn registration in an isolated development namespace
+      description: >
+        Disabled unless an explicit synthetic Identity opt-in is enabled. Requires
+        a short-lived 256-bit ticket issued offline by the authorized Identity owner,
+        a currently empty Operator-role set and no original Root marker. No account,
+        credential or permission is created by beginning the ceremony.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [proof]
+              properties:
+                proof: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+      responses:
+        '200':
+          description: User-verified resident WebAuthn registration options
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ceremonyId, options]
+                properties:
+                  ceremonyId: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                  options:
+                    type: object
+                    required: [publicKey]
+                    additionalProperties: true
+                    properties:
+                      publicKey: { type: object }
+        '400':
+          description: Invalid or ambiguous request
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Invalid, used, expired or unavailable first-Owner ticket
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: POST only
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Isolated owner unavailable or migration missing
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+  /v1/operators/passkey/bootstrap:
+    post:
+      operationId: finishInitialOperatorPasskeyRegistration
+      summary: Consume first-Owner ticket after real UV WebAuthn attestation and create original Operator atomically
+      description: >
+        Synthetic development only and disabled by default. The Identity owner
+        verifies an exact RP/challenge/origin and user-verified resident credential,
+        then creates exactly one actor, Operator role, seven canonical workspace
+        grants, immutable original Operator marker, credential and enrollment audit
+        in one PostgreSQL transaction. Does not issue any session or accept user-
+        supplied actor IDs, role names or permissions. Rejected and replayed
+        requests cannot grant authority.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [proof, ceremonyId, credential]
+              properties:
+                proof: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                ceremonyId: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                credential:
+                  type: object
+                  additionalProperties: true
+                  description: A real browser PublicKeyCredential.toJSON registration response
+      responses:
+        '201':
+          description: First Operator enrolled; independent Passkey login still required
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [registered]
+                properties:
+                  registered: { type: boolean, const: true }
+        '400':
+          description: Invalid or ambiguous request
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Invalid, used, expired or unavailable first-Owner ticket or attestation
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: POST only
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity owner unavailable
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }

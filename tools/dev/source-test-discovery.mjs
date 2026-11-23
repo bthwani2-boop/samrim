@@ -20,6 +20,11 @@ export function discoverNodeSourceTests(root, folder) {
     }
     for (const entry of entries) {
       const full = join(dir, entry.name);
+      // A linked directory or test file would otherwise vanish silently from
+      // coverage discovery. Do not traverse links outside the source owner.
+      if (entry.isSymbolicLink() && !ignoredDirectories.has(entry.name)) {
+        throw new Error("UNSCANNED_SOURCE_LINK " + relative(root, full).replaceAll("\\", "/"));
+      }
       if (entry.isDirectory()) {
         if (!ignoredDirectories.has(entry.name)) walk(full);
       } else if (entry.isFile()) {

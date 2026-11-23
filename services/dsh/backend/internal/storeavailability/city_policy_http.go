@@ -1,9 +1,7 @@
 package storeavailability
 
 import (
-	"encoding/json"
 	"errors"
-	"io"
 	"mime"
 	"net/http"
 	"strings"
@@ -45,6 +43,9 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 		}
 		writeJSON(w, http.StatusOK, current)
 	})
+	if history, ok := policies.(CityPolicyHistoryReader); ok {
+		mux.HandleFunc("GET "+path+"/history", cityPolicyHistoryHandler(identity, history))
+	}
 	if writer != nil {
 		mux.HandleFunc("PATCH "+path, func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Cache-Control", "no-store")
@@ -57,9 +58,6 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 				writeFailure(w, ErrInvalidChange)
 				return
 			}
-			r.Body = http.MaxBytesReader(w, r.Body, 8*1024)
-			decoder := json.NewDecoder(r.Body)
-			decoder.DisallowUnknownFields()
 			var input struct {
 				OperationID           string `json:"operationId"`
 				ExpectedVersion       *int64 `json:"expectedVersion"`
@@ -67,8 +65,7 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 				MaxPreparationMinutes *int   `json:"maxPreparationMinutes"`
 				Reason                string `json:"reason"`
 			}
-			if err = decoder.Decode(&input); err != nil ||
-				decoder.Decode(new(any)) != io.EOF ||
+			if decodeUniqueJSON(w, r, 8*1024, &input) != nil ||
 				input.ExpectedVersion == nil || input.MaxPauseSeconds == nil || input.MaxPreparationMinutes == nil {
 				writeFailure(w, ErrInvalidChange)
 				return
@@ -99,12 +96,18 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 }
 
 func authorizeCityPolicyOperator(w http.ResponseWriter, r *http.Request, identity IdentitySessions) (string, bool) {
+	return authorizePolicyOperator(w, r, identity, r.URL.RawQuery == "")
+}
+
+// queryAllowed is determined at the endpoint boundary: writes reject all
+// selectors, while history reads accept only validated pagination selectors.
+func authorizePolicyOperator(w http.ResponseWriter, r *http.Request, identity IdentitySessions, queryAllowed bool) (string, bool) {
 	token, ok := bearerToken(r)
 	if !ok {
 		writeFailure(w, ErrUnauthorized)
 		return "", false
 	}
-	if r.URL.RawQuery != "" || !cityPolicyIDRule.MatchString(r.PathValue("cityID")) {
+	if !queryAllowed || !cityPolicyIDRule.MatchString(r.PathValue("cityID")) {
 		writeFailure(w, ErrInvalidChange)
 		return "", false
 	}

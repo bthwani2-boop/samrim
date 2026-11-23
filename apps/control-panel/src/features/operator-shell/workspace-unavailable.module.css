@@ -1,0 +1,65 @@
+.workspace {
+  inline-size: 100%;
+  max-inline-size: 68rem;
+  margin-inline: auto;
+  padding-block: clamp(1.5rem, 4vw, 3rem);
+}
+.card {
+  padding: clamp(1.25rem, 3vw, 2.5rem);
+  border: 1px solid var(--border-subtle);
+  border-block-start: 0.25rem solid var(--brand-action);
+  border-radius: 1rem;
+  background: var(--surface-base);
+}
+.kicker {
+  display: inline-block;
+  margin-block-end: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--interactive-text);
+}
+.card h1 {
+  margin: 0 0 0.625rem;
+  color: var(--color-primary);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  line-height: 1.4;
+}
+.description {
+  max-inline-size: 65ch;
+  color: var(--color-secondary);
+  line-height: 1.8;
+}
+.warning {
+  margin-block-start: 1.5rem;
+}
+.footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  margin-block-start: 1.5rem;
+}
+.footer p {
+  margin: 0;
+  color: var(--color-secondary);
+}
+.returnLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-block-size: 2.75rem;
+  padding: 0.625rem 1rem;
+  color: var(--interactive-text);
+  background: var(--action-soft);
+  border-radius: 0.625rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+.returnLink:hover {
+  text-decoration: underline;
+}
+.returnLink:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

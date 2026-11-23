@@ -6,15 +6,61 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
+	"strconv"
 	"testing"
 	"time"
 )
+
+// The URL authority is not sufficient isolation: lib/pq also accepts query
+// overrides and ambient PGHOSTADDR. Require the exact synthetic identity and
+// a supported local endpoint; port 5432 is admitted only inside the separately
+// named disposable CI container with explicit isolation enabled.
+func isolatedMerchantTestDSN(rawDSN, container, hostAddr, isolatedMode string) bool {
+	uri, err := url.Parse(rawDSN)
+	if err != nil || uri.Scheme != "postgres" || uri.User == nil ||
+		uri.Opaque != "" || uri.Fragment != "" || uri.RawFragment != "" ||
+		uri.RawPath != "" || uri.ForceQuery ||
+		uri.User.Username() != "bthwani_session01" ||
+		uri.Path != "/merchant_agent01" ||
+		container != "bthwani-session01-merchant-pg" || hostAddr != "" {
+		return false
+	}
+	password, hasPassword := uri.User.Password()
+	if !hasPassword || password == "" {
+		return false
+	}
+	if uri.Host != "127.0.0.1:35328" &&
+		!(uri.Host == "127.0.0.1:5432" && isolatedMode == "true") {
+		return false
+	}
+	params, err := url.ParseQuery(uri.RawQuery)
+	if err != nil || len(params["sslmode"]) != 1 || params["sslmode"][0] != "disable" {
+		return false
+	}
+	for key, values := range params {
+		switch key {
+		case "sslmode":
+			// Already checked for exactly one required value.
+		case "connect_timeout":
+			if len(values) != 1 {
+				return false
+			}
+			seconds, parseErr := strconv.Atoi(values[0])
+			if parseErr != nil || seconds < 1 || seconds > 15 {
+				return false
+			}
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 // This test is intentionally opt-in and rejects every target except the
 // session-01 disposable, loopback-only PostgreSQL database. No shared volumes.
@@ -23,11 +69,8 @@ func TestMerchantOwnedStoresRealPostgresAndHTTPReadback(t *testing.T) {
 	if dsn == "" {
 		t.Skip("NOT_RUN: session-01 disposable Merchant PostgreSQL not configured")
 	}
-	uri, err := url.Parse(dsn)
-	if err != nil || uri.Scheme != "postgres" || uri.Host != "127.0.0.1:35328" ||
-		uri.User == nil || uri.User.Username() != "bthwani_session01" ||
-		uri.Path != "/merchant_agent01" ||
-		os.Getenv("BTHWANI_MERCHANT_TEST_CONTAINER") != "bthwani-session01-merchant-pg" {
+	if !isolatedMerchantTestDSN(dsn, os.Getenv("BTHWANI_MERCHANT_TEST_CONTAINER"),
+		os.Getenv("PGHOSTADDR"), os.Getenv("BTHWANI_ISOLATED_TEST_MODE")) {
 		t.Fatal("refusing any database other than session-01 disposable Merchant PostgreSQL")
 	}
 
@@ -48,14 +91,8 @@ func TestMerchantOwnedStoresRealPostgresAndHTTPReadback(t *testing.T) {
 		t.Fatalf("unexpected database %q, err=%v", database, err)
 	}
 
-	schema := fmt.Sprintf("merchant_session01_%d", time.Now().UnixNano())
-	baseline, err := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", "001_public_discovery.sql"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(baseline), "__SCHEMA__", schema)); err != nil {
-		t.Fatalf("synthetic DSH schema migration: %v", err)
-	}
+	schema := fmt.Sprintf("dsh_test_merchant_session01_%d", time.Now().UnixNano())
+	testfixture.Fresh(t, ctx, db, "dsh", schema, filepath.Join("..", "..", "..", "database", "schema"))
 	defer db.ExecContext(context.Background(), "DROP SCHEMA IF EXISTS "+schema+" CASCADE")
 
 	if _, err = db.ExecContext(ctx, "INSERT INTO "+schema+".service_cities(id,active) VALUES('sanaa-merchant01',true)"); err != nil {
@@ -170,5 +207,48 @@ func TestMerchantOwnedStoresRealPostgresAndHTTPReadback(t *testing.T) {
 	}
 	if _, err = service.ListMerchantStores(ctx, "synthetic-session-01"); !errors.Is(err, ErrStoreOwnerUnavailable) {
 		t.Fatalf("over-limit canonical Store authority must fail closed: %v", err)
+	}
+}
+
+func TestMerchantIsolatedPostgresDSNGuard(t *testing.T) {
+	const ci = "postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable"
+	const windows = "postgres://bthwani_session01:synthetic-only@127.0.0.1:35328/merchant_agent01?sslmode=disable"
+	const expectedContainer = "bthwani-session01-merchant-pg"
+	for _, tc := range []struct {
+		name, dsn, container, hostAddr, isolatedMode string
+		allowed                                      bool
+	}{
+		{"container loopback", ci, expectedContainer, "", "true", true},
+		{"legacy Windows loopback", windows, expectedContainer, "", "", true},
+		{"wrong user", "postgres://other:synthetic-only@127.0.0.1:5432/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+		{"wrong database", "postgres://bthwani_session01:synthetic-only@127.0.0.1:5432/production?sslmode=disable", expectedContainer, "", "true", false},
+		{"remote host", "postgres://bthwani_session01:synthetic-only@198.51.100.25:5432/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+		{"wrong container name", ci, "different-postgres", "", "true", false},
+		{"missing container name", ci, "", "", "true", false},
+		{"no explicit container mode", ci, expectedContainer, "", "", false},
+		{"ambient PGHOSTADDR bypass", ci, expectedContainer, "198.51.100.25", "true", false},
+		{"localhost PGHOSTADDR bypass", ci, expectedContainer, "127.0.0.1", "true", false},
+		{"DSN hostaddr bypass", ci + "&hostaddr=198.51.100.25", expectedContainer, "", "true", false},
+		{"unexpected local port", "postgres://bthwani_session01:synthetic-only@127.0.0.1:5433/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+		{"duplicate conflicting sslmode", ci + "&sslmode=require", expectedContainer, "", "true", false},
+		{"duplicate identical sslmode", ci + "&sslmode=disable", expectedContainer, "", "true", false},
+		{"valid bounded timeout", ci + "&connect_timeout=5", expectedContainer, "", "true", true},
+		{"duplicate timeout", ci + "&connect_timeout=3&connect_timeout=4", expectedContainer, "", "true", false},
+		{"unbounded timeout", ci + "&connect_timeout=99999", expectedContainer, "", "true", false},
+		{"zero timeout", ci + "&connect_timeout=0", expectedContainer, "", "true", false},
+		{"nonnumeric timeout", ci + "&connect_timeout=oops", expectedContainer, "", "true", false},
+		{"query host override", ci + "&host=198.51.100.25", expectedContainer, "", "true", false},
+		{"query dbname override", ci + "&dbname=production", expectedContainer, "", "true", false},
+		{"malformed query encoding", ci + "&bad%ZZ=value", expectedContainer, "", "true", false},
+		{"URL fragment", ci + "#host=198.51.100.25", expectedContainer, "", "true", false},
+		{"URL opaque", "postgres:merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+		{"missing password", "postgres://bthwani_session01@127.0.0.1:5432/merchant_agent01?sslmode=disable", expectedContainer, "", "true", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := isolatedMerchantTestDSN(tc.dsn, tc.container, tc.hostAddr, tc.isolatedMode)
+			if got != tc.allowed {
+				t.Fatalf("isolated merchant test DSN allowed=%v, wanted %v", got, tc.allowed)
+			}
+		})
 	}
 }

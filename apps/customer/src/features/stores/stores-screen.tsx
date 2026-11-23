@@ -1,16 +1,19 @@
-import { listPublicStores, type PublicPage, type PublicStore } from "@bthwani/dsh";
+import { listPublicStores, listPublicVerticals, type PublicPage, type PublicStore, type PublicVertical } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ServiceCityScope from "../location/service-city-scope";
-import { readStoreBrowseScope, STORE_SEARCH_LIMIT, serviceCityLabel } from "../location/serviceability";
+import { normalizeServiceCityId, readStoreBrowseScope, STORE_SEARCH_LIMIT, serviceCityLabel } from "../location/serviceability";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
 
 const INITIAL_CITY = process.env.EXPO_PUBLIC_DSH_CITY_ID ?? "sanaa";
-type PageState = { scope: string; loading: boolean; loadingMore: boolean; items: PublicStore[]; cursor?: string | undefined; error?: string | undefined };
+type PageState = { scope: string; loading: boolean; loadingMore: boolean; items: PublicStore[]; revision?: number; cursor?: string | undefined; error?: string | undefined };
+type VerticalState = { city: string; loading: boolean; loadingMore: boolean; items: PublicVertical[]; revision?: number; cursor?: string | undefined; error?: string | undefined };
+const verticalLabels: Readonly<Record<string, string>> = { grocery: "المقاضي", restaurant: "المطاعم", pharmacy: "الصيدليات" };
+function verticalLabel(id: string) { return verticalLabels[id] ?? id; }
 function requiresFreshPage(code?: string) {
   return code === "STALE_CURSOR" || code === "INVALID_CURSOR";
 }
@@ -26,25 +29,90 @@ type Props = Readonly<{ variant?: "home" | "directory" }>;
 export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const { theme } = useMobileAppearance();
   const api = resolvePublicStoreOrigin();
-  const params = useLocalSearchParams<{ city?: string | string[]; q?: string | string[] }>();
+  const params = useLocalSearchParams<{ city?: string | string[]; q?: string | string[]; vertical?: string | string[] }>();
   const initial = readStoreBrowseScope(params, INITIAL_CITY);
-  const [draftCity, setDraftCity] = React.useState(initial.city);
   const [cityId, setCityId] = React.useState(initial.city);
   const [showCityPicker, setShowCityPicker] = React.useState(false);
   const [showSearch, setShowSearch] = React.useState(variant === "directory" || Boolean(initial.q));
   const [draftQuery, setDraftQuery] = React.useState(initial.q);
   const [query, setQuery] = React.useState(initial.q);
-  const routeScope = JSON.stringify([initial.city, initial.q]);
+  const [draftVertical, setDraftVertical] = React.useState(initial.vertical ?? "");
+  const [vertical, setVertical] = React.useState(initial.vertical ?? "");
+  const [invalidVertical, setInvalidVertical] = React.useState(false);
+  const routeScope = JSON.stringify([initial.city, initial.q, initial.vertical ?? ""]);
   const [appliedRouteScope, setAppliedRouteScope] = React.useState(routeScope);
   React.useEffect(() => {
     if (appliedRouteScope === routeScope) return;
-    setDraftCity(initial.city);
     setCityId(initial.city);
     setDraftQuery(initial.q);
     setQuery(initial.q);
+    setDraftVertical(initial.vertical ?? "");
+    setVertical(initial.vertical ?? "");
+    setInvalidVertical(false);
     setAppliedRouteScope(routeScope);
-  }, [appliedRouteScope, routeScope, initial.city, initial.q]);
-  const scope = JSON.stringify([cityId, query]);
+  }, [appliedRouteScope, routeScope, initial.city, initial.q, initial.vertical]);
+  const [verticalRetry, setVerticalRetry] = React.useState(0);
+  const [verticalState, setVerticalState] = React.useState<VerticalState>({
+    city: "", loading: true, loadingMore: false, items: [],
+  });
+  const verticalGeneration = React.useRef(0);
+  const verticalAbort = React.useRef<AbortController | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry intentionally refreshes the same DSH city classification.
+  React.useEffect(() => {
+    const current = ++verticalGeneration.current;
+    const abort = new AbortController();
+    verticalAbort.current?.abort();
+    verticalAbort.current = abort;
+    setVerticalState({ city: cityId, loading: true, loadingMore: false, items: [] });
+    listPublicVerticals(api, cityId, { limit: 20, signal: abort.signal })
+      .then(page => {
+        if (!abort.signal.aborted && verticalGeneration.current === current) {
+          setVerticalState({ city: cityId, loading: false, loadingMore: false,
+            items: page.items, cursor: page.nextCursor, revision: page.revision });
+        }
+      }).catch((error: unknown) => {
+        if (!abort.signal.aborted && verticalGeneration.current === current) {
+          setVerticalState({ city: cityId, loading: false, loadingMore: false,
+            items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
+        }
+      });
+    return () => { abort.abort(); verticalGeneration.current++; };
+  }, [api, cityId, verticalRetry]);
+  const visibleVerticals: VerticalState = verticalState.city === cityId ? verticalState :
+    { city: cityId, loading: true, loadingMore: false, items: [] };
+  const loadMoreVerticals = async () => {
+    if (!visibleVerticals.cursor || visibleVerticals.loading || visibleVerticals.loadingMore) return;
+    const cursor = visibleVerticals.cursor;
+    const current = verticalGeneration.current;
+    const abort = new AbortController();
+    verticalAbort.current?.abort();
+    verticalAbort.current = abort;
+    setVerticalState(old => old.city === cityId ? { ...old, loadingMore: true, error: undefined } : old);
+    try {
+      const page = await listPublicVerticals(api, cityId, { cursor, limit: 20, signal: abort.signal });
+      if (abort.signal.aborted || current !== verticalGeneration.current) return;
+      setVerticalState(old => {
+        if (old.city !== cityId) return old;
+        const seen = new Set(old.items.map(item => item.id));
+        if (page.revision !== old.revision ||
+          (page.nextCursor !== undefined && page.nextCursor === cursor) ||
+          page.items.some(item => seen.has(item.id)) ||
+          new Set(page.items.map(item => item.id)).size !== page.items.length) {
+          return { city: cityId, loading: false, loadingMore: false, items: [], error: "STALE_CURSOR" };
+        }
+        return { ...old, loadingMore: false,
+          items: [...old.items, ...page.items], cursor: page.nextCursor,
+          revision: page.revision, error: undefined };
+      });
+    } catch (error) {
+      if (abort.signal.aborted || current !== verticalGeneration.current) return;
+      const code = error instanceof Error ? error.message : "UNKNOWN";
+      setVerticalState(old => old.city !== cityId ? old : requiresFreshPage(code)
+        ? { city: cityId, loading: false, loadingMore: false, items: [], error: code }
+        : { ...old, loadingMore: false, error: code });
+    }
+  };
+  const scope = JSON.stringify([cityId, query, vertical]);
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<PageState>({ scope: "", loading: true, loadingMore: false, items: [] });
   const generation = React.useRef(0);
@@ -56,17 +124,17 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     pageAbort.current?.abort();
     pageAbort.current = abort;
     setState({ scope, loading: true, loadingMore: false, items: [] });
-    listPublicStores(api, cityId, { query, limit: 20, signal: abort.signal })
+    listPublicStores(api, cityId, { query, ...(vertical ? { verticalId: vertical } : {}), limit: 20, signal: abort.signal })
       .then((page) => {
         if (!abort.signal.aborted && generation.current === current)
-          setState({ scope, loading: false, loadingMore: false, items: page.items, cursor: page.nextCursor });
+          setState({ scope, loading: false, loadingMore: false, items: page.items, cursor: page.nextCursor, revision: page.revision });
       })
       .catch((error: unknown) => {
         if (!abort.signal.aborted && generation.current === current)
           setState({ scope, loading: false, loadingMore: false, items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
     return () => { abort.abort(); generation.current++; };
-  }, [api, cityId, query, scope, retry]);
+  }, [api, cityId, query, vertical, scope, retry]);
   const visible: PageState = appliedRouteScope === routeScope && state.scope === scope
     ? state : { scope, loading: true, loadingMore: false, items: [] };
   const loadMore = async () => {
@@ -78,10 +146,20 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     pageAbort.current = abort;
     setState((old) => ({ ...old, loadingMore: true, error: undefined }));
     try {
-      const page: PublicPage<PublicStore> = await listPublicStores(api, scopedCity, { query, cursor: visible.cursor, limit: 20, signal: abort.signal });
+      const page: PublicPage<PublicStore> = await listPublicStores(api, scopedCity, { query, ...(vertical ? { verticalId: vertical } : {}), cursor: visible.cursor, limit: 20, signal: abort.signal });
       if (generation.current !== current || abort.signal.aborted) return;
-      setState((old) => old.scope !== scope ? old : {
-        ...old, loadingMore: false, items: [...old.items, ...page.items], cursor: page.nextCursor,
+      setState((old) => {
+        if (old.scope !== scope) return old;
+        const seen = new Set(old.items.map(item => item.id));
+        if (page.revision !== old.revision ||
+          page.nextCursor === visible.cursor && page.nextCursor !== undefined ||
+          page.items.some(item => seen.has(item.id)) ||
+          new Set(page.items.map(item => item.id)).size !== page.items.length) {
+          // Do not expose a mixed owner snapshot after an invalid continuation.
+          return { scope, loading: false, loadingMore: false, items: [], error: "STALE_CURSOR" };
+        }
+        return { ...old, loadingMore: false, items: [...old.items, ...page.items],
+          cursor: page.nextCursor, revision: page.revision };
       });
     } catch (error) {
       if (generation.current !== current || abort.signal.aborted) return;
@@ -99,8 +177,17 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     borderRadius: 10, borderWidth: 1, borderColor: theme.borderColor } as const;
   const headerAction = { ...buttonStyle, justifyContent: "center",
     alignItems: "center", backgroundColor: theme.surface } as const;
-  const browseParams = { city: cityId, ...(query ? { q: query } : {}) };
+  const browseParams = { city: cityId, ...(query ? { q: query } : {}), ...(vertical ? { vertical } : {}) };
   const submitSearch = () => setQuery(draftQuery.trim());
+  const applyVertical = () => {
+    const normalized = normalizeServiceCityId(draftVertical);
+    if (draftVertical.trim() && !normalized) {
+      setInvalidVertical(true);
+      return;
+    }
+    setInvalidVertical(false);
+    setVertical(normalized);
+  };
   return (
     <SafeAreaView
       edges={variant === "home" ? ["top", "left", "right"] : ["top", "bottom", "left", "right"]}
@@ -128,7 +215,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
             <Pressable accessibilityRole="button" accessibilityState={{ expanded: showCityPicker }}
               accessibilityLabel={`تغيير مدينة التسوّق، ${serviceCityLabel(cityId)}`}
-              onPress={() => { setDraftCity(cityId); setShowCityPicker(value => !value); setShowSearch(false); }}
+              onPress={() => { setShowCityPicker(value => !value); setShowSearch(false); }}
               style={{ minHeight: 44, justifyContent: "center" }}>
               <Text style={{ color: theme.interactiveText, fontWeight: "600" }}>
                 مدينة التسوّق: {serviceCityLabel(cityId)}
@@ -142,7 +229,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
               <Text style={{ color: theme.interactiveText }}>مسح البحث</Text>
             </Pressable> : null}
           </View>
-          {showCityPicker ? <ServiceCityScope draftCity={draftCity} onDraftChange={setDraftCity}
+          {showCityPicker ? <ServiceCityScope key={api} origin={api} currentCity={cityId}
             onApply={nextCity => { setCityId(nextCity); setShowCityPicker(false); }} /> : null}
           {showSearch ? (
             <View style={{ flexDirection: "row", gap: 8 }}>
@@ -158,6 +245,57 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
               </Pressable>
             </View>
           ) : null}
+          <View style={{ gap: 6 }}>
+            <Text style={{ color: theme.colorSecondary }}>تصفية المتاجر حسب نوع النشاط</Text>
+            {visibleVerticals.loading ? <ActivityIndicator accessibilityLabel="جاري تحميل أنواع المتاجر" color={theme.actionBackground} /> : null}
+            <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              {visibleVerticals.items.map(item => (
+                <Pressable key={item.id} testID={`vertical-option-${item.id}`}
+                  accessibilityRole="button" accessibilityState={{ selected: vertical === item.id }}
+                  accessibilityLabel={`عرض متاجر ${verticalLabel(item.id)}`}
+                  onPress={() => { setDraftVertical(item.id); setVertical(item.id); setInvalidVertical(false); }}
+                  style={{ ...buttonStyle, backgroundColor: vertical === item.id ? theme.actionSoft : theme.surface }}>
+                  <Text style={{ color: vertical === item.id ? theme.interactiveText : theme.color }}>
+                    {verticalLabel(item.id)} ({item.storeCount})
+                  </Text>
+                </Pressable>
+              ))}
+              {visibleVerticals.cursor && !visibleVerticals.error ? (
+                <Pressable testID="vertical-options-more" accessibilityRole="button"
+                  disabled={visibleVerticals.loadingMore} onPress={loadMoreVerticals} style={buttonStyle}>
+                  <Text style={{ color: theme.interactiveText }}>
+                    {visibleVerticals.loadingMore ? "جاري التحميل" : "أنواع أخرى"}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {visibleVerticals.error ? (
+                <Pressable testID="vertical-options-retry" accessibilityRole="button"
+                  onPress={() => setVerticalRetry(value => value + 1)} style={buttonStyle}>
+                  <Text style={{ color: theme.interactiveText }}>تعذّر تحميل الأنواع — إعادة المحاولة</Text>
+                </Pressable>
+              ) : null}
+            </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <TextInput testID="vertical-filter-input" accessibilityLabel="رمز تصنيف المتجر"
+                placeholder="مثل grocery" placeholderTextColor={theme.colorSecondary}
+                value={draftVertical} autoCapitalize="none" autoCorrect={false}
+                onChangeText={value => { setDraftVertical(value); setInvalidVertical(false); }}
+                returnKeyType="search" onSubmitEditing={applyVertical} maxLength={64}
+                style={{ ...buttonStyle, ...textStyle, flexGrow: 1, minWidth: 140, backgroundColor: theme.surface }} />
+              <Pressable testID="vertical-filter-apply" accessibilityRole="button"
+                onPress={applyVertical} style={{ ...headerAction, backgroundColor: theme.actionBackground }}>
+                <Text style={{ color: theme.onAction }}>تطبيق التصنيف</Text>
+              </Pressable>
+              {vertical ? <Pressable testID="vertical-filter-clear" accessibilityRole="button"
+                onPress={() => { setDraftVertical(""); setVertical(""); setInvalidVertical(false); }}
+                style={headerAction}>
+                <Text style={{ color: theme.interactiveText }}>كل الأنواع</Text>
+              </Pressable> : null}
+            </View>
+            {invalidVertical ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
+              رمز التصنيف غير صالح. استخدم حروفًا لاتينية صغيرة وأرقامًا وشرطة فقط.
+            </Text> : null}
+          </View>
         </View>
       </View>
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{

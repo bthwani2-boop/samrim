@@ -100,6 +100,9 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		expectedMethod, role = http.MethodGet, "customer"
 	case CaptainApplicationPath:
 		expectedMethod, role = http.MethodPost, "customer"
+		if r.Method == http.MethodGet {
+			expectedMethod = http.MethodGet
+		}
 	case OperatorCaptainsPath:
 		expectedMethod, operatorList = http.MethodGet, true
 	default:
@@ -124,6 +127,9 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	w.Header().Set("Allow", expectedMethod)
+	if r.URL.Path == CaptainApplicationPath {
+		w.Header().Set("Allow", "GET, POST")
+	}
 	if operatorID != "" {
 		w.Header().Set("Allow", "GET, PATCH")
 	}
@@ -161,7 +167,9 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var err error
 	switch expectedMethod {
 	case http.MethodGet:
-		if operatorID != "" {
+		if r.URL.Path == CaptainApplicationPath {
+			standing, err = h.service.ReadSelfApplication(ctx, bearer)
+		} else if operatorID != "" {
 			standing, err = h.service.ReadForOperator(ctx, bearer, operatorID)
 		} else {
 			standing, err = h.service.ReadSelf(ctx, bearer, role)

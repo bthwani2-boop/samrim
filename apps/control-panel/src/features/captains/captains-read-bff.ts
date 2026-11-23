@@ -6,6 +6,7 @@ import {type CaptainStandingStatus,
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import {
+  isTrustedOperatorLoopbackTarget,
   OPERATOR_COOKIE, readVerifiedOperatorAccess, resolveIsolatedOperatorConfig,
 } from "../../server/operator-passkey-bff";
 import { isolatedPublicDshOrigin } from "../stores/public-store-query";
@@ -16,8 +17,8 @@ const privateHeaders = {
 };
 const error = (code: string, status: number) => NextResponse.json({ code }, { status, headers: privateHeaders });
 
-/** Fixed read routes only; the browser supplies neither an owner URL nor an
- * authenticated actor. The same HttpOnly bearer is checked and forwarded. */
+/** The HttpOnly bearer authenticates the operator. The detail page's binding
+ * prevents a read or draft from carrying over to a different operator. */
 export async function readCaptainReview(request: Request, actorId?: string) {
   const config = resolveIsolatedOperatorConfig(process.env);
   const owner = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
@@ -32,12 +33,12 @@ export async function readCaptainReview(request: Request, actorId?: string) {
     request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json")) {
     return error("FORBIDDEN", 403);
   }
-  if (url.origin !== config.browserOrigin || request.headers.get("host") !== url.host ||
+  // Next sees localhost:23010 inside the existing Surface SSH tunnel while
+  // the browser's trusted Host remains localhost:13000. Query validation
+  // below still enforces the exact allowed Captain parameters.
+  if (!isTrustedOperatorLoopbackTarget(request, config.browserOrigin, true) ||
     (origin !== null && origin !== config.browserOrigin) ||
-    (site !== null && site !== "same-origin" && site !== "none") ||
-    (request.headers.has("x-forwarded-host") && request.headers.get("x-forwarded-host") !== url.host) ||
-    (request.headers.has("x-forwarded-proto") && request.headers.get("x-forwarded-proto") !== "http") ||
-    ["authorization", "x-actor-id", "x-role", "x-operator-role"].some(name => request.headers.has(name))) {
+    (site !== null && site !== "same-origin" && site !== "none")) {
     return error("FORBIDDEN", 403);
   }
   const params = url.searchParams;
@@ -54,7 +55,11 @@ export async function readCaptainReview(request: Request, actorId?: string) {
   if (!bearer || !/^[A-Za-z0-9_-]{43}$/.test(bearer)) return error("UNAUTHORIZED", 401);
   const access = await readVerifiedOperatorAccess(config, bearer);
   if (!access) return error("UNAUTHORIZED", 401);
-  if (!access.grants.includes("operations")) return error("FORBIDDEN", 403);
+  const operatorBinding = encodeURIComponent(access.actorId);
+  if (!access.grants.includes("operations") ||
+    (actorId !== undefined && request.headers.get("X-BThwani-Operator") !== operatorBinding)) {
+    return error("FORBIDDEN", 403);
+  }
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
   try {
     let result: unknown;
@@ -100,7 +105,7 @@ export async function readCaptainReview(request: Request, actorId?: string) {
         : await getOperatorCaptainStanding(owner, actorId, bearer, signal);
     }
     return NextResponse.json(result, { status: 200, headers: {
-      ...privateHeaders, "X-BThwani-Operator": encodeURIComponent(access.actorId),
+      ...privateHeaders, "X-BThwani-Operator": operatorBinding,
     } });
   } catch (reason) {
     if (reason instanceof DshPublicError) {

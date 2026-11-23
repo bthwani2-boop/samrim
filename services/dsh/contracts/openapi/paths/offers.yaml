@@ -17,7 +17,7 @@ paths:
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
         - name: cursor
           in: query
-          schema: { type: string, maxLength: 512 }
+          schema: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
       responses:
         '200':
           description: Current DSH approved Offer page; not a quote or checkout authorization
@@ -30,5 +30,46 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/NotFound'
         '409':
           $ref: '../dsh.openapi.yaml#/components/responses/StaleCursor'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/OwnerUnavailable'
+  /v1/public/stores/{id}/offers/{offerId}/estimate:
+    get:
+      operationId: estimatePublicOffer
+      summary: Estimate the merchandise subtotal for one visible Store Offer and quantity
+      description: Reads one current DSH publication, Offer, Variant, price and stock snapshot. It creates no cart, inventory hold, price promise, payment or Order. A Store that is closed or paused may still show current merchandise prices. This response carries neither current inventory counts nor fulfillment fees.
+      security: []
+      parameters:
+        - $ref: '../dsh.openapi.yaml#/components/parameters/StoreId'
+        - name: offerId
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: quantity
+          in: query
+          required: true
+          schema: { type: integer, minimum: 1, maximum: 2147483647 }
+      responses:
+        '200':
+          description: Current YER merchandise subtotal for the specified quantity
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicOfferEstimate' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '404':
+          $ref: '../dsh.openapi.yaml#/components/responses/NotFound'
+        '409':
+          description: Quantity exceeds currently available units for the visible Offer
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [error]
+                properties:
+                  error: { type: string, const: INSUFFICIENT_AVAILABLE_QUANTITY }
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/OwnerUnavailable'

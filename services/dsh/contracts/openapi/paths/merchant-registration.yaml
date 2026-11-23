@@ -1,0 +1,111 @@
+paths:
+  /v1/stores/registration-options:
+    get:
+      operationId: getMerchantStoreRegistrationOptions
+      summary: Read currently admitted Store city/channel choices and active verticals
+      description: Only a current Identity Merchant may read DSH registration choices. DSH owns city, vertical, admission and terms version. An empty list means registration is closed; no application fallback or auto-created Store.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Bounded current DSH admission policy and vertical choices
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantRegistrationOptions' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+  /v1/stores:
+    post:
+      operationId: registerMerchantStore
+      summary: Create one unpublished DSH Store for the verified Merchant
+      description: Requires the current Merchant bearer. DSH binds ownership to Identity's current actor, checks the live versioned city/relation policy and active vertical inside the SQL transaction, records accepted terms and an idempotency command. The new Store is unpublished, without any orderability or payment grant. Retries using the same actor, operation and payload return the original Store (200) with replay=true; differing payloads fail 409.
+      security:
+        - OpaqueSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantStoreRegistration' }
+      responses:
+        '201':
+          description: New DSH Store committed, not published and not orderable
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantStoreRegistrationResult' }
+        '200':
+          description: Idempotent replay after fresh Identity authorization and current Store ownership confirmation
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantStoreRegistrationResult' }
+        '400':
+          description: Invalid or unconsented registration request
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          description: Invalid Merchant role, disabled Store admission or unauthorized origin
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '409':
+          description: Reused operation with different payload or stale admission-policy version
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '503':
+          description: DSH/Identity owner unavailable or result unknown; retry same operation id
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+  /v1/operators/cities/{cityID}/store-publication-review/{relation}:
+    parameters:
+      - in: path
+        name: cityID
+        required: true
+        schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      - in: path
+        name: relation
+        required: true
+        schema: { type: string, enum: [DIRECT, MARKETPLACE] }
+    get:
+      operationId: listOperatorStorePublicationReview
+      summary: Read unpublished Store evidence for Operator publication review
+      description: Requires current Identity Operator merchant permission before and after DSH read. Returns existing unpublished Stores scoped to city and relation, not a submitted case, approval, financial eligibility or checkout permission. Fixed page size of 20, ordered by Store ID; no writes.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - in: query
+          name: after
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: DSH owner facts only, no financial or publication approval
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicationReviewPage' }
+        '400':
+          description: Invalid scope or cursor
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'

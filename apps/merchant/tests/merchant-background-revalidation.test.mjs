@@ -43,9 +43,9 @@ function harness() {
     useCallback(fn) { index++; return fn; },
     useEffect(fn) { index++; effects.push(fn); },
   };
-  const jsx = (type, props) => ({ type, props: props ?? {} });
+  const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
   const mocks = {
-    "@bthwani/identity": { IdentityClientError: class extends Error {} },
+    "@bthwani/identity": { IdentityClientError: class extends Error {}, normalizeYemeniMobile: () => undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {
       background: "black", surface: "black", color: "white",
       colorSecondary: "white", interactiveText: "white", warningText: "red",
@@ -53,6 +53,7 @@ function harness() {
     } }) },
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+    "expo-router": { Link: "Link" },
     "react-native": {
       AppState: {
         currentState: "active",
@@ -90,7 +91,7 @@ function harness() {
   const render = () => {
     index = 0;
     effects.length = 0;
-    return mod.exports.default();
+    return mod.exports.default({});
   };
   return {
     render,
@@ -123,11 +124,34 @@ const approvedSession = {
   role: "merchant",
   sessionExpiresAt: new Date(Date.now() + 120_000).toISOString(),
 };
+const workspace = tree => tree.props.children[0];
+const visible = view => view?.props.pointerEvents === "auto";
 async function settle() {
   await Promise.resolve();
   await Promise.resolve();
   await Promise.resolve();
 }
+
+function findNode(node, matches) {
+  if (Array.isArray(node)) return node.map(child => findNode(child, matches)).find(Boolean);
+  if (node && typeof node === "object") {
+    return matches(node) ? node : findNode(node.props?.children, matches);
+  }
+}
+
+test("sending without a typed phone explains the missing input", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: null });
+  await settle();
+  const send = findNode(h.render(), node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إرسال رمز التحقق");
+  assert.ok(send);
+  assert.equal(send.props.disabled, false);
+  send.props.onPress();
+  assert.ok(findNode(h.render(), node => node.props.accessibilityRole === "alert" &&
+    node.props.children === "اكتب رقم الهاتف اليمني للاختبار، مثل 770000001."));
+});
 
 test("Merchant workspace is concealed immediately when app enters background", async () => {
   const h = harness();
@@ -137,9 +161,9 @@ test("Merchant workspace is concealed immediately when app enters background", a
   h.startStanding();
   h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
   await settle();
-  assert.equal(h.render().type, "MerchantWorkspace", "valid current Identity and DSH grants show workspace");
+  assert.equal(visible(workspace(h.render())), true, "valid current Identity and DSH grants show workspace");
   h.emit("background");
-  assert.notEqual(h.render().type, "MerchantWorkspace",
+  assert.equal(visible(workspace(h.render())), false,
     "background transition must hide Store-scoped information before returning to app");
 });
 
@@ -153,8 +177,62 @@ test("Merchant background aborts stale owner check and foreground requires a fre
   const fresh = h.nextAdmission();
   stale.resolve({ enabled: true, session: approvedSession });
   await settle();
-  assert.notEqual(h.render().type, "MerchantWorkspace", "late stale approval cannot reopen Store workspace");
+  assert.equal(workspace(h.render()), null, "late stale approval cannot reopen Store workspace");
   fresh.resolve({ enabled: true, session: null });
   await settle();
-  assert.notEqual(h.render().type, "MerchantWorkspace", "fresh revoked session keeps workspace closed");
+  assert.equal(workspace(h.render()), null, "fresh revoked session keeps workspace closed");
+});
+
+test("revalidating the same session preserves its workspace key while private content is concealed", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const initial = workspace(h.render());
+  assert.equal(visible(initial), true);
+
+  h.emit("background");
+  const concealed = workspace(h.render());
+  assert.equal(concealed.key, initial.key);
+  assert.deepEqual(concealed.props.style, { display: "none" });
+  assert.equal(concealed.props.accessibilityElementsHidden, true);
+  assert.equal(visible(concealed), false);
+
+  h.emit("active");
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false, "Identity alone does not reopen the workspace");
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const verifiedAgain = workspace(h.render());
+  assert.equal(verifiedAgain.key, initial.key);
+  assert.equal(visible(verifiedAgain), true);
+});
+
+test("a different actor invalidates the old workspace before DSH grants arrive", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const initial = workspace(h.render());
+  initial.props.children.props.onRefresh();
+  assert.equal(visible(workspace(h.render())), false);
+  const other = { ...approvedSession, actorId: "merchant-test-b" };
+  h.nextAdmission().resolve({ enabled: true, session: other });
+  await settle();
+  assert.equal(workspace(h.render()), null);
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: other.actorId, stores: [] });
+  await settle();
+  const current = workspace(h.render());
+  assert.equal(visible(current), true);
+  assert.notEqual(current.key, initial.key);
+  assert.equal(current.props.children.props.actorId, other.actorId);
 });

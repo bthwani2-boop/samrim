@@ -1,14 +1,16 @@
 "use client";
 
 import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Space, Typography } from "antd";
+import Link from "next/link";
 import { useState } from "react";
 import {
   type CityPolicy, type CityPolicyChange, parseCityPolicy, reconcileCityPolicy,
 } from "./city-policy-command";
+import CityPolicyHistory from "./city-policy-history";
 
 const validCity = /^[a-z0-9-]{1,64}$/;
 
-export default function PoliciesWorkspace({ title = "السياسات" }: Readonly<{ title?: string }>) {
+export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: string }>) {
   const [city, setCity] = useState("");
   const [policy, setPolicy] = useState<CityPolicy | null>(null);
   const [maxPause, setMaxPause] = useState<number | null>(null);
@@ -44,6 +46,7 @@ export default function PoliciesWorkspace({ title = "السياسات" }: Readon
     try {
       const response = await fetch(endpoint, {
         method: "GET", credentials: "same-origin", cache: "no-store",
+        headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
       });
       if (!response.ok) {
         throw new Error(response.status === 403 || response.status === 401
@@ -86,7 +89,7 @@ export default function PoliciesWorkspace({ title = "السياسات" }: Readon
     setBusy(true);
     setMessage("");
     setErrorMessage("");
-    const result = await reconcileCityPolicy(endpoint, city, change);
+    const result = await reconcileCityPolicy(endpoint, city, actorId, change);
     setBusy(false);
 
     if (result.status === "confirmed") {
@@ -133,11 +136,53 @@ export default function PoliciesWorkspace({ title = "السياسات" }: Readon
 
   return (
     <main style={{ maxWidth: 900, marginInline: "auto", paddingBlock: 24 }}>
-      <Typography.Title level={2}>{title}</Typography.Title>
+      <Typography.Title level={1}>السياسات</Typography.Title>
       <Typography.Paragraph>
         إدارة حدود إتاحة المتاجر لكل مدينة عبر DSH. تتطلب جلسة Operator وصلاحية
         <code> platform_policies </code> مؤكَّدتين من Identity؛ ولا تغيّر الطلبات أو الاتفاقيات المالية.
       </Typography.Paragraph>
+      <section aria-label="خريطة السياسات المعتمدة" style={{
+        display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+        gap: 12, marginBlockEnd: 22,
+      }}>
+        <Card title="الانضمام والمتاجر — DSH">
+          <Typography.Paragraph>
+            قبول المتاجر المباشرة ومتاجر السوق مستقل لكل مدينة ونموذج، مع شروط وإصدار
+            وتسجيل من غيّر السياسة. الإتاحة لا تعني النشر أو إبرام اتفاق مالي.
+          </Typography.Paragraph>
+          <Link href="/policies/store-registration">إدارة قبول المتاجر: المباشر والسوق</Link>
+          <Typography.Paragraph style={{ marginBlockStart: 8 }}>
+            <Link href="/merchants/joining">مراجعة حقائق المتاجر غير المنشورة (صلاحية إدارة التجار)</Link>
+          </Typography.Paragraph>
+        </Card>
+        <Card title="التشغيل والأهلية — DSH">
+          <Typography.Paragraph>
+            سياسة توقف المتاجر ووقت التحضير حسب المدينة، دون منح المتجر صلاحية نشر جديدة.
+          </Typography.Paragraph>
+          <Link href="#city-availability-policy">إدارة سياسة إتاحة المتاجر أدناه</Link>
+        </Card>
+        <Card title="الطلبات والتوصيل — DSH">
+          <Typography.Paragraph>
+            أزمنة مراحل الطلبات لم تُوصل بعد إلى مالك تنفيذي. رسوم التوصيل
+            وطريقة الإسناد ليستا جزءًا من سياسة تسجيل المتجر.
+          </Typography.Paragraph>
+          <Link href="/policies/stage-sla">حالة توفر سياسات أزمنة مراحل الطلبات</Link>
+        </Card>
+        <Card title="المالية والاتفاقيات — WLT">
+          <Typography.Paragraph>
+            العمولة والاشتراك والتحصيل والتسويات يملكها WLT، ولا يحددها
+            اختيار DIRECT أو MARKETPLACE. لم تُوصل هنا واجهة تحرير مالية معتمدة؛
+            لا يمكن إنشاء اتفاق أو تغيير مستحقات من إعداد قبول المتاجر.
+          </Typography.Paragraph>
+        </Card>
+        <Card title="السريان وسجل التغييرات">
+          <Typography.Paragraph>
+            راجع الإصدار والمشغّل والسبب وتاريخ التحديث في شاشة السياسة نفسها.
+            لا توجد في هذه الصفحة واجهة لتعديل الأثر المالي أو استرجاع تاريخ محذوف.
+          </Typography.Paragraph>
+        </Card>
+      </section>
+      <section id="city-availability-policy" aria-label="سياسة إتاحة المتاجر حسب المدينة">
       <Card title="قراءة سياسة المدينة" style={{ marginBlockEnd: 16 }}>
         <Form layout="vertical" onFinish={() => void readCurrent()}>
           <Form.Item label="معرّف المدينة المعتمد في DSH">
@@ -165,6 +210,8 @@ export default function PoliciesWorkspace({ title = "السياسات" }: Readon
           </section>
         )}
       </Card>
+      {endpoint && !busy && !uncertain && <CityPolicyHistory key={actorId + ":" + city + ":" + (policy?.version ?? 0)}
+        actorId={actorId} city={city} endpoint={endpoint} />}
       <Card title="تغيير سياسة إتاحة المتاجر" style={{ marginBlockEnd: 16 }}>
         {!policy && (
           <Checkbox checked={provision} disabled={busy || uncertain || requiresRead} onChange={event => {
@@ -207,6 +254,7 @@ export default function PoliciesWorkspace({ title = "السياسات" }: Readon
           {uncertain ? " — احتفظ به؛ لا تغير الأمر إلى أن تتضح النتيجة." : null}
         </Typography.Paragraph>}
       </Card>
+      </section>
       {message && <Alert type="success" showIcon message={message} role="status" />}
       {errorMessage && <Alert type="error" showIcon message={errorMessage} role="alert" />}
     </main>

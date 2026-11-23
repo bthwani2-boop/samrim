@@ -1,3 +1,4 @@
+import { identityOperations } from "@bthwani/identity";
 import { NextResponse } from "next/server";
 import {
   boundedResponseJSON,
@@ -28,8 +29,8 @@ export async function POST(request: Request) {
   try {
     const upstream = await operatorIdentityRequest(
       config,
-      "/v1/operators/passkey/authentication/options",
-      { method: "POST" },
+      identityOperations.beginOperatorPasskeyAuthentication,
+      {},
     );
     if (upstream.status !== 200) {
       return NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });

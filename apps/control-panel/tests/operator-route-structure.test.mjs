@@ -13,6 +13,16 @@ test("Operator workspace keeps control-panel identity and uses a real Next route
     assert.ok(existsSync(file(path)), path);
   }
   assert.match(read("app/page.tsx"), /OperatorEntryScreen/);
+  const entry = read("src/features/access/operator-entry-screen.tsx");
+  assert.match(entry, /متطلبات تفعيل الدخول/);
+  assert.match(entry, /مفتاح مرور موثّق لصاحب الحساب/);
+  assert.match(entry, /const bootstrap = resolveInitialOperatorBootstrapConfig\(process.env\)/);
+  assert.match(entry, /\{bootstrap && <OperatorBootstrapForm mode="initial" \/>\}/);
+  assert.match(entry, /\{recovery && <OperatorBootstrapForm mode="recovery" \/>\}/);
+  assert.doesNotMatch(entry, /operator-sections-title|workspaceGroupLabels/);
+  assert.match(read("src/features/operator-shell/operator-shell.tsx"), /pathname === "\/" && verifiedGrants === null && signOutState === "idle"/);
+  const login = read("src/features/access/operator-passkey-form.tsx");
+  assert.match(login, /Identity من إكمال التحقق الآمن/);
   assert.match(read("app/(workspace)/workspace/page.tsx"), /OperatorDashboardPage/);
   assert.equal(existsSync(file("src/app")), false);
 });
@@ -27,12 +37,12 @@ test("Operator workspace only renders protected children after owner-verified ac
   assert.match(proxy, /requestHeaders\.set\("x-bthwani-route", request\.nextUrl\.pathname\)/);
   const server = read("src/server/current-operator-access.ts");
   assert.match(server, /cache\(async/);
-  assert.match(server, /readVerifiedOperatorAccess/);
+  assert.match(server, /readOperatorAccessState/);
   const gate = read("src/features/access/operator-workspace-gate.tsx");
   assert.match(gate, /غير متاح/);
   assert.doesNotMatch(gate, /fetch\(|getOrder\(|useSession\(/);
   const entry = read("src/features/access/operator-entry-screen.tsx");
-  assert.match(entry, /لوحة تحكم بثواني/);
+  assert.match(entry, /دخول المشغّل/);
   assert.doesNotMatch(entry, /setSession\(|localStorage|mock/i);
 });
 
@@ -41,9 +51,33 @@ test("Operator links perform a new document request, not a cached layout-only tr
   const login = read("src/features/access/operator-passkey-form.tsx");
   const home = read("src/features/workspace/home-dashboard.tsx");
   assert.match(shell, /<a href={href}/);
+  assert.doesNotMatch(shell, /معاينة الأقسام|تبويبات الأقسام/);
+  assert.match(shell, /aria-label="تبويبات الوظائف"/);
   assert.match(login, /window\.location\.replace\("\/"\)/);
   assert.match(home, /<a className={styles\.sectionCard} href={entry\.href}/);
   assert.doesNotMatch(shell, /next\/link/);
   assert.doesNotMatch(login, /next\/link/);
   assert.doesNotMatch(home, /next\/link/);
+});
+
+
+test("Operator SSR shell paints from the same semantic CSS theme as its text before hydration", () => {
+  const provider = read("app/providers.tsx");
+  // When the OS prefers dark and React has not hydrated yet, its initial
+  // `systemDark=false` must not force a light inline background under dark CSS text.
+  assert.match(provider, /background:\s*"var\(--surface-warm\)"/);
+  assert.match(provider, /color:\s*"var\(--color-primary\)"/);
+  assert.doesNotMatch(provider, /background:\s*colors\.background/);
+  assert.doesNotMatch(provider, /color:\s*colors\.color/);
+
+  const themeCss = read("../../packages/design-system/theme.css");
+  const darkIndex = themeCss.indexOf("@media (prefers-color-scheme: dark)");
+  assert.notEqual(darkIndex, -1, "canonical dark-system CSS roles are required before JS mounts");
+  const darkMedia = themeCss.slice(darkIndex);
+  for (const role of ["--surface-warm", "--color-primary"]) {
+    assert.match(themeCss, new RegExp(`${role}:\\s*#[0-9A-Fa-f]{6}`));
+    assert.match(darkMedia, new RegExp(`${role}:\\s*#[0-9A-Fa-f]{6}`));
+  }
+  assert.match(provider, /document\.documentElement\.dataset\.theme\s*=/,
+    "hydration must still honor the user-selected light/dark theme");
 });

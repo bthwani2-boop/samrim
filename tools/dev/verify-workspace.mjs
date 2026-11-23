@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolvePinnedGo } from './check-go.mjs';
+import { serviceSourcePlacementIssues } from './check-service-placement.mjs';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const strict = process.argv.includes('--require-exact-toolchain');
@@ -127,6 +128,11 @@ for (const forbidden of ['contracts','go.work',
 }
 for (const entry of ['node_modules/','.env','secrets.local.','apps/control-panel/next-env.d.ts']) {
   if (!read('.gitignore').includes(entry)) fail('Local dependencies or secret ignores missing: ' + entry);
+}
+
+const sourcePlacementIssues = serviceSourcePlacementIssues(projectRoot);
+if (sourcePlacementIssues.length > 0) {
+  fail('Service source placement violations:\n' + sourcePlacementIssues.join('\n'));
 }
 
 console.log('STAGE4_WORKSPACE_STRUCTURE_PASS pnpm=' + pnpmPin +

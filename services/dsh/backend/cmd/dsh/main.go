@@ -12,7 +12,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/customercart"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
@@ -24,17 +26,24 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 		return public, nil
 	}
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
-		!strings.HasPrefix(schema, "dsh_test_") || len(schema) <= len("dsh_test_") {
+		!isolatedDSHSchema.MatchString(schema) {
 		return nil, fmt.Errorf("protected Store operations require a dedicated dsh_test_* database schema")
 	}
-	// A protected development endpoint must not inherit the public :8080
-	// wildcard bind. This opt-in is loopback-only until a separately reviewed
-	// container deployment with explicit network isolation exists.
-	listenHost, _, parseErr := net.SplitHostPort(os.Getenv("DSH_LISTEN_ADDR"))
-	if parseErr != nil || (listenHost != "127.0.0.1" && listenHost != "::1") {
-		return nil, fmt.Errorf("isolated Store availability requires explicit loopback DSH_LISTEN_ADDR")
+	listen := os.Getenv("DSH_LISTEN_ADDR")
+	if !isolatedAvailabilityTransport(listen, os.Getenv) {
+		return nil, fmt.Errorf("isolated Store availability requires explicit loopback or the verified isolated container transport")
 	}
-	identity, err := storeavailability.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
+	// An explicit container opt-in must also prove the real owner database and
+	// required tables. A similarly named namespace or a missing audit does not
+	// qualify, and no bootstrap/upgrade is run from the serving process.
+	if listen == "0.0.0.0:8080" {
+		ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+		defer cancel()
+		if err := verifyAvailabilityContainerDatabase(ctx, db, schema); err != nil {
+			return nil, err
+		}
+	}
+	identity, err := identityaccess.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
 	if err != nil {
 		return nil, fmt.Errorf("current Identity verifier is required: %w", err)
 	}
@@ -65,6 +74,40 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 	mux := http.NewServeMux()
 	mux.Handle("/v1/stores/", storeAvailabilityCORS(private, allowedOrigins))
 	mux.Handle("/v1/operators/cities/", storePolicyCORS(policyRead, allowedOrigins))
+	mux.Handle("/", public)
+	return mux, nil
+}
+
+// The draft Cart is an isolated, owner-backed DSH capability. It can be
+// exposed only on verified development loopback (including host-only Docker
+// publishing) with the same current Identity session verifier.
+// No Cart request is an Order, checkout or financial mutation.
+func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http.Handler) (http.Handler, error) {
+	if os.Getenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART") != "true" {
+		return public, nil
+	}
+	host, _, err := net.SplitHostPort(address)
+	// Inside the isolated Docker network, the listener must bind 0.0.0.0:8080
+	// to be reachable through Compose's host-loopback-only published port.
+	// Outside that explicit container contract, only loopback is admitted.
+	dockerLoopback := address == "0.0.0.0:8080" &&
+		os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" &&
+		os.Getenv("DSH_IDENTITY_VERIFIER_URL") == isolatedDSHVerifierURL
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
+		!strings.HasPrefix(schema, "dsh_test_") || len(schema) <= len("dsh_test_") ||
+		err != nil || (!dockerLoopback && host != "127.0.0.1" && host != "::1") {
+		return nil, fmt.Errorf("Customer Cart requires isolated DSH schema and loopback-only transport")
+	}
+	identity, err := identityaccess.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
+	if err != nil {
+		return nil, fmt.Errorf("current Identity verifier is required for Customer Cart: %w", err)
+	}
+	cart, err := customercart.NewHandler(db, schema, identity)
+	if err != nil {
+		return nil, err
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/v1/carts/", cart)
 	mux.Handle("/", public)
 	return mux, nil
 }
@@ -121,8 +164,7 @@ func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch
 }
 
 func main() {
-	mode := flag.String("mode", "serve", "serve, migrate, or isolated-seed")
-	migrations := flag.String("migration", "database/migrations/001_public_discovery.sql", "explicit reviewed SQL migration path")
+	mode := flag.String("mode", "serve", "serve, bootstrap, or isolated-seed")
 	flag.Parse()
 	schema := os.Getenv("DSH_DB_SCHEMA")
 	if schema == "" {
@@ -145,18 +187,11 @@ func main() {
 		log.Fatal("DSH owner DB unavailable")
 	}
 	switch *mode {
-	case "migrate":
-		if !strings.HasPrefix(schema, "dsh_test_") {
-			log.Fatal("migration denied: choose a verified isolated dsh_test_* schema for this development slice")
+	case "bootstrap":
+		if err := owner.BootstrapFresh(ctx, "database/schema"); err != nil {
+			log.Fatal("fresh DSH baseline denied: ", err)
 		}
-		data, err := os.ReadFile(*migrations)
-		if err != nil {
-			log.Fatal(err)
-		}
-		if err = owner.Migrate(ctx, data); err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println("DSH_PUBLIC_MIGRATION_PASS schema=" + schema)
+		fmt.Println("DSH_FRESH_BASELINE_PASS schema=" + schema)
 	case "isolated-seed":
 		if err := owner.ImportSynthetic(ctx); err != nil {
 			log.Fatal(err)
@@ -173,7 +208,11 @@ func main() {
 		if addr == "" {
 			addr = ":8080"
 		}
-		public := &discovery.Server{Owner: owner, AllowedOrigins: origins}
+		public := &discovery.Server{
+			Owner:                    owner,
+			AllowedOrigins:           origins,
+			StoreAvailabilityEnabled: os.Getenv("DSH_ENABLE_ISOLATED_STORE_AVAILABILITY") == "true",
+		}
 		handler, err := isolatedStoreAvailabilityHandler(db, schema, public, origins)
 		if err != nil {
 			log.Fatal("DSH protected Store availability cannot start: ", err)
@@ -185,6 +224,14 @@ func main() {
 		handler, err = isolatedMerchantStandingHandler(db, schema, addr, handler)
 		if err != nil {
 			log.Fatal("DSH protected Merchant standing cannot start: ", err)
+		}
+		handler, err = isolatedCustomerCartHandler(db, schema, addr, handler)
+		if err != nil {
+			log.Fatal("DSH Customer Cart cannot start: ", err)
+		}
+		handler, err = isolatedEmployeeHandler(ctx, db, schema, addr, handler)
+		if err != nil {
+			log.Fatal("DSH employee directory cannot start: ", err)
 		}
 		server := &http.Server{
 			Addr:              addr,

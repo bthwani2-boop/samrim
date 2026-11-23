@@ -29,7 +29,7 @@ const change = {
 function jsonResponse(body, status = 200, contentType = "application/json; charset=utf-8") {
   return new Response(typeof body === "string" ? body : JSON.stringify(body), {
     status,
-    headers: { "Content-Type": contentType },
+    headers: { "Content-Type": contentType, "Cache-Control": "no-store" },
   });
 }
 

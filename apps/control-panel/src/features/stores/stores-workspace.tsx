@@ -1,10 +1,15 @@
+import type { ReactNode } from "react";
 import styles from "../operator-shell/operator-shell.module.css";
 
-export default function StoresWorkspace({ title = "الشركاء والمتاجر" }: Readonly<{ title?: string }>) {
+export default function StoresWorkspace({ title = "التجار والمتاجر", marketOverview }: Readonly<{
+  title?: string;
+  marketOverview?: ReactNode;
+}>) {
   return (
     <main className={styles.workspace} aria-labelledby="stores-workspace-heading">
       <h1 id="stores-workspace-heading">{title}</h1>
       <p>تُقرأ حالة النشر والكتالوج العام من المالك DSH؛ حساب Merchant منفصل عن مورد Store.</p>
+      {marketOverview}
       <h2>القدرات المتصلة</h2>
       <ul className={styles.sectionGrid}>
         <li>

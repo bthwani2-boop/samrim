@@ -44,7 +44,8 @@ function harness() {
   };
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const mocks = {
-    "@bthwani/identity": { IdentityClientError: class extends Error {} },
+    "@bthwani/identity": { IdentityClientError: class extends Error {},
+      normalizeYemeniMobile: value => /^7\d{8}$/.test(value) ? "+967" + value : undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {
       background: "black", surface: "black", color: "white",
       colorSecondary: "white", interactiveText: "white", warningText: "red",
@@ -58,19 +59,21 @@ function harness() {
         appChanged = cb;
         return { remove() {} };
       } },
-      Pressable: "Pressable", SafeAreaView: "SafeAreaView",
+      Pressable: "Pressable",
       ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View",
     },
+    "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "./admission-transport": {
       readCaptainAdmission(signal) {
         return new Promise((resolve, reject) => pending.push({ signal, resolve, reject }));
       },
+      async requestCaptainPhoneCode() { return "issued-ticket"; },
+      async verifyCaptainCode() { return { state: "pending" }; },
     },
     "./captain-session": {
       hasActiveCaptainSession(session) { return session?.role === "captain"; },
     },
     "./captain-standing": { CaptainStandingError: class extends Error {} },
-    "./captain-entry-shell": { __esModule: true, default: "CaptainEntryShell" },
   };
   const module = { exports: {} };
   new Function("require", "module", "exports", "__DEV__", "setTimeout", "clearTimeout", compiled)(
@@ -112,7 +115,7 @@ function verifiedUI(tree) {
   return nodes(tree).some(node => node.props?.testID === "captain-admission-verified");
 }
 function guestNavigation(tree) {
-  return nodes(tree).some(node => node.type === "CaptainEntryShell");
+  return nodes(tree).some(node => node.props?.accessibilityRole === "tab");
 }
 function homeLink(tree) {
   return nodes(tree).find(node => node.type === "Link" && node.props?.href === "/home");
@@ -128,13 +131,84 @@ function approved() {
   } };
 }
 
+test("Identity-only Captain entry shows phone login without consuming OTP or mounting workspace", async () => {
+  const h = harness();
+  h.mount();
+  h.next().resolve({ enabled: true, standingReady: false, session: null });
+  await settle();
+
+  const guest = nodes(h.render());
+  assert.ok(guest.some(node => node.props?.children === "تسجيل دخول الكابتن"));
+  assert.ok(guest.some(node => node.props?.testID === "captain-standing-service-unavailable"));
+  assert.equal(verifiedUI(h.render()), false);
+  assert.equal(guestNavigation(h.render()), false);
+  assert.equal(homeLink(h.render()), undefined);
+
+  const phone = guest.find(node => node.type === "TextInput" &&
+    node.props.accessibilityLabel === "رقم الهاتف التجريبي");
+  assert.ok(phone, "Identity-only state keeps the real phone input visible");
+  phone.props.onChangeText("770000001");
+  const send = nodes(h.render()).find(node => node.type === "Pressable" &&
+    node.props.children.props.children === "إرسال رمز التحقق");
+  assert.equal(send.props.accessibilityState.disabled, true,
+    "no phone challenge can be issued without DSH standing");
+
+  h.emit("active");
+  h.next().resolve({ enabled: true, standingReady: true, session: null });
+  await settle();
+  const ready = nodes(h.render());
+  assert.equal(ready.some(node => node.props?.testID === "captain-standing-service-unavailable"), false);
+  const enabledSend = ready.find(node => node.type === "Pressable" &&
+    node.props.children.props.children === "إرسال رمز التحقق");
+  assert.equal(enabledSend.props.accessibilityState.disabled, false,
+    "ready Identity and DSH expose the active authentication flow");
+});
+
+test("confirmed pending application retains phone and explains proof-bound recheck", async () => {
+  const h = harness();
+  h.mount();
+  h.next().resolve({ enabled: true, standingReady: true, session: null });
+  await settle();
+  const phoneInput = nodes(h.render()).find(node =>
+    node.type === "TextInput" && node.props.accessibilityLabel === "رقم الهاتف التجريبي");
+  assert.ok(phoneInput);
+  phoneInput.props.onChangeText("770000001");
+  const send = nodes(h.render()).find(node => node.type === "Pressable" &&
+    node.props.children?.props?.children === "إرسال رمز التحقق");
+  assert.ok(send);
+  send.props.onPress();
+  await settle();
+  const otpInput = nodes(h.render()).find(node =>
+    node.type === "TextInput" && node.props.accessibilityLabel === "رمز التحقق");
+  assert.ok(otpInput);
+  otpInput.props.onChangeText("123456");
+  const confirm = nodes(h.render()).find(node => node.type === "Pressable" &&
+    node.props.children?.props?.children === "التحقق من حساب الكابتن");
+  assert.ok(confirm);
+  confirm.props.onPress();
+  await settle();
+
+  const pendingScreen = nodes(h.render());
+  assert.ok(pendingScreen.some(node => node.props?.testID === "captain-admission-pending"),
+    "only DSH-confirmed pending state produces the waiting message");
+  const preservedPhone = pendingScreen.find(node => node.type === "TextInput" &&
+    node.props.accessibilityLabel === "رقم الهاتف التجريبي");
+  assert.equal(preservedPhone?.props.value, "770000001");
+  const recheck = pendingScreen.find(node => node.type === "Pressable" &&
+    node.props.children?.props?.children === "إرسال رمز جديد للتحقق من حالة الطلب");
+  assert.ok(recheck, "a new OTP is required for the next status check");
+  assert.equal(recheck.props.accessibilityState.disabled, false);
+  assert.equal(verifiedUI(h.render()), false);
+  assert.equal(guestNavigation(h.render()), false);
+});
+
 test("background aborts in-flight Captain admission and foreground forces fresh owner read", async () => {
   const h = harness();
   h.mount();
   h.next().resolve(approved());
   await settle();
   assert.equal(verifiedUI(h.render()), true, "initial owner-approved Captain should appear");
-  assert.equal(guestNavigation(h.render()), false, "approved Captain uses protected real tabs instead of preview");
+  assert.equal(guestNavigation(h.render()), false, "entry screen contains no simulated workspace tabs");
   assert.equal(homeLink(h.render())?.props.children.props.style.backgroundColor, "primary");
 
   h.emit("active");
@@ -153,7 +227,7 @@ test("background aborts in-flight Captain admission and foreground forces fresh 
   fresh.resolve({ enabled: true, session: null });
   await settle();
   assert.equal(verifiedUI(h.render()), false, "fresh denied owner session stays denied");
-  assert.equal(guestNavigation(h.render()), true, "denied Captain sees disabled public navigation preview");
+  assert.equal(guestNavigation(h.render()), false, "denied Captain never sees misleading disabled navigation tabs");
   assert.equal(homeLink(h.render()), undefined);
   const phone = nodes(h.render()).find(node => node.type === "TextInput");
   assert.equal(phone?.props.accessibilityLabel, "رقم الهاتف التجريبي");

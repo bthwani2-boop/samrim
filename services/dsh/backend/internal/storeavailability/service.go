@@ -6,12 +6,14 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
 var (
-	ErrUnauthorized          = errors.New("UNAUTHENTICATED")
-	ErrIdentityUnavailable   = errors.New("IDENTITY_OWNER_UNAVAILABLE")
-	ErrForbidden             = errors.New("STORE_OPERATION_FORBIDDEN")
+	ErrUnauthorized          = identityaccess.ErrUnauthorized
+	ErrIdentityUnavailable   = identityaccess.ErrIdentityUnavailable
+	ErrForbidden             = identityaccess.ErrForbidden
 	ErrStoreOwnerUnavailable = errors.New("STORE_OWNER_UNAVAILABLE")
 	ErrInvalidChange         = errors.New("INVALID_OPERATIONAL_CHANGE")
 	ErrPolicyUnavailable     = errors.New("OPERATIONAL_POLICY_UNAVAILABLE")
@@ -22,17 +24,16 @@ var (
 	ErrUnknownResult         = errors.New("OPERATION_RESULT_UNKNOWN")
 )
 
-type ActorRole string
+// Keep the Store consumer vocabulary tied to the same verified principal;
+// aliases do not introduce another identity type or authority.
+type ActorRole = identityaccess.ActorRole
+type VerifiedActor = identityaccess.VerifiedActor
 
 const (
-	MerchantRole ActorRole = "MERCHANT"
-	OperatorRole ActorRole = "OPERATOR"
+	MerchantRole = identityaccess.MerchantRole
+	OperatorRole = identityaccess.OperatorRole
 )
 
-type VerifiedActor struct {
-	Subject string
-	Role    ActorRole
-}
 type IdentitySessions interface {
 	// ResolveCurrentSession must contact Identity's current authoritative session
 	// state, never decode an unverified client-supplied actor header.

@@ -6,10 +6,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 import { validate } from "./check-openapi.mjs";
+import { generatedOperationSource, generatedOperationsPath } from "./generate-openapi-operations.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-for (const owner of ["identity", "dsh"]) {
+for (const owner of ["identity", "dsh", "wlt"]) {
   test(`${owner} generated operation manifest matches its contract and rejects drift`, () => {
   const temp = mkdtempSync(path.join(tmpdir(), "bthwani-generated-contract-"));
   try {
@@ -26,15 +27,23 @@ for (const owner of ["identity", "dsh"]) {
       return Object.entries(pathItem).filter(([method]) => methods.has(method)).map(
         ([method, operation]) => [operation.operationId, method.toUpperCase(), route]);
     });
-    assert.ok(operations.length > 1, "Test requires an actual multi-operation owner contract");
-    const generatedFile = path.join(temp, "services", owner, "clients", "generated", owner + "-operations.ts");
+    assert.ok(operations.length > 0);
+    const generatedFile = generatedOperationsPath(owner, temp);
     mkdirSync(path.dirname(generatedFile), { recursive: true });
     const writeOperations = (rows) => writeFileSync(generatedFile,
       rows.map(([id, method, route]) =>
         `  ${id}: { method: "${method}", path: "${route}" },`).join("\n") + "\n", "utf8");
 
-    writeOperations(operations);
+    writeFileSync(generatedFile, generatedOperationSource(owner, temp));
     assert.deepEqual(validate(owner, temp).errors, [], "Matching generated operations must pass");
+
+    const mainFile = path.join(contractDir, owner + ".openapi.yaml");
+    const yaml = readFileSync(mainFile, "utf8");
+    const changed = yaml.replace(/^  version: [^\r\n]+/m, "  version: 99.0.0");
+    assert.ok(changed !== yaml, "Fixture must change the version");
+    writeFileSync(mainFile, changed);
+    assert.ok(validate(owner, temp).errors.some(error => error.includes("not deterministic from current owner OpenAPI")));
+    writeFileSync(mainFile, yaml);
 
     writeOperations(operations.slice(1));
     assert.ok(validate(owner, temp).errors.some((error) => error.includes("Generated operation mismatch")));

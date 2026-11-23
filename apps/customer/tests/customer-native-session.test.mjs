@@ -10,7 +10,7 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
   .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
     (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
   .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = {readCustomerAdmission, requestCustomerCode, verifyCustomerCode, signOutCustomer};";
+  "\nmodule.exports = {readCustomerAdmission, requestCustomerCode, verifyCustomerCode, signOutCustomer, withVerifiedNativeCustomerRead};";
 
 const original = Buffer.alloc(32, 1).toString("base64url");
 const next = Buffer.alloc(32, 2).toString("base64url");
@@ -25,19 +25,27 @@ class IdentityError extends Error {
 const customer = bearer => ({ actorId: bearer === original ? "actor-old" : "actor-new",
   role: "customer", sessionExpiresAt: expiry });
 
-function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false } = {}) {
+function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false, lenovoPreview, platform = "android" } = {}) {
   let bearer = stored;
+  let refresh = null;
   let pendingMarker = null;
   let read = async value => ({ ...customer(value), role: ownerRole });
   let codeVerification = async () => ({ accessToken: next, sessionExpiresAt: expiry });
   let revoke = async value => { revoked.push(value); };
   let onStorageWrite = () => {};
   const revoked = [];
+  const storageReads = [];
   const secure = {
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "this-device",
-    async getItemAsync(key) { return key.endsWith(".pending.v1") ? pendingMarker : bearer; },
+    async getItemAsync(key) {
+      storageReads.push(key);
+      if (key.endsWith(".pending.v1")) return pendingMarker;
+      if (key.endsWith(".refresh.v1")) return refresh;
+      return bearer;
+    },
     async setItemAsync(key, value) {
       if (key.endsWith(".pending.v1")) { pendingMarker = value; return; }
+      if (key.endsWith(".refresh.v1")) { refresh = value; return; }
       bearer = value;
       onStorageWrite();
     },
@@ -48,6 +56,7 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
       }
       if (storageDeletionFails) throw new Error("device storage deletion temporarily unavailable");
       if (key.endsWith(".pending.v1")) pendingMarker = null;
+      else if (key.endsWith(".refresh.v1")) refresh = null;
       else bearer = null;
     },
   };
@@ -56,22 +65,36 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
       IdentityClientError: IdentityError,
       issueCustomerPhoneChallenge: async () => "ticket",
       readVerifiedIdentitySession: (_origin, value, signal) => read(value, signal),
+      async readPersistentIdentityRole(_origin, value, token, role, signal) {
+        // Legacy access tests exercise current role verification. The refresh
+        // client and rotation are tested separately against their owner contract.
+        assert.equal(token, null, "fixture must not mistake a bearer for a refresh credential");
+        const session = await read(value, signal);
+        if (session.role !== role) throw new IdentityError(403, "FORBIDDEN");
+        return { session, bearer: value };
+      },
+      async revokePersistentIdentitySession() {
+        throw new Error("no refresh credential was issued in this fixture");
+      },
       revokeVerifiedIdentitySession: (_origin, value, signal) => revoke(value, signal),
       verifyCustomerPhoneChallenge: (_origin, ticket, code, signal) => codeVerification(ticket, code, signal),
     },
     "expo-secure-store": secure,
-    "react-native": { Platform: { OS: "android" } },
+    "react-native": { Platform: { OS: platform } },
   };
   const mount = () => {
     const module = { exports: {} };
     new Function("require", "module", "exports", "process", compiled)(
       key => { assert.ok(Object.hasOwn(fake, key)); return fake[key]; },
-      module, module.exports, { env: { EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin } },
+      module, module.exports, { env: {
+        EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin,
+        EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW: lenovoPreview,
+      } },
     );
     return module.exports;
   };
   return {
-    transport: mount(), reload: mount, revoked, pending: () => pendingMarker,
+    transport: mount(), reload: mount, revoked, storageReads, pending: () => pendingMarker,
     current: () => bearer,
     setCurrent(value) { bearer = value; },
     setRead(fn) { read = fn; },
@@ -80,6 +103,25 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
     setOnStorageWrite(fn) { onStorageWrite = fn; },
   };
 }
+
+test("Lenovo Android admission uses its own storage and accepts only the opted-in USB loopback origin", async () => {
+  const signal = new AbortController().signal;
+  const nativeOrigin = "http://127.0.0.1:3201";
+  const approved = harness({ nativeOrigin, lenovoPreview: "1" });
+  assert.deepEqual(await approved.transport.readCustomerAdmission(signal), { enabled: true, session: customer(original) });
+  assert.ok(approved.storageReads.length > 0);
+  assert.ok(approved.storageReads.every(key => key.startsWith("bthwani.customer.synthetic-identity.lenovo-android.v1")));
+
+  for (const settings of [
+    { nativeOrigin: "http://127.0.0.1:33221", lenovoPreview: "1" },
+    { nativeOrigin, lenovoPreview: "1", platform: "ios" },
+  ]) {
+    const rejected = harness(settings);
+    assert.deepEqual(await rejected.transport.readCustomerAdmission(signal), { enabled: false, session: null });
+    await rejected.transport.signOutCustomer(signal);
+    assert.deepEqual(rejected.storageReads, []);
+  }
+});
 
 test("Customer role-scoped native admission reads only current Identity actor", async () => {
   const h = harness();
@@ -302,4 +344,118 @@ test("Customer marker deletion pre-effect failure leaves cold start quarantined"
   assert.ok(h.pending());
   assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
     { enabled: true, session: null });
+});
+
+test("late successful owner read cannot revive an actor after the local Customer bearer changed", async () => {
+  const h = harness();
+  let didStart;
+  const started = new Promise(resolve => { didStart = resolve; });
+  let finish;
+  const delayed = new Promise(resolve => { finish = resolve; });
+  h.setRead(async () => {
+    didStart();
+    await delayed;
+    return customer(original);
+  });
+  const pending = h.transport.readCustomerAdmission(new AbortController().signal);
+  await started;
+  h.setCurrent(next);
+  finish();
+  assert.deepEqual(await pending, { enabled: true, session: null },
+    "a response authorized for the previous bearer cannot render as the new actor");
+  assert.equal(h.current(), next, "an old read must not remove the replacement bearer");
+});
+
+test("native Customer logout quarantines the bearer on Identity outage until owner revocation can be reconciled", async () => {
+  const h = harness();
+  h.setRead(async () => { throw new IdentityError(503, "OWNER_UNAVAILABLE"); });
+  await assert.rejects(h.transport.signOutCustomer(new AbortController().signal),
+    { status: 503, code: "OWNER_UNAVAILABLE" });
+  assert.equal(h.current(), original, "the bearer stays available for safe owner revocation retry");
+  assert.equal(h.pending(), "sign-out", "durable quarantine must precede an uncertain owner response");
+  assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
+    { enabled: true, session: null }, "restart cannot authorize a quarantined bearer");
+  assert.equal(h.current(), null, "cleanup may delete the bearer only after the test owner recovers");
+  assert.equal(h.pending(), null);
+});
+
+test("uncertain Customer owner revocation with failed device deletion stays quarantined after restart", async () => {
+  const h = harness({ storageDeletionFails: true });
+  h.setRevoke(async () => {
+    throw new IdentityError(0, "OPERATION_RESULT_UNKNOWN");
+  });
+  await assert.rejects(h.transport.signOutCustomer(new AbortController().signal),
+    error => error.code === "OPERATION_RESULT_UNKNOWN" || /device storage deletion/.test(String(error)));
+  assert.equal(h.current(), original, "mock storage still retains the physical bearer");
+  assert.equal(h.pending(), "sign-out", "a durable logout marker must block recovery");
+  assert.deepEqual(await h.reload().readCustomerAdmission(new AbortController().signal),
+    { enabled: true, session: null }, "a crash must not resurrect a bearer retained by device failure");
+});
+
+test("native financial reader uses one verified bearer and enforces the same actor after WLT readback", async () => {
+  const h = harness();
+  let sends = 0;
+  const result = await h.transport.withVerifiedNativeCustomerRead(new AbortController().signal,
+    async bearer => {
+      sends++;
+      assert.equal(bearer, original);
+      return { actorId: "actor-old", balanceYer: "2400" };
+    });
+  assert.equal(sends, 1);
+  assert.equal(result.kind, "ready");
+  assert.equal(result.value.balanceYer, "2400");
+  assert.ok(result.expiresAt > Date.now());
+});
+
+test("native financial reader cannot send an unverified token changed between admission and transport", async () => {
+  const h = harness();
+  let reads = 0;
+  h.setRead(async bearer => {
+    reads++;
+    if (reads === 2) h.setCurrent(next);
+    return customer(bearer);
+  });
+  let sends = 0;
+  const result = await h.transport.withVerifiedNativeCustomerRead(new AbortController().signal,
+    async () => { sends++; return { actorId: "actor-old" }; });
+  assert.equal(sends, 0);
+  assert.equal(result.kind, "signed-out");
+});
+
+test("native financial reader refuses a different current Customer before sending a history request", async () => {
+  const h = harness();
+  let sends = 0;
+  const result = await h.transport.withVerifiedNativeCustomerRead(new AbortController().signal,
+    async () => { sends++; return { actorId: "actor-old" }; }, "actor-new");
+  assert.deepEqual(result, { kind: "signed-out" });
+  assert.equal(sends, 0);
+});
+
+test("native financial reader rejects a token rotated during an owner read, even to the same actor", async () => {
+  const h = harness();
+  let calls = 0;
+  const result = await h.transport.withVerifiedNativeCustomerRead(new AbortController().signal,
+    async bearer => {
+      calls++;
+      assert.equal(bearer, original);
+      h.setCurrent(next);
+      h.setRead(async () => ({ ...customer(original), actorId: "actor-old" }));
+      return { actorId: "actor-old", balanceYer: "2500" };
+    });
+  assert.equal(calls, 1);
+  assert.equal(result.kind, "signed-out");
+});
+
+test("native financial reader suppresses a revoked or expired Customer without calling WLT", async () => {
+  for (const revoked of [true, false]) {
+    const h = harness();
+    h.setRead(async bearer => revoked
+      ? Promise.reject(new IdentityError(401))
+      : { ...customer(bearer), sessionExpiresAt: new Date(Date.now() - 1000).toISOString() });
+    let calls = 0;
+    const result = await h.transport.withVerifiedNativeCustomerRead(
+      new AbortController().signal, async () => { calls++; return { actorId: "actor-old" }; });
+    assert.equal(result.kind, "signed-out");
+    assert.equal(calls, 0);
+  }
 });

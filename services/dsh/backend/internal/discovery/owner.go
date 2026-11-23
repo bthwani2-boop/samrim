@@ -2,7 +2,6 @@ package discovery
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -11,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	_ "github.com/lib/pq"
 )
 
@@ -22,7 +22,7 @@ type Owner struct {
 
 var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
-// Migration and synthetic import are isolated developer-only operations. Do not accept a similarly
+// Fresh bootstrap and synthetic import are isolated developer-only operations. Do not accept a similarly
 // named production/donor database even when it contains a dsh_test_* schema.
 func isRefoundationDatabase(name string) bool {
 	return name == "bthwani_refoundation"
@@ -68,56 +68,6 @@ func OpenFromEnvironment() (*sql.DB, error) {
 	return sql.Open("postgres", u.String())
 }
 
-// A schema marker is not a SQL sandbox: arbitrary input could still alter
-// other schemas or execute privileged statements. Only these exact, reviewed,
-// immutable DSH migration files may reach the SQL executor. Updating a file
-// requires a separate review of its statements and an explicit new digest.
-func isReviewedMigrationSource(source []byte) bool {
-	switch fmt.Sprintf("%x", sha256.Sum256(source)) {
-	case "0faa485857413951eba34f4ff278a723bb968a84be7fa01de19249ece7ad3895", // 001_public_discovery.sql
-		"f4ef4ed3b9b45bf7389c8588d69fb333e1ce3ac92b334f1f003cc17313501e90", // 002_store_orderability.sql
-		"2ae3dcccc682c1e8f7917b7355f85b12311c381718fcf9afff91524e30bee773", // 003_service_city_timezone.sql
-		"8e48b3cdcdc103fe698b1a9d1768be7006395e99e930f81ce37084de8e5f778e", // 004_store_availability_city_limits.sql
-		"05f8566c1e8de1ee4f5922964c449652e0a005bd7e4840c651a464cdbca481fb": // 005_store_operational_policy_commands.sql
-		return true
-	default:
-		return false
-	}
-}
-
-func (o *Owner) Migrate(ctx context.Context, source []byte) error {
-	if !o.isIsolatedTestOwner() {
-		return errors.New("isolated DSH migration required")
-	}
-	// Every reviewed owner migration must explicitly identify its own test schema.
-	// Without the marker, a mistakenly supplied SQL file could run in public
-	// or another service's search_path even in the isolated development DB.
-	if !strings.Contains(string(source), "__SCHEMA__") {
-		return errors.New("DSH migration is missing its scoped schema marker")
-	}
-	if !isReviewedMigrationSource(source) {
-		return errors.New("DSH migration content does not match a reviewed source")
-	}
-	sqlText := strings.ReplaceAll(string(source), "__SCHEMA__", o.Schema)
-	if strings.Contains(sqlText, "__SCHEMA__") {
-		return errors.New("unresolved schema marker")
-	}
-	tx, err := o.DB.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	// An environment toggle and dsh_test_* identifier alone do not prove the
-	// target database is this Worktree's isolated PostgreSQL instance.
-	if err = requireRefoundationDatabase(ctx, tx); err != nil {
-		return fmt.Errorf("DSH migration denied: %w", err)
-	}
-	if _, err = tx.ExecContext(ctx, sqlText); err != nil {
-		return fmt.Errorf("dsh public migration: %w", err)
-	}
-	return tx.Commit()
-}
-
 // beginScopedTx resolves all unqualified DSH table names against one validated
 // schema for the lifetime of a transaction. Connection-pool reuse cannot leak
 // search_path state across callers, and pg_temp comes last to prevent shadowing.
@@ -125,17 +75,7 @@ func (o *Owner) beginScopedTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx
 	if o == nil || o.DB == nil || !identifier.MatchString(o.Schema) {
 		return nil, errors.New("invalid DSH owner schema")
 	}
-	tx, err := o.DB.BeginTx(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
-	_, err = tx.ExecContext(ctx,
-		"SELECT pg_catalog.set_config('search_path', 'pg_catalog,' || pg_catalog.quote_ident($1) || ',pg_temp', true)", o.Schema)
-	if err != nil {
-		_ = tx.Rollback()
-		return nil, err
-	}
-	return tx, nil
+	return dbscope.Begin(ctx, o.DB, o.Schema, opts)
 }
 
 func (o *Owner) revision(ctx context.Context, tx *sql.Tx) (int64, error) {
@@ -165,6 +105,22 @@ func (o *Owner) ImportSynthetic(ctx context.Context) error {
 	}
 	for _, q := range queries {
 		if _, err = tx.ExecContext(ctx, q); err != nil {
+			return err
+		}
+	}
+	// The public-only schema predates the availability migration. Once it is
+	// installed, fill missing fixture timezones without replacing existing values.
+	var hasCityTimezone bool
+	if err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM pg_catalog.pg_attribute
+		WHERE attrelid=pg_catalog.to_regclass('service_cities')
+		  AND attname='timezone_name' AND NOT attisdropped
+	)`).Scan(&hasCityTimezone); err != nil {
+		return err
+	}
+	if hasCityTimezone {
+		if _, err = tx.ExecContext(ctx, `UPDATE service_cities SET timezone_name='Asia/Aden'
+			WHERE id IN ('sanaa','aden') AND timezone_name IS NULL`); err != nil {
 			return err
 		}
 	}

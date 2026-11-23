@@ -31,16 +31,18 @@ test("Captain entry is gated by current Identity role and DSH approval", () => {
   assert.ok(!admission.includes("setRole("));
 });
 
-test("Captain Home shows the verified status and defers the map until fulfillment is available", () => {
+test("Captain Home presents owner-verified standing, not a fictitious dispatch map", () => {
   assert.ok(read("(tabs)/home.tsx").includes("captain-home-screen"));
   const home = source("src/features/dispatch/captain-home-screen.tsx");
-  assert.ok(home.includes("الخريطة"));
-  assert.ok(home.includes('status="حساب الكابتن معتمد"'));
-  assert.doesNotMatch(home, /watchPosition|requestForegroundPermissions/);
+  assert.match(home, /useCaptainWorkspace\(\)/);
+  assert.match(home, /workspace\.standing\?\.actorId === workspace\.session\.actorId/);
+  assert.match(home, /status === "APPROVED"/);
+  assert.match(home, /sessionExpiresAt/);
+  assert.match(home, /captain-standing-verified/);
+  assert.doesNotMatch(home, /watchPosition|requestForegroundPermissions|acceptOffer\(|completeDelivery\(/);
 });
-
 test("protected and financial routes fail closed without owners", () => {
-  for (const file of ["(tabs)/deliveries.tsx", "(tabs)/wallet.tsx", "(tabs)/account.tsx",
+  for (const file of ["(tabs)/deliveries.tsx", "(tabs)/wallet.tsx",
     "offers.tsx", "notifications.tsx", "delivery/[id].tsx"]) {
     const route = read(file);
     assert.ok(route.includes("CaptainCapabilityScreen"), file);
@@ -52,10 +54,17 @@ test("protected and financial routes fail closed without owners", () => {
   assert.ok(screen.includes("captain-capability-unavailable"));
   assert.doesNotMatch(screen, /href="\/(?:home|deliveries|wallet|account)"/,
     "section bodies must not duplicate primary tab destinations");
-  assert.match(read("(tabs)/account.tsx"), /returnTo="\/"/);
   for (const route of ["offers.tsx", "notifications.tsx", "delivery/[id].tsx"]) {
     assert.match(read(route), /returnTo="\/home"/, route);
   }
+});
+
+test("Captain account uses only the verified workspace session and owner logout", () => {
+  const page = read("(tabs)/account.tsx");
+  assert.match(page, /useCaptainWorkspace\(\)/);
+  assert.match(page, /workspace\.session\.sessionExpiresAt/);
+  assert.match(page, /onPress=\{workspace\.signOut\}/);
+  assert.doesNotMatch(page, /SecureStore|fetch\(|CaptainCapabilityScreen/);
 });
 
 test("Captain has one tab route for each primary URL", () => {

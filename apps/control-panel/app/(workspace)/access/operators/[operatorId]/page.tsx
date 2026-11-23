@@ -1,3 +1,5 @@
 import OperatorPermissionEditor from "../../../../../src/features/access/operator-permission-editor";
 
-export default function Page() { return <OperatorPermissionEditor title="صلاحيات المشغّل" />; }
+export default async function Page({ params }: Readonly<{ params: Promise<{ operatorId: string }> }>) {
+  return <OperatorPermissionEditor actorId={(await params).operatorId} />;
+}

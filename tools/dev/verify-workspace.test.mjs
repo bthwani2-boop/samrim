@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -28,6 +28,237 @@ test('workspace verifier rejects a different active Node even if the pinned bina
     });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Active Node runtime mismatch: expected 24\.22\.1, observed 24\.19\.0/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('existing owner Go and SQL source paths remain legal, including WLT when implemented', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-service-placement-'));
+  try {
+    for (const file of [
+      'services/identity/backend/cmd/identity/main.go',
+      'services/dsh/backend/internal/storeavailability/service.go',
+      'services/dsh/backend/internal/storeavailability/tests/replay_test.go',
+      'services/wlt/backend/internal/ledger/entry.go',
+      'services/wlt/database/migrations/001_ledger_entries.sql',
+      'services/identity/database/schema/00_identity.sql',
+      'services/dsh/database/schema/10_catalog.sql',
+      'services/wlt/database/schema/00_ledger.sql',
+      'services/wlt/database/sandbox/10_test_funding.sql',
+    ]) {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, '// synthetic fixture');
+    }
+    assert.deepEqual(serviceSourcePlacementIssues(directory), []);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('fresh owner SQL rejects misplaced sandbox and noncanonical baseline names', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-sql-baseline-placement-'));
+  try {
+    for (const file of [
+      'services/dsh/database/sandbox/20_test_reversal.sql',
+      'services/identity/database/schema/001_wrong_width.sql',
+      'services/wlt/database/schema/legacy.sql',
+    ]) {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, '-- deliberately invalid SQL placement fixture');
+    }
+    const problems = serviceSourcePlacementIssues(directory);
+    assert.equal(problems.length, 3, problems.join('\n'));
+    for (const name of ['20_test_reversal.sql', '001_wrong_width.sql', 'legacy.sql']) {
+      assert.ok(problems.some(issue => issue.includes(name)), name);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('owner OpenAPI YAML permits only its one entrypoint and flat paths modules', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-owner-openapi-placement-'));
+  try {
+    for (const file of [
+      'services/identity/contracts/openapi/identity.openapi.yaml',
+      'services/dsh/contracts/openapi/paths/store-access.yaml',
+      'services/wlt/contracts/openapi/paths/ledger.yaml',
+    ]) {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, 'paths: {}\\n');
+    }
+    assert.deepEqual(serviceSourcePlacementIssues(directory), [],
+      'canonical owner entrypoints and reserved flat fragments remain allowed');
+
+    for (const file of [
+      'services/identity/contracts/openapi/shadow.yaml',
+      'services/dsh/contracts/openapi/wlt.openapi.yaml',
+      'services/wlt/contracts/openapi/paths/nested/ledger.yaml',
+      'services/identity/contracts/alternate-sessions.yaml',
+    ]) {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, 'paths: {}\\n');
+    }
+    const issues = serviceSourcePlacementIssues(directory);
+    for (const name of ['shadow.yaml', 'wlt.openapi.yaml', 'nested/ledger.yaml', 'alternate-sessions.yaml']) {
+      assert.ok(issues.some(issue => issue.includes(name)),
+        `Non-canonical owner OpenAPI file escaped placement guard: ${name}`);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('service placement guard rejects wrong owners, unnamed SQL and duplicate contract path trees', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-illegal-placement-'));
+  try {
+    for (const file of [
+      'services/identity/backend/session.go',
+      'services/dsh/backend/cmd/identity/main.go',
+      'services/dsh/backend/internal/misc/store.go',
+      'services/wlt/database/migrations/001.sql',
+      'services/wlt/backend/seed.sql',
+      'services/identity/contracts/openapi/path/sessions.yaml',
+    ]) {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, '// forbidden fixture');
+    }
+    const problems = serviceSourcePlacementIssues(directory);
+    assert.ok(problems.some(problem => problem.includes('backend/session.go')));
+    assert.ok(problems.some(problem => problem.includes('cmd/identity/main.go')));
+    assert.ok(problems.some(problem => problem.includes('internal/misc')));
+    assert.ok(problems.some(problem => problem.includes('001.sql')));
+    assert.ok(problems.some(problem => problem.includes('backend/seed.sql')));
+    assert.ok(problems.some(problem => problem.includes('openapi/path')));
+    assert.equal(problems.length, 7, problems.join('\\n'));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('the merged PR 193 coverage waiver cannot silently return to Sonar CI', async () => {
+  const { readFileSync } = await import('node:fs');
+  const sonar = readFileSync(new URL('../../.github/workflows/sonar-quality.yml', import.meta.url), 'utf8');
+  assert.doesNotMatch(sonar, /Temporary PR 193 coverage exception|sonar[.]coverage[.]exclusions/);
+  assert.ok(sonar.includes('-Dsonar.qualitygate.wait=true'));
+  assert.ok(sonar.includes('SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}'));
+});
+
+test('an untracked fourth business service cannot bypass the owner-placement guard', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-rogue-owner-'));
+  try {
+    const allowed = path.join(directory, 'services', 'wlt', 'backend', 'internal', 'ledger', 'entry.go');
+    mkdirSync(path.dirname(allowed), { recursive: true });
+    writeFileSync(allowed, 'package ledger\\n');
+    assert.deepEqual(serviceSourcePlacementIssues(directory), []);
+
+    const rogue = path.join(directory, 'services', 'payments', 'backend', 'internal', 'ledger', 'entry.go');
+    mkdirSync(path.dirname(rogue), { recursive: true });
+    writeFileSync(rogue, 'package ledger\\n');
+    const issues = serviceSourcePlacementIssues(directory);
+    assert.ok(issues.some(issue => issue.includes('services/payments: unapproved service owner')), issues.join('\\n'));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+
+test('service placement rejects unowned source files directly under services/', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-orphan-service-file-'));
+  try {
+    const legal = path.join(directory, 'services', 'dsh', 'backend', 'internal', 'discovery', 'http.go');
+    mkdirSync(path.dirname(legal), { recursive: true });
+    writeFileSync(legal, 'package discovery\n');
+    assert.deepEqual(serviceSourcePlacementIssues(directory), []);
+
+    const orphan = path.join(directory, 'services', 'orphan-client.ts');
+    writeFileSync(orphan, 'export const duplicateOwner = true;\n');
+    const issues = serviceSourcePlacementIssues(directory);
+    assert.ok(issues.some(issue => issue.includes('services/orphan-client.ts: unowned service root file')),
+      issues.join('\n'));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('service placement refuses a linked services root before traversing it', async (t) => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'bthwani-linked-service-root-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const base = path.join(dir, 'checkout');
+  const target = path.join(dir, 'outside');
+  mkdirSync(base);
+  mkdirSync(path.join(target, 'dsh'), { recursive: true });
+  symlinkSync(target, path.join(base, 'services'), 'junction');
+  assert.deepEqual(serviceSourcePlacementIssues(base),
+    ['services: service source root must be an actual directory']);
+});
+
+test('service placement reports an owner link without evaluating files outside the checkout', async (t) => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'bthwani-linked-owner-root-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const base = path.join(dir, 'checkout');
+  const target = path.join(dir, 'outside');
+  mkdirSync(path.join(base, 'services'), { recursive: true });
+  mkdirSync(target);
+  writeFileSync(path.join(target, 'misplaced.sql'), 'SELECT 1;');
+  symlinkSync(target, path.join(base, 'services', 'dsh'), 'junction');
+  assert.deepEqual(serviceSourcePlacementIssues(base),
+    ['services/dsh: unapproved service owner or source link']);
+});
+
+test('deep owner paths reject misplaced Go, SQL and OpenAPI while preserving legal modules', async () => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-deep-owner-placement-'));
+  try {
+    const put = file => {
+      const target = path.join(directory, file);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, '// isolated fixture\n');
+    };
+    for (const valid of [
+      'services/identity/backend/internal/session/recovery/replay.go',
+      'services/dsh/backend/internal/storeavailability/policy/current.go',
+      'services/wlt/backend/internal/ledger/reversal.go',
+      'services/wlt/database/migrations/012_reverse_posting.sql',
+      'services/dsh/contracts/openapi/paths/captain-interest.yaml',
+    ]) put(valid);
+    assert.deepEqual(serviceSourcePlacementIssues(directory), [],
+      'meaningful nested domains and legal owner artifacts remain valid');
+
+    for (const invalid of [
+      'services/dsh/backend/internal/storeavailability/misc/legacy.go',
+      'services/dsh/backend/internal/store-availability/snapshot.go',
+      'services/identity/backend/cmd/dsh/other-owner.go',
+      'services/wlt/database/migrations/012.sql',
+      'services/dsh/contracts/openapi/paths/checkout/shadow.yaml',
+    ]) put(invalid);
+    const issues = serviceSourcePlacementIssues(directory);
+    assert.equal(issues.length, 6, issues.join('\n'),
+      'the illegal Go directory and its source file are separate placement violations');
+    for (const fragment of [
+      'storeavailability/misc/legacy.go',
+      'store-availability/snapshot.go',
+      'backend/cmd/dsh/other-owner.go',
+      'migrations/012.sql',
+      'paths/checkout/shadow.yaml',
+    ]) {
+      assert.ok(issues.some(issue => issue.includes(fragment)),
+        `Untracked deeply nested owner violation escaped guard: ${fragment}`);
+    }
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

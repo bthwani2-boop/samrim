@@ -1,11 +1,29 @@
 # BThwani Surface-to-Lenovo development operations
 
 One canonical source: Surface D:\samrim; Lenovo BTHWANI-DOCKER runs the apps.
-Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-docker with strict host-key checks.
+Surface hostname BTHWANI; Lenovo hostname BTHWANI-DOCKER. The SSH target alias is bthwani-docker with strict host-key checks; resolve its current network address rather than treating historical DHCP assignments as permanent.
+
+## Daily launch — one command
+
+From Surface PowerShell in `D:\samrim` run **`pnpm dev`**. This is the fast default: it verifies the existing Lenovo SSH endpoint, reuses the existing Surface sync/tunnel and Lenovo app tasks, and opens the three Chrome tabs plus Customer/Merchant/Captain on a connected Samsung. It never launches a second watcher or another Expo/Next server, and does not recreate Docker containers or touch data.
+
+- `pnpm dev apps open` — reopen the existing Chrome window and connected Android apps without touching their servers. Use `-Mode Browser` when Samsung is disconnected.
+- `pnpm dev apps status` / `pnpm dev apps verify` — targeted diagnostics, not required at every launch.
+- `pnpm dev up` — explicit, slower isolated infrastructure startup when the development Docker containers need starting; it preserves protected Identity/WLT state.
+
+When Lenovo is unreachable on TCP port 22, the fast command reports a specific `BLOCKED` error instead of running lengthy Docker checks. The preexisting Scheduled Tasks keep retrying their SSH tunnels. Check Lenovo power/network before repeating a failed start; never launch a duplicate watcher or tunnel.
+
+## Operator login is a separate Identity acceptance gate
+
+The canonical **WebAuthn/Passkey browser origin is `http://localhost:13000`**, not `127.0.0.1:13000`; the latter redirects to the canonical entry. The URL is forwarded over the existing Surface SSH tunnel to Lenovo's Next.js port `23010`. `localhost:23100` belongs to a **different, optional Surface-only preview** and is not evidence of a logged-in Lenovo Operator.
+
+`pnpm dev` reports `OPERATOR_AUTH` separately from `LAUNCH`. A successful app launch or an HTTP 200 does not prove Operator identity, enrollment, a verified cookie, or any of the seven Identity-owned grants. A `503` session response means the isolated login BFF or its owner is unavailable; do not restart Identity or bypass the gate automatically.
+
+For a genuinely usable **isolated** Operator login, independently verify that the existing Identity test schema is disposable, its required owner migrations are applied, its Passkey origin/RP ID and authentication opt-ins are correct, and the actual Lenovo Control task is launched with `-EnableIsolatedOperatorPasskeyPreview`. The one-time initial Root bootstrap is a **separate protected operation**, never inferred from UI readiness. A real user must enroll their own Passkey; only Identity-owned current session and permission readback permits the workspace. Never fabricate a Root, re-enroll another identity or expose a bootstrap ticket in logs. See `governance/identity.md` and `services/identity/README.md` for owner authorization and recovery requirements.
 
 ## Single existing owners
-- SSH tunnels: four Scheduled Tasks invoke `tools/dev/Start-AppTunnel.ps1`. Customer uses Surface 18101 → Lenovo 28111 and Merchant uses 18102 → 28112. Optional local overrides use `SAMRIM_APP_CUSTOMER_METRO_PORT` and `SAMRIM_APP_MERCHANT_METRO_PORT`. Captain uses 18103 → 28113 and Control Panel uses 13000 → 23010.
-- Source sync: the existing Scheduled Task BThwani Lenovo Source Sync directly runs pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch. Its direct process ownership ensures stopping the task also stops its Node watcher, without orphan duplicates. Start-LenovoSourceSync.ps1 is the manual validation/one-shot helper.
+- SSH tunnels: four Scheduled Tasks invoke `tools/dev/Start-AppTunnel.ps1`. Customer uses Surface 18101 → Lenovo 28111 and Merchant uses 18102 → 28112. Optional local overrides use `SAMRIM_APP_CUSTOMER_METRO_PORT` and `SAMRIM_APP_MERCHANT_METRO_PORT`. Captain uses 18103 → 28113 and Control Panel uses 13000 → 23010. The existing Customer tunnel also carries loopback-only Identity 3201 and DSH 3202 for native synthetic authentication; those owner forwards require that the existing tunnel task actually reload the current script.
+- Source sync: the existing Scheduled Task BThwani Lenovo Source Sync directly runs pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch. Its direct process ownership ensures stopping the task also stops its Node watcher, without orphan duplicates. The scheduled task directly owns the sole watch process; no manual wrapper or second watcher is necessary.
 - The Surface sync target is `C:\Users\bthwa\BThwaniAppRunner\source-runtime`. The Lenovo app tasks invoke `infra\Start-RefoundationApp.ps1` in that mirror with `-App customer`, `-App merchant`, `-App captain`, or `-App control-panel`. Verify the task action, synced source revision, and listener owner when diagnosing a runtime issue.
 
 ## Guarantees and limits
@@ -18,8 +36,8 @@ Surface DHCP 192.168.0.100; Lenovo DHCP 192.168.0.101; SSH target alias bthwani-
 - A successful file mirror does not prove that running app processes are using it; validate source version, real Web/Android UI and Metro Fast Refresh. Go containers are source-SHA-built images, not hot-reloaded filesystem mirrors; use the existing infra runtime provenance check before any owner-approved rebuild.
 
 ## Commands
-- Validate launcher: pwsh.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -ValidateOnly
-- One pass: pwsh.exe -NoProfile -File D:\samrim\tools\dev\Start-LenovoSourceSync.ps1 -Once
+- Validate the existing watcher code: `node --check tools/dev/sync-lenovo-source.mjs`.
+- The running Scheduled Task already reconciles changes automatically; do not launch a second `--once`/`--watch` source writer.
 - Normal automatic mode: the existing Surface Scheduled Task invokes pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch directly; do not start duplicate watch processes.
 - Test policy: node --test D:\samrim\tools\dev\sync-lenovo-source.test.mjs
 
@@ -36,7 +54,7 @@ From Surface run the existing central CLI (it uses the same Lenovo Scheduled Tas
     pnpm dev apps start -App captain
     pnpm dev apps restart -App captain
 
-The apps status command verifies the single Lenovo listener and its Node/launcher ancestry, application CLI, pinned Node and mirrored dependency-lock SHA. Apps verify also probes the customer/merchant/control Web endpoints and Captain Metro /status. Web HTTP/Metro success does not close Fast Refresh, browser journeys or Android UI tests. Apps android only reports connected ADB devices and existing reverse mappings; it never changes mappings, installs APKs or clears sessions.
+The apps status command verifies the single Lenovo listener and its Node/launcher ancestry, application CLI, pinned Node and mirrored dependency-lock SHA. Apps verify also probes the customer/merchant/control Web endpoints and Captain Metro /status. Cold Expo compilation gets up to three bounded HTTP attempts with per-endpoint timing and failure reasons; persistent HTTP failures still fail the verification. The lightweight `pnpm dev status` probe uses one attempt and the same URL inventory. Web HTTP/Metro success does not close Fast Refresh, browser journeys or Android UI tests. `pnpm dev docker status` reads Docker source-image provenance for DSH and Identity and includes WLT only when its container has verified ownership in the same isolated Compose project; an old running image is reported as FAIL, not rebuilt or silently replaced. Apps android only reports connected ADB devices and existing reverse mappings; it never changes mappings, installs APKs or clears sessions.
 
 Long bounded PowerShell diagnostics use a single base64 input line over the existing strict SSH connection to avoid Windows command-line limits; no remote helper, watcher or permanent file is created.
 

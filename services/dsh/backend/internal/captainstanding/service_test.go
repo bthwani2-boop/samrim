@@ -25,10 +25,11 @@ func (f *fakeIdentity) RequireOperations(context.Context, string, string) error 
 }
 
 type fakeStandingRepository struct {
-	standing   Standing
-	err        error
-	changes    int
-	lastChange Change
+	standing    Standing
+	changeReply *Standing
+	err         error
+	changes     int
+	lastChange  Change
 }
 
 func (f *fakeStandingRepository) Read(context.Context, string) (Standing, error) {
@@ -43,8 +44,23 @@ func (f *fakeStandingRepository) Change(_ context.Context, cmd Change) (Standing
 	if f.err != nil {
 		return Standing{}, f.err
 	}
+	if f.changeReply != nil {
+		return *f.changeReply, nil
+	}
 	f.standing = Standing{ActorID: cmd.ActorID, Status: cmd.Status, Version: cmd.ExpectedVersion + 1}
 	return f.standing, nil
+}
+
+func TestCaptainChangeConfirmsOnlyTheExpectedSuccessorVersion(t *testing.T) {
+	identity := &fakeIdentity{actor: Actor{ID: "operator-test", Role: "operator"}, allow: true}
+	command := Change{ActorID: "captain-test", Status: Approved, ExpectedVersion: 3,
+		OperationID: "decision-123", Reason: "Verified standing"}
+	for _, version := range []int64{3, 5} {
+		repo := &fakeStandingRepository{changeReply: &Standing{ActorID: command.ActorID, Status: Approved, Version: version}}
+		if actual, err := NewService(identity, repo).Change(t.Context(), "opaque-owner-token", command); !errors.Is(err, ErrOwnerUnavailable) || actual != (Standing{}) {
+			t.Errorf("unexpected version %d escaped as a confirmed mutation: %+v, %v", version, actual, err)
+		}
+	}
 }
 
 func TestCaptainStandingSelfReadUsesCurrentIdentityAndDSHApproval(t *testing.T) {

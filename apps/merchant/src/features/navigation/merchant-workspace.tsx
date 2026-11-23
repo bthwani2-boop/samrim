@@ -4,6 +4,8 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
+import MerchantPrivateCatalog from "../catalog/merchant-private-catalog";
+import MerchantStoreRegistration from "../onboarding/merchant-store-registration";
 import MerchantStoreDirectory from "./merchant-store-directory";
 import {
   type MerchantSection,
@@ -12,7 +14,8 @@ import {
   merchantStoreSummary,
 } from "./merchant-workspace-model";
 
-export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Readonly<{
+export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOut }: Readonly<{
+  actorId: string;
   stores: MerchantDSHStanding["stores"];
   onRefresh: () => void;
   onSignOut: () => void;
@@ -102,12 +105,6 @@ export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Read
                 <Text style={{ color: theme.colorSecondary, textAlign: "auto" }}>{selected.description}</Text>
               </View>
               <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                <Pressable accessibilityRole="button" onPress={onRefresh} style={{
-                  paddingVertical: 11, paddingHorizontal: 13, borderRadius: 10,
-                  borderWidth: 1, borderColor: theme.borderColor, minHeight: 44,
-                }}>
-                  <Text style={{ color: theme.interactiveText }}>تحديث</Text>
-                </Pressable>
                 <Pressable accessibilityRole="button" onPress={onSignOut} style={{
                   paddingVertical: 11, paddingHorizontal: 13, borderRadius: 10,
                   borderWidth: 1, borderColor: theme.borderColor, minHeight: 44,
@@ -126,8 +123,16 @@ export default function MerchantWorkspace({ stores, onRefresh, onSignOut }: Read
                 {metric("غير المنشورة", summary.unpublished)}
               </View>
               {showStores}
+              {stores.length === 0 ? <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} /> : null}
             </>
-          ) : section === "stores" ? <MerchantStoreDirectory stores={stores} /> : section === "more" ? (
+          ) : section === "stores" ? (
+            <>
+              <MerchantStoreDirectory actorId={actorId} stores={stores} />
+              <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} />
+            </>
+          ) : section === "products" ? (
+            <MerchantPrivateCatalog actorId={actorId} stores={stores} />
+          ) : section === "more" ? (
             <View style={{ gap: 10 }}>
               {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home")
                 .map(item => navigationButton(item))}

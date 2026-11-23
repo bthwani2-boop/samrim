@@ -1,6 +1,7 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
-import { Pressable, SafeAreaView, ScrollView, Text, View } from "react-native";
+import { Pressable, ScrollView, Text, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 type Props = Readonly<{
   title: string;

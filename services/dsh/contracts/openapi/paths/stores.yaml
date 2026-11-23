@@ -1,4 +1,62 @@
 paths:
+  /v1/public/cities:
+    get:
+      operationId: listPublicCities
+      summary: List active DSH Service Cities for Store browsing
+      description: Returns canonical city IDs for browsing. Delivery eligibility is evaluated separately by DSH.
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          description: Opaque continuation bound to the active city directory and DSH public revision.
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+      responses:
+        '200':
+          description: Bounded active city identity page
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityPage' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StaleCursor'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/OwnerUnavailable'
+  /v1/public/verticals:
+    get:
+      operationId: listPublicVerticals
+      summary: List verticals with published MARKETPLACE Stores in one active Service City
+      description: Return only active DSH vertical identities and public Store counts. These are browse categories, not checkout eligibility or editable taxonomy.
+      security: []
+      parameters:
+        - name: city_id
+          in: query
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque continuation bound to the selected city and DSH public revision.
+          schema: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
+      responses:
+        '200':
+          description: Bounded public vertical identity and Store count page
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/VerticalPage' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StaleCursor'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/OwnerUnavailable'
   /v1/public/stores:
     get:
       operationId: listPublicStores
@@ -15,6 +73,11 @@ paths:
           in: query
           required: true
           schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: vertical_id
+          in: query
+          required: false
+          description: Optional exact active DSH Store vertical. Omit to browse all verticals; a continuation cursor is bound to this filter.
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
         - name: limit
           in: query
           required: false
@@ -22,7 +85,7 @@ paths:
         - name: cursor
           in: query
           required: false
-          schema: { type: string, maxLength: 512 }
+          schema: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
       responses:
         '200':
           description: Bounded server-filtered Store page, with durable DSH read revision

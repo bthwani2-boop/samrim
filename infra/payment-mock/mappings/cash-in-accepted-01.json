@@ -1,0 +1,22 @@
+{
+  "name": "sandbox cash-in-accepted-01",
+  "priority": 5,
+  "request": {
+    "method": "GET",
+    "url": "/sandbox/v1/funding/cash-in-accepted-01"
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store"
+    },
+    "jsonBody": {
+      "reference": "cash-in-accepted-01",
+      "actorId": "wallet-two",
+      "amountYer": "17",
+      "currency": "YER",
+      "status": "SUCCEEDED"
+    }
+  }
+}

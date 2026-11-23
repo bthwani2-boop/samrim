@@ -1,12 +1,12 @@
-import { IdentityClientError, type VerifiedIdentitySession } from "@bthwani/identity";
+import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Link } from "expo-router";
+import { type Href, Link } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
+import { AppState, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import {
   leaveCaptainAdmission, readCaptainAdmission, requestCaptainPhoneCode, verifyCaptainCode,
 } from "./admission-transport";
-import CaptainEntryShell from "./captain-entry-shell";
 import { hasActiveCaptainSession } from "./captain-session";
 import { CaptainStandingError } from "./captain-standing";
 
@@ -24,6 +24,7 @@ function admissionError(error: unknown) {
     }
   }
   if (error instanceof CaptainStandingError) {
+    if (error.code === "OPERATION_RESULT_UNKNOWN") return "نتيجة تسجيل طلب الكابتن غير مؤكدة؛ قد يكون DSH حفظه. تحقق من حالة الطلب لدى المشغّل قبل إعادة التقديم.";
     if (error.code === "CAPTAIN_NOT_ELIGIBLE") return "طلب الكابتن غير معتمد أو تم تعليق الأهلية.";
   }
   return "تعذّر التحقق من حساب الكابتن. أعد المحاولة عند استقرار الاتصال.";
@@ -32,9 +33,11 @@ function admissionError(error: unknown) {
 export default function CaptainIdentityGate() {
   const { theme } = useMobileAppearance();
   const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [standingReady, setStandingReady] = useState(false);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
   const [pending, setPending] = useState(false);
   const [phone, setPhone] = useState("");
+  const phoneNumber = normalizeYemeniMobile(phone);
   const [ticket, setTicket] = useState("");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
@@ -68,6 +71,7 @@ export default function CaptainIdentityGate() {
       const state = await readCaptainAdmission(signal);
       if (!signal.aborted) {
         setEnabled(state.enabled);
+        setStandingReady(state.standingReady !== false);
         setSession(state.session);
       }
     });
@@ -84,6 +88,7 @@ export default function CaptainIdentityGate() {
         controller.current = null;
         setSession(null);
         setEnabled(null);
+        setStandingReady(false);
         setBusy(false);
       }
     });
@@ -98,7 +103,15 @@ export default function CaptainIdentityGate() {
     if (!session) return;
     const ms = Date.parse(session.sessionExpiresAt) - Date.now();
     const expiry = setTimeout(() => setSession(null), Math.max(0, ms));
-    return () => clearTimeout(expiry);
+    // Renew through Identity before the short-lived access token expires.
+    // The actual Captain standing remains a fresh, mandatory DSH check.
+    const revalidate = setInterval(() => {
+      if (AppState.currentState === "active") refresh();
+    }, 30_000);
+    return () => {
+      clearTimeout(expiry);
+      clearInterval(revalidate);
+    };
   }, [session]);
 
   const verified = hasActiveCaptainSession(session);
@@ -118,7 +131,8 @@ export default function CaptainIdentityGate() {
 
   function requestCode() {
     void run(async signal => {
-      const issuedTicket = await requestCaptainPhoneCode(phone.trim(), signal);
+      if (!phoneNumber) return;
+      const issuedTicket = await requestCaptainPhoneCode(phoneNumber, signal);
       if (!signal.aborted) { setTicket(issuedTicket); setCode(""); setPending(false); }
     });
   }
@@ -130,11 +144,13 @@ export default function CaptainIdentityGate() {
         if (signal.aborted) return;
         setTicket("");
         setCode("");
-        setPhone("");
         if (result.state === "pending") {
+          // Keep the phone for the next verified check in this app session;
+          // the short-lived Customer proof has already been revoked.
           setPending(true);
           setSession(null);
         } else {
+          setPhone("");
           setPending(false);
           setSession(result.session);
         }
@@ -175,7 +191,11 @@ export default function CaptainIdentityGate() {
           {!busy && (enabled === null || (enabled && !verified && message && !ticket))
             ? button("إعادة التحقق", refresh) : null}
           {enabled === false ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
-            دخول الكابتن غير متاح في هذه النسخة.
+            تعذّر تهيئة الاتصال بخدمة الهوية في هذه البيئة.
+          </Text> : null}
+          {enabled && !standingReady ? <Text testID="captain-standing-service-unavailable"
+            accessibilityRole="alert" style={{ color: theme.warningText }}>
+            تسجيل الدخول للكابتن ينتظر تفعيل خدمة الأهلية. يمكنك إدخال رقم الهاتف، لكن إرسال الرمز والدخول محجوبان حتى جاهزية DSH.
           </Text> : null}
           {enabled && verified ? (
             <>
@@ -192,19 +212,20 @@ export default function CaptainIdentityGate() {
           ) : null}
           {enabled && !verified && pending ? (
             <Text testID="captain-admission-pending" style={{ color: theme.color }}>
-              طلبك بانتظار الموافقة. يمكنك التحقق من حالته برقم هاتفك.
+              تم تسجيل طلب أهليتك لدى DSH وهو بانتظار اعتماد المشغّل. لإعادة فحص الموافقة يلزم رمز تحقق جديد؛ رقم الهاتف وحده لا يفتح حساب الكابتن.
             </Text>
           ) : null}
           {enabled && !verified && !ticket ? (
             <>
+              <Text style={{ color: theme.color, fontWeight: "700", fontSize: 20 }}>تسجيل دخول الكابتن</Text>
               <View style={{ gap: 6 }}>
                 <Text style={{ color: theme.color, fontWeight: "600" }}>رقم الهاتف التجريبي</Text>
                 <TextInput accessibilityLabel="رقم الهاتف التجريبي" keyboardType="phone-pad"
                   autoComplete="tel" value={phone} editable={!busy} onChangeText={setPhone}
-                  maxLength={12} style={input} />
+                  maxLength={13} style={input} />
               </View>
-              {button(pending ? "التحقق مجددًا من الموافقة" : "إرسال رمز التحقق",
-                requestCode, busy || !/^\+120255501[0-9]{2}$/.test(phone.trim()), true)}
+              {button(pending ? "إرسال رمز جديد للتحقق من حالة الطلب" : "إرسال رمز التحقق",
+                requestCode, busy || !phoneNumber || !standingReady, true)}
             </>
           ) : null}
           {enabled && !verified && ticket ? (
@@ -219,13 +240,18 @@ export default function CaptainIdentityGate() {
               {button("تعديل رقم الهاتف", () => { setTicket(""); setCode(""); })}
             </>
           ) : null}
-          {__DEV__ ? <Link href="/health" style={{ color: theme.interactiveText }}>فحص التطوير</Link> : null}
+          {!verified ? (
+            <Link href={"/join" as Href} asChild>
+              <Pressable accessibilityRole="link" testID="captain-one-way-registration-link"
+                style={{ ...actionStyle, justifyContent: "center" }}>
+                <Text style={{ color: theme.interactiveText, textAlign: "center", fontWeight: "600" }}>
+                  انضم إلى كباتن بثواني
+                </Text>
+              </Pressable>
+            </Link>
+          ) : null}
         </View>
       </ScrollView>
-      {!verified ? (
-        <CaptainEntryShell color={theme.colorSecondary} borderColor={theme.borderColor}
-          backgroundColor={theme.surface} />
-      ) : null}
     </SafeAreaView>
   );
 }

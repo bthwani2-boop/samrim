@@ -4,6 +4,7 @@ export interface PublicStoreDetailResult {
   store: PublicStore;
   offers: PublicOffer[];
   nextCursor?: string | undefined;
+  offersRevision?: number;
   offersError?: string;
 }
 
@@ -12,6 +13,7 @@ export interface PublicStoreDetailState {
   loading: boolean;
   store?: PublicStore | undefined;
   offers: PublicOffer[];
+  offersRevision?: number | undefined;
   cursor?: string | undefined;
   more?: boolean;
   error?: string | undefined;
@@ -50,5 +52,6 @@ export async function resolvePublicStoreDetail(
     store,
     offers: outcome.page.items,
     nextCursor: outcome.page.nextCursor,
+    offersRevision: outcome.page.revision,
   };
 }

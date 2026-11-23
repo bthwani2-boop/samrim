@@ -13,8 +13,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -87,20 +85,7 @@ func TestCaptainIdentityVerifiedAdmissionRealPostgres(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := "identity_test_captain_s02_" + hex.EncodeToString(random)
-	for _, migration := range []string{
-		"001_session_verification.sql",
-		"002_operator_permission_read.sql",
-		"003_verified_customer_merchant_admission.sql",
-		"004_customer_phone_verification.sql",
-	} {
-		sqlBytes, e := os.ReadFile(filepath.Join("..", "..", "..", "database", "migrations", migration))
-		if e != nil {
-			t.Fatal(e)
-		}
-		if _, e = db.ExecContext(ctx, strings.ReplaceAll(string(sqlBytes), "__SCHEMA__", schema)); e != nil {
-			t.Fatalf("Identity migration %s failed: %v", migration, e)
-		}
-	}
+	initializeFreshIdentityFixture(t, ctx, db, schema)
 	actors := schema + ".actors"
 	roles := schema + ".actor_roles"
 	sessions := schema + ".auth_sessions"

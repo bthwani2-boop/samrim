@@ -3,12 +3,14 @@ package discovery
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func setupIntegratedOwner(t *testing.T) (*Owner, *Server) {
@@ -21,23 +23,15 @@ func setupIntegratedOwner(t *testing.T) (*Owner, *Server) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	schema := os.Getenv("DSH_DB_SCHEMA")
-	if !strings.HasPrefix(schema, "dsh_test_") {
+	if !strings.HasPrefix(os.Getenv("DSH_DB_SCHEMA"), "dsh_test_") {
 		t.Fatal("owner-backed integration requires an explicitly isolated dsh_test_* schema")
 	}
-	owner, err := New(db, schema)
+	owner, err := New(db, fmt.Sprintf("dsh_test_discovery_%x", time.Now().UnixNano()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	migrationPath := os.Getenv("DSH_DISCOVERY_MIGRATION_FILE")
-	if migrationPath == "" {
-		migrationPath = filepath.Join("..", "..", "..", "database", "migrations", "001_public_discovery.sql")
-	}
-	migration, err := os.ReadFile(migrationPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = owner.Migrate(context.Background(), migration); err != nil {
+	baseline := filepath.Join("..", "..", "..", "database", "schema")
+	if err = owner.BootstrapFresh(t.Context(), baseline); err != nil {
 		t.Fatal(err)
 	}
 	if err = owner.ImportSynthetic(context.Background()); err != nil {
@@ -106,6 +100,72 @@ func TestOwnerBackedMarketplaceVisibility(t *testing.T) {
 	w, body = request(s, "/v1/public/stores/market-sanaa-paused")
 	if w.Code != 200 || body["orderabilityStatus"] != "OPERATIONALLY_UNAVAILABLE" || body["orderingAvailable"] != false {
 		t.Fatal("paused store status lost")
+	}
+}
+
+func TestOwnerBackedPublicStoreOperationalStatus(t *testing.T) {
+	owner, server := setupIntegratedOwner(t)
+	ctx := context.Background()
+	tx, err := owner.beginScopedTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback()
+	var configuredCities int
+	if err = tx.QueryRowContext(ctx, `SELECT count(*) FROM service_cities
+		WHERE id IN ('sanaa','aden') AND timezone_name='Asia/Aden'`).Scan(&configuredCities); err != nil || configuredCities != 2 {
+		t.Fatalf("synthetic import configured %d city timezones, want 2: %v", configuredCities, err)
+	}
+	// Each isolated projection fixture has a distinct coverage case. Store
+	// mutation authorization and durable commands have their own tests.
+	if _, err = tx.ExecContext(ctx, `INSERT INTO store_operational_availability
+		(store_id,store_timezone,paused_until,preparation_minutes,changed_by_actor,change_reason)
+		VALUES ('market-sanaa','Asia/Aden',now()+interval '30 minutes',15,'private-actor','private-reason'),
+		('direct-sanaa','Asia/Aden',now()-interval '1 minute',15,'private-actor','private-reason'),
+		('market-aden','Asia/Aden',NULL,15,'private-actor','private-reason'),
+		('market-sanaa-paused','UTC',NULL,15,'private-actor','private-reason'),
+		('draft-sanaa','Asia/Aden',now()+interval '30 minutes',15,'private-actor','private-reason')
+		ON CONFLICT (store_id) DO UPDATE SET paused_until=EXCLUDED.paused_until,
+		preparation_minutes=EXCLUDED.preparation_minutes, store_timezone=EXCLUDED.store_timezone`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = tx.ExecContext(ctx, `INSERT INTO store_operational_weekly_hours
+		(store_id,weekday,opens_minute,closes_minute)
+		SELECT 'market-aden', weekday, 0, 1440 FROM generate_series(0,6) weekday
+		ON CONFLICT (store_id,weekday,opens_minute) DO NOTHING`); err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(); err != nil {
+		t.Fatal(err)
+	}
+	server.StoreAvailabilityEnabled = true
+	w, active := request(server, "/v1/public/stores/market-sanaa")
+	if w.Code != 200 || active["orderabilityStatus"] != "PAUSED" ||
+		active["orderingAvailable"] != false || len(active) != 6 {
+		t.Fatalf("unexpected public paused Store response: %d %s", w.Code, w.Body.String())
+	}
+	w, page := request(server, "/v1/public/stores?city_id=sanaa&limit=1")
+	if w.Code != 200 {
+		t.Fatalf("listing failed: %d %s", w.Code, w.Body.String())
+	}
+	items := results(t, page)
+	if len(items) != 1 || items[0].(map[string]any)["orderabilityStatus"] != "PAUSED" ||
+		items[0].(map[string]any)["orderingAvailable"] != false {
+		t.Fatalf("listing lost active pause: %s", w.Body.String())
+	}
+	for _, example := range []struct{ store, status string }{
+		{"direct-sanaa", "CLOSED_BY_SCHEDULE"},
+		{"market-aden", "OPERATIONALLY_UNAVAILABLE"},
+		{"market-sanaa-paused", "OPERATIONALLY_UNAVAILABLE"},
+	} {
+		w, result := request(server, "/v1/public/stores/"+example.store)
+		if w.Code != 200 || result["orderabilityStatus"] != example.status ||
+			result["orderingAvailable"] != false || len(result) != 6 {
+			t.Fatalf("unexpected Store %s projection: %d %s", example.store, w.Code, w.Body.String())
+		}
+	}
+	if w, _ = request(server, "/v1/public/stores/draft-sanaa"); w.Code != 404 {
+		t.Fatalf("draft Store leaked: %d %s", w.Code, w.Body.String())
 	}
 }
 

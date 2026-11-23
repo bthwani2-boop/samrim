@@ -1,16 +1,163 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "dev.ps1");
 
+test("opening Chrome and Android is owned by the single dev launcher", () => {
+  assert.equal(existsSync(new URL("./open-dev-apps.ps1", import.meta.url)), false);
+});
+
 test("the Android Expo manifest check identifies the native platform", () => {
-  const opener = readFileSync(new URL("./open-dev-apps.ps1", import.meta.url), "utf8");
+  const opener = readFileSync(scriptPath, "utf8");
   assert.match(opener, /'Expo-Platform: '\s*\+\s*\$platform/);
   assert.match(opener, /\$manifest=Probe[^\r\n]*'application\/expo\+json'\s+'android'/);
+  assert.doesNotMatch(opener, /Start-Sleep -Seconds 3/);
+});
+
+test("Chrome reuses the intended customer, merchant and operator tabs when Expo shows a URL title", () => {
+  const opener = readFileSync(scriptPath, "utf8");
+  const expected = opener.match(/\$expected=@\(([\s\S]*?)\r?\n\s*\)/);
+  assert.ok(expected, "Chrome tab signatures must be declared");
+  const patterns = [...expected[1].matchAll(/'([^']+)'/g)]
+    .map(([, source]) => new RegExp(source.replace(/^\(\?i\)/, ""), "i"));
+  assert.equal(patterns.length, 3);
+
+  const validTitles = [
+    "127.0.0.1:18101 - Memory usage - 30 MB",
+    "بثواني — التاجر",
+    "بثواني — لوحة التحكم",
+  ];
+  for (let i = 0; i < patterns.length; i++) {
+    assert.match(validTitles[i], patterns[i]);
+    assert.doesNotMatch(validTitles[(i + 1) % patterns.length], patterns[i]);
+  }
+  assert.match("بثواني — الرئيسية", patterns[0]);
+  assert.match("127.0.0.1:18102", patterns[1]);
+  assert.match("127.0.0.1:13000", patterns[2]);
+  assert.match(opener, /\$tabs\.Count -lt 3/);
+  assert.match(opener, /foreach\(\$signature in \$expected\)/);
+  assert.match(opener, /\$matched\.Count -eq \$expected\.Count/);
+  assert.doesNotMatch(opener, /bthwani2@gmail\.com/);
+});
+
+test("Operator opens at the exact WebAuthn localhost origin and reports auth readiness separately", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  assert.match(launcher, /'http:\/\/localhost:13000\/'/);
+  assert.match(launcher, /function Show-OperatorAuthReadiness\b/);
+  assert.match(launcher, /'http:\/\/localhost:13000\/api\/auth\/session'/);
+  assert.match(launcher, /'OPERATOR_AUTH'/);
+  assert.match(launcher, /'launch'\s*\{[\s\S]*?Open-AppSurfaces\s+Show-OperatorAuthReadiness/);
+});
+
+test("one dev command opens existing app surfaces after the owner tasks are ready", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  assert.match(launcher, /function Open-AppSurfaces\b/);
+  assert.match(launcher, /\[string\]\$Action = 'Launch'/);
+  const fastPath = launcher.match(/'launch'\s*\{([\s\S]*?)\n\s*break/);
+  assert.ok(fastPath, "default launch action must be present");
+  assert.match(fastPath[1], /Check-Ssh[\s\S]*?Start-LocalTasks[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces/);
+  assert.doesNotMatch(fastPath[1], /Docker|Start-Base|Show-Docker|Assert-Compose/);
+  assert.match(launcher, /'up'\s*\{[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
+  assert.match(launcher, /'warm'\s*\{[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
+  assert.match(launcher, /if\s*\(\$DockerAction -eq 'open'\)\s*\{Open-AppSurfaces;Show-OperatorAuthReadiness;return\}/);
+  assert.match(launcher, /if\s*\(\$selection -eq 'All'\)/);
+  assert.match(launcher, /'SAMSUNG' 'SKIPPED/);
+});
+
+test("native owner traffic reuses the verified SSH tunnel and cannot take over an arbitrary ADB port", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  const tunnel = readFileSync(new URL("./Start-AppTunnel.ps1", import.meta.url), "utf8");
+  assert.match(tunnel, /if \(\$App -eq 'customer'\)/);
+  assert.match(tunnel, /foreach \(\$ownerPort in @\(3201,3202\)\)/);
+  assert.match(tunnel, /'127\.0\.0\.1:' \+ \$ownerPort/);
+  assert.match(tunnel, /\$argsList \+= \$target/);
+  assert.match(launcher, /\$nativePorts = @\(\$android \| ForEach-Object/);
+  assert.match(launcher, /NATIVE_OWNER_SSH_TUNNEL_NOT_LISTENING/);
+  assert.match(launcher, /NATIVE_OWNER_SSH_TUNNEL_UNVERIFIED/);
+  assert.match(launcher, /ADB_REVERSE_COLLISION/);
+  assert.match(launcher, /18101,18102,18103,3201,3202/);
+});
+
+test("Web and Metro readiness share endpoints and report bounded cold-start retries", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  const targets = launcher.match(/function Get-AppHttpTargets \{([\s\S]*?)\n\}/);
+  assert.ok(targets, "one endpoint inventory must serve both status and verification");
+  for (const port of [18101, 18102, 18103, 13000]) {
+    assert.match(targets[1], new RegExp(String(port)));
+  }
+  assert.match(launcher, /function Test-AppHttpTarget\b/);
+  assert.match(launcher, /\$attempt -le \$MaxAttempts/);
+  assert.match(launcher, /\$attempt -lt \$MaxAttempts/);
+  assert.match(launcher, /\$result\.Success/);
+  assert.match(launcher, /\$result\.Error/);
+  assert.match(launcher, /elapsedMs=/);
+  assert.match(launcher, /-MaxAttempts 3/);
+  assert.match(launcher, /-MaxAttempts 1/);
+  assert.match(launcher, /Assert-Ok \(\$failures -eq 0\)/);
+});
+
+test("transient HTTP failure recovers and persistent failure remains negative", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted = scriptPath.replaceAll("'", "''");
+  const ps = [
+    "$ErrorActionPreference='Stop'",
+    `$source=Get-Content -LiteralPath '${quoted}' -Raw`,
+    "$tokens=$null;$errors=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)",
+    "$node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-AppHttpTarget'},$true)",
+    "if(!$node){throw 'PROBE_FUNCTION_MISSING'}",
+    "Invoke-Expression $node.Extent.Text",
+    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[string]$Uri,[int]$TimeoutSec) $script:tries++; if($script:alwaysFail -or $script:tries -eq 1){throw 'temporary failure'}; return [pscustomobject]@{StatusCode=200} }",
+    "$target=@{A='test';U='http://not-used.invalid/'}",
+    "$script:tries=0;$script:alwaysFail=$false",
+    "$recovered=Test-AppHttpTarget -Target $target -MaxAttempts 3 -TimeoutSec 1 -RetryDelayMs 0",
+    "if(!$recovered.Success -or $recovered.Attempts -ne 2 -or $script:tries -ne 2){throw 'TRANSIENT_NOT_RECOVERED'}",
+    "$script:tries=0;$script:alwaysFail=$true",
+    "$failed=Test-AppHttpTarget -Target $target -MaxAttempts 3 -TimeoutSec 1 -RetryDelayMs 0",
+    "if($failed.Success -or $failed.Attempts -ne 3 -or $script:tries -ne 3 -or !$failed.Error){throw 'PERSISTENT_FAILURE_MASKED'}",
+    "Write-Output 'RETRY_AND_FAIL_CLOSED_PASS'",
+  ].join("; ");
+  const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], {
+    encoding: "utf8", timeout: 15000, windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /RETRY_AND_FAIL_CLOSED_PASS/);
+});
+
+test("Docker status verifies present WLT without misreporting it as another project", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  assert.match(launcher, /--include-wlt/);
+  assert.match(launcher, /bthwani-refoundation-wlt-1/);
+  assert.doesNotMatch(launcher, /WLT.*outside this Docker project/);
+});
+
+test("read-only diagnostics do not monopolize the global app lifecycle mutex", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  assert.match(launcher, /\$readOnlyOperation\s*=/);
+  assert.match(launcher, /'status','verify','logs','android'/);
+  assert.match(launcher, /if\s*\(-not\s+\$readOnlyOperation\)\s*\{/);
+});
+
+test("an offline Lenovo fails quickly without weakening SSH host-key checks", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  const check = launcher.match(/function Check-Ssh \{([\s\S]*?)\n\}/);
+  assert.ok(check);
+  assert.match(check[1], /ConnectAsync/);
+  assert.match(check[1], /\.Wait\(2000\)/);
+  assert.match(check[1], /StrictHostKeyChecking=yes/);
+});
+
+test("the existing package script replaces the obsolete self-install branch", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  const root = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8"));
+  assert.equal(root.scripts.dev, "pwsh -NoProfile -File tools/dev/dev.ps1");
+  assert.doesNotMatch(launcher, /function Install-CLI/);
+  assert.doesNotMatch(launcher, /'install'\s*\{\s*Install-CLI/);
 });
 
 test("the unified dev launcher and each embedded PowerShell block parse on Windows", {
@@ -24,7 +171,7 @@ test("the unified dev launcher and each embedded PowerShell block parse on Windo
     "if($errors.Count){throw ('ROOT_PARSE '+($errors -join '|'))}",
     "$blocks=@($ast.FindAll({param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.StringConstantType.ToString() -eq 'SingleQuotedHereString'},$true))",
     "if($blocks.Count -lt 6){throw ('MISSING_EMBEDDED_BLOCKS '+$blocks.Count)}",
-    "foreach($block in $blocks){$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($block.Value,[ref]$t,[ref]$e);if($e.Count){throw ('EMBEDDED_PARSE '+($e -join '|'))}}",
+    "foreach($block in $blocks){if($block.Value.TrimStart().StartsWith('using System;')){if($block.Value -notmatch 'BthwaniChromeWindowLocator'){throw 'CHROME_CSHARP_BLOCK_CHANGED'};continue};$t=$null;$e=$null;[void][Management.Automation.Language.Parser]::ParseInput($block.Value,[ref]$t,[ref]$e);if($e.Count){throw ('EMBEDDED_PARSE '+($e -join '|'))}}",
     "Write-Output ('EMBEDDED_PARSE_PASS blocks='+$blocks.Count)",
   ].join("; ");
   const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], {

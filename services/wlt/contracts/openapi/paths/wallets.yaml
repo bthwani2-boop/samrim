@@ -1,1 +1,90 @@
-paths: {}
+paths:
+  /v1/wallets/me:
+    get:
+      operationId: getCurrentCustomerWalletBalance
+      summary: Read the verified Customer's posted balance
+      description: The isolated WLT owner resolves the active Identity Customer, reads that actor's durable posted funding journal, and rechecks the current binding before returning the balance. Query parameters and request bodies are rejected.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Posted balance with the verified actor binding
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/CustomerWalletBalance' }
+        '400':
+          description: Request contained a body or query
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: A current verified Identity session is required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: The session does not carry the Customer role
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: This read-only wallet resource permits GET only
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity or WLT could not verify the current balance
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+
+  /v1/wallets/me/transactions:
+    get:
+      operationId: listCurrentCustomerWalletTransactions
+      summary: Read a bounded page of the current Customer's posted funding history
+      description: Read-only isolated development projection of funding credits and their reversals. Identity is checked before and after the actor-scoped SQL read. The response excludes external provider identifiers; nextCursor permits older pages without choosing an account. Only a canonical cursor query is accepted; unknown keys and bodies are rejected.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          description: Canonical base64url keyset cursor issued by WLT for an earlier page.
+          schema: { type: string, minLength: 20, maxLength: 240 }
+      responses:
+        '200':
+          description: Bounded posted funding page for the current Customer only
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/CustomerFundingHistory' }
+        '400':
+          description: Request contained a body or query
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: A current verified Identity session is required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: The session does not carry the Customer role
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: This read-only wallet resource permits GET only
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity or WLT could not verify the current transaction history
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }

@@ -67,6 +67,18 @@ function harness() {
         ownerReads++;
         return readIdentity(_origin, bearer);
       },
+      async readPersistentIdentityRole(origin, bearer, refresh, role) {
+        // This fixture exercises the existing access-token path; persistence
+        // and refresh rotation are owner-client integration responsibilities.
+        assert.equal(refresh, null, "legacy access tests must not invent refresh credentials");
+        ownerReads++;
+        const session = await readIdentity(origin, bearer);
+        if (session.role !== role) throw new OwnerError(403, "FORBIDDEN");
+        return { session, bearer };
+      },
+      async revokePersistentIdentitySession() {
+        throw new Error("unexpected persistent token in access-only fixture");
+      },
       async admitCurrentCustomerAsCaptain() { ownerAdmissions++; return { accessToken: tokens.captain }; },
       async revokeVerifiedIdentitySession(_origin, bearer) {
         if (bearer === tokens.captain) {
@@ -83,7 +95,7 @@ function harness() {
       async requestCaptainApplication() { return "PENDING"; },
     },
   };
-  const reload = () => {
+  const reload = ({ preview = false } = {}) => {
     const module = { exports: {} };
     new Function("require", "module", "exports", "process", "setTimeout", "clearTimeout", compiled)(
       name => {
@@ -92,6 +104,7 @@ function harness() {
       }, module, module.exports, { env: {
         EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
         EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+        EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: preview ? "1" : "0",
       } }, setTimeout, clearTimeout,
     );
     return module.exports;
@@ -115,6 +128,34 @@ function harness() {
   };
 }
 
+test("Surface preview never reads or revokes the installed app session", async () => {
+  const h = harness();
+  const legacyKey = "bthwani.captain.synthetic-admission.v1";
+  h.stored.set(legacyKey, h.tokens.captain);
+  const preview = h.reload({ preview: true });
+  const signal = new AbortController().signal;
+  assert.deepEqual(await preview.readCaptainAdmission(signal), { enabled: true, standingReady: true, session: null });
+  await preview.leaveCaptainAdmission(signal);
+  assert.equal(h.ownerReads, 0);
+  assert.equal(h.captainRevocationAttempts, 0);
+  assert.equal(h.stored.get(legacyKey), h.tokens.captain);
+});
+
+test("Captain account logout cannot revoke a newer or different actor", async () => {
+  const h = harness();
+  const controller = new AbortController();
+  h.stored.set("bthwani.captain.synthetic-admission.v1", h.tokens.captain);
+  await assert.rejects(h.reload().leaveCaptainAdmission(controller.signal, "earlier-captain"),
+    { status: 409, code: "CAPTAIN_CONTEXT_CHANGED" });
+  assert.equal(h.pending(), null);
+  assert.equal(h.captainRevocationAttempts, 0);
+  assert.equal(h.readToken(), h.tokens.captain);
+  h.setRevokeCaptainFails(false);
+  await h.reload().leaveCaptainAdmission(controller.signal, "captain-owner-one");
+  assert.equal(h.captainRevocationAttempts, 1);
+  assert.equal(h.readToken(), null);
+});
+
 test("Captain undelivered bearer must not resurrect after restart, even when storage and revoke fail", async () => {
   const h = harness();
   h.setWriteFailure("after");
@@ -125,7 +166,7 @@ test("Captain undelivered bearer must not resurrect after restart, even when sto
   assert.ok(h.pending(), "durable quarantine must survive despite failed cleanup");
   const before = h.ownerReads;
   const restored = await h.reload().readCaptainAdmission(new AbortController().signal);
-  assert.deepEqual(restored, { enabled: true, session: null });
+  assert.deepEqual(restored, { enabled: true, standingReady: true, session: null });
   assert.equal(h.ownerReads, before, "quarantined token never reaches owner as admitted bearer");
 });
 
@@ -149,7 +190,7 @@ test("Captain marker deletion before effect leaves approved local response but c
   assert.equal(result.state, "approved");
   assert.ok(h.pending());
   assert.deepEqual(await h.reload().readCaptainAdmission(new AbortController().signal),
-    { enabled: true, session: null });
+    { enabled: true, standingReady: true, session: null });
 });
 
 test("Captain normal admission survives process restart and pending recovery blocks proof reuse", async () => {
@@ -173,7 +214,7 @@ test("Captain signout must remain fail closed after owner outage and device dele
   assert.ok(h.pending(), "signout uncertainty must remain visible to next process");
   const before = h.ownerReads;
   assert.deepEqual(await h.reload().readCaptainAdmission(new AbortController().signal),
-    { enabled: true, session: null });
+    { enabled: true, standingReady: true, session: null });
   assert.equal(h.ownerReads, before);
 });
 
@@ -186,7 +227,7 @@ test("Captain signout on outage retries owner revocation when connectivity retur
   assert.ok(h.pending(), "owner outage must quarantine the bearer even when local deletion is available");
   h.setRevokeCaptainFails(false);
   const restored = await h.reload().readCaptainAdmission(new AbortController().signal);
-  assert.deepEqual(restored, { enabled: true, session: null });
+  assert.deepEqual(restored, { enabled: true, standingReady: true, session: null });
   assert.equal(h.captainRevocationAttempts, 2, "recovery must retry actual Identity revocation");
   assert.equal(h.readToken(), null);
   assert.equal(h.pending(), null);
@@ -281,4 +322,34 @@ test("a delayed old-actor 401 cannot quarantine a newly installed Captain creden
   assert.equal(h.pending(), null, "old principal denial must not quarantine the newly signed-in actor");
   const current = await instance.readCaptainAdmission(new AbortController().signal);
   assert.equal(current.session?.actorId, "new-captain-owner");
+});
+
+test("Current Captain home receives the exact owner-verified DSH standing revision", async () => {
+  const h = harness();
+  h.stored.set("bthwani.captain.synthetic-admission.v1", h.tokens.captain);
+  const standing = { actorId: "captain-owner-one", status: "APPROVED", version: 41 };
+  let reads = 0;
+  h.setStandingRead(async (_origin, token, role, actorId) => {
+    reads++;
+    assert.equal(token, h.tokens.captain);
+    assert.equal(role, "captain");
+    assert.equal(actorId, standing.actorId);
+    return standing;
+  });
+  const admission = await h.reload().readCaptainAdmission(new AbortController().signal);
+  assert.equal(admission.session?.actorId, standing.actorId);
+  assert.deepEqual(admission.standing, standing);
+  assert.equal(reads, 1, "one already-authorized DSH read supplies both admission and UI");
+});
+
+test("Captain actor switch during owner approval cannot leak the old standing", async () => {
+  const h = harness();
+  h.stored.set("bthwani.captain.synthetic-admission.v1", h.tokens.captain);
+  h.setStandingRead(async () => {
+    h.stored.delete("bthwani.captain.synthetic-admission.v1");
+    return { actorId: "captain-owner-one", status: "APPROVED", version: 41 };
+  });
+  const admission = await h.reload().readCaptainAdmission(new AbortController().signal);
+  assert.deepEqual(admission, { enabled: true, standingReady: true, session: null });
+  assert.equal("standing" in admission, false, "old DSH status must not reach the next actor");
 });

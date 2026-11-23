@@ -15,5 +15,9 @@ test("Store links restore only bounded city and search text", () => {
   assert.deepEqual(readStoreBrowseScope({ city: "https://elsewhere.test", q: "😀".repeat(81) }, "sanaa"), { city: "sanaa", q: "" });
   assert.deepEqual(readStoreBrowseScope({ city: ["aden", "sanaa"], q: ["first", "second"] }, "sanaa"), { city: "sanaa", q: "" });
   assert.equal(readStoreBrowseScope({ q: "😀".repeat(80) }, "sanaa").q, "😀".repeat(80));
+  assert.equal(readStoreBrowseScope({ vertical: " GROCERY " }, "sanaa").vertical, "grocery");
+  for (const unsafe of ["../grocery", "صيدليات", "a".repeat(65)]) {
+    assert.equal(readStoreBrowseScope({ vertical: unsafe }, "sanaa").vertical, undefined);
+  }
   assert.equal(serviceCityLabel("sanaa"), "صنعاء");
 });

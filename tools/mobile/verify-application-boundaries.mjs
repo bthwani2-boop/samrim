@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Structural checks for literal imports; not an authorization or runtime boundary.
 import assert from "node:assert/strict";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createScanner, SyntaxKind } from "typescript/unstable/ast";
@@ -9,7 +9,7 @@ import { createScanner, SyntaxKind } from "typescript/unstable/ast";
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const appNames = ["customer", "merchant", "captain", "control-panel"];
 const ownerRoots = ["apps", "packages", "services"];
-const extensions = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"]);
+const extensions = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"]);
 const ignored = new Set(["node_modules", ".next", ".expo", "dist", "out", "build", "coverage"]);
 
 function within(base, target) {
@@ -86,6 +86,11 @@ export function sourceBoundaryIssues(file, source, base = root) {
   const references = moduleReferences(source);
   issues.push(...references.issues);
   for (const spec of references.specs) {
+    if ((current === "packages/design-system" || current === "packages/tamagui-config") &&
+        /^@bthwani\/(?:identity|dsh|wlt)(?:\/|$)/.test(spec)) {
+      issues.push("Presentation package cannot depend on a business owner: " + spec);
+      continue;
+    }
     // Renderer ownership: Expo uses Tamagui/native modules; Operator uses Ant/Next.
     if (current === "apps/control-panel" &&
         /^(?:tamagui(?:\/|$)|@tamagui\/|@bthwani\/tamagui-config(?:\/|$)|react-native(?:[-/]|$)|expo(?:[-/]|$)|@expo\/)/.test(spec)) {
@@ -117,6 +122,12 @@ export function sourceBoundaryIssues(file, source, base = root) {
       issues.push("Private workspace path is not an approved package export: " + spec);
       continue;
     }
+    // Identity, DSH and WLT currently publish only "." in package.json.
+    // Reject unexported subpaths without blocking their public SDK roots.
+    if (/^@bthwani\/(?:identity|dsh|wlt)\//.test(spec)) {
+      issues.push("Private service package subpath is not a declared export: " + spec);
+      continue;
+    }
     if (!spec.startsWith(".")) continue;
     const destination = ownerOf(resolve(dirname(file), spec), base);
     if (destination && destination !== current) {
@@ -125,27 +136,53 @@ export function sourceBoundaryIssues(file, source, base = root) {
   }
   return issues;
 }
-function filesIn(folder) {
-  if (!existsSync(folder)) return [];
+function filesIn(folder, issues, base) {
+  let metadata;
+  try { metadata = lstatSync(folder); }
+  catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  if (metadata.isSymbolicLink()) {
+    issues.push(relative(base, folder) + ": source symlink is not approved");
+    return [];
+  }
   const result = [];
   for (const entry of readdirSync(folder, { withFileTypes: true })) {
-    if (entry.isDirectory() && !ignored.has(entry.name)) result.push(...filesIn(join(folder, entry.name)));
-    else if (entry.isFile() && extensions.has(extname(entry.name))) result.push(join(folder, entry.name));
+    if (ignored.has(entry.name)) continue;
+    const file = join(folder, entry.name);
+    if (entry.isSymbolicLink()) {
+      issues.push(relative(base, file) + ": source symlink is not approved");
+    } else if (entry.isDirectory()) {
+      result.push(...filesIn(file, issues, base));
+    } else if (entry.isFile() && extensions.has(extname(entry.name))) {
+      result.push(file);
+    }
   }
   return result;
 }
-function presentationCandidates(base) {
+function presentationCandidates(base, issues) {
   return [
     ...appNames.flatMap(name => {
       const app = join(base, "apps", name);
       return [
-        ...filesIn(join(app, "app")),
-        ...filesIn(join(app, "src")),
-        ...(existsSync(app) ? readdirSync(app).filter(name => extensions.has(extname(name))).map(name => join(app, name)) : []),
+        ...filesIn(join(app, "app"), issues, base),
+        ...filesIn(join(app, "src"), issues, base),
+        ...(existsSync(app) ? readdirSync(app, { withFileTypes: true }).flatMap(entry => {
+          if (!extensions.has(extname(entry.name))) return [];
+          const file = join(app, entry.name);
+          if (entry.isSymbolicLink()) {
+            issues.push(relative(base, file) + ": source symlink is not approved");
+            return [];
+          }
+          return entry.isFile() ? [file] : [];
+        }) : []),
       ];
     }),
-    ...["design-system", "tamagui-config"].flatMap(name => filesIn(join(base, "packages", name, "src"))),
-    ...["identity", "dsh", "wlt"].flatMap(name => filesIn(join(base, "services", name, "clients"))),
+    ...["design-system", "tamagui-config"].flatMap(name =>
+      filesIn(join(base, "packages", name, "src"), issues, base)),
+    ...["identity", "dsh", "wlt"].flatMap(name =>
+      filesIn(join(base, "services", name, "clients"), issues, base)),
   ];
 }
 // The Stage-4 workspace admits exactly four app hosts, two presentation
@@ -158,6 +195,10 @@ export function stage4WorkspaceIssues(base = root) {
     ["services", ["identity", "dsh", "wlt"]],
   ]) {
     for (const entry of readdirSync(join(base, group), { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) {
+        issues.push(group + "/" + entry.name + ": workspace owner symlink is not approved");
+        continue;
+      }
       if (entry.isDirectory() && !ignored.has(entry.name) && !allowed.includes(entry.name)) {
         // Removed packages can leave an ignored node_modules directory behind.
         // It is not authored source or a workspace owner. Still reject empty
@@ -209,7 +250,7 @@ export function presentationDirectoryIssues(base = root) {
             }
             if (treeRoot.endsWith("src") && parts[0] === "features" &&
                 extensions.has(extname(entry.name)) &&
-                !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.(?:native|web|android|ios))?(?:\.(?:test|spec))?\.(?:ts|tsx|js|jsx|mjs|cjs)$/.test(entry.name)) {
+                !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*(?:\.(?:native|web|android|ios))?(?:\.(?:test|spec))?\.(?:ts|tsx|mts|cts|js|jsx|mjs|cjs)$/.test(entry.name)) {
               issues.push(label + ": feature source filename must be lowercase-kebab-case");
             }
             continue;
@@ -260,7 +301,7 @@ export function presentationDirectoryIssues(base = root) {
 // Test the same on-disk feature scanning in fixtures and in CI.
 export function scanPresentationBoundaries(base = root) {
   const issues = [...stage4WorkspaceIssues(base), ...presentationDirectoryIssues(base)];
-  const candidates = presentationCandidates(base);
+  const candidates = presentationCandidates(base, issues);
   for (const file of candidates) {
     for (const issue of sourceBoundaryIssues(file, readFileSync(file, "utf8"), base)) {
       issues.push(relative(base, file) + ": " + issue);

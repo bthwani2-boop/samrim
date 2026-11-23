@@ -2,18 +2,14 @@ package discovery
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
@@ -21,6 +17,9 @@ import (
 type Server struct {
 	Owner          *Owner
 	AllowedOrigins map[string]bool
+	// The isolated Store availability capability requires migrations 002–003.
+	// Discovery deployments with the public baseline alone can still serve.
+	StoreAvailabilityEnabled bool
 }
 type publicStore struct {
 	ID                 string `json:"id"`
@@ -30,14 +29,105 @@ type publicStore struct {
 	OrderabilityStatus string `json:"orderabilityStatus"`
 	OrderingAvailable  bool   `json:"orderingAvailable"`
 }
-type publicOffer struct {
-	ID        string `json:"id"`
-	StoreID   string `json:"storeId"`
-	Name      string `json:"name"`
-	VariantID string `json:"variantId"`
-	PriceYER  int64  `json:"priceYer"`
-	Available bool   `json:"available"`
+
+type publicStoreSelection struct {
+	id, city, after, search, vertical string
+	limit                             int
 }
+
+// The same published/active boundary serves a direct Store link and the
+// marketplace listing. Only bound selectors vary; hours-disabled deployments
+// must not reference operational tables that have not been installed.
+func (s *Server) queryPublicStores(ctx context.Context, tx *sql.Tx, selection publicStoreSelection) (*sql.Rows, error) {
+	args := []any{selection.id, selection.city, selection.after, selection.search, selection.vertical, selection.limit}
+	if s.StoreAvailabilityEnabled {
+		return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,(SELECT CASE
+			WHEN a.paused_until > transaction_timestamp() THEN jsonb_build_object('paused', true)
+			WHEN a.preparation_minutes IS NOT NULL AND a.store_timezone=c.timezone_name THEN
+				jsonb_build_object('timezone', a.store_timezone, 'weekly', COALESCE(
+					(SELECT jsonb_agg(jsonb_build_object('weekday', h.weekday,
+						'opens', h.opens_minute, 'closes', h.closes_minute))
+					 FROM store_operational_weekly_hours h WHERE h.store_id=a.store_id),
+					'[]'::jsonb))
+			END FROM store_operational_availability a WHERE a.store_id=s.id),
+			transaction_timestamp()
+			FROM stores s
+			JOIN service_cities c ON c.id=s.city_id
+			JOIN verticals v ON v.id=s.vertical_id
+			WHERE s.published AND c.active AND v.active
+			  AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
+				AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
+				AND ($5='' OR s.vertical_id=$5)))
+			ORDER BY s.id LIMIT $6`, args...)
+	}
+	return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,
+		NULL::jsonb, transaction_timestamp()
+		FROM stores s
+		JOIN service_cities c ON c.id=s.city_id
+		JOIN verticals v ON v.id=s.vertical_id
+		WHERE s.published AND c.active AND v.active
+		  AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
+			AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
+			AND ($5='' OR s.vertical_id=$5)))
+		ORDER BY s.id LIMIT $6`, args...)
+}
+
+func scanPublicStore(scan func(...any) error) (publicStore, error) {
+	var st publicStore
+	var hoursJSON []byte
+	var now time.Time
+	if err := scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID, &hoursJSON, &now); err != nil {
+		return publicStore{}, err
+	}
+	// An active pause and a closed schedule are public browse information. A checkout decision
+	// still requires the currently unavailable fulfillment and WLT flow.
+	st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
+	if len(hoursJSON) == 0 {
+		return st, nil
+	}
+	var hours struct {
+		Paused   bool                             `json:"paused"`
+		Timezone string                           `json:"timezone"`
+		Weekly   []storeavailability.WeeklyWindow `json:"weekly"`
+	}
+	if err := json.Unmarshal(hoursJSON, &hours); err != nil {
+		return st, nil
+	}
+	if hours.Paused {
+		st.OrderabilityStatus = string(storeavailability.Paused)
+	} else if open, err := storeavailability.WithinWeeklyHours(now, hours.Timezone, hours.Weekly); err == nil && !open {
+		st.OrderabilityStatus = string(storeavailability.ClosedBySchedule)
+	}
+	return st, nil
+}
+
+// Public verticals are DSH-owned marketplace classifications visible in a
+// selected active Service City. Counts exclude drafts and DIRECT Stores.
+type publicVerticalSummary struct {
+	ID         string `json:"id"`
+	StoreCount int64  `json:"storeCount"`
+}
+
+type publicOffer struct {
+	ID        string         `json:"id"`
+	StoreID   string         `json:"storeId"`
+	Name      string         `json:"name"`
+	VariantID string         `json:"variantId"`
+	PriceYER  publicPriceYER `json:"priceYer"`
+	Available bool           `json:"available"`
+}
+
+type publicPriceYER int64
+
+func (price publicPriceYER) MarshalJSON() ([]byte, error) {
+	const maxSafeJSONInteger = 1<<53 - 1
+	amount := strconv.FormatInt(int64(price), 10)
+	if price > maxSafeJSONInteger {
+		return json.Marshal(amount)
+	}
+	return []byte(amount), nil
+}
+
 type page[T any] struct {
 	Items      []T    `json:"items"`
 	NextCursor string `json:"nextCursor,omitempty"`
@@ -98,19 +188,26 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(segments) < 3 || segments[0] != "v1" || segments[1] != "public" || segments[2] != "stores" {
+	if len(segments) < 3 || segments[0] != "v1" || segments[1] != "public" {
 		errorJSON(w, 404, "NOT_FOUND")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	switch {
-	case len(segments) == 3:
+	case len(segments) == 3 && segments[2] == "cities":
+		s.listCities(ctx, w, r)
+	case len(segments) == 3 && segments[2] == "verticals":
+		s.listVerticals(ctx, w, r)
+	case len(segments) == 3 && segments[2] == "stores":
 		s.listStores(ctx, w, r)
-	case len(segments) == 4 && validID(segments[3]):
+	case len(segments) == 4 && segments[2] == "stores" && validID(segments[3]):
 		s.storeDetail(ctx, w, segments[3])
-	case len(segments) == 5 && validID(segments[3]) && segments[4] == "offers":
+	case len(segments) == 5 && segments[2] == "stores" && validID(segments[3]) && segments[4] == "offers":
 		s.listOffers(ctx, w, r, segments[3])
+	case len(segments) == 7 && segments[2] == "stores" && validID(segments[3]) &&
+		segments[4] == "offers" && validID(segments[5]) && segments[6] == "estimate":
+		s.estimateOffer(ctx, w, r, segments[3], segments[5])
 	default:
 		errorJSON(w, 404, "NOT_FOUND")
 	}
@@ -137,11 +234,14 @@ func errorJSON(w http.ResponseWriter, status int, code string) {
 	jsonResponse(w, status, map[string]string{"error": code})
 }
 func limitParam(r *http.Request) (int, bool) {
-	v := r.URL.Query().Get("limit")
-	if v == "" {
+	values, present := r.URL.Query()["limit"]
+	if !present {
 		return 20, true
 	}
-	n, e := strconv.Atoi(v)
+	if len(values) != 1 {
+		return 0, false
+	}
+	n, e := strconv.Atoi(values[0])
 	return n, e == nil && n >= 1 && n <= 50
 }
 func makeCursor(c pageCursor) string {
@@ -177,205 +277,4 @@ func cursorError(w http.ResponseWriter, err error) {
 		return
 	}
 	errorJSON(w, 400, "INVALID_CURSOR")
-}
-func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.Request) {
-	search, scope, valid := publicSearch(r, r.URL.Query().Get("city_id"))
-	if !valid {
-		errorJSON(w, 400, "INVALID_SEARCH")
-		return
-	}
-	city := r.URL.Query().Get("city_id")
-	if !validID(city) {
-		errorJSON(w, 400, "INVALID_CITY")
-		return
-	}
-	limit, ok := limitParam(r)
-	if !ok {
-		errorJSON(w, 400, "INVALID_LIMIT")
-		return
-	}
-	tx, err := s.Owner.viewTx(ctx)
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	defer tx.Rollback()
-	rev, err := s.Owner.revision(ctx, tx)
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	after, err := parseCursor(r.URL.Query().Get("cursor"), "stores", scope, rev)
-	if err != nil {
-		cursorError(w, err)
-		return
-	}
-	q := `SELECT s.id,s.name,s.city_id,s.vertical_id FROM stores s
-		JOIN service_cities c ON c.id=s.city_id
-		JOIN verticals v ON v.id=s.vertical_id
-		WHERE c.active AND v.active AND s.published AND s.relation='MARKETPLACE'
-			AND s.city_id=$1 AND s.id>$2 AND strpos(lower(s.name),lower($4))>0 ORDER BY s.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, city, after, limit+1, search)
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	items := make([]publicStore, 0, limit+1)
-	for rows.Next() {
-		var st publicStore
-		if e := rows.Scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID); e != nil {
-			err = e
-			break
-		}
-		// Discovery does not create checkout or bypass fulfillment/WLT activation.
-		st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
-		st.OrderingAvailable = false
-		items = append(items, st)
-	}
-	if err == nil {
-		err = rows.Err()
-	}
-	rows.Close()
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	if err = tx.Commit(); err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	result := page[publicStore]{Items: items, Revision: rev}
-	if len(items) > limit {
-		result.Items = items[:limit]
-		result.NextCursor = makeCursor(pageCursor{Kind: "stores", Scope: scope, After: items[limit-1].ID, Revision: rev})
-	}
-	jsonResponse(w, 200, result)
-}
-
-// Search is a literal substring, never a SQL LIKE pattern. Hashing its scope
-// keeps even multi-byte search text within the existing bounded cursor format.
-func publicSearch(r *http.Request, scope string) (string, string, bool) {
-	values, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil || len(values["q"]) > 1 {
-		return "", "", false
-	}
-	raw := values.Get("q")
-	if !utf8.ValidString(raw) || utf8.RuneCountInString(raw) > 80 || strings.ContainsRune(raw, 0) {
-		return "", "", false
-	}
-	search := strings.TrimSpace(raw)
-	if search != "" {
-		scope += fmt.Sprintf(":%x", sha256.Sum256([]byte(search)))
-	}
-	return search, scope, true
-}
-func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publicStore, error) {
-	var st publicStore
-	q := `SELECT s.id,s.name,s.city_id,s.vertical_id FROM stores s
-		JOIN service_cities c ON c.id=s.city_id
-		JOIN verticals v ON v.id=s.vertical_id
-		WHERE s.id=$1 AND s.published AND c.active AND v.active`
-	e := tx.QueryRowContext(ctx, q, id).Scan(&st.ID, &st.Name, &st.CityID, &st.VerticalID)
-	st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
-	st.OrderingAvailable = false
-	return st, e
-}
-func (s *Server) storeDetail(ctx context.Context, w http.ResponseWriter, id string) {
-	tx, e := s.Owner.viewTx(ctx)
-	if e != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	defer tx.Rollback()
-	st, e := s.visibleStore(ctx, tx, id)
-	if errors.Is(e, sql.ErrNoRows) {
-		errorJSON(w, 404, "NOT_FOUND")
-		return
-	}
-	if e != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	if e = tx.Commit(); e != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	jsonResponse(w, 200, st)
-}
-func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.Request, id string) {
-	search, scope, valid := publicSearch(r, id)
-	if !valid {
-		errorJSON(w, 400, "INVALID_SEARCH")
-		return
-	}
-	limit, ok := limitParam(r)
-	if !ok {
-		errorJSON(w, 400, "INVALID_LIMIT")
-		return
-	}
-	tx, err := s.Owner.viewTx(ctx)
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	defer tx.Rollback()
-	_, err = s.visibleStore(ctx, tx, id)
-	if errors.Is(err, sql.ErrNoRows) {
-		errorJSON(w, 404, "NOT_FOUND")
-		return
-	}
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	rev, err := s.Owner.revision(ctx, tx)
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	after, err := parseCursor(r.URL.Query().Get("cursor"), "offers", scope, rev)
-	if err != nil {
-		cursorError(w, err)
-		return
-	}
-	q := `SELECT o.id,o.store_id,p.name,o.variant_id,o.price_yer FROM offers o
-		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
-		JOIN variants v ON v.id=o.variant_id AND v.product_id=o.product_id
-		WHERE o.store_id=$1 AND o.id>$2 AND p.active AND v.sellable
-			AND v.required_attributes_valid AND o.published AND o.available
-			AND o.price_yer>0 AND o.stock_units>0
-			AND strpos(lower(p.name),lower($4))>0 ORDER BY o.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, id, after, limit+1, search)
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	items := make([]publicOffer, 0, limit+1)
-	for rows.Next() {
-		var off publicOffer
-		if e := rows.Scan(&off.ID, &off.StoreID, &off.Name, &off.VariantID, &off.PriceYER); e != nil {
-			err = e
-			break
-		}
-		off.Available = true
-		items = append(items, off)
-	}
-	if err == nil {
-		err = rows.Err()
-	}
-	rows.Close()
-	if err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	if err = tx.Commit(); err != nil {
-		errorJSON(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	result := page[publicOffer]{Items: items, Revision: rev}
-	if len(items) > limit {
-		result.Items = items[:limit]
-		result.NextCursor = makeCursor(pageCursor{Kind: "offers", Scope: scope, After: items[limit-1].ID, Revision: rev})
-	}
-	jsonResponse(w, 200, result)
 }

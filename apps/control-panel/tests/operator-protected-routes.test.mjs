@@ -58,20 +58,9 @@ test("Operator routes and the browser session endpoint fail closed on the produc
     const entryHtml = await entry.text();
     assert.match(entryHtml, /تسجيل دخول المشغّلين غير متاح على هذه النسخة/);
     assert.doesNotMatch(entryHtml, /تسجيل الدخول بمفتاح المرور/);
-    const lockedSections = entryHtml.match(/<section\b[^>]*aria-label="الأقسام الرئيسية \(تتطلب تسجيل الدخول\)"[^>]*>(.*?)<\/section>/s)?.[1];
-    assert.ok(lockedSections, "guest must see a read-only section map in the sidebar");
-    assert.match(lockedSections, /العمليات/);
-    assert.match(lockedSections, /المالية/);
-    assert.doesNotMatch(lockedSections, /<(?:a|button)\\b/, "no disabled section may become a protected action");
-    assert.doesNotMatch(entryHtml, /aria-label="تبويبات الأقسام"/, "tabs require verified grants");
-    const overview = entryHtml.match(/<section\b[^>]*aria-labelledby="operator-sections-title"[^>]*>(.*?)<\/section>/s)?.[1];
-    assert.ok(overview, "the guest landing must show the public section overview");
-    assert.match(overview, /تظهر روابط الأقسام بعد التحقق من صلاحيات حسابك/);
-    assert.doesNotMatch(overview, /<(?:a|button)\b/);
-    assert.deepEqual(
-      Array.from(overview.matchAll(/<li>([^<]+)<\/li>/g), item => item[1]),
-      workspaceRegistry.filter(item => item.permission !== null).map(item => item.label),
-    );
+    assert.doesNotMatch(entryHtml, /الأقسام الرئيسية \(تتطلب تسجيل الدخول\)|معاينة الأقسام غير المتاحة قبل الدخول|aria-label="تبويبات الوظائف"/);
+    assert.doesNotMatch(entryHtml, /operator-sections-title|aria-label="التنقل الرئيسي"/);
+    assert.match(entryHtml, /دخول المشغّل/);
     for (const { href } of workspaceRegistry) {
       assert.ok(!entryHtml.includes(`href="${href}"`), `guest entry exposed ${href}`);
     }
@@ -100,6 +89,17 @@ test("Operator routes and the browser session endpoint fail closed on the produc
       assert.match(response.headers.get("cache-control") ?? "", /no-store/, method);
       assert.equal((await response.json()).code, "OPERATOR_SESSION_UNAVAILABLE");
     }
+    const permissionChange = await fetch(`${base}/api/access/operators/synthetic/permissions/operations`, {
+      method: "PATCH",
+      headers: { Origin: base },
+      body: new URLSearchParams({
+        state: "ACTIVE", expectedVersion: "0", operationId: "permission-op-1", reason: "isolated check only",
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
+    assert.equal(permissionChange.status, 503);
+    assert.match(permissionChange.headers.get("cache-control") ?? "", /no-store/);
+    assert.deepEqual(await permissionChange.json(), { code: "OWNER_UNAVAILABLE" });
   } finally {
     if (child.exitCode === null) child.kill("SIGTERM");
     if (child.exitCode === null) {

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/smtp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -21,21 +22,30 @@ const (
 )
 
 type customerPhoneHandler struct {
-	owner *PostgresReader
-	key   []byte
-	smtp  string
+	owner  *PostgresReader
+	key    []byte
+	smtp   string
+	phones map[string]struct{}
 }
 
 // This delivery adapter is available only to Identity's isolated development
-// binary. It sends proof for reserved fictional numbers to the Mailpit inbox.
-func NewCustomerPhoneHandler(owner *PostgresReader, keyHex, address string, containerMode bool) (http.Handler, error) {
+// binary. It sends proof for approved Yemeni test numbers to the Mailpit inbox.
+func NewCustomerPhoneHandler(owner *PostgresReader, keyHex, address string, containerMode bool, approvedPhones string) (http.Handler, error) {
 	key, err := hex.DecodeString(keyHex)
 	host, port, addrErr := net.SplitHostPort(address)
 	if owner == nil || err != nil || len(key) != 32 || addrErr != nil || port == "" ||
 		!(host == "127.0.0.1" || (containerMode && host == "mailpit" && port == "1025")) {
 		return nil, errors.New("invalid isolated phone verification configuration")
 	}
-	return &customerPhoneHandler{owner: owner, key: key, smtp: address}, nil
+	phones := make(map[string]struct{})
+	for _, value := range strings.Split(approvedPhones, ",") {
+		phone := strings.TrimSpace(value)
+		if !syntheticPhone.MatchString(phone) {
+			return nil, errors.New("invalid isolated Yemeni phone allowlist")
+		}
+		phones[phone] = struct{}{}
+	}
+	return &customerPhoneHandler{owner: owner, key: key, smtp: address, phones: phones}, nil
 }
 
 func (h *customerPhoneHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -62,7 +72,11 @@ func (h *customerPhoneHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		var input struct {
 			Phone string `json:"phone"`
 		}
-		if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF || !syntheticPhone.MatchString(input.Phone) {
+		if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
+			invalid()
+			return
+		}
+		if _, allowed := h.phones[input.Phone]; !allowed {
 			invalid()
 			return
 		}
@@ -113,12 +127,13 @@ func (h *customerPhoneHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
 func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
-	// Only numeric values reconstructed from the reserved synthetic formats
-	// may reach SMTP DATA; no caller-controlled text is interpolated.
+	// Both fields have anchored digit-only formats before SMTP DATA.
 	if !syntheticPhone.MatchString(phone) || !phoneCode.MatchString(code) {
 		return errors.New("invalid synthetic phone verification payload")
 	}
-	phoneSuffix, err := strconv.ParseUint(phone[len(phone)-2:], 10, 8)
+	// Reconstruct the fixed-format Yemeni test number and six-digit code from
+	// parsed integers, so request text cannot enter SMTP message content.
+	phoneSuffix, err := strconv.ParseUint(phone[4:], 10, 32)
 	if err != nil {
 		return errors.New("invalid synthetic phone verification payload")
 	}
@@ -152,7 +167,7 @@ func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(payload, "From: %s\r\nTo: %s\r\nSubject: BThwani synthetic phone verification\r\n\r\nPhone: +120255501%02d\r\nCode: %06d\r\n", sender, inbox, phoneSuffix, verificationCode)
+	_, err = fmt.Fprintf(payload, "From: %s\r\nTo: %s\r\nSubject: BThwani synthetic phone verification\r\n\r\nPhone: +967%09d\r\nCode: %06d\r\n", sender, inbox, phoneSuffix, verificationCode)
 	if err != nil {
 		return err
 	}

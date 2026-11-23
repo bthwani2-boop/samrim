@@ -1,3 +1,5 @@
-import EmployeesWorkspace from "../../../../../src/features/hr/employees-workspace";
+import EmployeeDetail from "../../../../../src/features/hr/employee-detail";
 
-export default function Page() { return <EmployeesWorkspace title="ملف الموظف" />; }
+export default async function Page({ params }: Readonly<{ params: Promise<{ employeeId: string }> }>) {
+  return <EmployeeDetail id={(await params).employeeId} />;
+}

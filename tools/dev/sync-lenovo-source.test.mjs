@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -116,7 +116,6 @@ test("canonical source paths accepted without path injection", () => {
     "services/dsh/clients/index.ts",
     "services/wlt/tsconfig.json",
     "tools/dev/Start-AppTunnel.ps1",
-    "tools/dev/Start-LenovoSourceSync.ps1",
     "infra/Start-RefoundationApp.ps1",
     "pnpm-lock.yaml", ".node-version"
   ]) assert.equal(allowed(path), true, path);

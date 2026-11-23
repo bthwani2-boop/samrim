@@ -18,6 +18,7 @@ const hosts = [
       ["/", 200, "جميع المتاجر"],
       ["/stores", 200, "متاجر بثواني"],
       ["/lab", 200, "مختبر مكونات Tamagui"],
+      ["/wallet", 200, "المحفظة"],
     ],
   },
   {
@@ -59,6 +60,7 @@ async function verifyHost({ name, routes, protectedRoutes = [] }) {
       NODE_ENV: "production",
       EXPO_NO_TELEMETRY: "1",
       EXPO_OFFLINE: "1",
+      BTHWANI_SURFACE_PREVIEW: "0",
     },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
@@ -113,6 +115,12 @@ async function verifyHost({ name, routes, protectedRoutes = [] }) {
         assert.match(html, /\bdir="rtl"/i, name + route + ": missing document RTL");
         assert.ok(html.includes(text), name + route + ": expected SSR text missing");
       }
+    }
+    if (name === "customer") {
+      const wallet = await fetch(origin + "/api/customer-auth/wallet", { signal: AbortSignal.timeout(7000) });
+      assert.equal(wallet.status, 503, "wallet read requires the isolated preview");
+      assert.equal(wallet.headers.get("cache-control"), "no-store");
+      assert.deepEqual(await wallet.json(), { error: "OWNER_UNAVAILABLE" });
     }
     // On a direct HTTP entry, owner-unverified Merchant routes must redirect
     // before Expo's server renderer can return blank but successful HTML.

@@ -37,6 +37,8 @@ test("production Operator UI rechecks isolated Identity grants on every document
   let revokeCalls = 0;
   let optionsCalls = 0;
   let authenticationCalls = 0;
+  let dshAvailable = true;
+  const publicReads = [];
   const calls = [];
   const owner = createServer((request, response) => {
     const route = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
@@ -45,6 +47,27 @@ test("production Operator UI rechecks isolated Identity grants on every document
     response.setHeader("Cache-Control", "no-store");
     const send = (status, data) => { response.writeHead(status); response.end(JSON.stringify(data)); };
     if (!ownerAvailable) return send(503, { error: "OWNER_UNAVAILABLE" });
+    if (request.method === "GET" && route.startsWith("/v1/public/")) {
+      publicReads.push(route);
+      if (!dshAvailable) return send(503, { error: "DSH_UNAVAILABLE" });
+      const requestUrl = new URL(request.url, "http://127.0.0.1");
+      if (route === "/v1/public/cities") {
+        return send(200, { items: ["sanaa"], revision: 3 });
+      }
+      if (requestUrl.searchParams.get("city_id") !== "sanaa") {
+        return send(400, { error: "INVALID_CITY" });
+      }
+      if (route === "/v1/public/stores") {
+        return send(200, { items: [{
+          id: "market-sanaa", name: "متجر الاختبار المنشور", cityId: "sanaa",
+          verticalId: "grocery", orderabilityStatus: "OPEN_FOR_ORDERS", orderingAvailable: false,
+        }], revision: 3 });
+      }
+      if (route === "/v1/public/verticals") {
+        return send(200, { items: [{ id: "grocery", storeCount: 1 }], revision: 3 });
+      }
+      return send(404, { error: "NOT_FOUND" });
+    }
     if (route === "/v1/operators/passkey/authentication/options" && request.method === "POST") {
       optionsCalls++;
       return send(200, {
@@ -100,8 +123,10 @@ test("production Operator UI rechecks isolated Identity grants on every document
       ...process.env, NEXT_TELEMETRY_DISABLED: "1", NODE_ENV: "production",
       BTHWANI_ISOLATED_TEST_MODE: "true",
       OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF: "true",
+      OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF: "true",
       OPERATOR_PASSKEY_BROWSER_ORIGIN: base,
       OPERATOR_PASSKEY_IDENTITY_ORIGIN: `http://127.0.0.1:${ownerPort}`,
+      OPERATOR_POLICY_DSH_ORIGIN: `http://127.0.0.1:${ownerPort}`,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -121,6 +146,21 @@ test("production Operator UI rechecks isolated Identity grants on every document
       await delay(250);
     }
     assert.ok(ready, `Isolated Next never started: ${output}`);
+
+    const guestEntry = await fetch(`${base}/`, { signal: AbortSignal.timeout(7000) });
+    assert.equal(guestEntry.status, 200);
+    const guestHtml = await guestEntry.text();
+    assert.match(guestHtml, /تسجيل الدخول بمفتاح المرور/);
+    assert.doesNotMatch(guestHtml, /operator-sections-title|aria-label="التنقل الرئيسي"/,
+      "the standalone sign-in page must not expose workspace navigation");
+    assert.doesNotMatch(guestHtml, /id="operator-bootstrap-proof"/,
+      "a bootstrap opt-in cannot permit enrollment at an unapproved origin");
+    const guestWorkspace = await fetch(`${base}/workspace?city=sanaa`, { signal: AbortSignal.timeout(7000) });
+    const guestWorkspaceHtml = await guestWorkspace.text();
+    assert.equal(guestWorkspace.status, 200);
+    assert.match(guestWorkspaceHtml, /الوصول إلى هذه المساحة غير متاح/);
+    assert.doesNotMatch(guestWorkspaceHtml, /متجر الاختبار المنشور|لمحة السوق المنشور/);
+    assert.equal(publicReads.length, 0, "unauthenticated page cannot read DSH");
 
     // This is a real empty browser-style POST: Next materializes its body as a
     // readable stream even when no bytes were sent. It must reach Identity.
@@ -178,7 +218,7 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.equal(verifiedSession.role, "operator");
     assert.doesNotMatch(JSON.stringify(verifiedSession), new RegExp(token));
 
-    const signedInRoot = await fetch(base + "/", {
+    const signedInRoot = await fetch(`${base}/`, {
       headers: { cookie: `bthwani_operator_session=${token}` },
       redirect: "manual", signal: AbortSignal.timeout(7000),
     });
@@ -200,23 +240,54 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.match(html, /href="\/operations"/);
     assert.match(html, /تسجيل الخروج/, "authenticated workspace must offer a visible sign-out action");
     assert.doesNotMatch(html, /href="\/finance"/);
-    assert.match(html, /aria-label="تبويبات الأقسام"/);
+    assert.equal((html.match(/<nav\b[^>]*aria-label="التنقل الرئيسي"/g) ?? []).length, 1);
+    assert.doesNotMatch(html, /aria-label="تبويبات الأقسام"/);
     assert.ok(html.includes('href="/workspace"'));
     assert.doesNotMatch(html, /aria-label="تبويبات الوظائف"/);
     assert.ok(calls.includes("/v1/operators/me/permissions/operations"));
     html = await read("/workspace");
-    assert.match(html, /مساحة عمل المشغّل/);
-    assert.match(html, /أقسام بانتظار ربط الخدمة/);
+    assert.match(html, /مرحبًا بك في لوحة تحكم بثواني/);
+    assert.match(html, /إدارة العمل من مساحة واحدة، وفق صلاحياتك المؤكدة من Identity/);
+    assert.match(html, /العمليات/);
     assert.match(html, /href="\/operations"/);
     assert.match(html, /href="\/captains"/);
     assert.doesNotMatch(html, /href="\/(?:finance|access|policies)"/);
+
+    const noMarket = await read("/workspace?city=sanaa");
+    assert.doesNotMatch(noMarket, /لمحة السوق المنشور/);
+    assert.equal(publicReads.length, 0, "operations grant must not trigger market reads");
 
     allowed.add("merchant");
     const merchantHtml = await read("/merchants");
     assert.match(merchantHtml, /aria-label="تبويبات الوظائف"/);
     assert.ok(merchantHtml.includes('href="/merchants/public-stores"'));
     assert.ok(!merchantHtml.includes('href="/finance"'));
+    const marketHtml = await read("/workspace?city=sanaa");
+    assert.match(marketHtml, /لمحة السوق المنشور/);
+    assert.match(marketHtml, /متجر الاختبار المنشور/);
+    assert.match(marketHtml, /عدد النتائج/);
+    assert.ok(marketHtml.includes('href="/merchants/public-stores?city=sanaa"'));
+    assert.match(marketHtml, /الأعداد المعروضة تخص الصفحة المحدودة/);
+    assert.ok(publicReads.includes("/v1/public/stores"));
+    assert.ok(publicReads.includes("/v1/public/verticals"));
+
+    const successfulMarketReads = publicReads.length;
+    const invalidMarket = await read("/workspace?city=..%2Faccess");
+    assert.match(invalidMarket, /معاملات المدينة غير صالحة/);
+    assert.equal(publicReads.length, successfulMarketReads, "invalid city must not reach DSH");
+
+    dshAvailable = false;
+    const unavailableMarket = await read("/workspace?city=sanaa");
+    assert.match(unavailableMarket, /تعذّر تأكيد المتاجر المنشورة من DSH/);
+    assert.doesNotMatch(unavailableMarket, /متجر الاختبار المنشور/);
+    dshAvailable = true;
+
     allowed.delete("merchant");
+    allowed.add("catalog");
+    const catalogOnlyMarket = await read("/workspace?city=sanaa");
+    assert.ok(catalogOnlyMarket.includes('href="/catalog/categories?city=sanaa"'));
+    assert.ok(!catalogOnlyMarket.includes('href="/merchants/public-stores?city=sanaa"'));
+    allowed.delete("catalog");
 
     html = await read("/finance", { "x-bthwani-route": "/operations" });
     assert.match(html, /الوصول إلى هذه المساحة غير متاح/);
@@ -244,7 +315,12 @@ test("production Operator UI rechecks isolated Identity grants on every document
     ownerAvailable = false;
     html = await read("/operations");
     assert.match(html, /الوصول إلى هذه المساحة غير متاح/, "owner outage cannot grant permission");
+    assert.match(html, /تعذّر التحقق من الجلسة والصلاحيات لدى Identity/);
+    assert.doesNotMatch(html, /href="\/(?:workspace|operations|captains)"/);
+    html = await read("/");
+    assert.match(html, /تعذّر التحقق من الجلسة والصلاحيات لدى Identity/);
     ownerAvailable = true;
+    assert.match(await read("/operations"), /href="\/captains"/, "owner recovery restores current grants");
 
     const rejected = await fetch(`${base}/api/auth/session`, {
       method: "POST",

@@ -2,13 +2,29 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   admitCurrentCustomerAsMerchant,
+  changeOriginalOperatorPermission,
   IdentityClientError,
   issueCustomerPhoneChallenge,
+  normalizeYemeniMobile,
   readVerifiedIdentitySession,
   resumeCurrentCustomerMerchantSession,
+  reviewOriginalOperatorPermissions,
   revokeVerifiedIdentitySession,
+  establishPersistentIdentitySession,
+  rotatePersistentIdentitySession,
+  revokePersistentIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "../../services/identity/clients/index.ts";
+
+test("Yemeni mobile input becomes one canonical owner number", () => {
+  for (const input of ["770000001", "+967770000001", "٧٧٠٠٠٠٠٠١", " ۷۷۰۰۰۰۰۰۱ "]) {
+    assert.equal(normalizeYemeniMobile(input), "+967770000001");
+  }
+  assert.equal(normalizeYemeniMobile("720000001"), "+967720000001");
+  for (const input of ["+12025550100", "790000001", "77000001", "abc770000001"]) {
+    assert.equal(normalizeYemeniMobile(input), undefined);
+  }
+});
 
 const origin = "https://identity.bthwani.test";
 const bearer = Buffer.alloc(32, 17).toString("base64url");
@@ -81,6 +97,57 @@ test("verified-session GET uses no cookies, redirects, cached data or Caller-sup
   }, async () => assert.deepEqual(await readVerifiedIdentitySession(origin, bearer), expected));
 });
 
+test("Operator permission review binds the result to a single target and accepts only known scope revisions", async () => {
+  const target = "operator-123";
+  const permission = { permission: "operations", state: "REVOKED", version: 2 };
+  const expected = { targetActorId: target, permissions: [permission] };
+  await withFetch(async (url, options) => {
+    assert.equal(new URL(url).pathname, "/v1/operators/operator-123/permissions");
+    assert.equal(options.method, "GET");
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    assert.equal(options.cache, "no-store");
+    return response(expected);
+  }, async () => {
+    assert.deepEqual(await reviewOriginalOperatorPermissions(origin, bearer, target), [permission]);
+    await rejectsAs(() => reviewOriginalOperatorPermissions(origin, bearer, "invalid/id"), 400, "INVALID_REQUEST");
+  });
+  for (const value of [
+    { ...expected, targetActorId: "operator-other" },
+    { ...expected, permissions: [permission, permission] },
+    { ...expected, permissions: [{ ...permission, permission: "partners" }] },
+    { ...expected, permissions: [{ ...permission, version: 0 }] },
+  ]) {
+    await withFetch(async () => response(value), () =>
+      rejectsAs(() => reviewOriginalOperatorPermissions(origin, bearer, target), 502, "OWNER_RESPONSE_INVALID"));
+  }
+});
+
+test("Operator permission writes preserve the command and only acknowledge a matching owner receipt", async () => {
+  const actorId = "synthetic-operator";
+  const command = { state: "ACTIVE", expectedVersion: 0, operationId: "permission-op-1", reason: "سبب موثّق للاختبار" };
+  const receipt = { targetActorId: actorId, permission: "operations", state: "ACTIVE", version: 1 };
+  const send = () => changeOriginalOperatorPermission(origin, bearer, actorId, "operations", command);
+  await withFetch(async (url, options) => {
+    assert.equal(new URL(url).pathname, "/v1/operators/synthetic-operator/permissions/operations");
+    assert.equal(options.method, "PATCH");
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    assert.equal(options.credentials, "omit");
+    assert.equal(options.redirect, "error");
+    assert.deepEqual(JSON.parse(options.body), command);
+    return response(receipt);
+  }, async () => assert.deepEqual(await send(), { permission: "operations", state: "ACTIVE", version: 1 }));
+  for (const mismatch of [
+    { targetActorId: "other-actor" }, { permission: "finance" }, { state: "REVOKED" }, { version: 2 },
+  ]) {
+    await withFetch(async () => response({ ...receipt, ...mismatch }),
+      () => rejectsAs(send, 502, "OPERATION_RESULT_UNKNOWN"));
+  }
+  await withFetch(async () => response({ error: "CONFLICT" }, 409),
+    () => rejectsAs(send, 409, "CONFLICT"));
+  await withFetch(async () => { throw new Error("interrupted after dispatch"); },
+    () => rejectsAs(send, 0, "OPERATION_RESULT_UNKNOWN"));
+});
+
 test("session scope is parsed from exactly the three owner fields and never implies Store rights", async () => {
   const valid = principal();
   await withFetch(async () => response(valid), async () => {
@@ -105,8 +172,18 @@ test("session scope is parsed from exactly the three owner fields and never impl
   }
 });
 
+test("verified Identity actor IDs follow Go's UTF-8 byte and Unicode control limits", async () => {
+  const allowed = { ...principal(), actorId: "ع".repeat(64) };
+  await withFetch(async () => response(allowed),
+    async () => assert.deepEqual(await readVerifiedIdentitySession(origin, bearer), allowed));
+  for (const actorId of ["ع".repeat(65), "actor\u0001name", "actor\u0085name", "actor\ud800name"]) {
+    await withFetch(async () => response({ ...principal(), actorId }),
+      () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+  }
+});
+
 test("phone proof carries exact JSON without credentials and logout requires a no-store 204", async () => {
-  const phone = "+12025550133";
+  const phone = "+967770000033";
   const ticket = "a".repeat(48);
   const code = "123456";
   await withFetch(async (url, options) => {
@@ -130,8 +207,10 @@ test("phone proof carries exact JSON without credentials and logout requires a n
     assert.equal(options.headers.Authorization, "Bearer " + bearer);
     return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
   }, async () => revokeVerifiedIdentitySession(origin, bearer));
+  // A no-body 204 without no-store cannot verify owner revocation, but the
+  // DELETE may already have committed: keep the outcome unknown.
   await withFetch(async () => new Response(null, { status: 204 }),
-    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
 });
 
 test("Merchant admission performs exact POST with verified Customer token and no implicit Store grant", async () => {
@@ -173,7 +252,8 @@ test("Merchant response rejects malformed tokens, expired credentials, extra fie
     { ...admission(), storeAccess: "superuser" },
   ]) {
     await withFetch(async () => response(value, 201),
-      () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+      // Even malformed issued credentials may indicate a committed owner role/session mutation.
+      () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
   }
   await withFetch(async () => response(admission(), 200),
     () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
@@ -235,4 +315,111 @@ test("cancelled or stale readback never revives an old Identity session or rotat
     return response(admission(), 201);
   }, () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer, another.signal),
     0, "OPERATION_RESULT_UNKNOWN"));
+});
+
+test("Identity revocation never classifies an uncertain DELETE as an ordinary read outage", async () => {
+  await withFetch(async () => { throw new Error("connection lost after revocation"); },
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 0, "OPERATION_RESULT_UNKNOWN"));
+  await withFetch(async () => response({ error: "OWNER_UNAVAILABLE" }, 503),
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 503, "OPERATION_RESULT_UNKNOWN"));
+  await withFetch(async () => response({ unexpected: true }, 200),
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
+  await withFetch(async () => new Response(null, { status: 204 }),
+    () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN"));
+  const controller = new AbortController();
+  await withFetch(async () => {
+    controller.abort();
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }, () => rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer, controller.signal),
+    0, "OPERATION_RESULT_UNKNOWN"));
+});
+
+test("late Identity denial must not sign out a replacement account or confirm a cancelled POST", async () => {
+  const denied = new Response(JSON.stringify({ error: "UNAUTHORIZED" }), {
+    status: 401,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+  const current = new AbortController();
+  denied.json = async () => {
+    current.abort();
+    return { error: "UNAUTHORIZED" };
+  };
+  await withFetch(async () => denied,
+    () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer, current.signal),
+      0, "OWNER_RESPONSE_STALE"));
+
+  const cancelledPost = new AbortController();
+  const failed = new Response(JSON.stringify({ error: "VERIFICATION_REQUIRED" }), {
+    status: 403,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+  failed.json = async () => {
+    cancelledPost.abort();
+    return { error: "VERIFICATION_REQUIRED" };
+  };
+  await withFetch(async () => failed,
+    () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer, cancelledPost.signal),
+      0, "OPERATION_RESULT_UNKNOWN"));
+});
+
+test("malformed successful Identity POST responses never certify that a mutation did not commit", async () => {
+  let requests = 0;
+  await withFetch(async (_url, options) => {
+    requests++;
+    assert.equal(options.method, "POST");
+    return response({ ticket: "malformed-proof-ticket" }, 201);
+  }, async () => {
+    await rejectsAs(() => issueCustomerPhoneChallenge(origin, "+967770000033"),
+      502, "OPERATION_RESULT_UNKNOWN");
+  });
+  assert.equal(requests, 1, "the client must not silently send the SMS challenge twice");
+
+  await withFetch(async (_url, options) => {
+    requests++;
+    assert.equal(options.method, "POST");
+    return response({ ...admission(), accessToken: "invalid-issued-token" });
+  }, async () => {
+    await rejectsAs(() => verifyCustomerPhoneChallenge(origin, "a".repeat(48), "123456"),
+      502, "OPERATION_RESULT_UNKNOWN");
+  });
+  assert.equal(requests, 2, "a consumed proof must not be replayed after an invalid owner reply");
+});
+
+test("Persistent Identity lifecycle uses isolated owner paths, exact secret schemas and no browser cookies",async()=>{
+  const refresh=Buffer.alloc(32,35).toString("base64url");
+  const newer=Buffer.alloc(32,36).toString("base64url");
+  const durableExpiry=new Date(Date.now()+30*24*60*60_000).toISOString();
+  const verifyRequest=(url,opts,path,method,token)=>{
+    assert.equal(new URL(url).pathname,path);
+    assert.equal(opts.method,method);
+    assert.equal(opts.headers.Authorization,"Bearer "+token);
+    assert.equal(opts.credentials,"omit");
+    assert.equal(opts.cache,"no-store");
+    assert.equal("body" in opts,false);
+  };
+  await withFetch(async (url,opts)=>{
+    verifyRequest(url,opts,"/v1/sessions/persistent","POST",bearer);
+    return response({refreshToken:refresh,refreshExpiresAt:durableExpiry},201);
+  },async()=>assert.deepEqual(await establishPersistentIdentitySession(origin,bearer),
+    {refreshToken:refresh,refreshExpiresAt:durableExpiry}));
+  const rotated={accessToken:rotatedBearer,sessionExpiresAt:expires(),refreshToken:newer,refreshExpiresAt:durableExpiry};
+  await withFetch(async(url,opts)=>{
+    verifyRequest(url,opts,"/v1/sessions/refresh","POST",refresh);
+    return response(rotated);
+  },async()=>assert.deepEqual(await rotatePersistentIdentitySession(origin,refresh),rotated));
+  await withFetch(async(url,opts)=>{
+    verifyRequest(url,opts,"/v1/sessions/refresh","DELETE",newer);
+    return new Response(null,{status:204,headers:{"Cache-Control":"no-store"}});
+  },async()=>assert.equal(await revokePersistentIdentitySession(origin,newer),undefined));
+  for (const malformed of [
+    {...rotated,debug:"actor"},
+    {...rotated,refreshToken:"forged"},
+    {...rotated,refreshExpiresAt:new Date(Date.now()-100).toISOString()},
+    {...rotated,sessionExpiresAt:"today"},
+  ]){
+    await withFetch(async()=>response(malformed),()=>
+      rejectsAs(()=>rotatePersistentIdentitySession(origin,refresh),502,"OPERATION_RESULT_UNKNOWN"));
+  }
+  await withFetch(async()=>response({error:"UNAUTHORIZED"},401),
+    ()=>rejectsAs(()=>rotatePersistentIdentitySession(origin,refresh),401,"UNAUTHORIZED"));
 });

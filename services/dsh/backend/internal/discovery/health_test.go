@@ -52,15 +52,7 @@ func TestOwnerBackedDiscoveryHealthRequiresInitializedSchema(t *testing.T) {
 	if w.Code != http.StatusServiceUnavailable || body["error"] != "OWNER_UNAVAILABLE" {
 		t.Fatalf("reachable PostgreSQL without the DSH schema returned %d %s", w.Code, w.Body.String())
 	}
-	path := os.Getenv("DSH_DISCOVERY_MIGRATION_FILE")
-	if path == "" {
-		path = filepath.Join("..", "..", "..", "database", "migrations", "001_public_discovery.sql")
-	}
-	migration, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := owner.Migrate(ctx, migration); err != nil {
+	if err := owner.BootstrapFresh(ctx, filepath.Join("..", "..", "..", "database", "schema")); err != nil {
 		t.Fatal(err)
 	}
 	w, body = request(server, "/health")

@@ -57,3 +57,102 @@ paths:
           content:
             application/json:
               schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+  /v1/sessions/persistent:
+    post:
+      operationId: establishPersistentIdentitySession
+      summary: Exchange a current verified access session for a rotating device refresh credential
+      description: Identity creates a bounded device session for a current active role. Operator sessions use a 12-hour absolute cap; other roles use a 90-day absolute and 30-day idle cap. Re-enrollment of the same access session is rejected.
+      security:
+        - OpaqueSession: []
+      responses:
+        '201':
+          description: Initial refresh credential, returned only once and never placed in a URL
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/PersistentGrant' }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: No verified active session
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '409':
+          description: Already enrolled
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity owner unavailable
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+  /v1/sessions/refresh:
+    post:
+      operationId: rotatePersistentIdentitySession
+      summary: Atomically consume one refresh credential and rotate both access and refresh credentials
+      description: A concurrently reused refresh token is denied with 409 during a bounded one-minute race window without revoking the successful rotation. Later replay revokes the entire device session family. Actor and role versions and server-side timestamps are verified at rotation.
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Newly issued access and rotating refresh pair
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/PersistentRotation' }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Invalid, expired, revoked or replayed refresh credential
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '409':
+          description: Recent concurrent duplicate of a consumed refresh credential; no token is returned and the winning session is preserved
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity owner unavailable
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+    delete:
+      operationId: revokePersistentIdentitySession
+      summary: End the presented current refresh session family
+      description: The refresh credential is accepted only as an Authorization bearer, and its family and active access session are atomically revoked.
+      security:
+        - OpaqueSession: []
+      responses:
+        '204':
+          description: Session family revoked
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Invalid or revoked refresh token
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Identity owner unavailable
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }

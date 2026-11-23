@@ -1,0 +1,118 @@
+paths:
+  /v1/operators/passkey/recovery/options:
+    post:
+      operationId: beginExistingOperatorPasskeyRecovery
+      summary: Begin an independently authorized Operator credential recovery
+      security: []
+      description: >
+        Disabled unless the isolated Identity owner explicitly enables existing-actor
+        recovery. Requires a high-entropy, one-use proof already bound to an ACTIVE
+        Operator by a separate authorized identity-continuity procedure. Neither the
+        browser nor this endpoint can issue the proof, select an actor, grant a role,
+        create an Owner, or receive a session. Four-minute WebAuthn challenge; exact
+        localhost relying-party origin and user verification required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [proof]
+              properties:
+                proof: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+      responses:
+        '200':
+          description: User-verified resident WebAuthn registration options and opaque ceremony ID
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ceremonyId, options]
+                properties:
+                  ceremonyId: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                  options:
+                    type: object
+                    additionalProperties: true
+                    required: [publicKey]
+                    properties:
+                      publicKey: { type: object }
+        '400':
+          description: Invalid or additional request fields
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Missing, expired, revoked or already consumed recovery proof, or inactive Operator
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: POST only
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Owner unavailable or recovery disabled
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+  /v1/operators/passkey/recovery:
+    post:
+      operationId: finishExistingOperatorPasskeyRecovery
+      summary: Verify WebAuthn and atomically rotate an existing Operator credential
+      security: []
+      description: >
+        Performs signed, one-use WebAuthn attestation for the exact proof-bound
+        existing actor. One Identity transaction inserts a new credential, revokes
+        older passkeys and Operator sessions, invalidates other outstanding recovery
+        claims, and appends immutable audit. No account, permission or session
+        issuance occurs. The human must authenticate separately after recovery.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [proof, ceremonyId, credential]
+              properties:
+                proof: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                ceremonyId: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+                credential: { type: object, additionalProperties: true }
+      responses:
+        '200':
+          description: Authenticator recovered; a separate passkey login is required
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [recovered]
+                properties:
+                  recovered: { type: boolean, const: true }
+        '400':
+          description: Invalid or additional request fields
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Invalid, stale, replayed, cross-actor or unverified WebAuthn recovery
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: POST only
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Owner unavailable or recovery disabled
+          content:
+            application/json:
+              schema: { $ref: '../identity.openapi.yaml#/components/schemas/Error' }

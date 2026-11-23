@@ -1,6 +1,7 @@
 package storeavailability
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -47,9 +48,6 @@ func NewHandler(service *Service) (http.Handler, error) {
 			return
 		}
 		// Even if the caller is authenticated, prevent oversized/unknown input.
-		r.Body = http.MaxBytesReader(w, r.Body, 16*1024)
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
 		var input struct {
 			OperationID        string          `json:"operationId"`
 			ExpectedVersion    int64           `json:"expectedVersion"`
@@ -58,11 +56,7 @@ func NewHandler(service *Service) (http.Handler, error) {
 			PreparationMinutes *int            `json:"preparationMinutes"`
 			Reason             string          `json:"reason"`
 		}
-		if err := decoder.Decode(&input); err != nil {
-			writeFailure(w, ErrInvalidChange)
-			return
-		}
-		if err := decoder.Decode(new(any)); err != io.EOF {
+		if decodeUniqueJSON(w, r, 16*1024, &input) != nil {
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
@@ -109,6 +103,78 @@ func NewMerchantStandingHandler(identity IdentitySessions, reader MerchantStoreL
 		}
 		writeJSON(w, http.StatusOK, standing)
 	})
+}
+
+// Decode one bounded JSON message and reject duplicate keys before any domain effect.
+func decodeUniqueJSON(w http.ResponseWriter, r *http.Request, limit int64, target any) error {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	body, err := io.ReadAll(r.Body)
+	if err != nil || rejectDuplicateJSONMembers(body) != nil {
+		return ErrInvalidChange
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(target); err != nil {
+		return ErrInvalidChange
+	}
+	if err := decoder.Decode(new(any)); err != io.EOF {
+		return ErrInvalidChange
+	}
+	return nil
+}
+
+// Reject ambiguous JSON object members before the typed decoder selects one
+// value. encoding/json otherwise accepts duplicate names, including aliases
+// differing only by case, in operation IDs and nested weekly-hour selectors.
+func rejectDuplicateJSONMembers(body []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	var value func() error
+	value = func() error {
+		token, err := decoder.Token()
+		if err != nil {
+			return ErrInvalidChange
+		}
+		switch token {
+		case json.Delim('{'):
+			seen := make(map[string]bool)
+			for decoder.More() {
+				field, err := decoder.Token()
+				if err != nil {
+					return ErrInvalidChange
+				}
+				name, ok := field.(string)
+				if !ok || seen[strings.ToLower(name)] {
+					return ErrInvalidChange
+				}
+				seen[strings.ToLower(name)] = true
+				if err := value(); err != nil {
+					return err
+				}
+			}
+			end, err := decoder.Token()
+			if err != nil || end != json.Delim('}') {
+				return ErrInvalidChange
+			}
+		case json.Delim('['):
+			for decoder.More() {
+				if err := value(); err != nil {
+					return err
+				}
+			}
+			end, err := decoder.Token()
+			if err != nil || end != json.Delim(']') {
+				return ErrInvalidChange
+			}
+		}
+		return nil
+	}
+	if err := value(); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		return ErrInvalidChange
+	}
+	return nil
 }
 
 func bearerToken(r *http.Request) (string, bool) {

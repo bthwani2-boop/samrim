@@ -168,3 +168,31 @@ func TestOperatorPermissionInvalidOwnerSessionIsUnauthorized(t *testing.T) {
 		t.Fatalf("invalid Identity principal must return unauthorized, got %d: %s", response.Code, response.Body.String())
 	}
 }
+
+func TestOperatorPermissionNeverReturnsMalformedActorID(t *testing.T) {
+	token, _ := testToken(93)
+	for _, tc := range []struct{ name, actor string }{
+		{"NUL", "operator\x00other"},
+		{"Unicode control", "operator\u0085other"},
+		{"invalid UTF-8", "operator\xffother"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reader := permissionReaderFunc{
+				lookup: func(context.Context, [32]byte) (Principal, error) {
+					t.Fatal("permission read must not fallback to unscoped session")
+					return Principal{}, nil
+				},
+				permission: func(context.Context, [32]byte, string) (Principal, error) {
+					return Principal{ActorID: tc.actor, Role: "operator", ExpiresAt: time.Now().UTC().Add(time.Hour)}, nil
+				},
+			}
+			request := httptest.NewRequest("GET", "/v1/operators/me/permissions/hr", nil)
+			request.Header.Set("Authorization", "Bearer "+token)
+			response := httptest.NewRecorder()
+			NewHandler(NewVerifier(reader)).ServeHTTP(response, request)
+			if response.Code != 401 || !strings.Contains(response.Body.String(), "UNAUTHORIZED") {
+				t.Fatalf("malformed Identity actor reached the permission response: status=%d body=%q", response.Code, response.Body.String())
+			}
+		})
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"io"
 	"net/http"
 	"net/url"
@@ -26,8 +27,8 @@ func TestCaptainJoinedOwnerMigrationSourcePaths(t *testing.T) {
 	for _, entry := range []struct {
 		owner, name string
 	}{
-		{"identity", "001_session_verification.sql"},
-		{"dsh", "006_captain_standing.sql"},
+		{"identity", "20_sessions.sql"},
+		{"dsh", "50_captains.sql"},
 	} {
 		file := filepath.Join(captainJoinedMigrationDir(entry.owner), entry.name)
 		if _, err := os.Stat(file); err != nil {
@@ -40,9 +41,9 @@ func TestCaptainJoinedOwnerMigrationSourcePaths(t *testing.T) {
 // relative to this package, not relative to the DSH service root.
 func captainJoinedMigrationDir(owner string) string {
 	if owner == "identity" {
-		return filepath.Join("..", "..", "..", "..", "identity", "database", "migrations")
+		return filepath.Join("..", "..", "..", "..", "identity", "database", "schema")
 	}
-	return filepath.Join("..", "..", "..", "database", "migrations")
+	return filepath.Join("..", "..", "..", "database", "schema")
 }
 
 // The opt-in joined acceptance test starts TWO real Go owner servers against
@@ -89,30 +90,8 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	suffix := fmt.Sprintf("%x", nonce)
 	identitySchema := "identity_test_captain_joined_" + suffix
 	dshSchema := "dsh_test_captain_joined_" + suffix
-	for _, entry := range []struct {
-		schema, root string
-		files        []string
-	}{
-		{identitySchema, "identity", []string{
-			"001_session_verification.sql", "002_operator_permission_read.sql",
-			"003_verified_customer_merchant_admission.sql", "004_customer_phone_verification.sql"}},
-		{dshSchema, "dsh", []string{
-			"001_public_discovery.sql", "002_store_orderability.sql",
-			"003_service_city_timezone.sql", "004_store_availability_city_limits.sql",
-			"005_store_operational_policy_commands.sql", "006_captain_standing.sql"}},
-	} {
-		ownerDir := captainJoinedMigrationDir(entry.root)
-		for _, file := range entry.files {
-			sqlBytes, e := os.ReadFile(filepath.Join(ownerDir, file))
-			if e != nil {
-				t.Fatalf("missing %s owner migration %s: %v", entry.root, file, e)
-			}
-			migration := strings.ReplaceAll(string(sqlBytes), "__SCHEMA__", entry.schema)
-			if _, e = db.ExecContext(ctx, migration); e != nil {
-				t.Fatalf("%s migration %s failed: %v", entry.root, file, e)
-			}
-		}
-	}
+	testfixture.Fresh(t, ctx, db, "identity", identitySchema, captainJoinedMigrationDir("identity"))
+	testfixture.Fresh(t, ctx, db, "dsh", dshSchema, captainJoinedMigrationDir("dsh"))
 
 	actors := identitySchema + ".actors"
 	roles := identitySchema + ".actor_roles"
@@ -319,6 +298,34 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	if applied.ActorID != customer || applied.Status != "PENDING" || applied.Version != 1 {
 		t.Fatalf("pending application incorrect: %+v", applied)
 	}
+	// The same Identity bearer can read its own committed DSH application
+	// after a lost POST response without issuing another mutation.
+	pendingReadback := send("GET", application, customerBearer, "", 200)
+	if pendingReadback.ActorID != customer || pendingReadback.Status != "PENDING" || pendingReadback.Version != 1 {
+		t.Fatalf("DSH owner readback after POST differs from durable pending fact: %+v", pendingReadback)
+	}
+	// A second device can recover an uncertain first POST with the same
+	// verified Customer actor, not create a second application or Captain role.
+	secondDeviceBearer := createBearer(customer, "customer")
+	recovered := send("POST", application, secondDeviceBearer, "", 200)
+	if recovered.ActorID != pendingReadback.ActorID || recovered.Status != "PENDING" ||
+		recovered.Version != pendingReadback.Version {
+		t.Fatalf("same actor on a second device duplicated application: %+v", recovered)
+	}
+	secondDeviceRead := send("GET", application, secondDeviceBearer, "", 200)
+	if secondDeviceRead.ActorID != customer || secondDeviceRead.Status != "PENDING" ||
+		secondDeviceRead.Version != 1 {
+		t.Fatalf("second device cannot read recovered owner record: %+v", secondDeviceRead)
+	}
+	var applicationRows int
+	if err = db.QueryRowContext(ctx,
+		"SELECT count(*) FROM "+dshSchema+".captain_standing WHERE actor_id=$1", customer).
+		Scan(&applicationRows); err != nil || applicationRows != 1 {
+		t.Fatalf("second device must retain exactly one durable application: count=%d err=%v", applicationRows, err)
+	}
+	send("GET", application, anotherBearer, "", 404)
+	send("GET", application, operatorBearer, "", 403)
+	send("GET", application+"?actorId="+secondCustomer, customerBearer, "", 400)
 	queue("", "", 401)
 	queue("", customerBearer, 403)
 	queue("", operatorBearer, 403)
@@ -363,6 +370,10 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	if accepted.ActorID != customer || accepted.Status != "APPROVED" || accepted.Version != 2 {
 		t.Fatalf("actual Operator approval not persisted: %+v", accepted)
 	}
+	if approvedReadback := send("GET", application, customerBearer, "", 200); approvedReadback.ActorID != customer ||
+		approvedReadback.Status != "APPROVED" || approvedReadback.Version != 2 {
+		t.Fatalf("DSH Customer readback did not reflect Operator-approved standing: %+v", approvedReadback)
+	}
 	approvedReview := queue("?status=APPROVED", operatorBearer, 200)
 	if len(approvedReview.Items) != 1 || approvedReview.Items[0].ActorID != customer || approvedReview.Items[0].Version != 2 {
 		t.Fatalf("approved queue stale after existing PATCH: %+v", approvedReview)
@@ -406,6 +417,7 @@ func TestCaptainJoinedRealHTTPAndPostgres(t *testing.T) {
 	}
 	send("GET", dshURL+"/v1/captains/me/standing", refreshed.AccessToken, "", 403)
 	send("GET", eligibility, customerBearer, "", 403)
+	send("GET", application, customerBearer, "", 403)
 	send("POST", resume, customerBearer, "", 403)
 	send("POST", admit, anotherBearer, "", 403)
 	oldReplay := send("PATCH", operatorStanding, operatorBearer, approval, 200)

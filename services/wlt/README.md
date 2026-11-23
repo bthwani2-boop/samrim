@@ -1,18 +1,44 @@
-# WLT — Service Placement
+# WLT — Wallet and financial owner
 
-STATUS: SCAFFOLD_ONLY
+STATUS: IMPLEMENTATION_IN_PROGRESS
 OWNER: WLT
-EXECUTION: NOT_STARTED
+EXECUTION: IN_PROGRESS
 
-WLT is the sole owner and writer of money: wallets, immutable ledger entries, fees, financial agreements, cash custody, payouts and settlements. DSH Order facts and Identity actor facts remain with their own owners. Never duplicate the ledger or infer payment success from an HTTP response.
+WLT owns wallets, ledger entries, fees, commercial agreements, cash custody,
+payouts and settlements. Identity verifies the actor and DSH owns Stores and
+Orders.
 
-STRUCTURE_READINESS: TRACKED_OWNER_PATHS_ONLY
+The isolated Customer wallet slice exposes `GET /v1/wallets/me` and
+`GET /v1/wallets/me/transactions`. WLT verifies the current opaque session
+with Identity, reads only that actor's posted YER balance and bounded pages of
+funding entries, and rechecks Identity before returning either response. The
+Customer Web preview uses a same-origin route with the existing
+HttpOnly session. The API serializes whole YER as decimal text to retain exact
+values above JavaScript's safe integer range.
 
-Current scaffold and tracked owner-local placement guidance. Progressive development of real WLT capabilities is permitted within the current authorization, but financial activation still requires owner-backed security, ledger, persistence and risk evidence:
-- `clients/` — private TypeScript workspace package with a nonfunctional `index.ts` entrypoint; future TypeScript/Go clients come only from validated contracts and real consumer needs.
-- `package.json` and `tsconfig.json` — exact-pinned TypeScript client tooling using the existing pnpm workspace; no runtime dependencies or implemented exports yet.
-- `backend/README.md` — Tracked placement guidance; real Go cmd/wlt and internal domain modules are added with the first financial capability, not as placeholders.
-- `contracts/openapi/` — one zero-operation OpenAPI 3.1 WLT entrypoint plus **14 reserved, nonfunctional `paths/*.yaml` domain groups**, each containing only `paths: {}` and unreferenced by the entrypoint. No financial endpoint, ledger authority, schema or permission is active. See the [source-pinned contract census](../../docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md).
-- `database/migrations/README.md` — Tracked migration placement guidance; real reviewed fresh-install and protected upgrade SQL are added with a WLT data model.
+The first migration stores one immutable funding journal per funding identity
+and per provider reference. Debit and credit legs derive from the same stored
+amount. A least-privilege runtime role can read the balance and bounded funding-history
+projections; it cannot read raw provider references. Older entries are retrieved
+with a canonical keyset cursor instead of unsafe unbounded reads. The CI suite
+uses a separate Identity fixture role and a disposable PostgreSQL container.
 
-See [finance governance](../../governance/finance.md) and [safety governance](../../governance/safety.md). Fresh baselines must not replace protected applied history; this README is **not** an executable service, financial schema or accounting proof.
+The isolated WLT command can post synthetic Customer funding into the same
+journal. It verifies the Customer session with Identity and uses a dedicated
+database role. A replay with the same reference, actor and amount confirms the
+earlier posting. The Customer wallet reads the resulting balance and history
+through the existing API.
+
+The sandbox reversal command takes the original reference and current Customer
+session. It appends one offsetting journal using the original amount and
+currency. The original remains visible in history, and both Customer previews
+label the reversal as a deduction.
+
+Synthetic external-provider **status verification** is available through an
+isolated WLT CLI command and fixed WireMock fixtures. It reuses the existing
+sandbox posting ledger and is not a real external rail or a Customer funding
+write API. Provider authentication, production-grade evidence retention,
+checkout, withdrawals, reconciliation and production runtime remain pending.
+
+See the [API](contracts/openapi/wlt.openapi.yaml), [runtime](backend/README.md),
+[owner baseline](database/schema/) and [finance policy](../../governance/finance.md).

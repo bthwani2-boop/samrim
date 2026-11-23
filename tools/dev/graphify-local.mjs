@@ -1,5 +1,5 @@
-// Query only the local Graphify CLI after proving index provenance against this worktree.
-// Refresh is explicit: repository governance prohibits automatic reindexing.
+// Read the locally indexed graph even when Git has pending changes.
+// Provenance/coverage warnings never silently claim current-source proof.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { closeSync, existsSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
@@ -49,20 +49,26 @@ function branchAndHead() {
 }
 
 export function evaluateIndex(stored, current, graphHash) {
-  if (stored?.version !== 1) return "INVALIDATED: no verified local Graphify index";
-  if (stored.repository !== current.repository) return "INVALIDATED: repository changed";
-  if (stored.branch !== current.branch) return "INVALIDATED: active branch changed";
-  if (stored.head !== current.head) return "INVALIDATED: HEAD changed";
-  if (stored.worktree !== current.worktree) return "INVALIDATED: working tree changed";
-  if (stored.graphSha256 !== graphHash) return "INVALIDATED: graph changed outside local refresh";
-  return null;
+  // Only trusted provenance can authorize reading the index for this checkout.
+  const blocked = (reason) => ({ status: "BLOCKED", queryable: false, reason });
+  if (stored?.version !== 1) return blocked("unverified local Graphify index");
+  if (stored.repository !== current.repository) return blocked("indexed repository differs");
+  if (stored.branch !== current.branch) return blocked("indexed branch differs");
+  const gaps = [];
+  if (stored.graphSha256 !== graphHash) gaps.push("graph changed since last verified local stamp; revision is unverified");
+  if (stored.head !== current.head) gaps.push("indexed HEAD differs from current HEAD");
+  if (stored.worktree !== current.worktree) gaps.push("local tracked, staged or untracked changes are not proven indexed");
+  return {
+    status: gaps.length ? "INVALIDATED" : "PASS",
+    queryable: true,
+    reason: gaps.length ? gaps.join("; ") : null,
+  };
 }
 
 export function rejectUntrackedFiles(names) {
-  // Never open untracked paths: a symlink swap between lstat and read is unsafe.
-  // Staged files are already covered by the Git diff fingerprint below.
+  // A refresh may ask Graphify to open untracked symlinks; a read-only query never does.
   if (names.length > 0) {
-    throw new Error("BLOCKED: untracked files must be staged or committed before querying Graphify");
+    throw new Error("BLOCKED: review untracked files before refreshing the Graphify index");
   }
 }
 
@@ -70,9 +76,7 @@ function currentState() {
   const beginning = branchAndHead();
   const status = git("status", "--porcelain=v1", "-z", "--untracked-files=all");
   const diff = git("diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--");
-  const untracked = git("ls-files", "--others", "--exclude-standard", "-z").toString("utf8")
-    .split("\0").filter(Boolean);
-  rejectUntrackedFiles(untracked);
+  // Git reports untracked names in status; do not open their contents or follow symlinks.
   const hash = createHash("sha256").update(status).update(diff);
   const ending = branchAndHead();
   if (beginning.branch !== ending.branch || beginning.head !== ending.head) {
@@ -88,7 +92,7 @@ function currentState() {
 }
 
 function graphHash() {
-  if (!existsSync(graph)) throw new Error("INVALIDATED: local graph file is absent");
+  if (!existsSync(graph)) throw new Error("BLOCKED: local graph file is absent");
   return sha256(readFileSync(graph));
 }
 
@@ -97,14 +101,15 @@ function readStamp() {
     return JSON.parse(readFileSync(stamp, "utf8"));
   } catch (error) {
     if (error.code === "ENOENT") return null;
-    throw new Error("INVALIDATED: local Graphify index stamp is unreadable");
+    throw new Error("BLOCKED: local Graphify index stamp is unreadable");
   }
 }
 
 function validate() {
   const current = currentState();
-  const reason = evaluateIndex(readStamp(), current, graphHash());
-  return { current, reason };
+  const indexed = readStamp();
+  const graphDigest = graphHash();
+  return { current, indexed, graphDigest, assessment: evaluateIndex(indexed, current, graphDigest) };
 }
 
 function refresh() {
@@ -113,10 +118,14 @@ function refresh() {
   const descriptor = openSync(lock, "wx");
   closeSync(descriptor);
   try {
+  // Only explicit refresh may scan source; reject untracked paths without opening them.
+  const untracked = git("ls-files", "--others", "--exclude-standard", "-z").toString("utf8").split("\0").filter(Boolean);
+  rejectUntrackedFiles(untracked);
   const before = currentState();
   // --no-cluster uses the local AST extractor and avoids LLM community labeling.
   const output = execute(graphifyExe, ["update", ".", "--no-cluster"], 180000);
   const after = currentState();
+  rejectUntrackedFiles(git("ls-files", "--others", "--exclude-standard", "-z").toString("utf8").split("\0").filter(Boolean));
   if (JSON.stringify(before) !== JSON.stringify(after)) {
     throw new Error("INVALIDATED: checkout changed during local Graphify indexing");
   }
@@ -145,11 +154,21 @@ function refresh() {
 
 function query(question) {
   const before = validate();
-  if (before.reason) throw new Error(before.reason + ". Run: node tools/dev/graphify-local.mjs refresh");
-  const output = execute(graphifyExe, ["query", question, "--graph", graph], 45000);
+  if (!before.assessment.queryable) throw new Error("BLOCKED: " + before.assessment.reason);
+  let output;
+  try {
+    output = execute(graphifyExe, ["query", question, "--graph", graph], 45000);
+  } catch (error) {
+    throw new Error("BLOCKED: local Graphify CLI query failed: " + error.message);
+  }
   const after = validate();
-  if (after.reason || JSON.stringify(before.current) !== JSON.stringify(after.current)) {
-    throw new Error("INVALIDATED: source or index changed during query; results discarded");
+  if (!after.assessment.queryable || before.current.repository !== after.current.repository || before.current.branch !== after.current.branch) {
+    throw new Error("BLOCKED: repository, branch or index trust changed during query");
+  }
+  const changedDuringQuery = JSON.stringify(before) !== JSON.stringify(after);
+  if (before.assessment.status === "INVALIDATED" || changedDuringQuery) {
+    const reason = [before.assessment.reason, changedDuringQuery ? "source or graph changed during query" : null].filter(Boolean).join("; ");
+    process.stderr.write("INVALIDATED index evidence: " + reason + ". Results come from the available local graph; its revision or coverage may differ from current source. Verify affected paths directly.\n");
   }
   process.stdout.write(output.toString("utf8"));
 }
@@ -158,12 +177,14 @@ function main() {
   const [action, ...args] = process.argv.slice(2);
   if (action === "refresh" && args.length === 0) return refresh();
   if (action === "status" && args.length === 0) {
-    const { current, reason } = validate();
+    const { current, indexed, assessment } = validate();
     process.stdout.write(JSON.stringify({
-      status: reason ? "INVALIDATED" : "PASS",
-      reason, branch: current.branch, head: current.head, dirty: current.dirty,
+      status: assessment.status, queryable: assessment.queryable,
+      reason: assessment.reason, branch: current.branch, head: current.head,
+      indexedHead: indexed?.head ?? null, dirty: current.dirty,
+      coverage: assessment.status === "PASS" ? "NOT_RUN" : "INVALIDATED",
     }, null, 2) + "\n");
-    if (reason) process.exitCode = 2;
+    if (!assessment.queryable) process.exitCode = 2;
     return;
   }
   if (action === "query" && args.length === 1 && args[0].trim()) return query(args[0]);

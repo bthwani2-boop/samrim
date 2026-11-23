@@ -8,6 +8,65 @@ import (
 	"testing"
 )
 
+func TestCustomerCartDockerOptInRequiresIsolatedContainerAndOwner(t *testing.T) {
+	public := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	})
+	t.Setenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART", "")
+	h, err := isolatedCustomerCartHandler(nil, "dsh", ":8080", public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/carts/store-a", nil))
+	if rec.Code != http.StatusTeapot {
+		t.Fatal("cart became available without owner opt-in")
+	}
+
+	db, err := sql.Open("postgres", "postgres://fake:fake@127.0.0.1:1/synthetic?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	t.Setenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART", "true")
+	t.Setenv("DSH_IDENTITY_VERIFIER_URL", "https://identity:3343")
+	for _, tc := range []struct {
+		name, isolated, container, schema, addr string
+		allowed                                 bool
+	}{
+		{"isolated Docker", "true", "true", "dsh_test_cart_docker", "0.0.0.0:8080", true},
+		{"missing isolation", "", "true", "dsh_test_cart_docker", "0.0.0.0:8080", false},
+		{"missing container approval", "true", "", "dsh_test_cart_docker", "0.0.0.0:8080", false},
+		{"protected schema", "true", "true", "dsh", "0.0.0.0:8080", false},
+		{"arbitrary listener", "true", "true", "dsh_test_cart_docker", "0.0.0.0:9090", false},
+		{"unspecified listener", "true", "true", "dsh_test_cart_docker", ":8080", false},
+		{"untrusted Docker verifier", "true", "true", "dsh_test_cart_docker", "0.0.0.0:8080", false},
+		{"loopback mode", "true", "", "dsh_test_cart_docker", "127.0.0.1:8080", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("BTHWANI_ISOLATED_TEST_MODE", tc.isolated)
+			t.Setenv("BTHWANI_ISOLATED_CONTAINER_MODE", tc.container)
+			if tc.name == "untrusted Docker verifier" {
+				t.Setenv("DSH_IDENTITY_VERIFIER_URL", "https://outside.example")
+			}
+			h, err := isolatedCustomerCartHandler(db, tc.schema, tc.addr, public)
+			if tc.allowed && err != nil {
+				t.Fatalf("safe Cart opt-in refused: %v", err)
+			}
+			if !tc.allowed && err == nil {
+				t.Fatalf("unsafe Cart opt-in accepted")
+			}
+			if tc.allowed {
+				rec := httptest.NewRecorder()
+				h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/carts/store-a", nil))
+				if rec.Code != http.StatusUnauthorized {
+					t.Fatalf("Cart route did not enforce current Identity: %d", rec.Code)
+				}
+			}
+		})
+	}
+}
+
 func TestAvailabilityMountIsAbsentUnlessIsolatedAndExplicitlyEnabled(t *testing.T) {
 	public := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot)

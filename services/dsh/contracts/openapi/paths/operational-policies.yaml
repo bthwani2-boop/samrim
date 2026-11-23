@@ -54,3 +54,34 @@ paths:
         '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
         '409': { $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict' }
         '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+  /v1/operators/cities/{cityID}/store-availability-policy/history:
+    get:
+      operationId: listCityStoreOperationalPolicyHistory
+      summary: Read immutable DSH city operational policy audit
+      description: Requires the current Identity Operator and platform_policies authority before and after reading. Descending version pages include previously inactive city policies; historical evidence does not grant current orderability.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cityID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: beforeVersion
+          in: query
+          schema: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+      responses:
+        '200':
+          description: Immutable city-scoped history; an empty page is not an active policy
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityStoreOperationalPolicyHistoryPage' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }

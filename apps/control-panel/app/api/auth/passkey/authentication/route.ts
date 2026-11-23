@@ -1,3 +1,4 @@
+import { establishPersistentIdentitySession, identityOperations } from "@bthwani/identity";
 import { NextResponse } from "next/server";
 import {
   boundedRequestBody,
@@ -5,6 +6,7 @@ import {
   cookieLifetimeSeconds,
   isTrustedOperatorRequest,
   OPERATOR_COOKIE,
+  OPERATOR_REFRESH_COOKIE,
   operatorIdentityRequest,
   parseIssuedOperatorToken,
   parseVerifiedOperatorPrincipal,
@@ -46,8 +48,8 @@ export async function POST(request: Request) {
   try {
     const auth = await operatorIdentityRequest(
       config,
-      "/v1/operators/passkey/authentication",
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: raw },
+      identityOperations.finishOperatorPasskeyAuthentication,
+      { headers: { "Content-Type": "application/json" }, body: raw },
     );
     if (auth.status === 401) {
       return NextResponse.json({ code: "UNAUTHORIZED" }, { status: 401, headers: privateHeaders });
@@ -61,14 +63,20 @@ export async function POST(request: Request) {
     }
     const owner = await operatorIdentityRequest(
       config,
-      "/v1/sessions/current",
-      { method: "GET", headers: { Authorization: `Bearer ${issued.accessToken}` } },
+      identityOperations.getVerifiedIdentitySession,
+      { headers: { Authorization: `Bearer ${issued.accessToken}` } },
     );
     if (owner.status !== 200 ||
         !parseVerifiedOperatorPrincipal(await boundedResponseJSON(owner), issued)) {
       return NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });
     }
     const response = NextResponse.json({ authenticated: true }, { status: 200, headers: privateHeaders });
+    const persistent = await establishPersistentIdentitySession(config.identityOrigin, issued.accessToken,
+      AbortSignal.timeout(5000)).catch(() => null);
+    if (persistent) response.cookies.set(OPERATOR_REFRESH_COOKIE, persistent.refreshToken, {
+      path: "/", httpOnly: true, secure: false, sameSite: "strict",
+      maxAge: Math.max(0,Math.floor((Date.parse(persistent.refreshExpiresAt)-Date.now())/1000)),
+    });
     response.cookies.set(OPERATOR_COOKIE, issued.accessToken, {
       path: "/",
       httpOnly: true,

@@ -21,6 +21,11 @@ type OperatorPasskeyAuth struct {
 	owner *PostgresReader
 	rp    *webauthn.WebAuthn
 	rpID  string
+	// Initial Root enrollment is a narrower opt-in than ordinary Passkey login.
+	initialRootOrigin string
+	// Exact local refoundation development only; never bypasses the original
+	// owner singleton, WebAuthn verification or protected database gates.
+	allowExistingSyntheticOperators bool
 }
 
 type OperatorPasskeyAssertionOptions struct {
@@ -45,7 +50,11 @@ func NewOperatorPasskeyAuth(owner *PostgresReader, policy OperatorPasskeyOriginP
 	if err != nil {
 		return nil, fmt.Errorf("invalid WebAuthn RP configuration: %w", err)
 	}
-	return &OperatorPasskeyAuth{owner: owner, rp: rp, rpID: policy.RPID}, nil
+	rootOrigin := ""
+	if policy.AllowsInitialOperatorBootstrap() {
+		rootOrigin = policy.Origins[0]
+	}
+	return &OperatorPasskeyAuth{owner: owner, rp: rp, rpID: policy.RPID, initialRootOrigin: rootOrigin}, nil
 }
 
 func operatorPasskeyRandom32() ([]byte, error) {

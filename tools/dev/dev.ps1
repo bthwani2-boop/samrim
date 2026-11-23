@@ -1,26 +1,28 @@
 #Requires -Version 7.0
 <#
 BThwani canonical development orchestration, Surface only.
-Download and run: .\BThwani-Install-Unified-Dev.ps1 Install -Apply
-This same file is installed as D:\samrim\tools\dev\dev.ps1 and called by pnpm dev.
+Run from D:\samrim: pnpm dev (fast app launch) or pnpm dev up (full isolated infrastructure).
+This existing Surface launcher reuses Lenovo Scheduled Tasks, source sync and loopback SSH tunnels.
 Never runs SQL migrations, operator bootstrap, Identity activation, WLT, image builds,
 Docker volume deletion, branch changes, Git commits/pushes, or credential modifications.
 #>
 [CmdletBinding()]
 param(
   [Parameter(Position=0)]
-  [ValidateSet('Install','Up','Warm','Status','Down','Verify','Migrations','Docker','Apps')]
-  [string]$Action = 'Up',
+  [ValidateSet('Launch','Up','Warm','Status','Down','Verify','Migrations','Docker','Apps')]
+  [string]$Action = 'Launch',
   [switch]$Apply,
   [switch]$DeepSql,
   [Parameter(Position=1)]
-  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','start','restart','android')]
+  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','start','restart','android','open')]
   [string]$DockerAction = 'help',
   [Parameter(Position=2)]
   [ValidateSet('dsh','identity','postgres','media','mailpit','payment-mock')]
   [string]$DockerService = 'dsh',
   [ValidateSet('customer','merchant','captain','control-panel')]
-  [string]$App = ''
+  [string]$App = '',
+  [ValidateSet('Browser','Android','All')]
+  [string]$Mode = 'All'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -44,6 +46,19 @@ $ownerTasks = @(
   @{Name='BThwani Control Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'}
 )
 $localPorts = @(18101,18102,18103,13000)
+$device='R5CX14S4PZW'
+$chrome='C:\Program Files\Google\Chrome\Application\chrome.exe'
+$chromeProfile='Profile 1'
+$urls=@(
+  'http://127.0.0.1:18101/',
+  'http://127.0.0.1:18102/',
+  'http://localhost:13000/'
+)
+$android=@(
+  @{Name='customer'; Package='com.bthwani.customer'; Scheme='exp+customer'; Port=18101},
+  @{Name='merchant'; Package='com.bthwani.merchant'; Scheme='exp+merchant'; Port=18102},
+  @{Name='captain'; Package='com.bthwani.captain'; Scheme='exp+app-captain'; Port=18103}
+)
 $logRoot = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\UnifiedDev'
 $mutex = [System.Threading.Mutex]::new($false,'Local\BThwaniUnifiedDevV1')
 $hasMutex = $false
@@ -76,6 +91,14 @@ function Check-LocalIdentity {
   Say 'SOURCE_HEAD' $head
 }
 function Check-Ssh {
+  $client = [Net.Sockets.TcpClient]::new()
+  $connected = $false
+  try {
+    $pending = $client.ConnectAsync('bthwani-docker',22)
+    $connected = $pending.Wait(2000) -and $client.Connected
+  } catch { $connected = $false }
+  finally { $client.Dispose() }
+  Assert-Ok $connected 'Lenovo TCP/22 unreachable; existing tunnel tasks will keep retrying'
   $rows = @(& $ssh '-T' '-o' 'BatchMode=yes' '-o' 'StrictHostKeyChecking=yes' '-o' 'ConnectTimeout=8' 'bthwani-docker' 'hostname' 2>&1)
   Assert-Ok ($LASTEXITCODE -eq 0 -and @($rows | Where-Object { $_.ToString().Trim() -ieq $expectedLenovo }).Count -eq 1) 'SSH verified host or authentication unavailable'
   Say 'SSH_AUTH' 'PASS host=BTHWANI-DOCKER strictHostKey=yes'
@@ -204,6 +227,9 @@ function Show-AppsHelp {
   Write-Output 'pnpm dev apps status                   # read-only task, listener, process owner and mirror check'
   Write-Output 'pnpm dev apps verify                   # above plus Web and Metro HTTP, not visual Fast Refresh'
   Write-Output 'pnpm dev apps android                  # inspect ADB device and reverse mappings, no changes'
+  Write-Output 'pnpm dev apps open                     # reuse Chrome tabs and open Samsung; no server duplication'
+  Write-Output 'pnpm dev apps open -Mode Browser       # Chrome only, no Android connection needed'
+  Write-Output 'pnpm dev                             # start/reuse tasks, then open available screens'
   Write-Output 'pnpm dev apps logs -App customer       # last 20 log lines, redacted'
   Write-Output 'pnpm dev apps start -App merchant      # preflight/dry run only'
   Write-Output 'pnpm dev apps start -App merchant -Apply # start only stopped and port-free task'
@@ -270,23 +296,45 @@ foreach($s in $specs){
   $script=$script.Replace('__STRICT__',$mode).Replace('__LOCK__',$lock)
   Invoke-Lenovo $script
 }
-function Verify-AppWeb {
-  $targets=@(
+function Get-AppHttpTargets {
+  @(
     @{A='customer';U='http://127.0.0.1:18101/'},
     @{A='customer';U='http://127.0.0.1:18101/stores'},
     @{A='merchant';U='http://127.0.0.1:18102/'},
     @{A='captain-metro';U='http://127.0.0.1:18103/status'},
     @{A='control-panel';U='http://127.0.0.1:13000/'}
   )
-  $failures=0
-  foreach($target in $targets){
+}
+function Test-AppHttpTarget([hashtable]$Target,[int]$TimeoutSec=7,[int]$MaxAttempts=1,[int]$RetryDelayMs=250) {
+  # First Expo Web compilation can outlast a short readiness probe.
+  # Retry only within a fixed budget; never turn a persistent failure into PASS.
+  $timer=[Diagnostics.Stopwatch]::StartNew()
+  $lastFailure='UNKNOWN'
+  for($attempt=1;$attempt -le $MaxAttempts;$attempt++){
     try {
-      $result=Invoke-WebRequest -UseBasicParsing -Uri $target.U -TimeoutSec 8 -ErrorAction Stop
-      if($result.StatusCode -ne 200){throw ('HTTP_'+$result.StatusCode)}
-      Say 'APP_HTTP' ($target.A+' PASS status=200')
+      $response=Invoke-WebRequest -UseBasicParsing -Uri $Target.U -TimeoutSec $TimeoutSec -ErrorAction Stop
+      if($response.StatusCode -eq 200){
+        return @{Success=$true;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=''}
+      }
+      $lastFailure='HTTP_'+$response.StatusCode
     } catch {
+      $exception=$_.Exception
+      $lastFailure=if($exception -is [Threading.Tasks.TaskCanceledException] -or
+        $exception.InnerException -is [Threading.Tasks.TaskCanceledException]){'TIMEOUT'}else{$exception.GetType().Name}
+    }
+    if($attempt -lt $MaxAttempts -and $RetryDelayMs -gt 0){Start-Sleep -Milliseconds $RetryDelayMs}
+  }
+  return @{Success=$false;Attempts=$MaxAttempts;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=$lastFailure}
+}
+function Verify-AppWeb {
+  $failures=0
+  foreach($target in Get-AppHttpTargets){
+    $result=Test-AppHttpTarget -Target $target -TimeoutSec 14 -MaxAttempts 3
+    if($result.Success){
+      Say 'APP_HTTP' ($target.A+' PASS status=200 path='+$target.U+' attempts='+$result.Attempts+' elapsedMs='+$result.ElapsedMs)
+    } else {
       $failures++
-      Say 'APP_HTTP' ($target.A+' FAIL path='+$target.U)
+      Say 'APP_HTTP' ($target.A+' FAIL path='+$target.U+' attempts='+$result.Attempts+' elapsedMs='+$result.ElapsedMs+' reason='+$result.Error)
     }
   }
   Say 'FAST_REFRESH_VISUAL' 'NOT_RUN (requires two observed Web and Android UI edits and restoration)'
@@ -302,7 +350,7 @@ function Inspect-AppAndroid {
   Say 'ANDROID_ADB' ('SAMSUNG_DEVICE='+$devicePresent)
   $reverses=@(& $adb.Source 'reverse' '--list' 2>&1)
   Assert-Ok ($LASTEXITCODE -eq 0) 'adb reverse list failed'
-  foreach($port in @(18101,18102,18103)){
+  foreach($port in @(18101,18102,18103,3201,3202)){
     $mapped=@($reverses | Where-Object {$_.ToString() -match ('tcp:'+$port+'\s+tcp:'+$port+'\b')}).Count -gt 0
     Say 'ANDROID_REVERSE' ('port='+$port+' configured='+$mapped)
   }
@@ -414,9 +462,212 @@ throw ('APP_LISTENER_NOT_READY '+$app)
   $body=$body.Replace('__APP__',$App).Replace('__MODE__',$operation).Replace('__LOCK__',$lockHash)
   Invoke-Lenovo $body
 }
+function Probe-App([string]$url,[string]$accept='text/html',[string]$platform='') {
+  $curl=Join-Path $env:WINDIR 'System32\curl.exe'
+  Assert-Ok (Test-Path -LiteralPath $curl -PathType Leaf) 'WINDOWS_CURL_MISSING'
+  $platformHeader=if($platform){@('--header',('Expo-Platform: '+$platform))}else{@()}
+  $response=@(& $curl '--silent' '--max-time' '7' '--output' 'NUL' '--write-out' '%{http_code}|%{content_type}' '--header' ('Accept: '+$accept) @platformHeader $url 2>$null)
+  $exitCode=$LASTEXITCODE
+  $parts=($response -join '').Trim().Split('|')
+  return @{ Code=$(if($parts.Count){$parts[0]}else{'000'}); Mime=$(if($parts.Count -gt 1){$parts[1]}else{''}); Exit=$exitCode }
+}
+function Get-AppChromeWindow {
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  if(-not ('BthwaniChromeWindowLocator' -as [type])){
+    Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class BthwaniChromeWindowLocator {
+  public delegate bool Callback(IntPtr handle, IntPtr param);
+  [DllImport("user32.dll")] public static extern bool EnumWindows(Callback callback, IntPtr parameter);
+  [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr handle);
+  [DllImport("user32.dll")] public static extern int GetClassName(IntPtr handle, StringBuilder result, int size);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+}
+'@
+  }
+  $handles=[Collections.Generic.List[IntPtr]]::new()
+  $callback=[BthwaniChromeWindowLocator+Callback] {
+    param([IntPtr]$h,[IntPtr]$lp)
+    $class=[Text.StringBuilder]::new(80)
+    [void][BthwaniChromeWindowLocator]::GetClassName($h,$class,80)
+    if($class.ToString() -eq 'Chrome_WidgetWin_1' -and [BthwaniChromeWindowLocator]::IsWindowVisible($h)){
+      [uint32]$chromeProcessId=0
+      [void][BthwaniChromeWindowLocator]::GetWindowThreadProcessId($h,[ref]$chromeProcessId)
+      if((Get-Process -Id $chromeProcessId -ErrorAction SilentlyContinue).ProcessName -eq 'chrome'){$handles.Add($h)}
+    }
+    return $true
+  }
+  [void][BthwaniChromeWindowLocator]::EnumWindows($callback,[IntPtr]::Zero)
+  $condition=[Windows.Automation.PropertyCondition]::new(
+    [Windows.Automation.AutomationElement]::ControlTypeProperty,
+    [Windows.Automation.ControlType]::TabItem
+  )
+  foreach($handle in $handles){
+    try {
+      $window=[Windows.Automation.AutomationElement]::FromHandle($handle)
+      $tabs=$window.FindAll([Windows.Automation.TreeScope]::Descendants,$condition)
+      if($tabs.Count -lt 3){continue}
+      $names=@($tabs | ForEach-Object {[string]$_.Current.Name})
+      # Expo Web can temporarily expose its local URL as the Chrome tab title.
+      # Match the three expected apps regardless of tab order or extra Chrome tabs.
+      $expected=@(
+        '(?i)(بثواني.*(الرئيسية|العميل)|bthwani.*customer|127\.0\.0\.1:18101)',
+        '(?i)(بثواني.*التاجر|bthwani.*merchant|127\.0\.0\.1:18102)',
+        '(?i)(بثواني.*لوحة التحكم|bthwani.*control|localhost:13000|127\.0\.0\.1:13000)'
+      )
+      $matched=[Collections.Generic.HashSet[int]]::new()
+      foreach($signature in $expected){
+        for($i=0;$i -lt $names.Count;$i++){
+          if(-not $matched.Contains($i) -and $names[$i] -match $signature){
+            [void]$matched.Add($i)
+            break
+          }
+        }
+      }
+      if($matched.Count -eq $expected.Count){return $handle.ToInt64()}
+    } catch {}
+  }
+  return 0
+}
+function Open-Browser {
+  Assert-Ok (Test-Path -LiteralPath $chrome -PathType Leaf) 'GOOGLE_CHROME_MISSING'
+  $statusUrls=@(
+    'http://127.0.0.1:18101/status',
+    'http://127.0.0.1:18102/status',
+    'http://localhost:13000/'
+  )
+  for($i=0;$i -lt $statusUrls.Count;$i++){
+    $state=Probe-App $statusUrls[$i]
+    Assert-Ok ($state.Exit -eq 0 -and $state.Code -eq '200') ('BROWSER_APP_NOT_READY '+$urls[$i])
+  }
+  $localState=Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data\Local State'
+  Assert-Ok (Test-Path -LiteralPath $localState -PathType Leaf) 'CHROME_PROFILE_METADATA_MISSING'
+  $profiles=Get-Content -LiteralPath $localState -Raw | ConvertFrom-Json
+  $selectedProfile=$profiles.profile.info_cache.PSObject.Properties[$chromeProfile]
+  Assert-Ok ($null -ne $selectedProfile) 'CHROME_PROFILE_MISSING'
+  # Reuse the existing three-tab app window, if present; do not create duplicates.
+  $existingWindow=Get-AppChromeWindow
+  if($existingWindow -ne 0){
+    Say 'CHROME_APPS' ('PASS already_open window='+$existingWindow+' profile='+$chromeProfile+' tabs=customer,merchant,control-panel')
+    return
+  }
+  # All three URLs are passed to ONE Chrome invocation: one window, three tabs.
+  # Other Chrome windows and profiles are left untouched.
+  $profileArg='--profile-directory="' + $chromeProfile + '"'
+  $null=Start-Process -FilePath $chrome -ArgumentList (@($profileArg,'--new-window','--no-first-run')+$urls) -PassThru -ErrorAction Stop
+  $actualWindow=0
+  for($attempt=0;$attempt -lt 12 -and $actualWindow -eq 0;$attempt++){
+    Start-Sleep -Milliseconds 500
+    $actualWindow=Get-AppChromeWindow
+  }
+  Assert-Ok ($actualWindow -ne 0) 'CHROME_ONE_WINDOW_THREE_APP_TABS_NOT_PROVEN'
+  Say 'CHROME_APPS' ('PASS opened_window='+$actualWindow+' profile='+$chromeProfile+' tabs=customer,merchant,control-panel')
+  Say 'BROWSER_VISUAL' 'NOT_RUN (requires actual page inspection; HTTP 200 is not UI acceptance)'
+}
+function Open-Android {
+  $adb=Get-Command adb.exe -ErrorAction SilentlyContinue
+  Assert-Ok ([bool]$adb) 'ADB_NOT_INSTALLED'
+  $devices=@(& $adb.Source 'devices' | ForEach-Object {$_.ToString()})
+  Assert-Ok (@($devices|Where-Object{$_ -match ('^'+[regex]::Escape($device)+'\s+device\s*$')}).Count -eq 1) 'EXPECTED_SAMSUNG_NOT_CONNECTED'
+  $existing=@(& $adb.Source '-s' $device 'reverse' '--list' | ForEach-Object{$_.ToString()})
+  $nativePorts = @($android | ForEach-Object { [int]$_.Port }) + @(3201,3202)
+  foreach($p in $nativePorts){
+    if ($p -in @(3201,3202)) {
+      $listeners=@(Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $p -ErrorAction SilentlyContinue)
+      Assert-Ok ($listeners.Count -eq 1) ('NATIVE_OWNER_SSH_TUNNEL_NOT_LISTENING '+$p)
+      $owner=Get-CimInstance Win32_Process -Filter ('ProcessId=' + $listeners[0].OwningProcess)
+      $forward='127.0.0.1:'+$p+':127.0.0.1:'+$p
+      Assert-Ok ($owner -and $owner.Name -eq 'ssh.exe' -and
+        $owner.CommandLine.Contains($forward) -and
+        $owner.CommandLine.Contains('bthwani-docker')) ('NATIVE_OWNER_SSH_TUNNEL_UNVERIFIED '+$p)
+    }
+    $same=@($existing|Where-Object {$_ -match ('\btcp:'+$p+'\s+tcp:'+$p+'\b')}).Count -gt 0
+    $collision=@($existing|Where-Object {$_ -match ('\btcp:'+$p+'\s+') -and $_ -notmatch ('\btcp:'+$p+'\s+tcp:'+$p+'\b')}).Count -gt 0
+    Assert-Ok (-not $collision) ('ADB_REVERSE_COLLISION '+$p)
+    if(-not $same){
+      $null=@(& $adb.Source '-s' $device 'reverse' ('tcp:'+$p) ('tcp:'+$p) 2>&1)
+      Assert-Ok ($LASTEXITCODE -eq 0) ('ADB_REVERSE_SETUP_FAILED '+$p)
+      Say 'ADB_REVERSE' ('CREATED port='+$p)
+    } else {Say 'ADB_REVERSE' ('REUSED port='+$p)}
+  }
+  $blocked=0
+  foreach($entry in $android){
+    $name=[string]$entry.Name
+    $port=[int]$entry.Port
+    # Native development builds need Expo's manifest, not merely web HTML or /status.
+    $manifest=Probe-App ('http://127.0.0.1:'+$port+'/') 'application/expo+json' 'android'
+    if($manifest.Exit -ne 0 -or $manifest.Code -ne '200' -or $manifest.Mime -notmatch '^application/expo\+json'){
+      $blocked++
+      Say 'ANDROID_APP' ($name+' BLOCKED native_manifest status='+$manifest.Code+' content_type='+$manifest.Mime)
+      continue
+    }
+    $uri=[string]$entry.Scheme+'://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A'+$port
+    $resolution=@(& $adb.Source '-s' $device 'shell' 'cmd' 'package' 'query-activities' '--brief' '-a' 'android.intent.action.VIEW' '-c' 'android.intent.category.BROWSABLE' '-d' $uri '-p' $entry.Package)
+    Assert-Ok ($LASTEXITCODE -eq 0 -and @($resolution|Where-Object {$_.ToString().Contains($entry.Package+'/.MainActivity')}).Count -eq 1) ('ANDROID_INTENT_UNAVAILABLE '+$name)
+    $result=@(& $adb.Source '-s' $device 'shell' 'am' 'start' '-W' '-a' 'android.intent.action.VIEW' '-c' 'android.intent.category.BROWSABLE' '-d' $uri '-p' $entry.Package)
+    $status=$LASTEXITCODE
+    if($status -ne 0 -or -not (@($result|Where-Object{$_.ToString() -match 'Status:\s+ok'}).Count)){
+      $blocked++
+      Say 'ANDROID_APP' ($name+' FAIL app_launch')
+      continue
+    }
+    Start-Sleep -Milliseconds 250
+    $top=@(& $adb.Source '-s' $device 'shell' 'dumpsys' 'activity' 'activities' | Where-Object{$_.ToString() -match 'topResumedActivity'} | Select-Object -First 1)
+    if(@($top|Where-Object{$_.ToString() -match 'DevLauncherErrorActivity'}).Count){
+      $blocked++
+      Say 'ANDROID_APP' ($name+' FAIL dev_launcher_error')
+    } elseif(@($top|Where-Object {$_.ToString().Contains($entry.Package)}).Count){
+      Say 'ANDROID_APP' ($name+' INTENT_ACCEPTED foreground_activity='+$entry.Package)
+    } else {
+      Say 'ANDROID_APP' ($name+' INTENT_ACCEPTED foreground_unverified')
+    }
+  }
+  Say 'ANDROID_VISUAL' 'NOT_RUN (native activity launch is not proof of rendered application)'
+  if($blocked -gt 0) { throw ('ANDROID_LAUNCH_INCOMPLETE blocked='+$blocked+'; inspect Expo native manifest and app logs') }
+}
+function Show-OperatorAuthReadiness {
+  # A missing browser cookie should return 401 only when the isolated BFF is configured.
+  # This check never enrolls a credential, creates a session or grants an Operator scope.
+  $state = Probe-App 'http://localhost:13000/api/auth/session' 'application/json'
+  if($state.Exit -ne 0) {
+    Say 'OPERATOR_AUTH' 'BLOCKED control-panel tunnel or server unavailable'
+  } elseif($state.Code -eq '503') {
+    Say 'OPERATOR_AUTH' 'BLOCKED Identity/Passkey runtime configuration or owner unavailable'
+  } elseif($state.Code -eq '401') {
+    Say 'OPERATOR_AUTH' 'BFF_READY; Identity ownership, enrollment and browser session NOT_VERIFIED'
+  } else {
+    Say 'OPERATOR_AUTH' ('NOT_VERIFIED status='+$state.Code)
+  }
+}
+
+function Open-AppSurfaces {
+  Assert-Ok ($env:COMPUTERNAME -ieq $expectedSurface) 'SURFACE_ONLY'
+  $selection = $Mode
+  if ($selection -eq 'All') {
+    $adb = Get-Command adb.exe -ErrorAction SilentlyContinue
+    $connected = $false
+    if ($adb) {
+      $devices = @(& $adb.Source devices 2>&1)
+      $connected = $LASTEXITCODE -eq 0 -and
+        @($devices | Where-Object { $_.ToString() -match '^R5CX14S4PZW\s+device\b' }).Count -eq 1
+    }
+    if (-not $connected) {
+      $selection = 'Browser'
+      Say 'SAMSUNG' 'SKIPPED (not connected; Chrome opens independently)'
+    }
+  }
+  if($selection -in @('Browser','All')){ Open-Browser }
+  if($selection -in @('Android','All')){ Open-Android }
+  Say 'OPEN_DEV_SURFACES' 'DONE'
+}
+
 function Invoke-AppAction {
   if($DockerAction -eq 'help'){Show-AppsHelp;return}
   if($DockerAction -eq 'android'){Inspect-AppAndroid;return}
+  if($DockerAction -eq 'open'){Open-AppSurfaces;Show-OperatorAuthReadiness;return}
   Check-Ssh
   switch($DockerAction.ToLowerInvariant()){
     'status' {Inspect-AppOwners}
@@ -431,14 +682,24 @@ function Invoke-AppAction {
 function Show-Docker {
   Banner 'DOCKER CONTAINERS'
   Invoke-DockerCli -argsList @('ps','-a','--filter','label=com.docker.compose.project=bthwani-refoundation','--format','{{.Names}} | {{.Status}} | {{.Image}}') | ForEach-Object { Write-Output $_ }
+  # WLT is optional, but may run under the same Compose project. Inspect
+  # its actual labels rather than relying on an obsolete placement assumption.
+  $wltIdentity=@(& docker --context $dockerContext inspect 'bthwani-refoundation-wlt-1' '--format' '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}' 2>$null)
+  $wltFound=$LASTEXITCODE -eq 0
+  $verifyArgs=@('--context',$dockerContext)
+  if($wltFound){
+    Assert-Ok (($wltIdentity -join '').Trim() -eq ($project+'|wlt')) 'unexpected WLT container ownership'
+    $verifyArgs+=@('--include-wlt')
+  } else {
+    Say 'WLT' 'NOT_RUN (optional WLT container not present)'
+  }
   if (Test-Path -LiteralPath (Join-Path $repo 'infra\verify-runtime-provenance.mjs')) {
-    $result = @(& node (Join-Path $repo 'infra\verify-runtime-provenance.mjs') '--context' $dockerContext 2>&1)
+    $result = @(& node (Join-Path $repo 'infra\verify-runtime-provenance.mjs') @verifyArgs 2>&1)
     $code = $LASTEXITCODE
     foreach ($line in $result) { Write-Output $line.ToString() }
     Say 'PROVENANCE_EXIT' $code
-    if ($code -ne 0) { Say 'NOTE' 'runtime provenance incomplete; Identity may be intentionally stopped. Never re-label a stopped container as PASS.' }
+    if ($code -ne 0) { Say 'NOTE' 'runtime provenance incomplete; inspect stale or stopped owner images before a scoped rebuild.' }
   }
-  Say 'WLT' 'NOT_IMPLEMENTED (no runnable new backend)'
 }
 function Show-DockerCommands {
   Write-Output 'DOCKER_COMMANDS=READ_ONLY (Surface -> bthwani-docker SSH context)'
@@ -452,7 +713,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker networks       # project-scoped networks'
   Write-Output 'pnpm dev docker config         # validate base and DSH Compose safely'
   Write-Output 'pnpm dev docker verify         # strict DSH + Identity live image provenance'
-  Write-Output 'pnpm dev | pnpm dev warm | pnpm dev status | pnpm dev down'
+  Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=use infra/build-dsh-image.ps1 or infra/build-identity-verifier-image.ps1 explicitly'
   Write-Output 'UNSUPPORTED=prune, down -v, SQL migration execution, bootstrap, protected state operations'
@@ -496,11 +757,10 @@ function Invoke-ScopedDocker {
   }
 }
 function Wait-AppStatus {
-  foreach ($url in @('http://127.0.0.1:18101/','http://127.0.0.1:18101/stores','http://127.0.0.1:18102/','http://127.0.0.1:13000/')) {
-    try {
-      $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 7 -ErrorAction Stop
-      Say 'WEB' ($url+' status='+$r.StatusCode)
-    } catch { Say 'WEB' ($url+' status=NOT_READY') }
+  foreach($target in Get-AppHttpTargets){
+    $result=Test-AppHttpTarget -Target $target -TimeoutSec 7 -MaxAttempts 1
+    $state=if($result.Success){'200'}else{'NOT_READY'}
+    Say 'WEB' ($target.U+' status='+$state+' elapsedMs='+$result.ElapsedMs+' reason='+$result.Error)
   }
   Say 'ANDROID' 'NOT_RUN (requires on-device test)'
 }
@@ -577,83 +837,34 @@ function Verify-Checks {
   } else { Say 'SQL_PROOF' 'NOT_RUN (optional: pnpm dev verify -DeepSql)' }
   Say 'VERIFY' 'PASS static/policy only; live Identity, Android and finance remain separate gates'
 }
-function Install-CLI {
-  $source = (Resolve-Path -LiteralPath $PSCommandPath).Path
-  $target = Join-Path $repo 'tools\dev\dev.ps1'
-  $package = Join-Path $repo 'package.json'
-  $expected = 'pwsh -NoProfile -File tools/dev/dev.ps1'
-  # Other worktree changes do not block installation; guard owned targets only.
-  $packageHashBefore = (Get-FileHash -Algorithm SHA256 -LiteralPath $package).Hash
-  $packageBefore = [IO.File]::ReadAllText($package)
-  $json = $packageBefore | ConvertFrom-Json
-  $oldDev = $json.scripts.PSObject.Properties['dev']
-  if ($oldDev) { Assert-Ok ($oldDev.Value -eq $expected) 'existing pnpm dev owner differs; refusing overwrite' }
-  $exists = Test-Path -LiteralPath $target -PathType Leaf
-  if ($exists) {
-    $a = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash
-    $b = (Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash
-    Assert-Ok ($a -eq $b) 'existing tools/dev/dev.ps1 differs; refusing overwrite'
-  }
-  if ($exists -and $oldDev) { Say 'INSTALL' 'ALREADY_INSTALLED'; return }
-
-  if (-not $oldDev) {
-    $matcher = [regex]::new('(?m)^\s*"scripts"\s*:\s*\{')
-    Assert-Ok ($matcher.IsMatch($packageBefore)) 'package.json script insertion point missing'
-    $packageAfter = $matcher.Replace($packageBefore,{param($m) $m.Value + "`r`n    `"dev`": `"$expected`","},1)
-    $newJson = $packageAfter | ConvertFrom-Json
-    Assert-Ok ($newJson.scripts.dev -eq $expected) 'generated package.json invalid'
-  } else { $packageAfter = $packageBefore }
-  $tokens=$null;$errors=$null
-  $null=[System.Management.Automation.Language.Parser]::ParseFile($source,[ref]$tokens,[ref]$errors)
-  Assert-Ok ($errors.Count -eq 0) ('PowerShell parse failed: '+($errors -join ' | '))
-  Banner 'INSTALL PLAN'
-  Say 'SOURCE' $source
-  Say 'TARGET' $target
-  Say 'PACKAGE_CHANGE' (-not [bool]$oldDev)
-  Say 'RUNNER_COPY' (-not $exists)
-  if(-not $Apply) { Say 'INSTALL' 'DRY_RUN (use Install -Apply)'; return }
-  # Check only owned targets immediately before writing; preserve unrelated modifications.
-  Assert-Ok ((Get-FileHash -Algorithm SHA256 -LiteralPath $package).Hash -eq $packageHashBefore) 'package.json changed during installation; protect concurrent writer'
-  Assert-Ok ((Test-Path -LiteralPath $target -PathType Leaf) -eq $exists) 'tools/dev/dev.ps1 appeared/disappeared during installation'
-  if ($exists) {
-    Assert-Ok ((Get-FileHash -Algorithm SHA256 -LiteralPath $target).Hash -eq (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash) 'tools/dev/dev.ps1 changed during installation'
-  }
-  $backup = Join-Path $logRoot ('package-backup-'+(Get-Date -Format 'yyyyMMdd-HHmmss'))
-  New-Item -ItemType Directory -Force -Path $backup | Out-Null
-  Copy-Item -LiteralPath $package -Destination (Join-Path $backup 'package.json')
-  try {
-    if(-not $exists) { Copy-Item -LiteralPath $source -Destination $target }
-    if(-not $oldDev) {
-      $temp = Join-Path $repo 'package.json.bthwani-atomic.tmp'
-      [IO.File]::WriteAllText($temp,$packageAfter,[Text.UTF8Encoding]::new($false))
-      Move-Item -LiteralPath $temp -Destination $package -Force
-    }
-    $actual = (Get-Content -LiteralPath $package -Raw | ConvertFrom-Json).scripts.dev
-    Assert-Ok ($actual -eq $expected) 'package readback mismatch'
-    Assert-Ok ((Get-FileHash -LiteralPath $target).Hash -eq (Get-FileHash -LiteralPath $source).Hash) 'runner readback mismatch'
-    Say 'INSTALL' 'PASS verified file hashes and package.json; local changes are not committed or pushed'
-    Say 'NEXT' 'pnpm dev status | pnpm dev | pnpm dev warm | pnpm dev verify | pnpm dev down'
-  } catch {
-    Copy-Item -LiteralPath (Join-Path $backup 'package.json') -Destination $package -Force
-    if(-not $exists -and (Test-Path -LiteralPath $target)){Remove-Item -LiteralPath $target -Force}
-    throw
-  }
-}
 
 try {
-  try { $hasMutex = $mutex.WaitOne(0) }
-  catch [Threading.AbandonedMutexException] { $hasMutex = $true }
-  Assert-Ok $hasMutex 'another unified dev operation is in progress'
+  $readOnlyOperation = $Action -in @('Status','Verify','Migrations') -or
+    ($Action -eq 'Apps' -and $DockerAction -in @('help','status','verify','logs','android')) -or
+    ($Action -eq 'Docker' -and $DockerAction -in @('help','status','ps','logs','images','volumes','networks','config','verify'))
+  if (-not $readOnlyOperation) {
+    try { $hasMutex = $mutex.WaitOne(0) }
+    catch [Threading.AbandonedMutexException] { $hasMutex = $true }
+    Assert-Ok $hasMutex 'another unified dev operation is in progress'
+  }
   New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
-  $logFile = Join-Path $logRoot ('dev-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.log')
+  $logFile = Join-Path $logRoot ('dev-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff')+'-'+$PID+'.log')
   Start-Transcript -Path $logFile -ErrorAction Stop | Out-Null
   $transcript = $true
   Say 'ACTION' $Action
   Check-LocalIdentity
   switch ($Action.ToLowerInvariant()) {
-    'install' { Install-CLI; break }
     'docker' { Invoke-ScopedDocker; break }
     'apps' { Invoke-AppAction; break }
+    'launch' {
+      Check-Ssh
+      Start-LocalTasks
+      Start-LenovoTasks
+      Open-AppSurfaces
+      Show-OperatorAuthReadiness
+      Say 'LAUNCH' 'PASS (existing app tasks and source watcher; screens opened where available)'
+      break
+    }
     'status' {
       Check-Ssh
       Show-LocalTasks
@@ -676,6 +887,8 @@ try {
       Show-LenovoTasks
       Show-Docker
       Wait-AppStatus
+      try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
+      Show-OperatorAuthReadiness
       Say 'IDENTITY' 'NOT_AUTOSTARTED (owner-backed runtime security/SQL acceptance required)'
       break
     }
@@ -690,6 +903,8 @@ try {
       Banner 'POST-WARM STATUS'
       Show-Docker
       Wait-AppStatus
+      try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
+      Show-OperatorAuthReadiness
       Say 'WARM' 'DONE without builds, migrations, and container recreation'
       break
     }
@@ -712,9 +927,9 @@ try {
     }
     'migrations' {
       Say 'MIGRATIONS' 'NOT_EXECUTED; owner approval and database role/schema/version verification required'
-      Say 'DSH_SQL' 'services/dsh/database/migrations (read/review only)'
-      Say 'IDENTITY_SQL' 'services/identity/database/migrations (read/review only)'
-      Say 'WLT_SQL' 'NOT_IMPLEMENTED'
+      Say 'DSH_SQL' 'fresh: services/dsh/database/schema; historical experimental upgrades: Git only'
+      Say 'IDENTITY_SQL' 'fresh: services/identity/database/schema; historical experimental upgrades: Git only'
+      Say 'WLT_SQL' 'fresh: services/wlt/database/schema; test-only: services/wlt/database/sandbox; historical experiments: Git history (read/review only)'
       break
     }
   }

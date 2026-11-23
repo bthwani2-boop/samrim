@@ -1,8 +1,9 @@
-import { DshPublicError, getStoreOperationalAvailability, type StoreOperationalAvailability } from "@bthwani/dsh";
+import { DshPublicError } from "@bthwani/dsh";
 import {
   IdentityClientError,
   issueCustomerPhoneChallenge,
-  readVerifiedIdentitySession,
+  readPersistentIdentityRole,
+  revokePersistentIdentitySession,
   revokeVerifiedIdentitySession,
   type VerifiedIdentitySession,
 } from "@bthwani/identity";
@@ -11,10 +12,12 @@ import { Platform } from "react-native";
 import { revokeUndeliveredAdmissionSession, verifyMerchantAdmission } from "./admission";
 import { MerchantStandingError, readMerchantDSHStanding, standingFrom } from "./dsh-standing";
 
-const storageKey = "bthwani.merchant.synthetic-admission.v1";
+const storageKey = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
+  ? "bthwani.merchant.synthetic-admission.surface.v1" : "bthwani.merchant.synthetic-admission.v1";
 // Persist before writing an issued bearer. An interrupted write must remain
 // quarantined even after the JavaScript process loses its in-memory state.
 const pendingStorageKey = `${storageKey}.pending.v1`;
+const refreshStorageKey = `${storageKey}.refresh.v1`;
 const nativeOrigin = process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN;
 const nativeDSHOrigin = process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN;
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
@@ -35,6 +38,15 @@ async function clearPendingNativeAdmission(signal: AbortSignal): Promise<boolean
     const pending = await SecureStore.getItemAsync(pendingStorageKey, nativeOptions);
     if (!pending) return false;
     if (signal.aborted) return true;
+    {
+      const refresh = await SecureStore.getItemAsync(refreshStorageKey, nativeOptions);
+      if (refresh) {
+        try { await revokePersistentIdentitySession(requireNativeOrigin(), refresh, signal); }
+        catch (error) {
+          if (!(error instanceof IdentityClientError && error.status === 401)) throw error;
+        }
+      }
+    }
     const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
     if (bearer) {
       deniedNativeBearer = bearer;
@@ -45,6 +57,7 @@ async function clearPendingNativeAdmission(signal: AbortSignal): Promise<boolean
         return true;
       }
     }
+    await SecureStore.deleteItemAsync(refreshStorageKey, nativeOptions).catch(() => {});
     await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => {});
     return true;
   });
@@ -55,7 +68,38 @@ function clearNativeBearerIfCurrent(bearer: string, signal: AbortSignal): Promis
     if (signal.aborted) return;
     if (await SecureStore.getItemAsync(storageKey, nativeOptions) !== bearer || signal.aborted) return;
     await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+    await SecureStore.deleteItemAsync(refreshStorageKey, nativeOptions).catch(() => {});
   });
+}
+
+let durableMerchantInFlight: Promise<Awaited<ReturnType<typeof readPersistentIdentityRole>>> | null = null;
+async function readDurableMerchant(bearer: string, signal: AbortSignal) {
+  if (durableMerchantInFlight) return durableMerchantInFlight;
+  const pending = (async () => {
+  const refresh = await SecureStore.getItemAsync(refreshStorageKey, nativeOptions);
+  return readPersistentIdentityRole(requireNativeOrigin(), bearer, refresh, "merchant", signal,
+    () => mutateNativeStorage(async () => {
+      if (signal.aborted || await SecureStore.getItemAsync(pendingStorageKey, nativeOptions) ||
+          await SecureStore.getItemAsync(storageKey, nativeOptions) !== bearer) {
+        throw new IdentityClientError(0, "OWNER_RESPONSE_STALE");
+      }
+      await SecureStore.setItemAsync(pendingStorageKey, "refreshing", nativeOptions);
+    }),
+    (issued, before, rotated) => mutateNativeStorage(async () => {
+      const pending = await SecureStore.getItemAsync(pendingStorageKey, nativeOptions);
+      if (signal.aborted || await SecureStore.getItemAsync(storageKey, nativeOptions) !== before ||
+          (pending && (!rotated || pending !== "refreshing"))) return false;
+      await SecureStore.setItemAsync(refreshStorageKey, issued.refreshToken, nativeOptions);
+      if (rotated) {
+        await SecureStore.setItemAsync(storageKey, issued.accessToken, nativeOptions);
+        await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions);
+      }
+      return true;
+    }));
+  })();
+  durableMerchantInFlight = pending;
+  try { return await pending; }
+  finally { if (durableMerchantInFlight === pending) durableMerchantInFlight = null; }
 }
 
 async function webRequest<T>(method: string, signal: AbortSignal, data?: object, stores = false): Promise<T> {
@@ -83,6 +127,7 @@ function requireNativeOrigin() {
 export async function readAdmission(signal: AbortSignal): Promise<EntryState> {
   if (Platform.OS === "web") return webRequest("GET", signal);
   if (!nativeOrigin) return { enabled: false, session: null };
+  if (durableMerchantInFlight) await durableMerchantInFlight.catch(() => undefined);
   if (await clearPendingNativeAdmission(signal)) return { enabled: true, session: null };
   const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
   if (bearer && bearer === deniedNativeBearer) {
@@ -91,8 +136,12 @@ export async function readAdmission(signal: AbortSignal): Promise<EntryState> {
   }
   if (bearer) {
     try {
-      const session = await readVerifiedIdentitySession(nativeOrigin, bearer, signal);
-      if (session.role === "merchant") return { enabled: true, session };
+      const current = await readDurableMerchant(bearer, signal);
+      if (current.session.role === "merchant" &&
+          await SecureStore.getItemAsync(storageKey, nativeOptions) === current.bearer &&
+          !await SecureStore.getItemAsync(pendingStorageKey, nativeOptions)) {
+        return { enabled: true, session: current.session };
+      }
     } catch (error) {
       if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) throw error;
     }
@@ -113,47 +162,48 @@ export async function readMerchantStanding(signal: AbortSignal) {
     const result = await webRequest<{ standing: unknown }>("GET", signal, undefined, true);
     return standingFrom(result.standing);
   }
+  // Preserve the standing API's unauthenticated result for a missing or
+  // quarantined bearer; the shared session guard below additionally verifies
+  // the active Identity role and rejects stale Store readback.
+  if (durableMerchantInFlight) await durableMerchantInFlight.catch(() => undefined);
   if (await clearPendingNativeAdmission(signal)) {
     throw new MerchantStandingError(401, "UNAUTHENTICATED");
   }
-  const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
-  if (!bearer) throw new MerchantStandingError(401, "UNAUTHENTICATED");
-  try {
-    return await readMerchantDSHStanding(nativeDSHOrigin ?? "", bearer, signal);
-  } catch (error) {
-    if (!signal.aborted &&
-      (error instanceof MerchantStandingError || error instanceof IdentityClientError) &&
-      (error.status === 401 || error.status === 403)) {
-      deniedNativeBearer = bearer;
-      // Owner denial remains authoritative if device storage is temporarily unavailable.
-      await clearNativeBearerIfCurrent(bearer, signal).catch(() => {});
-    }
-    throw error;
+  const initialBearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
+  if (!initialBearer || initialBearer === deniedNativeBearer) {
+    throw new MerchantStandingError(401, "UNAUTHENTICATED");
   }
+  return withNativeMerchantSession(signal, async bearer => {
+    try {
+      return await readMerchantDSHStanding(nativeDSHOrigin ?? "", bearer, signal);
+    } catch (error) {
+      if (!signal.aborted && error instanceof MerchantStandingError &&
+          (error.status === 401 || error.status === 403)) {
+        // Deny only the bearer used by this request. A concurrent account
+        // switch must never invalidate the replacement session.
+        deniedNativeBearer = bearer;
+        await clearNativeBearerIfCurrent(bearer, signal).catch(() => {});
+      }
+      throw error;
+    }
+  });
 }
 
-/** Read-only Store projection. Identity proves the role; DSH authorizes the Store. */
-export async function readMerchantAvailability(storeId: string, signal: AbortSignal): Promise<StoreOperationalAvailability> {
-  if (!/^[a-z0-9-]{1,64}$/.test(storeId)) throw new DshPublicError(400, "STORE_ID_INVALID");
-  if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-  if (Platform.OS === "web") {
-    const result = await fetch(`/api/admission?availability=${encodeURIComponent(storeId)}`, {
-      method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
-    });
-    const body = await result.json();
-    if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-    if (!result.ok) throw new DshPublicError(result.status, body.code);
-    if (!body?.availability || body.availability.storeId !== storeId) {
-      throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
-    }
-    return body.availability as StoreOperationalAvailability;
-  }
+export async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: string, origin: string) => Promise<T>, actorId?: string,
+  isWrite = false): Promise<T> {
+  if (durableMerchantInFlight) await durableMerchantInFlight.catch(() => undefined);
   if (await clearPendingNativeAdmission(signal)) throw new IdentityClientError(401, "UNAUTHORIZED");
   const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
   if (!bearer || bearer === deniedNativeBearer) throw new IdentityClientError(401, "UNAUTHORIZED");
+  let effectiveBearer = bearer;
   try {
-    const session = await readVerifiedIdentitySession(requireNativeOrigin(), bearer, signal);
+    const current = await readDurableMerchant(bearer, signal);
+    effectiveBearer = current.bearer;
+    const session = current.session;
     if (session.role !== "merchant") throw new IdentityClientError(403, "FORBIDDEN");
+    if (actorId !== undefined && session.actorId !== actorId) {
+      throw new DshPublicError(403, "MERCHANT_CONTEXT_CHANGED");
+    }
   } catch (error) {
     if (!signal.aborted && error instanceof IdentityClientError && (error.status === 401 || error.status === 403)) {
       deniedNativeBearer = bearer;
@@ -162,18 +212,19 @@ export async function readMerchantAvailability(storeId: string, signal: AbortSig
     throw error;
   }
   const afterIdentity = await SecureStore.getItemAsync(storageKey, nativeOptions);
-  if (signal.aborted || bearer === deniedNativeBearer || afterIdentity !== bearer) {
+  if (signal.aborted || bearer === deniedNativeBearer || afterIdentity !== effectiveBearer) {
     throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
   }
   // A scoped 403 does not invalidate the Merchant's unrelated Store grants.
-  const availability = await getStoreOperationalAvailability(nativeDSHOrigin ?? "", storeId, bearer, signal);
+  const result = await run(effectiveBearer, nativeDSHOrigin ?? "");
   const afterOwner = await SecureStore.getItemAsync(storageKey, nativeOptions);
-  if (signal.aborted || bearer === deniedNativeBearer ||
-      afterOwner !== bearer) {
-    throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  if (signal.aborted || bearer === deniedNativeBearer || afterOwner !== effectiveBearer) {
+    // A write may already have committed despite an account switch or abort.
+    throw new DshPublicError(0, isWrite ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
   }
-  return availability;
+  return result;
 }
+
 
 export async function requestAdmissionCode(phone: string, signal: AbortSignal): Promise<string> {
   if (Platform.OS === "web") return (await webRequest<{ ticket: string }>("POST", signal, { phone })).ticket;
@@ -190,6 +241,7 @@ export async function submitAdmissionCode(
   nativeAdmissionInFlight = true;
   try {
     const origin = requireNativeOrigin();
+    if (durableMerchantInFlight) await durableMerchantInFlight.catch(() => undefined);
     if (await clearPendingNativeAdmission(signal) &&
         await SecureStore.getItemAsync(pendingStorageKey, nativeOptions)) {
       throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
@@ -197,8 +249,8 @@ export async function submitAdmissionCode(
     const previousBearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
     if (previousBearer && previousBearer !== deniedNativeBearer) {
       try {
-        const active = await readVerifiedIdentitySession(origin, previousBearer, signal);
-        if (active.role === "merchant") throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
+        const active = await readDurableMerchant(previousBearer, signal);
+        if (active.session.role === "merchant") throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
       } catch (error) {
         if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) {
           throw error;
@@ -250,12 +302,28 @@ export async function submitAdmissionCode(
 
 export async function signOutOfAdmission(signal: AbortSignal): Promise<void> {
   if (Platform.OS === "web") return webRequest("DELETE", signal);
-  const bearer = await SecureStore.getItemAsync(storageKey, nativeOptions);
+  const bearer = await mutateNativeStorage(async () => {
+    const stored = await SecureStore.getItemAsync(storageKey, nativeOptions);
+    if (stored) await SecureStore.setItemAsync(pendingStorageKey, "sign-out", nativeOptions);
+    return stored;
+  });
   if (!bearer) return;
+  const refresh = await SecureStore.getItemAsync(refreshStorageKey, nativeOptions);
+  if (refresh) {
+    try { await revokePersistentIdentitySession(requireNativeOrigin(), refresh, signal); }
+    catch (error) {
+      if (!(error instanceof IdentityClientError && error.status === 401)) throw error;
+    }
+  }
   try {
     await revokeVerifiedIdentitySession(requireNativeOrigin(), bearer, signal);
   } catch (error) {
     if (!(error instanceof IdentityClientError && (error.status === 401 || error.status === 403))) throw error;
   }
-  await clearNativeBearerIfCurrent(bearer, signal);
+  await mutateNativeStorage(async () => {
+    if (await SecureStore.getItemAsync(storageKey, nativeOptions) !== bearer) return;
+    await SecureStore.deleteItemAsync(storageKey, nativeOptions);
+    await SecureStore.deleteItemAsync(refreshStorageKey, nativeOptions);
+    await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions);
+  });
 }

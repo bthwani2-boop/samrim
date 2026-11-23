@@ -227,6 +227,9 @@ importers:
 
   apps/captain:
     dependencies:
+      '@bthwani/dsh':
+        specifier: workspace:*
+        version: link:../../services/dsh
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
@@ -399,6 +402,9 @@ importers:
       '@bthwani/dsh':
         specifier: workspace:*
         version: link:../../services/dsh
+      '@bthwani/identity':
+        specifier: workspace:*
+        version: link:../../services/identity
       '@date-fns/tz':
         specifier: 'catalog:'
         version: 1.5.0
@@ -417,6 +423,9 @@ importers:
       react-dom:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
+      server-only:
+        specifier: 0.0.1
+        version: 0.0.1
       zod:
         specifier: 'catalog:'
         version: 4.6.7
@@ -445,6 +454,9 @@ importers:
       '@bthwani/tamagui-config':
         specifier: workspace:*
         version: link:../../packages/tamagui-config
+      '@bthwani/wlt':
+        specifier: workspace:*
+        version: link:../../services/wlt
       '@date-fns/tz':
         specifier: 'catalog:'
         version: 1.5.0

@@ -14,7 +14,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -71,46 +70,7 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM pg_catalog.pg_namespace WHERE nspname=$1", schema).Scan(&preexisting); err != nil || preexisting != 0 {
 		t.Fatal("synthetic namespace collides with preexisting schema")
 	}
-	migrationPath := os.Getenv("IDENTITY_SESSION_MIGRATION_SQL_PATH")
-	if migrationPath == "" {
-		migrationPath = filepath.Join("..", "..", "..", "database", "migrations", "001_session_verification.sql")
-	}
-	source, err := os.ReadFile(migrationPath)
-	if err != nil {
-		t.Fatal("Identity migration unavailable")
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(source), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("synthetic Identity namespace bootstrap failed:", err)
-	}
-	permissionMigrationPath := os.Getenv("IDENTITY_OPERATOR_PERMISSION_MIGRATION_SQL_PATH")
-	if permissionMigrationPath == "" {
-		permissionMigrationPath = filepath.Join("..", "..", "..", "database", "migrations", "002_operator_permission_read.sql")
-	}
-	permissionMigration, err := os.ReadFile(permissionMigrationPath)
-	if err != nil {
-		t.Fatal("Identity effective permissions migration unavailable")
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(permissionMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("synthetic effective Operator permission bootstrap failed:", err)
-	}
-	verificationPath := os.Getenv("IDENTITY_MERCHANT_ADMISSION_MIGRATION_SQL_PATH")
-	if verificationPath == "" {
-		verificationPath = filepath.Join("..", "..", "..", "database", "migrations", "003_verified_customer_merchant_admission.sql")
-	}
-	verificationMigration, err := os.ReadFile(verificationPath)
-	if err != nil {
-		t.Fatal("Identity verified Customer prerequisite unavailable")
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(verificationMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("isolated verified Customer migration failed:", err)
-	}
-	phoneMigration, err := os.ReadFile(filepath.Join(filepath.Dir(verificationPath), "004_customer_phone_verification.sql"))
-	if err != nil {
-		t.Fatal("isolated phone verification migration unavailable:", err)
-	}
-	if _, err = db.ExecContext(ctx, strings.ReplaceAll(string(phoneMigration), "__SCHEMA__", schema)); err != nil {
-		t.Fatal("isolated phone verification migration failed:", err)
-	}
+	initializeFreshIdentityFixture(t, ctx, db, schema)
 	// Keep test scope explicit. Only SQL identifiers derived from local random
 	// bytes are interpolated; all actor IDs, digests and values use binds.
 	exec := func(query string, args ...any) {
@@ -305,6 +265,11 @@ func TestPostgresIdentitySessionReadback(t *testing.T) {
 	}
 	if _, err = independentlyScoped.LookupPermission(ctx, digestOpA, "operations"); !errors.Is(err, ErrForbidden) {
 		t.Fatal("revoked permission not visible to independent Identity owner connection")
+	}
+	if os.Getenv("IDENTITY_RESTORE_CI_TEST") == "true" {
+		t.Run("restored owner authorization", func(t *testing.T) {
+			verifyIdentityRestore(t, ctx, connectionURL, schema, tokenA, opA, opB)
+		})
 	}
 	exec("UPDATE "+permissions+" SET state='ACTIVE',updated_at=now() WHERE actor_id=$1 AND permission='operations'", "identity-operator-a")
 	checkPermission(opA, "operations", "identity-operator-a", nil)

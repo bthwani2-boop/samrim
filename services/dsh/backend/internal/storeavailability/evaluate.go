@@ -90,10 +90,7 @@ func ValidateSchedule(windows []WeeklyWindow) error {
 
 func EvaluatedAt(now time.Time, in Inputs) (Result, error) {
 	fail := Result{Status: OperationallyUnavail, Orderable: false}
-	if err := ValidateSchedule(in.Weekly); err != nil {
-		return fail, err
-	}
-	loc, err := loadStoreTimezone(in.Timezone)
+	open, err := WithinWeeklyHours(now, in.Timezone, in.Weekly)
 	if err != nil {
 		return fail, err
 	}
@@ -104,9 +101,25 @@ func EvaluatedAt(now time.Time, in Inputs) (Result, error) {
 	if in.PausedUntil != nil && now.Before(*in.PausedUntil) {
 		return Result{Status: Paused}, nil
 	}
+	if open {
+		return Result{Status: OpenForOrders, Orderable: true}, nil
+	}
+	return Result{Status: ClosedBySchedule}, nil
+}
+
+// WithinWeeklyHours evaluates the weekly schedule in the Store's IANA zone.
+// Fulfillment and payment eligibility are checked separately by EvaluatedAt.
+func WithinWeeklyHours(now time.Time, timezone string, weekly []WeeklyWindow) (bool, error) {
+	if err := ValidateSchedule(weekly); err != nil {
+		return false, err
+	}
+	loc, err := loadStoreTimezone(timezone)
+	if err != nil {
+		return false, err
+	}
 	local := now.In(loc)
 	minuteOfWeek := int(local.Weekday())*1440 + local.Hour()*60 + local.Minute()
-	for _, slot := range in.Weekly {
+	for _, slot := range weekly {
 		start := int(slot.Weekday)*1440 + slot.Opens
 		end := int(slot.Weekday)*1440 + slot.Closes
 		if slot.Closes < slot.Opens {
@@ -117,8 +130,8 @@ func EvaluatedAt(now time.Time, in Inputs) (Result, error) {
 			current += 7 * 1440
 		}
 		if current >= start && current < end {
-			return Result{Status: OpenForOrders, Orderable: true}, nil
+			return true, nil
 		}
 	}
-	return Result{Status: ClosedBySchedule}, nil
+	return false, nil
 }

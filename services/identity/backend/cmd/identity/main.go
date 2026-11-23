@@ -9,7 +9,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
@@ -46,6 +45,16 @@ func isolatedVerifierTLS(isolated, container, schema, certPath, keyPath string) 
 }
 
 func main() {
+	// Offline first-Operator registration is an explicit separate command,
+	// never part of normal Identity server startup or an HTTP route.
+	if len(os.Args) != 1 {
+		if len(os.Args) == 2 && (os.Args[1] == "issue-synthetic-root-ticket" ||
+			os.Args[1] == "issue-local-dev-root-ticket") {
+			runIsolatedInitialOperatorTicket()
+			return
+		}
+		log.Fatal("unknown Identity startup mode")
+	}
 	// Isolated development only. Direct Merchant admission still requires
 	// a verified Customer session.
 	schema := os.Getenv("IDENTITY_DB_SCHEMA")
@@ -95,7 +104,7 @@ func main() {
 	if os.Getenv("IDENTITY_SYNTHETIC_PHONE_AUTH") == "true" {
 		phone, err := session.NewCustomerPhoneHandler(reader,
 			os.Getenv("IDENTITY_SYNTHETIC_PHONE_HMAC_KEY"), os.Getenv("IDENTITY_SYNTHETIC_PHONE_SMTP"),
-			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true")
+			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true", os.Getenv("IDENTITY_SYNTHETIC_YEMEN_PHONES"))
 		if err != nil {
 			log.Fatal("Identity synthetic phone verification misconfigured")
 		}
@@ -115,6 +124,8 @@ func main() {
 	// A PATCH-specific mux pattern preserves the existing GET /operators/me permission read.
 	// No original Operator is created or reactivated by enabling this route.
 	if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN") == "true" {
+		routes.Handle("GET /v1/operators/{actorId}/permissions",
+			session.NewOperatorPermissionReviewHandler(reader))
 		routes.Handle("PATCH /v1/operators/{actorId}/permissions/{permission}",
 			session.NewOperatorPermissionManagementHandler(reader))
 	}
@@ -122,10 +133,7 @@ func main() {
 	// the isolated Identity owner opts in. No Operator account is provisioned,
 	// and no protected original-owner credential can be enrolled through them.
 	if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH") == "true" {
-		policy := session.OperatorPasskeyOriginPolicy{
-			RPID:    os.Getenv("IDENTITY_OPERATOR_PASSKEY_RPID"),
-			Origins: strings.Split(os.Getenv("IDENTITY_OPERATOR_PASSKEY_ORIGINS"), ","),
-		}
+		policy := operatorPasskeyOriginPolicy()
 		auth, err := session.NewOperatorPasskeyAuth(reader, policy, true)
 		if err != nil {
 			log.Fatal("Operator WebAuthn isolated relying-party configuration rejected")
@@ -133,13 +141,54 @@ func main() {
 		handler := session.NewOperatorPasskeyHandler(auth)
 		routes.Handle(session.OperatorPasskeyOptionsPath, handler)
 		routes.Handle(session.OperatorPasskeyFinishPath, handler)
+		// Initial Root enrollment is a separate explicit opt-in, unavailable
+		// unless the existing isolated WebAuthn RP is configured.
+		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" {
+			localDevelopment := os.Getenv("IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR") == "true"
+			if !policy.AllowsInitialOperatorBootstrap() {
+				log.Fatal("initial Operator bootstrap requires one approved WebAuthn origin")
+			}
+			if localDevelopment {
+				if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") != "true" ||
+					!isLocalDevelopmentFirstOperatorDatabase(ctx, db, schema) {
+					log.Fatal("local First Operator requires exact authorized development database and schema")
+				}
+				if err := auth.AllowLocalDevelopmentFirstOwner(); err != nil {
+					log.Fatal("local First Operator guard refused")
+				}
+			} else if !isInitialOperatorDatabase(ctx, db) {
+				log.Fatal("initial Operator bootstrap requires the disposable WebAuthn database")
+			}
+			initial := session.NewOperatorInitialRegistrationHandler(auth)
+			routes.Handle(session.OperatorInitialRegistrationOptionsPath, initial)
+			routes.Handle(session.OperatorInitialRegistrationFinishPath, initial)
+		}
+		// Existing-actor recovery is explicitly opt-in. The HTTP handler only
+		// consumes an independently authorized, owner-bound recovery proof;
+		// it has no issuer, role creation, grant or session-issuance capability.
+		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY") == "true" {
+			if !policy.AllowsInitialOperatorBootstrap() || !isInitialOperatorDatabase(ctx, db) {
+				log.Fatal("Operator recovery requires the exact isolated localhost WebAuthn origin and disposable database")
+			}
+			recovery := session.NewOperatorPasskeyRecoveryHandler(auth)
+			routes.Handle(session.OperatorPasskeyRecoveryOptionsPath, recovery)
+			routes.Handle(session.OperatorPasskeyRecoveryFinishPath, recovery)
+		}
+	} else if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" ||
+		os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY") == "true" {
+		log.Fatal("Operator bootstrap/recovery requires the isolated WebAuthn owner")
 	}
+	// Persistent device sessions are issued and rotated only by canonical Identity.
+	persistent := session.NewPersistentSessionHandler(reader)
+	routes.Handle(session.PersistentStartPath, persistent)
+	routes.Handle(session.PersistentRefreshPath, persistent)
 	verifier := session.NewHandler(session.NewVerifier(reader))
 	routes.Handle("/", verifier)
 	if tlsConfig != nil {
-		// Only the owner-to-owner session read is needed on the private TLS port.
+		// DSH verifies sessions and effective Operator scopes over private TLS.
 		secureRoutes := http.NewServeMux()
 		secureRoutes.Handle("GET /v1/sessions/current", verifier)
+		secureRoutes.Handle("GET /v1/operators/me/permissions/{permission}", verifier)
 		secureServer := &http.Server{
 			Handler: secureRoutes, TLSConfig: tlsConfig,
 			ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second, WriteTimeout: 6 * time.Second,

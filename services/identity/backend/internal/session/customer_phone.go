@@ -14,7 +14,7 @@ import (
 )
 
 var (
-	syntheticPhone = regexp.MustCompile(`^\+120255501[0-9]{2}$`)
+	syntheticPhone = regexp.MustCompile(`^\+9677[01237][0-9]{7}$`)
 	phoneTicket    = regexp.MustCompile(`^[a-f0-9]{48}$`)
 	phoneCode      = regexp.MustCompile(`^[0-9]{6}$`)
 	errPhoneLimit  = errors.New("phone challenge rate limited")

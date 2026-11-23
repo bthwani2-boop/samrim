@@ -7,6 +7,9 @@ const bearer = "A".repeat(43);
 const actorId = "captain-a";
 const change = { status: "APPROVED", expectedVersion: 2, operationId: "op-captain-12345", reason: "Reviewed documents" };
 const standing = { actorId, status: "APPROVED", version: 3 };
+const ownerJSON = (body, options = {}) => Response.json(body, {
+  ...options, headers: { "Cache-Control": "no-store", ...options.headers },
+});
 
 async function withFetch(callback, run) {
   const previous = globalThis.fetch;
@@ -31,14 +34,14 @@ test("Captain review mutation forwards exact versioned decision to DSH with curr
     assert.equal(options.headers["Content-Type"], "application/json");
     assert.equal(options.signal, abort.signal);
     assert.deepEqual(JSON.parse(options.body), change);
-    return Response.json(standing);
+    return ownerJSON(standing);
   }, async () => assert.deepEqual(
     await sdk.changeOperatorCaptainStanding(base, actorId, bearer, change, abort.signal), standing));
 });
 
 test("Captain review mutation refuses invalid actor, status, version, operation key or audit reason without network", async () => {
   let calls = 0;
-  await withFetch(async () => { calls++; return Response.json(standing); }, async () => {
+  await withFetch(async () => { calls++; return ownerJSON(standing); }, async () => {
     for (const [actor, payload] of [
       ["../captain", change],
       [actorId, { ...change, status: "PENDING" }],
@@ -63,12 +66,12 @@ test("Captain review mutation treats uncertain owner replies as unknown outcomes
     { ...standing, version: 0 },
     { ...standing, status: "WRONG" },
   ]) {
-    await withFetch(async () => Response.json(result), () =>
+    await withFetch(async () => ownerJSON(result), () =>
       rejects(() => sdk.changeOperatorCaptainStanding(base, actorId, bearer, change), 502, "OPERATION_RESULT_UNKNOWN"));
   }
   await withFetch(async () => { throw new TypeError("Connection lost after submission"); }, () =>
     rejects(() => sdk.changeOperatorCaptainStanding(base, actorId, bearer, change), 0, "OPERATION_RESULT_UNKNOWN"));
-  await withFetch(async () => Response.json({ error: "retry" }, { status: 503 }), () =>
+  await withFetch(async () => ownerJSON({ error: "retry" }, { status: 503 }), () =>
     rejects(() => sdk.changeOperatorCaptainStanding(base, actorId, bearer, change), 503, "OPERATION_RESULT_UNKNOWN"));
 });
 
@@ -76,7 +79,7 @@ test("Captain review mutation surfaces owner conflict without mutating or retryi
   let calls = 0;
   await withFetch(async () => {
     calls++;
-    return Response.json({ error: "CAPTAIN_STANDING_VERSION_CONFLICT" }, { status: 409 });
+    return ownerJSON({ error: "CAPTAIN_STANDING_VERSION_CONFLICT" }, { status: 409 });
   }, async () => rejects(() => sdk.changeOperatorCaptainStanding(base, actorId, bearer, change),
     409, "CAPTAIN_STANDING_VERSION_CONFLICT"));
   assert.equal(calls, 1);

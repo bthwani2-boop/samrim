@@ -1,1 +1,129 @@
-paths: {}
+paths:
+  /v1/operators/employees:
+    get:
+      operationId: listCompanyEmployees
+      summary: List BThwani company employment records through the current hr grant
+      description: Employer is fixed by DSH to the company. Returns up to 30 records, ordered by ID. Merchant personnel are excluded.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cursor
+          in: query
+          schema: { $ref: '#/components/schemas/EmployeeId' }
+      responses:
+        '200':
+          description: Company employees and the cursor for the next page, if available
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 30
+                    items: { $ref: '#/components/schemas/Employee' }
+                  nextCursor:
+                    anyOf:
+                      - { $ref: '#/components/schemas/EmployeeId' }
+                      - { type: 'null' }
+        '400': { $ref: '#/components/responses/EmployeeError' }
+        '401': { $ref: '#/components/responses/EmployeeError' }
+        '403': { $ref: '#/components/responses/EmployeeError' }
+        '503': { $ref: '#/components/responses/EmployeeError' }
+    post:
+      operationId: registerCompanyEmployee
+      summary: Register a company employee and audit the author in one transaction
+      description: Current company hr authority is required. The same actor and operation ID replay the same employee for an identical normalized request, or conflict for a changed request. An uncertain result must be retried with the same operation ID and fields. Creates no Identity account or grant.
+      security:
+        - OpaqueSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operationId, displayName, department, jobTitle, startDate]
+              properties:
+                operationId: { $ref: '#/components/schemas/EmployeeId' }
+                displayName: { type: string, minLength: 1, maxLength: 120 }
+                department: { type: string, minLength: 1, maxLength: 80 }
+                jobTitle: { type: string, minLength: 1, maxLength: 80 }
+                startDate: { type: string, format: date }
+      responses:
+        '200':
+          description: Durable employee registration or confirmed replay
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id]
+                properties:
+                  id: { $ref: '#/components/schemas/EmployeeId' }
+        '400': { $ref: '#/components/responses/EmployeeError' }
+        '401': { $ref: '#/components/responses/EmployeeError' }
+        '403': { $ref: '#/components/responses/EmployeeError' }
+        '409': { $ref: '#/components/responses/EmployeeError' }
+        '503': { $ref: '#/components/responses/EmployeeError' }
+  /v1/operators/employees/{id}:
+    get:
+      operationId: getCompanyEmployee
+      summary: Read one BThwani company employment record
+      description: Absent employees and IDs from other employers return the same not-found response.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/EmployeeId' }
+      responses:
+        '200':
+          description: Private company employment record
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Employee' }
+        '400': { $ref: '#/components/responses/EmployeeError' }
+        '401': { $ref: '#/components/responses/EmployeeError' }
+        '403': { $ref: '#/components/responses/EmployeeError' }
+        '404': { $ref: '#/components/responses/EmployeeError' }
+        '503': { $ref: '#/components/responses/EmployeeError' }
+components:
+  schemas:
+    EmployeeId:
+      type: string
+      format: uuid
+      pattern: '^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+    Employee:
+      type: object
+      additionalProperties: false
+      required: [id, displayName, department, jobTitle, startDate, endDate]
+      properties:
+        id: { $ref: '#/components/schemas/EmployeeId' }
+        displayName: { type: string, minLength: 1, maxLength: 120 }
+        department: { type: string, minLength: 1, maxLength: 80 }
+        jobTitle: { type: string, minLength: 1, maxLength: 80 }
+        startDate: { type: string, format: date }
+        endDate:
+          type: [string, 'null']
+          format: date
+  responses:
+    EmployeeError:
+      description: Invalid request, access denied, employee not found, conflicting registration, or unconfirmed owner result
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [code]
+            properties:
+              code: { type: string }

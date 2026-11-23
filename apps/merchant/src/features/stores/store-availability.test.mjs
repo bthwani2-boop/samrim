@@ -21,7 +21,10 @@ function harness() {
   const hooks = [];
   const effects = [];
   const reads = [];
+  const writes = [];
+  const resumeListeners = new Set();
   let index = 0;
+  let operationSequence = 0;
   const jsx = (type, props) => ({ type, props });
   const modules = {
     react: {
@@ -35,13 +38,33 @@ function harness() {
         if (hooks[at]?.deps.every((value, i) => Object.is(value, deps[i]))) return;
         effects.push(() => { hooks[at]?.cleanup?.(); hooks[at] = { deps, cleanup: fn() }; });
       },
+      useRef(initial) {
+        const at = index++;
+        if (!(at in hooks)) hooks[at] = { current: initial };
+        return hooks[at];
+      },
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": { ActivityIndicator: "Loading", Pressable: "Button", Text: "Text", View: "View" },
+    "react-native": {
+      ActivityIndicator: "Loading",
+      AppState: {
+        addEventListener(event, callback) {
+          assert.equal(event, "change");
+          resumeListeners.add(callback);
+          return { remove() { resumeListeners.delete(callback); } };
+        },
+      },
+      Platform: { OS: "android" },
+      Pressable: "Button", Text: "Text", TextInput: "Input", View: "View",
+    },
+    "expo-crypto": { randomUUID: () => `synthetic-operation-${++operationSequence}` },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
-    "../access/admission-transport": {
+    "./store-availability-transport": {
       readMerchantAvailability(storeId, signal) {
         return new Promise((resolve, reject) => reads.push({ storeId, signal, resolve, reject }));
+      },
+      saveMerchantAvailability(storeId, actorId, change, signal) {
+        return new Promise((resolve, reject) => writes.push({ storeId, actorId, change, signal, resolve, reject }));
       },
     },
   };
@@ -51,14 +74,16 @@ function harness() {
     return modules[name];
   }, mod, mod.exports);
   return {
-    render(storeId) {
+    render(storeId, actorId) {
       index = 0;
       effects.length = 0;
-      const view = mod.exports.default({ storeId });
+      const view = mod.exports.default({ storeId, actorId });
       effects.forEach(fn => { fn(); });
       return view;
     },
     read() { assert.ok(reads.length, "a selected Store must trigger a fresh read"); return reads.shift(); },
+    writes,
+    resume() { for (const listener of [...resumeListeners]) listener("active"); },
     count: () => reads.length,
     unmount() { hooks.forEach(hook => { hook?.cleanup?.(); }); },
   };
@@ -132,14 +157,16 @@ for (const status of [401, 403, 503]) {
     const h = harness(); h.render("store-a");
     h.read().resolve(snapshot); await settle();
     let view = h.render("store-a");
-    const refresh = () => find(view, node => node.props?.accessibilityLabel === "تحديث إتاحة المتجر").props.onPress();
+    const refresh = () => h.resume();
     refresh(); h.render("store-a");
     h.read().reject({ status }); await settle();
     view = h.render("store-a");
     assert.equal(byID(view, "merchant-availability-snapshot"), undefined);
     assert.ok(byID(view, "merchant-availability-error"));
     assert.ok(content(view).includes(status === 503 ? "تعذّر تأكيد" : "لا تتوفر صلاحية"));
-    refresh(); h.render("store-a"); h.read().resolve(snapshot); await settle();
+    const retry = find(view, node => node.props?.accessibilityLabel === "إعادة محاولة قراءة إتاحة المتجر");
+    assert.ok(retry);
+    retry.props.onPress(); h.render("store-a"); h.read().resolve(snapshot); await settle();
     view = h.render("store-a");
     assert.ok(byID(view, "merchant-availability-snapshot"));
     assert.equal(byID(view, "merchant-availability-error"), undefined);
@@ -149,4 +176,85 @@ for (const status of [401, 403, 503]) {
 test("unmount cancels a private Store read", () => {
   const h = harness(); h.render("store-a"); const read = h.read();
   h.unmount(); assert.equal(read.signal.aborted, true);
+});
+
+test("pausing preserves the owner schedule and reconciles an ambiguous write using the same command", async () => {
+  const h = harness();
+  const render = () => h.render("store-a", "merchant-a");
+  const button = view => find(view, item => item.type === "Button" && item.props.accessibilityState);
+  render(); h.read().resolve(snapshot); await settle();
+  let view = render();
+  find(view, item => item.props?.accessibilityLabel === "مدة الإيقاف بالدقائق").props.onChangeText("٣٠");
+  find(view, item => item.props?.accessibilityLabel === "سبب التغيير").props.onChangeText("ازدحام مؤقت");
+  view = render();
+  assert.equal(button(view).props.disabled, false);
+  const first = button(view).props.onPress();
+  await button(view).props.onPress();
+  assert.equal(h.writes.length, 1);
+  const attempt = h.writes.shift();
+  assert.equal(attempt.actorId, "merchant-a");
+  assert.equal(attempt.change.expectedVersion, snapshot.version);
+  assert.deepEqual(attempt.change.weekly, snapshot.weekly);
+  assert.equal(attempt.change.preparationMinutes, snapshot.preparationMinutes);
+  assert.equal(attempt.change.reason, "ازدحام مؤقت");
+  assert.ok(Date.parse(attempt.change.pausedUntil) > Date.now());
+  attempt.reject({ status: 503 });
+  await first;
+  assert.match(content(render()), /إعادة التحقق من الحفظ/);
+  const recovery = button(render()).props.onPress();
+  const replay = h.writes.shift();
+  assert.deepEqual(replay.change, attempt.change);
+  replay.resolve();
+  await recovery;
+  assert.equal(byID(render(), "merchant-availability-snapshot"), undefined);
+  h.read().resolve({ ...snapshot, version: 4, pausedUntil: attempt.change.pausedUntil });
+  await settle();
+  view = render();
+  assert.match(content(view), /إنهاء الإيقاف المؤقت/);
+  find(view, item => item.props?.accessibilityLabel === "سبب التغيير").props.onChangeText("عاد التشغيل");
+  const resume = button(render()).props.onPress();
+  const resumeAttempt = h.writes.shift();
+  assert.equal(resumeAttempt.change.expectedVersion, 4);
+  assert.equal(resumeAttempt.change.pausedUntil, null);
+  render();
+  h.unmount();
+  assert.equal(resumeAttempt.signal.aborted, true);
+  resumeAttempt.resolve();
+  await resume;
+  assert.equal(h.count(), 0);
+});
+
+test("a new Store saves multiple explicit periods with overnight and Arabic inputs", async () => {
+  const h = harness();
+  const render = () => h.render("store-a", "merchant-a");
+  const button = (label) => find(render(), item => item.type === "Button" && content(item) === label);
+  const input = (label, value) => find(render(), item => item.props?.accessibilityLabel === label).props.onChangeText(value);
+  const initial = { ...snapshot, weekly: null, version: 1, preparationMinutes: 0, reason: "" };
+  render(); h.read().resolve(initial); await settle();
+  button("إعداد الدوام").props.onPress();
+  input("مدة التجهيز بالدقائق", "١٥");
+  input("سبب التغيير", "إعداد دوام المتجر");
+  assert.equal(button("حفظ الدوام والتجهيز").props.disabled, true, "no implicit closure");
+  const add = () => find(render(), item => item.props?.accessibilityLabel === "إضافة فترة يوم الجمعة").props.onPress();
+  add();
+  input("وقت الفتح يوم الجمعة للفترة 1", "٠٩:٠٠");
+  input("وقت الإغلاق يوم الجمعة للفترة 1", "١٢:٠٠");
+  add();
+  input("وقت الفتح يوم الجمعة للفترة 2", "٢٢:٣٠");
+  input("وقت الإغلاق يوم الجمعة للفترة 2", "٢٥:٠٠");
+  assert.equal(button("حفظ الدوام والتجهيز").props.disabled, true, "invalid time");
+  input("وقت الإغلاق يوم الجمعة للفترة 2", "٠١:٣٠");
+  const first = button("حفظ الدوام والتجهيز").props.onPress();
+  const command = h.writes.shift();
+  assert.deepEqual(command.change.weekly, [{ weekday: 5, opens: 540, closes: 720 },
+    { weekday: 5, opens: 1350, closes: 90 }]);
+  assert.equal(command.change.preparationMinutes, 15);
+  assert.equal(command.change.pausedUntil, null);
+  assert.equal(command.change.expectedVersion, 1);
+  command.reject({ status: 409 });
+  await first;
+  render();
+  h.read().resolve({ ...snapshot, version: 2 }); await settle();
+  assert.match(content(render()), /تغيّر سجل الإتاحة/);
+  assert.ok(button("تعديل الدوام والتجهيز"), "reconciles latest version before editing again");
 });

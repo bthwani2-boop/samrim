@@ -1,1 +1,103 @@
-paths: {}
+paths:
+  /v1/carts/{storeID}:
+    get:
+      operationId: getCurrentCustomerCart
+      summary: Read one Customer's DSH-owned single-Store cart draft
+      description: Authenticated Customer only; never accepts actorId from caller. Lines are advisory current Offer previews, not an Order, stock reservation, payable quote or WLT effect. Rechecks Identity after database read.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Current draft and DSH-owned Offer preview
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCart' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+    put:
+      operationId: replaceCurrentCustomerCart
+      summary: Replace a Customer single-Store cart draft with optimistic version and stable operation ID
+      description: DSH checks current Customer Identity, Store publication, Offer/Variant/stock and bound operation payload in one isolated owner transaction. An ambiguous connection or 503 after dispatch must be reconciled using the same operation identity; never assume a paid or confirmed Order.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCartChange' }
+      responses:
+        '200':
+          description: One committed Cart draft mutation, or replay of that same operation
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCartResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '404':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailableOffer'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+
+  /v1/carts/{storeID}/merchandise-estimate:
+    get:
+      operationId: estimateCurrentCustomerCartMerchandise
+      summary: Recalculate a current Customer Cart's owner-priced merchandise subtotal
+      description: Read-only, non-payable merchandise-only estimate. Verifies Customer Identity before and after a repeatable-read DSH Cart/Offer snapshot. Rejects stale Cart versions, unavailable offers and overflowing whole-YER amounts. Does not include delivery, serviceability, fulfillment, fees, promotions or WLT authorization, and never confirms an Order or holds stock.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: expectedVersion
+          in: query
+          required: true
+          schema: { type: integer, minimum: 0, maximum: 9007199254740991 }
+      responses:
+        '200':
+          description: Exact merchandise-only subtotal from one verified DSH owner snapshot; never checkout-ready
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCartMerchandiseEstimate' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'

@@ -101,7 +101,7 @@ try {
   assert.ok(ready, `Operator host readiness timed out: ${output}`);
 
   const routes = [
-    ["/", 200, "لوحة تحكم بثواني"],
+    ["/", 200, "دخول المشغّل"],
     ["/workspace", 200, "الوصول إلى هذه المساحة غير متاح"],
     ["/health", 200, "واجهة لوحة التحكم متاحة. هذه الصفحة تفحص الواجهة فقط."],
     ["/lab", 200, "مختبر مكونات Ant Design"],

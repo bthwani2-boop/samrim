@@ -4,42 +4,76 @@ import { evaluateIndex, rejectUntrackedFiles } from "./graphify-local.mjs";
 
 const current = {
   repository: "d:/samrim",
-  branch: "codex/next-capability-20261118",
+  branch: "codex/close-as-you-go-20261120",
   head: "8661b0602f6fdc6988075594bfb48b3c556afe7c",
-  worktree: "dirty-fingerprint",
+  worktree: "clean-fingerprint",
 };
 const indexed = {
   version: 1,
   ...current,
-  graphSha256: "graph-fingerprint",
+  graphSha256: "indexed-graph",
 };
 
-test("accept a local graph only when repository, branch, HEAD, edits and graph match", () => {
-  assert.equal(evaluateIndex(indexed, current, "graph-fingerprint"), null);
+test("a verified graph is queryable when repository, branch, HEAD, edits and digest match", () => {
+  assert.deepEqual(evaluateIndex(indexed, current, "indexed-graph"), {
+    status: "PASS",
+    queryable: true,
+    reason: null,
+  });
 });
 
-test("reject an index without independently recorded provenance", () => {
-  assert.match(evaluateIndex(null, current, "graph-fingerprint"), /INVALIDATED/);
-  assert.match(evaluateIndex({ ...indexed, version: 0 }, current, "graph-fingerprint"), /INVALIDATED/);
+test("missing or incompatible index provenance blocks a query", () => {
+  for (const value of [null, { ...indexed, version: 0 }]) {
+    const result = evaluateIndex(value, current, "indexed-graph");
+    assert.equal(result.queryable, false);
+    assert.equal(result.status, "BLOCKED");
+  }
 });
 
 for (const [field, different] of [
-  ["repository", "d:/other"],
+  ["repository", "d:/another-repo"],
   ["branch", "main"],
-  ["head", "another-commit"],
-  ["worktree", "another-dirty-snapshot"],
 ]) {
-  test("reject an index built with a different " + field, () => {
-    assert.match(evaluateIndex(indexed, { ...current, [field]: different }, "graph-fingerprint"), /INVALIDATED/);
+  test("a different " + field + " must not be queried as the active checkout", () => {
+    const result = evaluateIndex(indexed, { ...current, [field]: different }, "indexed-graph");
+    assert.equal(result.queryable, false);
+    assert.equal(result.status, "BLOCKED");
   });
 }
 
-test("reject a graph changed independently of the verified local refresh", () => {
-  assert.match(evaluateIndex(indexed, current, "different-graph"), /INVALIDATED/);
+test("a newer local HEAD does not block querying the older graph", () => {
+  const result = evaluateIndex(indexed, { ...current, head: "new-commit" }, "indexed-graph");
+  assert.equal(result.queryable, true);
+  assert.equal(result.status, "INVALIDATED");
+  assert.match(result.reason, /HEAD/);
 });
 
-test("fail closed on any untracked file rather than inspecting a potentially swapped symlink", () => {
+for (const kind of ["modified", "staged", "untracked"]) {
+  test(kind + " files do not block read-only Graphify queries", () => {
+    const result = evaluateIndex(indexed, { ...current, worktree: kind + "-snapshot" }, "indexed-graph");
+    assert.equal(result.queryable, true);
+    assert.equal(result.status, "INVALIDATED");
+    assert.match(result.reason, /local tracked, staged or untracked/);
+  });
+}
+
+test("a graph changed by a post-commit hook remains queryable with unverified revision", () => {
+  const result = evaluateIndex(indexed, current, "hook-rewritten-graph");
+  assert.equal(result.queryable, true);
+  assert.equal(result.status, "INVALIDATED");
+  assert.match(result.reason, /graph changed/);
+});
+
+test("combined source and graph changes preserve all coverage warnings", () => {
+  const result = evaluateIndex(indexed, { ...current, head: "next-commit", worktree: "dirty" }, "other-digest");
+  assert.equal(result.queryable, true);
+  assert.match(result.reason, /graph changed/);
+  assert.match(result.reason, /HEAD/);
+  assert.match(result.reason, /local tracked/);
+});
+
+test("untracked symlinks are not opened by queries and still prevent unsafe refresh", () => {
   assert.doesNotThrow(() => rejectUntrackedFiles([]));
-  assert.throws(() => rejectUntrackedFiles(["user-supplied.ts"]), /BLOCKED: untracked/);
-  assert.throws(() => rejectUntrackedFiles(["link-to-outside"]), /BLOCKED: untracked/);
+  assert.throws(() => rejectUntrackedFiles(["user-supplied.ts"]), /BLOCKED: review untracked/);
+  assert.throws(() => rejectUntrackedFiles(["symlink-to-outside"]), /BLOCKED: review untracked/);
 });

@@ -2,8 +2,10 @@ import { getPublicStore, listPublicOffers } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { type Href, Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
-import { ActivityIndicator, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
-import StoreProducts from "../catalog/store-products";
+import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useStoreCart } from "../cart/use-store-cart";
+import StoreProducts, { StoreCartBar } from "../catalog/store-products";
 import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
@@ -13,7 +15,7 @@ import { type PublicStoreDetailState, recoverPublicStoreDetail, resolvePublicSto
 type Props = Readonly<{ storeID?: string; fullPage?: boolean }>;
 
 export default function PublicStoreDetail({ storeID, fullPage = false }: Props) {
-  const params = useLocalSearchParams<{ id?: string | string[]; city?: string | string[]; q?: string | string[] }>();
+  const params = useLocalSearchParams<{ id?: string | string[]; city?: string | string[]; q?: string | string[]; vertical?: string | string[] }>();
   const id = storeID ?? (typeof params.id === "string" ? params.id : "");
   const browse = readStoreBrowseScope(params, "");
   const { theme } = useMobileAppearance();
@@ -38,9 +40,9 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
     resolvePublicStoreDetail(
       getPublicStore(api, id, abort.signal),
       listPublicOffers(api, id, { query, signal: abort.signal, limit: 20 }),
-    ).then(({ store, offers, nextCursor, offersError }) => {
+    ).then(({ store, offers, nextCursor, offersRevision, offersError }) => {
       if (!abort.signal.aborted && revision.current === current)
-        setState({ scope, loading: false, store, offers, cursor: nextCursor, offersError });
+        setState({ scope, loading: false, store, offers, cursor: nextCursor, offersRevision, offersError });
     }).catch((error: unknown) => {
         if (!abort.signal.aborted && revision.current === current)
           setState({ scope, loading: false, offers: [], error: error instanceof Error ? error.message : "UNKNOWN" });
@@ -48,6 +50,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
     return () => { abort.abort(); revision.current++; };
   }, [api, id, query, scope, retry]);
   const visible: PublicStoreDetailState = state.scope === scope ? state : { scope, loading: true, offers: [] };
+  const cartSession = useStoreCart(visible.store?.id);
   const textStyle = { color: theme.color };
   const availability = visible.store ? describeStoreOrderability(visible.store) : undefined;
   const more = async () => {
@@ -59,8 +62,20 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
     setState((v) => ({ ...v, more: true, offersError: undefined }));
     try {
       const page = await listPublicOffers(api, id, { query, cursor: visible.cursor, limit: 20, signal: abort.signal });
-      if (!abort.signal.aborted && revision.current === current)
-        setState((v) => v.scope !== scope ? v : { ...v, more: false, offers: [...v.offers, ...page.items], cursor: page.nextCursor, offersError: undefined });
+      if (!abort.signal.aborted && revision.current === current) {
+        setState((v) => {
+          if (v.scope !== scope) return v;
+          const ids = new Set(v.offers.map(item => item.id));
+          if (page.revision !== v.offersRevision ||
+            (page.nextCursor !== undefined && page.nextCursor === visible.cursor) ||
+            page.items.some(item => ids.has(item.id)) ||
+            new Set(page.items.map(item => item.id)).size !== page.items.length) {
+            return recoverPublicStoreDetail(v, new Error("STALE_CURSOR"));
+          }
+          return { ...v, more: false, offers: [...v.offers, ...page.items],
+            cursor: page.nextCursor, offersRevision: page.revision, offersError: undefined };
+        });
+      }
     } catch (error) {
       if (!abort.signal.aborted && revision.current === current)
         setState((v) => v.scope !== scope ? v : recoverPublicStoreDetail(v, error));
@@ -119,7 +134,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
               <Text style={{ color: theme.interactiveText, textAlign: "center" }}>إعادة تحميل العروض</Text>
             </Pressable>
           </View> : null}
-          <StoreProducts offers={visible.offers} />
+          <StoreProducts store={visible.store} offers={visible.offers} session={cartSession} />
           {visible.cursor && !visible.offersError ? <Pressable accessibilityRole="button" accessibilityLabel="عرض المزيد من عروض المتجر" onPress={more} disabled={visible.more}
             style={{ padding: 14, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
             <Text style={{ color: theme.interactiveText, textAlign: "center" }}>{visible.more ? "جارٍ التحميل" : "عرض المزيد"}</Text>
@@ -135,6 +150,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
           </Pressable>
         </> : null}
       </ScrollView>
+      {visible.store ? <StoreCartBar storeId={id} session={cartSession} /> : null}
     </SafeAreaView>
   );
 }

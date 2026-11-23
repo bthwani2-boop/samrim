@@ -32,6 +32,7 @@ function harness() {
   let interval;
   let appChanged;
   let pending = [];
+  const logouts = [];
   let tick = 0;
   const protectedChild = { type: "ProtectedScreen", props: { testID: "captain-sensitive-screen" } };
   function hook(create) {
@@ -40,6 +41,7 @@ function harness() {
     return { at, value: hooks[at] };
   }
   const react = {
+    createContext() { return { Provider: "CaptainWorkspaceProvider" }; },
     useState(initial) {
       const { at, value } = hook(() => initial);
       return [value, next => { hooks[at] = typeof next === "function" ? next(hooks[at]) : next; }];
@@ -67,15 +69,18 @@ function harness() {
         },
       },
       Pressable: "Pressable",
-      SafeAreaView: "SafeAreaView",
       Text: "Text",
       View: "View",
     },
+    "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "./admission-transport": {
       readCaptainAdmission(signal) {
         return new Promise((resolve, reject) => {
           pending.push({ signal, resolve, reject });
         });
+      },
+      leaveCaptainAdmission(signal, actorId) {
+        return new Promise((resolve, reject) => logouts.push({ signal, actorId, resolve, reject }));
       },
     },
     "./captain-session": { hasActiveCaptainSession: session => session.role === "captain" },
@@ -103,7 +108,8 @@ function harness() {
     return pending.shift();
   };
   return {
-    render, next, child: protectedChild,
+    render, next, child: protectedChild, logouts,
+    reads: () => pending.length,
     startFocus: () => focus(),
     periodic: () => interval(),
     appChanged: state => appChanged(state),
@@ -121,11 +127,15 @@ async function settle() {
   await Promise.resolve();
 }
 
-function approved() {
-  return { enabled: true, session: {
-    role: "captain", actorId: "synthetic-captain",
-    sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
-  } };
+function approved(actorId = "synthetic-captain") {
+  return {
+    enabled: true,
+    session: {
+      role: "captain", actorId,
+      sessionExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    },
+    standing: { actorId, status: "APPROVED", version: 2 },
+  };
 }
 
 test("initial pending, unavailable and background-aborted checks do not mount Captain content", async () => {
@@ -209,16 +219,14 @@ test("revalidation never reuses protected component state across Captain actors 
   const h = harness();
   h.render();
   h.startFocus();
-  const first = approved();
-  first.session.actorId = "captain-first";
+  const first = approved("captain-first");
   h.next().resolve(first);
   await settle();
   const firstHolder = nodes(h.render()).find(x => x.props?.children === h.child);
   assert.ok(firstHolder, "first verified Captain mounts protected subtree");
 
   h.periodic();
-  const second = approved();
-  second.session.actorId = "captain-second";
+  const second = approved("captain-second");
   h.next().resolve(second);
   await settle();
   const secondHolder = nodes(h.render()).find(x => x.props?.children === h.child);
@@ -227,8 +235,7 @@ test("revalidation never reuses protected component state across Captain actors 
     "different Captain actor must remount instead of retaining another actor's private UI state");
 
   h.periodic();
-  const rotated = approved();
-  rotated.session.actorId = "captain-second";
+  const rotated = approved("captain-second");
   rotated.session.sessionExpiresAt = new Date(Date.now() + 120_000).toISOString();
   h.next().resolve(rotated);
   await settle();
@@ -254,4 +261,53 @@ test("the same approved Captain session preserves component state across owner r
   const checkedHolder = nodes(h.render()).find(x => x.props?.children === h.child);
   assert.equal(checkedHolder.key, firstHolder.key,
     "re-reading the same verified session must preserve its protected component state");
+});
+
+test("Captain logout conceals private screens immediately and retries the same actor after uncertainty", async () => {
+  const h = harness();
+  h.render();
+  h.startFocus();
+  const decision = approved();
+  h.next().resolve(decision);
+  await settle();
+  const provider = nodes(h.render()).find(item => item.type === "CaptainWorkspaceProvider");
+  assert.equal(provider.props.value.session.actorId, decision.session.actorId);
+  provider.props.value.signOut();
+  provider.props.value.signOut();
+  assert.equal(h.logouts.length, 1);
+  assert.ok(!nodes(h.render()).includes(h.child));
+  const attempt = h.logouts.shift();
+  assert.equal(attempt.actorId, decision.session.actorId);
+  h.periodic();
+  assert.equal(h.reads(), 0, "periodic owner reads cannot reopen a signing-out workspace");
+  attempt.reject(new Error("Identity unavailable"));
+  await settle();
+  nodes(h.render()).find(item => item.type === "Pressable").props.onPress();
+  const retry = h.logouts.shift();
+  assert.equal(retry.actorId, decision.session.actorId);
+  retry.resolve();
+  await settle();
+  assert.equal(h.render().type, "Redirect");
+});
+
+test("Captain route rejects an Identity-only session or an unrelated, revoked or invalid DSH approval", async () => {
+  const reference = approved();
+  const rejected = [
+    { enabled: true, session: reference.session },
+    { ...approved(), standing: undefined },
+    { ...approved(), standing: { ...reference.standing, actorId: "another-captain" } },
+    { ...approved(), standing: { ...reference.standing, status: "SUSPENDED" } },
+    { ...approved(), standing: { ...reference.standing, version: 0 } },
+    { ...approved(), standing: { ...reference.standing, version: NaN } },
+  ];
+  for (const [index, result] of rejected.entries()) {
+    const h = harness();
+    h.render();
+    h.startFocus();
+    h.next().resolve(result);
+    await settle();
+    const tree = h.render();
+    assert.equal(tree.type, "Redirect", "unsafe DSH standing at variant " + index);
+    assert.ok(!nodes(tree).includes(h.child), "no protected subtree for unsafe standing " + index);
+  }
 });

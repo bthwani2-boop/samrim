@@ -11,8 +11,17 @@ This environment is synthetic development only, not production deployment. Legac
 | `postgres` | Fresh PostgreSQL 18 + PostGIS, own empty database | internal 5432 only, not exposed |
 | `media` | Fresh SeaweedFS mini, own media volume/credentials | 3233 |
 | `mailpit` | Local inbound test email capture | 3226 |
-| `payment-mock` | Empty WireMock, no provider mappings | 3290 |
+| `payment-mock` | WireMock with fixed synthetic cash-in evidence (no production rails) | 3290 |
+| `wlt` (opt-in overlay) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
 | `dsh` (with optional Compose file) | Public discovery only; proven read-only Store/Offer API | 3202 |
+
+The `payment-mock` image is built from `infra/payment-mock/Dockerfile` using the existing
+pinned WireMock base and fixed, synthetic funding-status mappings. Only the
+listed `GET /sandbox/v1/funding/{reference}` test identities return evidence.
+Unknown operations return 404. The simulator never owns wallets, posts money,
+or exercises a production payment rail. It has no mounted host data or provider
+secrets. The image build and any controlled replacement of the already-running
+container are separate operations; merely editing Compose does not refresh it.
 
 `compose.yaml` defines exactly these four foundational dependencies. The project-scoped `isolated` bridge
 is internal and keeps PostgreSQL inaccessible from the host. A second private
@@ -24,26 +33,48 @@ secrets, applied migrations and media are never copied or changed.
 ## Optional owner service roles and DSH public discovery
 
 `compose.apps.yaml` now contains **only** the two real DSH owner roles:
-`dsh` and opt-in `dsh-migrate`. Placeholder Identity/WLT services,
-nonexistent bootstrap commands and invalid old Dockerfiles are no longer
-advertised as runnable. Do not start the whole `implementation` profile.
+`dsh` and opt-in `dsh-bootstrap`. Placeholder Identity services and nonexistent bootstrap commands are not
+advertised as runnable. The separate `compose.wlt.yaml` now defines the real
+read-only WLT development owner; it is not activated by the DSH profile. Do not start the whole `implementation` profile.
 DSH public Store/Offer discovery is real; protected mutation and WLT/Order
 integration remain NOT_RUN.
 
 Identity is a separate, synthetic Go session/Operator-permission verifier
 in `compose.identity-verifier.yaml`, not a first-factor login issuer.
 The two overlays may be combined with the same `compose.yaml` without
-competing service definitions. WLT has no runnable Go backend yet.
+competing service definitions. The [WLT Customer balance reader](../services/wlt/backend/README.md)
+runs only as an isolated loopback process with its read-only database role.
 
-The DSH migration command now uses its own `migration` Compose profile,
+The fresh DSH bootstrap command uses its own `bootstrap` Compose profile,
 separate from `implementation`. Normal `implementation` startup cannot start
-`dsh-migrate`; migration remains an explicit, separately reviewed operation.
+`dsh-bootstrap`; bootstrap remains an explicit, separately verified operation on a new empty schema.
 Validate this invariant with `node --test infra/compose-policy.test.mjs` and
 `docker compose ... --profile implementation config --services`. Never use
-`--profile '*'`, `--profile migration up` or automatic migrations in the normal
+`--profile '*'`, `--profile bootstrap up` or automatic schema changes in the normal
 service-start path. Existing running containers and persisted volumes are not
 recreated by this file change.
 Never reuse donor images, production data or `samrim-local` volumes.
+
+### Opt-in real WLT read-only container
+
+WLT has a separate `compose.wlt.yaml` overlay and a pinned service-owned
+Dockerfile. The refoundation database currently used by Identity/DSH is
+**not** renamed, erased or migrated. Provision `bthwani_wlt_test` explicitly
+using `pwsh -NoProfile -File infra/provision-wlt-test-db.ps1` only after
+confirming it and its three WLT roles do not already exist. That operation
+creates a new isolated database plus its own read-only runtime credentials
+inside ignored `infra/.env`. It must never be run automatically with Compose.
+
+After a source commit, build via
+`pwsh -NoProfile -File infra/build-wlt-image.ps1`, and configure with
+`docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.wlt.yaml --profile wlt-reader config --quiet`.
+Start only the admitted reader using the matching Compose invocation plus
+`up -d --no-deps wlt`. Port `3203` is bound to Lenovo loopback only;
+WLT uses the existing synthetic Identity verifier `identity:3302` and a
+separate read-only WLT database identity. A successful Docker healthcheck
+indicates only local process/SQL readiness; financial delivery, checkout and
+production remain disabled. The local executable loopback reader remains
+supported independently.
 
 ### Build and run real public DSH inside the same Compose project
 
@@ -75,13 +106,14 @@ docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.y
 
 The public DSH image serves `/health` and the public Store discovery routes.
 The Compose healthcheck requires the configured DSH discovery revision row to
-be readable. A migrated schema with an empty catalog is ready. The database
-schema must have the reviewed DSH SQL migrations applied separately in the
-isolated namespace before serving. The `dsh-migrate` service can explicitly run
-migration 001 only after reviewing the target schema; it does not silently
-seed or upgrade 002/003/004/005. It is isolated under the `migration` profile,
-not included in routine `implementation` startup. Inspect the exact applied
-migration versions and target role before any separately authorized migration. Do not treat HTTP health as evidence of checkout,
+be readable. A freshly initialized schema with an empty catalog is ready. For a
+new verified absent `dsh_test_*` namespace, explicitly run the `dsh-bootstrap`
+one-shot service in the `bootstrap` profile after building the matching owner
+image. It uses the reviewed ordered `database/schema/` files in one transaction,
+refuses existing schemas, and does not seed or upgrade. Never run it against
+retained state or as part of normal `implementation` startup. A retained
+schema must keep its existing applied history and any separately authorized
+upgrade path until its compatibility obligations are resolved. Do not treat HTTP health as evidence of checkout,
 merchant permissions, identity authentication or finance correctness.
 
 
@@ -124,10 +156,12 @@ in the ignored `infra/.env.identity-verifier.local`. Keep the shared
 `infra/.env` untouched. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
 image; default `:dev` remains compatible with existing development commands.
 Set `REF_IDENTITY_SYNTHETIC_PHONE_AUTH=true` only after applying the Identity
-phone migration in the synthetic schema and verifying the runtime role's scoped
+phone verification baseline in a new synthetic schema (or confirming the compatible retained schema) and verifying the runtime role's scoped
 write privileges. Supply a fresh 32-byte hex `REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY`
 through the Identity-only local settings. Delivery stays on the project's
-`mailpit:1025` network endpoint and accepts only the reserved test phone range.
+`mailpit:1025` network endpoint. Verify the Yemeni phone format constraint from `database/schema/10_verification.sql`
+and set `REF_IDENTITY_SYNTHETIC_YEMEN_PHONES` to the allowed test numbers in
+international format. The Compose default is `+967770000001`.
 The local Merchant development Web endpoint checks synthetic phone availability
 at `127.0.0.1:3201` on each admission retry. For alternate isolated hosts, set
 `MERCHANT_SYNTHETIC_IDENTITY_ORIGIN` and `MERCHANT_SYNTHETIC_DSH_ORIGIN` explicitly.
@@ -141,8 +175,9 @@ to the base, Identity and DSH Compose files. It requires two dedicated volumes.
 The Identity TLS volume contains `server.pem` and `server-key.pem`, with the key
 readable only by Identity's UID 65532. The separate DSH trust volume contains
 `ca.pem`. Issue the leaf for DNS name `identity`, keep the CA signing key off the
-containers, and never publish port 3343. The overlay enables only the authenticated
-owned-Store read and does not enable Store availability mutations.
+containers, and never publish port 3343. The overlay enables authenticated Store
+standing and policy-bound registration. Store availability mutations have a
+separate opt-in.
 The opt-in deployment sequence is:
 
 ```powershell
@@ -163,31 +198,126 @@ separately tested before the new healthcheck can be claimed live. No
 real login, WebAuthn, Operator permission administration or production release
 is authorized by this isolated verifier.
 
+## Isolated Surface app preview
+
+`infra/Start-RefoundationApp.ps1 -Surface -App <app>` runs the named app from
+the current checkout. It uses separate loopback ports for Control Panel
+(`localhost:23100`), Customer (`127.0.0.1:23101`), Merchant
+(`127.0.0.1:23102`) and Captain Metro (`127.0.0.1:23103`).
+The default Identity and DSH preview ports are `23201` and `23202`.
+
+Use locally running owners with fresh synthetic schemas and the relevant
+phone, Passkey and DSH standing capabilities enabled. Configure DSH to allow
+the Customer preview origin and Identity to accept the Operator's exact
+`http://localhost:23100` WebAuthn origin. Only synthetic test phones and
+enrolled synthetic Operator credentials belong in this preview.
+
+To enroll the first synthetic Operator on Surface, start the Identity
+owner with the two isolated Passkey and bootstrap opt-ins, the exact
+`http://localhost:23100` origin, and the dedicated disposable WebAuthn
+database described in [Identity](../services/identity/README.md). Then start
+Control Panel using
+`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -Surface -App control-panel -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap`.
+The launcher requires both bootstrap routes on the local Identity owner.
+
+For a **synthetic Android emulator only**, the Customer can opt into WLT's
+read-only wallet and posted-funding history once **Identity, DSH and WLT** are
+running locally with isolated synthetic data. Start the Surface Customer
+presentation using
+`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -Surface -App customer -EnableAndroidWalletPreview -WltPort 23203`.
+The launcher checks the WLT loopback listener and its unauthenticated read
+must return HTTP 401. Android receives the emulator-to-host `10.0.2.2` origins
+for both Identity and WLT; the Web BFF continues using `127.0.0.1`.
+Absent owner, revoked session, wrong role and physical-device/private-LAN
+origins keep the Native finance display closed. No Cash-In, payment, protected
+database migration or real-user finance access is activated by this flag.
+
+### Opt-in Lenovo Customer Web wallet
+
+The active Lenovo Customer Web server is **not** silently reconfigured when
+Docker WLT appears. With its existing default launcher environment, its
+`/api/customer-auth/wallet` and `/wallet-transactions` routes remain disabled
+(`503`). Once the isolated `identity` and `wlt` containers are healthy,
+a **separately controlled Customer Web start** on Lenovo can use
+`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -App customer -EnableDockerWalletWebPreview`
+from the verified runtime source. Only this opt-in sets the Web BFF's private
+`BTHWANI_DOCKER_WALLET_WEB_PREVIEW` flag, explicit isolated-test mode,
+and fixed local Identity `3201`
+and WLT `3203` owner origins. The launcher validates the actual Docker
+container capability labels, health and unauthenticated route denial before
+starting Expo. It refuses Surface/native previews and all other applications;
+the browser session is still an HttpOnly same-origin Customer cookie.
+The public/native Expo preview flags stay disabled and the BFF refuses any
+other wallet port even if other preview flags are set. **Do not restart the
+shared running Customer task to opt in without checking its ownership and
+other active sessions.** Only the synthetic development customer can sign in
+through Mailpit. No payment mutation is enabled.
+Neither an Expo Android JS export nor source tests prove actual emulator/device
+execution; test its complete network and session behavior separately.
+
+### Opt-in Lenovo Customer Android sign-in
+
+Use `-EnableDockerCustomerAndroidIdentityPreview` on the Customer launcher
+with the standard Customer Metro tunnel and ADB reverse on port `18101`.
+The isolated Identity owner must be published on Lenovo loopback port `3201`.
+Forward that owner over the approved private SSH connection to a Surface
+loopback port and map device port `3201` to that Surface port with ADB reverse.
+This preview uses a separate Android session namespace and synthetic phones.
+The Web wallet option can coexist with it and continues to use its own cookie.
+
+The existing Surface development launcher adds ADB reverse mappings for the
+three Metro ports and the two owner ports (Identity 3201, DSH 3202) only after
+verifying that the latter are listening through the canonical loopback SSH
+tunnel. The existing Customer SSH tunnel carries both owner forwards; do not
+start another SSH process for them or replace an unrelated ADB mapping.
+A change to tunnel arguments requires a separately controlled reload of that
+existing task before the new mappings can be used. The Lenovo Merchant and
+Captain launchers require healthy, isolated Identity and DSH owners before
+considering native admission. Merchant admission stays blocked when its owner
+endpoint is unavailable. If the isolated DSH has not enabled Captain standing
+and returns exactly HTTP 404, the Captain launcher keeps the verified isolated
+Identity origin so the public phone login form remains visible, but removes
+the DSH origin. The Captain form explains that code submission is disabled
+until owner standing is available; it never consumes OTP or grants workspace
+access while DSH is missing. Any other unexpected Captain owner response aborts
+startup. Once the DSH owner is migrated and independently enabled, an
+unauthenticated standing read must return HTTP 401 before Captain native
+admission can be configured. Browser
+cookies and native SecureStore remain separate.
+
 ## Non-invasive runtime attestation and disposable PostgreSQL proof
 
 Before trusting a previously running Docker service after a source change, use:
 
 ```powershell
 node infra/verify-runtime-provenance.mjs --context bthwani-docker
+# When the optional WLT reader is running, attest all three canonical owners.
+node infra/verify-runtime-provenance.mjs --context bthwani-docker --include-wlt
 pwsh -NoProfile -File infra/verify-isolated-postgres.ps1 -DockerContext bthwani-docker
 ```
 
 The runtime check reads the actual Compose container image ID, non-secret source
 SHA labels, owner Git history/diff, health and owner worktree state. It fails on
-missing labels, changed owner source or an unproven container. It **does not**
-rebuild/restart a service, examine secrets, run SQL or prove login, session
-revocation, WLT, published client UX or production suitability. Building a
+missing labels, changed owner source or an unproven container. The
+`--include-wlt` switch additionally requires the optional WLT container
+and fails closed if its running image is stale, unhealthy or absent. Without
+that switch, the baseline DSH/Identity check remains usable before WLT opt-in.
+It **does not** rebuild/restart a service, examine secrets, run SQL or prove
+login, session revocation, ledger correctness, published client UX or
+production suitability. Building a
 new `sha-<commit>` image is a separate operation and does **not** update the
 container already running. Readiness always attaches to the *running* image ID.
 
 The SQL proof intentionally creates a **new disposable container** with a
 unique `bthwani-agent01-pgproof-*` name and the same pinned PostGIS image as
 the existing Compose stack. It has `--network none`, no published ports, no
-external volumes and tmpfs-only PostgreSQL storage. The script runs all five
-current DSH migrations in order, establishes a synthetic read-only role and
-asserts that its writes fail (SQLSTATE 42501), then makes a PostgreSQL backup,
-restores it into a second disposable database and compares schema/data counts.
-It stops only its own identity-verified scratch container at the end.
+external volumes and tmpfs-only PostgreSQL storage. The script runs the
+current DSH migrations in order, then restores a custom-format backup into a
+second database in the same disposable container. It compares columns,
+constraints, indexes, triggers and the discovery revision. The same synthetic
+reader must be able to read the revision and must receive SQLSTATE 42501 on
+update in both databases. The Go quality workflow runs this rehearsal with
+its local Docker context. The script stops only its own verified container.
 
 **Scope boundary:** This proves an *empty isolated fresh installation*,
 synthetic least-privilege example and local restore, not migration of existing
@@ -196,6 +326,12 @@ already-running service version, service-to-service authentication, or any
 financial ledger. Do not take the successful scratch proof as authority to
 change shared database roles, alter protected volumes, restart active services
 or run real schema upgrades.
+
+The [owner integration script](verify-owner-postgres-ci.sh) also restores an
+isolated Identity schema and checks active sessions, revoked sessions and
+Operator permissions through the Identity HTTP handler. The WLT stage restores
+the Customer balance projection and verifies that its reader still cannot
+access the funding journal.
 
 ## Deployment boundary and security review
 

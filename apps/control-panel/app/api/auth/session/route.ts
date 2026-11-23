@@ -1,10 +1,15 @@
+import { identityOperations, IdentityClientError, readVerifiedIdentitySession,
+  rotatePersistentIdentitySession, revokePersistentIdentitySession } from "@bthwani/identity";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   boundedResponseJSON,
   cookieLifetimeSeconds,
   isEmptyRequestBody,
+  isTrustedOperatorLoopbackTarget,
   isTrustedOperatorRequest,
   OPERATOR_COOKIE,
+  OPERATOR_REFRESH_COOKIE,
+  type OperatorPasskeyConfig,
   operatorIdentityRequest,
   parseVerifiedOperatorPrincipal,
   resolveIsolatedOperatorConfig,
@@ -21,19 +26,10 @@ const privateHeaders = {
   "Referrer-Policy": "no-referrer",
 };
 
-function validLoopbackRead(request: NextRequest, expectedOrigin: string): boolean {
-  const url = new URL(request.url);
-  if (url.origin !== expectedOrigin || url.search ||
-      request.headers.get("host") !== url.host) return false;
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  if (forwardedHost && forwardedHost !== url.host) return false;
-  for (const claim of ["authorization", "x-actor-id", "x-operator-role", "x-role"]) {
-    if (request.headers.has(claim)) return false;
-  }
-  return true;
-}
-
 function clearOperatorCookie(response: NextResponse) {
+  response.cookies.set(OPERATOR_REFRESH_COOKIE, "", {
+    path: "/", httpOnly: true, secure: false, sameSite: "strict", maxAge: 0,
+  });
   response.cookies.set(OPERATOR_COOKIE, "", {
     path: "/",
     httpOnly: true,
@@ -43,26 +39,54 @@ function clearOperatorCookie(response: NextResponse) {
   });
 }
 
+async function restoredOperatorSession(request: NextRequest, config: OperatorPasskeyConfig): Promise<NextResponse> {
+  const refresh = request.cookies.get(OPERATOR_REFRESH_COOKIE)?.value;
+  if (!refresh || !/^[A-Za-z0-9_-]{43}$/.test(refresh)) {
+    return NextResponse.json({ code: "UNAUTHORIZED" }, { status: 401, headers: privateHeaders });
+  }
+  try {
+    const rotated = await rotatePersistentIdentitySession(config.identityOrigin,refresh,AbortSignal.timeout(5000));
+    const session = await readVerifiedIdentitySession(config.identityOrigin,rotated.accessToken,AbortSignal.timeout(5000));
+    if (session.role !== "operator") throw new IdentityClientError(403,"FORBIDDEN");
+    const response = NextResponse.json({authenticated:true,actorId:session.actorId,role:session.role,
+      sessionExpiresAt:session.sessionExpiresAt},{status:200,headers:privateHeaders});
+    response.cookies.set(OPERATOR_COOKIE,rotated.accessToken,{
+      path:"/",httpOnly:true,secure:false,sameSite:"strict",
+      maxAge:cookieLifetimeSeconds(rotated.sessionExpiresAt),
+    });
+    response.cookies.set(OPERATOR_REFRESH_COOKIE,rotated.refreshToken,{
+      path:"/",httpOnly:true,secure:false,sameSite:"strict",
+      maxAge:Math.max(0,Math.floor((Date.parse(rotated.refreshExpiresAt)-Date.now())/1000)),
+    });
+    return response;
+  } catch(error) {
+    if (error instanceof IdentityClientError && [401,403].includes(error.status)) {
+      const response=NextResponse.json({code:"UNAUTHORIZED"},{status:401,headers:privateHeaders});
+      clearOperatorCookie(response);
+      return response;
+    }
+    return NextResponse.json({code:"OWNER_UNAVAILABLE"},{status:503,headers:privateHeaders});
+  }
+}
+
 export async function GET(request: NextRequest) {
   const config = resolveIsolatedOperatorConfig(process.env);
   if (!config) return unavailableSessionResponse();
-  if (!validLoopbackRead(request, config.browserOrigin)) {
+  if (!isTrustedOperatorLoopbackTarget(request, config.browserOrigin)) {
     return NextResponse.json({ code: "INVALID_REQUEST" }, { status: 400, headers: privateHeaders });
   }
   const accessToken = request.cookies.get(OPERATOR_COOKIE)?.value;
   if (!accessToken || !/^[A-Za-z0-9_-]{43}$/.test(accessToken)) {
-    return NextResponse.json({ code: "UNAUTHORIZED" }, { status: 401, headers: privateHeaders });
+    return restoredOperatorSession(request,config);
   }
   try {
     const upstream = await operatorIdentityRequest(
       config,
-      "/v1/sessions/current",
-      { method: "GET", headers: { Authorization: `Bearer ${accessToken}` } },
+      identityOperations.getVerifiedIdentitySession,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     if (upstream.status === 401 || upstream.status === 403) {
-      const response = NextResponse.json({ code: "UNAUTHORIZED" }, { status: 401, headers: privateHeaders });
-      clearOperatorCookie(response);
-      return response;
+      return restoredOperatorSession(request,config);
     }
     if (upstream.status !== 200) {
       return NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });
@@ -104,12 +128,21 @@ export async function POST(request: NextRequest) {
   const accessToken = request.cookies.get(OPERATOR_COOKIE)?.value;
   const response = new NextResponse(null, { status: 204, headers: privateHeaders });
   clearOperatorCookie(response);
+  const refresh = request.cookies.get(OPERATOR_REFRESH_COOKIE)?.value;
+  if (refresh && /^[A-Za-z0-9_-]{43}$/.test(refresh)) {
+    try { await revokePersistentIdentitySession(config.identityOrigin,refresh,AbortSignal.timeout(5000)); }
+    catch(error) {
+      if (!(error instanceof IdentityClientError && error.status===401)) {
+        return NextResponse.json({code:"OWNER_UNAVAILABLE"},{status:503,headers:privateHeaders});
+      }
+    }
+  }
   if (!accessToken || !/^[A-Za-z0-9_-]{43}$/.test(accessToken)) return response;
   try {
     const upstream = await operatorIdentityRequest(
       config,
-      "/v1/sessions/current",
-      { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } },
+      identityOperations.revokeCurrentIdentitySession,
+      { headers: { Authorization: `Bearer ${accessToken}` } },
     );
     if ([204, 401].includes(upstream.status)) return response;
     const unavailable = NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });

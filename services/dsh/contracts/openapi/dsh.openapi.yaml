@@ -6,16 +6,40 @@ info:
 paths:
   /health:
     $ref: './paths/runtime.yaml#/paths/~1health'
+  /v1/public/cities:
+    $ref: './paths/stores.yaml#/paths/~1v1~1public~1cities'
+  /v1/public/verticals:
+    $ref: './paths/stores.yaml#/paths/~1v1~1public~1verticals'
   /v1/public/stores:
     $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores'
   /v1/public/stores/{id}:
     $ref: './paths/stores.yaml#/paths/~1v1~1public~1stores~1{id}'
   /v1/public/stores/{id}/offers:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
+  /v1/public/stores/{id}/offers/{offerId}/estimate:
+    $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers~1{offerId}~1estimate'
+  /v1/carts/{storeID}:
+    $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}'
+  /v1/carts/{storeID}/merchandise-estimate:
+    $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}~1merchandise-estimate'
   /v1/stores/mine:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
+  /v1/stores/{storeID}/catalog:
+    $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog'
+  /v1/stores/{storeID}/catalog/{offerID}:
+    $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog~1{offerID}'
+  /v1/stores/registration-options:
+    $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores~1registration-options'
+  /v1/stores:
+    $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores'
   /v1/stores/{storeID}/availability:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
+  /v1/captain-interest:
+    $ref: './paths/captain-interest.yaml#/paths/~1v1~1captain-interest'
+  /v1/operators/captain-interest:
+    $ref: './paths/captain-interest.yaml#/paths/~1v1~1operators~1captain-interest'
+  /v1/operators/captain-interest/{id}/contact:
+    $ref: './paths/captain-interest.yaml#/paths/~1v1~1operators~1captain-interest~1{id}~1contact'
   /v1/captains/me/standing:
     $ref: './paths/captain-standing.yaml#/paths/~1v1~1captains~1me~1standing'
   /v1/actors/me/captain-eligibility:
@@ -26,6 +50,18 @@ paths:
     $ref: './paths/captain-standing.yaml#/paths/~1v1~1operators~1captains~1{actorId}~1standing'
   /v1/operators/captains:
     $ref: './paths/captain-standing.yaml#/paths/~1v1~1operators~1captains'
+  /v1/operators/employees:
+    $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees'
+  /v1/operators/employees/{id}:
+    $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}'
+  /v1/operators/cities/{cityID}/store-publication-review/{relation}:
+    $ref: './paths/merchant-registration.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-publication-review~1{relation}'
+  /v1/operators/cities/{cityID}/store-registration-policy/{relation}:
+    $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}'
+  /v1/operators/cities/{cityID}/store-registration-policy/{relation}/history:
+    $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}~1history'
+  /v1/operators/cities/{cityID}/store-availability-policy/history:
+    $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy~1history'
   /v1/operators/cities/{cityID}/store-availability-policy:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy'
 components:
@@ -41,6 +77,161 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/PublicId' }
   schemas:
+    MerchantCatalogDraftEditChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, name, priceYer, stockUnits]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        expectedVersion: { type: integer, minimum: 1, maximum: 9007199254740990 }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        priceYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        stockUnits: { type: integer, minimum: 0, maximum: 2147483647 }
+    MerchantCatalogDraftEditResult:
+      type: object
+      additionalProperties: false
+      required: [offer, replay]
+      properties:
+        offer: { $ref: '#/components/schemas/MerchantCatalogOffer' }
+        replay: { type: boolean }
+    MerchantCatalogDraftChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, name, priceYer, stockUnits]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        priceYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        stockUnits: { type: integer, minimum: 0, maximum: 2147483647 }
+    MerchantCatalogDraftResult:
+      type: object
+      additionalProperties: false
+      required: [offer, replay]
+      properties:
+        offer: { $ref: '#/components/schemas/MerchantCatalogOffer' }
+        replay: { type: boolean }
+    MerchantCatalogOffer:
+      type: object
+      additionalProperties: false
+      required: [id, storeId, productId, name, variantId, priceYer, stockUnits, draftVersion, productActive, variantSellable, requiredAttributesValid, published, available]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        productId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        variantId: { type: string, minLength: 1, maxLength: 128 }
+        priceYer: { type: string, pattern: '^[0-9]{1,19}$' }
+        stockUnits: { type: integer, minimum: 0 }
+        draftVersion: { type: integer, minimum: 1 }
+        productActive: { type: boolean }
+        variantSellable: { type: boolean }
+        requiredAttributesValid: { type: boolean }
+        published: { type: boolean }
+        available: { type: boolean }
+    MerchantCatalogPage:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, items]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/MerchantCatalogOffer' }
+        nextCursor: { $ref: '#/components/schemas/PublicId' }
+    CustomerCartLine:
+      type: object
+      additionalProperties: false
+      required: [offerId, variantId, name, quantity, previewUnitYer, previewAvailable]
+      properties:
+        offerId: { $ref: '#/components/schemas/PublicId' }
+        variantId: { $ref: '#/components/schemas/PublicId' }
+        name: { type: string, minLength: 1, maxLength: 160 }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+        previewUnitYer: { type: string, pattern: '^[0-9]{1,19}$' }
+        previewAvailable: { type: boolean }
+    CustomerCart:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, version, lines]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        version: { type: integer, minimum: 0 }
+        lines:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CustomerCartLine' }
+    CustomerCartChangeLine:
+      type: object
+      additionalProperties: false
+      required: [offerId, quantity]
+      properties:
+        offerId: { $ref: '#/components/schemas/PublicId' }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+    CustomerCartChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, lines]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        expectedVersion: { type: integer, minimum: 0 }
+        lines:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CustomerCartChangeLine' }
+    CustomerCartMerchandiseEstimateLine:
+      type: object
+      additionalProperties: false
+      required: [offerId, variantId, quantity, unitYer, lineTotalYer]
+      properties:
+        offerId: { $ref: '#/components/schemas/PublicId' }
+        variantId: { $ref: '#/components/schemas/PublicId' }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+        unitYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        lineTotalYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+    CustomerCartMerchandiseEstimate:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, cartVersion, lines, merchandiseSubtotalYer, checkoutReady]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        cartVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CustomerCartMerchandiseEstimateLine' }
+        merchandiseSubtotalYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        checkoutReady: { type: boolean, const: false }
+    CustomerCartResult:
+      type: object
+      additionalProperties: false
+      required: [cart, replay]
+      properties:
+        cart: { $ref: '#/components/schemas/CustomerCart' }
+        replay: { type: boolean }
+    CartError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [INVALID_REQUEST, UNAUTHORIZED_OR_OWNER_UNAVAILABLE, STORE_OR_OFFER_NOT_AVAILABLE, CART_VERSION_OR_OPERATION_CONFLICT, OPERATION_RESULT_UNKNOWN, OWNER_UNAVAILABLE, CART_VERSION_CONFLICT, CART_EMPTY_OR_TOO_LARGE, CART_LINE_UNAVAILABLE, MERCHANDISE_AMOUNT_OUT_OF_RANGE]
+    PublicOfferEstimate:
+      type: object
+      additionalProperties: false
+      required: [storeId, offerId, variantId, quantity, unitYer, subtotalYer]
+      properties:
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        offerId: { $ref: '#/components/schemas/PublicId' }
+        variantId: { $ref: '#/components/schemas/PublicId' }
+        quantity: { type: integer, minimum: 1, maximum: 2147483647 }
+        unitYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        subtotalYer: { type: string, pattern: '^[1-9][0-9]{0,28}$' }
     PublicId:
       type: string
       pattern: '^[a-z0-9-]{1,64}$'
@@ -55,8 +246,143 @@ components:
         name: { type: string, minLength: 1, maxLength: 120 }
         cityId: { $ref: '#/components/schemas/PublicId' }
         verticalId: { $ref: '#/components/schemas/PublicId' }
-        orderabilityStatus: { type: string, enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE] }
+        orderabilityStatus:
+          type: string
+          enum: [OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED, OPERATIONALLY_UNAVAILABLE]
+          description: DSH can show PAUSED or CLOSED_BY_SCHEDULE while checkout remains unavailable. The public response omits the schedule, pause timestamps, reason and actor details.
         orderingAvailable: { type: boolean, const: false, description: "The checkout/fulfillment journey is not activated" }
+    PublicationReviewItem:
+      type: object
+      additionalProperties: false
+      required: [id, name, verticalId, cityActive, verticalActive, locationRecorded, registrationTermsRecorded, weeklyHoursRecorded, catalogRecorded]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        verticalId: { $ref: '#/components/schemas/PublicId' }
+        cityActive: { type: boolean }
+        verticalActive: { type: boolean }
+        locationRecorded: { type: boolean }
+        registrationTermsRecorded: { type: boolean }
+        weeklyHoursRecorded: { type: boolean }
+        catalogRecorded: { type: boolean }
+    PublicationReviewPage:
+      type: object
+      additionalProperties: false
+      required: [cityId, relation, items]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/PublicationReviewItem' }
+        nextCursor: { $ref: '#/components/schemas/PublicId' }
+    StoreRegistrationPolicy:
+      type: object
+      additionalProperties: false
+      required: [cityId, relation, version, enabled]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        version: { type: integer, minimum: 0 }
+        enabled: { type: boolean }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        termsText: { type: string, minLength: 1, maxLength: 4000 }
+        changedByActor: { type: string, minLength: 1, maxLength: 128 }
+        changeReason: { type: string, minLength: 1, maxLength: 300 }
+        updatedAt: { type: string, format: date-time }
+    StoreRegistrationPolicyHistoryEntry:
+      type: object
+      additionalProperties: false
+      required: [version, enabled, termsVersion, changedByActor, changeReason, updatedAt]
+      properties:
+        version: { type: integer, minimum: 1 }
+        enabled: { type: boolean }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        changedByActor: { type: string, minLength: 1, maxLength: 128 }
+        changeReason: { type: string, minLength: 1, maxLength: 300 }
+        updatedAt: { type: string, format: date-time }
+    StoreRegistrationPolicyHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [entries]
+      properties:
+        entries:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/StoreRegistrationPolicyHistoryEntry' }
+        nextBeforeVersion: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+    StoreRegistrationPolicyChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, enabled, termsVersion, termsText, reason]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        expectedVersion: { type: integer, minimum: 0 }
+        enabled: { type: boolean }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        termsText: { type: string, minLength: 1, maxLength: 4000 }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+    StoreRegistrationPolicyResult:
+      type: object
+      additionalProperties: false
+      required: [policy, replay]
+      properties:
+        policy: { $ref: '#/components/schemas/StoreRegistrationPolicy' }
+        replay: { type: boolean }
+    MerchantRegistrationChoice:
+      type: object
+      additionalProperties: false
+      required: [cityId, relation, policyVersion, termsVersion, termsText]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        policyVersion: { type: integer, minimum: 1 }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        termsText: { type: string, minLength: 1, maxLength: 4000, description: Append-only DSH terms snapshot actually shown to the Merchant before consent }
+    MerchantRegistrationOptions:
+      type: object
+      additionalProperties: false
+      required: [choices, verticals]
+      properties:
+        choices:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/MerchantRegistrationChoice' }
+        verticals:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/PublicId' }
+    MerchantStoreRegistration:
+      type: object
+      additionalProperties: false
+      required: [operationId, name, cityId, verticalId, relation, latitude, longitude, policyVersion, termsVersion, acceptedTerms]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        verticalId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        policyVersion: { type: integer, minimum: 1 }
+        termsVersion: { type: string, pattern: '^[a-z0-9._-]{3,80}$' }
+        acceptedTerms: { type: boolean, const: true }
+    MerchantStoreRegistrationResult:
+      type: object
+      additionalProperties: false
+      required: [store, replay]
+      properties:
+        store: { $ref: '#/components/schemas/MerchantOwnedStore' }
+        replay: { type: boolean }
+    StoreRegistrationError:
+      type: object
+      additionalProperties: false
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [INVALID_STORE_REGISTRATION, STORE_REGISTRATION_CLOSED, STORE_REGISTRATION_POLICY_CHANGED, OPERATIONAL_POLICY_VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, UNAUTHENTICATED, STORE_OPERATION_FORBIDDEN, IDENTITY_OWNER_UNAVAILABLE, STORE_OWNER_UNAVAILABLE, OPERATION_RESULT_UNKNOWN]
     MerchantOwnedStore:
       type: object
       additionalProperties: false
@@ -85,7 +411,11 @@ components:
         storeId: { $ref: '#/components/schemas/PublicId' }
         name: { type: string, minLength: 1, maxLength: 160 }
         variantId: { $ref: '#/components/schemas/PublicId' }
-        priceYer: { type: integer, minimum: 1, description: Exact positive integer YER value from DSH }
+        priceYer:
+          description: Exact whole YER. Safe JSON integers retain the numeric representation. Amounts above 9007199254740991 are canonical decimal strings, up to 9223372036854775807.
+          oneOf:
+            - { type: integer, minimum: 1, maximum: 9007199254740991 }
+            - { type: string, pattern: '^[1-9][0-9]{15,18}$' }
         available: { type: boolean, const: true }
     CityStoreOperationalPolicy:
       type: object
@@ -99,6 +429,17 @@ components:
         changedByActor: { type: string, minLength: 1, maxLength: 128 }
         changeReason: { type: string, minLength: 1, maxLength: 300 }
         updatedAt: { type: string, format: date-time }
+    CityStoreOperationalPolicyHistoryPage:
+      type: object
+      additionalProperties: false
+      required: [cityId, entries]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        entries:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CityStoreOperationalPolicy' }
+        nextBeforeVersion: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
     CityStoreOperationalPolicyChange:
       type: object
       additionalProperties: false
@@ -168,6 +509,36 @@ components:
         code:
           type: string
           enum: [UNAUTHENTICATED, IDENTITY_OWNER_UNAVAILABLE, STORE_OPERATION_FORBIDDEN, STORE_NOT_FOUND, STORE_AVAILABILITY_VERSION_CONFLICT, OPERATIONAL_POLICY_VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, INVALID_OPERATIONAL_CHANGE, OPERATION_RESULT_UNKNOWN, OPERATIONAL_POLICY_UNAVAILABLE, STORE_OWNER_UNAVAILABLE, OWNER_UNAVAILABLE]
+    PublicVertical:
+      type: object
+      additionalProperties: false
+      required: [id, storeCount]
+      properties:
+        id: { $ref: '#/components/schemas/PublicId' }
+        storeCount: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    CityPage:
+      type: object
+      additionalProperties: false
+      required: [items, revision]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          uniqueItems: true
+          items: { $ref: '#/components/schemas/PublicId' }
+        revision: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        nextCursor: { type: string, pattern: '^[A-Za-z0-9_-]{1,512}$' }
+    VerticalPage:
+      type: object
+      additionalProperties: false
+      required: [items, revision]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/PublicVertical' }
+        revision: { type: integer, minimum: 0 }
+        nextCursor: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
     StorePage:
       type: object
       additionalProperties: false
@@ -175,9 +546,10 @@ components:
       properties:
         items:
           type: array
+          maxItems: 50
           items: { $ref: '#/components/schemas/PublicStore' }
         revision: { type: integer, minimum: 0 }
-        nextCursor: { type: string, maxLength: 512 }
+        nextCursor: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
     OfferPage:
       type: object
       additionalProperties: false
@@ -185,9 +557,10 @@ components:
       properties:
         items:
           type: array
+          maxItems: 50
           items: { $ref: '#/components/schemas/PublicOffer' }
         revision: { type: integer, minimum: 0 }
-        nextCursor: { type: string, maxLength: 512 }
+        nextCursor: { type: string, minLength: 1, maxLength: 512, pattern: '^[A-Za-z0-9_-]+$' }
     Error:
       type: object
       required: [error]
@@ -228,6 +601,59 @@ components:
         expectedVersion: { type: integer, minimum: 1 }
         operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
         reason: { type: string, minLength: 1, maxLength: 300 }
+    CaptainInterestInput:
+      type: object
+      additionalProperties: false
+      required: [name, phone, city, district, vehicleType, phoneType, experienced]
+      properties:
+        name: { type: string, minLength: 4, maxLength: 100 }
+        phone: { type: string, pattern: '^([+]967|967)?7[0-9]{8}$' }
+        city: { type: string, minLength: 2, maxLength: 80 }
+        district: { type: string, minLength: 2, maxLength: 100 }
+        vehicleType: { type: string, enum: [MOTORCYCLE, ELECTRIC, BICYCLE, NONE] }
+        plateRegistered: { type: boolean }
+        phoneType: { type: string, enum: [SMART, BASIC, NONE] }
+        experienced: { type: boolean }
+        experienceDetails: { type: string, maxLength: 200 }
+    CaptainInterestReceived:
+      type: object
+      additionalProperties: false
+      required: [received]
+      properties:
+        received: { type: boolean, const: true }
+    CaptainInterestRecord:
+      type: object
+      additionalProperties: false
+      required: [id, name, phone, city, district, vehicleType, phoneType, experienced, contacted, createdAt]
+      properties:
+        id: { type: integer, minimum: 1 }
+        name: { type: string, minLength: 4, maxLength: 100 }
+        phone: { type: string, pattern: '^7[0-9]{8}$' }
+        city: { type: string, minLength: 2, maxLength: 80 }
+        district: { type: string, minLength: 2, maxLength: 100 }
+        vehicleType: { type: string, enum: [MOTORCYCLE, ELECTRIC, BICYCLE, NONE] }
+        plateRegistered: { type: boolean }
+        phoneType: { type: string, enum: [SMART, BASIC, NONE] }
+        experienced: { type: boolean }
+        experienceDetails: { type: string, maxLength: 200 }
+        contacted: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    CaptainInterestPage:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items: { $ref: '#/components/schemas/CaptainInterestRecord' }
+        nextCursor: { type: string, pattern: '^[0-9]+$' }
+    CaptainInterestError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { type: string, enum: [RATE_LIMITED] }
     CaptainError:
       type: object
       additionalProperties: false
@@ -238,6 +664,21 @@ components:
           enum: [UNAUTHORIZED, FORBIDDEN, NOT_FOUND, METHOD_NOT_ALLOWED, INVALID_REQUEST, CAPTAIN_NOT_ELIGIBLE, CAPTAIN_STANDING_VERSION_CONFLICT, OWNER_UNAVAILABLE, OPERATION_RESULT_UNKNOWN]
 
   responses:
+    CartUnauthorized:
+      description: Invalid, expired or revoked Customer session
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
+    CartForbidden:
+      description: Current session is not a Customer
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
+    CartUnavailableOffer:
+      description: DSH Store or Offer is not eligible for a draft Cart change
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
+    CartConflict:
+      description: Stale draft version or operation identity used for another payload
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
+    CartUnavailable:
+      description: Identity/DSH owner cannot confirm the draft or mutation outcome
+      content: { application/json: { schema: { $ref: '#/components/schemas/CartError' } } }
     BadRequest:
       description: Invalid city, page, path or cursor
       content:
