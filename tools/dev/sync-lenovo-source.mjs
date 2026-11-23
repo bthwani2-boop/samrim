@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 // One-way live-source mirror: BTHWANI D:\samrim -> BTHWANI-DOCKER, verified SSH.
 // Uses the existing Lenovo staging runtime and existing Surface scheduled task.
@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -478,6 +478,79 @@ function reconcile() {
   if (changed) logger("SYNC_PASS files=" + changed + " head=" + currentHead.slice(0, 12));
   if (dependencyChanges.length) logger("DEPENDENCY_INSTALL_REQUIRED paths=" + dependencyChanges.join(","));
 }
+// Reuse the existing scheduled watcher; no second watcher or Docker daemon.
+// Backend source is built from Surface, not copied into the app-only mirror.
+const runtimeScope = [
+  "services/identity", "services/dsh", "services/wlt", ".go-version",
+  "infra/compose.yaml", "infra/compose.apps.yaml", "infra/compose.identity-verifier.yaml",
+  "infra/compose.merchant-development.yaml", "infra/compose.captain-development.yaml",
+  "infra/compose.wlt.yaml", "infra/build-dsh-image.ps1", "infra/build-identity-verifier-image.ps1",
+  "infra/build-wlt-image.ps1", "infra/reconcile-owner-runtime.mjs",
+  "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
+];
+const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
+const runtimeStateFile = path.join(stateDir, "runtime-reconcile.json");
+let runtimeChild = null;
+let nextRuntimeAudit = 0;
+let runtimeNotice = "";
+function runtimeLogOnce(message) {
+  if (message !== runtimeNotice) { logger(message); runtimeNotice = message; }
+}
+function runtimeState() {
+  if (!fs.existsSync(runtimeStateFile)) return null;
+  const v = JSON.parse(fs.readFileSync(runtimeStateFile, "utf8"));
+  if (v.version !== 1 || !/^[a-f0-9]{64}$/.test(v.key) ||
+      !["running","uncertain","blocked","retry","pass"].includes(v.status)) throw new Error("RUNTIME_ATTEMPT_STATE_INVALID");
+  return v;
+}
+function pollOwnerRuntime() {
+  if (runtimeChild || !fs.existsSync(runtimeOptIn)) return;
+  if (fs.readFileSync(runtimeOptIn, "utf8").trim() !== "isolated-committed-owner-images-v1") throw new Error("RUNTIME_OPT_IN_INVALID");
+  remoteReady();
+  const currentBranch = branch();
+  if (!currentBranch || currentBranch === "main" || currentBranch.startsWith("archive/")) {
+    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED branch"); return;
+  }
+  const dirty = Boolean(run("git", ["status", "--porcelain", "--", ...runtimeScope]));
+  if (dirty) { runtimeLogOnce("RUNTIME_UPDATE_PENDING_COMMIT (no false image provenance)"); return; }
+  const key = crypto.createHash("sha256").update(run("git", ["ls-tree", "HEAD", "--", ...runtimeScope])).digest("hex");
+  const last = runtimeState();
+  if (last && (["running","uncertain"].includes(last.status) || (last.key === key && last.status === "blocked"))) {
+    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation"); return;
+  }
+  if (!runtimePollDue({enabled:true,dirty,active:false,key,last,now:Date.now(),nextAudit:nextRuntimeAudit})) return;
+  persistAt(runtimeStateFile, {version:1,key,status:"running"});
+  logger("RUNTIME_RECONCILE_STARTED key="+key.slice(0,12));
+  // The unified dev launcher holds the existing lifecycle mutex. Keep the app
+  // file sync responsive while its one bounded build/replacement runs.
+  const child = spawn("pwsh.exe", ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply"], {
+    cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]
+  });
+  runtimeChild=child;
+  let output="",errors="",settled=false;
+  child.stdout.on("data", chunk => { output=(output+chunk.toString()).slice(-65536); });
+  child.stderr.on("data", chunk => { errors=(errors+chunk.toString()).slice(-65536); });
+  const finish=(status)=>{
+    if(settled)return;
+    settled=true;
+    runtimeChild=null;
+    nextRuntimeAudit=Date.now()+60_000;
+    try {
+      persistAt(runtimeStateFile,{version:1,key,status});
+      runtimeLogOnce("RUNTIME_RECONCILE_"+status.toUpperCase()+" key="+key.slice(0,12));
+    } catch {
+      runtimeLogOnce("RUNTIME_UPDATE_BLOCKED attempt state could not be persisted");
+    }
+  };
+  child.on("error",()=>finish("retry"));
+  child.on("close",(code,signal)=>{
+    if(code===0) return finish("pass");
+    if(signal || /ROLLBACK_BLOCKED|ROLLBACK_READBACK_FAILED|OWNER_APPLY_STARTED/.test(output+errors)) {
+      return finish(!signal && /ROLLBACK_PASS/.test(errors) ? "blocked":"uncertain");
+    }
+    return finish("retry");
+  });
+}
 function main() {
   const idx = process.argv.indexOf("--check-path");
   if (idx >= 0) {
@@ -497,6 +570,7 @@ function main() {
     const attempt = () => {
       if (active) return;
       active = true;
+      try { pollOwnerRuntime(); } catch (e) { runtimeLogOnce("RUNTIME_UPDATE_BLOCKED "+e.message); }
       try {
         cycle();
         if (lastError) { logger("SYNC_RECOVERED after=" + lastError); lastError = ""; }

@@ -41,6 +41,18 @@ For a genuinely usable **isolated** Operator login, independently verify that th
 - Normal automatic mode: the existing Surface Scheduled Task invokes pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch directly; do not start duplicate watch processes.
 - Test policy: node --test D:\samrim\tools\dev\sync-lenovo-source.test.mjs
 
+## Isolated owner runtime reconciliation
+
+Use the existing unified lifecycle CLI, from Surface, not a second watcher:
+
+- `pnpm dev docker reconcile` checks the running Compose configuration and owner source drift.
+- `pnpm dev docker reconcile -Apply` runs fresh owner tests without live DB test credentials, builds through the existing pinned owner build scripts, verifies image labels, and replaces only changed running owners with `--no-deps --no-build --pull never`. Previous image tags and reconstructed Compose hashes must match before replacement; failed known replacements restore the previous configuration/images, and ambiguous writes stop. Never start SQL/migration roles or change volumes.
+- `pnpm dev docker reconcile -Apply -EnableCaptain` explicitly admits the existing Captain overlay once, only in the isolated development environment, after checking the pre-provisioned read-only TLS volumes. This option is never used by the automatic watcher.
+
+Automatic committed-owner reconciliation is opt-in for the canonical Surface watcher. After explicit owner authorization, set the existing SourceSync state directory's `runtime-reconcile.enabled` file to the exact text `isolated-committed-owner-images-v1` and reload the existing watcher task through its authorized owner; do not create another watcher. The watcher checks the owner/configuration source fingerprint on its normal cycle, runs the unified CLI asynchronously under its existing lifecycle mutex, and audits unchanged source at a bounded interval. Its attempt record is stored beside the existing sync manifest. An ambiguous or interrupted attempt blocks future automatic writes pending owner readback and reconciliation; a known rolled-back attempt is not repeated for the same source. Preflight failures are retried at most once per minute. The watcher logs dirty owner/Compose changes as pending commit, rather than mislabeling an uncommitted build with a committed source SHA. GitHub Push is not required for local committed image reconciliation.
+
+The current safe path does not automatically apply an uncommitted backend snapshot, migrations, unrecognized Compose changes, new capabilities/containers, or protected configuration changes. Such changes remain visible as blocked or pending; frontend Fast Refresh remains independent. Do not treat image/health proof as full login or financial acceptance.
+
 ## Scoped app checks and recovery
 
 From Surface run the existing central CLI (it uses the same Lenovo Scheduled Tasks, SSH and source-sync watcher):

@@ -57,4 +57,13 @@ function isUnchanged(state, current, currentHead) {
   );
 }
 
-export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict };
+// One existing watcher owns the runtime attempt. Never retry an ambiguous
+// or failed replacement for unchanged source; read-only/preflight failures
+// may retry after the bounded interval.
+function runtimePollDue({enabled, dirty, active, key, last, now, nextAudit}) {
+  if (!enabled || dirty || active || !key || ["running", "uncertain"].includes(last?.status)) return false;
+  if (last?.key !== key) return true;
+  return last.status !== "blocked" && now >= nextAudit;
+}
+
+export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue };

@@ -380,3 +380,13 @@ test("managed deletion refuses an ancestor junction outside the source mirror", 
     rmSync(folder, { recursive: true, force: true });
   }
 });
+
+// The existing watcher owns a single bounded runtime attempt and does not retry ambiguous writes.
+test("runtime reconciliation trigger is immediate for changed committed source and respects retry gates", async () => {
+  const { runtimePollDue } = await import("./sync-lenovo-reconciliation.mjs");
+  const base={enabled:true,dirty:false,active:false,key:"new",last:{key:"old",status:"pass"},now:100,nextAudit:200};
+  assert.equal(runtimePollDue(base),true);
+  for(const override of [{enabled:false},{dirty:true},{active:true},{last:{key:"old",status:"running"}},{last:{key:"old",status:"uncertain"}},{last:{key:"new",status:"blocked"}},{last:{key:"new",status:"retry"}}]) assert.equal(runtimePollDue({...base,...override}),false);
+  assert.equal(runtimePollDue({...base,last:{key:"new",status:"retry"},now:201}),true);
+  assert.equal(runtimePollDue({...base,last:{key:"old",status:"blocked"}}),true);
+});

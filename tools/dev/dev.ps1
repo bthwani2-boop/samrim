@@ -3,8 +3,9 @@
 BThwani canonical development orchestration, Surface only.
 Run from D:\samrim: pnpm dev (fast app launch) or pnpm dev up (full isolated infrastructure).
 This existing Surface launcher reuses Lenovo Scheduled Tasks, source sync and loopback SSH tunnels.
-Never runs SQL migrations, operator bootstrap, Identity activation, WLT, image builds,
-Docker volume deletion, branch changes, Git commits/pushes, or credential modifications.
+Never runs SQL migrations, operator bootstrap, volume deletion, branch changes,
+Git commits/pushes, or credential modifications. Explicit Docker reconcile applies only
+verified isolated owner image replacements under the shared lifecycle mutex.
 #>
 [CmdletBinding()]
 param(
@@ -13,8 +14,9 @@ param(
   [string]$Action = 'Launch',
   [switch]$Apply,
   [switch]$DeepSql,
+  [switch]$EnableCaptain,
   [Parameter(Position=1)]
-  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','start','restart','android','open')]
+  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','reconcile','start','restart','android','open')]
   [string]$DockerAction = 'help',
   [Parameter(Position=2)]
   [ValidateSet('dsh','identity','postgres','media','mailpit','payment-mock')]
@@ -702,7 +704,7 @@ function Show-Docker {
   }
 }
 function Show-DockerCommands {
-  Write-Output 'DOCKER_COMMANDS=READ_ONLY (Surface -> bthwani-docker SSH context)'
+  Write-Output 'DOCKER_COMMANDS=READ_ONLY except explicitly authorized reconcile -Apply (Surface -> Lenovo)'
   Write-Output 'pnpm dev docker help           # command reference, no Docker changes'
   Write-Output 'pnpm dev docker status         # project containers and provenance summary'
   Write-Output 'pnpm dev docker ps             # project containers'
@@ -713,6 +715,9 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker networks       # project-scoped networks'
   Write-Output 'pnpm dev docker config         # validate base and DSH Compose safely'
   Write-Output 'pnpm dev docker verify         # strict DSH + Identity live image provenance'
+  Write-Output 'pnpm dev docker reconcile      # check existing runtime and owner source drift'
+  Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
+  Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit Captain overlay activation'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=use infra/build-dsh-image.ps1 or infra/build-identity-verifier-image.ps1 explicitly'
@@ -748,6 +753,16 @@ function Invoke-ScopedDocker {
       Assert-Compose
       $null=Invoke-DockerCli -argsList @('compose','--env-file',$baseEnv,'-f',$baseCompose,'-f',$appCompose,'--profile','implementation','config','--quiet')
       Say 'COMPOSE_CONFIG' 'PASS base and DSH overlay; no SQL execution or secret output'
+    }
+    'reconcile' {
+      Assert-Ok (!$EnableCaptain -or $Apply) 'Captain overlay requires explicit -Apply'
+      $mode = if ($EnableCaptain) { '--apply-captain' } elseif ($Apply) { '--apply' } else { '--check' }
+      $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
+      try {
+        if ($Apply) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
+        & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode
+        Assert-Ok ($LASTEXITCODE -eq 0) 'owner runtime reconciliation failed; inspect explicit result'
+      } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }
     'verify' {
       & node (Join-Path $repo 'infra\verify-runtime-provenance.mjs') '--context' $dockerContext
@@ -819,6 +834,7 @@ function Verify-Checks {
   $tests=@(
     'infra/compose-policy.test.mjs',
     'infra/verify-runtime-provenance.test.mjs',
+    'infra/reconcile-owner-runtime.test.mjs',
     'tools/dev/sync-lenovo-source.test.mjs',
     'tools/dev/dev-powershell.test.mjs',
     'tools/dev/verify-nx-project-graph.test.mjs'
