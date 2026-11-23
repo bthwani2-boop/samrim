@@ -82,6 +82,60 @@ test("native owner traffic reuses the verified SSH tunnel and cannot take over a
   assert.match(launcher, /18101,18102,18103,3201,3202/);
 });
 
+test("Web and Metro readiness share endpoints and report bounded cold-start retries", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  const targets = launcher.match(/function Get-AppHttpTargets \{([\s\S]*?)\n\}/);
+  assert.ok(targets, "one endpoint inventory must serve both status and verification");
+  for (const port of [18101, 18102, 18103, 13000]) {
+    assert.match(targets[1], new RegExp(String(port)));
+  }
+  assert.match(launcher, /function Test-AppHttpTarget\b/);
+  assert.match(launcher, /\$attempt -le \$MaxAttempts/);
+  assert.match(launcher, /\$attempt -lt \$MaxAttempts/);
+  assert.match(launcher, /\$result\.Success/);
+  assert.match(launcher, /\$result\.Error/);
+  assert.match(launcher, /elapsedMs=/);
+  assert.match(launcher, /-MaxAttempts 3/);
+  assert.match(launcher, /-MaxAttempts 1/);
+  assert.match(launcher, /Assert-Ok \(\$failures -eq 0\)/);
+});
+
+test("transient HTTP failure recovers and persistent failure remains negative", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted = scriptPath.replaceAll("'", "''");
+  const ps = [
+    "$ErrorActionPreference='Stop'",
+    `$source=Get-Content -LiteralPath '${quoted}' -Raw`,
+    "$tokens=$null;$errors=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)",
+    "$node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-AppHttpTarget'},$true)",
+    "if(!$node){throw 'PROBE_FUNCTION_MISSING'}",
+    "Invoke-Expression $node.Extent.Text",
+    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[string]$Uri,[int]$TimeoutSec) $script:tries++; if($script:alwaysFail -or $script:tries -eq 1){throw 'temporary failure'}; return [pscustomobject]@{StatusCode=200} }",
+    "$target=@{A='test';U='http://not-used.invalid/'}",
+    "$script:tries=0;$script:alwaysFail=$false",
+    "$recovered=Test-AppHttpTarget -Target $target -MaxAttempts 3 -TimeoutSec 1 -RetryDelayMs 0",
+    "if(!$recovered.Success -or $recovered.Attempts -ne 2 -or $script:tries -ne 2){throw 'TRANSIENT_NOT_RECOVERED'}",
+    "$script:tries=0;$script:alwaysFail=$true",
+    "$failed=Test-AppHttpTarget -Target $target -MaxAttempts 3 -TimeoutSec 1 -RetryDelayMs 0",
+    "if($failed.Success -or $failed.Attempts -ne 3 -or $script:tries -ne 3 -or !$failed.Error){throw 'PERSISTENT_FAILURE_MASKED'}",
+    "Write-Output 'RETRY_AND_FAIL_CLOSED_PASS'",
+  ].join("; ");
+  const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], {
+    encoding: "utf8", timeout: 15000, windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /RETRY_AND_FAIL_CLOSED_PASS/);
+});
+
+test("Docker status verifies present WLT without misreporting it as another project", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  assert.match(launcher, /--include-wlt/);
+  assert.match(launcher, /bthwani-refoundation-wlt-1/);
+  assert.doesNotMatch(launcher, /WLT.*outside this Docker project/);
+});
+
 test("read-only diagnostics do not monopolize the global app lifecycle mutex", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   assert.match(launcher, /\$readOnlyOperation\s*=/);

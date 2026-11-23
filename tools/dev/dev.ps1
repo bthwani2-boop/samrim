@@ -296,23 +296,45 @@ foreach($s in $specs){
   $script=$script.Replace('__STRICT__',$mode).Replace('__LOCK__',$lock)
   Invoke-Lenovo $script
 }
-function Verify-AppWeb {
-  $targets=@(
+function Get-AppHttpTargets {
+  @(
     @{A='customer';U='http://127.0.0.1:18101/'},
     @{A='customer';U='http://127.0.0.1:18101/stores'},
     @{A='merchant';U='http://127.0.0.1:18102/'},
     @{A='captain-metro';U='http://127.0.0.1:18103/status'},
     @{A='control-panel';U='http://127.0.0.1:13000/'}
   )
-  $failures=0
-  foreach($target in $targets){
+}
+function Test-AppHttpTarget([hashtable]$Target,[int]$TimeoutSec=7,[int]$MaxAttempts=1,[int]$RetryDelayMs=250) {
+  # First Expo Web compilation can outlast a short readiness probe.
+  # Retry only within a fixed budget; never turn a persistent failure into PASS.
+  $timer=[Diagnostics.Stopwatch]::StartNew()
+  $lastFailure='UNKNOWN'
+  for($attempt=1;$attempt -le $MaxAttempts;$attempt++){
     try {
-      $result=Invoke-WebRequest -UseBasicParsing -Uri $target.U -TimeoutSec 8 -ErrorAction Stop
-      if($result.StatusCode -ne 200){throw ('HTTP_'+$result.StatusCode)}
-      Say 'APP_HTTP' ($target.A+' PASS status=200')
+      $response=Invoke-WebRequest -UseBasicParsing -Uri $Target.U -TimeoutSec $TimeoutSec -ErrorAction Stop
+      if($response.StatusCode -eq 200){
+        return @{Success=$true;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=''}
+      }
+      $lastFailure='HTTP_'+$response.StatusCode
     } catch {
+      $exception=$_.Exception
+      $lastFailure=if($exception -is [Threading.Tasks.TaskCanceledException] -or
+        $exception.InnerException -is [Threading.Tasks.TaskCanceledException]){'TIMEOUT'}else{$exception.GetType().Name}
+    }
+    if($attempt -lt $MaxAttempts -and $RetryDelayMs -gt 0){Start-Sleep -Milliseconds $RetryDelayMs}
+  }
+  return @{Success=$false;Attempts=$MaxAttempts;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=$lastFailure}
+}
+function Verify-AppWeb {
+  $failures=0
+  foreach($target in Get-AppHttpTargets){
+    $result=Test-AppHttpTarget -Target $target -TimeoutSec 14 -MaxAttempts 3
+    if($result.Success){
+      Say 'APP_HTTP' ($target.A+' PASS status=200 path='+$target.U+' attempts='+$result.Attempts+' elapsedMs='+$result.ElapsedMs)
+    } else {
       $failures++
-      Say 'APP_HTTP' ($target.A+' FAIL path='+$target.U)
+      Say 'APP_HTTP' ($target.A+' FAIL path='+$target.U+' attempts='+$result.Attempts+' elapsedMs='+$result.ElapsedMs+' reason='+$result.Error)
     }
   }
   Say 'FAST_REFRESH_VISUAL' 'NOT_RUN (requires two observed Web and Android UI edits and restoration)'
@@ -660,14 +682,24 @@ function Invoke-AppAction {
 function Show-Docker {
   Banner 'DOCKER CONTAINERS'
   Invoke-DockerCli -argsList @('ps','-a','--filter','label=com.docker.compose.project=bthwani-refoundation','--format','{{.Names}} | {{.Status}} | {{.Image}}') | ForEach-Object { Write-Output $_ }
+  # WLT is optional, but may run under the same Compose project. Inspect
+  # its actual labels rather than relying on an obsolete placement assumption.
+  $wltIdentity=@(& docker --context $dockerContext inspect 'bthwani-refoundation-wlt-1' '--format' '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}' 2>$null)
+  $wltFound=$LASTEXITCODE -eq 0
+  $verifyArgs=@('--context',$dockerContext)
+  if($wltFound){
+    Assert-Ok (($wltIdentity -join '').Trim() -eq ($project+'|wlt')) 'unexpected WLT container ownership'
+    $verifyArgs+=@('--include-wlt')
+  } else {
+    Say 'WLT' 'NOT_RUN (optional WLT container not present)'
+  }
   if (Test-Path -LiteralPath (Join-Path $repo 'infra\verify-runtime-provenance.mjs')) {
-    $result = @(& node (Join-Path $repo 'infra\verify-runtime-provenance.mjs') '--context' $dockerContext 2>&1)
+    $result = @(& node (Join-Path $repo 'infra\verify-runtime-provenance.mjs') @verifyArgs 2>&1)
     $code = $LASTEXITCODE
     foreach ($line in $result) { Write-Output $line.ToString() }
     Say 'PROVENANCE_EXIT' $code
-    if ($code -ne 0) { Say 'NOTE' 'runtime provenance incomplete; Identity may be intentionally stopped. Never re-label a stopped container as PASS.' }
+    if ($code -ne 0) { Say 'NOTE' 'runtime provenance incomplete; inspect stale or stopped owner images before a scoped rebuild.' }
   }
-  Say 'WLT' 'NOT_RUN (the isolated loopback reader is outside this Docker project)'
 }
 function Show-DockerCommands {
   Write-Output 'DOCKER_COMMANDS=READ_ONLY (Surface -> bthwani-docker SSH context)'
@@ -725,11 +757,10 @@ function Invoke-ScopedDocker {
   }
 }
 function Wait-AppStatus {
-  foreach ($url in @('http://127.0.0.1:18101/','http://127.0.0.1:18101/stores','http://127.0.0.1:18102/','http://127.0.0.1:13000/')) {
-    try {
-      $r = Invoke-WebRequest -Uri $url -UseBasicParsing -TimeoutSec 7 -ErrorAction Stop
-      Say 'WEB' ($url+' status='+$r.StatusCode)
-    } catch { Say 'WEB' ($url+' status=NOT_READY') }
+  foreach($target in Get-AppHttpTargets){
+    $result=Test-AppHttpTarget -Target $target -TimeoutSec 7 -MaxAttempts 1
+    $state=if($result.Success){'200'}else{'NOT_READY'}
+    Say 'WEB' ($target.U+' status='+$state+' elapsedMs='+$result.ElapsedMs+' reason='+$result.Error)
   }
   Say 'ANDROID' 'NOT_RUN (requires on-device test)'
 }
