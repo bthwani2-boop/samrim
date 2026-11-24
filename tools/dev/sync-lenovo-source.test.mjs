@@ -15,7 +15,7 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
   const localAppData = path.join(folder, "state");
   const manifestDir = path.join(localAppData, "BThwani", "Operations", "SourceSync");
   const entry = "tools/dev/sync-lenovo-source.mjs";
-  const mirrored = [entry, "tools/dev/sync-lenovo-reconciliation.mjs", "apps/customer/example.ts"];
+  const mirrored = [entry, "tools/dev/sync-lenovo-reconciliation.mjs", "apps/customer/example.ts", "apps/customer/package.json"];
   const git = (...args) => {
     const result = spawnSync("C:\\Program Files\\Git\\cmd\\git.exe", args, { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
@@ -26,6 +26,7 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
       const target = path.join(root, rel);
       mkdirSync(path.dirname(target), { recursive: true });
       if (rel.endsWith("example.ts")) writeFileSync(target, "export const value = 1;\n");
+      else if (rel.endsWith("package.json")) writeFileSync(target, JSON.stringify({name:"@fixture/customer",version:"1.0.0"}));
       else copyFileSync(new URL(`../../${rel}`, import.meta.url), target);
     }
     git("init", "-q");
@@ -42,8 +43,8 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
       files: Object.fromEntries(mirrored.map(rel => [rel,
         createHash("sha256").update(readFileSync(path.join(root, rel))).digest("hex").toUpperCase()])),
     }));
-    const verify = () => {
-      const result = spawnSync(process.execPath, [entry, "--verify-manifest"], {
+    const verify = (flag="--verify-manifest") => {
+      const result = spawnSync(process.execPath, [entry, flag], {
         cwd: root, env: { ...process.env, LOCALAPPDATA: localAppData }, encoding: "utf8", timeout: 10000,
       });
       assert.equal(result.status, 0, result.stderr);
@@ -53,6 +54,14 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
     assert.equal(verify().current, true);
     writeFileSync(path.join(root, "apps/customer/example.ts"), "export const value = 2;\n");
     assert.deepEqual(verify(), { head, mirrorHead: head, current: false });
+    const dependencyProof=verify("--verify-dependency-inputs");
+    assert.equal(dependencyProof.current,true,"ordinary source edits do not block dependencies");
+    assert.deepEqual(Object.keys(dependencyProof.files),["apps/customer/package.json"]);
+    const pkg=path.join(root,"apps/customer/package.json");
+    writeFileSync(pkg,JSON.stringify({name:"@fixture/customer",version:"1.0.1"}));
+    assert.equal(verify("--verify-dependency-inputs").current,false,"unsynced dependency edit must block");
+    markSynced();
+    assert.equal(verify("--verify-dependency-inputs").current,true);
     markSynced();
     assert.equal(verify().current, true);
     writeFileSync(path.join(root, "apps/customer/added.ts"), "export const added = true;\n");

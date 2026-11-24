@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { dirtyPaths, isPreviewGoPath, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, dependencyInputChanges, isDependencyInput, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -194,9 +194,9 @@ function logger(line) {
 }
 function head() { return run("git", ["rev-parse", "HEAD"]); }
 function branch() { return run("git", ["branch", "--show-current"]); }
-function inventory() {
+function inventory(filter = () => true) {
   const raw = run("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", ...include]);
-  const files = [...new Set(raw.split("\0").filter(allowed))]
+  const files = [...new Set(raw.split("\0").filter(rel => allowed(rel) && filter(rel)))]
     .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
   const found = new Map();
   for (const rel of files) {
@@ -237,6 +237,16 @@ function verifyManifest() {
   const current = mirrorHead === currentHead && state.branch === currentBranch &&
     isUnchanged(state, inventory(), currentHead) && head() === currentHead && branch() === currentBranch;
   return { head: currentHead, mirrorHead, current };
+}
+function verifyDependencyInputs() {
+  const currentBranch=branch();
+  assertCompatibleBranchTransition(null,null,currentBranch);
+  const state=readState();
+  const files=inventory(isDependencyInput);
+  const mirrored=Object.entries(state?.files||{}).filter(([rel])=>isDependencyInput(rel));
+  const current=Boolean(state && state.branch===currentBranch && branch()===currentBranch &&
+    mirrored.length===files.size && [...files].every(([rel,digest])=>state.files[rel]===digest));
+  return {current,files:Object.fromEntries(files)};
 }
 function persistAt(file, state) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -516,6 +526,34 @@ function runtimeState() {
       !["running","uncertain","blocked","retry","pass","review"].includes(v.status)) throw new Error("RUNTIME_ATTEMPT_STATE_INVALID");
   return v;
 }
+let nextDependencyAudit=0;
+let dependencyKey="";
+let dependencyNotice="";
+function pollAppDependencies() {
+  if(runtimeChild)return;
+  const state=readState();
+  if(!state||state.branch==="main"||state.branch.startsWith("archive/"))return;
+  const paths=dependencyInputChanges({files:{}},new Map(Object.entries(state.files)));
+  const key=crypto.createHash("sha256").update(JSON.stringify(paths.map(p=>[p,state.files[p]]))).digest("hex");
+  if(key===dependencyKey&&Date.now()<nextDependencyAudit)return;
+  if(run("git",["status","--porcelain","--","tools/dev/dev.ps1","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"]))return;
+  dependencyKey=key;
+  nextDependencyAudit=Date.now()+60_000;
+  const child=spawn("pwsh.exe",["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Apps","reconcile","-Apply","-Automatic"],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
+  runtimeChild=child;
+  let output="",errors="",settled=false;
+  child.stdout.on("data",chunk=>{output=(output+chunk.toString()).slice(-65536);});
+  child.stderr.on("data",chunk=>{errors=(errors+chunk.toString()).slice(-65536);});
+  const finish=(code)=>{
+    if(settled)return;settled=true;runtimeChild=null;
+    const result=code===0&&output.includes("APP_DEPENDENCY_RECONCILE_PASS")?"DEPENDENCY_RECONCILE_PASS":
+      code===0&&output.includes("APP_DEPENDENCY_CURRENT")?"DEPENDENCY_CURRENT":
+      "DEPENDENCY_RECONCILE_BLOCKED "+(errors.match(/DEPENDENCY_[A-Z_]+|APP_SOURCE_SYNC_NOT_CURRENT|another unified dev operation/i)?.[0]||"inspect unified dev log");
+    if(result!==dependencyNotice){logger(result);dependencyNotice=result;}
+  };
+  child.on("error",()=>finish(1));
+  child.on("close",code=>finish(code));
+}
 function pollOwnerRuntime() {
   if (runtimeChild || !fs.existsSync(runtimeOptIn)) return;
   const optIn=fs.readFileSync(runtimeOptIn,"utf8").trim();
@@ -673,6 +711,10 @@ function pollGraphify() {
   });
 }
 function main() {
+  if (process.argv.includes("--verify-dependency-inputs")) {
+    console.log(JSON.stringify(verifyDependencyInputs()));
+    return;
+  }
   if (process.argv.includes("--verify-manifest")) {
     console.log(JSON.stringify(verifyManifest()));
     return;
@@ -685,7 +727,7 @@ function main() {
     return;
   }
   if (!process.argv.includes("--once") && !process.argv.includes("--watch")) {
-    throw new Error("USAGE --once | --watch | --verify-manifest | --check-path <path>");
+    throw new Error("USAGE --once | --watch | --verify-manifest | --verify-dependency-inputs | --check-path <path>");
   }
   if (!fs.existsSync(path.join(root, "AGENTS.md"))) throw new Error("CANONICAL_SOURCE_MISSING");
   const cycle = () => reconcile();
@@ -730,9 +772,10 @@ function main() {
       }
       active = true;
       try { pollGraphify(); } catch { graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED preflight"); }
-      try { pollOwnerRuntime(); } catch (e) { runtimeLogOnce("RUNTIME_UPDATE_BLOCKED "+e.message); }
       try {
         cycle();
+        try { pollAppDependencies(); } catch (e) { logger("DEPENDENCY_RECONCILE_BLOCKED "+e.message); }
+        try { pollOwnerRuntime(); } catch (e) { runtimeLogOnce("RUNTIME_UPDATE_BLOCKED "+e.message); }
         if (lastError) { logger("SYNC_RECOVERED after=" + lastError); lastError = ""; }
       } catch (e) {
         if (e.message !== lastError) { logger("SYNC_ERROR " + e.message); lastError = e.message; }

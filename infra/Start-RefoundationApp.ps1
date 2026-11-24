@@ -35,6 +35,87 @@ if ($EnableDockerCustomerAndroidIdentityPreview -and ($Surface -or $App -ne 'cus
 Remove-Item Env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW -ErrorAction SilentlyContinue
 Remove-Item Env:BTHWANI_DOCKER_CART_WEB_PREVIEW -ErrorAction SilentlyContinue
 
+# The scheduled launcher owns the native job handle, never the Node children.
+# CreateProcess assigns the child to that job atomically, even under a nested
+# Windows job. Inherit only log/stdin handles, never the job handle itself.
+function Invoke-OwnedAppProcess {
+  param([string]$Executable,[string[]]$Arguments,[string]$WorkingDirectory,[string]$Stdout,[string]$Stderr)
+  if (-not ('OwnedAppJob' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class OwnedAppJob {
+ [StructLayout(LayoutKind.Sequential)] struct Basic {
+  public long ProcessTime, JobTime; public uint Flags;
+  public UIntPtr Min, Max; public uint Active; public UIntPtr Affinity; public uint Priority, Schedule;
+ }
+ [StructLayout(LayoutKind.Sequential)] struct Io { public ulong ReadOps, WriteOps, OtherOps, ReadBytes, WriteBytes, OtherBytes; }
+ [StructLayout(LayoutKind.Sequential)] struct Limits {
+  public Basic Basic; public Io Io; public UIntPtr ProcessMemory, JobMemory, PeakProcess, PeakJob;
+ }
+ [StructLayout(LayoutKind.Sequential)] struct Security {
+  public int Length; public IntPtr Descriptor; public int Inherit;
+ }
+ [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] struct Startup {
+  public uint Size; public string Reserved, Desktop, Title;
+  public uint X,Y,XSize,YSize,XChars,YChars,Fill,Flags;
+  public ushort Show, ReservedSize; public IntPtr Reserved2, Input, Output, Error;
+ }
+ [StructLayout(LayoutKind.Sequential)] struct StartupEx { public Startup Startup; public IntPtr Attributes; }
+ [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr Process, Thread; public uint Pid, Tid; }
+ [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateJobObject(IntPtr security,string name);
+ [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetInformationJobObject(IntPtr job,int kind,ref Limits limits,uint size);
+ [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern IntPtr CreateFile(string file,uint access,uint share,ref Security security,uint creation,uint flags,IntPtr template);
+ [DllImport("kernel32.dll", SetLastError=true)] static extern bool InitializeProcThreadAttributeList(IntPtr list,int count,int flags,ref IntPtr size);
+ [DllImport("kernel32.dll", SetLastError=true)] static extern bool UpdateProcThreadAttribute(IntPtr list,uint flags,IntPtr attribute,IntPtr value,IntPtr size,IntPtr previous,IntPtr returned);
+ [DllImport("kernel32.dll")] static extern void DeleteProcThreadAttributeList(IntPtr list);
+ [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)] static extern bool CreateProcess(string app,StringBuilder command,IntPtr processSecurity,IntPtr threadSecurity,bool inherit,uint flags,IntPtr environment,string cwd,ref StartupEx startup,out ProcessInfo process);
+ [DllImport("kernel32.dll", SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle,uint timeout);
+ [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetExitCodeProcess(IntPtr handle,out uint code);
+ [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
+ static void Check(bool ok,string name) { if(!ok) throw new Win32Exception(Marshal.GetLastWin32Error(), name+" failed"); }
+ static void Close(IntPtr h) { if(h!=IntPtr.Zero && h!=new IntPtr(-1)) CloseHandle(h); }
+ static string Quote(string s) {
+  StringBuilder b=new StringBuilder("\""); int slash=0;
+  foreach(char c in s) { if(c=='\\'){slash++;continue;} if(c=='"'){b.Append('\\',2*slash+1);b.Append(c);}else{b.Append('\\',slash);b.Append(c);} slash=0; }
+  b.Append('\\',2*slash);b.Append('"');return b.ToString();
+ }
+ public static int Run(string executable,string[] args,string cwd,string stdout,string stderr) {
+  IntPtr job=IntPtr.Zero,input=IntPtr.Zero,output=IntPtr.Zero,error=IntPtr.Zero,list=IntPtr.Zero,handles=IntPtr.Zero,jobs=IntPtr.Zero;
+  bool initialized=false; ProcessInfo process=new ProcessInfo();
+  try{
+   job=CreateJobObject(IntPtr.Zero,null);Check(job!=IntPtr.Zero,"CreateJobObject");
+   Limits limits=new Limits();limits.Basic.Flags=0x2000;
+   Check(SetInformationJobObject(job,9,ref limits,(uint)Marshal.SizeOf(typeof(Limits))),"SetInformationJobObject");
+   Security security=new Security();security.Length=Marshal.SizeOf(typeof(Security));security.Inherit=1;
+   input=CreateFile("NUL",0x80000000,7,ref security,3,0,IntPtr.Zero);Check(input!=new IntPtr(-1),"Open NUL");
+   output=CreateFile(stdout,4,7,ref security,4,0,IntPtr.Zero);Check(output!=new IntPtr(-1),"Open stdout");
+   error=CreateFile(stderr,4,7,ref security,4,0,IntPtr.Zero);Check(error!=new IntPtr(-1),"Open stderr");
+   IntPtr size=IntPtr.Zero;InitializeProcThreadAttributeList(IntPtr.Zero,2,0,ref size);
+   Check(size!=IntPtr.Zero,"Get attribute list size");list=Marshal.AllocHGlobal(size);
+   Check(InitializeProcThreadAttributeList(list,2,0,ref size),"Initialize attribute list");initialized=true;
+   handles=Marshal.AllocHGlobal(3*IntPtr.Size);Marshal.WriteIntPtr(handles,0,input);Marshal.WriteIntPtr(handles,IntPtr.Size,output);Marshal.WriteIntPtr(handles,2*IntPtr.Size,error);
+   jobs=Marshal.AllocHGlobal(IntPtr.Size);Marshal.WriteIntPtr(jobs,job);
+   Check(UpdateProcThreadAttribute(list,0,new IntPtr(0x20002),handles,new IntPtr(3*IntPtr.Size),IntPtr.Zero,IntPtr.Zero),"Handle list");
+   Check(UpdateProcThreadAttribute(list,0,new IntPtr(0x2000D),jobs,new IntPtr(IntPtr.Size),IntPtr.Zero,IntPtr.Zero),"Job list");
+   StartupEx startup=new StartupEx();startup.Startup.Size=(uint)Marshal.SizeOf(typeof(StartupEx));startup.Startup.Flags=0x100;startup.Startup.Input=input;startup.Startup.Output=output;startup.Startup.Error=error;startup.Attributes=list;
+   StringBuilder command=new StringBuilder(Quote(executable));foreach(string arg in args)command.Append(" ").Append(Quote(arg));
+   Check(CreateProcess(executable,command,IntPtr.Zero,IntPtr.Zero,true,0x08080000,IntPtr.Zero,cwd,ref startup,out process),"CreateProcess in job");
+   Check(WaitForSingleObject(process.Process,0xffffffff)==0,"WaitForSingleObject");
+   uint code;Check(GetExitCodeProcess(process.Process,out code),"GetExitCodeProcess");return unchecked((int)code);
+  }finally{
+   Close(job);Close(process.Thread);Close(process.Process);Close(input);Close(output);Close(error);
+   if(initialized)DeleteProcThreadAttributeList(list);if(list!=IntPtr.Zero)Marshal.FreeHGlobal(list);
+   if(handles!=IntPtr.Zero)Marshal.FreeHGlobal(handles);if(jobs!=IntPtr.Zero)Marshal.FreeHGlobal(jobs);
+  }
+ }
+}
+'@
+  }
+  [OwnedAppJob]::Run($Executable,$Arguments,$WorkingDirectory,$Stdout,$Stderr)
+}
 function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
   try {
     $status=[int](Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 3 -MaximumRedirection 0).StatusCode
@@ -460,9 +541,13 @@ if(!(Test-Path -LiteralPath $cli)){throw ('REFOUNDATION_APP_CLI_MISSING '+$cli)}
 "START refoundation app=$App source=$source port=$port surface=$Surface" | Out-File -FilePath $log -Append -Encoding utf8
 # PowerShell 5.1 wraps native stderr warnings as NativeCommandError when
 # ErrorActionPreference=Stop. Keep stderr logged, but judge failure by exit code.
-$ErrorActionPreference='Continue'
-& $node $cli @args 1>> $log 2>> $err
-$nativeExit=$LASTEXITCODE
+if (!$Surface) {
+  $nativeExit=Invoke-OwnedAppProcess -Executable $node -Arguments ([string[]](@($cli)+$args)) -WorkingDirectory $dir -Stdout $log -Stderr $err
+} else {
+  $ErrorActionPreference='Continue'
+  & $node $cli @args 1>> $log 2>> $err
+  $nativeExit=$LASTEXITCODE
+}
 if($nativeExit -ne 0){
   "EXIT app=$App code=$nativeExit" | Out-File -FilePath $err -Append -Encoding utf8
 }

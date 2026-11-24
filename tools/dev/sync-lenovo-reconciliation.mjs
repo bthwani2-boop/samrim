@@ -41,13 +41,15 @@ const branchTransitionPins = Object.freeze([
 
 // Detect changes and removals to every mirrored dependency input. The
 // installed graph is checked independently by the existing dev launcher.
+function isDependencyInput(rel) {
+  return branchTransitionPins.includes(rel)||rel==="pnpm-workspace.yaml"||
+    /^packages\/[a-z0-9-]+\/package\.json$/.test(rel)||/^patches\/[^/]+\.patch$/.test(rel);
+}
 function dependencyInputChanges(previous,current) {
   if(!previous)return [];
   const before=previous.files;
-  const relevant=rel=>branchTransitionPins.includes(rel)||rel==="pnpm-workspace.yaml"||
-    /^packages\/[a-z0-9-]+\/package\.json$/.test(rel)||/^patches\/[^/]+\.patch$/.test(rel);
   return [...new Set([...Object.keys(before),...current.keys()])]
-    .filter(rel=>relevant(rel)&&before[rel]!==current.get(rel)).sort();
+    .filter(rel=>isDependencyInput(rel)&&before[rel]!==current.get(rel)).sort();
 }
 
 function assertCompatibleBranchTransition(previous, current, currentBranch) {
@@ -128,4 +130,4 @@ function graphifyPollDue({now,dirtySince,lastEvent,nextAudit,busy,debounce=3000,
   return now>=nextAudit || (dirtySince!==null && (now-lastEvent>=debounce || now-dirtySince>=maxWait));
 }
 
-export { assertCompatibleBranchTransition, branchTransitionPins, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction };
+export { assertCompatibleBranchTransition, branchTransitionPins, isDependencyInput, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction };

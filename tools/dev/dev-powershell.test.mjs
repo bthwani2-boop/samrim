@@ -305,3 +305,17 @@ test("pnpm package-manager lock document is excluded but workspace changes are n
   assert.equal(result.status,0,result.stderr||result.stdout);
   assert.match(result.stdout,/WORKSPACE_LOCK_PROOF_PASS/);
 });
+
+test("dependency reconcile uses the existing lifecycle and only retries changed or explicitly requested inputs", () => {
+  const source=readFileSync(scriptPath,"utf8");
+  const watch=readFileSync(new URL("./sync-lenovo-source.mjs",import.meta.url),"utf8");
+  assert.match(source,/function Invoke-AppDependencyReconcile[\s\S]*?--verify-dependency-inputs/);
+  assert.match(source,/DEPENDENCY_FAILED_SAME_INPUT_MANUAL_RETRY_REQUIRED/);
+  assert.match(source,/DEPENDENCY_PREVIOUS_ATTEMPT_REQUIRES_READBACK/);
+  assert.match(source,/Stop-OwnedAppTree \$plan\.Spec\.N/);
+  assert.match(source,/install --frozen-lockfile --prefer-offline/);
+  assert.match(source,/DEPENDENCY_ROLLBACK_LOCK_CHANGED/);
+  assert.match(watch,/if\(runtimeChild\)return;/);
+  assert.match(watch,/\"Apps\",\"reconcile\",\"-Apply\",\"-Automatic\"/);
+  assert.match(watch,/cycle\(\);\s*try \{ pollAppDependencies\(\)/);
+});

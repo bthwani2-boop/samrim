@@ -13,6 +13,7 @@ param(
   [ValidateSet('Launch','Up','Warm','Status','Down','Verify','Migrations','Docker','Apps')]
   [string]$Action = 'Launch',
   [switch]$Apply,
+  [switch]$Automatic,
   [switch]$DeepSql,
   [switch]$EnableCaptain,
   [switch]$Preview,
@@ -190,13 +191,15 @@ function Stop-LocalTasks {
 }
 # Legacy Windows task keys are used only to find existing Task Scheduler owners.
 # Canonical app names are customer, merchant, captain, control-panel.
-$remoteTasksScript = @'
+$remoteAppSpecs = @'
 $specs=@(
  @{N='BThwani Client Metro Native';A='customer';P=28111},
  @{N='BThwani Partner Metro Native';A='merchant';P=28112},
  @{N='BThwani Captain Metro Native';A='captain';P=28113},
  @{N='BThwani Control Next Native';A='control-panel';P=23010}
 )
+'@
+$remoteTasksScript = $remoteAppSpecs + [Environment]::NewLine + @'
 foreach($s in $specs){
   $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
   $actions=($task.Actions | ForEach-Object { [string]$_.Execute+' '+[string]$_.Arguments }) -join ' '
@@ -342,6 +345,7 @@ function Show-AppsHelp {
   Write-Output 'APPS=canonical customer / merchant / captain / control-panel; no duplicate launchers'
   Write-Output 'pnpm dev apps status                   # read-only task, listener, process owner and mirror check'
   Write-Output 'pnpm dev apps verify                   # above plus Web and Metro HTTP, not visual Fast Refresh'
+  Write-Output 'pnpm dev apps reconcile [-Apply]      # check or repair pinned Lenovo dependencies only when needed'
   Write-Output 'pnpm dev apps android                  # inspect ADB device and reverse mappings, no changes'
   Write-Output 'pnpm dev apps open                     # reuse Chrome tabs and open Samsung; no server duplication'
   Write-Output 'pnpm dev apps open -Mode Browser       # Chrome only, no Android connection needed'
@@ -375,10 +379,20 @@ function Inspect-AppSourceSync([switch]$StrictCheck) {
   if($StrictCheck){Assert-Ok ($running -and $current) 'APP_SOURCE_SYNC_NOT_CURRENT (existing watcher or current source digests not verified)'}
 }
 
+$remoteDependencyLock = @'
+function Get-WorkspaceLockDocument([string]$Raw) {
+  $docs=@(($Raw -csplit '(?m)^---[ \t]*\r?$') | ForEach-Object {$_.Trim()} | Where-Object {$_})
+  if($docs.Count -lt 1 -or $docs.Count -gt 2){throw 'APP_LOCK_DOCUMENT_COUNT_INVALID'}
+  $workspace=$docs[$docs.Count-1].Replace([string][char]13+[char]10,[string][char]10)
+  if($workspace -cnotmatch '(?m)^lockfileVersion:' -or $workspace -cnotmatch '(?m)^importers:'){throw 'APP_LOCK_DOCUMENT_INVALID'}
+  return $workspace
+}
+'@
+
 function Inspect-AppOwners([switch]$StrictCheck) {
   $lock=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
   $mode=if($StrictCheck){'$true'}else{'$false'}
-  $script=@'
+  $script=$remoteDependencyLock + [Environment]::NewLine + @'
 $specs=@(
  @{A='customer';N='BThwani Client Metro Native';P=28111;Cli='expo'}
  @{A='merchant';N='BThwani Partner Metro Native';P=28112;Cli='expo'}
@@ -396,13 +410,6 @@ $lock=(Get-FileHash -LiteralPath (Join-Path $root 'pnpm-lock.yaml') -Algorithm S
 # pnpm 12's source lock can have a leading package-manager lock document;
 # its installed virtual-store lock represents the final workspace document.
 # Compare the actual installed graph, not just the mirrored lockfile bytes.
-function Get-WorkspaceLockDocument([string]$Raw) {
-  $docs=@(($Raw -csplit '(?m)^---[ \t]*\r?$') | ForEach-Object {$_.Trim()} | Where-Object {$_})
-  if($docs.Count -lt 1 -or $docs.Count -gt 2){throw 'APP_LOCK_DOCUMENT_COUNT_INVALID'}
-  $workspace=$docs[$docs.Count-1].Replace([string][char]13+[char]10,[string][char]10)
-  if($workspace -cnotmatch '(?m)^lockfileVersion:' -or $workspace -cnotmatch '(?m)^importers:'){throw 'APP_LOCK_DOCUMENT_INVALID'}
-  return $workspace
-}
 $installed=Join-Path $root 'node_modules\.pnpm\lock.yaml'
 $installedMatch=$false
 if(Test-Path -LiteralPath $installed -PathType Leaf){
@@ -822,6 +829,194 @@ function Open-AppSurfaces {
   Say 'OPEN_DEV_SURFACES' 'DONE'
 }
 
+function Invoke-AppDependencyReconcile {
+  $task=Task-Action $ownerTasks[0].Name $ownerTasks[0].Pattern
+  Assert-Ok ($task.State -eq 'Running') 'DEPENDENCY_SOURCE_WATCHER_STOPPED'
+  $node=Get-Command node.exe -ErrorAction Stop
+  $result=@(& $node.Source (Join-Path $repo 'tools/dev/sync-lenovo-source.mjs') '--verify-dependency-inputs' 2>&1)
+  Assert-Ok ($LASTEXITCODE -eq 0) 'DEPENDENCY_SOURCE_PROOF_FAILED'
+  $proof=($result -join [Environment]::NewLine)|ConvertFrom-Json -AsHashtable
+  Assert-Ok ($proof.current -eq $true) 'DEPENDENCY_SOURCE_NOT_CURRENT'
+  $expected=[ordered]@{}
+  foreach($rel in @($proof.files.Keys|Sort-Object)){$expected[$rel]=$proof.files[$rel]}
+  foreach($required in @('.node-version','pnpm-lock.yaml','pnpm-workspace.yaml','package.json')){Assert-Ok ($expected.Contains($required)) ('DEPENDENCY_SOURCE_MISSING '+$required)}
+  $json=$expected|ConvertTo-Json -Compress
+  $key=[Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($json)))
+  $script=$remoteAppSpecs+[Environment]::NewLine+$remoteAppProcessLifecycle+[Environment]::NewLine+$remoteDependencyLock+[Environment]::NewLine+@'
+$root='C:\Users\bthwa\BThwaniAppRunner\source-runtime'
+$node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe'
+$pnpm='C:\Users\bthwa\BThwaniAppRunner\tools\pnpm\node_modules\pnpm\node_modules\@pnpm\exe.win32-x64\pnpm.exe'
+$state=Join-Path $env:LOCALAPPDATA 'BThwani\Operations\SourceSync'
+$receipt=Join-Path $state 'dependency-reconcile.json'
+$expected='__INPUTS__'|ConvertFrom-Json -AsHashtable
+$key='__KEY__'
+$apply=__APPLY__
+$automatic=__AUTOMATIC__
+$roots=@('')+@($expected.Keys|Where-Object {$_ -match '^(apps|services|packages)/[^/]+/package\.json$'}|ForEach-Object {Split-Path -Parent $_}|Sort-Object)
+function Assert-DependencyInputs {
+  foreach($rel in $expected.Keys){
+    if($rel -notmatch '^(?:\.node-version|package\.json|pnpm-(?:lock|workspace)\.yaml|(?:apps|services|packages)/[a-z0-9-]+/package\.json|patches/[^/\\:]+\.patch)$' -or $expected[$rel] -notmatch '^[A-F0-9]{64}$'){throw 'DEPENDENCY_INPUT_INVALID'}
+    $file=Join-Path $root $rel
+    if(!(Test-Path -LiteralPath $file -PathType Leaf) -or (Get-FileHash -LiteralPath $file).Hash -cne $expected[$rel]){throw ('DEPENDENCY_INPUT_DRIFT '+$rel)}
+  }
+  foreach($scope in 'apps','services','packages'){
+    foreach($dir in @(Get-ChildItem -LiteralPath (Join-Path $root $scope) -Directory -ErrorAction SilentlyContinue)){
+      $rel=$scope+'/'+$dir.Name+'/package.json'
+      if((Test-Path -LiteralPath (Join-Path $root $rel)) -and !$expected.Contains($rel)){throw ('DEPENDENCY_UNMANAGED_IMPORTER '+$rel)}
+    }
+  }
+  foreach($patch in @(Get-ChildItem -LiteralPath (Join-Path $root 'patches') -File -Filter '*.patch' -ErrorAction SilentlyContinue)){
+    if(!$expected.Contains('patches/'+$patch.Name)){throw 'DEPENDENCY_UNMANAGED_PATCH'}
+  }
+}
+function Test-InstalledDependencies {
+  try{
+    $wanted=Get-WorkspaceLockDocument (Get-Content -LiteralPath (Join-Path $root 'pnpm-lock.yaml') -Raw)
+    $actual=Get-WorkspaceLockDocument (Get-Content -LiteralPath (Join-Path $root 'node_modules\.pnpm\lock.yaml') -Raw)
+    if($wanted -cne $actual){return $false}
+    foreach($rel in $roots){
+      $dir=if($rel){Join-Path $root $rel}else{$root}
+      $manifest=Get-Content -LiteralPath (Join-Path $dir 'package.json') -Raw|ConvertFrom-Json -AsHashtable
+      foreach($kind in 'dependencies','devDependencies'){
+        foreach($name in @($manifest[$kind].Keys)){
+          if(!$name){continue}
+          if($name -notmatch '^(?:@[a-zA-Z0-9_.-]+/)?[a-zA-Z0-9_.-]+$' -or $name -match '(?:^|/)\.\.?(?:/|$)'){throw 'DEPENDENCY_NAME_INVALID'}
+          if(!(Test-Path -LiteralPath (Join-Path $dir ('node_modules/'+$name+'/package.json')) -PathType Leaf)){return $false}
+        }
+      }
+    }
+    return $true
+  }catch{return $false}
+}
+function Write-DependencyReceipt([string]$status,[string]$backup) {
+  $pending=$receipt+'.'+$PID+'.tmp'
+  [IO.File]::WriteAllText($pending,(@{version=1;key=$key;status=$status;backup=$backup}|ConvertTo-Json -Compress))
+  [IO.File]::Move($pending,$receipt,$true)
+}
+Assert-DependencyInputs
+$last=if(Test-Path -LiteralPath $receipt){Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json -AsHashtable}else{$null}
+if($last -and ($last.version -ne 1 -or $last.status -notin @('running','pass','failed','blocked') -or $last.key -notmatch '^[A-F0-9]{64}$')){throw 'DEPENDENCY_RECEIPT_INVALID'}
+if($last -and $last.status -in @('running','blocked')){throw 'DEPENDENCY_PREVIOUS_ATTEMPT_REQUIRES_READBACK'}
+if(@(Get-Process pnpm -ErrorAction SilentlyContinue).Count){throw 'DEPENDENCY_INSTALL_ALREADY_RUNNING'}
+if((Test-InstalledDependencies) -and (!$last -or ($last.key -ceq $key -and $last.status -eq 'pass'))){
+  if($apply -and !$last){New-Item -ItemType Directory -Path $state -Force|Out-Null;Write-DependencyReceipt 'pass' ''}
+  Write-Output 'APP_DEPENDENCY_CURRENT';return
+}
+if(!$apply){Write-Output 'APP_DEPENDENCY_INSTALL_REQUIRED';return}
+if($automatic -and $last -and $last.key -ceq $key -and $last.status -eq 'failed'){throw 'DEPENDENCY_FAILED_SAME_INPUT_MANUAL_RETRY_REQUIRED'}
+$env:Path=(Split-Path -Parent $node)+';'+$env:Path
+$env:CI='true'
+if((& $node --version).Trim() -cne ('v'+(Get-Content -LiteralPath (Join-Path $root '.node-version') -Raw).Trim()) -or $LASTEXITCODE){throw 'DEPENDENCY_NODE_PIN_MISMATCH'}
+$pin=(Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw|ConvertFrom-Json).packageManager
+if($pin -cne ('pnpm@'+(& $pnpm --version).Trim()) -or $LASTEXITCODE){throw 'DEPENDENCY_PNPM_PIN_MISMATCH'}
+$plans=@();$snapshot=@(Get-CimInstance Win32_Process)
+foreach($s in $specs){
+  $task=Get-ScheduledTask -TaskName $s.N
+  $actions=@($task.Actions)
+  $args=[string]$actions[0].Arguments
+  if($actions.Count -ne 1 -or $args.IndexOf((Join-Path $root 'infra\Start-RefoundationApp.ps1'),[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+     $args -notmatch ('(?i)(?:^|\s)-App\s+"?'+[regex]::Escape($s.A)+'"?(?:\s|$)')){throw ('DEPENDENCY_TASK_OWNER_CHANGED '+$s.A)}
+  if($task.State -eq 'Running'){
+    $tree=@(Get-OwnedAppProcessTree $s.A $snapshot $root $node)
+    Assert-OwnedAppPort $s.A $s.P $tree
+    $plans+=@{Spec=$s;Tree=$tree}
+  }elseif(@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count){throw ('DEPENDENCY_UNPROVEN_ORPHAN '+$s.A)}
+}
+foreach($rel in $roots){
+  $dir=if($rel){Join-Path $root $rel}else{$root}
+  foreach($path in @($dir,(Join-Path $dir 'node_modules'))){
+    if((Test-Path -LiteralPath $path) -and ((Get-Item -LiteralPath $path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint)){throw 'DEPENDENCY_ROOT_REPARSE_POINT'}
+  }
+}
+$backup=Join-Path (Join-Path $state 'rollbacks') ('dependencies-'+$key.Substring(0,12)+'-'+[Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $backup|Out-Null
+$oldLockPath=Join-Path $root 'node_modules\.pnpm\lock.yaml'
+$oldLockHash=if(Test-Path -LiteralPath $oldLockPath){(Get-FileHash -LiteralPath $oldLockPath).Hash}else{''}
+Write-DependencyReceipt 'running' $backup
+$moved=@();$installStarted=$false;$safe=$false;$success=$false;$failure=''
+try{
+  foreach($plan in $plans){Stop-OwnedAppTree $plan.Spec.N $plan.Spec.A $plan.Spec.P $plan.Tree}
+  Assert-DependencyInputs
+  foreach($rel in $roots){
+    $dir=if($rel){Join-Path $root $rel}else{$root}
+    $modules=Join-Path $dir 'node_modules'
+    $old=Join-Path (Join-Path $backup ('previous/'+$rel)) 'node_modules'
+    if(Test-Path -LiteralPath $modules){
+      New-Item -ItemType Directory -Path (Split-Path -Parent $old) -Force|Out-Null
+      Move-Item -LiteralPath $modules -Destination $old -ErrorAction Stop
+      $moved+=@{Modules=$modules;Old=$old}
+    }
+  }
+  $installStarted=$true
+  Push-Location $root
+  try{& $pnpm install --frozen-lockfile --prefer-offline --reporter=append-only;if($LASTEXITCODE){throw ('PNPM_INSTALL_FAILED '+$LASTEXITCODE)}}finally{Pop-Location}
+  Assert-DependencyInputs
+  if(!(Test-InstalledDependencies)){throw 'DEPENDENCY_INSTALLED_GRAPH_UNVERIFIED'}
+  $success=$true;$safe=$true
+}catch{
+  $failure=$_.Exception.Message
+  try{
+    if($installStarted){
+      foreach($rel in $roots){
+        $dir=if($rel){Join-Path $root $rel}else{$root}
+        $modules=Join-Path $dir 'node_modules'
+        if(Test-Path -LiteralPath $modules){
+          $failed=Join-Path (Join-Path $backup ('failed/'+$rel)) 'node_modules'
+          New-Item -ItemType Directory -Path (Split-Path -Parent $failed) -Force|Out-Null
+          Move-Item -LiteralPath $modules -Destination $failed -ErrorAction Stop
+        }
+      }
+    }
+    foreach($entry in $moved){
+      if(Test-Path -LiteralPath $entry.Modules){throw 'DEPENDENCY_ROLLBACK_TARGET_OCCUPIED'}
+      Move-Item -LiteralPath $entry.Old -Destination $entry.Modules -ErrorAction Stop
+      if(!(Test-Path -LiteralPath $entry.Modules -PathType Container)){throw 'DEPENDENCY_ROLLBACK_MISSING'}
+    }
+    $restoredHash=if(Test-Path -LiteralPath $oldLockPath){(Get-FileHash -LiteralPath $oldLockPath).Hash}else{''}
+    if($restoredHash -cne $oldLockHash){throw 'DEPENDENCY_ROLLBACK_LOCK_CHANGED'}
+    $safe=$true;Write-Output 'APP_DEPENDENCY_ROLLBACK_PASS'
+  }catch{$failure+='; ROLLBACK '+$_.Exception.Message}
+}
+if($safe){
+  try{
+    foreach($plan in $plans){
+      $s=$plan.Spec
+      if((Get-ScheduledTask -TaskName $s.N).State -eq 'Running'){continue}
+      if(@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count){throw ('DEPENDENCY_RESTART_PORT_OCCUPIED '+$s.A)}
+      Start-ScheduledTask -TaskName $s.N -ErrorAction Stop
+    }
+  }catch{$safe=$false;$failure+='; RESTART '+$_.Exception.Message}
+}
+# Prove restored app ownership after maintenance, not just a start request.
+# Keep an installed candidate and rollback tree when a distinct app boot fails.
+if($safe -and $success -and $plans.Count){
+  $deadline=[DateTime]::UtcNow.AddSeconds(90)
+  $pending=@($plans)
+  do{
+    $snapshot=@(Get-CimInstance Win32_Process)
+    $pending=@(foreach($plan in $plans){
+      $s=$plan.Spec
+      try{
+        if((Get-ScheduledTask -TaskName $s.N).State -ne 'Running'){throw 'TASK_NOT_RUNNING'}
+        $tree=@(Get-OwnedAppProcessTree $s.A $snapshot $root $node)
+        $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
+        if($listeners.Count -ne 1 -or $tree.ProcessId -notcontains $listeners[0].OwningProcess){throw 'LISTENER_NOT_OWNED'}
+      }catch{$plan}
+    })
+    if(!$pending.Count){break}
+    Start-Sleep -Milliseconds 500
+  }while([DateTime]::UtcNow -lt $deadline)
+  if($pending.Count){$safe=$false;$failure+='; APP_RESTART_UNVERIFIED '+(($pending|ForEach-Object {$_.Spec.A}) -join ',')}
+  else{Write-Output 'APP_DEPENDENCY_RESTART_OWNERS_PASS'}
+}
+if(!$safe){Write-DependencyReceipt 'blocked' $backup;throw ('DEPENDENCY_RECOVERY_BLOCKED '+$failure)}
+if(!$success){Write-DependencyReceipt 'failed' $backup;throw ('DEPENDENCY_INSTALL_ROLLED_BACK '+$failure)}
+Write-DependencyReceipt 'pass' $backup
+Write-Output 'APP_DEPENDENCY_RECONCILE_PASS'
+'@
+  $script=$script.Replace('__INPUTS__',$json.Replace("'","''")).Replace('__KEY__',$key).Replace('__APPLY__',$(if($Apply){'$true'}else{'$false'})).Replace('__AUTOMATIC__',$(if($Automatic){'$true'}else{'$false'}))
+  Invoke-Lenovo $script
+}
 function Invoke-AppAction {
   if($DockerAction -eq 'help'){Show-AppsHelp;return}
   if($DockerAction -eq 'android'){Inspect-AppAndroid;return}
@@ -830,6 +1025,7 @@ function Invoke-AppAction {
   switch($DockerAction.ToLowerInvariant()){
     'status' {Inspect-AppSourceSync;Inspect-AppOwners}
     'verify' {Inspect-AppSourceSync -StrictCheck;Inspect-AppOwners -StrictCheck;Verify-AppWeb}
+    'reconcile' {Invoke-AppDependencyReconcile}
     'logs' {Show-AppLogs}
     'start' {Control-SingleApp 'start'}
     'restart' {Control-SingleApp 'restart'}
@@ -1028,6 +1224,7 @@ function Verify-Checks {
 try {
   $readOnlyOperation = $Action -in @('Status','Verify','Migrations') -or
     ($Action -eq 'Apps' -and $DockerAction -in @('help','status','verify','logs','android')) -or
+    ($Action -eq 'Apps' -and $DockerAction -eq 'reconcile' -and !$Apply) -or
     ($Action -eq 'Docker' -and $DockerAction -in @('help','status','ps','logs','images','volumes','networks','config','verify'))
   if (-not $readOnlyOperation) {
     try { $hasMutex = $mutex.WaitOne(0) }
