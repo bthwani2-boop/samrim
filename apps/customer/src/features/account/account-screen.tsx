@@ -36,6 +36,12 @@ export default function AccountScreen() {
         <Link href="/addresses" asChild><Pressable accessibilityRole="link" style={{ minHeight:44, justifyContent:"center", padding:12, backgroundColor:theme.actionSoft, borderRadius:10 }}>
           <Text style={{ color:theme.interactiveText }}>عناويني</Text>
         </Pressable></Link>
+        <Link href={{ pathname: "/stores", params: { chooseCity: "1" } }} asChild>
+          <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center", padding: 12,
+            backgroundColor: theme.actionSoft, borderRadius: 10 }}>
+            <Text style={{ color: theme.interactiveText }}>تغيير مدينة التسوّق</Text>
+          </Pressable>
+        </Link>
         <AccountPreferences />
         <StoreInvitations />
       </ScrollView>

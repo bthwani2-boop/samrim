@@ -29,11 +29,12 @@ type Props = Readonly<{ variant?: "home" | "directory" }>;
 export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const { theme } = useMobileAppearance();
   const api = resolvePublicStoreOrigin();
-  const params = useLocalSearchParams<{ city?: string | string[]; q?: string | string[]; vertical?: string | string[] }>();
+  const params = useLocalSearchParams<{ city?: string | string[]; q?: string | string[]; vertical?: string | string[]; chooseCity?: string | string[] }>();
   const initial = readStoreBrowseScope(params, INITIAL_CITY);
   const [cityId, setCityId] = React.useState(initial.city);
-  const [showCityPicker, setShowCityPicker] = React.useState(false);
-  const [showSearch, setShowSearch] = React.useState(variant === "directory" || Boolean(initial.q));
+  const chooseCity = params.chooseCity === "1";
+  const [showCityPicker, setShowCityPicker] = React.useState(chooseCity);
+  const [showSearch, setShowSearch] = React.useState(!chooseCity && (variant === "directory" || Boolean(initial.q)));
   const [draftQuery, setDraftQuery] = React.useState(initial.q);
   const [query, setQuery] = React.useState(initial.q);
   const [vertical, setVertical] = React.useState(initial.vertical ?? "");
@@ -47,6 +48,9 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     setVertical(initial.vertical ?? "");
     setAppliedRouteScope(routeScope);
   }, [appliedRouteScope, routeScope, initial.city, initial.q, initial.vertical]);
+  React.useEffect(() => {
+    if (chooseCity) { setShowCityPicker(true); setShowSearch(false); }
+  }, [chooseCity]);
   const [verticalRetry, setVerticalRetry] = React.useState(0);
   const [verticalState, setVerticalState] = React.useState<VerticalState>({
     city: "", loading: true, loadingMore: false, items: [],
@@ -217,7 +221,10 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
             </Pressable> : null}
           </View>
           {showCityPicker ? <ServiceCityScope key={api} origin={api} currentCity={cityId}
-            onApply={nextCity => { setCityId(nextCity); setShowCityPicker(false); }} /> : null}
+            onApply={nextCity => {
+              if (nextCity !== cityId) { setCityId(nextCity); setVertical(""); }
+              setShowCityPicker(false);
+            }} /> : null}
           {showSearch ? (
             <View style={{ flexDirection: "row", gap: 8 }}>
               <TextInput testID="stores-search" accessibilityLabel="البحث باسم المتجر" placeholder="ابحث باسم المتجر"

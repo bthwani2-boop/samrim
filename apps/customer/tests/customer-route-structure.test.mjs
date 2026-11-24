@@ -125,3 +125,9 @@ test("Customer account exposes the existing protected wallet and signed-out wall
   assert.match(identity, /enabled && session \? \(/);
   assert.match(identity, /href=\{destination\}/);
 });
+
+test("Account city shortcut and address login continuation reuse admitted routes", () => {
+  const account = readFeature("account/account-screen.tsx");
+  assert.match(account, /pathname: "\/stores", params: \{ chooseCity: "1" \}/);
+  assert.match(readFeature("addresses/addresses-screen.tsx"), /pathname: "\/login", params: \{ returnTo: "\/addresses" \}/);
+});

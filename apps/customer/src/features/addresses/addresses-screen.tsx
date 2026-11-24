@@ -142,7 +142,7 @@ export default function AddressesScreen() {
       <Text style={{color:theme.colorSecondary}}>عناوينك الخاصة محفوظة لدى DSH. حفظ الموقع لا يعني أنه مؤهل للتوصيل.</Text>
       <Pressable accessibilityRole="button" onPress={reload} style={button}><Text style={{color:theme.interactiveText}}>تحديث العناوين</Text></Pressable>
       {message?<Text accessibilityRole="alert" style={{color:theme.warningText}}>{message}</Text>:null}
-      {!view?<Link href="/login" style={{color:theme.interactiveText}}>التحقق من الحساب</Link>:<>
+      {!view?<Link href={{ pathname: "/login", params: { returnTo: "/addresses" } }} style={{color:theme.interactiveText}}>التحقق من الحساب</Link>:<>
         {view.items.length===0?<Text style={{color:theme.color}}>لا توجد عناوين مسجلة.</Text>:view.items.map(a=><Pressable key={a.id} accessibilityRole="button"
           disabled={busy||!!pending} style={button} onPress={()=>{setDraft(toDraft(a));setMap(false);}}>
           <Text style={{color:theme.color,fontWeight:"700"}}>{a.label}</Text><Text style={{color:theme.colorSecondary}}>{serviceCityLabel(a.cityId)} · {a.details}</Text>

@@ -377,3 +377,49 @@ test("Customer vertical continuation invalidates a cross-page duplicate or chang
     assert.equal(fresh.cursor, undefined, scenario);
   }
 });
+
+test("account city shortcut opens the existing city selector and rejects a multi-value shortcut", () => {
+  const app = harness({ params: { chooseCity: "1" } });
+  assert.ok(find(app.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string"));
+  const invalid = harness({ params: { chooseCity: ["1", "1"] } });
+  assert.equal(find(invalid.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string"), undefined);
+});
+
+test("explicit city change drops old category and preserves submitted search", async () => {
+  const app = harness({ params: { city: "sanaa", q: "مخبز", vertical: "grocery" } });
+  app.render();
+  const old = app.read();
+  assert.equal(old.verticalId, "grocery");
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1 });
+  await settle();
+  const changeCity = find(app.render(), node => node.props?.accessibilityLabel?.startsWith("تغيير مدينة التسوّق"));
+  changeCity.props.onPress();
+  find(app.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string").props.onApply("aden");
+  const loading = app.render();
+  const next = app.read();
+  assert.equal(old.signal.aborted, true);
+  assert.equal(next.cityId, "aden");
+  assert.equal(next.query, "مخبز");
+  assert.equal(next.verticalId, undefined);
+  assert.equal(byId(loading, "vertical-filter-clear").props.accessibilityState.selected, true);
+  old.resolve({ items: [store("old-city")], revision: 1 });
+  next.resolve({ items: [{ ...store("new-city"), cityId: "aden" }], revision: 2 });
+  await settle();
+  const current = app.render();
+  assert.equal(byId(current, "store-old-city"), undefined);
+  assert.ok(byId(current, "store-new-city"));
+  const home = find(current, node => node.type === "Link" && node.props.href?.pathname === "/");
+  assert.deepEqual(home.props.href.params, { city: "aden", q: "مخبز" });
+});
+
+test("reopening the selector and choosing the same city does not lose its filter", async () => {
+  const app = harness({ params: { city: "sanaa", vertical: "grocery" } });
+  app.render();
+  const old = app.read();
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1 });
+  await settle();
+  find(app.render(), node => node.props?.accessibilityLabel?.startsWith("تغيير مدينة التسوّق")).props.onPress();
+  find(app.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string").props.onApply("sanaa");
+  assert.equal(byId(app.render(), "vertical-option-grocery").props.accessibilityState.selected, true);
+  assert.equal(old.signal.aborted, false);
+});
