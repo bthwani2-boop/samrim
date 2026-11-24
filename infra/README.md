@@ -213,7 +213,7 @@ is authorized by this isolated verifier.
 
 ## Isolated Surface app preview
 
-`infra/Start-RefoundationApp.ps1 -Surface -App <app>` runs the named app from
+`tools/dev/Start-RefoundationApp.ps1 -Surface -App <app>` runs the named app from
 the current checkout. It uses separate loopback ports for Control Panel
 (`localhost:23100`), Customer (`127.0.0.1:23101`), Merchant
 (`127.0.0.1:23102`) and Captain Metro (`127.0.0.1:23103`).
@@ -230,14 +230,14 @@ owner with the two isolated Passkey and bootstrap opt-ins, the exact
 `http://localhost:23100` origin, and the dedicated disposable WebAuthn
 database described in [Identity](../services/identity/README.md). Then start
 Control Panel using
-`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -Surface -App control-panel -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap`.
+`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -Surface -App control-panel -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap`.
 The launcher requires both bootstrap routes on the local Identity owner.
 
 For a **synthetic Android emulator only**, the Customer can opt into WLT's
 read-only wallet and posted-funding history once **Identity, DSH and WLT** are
 running locally with isolated synthetic data. Start the Surface Customer
 presentation using
-`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -Surface -App customer -EnableAndroidWalletPreview -WltPort 23203`.
+`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -Surface -App customer -EnableAndroidWalletPreview -WltPort 23203`.
 The launcher checks the WLT loopback listener and its unauthenticated read
 must return HTTP 401. Android receives the emulator-to-host `10.0.2.2` origins
 for both Identity and WLT; the Web BFF continues using `127.0.0.1`.
@@ -252,7 +252,7 @@ Docker WLT appears. With its existing default launcher environment, its
 `/api/customer-auth/wallet` and `/wallet-transactions` routes remain disabled
 (`503`). Once the isolated `identity` and `wlt` containers are healthy,
 a **separately controlled Customer Web start** on Lenovo can use
-`pwsh -NoProfile -File infra/Start-RefoundationApp.ps1 -App customer -EnableDockerWalletWebPreview`
+`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -App customer -EnableDockerWalletWebPreview`
 from the verified runtime source. Only this opt-in sets the Web BFF's private
 `BTHWANI_DOCKER_WALLET_WEB_PREVIEW` flag, explicit isolated-test mode,
 and fixed local Identity `3201`

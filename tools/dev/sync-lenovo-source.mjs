@@ -20,7 +20,7 @@ const include = [
   "packages/design-system", "packages/push-device", "packages/tamagui-config",
   ...["identity", "dsh", "wlt"].flatMap(owner =>
     ["package.json", "tsconfig.json", "clients"].map(entry => `services/${owner}/${entry}`)),
-  "tools/mobile", "tools/dev", "patches", "infra/Start-RefoundationApp.ps1",
+  "tools/mobile", "tools/dev", "patches",
   "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", ".node-version",
   "tsconfig.base.json", "nx.json", "biome.json"
 ];

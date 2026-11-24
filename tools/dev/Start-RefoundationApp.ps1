@@ -132,7 +132,7 @@ function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
 
 $ports = @{ customer=28111; merchant=28112; captain=28113; 'control-panel'=23010 }
 if ($Surface) {
-  $source=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..')).Path
+  $source=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
   $node=(Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
   $nodeDir=Split-Path -Parent $node
   $logs=Join-Path $source '.tmp\surface-preview-logs'

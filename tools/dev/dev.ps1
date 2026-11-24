@@ -213,7 +213,7 @@ foreach($s in $specs){
 # Snapshot before stopping Task Scheduler: afterward parent links can disappear.
 $remoteAppProcessLifecycle = @'
 function Get-OwnedAppProcessTree([string]$App,[object[]]$Processes,[string]$Root,[string]$PinnedNode) {
-  $launcherPath=Join-Path $Root 'infra\Start-RefoundationApp.ps1'
+  $launcherPath=Join-Path $Root 'tools\dev\Start-RefoundationApp.ps1'
   $pattern='(?i)(?:^|\s)-App\s+"?'+[regex]::Escape($App)+'"?(?:\s|$)'
   $launchers=@($Processes | Where-Object {
     $_.Name -in @('pwsh.exe','powershell.exe') -and $_.CommandLine -and
@@ -960,7 +960,7 @@ foreach($s in $specs){
   $task=Get-ScheduledTask -TaskName $s.N
   $actions=@($task.Actions)
   $args=[string]$actions[0].Arguments
-  if($actions.Count -ne 1 -or $args.IndexOf((Join-Path $root 'infra\Start-RefoundationApp.ps1'),[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+  if($actions.Count -ne 1 -or $args.IndexOf((Join-Path $root 'tools\dev\Start-RefoundationApp.ps1'),[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
      $args -notmatch ('(?i)(?:^|\s)-App\s+"?'+[regex]::Escape($s.A)+'"?(?:\s|$)')){throw ('DEPENDENCY_TASK_OWNER_CHANGED '+$s.A)}
   if($task.State -eq 'Running'){
     $tree=@(Get-OwnedAppProcessTree $s.A $snapshot $root $node)

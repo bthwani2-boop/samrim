@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const file = fileURLToPath(new URL("../../infra/Start-RefoundationApp.ps1", import.meta.url));
+const file = fileURLToPath(new URL("./Start-RefoundationApp.ps1", import.meta.url));
 const launcher = readFileSync(file, "utf8");
 
 test("the Lenovo launcher assigns the process to a non-inheritable job at creation", (t) => {
