@@ -3,7 +3,7 @@ set -euo pipefail
 
 # One disposable, localhost-only simulator. Do not replace shared Compose services.
 image="bthwani-payment-mock-ci:${GITHUB_SHA:-local}"
-docker build --file infra/payment-mock/Dockerfile --tag "$image" infra/payment-mock
+docker build --file tests/infra/payment-mock/Dockerfile --tag "$image" tests/infra/payment-mock
 container="$(docker run --rm -d --publish '127.0.0.1::8080' "$image")"
 cleanup() {
   docker rm -f "$container" >/dev/null 2>&1 || true

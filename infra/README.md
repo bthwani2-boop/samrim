@@ -15,7 +15,7 @@ This environment is synthetic development only, not production deployment. Legac
 | `wlt` (opt-in overlay) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
 | `dsh` (with optional Compose file) | Public discovery only; proven read-only Store/Offer API | 3202 |
 
-The `payment-mock` image is built from `infra/payment-mock/Dockerfile` using the existing
+The `payment-mock` image is built from `tests/infra/payment-mock/Dockerfile` using the existing
 pinned WireMock base and fixed, synthetic funding-status mappings. Only the
 listed `GET /sandbox/v1/funding/{reference}` test identities return evidence.
 Unknown operations return 404. The simulator never owns wallets, posts money,

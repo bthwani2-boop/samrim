@@ -67,7 +67,7 @@ services:
 
   payment-mock:
     build:
-      context: ./payment-mock
+      context: ../tests/infra/payment-mock
     image: bthwani/payment-mock:local
     restart: unless-stopped
     logging: *logging

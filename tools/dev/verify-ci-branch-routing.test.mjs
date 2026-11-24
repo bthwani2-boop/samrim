@@ -103,11 +103,11 @@ test("SQL baseline, sandbox and retained migration changes trigger Go quality an
 
 test("the disposable PostgreSQL job routes and runs the DSH restore rehearsal", () => {
   const { content, push, pr } = events(workflows[2]);
-  const restoreScript = /^ {6}- 'infra\/verify-isolated-postgres\.ps1'$/m;
+  const restoreScript = /^ {6}- 'tests\/infra\/verify-isolated-postgres\.ps1'$/m;
   assert.match(push, restoreScript);
   assert.match(pr, restoreScript);
   const job = content.slice(content.indexOf("\n  owner-postgres-integration:\n"));
-  assert.match(job, /shell: pwsh\n {8}run: \.\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/);
+  assert.match(job, /shell: pwsh\n {8}run: \.\/tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/);
 });
 
 test("CI retains real security and contract checks without the retired scaffold guard", () => {

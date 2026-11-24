@@ -23,7 +23,7 @@ test("database and mock integrations stay in one isolated project", () => {
   for (const name of ["media", "mailpit", "payment-mock"]) {
     assert.ok(base.services[name].ports.every((v) => v.startsWith("127.0.0.1:")), name);
   }
-  assert.equal(base.services["payment-mock"].build.context, "./payment-mock");
+  assert.equal(base.services["payment-mock"].build.context, "../tests/infra/payment-mock");
   assert.equal(base.services["payment-mock"].image, "bthwani/payment-mock:local");
   assert.ok(!base.services["payment-mock"].volumes?.length, "synthetic provider must not mount host/legacy data");
   assert.ok(!base.services.wlt, "No fake WLT runtime until real ledger owner exists");
