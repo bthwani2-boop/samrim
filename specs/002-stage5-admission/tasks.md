@@ -43,3 +43,5 @@ This is implementation work in the existing Spec Kit task set, **not** a second 
 - **Developer Spec Kit template workflow** is compatible with progressive development of existing and newly proposed Product scope; it does not prove any business route works or admit production.
 - **Governance READY** is a reviewed *policy-source* gate, not a financial/API/mobile runtime PASS.
 - **Service, SQL, native and release acceptance** each require direct evidence and remain `NOT_RUN` until performed on the actual approved revision.
+
+- [x] T017-WLT-RESERVATION (BTH-17, isolated owner foundation): exact-YER WALLET/MIXED reservation from posted customer funding, immutable release, actor-bound checkout payload, per-actor serialization, insufficient balance rejection and prevention of reversal while reserved. Existing reader/sandbox roles have no reservation writer authority. Fresh PostgreSQL + real Identity wallet suite and separate pg_dump/restore proof passed. No payable quote, effective agreement, authenticated DSH command, Order creation, capture/refund or runtime activation yet; parent T017 remains open.

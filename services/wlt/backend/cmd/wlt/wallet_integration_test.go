@@ -65,6 +65,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	apply("schema", "10_projections.sql")
 	apply("schema", "20_permissions.sql")
 	apply("schema", "30_commercial_agreements.sql")
+	apply("schema", "40_order_wallet_reservations.sql")
 	t.Run("commercial agreement proposals", func(t *testing.T) {
 		verifyCommercialAgreementProposals(t, ctx, owner, reader)
 	})
@@ -94,6 +95,15 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	for _, privilege := range []struct {
 		name, grant, revoke string
 	}{
+		{"private reservation read",
+			"GRANT SELECT (wallet_yer) ON wlt.order_wallet_reservations TO bthwani_wlt_reader",
+			"REVOKE SELECT (wallet_yer) ON wlt.order_wallet_reservations FROM bthwani_wlt_reader"},
+		{"reservation execution",
+			"GRANT EXECUTE ON FUNCTION wlt.reserve_order_wallet(text,text,text,text,text,bigint,bigint) TO bthwani_wlt_reader",
+			"REVOKE EXECUTE ON FUNCTION wlt.reserve_order_wallet(text,text,text,text,text,bigint,bigint) FROM bthwani_wlt_reader"},
+		{"release execution",
+			"GRANT EXECUTE ON FUNCTION wlt.release_order_wallet(text,text,text,text) TO bthwani_wlt_reader",
+			"REVOKE EXECUTE ON FUNCTION wlt.release_order_wallet(text,text,text,text) FROM bthwani_wlt_reader"},
 		{"private commercial proposal column read",
 			"GRANT SELECT (commission_basis_points) ON wlt.store_commercial_agreement_proposals TO bthwani_wlt_reader",
 			"REVOKE SELECT (commission_basis_points) ON wlt.store_commercial_agreement_proposals FROM bthwani_wlt_reader"},
@@ -151,6 +161,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 
 	// Add postings after sandbox setup and verify they coexist with the original one.
 	executeFixture(t, ctx, owner, post, "funding-0002", "wallet-two", "synthetic-b", int64(41), "YER")
+	t.Run("order wallet reservations", func(t *testing.T) { verifyOrderFundingReservations(t, ctx, owner, reader) })
 	const attempts = 8
 	results := make(chan error, attempts)
 	var contenders sync.WaitGroup

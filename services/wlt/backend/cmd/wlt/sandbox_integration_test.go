@@ -121,6 +121,21 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 		VALUES ('reversal-invalid', 'wallet-two', 'sandbox-reversal', 'interrupted-credit', 8, 'sandbox-interrupted-credit')`)
 	assertSQLState(t, err, "23514")
 
+	// A real existing sandbox credit must not be reversed while its balance is held.
+	var reservation string
+	if err = owner.QueryRowContext(ctx, "SELECT wlt.reserve_order_wallet($1,$2,$3,$4,$5,$6,$7)", "checkout-reversal-guard", "wallet-two", "store-a", strings.Repeat("b", 64), "WALLET", int64(57), int64(57)).Scan(&reservation); err != nil || reservation != "RESERVED" {
+		t.Fatalf("reserve before reversal %s %v", reservation, err)
+	}
+	if err = reverse(customer, "interrupted-credit", io.Discard); err == nil {
+		t.Fatal("reversed reserved funding")
+	}
+	var heldBalance string
+	if err = owner.QueryRowContext(ctx, "SELECT balance_yer::text FROM wlt.customer_wallet_balances WHERE actor_id='wallet-two'").Scan(&heldBalance); err != nil || heldBalance != "57" {
+		t.Fatalf("guard changed posted balance %s %v", heldBalance, err)
+	}
+	if err = owner.QueryRowContext(ctx, "SELECT wlt.release_order_wallet($1,$2,$3,$4)", "checkout-reversal-guard", "wallet-two", "release-reversal-guard", "synthetic cancellation").Scan(&reservation); err != nil || reservation != "RELEASED" {
+		t.Fatalf("release before reversal %s %v", reservation, err)
+	}
 	if err := reverse(customer, "interrupted-credit", lostConfirmation{}); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("expected lost reversal confirmation, got %v", err)
 	}
