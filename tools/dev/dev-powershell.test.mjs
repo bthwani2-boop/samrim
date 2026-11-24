@@ -215,6 +215,35 @@ test("strict app verification distinguishes copied lockfile from installed depen
   assert.match(launcher,/\$installedMatch/);
 });
 
+test("owner baseline reconciliation forwards one intact native option", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted = scriptPath.replaceAll("'", "''");
+  const ps = [
+    "$ErrorActionPreference='Stop'",
+    "$tok=$null;$errors=$null",
+    `$ast=[Management.Automation.Language.Parser]::ParseFile('${quoted}',[ref]$tok,[ref]$errors)`,
+    "$assignment=$ast.Find({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$reconcileOptions'},$true)",
+    "if(!$assignment){throw 'MISSING_RECONCILE_OPTIONS'}",
+    "$CutoverDshDatabase=$false;$PrepareBaseline=$true;$mode='--apply-preview'",
+    "Invoke-Expression $assignment.Extent.Text",
+    "$actual=& node -e 'console.log(JSON.stringify(process.argv.slice(1)))' -- $mode @reconcileOptions",
+    "if($LASTEXITCODE -ne 0){throw 'NATIVE_ARGUMENT_PROBE_FAILED'}",
+    "$actual",
+    "$PrepareBaseline=$false",
+    "Invoke-Expression $assignment.Extent.Text",
+    "$actual=& node -e 'console.log(JSON.stringify(process.argv.slice(1)))' -- $mode @reconcileOptions",
+    "if($LASTEXITCODE -ne 0){throw 'NATIVE_ARGUMENT_PROBE_FAILED'}",
+    "$actual",
+  ].join("; ");
+  const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], {
+    encoding: "utf8", windowsHide: true, timeout: 15000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  const actual = result.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line));
+  assert.deepEqual(actual, [["--apply-preview", "--prepare-baseline"], ["--apply-preview"]]);
+});
+
 test("pnpm package-manager lock document is excluded but workspace changes are not", {
   skip: process.platform !== "win32",
 },()=>{

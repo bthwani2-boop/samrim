@@ -817,7 +817,7 @@ function Invoke-ScopedDocker {
       Assert-Ok (!$PrepareDshDatabase -or ($Apply -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline)) 'Dedicated DSH database preparation requires explicit isolated -Apply without another operation'
       $mode = if ($RelocateIdentityDatabase -and $ResumeIdentityDatabase) { '--resume-identity-database' } elseif ($RelocateIdentityDatabase) { '--relocate-identity-database' } elseif ($CutoverDshDatabase) { '--cutover-dsh-database' } elseif ($PrepareDshDatabase -and $ResumeDshDatabase) { '--resume-dsh-database' } elseif ($PrepareDshDatabase) { '--prepare-dsh-database' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
       Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply, without capability activation'
-      $reconcileOptions = if ($CutoverDshDatabase) { @($PreparedSourceSha) } elseif ($PrepareBaseline) { @('--prepare-baseline') } else { @() }
+      $reconcileOptions = @(if ($CutoverDshDatabase) { $PreparedSourceSha } elseif ($PrepareBaseline) { '--prepare-baseline' })
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {
         if ($Apply) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
