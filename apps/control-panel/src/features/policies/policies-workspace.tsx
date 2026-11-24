@@ -8,6 +8,7 @@ import {
 } from "./city-policy-command";
 import CityPolicyHistory from "./city-policy-history";
 import type { PolicyCityDirectory } from "./policy-city-directory";
+import { readRegistrationOverview, type RegistrationOverview } from "./store-registration-command";
 
 const validCity = /^[a-z0-9-]{1,64}$/;
 
@@ -17,6 +18,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
 }>) {
   const [city, setCity] = useState("");
   const [policy, setPolicy] = useState<CityPolicy | null>(null);
+  const [admission, setAdmission] = useState<RegistrationOverview | null>(null);
   const [maxPause, setMaxPause] = useState<number | null>(null);
   const [maxPreparation, setMaxPreparation] = useState<number | null>(null);
   const [reason, setReason] = useState("");
@@ -46,6 +48,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
     if (busy || uncertain || pending) return;
     setCity(value);
     setPolicy(null);
+    setAdmission(null);
     setRequiresRead(false);
     setMaxPause(null);
     setMaxPreparation(null);
@@ -59,17 +62,28 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
     setBusy(true);
     setMessage("");
     setErrorMessage("");
+    setAdmission(null);
     try {
-      const response = await fetch(endpoint, {
-        method: "GET", credentials: "same-origin", cache: "no-store",
-        headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
-      });
-      if (!response.ok) {
-        throw new Error(response.status === 403 || response.status === 401
-          ? "Identity لا يثبت صلاحية إدارة السياسات الحالية."
-          : "تعذر قراءة سياسة المدينة من DSH. لا توجد قيم افتراضية مفترضة؛ لا تعتبر 503 دليلًا على غياب السياسة.");
+      // Independent owner reads: a failed relation or availability policy must
+      // never become an implicit admission, closure or default configuration.
+      const [response, overview] = await Promise.allSettled([
+        fetch(endpoint, {
+          method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
+        }),
+        readRegistrationOverview(city, actorId),
+      ]);
+      if (response.status === "fulfilled" && (response.value.status === 401 || response.value.status === 403)) {
+        setRequiresRead(true);
+        throw new Error("Identity لا يثبت صلاحية إدارة السياسات الحالية.");
       }
-      const current = parseCityPolicy(await response.json(), city);
+      if (overview.status === "fulfilled") setAdmission(overview.value);
+      if (response.status === "rejected") throw response.reason;
+      const responseValue = response.value;
+      if (!responseValue.ok) {
+        throw new Error("تعذر قراءة سياسة إتاحة المتاجر من DSH. لا توجد قيم افتراضية مفترضة؛ لا تعتبر 503 دليلًا على غياب السياسة.");
+      }
+      const current = parseCityPolicy(await responseValue.json(), city);
       if (!current) throw new Error("أعاد DSH بيانات سياسة غير معتمدة.");
       setPolicy(current);
       setRequiresRead(false);
@@ -133,6 +147,10 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
       return;
     }
     if (result.status === "unknown" || uncertain) {
+      if (result.status === "denied") {
+        setAdmission(null);
+        setPolicy(null);
+      }
       setUncertain(true);
       setErrorMessage(result.status === "denied"
         ? "تعذّر التحقق من الصلاحية لاسترداد العملية. احتفظ بمعرّفها حتى استعادة الصلاحية."
@@ -141,6 +159,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
     }
     setPending(null);
     if (result.status === "denied") {
+      setAdmission(null);
       setPolicy(null);
       setProvision(false);
       setRequiresRead(true);
@@ -222,8 +241,23 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
             <Input aria-label="معرّف المدينة" value={city} maxLength={64}
               disabled={busy || uncertain || !!pending} onChange={event => selectCity(event.target.value)} />
           </details>
-          <Button htmlType="submit" disabled={!endpoint || busy} loading={busy}>قراءة السياسة الحالية</Button>
+          <Button htmlType="submit" disabled={!endpoint || busy} loading={busy}>قراءة سياسات المدينة الحالية</Button>
         </Form>
+        {admission && (
+          <section aria-label="قبول المتاجر حسب النموذج" style={{ marginBlockStart: 16 }}>
+            <Typography.Title level={4}>قبول المتاجر الجديدة — DSH</Typography.Title>
+            {(["MARKETPLACE", "DIRECT"] as const).map(relation => {
+              const entry = admission[relation];
+              return <Typography.Paragraph key={relation}>
+                <strong>{relation === "MARKETPLACE" ? "متاجر السوق" : "المتاجر المباشرة"}:</strong>{" "}
+                {entry.status === "unavailable" ? "تعذر التحقق من المالك" :
+                  entry.policy.version === 0 ? "غير مهيأة — القبول غير متاح" :
+                  (entry.policy.enabled ? "القبول متاح" : "القبول مغلق") + " — الإصدار " + entry.policy.version}
+              </Typography.Paragraph>;
+            })}
+            <Link href="/policies/store-registration">إدارة سياسة القبول وسجلها</Link>
+          </section>
+        )}
         {policy && (
           <section aria-label="السياسة الحالية" style={{ marginBlockStart: 16 }}>
             <Typography.Paragraph>الإصدار: <strong>{policy.version}</strong> — المدينة: {policy.cityId}</Typography.Paragraph>

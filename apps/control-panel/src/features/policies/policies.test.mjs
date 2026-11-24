@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 import { findWorkspaceEntry } from "../navigation/workspace-registry.ts";
 import { canShowNavigation } from "../session/operator-permissions.ts";
-import { reconcileCityPolicy } from "./city-policy-command.ts";
+import { parseCityPolicy, reconcileCityPolicy } from "./city-policy-command.ts";
 import { readRegistrationHistory, readRegistrationOverview } from "./store-registration-command.ts";
 
 test("policies: routes have the expected navigation permission boundary", () => {
@@ -287,4 +287,97 @@ test("policy city directory reads the bounded owner pages without treating parti
   origin = null;
   assert.deepEqual(await load(), { status: "unavailable", cities: [] });
   assert.equal(calls.length, before);
+});
+
+test("operational policy refuses malformed owner evidence", () => {
+  assert.deepEqual(parseCityPolicy(committed, "sanaa"), committed);
+  for (const invalid of [
+    { ...committed, maxPauseSeconds: -1 },
+    { ...committed, maxPreparationMinutes: 1441 },
+    { ...committed, updatedAt: "not a timestamp" },
+    { ...committed, changedByActor: " " },
+    { ...committed, changeReason: "" },
+    { ...committed, extra: "unknown" },
+  ]) assert.equal(parseCityPolicy(invalid, "sanaa"), null);
+});
+
+test("operational policy never confirms a different audit identity or reason at the same version", async t => {
+  for (const [write, read] of [
+    [{ ...committed, changeReason: "Different command" }, committed],
+    [committed, { ...committed, changedByActor: "operator-2" }],
+    [committed, { ...committed, changeReason: "Different command" }],
+    [committed, { ...committed, updatedAt: "2026-11-19T06:00:00Z" }],
+  ]) {
+    const fetch = t.mock.method(globalThis, "fetch", async (_url, init) =>
+      Response.json(init.method === "PATCH" ? { policy: write, replay: false } : read));
+    assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), { status: "unknown" });
+    fetch.mock.restore();
+  }
+});
+
+test("policy center renders independently verified city admission, clears old scope, and hides evidence after denial", async t => {
+  const require = createRequire(import.meta.url);
+  const { transformSync } = require("next/dist/build/swc/index.js");
+  const compiled = transformSync(readFileSync(new URL("./policies-workspace.tsx", import.meta.url), "utf8"), {
+    jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
+      transform: { react: { runtime: "automatic" } } }, module: { type: "commonjs" },
+  }).code;
+  const states = [];
+  let index = 0;
+  const jsx = (type, props) => ({ type, props });
+  let denied = false;
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    calls.push(url);
+    assert.equal(init.headers["X-BThwani-Operator"], "operator-1");
+    return denied ? Response.json({}, { status: 403 }) : Response.json({}, { status: 503 });
+  });
+  const mocks = {
+    "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+    react: { useState(initial) { const i = index++; if (!(i in states)) states[i] = initial;
+      return [states[i], next => { states[i] = typeof next === "function" ? next(states[i]) : next; }]; } },
+    antd: { Alert: "Alert", Button: "Button", Card: "Card", Checkbox: "Checkbox",
+      Form: { Item: "FormItem" }, Input: { TextArea: "TextArea" }, InputNumber: "Number",
+      Select: "Select", Space: "Space", Typography: { Title: "Title", Paragraph: "Paragraph", Text: "Text" } },
+    "next/link": { __esModule: true, default: "Link" },
+    "./city-policy-command": { parseCityPolicy, reconcileCityPolicy },
+    "./city-policy-history": { __esModule: true, default: "History" },
+    "./store-registration-command": { readRegistrationOverview: async (city, actor) => {
+      assert.equal(actor, "operator-1");
+      calls.push(city);
+      return { MARKETPLACE: { status: "current", policy: { version: 2, enabled: true } },
+        DIRECT: { status: "unavailable" } };
+    } },
+  };
+  const module = { exports: {} };
+  new Function("require", "module", "exports", compiled)(name => {
+    assert.ok(Object.hasOwn(mocks, name), name); return mocks[name];
+  }, module, module.exports);
+  function flatten(tree) { return !tree || typeof tree !== "object" ? [] :
+    Array.isArray(tree) ? tree.flatMap(flatten) : [tree, ...flatten(tree.props?.children)]; }
+  const render = () => { index = 0; return flatten(module.exports.default({ actorId: "operator-1",
+    directory: { status: "current", cities: [{ value: "sanaa", label: "Sanaa" }, { value: "aden", label: "Aden" }] } })); };
+  const city = () => render().find(n => n.props?.["aria-label"] === "اختيار المدينة");
+  const overview = () => render().find(n => n.props?.["aria-label"] === "قبول المتاجر حسب النموذج");
+  const read = () => render().find(n => n.type === mocks.antd.Form).props.onFinish();
+  city().props.onChange("sanaa"); read(); await new Promise(resolve => setImmediate(resolve));
+  assert.ok(overview());
+  assert.match(JSON.stringify(overview()), /القبول متاح — الإصدار 2/);
+  assert.match(JSON.stringify(overview()), /تعذر التحقق من المالك/);
+  assert.deepEqual(calls, ["/api/policies/cities/sanaa", "sanaa"]);
+  city().props.onChange("aden"); assert.equal(overview(), undefined);
+  denied = true; read(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(overview(), undefined);
+  assert.deepEqual(calls.slice(2), ["/api/policies/cities/aden", "aden"]);
+});
+
+test("operational policy refuses mismatched endpoint before network access", async t => {
+  const fetch = t.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected traffic"); });
+  for (const [path, city, actor] of [
+    ["/api/policies/cities/aden", "sanaa", actorId],
+    ["https://example.invalid", "sanaa", actorId],
+    [endpoint, "../sanaa", actorId],
+    [endpoint, "sanaa", ""],
+  ]) assert.deepEqual(await reconcileCityPolicy(path, city, actor, change), { status: "rejected" });
+  assert.equal(fetch.mock.callCount(), 0);
 });
