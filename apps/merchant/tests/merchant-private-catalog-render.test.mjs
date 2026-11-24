@@ -66,7 +66,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
           successText: "good", warningText: "warning", dangerText: "danger",
         } }),
       },
-      "./merchant-catalog-draft-form": { default: "DraftForm" },
+      "./merchant-catalog-draft-form": { __esModule: true, default: "DraftForm" },
       "./catalog-export": { __esModule: true, default: "CatalogExport" },
       "./inventory-summary": { __esModule: true, default: "InventorySummary" },
       "./catalog-transport": {
@@ -168,6 +168,30 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       await Promise.resolve();
       assert.ok(!nodes(render("merchant-b", stores)).some(n => n.props?.children === "قديم"));
       assert.equal(requests.length, 6);
+      const draftId = "of-1234567890abcdef1234567890abcdef";
+      const draft = { ...offer(draftId, "مسودة للسعر"), productActive: false,
+        variantSellable: false, requiredAttributesValid: false };
+      requests[5].resolve({ actorId: "merchant-b", storeId: "store-b",
+        items: [draft, { ...draft, id: "of-2234567890abcdef1234567890abcdef", name: "عرض منشور", published: true }] });
+      await Promise.resolve(); await Promise.resolve();
+      tree = render("merchant-b", stores);
+      const quickMode = nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات");
+      assert.ok(quickMode, "Merchant can open focused draft price editing");
+      quickMode.props.onPress();
+      tree = render("merchant-b", stores);
+      assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && !n.props.draft), "hide create form in focused mode");
+      const quickEdit = nodes(tree).find(n => n.props?.accessibilityLabel === "تعديل سعر ومخزون مسودة للسعر");
+      assert.ok(quickEdit);
+      assert.ok(!nodes(tree).some(n => n.props?.accessibilityLabel === "تعديل سعر ومخزون عرض منشور"));
+      quickEdit.props.onPress();
+      tree = render("merchant-b", stores);
+      const edit = nodes(tree).find(n => n.type === "DraftForm");
+      assert.equal(edit.props.priceStockOnly, true);
+      assert.equal(edit.props.storeId, "store-b");
+      assert.equal(edit.props.draft.id, draftId);
+      tree = render("merchant-c", stores);
+      assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && n.props.draft));
+      assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات").props.accessibilityState.selected, false);
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;

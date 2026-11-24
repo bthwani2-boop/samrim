@@ -4,8 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 import CatalogExport from "./catalog-export";
-import InventorySummary from "./inventory-summary";
 import { readMerchantCatalogPage } from "./catalog-transport";
+import InventorySummary from "./inventory-summary";
 import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
 
 type CatalogState = {
@@ -17,6 +17,12 @@ type CatalogState = {
   error?: string | undefined;
 };
 
+function canEditDraft(offer: MerchantCatalogOffer) {
+  return !offer.published && !offer.available && !offer.productActive &&
+    !offer.variantSellable && !offer.requiredAttributesValid &&
+    /^of-[a-f0-9]{32}$/.test(offer.id);
+}
+
 export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
   actorId: string;
   stores: MerchantDSHStanding["stores"];
@@ -25,6 +31,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
   const [selectedId, setSelectedId] = useState("");
   const [search, setSearch] = useState({ scope: "", draft: "", query: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [priceScope, setPriceScope] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<CatalogState>({
     scope: "", loading: false, more: false, items: [],
@@ -34,6 +41,10 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
   const selected = stores.find(store => store.id === selectedId) ?? stores[0];
   const storeId = selected?.id ?? "";
   const storeScope = JSON.stringify([actorId, storeId]);
+  const priceStockOnly = priceScope === storeScope;
+  // A different actor or Store starts in the regular catalog, even on returning to a previous Store.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the scope change resets the focused view.
+  useEffect(() => { setPriceScope(null); }, [storeScope]);
   const draftSearch = search.scope === storeScope ? search.draft : "";
   const searchQuery = search.scope === storeScope ? search.query : "";
   const scope = JSON.stringify([actorId, storeId, searchQuery]);
@@ -112,8 +123,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
 
   return <View testID="merchant-private-catalog" style={{ gap: 14 }}>
     <Text style={{ color: theme.colorSecondary, lineHeight: 24 }}>
-      يعرض DSH منتجات وعروض متجرك، بما فيها المسودات وغير المنشورة. لا تمنح هذه القراءة صلاحية
-      البيع أو تغيير السعر والمخزون حتى تكتمل وظائف إدارة الكتالوج.
+      يعرض DSH منتجات وعروض متجرك. يمكن تعديل المسودات المؤهلة، أما العروض المنشورة فتظل للقراءة فقط.
     </Text>
     {stores.length === 0 ? <Text style={{ color: theme.color }}>سجّل متجرًا لعرض كتالوجه.</Text> :
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
@@ -125,6 +135,18 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
           <Text style={{ color: theme.color }}>{store.name}</Text>
         </Pressable>)}
       </View>}
+    {storeId && actorId ? <Pressable accessibilityRole="button"
+      accessibilityLabel="الأسعار والمخزون للمسودات"
+      accessibilityState={{ selected: priceStockOnly }}
+      style={{ ...button, backgroundColor: priceStockOnly ? theme.actionSoft : theme.surface }}
+      onPress={() => { setEditingId(null); setPriceScope(priceStockOnly ? null : storeScope); }}>
+      <Text style={{ color: theme.interactiveText }}>
+        {priceStockOnly ? "العودة إلى إدارة المنتجات" : "الأسعار والمخزون للمسودات"}
+      </Text>
+    </Pressable> : null}
+    {priceStockOnly ? <Text style={{ color: theme.colorSecondary }}>
+      عدّل السعر والكمية لمسودة واحدة في كل مرة. تعديل العروض المنشورة والحفظ الجماعي غير متاحين.
+    </Text> : null}
     {storeId && actorId ? <View style={{ gap: 8 }}>
       <TextInput accessibilityLabel="البحث باسم المنتج" value={draftSearch}
         onChangeText={draft => setSearch({ scope: storeScope, draft, query: searchQuery })}
@@ -142,8 +164,8 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
     </View> : null}
     {storeId && actorId ? <InventorySummary key={JSON.stringify([actorId, storeId, retry])}
       actorId={actorId} storeId={storeId} /> : null}
-    {storeId && actorId ? <CatalogExport actorId={actorId} storeId={storeId} /> : null}
-    {storeId && actorId ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
+    {storeId && actorId && !priceStockOnly ? <CatalogExport actorId={actorId} storeId={storeId} /> : null}
+    {storeId && actorId && !priceStockOnly ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
       onCreated={() => setRetry(value => value + 1)} /> : null}
     {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة كتالوج المتجر" /> : null}
     {visible.error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
@@ -164,19 +186,17 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
       <Text style={{ color: offer.published ? theme.successText : theme.warningText }}>
         {offer.published ? "عرض منشور" : "عرض غير منشور"} · {offer.available ? "متاح" : "موقوف"}
       </Text>
-      {!offer.published && !offer.available && !offer.productActive &&
-        !offer.variantSellable && !offer.requiredAttributesValid &&
-        /^of-[a-f0-9]{32}$/.test(offer.id) ?
-        <Pressable accessibilityRole="button" accessibilityLabel={`تعديل ${offer.name}`}
+      {canEditDraft(offer) ?
+        <Pressable accessibilityRole="button"
+          accessibilityLabel={priceStockOnly ? `تعديل سعر ومخزون ${offer.name}` : `تعديل ${offer.name}`}
           style={button} onPress={() => setEditingId(current => current === offer.id ? null : offer.id)}>
           <Text style={{ color: theme.interactiveText }}>
-            {editingId === offer.id ? "إغلاق تعديل المسودة" : "تعديل المسودة"}
+            {editingId === offer.id ? "إغلاق تعديل المسودة" : priceStockOnly ? "تعديل السعر والمخزون" : "تعديل المسودة"}
           </Text>
         </Pressable> : null}
-      {editingId === offer.id && !offer.published && !offer.available && !offer.productActive &&
-        !offer.variantSellable && !offer.requiredAttributesValid ?
-        <MerchantCatalogDraftForm key={`${storeScope}:${offer.id}:${offer.draftVersion}`}
-          actorId={actorId} storeId={storeId} draft={offer}
+      {editingId === offer.id && canEditDraft(offer) ?
+        <MerchantCatalogDraftForm key={`${storeScope}:${offer.id}:${offer.draftVersion}:${priceStockOnly}`}
+          actorId={actorId} storeId={storeId} draft={offer} priceStockOnly={priceStockOnly}
           onCreated={() => { setEditingId(null); setRetry(value => value + 1); }} /> : null}
       {!offer.productActive || !offer.variantSellable || !offer.requiredAttributesValid ?
         <Text style={{ color: theme.dangerText }}>المنتج أو الصنف غير مؤهل للبيع حاليًا.</Text> : null}

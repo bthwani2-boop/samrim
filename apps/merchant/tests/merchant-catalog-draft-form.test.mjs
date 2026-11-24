@@ -111,10 +111,10 @@ test("Merchant draft form retries the identical operation after unknown outcome 
       return mocks[name];
     }, mod, mod.exports, { localStorage });
     let created = 0;
-    function render(actorId = "merchant-a", storeId = "store-a", draft) {
+    function render(actorId = "merchant-a", storeId = "store-a", draft, priceStockOnly = false) {
       hooksCursor = 0;
       scheduled = [];
-      const tree = mod.exports.default({ actorId, storeId, draft, onCreated: () => { created++; } });
+      const tree = mod.exports.default({ actorId, storeId, draft, priceStockOnly, onCreated: () => { created++; } });
       for (const effect of scheduled) effect();
       return tree;
     }
@@ -246,6 +246,35 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     assert.equal(storage.size, 0, "DSH confirmed this version conflict did not apply the edit");
     assert.ok(nodes(render("merchant-a", "store-a", updatedDraft))
       .some(n => n.props?.accessibilityLabel === "تحديث مسودة الكتالوج"));
+
+    restart();
+    render("merchant-a", "store-a", updatedDraft, true);
+    await settle();
+    tree = render("merchant-a", "store-a", updatedDraft, true);
+    assert.equal(namedInput(tree, "اسم المنتج"), undefined, "focused pricing cannot rename a product");
+    assert.ok(nodes(tree).some(n => n.props?.children === updatedDraft.name));
+    namedInput(tree, "السعر بالريال اليمني").props.onChangeText("٦٥٠٠");
+    tree = render("merchant-a", "store-a", updatedDraft, true);
+    namedInput(tree, "عدد الوحدات").props.onChangeText("7");
+    tree = render("merchant-a", "store-a", updatedDraft, true);
+    const quickSave = nodes(tree).find(n => n.props?.accessibilityLabel === "حفظ تعديل المسودة");
+    assert.ok(quickSave && !quickSave.props.disabled);
+    quickSave.props.onPress();
+    await settle();
+    assert.equal(pending[5].change.name, updatedDraft.name);
+    assert.equal(pending[5].change.priceYer, "6500");
+    assert.equal(pending[5].change.stockUnits, 7);
+    assert.equal(pending[5].change.expectedVersion, 2);
+    pending[5].reject(new Error("unknown outcome"));
+    await settle();
+    tree = render("merchant-a", "store-a", updatedDraft, true);
+    nodes(tree).find(n => n.props?.accessibilityLabel === "إعادة تأكيد المسودة").props.onPress();
+    await settle();
+    assert.deepEqual(pending[6].change, pending[5].change);
+    pending[6].resolve({ replay: true });
+    await settle();
+    assert.equal(storage.size, 0);
+    assert.equal(created, 3);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
