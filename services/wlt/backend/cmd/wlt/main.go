@@ -62,6 +62,7 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 		AND NOT has_function_privilege('wlt.post_sandbox_customer_funding(text,text,bigint)'::regprocedure, 'EXECUTE')
 		AND NOT has_function_privilege('wlt.reverse_sandbox_customer_funding(text,text)'::regprocedure, 'EXECUTE')
 		AND NOT COALESCE(has_function_privilege(to_regprocedure('wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)'), 'EXECUTE'), false)
+		AND NOT COALESCE(has_function_privilege(to_regprocedure('wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)'), 'EXECUTE'), false)
 		AND NOT COALESCE(has_function_privilege(to_regprocedure('wlt.reserve_order_wallet(text,text,text,text,text,bigint,bigint)'), 'EXECUTE'), false)
 		AND NOT COALESCE(has_function_privilege(to_regprocedure('wlt.release_order_wallet(text,text,text,text)'), 'EXECUTE'), false)
 		AND NOT COALESCE(has_function_privilege(to_regprocedure('wlt.available_order_wallet_yer(text)'), 'EXECUTE'), false)
@@ -73,6 +74,8 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 				('wlt.customer_wallet_balances'::regclass, true),
 				('wlt.customer_funding_history'::regclass, true),
 				(to_regclass('wlt.store_commercial_agreement_proposals'), false),
+				(to_regclass('wlt.store_commercial_agreement_decisions'), false),
+				(to_regclass('wlt.commercial_agreement_review_states'), false),
 				(to_regclass('wlt.order_wallet_reservations'), false),
 				(to_regclass('wlt.order_wallet_releases'), false)
 			) AS relation(id, readable)

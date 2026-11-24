@@ -119,3 +119,107 @@ REVOKE ALL ON FUNCTION wlt.reject_commercial_proposal_rewrite() FROM PUBLIC;
 REVOKE ALL ON FUNCTION wlt.append_commercial_agreement_proposal(
     text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text
 ) FROM PUBLIC;
+
+-- Immutable evidence of a decision on one exact proposal. Neither consent nor
+-- Finance review activates terms, permits checkout, or posts money.
+CREATE TABLE wlt.store_commercial_agreement_decisions (
+    store_id text NOT NULL,
+    version bigint NOT NULL,
+    operation_id text NOT NULL UNIQUE CHECK (operation_id ~ '^[A-Za-z0-9._-]{8,128}$'),
+    decision text NOT NULL CHECK (decision IN ('ACCEPTED','DECLINED','FINANCE_APPROVED','FINANCE_REJECTED')),
+    stage text GENERATED ALWAYS AS (
+        CASE WHEN decision IN ('ACCEPTED','DECLINED') THEN 'MERCHANT' ELSE 'FINANCE' END
+    ) STORED,
+    actor_id text NOT NULL CHECK (char_length(actor_id) BETWEEN 1 AND 128
+        AND btrim(actor_id)=actor_id AND actor_id !~ '[[:cntrl:]]'),
+    reason text NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 300
+        AND btrim(reason)=reason AND reason !~ '[[:cntrl:]]'),
+    recorded_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    PRIMARY KEY (store_id,version,stage),
+    FOREIGN KEY (store_id,version) REFERENCES wlt.store_commercial_agreement_proposals(store_id,version)
+);
+CREATE TRIGGER commercial_decision_immutable
+BEFORE UPDATE OR DELETE OR TRUNCATE ON wlt.store_commercial_agreement_decisions
+FOR EACH STATEMENT EXECUTE FUNCTION wlt.reject_commercial_proposal_rewrite();
+
+-- Owner-only preparation. Future transport must prove current Identity role,
+-- Finance permission and DSH Store ownership before calling this command.
+CREATE FUNCTION wlt.record_commercial_agreement_decision(
+    p_store text,p_version bigint,p_proposal_operation text,p_operation text,
+    p_decision text,p_actor text,p_reason text
+) RETURNS text LANGUAGE plpgsql SET search_path=pg_catalog AS $decision$
+DECLARE
+    proposal wlt.store_commercial_agreement_proposals%ROWTYPE;
+    prior wlt.store_commercial_agreement_decisions%ROWTYPE;
+    consent wlt.store_commercial_agreement_decisions%ROWTYPE;
+    decision_stage text;
+BEGIN
+    IF current_database()<>'bthwani_wlt_test' OR current_user<>'bthwani_wlt_owner'
+        OR current_setting('transaction_isolation')<>'read committed' THEN
+        RAISE EXCEPTION 'isolated agreement owner required' USING ERRCODE='42501';
+    END IF;
+    IF p_store IS NULL OR p_store !~ '^[a-z0-9-]{1,64}$'
+       OR p_version IS NULL OR p_version NOT BETWEEN 1 AND 9007199254740991
+       OR p_proposal_operation IS NULL OR p_proposal_operation !~ '^[A-Za-z0-9._-]{8,128}$'
+       OR p_operation IS NULL OR p_operation !~ '^[A-Za-z0-9._-]{8,128}$'
+       OR p_decision IS NULL OR p_decision NOT IN ('ACCEPTED','DECLINED','FINANCE_APPROVED','FINANCE_REJECTED')
+       OR p_actor IS NULL OR char_length(p_actor) NOT BETWEEN 1 AND 128
+       OR p_actor<>btrim(p_actor) OR p_actor ~ '[[:cntrl:]]'
+       OR p_reason IS NULL OR char_length(p_reason) NOT BETWEEN 1 AND 300
+       OR p_reason<>btrim(p_reason) OR p_reason ~ '[[:cntrl:]]' THEN
+        RAISE EXCEPTION 'invalid agreement decision' USING ERRCODE='23514';
+    END IF;
+    -- Share the proposal writer's lock. A new version cannot race a consent.
+    PERFORM pg_advisory_xact_lock(hashtextextended('wlt:commercial-proposal:'||p_store,0));
+    SELECT * INTO proposal FROM wlt.store_commercial_agreement_proposals
+        WHERE store_id=p_store AND version=p_version;
+    IF NOT FOUND OR proposal.operation_id<>p_proposal_operation THEN
+        RAISE EXCEPTION 'proposal identity mismatch' USING ERRCODE='23514';
+    END IF;
+    SELECT * INTO prior FROM wlt.store_commercial_agreement_decisions WHERE operation_id=p_operation;
+    IF FOUND THEN
+        IF ROW(prior.store_id,prior.version,prior.decision,prior.actor_id,prior.reason)
+           IS DISTINCT FROM ROW(p_store,p_version,p_decision,p_actor,p_reason) THEN
+            RAISE EXCEPTION 'decision operation conflict' USING ERRCODE='23505';
+        END IF;
+        RETURN 'REPLAYED';
+    END IF;
+    IF p_version<>(SELECT max(version) FROM wlt.store_commercial_agreement_proposals WHERE store_id=p_store) THEN
+        RAISE EXCEPTION 'stale proposal' USING ERRCODE='40001';
+    END IF;
+    IF p_actor=proposal.proposed_by_actor THEN
+        RAISE EXCEPTION 'proposal author cannot decide own terms' USING ERRCODE='23514';
+    END IF;
+    decision_stage:=CASE WHEN p_decision IN ('ACCEPTED','DECLINED') THEN 'MERCHANT' ELSE 'FINANCE' END;
+    IF EXISTS(SELECT 1 FROM wlt.store_commercial_agreement_decisions
+        WHERE store_id=p_store AND version=p_version AND stage=decision_stage) THEN
+        RAISE EXCEPTION 'decision already recorded' USING ERRCODE='23505';
+    END IF;
+    IF decision_stage='FINANCE' THEN
+        SELECT * INTO consent FROM wlt.store_commercial_agreement_decisions
+          WHERE store_id=p_store AND version=p_version AND stage='MERCHANT';
+        IF NOT FOUND OR consent.decision<>'ACCEPTED' OR consent.actor_id=p_actor THEN
+            RAISE EXCEPTION 'separate accepted Merchant consent required' USING ERRCODE='23514';
+        END IF;
+    END IF;
+    INSERT INTO wlt.store_commercial_agreement_decisions(store_id,version,operation_id,decision,actor_id,reason)
+        VALUES(p_store,p_version,p_operation,p_decision,p_actor,p_reason);
+    RETURN 'RECORDED';
+END;
+$decision$;
+
+CREATE VIEW wlt.commercial_agreement_review_states WITH (security_barrier=true) AS
+SELECT p.store_id,p.version,p.operation_id AS proposal_operation_id,
+    CASE WHEN p.version<(SELECT max(v.version) FROM wlt.store_commercial_agreement_proposals v WHERE v.store_id=p.store_id)
+            THEN 'SUPERSEDED_PROPOSAL'
+         WHEN m.decision='DECLINED' THEN 'DECLINED'
+         WHEN f.decision='FINANCE_REJECTED' THEN 'FINANCE_REJECTED'
+         WHEN f.decision='FINANCE_APPROVED' THEN 'REVIEW_APPROVED_PENDING_ACTIVATION'
+         WHEN m.decision='ACCEPTED' THEN 'AWAITING_FINANCE_REVIEW'
+         ELSE 'AWAITING_MERCHANT_CONSENT' END AS review_state
+FROM wlt.store_commercial_agreement_proposals p
+LEFT JOIN wlt.store_commercial_agreement_decisions m ON m.store_id=p.store_id AND m.version=p.version AND m.stage='MERCHANT'
+LEFT JOIN wlt.store_commercial_agreement_decisions f ON f.store_id=p.store_id AND f.version=p.version AND f.stage='FINANCE';
+
+REVOKE ALL ON wlt.store_commercial_agreement_decisions,wlt.commercial_agreement_review_states FROM PUBLIC;
+REVOKE ALL ON FUNCTION wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text) FROM PUBLIC;

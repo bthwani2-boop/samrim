@@ -102,7 +102,7 @@ func verifyCommercialAgreementProposals(t *testing.T, ctx context.Context, owner
 	for _, statement := range []string{
 		"UPDATE wlt.store_commercial_agreement_proposals SET commission_basis_points=1 WHERE store_id='store-a'",
 		"DELETE FROM wlt.store_commercial_agreement_proposals WHERE store_id='store-a'",
-		"TRUNCATE wlt.store_commercial_agreement_proposals",
+		"TRUNCATE wlt.store_commercial_agreement_proposals CASCADE",
 	} {
 		_, err = owner.ExecContext(ctx, statement)
 		assertSQLState(t, err, "23514")

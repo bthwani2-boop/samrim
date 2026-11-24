@@ -274,6 +274,19 @@ for db in bthwani_wlt_test bthwani_wlt_restore; do
         AND NOT has_table_privilege('wlt.store_commercial_agreement_proposals','INSERT,UPDATE,DELETE,TRUNCATE')
         AND NOT has_function_privilege('wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE');")"
   [[ "$proposal_scope" == 't' ]] || { echo "WLT restore exposed commercial proposals" >&2; exit 1; }
+  agreement_decisions="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
+    -c "SELECT string_agg(store_id || ':' || version || ':' || review_state, ',' ORDER BY store_id,version)
+        FROM wlt.commercial_agreement_review_states;")"
+  [[ "$agreement_decisions" == 'store-a:1:SUPERSEDED_PROPOSAL,store-a:2:REVIEW_APPROVED_PENDING_ACTIVATION,store-b:1:DECLINED' ]] ||
+    { echo "WLT restored agreement review states differ" >&2; exit 1; }
+  decision_count="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
+    -c "SELECT count(*) FROM wlt.store_commercial_agreement_decisions;")"
+  [[ "$decision_count" == '3' ]] || { echo "WLT restored decision history differs" >&2; exit 1; }
+  decision_scope="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
+    -c "SELECT NOT has_any_column_privilege('wlt.store_commercial_agreement_decisions','SELECT')
+        AND NOT has_table_privilege('wlt.commercial_agreement_review_states','SELECT')
+        AND NOT has_function_privilege('wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE');")"
+  [[ "$decision_scope" == 't' ]] || { echo "WLT restore exposed commercial decisions" >&2; exit 1; }
   reservation_proof="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
     -c "SELECT count(*) || ':' || count(r.checkout_id) || ':' || sum(h.wallet_yer)
         FROM wlt.order_wallet_reservations h LEFT JOIN wlt.order_wallet_releases r USING(checkout_id);")"

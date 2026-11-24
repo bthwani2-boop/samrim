@@ -68,6 +68,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	apply("schema", "40_order_wallet_reservations.sql")
 	t.Run("commercial agreement proposals", func(t *testing.T) {
 		verifyCommercialAgreementProposals(t, ctx, owner, reader)
+		verifyAgreementDecisions(t, ctx, owner, reader)
 	})
 	// Post only from the isolated fixture owner; the HTTP runtime stays read-only.
 	// Preserve this exact posting while installing the separate sandbox.
@@ -95,6 +96,15 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	for _, privilege := range []struct {
 		name, grant, revoke string
 	}{
+		{"private agreement decision read",
+			"GRANT SELECT (decision) ON wlt.store_commercial_agreement_decisions TO bthwani_wlt_reader",
+			"REVOKE SELECT (decision) ON wlt.store_commercial_agreement_decisions FROM bthwani_wlt_reader"},
+		{"private agreement review state read",
+			"GRANT SELECT ON wlt.commercial_agreement_review_states TO bthwani_wlt_reader",
+			"REVOKE SELECT ON wlt.commercial_agreement_review_states FROM bthwani_wlt_reader"},
+		{"agreement decision execution",
+			"GRANT EXECUTE ON FUNCTION wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text) TO bthwani_wlt_reader",
+			"REVOKE EXECUTE ON FUNCTION wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text) FROM bthwani_wlt_reader"},
 		{"private reservation read",
 			"GRANT SELECT (wallet_yer) ON wlt.order_wallet_reservations TO bthwani_wlt_reader",
 			"REVOKE SELECT (wallet_yer) ON wlt.order_wallet_reservations FROM bthwani_wlt_reader"},
