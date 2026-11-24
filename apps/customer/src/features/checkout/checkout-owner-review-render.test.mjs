@@ -113,6 +113,7 @@ function harness(startStore = "store-one") {
         return new Promise((resolve, reject) => { call.resolve = resolve; call.reject = reject; });
       },
     },
+    "./checkout-review-form": { __esModule: true, default: "CheckoutReviewForm" },
     "./checkout-funding": {
       // This isolated UI harness deliberately supplies no WLT balance. The
       // real WLT adapter is tested independently; unavailable must not hide
@@ -310,4 +311,22 @@ test("Owner estimate rejection remains unavailable, and Identity sign-out clears
   assert.ok(flatten(h.render()).includes("سجل الدخول"));
   assert.ok(!nodes(h.render()).some(n => n.props?.testID === "checkout-cart-review"));
   h.blur();
+});
+
+test("eligible cart mounts the interactive owner review with the exact cart scope, never an order confirmation", async () => {
+  const h = harness("store-a");
+  h.render(); h.focus();
+  const cart = fixture("store-a");
+  cart.lines = cart.lines.filter(line => line.previewAvailable);
+  h.calls[0].resolve({ kind: "ready", cart });
+  await settle();
+  const tree = h.render();
+  const form = nodes(tree).find(n => n.type === "CheckoutReviewForm");
+  assert.ok(form);
+  assert.equal(form.props.actorId, cart.actorId);
+  assert.equal(form.props.storeId, cart.storeId);
+  assert.equal(form.props.cartVersion, cart.version);
+  assert.ok(nodes(tree).some(n => n.props?.testID === "checkout-confirmation-unavailable"));
+  h.blur();
+  assert.ok(!nodes(h.render()).some(n => n.type === "CheckoutReviewForm"));
 });

@@ -7,7 +7,7 @@ import { readVerifiedAddresses, readVerifiedDeliveryServiceability, verifyAddres
 import { serviceCityLabel } from "../location/serviceability";
 
 type Page = {items:CustomerAddress[];next:string|undefined};
-export default function DeliveryAddressReview({actorId,storeId}:Readonly<{actorId:string;storeId:string}>) {
+export default function DeliveryAddressReview({actorId,storeId,onSelectionChange}:Readonly<{actorId:string;storeId:string;onSelectionChange?:(address:Pick<CustomerAddress,"id"|"version">|null)=>void}>) {
   const {theme}=useMobileAppearance();
   const [page,setPage]=useState<Page|null>(null);
   const [selection,setSelection]=useState<CustomerAddress|null>(null);
@@ -23,7 +23,8 @@ export default function DeliveryAddressReview({actorId,storeId}:Readonly<{actorI
     scope.current?.abort();scope.current=null;request.current?.abort();request.current=null;
     clearTimeout(expiry.current);expiry.current=undefined;expiresAt.current=undefined;
     setPage(null);setSelection(null);setResult(null);setBusy(false);setError(false);
-  },[]);
+    onSelectionChange?.(null);
+  },[onSelectionChange]);
   const acceptExpiry=useCallback((deadline:number)=>{
     const limit=Math.min(expiresAt.current??deadline,deadline);
     if(!Number.isFinite(limit)||limit<=Date.now()){clear();setError(true);return false;}
@@ -66,7 +67,7 @@ export default function DeliveryAddressReview({actorId,storeId}:Readonly<{actorI
     if(expiresAt.current<=Date.now()){clear();setError(true);return;}
     request.current?.abort();
     const controller=new AbortController();request.current=controller;
-    setSelection(address);setResult(null);setError(false);setBusy(true);
+    setSelection(address);setResult(null);setError(false);setBusy(true);onSelectionChange?.(null);
     try {
       const value=await readVerifiedDeliveryServiceability(actorId,storeId,address.id,controller.signal);
       if(controller.signal.aborted||request.current!==controller)return;
@@ -74,6 +75,7 @@ export default function DeliveryAddressReview({actorId,storeId}:Readonly<{actorI
         value.actorId!==actorId||value.storeId!==storeId||value.addressId!==address.id||
         (value.evidence&&(value.evidence.addressVersion!==address.version||value.evidence.addressCityId!==address.cityId))){clear();setError(true);return;}
       setResult(value);
+      if(value.evidence)onSelectionChange?.({id:address.id,version:address.version});
     }catch{if(!controller.signal.aborted&&request.current===controller){clear();setError(true);}}
     finally{if(request.current===controller){request.current=null;setBusy(false);}}
   }

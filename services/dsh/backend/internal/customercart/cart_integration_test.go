@@ -223,6 +223,10 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 		first.Cart.Lines[0].Quantity != 2 || !first.Cart.Lines[0].PreviewAvailable {
 		t.Fatalf("invalid Cart owner result: %s", body)
 	}
+	// Review the exact same owner cart, recipient purpose and owned address.
+	t.Run("CheckoutReviewOwnerReadback", func(t *testing.T) {
+		verifyCheckoutReviewOnPostgres(t, ctx, db, schema, handler)
+	})
 	// A new DSH read endpoint derives exact merchandise value from one real
 	// PostgreSQL snapshot. It cannot claim delivery fees, a confirmed Order,
 	// a WLT allocation or a checkout-ready state.

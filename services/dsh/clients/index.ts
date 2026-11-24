@@ -17,6 +17,8 @@ export type { CustomerAddress, CustomerAddressChange, CustomerAddressPage, Custo
 export { evaluateDeliveryServiceability, getCustomerAddress, isCustomerAddressId, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress, validCustomerAddressChange } from "./customer-addresses.ts";
 export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";
 export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
+export type { CheckoutRecipientPurpose, CheckoutFulfillmentMode, CustomerCheckoutReviewInput, CustomerCheckoutReview, CustomerCheckoutBlocker } from "./customer-checkout-review.ts";
+export { validCustomerCheckoutReviewInput, parseCustomerCheckoutReview, reviewCurrentCustomerCheckout } from "./customer-checkout-review.ts";
 export type { CompanyEmployee, CompanyEmployeeRegistration, CompanyEmployeeRegistrationAudit } from "./employees.ts";
 export { getCompanyEmployee, getCompanyEmployeeRegistrationAudit, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
 export { dshOperations } from "./generated/dsh-operations.ts";

@@ -28,6 +28,8 @@ paths:
     $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}'
   /v1/carts/{storeID}/merchandise-estimate:
     $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}~1merchandise-estimate'
+  /v1/carts/{storeID}/checkout-review:
+    $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}~1checkout-review'
   /v1/stores/mine:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
   /v1/stores/{storeID}/catalog:
@@ -290,6 +292,63 @@ components:
           items: { $ref: '#/components/schemas/CustomerCartMerchandiseEstimateLine' }
         merchandiseSubtotalYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
         checkoutReady: { type: boolean, const: false }
+    CustomerCheckoutReviewInput:
+      type: object
+      additionalProperties: false
+      required: [expectedCartVersion, recipientPurpose, fulfillmentMode]
+      properties:
+        expectedCartVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        recipientPurpose: { type: string, enum: [SELF, OTHER] }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        addressId: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+        expectedAddressVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        recipientName: { type: string, minLength: 1, maxLength: 100 }
+        recipientPhone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
+        deliveryInstructions: { type: string, minLength: 1, maxLength: 300 }
+      allOf:
+        - if:
+            properties:
+              recipientPurpose: { const: SELF }
+          then:
+            not:
+              anyOf:
+                - required: [recipientName]
+                - required: [recipientPhone]
+                - required: [deliveryInstructions]
+          else:
+            required: [recipientName, recipientPhone]
+        - if:
+            properties:
+              fulfillmentMode: { const: CUSTOMER_PICKUP }
+          then:
+            not:
+              anyOf:
+                - required: [addressId]
+                - required: [expectedAddressVersion]
+                - required: [deliveryInstructions]
+          else:
+            required: [addressId, expectedAddressVersion]
+    CustomerCheckoutReview:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, cartVersion, recipientPurpose, fulfillmentMode, merchandise, checkoutReady, blockers]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        cartVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        recipientPurpose: { type: string, enum: [SELF, OTHER] }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        merchandise: { $ref: '#/components/schemas/CustomerCartMerchandiseEstimate' }
+        delivery: { $ref: '#/components/schemas/CustomerDeliveryServiceability' }
+        checkoutReady: { type: boolean, const: false }
+        blockers:
+          type: array
+          minItems: 3
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [FULFILLMENT_MODE_NOT_ADMITTED, PAYABLE_QUOTE_NOT_AVAILABLE, PAYMENT_ALLOCATION_NOT_AVAILABLE, ADDRESS_UNSERVICEABLE]
     CustomerCartResult:
       type: object
       additionalProperties: false
@@ -304,7 +363,7 @@ components:
       properties:
         error:
           type: string
-          enum: [INVALID_REQUEST, UNAUTHORIZED_OR_OWNER_UNAVAILABLE, STORE_OR_OFFER_NOT_AVAILABLE, CART_VERSION_OR_OPERATION_CONFLICT, OPERATION_RESULT_UNKNOWN, OWNER_UNAVAILABLE, CART_VERSION_CONFLICT, CART_EMPTY_OR_TOO_LARGE, CART_LINE_UNAVAILABLE, MERCHANDISE_AMOUNT_OUT_OF_RANGE]
+          enum: [INVALID_REQUEST, UNAUTHORIZED_OR_OWNER_UNAVAILABLE, STORE_OR_OFFER_NOT_AVAILABLE, CART_VERSION_OR_OPERATION_CONFLICT, OPERATION_RESULT_UNKNOWN, OWNER_UNAVAILABLE, CART_VERSION_CONFLICT, CART_EMPTY_OR_TOO_LARGE, CART_LINE_UNAVAILABLE, MERCHANDISE_AMOUNT_OUT_OF_RANGE, ADDRESS_OR_SERVICEABILITY_UNAVAILABLE, ADDRESS_VERSION_CONFLICT]
     PublicOfferEstimate:
       type: object
       additionalProperties: false

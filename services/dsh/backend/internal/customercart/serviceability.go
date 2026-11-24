@@ -66,12 +66,30 @@ func (h *Handler) deliveryServiceability(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	defer tx.Rollback()
+	result, err := readDeliveryServiceability(ctx, tx, actor, store, address)
+	if err != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	if tx.Commit() != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	if status = h.stillCurrent(ctx, token, actor); status != 200 {
+		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
+		return
+	}
+	reply(w, result)
+}
+
+// Both the geographic read and checkout review use this same owner snapshot.
+func readDeliveryServiceability(ctx context.Context, tx *sql.Tx, actor, store, address string) (DeliveryServiceability, error) {
 	result := DeliveryServiceability{ActorID: actor, StoreID: store, AddressID: address, Status: "UNAVAILABLE"}
 	var evidence DeliveryEvidence
 	var lat, lon, alat, alon float64
 	// The private address join is actor-scoped even for unpublished/unknown Stores.
 	// Eligibility uses one owner snapshot; no browsing preference or caller coordinates.
-	err = tx.QueryRowContext(ctx, `SELECT s.city_id,a.city_id,a.version,p.version,p.radius_metres,
+	err := tx.QueryRowContext(ctx, `SELECT s.city_id,a.city_id,a.version,p.version,p.radius_metres,
   s.latitude,s.longitude,a.latitude,a.longitude
   FROM stores s
   JOIN service_cities sc ON sc.id=s.city_id AND sc.active
@@ -87,16 +105,7 @@ func (h *Handler) deliveryServiceability(w http.ResponseWriter, r *http.Request)
 			result.Evidence = &evidence
 		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		fail(w, 503, "OWNER_UNAVAILABLE")
-		return
+		return result, err
 	}
-	if tx.Commit() != nil {
-		fail(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
-	if status = h.stillCurrent(ctx, token, actor); status != 200 {
-		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
-		return
-	}
-	reply(w, result)
+	return result, nil
 }
