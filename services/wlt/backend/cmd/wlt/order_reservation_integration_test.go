@@ -15,8 +15,8 @@ import (
 // is manufactured by this reservation test.
 func verifyOrderFundingReservations(t *testing.T, ctx context.Context, owner, reader *sql.DB) {
 	t.Helper()
-	const reserve = "SELECT wlt.reserve_order_wallet($1,$2,$3,$4,$5,$6,$7)"
-	const release = "SELECT wlt.release_order_wallet($1,$2,$3,$4)"
+	const reserve = "SELECT wlt.allocate_order_payment($1,$2,$3,$4,$5,$6,$7)"
+	const release = "SELECT wlt.release_order_payment($1,$2,$3,$4)"
 	digest := strings.Repeat("a", 64)
 	run := func(db *sql.DB, key, actor, method string, total, amount int64) (string, error) {
 		var state string
@@ -36,6 +36,31 @@ func verifyOrderFundingReservations(t *testing.T, ctx context.Context, owner, re
 		}
 	}
 	balance("wallet-two", "41")
+	balance("wallet-empty", "0")
+	// COD requires no wallet funding, but owns the same immutable checkout identity.
+	if state, err := run(owner, "checkout-cash-only", "wallet-empty", "COD", 90, 0); err != nil || state != "ALLOCATED" {
+		t.Fatalf("COD allocation: %s %v", state, err)
+	}
+	balance("wallet-empty", "0")
+	if state, err := run(owner, "checkout-cash-only", "wallet-empty", "COD", 90, 0); err != nil || state != "REPLAYED" {
+		t.Fatalf("COD replay: %s %v", state, err)
+	}
+	_, conflict := run(owner, "checkout-cash-only", "wallet-empty", "MIXED", 90, 1)
+	assertSQLState(t, conflict, "23505")
+	_, conflict = run(owner, "checkout-cash-only", "wallet-one", "COD", 90, 0)
+	assertSQLState(t, conflict, "23505")
+	_, conflict = run(owner, "checkout-cash-only", "wallet-empty", "COD", 91, 0)
+	assertSQLState(t, conflict, "23505")
+	_, conflict = unlock("checkout-cash-only", "wallet-two", "release-cash-only", "synthetic cancellation")
+	assertSQLState(t, conflict, "23514")
+	if state, err := unlock("checkout-cash-only", "wallet-empty", "release-cash-only", "synthetic cancellation"); err != nil || state != "RELEASED" {
+		t.Fatalf("COD cancellation: %s %v", state, err)
+	}
+	if state, err := run(owner, "checkout-cash-only", "wallet-empty", "COD", 90, 0); err != nil || state != "RELEASED" {
+		t.Fatalf("cancelled COD resurrected: %s %v", state, err)
+	}
+	balance("wallet-empty", "0")
+	balance("wallet-two", "41")
 	if _, err := run(reader, "checkout-denied", "wallet-two", "WALLET", 1, 1); err == nil {
 		t.Fatal("reader can reserve")
 	} else {
@@ -44,7 +69,7 @@ func verifyOrderFundingReservations(t *testing.T, ctx context.Context, owner, re
 	for _, bad := range []struct {
 		method        string
 		total, amount int64
-	}{{"COD", 10, 1}, {"WALLET", 10, 9}, {"MIXED", 10, 10}, {"MIXED", 10, 0}, {"WALLET", 0, 0}, {"MIXED", -1, 1}} {
+	}{{"COD", 10, 1}, {"COD", 10, -1}, {"COD", 0, 0}, {"WALLET", 10, 9}, {"MIXED", 10, 10}, {"MIXED", 10, 0}, {"WALLET", 0, 0}, {"MIXED", -1, 1}} {
 		_, err := run(owner, "checkout-invalid", "wallet-two", bad.method, bad.total, bad.amount)
 		assertSQLState(t, err, "23514")
 	}
@@ -72,7 +97,7 @@ func verifyOrderFundingReservations(t *testing.T, ctx context.Context, owner, re
 	close(results)
 	winner := ""
 	for result := range results {
-		if result.err == nil && result.state == "RESERVED" {
+		if result.err == nil && result.state == "ALLOCATED" {
 			if winner != "" {
 				t.Fatal("two winning holds")
 			}
@@ -109,7 +134,7 @@ func verifyOrderFundingReservations(t *testing.T, ctx context.Context, owner, re
 		t.Fatalf("released checkout resurrected: %s %v", state, err)
 	}
 	balance("wallet-two", "41")
-	if state, err := run(owner, "checkout-exact-big", "wallet-one", "WALLET", 9007199254740993, 9007199254740993); err != nil || state != "RESERVED" {
+	if state, err := run(owner, "checkout-exact-big", "wallet-one", "WALLET", 9007199254740993, 9007199254740993); err != nil || state != "ALLOCATED" {
 		t.Fatalf("exact integer %s %v", state, err)
 	}
 	balance("wallet-one", "0")
@@ -117,16 +142,23 @@ func verifyOrderFundingReservations(t *testing.T, ctx context.Context, owner, re
 		t.Fatal(err)
 	}
 	balance("wallet-one", "9007199254740993")
-	for _, q := range []string{"UPDATE wlt.order_wallet_reservations SET wallet_yer=1", "DELETE FROM wlt.order_wallet_releases", "TRUNCATE wlt.order_wallet_reservations CASCADE"} {
+	var cash, wallet, total int64
+	if err := owner.QueryRowContext(ctx, "SELECT cash_yer,wallet_yer,total_yer FROM wlt.order_payment_allocations WHERE checkout_id=$1", "checkout-cash-only").Scan(&cash, &wallet, &total); err != nil || cash != 90 || wallet != 0 || total != 90 {
+		t.Fatalf("COD durable allocation %d %d %d %v", cash, wallet, total, err)
+	}
+	if err := owner.QueryRowContext(ctx, "SELECT cash_yer,wallet_yer,total_yer FROM wlt.order_payment_allocations WHERE checkout_id=$1", winner).Scan(&cash, &wallet, &total); err != nil || cash != 15 || wallet != 30 || total != 45 {
+		t.Fatalf("mixed durable allocation %d %d %d %v", cash, wallet, total, err)
+	}
+	for _, q := range []string{"UPDATE wlt.order_payment_allocations SET wallet_yer=1", "DELETE FROM wlt.order_payment_releases", "TRUNCATE wlt.order_payment_allocations CASCADE"} {
 		_, err = owner.ExecContext(ctx, q)
 		assertSQLState(t, err, "23514")
 	}
-	_, err = reader.ExecContext(ctx, "SELECT * FROM wlt.order_wallet_reservations")
+	_, err = reader.ExecContext(ctx, "SELECT * FROM wlt.order_payment_allocations")
 	assertSQLState(t, err, "42501")
 	var count, open int
-	err = owner.QueryRowContext(ctx, `SELECT count(*),count(*) FILTER(WHERE r.checkout_id IS NULL) FROM wlt.order_wallet_reservations h LEFT JOIN wlt.order_wallet_releases r USING(checkout_id)`).Scan(&count, &open)
-	if err != nil || count != 2 || open != 0 {
+	err = owner.QueryRowContext(ctx, `SELECT count(*),count(*) FILTER(WHERE r.checkout_id IS NULL) FROM wlt.order_payment_allocations h LEFT JOIN wlt.order_payment_releases r USING(checkout_id)`).Scan(&count, &open)
+	if err != nil || count != 3 || open != 0 {
 		t.Fatalf("durable holds %d open %d %v", count, open, err)
 	}
-	t.Log("WLT_ORDER_WALLET_RESERVATION_PASS single_winner=true exact_yer=true replay=true release=true no_charge=true")
+	t.Log("WLT_ORDER_PAYMENT_ALLOCATION_PASS cod=true wallet=true mixed=true single_winner=true exact_yer=true replay=true release=true no_charge=true")
 }

@@ -288,19 +288,29 @@ for db in bthwani_wlt_test bthwani_wlt_restore; do
         AND NOT has_function_privilege('wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE');")"
   [[ "$decision_scope" == 't' ]] || { echo "WLT restore exposed commercial decisions" >&2; exit 1; }
   reservation_proof="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT count(*) || ':' || count(r.checkout_id) || ':' || sum(h.wallet_yer)
-        FROM wlt.order_wallet_reservations h LEFT JOIN wlt.order_wallet_releases r USING(checkout_id);")"
-  [[ "$reservation_proof" == '3:3:9007199254741080' ]] || { echo "WLT restored reservation history differs" >&2; exit 1; }
+    -c "SELECT count(*) || ':' || count(r.checkout_id) || ':' || sum(h.wallet_yer) || ':' || sum(h.cash_yer)
+        FROM wlt.order_payment_allocations h LEFT JOIN wlt.order_payment_releases r USING(checkout_id);")"
+  [[ "$reservation_proof" == '4:4:9007199254741080:105' ]] || { echo "WLT restored reservation history differs" >&2; exit 1; }
   reservation_scope="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT NOT has_any_column_privilege('wlt.order_wallet_reservations','SELECT')
-        AND NOT has_any_column_privilege('wlt.order_wallet_releases','SELECT')
-        AND NOT has_function_privilege('wlt.reserve_order_wallet(text,text,text,text,text,bigint,bigint)','EXECUTE')
-        AND NOT has_function_privilege('wlt.release_order_wallet(text,text,text,text)','EXECUTE')
+    -c "SELECT NOT has_any_column_privilege('wlt.order_payment_allocations','SELECT')
+        AND NOT has_any_column_privilege('wlt.order_payment_releases','SELECT')
+        AND NOT has_function_privilege('wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint)','EXECUTE')
+        AND NOT has_function_privilege('wlt.release_order_payment(text,text,text,text)','EXECUTE')
         AND NOT has_function_privilege('wlt.available_order_wallet_yer(text)','EXECUTE');")"
   [[ "$reservation_scope" == 't' ]] || { echo "WLT restore exposed reservations" >&2; exit 1; }
   available_totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
     -c "SELECT string_agg(actor_id || ':' || wlt.available_order_wallet_yer(actor_id), ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
   [[ "$available_totals" == 'wallet-one:9007199254741062,wallet-two:58' ]] || { echo "WLT restored available balance differs" >&2; exit 1; }
+  available_projection="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
+    -c "SELECT string_agg(actor_id || ':' || balance_yer || ':' || available_yer, ',' ORDER BY actor_id)
+        FROM wlt.customer_wallet_availability;")"
+  [[ "$available_projection" == 'wallet-one:9007199254741062:9007199254741062,wallet-two:58:58' ]] ||
+    { echo "WLT restored wallet availability projection differs" >&2; exit 1; }
+  availability_scope="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
+    -c "SELECT has_table_privilege('wlt.customer_wallet_availability','SELECT')
+        AND NOT has_any_column_privilege('wlt.customer_wallet_availability','UPDATE,INSERT')
+        AND NOT has_any_column_privilege('wlt.order_payment_allocations','SELECT');")"
+  [[ "$availability_scope" == 't' ]] || { echo "WLT restored availability privileges differ" >&2; exit 1; }
   totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT string_agg(actor_id || ':' || balance_yer, ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
   [[ "$totals" == 'wallet-one:9007199254741062,wallet-two:58' ]] || { echo "WLT restored balances differ after verified sandbox provider credit" >&2; exit 1; }
