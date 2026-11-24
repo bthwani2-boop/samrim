@@ -153,3 +153,9 @@ test("runtime command-line refuses unsafe or incomplete Docker context names bef
   assert.throws(() => main(["--context", "../unsafe"]), /invalid Docker context/);
   assert.throws(() => main(["--context", "a;whoami"]), /invalid Docker context/);
 });
+
+test("a preview never satisfies committed runtime acceptance",()=>{
+  const result=evaluateService({...good,revisionPrimary:"worktree-"+"a".repeat(64),revisionFallback:undefined});
+  assert.equal(result.passed,false);
+  assert.ok(result.errors.some(e=>e.includes("uncommitted preview")));
+});

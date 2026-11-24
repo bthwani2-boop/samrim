@@ -24,32 +24,36 @@ export const containsLikelySecret = (text) =>
   /sk_live_[A-Za-z0-9]{12,}/.test(text) ||
   /AKIA[0-9A-Z]{16}/.test(text);
 
-const paths = execFileSync(gitExecutable, ["ls-files", "-z"], {
-  cwd: root, encoding: "utf8",
-}).split("\0").filter(Boolean);
-const problems = [];
-let checked = 0;
-for (const path of paths) {
-  if (forbiddenName(path)) {
-    problems.push(path + ": forbidden tracked credential filename");
-    continue;
+export function verifyTrackedSecrets() {
+  const paths = execFileSync(gitExecutable, ["ls-files", "-z"], {
+    cwd: root, encoding: "utf8",
+  }).split("\0").filter(Boolean);
+  const problems = [];
+  let checked = 0;
+  for (const path of paths) {
+    if (forbiddenName(path)) {
+      problems.push(path + ": forbidden tracked credential filename");
+      continue;
+    }
+    let data;
+    try {
+      data = readFileSync(resolve(root, path));
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+      // A staged addition may have been removed from the working tree. Scan
+      // its index content rather than silently skipping a tracked file.
+      data = execFileSync(gitExecutable, ["show", `:${path}`], {
+        cwd: root, maxBuffer: 10 * 1024 * 1024,
+      });
+    }
+    if (data.includes(0)) continue; // Binary assets cannot be safely decoded as source.
+    checked++;
+    if (containsLikelySecret(data.toString("utf8"))) {
+      problems.push(path + ": likely secret marker detected (value redacted)");
+    }
   }
-  let data;
-  try {
-    data = readFileSync(resolve(root, path));
-  } catch (error) {
-    if (error?.code !== "ENOENT") throw error;
-    // A staged addition may have been removed from the working tree. Scan
-    // its index content rather than silently skipping a tracked file.
-    data = execFileSync(gitExecutable, ["show", `:${path}`], {
-      cwd: root, maxBuffer: 10 * 1024 * 1024,
-    });
-  }
-  if (data.includes(0)) continue; // Binary assets cannot be safely decoded as source.
-  checked++;
-  if (containsLikelySecret(data.toString("utf8"))) {
-    problems.push(path + ": likely secret marker detected (value redacted)");
-  }
+  assert.deepEqual(problems, [], "Tracked source secret guard failed; inspect locally without printing values.");
+  console.log("TRACKED_SECRET_MARKERS_PASS files=" + checked + " binary_assets_skipped=true full_history=NOT_SCANNED");
 }
-assert.deepEqual(problems, [], "Tracked source secret guard failed; inspect locally without printing values.");
-console.log("TRACKED_SECRET_MARKERS_PASS files=" + checked + " binary_assets_skipped=true full_history=NOT_SCANNED");
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) verifyTrackedSecrets();

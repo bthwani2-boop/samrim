@@ -53,6 +53,9 @@ func TestIsolatedCaptainTLSOnlyAllowsReadOnAdmittedContainer(t *testing.T) {
 		if w.Code != c.want {
 			t.Fatalf("%s %s got %d", c.method, c.path, w.Code)
 		}
+		if w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s %s private response may be cached", c.method, c.path)
+		}
 	}
 	for _, k := range []string{"BTHWANI_ISOLATED_TEST_MODE", "BTHWANI_ISOLATED_CONTAINER_MODE", "DSH_ENABLE_ISOLATED_CAPTAIN_STANDING", "DSH_LISTEN_ADDR", "DSH_IDENTITY_VERIFIER_URL", "DSH_ISOLATED_CAPTAIN_TLS_KEY"} {
 		previous := env[k]

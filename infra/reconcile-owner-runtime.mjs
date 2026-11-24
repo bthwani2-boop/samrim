@@ -3,6 +3,8 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const context = "bthwani-docker";
@@ -92,17 +94,29 @@ function currentHashes(state, names) {
 function imageRecord(image) {
   return JSON.parse(docker(["image", "inspect", image]))[0];
 }
-function ownerRevision(state, owner) {
-  const image = imageRecord(state[owner].Image);
-  const a = image.Config.Labels?.["org.opencontainers.image.revision"];
-  const b = image.Config.Labels?.["com.bthwani.source-sha"];
-  if (!/^[0-9a-f]{40}$/.test(a || b || "") || (a && b && a !== b)) throw new Error("Invalid source provenance: " + owner);
-  return a || b;
+export function sourceIdentity(labels, owner) {
+  const a=labels?.["org.opencontainers.image.revision"];
+  const b=labels?.["com.bthwani.source-sha"];
+  const base=labels?.["com.bthwani.preview-base"];
+  const digest=labels?.["com.bthwani.preview-digest"];
+  if(base || digest || a?.startsWith("worktree-")){
+    if(b || !/^[0-9a-f]{40}$/.test(base||"") || !/^[0-9a-f]{64}$/.test(digest||"") || a!=="worktree-"+digest) throw new Error("Invalid preview provenance: "+owner);
+    return {revision:base,digest};
+  }
+  if(!/^[0-9a-f]{40}$/.test(a||b||"") || (a&&b&&a!==b)) throw new Error("Invalid source provenance: "+owner);
+  return {revision:a||b,digest:null};
 }
-function checkedHead(head) {
+function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
+const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml",".go-version"];
+function currentChangeKey() {
+  const changed=dirtyPaths(root,guardedScope);
+  if(changed.some(p=>!isPreviewGoPath(p))) throw new Error("Only uncommitted owner Go code is eligible; review configuration, contracts, dependencies and SQL explicitly");
+  return {changed,key:previewChangeKey(root,changed)};
+}
+function checkedHead(head, key) {
   const currentBranch = git(["branch", "--show-current"]);
   if (!currentBranch || currentBranch === "main" || currentBranch.startsWith("archive/")) throw new Error("Not an active development branch");
-  if (git(["rev-parse", "HEAD"]) !== head || git(["status", "--porcelain", "--", "services", "infra/compose.yaml", "infra/compose.apps.yaml", "infra/compose.identity-verifier.yaml", "infra/compose.merchant-development.yaml", "infra/compose.captain-development.yaml", "infra/compose.wlt.yaml", ".go-version"])) throw new Error("Source changed or owner/Compose has uncommitted edits");
+  if (git(["rev-parse", "HEAD"]) !== head || currentChangeKey().key !== key) throw new Error("Source changed during reconciliation");
 }
 function validateVolumeFiles(headTag) {
   for (const [volume, paths] of [["bthwani-refoundation-captain-dsh-ca", ["/proof/ca.pem"]], ["bthwani-refoundation-captain-dsh-tls", ["/proof/server.pem","/proof/server-key.pem"]]]) {
@@ -116,7 +130,7 @@ export function isolatedTestEnv(env) {
 }
 function main() {
   const mode = process.argv.slice(2).join(" ");
-  if (!["--check","--apply","--apply-captain"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain");
+  if (!["--check","--apply","--apply-captain","--apply-preview"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview");
   const apply = mode !== "--check";
   if (apply && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
   if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
@@ -145,37 +159,71 @@ function main() {
   const appNames = ["dsh","identity"];
   const groups = [{ names: appNames, files: activeAppFiles },{names:["wlt"],files:wltFiles}];
   for (const group of groups) assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
-  const candidates = [];
-  for (const o of Object.keys(owners)) {
-    const rev = ownerRevision(state,o);
-    git(["merge-base","--is-ancestor",rev,head]);
-    const changed = git(["diff","--name-only",rev,head,"--","services/"+o]);
-    if (changed) {
-      if (changed.split(/\r?\n/).some(p => p.startsWith("services/"+o+"/database/"))) throw new Error("Migration or schema review required: " + o);
-      candidates.push(o);
-    }
-    console.log(o+" RUNTIME="+(changed ? "STALE":"CURRENT")+" revision="+rev);
+  const change=currentChangeKey();
+  if(apply && change.changed.length && mode!=="--apply-preview")throw new Error("Explicit isolated preview authorization required for uncommitted Go");
+  const snapshots=new Map();
+  const candidates=[];
+  for(const o of Object.keys(owners)){
+    const old=ownerRevision(state,o);
+    git(["merge-base","--is-ancestor",old.revision,head]);
+    const committed=git(["diff","--name-only",old.revision,head,"--","services/"+o]);
+    if(committed.split(/\r?\n/).some(p=>p.startsWith("services/"+o+"/database/"))) throw new Error("Migration or schema review required: "+o);
+    const dirty=change.changed.some(p=>p.startsWith("services/"+o+"/"));
+    if(dirty) snapshots.set(o,captureOwner(root,o));
+    const snapshot=snapshots.get(o);
+    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(committed || old.digest);
+    if(stale)candidates.push(o);
+    console.log(o+" RUNTIME="+(stale?"STALE":snapshot?"PREVIEW_CURRENT":"CURRENT")+" revision="+old.revision+(old.digest?" preview="+old.digest:""));
   }
   const selected = selectOwners({candidates,activateCaptain:mode==="--apply-captain",currentCaptain:captain});
   console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_OVERLAY="+captain);
   if (!apply || selected.length===0) return;
-  checkedHead(head);
-  const tag = "sha-"+head.slice(0,9);
+  checkedHead(head,change.key);
+  const tags={};
+  const targetIds={};
   const nextEnv = {...env};
   for (const o of selected) {
     // Fresh local unit tests, with the pinned toolchain. No migration or DB writes.
-    const go = spawnSync("go",["test","-count=1","./..."],{cwd:resolve(root,"services",o,"backend"),encoding:"utf8",windowsHide:true,timeout:120000,env:isolatedTestEnv(process.env)});
-    if (go.status!==0) throw new Error("Owner tests failed: "+o);
-    console.log("OWNER_TEST_PASS "+o);
-    run("pwsh",["-NoProfile","-File",buildScripts[o],"-DockerContext",context,"-Image",owners[o].image+":"+tag],{},180000);
-    const image = imageRecord(owners[o].image+":"+tag);
-    if (image.Config.Labels?.["com.bthwani.source-sha"]!==head) throw new Error("New image source mismatch: "+o);
-    nextEnv[owners[o].tag]=tag;
-    console.log("OWNER_IMAGE_PASS "+o+" "+image.Id);
+    checkedHead(head,change.key);
+    const snap=snapshots.get(o);
+    const tag=snap?"preview-"+head.slice(0,9)+"-"+snap.digest:"sha-"+head.slice(0,9);
+    tags[o]=tag;
+    const staged=snap?materializeOwner(snap):null;
+    try {
+      const service=staged?.dir || resolve(root,"services",o);
+      const pin=readFileSync(resolve(root,".go-version"),"utf8").trim();
+      const version=run("go",["version"],{GOTOOLCHAIN:"local"});
+      if(!version.startsWith("go version go"+pin+" "))throw new Error("Pinned Go toolchain required");
+      const go=spawnSync("go",["test","-json","-count=1","./..."],{cwd:resolve(service,"backend"),encoding:"utf8",windowsHide:true,timeout:120000,maxBuffer:16*1024*1024,env:{...isolatedTestEnv(process.env),GOWORK:"off"}});
+      if(go.status!==0){
+        const names=[];
+        for(const line of (go.stdout||"").split(/\r?\n/)){
+          try{const event=JSON.parse(line);if(event.Action==="fail" && /^[A-Za-z0-9_/.+-]+$/.test(event.Package||"") && (!event.Test||/^[A-Za-z0-9_/.+-]+$/.test(event.Test)))names.push(event.Package+(event.Test?":"+event.Test:""));}catch{}
+        }
+        throw new Error("Owner tests failed: "+o+" "+(go.error?.code||go.status)+" "+names.slice(0,15).join(","));
+      }
+      console.log("OWNER_TEST_PASS "+o);
+      if(snap){
+        verifyMaterializedOwner(service,snap);
+        const file=resolve(service,"backend","Dockerfile");
+        if(!readFileSync(file,"utf8").split(/\r?\n/).some(line=>line.startsWith("FROM golang:"+pin+"-alpine@sha256:") && /@sha256:[0-9a-f]{64} AS build$/.test(line)))throw new Error("Pinned preview Dockerfile required");
+        // Preview uses the canonical owner Dockerfile but never claims a commit SHA.
+        docker(["build","--pull=false","--file",file,"--build-arg","SAMRIM_SOURCE_REVISION=worktree-"+snap.digest,"--label","com.bthwani.preview-base="+head,"--label","com.bthwani.preview-digest="+snap.digest,"--tag",owners[o].image+":"+tag,service],{},180000);
+        verifyMaterializedOwner(service,snap);
+        if(captureOwner(root,o).digest!==snap.digest)throw new Error("Preview input changed during build: "+o);
+      } else run("pwsh",["-NoProfile","-File",buildScripts[o],"-DockerContext",context,"-Image",owners[o].image+":"+tag],{},180000);
+      const image=imageRecord(owners[o].image+":"+tag);
+      const source=sourceIdentity(image.Config.Labels,o);
+      if(source.revision!==head || source.digest!==(snap?.digest||null))throw new Error("New image source mismatch: "+o);
+      targetIds[o]=image.Id;
+      nextEnv[owners[o].tag]=tag;
+      console.log("OWNER_IMAGE_PASS "+o+" "+image.Id+(snap?" preview="+snap.digest:""));
+    } finally { staged?.dispose(); }
   }
-  checkedHead(head);
+  checkedHead(head,change.key);
+  for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("Preview source changed: "+o);
   const activate = mode==="--apply-captain" && !captain;
-  if (activate) validateVolumeFiles(tag);
+  if (activate) validateVolumeFiles(tags.dsh);
   // Re-read every owner before mutation. Do not overwrite another writer.
   for (const o of Object.keys(owners)) {
     const now=inspect(o);
@@ -185,7 +233,8 @@ function main() {
     const names=group.names.filter(o=>selected.includes(o));
     if(!names.length) continue;
     const newFiles=activate && group.names.includes("dsh") ? [...group.files,captainFile]:group.files;
-    checkedHead(head);
+    checkedHead(head,change.key);
+    for(const o of names) if(imageRecord(owners[o].image+":"+tags[o]).Id!==targetIds[o])throw new Error("Candidate image tag changed: "+o);
     assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
     const newHashes=configHashes(newFiles,group.names,nextEnv);
     try {
@@ -193,9 +242,11 @@ function main() {
       docker([...composeArgs(newFiles),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",...names],nextEnv,95000);
       for (const o of names) {
         const now=inspect(o);
-        if(now.Image!==imageRecord(owners[o].image+":"+tag).Id || now.Config.Labels["com.docker.compose.config-hash"]!==newHashes[o] || ownerRevision({[o]:now},o)!==head) throw new Error("Owner readback mismatch: "+o);
+        const source=ownerRevision({[o]:now},o);
+        if(now.Image!==targetIds[o] || now.Config.Labels["com.docker.compose.config-hash"]!==newHashes[o] || source.revision!==head || source.digest!==(snapshots.get(o)?.digest||null)) throw new Error("Owner readback mismatch: "+o);
         console.log("OWNER_RUNTIME_PASS "+o+" "+now.Id);
       }
+      console.log("OWNER_APPLY_VERIFIED "+names.join(","));
     } catch (e) {
       // Before rollback, establish the durable state and that no unknown writer
       // changed the selected service or the rollback configuration.
@@ -203,7 +254,7 @@ function main() {
         const now=inspect(o,false);
         const hash=now.Config.Labels["com.docker.compose.config-hash"];
         if(![currentHashes(state,[o])[o],newHashes[o]].includes(hash) ||
-           ![state[o].Image,imageRecord(owners[o].image+":"+tag).Id].includes(now.Image)) throw new Error("ROLLBACK_BLOCKED unknown owner state: "+o);
+           ![state[o].Image,targetIds[o]].includes(now.Image)) throw new Error("ROLLBACK_BLOCKED unknown owner state: "+o);
       }
       if(e.code === "ETIMEDOUT") throw new Error("ROLLBACK_BLOCKED ambiguous Docker operation; readback completed, require explicit reconciliation");
       assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
@@ -213,7 +264,8 @@ function main() {
       throw new Error("ROLLBACK_PASS "+names.join(",")+" after failed replacement: "+e.message);
     }
   }
-  if (git(["rev-parse","HEAD"]) !== head) throw new Error("RUNTIME_STALE source advanced during replacement; rerun on the current source");
+  checkedHead(head,change.key);
+  for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("RUNTIME_STALE preview input advanced: "+o);
   console.log("RECONCILE_PASS HEAD="+head);
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

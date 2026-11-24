@@ -390,3 +390,12 @@ test("runtime reconciliation trigger is immediate for changed committed source a
   assert.equal(runtimePollDue({...base,last:{key:"new",status:"retry"},now:201}),true);
   assert.equal(runtimePollDue({...base,last:{key:"old",status:"blocked"}}),true);
 });
+
+test("runtime attempt outcome distinguishes known readback from ambiguous writes",async()=>{
+  const {runtimeAttemptResult}=await import("./sync-lenovo-reconciliation.mjs");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nOWNER_APPLY_VERIFIED dsh\n","Source changed"),"retry");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n",""),"uncertain");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_PASS dsh"),"blocked");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_BLOCKED"),"uncertain");
+  assert.equal(runtimeAttemptResult(1,"SIGTERM","",""),"uncertain");
+});

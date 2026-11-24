@@ -15,6 +15,7 @@ param(
   [switch]$Apply,
   [switch]$DeepSql,
   [switch]$EnableCaptain,
+  [switch]$Preview,
   [Parameter(Position=1)]
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','reconcile','start','restart','android','open')]
   [string]$DockerAction = 'help',
@@ -718,6 +719,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker reconcile      # check existing runtime and owner source drift'
   Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
   Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit Captain overlay activation'
+  Write-Output 'pnpm dev docker reconcile -Apply -Preview # isolated uncommitted Go snapshot'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=use infra/build-dsh-image.ps1 or infra/build-identity-verifier-image.ps1 explicitly'
@@ -756,7 +758,8 @@ function Invoke-ScopedDocker {
     }
     'reconcile' {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain overlay requires explicit -Apply'
-      $mode = if ($EnableCaptain) { '--apply-captain' } elseif ($Apply) { '--apply' } else { '--check' }
+      Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
+      $mode = if ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {
         if ($Apply) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
@@ -835,6 +838,7 @@ function Verify-Checks {
     'infra/compose-policy.test.mjs',
     'infra/verify-runtime-provenance.test.mjs',
     'infra/reconcile-owner-runtime.test.mjs',
+    'infra/owner-preview-source.test.mjs',
     'tools/dev/sync-lenovo-source.test.mjs',
     'tools/dev/dev-powershell.test.mjs',
     'tools/dev/verify-nx-project-graph.test.mjs'

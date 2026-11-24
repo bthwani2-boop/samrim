@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { differingKeys, selectOwners, assertSameHashes, isolatedTestEnv } from "./reconcile-owner-runtime.mjs";
+import { differingKeys, selectOwners, assertSameHashes, isolatedTestEnv, sourceIdentity } from "./reconcile-owner-runtime.mjs";
 
 test("runtime reconciliation never rebuilds unaffected owners", () => {
   assert.deepEqual(selectOwners({ candidates: [], activateCaptain: false, currentCaptain: true }), []);
@@ -21,4 +21,13 @@ test("configuration comparison detects differing or absent keys without leaking 
 
 test("owner tests cannot inherit live database or synthetic activation configuration", () => {
   assert.deepEqual(isolatedTestEnv({ PATH:"toolchain", BTHWANI_ISOLATED_TEST_MODE:"true", BTHWANI_CAPTAIN_TEST_DATABASE_URL:"private", REF_POSTGRES_PASSWORD:"private", PGHOST:"private", DATABASE_URL:"private", GOTOOLCHAIN:"auto" }), {PATH:"toolchain",GOTOOLCHAIN:"local"});
+});
+
+test("preview provenance is distinct from an accepted Git source SHA",()=>{
+  const base="a".repeat(40), digest="b".repeat(64);
+  const labels={"org.opencontainers.image.revision":"worktree-"+digest,"com.bthwani.preview-base":base,"com.bthwani.preview-digest":digest};
+  assert.deepEqual(sourceIdentity(labels,"dsh"),{revision:base,digest});
+  assert.throws(()=>sourceIdentity({...labels,"com.bthwani.source-sha":base},"dsh"),/Invalid preview/);
+  assert.throws(()=>sourceIdentity({...labels,"com.bthwani.preview-digest":"c".repeat(64)},"dsh"),/Invalid preview/);
+  assert.deepEqual(sourceIdentity({"org.opencontainers.image.revision":base,"com.bthwani.source-sha":base},"dsh"),{revision:base,digest:null});
 });

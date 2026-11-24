@@ -38,7 +38,8 @@ export function evaluateService(input) {
     input.revisionPrimary !== input.revisionFallback) {
     errors.push("conflicting image source labels");
   }
-  if (!shaPattern.test(revision)) errors.push("source revision absent or invalid");
+  if (/^worktree-[0-9a-f]{64}$/.test(revision)) errors.push("uncommitted preview is not committed acceptance; use docker reconcile to check preview parity");
+  else if (!shaPattern.test(revision)) errors.push("source revision absent or invalid");
   if (input.project !== "bthwani-refoundation" || input.service !== input.owner) {
     errors.push("not the expected isolated Compose project and owner");
   }

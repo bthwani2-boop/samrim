@@ -30,8 +30,13 @@ func isolatedCaptainTLS(schema string, getenv func(string) string, standing http
 	}
 	routes := http.NewServeMux()
 	routes.Handle("GET "+captainstanding.CaptainEligibilityPath, standing)
+	// Never cache private responses, including mux-generated 404/405 errors.
+	private := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		routes.ServeHTTP(w, r)
+	})
 	return &http.Server{
-		Addr: "0.0.0.0:3344", Handler: routes,
+		Addr: "0.0.0.0:3344", Handler: private,
 		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12, Certificates: []tls.Certificate{pair}},
 		ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second,
 		WriteTimeout: 6 * time.Second, IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,

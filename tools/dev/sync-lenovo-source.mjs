@@ -7,7 +7,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue } from "./sync-lenovo-reconciliation.mjs";
+import { dirtyPaths, isPreviewGoPath, previewChangeKey } from "../../infra/owner-preview-source.mjs";
+import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -486,6 +487,7 @@ const runtimeScope = [
   "infra/compose.merchant-development.yaml", "infra/compose.captain-development.yaml",
   "infra/compose.wlt.yaml", "infra/build-dsh-image.ps1", "infra/build-identity-verifier-image.ps1",
   "infra/build-wlt-image.ps1", "infra/reconcile-owner-runtime.mjs",
+  "infra/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
   "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
 ];
 const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
@@ -505,15 +507,18 @@ function runtimeState() {
 }
 function pollOwnerRuntime() {
   if (runtimeChild || !fs.existsSync(runtimeOptIn)) return;
-  if (fs.readFileSync(runtimeOptIn, "utf8").trim() !== "isolated-committed-owner-images-v1") throw new Error("RUNTIME_OPT_IN_INVALID");
+  const optIn=fs.readFileSync(runtimeOptIn,"utf8").trim();
+  const preview=optIn==="isolated-owner-go-preview-v2";
+  if(!preview && optIn!=="isolated-committed-owner-images-v1")throw new Error("RUNTIME_OPT_IN_INVALID");
   remoteReady();
   const currentBranch = branch();
   if (!currentBranch || currentBranch === "main" || currentBranch.startsWith("archive/")) {
     runtimeLogOnce("RUNTIME_UPDATE_BLOCKED branch"); return;
   }
-  const dirty = Boolean(run("git", ["status", "--porcelain", "--", ...runtimeScope]));
-  if (dirty) { runtimeLogOnce("RUNTIME_UPDATE_PENDING_COMMIT (no false image provenance)"); return; }
-  const key = crypto.createHash("sha256").update(run("git", ["ls-tree", "HEAD", "--", ...runtimeScope])).digest("hex");
+  const changed=dirtyPaths(root,runtimeScope);
+  const dirty=changed.some(p=>!isPreviewGoPath(p)) || (!preview && changed.length>0);
+  if(dirty){runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (non-Go input or preview not authorized)");return;}
+  const key=crypto.createHash("sha256").update(run("git",["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(previewChangeKey(root,changed)).update(optIn).digest("hex");
   const last = runtimeState();
   if (last && (["running","uncertain"].includes(last.status) || (last.key === key && last.status === "blocked"))) {
     runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation"); return;
@@ -523,7 +528,7 @@ function pollOwnerRuntime() {
   logger("RUNTIME_RECONCILE_STARTED key="+key.slice(0,12));
   // The unified dev launcher holds the existing lifecycle mutex. Keep the app
   // file sync responsive while its one bounded build/replacement runs.
-  const child = spawn("pwsh.exe", ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply"], {
+  const child = spawn("pwsh.exe", ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply",...(preview?["-Preview"]:[])], {
     cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]
   });
   runtimeChild=child;
@@ -543,13 +548,7 @@ function pollOwnerRuntime() {
     }
   };
   child.on("error",()=>finish("retry"));
-  child.on("close",(code,signal)=>{
-    if(code===0) return finish("pass");
-    if(signal || /ROLLBACK_BLOCKED|ROLLBACK_READBACK_FAILED|OWNER_APPLY_STARTED/.test(output+errors)) {
-      return finish(!signal && /ROLLBACK_PASS/.test(errors) ? "blocked":"uncertain");
-    }
-    return finish("retry");
-  });
+  child.on("close",(code,signal)=>finish(runtimeAttemptResult(code,signal,output,errors)));
 }
 function main() {
   const idx = process.argv.indexOf("--check-path");

@@ -66,4 +66,13 @@ function runtimePollDue({enabled, dirty, active, key, last, now, nextAudit}) {
   return last.status !== "blocked" && now >= nextAudit;
 }
 
-export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue };
+function runtimeAttemptResult(code, signal, stdout, stderr) {
+  if(code===0 && !signal)return "pass";
+  if(signal || /ROLLBACK_BLOCKED|ROLLBACK_READBACK_FAILED/.test(stderr))return "uncertain";
+  const starts=[...stdout.matchAll(/^OWNER_APPLY_STARTED (.+)\r?$/gm)].map(m=>m[1].trim());
+  const verified=[...stdout.matchAll(/^OWNER_APPLY_VERIFIED (.+)\r?$/gm)].map(m=>m[1].trim());
+  if(/ROLLBACK_PASS/.test(stderr))return "blocked";
+  return starts.length===verified.length && starts.every((v,i)=>v===verified[i]) ? "retry":"uncertain";
+}
+
+export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult };
