@@ -363,7 +363,15 @@ function identityEffectiveAclSql(schema, role) {
   const roleLiteral="'"+role+"'";
   return "BEGIN READ ONLY; SELECT 'table:'||c.relname,p,has_table_privilege("+roleLiteral+",c.oid,p) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p WHERE n.nspname='"+schema+"' AND c.relkind='r' ORDER BY 1,2; SELECT 'column:'||c.relname||'.'||a.attname,p,has_column_privilege("+roleLiteral+",c.oid,a.attnum,p) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) p WHERE n.nspname='"+schema+"' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped ORDER BY 1,2; SELECT 'function:'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||')',has_function_privilege("+roleLiteral+",p.oid,'EXECUTE') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='"+schema+"' ORDER BY 1; SELECT 'sequence:'||c.relname,p,has_sequence_privilege("+roleLiteral+",c.oid,p) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['USAGE','SELECT','UPDATE']) p WHERE n.nspname='"+schema+"' AND c.relkind='S' ORDER BY 1,2; COMMIT;";
 }
-function relocateIdentity(state,env,head,files) {
+// PostgreSQL can flatten the redundant AND-group parentheses when restoring
+// a CHECK expression. Ignore only that known display difference, and require
+// the complete constraint catalog definition and state to match separately.
+export function normalizeIdentitySchemaDump(dump) {
+  const original="    CONSTRAINT operator_permission_commands_reason_check CHECK ((((char_length(reason) >= 10) AND (char_length(reason) <= 500)) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
+  const restored="    CONSTRAINT operator_permission_commands_reason_check CHECK (((char_length(reason) >= 10) AND (char_length(reason) <= 500) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
+  return dump.split(/\r?\n/).filter(line=>!/^\\(?:un)?restrict /.test(line)).map(line=>line===original?restored:line).join("\n").trim();
+}
+function relocateIdentity(state,env,head,files,resume=false) {
   const scope=[...guardedScope,"infra/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
   const clean=()=>git(["rev-parse","HEAD"])===head && !dirtyPaths(root,scope).length;
   if(!clean())throw new Error("Identity relocation requires a committed stable source");
@@ -385,8 +393,8 @@ function relocateIdentity(state,env,head,files) {
   if(!info.isFile()||info.isSymbolicLink())throw new Error("Unsafe local configuration");
   const original=readFileSync(envPath,"utf8");
   if(/^REF_IDENTITY_RUNTIME_DATABASE_URL=/m.test(original))throw new Error("Identity candidate configuration already exists; inspect before retry");
-  if(sql("postgres","BEGIN READ ONLY; SELECT (SELECT count(*) FROM pg_database WHERE datname='"+db+"')+(SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"')); COMMIT;")!=="0")
-    throw new Error("Identity candidate already exists; inspect before retry");
+  if(sql("postgres","BEGIN READ ONLY; SELECT (SELECT count(*) FROM pg_database WHERE datname='"+db+"')+(SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"')); COMMIT;")!==(resume?"3":"0"))
+    throw new Error("Identity candidate is not in the explicitly selected preparation state");
   const roleCheck=sql(oldDb,"BEGIN READ ONLY; SELECT NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid) AND has_schema_privilege(rolname,'"+schema+"','USAGE') AND NOT has_schema_privilege(rolname,'"+schema+"','CREATE') FROM pg_roles r WHERE rolname='"+oldRole+"'; COMMIT;");
   if(roleCheck!=="t")throw new Error("Legacy Identity runtime principal not verified");
   const list=(database,kind)=>sql(database,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='"+kind+"' ORDER BY 1; COMMIT;").split(/\r?\n/).filter(Boolean);
@@ -409,10 +417,16 @@ function relocateIdentity(state,env,head,files) {
   const targetHashes=configHashes(files,["dsh","identity"],targetEnv);
   if(targetHashes.dsh!==oldHashes.dsh || targetHashes.identity===oldHashes.identity)throw new Error("Unexpected Identity peer configuration change");
   // This is an additive, empty DB only. Preserve the legacy database and grants.
-  sql("postgres","BEGIN; CREATE ROLE "+owner+" NOLOGIN NOINHERIT; CREATE ROLE "+runtime+" LOGIN NOINHERIT PASSWORD '"+password+"'; COMMIT;");
-  sql("postgres","CREATE DATABASE "+db+" OWNER "+owner+" TEMPLATE template0;");
-  sql("postgres","REVOKE ALL ON DATABASE "+db+" FROM PUBLIC; GRANT CONNECT ON DATABASE "+db+" TO "+runtime+";");
-  sql(db,"REVOKE ALL ON SCHEMA public FROM PUBLIC;");
+  if(!resume){
+    sql("postgres","BEGIN; CREATE ROLE "+owner+" NOLOGIN NOINHERIT; CREATE ROLE "+runtime+" LOGIN NOINHERIT PASSWORD '"+password+"'; COMMIT;");
+    sql("postgres","CREATE DATABASE "+db+" OWNER "+owner+" TEMPLATE template0;");
+    sql("postgres","REVOKE ALL ON DATABASE "+db+" FROM PUBLIC; GRANT CONNECT ON DATABASE "+db+" TO "+runtime+";");
+    sql(db,"REVOKE ALL ON SCHEMA public FROM PUBLIC;");
+  } else {
+    const ownership=sql(db,"BEGIN READ ONLY; SELECT (SELECT pg_get_userbyid(datdba)='"+owner+"' FROM pg_database WHERE datname=current_database()) AND NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()) AND (SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"') AND NOT(rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit) AND rolcanlogin=(rolname='"+runtime+"'))=2 AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member IN (SELECT oid FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"'))) AND (SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname NOT IN ('information_schema','public'))=1 AND EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='"+schema+"' AND pg_get_userbyid(nspowner)='"+owner+"') AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND pg_get_userbyid(c.relowner)<>'"+owner+"') AND NOT has_schema_privilege('"+runtime+"','"+schema+"','USAGE'); COMMIT;");
+    if(ownership!=="t" || !equal(list(db,"r"),tables) || !equal(list(db,"S"),sequences))
+      throw new Error("Existing unpublished Identity candidate ownership differs; preserve and review");
+  }
   const archive="/tmp/bthwani-identity-copy-"+randomBytes(12).toString("hex")+".dump";
   let stopped=false,applyStarted=false;
   try {
@@ -425,14 +439,19 @@ function relocateIdentity(state,env,head,files) {
     const noWriters=()=>{if(sql("postgres","BEGIN READ ONLY; SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid() AND (datname='"+db+"' OR (datname='"+oldDb+"' AND usename IN ('"+admin+"','"+oldRole+"'))); COMMIT;")!=="0")throw new Error("Identity writer exclusivity unproven");};
     noWriters();
     const before=sql(oldDb,fp);
-    const schemaDump=database=>docker(["exec",pg,"pg_dump","--schema-only","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",database],{},45000).split(/\r?\n/).filter(line=>!/^\\(?:un)?restrict /.test(line)).join("\n");
+    const schemaDump=database=>normalizeIdentitySchemaDump(docker(["exec",pg,"pg_dump","--schema-only","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",database],{},45000));
+    const constraintSql="BEGIN READ ONLY; SELECT c.conname,c.contype,c.convalidated,c.conenforced,c.condeferrable,c.condeferred,c.connoinherit,pg_get_constraintdef(c.oid,true) FROM pg_constraint c JOIN pg_namespace n ON n.oid=c.connamespace WHERE n.nspname='"+schema+"' ORDER BY c.conname,c.contype,pg_get_constraintdef(c.oid,true); COMMIT;";
+    const constraintProof=sql(oldDb,constraintSql);
     const originalSchema=schemaDump(oldDb);
-    docker(["exec",pg,"pg_dump","-Fc","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive],{},45000);
-    docker(["exec",pg,"pg_restore","--no-owner","--no-acl","--role="+owner,"--exit-on-error","--single-transaction","-U",admin,"-d",db,archive],{},60000);
-    if(schemaDump(db)!==originalSchema || !equal(list(db,"r"),tables) || !equal(list(db,"S"),sequences))throw new Error("Identity restored schema differs");
+    if(!resume){
+      docker(["exec",pg,"pg_dump","-Fc","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive],{},45000);
+      docker(["exec",pg,"pg_restore","--no-owner","--no-acl","--role="+owner,"--exit-on-error","--single-transaction","-U",admin,"-d",db,archive],{},60000);
+    }
+    if(schemaDump(db)!==originalSchema || !constraintProof || sql(db,constraintSql)!==constraintProof || !equal(list(db,"r"),tables) || !equal(list(db,"S"),sequences))throw new Error("Identity restored schema differs");
     assertHandoffParity(before,sql(db,fp),tables.length+sequences.length);
     assertHandoffParity(before,sql(oldDb,fp),tables.length+sequences.length);
     if(sql(oldDb,identityAclSql(schema,oldRole))!==grants || sql(oldDb,identityEffectiveAclSql(schema,oldRole))!==access)throw new Error("Legacy Identity grants changed");
+    if(resume)sql("postgres","ALTER ROLE "+runtime+" PASSWORD '"+password+"';");
     sql(db,"BEGIN; GRANT USAGE ON SCHEMA "+schema+" TO "+runtime+";\n"+grants+"\nCOMMIT;");
     if(sql(db,identityEffectiveAclSql(schema,runtime))!==access || sql(oldDb,legacyOwnerAccessSql(runtime))!=="0" ||
        sql("postgres","BEGIN READ ONLY; SELECT NOT has_database_privilege('"+runtime+"','bthwani_dsh_dev','CONNECT') AND NOT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="t")
@@ -462,7 +481,7 @@ function relocateIdentity(state,env,head,files) {
     }
     throw new Error("IDENTITY_HANDOFF_REVIEW_REQUIRED "+e.message);
   } finally {
-    try {docker(["exec",pg,"rm","-f","--",archive]);}catch{console.error("IDENTITY_COPY_ARCHIVE_CLEANUP_BLOCKED");}
+    try {if(!resume)docker(["exec",pg,"rm","-f","--",archive]);}catch{console.error("IDENTITY_COPY_ARCHIVE_CLEANUP_BLOCKED");}
   }
 }
 
@@ -471,7 +490,7 @@ function main() {
   const cutover=mode==="--cutover-dsh-database";
   const prepare=options.length===1 && options[0]==="--prepare-baseline";
   if(!cutover && options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
-  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database","--relocate-identity-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
+  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database","--relocate-identity-database","--resume-identity-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
   const apply = mode !== "--check";
   if (apply && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
   if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
@@ -510,7 +529,7 @@ function main() {
   for (const group of groups) assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
   if(mode==="--prepare-dsh-database" || mode==="--resume-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles,mode==="--resume-dsh-database");return;}
   if(cutover){if(options.length!==1)throw new Error("Expected prepared source SHA");cutoverPreparedDsh(state,env,head,activeAppFiles,options[0]);return;}
-  if(mode==="--relocate-identity-database"){relocateIdentity(state,env,head,activeAppFiles);return;}
+  if(mode==="--relocate-identity-database" || mode==="--resume-identity-database"){relocateIdentity(state,env,head,activeAppFiles,mode==="--resume-identity-database");return;}
   const revisions=Object.fromEntries(Object.keys(owners).map(o=>[o,ownerRevision(state,o)]));
   const committed={};
   for(const o of Object.keys(owners)){

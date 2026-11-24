@@ -157,3 +157,12 @@ test("Identity relocation admits only the verified owner URL and changes only ow
   assert.match(legacyOwnerAccessSql("bthwani_identity_runtime"),/bthwani_identity_runtime/);
   assert.throws(()=>legacyOwnerAccessSql("bthwani_refoundation_admin"),/Invalid/);
 });
+
+test("Identity schema normalization tolerates only known redundant CHECK grouping",async()=>{
+  const {normalizeIdentitySchemaDump}=await import("./reconcile-owner-runtime.mjs");
+  const original="    CONSTRAINT operator_permission_commands_reason_check CHECK ((((char_length(reason) >= 10) AND (char_length(reason) <= 500)) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
+  const restored="    CONSTRAINT operator_permission_commands_reason_check CHECK (((char_length(reason) >= 10) AND (char_length(reason) <= 500) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
+  assert.equal(normalizeIdentitySchemaDump(original),normalizeIdentitySchemaDump(restored));
+  assert.notEqual(normalizeIdentitySchemaDump(original.replace(">= 10",">= 9")),normalizeIdentitySchemaDump(restored));
+  assert.notEqual(normalizeIdentitySchemaDump(original.replace("AND (reason", "OR (reason")),normalizeIdentitySchemaDump(restored));
+});
