@@ -166,8 +166,7 @@ After those independent prerequisites are **proved**, set the Identity-only
 values `REF_IDENTITY_TEST_SCHEMA`, `REF_IDENTITY_RUNTIME_DATABASE_URL` (pointing
 to isolated `postgres:5432` with a separately authorized limited database
 role, never admin/donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`
-in the ignored `infra/.env.identity-verifier.local`. Keep the shared
-`infra/.env` untouched. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
+in the single ignored `infra/.env`. Preserve all other owner settings and credentials. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
 image; default `:dev` remains compatible with existing development commands.
 Set `REF_IDENTITY_SYNTHETIC_PHONE_AUTH=true` only after applying the Identity
 phone verification baseline in a new synthetic schema (or confirming the compatible retained schema) and verifying the runtime role's scoped
@@ -196,9 +195,9 @@ The opt-in deployment sequence is:
 
 ```powershell
 powershell -NoProfile -File infra/build-owner-image.ps1 -Owner identity
-docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
-docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
-docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
 ```
 
 The committed Identity verifier now exposes `GET /health` for isolated

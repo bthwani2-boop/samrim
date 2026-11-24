@@ -43,7 +43,7 @@ function run(executable, args, env = {}, timeout = 30000, input) {
 const git = args => run(gitExe, args);
 const docker = (args, env, timeout, input) => run("docker", ["--context", context, ...args], env, timeout, input);
 function composeArgs(activeFiles) {
-  return ["compose", "--env-file", "infra/.env", "--env-file", "infra/.env.identity-verifier.local",
+  return ["compose", "--env-file", "infra/.env",
     ...activeFiles.flatMap(f => ["-f", "infra/" + f]),
     ...Object.entries(owners).filter(([o]) => o === "wlt" ? activeFiles.includes("compose.wlt.yaml") : activeFiles.includes("compose.apps.yaml")).flatMap(([,o]) => ["--profile", o.profile])];
 }
