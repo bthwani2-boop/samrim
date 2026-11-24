@@ -17,8 +17,8 @@ const owners = {
   identity: { tag: "REF_IDENTITY_IMAGE_TAG", image: "bthwani-refoundation-identity-verifier", profile: "identity-verifier" },
   wlt: { tag: "REF_WLT_IMAGE_TAG", image: "bthwani-refoundation-wlt", profile: "wlt-reader" },
 };
-const appFiles = ["compose.yaml", "compose.apps.yaml", "compose.identity-verifier.yaml", "compose.merchant-development.yaml"];
-const captainFile = "compose.captain-development.yaml";
+const appFiles = ["compose.yaml", "compose.dsh.yaml", "compose.identity.yaml", "compose.merchant.yaml"];
+const captainFile = "compose.captain.yaml";
 const wltFiles = ["compose.yaml", "compose.wlt.yaml"];
 const operatorOverrides = {
   IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP: "REF_IDENTITY_OPERATOR_BOOTSTRAP",
@@ -45,7 +45,7 @@ const docker = (args, env, timeout, input) => run("docker", ["--context", contex
 function composeArgs(activeFiles) {
   return ["compose", "--env-file", "infra/.env",
     ...activeFiles.flatMap(f => ["-f", "infra/" + f]),
-    ...Object.entries(owners).filter(([o]) => o === "wlt" ? activeFiles.includes("compose.wlt.yaml") : activeFiles.includes("compose.apps.yaml")).flatMap(([,o]) => ["--profile", o.profile])];
+    ...Object.entries(owners).filter(([o]) => o === "wlt" ? activeFiles.includes("compose.wlt.yaml") : activeFiles.includes("compose.dsh.yaml")).flatMap(([,o]) => ["--profile", o.profile])];
 }
 function asEnv(values) {
   return Object.fromEntries(values.map(v => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
@@ -81,13 +81,30 @@ export function wltConfigReviewRequired(expected, actual, mode) {
       /^[a-f0-9]{64}$/.test(expected.wlt || "") && /^[a-f0-9]{64}$/.test(actual.wlt || "")) return true;
   assertSameHashes(expected,actual);
 }
-function liveFiles(v) {
-  const prefix = root.toLowerCase() + "\\infra\\";
-  return (v.Config.Labels["com.docker.compose.project.config_files"] || "").split(",").map(p => {
+export function composeFileNames(label, repoRoot = root) {
+  const prefix = repoRoot.replaceAll("/", "\\").toLowerCase() + "\\infra\\";
+  // Existing containers record former file names. Exact aliases only;
+  // effective configuration hashes must still match before replacement.
+  const renamed = new Map([
+    ["compose.apps.yaml", "compose.dsh.yaml"],
+    ["compose.identity-verifier.yaml", "compose.identity.yaml"],
+    ["compose.merchant-development.yaml", "compose.merchant.yaml"],
+    ["compose.captain-development.yaml", "compose.captain.yaml"],
+  ]);
+  const allowed = new Set([...appFiles, captainFile, ...wltFiles]);
+  const names = (label || "").split(",").map(p => {
     const normalized = p.replaceAll("/", "\\");
     if (!normalized.toLowerCase().startsWith(prefix)) throw new Error("Unowned Compose file");
-    return normalized.slice(prefix.length);
+    const name = normalized.slice(prefix.length);
+    const canonical = renamed.get(name) ?? name;
+    if (!allowed.has(canonical)) throw new Error("Unowned Compose file");
+    return canonical;
   });
+  if (new Set(names).size !== names.length) throw new Error("Duplicate Compose file");
+  return names;
+}
+function liveFiles(v) {
+  return composeFileNames(v.Config.Labels["com.docker.compose.project.config_files"]);
 }
 function equal(a,b) { return JSON.stringify(a) === JSON.stringify(b); }
 function configHashes(activeFiles, names, env) {
@@ -115,7 +132,7 @@ export function sourceIdentity(labels, owner) {
   return {revision:a||b,digest:null};
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1",".go-version"];
+const guardedScope = ["services","infra/compose.yaml","infra/compose.dsh.yaml","infra/compose.identity.yaml","infra/compose.merchant.yaml","infra/compose.captain.yaml","infra/compose.wlt.yaml","tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});

@@ -505,8 +505,8 @@ function reconcile() {
 // Backend source is built from Surface, not copied into the app-only mirror.
 const runtimeScope = [
   "services/identity", "services/dsh", "services/wlt", ".go-version",
-  "infra/compose.yaml", "infra/compose.apps.yaml", "infra/compose.identity-verifier.yaml",
-  "infra/compose.merchant-development.yaml", "infra/compose.captain-development.yaml",
+  "infra/compose.yaml", "infra/compose.dsh.yaml", "infra/compose.identity.yaml",
+  "infra/compose.merchant.yaml", "infra/compose.captain.yaml",
   "infra/compose.wlt.yaml", "tools/dev/docker/build-owner-image.ps1", "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1",
   "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
   "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"

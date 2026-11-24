@@ -1,5 +1,5 @@
 # Only real Go DSH owner roles belong in this overlay.
-# Pair with infra/compose.yaml and optionally compose.identity-verifier.yaml.
+# Pair with infra/compose.yaml and optionally compose.identity.yaml.
 # Never start every profile: fresh bootstrap is an explicit operator-controlled action.
 services:
   dsh-bootstrap:

@@ -49,7 +49,7 @@ $expectedLenovo = 'BTHWANI-DOCKER'
 $project = 'bthwani-refoundation'
 $baseEnv = Join-Path $repo 'infra\.env'
 $baseCompose = Join-Path $repo 'infra\compose.yaml'
-$appCompose = Join-Path $repo 'infra\compose.apps.yaml'
+$appCompose = Join-Path $repo 'infra\compose.dsh.yaml'
 $ownerTasks = @(
   @{Name='BThwani Lenovo Source Sync'; Pattern='sync-lenovo-source\.mjs'},
   @{Name='BThwani Customer Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'},

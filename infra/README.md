@@ -4,16 +4,16 @@ Canonical checkout: `D:\samrim` (current development branch changes).
 Compose project: `bthwani-refoundation` is a stable runtime identity. Do not change it when switching Git branches or repurpose donor volumes.
 This environment is synthetic development only, not production deployment. Legacy `com.bthwani.worktree` labels are retained as compatibility identifiers for running containers; they do **not** describe the current checkout. Do not recreate existing services or rename their volumes as part of a Git branch change.
 
-## Runnable now
+## Compose topology (configuration, not live readiness)
 
 | Service | Work | Lenovo loopback port |
 | --- | --- | --- |
-| `postgres` | Fresh PostgreSQL 18 + PostGIS, own empty database | internal 5432 only, not exposed |
+| `postgres` | PostgreSQL 18 + PostGIS, separate owner databases | internal 5432 only, not exposed |
 | `media` | Fresh SeaweedFS mini, own media volume/credentials | 3233 |
 | `mailpit` | Local inbound test email capture | 3226 |
 | `payment-mock` | WireMock with fixed synthetic cash-in evidence (no production rails) | 3290 |
 | `wlt` (opt-in overlay) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
-| `dsh` (with optional Compose file) | Public discovery only; proven read-only Store/Offer API | 3202 |
+| `dsh` (with optional Compose file) | DSH owner; admitted capabilities depend on explicit configuration | 3202 |
 
 The `payment-mock` image is built from `tests/infra/payment-mock/Dockerfile` using the existing
 pinned WireMock base and fixed, synthetic funding-status mappings. Only the
@@ -26,21 +26,20 @@ container are separate operations; merely editing Compose does not refresh it.
 `compose.yaml` defines exactly these four foundational dependencies. The project-scoped `isolated` bridge
 is internal and keeps PostgreSQL inaccessible from the host. A second private
 `loopback` bridge is used only by the services publishing 127.0.0.1 ports.
-The two named volumes are project-scoped, and there are no host bind mounts.
+The two base volumes are project-scoped; TLS overlays reference separately provisioned external volumes. No host bind mounts.
 Existing `samrim-local` containers, historical customers/Root Owner, balances, orders,
 secrets, applied migrations and media are never copied or changed.
 
-## Optional owner service roles and DSH public discovery
+## Owner overlays and explicit capabilities
 
-`compose.apps.yaml` now contains **only** the two real DSH owner roles:
+`compose.dsh.yaml` now contains **only** the two real DSH owner roles:
 `dsh` and opt-in `dsh-bootstrap`. Placeholder Identity services and nonexistent bootstrap commands are not
 advertised as runnable. The separate `compose.wlt.yaml` now defines the real
 read-only WLT development owner; it is not activated by the DSH profile. Do not start the whole `implementation` profile.
-DSH public Store/Offer discovery is real; protected mutation and WLT/Order
-integration remain NOT_RUN.
+DSH discovery and admitted protected capabilities use the same owner. Verify each journey separately; configuration alone is not integration evidence.
 
 Identity is a separate, synthetic Go session/Operator-permission verifier
-in `compose.identity-verifier.yaml`, not a first-factor login issuer.
+in `compose.identity.yaml`, not a first-factor login issuer.
 The two overlays may be combined with the same `compose.yaml` without
 competing service definitions. The [WLT Customer balance reader](../services/wlt/backend/README.md)
 runs only as an isolated loopback process with its read-only database role.
@@ -99,9 +98,9 @@ rollout. An image build by itself does not recreate an existing container:
 
 ```powershell
 powershell -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner dsh
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile implementation up -d --no-deps dsh
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile implementation ps dsh
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.dsh.yaml config --quiet
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.dsh.yaml --profile implementation up -d --no-deps dsh
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.dsh.yaml --profile implementation ps dsh
 ```
 
 The public DSH image serves `/health` and the public Store discovery routes.
@@ -115,7 +114,7 @@ empty synthetic Merchant development environment explicitly approved for Sanaa
 registration, add the one-shot opt-in to the existing bootstrap command:
 
 ```powershell
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile bootstrap run --rm --no-deps -e DSH_BOOTSTRAP_SYNTHETIC_REGISTRATION=true dsh-bootstrap
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.dsh.yaml --profile bootstrap run --rm --no-deps -e DSH_BOOTSTRAP_SYNTHETIC_REGISTRATION=true dsh-bootstrap
 ```
 
 The opt-in installs only Sanaa, the synthetic grocery vertical, one
@@ -133,9 +132,9 @@ merchant permissions, identity authentication or finance correctness.
 
 ### Isolated Identity verifier in the SAME Compose project
 
-`compose.identity-verifier.yaml` is an opt-in overlay for the **new
+`compose.identity.yaml` is an opt-in overlay for the **new
 refoundation Go Identity source**. Pair it with `compose.yaml` and optionally
-`compose.apps.yaml` for the real DSH service; the existing project name remains
+`compose.dsh.yaml` for the real DSH service; the existing project name remains
 `bthwani-refoundation`, and its published host port is loopback-only 3201.
 The service is `identity`, profile `identity-verifier`. It has no
 automatic bootstrap, issuer, migrations, donor volumes or other service restarts.
@@ -183,7 +182,7 @@ independently verify the Merchant session with Identity. For a containerized
 DSH verifier connection, set `REF_DSH_IDENTITY_VERIFIER_URL` to the authorized
 HTTPS Identity origin. Leaving it unset keeps protected DSH operations unavailable.
 
-For the isolated Docker Merchant read path, add `compose.merchant-development.yaml`
+For the isolated Docker Merchant read path, add `compose.merchant.yaml`
 to the base, Identity and DSH Compose files. It requires two dedicated volumes.
 The Identity TLS volume contains `server.pem` and `server-key.pem`, with the key
 readable only by Identity's UID 65532. The separate DSH trust volume contains
@@ -195,9 +194,9 @@ The opt-in deployment sequence is:
 
 ```powershell
 powershell -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner identity
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity.yaml --profile identity-verifier config --quiet
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity.yaml --profile identity-verifier up -d --no-deps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.identity.yaml --profile identity-verifier ps identity
 ```
 
 The committed Identity verifier now exposes `GET /health` for isolated
@@ -399,7 +398,7 @@ access the funding journal.
 
 ## Deployment boundary and security review
 
-The DSH container is a **local public-read-only** service: non-root runtime,
+The DSH container is an **isolated development owner** with explicitly admitted capabilities: non-root runtime,
 read-only container root filesystem, all Linux capabilities dropped, no new
 privileges and loopback-only published port. It has no application volume mounts,
 and its PostgreSQL dependency is on the project's internal bridge network.
@@ -426,7 +425,7 @@ Necessary non-secret names are `REF_POSTGRES_USER`, `REF_POSTGRES_DB`,
 `REF_MEDIA_BUCKET` and port variables; secrets are `REF_POSTGRES_PASSWORD`,
 `REF_MEDIA_ACCESS_KEY` and `REF_MEDIA_SECRET_KEY`.
 
-Once authorized private credentials exist, run from the Worktree root:
+Once authorized private credentials exist, run from the checkout root:
 
 ```powershell
 node tools/dev/setup-env.mjs
@@ -436,13 +435,12 @@ docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.y
 ```
 
 Do not start an entire Compose profile. Launch only services with proven
-source, isolated database permissions and authorization acceptance. WLT
-remains unbuilt and must not be represented by a placeholder container.
+source, isolated database permissions and authorization acceptance. WLT is a real owner; verify its actual running revision and configuration before use.
 Do not run `down -v`, `prune`, copy donor volume data or touch donor tasks.
 
-## Approved development port map (configured ports are not proof of current source or readiness)
+## Development port map (configured ports are not readiness evidence)
 
-| Future native app | Port | Future service | Port |
+| Optional app preview | Port | Owner service | Port |
 | --- | ---: | --- | ---: |
 | Customer | 3101 | Identity | 3201 |
 | Merchant | 3102 | DSH | 3202 |
@@ -466,7 +464,7 @@ Production and GitHub merge remain separately blocked until their gates pass.
 
 ### Isolated Captain admission
 
-Layer compose.captain-development.yaml after the existing Merchant TLS overlay
+Layer compose.captain.yaml after the existing Merchant TLS overlay
 only in the explicitly approved synthetic development project. DSH serves only
 GET /v1/actors/me/captain-eligibility on its private TLS listener 3344; the same
 DSH handler verifies the current Customer with the existing Identity TLS

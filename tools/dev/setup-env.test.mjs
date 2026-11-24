@@ -47,6 +47,8 @@ test('creates one local secret file with exclusive creation and no printed secre
   assert.match(file, /^REF_POSTGRES_PASSWORD=[0-9a-f]{64}$/m);
   assert.match(file, /^REF_MEDIA_ACCESS_KEY=[0-9a-f]{64}$/m);
   assert.match(file, /^REF_MEDIA_SECRET_KEY=[0-9a-f]{64}$/m);
+  assert.match(file, /^REF_IDENTITY_VERIFIER_PORT=3201$/m);
+  assert.doesNotMatch(file, /^REF_(?:IDENTITY|CUSTOMER|MERCHANT|CAPTAIN|OPERATOR)_PORT=/m);
   assert.ok(lstatSync(dest).isFile());
   for (const secret of [...file.matchAll(/=(?<secret>[0-9a-f]{64})$/gm)]) {
     assert.ok(!result.stdout.includes(secret.groups.secret));

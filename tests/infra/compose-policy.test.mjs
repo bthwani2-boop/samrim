@@ -58,7 +58,7 @@ test("WLT is the real isolated read-only owner and never a migration service", (
 });
 
 test("a normal implementation profile can never implicitly bootstrap SQL", () => {
-  const apps = compose("compose.apps.yaml");
+  const apps = compose("compose.dsh.yaml");
   const service = apps.services.dsh;
   const bootstrap = apps.services["dsh-bootstrap"];
   assert.equal(apps.services["dsh-migrate"], undefined);
@@ -87,7 +87,7 @@ test("a normal implementation profile can never implicitly bootstrap SQL", () =>
 });
 
 test("Identity verifier is synthetic only and has no privileged host exposure", () => {
-  const overlay = compose("compose.identity-verifier.yaml");
+  const overlay = compose("compose.identity.yaml");
   const id = overlay.services.identity;
   assert.ok(!overlay.services.wlt);
   assert.deepEqual(id.profiles, ["identity-verifier"]);
@@ -117,7 +117,7 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
 });
 
 test("Merchant development overlay adds only private TLS and read-side standing", () => {
-  const overlay = compose("compose.merchant-development.yaml");
+  const overlay = compose("compose.merchant.yaml");
   assert.deepEqual(Object.keys(overlay.services).sort(), ["dsh", "identity"]);
   const { dsh, identity } = overlay.services;
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_MERCHANT_STANDING, "true");
@@ -136,7 +136,7 @@ test("Merchant development overlay adds only private TLS and read-side standing"
 });
 
 test("Captain admission uses only the private DSH TLS owner and a dedicated trust volume", () => {
-  const overlay = compose("compose.captain-development.yaml");
+  const overlay = compose("compose.captain.yaml");
   const { identity, dsh } = overlay.services;
   assert.equal(identity.environment.IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION, "true");
   assert.equal(identity.environment.IDENTITY_DSH_CAPTAIN_STANDING_URL, "https://dsh:3344");

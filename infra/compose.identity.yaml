@@ -1,5 +1,5 @@
 # Optional NEW Identity session-verifier development slice only.
-# Pair with infra/compose.yaml; optionally include compose.apps.yaml for DSH.
+# Pair with infra/compose.yaml; optionally include compose.dsh.yaml for DSH.
 # The single project identity remains bthwani-refoundation.
 #
 # Do NOT start until the Identity owner has verified safe Docker-network

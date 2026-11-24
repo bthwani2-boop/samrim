@@ -234,3 +234,16 @@ test("one owner-image builder replaces the three duplicated scripts", async () =
     }
   }
 });
+
+test("Compose provenance accepts exact old or current names only within the canonical checkout", async () => {
+  const { composeFileNames } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const root = "D:/samrim";
+  const files = names => names.map(name => root + "/infra/" + name).join(",");
+  const canonical = ["compose.yaml","compose.dsh.yaml","compose.identity.yaml","compose.merchant.yaml","compose.captain.yaml"];
+  assert.deepEqual(composeFileNames(files(canonical),root),canonical);
+  assert.deepEqual(composeFileNames(files(["compose.yaml","compose.apps.yaml","compose.identity-verifier.yaml","compose.merchant-development.yaml","compose.captain-development.yaml"]),root),canonical);
+  assert.throws(()=>composeFileNames(files(["compose.apps.yaml","compose.dsh.yaml"]),root),/Duplicate/);
+  assert.throws(()=>composeFileNames("D:/other/infra/compose.apps.yaml",root),/Unowned/);
+  assert.throws(()=>composeFileNames(files(["../infra/compose.dsh.yaml"]),root),/Unowned/);
+  assert.throws(()=>composeFileNames(files(["compose.unknown.yaml"]),root),/Unowned/);
+});
