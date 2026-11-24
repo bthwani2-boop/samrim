@@ -1,10 +1,12 @@
-import { type CustomerAddress, type CustomerAddressChange, DshPublicError, isCustomerAddressId, listPublicCities, validCustomerAddressChange } from "@bthwani/dsh";
+import { type CustomerAddress, type CustomerAddressChange, DshPublicError, isCustomerAddressId, validCustomerAddressChange } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { randomUUID } from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import ServiceCityScope from "../location/service-city-scope";
+import { serviceCityLabel } from "../location/serviceability";
 import { resolvePublicStoreOrigin } from "../stores/public-store-origin";
 import AddressEditor from "./address-editor";
 import { readVerifiedAddress, readVerifiedAddresses, verifyAddressSession, writeVerifiedAddress } from "./address-transport";
@@ -24,8 +26,6 @@ export default function AddressesScreen() {
   const { theme }=useMobileAppearance();
   const {id}=useLocalSearchParams<{id?:string}>();
   const [view,setView]=useState<ReadState|null>(null);
-  const [cities,setCities]=useState<string[]>([]);
-  const [cityCursor,setCityCursor]=useState<string|undefined>();
   const [draft,setDraft]=useState<Draft|null>(null);
   const [pending,setPending]=useState<Pending|null>(null);
   const [message,setMessage]=useState("");
@@ -37,7 +37,7 @@ export default function AddressesScreen() {
   const expires=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
   const clear=useCallback(()=>{
     scope.current?.abort();scope.current=null;active.current?.abort();active.current=null;
-    clearTimeout(expires.current);setView(null);setDraft(null);setPending(null);setCities([]);setCityCursor(undefined);setMap(false);setBusy(false);
+    clearTimeout(expires.current);setView(null);setDraft(null);setPending(null);setMap(false);setBusy(false);
   },[]);
   const reload=useCallback(()=>{clear();setRetry(v=>v+1);},[clear]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry deliberately refreshes private owner state.
@@ -72,9 +72,6 @@ export default function AddressesScreen() {
     }).catch(()=>{
       if(!controller.signal.aborted)setMessage("تعذّر التحقق من عناوين حسابك. تحقق من الدخول والاتصال ثم أعد المحاولة.");
     });
-    void listPublicCities(resolvePublicStoreOrigin(),{limit:50,signal:controller.signal}).then(result=>{
-      if(!controller.signal.aborted){setCities(result.items);setCityCursor(result.nextCursor);}
-    }).catch(()=>{});
     return clear;
   },[clear,reload,retry,id]));
   useEffect(()=>{
@@ -113,14 +110,6 @@ export default function AddressesScreen() {
     }catch{if(!c.signal.aborted){clear();setMessage("تعذّرت قراءة العناوين؛ أعد التحقق.");}}
     finally{if(active.current===c){active.current=null;setBusy(false);}}
   }
-  async function moreCities() {
-    if(!cityCursor||active.current)return;
-    const c=new AbortController();active.current=c;setBusy(true);
-    try{const p=await listPublicCities(resolvePublicStoreOrigin(),{limit:50,cursor:cityCursor,signal:c.signal});
-      if(!c.signal.aborted){setCities(old=>[...new Set([...old,...p.items])]);setCityCursor(p.nextCursor);}}
-    catch{if(!c.signal.aborted)setMessage("تعذّرت قراءة المدن.");}
-    finally{if(active.current===c){active.current=null;setBusy(false);}}
-  }
   async function save() {
     if(!view||!draft||active.current)return;
     const command=pending??{actor:view.actor,id:draft.id,change:toChange(draft)};
@@ -156,17 +145,16 @@ export default function AddressesScreen() {
       {!view?<Link href="/login" style={{color:theme.interactiveText}}>التحقق من الحساب</Link>:<>
         {view.items.length===0?<Text style={{color:theme.color}}>لا توجد عناوين مسجلة.</Text>:view.items.map(a=><Pressable key={a.id} accessibilityRole="button"
           disabled={busy||!!pending} style={button} onPress={()=>{setDraft(toDraft(a));setMap(false);}}>
-          <Text style={{color:theme.color,fontWeight:"700"}}>{a.label}</Text><Text style={{color:theme.colorSecondary}}>{a.cityId} · {a.details}</Text>
+          <Text style={{color:theme.color,fontWeight:"700"}}>{a.label}</Text><Text style={{color:theme.colorSecondary}}>{serviceCityLabel(a.cityId)} · {a.details}</Text>
         </Pressable>)}
         {view.next?<Pressable accessibilityRole="button" disabled={busy||!!pending} style={button} onPress={()=>void more()}><Text style={{color:theme.interactiveText}}>المزيد من العناوين</Text></Pressable>:null}
         <Pressable accessibilityRole="button" disabled={busy||!!pending} style={button} onPress={()=>{setDraft(fresh());setMap(false);}}><Text style={{color:theme.interactiveText}}>إضافة عنوان</Text></Pressable>
         {draft?<View key={draft.id} style={{gap:10}}>
           <Text style={{color:theme.color,fontWeight:"700"}}>{draft.expectedVersion?"تعديل العنوان":"عنوان جديد"}</Text>
           <Text style={{color:theme.color}}>مدينة الخدمة</Text>
-          {cities.map(city=><Pressable key={city} accessibilityRole="button" accessibilityState={{selected:city===draft.cityId}}
-            disabled={busy||!!pending} style={{...button,backgroundColor:city===draft.cityId?theme.actionSoft:theme.surface}}
-            onPress={()=>setDraft(old=>old?{...old,cityId:city}:null)}><Text style={{color:theme.color}}>{city}</Text></Pressable>)}
-          {cityCursor?<Pressable accessibilityRole="button" style={button} disabled={busy||!!pending} onPress={()=>void moreCities()}><Text style={{color:theme.interactiveText}}>مدن أخرى</Text></Pressable>:null}
+          {draft.cityId?<Text style={{color:theme.colorSecondary}}>المدينة المختارة: {serviceCityLabel(draft.cityId)}</Text>:null}
+          <ServiceCityScope origin={resolvePublicStoreOrigin()} currentCity={draft.cityId} disabled={busy||!!pending}
+            onApply={city=>setDraft(old=>old?{...old,cityId:city}:null)}/>
           {field("label","اسم العنوان",80)}{field("details","تفاصيل الوصول",300)}
           {field("latitude","خط العرض",24)}{field("longitude","خط الطول",24)}
           {!pending?<Pressable testID="address-location-open" accessibilityRole="button" accessibilityState={{expanded:map}} disabled={busy} style={button} onPress={()=>setMap(v=>!v)}><Text style={{color:theme.interactiveText}}>{map?"إغلاق محدد الموقع":Platform.OS==="web"?"تحديد الموقع الحالي":"اختيار الموقع على الخريطة"}</Text></Pressable>:null}
