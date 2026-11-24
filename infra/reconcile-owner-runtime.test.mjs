@@ -95,3 +95,16 @@ test("committed client-only changes eventually refresh strict provenance without
   assert.equal(ownerSourceState("identity",clients,clients).requiresCommittedRefresh,false);
   assert.equal(ownerSourceState("identity",clients,[]).requiresCommittedRefresh,false);
 });
+
+test("fresh baseline preparation is confined to explicit isolated apply with committed schema drift", async () => {
+  const { baselineProofOwners, verifyBaselineProofOutput }=await import("./reconcile-owner-runtime.mjs");
+  const base={apply:true,prepare:true,blocked:{dsh:"SCHEMA_REVIEW_REQUIRED",identity:"PEER_REVIEW_REQUIRED:dsh"},dirtyInputs:[]};
+  assert.deepEqual(baselineProofOwners(base),["dsh"]);
+  for(const patch of [{apply:false},{prepare:false},{dirtyInputs:["services/dsh/database/schema/00_marketplace.sql"]},{blocked:{identity:"UNCOMMITTED_NON_GO"}}]) {
+    assert.deepEqual(baselineProofOwners({...base,...patch}),[]);
+  }
+  const proof=["PG_FRESH_DSH_BASELINE=PASS count=8","PG_READER_ACCESS=PASS","PG_RESTORE_READBACK=PASS","PG_FRESH_IDENTITY_BASELINE=PASS","PG_FRESH_WLT_BASELINE=PASS","PG_ISOLATION=PASS"].join("\n");
+  assert.doesNotThrow(()=>verifyBaselineProofOutput(proof));
+  assert.throws(()=>verifyBaselineProofOutput(proof+"\nPG_ISOLATION=FAIL"),/BASELINE_PROOF_INCOMPLETE/);
+  assert.throws(()=>verifyBaselineProofOutput(proof.replace("PG_RESTORE_READBACK=PASS","PG_RESTORE_READBACK=FAIL")),/BASELINE_PROOF_INCOMPLETE/);
+});

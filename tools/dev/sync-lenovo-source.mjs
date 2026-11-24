@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirtyPaths, isPreviewGoPath, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeBaselineProofDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -486,7 +486,7 @@ const runtimeScope = [
   "infra/compose.yaml", "infra/compose.apps.yaml", "infra/compose.identity-verifier.yaml",
   "infra/compose.merchant-development.yaml", "infra/compose.captain-development.yaml",
   "infra/compose.wlt.yaml", "infra/build-dsh-image.ps1", "infra/build-identity-verifier-image.ps1",
-  "infra/build-wlt-image.ps1", "infra/reconcile-owner-runtime.mjs",
+  "infra/build-wlt-image.ps1", "infra/reconcile-owner-runtime.mjs", "infra/verify-isolated-postgres.ps1",
   "infra/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
   "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
 ];
@@ -534,7 +534,7 @@ function pollOwnerRuntime() {
   logger("RUNTIME_RECONCILE_STARTED key="+key.slice(0,12));
   // The unified dev launcher holds the existing lifecycle mutex. Keep the app
   // file sync responsive while its one bounded build/replacement runs.
-  const child = spawn("pwsh.exe", ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply",...(preview?["-Preview"]:[])], {
+  const child = spawn("pwsh.exe", ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply",...(preview?["-Preview"]:[]),...(runtimeBaselineProofDue(key,last)?["-PrepareBaseline"]:[])], {
     cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]
   });
   runtimeChild=child;
@@ -550,6 +550,7 @@ function pollOwnerRuntime() {
       persistAt(runtimeStateFile,{version:1,key,status});
       const holds=output.split(/\r?\n/).filter(line=>/^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=[A-Z_:a-z]+$/.test(line));
       for(const hold of holds) logger(hold);
+      for(const proof of output.split(/\r?\n/).filter(line=>/^BASELINE_PROOF_PASS HEAD=[a-f0-9]{40} OWNERS=[a-z,]+ CUTOVER=BLOCKED$/.test(line))) logger(proof);
       runtimeLogOnce("RUNTIME_RECONCILE_"+status.toUpperCase()+" key="+key.slice(0,12));
     } catch {
       runtimeLogOnce("RUNTIME_UPDATE_BLOCKED attempt state could not be persisted");

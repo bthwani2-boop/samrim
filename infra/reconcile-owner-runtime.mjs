@@ -133,9 +133,25 @@ function validateVolumeFiles(headTag) {
 export function isolatedTestEnv(env) {
   return {...Object.fromEntries(Object.entries(env).filter(([k]) => !/^(BTHWANI_|DSH_|IDENTITY_|WLT_|REF_|PG[A-Z]|DATABASE_URL$)/i.test(k))), GOTOOLCHAIN:"local"};
 }
+// This is a preparation proof only, not permission to switch a retained
+// namespace. Reuse the existing network-disabled PostgreSQL rehearsal.
+export function baselineProofOwners({apply,prepare,blocked,dirtyInputs}) {
+  if(!apply || !prepare || dirtyInputs.length) return [];
+  return Object.keys(owners).filter(o=>blocked[o]==="SCHEMA_REVIEW_REQUIRED");
+}
+export function verifyBaselineProofOutput(output) {
+  const expected=["PG_FRESH_DSH_BASELINE","PG_READER_ACCESS","PG_RESTORE_READBACK","PG_FRESH_IDENTITY_BASELINE","PG_FRESH_WLT_BASELINE","PG_ISOLATION"];
+  for(const name of expected) {
+    const evidence=output.split(/\r?\n/).filter(line=>line.startsWith(name+"="));
+    if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
+  }
+}
+const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","infra/verify-isolated-postgres.ps1","infra/compose.yaml"];
 function main() {
-  const mode = process.argv.slice(2).join(" ");
-  if (!["--check","--apply","--apply-captain","--apply-preview"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview");
+  const [mode,...options] = process.argv.slice(2);
+  const prepare=options.length===1 && options[0]==="--prepare-baseline";
+  if(options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
+  if (!["--check","--apply","--apply-captain","--apply-preview"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
   const apply = mode !== "--check";
   if (apply && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
   if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
@@ -176,6 +192,18 @@ function main() {
   const blocked=change.plan.blocked;
   let partial=Object.keys(blocked).length>0;
   if(mode==="--apply-captain" && (partial || change.changed.length)) throw new Error("Captain activation requires a fully reviewed committed source");
+  const prepareFreshBaseline=()=>{
+    if(!apply || !prepare) return;
+    const proofOwners=baselineProofOwners({apply,prepare,blocked,dirtyInputs:dirtyPaths(root,baselineProofScope)});
+    if(!proofOwners.length)return;
+    ensureSource();
+    console.log("BASELINE_PROOF_STARTED HEAD="+head+" OWNERS="+proofOwners.join(","));
+    const proof=run("pwsh",["-NoProfile","-File","infra/verify-isolated-postgres.ps1","-DockerContext",context,"-NoPull"],{},180000);
+    verifyBaselineProofOutput(proof);
+    ensureSource();
+    if(dirtyPaths(root,baselineProofScope).length)throw new Error("Baseline proof inputs changed during rehearsal");
+    console.log("BASELINE_PROOF_PASS HEAD="+head+" OWNERS="+proofOwners.join(",")+" CUTOVER=BLOCKED");
+  };
   const snapshots=new Map();
   const candidates=[];
   for(const o of Object.keys(owners)){
@@ -201,6 +229,7 @@ function main() {
   const selected = selectOwners({candidates,activateCaptain:mode==="--apply-captain",currentCaptain:captain});
   console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_OVERLAY="+captain);
   if (!apply || selected.length===0) {
+    prepareFreshBaseline();
     if(partial || selected.length){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
     else console.log("RECONCILE_PASS HEAD="+head);
     return;
@@ -293,6 +322,7 @@ function main() {
   }
   ensureSource();
   for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("RUNTIME_STALE preview input advanced: "+o);
+  prepareFreshBaseline();
   if(partial){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
   else console.log("RECONCILE_PASS HEAD="+head);
 }

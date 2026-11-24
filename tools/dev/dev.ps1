@@ -16,6 +16,7 @@ param(
   [switch]$DeepSql,
   [switch]$EnableCaptain,
   [switch]$Preview,
+  [switch]$PrepareBaseline,
   [Parameter(Position=1)]
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','reconcile','start','restart','android','open')]
   [string]$DockerAction = 'help',
@@ -760,10 +761,12 @@ function Invoke-ScopedDocker {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain overlay requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
       $mode = if ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
+      Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply, without capability activation'
+      $reconcileOptions = if ($PrepareBaseline) { @('--prepare-baseline') } else { @() }
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {
         if ($Apply) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
-        & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode
+        & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode @reconcileOptions
         Assert-Ok ($LASTEXITCODE -eq 0) 'owner runtime reconciliation failed; inspect explicit result'
       } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }

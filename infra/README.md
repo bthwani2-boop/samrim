@@ -308,11 +308,22 @@ production suitability. Building a
 new `sha-<commit>` image is a separate operation and does **not** update the
 container already running. Readiness always attaches to the *running* image ID.
 
+For a committed owner schema change, the existing source watcher requests one
+isolated baseline rehearsal per new runtime input key through the unified
+lifecycle mutex. The explicit equivalent is
+`pnpm dev docker reconcile -Apply -PrepareBaseline`.
+No image pull, retained database write or schema cutover is part of this rehearsal.
+`BASELINE_PROOF_PASS HEAD=... OWNERS=... CUTOVER=BLOCKED` proves fresh
+schema/restore rehearsal only. A changed schema continues to hold the affected
+runtime and its dependent peers until a separately verified safe cutover; the
+normal read-only check never runs the rehearsal. Independent eligible owners
+continue through the existing image reconciliation path.
+
 The SQL proof intentionally creates a **new disposable container** with a
 unique `bthwani-agent01-pgproof-*` name and the same pinned PostGIS image as
 the existing Compose stack. It has `--network none`, no published ports, no
 external volumes and tmpfs-only PostgreSQL storage. The script runs the
-current DSH migrations in order, then restores a custom-format backup into a
+current DSH owner baseline SQL in order, then restores a custom-format backup into a
 second database in the same disposable container. It compares columns,
 constraints, indexes, triggers and the discovery revision. The same synthetic
 reader must be able to read the revision and must receive SQLSTATE 42501 on

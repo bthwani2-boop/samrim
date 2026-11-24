@@ -66,6 +66,11 @@ function runtimePollDue({enabled, dirty, active, key, last, now, nextAudit}) {
   return last.status !== "blocked" && now >= nextAudit;
 }
 
+function runtimeBaselineProofDue(key,last) {
+  if(!key || ["running","uncertain"].includes(last?.status))return false;
+  return last?.key!==key || last.status==="retry";
+}
+
 function runtimeAttemptResult(code, signal, stdout, stderr) {
   if(signal || /ROLLBACK_BLOCKED|ROLLBACK_READBACK_FAILED/.test(stderr))return "uncertain";
   const starts=[...stdout.matchAll(/^OWNER_APPLY_STARTED (.+)\r?$/gm)].map(m=>m[1].trim());
@@ -111,4 +116,4 @@ function graphifyPollDue({now,dirtySince,lastEvent,nextAudit,busy,debounce=3000,
   if (busy) return false;
   return now>=nextAudit || (dirtySince!==null && (now-lastEvent>=debounce || now-dirtySince>=maxWait));
 }
-export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue, watcherReloadAction };
+export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeBaselineProofDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue, watcherReloadAction };

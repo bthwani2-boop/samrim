@@ -3,7 +3,7 @@
 # Creates only an ephemeral, network-disabled PostgreSQL with tmpfs storage.
 # Never attaches to the project's existing database, volumes or service ports.
 [CmdletBinding()]
-param([string]$DockerContext = 'bthwani-docker')
+param([string]$DockerContext = 'bthwani-docker', [switch]$NoPull)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
@@ -19,8 +19,9 @@ $user = 'bthwani_agent01_admin'
 $schema = 'dsh_test_agent01'
 $reader = 'bthwani_agent01_reader'
 $containerId = $null
+$pullPolicy = if ($NoPull) { @('--pull','never') } else { @() }
 try {
-  $containerId = (& docker --context $DockerContext run -d --rm --name $name `
+  $containerId = (& docker --context $DockerContext run -d --rm @pullPolicy --name $name `
       --network none --mount 'type=tmpfs,dst=/var/lib/postgresql,tmpfs-size=536870912' `
       --label 'com.bthwani.test-scope=session01-disposable-sql' `
       -e 'POSTGRES_HOST_AUTH_METHOD=trust' -e ('POSTGRES_USER=' + $user) `

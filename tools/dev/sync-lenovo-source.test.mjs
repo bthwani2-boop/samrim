@@ -519,3 +519,12 @@ test("reconciliation requires an explicit terminal result and never certifies a 
   assert.equal(runtimeAttemptResult(0,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PASS HEAD="+sha+"\n",""),"uncertain");
   assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PARTIAL HEAD="+sha+"\n",""),"uncertain");
 });
+
+test("fresh baseline rehearsal is scheduled on a new runtime key, not every review audit", async()=>{
+  const {runtimeBaselineProofDue}=await import("./sync-lenovo-reconciliation.mjs");
+  assert.equal(runtimeBaselineProofDue("new",null),true);
+  assert.equal(runtimeBaselineProofDue("new",{key:"old",status:"review"}),true);
+  assert.equal(runtimeBaselineProofDue("new",{key:"new",status:"review"}),false);
+  assert.equal(runtimeBaselineProofDue("new",{key:"new",status:"retry"}),true);
+  assert.equal(runtimeBaselineProofDue("new",{key:"new",status:"uncertain"}),false);
+});
