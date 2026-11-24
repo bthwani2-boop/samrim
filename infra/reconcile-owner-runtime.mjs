@@ -150,17 +150,18 @@ const baselineProofScope=["services/identity/database","services/dsh/database","
 // One-time additive preparation: the old owner remains the writer until a
 // separately verified handoff. No retained schema, role, service or volume is
 // modified. Existing target names fail closed rather than being overwritten.
-export function ownerDataFingerprintSql(schema, tables, sequences) {
+export function ownerDataFingerprintSql(schema, tables, sequences, owner="dsh") {
   const identifier=/^[a-z][a-z0-9_]{0,62}$/;
-  if(!/^dsh_test_[a-z0-9_]{1,50}$/.test(schema) ||
+  if(!["dsh","identity"].includes(owner) || !(owner==="dsh"?/^dsh_test_[a-z0-9_]{1,50}$/:/^identity_test_[a-z0-9_]{1,49}$/).test(schema) ||
      [...tables,...sequences].some(t=>!identifier.test(t)) ||
      !tables.length || new Set(tables).size!==tables.length || new Set(sequences).size!==sequences.length) throw new Error("Invalid owner snapshot scope");
   return "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='15s'; SET LOCAL timezone='UTC'; SET LOCAL datestyle='ISO, YMD'; SET LOCAL intervalstyle='postgres'; SET LOCAL extra_float_digits=3;\n"+
     [...tables].sort().map(t=>"SELECT 'table:"+t+"',count(*),encode(sha256(convert_to(coalesce(string_agg(h,'' ORDER BY h),''),'UTF8')),'hex') FROM (SELECT encode(sha256(convert_to(to_jsonb(x)::text,'UTF8')),'hex') h FROM "+schema+"."+t+" x) q;").join("\n")+"\n"+
     [...sequences].sort().map(t=>"SELECT 'sequence:"+t+"',last_value,is_called FROM "+schema+"."+t+";").join("\n")+"\nCOMMIT;";
 }
-export function legacyDshAccessSql() {
-  return "BEGIN READ ONLY; SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' AND (has_table_privilege('bthwani_dsh_runtime',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_any_column_privilege('bthwani_dsh_runtime',c.oid,'INSERT,UPDATE,REFERENCES') OR ((has_table_privilege('bthwani_dsh_runtime',c.oid,'SELECT') OR has_any_column_privilege('bthwani_dsh_runtime',c.oid,'SELECT')) AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND ((e.extname='postgis' AND n.nspname='public' AND c.relname IN ('geography_columns','geometry_columns','spatial_ref_sys')) OR (e.extname='postgis_tiger_geocoder' AND n.nspname='tiger' AND c.relname IN ('geocode_settings','geocode_settings_default','loader_lookuptables','loader_platform','loader_variables','pagc_gaz','pagc_lex','pagc_rules')) OR (e.extname='postgis_topology' AND n.nspname='topology' AND c.relname IN ('layer','topology')))))); COMMIT;";
+export function legacyOwnerAccessSql(runtime="bthwani_dsh_runtime") {
+  if(!["bthwani_dsh_runtime","bthwani_identity_runtime"].includes(runtime))throw new Error("Invalid dedicated owner principal");
+  return "BEGIN READ ONLY; SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' AND (has_table_privilege('bthwani_dsh_runtime',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_any_column_privilege('bthwani_dsh_runtime',c.oid,'INSERT,UPDATE,REFERENCES') OR ((has_table_privilege('bthwani_dsh_runtime',c.oid,'SELECT') OR has_any_column_privilege('bthwani_dsh_runtime',c.oid,'SELECT')) AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND ((e.extname='postgis' AND n.nspname='public' AND c.relname IN ('geography_columns','geometry_columns','spatial_ref_sys')) OR (e.extname='postgis_tiger_geocoder' AND n.nspname='tiger' AND c.relname IN ('geocode_settings','geocode_settings_default','loader_lookuptables','loader_platform','loader_variables','pagc_gaz','pagc_lex','pagc_rules')) OR (e.extname='postgis_topology' AND n.nspname='topology' AND c.relname IN ('layer','topology')))))); COMMIT;".replaceAll("bthwani_dsh_runtime",runtime);
 }
 function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
   if(git(["status","--porcelain","--untracked-files=all"]))throw new Error("Dedicated database preparation requires a clean committed checkout");
@@ -216,7 +217,7 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
     }
     if(sql(oldDb,fingerprint)!==before || sql(db,fingerprint)!==before)throw new Error("Source or candidate data changed; preserve both and review");
     if(sql(db,"BEGIN READ ONLY; SELECT (SELECT count(*) FROM "+schema+".customer_addresses)+(SELECT count(*) FROM "+schema+".service_city_delivery_policies); COMMIT;")!=="0")throw new Error("Fresh policy or address facts must remain empty");
-    const legacyAccess=sql(oldDb,legacyDshAccessSql());
+    const legacyAccess=sql(oldDb,legacyOwnerAccessSql());
     if(legacyAccess!=="0" || sql("postgres","BEGIN READ ONLY; SELECT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="f")throw new Error("Dedicated runtime has unexpected legacy or WLT access");
 
     if(resume)sql("postgres","ALTER ROLE "+runtime+" PASSWORD '"+runtimeSecret+"';");
@@ -280,7 +281,7 @@ function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
       throw new Error("DSH writer exclusivity unproven");
   };
   checkParity(); verifyEmptyNewTables();
-  if(sql(oldDb,legacyDshAccessSql())!=="0" || sql("postgres","BEGIN READ ONLY; SELECT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="f")
+  if(sql(oldDb,legacyOwnerAccessSql())!=="0" || sql("postgres","BEGIN READ ONLY; SELECT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="f")
     throw new Error("DSH cross-owner access not excluded");
   const proof=docker([...composeArgs(files),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
   if(!proof.includes("DSH_DEVELOPMENT_DATABASE_PASS"))throw new Error("Prepared DSH runtime login proof failed");
@@ -335,12 +336,142 @@ function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
   }
 }
 
+
+// Identity is moved without changing its existing SQL semantics. The native
+// backup/restore preserves the historical audit relation and all session facts.
+// Changed schemas must instead use the fresh-baseline path, never this copy.
+export function identityDestinationUrl(oldUrl, password) {
+  const url=new URL(oldUrl);
+  if(!/^postgres(?:ql)?:$/.test(url.protocol) || url.hostname!=="postgres" ||
+     !["","5432"].includes(url.port) || url.pathname!=="/bthwani_refoundation" ||
+     !/^identity_runtime_docker_[a-f0-9]{12}$/.test(url.username) ||
+     !url.password || url.hash || url.search!=="?sslmode=disable" ||
+     !/^[a-f0-9]{64}$/.test(password))throw new Error("Unverified legacy Identity connection");
+  url.username="bthwani_identity_runtime";
+  url.password=password;
+  url.pathname="/bthwani_identity_dev";
+  return url.toString();
+}
+export function identityAclSql(schema, role) {
+  if(!/^identity_test_docker_[a-f0-9]{12}$/.test(schema) || !/^identity_runtime_docker_[a-f0-9]{12}$/.test(role) ||
+     schema.slice(-12)!==role.slice(-12))throw new Error("Unverified legacy Identity grants");
+  const rows="WITH grants AS (SELECT c.relname AS relation,NULL::name AS column_name,a.privilege_type,a.is_grantable FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(c.relacl) a WHERE n.nspname='"+schema+"' AND c.relkind='r' AND a.grantee=(SELECT oid FROM pg_roles WHERE rolname='"+role+"') UNION ALL SELECT c.relname,t.attname,a.privilege_type,a.is_grantable FROM pg_attribute t JOIN pg_class c ON c.oid=t.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN LATERAL aclexplode(t.attacl) a WHERE n.nspname='"+schema+"' AND c.relkind='r' AND t.attnum>0 AND NOT t.attisdropped AND a.grantee=(SELECT oid FROM pg_roles WHERE rolname='"+role+"')) ";
+  return "BEGIN READ ONLY; "+rows+"SELECT CASE WHEN is_grantable OR privilege_type NOT IN ('SELECT','INSERT','UPDATE') THEN 'INVALID' ELSE format('GRANT %s%s ON TABLE %I.%I TO bthwani_identity_runtime;',privilege_type,CASE WHEN column_name IS NULL THEN '' ELSE format(' (%I)',column_name) END,'"+schema+"',relation) END FROM grants ORDER BY relation,column_name NULLS FIRST,privilege_type; COMMIT;";
+}
+function identityEffectiveAclSql(schema, role) {
+  if(!/^identity_test_docker_[a-f0-9]{12}$/.test(schema) || !/^(?:identity_runtime_docker_[a-f0-9]{12}|bthwani_identity_runtime)$/.test(role))throw new Error("Invalid Identity ACL scope");
+  const roleLiteral="'"+role+"'";
+  return "BEGIN READ ONLY; SELECT 'table:'||c.relname,p,has_table_privilege("+roleLiteral+",c.oid,p) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER','MAINTAIN']) p WHERE n.nspname='"+schema+"' AND c.relkind='r' ORDER BY 1,2; SELECT 'column:'||c.relname||'.'||a.attname,p,has_column_privilege("+roleLiteral+",c.oid,a.attnum,p) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['SELECT','INSERT','UPDATE','REFERENCES']) p WHERE n.nspname='"+schema+"' AND c.relkind='r' AND a.attnum>0 AND NOT a.attisdropped ORDER BY 1,2; SELECT 'function:'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||')',has_function_privilege("+roleLiteral+",p.oid,'EXECUTE') FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='"+schema+"' ORDER BY 1; SELECT 'sequence:'||c.relname,p,has_sequence_privilege("+roleLiteral+",c.oid,p) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace CROSS JOIN unnest(ARRAY['USAGE','SELECT','UPDATE']) p WHERE n.nspname='"+schema+"' AND c.relkind='S' ORDER BY 1,2; COMMIT;";
+}
+function relocateIdentity(state,env,head,files) {
+  const scope=[...guardedScope,"infra/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
+  const clean=()=>git(["rev-parse","HEAD"])===head && !dirtyPaths(root,scope).length;
+  if(!clean())throw new Error("Identity relocation requires a committed stable source");
+  const old=state.identity,live=asEnv(old.Config.Env),schema=live.IDENTITY_DB_SCHEMA;
+  const oldUrl=live.IDENTITY_TEST_DATABASE_URL, oldDb="bthwani_refoundation",db="bthwani_identity_dev";
+  const owner="bthwani_identity_owner",runtime="bthwani_identity_runtime",admin="bthwani_refoundation_admin",pg=project+"-postgres-1";
+  const oldRole=new URL(oldUrl).username;
+  const password=randomBytes(32).toString("hex"),newUrl=identityDestinationUrl(oldUrl,password);
+  if(!/^identity_test_docker_[a-f0-9]{12}$/.test(schema) || schema.slice(-12)!==oldRole.slice(-12))throw new Error("Legacy Identity schema not verified");
+  const oldRevision=ownerRevision(state,"identity").revision;
+  git(["merge-base","--is-ancestor",oldRevision,head]);
+  if(git(["diff","--name-only",oldRevision,head,"--","services/identity/database/schema"]))
+    throw new Error("Identity schema changed; relocation is not a fresh-baseline transition");
+  if(docker(["inspect","--format",'{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.bthwani.environment"}}|{{.State.Health.Status}}',pg])!==project+"|refoundation|healthy")throw new Error("PostgreSQL owner not verified");
+  const sql=(database,statement)=>docker(["exec","-i",pg,"psql","-X","-qAt","-v","ON_ERROR_STOP=1","-U",admin,"-d",database,"-f","-"],{},45000,statement+"\n");
+  const envPath=resolve(root,"infra/.env");
+  git(["check-ignore","infra/.env"]);
+  const info=lstatSync(envPath);
+  if(!info.isFile()||info.isSymbolicLink())throw new Error("Unsafe local configuration");
+  const original=readFileSync(envPath,"utf8");
+  if(/^REF_IDENTITY_RUNTIME_DATABASE_URL=/m.test(original))throw new Error("Identity candidate configuration already exists; inspect before retry");
+  if(sql("postgres","BEGIN READ ONLY; SELECT (SELECT count(*) FROM pg_database WHERE datname='"+db+"')+(SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"')); COMMIT;")!=="0")
+    throw new Error("Identity candidate already exists; inspect before retry");
+  const roleCheck=sql(oldDb,"BEGIN READ ONLY; SELECT NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid) AND has_schema_privilege(rolname,'"+schema+"','USAGE') AND NOT has_schema_privilege(rolname,'"+schema+"','CREATE') FROM pg_roles r WHERE rolname='"+oldRole+"'; COMMIT;");
+  if(roleCheck!=="t")throw new Error("Legacy Identity runtime principal not verified");
+  const list=(database,kind)=>sql(database,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='"+kind+"' ORDER BY 1; COMMIT;").split(/\r?\n/).filter(Boolean);
+  const tables=list(oldDb,"r"), sequences=list(oldDb,"S");
+  if(!["actors","actor_roles","auth_sessions","auth_session_families","auth_refresh_tokens","operator_permissions","operator_bootstrap"].every(t=>tables.includes(t)) || tables.length>100)
+    throw new Error("Legacy Identity data inventory incomplete");
+  const fp=ownerDataFingerprintSql(schema,tables,sequences,"identity"), grants=sql(oldDb,identityAclSql(schema,oldRole));
+  if(!grants || grants.split(/\r?\n/).some(line=>!/^GRANT (?:SELECT|INSERT|UPDATE)(?: \([a-z_][a-z0-9_]*\))? ON TABLE identity_test_docker_[a-f0-9]{12}\.[a-z_][a-z0-9_]* TO bthwani_identity_runtime;$/.test(line)))
+    throw new Error("Legacy Identity grant inventory unsupported");
+  const access=sql(oldDb,identityEffectiveAclSql(schema,oldRole));
+  if(!access)throw new Error("Legacy Identity ACL proof incomplete");
+  const tag="sha-"+head.slice(0,9);
+  // The new owner image includes a mandatory live-principal check.
+  run("pwsh",["-NoProfile","-File",buildScripts.identity,"-DockerContext",context,"-Image",owners.identity.image+":"+tag],{},180000);
+  const image=imageRecord(owners.identity.image+":"+tag);
+  if(sourceIdentity(image.Config.Labels,"identity").revision!==head || !clean())throw new Error("Identity candidate source advanced");
+  const targetEnv={...env,REF_IDENTITY_IMAGE_TAG:tag,REF_IDENTITY_RUNTIME_DATABASE_URL:newUrl};
+  const oldHashes=currentHashes(state,["dsh","identity"]);
+  assertSameHashes(oldHashes,configHashes(files,["dsh","identity"],env));
+  const targetHashes=configHashes(files,["dsh","identity"],targetEnv);
+  if(targetHashes.dsh!==oldHashes.dsh || targetHashes.identity===oldHashes.identity)throw new Error("Unexpected Identity peer configuration change");
+  // This is an additive, empty DB only. Preserve the legacy database and grants.
+  sql("postgres","BEGIN; CREATE ROLE "+owner+" NOLOGIN NOINHERIT; CREATE ROLE "+runtime+" LOGIN NOINHERIT PASSWORD '"+password+"'; COMMIT;");
+  sql("postgres","CREATE DATABASE "+db+" OWNER "+owner+" TEMPLATE template0;");
+  sql("postgres","REVOKE ALL ON DATABASE "+db+" FROM PUBLIC; GRANT CONNECT ON DATABASE "+db+" TO "+runtime+";");
+  sql(db,"REVOKE ALL ON SCHEMA public FROM PUBLIC;");
+  const archive="/tmp/bthwani-identity-copy-"+randomBytes(12).toString("hex")+".dump";
+  let stopped=false,applyStarted=false;
+  try {
+    // Build and validate configuration before pausing the sole legacy writer.
+    if(!clean() || inspect("identity").Id!==old.Id || inspect("dsh").Id!==state.dsh.Id || inspect("wlt").Id!==state.wlt.Id)
+      throw new Error("Identity source or peer runtime changed");
+    console.log("IDENTITY_HANDOFF_STARTED HEAD="+head);
+    docker(["stop","--time","20",old.Id],{},45000); stopped=true;
+    if(inspect("identity",false).State.Running)throw new Error("Legacy Identity writer still running");
+    const noWriters=()=>{if(sql("postgres","BEGIN READ ONLY; SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid() AND (datname='"+db+"' OR (datname='"+oldDb+"' AND usename IN ('"+admin+"','"+oldRole+"'))); COMMIT;")!=="0")throw new Error("Identity writer exclusivity unproven");};
+    noWriters();
+    const before=sql(oldDb,fp);
+    const schemaDump=database=>docker(["exec",pg,"pg_dump","--schema-only","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",database],{},45000).split(/\r?\n/).filter(line=>!/^\\(?:un)?restrict /.test(line)).join("\n");
+    const originalSchema=schemaDump(oldDb);
+    docker(["exec",pg,"pg_dump","-Fc","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive],{},45000);
+    docker(["exec",pg,"pg_restore","--no-owner","--no-acl","--role="+owner,"--exit-on-error","--single-transaction","-U",admin,"-d",db,archive],{},60000);
+    if(schemaDump(db)!==originalSchema || !equal(list(db,"r"),tables) || !equal(list(db,"S"),sequences))throw new Error("Identity restored schema differs");
+    assertHandoffParity(before,sql(db,fp),tables.length+sequences.length);
+    assertHandoffParity(before,sql(oldDb,fp),tables.length+sequences.length);
+    if(sql(oldDb,identityAclSql(schema,oldRole))!==grants || sql(oldDb,identityEffectiveAclSql(schema,oldRole))!==access)throw new Error("Legacy Identity grants changed");
+    sql(db,"BEGIN; GRANT USAGE ON SCHEMA "+schema+" TO "+runtime+";\n"+grants+"\nCOMMIT;");
+    if(sql(db,identityEffectiveAclSql(schema,runtime))!==access || sql(oldDb,legacyOwnerAccessSql(runtime))!=="0" ||
+       sql("postgres","BEGIN READ ONLY; SELECT NOT has_database_privilege('"+runtime+"','bthwani_dsh_dev','CONNECT') AND NOT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="t")
+      throw new Error("Identity least-privilege parity or cross-owner isolation failed");
+    if(!docker([...composeArgs(files),"run","--rm","--no-deps","--pull","never","identity","verify-development-db"],targetEnv,45000).includes("IDENTITY_DEVELOPMENT_DATABASE_PASS"))throw new Error("Identity runtime login proof failed");
+    noWriters();
+    assertHandoffParity(before,sql(oldDb,fp),tables.length+sequences.length);
+    assertHandoffParity(before,sql(db,fp),tables.length+sequences.length);
+    if(!clean() || readFileSync(envPath,"utf8")!==original || imageRecord(owners.identity.image+":"+tag).Id!==image.Id ||
+       inspect("identity",false).Id!==old.Id || inspect("dsh").Id!==state.dsh.Id || inspect("wlt").Id!==state.wlt.Id)
+      throw new Error("Identity source, peers or local configuration advanced");
+    appendFileSync(envPath,"\nREF_IDENTITY_RUNTIME_DATABASE_URL="+newUrl+"\n",{encoding:"utf8"});
+    applyStarted=true;
+    docker([...composeArgs(files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60","identity"],targetEnv,95000);
+    const now=inspect("identity");
+    if(now.Image!==image.Id || now.Config.Labels["com.docker.compose.config-hash"]!==targetHashes.identity ||
+       asEnv(now.Config.Env).IDENTITY_TEST_DATABASE_URL!==newUrl || inspect("dsh").Id!==state.dsh.Id || inspect("wlt").Id!==state.wlt.Id ||
+       !docker(["exec",now.Id,"/usr/local/bin/identity","verify-development-db"],{},15000).includes("IDENTITY_DEVELOPMENT_DATABASE_PASS"))
+      throw new Error("Identity serving runtime readback mismatch");
+    console.log("IDENTITY_HANDOFF_PASS DATA_PARITY=PASS ACL_PARITY=PASS RUNTIME_LOGIN=PASS TABLES="+tables.length+" HEAD="+head);
+  } catch(e) {
+    if(e.code==="ETIMEDOUT")throw new Error("IDENTITY_HANDOFF_BLOCKED ambiguous operation; inspect before retry");
+    if(stopped && !applyStarted && inspect("identity",false).Id===old.Id && !inspect("identity",false).State.Running){
+      docker(["start",old.Id],{},45000);
+      if(!inspect("identity",false).State.Running)throw new Error("IDENTITY_HANDOFF_RECOVERY_BLOCKED");
+      throw new Error("IDENTITY_HANDOFF_ABORTED old writer restored: "+e.message);
+    }
+    throw new Error("IDENTITY_HANDOFF_REVIEW_REQUIRED "+e.message);
+  } finally {
+    try {docker(["exec",pg,"rm","-f","--",archive]);}catch{console.error("IDENTITY_COPY_ARCHIVE_CLEANUP_BLOCKED");}
+  }
+}
+
 function main() {
   const [mode,...options] = process.argv.slice(2);
   const cutover=mode==="--cutover-dsh-database";
   const prepare=options.length===1 && options[0]==="--prepare-baseline";
   if(!cutover && options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
-  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
+  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database","--relocate-identity-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
   const apply = mode !== "--check";
   if (apply && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
   if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
@@ -369,6 +500,7 @@ function main() {
     env[key]=dshEnv[name];
   }
   const identityEnv = asEnv(state.identity.Config.Env);
+  env.REF_IDENTITY_RUNTIME_DATABASE_URL=identityEnv.IDENTITY_TEST_DATABASE_URL;
   for (const [name, key] of Object.entries(operatorOverrides)) {
     if (!Object.hasOwn(identityEnv,name)) throw new Error("Missing current Operator setting: " + name);
     env[key] = identityEnv[name];
@@ -378,6 +510,7 @@ function main() {
   for (const group of groups) assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
   if(mode==="--prepare-dsh-database" || mode==="--resume-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles,mode==="--resume-dsh-database");return;}
   if(cutover){if(options.length!==1)throw new Error("Expected prepared source SHA");cutoverPreparedDsh(state,env,head,activeAppFiles,options[0]);return;}
+  if(mode==="--relocate-identity-database"){relocateIdentity(state,env,head,activeAppFiles);return;}
   const revisions=Object.fromEntries(Object.keys(owners).map(o=>[o,ownerRevision(state,o)]));
   const committed={};
   for(const o of Object.keys(owners)){
@@ -388,6 +521,11 @@ function main() {
   const change=currentChangeKey(committed,preview,captain);
   const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain);
   const blocked=change.plan.blocked;
+  if(new URL(identityEnv.IDENTITY_TEST_DATABASE_URL).pathname!=="/bthwani_identity_dev" && committed.identity.length) {
+    blocked.identity="OWNER_DATABASE_HANDOFF_REQUIRED";
+    if(!blocked.dsh && (change.changed.some(p=>p.startsWith("services/dsh/"))||committed.dsh.length))blocked.dsh="PEER_REVIEW_REQUIRED:identity";
+    if(!blocked.wlt && (change.changed.some(p=>p.startsWith("services/wlt/"))||committed.wlt.length))blocked.wlt="PEER_REVIEW_REQUIRED:identity";
+  }
   let partial=Object.keys(blocked).length>0;
   if(mode==="--apply-captain" && (partial || change.changed.length)) throw new Error("Captain activation requires a fully reviewed committed source");
   const prepareFreshBaseline=()=>{

@@ -123,8 +123,8 @@ test("dedicated DSH transfer fingerprints only validated owner tables and sequen
 
 // Public extension reference reads are distinct from owner tables and never allow writes.
 test("legacy DSH access excludes only named extension reference reads", async () => {
-  const { legacyDshAccessSql } = await import("./reconcile-owner-runtime.mjs");
-  const sql = legacyDshAccessSql();
+  const { legacyOwnerAccessSql } = await import("./reconcile-owner-runtime.mjs");
+  const sql = legacyOwnerAccessSql();
   assert.match(sql, /BEGIN READ ONLY/);
   assert.match(sql, /INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER/);
   assert.match(sql, /d\.deptype=\x27e\x27/);
@@ -137,4 +137,23 @@ test("database handoff rejects a changed or incomplete owner snapshot", async()=
   assert.throws(()=>assertHandoffParity("a|1\nb|2","a|1\nb|3",2),/DATA_PARITY_FAILED/);
   assert.throws(()=>assertHandoffParity("a|1","a|1",2),/DATA_PARITY_FAILED/);
   assert.throws(()=>assertHandoffParity("","",0),/DATA_PARITY_FAILED/);
+});
+
+test("Identity relocation admits only the verified owner URL and changes only owner credentials and database",async()=>{
+  const {identityDestinationUrl,identityAclSql,ownerDataFingerprintSql,legacyOwnerAccessSql}=await import("./reconcile-owner-runtime.mjs");
+  const source="postgres://identity_runtime_docker_abcdef123456:fixture@postgres:5432/bthwani_refoundation?sslmode=disable";
+  const result=new URL(identityDestinationUrl(source,"a".repeat(64)));
+  assert.equal(result.username,"bthwani_identity_runtime");
+  assert.equal(result.pathname,"/bthwani_identity_dev");
+  assert.equal(result.hostname,"postgres");
+  assert.throws(()=>identityDestinationUrl(source.replace("@postgres:","@other:"),"a".repeat(64)),/Unverified/);
+  assert.throws(()=>identityDestinationUrl(source.replace("bthwani_refoundation","bthwani_wlt_test"),"a".repeat(64)),/Unverified/);
+  assert.throws(()=>identityAclSql("identity_test_docker_abcdef123456","identity_runtime_docker_abcdef123457"),/Unverified/);
+  const acl=identityAclSql("identity_test_docker_abcdef123456","identity_runtime_docker_abcdef123456");
+  assert.match(acl,/aclexplode\(t.attacl\)/);
+  assert.match(acl,/is_grantable/);
+  assert.match(acl,/TO bthwani_identity_runtime/);
+  assert.match(ownerDataFingerprintSql("identity_test_docker_abcdef123456",["actors","auth_sessions"],[],"identity"),/auth_sessions/);
+  assert.match(legacyOwnerAccessSql("bthwani_identity_runtime"),/bthwani_identity_runtime/);
+  assert.throws(()=>legacyOwnerAccessSql("bthwani_refoundation_admin"),/Invalid/);
 });

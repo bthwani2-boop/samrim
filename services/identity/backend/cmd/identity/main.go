@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -45,9 +46,10 @@ func isolatedVerifierTLS(isolated, container, schema, certPath, keyPath string) 
 }
 
 func main() {
+	verifyOnly := len(os.Args) == 2 && os.Args[1] == "verify-development-db"
 	// Offline first-Operator registration is an explicit separate command,
 	// never part of normal Identity server startup or an HTTP route.
-	if len(os.Args) != 1 {
+	if len(os.Args) != 1 && !verifyOnly {
 		if len(os.Args) == 2 && (os.Args[1] == "issue-synthetic-root-ticket" ||
 			os.Args[1] == "issue-local-dev-root-ticket") {
 			runIsolatedInitialOperatorTicket()
@@ -94,6 +96,15 @@ func main() {
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
 		log.Fatal("Identity isolated database unreachable")
+	}
+	if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" || verifyOnly {
+		if err = session.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if verifyOnly {
+		fmt.Println("IDENTITY_DEVELOPMENT_DATABASE_PASS")
+		return
 	}
 	reader, err := session.NewPostgresReader(db, schema)
 	if err != nil {

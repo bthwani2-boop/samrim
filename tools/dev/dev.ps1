@@ -20,6 +20,7 @@ param(
   [switch]$PrepareDshDatabase,
   [switch]$ResumeDshDatabase,
   [switch]$CutoverDshDatabase,
+  [switch]$RelocateIdentityDatabase,
   [string]$PreparedSourceSha,
   [Parameter(Position=1)]
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','reconcile','start','restart','android','open')]
@@ -765,10 +766,11 @@ function Invoke-ScopedDocker {
     'reconcile' {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain overlay requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
+      Assert-Ok (!$RelocateIdentityDatabase -or ($Apply -and !$CutoverDshDatabase -and !$PrepareDshDatabase -and !$ResumeDshDatabase -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline)) 'Identity relocation requires explicit isolated Apply'
       Assert-Ok (!$CutoverDshDatabase -or ($Apply -and !$PrepareDshDatabase -and !$ResumeDshDatabase -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $PreparedSourceSha -cmatch '^[0-9a-f]{40}$')) 'DSH cutover requires explicit Apply and exact prepared source SHA'
       Assert-Ok (!$ResumeDshDatabase -or $PrepareDshDatabase) 'Resume requires -PrepareDshDatabase'
       Assert-Ok (!$PrepareDshDatabase -or ($Apply -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline)) 'Dedicated DSH database preparation requires explicit isolated -Apply without another operation'
-      $mode = if ($CutoverDshDatabase) { '--cutover-dsh-database' } elseif ($PrepareDshDatabase -and $ResumeDshDatabase) { '--resume-dsh-database' } elseif ($PrepareDshDatabase) { '--prepare-dsh-database' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
+      $mode = if ($RelocateIdentityDatabase) { '--relocate-identity-database' } elseif ($CutoverDshDatabase) { '--cutover-dsh-database' } elseif ($PrepareDshDatabase -and $ResumeDshDatabase) { '--resume-dsh-database' } elseif ($PrepareDshDatabase) { '--prepare-dsh-database' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
       Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply, without capability activation'
       $reconcileOptions = if ($CutoverDshDatabase) { @($PreparedSourceSha) } elseif ($PrepareBaseline) { @('--prepare-baseline') } else { @() }
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE

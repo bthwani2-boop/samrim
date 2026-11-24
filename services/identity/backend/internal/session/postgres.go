@@ -175,3 +175,31 @@ func (r *PostgresReader) LookupPermission(ctx context.Context, digest [32]byte, 
 	}
 	return principal, nil
 }
+
+// DevelopmentDatabase and DevelopmentRuntimeRole are the dedicated, restricted
+// owner database and serving principal. Historical fixtures remain available
+// only to local integration tests, not serving containers.
+const DevelopmentDatabase = "bthwani_identity_dev"
+const DevelopmentRuntimeRole = "bthwani_identity_runtime"
+
+// VerifyDevelopmentRuntime confirms the actual SQL principal, not only its DSN.
+func VerifyDevelopmentRuntime(ctx context.Context, db *sql.DB, schema string) error {
+	if db == nil || !IsIsolatedTestSchema(schema) {
+		return errors.New("Identity development database scope invalid")
+	}
+	var admitted bool
+	err := db.QueryRowContext(ctx, `SELECT current_database()=$1 AND current_user=$2
+		AND NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
+		AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_auth_members m WHERE m.member=r.oid)
+		AND NOT pg_catalog.has_database_privilege(current_database(),'CREATE')
+		AND NOT pg_catalog.has_database_privilege(current_database(),'TEMP')
+		AND NOT pg_catalog.has_schema_privilege('public','CREATE')
+		AND EXISTS (SELECT 1 FROM pg_catalog.pg_namespace n WHERE n.nspname=$3
+			AND n.nspowner<>r.oid AND pg_catalog.has_schema_privilege(n.oid,'USAGE')
+			AND NOT pg_catalog.has_schema_privilege(n.oid,'CREATE'))
+		FROM pg_catalog.pg_roles r WHERE r.rolname=current_user`, DevelopmentDatabase, DevelopmentRuntimeRole, schema).Scan(&admitted)
+	if err != nil || !admitted {
+		return errors.New("Identity development runtime requires its dedicated database and limited role")
+	}
+	return nil
+}

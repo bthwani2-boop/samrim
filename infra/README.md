@@ -149,7 +149,7 @@ continues to reject uncommitted Identity Go/SQL source; no issuer, real user
 or production authentication is enabled by these settings.
 
 After those independent prerequisites are **proved**, set the Identity-only
-values `REF_IDENTITY_TEST_SCHEMA`, `REF_IDENTITY_TEST_DATABASE_URL` (pointing
+values `REF_IDENTITY_TEST_SCHEMA`, `REF_IDENTITY_RUNTIME_DATABASE_URL` (pointing
 to isolated `postgres:5432` with a separately authorized limited database
 role, never admin/donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`
 in the ignored `infra/.env.identity-verifier.local`. Keep the shared
@@ -319,8 +319,21 @@ of an absent target using the reviewed owner bootstrap and constraint-preserving
 native data-only restore. It compares old/new owner data and sequence hashes,
 verifies the real limited login, and retains the old runtime as sole writer.
 An existing target or incomplete outcome requires readback before any retry.
-This command does not switch the serving container. A verified writer handoff
-and current data parity remain required before cutover.
+This command does not switch the serving container. The explicit unified
+`pnpm dev docker reconcile -Apply -CutoverDshDatabase -PreparedSourceSha <sha>`
+operation verifies the exact prepared image, data and role, pauses the old
+writer, rechecks parity and promotes only DSH. It refuses rollback to stale
+data after a new writer may have accepted a change.
+
+Identity's one-time `pnpm dev docker reconcile -Apply -RelocateIdentityDatabase`
+moves its unchanged owner schema into `bthwani_identity_dev`, using
+`bthwani_identity_runtime`, a separate non-login schema owner, the exact
+existing table/column privilege set and the native PostgreSQL backup/restore.
+It retains the old schema, original session/permission facts and historical
+audit, proves full data and ACL parity, and switches only Identity. This is
+a relocation of an unchanged schema, not an experimental schema upgrade.
+A future schema change must use a separately verified fresh-baseline
+transition; neither command overlays a baseline on retained data.
 
 For a committed owner schema change, the existing source watcher requests one
 isolated baseline rehearsal per new runtime input key through the unified
