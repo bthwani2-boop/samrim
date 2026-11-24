@@ -370,7 +370,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 			pending <- recorder
 		}()
 
-		waitForWalletQuery(t, ctx, reader, "wlt.customer_wallet_balances")
+		waitForWalletQuery(t, ctx, reader, "wlt.customer_wallet_availability")
 		executeFixture(t, ctx, identity, "UPDATE identity_test_wlt.auth_sessions SET revoked_at=now() WHERE token_digest=$1", digest[:])
 		if err = lock.Rollback(); err != nil {
 			t.Fatal(err)
