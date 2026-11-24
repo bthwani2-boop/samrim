@@ -1,5 +1,5 @@
 // Feature/journey tests must be executed or explicitly rejected, never ignored.
-import { readdirSync } from "node:fs";
+import { lstatSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 
 const testCandidate = /\.(?:test|spec)\.(?:mjs|cjs|js|jsx|ts|tsx|mts|cts)$/;
@@ -36,6 +36,10 @@ export function discoverNodeSourceTests(root, folder) {
         }
       }
     }
+  }
+  // The source root itself may be a junction/symlink, not just its children.
+  if (lstatSync(folder, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    throw new Error(`UNSCANNED_SOURCE_LINK ${relative(root, folder).replaceAll("\\", "/")}`);
   }
   walk(folder);
   return files.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);

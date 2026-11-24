@@ -402,7 +402,7 @@ test("runtime attempt outcome distinguishes known readback from ambiguous writes
 
 test("Graphify scheduling responds to saved code and ignores its own generated output",async()=>{
   const {graphifySourceEvent}=await import("./sync-lenovo-reconciliation.mjs");
-  for(const rel of ["services\\dsh\\backend\\cmd\\dsh\\main.go","apps/customer/src/new.tsx","AGENTS.md","docs/reference/a.md",".git/HEAD",".git/refs/heads/codex/test"])assert.equal(graphifySourceEvent(rel),true,rel);
+  for(const rel of ["services\\dsh\\backend\\cmd\\dsh\\main.go","apps/customer/src/new.tsx","AGENTS.md","docs/reference/a.md",".agents/skills/speckit-plan/SKILL.md",".git/HEAD",".git/refs/heads/codex/test"])assert.equal(graphifySourceEvent(rel),true,rel);
   for(const rel of ["graphify-out/graph.json","apps/customer/node_modules/pkg/index.js","apps/customer/.expo/a.json","infra/.env.local",".git/index",".git/objects/aa/bb","apps/customer/coverage/data.json"])assert.equal(graphifySourceEvent(rel),false,rel);
   assert.equal(graphifySourceEvent(null),true);
 });

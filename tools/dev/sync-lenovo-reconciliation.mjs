@@ -110,10 +110,11 @@ function graphifySourceEvent(name) {
   if (/^\.git\/(?:HEAD|refs\/heads\/)/.test(rel)) return true;
   const parts=rel.split("/");
   if (parts.some(p=>!p || p===".." || /^(?:\.git|node_modules|graphify-out|\.next|\.expo|\.nx|dist|build|coverage|\.cache|\.pnpm-store|\.env(?:\..*)?|\.ssh|\.secrets)$/i.test(p))) return false;
-  return /^(?:apps|services|packages|infra|tools|governance|specs|docs|tests|\.specify|\.github)(?:\/|$)/.test(rel) || !rel.includes("/");
+  return /^(?:apps|services|packages|infra|tools|governance|specs|docs|tests|\.specify|\.agents|\.github)(?:\/|$)/.test(rel) || !rel.includes("/");
 }
 function graphifyPollDue({now,dirtySince,lastEvent,nextAudit,busy,debounce=3000,maxWait=15000}) {
   if (busy) return false;
   return now>=nextAudit || (dirtySince!==null && (now-lastEvent>=debounce || now-dirtySince>=maxWait));
 }
-export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeBaselineProofDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue, watcherReloadAction };
+
+export { assertCompatibleBranchTransition, branchTransitionPins, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction };

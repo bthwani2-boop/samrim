@@ -107,6 +107,19 @@ test("linked source directories cannot hide untracked test suites from CI", (t) 
     /UNSCANNED_SOURCE_LINK apps\/customer\/src\/features\/orders/);
 }));
 
+test("linked workspace source roots cannot import tests outside their owner", (t) => fixture(({ root }) => {
+  const outside = join(root, "external-tests");
+  mkdirSync(outside);
+  writeFileSync(join(outside, "outside.test.mjs"), "export {};");
+  try {
+    symlinkSync(outside, join(root, "tools"), "junction");
+  } catch (error) {
+    if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("source links unavailable");
+    throw error;
+  }
+  assert.throws(() => discoverWorkspaceNodeTests(root), /UNSCANNED_SOURCE_LINK tools/);
+}));
+
 test("generated dependency symlinks remain excluded, without hiding authored source", (t) => fixture(({ root, folder }) => {
   const generated = join(root, "installed-dependency");
   mkdirSync(generated, { recursive: true });
