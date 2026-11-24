@@ -19,7 +19,6 @@
     // Scoped exceptions, NOT runtime routes or implemented capabilities.
     // Checked by verify-application-boundaries.test.mjs. Remove each exemption
     // when its module gains a real consumer or owner-backed implementation.
-    "apps/merchant/src/features/catalog/inventory-summary.tsx",
     "apps/merchant/src/features/catalog/product-media.tsx",
     "apps/merchant/src/features/catalog/products-screen.tsx",
     "apps/merchant/src/features/employees/employee-access.tsx",

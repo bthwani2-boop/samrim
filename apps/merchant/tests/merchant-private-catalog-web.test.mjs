@@ -22,7 +22,7 @@ function request(search = "?catalog=store-a&limit=20", actor = "merchant-a", tok
     },
   });
 }
-function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false, expectedSearch = "?limit=20" } = {}) {
+function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false, expectedSearch = "?limit=20", inventory = false } = {}) {
   const env = {
     MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN,
     MERCHANT_SYNTHETIC_DSH_ORIGIN: process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN,
@@ -59,6 +59,12 @@ function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catal
       } : { code: "CATALOG_DRAFT_VERSION_CONFLICT" }, {
         status: ownerStatus, headers: { "Cache-Control": "no-store" },
       });
+    }
+    if (inventory) {
+      assert.equal(target.pathname, "/v1/stores/store-a/inventory-summary");
+      assert.equal(target.search, "");
+      return Response.json(ownerStatus === 200 ? ownerPage : {code:"STORE_OPERATION_FORBIDDEN"},
+        {status:ownerStatus,headers:{"Cache-Control":"no-store"}});
     }
     assert.equal(target.pathname, "/v1/stores/store-a/catalog");
     if (draft) {
@@ -247,4 +253,19 @@ test("DSH draft conflict stays 409 instead of inventing the next version", async
   assert.equal(reply.status, 409);
   assert.deepEqual(await reply.json(), { code: "CATALOG_DRAFT_VERSION_CONFLICT" });
   assert.equal(calls.length, 2);
+});
+
+test("inventory summary BFF delegates to the complete owner summary and denies foreign context", async t => {
+  const inventory = {actorId:"merchant-a",storeId:"store-a",totalOffers:130,
+    publishedOffers:120,availableOffers:110,unavailableOffers:10,stockoutOffers:3};
+  const calls = ownerMocks(t,{inventory:true,ownerPage:inventory});
+  const reply = await GET(request("?inventory=store-a"));
+  assert.equal(reply.status,200);
+  assert.equal(reply.headers.get("Cache-Control"),"no-store");
+  assert.deepEqual(await reply.json(),{inventory});
+  assert.deepEqual(calls,["/v1/sessions/current","/v1/stores/store-a/inventory-summary"]);
+  assert.equal((await GET(request("?inventory=store-a","merchant-b"))).status,403);
+  assert.equal((await GET(request("?inventory=store-a","merchant-a",""))).status,401);
+  assert.equal((await GET(request("?inventory=store-a&limit=1"))).status,400);
+  assert.equal(calls.length,3);
 });

@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, readMerchantRegistrationOptions, validMerchantCatalogSearch } from "@bthwani/dsh";
+import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, readMerchantInventorySummary, readMerchantRegistrationOptions, validMerchantCatalogSearch } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
 import {
   appendSessionCookies, bearerFrom, configuredOrigin, cookieName, ownerError,
@@ -55,16 +55,19 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
     (searchValue === null || validMerchantCatalogSearch(searchValue)) &&
     (limitValue === null || /^(?:[1-9]|[1-4][0-9]|50)$/.test(limitValue)) &&
     (cursorValue === null || /^[a-z0-9-]{1,64}$/.test(cursorValue));
-  if (query.size > 0 && !stores && !availability && !registration && !catalog) {
+  const inventoryId = query.size === 1 ? query.get("inventory") : null;
+  const inventory = inventoryId !== null && /^[a-z0-9-]{1,64}$/.test(inventoryId);
+  const protectedRead = stores || availability || registration || catalog || inventory;
+  if (query.size > 0 && !protectedRead) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
   const origin = await configuredOrigin(request);
-  if (!origin) return stores || availability || registration || catalog ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
+  if (!origin) return protectedRead ? response({ code: "OWNER_UNAVAILABLE" }, 503) :
     response({ enabled: false, session: null });
   const bearer = bearerFrom(request);
   if (!bearer) {
-    if (!alreadyRotated && refreshFrom(request)) return resumeMerchantBrowser(request, origin, stores || availability || registration || catalog);
-    return stores || availability || registration || catalog ? response({ code: "UNAUTHENTICATED" }, 401) :
+    if (!alreadyRotated && refreshFrom(request)) return resumeMerchantBrowser(request, origin, protectedRead);
+    return protectedRead ? response({ code: "UNAUTHENTICATED" }, 401) :
       response({ enabled: true, session: null });
   }
   try {
@@ -90,6 +93,14 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
             ...(cursorValue ? { cursor: cursorValue } : {}),
             ...(searchValue !== null ? { query: searchValue } : {}) },
         ) });
+      }
+      if (inventory) {
+        const actorId = request.headers.get("X-Merchant-Context");
+        if (actorId !== null && actorId !== session.actorId) {
+          return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+        }
+        return response({ inventory: await readMerchantInventorySummary(
+          standingOrigin(origin), inventoryId, session.actorId, bearer, signal) });
       }
       if (availability) {
         const actorId = request.headers.get("X-Merchant-Context");
@@ -119,8 +130,8 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
       return response({ code: error.code }, error.status, sessionCookie(request, "", 0));
     }
     if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);
-    if (!alreadyRotated && refreshFrom(request)) return resumeMerchantBrowser(request, origin, stores || availability || registration || catalog);
+    if (!alreadyRotated && refreshFrom(request)) return resumeMerchantBrowser(request, origin, protectedRead);
   }
-  return stores || availability || registration || catalog ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
+  return protectedRead ? response({ code: "UNAUTHENTICATED" }, 401, sessionCookie(request, "", 0)) :
     response({ enabled: true, session: null }, 200, sessionCookie(request, "", 0));
 }

@@ -42,6 +42,14 @@ type MerchantCatalogPage struct {
 // by that actor are checked again in the same DSH transaction as the data.
 // No delegated Store grants are accepted until they are implemented by DSH.
 func NewMerchantCatalogHandler(identity IdentitySessions, db *sql.DB, schema string) (http.Handler, error) {
+	return newMerchantCatalogReadHandler(identity, db, schema, false)
+}
+
+func NewMerchantInventorySummaryHandler(identity IdentitySessions, db *sql.DB, schema string) (http.Handler, error) {
+	return newMerchantCatalogReadHandler(identity, db, schema, true)
+}
+
+func newMerchantCatalogReadHandler(identity IdentitySessions, db *sql.DB, schema string, inventory bool) (http.Handler, error) {
 	if identity == nil || db == nil || !postgresSchemaRule.MatchString(schema) {
 		return nil, ErrStoreOwnerUnavailable
 	}
@@ -59,7 +67,7 @@ func NewMerchantCatalogHandler(identity IdentitySessions, db *sql.DB, schema str
 			return
 		}
 		limit, cursor, query, valid := merchantCatalogPageParameters(r)
-		if !valid {
+		if !valid || (inventory && r.URL.RawQuery != "") {
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
@@ -78,7 +86,12 @@ func NewMerchantCatalogHandler(identity IdentitySessions, db *sql.DB, schema str
 			writeFailure(w, ErrForbidden)
 			return
 		}
-		page, err := readMerchantCatalog(ctx, db, schema, actor.Subject, r.PathValue("storeID"), limit, cursor, query)
+		var result any
+		if inventory {
+			result, err = readMerchantInventorySummary(ctx, db, schema, actor.Subject, r.PathValue("storeID"))
+		} else {
+			result, err = readMerchantCatalog(ctx, db, schema, actor.Subject, r.PathValue("storeID"), limit, cursor, query)
+		}
 		if err != nil {
 			writeFailure(w, err)
 			return
@@ -92,7 +105,7 @@ func NewMerchantCatalogHandler(identity IdentitySessions, db *sql.DB, schema str
 			}
 			return
 		}
-		writeJSON(w, http.StatusOK, page)
+		writeJSON(w, http.StatusOK, result)
 	}), nil
 }
 
@@ -152,15 +165,8 @@ func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, store
 		return result, ErrStoreOwnerUnavailable
 	}
 	defer tx.Rollback()
-	var owner string
-	if err := tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1 FOR SHARE", storeID).Scan(&owner); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return result, ErrForbidden
-		}
-		return result, ErrStoreOwnerUnavailable
-	}
-	if owner != actorID {
-		return result, ErrForbidden
+	if err := requireMerchantCatalogStore(ctx, tx, actorID, storeID); err != nil {
+		return result, err
 	}
 	rows, err := tx.QueryContext(ctx, `SELECT o.id,p.id,p.name,v.id,o.price_yer::text,
 		o.stock_units,o.draft_version,p.active,v.sellable,v.required_attributes_valid,o.published,o.available
@@ -196,6 +202,62 @@ func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, store
 	}
 	if err = tx.Commit(); err != nil {
 		return MerchantCatalogPage{}, ErrStoreOwnerUnavailable
+	}
+	return result, nil
+}
+
+type MerchantInventorySummary struct {
+	ActorID           string `json:"actorId"`
+	StoreID           string `json:"storeId"`
+	TotalOffers       int64  `json:"totalOffers"`
+	PublishedOffers   int64  `json:"publishedOffers"`
+	AvailableOffers   int64  `json:"availableOffers"`
+	UnavailableOffers int64  `json:"unavailableOffers"`
+	StockoutOffers    int64  `json:"stockoutOffers"`
+}
+
+func requireMerchantCatalogStore(ctx context.Context, tx *sql.Tx, actorID, storeID string) error {
+	var owner string
+	if err := tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1 FOR SHARE", storeID).Scan(&owner); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrForbidden
+		}
+		return ErrStoreOwnerUnavailable
+	}
+	if owner != actorID {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// One owner-scoped SQL snapshot, independent of page/search limits.
+// Availability is Offer-level catalog eligibility, not Store orderability.
+func readMerchantInventorySummary(ctx context.Context, db *sql.DB, schema, actorID, storeID string) (MerchantInventorySummary, error) {
+	result := MerchantInventorySummary{ActorID: actorID, StoreID: storeID}
+	tx, err := beginScopedStoreTx(ctx, db, schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return MerchantInventorySummary{}, ErrStoreOwnerUnavailable
+	}
+	defer tx.Rollback()
+	if err := requireMerchantCatalogStore(ctx, tx, actorID, storeID); err != nil {
+		return MerchantInventorySummary{}, err
+	}
+	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),
+		COUNT(*) FILTER (WHERE o.published),
+		COUNT(*) FILTER (WHERE o.published AND o.available AND p.active AND v.sellable
+			AND v.required_attributes_valid AND o.price_yer>0 AND o.stock_units>0),
+		COUNT(*) FILTER (WHERE o.published AND o.stock_units=0)
+		FROM offers o
+		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
+		JOIN variants v ON v.id=o.variant_id AND v.product_id=p.id
+		WHERE o.store_id=$1`, storeID).Scan(&result.TotalOffers, &result.PublishedOffers,
+		&result.AvailableOffers, &result.StockoutOffers)
+	if err != nil {
+		return MerchantInventorySummary{}, ErrStoreOwnerUnavailable
+	}
+	result.UnavailableOffers = result.PublishedOffers - result.AvailableOffers
+	if err := tx.Commit(); err != nil {
+		return MerchantInventorySummary{}, ErrStoreOwnerUnavailable
 	}
 	return result, nil
 }

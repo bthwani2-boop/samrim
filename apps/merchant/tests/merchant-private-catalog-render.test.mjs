@@ -68,6 +68,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       },
       "./merchant-catalog-draft-form": { default: "DraftForm" },
       "./catalog-export": { __esModule: true, default: "CatalogExport" },
+      "./inventory-summary": { __esModule: true, default: "InventorySummary" },
       "./catalog-transport": {
         readMerchantCatalogPage(storeId, actorId, signal, options) {
           const request = { storeId, actorId, signal, options };
@@ -103,12 +104,15 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(requests.length, 1);
       assert.equal(requests[0].storeId, "store-a");
       assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-a");
+      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.storeId, "store-a");
+      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-a");
       const choice = nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر ثان");
       assert.ok(choice);
       choice.props.onPress();
       tree = render("merchant-a", stores);
       assert.equal(requests.length, 2);
       assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-b");
+      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.storeId, "store-b");
       assert.equal(requests[0].signal.aborted, true);
       requests[0].resolve({ actorId: "merchant-a", storeId: "store-a",
         items: [offer("old-a", "بيانات قديمة")] });
@@ -155,6 +159,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(requests[4].options.query, "منتج");
       assert.equal(requests[4].options.cursor, "of-c");
       tree = render("merchant-b", stores);
+      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-b");
       assert.ok(!nodes(tree).some(n => n.props?.children === "منتج ثالث"));
       assert.equal(requests[5].options.query, undefined);
       assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "البحث باسم المنتج").props.value, "");
@@ -170,4 +175,76 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
+});
+
+test("inventory summary displays owner counts and never leaks a stale Store after switch or failure", async () => {
+  const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-inventory-test-"));
+  try {
+    const inventorySrc = fileURLToPath(new URL("../src/features/catalog/inventory-summary.tsx", import.meta.url));
+    const compiled = spawnSync(process.execPath, [
+      path.join(root, "node_modules/typescript/bin/tsc"), inventorySrc, "--ignoreConfig",
+      "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
+      "--jsx", "react-jsx", "--outDir", tmp,
+    ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+    assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
+    const hooks = [], effects = [], requests = [];
+    let index = 0, scheduled = [];
+    const jsx = (type, props) => ({type,props:props ?? {}});
+    const mocks = {
+      "@bthwani/tamagui-config/appearance": {useMobileAppearance:()=>({theme:{}})},
+      "react/jsx-runtime": {jsx,jsxs:jsx,Fragment:"Fragment"},
+      "react-native": {ActivityIndicator:"ActivityIndicator",Pressable:"Pressable",Text:"Text",View:"View"},
+      "./catalog-transport": {
+        readMerchantInventorySummary(storeId,actorId,signal) {
+          return new Promise((resolve,reject)=>requests.push({storeId,actorId,signal,resolve,reject}));
+        },
+      },
+      react: {
+        useState(initial) {
+          const n = index++;
+          if (!(n in hooks)) hooks[n] = initial;
+          return [hooks[n],update=>{hooks[n]=typeof update==="function"?update(hooks[n]):update;}];
+        },
+        useEffect(action,deps) {
+          const n = index++, prior=effects[n];
+          if (!prior || deps.some((v,i)=>prior.deps[i]!==v)) scheduled.push(()=>{
+            prior?.cleanup?.();
+            effects[n]={deps,cleanup:action()};
+          });
+        },
+      },
+    };
+    const mod = {exports:{}};
+    new Function("require","module","exports",readFileSync(path.join(tmp,"inventory-summary.js"),"utf8"))(name=>{
+      assert.ok(Object.hasOwn(mocks,name),name);
+      return mocks[name];
+    },mod,mod.exports);
+    function render(actorId,storeId) {
+      index=0; scheduled=[];
+      const tree=mod.exports.default({actorId,storeId});
+      for(const effect of scheduled) effect();
+      return nodes(tree);
+    }
+    const counts = (actorId,storeId,totalOffers)=>({actorId,storeId,totalOffers,publishedOffers:0,availableOffers:0,unavailableOffers:0,stockoutOffers:0});
+    const hasCount=(tree,n)=>tree.some(node=>node.props?.children===n.toLocaleString("ar-YE"));
+    assert.ok(render("merchant-a","store-a").some(n=>n.type==="ActivityIndicator"));
+    requests[0].resolve(counts("merchant-a","store-a",132));
+    await Promise.resolve();
+    assert.ok(hasCount(render("merchant-a","store-a"),132));
+    assert.ok(!hasCount(render("merchant-a","store-b"),132));
+    assert.equal(requests[0].signal.aborted,true);
+    render("merchant-b","store-b");
+    assert.equal(requests[1].signal.aborted,true);
+    requests[1].resolve(counts("merchant-a","store-b",77));
+    requests[2].reject(new Error("denied"));
+    await Promise.resolve(); await Promise.resolve();
+    const error=render("merchant-b","store-b");
+    assert.ok(error.some(n=>n.props?.accessibilityRole==="alert"));
+    assert.ok(!hasCount(error,77)); assert.ok(!hasCount(error,0));
+    error.find(n=>n.type==="Pressable").props.onPress();
+    render("merchant-b","store-b");
+    requests[3].resolve(counts("merchant-b","store-b",0));
+    await Promise.resolve();
+    assert.ok(hasCount(render("merchant-b","store-b"),0));
+  } finally { rmSync(tmp,{recursive:true,force:true}); }
 });

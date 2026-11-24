@@ -128,3 +128,38 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+
+  /v1/stores/{storeID}/inventory-summary:
+    get:
+      operationId: readCurrentMerchantInventorySummary
+      summary: Read complete Store-owned inventory counts independent of catalog pagination
+      description: >
+        Requires a current Merchant session and DSH Store ownership. Counts all
+        Store Offers, including unpublished drafts in totalOffers; available and
+        unavailable partition published Offers. Stockout counts published Offers
+        with zero stock. Availability is catalog eligibility only, not Store
+        orderability, checkout, or inventory reservation. No query selectors.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: One complete Store-scoped inventory summary
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantInventorySummary' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'

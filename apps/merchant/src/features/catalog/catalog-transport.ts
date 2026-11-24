@@ -1,4 +1,4 @@
-import { createMerchantCatalogDraft, DshPublicError, listMerchantCatalog, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantCatalogDraftEditResult, type MerchantCatalogDraftResult, type MerchantCatalogPage, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogSearch } from "@bthwani/dsh";
+import { createMerchantCatalogDraft, DshPublicError, listMerchantCatalog, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantCatalogDraftEditResult, type MerchantCatalogDraftResult, type MerchantCatalogPage, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, type MerchantInventorySummary, parseMerchantInventorySummary, readMerchantInventorySummary as readOwnerInventorySummary, updateMerchantCatalogDraft, validMerchantCatalogSearch } from "@bthwani/dsh";
 import { Platform } from "react-native";
 import { withNativeMerchantSession } from "../access/admission-transport";
 
@@ -107,4 +107,30 @@ export async function submitMerchantCatalogDraftEdit(
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   return parseMerchantCatalogDraftEditResult(document.edit, storeId, offerId, change);
+}
+
+/** Complete Store inventory counts, independent of catalog search and pagination. */
+export async function readMerchantInventorySummary(
+  storeId: string, actorId: string, signal: AbortSignal,
+): Promise<MerchantInventorySummary> {
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId || signal.aborted) {
+    throw new DshPublicError(400, "INVALID_REQUEST");
+  }
+  if (Platform.OS !== "web") return withNativeMerchantSession(signal, (bearer, origin) =>
+    readOwnerInventorySummary(origin, storeId, actorId, bearer, signal), actorId);
+  const reply = await fetch(`/api/admission?inventory=${encodeURIComponent(storeId)}`, {
+    method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: { "X-Merchant-Context": actorId },
+  });
+  let payload: unknown;
+  try { payload = await reply.json(); }
+  catch { throw new DshPublicError(502, "OWNER_RESPONSE_INVALID"); }
+  if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  const body = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+  if (!reply.ok) throw new DshPublicError(reply.status, typeof body.code === "string" ? body.code : "OWNER_UNAVAILABLE");
+  if (reply.status !== 200 ||
+    reply.headers.get("Cache-Control")?.toLowerCase().split(",").map(part => part.trim()).includes("no-store") !== true) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return parseMerchantInventorySummary(body.inventory, actorId, storeId);
 }

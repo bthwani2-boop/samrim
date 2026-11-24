@@ -34,6 +34,8 @@ paths:
     $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog'
   /v1/stores/{storeID}/catalog/{offerID}:
     $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog~1{offerID}'
+  /v1/stores/{storeID}/inventory-summary:
+    $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1inventory-summary'
   /v1/stores/registration-options:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores~1registration-options'
   /v1/stores:
@@ -136,6 +138,18 @@ components:
         requiredAttributesValid: { type: boolean }
         published: { type: boolean }
         available: { type: boolean }
+    MerchantInventorySummary:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, totalOffers, publishedOffers, availableOffers, unavailableOffers, stockoutOffers]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        totalOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        publishedOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        availableOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        unavailableOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        stockoutOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
     MerchantCatalogPage:
       type: object
       additionalProperties: false

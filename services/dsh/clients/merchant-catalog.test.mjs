@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
+import { readMerchantInventorySummary, parseMerchantInventorySummary, createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
 
 const offer = {
   id: "of-a", storeId: "store-a", productId: "p-a", name: "مادة تجريبية",
@@ -205,4 +205,23 @@ test("owner version conflict is explicit and a lost edit acknowledgement remains
   await assert.rejects(() => updateMerchantCatalogDraft(
     "http://127.0.0.1:3202", "store-a", "of-new", "synthetic-bearer", edited),
     { message: "OPERATION_RESULT_UNKNOWN" });
+});
+
+test("complete inventory summary verifies owner scope and counter invariants", async () => {
+  const summary = { actorId: "merchant-a", storeId: "store-a", totalOffers: 132,
+    publishedOffers: 120, availableOffers: 115, unavailableOffers: 5, stockoutOffers: 2 };
+  assert.deepEqual(parseMerchantInventorySummary(summary, "merchant-a", "store-a"), summary);
+  for (const bad of [{...summary, actorId:"merchant-b"}, {...summary, storeId:"store-b"},
+    {...summary, stockoutOffers:6}, {...summary, unavailableOffers:4},
+    {...summary, publishedOffers:133}, {...summary, totalOffers:-1},
+    {...summary, totalOffers:Number.MAX_SAFE_INTEGER+1}, {...summary, extra:0}]) {
+    assert.throws(() => parseMerchantInventorySummary(bad,"merchant-a","store-a"), {code:"OWNER_RESPONSE_INVALID"});
+  }
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url,"http://127.0.0.1:3202/v1/stores/store-a/inventory-summary");
+    assert.equal(init.method,"GET");
+    assert.equal(init.headers.Authorization,"Bearer synthetic-bearer");
+    return Response.json(summary,{headers:{"Cache-Control":"no-store"}});
+  };
+  assert.deepEqual(await readMerchantInventorySummary("http://127.0.0.1:3202","store-a","merchant-a","synthetic-bearer"),summary);
 });

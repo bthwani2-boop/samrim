@@ -171,6 +171,62 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 		first.NextCursor != "of-a" {
 		t.Fatalf("draft page not authorized: %d %+v", status, first)
 	}
+	// The complete summary must be independent of the currently paginated rows.
+	getSummary := func(identity IdentitySessions, path string, bearer string) (int, MerchantInventorySummary) {
+		t.Helper()
+		h, e := NewMerchantInventorySummaryHandler(identity, db, schema)
+		if e != nil {
+			t.Fatal(e)
+		}
+		req := httptest.NewRequest("GET", path, nil)
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		req.Header.Set("X-Actor-ID", "merchant-b")
+		result := httptest.NewRecorder()
+		router := http.NewServeMux()
+		router.Handle("GET /v1/stores/{storeID}/inventory-summary", h)
+		router.ServeHTTP(result, req)
+		var value MerchantInventorySummary
+		if result.Code == 200 && json.Unmarshal(result.Body.Bytes(), &value) != nil {
+			t.Fatalf("invalid summary JSON: %s", result.Body.String())
+		}
+		if result.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("cacheable summary")
+		}
+		return result.Code, value
+	}
+	const summaryPath = "/v1/stores/catalog-a/inventory-summary"
+	status, summary := getSummary(merchant, summaryPath, "synthetic")
+	if status != 200 || summary != (MerchantInventorySummary{ActorID: "merchant-a", StoreID: "catalog-a", TotalOffers: 2, PublishedOffers: 1, AvailableOffers: 1}) {
+		t.Fatalf("summary not scoped or complete: %d %+v", status, summary)
+	}
+	for _, tc := range []struct {
+		identity     IdentitySessions
+		path, bearer string
+		status       int
+	}{
+		{merchant, summaryPath, "", 401},
+		{merchant, "/v1/stores/catalog-b/inventory-summary", "synthetic", 403},
+		{merchant, summaryPath + "?limit=1", "synthetic", 400},
+		{fakeIdentity{denied: true}, summaryPath, "synthetic", 401},
+		{&changingMerchantIdentity{}, summaryPath, "synthetic", 401},
+	} {
+		if code, _ := getSummary(tc.identity, tc.path, tc.bearer); code != tc.status {
+			t.Fatalf("summary denial: %d expected %d", code, tc.status)
+		}
+	}
+	// A published stockout is unavailable; a zero-stock draft is not counted as published stockout.
+	if _, err = db.ExecContext(ctx, "UPDATE "+schema+".offers SET stock_units=0 WHERE id='of-b'"); err != nil {
+		t.Fatal(err)
+	}
+	status, summary = getSummary(merchant, summaryPath, "synthetic")
+	if status != 200 || summary.PublishedOffers != 1 || summary.AvailableOffers != 0 || summary.UnavailableOffers != 1 || summary.StockoutOffers != 1 {
+		t.Fatalf("stockout not reflected: %d %+v", status, summary)
+	}
+	if _, err = db.ExecContext(ctx, "UPDATE "+schema+".offers SET stock_units=7 WHERE id='of-b'"); err != nil {
+		t.Fatal(err)
+	}
 	status, second := get(handler, "/v1/stores/catalog-a/catalog?limit=1&cursor=of-a")
 	if status != 200 || len(second.Items) != 1 || second.Items[0].ID != "of-b" ||
 		second.NextCursor != "" || second.Items[0].PriceYER != "1500" {
@@ -450,5 +506,56 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if status, _ := patch("/v1/stores/catalog-a/catalog/"+draftOfferID,
 		`{"operationId":"edit-draft-0003","ExpectedVersion":100,"expectedVersion":2,"name":"x","priceYer":"3","stockUnits":2}`); status != 400 {
 		t.Fatalf("duplicate version JSON reached writer status=%d", status)
+	}
+	// Add more offers than the maximum catalog page size in the disposable schema.
+	for _, statement := range []string{
+		"INSERT INTO " + schema + ".products(id,store_id,name,active) SELECT 'summary-p-'||n,'catalog-a','Inventory fixture',true FROM generate_series(1,60) n",
+		"INSERT INTO " + schema + ".variants(id,product_id,sellable,required_attributes_valid) SELECT 'summary-v-'||n,'summary-p-'||n,true,true FROM generate_series(1,60) n",
+		"INSERT INTO " + schema + ".offers(id,store_id,product_id,variant_id,published,available,price_yer,stock_units) SELECT 'summary-of-'||n,'catalog-a','summary-p-'||n,'summary-v-'||n,true,true,100,n%2 FROM generate_series(1,60) n",
+	} {
+		if _, err := db.ExecContext(ctx, statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status, summary = getSummary(merchant, summaryPath, "synthetic")
+	if status != 200 || summary != (MerchantInventorySummary{ActorID: "merchant-a", StoreID: "catalog-a", TotalOffers: 64, PublishedOffers: 61, AvailableOffers: 31, UnavailableOffers: 30, StockoutOffers: 30}) {
+		t.Fatalf("whole Store inventory must exceed page limit: %d %+v", status, summary)
+	}
+}
+
+func TestMerchantInventorySummaryRejectsUnauthorizedBeforeDatabase(t *testing.T) {
+	db, err := sql.Open("postgres", "postgres://synthetic@127.0.0.1:1/unused?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	merchant := fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}
+	const path = "/v1/stores/store-a/inventory-summary"
+	for _, tc := range []struct {
+		path, bearer string
+		identity     IdentitySessions
+		status       int
+	}{
+		{path, "", merchant, 401},
+		{path, "synthetic", fakeIdentity{denied: true}, 401},
+		{path, "synthetic", fakeIdentity{actor: VerifiedActor{Subject: "operator-a", Role: OperatorRole}}, 403},
+		{path + "?limit=1", "synthetic", merchant, 400},
+		{"/v1/stores/INVALID/inventory-summary", "synthetic", merchant, 400},
+	} {
+		h, err := NewMerchantInventorySummaryHandler(tc.identity, db, "dsh_test_inventory")
+		if err != nil {
+			t.Fatal(err)
+		}
+		mux := http.NewServeMux()
+		mux.Handle("GET /v1/stores/{storeID}/inventory-summary", h)
+		req := httptest.NewRequest("GET", tc.path, nil)
+		if tc.bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+tc.bearer)
+		}
+		reply := httptest.NewRecorder()
+		mux.ServeHTTP(reply, req)
+		if reply.Code != tc.status || reply.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("unexpected inventory response: %d expected %d", reply.Code, tc.status)
+		}
 	}
 }

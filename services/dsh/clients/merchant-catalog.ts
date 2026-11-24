@@ -192,3 +192,46 @@ export async function updateMerchantCatalogDraft(
   const body = await privateOwnerRequest(origin, path, bearer, "PATCH", change, signal);
   return parseMerchantCatalogDraftEditResult(body, storeId, offerId, change);
 }
+
+export type MerchantInventorySummary = Readonly<{
+  actorId: string;
+  storeId: string;
+  totalOffers: number;
+  publishedOffers: number;
+  availableOffers: number;
+  unavailableOffers: number;
+  stockoutOffers: number;
+}>;
+
+export function parseMerchantInventorySummary(
+  payload: unknown, actorId: string, storeId: string,
+): MerchantInventorySummary {
+  const value = object(payload);
+  const counts = ["totalOffers", "publishedOffers", "availableOffers", "unavailableOffers", "stockoutOffers"];
+  if (!value || !exactKeys(value, ["actorId", "storeId", ...counts]) ||
+    !actorRule.test(actorId) || !key.test(storeId) ||
+    value.actorId !== actorId || value.storeId !== storeId ||
+    !counts.every(name => typeof value[name] === "number" &&
+      Number.isSafeInteger(value[name]) && (value[name] as number) >= 0)) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  const summary = value as MerchantInventorySummary;
+  if (summary.publishedOffers > summary.totalOffers ||
+    summary.availableOffers > summary.publishedOffers ||
+    summary.unavailableOffers !== summary.publishedOffers - summary.availableOffers ||
+    summary.stockoutOffers > summary.unavailableOffers) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return summary;
+}
+
+export async function readMerchantInventorySummary(
+  origin: string, storeId: string, actorId: string, bearer: string, signal?: AbortSignal,
+): Promise<MerchantInventorySummary> {
+  if (!key.test(storeId) || !actorRule.test(actorId)) {
+    throw new DshPublicError(400, "INVALID_REQUEST");
+  }
+  const path = dshOperations.readCurrentMerchantInventorySummary.path.replace("{storeID}", storeId);
+  return parseMerchantInventorySummary(
+    await privateOwnerRequest(origin, path, bearer, "GET", undefined, signal), actorId, storeId);
+}
