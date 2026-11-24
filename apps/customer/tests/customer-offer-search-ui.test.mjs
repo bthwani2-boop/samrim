@@ -11,13 +11,19 @@ import * as loader from "../src/features/stores/store-detail-loader.ts";
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const entry = fileURLToPath(new URL("../src/features/stores/store-detail-screen.tsx", import.meta.url));
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-offer-search-"));
-let compiled;
+let compiled, compiledStorefrontRoute;
 try {
   const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), entry,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(path.join(temp, "store-detail-screen.js"), "utf8");
+  const routeEntry = fileURLToPath(new URL("../app/storefront/[storeId].tsx", import.meta.url));
+  const routeResult = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), routeEntry,
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+  { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
+  assert.equal(routeResult.status, 0, routeResult.stderr || routeResult.stdout);
+  compiledStorefrontRoute = readFileSync(path.join(temp, "[storeId].js"), "utf8");
 } finally { rmSync(temp, { recursive: true, force: true }); }
 
 function harness({ params = {}, id = "store-a" } = {}) {
@@ -93,6 +99,43 @@ test("Store browse q stays a return-link context and does not filter the Store's
   assert.equal(byId(view, "offers-search").props.value, "");
   assert.deepEqual(find(view, node => node.type === "Link" && node.props.href?.pathname === "/stores").props.href.params,
     { city: "sanaa", q: "متجر" });
+});
+
+test("full storefront navigation preserves bounded directory context without filtering offers", async () => {
+  const app = harness({ params: { city: " ADEN ", q: " متجر ", vertical: "GROCERY" } });
+  const initial = await open(app);
+  assert.equal(initial.query, "");
+  const link = find(app.render(), node => node.type === "Link" && node.props.children === "عرض موقع المتجر الكامل");
+  assert.deepEqual(link.props.href, { pathname: "/s/store-a", params: { city: "aden", vertical: "grocery", q: "متجر" } });
+});
+
+test("unscoped public storefront link remains canonical", async () => {
+  const app = harness(); await open(app);
+  const link = find(app.render(), node => node.type === "Link" && node.props.children === "عرض موقع المتجر الكامل");
+  assert.equal(link.props.href, "/s/store-a");
+});
+
+function renderNativeStorefrontRoute(params) {
+  const mod = { exports: {} };
+  const jsx = (type, props) => ({ type, props });
+  const modules = {
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "expo-router": { Redirect: "Redirect", useLocalSearchParams: () => params },
+    "react-native": { Platform: { OS: "android" } },
+    "../../src/features/stores/storefront-screen": { __esModule: true, default: "StorefrontScreen" },
+    "../../src/features/location/serviceability": serviceability,
+  };
+  new Function("require", "module", "exports", compiledStorefrontRoute)(name => {
+    assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`); return modules[name];
+  }, mod, mod.exports);
+  return mod.exports.default();
+}
+
+test("native storefront redirect preserves only validated directory context", () => {
+  const route = renderNativeStorefrontRoute({ storeId: "store-a", city: " ADEN ", q: " متجر ", vertical: "GROCERY", actorId: "ignored" });
+  assert.equal(route.type, "Redirect");
+  assert.deepEqual(route.props.href, { pathname: "/store/store-a", params: { city: "aden", vertical: "grocery", q: "متجر" } });
+  assert.equal(renderNativeStorefrontRoute({ storeId: "store-a", city: "../private", q: "ignored" }).props.href, "/store/store-a");
 });
 
 test("the offer list receives current Store orderability so browsing cannot expose an unverified cart action", async () => {

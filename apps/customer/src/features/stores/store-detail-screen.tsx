@@ -112,7 +112,8 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
           {!fullPage ? (
-            <Link href={publicStorefrontPath(id) as Href} style={{ color: theme.interactiveText }}>
+            <Link href={(browse.city ? { pathname: publicStorefrontPath(id), params: browse } : publicStorefrontPath(id)) as Href}
+              style={{ color: theme.interactiveText }}>
               عرض موقع المتجر الكامل
             </Link>
           ) : null}

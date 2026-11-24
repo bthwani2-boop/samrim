@@ -1,6 +1,7 @@
 import { type Href, Redirect, useLocalSearchParams } from "expo-router";
 import type { GenerateMetadataFunction } from "expo-router/server";
 import { Platform } from "react-native";
+import { readStoreBrowseScope } from "../../src/features/location/serviceability";
 import StorefrontScreen from "../../src/features/stores/storefront-screen";
 
 // Public listing does not authorize search indexing of Store sites before release approval.
@@ -11,10 +12,14 @@ export const generateMetadata: GenerateMetadataFunction = () => ({
 });
 
 export default function FullStorefrontRoute() {
-  const { storeId: value } = useLocalSearchParams<{ storeId?: string | string[] }>();
+  const { storeId: value, ...params } = useLocalSearchParams<{
+    storeId?: string | string[]; city?: string | string[]; q?: string | string[]; vertical?: string | string[];
+  }>();
   const storeId = typeof value === "string" ? value : "";
   if (Platform.OS !== "web") {
-    return <Redirect href={(`/store/${encodeURIComponent(storeId)}`) as Href} />;
+    const browse = readStoreBrowseScope(params, "");
+    const pathname = `/store/${encodeURIComponent(storeId)}`;
+    return <Redirect href={(browse.city ? { pathname, params: browse } : pathname) as Href} />;
   }
   // Same public DSH Store/Offer owner as the marketplace, with a wider Web presentation.
   // Never infer checkout eligibility from publication.
