@@ -146,15 +146,15 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
       weekly: snapshot.weekly,
       preparationMinutes: snapshot.preparationMinutes,
     };
-    if (!fields) return;
-    const attempt = pending ?? {
+    const attempt = pending ?? (fields ? {
       operationId: randomUUID(),
       expectedVersion: snapshot.version,
       ...fields,
       pausedUntil: schedule ? (paused ? snapshot.pausedUntil ?? null : null)
         : paused ? null : new Date(Date.now() + duration * 60000).toISOString(),
       reason: reason.trim(),
-    };
+    } : null);
+    if (!attempt) return;
     inFlight.current = true;
     setPending(attempt);
     setSaving(true);
@@ -176,6 +176,12 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
         setPending(null);
         setNotice(schedule ? "رفض DSH التغيير. راجع تداخل الفترات ومدة التجهيز وسياسة المدينة."
           : "رفض DSH التغيير. راجع المدة والسبب وسياسة المدينة.");
+      } else if (pending && (status === 401 || status === 403 || status === 404)) {
+        // Denial on a later retry cannot prove the outcome of the original dispatch.
+        // Hide owner data until a fresh authorized read, retaining the exact command.
+        setState({ storeId, actorId, loading: true });
+        setNotice("لم تتأكد نتيجة الحفظ السابق. استعد صلاحية المتجر ثم أعد التحقق من العملية نفسها.");
+        setRetry(value => value + 1);
       } else if (status === 401 || status === 403 || status === 404 || status === 409) {
         setPending(null);
         setSchedule(null);
@@ -290,7 +296,7 @@ export default function StoreAvailability({ storeId = "", actorId = "" }: Readon
               style={{ ...control, ...text }} />
           </View>
         ) : null}
-        {actorId && snapshot && (schedule || snapshot.weekly !== null) ? (
+        {actorId && snapshot && (pending || schedule || snapshot.weekly !== null) ? (
           <View style={{ gap: 8 }}>
             {!schedule ? <Text accessibilityRole="header" style={{ ...text, fontWeight: "700" }}>
               {paused ? "إنهاء الإيقاف المؤقت" : "إيقاف استقبال الطلبات مؤقتًا"}

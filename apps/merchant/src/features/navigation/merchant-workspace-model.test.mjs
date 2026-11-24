@@ -14,7 +14,7 @@ import {
 
 test("Merchant workspace has unique functional navigation targets on desktop and mobile", () => {
   const ids = merchantNavigation.map(item => item.id);
-  assert.deepEqual(ids, ["home", "stores", "orders", "products", "wallet", "more"]);
+  assert.deepEqual(ids, ["home", "stores", "orders", "products", "staff", "wallet", "more"]);
   assert.equal(new Set(ids).size, ids.length);
   for (const section of merchantMobileSections) {
     assert.ok(ids.includes(section), `mobile section ${section} must also exist on desktop`);
@@ -116,6 +116,10 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       assert.equal(render().find(n => n.type === "Catalog")?.props.initialStoreId, "b");
       assert.equal(render().find(n => n.type === "Catalog")?.props.initialPriceStockOnly, true);
       click("الرئيسية");
+      click("موظفو متجر ب");
+      assert.equal(render().find(n => n.type === "Employees")?.props.storeId, "b");
+      assert.equal(render().find(n => n.type === "Employees")?.props.actorId, "merchant-a");
+      click("الرئيسية");
       click("الطلبات");
       assert.ok(render().some(n => n.props?.testID === "merchant-section-unavailable"));
       click("الرئيسية");
@@ -134,6 +138,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     assert.ok(!empty.some(n => n.props?.accessibilityLabel === "فتح متجر ب"));
     assert.ok(!empty.some(n => n.props?.accessibilityLabel === "عرض جميع المتاجر"));
     assert.ok(!empty.some(n => n.props?.accessibilityLabel === "إدارة المنتجات"));
+    assert.ok(!empty.some(n => n.type === "Employees"));
     click("عرض المتاجر المنشورة");
     let directory = render().find(n => n.type === "Directory");
     assert.equal(directory.props.initialPublication, "published");
@@ -159,6 +164,16 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     click("الرئيسية");
     click("المزيد");
     assert.ok(render().some(n => n.type === "Account"), "Mobile More must expose working account preferences");
+    click("الموظفون");
+    assert.ok(!render().some(n => n.type === "Employees"), "a scope must be selected before reading staff");
+    click("موظفو متجر أ");
+    assert.equal(render().find(n => n.type === "Employees")?.props.storeId, "a");
+    index = 0;
+    const revoked = nodes(Workspace({ actorId: "merchant-a", stores: stores.slice(1), onRefresh() {}, onSignOut() {} }));
+    assert.ok(!revoked.some(n => n.type === "Employees"), "revoked store immediately loses staff surface");
+    index = 0;
+    const switched = nodes(Workspace({ actorId: "merchant-b", stores, onRefresh() {}, onSignOut() {} }));
+    assert.ok(!switched.some(n => n.type === "Employees"), "actor switch cannot reuse a prior selection");
 
     const Directory = load(readFileSync(path.join(temp, "merchant-store-directory.js"), "utf8"));
     values = [];

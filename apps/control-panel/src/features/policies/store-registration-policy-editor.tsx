@@ -46,6 +46,7 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
   const [error, setError] = useState("");
   const [recoveryReady, setRecoveryReady] = useState(false);
   const saving = useRef(false);
+  const reading = useRef(false);
   useEffect(() => {
     try {
       const saved = readPendingRegistrationPolicy(window.sessionStorage, actorId);
@@ -92,8 +93,10 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
     setMessage("");
     setError("");
   }
-  async function refresh() {
-    if (!endpoint || busy || overviewBusy || historyBusy) return;
+  async function refresh(selectedCity = city, selectedRelation = relation) {
+    if (!recoveryReady || !validCity.test(selectedCity) || reading.current || saving.current || busy || overviewBusy || historyBusy) return;
+    const selectedEndpoint = `/api/policies/cities/${selectedCity}/store-registration/${selectedRelation}`;
+    reading.current = true;
     setBusy(true);
     setMessage("");
     setError("");
@@ -101,7 +104,7 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
     setHistory(null);
     setHistoryError("");
     try {
-      const current = await readStoreRegistrationPolicy(endpoint, city, relation, actorId);
+      const current = await readStoreRegistrationPolicy(selectedEndpoint, selectedCity, selectedRelation, actorId);
       setPolicy(current);
       setNeedsRead(false);
       if (pending) {
@@ -123,6 +126,7 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
       setPolicy(null);
       setError(cause instanceof Error ? cause.message : "تعذرت قراءة السياسة من DSH.");
     } finally {
+      reading.current = false;
       setBusy(false);
     }
   }
@@ -247,7 +251,13 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
             <Select aria-label="اختيار مدينة قبول المتاجر" showSearch optionFilterProp="label"
               value={city || null} options={[...directory.cities]}
               disabled={locked || directory.cities.length === 0} placeholder="اختر مدينة الخدمة"
-              onChange={value => { if (!locked) { setCity(value ?? ""); resetScope(); } }} />
+              onChange={value => {
+                if (locked || reading.current) return;
+                const selectedCity = value ?? "";
+                setCity(selectedCity);
+                resetScope();
+                if (validCity.test(selectedCity)) void refresh(selectedCity, relation);
+              }} />
           </Form.Item>
           {directory.status === "unavailable" && <Alert type="warning" showIcon
             message="تعذر تحميل المدن من الخدمة المالكة. أعد تحميل الصفحة أو اقرأ مدينة معروفة." />}
@@ -256,12 +266,15 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
           <details style={{ marginBlockEnd: 12 }}>
             <summary>قراءة مدينة معروفة أو مراجعة سجل تاريخي</summary>
             <Input aria-label="معرّف مدينة قبول المتاجر" value={city} maxLength={64}
-              disabled={locked} onChange={event => { setCity(event.target.value); resetScope(); }} />
+              disabled={locked} onChange={event => { if (!locked && !reading.current) { setCity(event.target.value); resetScope(); } }} />
           </details>
           <Form.Item label="طريقة العمل">
             <Radio.Group value={relation} disabled={locked} onChange={event => {
-              setRelation(event.target.value as StoreRegistrationRelation);
+              if (locked || reading.current) return;
+              const selectedRelation = event.target.value as StoreRegistrationRelation;
+              setRelation(selectedRelation);
               resetScope();
+              if (validCity.test(city)) void refresh(city, selectedRelation);
             }}>
               <Radio value="MARKETPLACE">داخل سوق بثواني</Radio>
               <Radio value="DIRECT">متجر مباشر</Radio>
@@ -360,6 +373,10 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
           style={{ marginBlockStart: 12 }} />}
       </Card>
       <Card title="تحديث سياسة التسجيل">
+        {!pending && needsRead && <Typography.Paragraph type="secondary" role="status">
+          {busy ? "جارٍ قراءة السياسة الحالية من DSH…" : !endpoint ? "اختر المدينة وطريقة العمل لإتاحة تحرير السياسة." :
+            "لا يمكن تعديل السياسة قبل قراءة إصدارها الحالي. اضغط قراءة السياسة من DSH لإعادة المحاولة."}
+        </Typography.Paragraph>}
         <Alert type="info" showIcon style={{ marginBlockEnd: 16 }}
           message="نطاق أثر القرار"
           description="يسري القرار على تسجيل المتاجر الجديدة في المدينة وطريقة العمل المحددتين فقط. لا يغير النشر الحالي أو شروط الاتفاقيات القائمة أو الطلبات السابقة." />

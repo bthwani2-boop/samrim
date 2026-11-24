@@ -258,3 +258,34 @@ test("a new Store saves multiple explicit periods with overnight and Arabic inpu
   assert.match(content(render()), /تغيّر سجل الإتاحة/);
   assert.ok(button("تعديل الدوام والتجهيز"), "reconciles latest version before editing again");
 });
+
+test("an uncertain Store pause survives a later authorization denial and replays only after a fresh owner read", async () => {
+  const h = harness();
+  const render = () => h.render("store-a", "merchant-a");
+  const button = view => find(view, item => item.type === "Button" && item.props.accessibilityState);
+  render(); h.read().resolve(snapshot); await settle();
+  const view = render();
+  find(view, item => item.props?.accessibilityLabel === "مدة الإيقاف بالدقائق").props.onChangeText("30");
+  find(view, item => item.props?.accessibilityLabel === "سبب التغيير").props.onChangeText("اختبار الاسترداد");
+  const initial = button(render()).props.onPress();
+  const original = h.writes.shift();
+  original.reject({ status: 503 }); await initial;
+  const retry = button(render()).props.onPress();
+  const denied = h.writes.shift();
+  assert.deepEqual(denied.change, original.change);
+  denied.reject({ status: 403 }); await retry;
+  assert.equal(byID(render(), "merchant-availability-snapshot"), undefined);
+  h.read().reject({ status: 403 }); await settle();
+  assert.equal(byID(render(), "merchant-availability-snapshot"), undefined);
+  assert.equal(button(render()), undefined);
+  const refresh = find(render(), n => n.props?.accessibilityLabel === "إعادة محاولة قراءة إتاحة المتجر");
+  refresh.props.onPress(); render();
+  h.read().resolve({ ...snapshot, version: 4, pausedUntil: original.change.pausedUntil }); await settle();
+  assert.match(content(render()), /إعادة التحقق من الحفظ/);
+  const reconcile = button(render()).props.onPress();
+  const replay = h.writes.shift();
+  assert.deepEqual(replay.change, original.change);
+  replay.resolve(); await reconcile;
+  render(); h.read().resolve({ ...snapshot, version: 4, pausedUntil: original.change.pausedUntil }); await settle();
+  assert.doesNotMatch(content(render()), /إعادة التحقق من الحفظ/);
+});

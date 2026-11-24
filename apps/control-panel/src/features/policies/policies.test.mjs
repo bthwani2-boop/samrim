@@ -177,6 +177,8 @@ test("registration editor provisions the first policy only after review and rest
   const browser = { sessionStorage: { getItem: key => storage.get(key) ?? null,
     setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) } };
   let result = { status: "unknown" };
+  let readDenied = false;
+  const reads = [];
   const submitted = [];
   const jsx = (type, props) => ({ type, props });
   const mocks = {
@@ -199,7 +201,11 @@ test("registration editor provisions the first policy only after review and rest
       Typography: { Title: "Title", Paragraph: "Paragraph", Text: "Text" },
     },
     "./store-registration-command": {
-      readStoreRegistrationPolicy: async () => current,
+      readStoreRegistrationPolicy: async (_endpoint, cityId, relation) => {
+        reads.push({ cityId, relation });
+        if (readDenied) throw new Error("DSH denied");
+        return { ...current, cityId, relation };
+      },
       clearPendingRegistrationPolicy, readPendingRegistrationPolicy, savePendingRegistrationPolicy,
       reconcileRegistrationPolicy: async (_endpoint, cityId, relation, actorId, change) => {
         assert.deepEqual(readPendingRegistrationPolicy(browser.sessionStorage, actorId), { cityId, relation, change });
@@ -229,8 +235,20 @@ test("registration editor provisions the first policy only after review and rest
   assert.deepEqual(citySelect.props.options, directory.cities);
   assert.equal(citySelect.props.disabled, false);
   citySelect.props.onChange("sanaa");
-  form(0).props.onFinish();
   await settle();
+  assert.equal(field("إصدار شروط قبول المتاجر").props.disabled, false, "selecting an active city automatically reads its current policy");
+  const relation = () => render().find(n => n.type === "RadioGroup");
+  readDenied = true;
+  relation().props.onChange({ target: { value: "DIRECT" } });
+  await settle();
+  assert.equal(field("إصدار شروط قبول المتاجر").props.disabled, true);
+  assert.equal(submit().props.disabled, true);
+  assert.deepEqual(reads.at(-1), { cityId: "sanaa", relation: "DIRECT" });
+  readDenied = false;
+  relation().props.onChange({ target: { value: "MARKETPLACE" } });
+  await settle();
+  assert.equal(field("إصدار شروط قبول المتاجر").props.disabled, false);
+  assert.deepEqual(reads.at(-1), { cityId: "sanaa", relation: "MARKETPLACE" });
   const enable = render().find(n => n.type === "Checkbox" && String(n.props.children).includes("السماح بإنشاء متاجر"));
   enable.props.onChange({ target: { checked: true } });
   field("إصدار شروط قبول المتاجر").props.onChange({ target: { value: "terms-v1" } });

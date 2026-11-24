@@ -5,6 +5,7 @@ export const merchantNavigation = [
   { id: "stores", label: "المتاجر", description: "ابحث عن متجرك وراجع حالة نشره" },
   { id: "orders", label: "الطلبات", description: "إدارة الطلبات غير متاحة حاليًا" },
   { id: "products", label: "المنتجات", description: "الكتالوج الخاص بمتاجرك من DSH؛ الإدارة والتعديل قيد التطوير" },
+  { id: "staff", label: "الموظفون", description: "إدارة سجل موظفي متجرك وفق صلاحياتك الحالية" },
   { id: "wallet", label: "المحفظة", description: "الأرصدة والحركات غير متاحة حاليًا" },
   { id: "more", label: "المزيد", description: "اختصارات مساحة التاجر" },
 ] as const;

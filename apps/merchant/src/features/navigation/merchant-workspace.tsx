@@ -6,6 +6,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 import AccountScreen from "../account/account-screen";
 import MerchantPrivateCatalog from "../catalog/merchant-private-catalog";
+import EmployeesScreen from "../employees/employees-screen";
 import MerchantStoreRegistration from "../onboarding/merchant-store-registration";
 import MerchantStoreDirectory from "./merchant-store-directory";
 import {
@@ -29,7 +30,15 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
   const [catalogTarget, setCatalogTarget] = useState<{ actorId: string; storeId: string; priceStockOnly?: boolean } | null>(null);
   const catalogStoreId = catalogTarget?.actorId === actorId && stores.some(store => store.id === catalogTarget.storeId)
     ? catalogTarget.storeId : undefined;
+  const [staffTarget, setStaffTarget] = useState<{ actorId: string; storeId: string } | null>(null);
+  const staffStore = staffTarget?.actorId === actorId ? stores.find(store => store.id === staffTarget.storeId) : undefined;
+  const openStaff = (storeId: string) => {
+    if (!stores.some(store => store.id === storeId)) return;
+    setStaffTarget({ actorId, storeId });
+    setSection("staff");
+  };
   const openSection = (next: MerchantSection) => {
+    if (next === "staff" && section !== "staff") setStaffTarget(null);
     if (next === "stores" && section !== "stores") {
       setInitialPublication("all");
       setCatalogTarget(null);
@@ -244,6 +253,11 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
                             style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.borderColor }}>
                             <Text style={{ color: theme.interactiveText }}>أسعار ومخزون المسودات</Text>
                           </Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`موظفو متجر ${store.name}`}
+                            onPress={() => openStaff(store.id)}
+                            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.borderColor }}>
+                            <Text style={{ color: theme.interactiveText }}>الموظفون</Text>
+                          </Pressable>
                         </View>
                       </View>
                     ))}
@@ -269,6 +283,26 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
               <MerchantPrivateCatalog key={actorId} actorId={actorId} stores={stores} initialStoreId={catalogStoreId}
                 initialPriceStockOnly={Boolean(catalogStoreId && catalogTarget?.priceStockOnly)} />
             </>
+          ) : section === "staff" ? (
+            <View style={{ gap: 12 }}>
+              <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 19, fontWeight: "700" }}>اختر المتجر لإدارة الموظفين</Text>
+              <Text style={{ color: theme.colorSecondary }}>يُقرأ السجل من الخدمة المالكة وفق صلاحيتك. تسجيل الموظف لا يمنحه حسابًا أو إذن دخول.</Text>
+              {stores.length === 0 ? (
+                <Text accessibilityRole="alert" style={{ color: theme.warningText }}>لا توجد متاجر متاحة لحسابك.</Text>
+              ) : (
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {stores.map(store => (
+                    <Pressable key={store.id} accessibilityRole="button" accessibilityLabel={`موظفو متجر ${store.name}`}
+                      accessibilityState={{ selected: staffStore?.id === store.id }} onPress={() => openStaff(store.id)}
+                      style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 10,
+                        borderWidth: 1, borderColor: theme.borderColor, backgroundColor: staffStore?.id === store.id ? theme.actionSoft : theme.surface }}>
+                      <Text style={{ color: staffStore?.id === store.id ? theme.interactiveText : theme.color }}>{store.name}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+              {staffStore ? <EmployeesScreen key={JSON.stringify([actorId, staffStore.id])} actorId={actorId} storeId={staffStore.id} /> : null}
+            </View>
           ) : section === "more" ? (
             <View style={{ gap: 10 }}>
               <AccountScreen />
