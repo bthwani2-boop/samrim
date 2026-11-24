@@ -112,6 +112,8 @@ export default function DeliveryAddressReview({actorId,storeId}:Readonly<{actorI
         ?evidence&&evidence.storeCityId!==evidence.addressCityId?"مدينة المتجر تختلف عن مدينة عنوان التوصيل.":"المسافة الجغرافية تتجاوز نطاق المدينة الحالي."
         :"لا تتوفر أدلة كافية لاعتماد نطاق الخدمة."}
     </Text>:null}
+    {current&&selection?<Link href={{pathname:"/addresses/[id]",params:{id:selection.id}}}
+      style={{color:theme.interactiveText}}>تعديل العنوان المحدد</Link>:null}
     {evidence?<View testID="checkout-address-evidence" style={{gap:4}}>
       <Text style={{color:theme.colorSecondary}}>مدينة المتجر: {serviceCityLabel(evidence.storeCityId)} · مدينة العنوان: {serviceCityLabel(evidence.addressCityId)}</Text>
       <Text style={{color:theme.colorSecondary}}>المسافة الجغرافية التقريبية: {metres.format(evidence.distanceMetres)} متر</Text>

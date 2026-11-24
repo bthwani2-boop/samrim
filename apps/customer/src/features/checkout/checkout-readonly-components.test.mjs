@@ -142,6 +142,18 @@ test("owner-denied geographic eligibility distinguishes a city mismatch and radi
   }
 });
 
+test("checkout opens the selected verified address in its editor", async () => {
+  const h = addressHarness();
+  const editLink = view => descendants(view).find(node => node.type === "Link" && textOf(node) === "تعديل العنوان المحدد");
+  assert.equal(editLink(h.render()), undefined);
+  const cleanup = h.start();
+  try {
+    const link = editLink(await openAddress(h));
+    assert.deepEqual(link?.props.href, { pathname: "/addresses/[id]", params: { id: address.id } });
+  } finally { cleanup(); }
+  assert.equal(editLink(h.render()), undefined);
+});
+
 test("owner unavailable carries no fabricated radius or distance; inconsistent address city fails closed", async () => {
   for (const outcome of [
     { actorId: evaluation.actorId, storeId: evaluation.storeId, addressId: evaluation.addressId, status: "UNAVAILABLE" },
