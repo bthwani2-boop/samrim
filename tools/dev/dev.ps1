@@ -527,17 +527,55 @@ function Show-AppLogs {
   $body=@'
 $app='__APP__'
 $base='C:\Users\bthwa\BThwaniAppRunner\logs'
-foreach($kind in @('out','err')){
-  $path=Join-Path $base ('refoundation-'+$app+'.'+$kind+'.log')
-  if(!(Test-Path -LiteralPath $path -PathType Leaf)){Write-Output ('APP_LOG_MISSING '+$app+' '+$kind);continue}
-  Write-Output ('APP_LOG app='+$app+' stream='+$kind)
-  Get-Content -LiteralPath $path -Tail 20 -ErrorAction Stop | ForEach-Object {
-    $line=$_.ToString()
+function Read-BoundedAppLog([string]$path) {
+  # A live log can contain a multi-megabyte line or incomplete final write.
+  # Never scan backwards without a byte limit (Get-Content -Tail can stall).
+  $stream=[IO.File]::Open($path,[IO.FileMode]::Open,[IO.FileAccess]::Read,([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+  try {
+    $length=$stream.Length
+    if(!$length){return}
+    $header=[byte[]]::new(2)
+    $headerRead=$stream.Read($header,0,2)
+    $encoding=[Text.Encoding]::UTF8
+    $unit=1
+    if($headerRead -eq 2 -and $header[0] -eq 255 -and $header[1] -eq 254){$encoding=[Text.Encoding]::Unicode;$unit=2}
+    elseif($headerRead -eq 2 -and $header[0] -eq 254 -and $header[1] -eq 255){$encoding=[Text.Encoding]::BigEndianUnicode;$unit=2}
+    $start=[Math]::Max([long]0,$length-65536)
+    if($unit -eq 2 -and $start%2){$start++}
+    $size=[int]($length-$start)
+    $buffer=[byte[]]::new($size)
+    $null=$stream.Seek($start,[IO.SeekOrigin]::Begin)
+    $read=0
+    while($read -lt $size){
+      $n=$stream.Read($buffer,$read,$size-$read)
+      if(!$n){break}
+      $read+=$n
+    }
+    if($read -ne $size -or $stream.Length -lt $length){throw 'APP_LOG_CHANGED_DURING_READ'}
+    $content=$encoding.GetString($buffer,0,$read)
+  } finally { $stream.Dispose() }
+  # Omit partial boundaries before redaction; never print a secret fragment.
+  if($start -gt 0){
+    $first=$content.IndexOf([char]10)
+    if($first -lt 0){Write-Output 'APP_LOG_NO_COMPLETE_LINES';return}
+    $content=$content.Substring($first+1)
+  } else { $content=$content.TrimStart([char]0xFEFF) }
+  $last=$content.LastIndexOf([char]10)
+  if($last -lt 0){Write-Output 'APP_LOG_NO_COMPLETE_LINES';return}
+  $lines=@($content.Substring(0,$last) -split '\r?\n')
+  foreach($line in @($lines | Select-Object -Last 20)){
+    $line=$line.TrimEnd([char]13)
     $line=$line -replace '(?i)(Bearer\s+)[A-Za-z0-9._~-]+','$1[REDACTED]'
     $line=$line -replace '(?i)(password|secret|token|api[_-]?key)\s*[=:]\s*[^,;\s]+','$1=[REDACTED]'
     if($line.Length -gt 300){$line=$line.Substring(0,300)}
     Write-Output $line
   }
+}
+foreach($kind in @('out','err')){
+  $path=Join-Path $base ('refoundation-'+$app+'.'+$kind+'.log')
+  if(!(Test-Path -LiteralPath $path -PathType Leaf)){Write-Output ('APP_LOG_MISSING '+$app+' '+$kind);continue}
+  Write-Output ('APP_LOG app='+$app+' stream='+$kind)
+  Read-BoundedAppLog $path
 }
 '@
   Invoke-Lenovo $body.Replace('__APP__',$App)

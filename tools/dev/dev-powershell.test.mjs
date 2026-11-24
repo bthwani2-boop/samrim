@@ -319,3 +319,36 @@ test("dependency reconcile uses the existing lifecycle and only retries changed 
   assert.match(watch,/\"Apps\",\"reconcile\",\"-Apply\",\"-Automatic\"/);
   assert.match(watch,/cycle\(\);\s*try \{ pollAppDependencies\(\)/);
 });
+
+test("app log diagnostics read a bounded tail and never emit partial or secret lines", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted=scriptPath.replaceAll("'","''");
+  const ps=[
+    "$ErrorActionPreference='Stop';$t=$null;$e=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseFile('"+quoted+"',[ref]$t,[ref]$e)",
+    "$owner=$ast.Find({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Show-AppLogs'},$true)",
+    "$block=$owner.Body.Find({param($n)$n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.StringConstantType.ToString() -eq 'SingleQuotedHereString'},$true)",
+    "$inner=[Management.Automation.Language.Parser]::ParseInput($block.Value,[ref]$t,[ref]$e)",
+    "$fn=$inner.Find({param($n)$n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Read-BoundedAppLog'},$true)",
+    "if(!$fn){throw 'MISSING_BOUNDED_LOG_READER'}",
+    "Invoke-Expression $fn.Extent.Text",
+    "$f=[IO.Path]::GetTempFileName();$nl=[string][char]10",
+    "try {",
+    "$data=('x'*2000000)+$nl+('Bearer fixture-token'+$nl)+('password=fixture-password'+$nl)+('z'*400)+$nl+'token=partial-unfinished'",
+    "[IO.File]::WriteAllText($f,$data,[Text.UTF8Encoding]::new($false))",
+    "$lines=@(Read-BoundedAppLog $f);$joined=$lines -join $nl",
+    "if($joined -match 'fixture-token|fixture-password|partial-unfinished|x{5}' -or $joined -notmatch 'Bearer \\[REDACTED\\]' -or $joined -notmatch 'password=\\[REDACTED\\]'){throw 'LOG_REDACTION_OR_PARTIAL_BOUNDARY_FAILED'}",
+    "if(@($lines|Where-Object {$_.Length -gt 300}).Count -or $joined -notmatch 'z{300}'){throw 'LOG_OUTPUT_LIMIT_FAILED'}",
+    "[IO.File]::WriteAllText($f,((1..30|ForEach-Object{'line-'+$_}) -join $nl)+$nl,[Text.Encoding]::Unicode)",
+    "$lines=@(Read-BoundedAppLog $f);if($lines.Count -ne 20 -or $lines[0] -cne 'line-11' -or $lines[-1] -cne 'line-30'){throw 'LOG_LINE_LIMIT_OR_ENCODING_FAILED'}",
+    "[IO.File]::WriteAllText($f,('a'*2000000),[Text.UTF8Encoding]::new($false))",
+    "$lines=@(Read-BoundedAppLog $f);if($lines.Count -ne 1 -or $lines[0] -cne 'APP_LOG_NO_COMPLETE_LINES'){throw 'LOG_OVERSIZED_LINE_FAILED'}",
+    "[IO.File]::WriteAllText($f,'');if(@(Read-BoundedAppLog $f).Count){throw 'LOG_EMPTY_FILE_FAILED'}",
+    "Write-Output 'BOUNDED_LOG_READER_PASS'",
+    "} finally { [IO.File]::Delete($f) }",
+  ].join("\n");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",timeout:15000,windowsHide:true});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/BOUNDED_LOG_READER_PASS/);
+});
