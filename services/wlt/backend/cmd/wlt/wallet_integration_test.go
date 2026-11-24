@@ -64,6 +64,10 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	}
 	apply("schema", "10_projections.sql")
 	apply("schema", "20_permissions.sql")
+	apply("schema", "30_commercial_agreements.sql")
+	t.Run("commercial agreement proposals", func(t *testing.T) {
+		verifyCommercialAgreementProposals(t, ctx, owner, reader)
+	})
 	// Post only from the isolated fixture owner; the HTTP runtime stays read-only.
 	// Preserve this exact posting while installing the separate sandbox.
 	const post = `INSERT INTO wlt.customer_funding_journal
@@ -90,6 +94,12 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	for _, privilege := range []struct {
 		name, grant, revoke string
 	}{
+		{"private commercial proposal column read",
+			"GRANT SELECT (commission_basis_points) ON wlt.store_commercial_agreement_proposals TO bthwani_wlt_reader",
+			"REVOKE SELECT (commission_basis_points) ON wlt.store_commercial_agreement_proposals FROM bthwani_wlt_reader"},
+		{"commercial proposal execution",
+			"GRANT EXECUTE ON FUNCTION wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text) TO bthwani_wlt_reader",
+			"REVOKE EXECUTE ON FUNCTION wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text) FROM bthwani_wlt_reader"},
 		{"private journal column read",
 			"GRANT SELECT (provider_reference) ON wlt.customer_funding_journal TO bthwani_wlt_reader",
 			"REVOKE SELECT (provider_reference) ON wlt.customer_funding_journal FROM bthwani_wlt_reader"},

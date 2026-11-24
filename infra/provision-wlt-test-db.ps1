@@ -66,6 +66,10 @@ foreach ($file in @($baseline) + @($sandbox)) {
 $proof = AdminSql 'bthwani_wlt_test' @"
 SELECT CASE WHEN
   (SELECT count(*) FROM wlt.customer_funding_journal) = 0
+  AND (SELECT count(*) FROM wlt.store_commercial_agreement_proposals) = 0
+  AND NOT has_any_column_privilege('bthwani_wlt_reader','wlt.store_commercial_agreement_proposals','SELECT')
+  AND NOT has_table_privilege('bthwani_wlt_reader','wlt.store_commercial_agreement_proposals','INSERT,UPDATE,DELETE,TRUNCATE')
+  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE')
   AND has_table_privilege('bthwani_wlt_reader', 'wlt.customer_wallet_balances', 'SELECT')
   AND has_table_privilege('bthwani_wlt_reader', 'wlt.customer_funding_history', 'SELECT')
   AND NOT has_any_column_privilege('bthwani_wlt_reader', 'wlt.customer_funding_journal', 'SELECT')
@@ -78,4 +82,4 @@ if ($proof -ne 'PASS') { throw 'WLT empty ledger or reader privileges are unsafe
 if (([IO.File]::ReadAllText($envPath)) -cne $existingText) { throw 'Environment file changed concurrently; credentials not written' }
 $entry = 'REF_WLT_TEST_DATABASE_URL=postgres://bthwani_wlt_reader:' + $secret + '@postgres:5432/bthwani_wlt_test?sslmode=disable'
 [IO.File]::AppendAllText($envPath, ([Environment]::NewLine + $entry + [Environment]::NewLine))
-Write-Output 'WLT_ISOLATED_DATABASE_PROVISIONED roles=owner-no-login,reader-read-only,sandbox-no-login baseline=3 sandbox=2 journal_empty=true'
+Write-Output ("WLT_ISOLATED_DATABASE_PROVISIONED roles=owner-no-login,reader-read-only,sandbox-no-login baseline={0} sandbox={1} journal_empty=true proposals_empty=true" -f $baseline.Count,$sandbox.Count)

@@ -263,6 +263,17 @@ docker exec "$current" pg_dump --format=custom --schema=wlt --no-owner \
 docker exec "$current" pg_restore --no-owner --exit-on-error --single-transaction \
   -U bthwani_wlt_owner -d bthwani_wlt_restore /tmp/wlt-owner.dump
 for db in bthwani_wlt_test bthwani_wlt_restore; do
+  proposed_terms="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
+    -c "SELECT string_agg(store_id || ':' || version || ':' || fee_model || ':' ||
+          COALESCE(commission_basis_points::text,subscription_amount_yer::text), ',' ORDER BY store_id,version)
+        FROM wlt.store_commercial_agreement_proposals;")"
+  [[ "$proposed_terms" == 'store-a:1:COMMISSION:375,store-a:2:COMMISSION:425,store-b:1:SUBSCRIPTION:9007199254740993' ]] ||
+    { echo "WLT restored commercial proposal versions differ" >&2; exit 1; }
+  proposal_scope="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
+    -c "SELECT NOT has_any_column_privilege('wlt.store_commercial_agreement_proposals','SELECT')
+        AND NOT has_table_privilege('wlt.store_commercial_agreement_proposals','INSERT,UPDATE,DELETE,TRUNCATE')
+        AND NOT has_function_privilege('wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE');")"
+  [[ "$proposal_scope" == 't' ]] || { echo "WLT restore exposed commercial proposals" >&2; exit 1; }
   totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
     -c "SELECT string_agg(actor_id || ':' || balance_yer, ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
   [[ "$totals" == 'wallet-one:9007199254741062,wallet-two:58' ]] || { echo "WLT restored balances differ after verified sandbox provider credit" >&2; exit 1; }

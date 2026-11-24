@@ -61,13 +61,15 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 		AND NOT has_schema_privilege('wlt', 'CREATE,USAGE WITH GRANT OPTION')
 		AND NOT has_function_privilege('wlt.post_sandbox_customer_funding(text,text,bigint)'::regprocedure, 'EXECUTE')
 		AND NOT has_function_privilege('wlt.reverse_sandbox_customer_funding(text,text)'::regprocedure, 'EXECUTE')
+		AND NOT COALESCE(has_function_privilege(to_regprocedure('wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)'), 'EXECUTE'), false)
 		AND NOT EXISTS (
 			SELECT 1
 			FROM (VALUES
 				('wlt.customer_funding_journal'::regclass, false),
 				('wlt.customer_funding_entries'::regclass, false),
 				('wlt.customer_wallet_balances'::regclass, true),
-				('wlt.customer_funding_history'::regclass, true)
+				('wlt.customer_funding_history'::regclass, true),
+				(to_regclass('wlt.store_commercial_agreement_proposals'), false)
 			) AS relation(id, readable)
 			JOIN pg_class ON pg_class.oid = relation.id
 			WHERE relowner = reader.oid
