@@ -41,7 +41,7 @@ existing strict local/Android loopback mode. The only permitted endpoints are
 synthetic `http://identity:3302` verifier. No ledger writes, funding command,
 automatic migrations, provider credentials or production services are enabled.
 
-The new `infra/provision-wlt-test-db.ps1` is an additive, explicit, one-time
+The new `tools/dev/provision-wlt-test-db.ps1` is an additive, explicit, one-time
 development-only provisioner. It refuses an existing WLT database, roles or
 credential entry, requires the verified refoundation PostgreSQL container, and
 creates `bthwani_wlt_test` plus no-login owner/sandbox roles and a unique

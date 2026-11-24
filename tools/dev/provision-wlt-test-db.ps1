@@ -6,8 +6,8 @@ param([string]$DockerContext = 'bthwani-docker')
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$envPath = Join-Path $PSScriptRoot '.env'
+$root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$envPath = Join-Path $root 'infra/.env'
 if ($DockerContext -notmatch '^[a-zA-Z0-9._-]+$') { throw 'Invalid Docker context' }
 $envFile = Get-Item -LiteralPath $envPath -ErrorAction Stop
 if (!$envFile.PSIsContainer -and ($envFile.Attributes -band [IO.FileAttributes]::ReparsePoint) -eq 0) {

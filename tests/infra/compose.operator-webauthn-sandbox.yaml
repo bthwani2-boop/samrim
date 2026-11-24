@@ -27,7 +27,7 @@ services:
       start_period: 15s
   identity:
     build:
-      context: ../services/identity
+      context: ../../services/identity
       dockerfile: backend/Dockerfile
       args:
         SAMRIM_SOURCE_REVISION: "${REF_OPERATOR_SOURCE_REVISION:?local source revision required}"

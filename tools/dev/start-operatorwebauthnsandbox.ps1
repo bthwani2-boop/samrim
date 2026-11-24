@@ -6,7 +6,7 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if ((hostname).ToUpperInvariant() -ne 'BTHWANI') { throw 'OPERATOR_SANDBOX_SURFACE_ONLY' }
 if ((& git -C $root branch --show-current) -like 'archive/*') { throw 'OPERATOR_SANDBOX_ARCHIVE_REFUSED' }
 $head = (& git -C $root rev-parse HEAD).Trim()
@@ -19,7 +19,7 @@ if ($LASTEXITCODE -ne 0 -or $context -cne 'ssh://bthwa@bthwani-docker') {
 & (Join-Path $root 'tools/dev/Control-Lenovo-SSH.ps1') -Action Check | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'OPERATOR_SANDBOX_LENOVO_NOT_VERIFIED' }
 
-$compose = Join-Path $PSScriptRoot 'compose.operator-webauthn-sandbox.yaml'
+$compose = Join-Path $root 'tests/infra/compose.operator-webauthn-sandbox.yaml'
 $secretDir = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\OperatorSandbox'
 $envFile = Join-Path $secretDir 'compose.env'
 New-Item -ItemType Directory -Force -Path $secretDir | Out-Null

@@ -60,7 +60,7 @@ Never reuse donor images, production data or `samrim-local` volumes.
 WLT has a separate `compose.wlt.yaml` overlay and a pinned service-owned
 Dockerfile. The refoundation database currently used by Identity/DSH is
 **not** renamed, erased or migrated. Provision `bthwani_wlt_test` explicitly
-using `pwsh -NoProfile -File infra/provision-wlt-test-db.ps1` only after
+using `pwsh -NoProfile -File tools/dev/provision-wlt-test-db.ps1` only after
 confirming it and its three WLT roles do not already exist. That operation
 creates a new isolated database plus its own read-only runtime credentials
 inside ignored `infra/.env`. It must never be run automatically with Compose.

@@ -124,3 +124,10 @@ test("CI retains real security and contract checks without the retired scaffold 
   assert.match(pkg.scripts.check, /check:security/);
   assert.match(pkg.scripts.check, /check:apps/);
 });
+
+test("the relocated disposable WebAuthn stack still triggers owner CI", () => {
+  const { push, pr } = events(workflows[2]);
+  const pattern = "      - 'tests/infra/compose.operator-webauthn-sandbox.yaml'";
+  assert.ok(push.includes(pattern));
+  assert.ok(pr.includes(pattern));
+});

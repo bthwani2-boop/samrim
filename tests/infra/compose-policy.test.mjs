@@ -151,3 +151,17 @@ test("Captain admission uses only the private DSH TLS owner and a dedicated trus
   assert.equal(overlay.volumes["captain-dsh-ca"].external, true);
   assert.equal(overlay.volumes["captain-dsh-tls"].external, true);
 });
+test("the disposable Operator stack remains separate from shared owner state", () => {
+  const stack = compose("../tests/infra/compose.operator-webauthn-sandbox.yaml");
+  assert.equal(stack.name, "bthwani-operator-webauthn-s02");
+  assert.equal(stack.networks.private.internal, true);
+  assert.deepEqual(Object.keys(stack.services).sort(), ["identity", "postgres"]);
+  for (const service of Object.values(stack.services)) {
+    assert.ok(service.ports.every(port => port.startsWith("127.0.0.1:")));
+  }
+  assert.deepEqual(stack.services.postgres.volumes, ["operator-s02-postgres-data:/var/lib/postgresql"]);
+  assert.deepEqual(Object.keys(stack.volumes), ["operator-s02-postgres-data"]);
+  assert.equal(stack.services.identity.build.context, "../../services/identity");
+  assert.equal(stack.services.identity.read_only, true);
+  assert.ok(stack.services.identity.cap_drop.includes("ALL"));
+});

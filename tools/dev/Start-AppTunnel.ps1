@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 Canonical Surface -> Lenovo development SSH tunnels.
-Source of local ports: infra/local/.env; remote ports: the Lenovo native
+Source of local ports: tools/dev/.env.tunnels.local; remote ports: the Lenovo native
 development launch ports. Run under one Windows Scheduled Task per App.
 No shell window is required, and no port is exposed beyond loopback.
 #>
@@ -17,7 +17,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
-if ($env:COMPUTERNAME -ne 'BTHWANI') { throw 'APP_TUNNEL_SOURCE_HOST_REQUIRED' }
+if ([Environment]::MachineName -ne 'BTHWANI') { throw 'APP_TUNNEL_SOURCE_HOST_REQUIRED' }
 
 $ports = @{
   'customer' = @{ EnvKey = 'SAMRIM_APP_CUSTOMER_METRO_PORT'; Local = 18101; Remote = 28111 }
@@ -26,7 +26,7 @@ $ports = @{
   'control-panel' = @{ EnvKey = 'SAMRIM_CONTROL_PORT'; Local = $null; Remote = 23010 }
 }
 $spec = $ports[$App]
-$envPath = Join-Path $root 'infra\local\.env'
+$envPath = Join-Path $root 'tools\dev\.env.tunnels.local'
 if (-not (Test-Path -LiteralPath $envPath)) { throw 'APP_TUNNEL_LOCAL_ENV_MISSING' }
 
 $localPort = $spec.Local
