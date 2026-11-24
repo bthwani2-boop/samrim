@@ -42,7 +42,6 @@ test('existing owner Go and SQL source paths remain legal, including WLT when im
       'services/dsh/backend/internal/storeavailability/service.go',
       'services/dsh/backend/internal/storeavailability/tests/replay_test.go',
       'services/wlt/backend/internal/ledger/entry.go',
-      'services/wlt/database/migrations/001_ledger_entries.sql',
       'services/identity/database/schema/00_identity.sql',
       'services/dsh/database/schema/10_catalog.sql',
       'services/wlt/database/schema/00_ledger.sql',
@@ -233,7 +232,6 @@ test('deep owner paths reject misplaced Go, SQL and OpenAPI while preserving leg
       'services/identity/backend/internal/session/recovery/replay.go',
       'services/dsh/backend/internal/storeavailability/policy/current.go',
       'services/wlt/backend/internal/ledger/reversal.go',
-      'services/wlt/database/migrations/012_reverse_posting.sql',
       'services/dsh/contracts/openapi/paths/captain-interest.yaml',
     ]) put(valid);
     assert.deepEqual(serviceSourcePlacementIssues(directory), [],
@@ -261,5 +259,27 @@ test('deep owner paths reject misplaced Go, SQL and OpenAPI while preserving leg
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('baseline-first local development refuses new migration histories for every owner', async (t) => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-baseline-first-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  for (const owner of ['identity', 'dsh', 'wlt']) {
+    const schema = path.join(directory, 'services', owner, 'database', 'schema', '00_domain.sql');
+    mkdirSync(path.dirname(schema), { recursive: true });
+    writeFileSync(schema, 'SELECT 1;');
+  }
+  assert.deepEqual(serviceSourcePlacementIssues(directory), []);
+  for (const owner of ['identity', 'dsh', 'wlt']) {
+    const migration = path.join(directory, 'services', owner, 'database', 'migrations', '001_new_column.sql');
+    mkdirSync(path.dirname(migration), { recursive: true });
+    writeFileSync(migration, 'SELECT 1;');
+  }
+  const issues = serviceSourcePlacementIssues(directory);
+  for (const owner of ['identity', 'dsh', 'wlt']) {
+    assert.ok(issues.some(issue => issue.includes('services/'+owner+'/database/migrations/001_new_column.sql') &&
+      issue.includes('BASELINE_FIRST')), issues.join('\n'));
   }
 });
