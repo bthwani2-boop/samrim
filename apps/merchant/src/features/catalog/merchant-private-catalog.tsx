@@ -45,6 +45,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const [priceScope, setPriceScope] = useState<string | null>(null);
   const [filter, setFilter] = useState<{ scope: string; status: MerchantCatalogStatus | undefined }>({ scope: "", status: undefined });
   const [retry, setRetry] = useState(0);
+  const [blockedScopes, setBlockedScopes] = useState<ReadonlySet<string>>(new Set<string>());
   const [state, setState] = useState<CatalogState>({
     scope: "", loading: false, more: false, items: [],
   });
@@ -54,6 +55,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const storeId = selected?.id ?? "";
   const storeScope = JSON.stringify([actorId, storeId]);
   const priceStockOnly = priceScope === storeScope;
+  const catalogBlocked = blockedScopes.has(storeScope);
   // A different actor or Store starts in the regular catalog, even on returning to a previous Store.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the scope change resets the focused view.
   useEffect(() => { setPriceScope(null); setFilter({ scope: "", status: undefined }); }, [storeScope]);
@@ -87,16 +89,23 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     void readMerchantCatalogPage(storeId, actorId, controller.signal, { limit: 20, ...(searchQuery ? { query: searchQuery } : {}), ...(status ? { status } : {}) })
       .then(page => {
         if (controller.signal.aborted || epoch !== generation.current) return;
+        setBlockedScopes(previous => {
+          if (!previous.has(storeScope)) return previous;
+          const next = new Set(previous);
+          next.delete(storeScope);
+          return next;
+        });
         setState({ scope, loading: false, more: false, items: page.items,
           ...(page.nextCursor ? { cursor: page.nextCursor } : {}) });
       })
       .catch(() => {
         if (controller.signal.aborted || epoch !== generation.current) return;
+        setBlockedScopes(previous => new Set(previous).add(storeScope));
         setState({ scope, loading: false, more: false, items: [],
           error: "تعذّر التحقق من كتالوج هذا المتجر لدى DSH. تأكد من الصلاحية والاتصال." });
       });
     return () => { controller.abort(); generation.current++; };
-  }, [scope, storeId, actorId, searchQuery, status, retry]);
+  }, [scope, storeId, actorId, storeScope, searchQuery, status, retry]);
 
   const visible: CatalogState = state.scope === scope ? state : {
     scope, loading: true, more: false, items: [],
@@ -117,20 +126,22 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
       const page: MerchantCatalogPage = await readMerchantCatalogPage(storeId, actorId, controller.signal,
         { cursor, limit: 20, ...(searchQuery ? { query: searchQuery } : {}), ...(status ? { status } : {}) });
       if (controller.signal.aborted || epoch !== generation.current) return;
+      if (page.items.some(item => item.id <= cursor) || (page.nextCursor && page.nextCursor <= cursor)) {
+        throw new Error("CATALOG_CURSOR_INVALID");
+      }
       setState(previous => {
         if (previous.scope !== scope || previous.cursor !== cursor) return previous;
-        const known = new Set(previous.items.map(item => item.id));
-        if (page.items.some(item => known.has(item.id)) || page.nextCursor === cursor) {
-          return { scope, loading: false, more: false, items: [],
-            error: "تغيّرت صفحة الكتالوج؛ أعد تحميل بيانات المتجر للتحقق." };
-        }
         return { ...previous, more: false, items: [...previous.items, ...page.items],
           cursor: page.nextCursor, error: undefined };
       });
     } catch {
       if (controller.signal.aborted || epoch !== generation.current) return;
-      setState(previous => previous.scope === scope ? { ...previous, more: false,
-        error: "تعذر تحميل الصفحة التالية. يمكنك إعادة المحاولة." } : previous);
+      // A failed owner read cannot extend the verified scope of the previous page.
+      // Discard that projection and its subordinate controls until a fresh read.
+      setBlockedScopes(previous => new Set(previous).add(storeScope));
+      setEditingId(null);
+      setState({ scope, loading: false, more: false, items: [],
+        error: "تعذّر التحقق من الصفحة التالية لدى DSH. أعد تحميل كتالوج المتجر." });
     }
   }
 
@@ -186,11 +197,11 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
         <Text style={{ color: theme.interactiveText }}>{item.label}</Text>
       </Pressable>)}
     </View> : null}
-    {storeId && actorId ? <InventorySummary key={JSON.stringify([actorId, storeId, retry])}
+    {storeId && actorId && !catalogBlocked ? <InventorySummary key={JSON.stringify([actorId, storeId, retry])}
       actorId={actorId} storeId={storeId} /> : null}
-    {storeId && actorId && !priceStockOnly ? <CatalogExport actorId={actorId} storeId={storeId} query={searchQuery} status={status} /> : null}
-    {storeId && actorId && !priceStockOnly ? <CatalogImport actorId={actorId} storeId={storeId} /> : null}
-    {storeId && actorId && !priceStockOnly ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
+    {storeId && actorId && !catalogBlocked && !priceStockOnly ? <CatalogExport actorId={actorId} storeId={storeId} query={searchQuery} status={status} /> : null}
+    {storeId && actorId && !catalogBlocked && !priceStockOnly ? <CatalogImport actorId={actorId} storeId={storeId} /> : null}
+    {storeId && actorId && !catalogBlocked && !priceStockOnly ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
       onCreated={() => setRetry(value => value + 1)} /> : null}
     {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة كتالوج المتجر" /> : null}
     {visible.error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
