@@ -29,6 +29,7 @@ function renderable(source, dependencies = {}) {
   const module = { exports: {} };
   const mocks = {
     "react/jsx-runtime": { jsx, jsxs: jsx },
+    react: { useRef: current => ({ current }), useState: initial => [initial, () => undefined] },
     "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable" },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "expo-router": { Link: "Link" },
@@ -83,6 +84,7 @@ test("Captain account renders verified session and can request owner logout", ()
   assert.equal(account(), null);
   workspace = {
     session: { actorId: "synthetic-captain", role: "captain", sessionExpiresAt: "2026-11-21T12:00:00Z" },
+    standing: { actorId: "synthetic-captain", status: "APPROVED", version: 3 },
     signOut() { requested = true; },
   };
   const view = account();
@@ -91,6 +93,6 @@ test("Captain account renders verified session and can request owner logout", ()
   const content = nodes(view);
   assert.ok(content.some(node => node.props.children === "حساب الكابتن معتمد"));
   assert.equal(content.some(node => node.props.testID === "captain-capability-unavailable"), false);
-  content.find(node => node.type === "Pressable").props.onPress();
+  content.find(node => node.type === "Pressable" && node.props.accessibilityRole === "button").props.onPress();
   assert.equal(requested, true);
 });

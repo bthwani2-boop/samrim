@@ -1,4 +1,5 @@
 import { validMerchantCatalogDraft } from "@bthwani/dsh";
+import { type CatalogReader, collectMerchantCatalogOffers } from "./catalog-pages.ts";
 
 // This is only a local syntax/shape preflight. Even valid rows require a DSH
 // import run to resolve identities, existing offers, permissions and conflicts.
@@ -35,9 +36,12 @@ export async function readCatalogCsv(file: Pick<Blob, "size" | "stream">, signal
     reader.releaseLock();
   }
 }
+type StoreNameMatch = Readonly<{ count: number; priceYer?: string; stockUnits?: number; published?: boolean }>;
+
 type PreviewRow = Readonly<{
   row: number; name: string; priceYer: string; stockUnits: string;
-  reason: "invalid" | "duplicate-name" | "owner-review";
+  reason: "invalid" | "duplicate-name" | "owner-review" | "existing-store-name";
+  match?: StoreNameMatch;
 }>;
 
 export function previewCatalogCsv(input: string): PreviewRow[] {
@@ -100,5 +104,26 @@ export function previewCatalogCsv(input: string): PreviewRow[] {
     const duplicate = (names.get(name.normalize("NFC").toLowerCase()) ?? 0) > 1;
     return { row: i+2, name, priceYer, stockUnits,
       reason: !valid ? "invalid" : duplicate ? "duplicate-name" : "owner-review" };
+  });
+}
+
+/** Names only are observations, never canonical identity resolution or import admission. */
+export async function reviewCatalogImportRows(
+  rows: readonly PreviewRow[], actorId: string, storeId: string, signal: AbortSignal, read: CatalogReader,
+): Promise<PreviewRow[]> {
+  const offers = await collectMerchantCatalogOffers(actorId, storeId, signal, read);
+  signal.throwIfAborted();
+  const key = (name: string) => name.trim().normalize("NFC").toLowerCase();
+  const existing = new Map<string, StoreNameMatch>();
+  for (const offer of offers) {
+    const name = key(offer.name);
+    const previous = existing.get(name);
+    existing.set(name, previous ? { count: previous.count + 1 } : {
+      count: 1, priceYer: offer.priceYer, stockUnits: offer.stockUnits, published: offer.published,
+    });
+  }
+  return rows.map(row => {
+    const match = row.reason === "owner-review" ? existing.get(key(row.name)) : undefined;
+    return match ? { ...row, reason: "existing-store-name", match } : row;
   });
 }

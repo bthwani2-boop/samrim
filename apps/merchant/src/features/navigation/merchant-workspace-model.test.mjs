@@ -62,7 +62,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     ], { cwd: root, encoding: "utf8", timeout: 20000 });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const compiled = readFileSync(path.join(temp, "merchant-workspace.js"), "utf8");
-    let values = [], index = 0;
+    let values = [], index = 0, desktop = true;
     const jsx = (type, props, key) => ({ type, props, key });
     const mocks = {
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
@@ -74,7 +74,8 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       "react-native": { Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View" },
       "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
       "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
-      "@bthwani/tamagui-config/navigation": { usePrimaryNavigation: () => ({ desktop: true }) },
+      "@bthwani/tamagui-config/navigation": { usePrimaryNavigation: () => ({ desktop }) },
+      "../account/account-screen": { __esModule: true, default: "Account" },
       "../catalog/merchant-private-catalog": { __esModule: true, default: "Catalog" },
       "../onboarding/merchant-store-registration": { __esModule: true, default: "Registration" },
       "./merchant-store-directory": { __esModule: true, default: "Directory" },
@@ -119,6 +120,13 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     click("إدارة المنتجات");
     assert.deepEqual(render().find(n => n.type === "Catalog").props.stores, stores);
     assert.equal(render().find(n => n.type === "Catalog").props.initialStoreId, undefined);
+
+    click("المزيد");
+    assert.ok(render().some(n => n.type === "Account"), "Desktop More must expose working account preferences");
+    desktop = false;
+    click("الرئيسية");
+    click("المزيد");
+    assert.ok(render().some(n => n.type === "Account"), "Mobile More must expose working account preferences");
 
     const Directory = load(readFileSync(path.join(temp, "merchant-store-directory.js"), "utf8"));
     values = [];

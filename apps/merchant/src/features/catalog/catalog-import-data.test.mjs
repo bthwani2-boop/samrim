@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { csvPreviewByteLimit, previewCatalogCsv, readCatalogCsv } from "./catalog-import-data.ts";
+import { csvPreviewByteLimit, previewCatalogCsv, readCatalogCsv, reviewCatalogImportRows } from "./catalog-import-data.ts";
 
 const header = "name,price_yer,stock_units\n";
 test("CSV preview preserves exact integer YER, UTF-8 BOM, quoted commas and zero stock", () => {
@@ -50,4 +50,61 @@ test("scope abort cancels a pending file stream without preview", async () => {
   controller.abort();
   await assert.rejects(task, /abort/i);
   assert.equal(cancelled, true);
+});
+
+test("owner comparison preserves invalid and local duplicate reasons and does not approve unmatched identities", async () => {
+  const rows = previewCatalogCsv(header + " Café ,5,2\nقهوة,10,1\nقهوة,10,2\nماء,0,1\nشاي,50,1");
+  const signal = new AbortController().signal;
+  const result = await reviewCatalogImportRows(rows, "merchant-a", "store-a", signal, async (store, actor, sig, options) => {
+    assert.equal(store, "store-a");
+    assert.equal(actor, "merchant-a");
+    assert.equal(sig, signal);
+    assert.deepEqual(options, {limit:50});
+    return {actorId:actor,storeId:store,items:[
+      {id:"of-a",storeId:store,name:"CAFE\u0301"},
+      {id:"of-b",storeId:store,name:"قهوة"},
+      {id:"of-c",storeId:store,name:"ماء"},
+    ]};
+  });
+  assert.deepEqual(result.map(row => row.reason),
+    ["existing-store-name","duplicate-name","duplicate-name","invalid","owner-review"]);
+  assert.equal(rows[0].reason, "owner-review");
+});
+
+test("owner review rejects incomplete, foreign, repeated and aborted pagination without publishing partial matches", async () => {
+  const rows = previewCatalogCsv(header + "قهوة,1,1");
+  const page = (items, nextCursor) => ({actorId:"merchant-a",storeId:"store-a",items,...(nextCursor ? {nextCursor} : {})});
+  const items = Array.from({length:50},(_,i)=>({id:"of-"+String(i).padStart(2,"0"),storeId:"store-a",name:"قهوة"}));
+  const first = page(items,"of-49");
+  const run = (read, signal=new AbortController().signal) => reviewCatalogImportRows(rows,"merchant-a","store-a",signal,read);
+  for (const next of [
+    {...page([]),actorId:"other"},
+    {...page([]),storeId:"other"},
+    page([{id:"of-49",storeId:"store-a",name:"قهوة"}]),
+    page([{id:"of-z",storeId:"other",name:"قهوة"}]),
+    page([{id:"of-z",storeId:"store-a",name:"قهوة"}],"of-z"),
+  ]) await assert.rejects(run(async (_s,_a,_signal,opt)=>opt.cursor ? next : first), /CATALOG_EXPORT_SCOPE/);
+  await assert.rejects(run(async (_s,_a,_signal,opt)=>{
+    if(opt.cursor) throw new Error("revoked");
+    return first;
+  }),/revoked/);
+  const controller = new AbortController();
+  await assert.rejects(run(async ()=>{controller.abort();return first;},controller.signal));
+  assert.equal(rows[0].reason,"owner-review");
+});
+
+test("conflict detail preserves exact owner price and stock only for a unique matching offer", async () => {
+  const rows = previewCatalogCsv(header + "قهوة,100,2\nشاي,200,3\nماء,300,4");
+  const offer = (id, name, priceYer, stockUnits, published) => ({id,storeId:"store-a",name,priceYer,stockUnits,published});
+  const result = await reviewCatalogImportRows(rows,"merchant-a","store-a",new AbortController().signal,
+    async () => ({actorId:"merchant-a",storeId:"store-a",items:[
+      offer("of-a","قهوة","9223372036854775807",0,true),
+      offer("of-b","شاي","90",10,false),
+      offer("of-c","شاي","190",20,true),
+    ]}));
+  assert.deepEqual(result[0].match,{count:1,priceYer:"9223372036854775807",stockUnits:0,published:true});
+  assert.deepEqual(result[1].match,{count:2});
+  assert.equal(result[2].match,undefined);
+  assert.equal(result[2].reason,"owner-review");
+  assert.equal(rows[0].match,undefined);
 });

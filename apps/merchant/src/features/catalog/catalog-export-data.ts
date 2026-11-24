@@ -1,14 +1,4 @@
-import type { MerchantCatalogPage, MerchantCatalogStatus } from "@bthwani/dsh";
-
-type CatalogSelectors = { query?: string; status?: MerchantCatalogStatus };
-
-type CatalogReader = (
-  storeId: string, actorId: string, signal: AbortSignal,
-  options: { limit: number; cursor?: string } & CatalogSelectors,
-) => Promise<MerchantCatalogPage>;
-
-const pageSize = 50;
-const maxRows = 5000;
+import { type CatalogReader, type CatalogSelectors, collectMerchantCatalogOffers } from "./catalog-pages.ts";
 
 // Treat spreadsheet formula prefixes as text; quoting alone does not prevent
 // formula execution. Keep the underlying decimal amount unrounded in the CSV.
@@ -22,34 +12,15 @@ export async function collectCatalogExport(
   actorId: string, storeId: string, signal: AbortSignal, read: CatalogReader,
   selectors: CatalogSelectors = {},
 ): Promise<{ csv: string; count: number }> {
-  const { query, status } = selectors;
+  const offers = await collectMerchantCatalogOffers(actorId, storeId, signal, read, selectors);
+  signal.throwIfAborted();
   const rows = ["offer_id,store_id,product_id,variant_id,name,price_yer,stock_units,draft_version,product_active,variant_sellable,required_attributes_valid,published,available"];
-  let cursor: string | undefined;
-  let count = 0;
-  for (let i = 0; i < maxRows / pageSize; i++) {
-    signal.throwIfAborted();
-    const page = await read(storeId, actorId, signal, { limit: pageSize, ...(cursor ? { cursor } : {}),
-      ...(query ? { query } : {}), ...(status ? { status } : {}) });
-    signal.throwIfAborted();
-    if (page.actorId !== actorId || page.storeId !== storeId || page.items.length > pageSize) {
-      throw new Error("CATALOG_EXPORT_SCOPE");
-    }
-    let last = cursor ?? "";
-    for (const item of page.items) {
-      if (item.storeId !== storeId || item.id <= last) throw new Error("CATALOG_EXPORT_SCOPE");
-      last = item.id;
-      rows.push([
-        item.id, item.storeId, item.productId, item.variantId, item.name, item.priceYer,
-        item.stockUnits, item.draftVersion, item.productActive, item.variantSellable,
-        item.requiredAttributesValid, item.published, item.available,
-      ].map(cell).join(","));
-      count++;
-    }
-    if (!page.nextCursor) return { csv: "\uFEFF" + rows.join("\r\n") + "\r\n", count };
-    if (page.items.length !== pageSize || page.nextCursor !== last || page.nextCursor === cursor) {
-      throw new Error("CATALOG_EXPORT_SCOPE");
-    }
-    cursor = page.nextCursor;
+  for (const item of offers) {
+    rows.push([
+      item.id, item.storeId, item.productId, item.variantId, item.name, item.priceYer,
+      item.stockUnits, item.draftVersion, item.productActive, item.variantSellable,
+      item.requiredAttributesValid, item.published, item.available,
+    ].map(cell).join(","));
   }
-  throw new Error("CATALOG_EXPORT_LIMIT");
+  return { csv: "\uFEFF" + rows.join("\r\n") + "\r\n", count: offers.length };
 }

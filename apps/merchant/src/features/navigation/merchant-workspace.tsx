@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
+import AccountScreen from "../account/account-screen";
 import MerchantPrivateCatalog from "../catalog/merchant-private-catalog";
 import MerchantStoreRegistration from "../onboarding/merchant-store-registration";
 import MerchantStoreDirectory from "./merchant-store-directory";
@@ -175,6 +176,7 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
             </>
           ) : section === "more" ? (
             <View style={{ gap: 10 }}>
+              <AccountScreen />
               {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home")
                 .map(item => navigationButton(item))}
             </View>

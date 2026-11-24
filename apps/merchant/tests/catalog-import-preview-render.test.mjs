@@ -35,7 +35,7 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
         if (!(i in states)) states[i] = initial;
         return [states[i], next => { states[i] = typeof next === "function" ? next(states[i]) : next; }];
       },
-      useRef(initial) { const i = refIndex++; return refs[i] ?? (refs[i] = {current:initial}); },
+      useRef(initial) { const i = refIndex++; refs[i] ??= {current:initial}; return refs[i]; },
       useLayoutEffect(fn) { if (!mounted) { mounted = true; cleanup = fn(); } },
     };
     const mocks = {
@@ -89,15 +89,34 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
     const secondRead=select(1);
     await tick();
     ownerReads[1].resolve({});
+    await until(() => ownerReads.length === 3 || states[2] === false);
+    assert.equal(ownerReads.length, 3, "preview must read the verified catalog after parsing");
+    assert.deepEqual(ownerReads[2].options,{limit:50});
+    const ownerPage = (items, nextCursor) => ({actorId:"merchant-a",storeId:"store-a",items,...(nextCursor ? {nextCursor} : {})});
+    const offer = (id,name) => ({id,name,storeId:"store-a",priceYer:"1200",stockUnits:7,published:true});
+    ownerReads[2].resolve(ownerPage(Array.from({length:50},(_,i)=>offer("of-a"+String(i).padStart(2,"0"),"منتج "+i)),"of-a49"));
+    await until(() => ownerReads.length === 4);
+    assert.deepEqual(ownerReads[3].options,{limit:50,cursor:"of-a49"});
+    ownerReads[3].resolve(ownerPage([offer("of-b","قهوة")]));
     await until(() => states[2] === false);
     assert.equal(secondRead(),1);
     assert.ok(JSON.stringify(screen()).includes("قهوة"));
+    assert.ok(JSON.stringify(screen()).includes("اسم موجود في كتالوج المتجر"));
+    assert.ok(JSON.stringify(screen()).includes("لم يُحفظ أي سجل"));
+    assert.ok(JSON.stringify(screen()).includes("1200"));
+    const conflictFilter = nodes(screen()).find(n=>n.props?.accessibilityLabel==="عرض تعارضات المتجر");
+    assert.ok(conflictFilter, "conflict filter must be reachable");
+    conflictFilter.props.onPress();
+    assert.ok(JSON.stringify(screen()).includes("قهوة"));
+    const pendingFilter = nodes(screen()).find(n=>n.props?.accessibilityLabel==="عرض ما يحتاج مراجعة");
+    pendingFilter.props.onPress();
+    assert.ok(JSON.stringify(screen()).includes("لا توجد سجلات مطابقة"));
     button().props.onPress();
     const thirdRead=select(2);
     await tick();
     cleanup();
-    assert.equal(ownerReads[2].signal.aborted,true);
-    ownerReads[2].resolve({});
+    assert.equal(ownerReads[4].signal.aborted,true);
+    ownerReads[4].resolve({});
     await tick();
     assert.equal(thirdRead(),0);
     assert.notEqual(mod.exports.default(scope).key,mod.exports.default({...scope,actorId:"merchant-b"}).key);
@@ -105,9 +124,12 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
     button().props.onPress();
     const nativeRead=select(3,"android");
     await tick();
-    ownerReads[3].resolve({});
+    ownerReads[5].resolve({});
+    await until(() => ownerReads.length === 7);
+    ownerReads[6].resolve(ownerPage([]));
     await until(() => states[2] === false);
     assert.equal(nativeRead(),1);
     assert.ok(JSON.stringify(screen()).includes("قهوة"));
+    assert.ok(JSON.stringify(screen()).includes("يحتاج مراجعة DSH"));
   } finally {rmSync(tmp,{recursive:true,force:true});}
 });
