@@ -59,8 +59,8 @@ test("Identity runtime changes requiring review hold dependent owners, but clien
   const schema = ownerReconcilePlan({...base, changed:["services/identity/database/schema/20_sessions.sql"]});
   assert.deepEqual(schema.eligible, []);
   const client = ownerReconcilePlan({...base, changed:["services/identity/clients/session.ts"]});
-  assert.deepEqual(client.eligible, ["dsh","wlt"]);
-  assert.equal(client.blocked.identity, "UNCOMMITTED_NON_GO");
+  assert.deepEqual(client.eligible, ["dsh","identity","wlt"]);
+  assert.equal(client.blocked.identity, undefined);
   const shared = ownerReconcilePlan({...base, changed:["infra/compose.yaml"]});
   assert.deepEqual(shared.eligible, []);
   assert.equal(shared.blocked.dsh, "SHARED_INPUT_REVIEW_REQUIRED");
@@ -71,4 +71,27 @@ test("committed-only mode cannot promote a dirty Go owner", async () => {
   const plan = ownerReconcilePlan({changed:["services/wlt/backend/cmd/wlt/main.go"], committed:{}, preview:false,captain:true});
   assert.deepEqual(plan.eligible, ["dsh","identity"]);
   assert.equal(plan.blocked.wlt, "PREVIEW_NOT_AUTHORIZED");
+});
+
+test("client-only edits cannot make the Go image stale or admit changed contracts", async () => {
+  const { ownerReconcilePlan, ownerSourceState } = await import("./owner-preview-source.mjs");
+  const changed=["services/identity/clients/persistent-sessions.ts"];
+  const committed={identity:["services/identity/clients/index.ts"]};
+  const plan=ownerReconcilePlan({changed,committed,preview:true,captain:true});
+  assert.equal(plan.blocked.identity,undefined);
+  assert.deepEqual(ownerSourceState("identity",changed,committed.identity),{
+    imageChanges:[], previewChanges:[], clientPending:true, requiresCommittedRefresh:false
+  });
+  const contract="services/identity/contracts/openapi/identity.openapi.yaml";
+  assert.equal(ownerReconcilePlan({changed:[...changed,contract],committed,preview:true,captain:true}).blocked.identity,"UNCOMMITTED_NON_GO");
+  const go="services/identity/backend/cmd/identity/main.go";
+  assert.equal(ownerReconcilePlan({changed,committed:{identity:[go]},preview:false,captain:true}).blocked.identity,"PREVIEW_NOT_AUTHORIZED");
+});
+
+test("committed client-only changes eventually refresh strict provenance without rebuilding for ongoing client edits",async()=>{
+  const {ownerSourceState}=await import("./owner-preview-source.mjs");
+  const clients=["services/identity/clients/persistent-sessions.ts"];
+  assert.equal(ownerSourceState("identity",[],clients).requiresCommittedRefresh,true);
+  assert.equal(ownerSourceState("identity",clients,clients).requiresCommittedRefresh,false);
+  assert.equal(ownerSourceState("identity",clients,[]).requiresCommittedRefresh,false);
 });

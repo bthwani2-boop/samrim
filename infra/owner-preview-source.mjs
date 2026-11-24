@@ -13,6 +13,21 @@ export function isPreviewGoPath(rel) { return goPath.test(rel); }
 function sourceOwner(rel) {
   return owners.find(owner => rel.startsWith("services/" + owner + "/"));
 }
+// Client files are neither copied by the owner Dockerfiles nor present in
+// the Go preview build context. Contracts and all other inputs stay guarded.
+export function isOwnerClientPath(rel) {
+  return /^services\/(?:identity|dsh|wlt)\/clients\//.test(rel);
+}
+export function ownerSourceState(owner, changed, committed) {
+  const prefix="services/"+owner+"/";
+  const local=changed.filter(rel=>rel.startsWith(prefix));
+  return {
+    imageChanges:committed.filter(rel=>!isOwnerClientPath(rel)),
+    previewChanges:local.filter(rel=>!isOwnerClientPath(rel)),
+    clientPending:[...local,...committed].some(isOwnerClientPath),
+    requiresCommittedRefresh:local.length===0 && committed.length>0,
+  };
+}
 
 // The existing preview authority is intentionally Go-only. Partition review
 // holds by owner, and propagate only actual runtime/contract dependency risk.
@@ -27,11 +42,12 @@ export function ownerReconcilePlan({changed, committed, preview, captain}) {
     const prefix = "services/" + owner + "/";
     const local = changed.filter(rel => sourceOwner(rel) === owner);
     const saved = committed[owner] || [];
-    runtimeChanges[owner] = [...local, ...saved].some(rel =>
-      !/^(?:clients\/|package\.json$|tsconfig\.json$|README\.md$)/.test(rel.slice(prefix.length)));
+    const {imageChanges,previewChanges}=ownerSourceState(owner,changed,saved);
+    runtimeChanges[owner] = [...previewChanges, ...imageChanges].some(rel =>
+      !/^(?:package\.json$|tsconfig\.json$|README\.md$)/.test(rel.slice(prefix.length)));
     if (saved.some(rel => rel.startsWith(prefix + "database/"))) blocked[owner] = "SCHEMA_REVIEW_REQUIRED";
-    else if (local.some(rel => !isPreviewGoPath(rel))) blocked[owner] = "UNCOMMITTED_NON_GO";
-    else if (local.length && !preview) blocked[owner] = "PREVIEW_NOT_AUTHORIZED";
+    else if (previewChanges.some(rel => !isPreviewGoPath(rel))) blocked[owner] = "UNCOMMITTED_NON_GO";
+    else if (!preview && (previewChanges.length || (local.length && imageChanges.length))) blocked[owner] = "PREVIEW_NOT_AUTHORIZED";
   }
   // DSH and WLT consume Identity; Captain-enabled Identity consumes DSH.
   // A blocked peer with no runtime input change is not a dependency hold.
@@ -93,7 +109,7 @@ export function captureOwner(root, owner) {
   const prefix="services/"+owner+"/";
   const scope=[prefix+".dockerignore",prefix+"backend",prefix+"database/schema"];
   const changes=dirtyPaths(root,["services/"+owner]);
-  if(changes.some(p=>!isPreviewGoPath(p))) throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
+  if(changes.some(p=>!isPreviewGoPath(p) && !isOwnerClientPath(p))) throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
   const files=[...new Set(gitList(root,["ls-files","--cached","--others","--exclude-standard","-z","--",...scope]))].sort();
   const entries=[];
   for(const p of files){

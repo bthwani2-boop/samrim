@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
-import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
+import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const context = "bthwani-docker";
@@ -174,7 +174,7 @@ function main() {
   const change=currentChangeKey(committed,preview,captain);
   const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain);
   const blocked=change.plan.blocked;
-  const partial=Object.keys(blocked).length>0;
+  let partial=Object.keys(blocked).length>0;
   if(mode==="--apply-captain" && (partial || change.changed.length)) throw new Error("Captain activation requires a fully reviewed committed source");
   const snapshots=new Map();
   const candidates=[];
@@ -184,17 +184,25 @@ function main() {
       console.log(o+" RUNTIME=BLOCKED revision="+old.revision+" reason="+blocked[o]);
       continue;
     }
+    const source=ownerSourceState(o,change.changed,committed[o]);
     const dirty=change.changed.some(p=>p.startsWith("services/"+o+"/"));
-    if(dirty) snapshots.set(o,captureOwner(root,o));
+    if(source.clientPending && dirty) partial=true;
+    if(dirty && old.digest && !preview) {
+      partial=true;
+      console.log(o+" RUNTIME=BLOCKED revision="+old.revision+" reason=PREVIEW_NOT_AUTHORIZED");
+      continue;
+    }
+    if(dirty && (source.previewChanges.length || source.imageChanges.length || old.digest)) snapshots.set(o,captureOwner(root,o));
     const snapshot=snapshots.get(o);
-    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(committed[o].length || old.digest);
+    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(source.imageChanges.length || source.requiresCommittedRefresh || old.digest);
     if(stale)candidates.push(o);
-    console.log(o+" RUNTIME="+(stale?"STALE":snapshot?"PREVIEW_CURRENT":"CURRENT")+" revision="+old.revision+(old.digest?" preview="+old.digest:""));
+    console.log(o+" RUNTIME="+(stale?"STALE":snapshot?"PREVIEW_CURRENT":"CURRENT")+" revision="+old.revision+(old.digest?" preview="+old.digest:"")+(source.clientPending && dirty?" SOURCE=CLIENT_REVIEW_PENDING":""));
   }
   const selected = selectOwners({candidates,activateCaptain:mode==="--apply-captain",currentCaptain:captain});
   console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_OVERLAY="+captain);
   if (!apply || selected.length===0) {
-    if(partial){console.log("RECONCILE_PARTIAL");process.exitCode=3;}
+    if(partial || selected.length){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
+    else console.log("RECONCILE_PASS HEAD="+head);
     return;
   }
   ensureSource();

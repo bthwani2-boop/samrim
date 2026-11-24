@@ -495,3 +495,13 @@ test("native recursive file event reaches Graphify scheduling without a Git comm
     }finally{clearTimeout(timer);clearTimeout(deadline);}
   }finally{watcher?.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+test("reconciliation requires an explicit terminal result and never certifies a partial result",async()=>{
+  const {runtimeAttemptResult}=await import("./sync-lenovo-reconciliation.mjs");
+  const sha="a".repeat(40);
+  assert.equal(runtimeAttemptResult(0,null,"",""),"retry");
+  assert.equal(runtimeAttemptResult(0,null,"RECONCILE_PASS HEAD="+sha+"\n",""),"pass");
+  assert.equal(runtimeAttemptResult(1,null,"RECONCILE_PARTIAL HEAD="+sha+"\n",""),"review");
+  assert.equal(runtimeAttemptResult(0,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PASS HEAD="+sha+"\n",""),"uncertain");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PARTIAL HEAD="+sha+"\n",""),"uncertain");
+});

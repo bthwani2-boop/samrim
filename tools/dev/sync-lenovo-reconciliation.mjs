@@ -67,12 +67,15 @@ function runtimePollDue({enabled, dirty, active, key, last, now, nextAudit}) {
 }
 
 function runtimeAttemptResult(code, signal, stdout, stderr) {
-  if(code===0 && !signal)return "pass";
   if(signal || /ROLLBACK_BLOCKED|ROLLBACK_READBACK_FAILED/.test(stderr))return "uncertain";
   const starts=[...stdout.matchAll(/^OWNER_APPLY_STARTED (.+)\r?$/gm)].map(m=>m[1].trim());
   const verified=[...stdout.matchAll(/^OWNER_APPLY_VERIFIED (.+)\r?$/gm)].map(m=>m[1].trim());
   if(/ROLLBACK_PASS/.test(stderr))return "blocked";
-  return starts.length===verified.length && starts.every((v,i)=>v===verified[i]) ? "retry":"uncertain";
+  if(starts.length!==verified.length || !starts.every((v,i)=>v===verified[i]))return "uncertain";
+  const terminal=[...stdout.matchAll(/^RECONCILE_(PASS|PARTIAL) HEAD=[a-f0-9]{40}\r?$/gm)];
+  if(terminal.length===1 && terminal[0][1]==="PARTIAL")return "review";
+  if(code===0 && terminal.length===1 && terminal[0][1]==="PASS")return "pass";
+  return "retry";
 }
 
 // The watcher schedules the existing Graphify runner; the runner owns all

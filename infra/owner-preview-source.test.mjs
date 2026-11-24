@@ -70,3 +70,16 @@ test("a snapshot cannot materialize path traversal",()=>{
   const entries=[["../outside",Buffer.from("x")]];
   assert.throws(()=>materializeOwner({owner:"dsh",entries,digest:digestEntries(entries)}),/PREVIEW_PATH_INVALID/);
 });
+
+test("preview snapshots omit unrelated client edits but still reject contract changes",t=>{
+  const {dir,write,base}=fixture(t);
+  const before=captureOwner(dir,"dsh");
+  write(base+"clients/customer.ts","export const test = 1;");
+  assert.equal(captureOwner(dir,"dsh").digest,before.digest);
+  write(base+"backend/cmd/dsh/main.go","package main\n// changed\n");
+  const snapshot=captureOwner(dir,"dsh");
+  assert.notEqual(snapshot.digest,before.digest);
+  assert.ok(snapshot.entries.every(([name])=>!name.startsWith("clients/")));
+  write(base+"contracts/openapi/dsh.openapi.yaml","openapi: 3.1.0");
+  assert.throws(()=>captureOwner(dir,"dsh"),/PREVIEW_ONLY_GO_SOURCE_ALLOWED/);
+});

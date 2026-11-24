@@ -502,7 +502,7 @@ function runtimeState() {
   if (!fs.existsSync(runtimeStateFile)) return null;
   const v = JSON.parse(fs.readFileSync(runtimeStateFile, "utf8"));
   if (v.version !== 1 || !/^[a-f0-9]{64}$/.test(v.key) ||
-      !["running","uncertain","blocked","retry","pass"].includes(v.status)) throw new Error("RUNTIME_ATTEMPT_STATE_INVALID");
+      !["running","uncertain","blocked","retry","pass","review"].includes(v.status)) throw new Error("RUNTIME_ATTEMPT_STATE_INVALID");
   return v;
 }
 function pollOwnerRuntime() {
