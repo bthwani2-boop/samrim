@@ -69,6 +69,15 @@ func catalogDraftSnapshot(ctx context.Context, tx *sql.Tx, storeID, offerID stri
 	return item, nil
 }
 
+// Keep the original actor bound to every confirmation, including replays.
+func (s *MerchantStoreRegistrar) confirmCatalogActor(ctx context.Context, token, expectedActor string) error {
+	current, err := s.actor(ctx, token)
+	if err != nil || current != expectedActor {
+		return ErrUnknownResult
+	}
+	return nil
+}
+
 func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 	ctx context.Context, token, storeID string, input MerchantCatalogDraftChange,
 ) (MerchantCatalogDraftResult, error) {
@@ -131,13 +140,13 @@ func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 		offer.DraftVersion = 1
 		offer.ProductActive, offer.VariantSellable, offer.RequiredAttributesValid = false, false, false
 		offer.Published, offer.Available = false, false
-		if _, readErr = s.actor(ctx, token); readErr != nil {
+		if readErr = s.confirmCatalogActor(ctx, token, actorID); readErr != nil {
 			return MerchantCatalogDraftResult{}, ErrUnknownResult
 		}
 		if err = tx.Commit(); err != nil {
 			return MerchantCatalogDraftResult{}, ErrUnknownResult
 		}
-		if _, readErr = s.actor(ctx, token); readErr != nil {
+		if readErr = s.confirmCatalogActor(ctx, token, actorID); readErr != nil {
 			return MerchantCatalogDraftResult{}, ErrUnknownResult
 		}
 		return MerchantCatalogDraftResult{Offer: offer, Replay: true}, nil
@@ -170,13 +179,13 @@ func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 		actorID, input.OperationID, fingerprint, storeID, offerID); err != nil {
 		return MerchantCatalogDraftResult{}, ErrUnknownResult
 	}
-	if _, err = s.actor(ctx, token); err != nil {
+	if err = s.confirmCatalogActor(ctx, token, actorID); err != nil {
 		return MerchantCatalogDraftResult{}, ErrUnknownResult
 	}
 	if err = tx.Commit(); err != nil {
 		return MerchantCatalogDraftResult{}, ErrUnknownResult
 	}
-	if _, err = s.actor(ctx, token); err != nil {
+	if err = s.confirmCatalogActor(ctx, token, actorID); err != nil {
 		return MerchantCatalogDraftResult{}, ErrUnknownResult
 	}
 	return MerchantCatalogDraftResult{Offer: MerchantCatalogOffer{

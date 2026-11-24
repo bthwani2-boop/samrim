@@ -105,13 +105,13 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 		snapshot.RequiredAttributesValid = false
 		snapshot.Published = false
 		snapshot.Available = false
-		if _, readErr = s.actor(ctx, token); readErr != nil {
+		if readErr = s.confirmCatalogActor(ctx, token, actor); readErr != nil {
 			return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 		}
 		if err = tx.Commit(); err != nil {
 			return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 		}
-		if _, readErr = s.actor(ctx, token); readErr != nil {
+		if readErr = s.confirmCatalogActor(ctx, token, actor); readErr != nil {
 			return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 		}
 		return MerchantCatalogDraftEditResult{Offer: snapshot, Replay: true}, nil
@@ -169,13 +169,13 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 		change.ExpectedVersion+1, change.Name, price, change.StockUnits); err != nil {
 		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 	}
-	if _, err = s.actor(ctx, token); err != nil {
+	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
 		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 	}
 	if err = tx.Commit(); err != nil {
 		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 	}
-	if _, err = s.actor(ctx, token); err != nil {
+	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
 		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 	}
 	offer.Name = change.Name

@@ -103,6 +103,26 @@ func (*changingMerchantIdentity) RequireOperatorPermission(context.Context, stri
 	return ErrForbidden
 }
 
+func TestMerchantCatalogWriteConfirmsOriginalActor(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		identity fakeIdentity
+		want     error
+	}{
+		{"same actor", fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, nil},
+		{"changed actor", fakeIdentity{actor: VerifiedActor{Subject: "merchant-b", Role: MerchantRole}}, ErrUnknownResult},
+		{"revoked", fakeIdentity{denied: true}, ErrUnknownResult},
+		{"changed role", fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: "customer"}}, ErrUnknownResult},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &MerchantStoreRegistrar{identity: tc.identity}
+			if err := service.confirmCatalogActor(t.Context(), "synthetic", "merchant-a"); !errors.Is(err, tc.want) {
+				t.Fatalf("actor confirmation: got %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
+
 func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	dsn := os.Getenv("BTHWANI_DSH_TEST_DATABASE_URL")
 	if dsn == "" {
