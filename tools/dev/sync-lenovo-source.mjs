@@ -487,7 +487,7 @@ const runtimeScope = [
   "infra/compose.yaml", "infra/compose.apps.yaml", "infra/compose.identity-verifier.yaml",
   "infra/compose.merchant-development.yaml", "infra/compose.captain-development.yaml",
   "infra/compose.wlt.yaml", "infra/build-dsh-image.ps1", "infra/build-identity-verifier-image.ps1",
-  "infra/build-wlt-image.ps1", "infra/reconcile-owner-runtime.mjs", "infra/verify-isolated-postgres.ps1",
+  "infra/build-wlt-image.ps1", "infra/reconcile-owner-runtime.mjs", "infra/owner-baseline-transition.mjs", "infra/verify-isolated-postgres.ps1",
   "infra/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
   "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
 ];
@@ -551,7 +551,7 @@ function pollOwnerRuntime() {
       persistAt(runtimeStateFile,{version:1,key,status});
       const holds=output.split(/\r?\n/).filter(line=>/^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=[A-Z_:a-z]+$/.test(line));
       for(const hold of holds) logger(hold);
-      for(const proof of output.split(/\r?\n/).filter(line=>/^BASELINE_PROOF_PASS HEAD=[a-f0-9]{40} OWNERS=[a-z,]+ CUTOVER=BLOCKED$/.test(line))) logger(proof);
+      for(const proof of output.split(/\r?\n/).filter(line=>/^BASELINE_PROOF_PASS HEAD=[a-f0-9]{40} OWNERS=[a-z,]+ CUTOVER=ELIGIBLE_IF_COMPATIBLE$/.test(line))) logger(proof);
       runtimeLogOnce("RUNTIME_RECONCILE_"+status.toUpperCase()+" key="+key.slice(0,12));
     } catch {
       runtimeLogOnce("RUNTIME_UPDATE_BLOCKED attempt state could not be persisted");

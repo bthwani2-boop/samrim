@@ -78,7 +78,7 @@ function runtimeAttemptResult(code, signal, stdout, stderr) {
   if(/ROLLBACK_PASS/.test(stderr))return "blocked";
   if(starts.length!==verified.length || !starts.every((v,i)=>v===verified[i]))return "uncertain";
   const terminal=[...stdout.matchAll(/^RECONCILE_(PASS|PARTIAL) HEAD=[a-f0-9]{40}\r?$/gm)];
-  if(terminal.length===1 && terminal[0][1]==="PARTIAL")return "review";
+  if(terminal.length===1 && terminal[0][1]==="PARTIAL")return /BASELINE_PROOF_FAIL/.test(stderr)?"retry":"review";
   if(code===0 && terminal.length===1 && terminal[0][1]==="PASS")return "pass";
   return "retry";
 }

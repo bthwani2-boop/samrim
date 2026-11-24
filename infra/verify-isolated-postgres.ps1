@@ -282,6 +282,64 @@ THEN 'PASS' ELSE 'FAIL' END;
   $moneyReadback = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries WHERE actor_id='$testCustomer'" | Out-String).Trim()
   if ($LASTEXITCODE -ne 0 -or $moneyReadback -cne '4:0') { throw 'WLT double-entry balance or idempotency readback failed' }
   Write-Output 'PG_FRESH_WLT_BASELINE=PASS schema=3 sandbox=2 privilege-isolation=yes posting-replay=yes reversal-replay=yes entries=4 net=0'
+  # Execute the exact transaction builder consumed by the owner reconciler,
+  # against only the disposable container. No live database is involved.
+  function Invoke-BaselineTransition([string]$Owner,[string]$Database,[string]$Schema,[string]$Archive,[bool]$ExpectPass=$true) {
+    $transition = & node (Join-Path $root 'infra/owner-baseline-transition.mjs') '--fixture-sql' $Owner $Schema $Archive
+    if ($LASTEXITCODE -ne 0 -or !$transition) { throw 'Cannot generate reviewed owner transition' }
+    $result = ($transition -join [Environment]::NewLine) | & docker --context $DockerContext exec -i $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -f - 2>&1
+    $ok = $LASTEXITCODE -eq 0
+    if ($ExpectPass) {
+      if (!$ok -or ($result | Out-String).Trim() -cne 'OWNER_BASELINE_TRANSITION_PASS') { throw ('Disposable owner transition failed: '+($result | Out-String)) }
+    } elseif ($ok) { throw 'Incompatible or wrong-database transition unexpectedly committed' }
+  }
+  # Wrong database and incompatible retained columns must leave the source
+  # exactly as it was. The temporary change is exclusively in our fixture.
+  Invoke-BaselineTransition 'dsh' $db $schema 'bthwani_recovery_dsh_000000000001' $false
+  $null = Invoke-ProofSql $dshDb "ALTER TABLE $schema.service_cities ADD COLUMN fixture_incompatible text;"
+  Invoke-BaselineTransition 'dsh' $dshDb $schema 'bthwani_recovery_dsh_000000000002' $false
+  $rollback = Invoke-ProofSql $dshDb "SELECT CASE WHEN to_regnamespace('bthwani_recovery_dsh_000000000002') IS NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='$schema' AND table_name='service_cities' AND column_name='fixture_incompatible') AND (SELECT count(*) FROM $schema.service_cities WHERE id='preserved-city')=1 AND has_schema_privilege('bthwani_dsh_runtime','$schema','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($rollback -cne 'PASS') { throw 'DSH incompatible transition did not roll back' }
+  $null = Invoke-ProofSql $dshDb "ALTER TABLE $schema.service_cities DROP COLUMN fixture_incompatible; DROP TABLE $schema.customer_addresses;"
+  Invoke-BaselineTransition 'dsh' $dshDb $schema 'bthwani_recovery_dsh_000000000003'
+  $proof = Invoke-ProofSql $dshDb "SELECT CASE WHEN (SELECT count(*) FROM $schema.service_cities WHERE id='preserved-city')=1 AND (SELECT revision FROM $schema.public_revision WHERE singleton)=7 AND to_regclass('$schema.customer_addresses') IS NOT NULL AND (SELECT count(*) FROM $schema.customer_addresses)=0 AND has_table_privilege('bthwani_dsh_runtime','$schema.customer_addresses','INSERT') AND NOT has_schema_privilege('bthwani_dsh_runtime','bthwani_recovery_dsh_000000000003','USAGE') AND (SELECT count(*) FROM bthwani_recovery_dsh_000000000003.service_cities WHERE id='preserved-city')=1 THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'DSH additive baseline transition readback failed' }
+  Write-Output 'PG_BASELINE_TRANSITION_DSH=PASS additive-table data-parity role-isolation incompatible-rollback wrong-database-denied'
+
+  $identityDb='bthwani_identity_dev'
+  $null = Invoke-ProofSql 'postgres' 'CREATE ROLE bthwani_identity_owner NOLOGIN NOINHERIT; CREATE ROLE bthwani_identity_runtime LOGIN NOINHERIT;'
+  $null = & docker --context $DockerContext exec $containerId createdb -U $user -O bthwani_identity_owner $identityDb
+  if ($LASTEXITCODE -ne 0) { throw 'Identity transition fixture database failed' }
+  $null = Invoke-ProofSql 'postgres' "REVOKE ALL ON DATABASE $identityDb FROM PUBLIC; GRANT CONNECT ON DATABASE $identityDb TO bthwani_identity_runtime;"
+  $null = Invoke-ProofSql $identityDb 'REVOKE ALL ON SCHEMA public FROM PUBLIC;'
+  foreach ($file in $identityFiles) {
+    $null = Invoke-ProofSql $identityDb ("SET ROLE bthwani_identity_owner; " + [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__',$identitySchema))
+  }
+  $null = Invoke-ProofSql $identityDb @"
+INSERT INTO $identitySchema.actors(id,status) VALUES ('fixture-session-actor','ACTIVE');
+INSERT INTO $identitySchema.actor_roles(actor_id,role,status) VALUES ('fixture-session-actor','customer','ACTIVE');
+INSERT INTO $identitySchema.auth_sessions(token_digest,actor_id,role,actor_version,role_version,issued_at,expires_at)
+VALUES (decode(repeat('ab',32),'hex'),'fixture-session-actor','customer',1,1,now(),now()+interval '1 hour');
+INSERT INTO $identitySchema.auth_session_families(id,first_access_digest,current_access_digest,actor_id,role,actor_version,role_version,idle_expires_at,absolute_expires_at)
+VALUES ('00000000-0000-4000-8000-000000000001',decode(repeat('ab',32),'hex'),decode(repeat('ab',32),'hex'),'fixture-session-actor','customer',1,1,now()+interval '1 hour',now()+interval '2 hours');
+INSERT INTO $identitySchema.auth_refresh_tokens(token_digest,family_id) VALUES (decode(repeat('cd',32),'hex'),'00000000-0000-4000-8000-000000000001');
+GRANT USAGE ON SCHEMA $identitySchema TO bthwani_identity_runtime;
+GRANT SELECT ON $identitySchema.actors,$identitySchema.actor_roles,$identitySchema.auth_sessions,$identitySchema.auth_session_families,$identitySchema.auth_refresh_tokens TO bthwani_identity_runtime;
+GRANT UPDATE(revoked_at) ON $identitySchema.auth_sessions TO bthwani_identity_runtime;
+"@
+  Invoke-BaselineTransition 'identity' $identityDb $identitySchema 'bthwani_recovery_identity_000000000001'
+  $proof = Invoke-ProofSql $identityDb "SELECT CASE WHEN (SELECT count(*) FROM $identitySchema.auth_sessions WHERE token_digest=decode(repeat('ab',32),'hex'))=1 AND (SELECT count(*) FROM $identitySchema.auth_refresh_tokens WHERE token_digest=decode(repeat('cd',32),'hex'))=1 AND (SELECT count(*) FROM $identitySchema.auth_session_families)=1 AND has_column_privilege('bthwani_identity_runtime','$identitySchema.auth_sessions','revoked_at','UPDATE') AND NOT has_table_privilege('bthwani_identity_runtime','$identitySchema.auth_sessions','UPDATE') AND NOT has_table_privilege('bthwani_identity_runtime','$identitySchema.auth_sessions','DELETE') AND NOT has_schema_privilege('bthwani_identity_runtime','bthwani_recovery_identity_000000000001','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'Identity baseline transition session/ACL readback failed' }
+  Write-Output 'PG_BASELINE_TRANSITION_IDENTITY=PASS sessions refresh-families column-acl archived-scope-denied'
+
+  # The live WLT sandbox role is intentionally NOLOGIN. Match that boundary
+  # after the preceding fixture-only posting/reversal tests have completed.
+  $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_sandbox NOLOGIN; REVOKE ALL ON DATABASE bthwani_wlt_test FROM PUBLIC; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader;'
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000001'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND (SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id='$testCustomer')=0 AND NOT has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT') AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE') AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000001','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT baseline transition ledger or reader boundary failed' }
+  Write-Output 'PG_BASELINE_TRANSITION_WLT=PASS immutable-ledger reversal-parity reader-denied net=0'
+
   Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'
 } finally {
   if ($containerId -match '^[a-f0-9]{64}$') {

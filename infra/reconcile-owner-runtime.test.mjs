@@ -103,7 +103,7 @@ test("fresh baseline preparation is confined to explicit isolated apply with com
   for(const patch of [{apply:false},{prepare:false},{dirtyInputs:["services/dsh/database/schema/00_marketplace.sql"]},{blocked:{identity:"UNCOMMITTED_NON_GO"}}]) {
     assert.deepEqual(baselineProofOwners({...base,...patch}),[]);
   }
-  const proof=["PG_FRESH_DSH_BASELINE=PASS count=8","PG_READER_ACCESS=PASS","PG_RESTORE_READBACK=PASS","PG_DSH_DEDICATED_RUNTIME=PASS","PG_FRESH_IDENTITY_BASELINE=PASS","PG_FRESH_WLT_BASELINE=PASS","PG_ISOLATION=PASS"].join("\n");
+  const proof=["PG_FRESH_DSH_BASELINE=PASS count=8","PG_READER_ACCESS=PASS","PG_RESTORE_READBACK=PASS","PG_DSH_DEDICATED_RUNTIME=PASS","PG_FRESH_IDENTITY_BASELINE=PASS","PG_FRESH_WLT_BASELINE=PASS","PG_BASELINE_TRANSITION_DSH=PASS","PG_BASELINE_TRANSITION_IDENTITY=PASS","PG_BASELINE_TRANSITION_WLT=PASS","PG_ISOLATION=PASS"].join("\n");
   assert.doesNotThrow(()=>verifyBaselineProofOutput(proof));
   assert.throws(()=>verifyBaselineProofOutput(proof+"\nPG_ISOLATION=FAIL"),/BASELINE_PROOF_INCOMPLETE/);
   assert.throws(()=>verifyBaselineProofOutput(proof.replace("PG_RESTORE_READBACK=PASS","PG_RESTORE_READBACK=FAIL")),/BASELINE_PROOF_INCOMPLETE/);
@@ -165,4 +165,28 @@ test("Identity schema normalization tolerates only known redundant CHECK groupin
   assert.equal(normalizeIdentitySchemaDump(original),normalizeIdentitySchemaDump(restored));
   assert.notEqual(normalizeIdentitySchemaDump(original.replace(">= 10",">= 9")),normalizeIdentitySchemaDump(restored));
   assert.notEqual(normalizeIdentitySchemaDump(original.replace("AND (reason", "OR (reason")),normalizeIdentitySchemaDump(restored));
+});
+
+test("only a current successful committed baseline proof admits canonical schema changes", async()=>{
+  const {ownerReconcilePlan}=await import("./owner-preview-source.mjs");
+  const base={changed:[],committed:{dsh:["services/dsh/database/schema/45_customer_addresses.sql"]},preview:true,captain:true};
+  assert.equal(ownerReconcilePlan(base).blocked.dsh,"SCHEMA_REVIEW_REQUIRED");
+  assert.deepEqual(ownerReconcilePlan({...base,schemaReady:["dsh"]}).eligible,["dsh","identity","wlt"]);
+  assert.equal(ownerReconcilePlan({...base,schemaReady:["dsh"],changed:["services/dsh/backend/cmd/dsh/main.go"]}).blocked.dsh,"SCHEMA_REVIEW_REQUIRED");
+  assert.equal(ownerReconcilePlan({...base,schemaReady:["dsh"],committed:{dsh:["services/dsh/database/migrations/001_bad.sql"]}}).blocked.dsh,"SCHEMA_REVIEW_REQUIRED");
+  assert.equal(ownerReconcilePlan({...base,schemaReady:["wlt"]}).blocked.dsh,"SCHEMA_REVIEW_REQUIRED");
+});
+test("baseline transition is owner-local, transactional and never disables triggers",async()=>{
+  const {buildOwnerBaselineTransition,transitionScope}=await import("./owner-baseline-transition.mjs");
+  assert.throws(()=>transitionScope("dsh","identity_test_actor","bthwani_recovery_dsh_abcdef123456"),/Invalid/);
+  assert.throws(()=>transitionScope("wlt","wlt","public"),/Invalid/);
+  const sql=buildOwnerBaselineTransition("dsh","dsh_test_agent01","bthwani_recovery_dsh_abcdef123456");
+  assert.match(sql,/^BEGIN;/);
+  assert.match(sql,/ALTER SCHEMA dsh_test_agent01 RENAME TO bthwani_recovery_dsh_abcdef123456/);
+  assert.match(sql,/EXCEPT ALL/);
+  assert.match(sql,/OVERRIDING SYSTEM VALUE/);
+  assert.match(sql,/REVOKE ALL ON SCHEMA bthwani_recovery_dsh_abcdef123456/);
+  assert.doesNotMatch(sql,/DISABLE TRIGGER|session_replication_role|DROP SCHEMA/);
+  assert.match(sql,/COMMIT;\nSELECT 'OWNER_BASELINE_TRANSITION_PASS';$/);
+  assert.throws(()=>buildOwnerBaselineTransition("dsh","dsh_test_agent01","bthwani_recovery_dsh_abcdef123456",["SELECT '__SCHEMA__'; $bthwani_baseline$"]),/Reserved/);
 });

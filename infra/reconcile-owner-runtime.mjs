@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Isolated development owner reconciliation; no SQL, secret output or volume mutations.
+// Isolated development owner reconciliation; SQL transitions use one verified owner-local transaction. No credential output or volume mutations.
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, lstatSync, appendFileSync } from "node:fs";
+import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
 import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -108,7 +109,7 @@ export function sourceIdentity(labels, owner) {
   return {revision:a||b,digest:null};
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml",".go-version"];
+const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","infra/owner-baseline-transition.mjs","infra/reconcile-owner-runtime.mjs","infra/verify-isolated-postgres.ps1",".go-version"];
 function currentChangeKey(committed, preview, captain) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain});
@@ -140,13 +141,13 @@ export function baselineProofOwners({apply,prepare,blocked,dirtyInputs}) {
   return Object.keys(owners).filter(o=>blocked[o]==="SCHEMA_REVIEW_REQUIRED");
 }
 export function verifyBaselineProofOutput(output) {
-  const expected=["PG_FRESH_DSH_BASELINE","PG_READER_ACCESS","PG_RESTORE_READBACK","PG_DSH_DEDICATED_RUNTIME","PG_FRESH_IDENTITY_BASELINE","PG_FRESH_WLT_BASELINE","PG_ISOLATION"];
+  const expected=["PG_FRESH_DSH_BASELINE","PG_READER_ACCESS","PG_RESTORE_READBACK","PG_DSH_DEDICATED_RUNTIME","PG_FRESH_IDENTITY_BASELINE","PG_FRESH_WLT_BASELINE","PG_BASELINE_TRANSITION_DSH","PG_BASELINE_TRANSITION_IDENTITY","PG_BASELINE_TRANSITION_WLT","PG_ISOLATION"];
   for(const name of expected) {
     const evidence=output.split(/\r?\n/).filter(line=>line.startsWith(name+"="));
     if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
   }
 }
-const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","infra/verify-isolated-postgres.ps1","infra/compose.yaml"];
+const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","infra/verify-isolated-postgres.ps1","infra/owner-baseline-transition.mjs","infra/compose.yaml"];
 // One-time additive preparation: the old owner remains the writer until a
 // separately verified handoff. No retained schema, role, service or volume is
 // modified. Existing target names fail closed rather than being overwritten.
@@ -485,6 +486,74 @@ function relocateIdentity(state,env,head,files,resume=false) {
   }
 }
 
+function rebaseAndApply(owner,state,env,head,files,tag,targetId,ensureSource) {
+  const old=state[owner], live=asEnv(old.Config.Env);
+  const schema=owner==="dsh"?live.DSH_DB_SCHEMA:owner==="identity"?live.IDENTITY_DB_SCHEMA:"wlt";
+  const archive="bthwani_recovery_"+owner+"_"+randomBytes(6).toString("hex");
+  const scope=transitionScope(owner,schema,archive);
+  const dsn=owner==="identity"?new URL(live.IDENTITY_TEST_DATABASE_URL):owner==="wlt"?new URL(live.WLT_TEST_DATABASE_URL):null;
+  const actualDb=dsn?dsn.pathname.slice(1):live.REF_POSTGRES_DB;
+  const actualRole=dsn?dsn.username:live.REF_POSTGRES_USER;
+  if(actualDb!==scope.database||actualRole!==scope.runtime|| (dsn&&dsn.hostname!=="postgres") || (!dsn&&live.DSH_DB_HOST!=="postgres"))
+    throw new Error("Dedicated owner database not verified");
+  const pg=project+"-postgres-1";
+  if(docker(["inspect","--format",'{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.bthwani.environment"}}|{{.State.Health.Status}}',pg])!==project+"|refoundation|healthy")
+    throw new Error("PostgreSQL owner not verified");
+  const sql=(statement,timeout=30000)=>docker(["exec","-i",pg,"psql","-X","-qAt","-v","ON_ERROR_STOP=1","-U","bthwani_refoundation_admin","-d",scope.database,"-f","-"],{},timeout,statement+"\n");
+  const before=sql("BEGIN READ ONLY; SELECT oid FROM pg_namespace WHERE nspname='"+schema+"' AND pg_get_userbyid(nspowner)='"+scope.owner+"'; COMMIT;");
+  if(!/^[0-9]+$/.test(before))throw new Error("Owner namespace not verified");
+  const transaction=buildOwnerBaselineTransition(owner,schema,archive);
+  const candidateEnv={...env,[owners[owner].tag]:tag};
+  const groupNames=owner==="wlt"?["wlt"]:["dsh","identity"];
+  assertSameHashes(currentHashes(state,groupNames),configHashes(files,groupNames,env));
+  const hashes=configHashes(files,groupNames,candidateEnv);
+  if(groupNames.some(o=>o!==owner&&hashes[o]!==currentHashes(state,[o])[o]))throw new Error("Schema transition changes peer configuration");
+  ensureSource();
+  if(Object.keys(owners).some(o=>inspect(o).Id!==state[o].Id)||imageRecord(owners[owner].image+":"+tag).Id!==targetId||imageRecord(old.Config.Image).Id!==old.Image)
+    throw new Error("Concurrent owner or image change");
+  let stopped=false,committed=false,applyStarted=false;
+  try {
+    console.log("OWNER_APPLY_STARTED "+owner);
+    docker(["stop","--time","20",old.Id],{},45000); stopped=true;
+    if(inspect(owner,false).State.Running)throw new Error("Legacy writer still active");
+    ensureSource();
+    if(sql(transaction,120000)!=="OWNER_BASELINE_TRANSITION_PASS")throw new Error("Owner baseline transaction result not proven");
+    committed=true;
+    const readback=sql("BEGIN READ ONLY; SELECT (SELECT oid FROM pg_namespace WHERE nspname='"+archive+"')::text||'|'||(SELECT oid FROM pg_namespace WHERE nspname='"+schema+"')::text||'|'||has_schema_privilege('"+scope.runtime+"','"+archive+"','USAGE')::text; COMMIT;");
+    if(!new RegExp("^"+before+"\\|[0-9]+\\|false$").test(readback)||readback.split("|")[1]===before)
+      throw new Error("Committed owner namespace readback mismatch");
+    console.log("OWNER_SCHEMA_PASS "+owner+" HEAD="+head+" RECOVERY="+archive);
+    // Once SQL commits, the old image must not serve the new schema. Promote
+    // the tested immutable candidate even if a later HEAD arrives; the final
+    // source check will schedule its successor. Never roll back image-only.
+    if(imageRecord(owners[owner].image+":"+tag).Id!==targetId)throw new Error("Candidate image tag changed");
+    applyStarted=true;
+    docker([...composeArgs(files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",owner],candidateEnv,95000);
+    const now=inspect(owner);
+    if(now.Image!==targetId||ownerRevision({[owner]:now},owner).revision!==head||now.Config.Labels["com.docker.compose.config-hash"]!==hashes[owner]||Object.keys(owners).some(o=>o!==owner&&inspect(o).Id!==state[o].Id))
+      throw new Error("Owner schema/image readback mismatch");
+    if(owner!=="wlt"){
+      const args=owner==="dsh"?["/usr/local/bin/dsh","-mode=verify-development-db"]:["/usr/local/bin/identity","verify-development-db"];
+      if(!docker(["exec",now.Id,...args],{},15000).includes(owner.toUpperCase()+"_DEVELOPMENT_DATABASE_PASS"))throw new Error("Serving owner principal not verified");
+    }
+    state[owner]=now; env[owners[owner].tag]=tag;
+    console.log("OWNER_RUNTIME_PASS "+owner+" "+now.Id);
+    console.log("OWNER_APPLY_VERIFIED "+owner);
+  } catch(e) {
+    if(e.code==="ETIMEDOUT"||committed||applyStarted)throw new Error("ROLLBACK_BLOCKED owner schema or runtime transition requires durable readback: "+owner);
+    if(stopped){
+      // The SQL transaction must be proven rolled back by the original OID,
+      // not merely a failed psql status, before restoring the old writer.
+      const proof=sql("BEGIN READ ONLY; SELECT coalesce((SELECT oid::text FROM pg_namespace WHERE nspname='"+schema+"'),'missing')||'|'||coalesce((SELECT oid::text FROM pg_namespace WHERE nspname='"+archive+"'),'missing'); COMMIT;");
+      if(proof!==before+"|missing"||inspect(owner,false).Id!==old.Id||inspect(owner,false).State.Running)throw new Error("ROLLBACK_BLOCKED owner database state uncertain: "+owner);
+      docker(["start",old.Id],{},45000);
+      if(!inspect(owner,false).State.Running || inspect(owner,false).Id!==old.Id)throw new Error("ROLLBACK_READBACK_FAILED "+owner);
+      throw new Error("ROLLBACK_PASS "+owner+" incompatible owner baseline; original writer restored");
+    }
+    throw new Error("ROLLBACK_BLOCKED owner stop outcome not proven: "+owner);
+  }
+}
+
 function main() {
   const [mode,...options] = process.argv.slice(2);
   const cutover=mode==="--cutover-dsh-database";
@@ -539,7 +608,27 @@ function main() {
   const preview=mode==="--apply-preview" || !apply;
   const change=currentChangeKey(committed,preview,captain);
   const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain);
-  const blocked=change.plan.blocked;
+  let blocked=change.plan.blocked;
+  const schemaReady=[];
+  const proofOwners=baselineProofOwners({apply,prepare,blocked,dirtyInputs:dirtyPaths(root,baselineProofScope)});
+  if(proofOwners.length){
+    ensureSource();
+    console.log("BASELINE_PROOF_STARTED HEAD="+head+" OWNERS="+proofOwners.join(","));
+    try {
+      const proof=run("pwsh",["-NoProfile","-File","infra/verify-isolated-postgres.ps1","-DockerContext",context,"-NoPull"],{},360000);
+      verifyBaselineProofOutput(proof);
+      ensureSource();
+      if(dirtyPaths(root,baselineProofScope).length)throw new Error("Baseline proof inputs changed during rehearsal");
+      schemaReady.push(...proofOwners);
+      blocked=ownerReconcilePlan({changed:change.changed,committed,preview,captain,schemaReady}).blocked;
+      console.log("BASELINE_PROOF_PASS HEAD="+head+" OWNERS="+proofOwners.join(",")+" CUTOVER=ELIGIBLE_IF_COMPATIBLE");
+    } catch(e) {
+      ensureSource();
+      console.error("BASELINE_PROOF_FAIL "+e.message);
+      // A failed disposable rehearsal does not authorize SQL; independently
+      // eligible image-only owners can still advance.
+    }
+  }
   if(new URL(identityEnv.IDENTITY_TEST_DATABASE_URL).pathname!=="/bthwani_identity_dev" && committed.identity.length) {
     blocked.identity="OWNER_DATABASE_HANDOFF_REQUIRED";
     if(!blocked.dsh && (change.changed.some(p=>p.startsWith("services/dsh/"))||committed.dsh.length))blocked.dsh="PEER_REVIEW_REQUIRED:identity";
@@ -547,18 +636,6 @@ function main() {
   }
   let partial=Object.keys(blocked).length>0;
   if(mode==="--apply-captain" && (partial || change.changed.length)) throw new Error("Captain activation requires a fully reviewed committed source");
-  const prepareFreshBaseline=()=>{
-    if(!apply || !prepare) return;
-    const proofOwners=baselineProofOwners({apply,prepare,blocked,dirtyInputs:dirtyPaths(root,baselineProofScope)});
-    if(!proofOwners.length)return;
-    ensureSource();
-    console.log("BASELINE_PROOF_STARTED HEAD="+head+" OWNERS="+proofOwners.join(","));
-    const proof=run("pwsh",["-NoProfile","-File","infra/verify-isolated-postgres.ps1","-DockerContext",context,"-NoPull"],{},360000);
-    verifyBaselineProofOutput(proof);
-    ensureSource();
-    if(dirtyPaths(root,baselineProofScope).length)throw new Error("Baseline proof inputs changed during rehearsal");
-    console.log("BASELINE_PROOF_PASS HEAD="+head+" OWNERS="+proofOwners.join(",")+" CUTOVER=BLOCKED");
-  };
   const snapshots=new Map();
   const candidates=[];
   for(const o of Object.keys(owners)){
@@ -584,7 +661,6 @@ function main() {
   const selected = selectOwners({candidates,activateCaptain:mode==="--apply-captain",currentCaptain:captain});
   console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_OVERLAY="+captain);
   if (!apply || selected.length===0) {
-    prepareFreshBaseline();
     if(partial || selected.length){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
     else console.log("RECONCILE_PASS HEAD="+head);
     return;
@@ -593,6 +669,13 @@ function main() {
   const tags={};
   const targetIds={};
   const nextEnv = {...env};
+  if(selected.some(o=>committed[o].some(rel=>rel.includes("/contracts/openapi/")||rel.includes("/database/")))){
+    ensureSource();
+    run("node",["tools/dev/check-openapi.mjs","identity","dsh","wlt"],{},120000);
+    run("node",["tools/dev/generate-openapi-operations.mjs","--check"],{},120000);
+    ensureSource();
+    console.log("OWNER_CONTRACTS_PASS");
+  }
   for (const o of selected) {
     // Fresh local unit tests, with the pinned toolchain. No migration or DB writes.
     ensureSource();
@@ -640,8 +723,15 @@ function main() {
     const now=inspect(o);
     if(now.Id!==state[o].Id || now.Image!==state[o].Image || now.Config.Labels["com.docker.compose.config-hash"]!==state[o].Config.Labels["com.docker.compose.config-hash"]) throw new Error("Concurrent owner change: "+o);
   }
+  // Owner databases are independent. Rebase each selected schema owner
+  // with its own transaction before ordinary image-only reconciliation.
+  const schemaSelected=selected.filter(o=>schemaReady.includes(o));
+  for(const o of ["identity","dsh","wlt"].filter(o=>schemaSelected.includes(o))){
+    ensureSource();
+    rebaseAndApply(o,state,env,head,o==="wlt"?wltFiles:activeAppFiles,tags[o],targetIds[o],ensureSource);
+  }
   for (const group of groups) {
-    const names=group.names.filter(o=>selected.includes(o));
+    const names=group.names.filter(o=>selected.includes(o)&&!schemaSelected.includes(o));
     if(!names.length) continue;
     const newFiles=activate && group.names.includes("dsh") ? [...group.files,captainFile]:group.files;
     ensureSource();
@@ -677,7 +767,6 @@ function main() {
   }
   ensureSource();
   for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("RUNTIME_STALE preview input advanced: "+o);
-  prepareFreshBaseline();
   if(partial){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
   else console.log("RECONCILE_PASS HEAD="+head);
 }

@@ -339,12 +339,29 @@ For a committed owner schema change, the existing source watcher requests one
 isolated baseline rehearsal per new runtime input key through the unified
 lifecycle mutex. The explicit equivalent is
 `pnpm dev docker reconcile -Apply -PrepareBaseline`.
-No image pull, retained database write or schema cutover is part of this rehearsal.
-`BASELINE_PROOF_PASS HEAD=... OWNERS=... CUTOVER=BLOCKED` proves fresh
-schema/restore rehearsal only. A changed schema continues to hold the affected
-runtime and its dependent peers until a separately verified safe cutover; the
-normal read-only check never runs the rehearsal. Independent eligible owners
-continue through the existing image reconciliation path.
+The rehearsal never writes to a retained database. It proves a fresh
+baseline, compatible data transfer, preserved privileges and rollback on
+incompatible input. Only a successful proof for the current clean source
+admits a canonical owner schema change for transition.
+
+The reconciler then builds and verifies the affected immutable owner image,
+stops the exclusive writer, and executes the owner-local transition in one
+PostgreSQL transaction. The previous namespace is retained under a unique
+`bthwani_recovery_<owner>_<id>` name with runtime access denied. A fresh
+canonical namespace is created, retained rows and sequence state are copied
+with constraints and triggers enabled, and exact data/privilege parity is
+checked before commit. No credentials, shared database, Docker volumes or
+financial history are reset. An incompatible transition rolls back and the
+original writer is restored only after the original namespace identity is
+verified. If commit or replacement is uncertain, automatic writes stop:
+an old image must never serve a newly committed schema. Recovery namespaces
+are not automatically pruned.
+
+`BASELINE_PROOF_PASS` is rehearsal evidence, not live acceptance.
+`OWNER_SCHEMA_PASS`, `OWNER_RUNTIME_PASS` and the terminal reconciliation
+result identify a completed live transition. The normal read-only check
+never runs the rehearsal or changes SQL. Independently eligible owners
+continue when rehearsal fails.
 
 The SQL proof intentionally creates a **new disposable container** with a
 unique `bthwani-agent01-pgproof-*` name and the same pinned PostGIS image as
@@ -357,11 +374,7 @@ reader must be able to read the revision and must receive SQLSTATE 42501 on
 update in both databases. The Go quality workflow runs this rehearsal with
 its local Docker context. The script stops only its own verified container.
 
-**Scope boundary:** This proves an *empty isolated fresh installation*,
-synthetic least-privilege example and local restore, not migration of existing
-protected DSH data, privileges of the shared refoundation database, an
-already-running service version, service-to-service authentication, or any
-financial ledger. Do not take the successful scratch proof as authority to
+**Scope boundary:** This proves isolated fresh installation, compatible synthetic data transfer for all three owners, least-privilege access, rollback and WLT ledger conservation. It does not prove migration of protected real data, a live schema transition, service-to-service authentication, or production acceptance. Do not take the successful scratch proof as authority to
 change shared database roles, alter protected volumes, restart active services
 or run real schema upgrades.
 
@@ -378,11 +391,10 @@ read-only container root filesystem, all Linux capabilities dropped, no new
 privileges and loopback-only published port. It has no application volume mounts,
 and its PostgreSQL dependency is on the project's internal bridge network.
 
-**Known limitation:** The current DSH discovery owner uses the private
-development database administrator credentials via `REF_POSTGRES_*`. This is
-only acceptable for tightly isolated synthetic development, **not** release.
-Before any protected endpoint or non-synthetic deployment, create and verify
-owner-scoped DSH runtime database grants (separate migration credentials),
+**Deployment boundary:** The isolated DSH runtime uses its dedicated
+`bthwani_dsh_runtime` login and separate non-login owner. Before any protected
+endpoint or non-synthetic deployment, independently verify production grants
+and the retained-data migration/recovery epoch,
 real Identity authorization, WLT integration and negative/recovery tests.
 Do not change DB grants or handle real money through this setup.
 

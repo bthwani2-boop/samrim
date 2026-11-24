@@ -31,7 +31,9 @@ export function ownerSourceState(owner, changed, committed) {
 
 // The existing preview authority is intentionally Go-only. Partition review
 // holds by owner, and propagate only actual runtime/contract dependency risk.
-export function ownerReconcilePlan({changed, committed, preview, captain}) {
+// A successful current-SHA disposable proof is necessary, never sufficient
+// on its own: the runtime transaction still checks exact retained data.
+export function ownerReconcilePlan({changed, committed, preview, captain, schemaReady=[]}) {
   const blocked = {};
   const runtimeChanges = {};
   const order = ["dsh", "identity", "wlt"];
@@ -45,7 +47,10 @@ export function ownerReconcilePlan({changed, committed, preview, captain}) {
     const {imageChanges,previewChanges}=ownerSourceState(owner,changed,saved);
     runtimeChanges[owner] = [...previewChanges, ...imageChanges].some(rel =>
       !/^(?:package\.json$|tsconfig\.json$|README\.md$)/.test(rel.slice(prefix.length)));
-    if (saved.some(rel => rel.startsWith(prefix + "database/"))) blocked[owner] = "SCHEMA_REVIEW_REQUIRED";
+    const schemaChanges=saved.filter(rel=>rel.startsWith(prefix+"database/"));
+    const schemaAdmitted=schemaReady.includes(owner) && local.length===0 &&
+      schemaChanges.every(rel=>new RegExp("^services/"+owner+"/database/"+(owner==="wlt"?"(?:schema|sandbox)":"schema")+"/[0-9]{2}_[a-z0-9_]+\\.sql$").test(rel));
+    if (schemaChanges.length && !schemaAdmitted) blocked[owner] = "SCHEMA_REVIEW_REQUIRED";
     else if (previewChanges.some(rel => !isPreviewGoPath(rel))) blocked[owner] = "UNCOMMITTED_NON_GO";
     else if (!preview && (previewChanges.length || (local.length && imageChanges.length))) blocked[owner] = "PREVIEW_NOT_AUTHORIZED";
   }

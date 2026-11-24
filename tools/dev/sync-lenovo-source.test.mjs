@@ -554,6 +554,8 @@ test("reconciliation requires an explicit terminal result and never certifies a 
   assert.equal(runtimeAttemptResult(0,null,"",""),"retry");
   assert.equal(runtimeAttemptResult(0,null,"RECONCILE_PASS HEAD="+sha+"\n",""),"pass");
   assert.equal(runtimeAttemptResult(1,null,"RECONCILE_PARTIAL HEAD="+sha+"\n",""),"review");
+  assert.equal(runtimeAttemptResult(3,null,"RECONCILE_PARTIAL HEAD="+sha+"\n","BASELINE_PROOF_FAIL rehearsal unavailable"),"retry");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_BLOCKED owner schema or runtime transition requires durable readback"),"uncertain");
   assert.equal(runtimeAttemptResult(0,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PASS HEAD="+sha+"\n",""),"uncertain");
   assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PARTIAL HEAD="+sha+"\n",""),"uncertain");
 });
