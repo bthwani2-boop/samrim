@@ -97,6 +97,38 @@ paths:
         '403': { $ref: '#/components/responses/EmployeeError' }
         '404': { $ref: '#/components/responses/EmployeeError' }
         '503': { $ref: '#/components/responses/EmployeeError' }
+  /v1/operators/employees/{id}/registration-audit:
+    get:
+      operationId: getCompanyEmployeeRegistrationAudit
+      summary: Read the immutable registration event for a company employee
+      description: Current company hr authority is checked again before disclosure. Only the attributable registration event is returned; no request hash, operation key, other employer or Identity grant is exposed. Absent or out-of-scope events have the same not-found response.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/EmployeeId' }
+      responses:
+        '200':
+          description: Immutable company registration event
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [employeeId, registeredByActorId, recordedAt]
+                properties:
+                  employeeId: { $ref: '#/components/schemas/EmployeeId' }
+                  registeredByActorId: { type: string, minLength: 1, maxLength: 128 }
+                  recordedAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/EmployeeError' }
+        '401': { $ref: '#/components/responses/EmployeeError' }
+        '403': { $ref: '#/components/responses/EmployeeError' }
+        '404': { $ref: '#/components/responses/EmployeeError' }
+        '503': { $ref: '#/components/responses/EmployeeError' }
 components:
   schemas:
     EmployeeId:

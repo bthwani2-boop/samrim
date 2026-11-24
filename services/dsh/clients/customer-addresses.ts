@@ -65,3 +65,34 @@ export async function saveCustomerAddress(origin: string,bearer: string,actor: s
   const path = dshOperations.saveCurrentCustomerAddress.path.replace("{addressID}",id);
   return parseCustomerAddressResult(await privateOwnerRequest(origin,path,bearer,"PUT",change,signal),actor,id,change);
 }
+
+
+export type DeliveryServiceability = Readonly<{
+  actorId: string; storeId: string; addressId: string;
+  status: "SERVICEABLE" | "UNSERVICEABLE" | "UNAVAILABLE";
+  evidence?: Readonly<{storeCityId:string;addressCityId:string;addressVersion:number;policyVersion:number;radiusMetres:number;distanceMetres:number}>;
+}>;
+export function parseDeliveryServiceability(v: unknown, actor:string,store:string,address:string):DeliveryServiceability {
+  const invalid=()=>new DshPublicError(502,"OWNER_RESPONSE_INVALID");
+  if (!obj(v)||v.actorId!==actor||v.storeId!==store||v.addressId!==address) throw invalid();
+  if (v.status==="UNAVAILABLE") {
+    if (!exact(v,["actorId","storeId","addressId","status"])) throw invalid();
+  } else {
+    const ev=v.evidence;
+    if ((v.status!=="SERVICEABLE"&&v.status!=="UNSERVICEABLE")||
+      !exact(v,["actorId","storeId","addressId","status","evidence"])||!obj(ev)||
+      !exact(ev,["storeCityId","addressCityId","addressVersion","policyVersion","radiusMetres","distanceMetres"])||
+      typeof ev.storeCityId!=="string"||!cityRule.test(ev.storeCityId)||
+      typeof ev.addressCityId!=="string"||!cityRule.test(ev.addressCityId)||
+      !version(ev.addressVersion,1)||!version(ev.policyVersion,1)||!version(ev.radiusMetres,1,2147483647)||
+      typeof ev.distanceMetres!=="number"||!Number.isFinite(ev.distanceMetres)||ev.distanceMetres<0||
+      ((ev.storeCityId===ev.addressCityId&&ev.distanceMetres<=ev.radiusMetres)!==(v.status==="SERVICEABLE"))) throw invalid();
+  }
+  return v as DeliveryServiceability;
+}
+export async function evaluateDeliveryServiceability(origin:string,bearer:string,actor:string,store:string,address:string,signal?:AbortSignal) {
+  if (!bearerRule.test(bearer)) throw new DshPublicError(401,"UNAUTHENTICATED");
+  if (!cityRule.test(store)||!idRule.test(address)) throw new DshPublicError(400,"INVALID_REQUEST");
+  const path=dshOperations.evaluateCurrentCustomerDeliveryAddress.path.replace("{storeID}",store);
+  return parseDeliveryServiceability(await privateOwnerRequest(origin,`${path}?addressId=${address}`,bearer,"GET",undefined,signal),actor,store,address);
+}

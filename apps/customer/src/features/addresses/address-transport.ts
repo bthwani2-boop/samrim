@@ -1,5 +1,5 @@
-import { type CustomerAddressChange, type CustomerAddressPage, type CustomerAddressResult, DshPublicError,
-  listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, saveCustomerAddress } from "@bthwani/dsh";
+import { type CustomerAddressChange, type CustomerAddressPage, type CustomerAddressResult, type DeliveryServiceability, DshPublicError, evaluateDeliveryServiceability,
+  listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "@bthwani/dsh";
 import { Platform } from "react-native";
 import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
@@ -70,4 +70,20 @@ export async function writeVerifiedAddress(actor:string,id:string,change:Custome
     }
     throw error;
   }
+}
+
+
+export async function readVerifiedDeliveryServiceability(actor:string,store:string,address:string,signal:AbortSignal):Promise<DeliveryServiceability> {
+  await verifyAddressSession(signal,actor);
+  if (Platform.OS==="web") {
+    const value=parseDeliveryServiceability(await webRead(
+      `/api/customer-auth/serviceability?storeId=${encodeURIComponent(store)}&addressId=${encodeURIComponent(address)}`,actor,signal),actor,store,address);
+    await verifyAddressSession(signal,actor);
+    return value;
+  }
+  if (!nativeOwner) throw new DshPublicError(503,"OWNER_UNAVAILABLE");
+  const result=await withVerifiedNativeCustomerRead(signal,bearer=>evaluateDeliveryServiceability(nativeOwner,bearer,actor,store,address,signal),actor);
+  if (result.kind!=="ready") throw new DshPublicError(result.kind==="signed-out"?401:503,"OWNER_UNAVAILABLE");
+  signal.throwIfAborted();
+  return result.value;
 }

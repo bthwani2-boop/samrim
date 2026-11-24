@@ -30,8 +30,6 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
   const facts: { label: string; value: string; note: string; icon: OperatorIconName; available: boolean }[] = [
     { label: "مجموعات العمل", value: String(sections.length), note: "مصرّح بها من Identity", icon: "layers", available: true },
     { label: "الوظائف المتاحة", value: String(entries.length), note: "يمكن الانتقال إليها", icon: "check", available: true },
-    { label: "الطلبات اليوم", value: "—", note: "لا توجد إحصائية مؤكدة من DSH", icon: "operations", available: false },
-    { label: "المتاجر النشطة", value: "—", note: "لا يوجد إجمالي مؤكد من DSH", icon: "store", available: false },
   ];
 
   return (
@@ -63,6 +61,10 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
         ))}
       </section>
 
+      {marketOverview && (
+        <div className={dashboardStyles.marketPanel}>{marketOverview}</div>
+      )}
+
       <div className={dashboardStyles.overviewGrid}>
         <section className={dashboardStyles.panel} aria-labelledby="operational-status-heading">
           <header className={dashboardStyles.panelHeading}>
@@ -73,20 +75,8 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
             <li><span className={dashboardStyles.statusDotNeutral} /><span>بيانات DSH العامة</span><strong>تُقرأ عند الطلب</strong></li>
             <li><span className={dashboardStyles.statusDotNeutral} /><span>الأرصدة والتسويات</span><strong>ليست معروضة</strong></li>
           </ul>
-          <p className={dashboardStyles.panelHint}>حالة الواجهة لا تثبت اتصال جميع الأنظمة أو سلامة البيانات المالية.</p>
+          <p className={dashboardStyles.panelHint}>إحصاءات الطلبات وإجمالي المتاجر والأرصدة غير متاحة في هذه الصفحة حاليًا.</p>
           {entries.length > 0 && <a className={dashboardStyles.panelLink} href="/health">عرض حالة الواجهة <OperatorIcon name="arrow" /></a>}
-        </section>
-
-        <section className={dashboardStyles.panel} aria-labelledby="order-trends-heading">
-          <header className={dashboardStyles.panelHeading}>
-            <h2 id="order-trends-heading"><OperatorIcon name="chart" /> حركة الطلبات</h2>
-            <span className={dashboardStyles.readonlyLabel}>تحتاج بيانات DSH</span>
-          </header>
-          <div className={dashboardStyles.emptyChart} role="status">
-            <span className={dashboardStyles.chartGlyph}><OperatorIcon name="chart" /></span>
-            <strong>لا تتوفر سلسلة زمنية مؤكدة</strong>
-            <p>لن نعرض رسمًا أو أرقامًا تخمينية. تظهر حركة الطلبات بعد إتاحة قراءة زمنية موثوقة من خدمتها المالكة.</p>
-          </div>
         </section>
 
         <section className={dashboardStyles.panel} aria-labelledby="quick-actions-heading">
@@ -129,13 +119,6 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
           {entries.length === 0 && <p role="status" className={dashboardStyles.noAccess}>لا توجد وظائف مصرح بها.</p>}
         </div>
       </section>
-
-      {marketOverview && (
-        <details className={dashboardStyles.marketDisclosure}>
-          <summary className={dashboardStyles.disclosureSummary}>بيانات السوق المنشور من DSH <span>عرض التفاصيل</span></summary>
-          <div className={dashboardStyles.marketPanel}>{marketOverview}</div>
-        </details>
-      )}
 
       <details aria-label="الأقسام المصرح بها" className={dashboardStyles.sections}>
         <summary className={dashboardStyles.disclosureSummary}>جميع الأقسام المتاحة <span>{sections.length} مجموعات</span></summary>

@@ -81,12 +81,22 @@ export async function readPersistentIdentityRole(
   // Quarantine the old refresh credential on-device before the remote mutation:
   // a lost reply must never provoke an unsafe replay on the next cold start.
   await prepareRotation();
-  const rotated=await rotatePersistentIdentitySession(origin,refreshToken,signal);
+  // Once a rotation is dispatched, finish its bounded credential handoff even
+  // if a view backgrounds. UI cancellation must not discard the new secret.
+  const rotation = new AbortController();
+  const deadline = setTimeout(() => rotation.abort(), 10_000);
+  let rotated: RotatedIdentitySession;
+  try {
+    rotated = await rotatePersistentIdentitySession(origin, refreshToken, rotation.signal);
+  } finally {
+    clearTimeout(deadline);
+  }
   const accepted=await commit(rotated,bearer,true);
   if (!accepted) {
     await revokePersistentIdentitySession(origin,rotated.refreshToken,AbortSignal.timeout(2000)).catch(()=>undefined);
     throw new IdentityClientError(0,"OWNER_RESPONSE_STALE");
   }
+  if (signal.aborted) throw new IdentityClientError(0,"OWNER_RESPONSE_STALE");
   const verified=await readVerifiedIdentitySession(origin,rotated.accessToken,signal);
   if (verified.role!==role || (current && verified.actorId!==current.actorId)) {
     throw new IdentityClientError(502,"OWNER_RESPONSE_INVALID");

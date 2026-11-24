@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
@@ -150,6 +151,31 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Prove the audit scope against an actual other-employer event, not just an absent event.
+	if _, err = readback.ExecContext(t.Context(), `INSERT INTO `+schema+`.employee_registration_audit
+		(employer_kind,employer_id,employee_id,acting_actor_id,operation_id,request_hash)
+		VALUES ('MERCHANT','merchant-a',$1,'merchant-author','00000000-0000-0000-0000-000000000002',decode(repeat('00',32),'hex'))`, merchantID); err != nil {
+		t.Fatal(err)
+	}
+	auditPath := root + "/" + id + "/registration-audit"
+	audit := expect("GET", auditPath, "hr-current", "", 200)
+	var event registrationEvent
+	var recorded time.Time
+	if err = readback.QueryRowContext(t.Context(), `SELECT recorded_at FROM `+schema+`.employee_registration_audit WHERE employee_id=$1`, id).Scan(&recorded); err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal(audit.Body.Bytes(), &event) != nil || event.EmployeeID != id || event.RegisteredByActorID != "hr-current" ||
+		event.RecordedAt != recorded.UTC().Format(time.RFC3339Nano) || strings.Contains(audit.Body.String(), "requestHash") ||
+		strings.Contains(audit.Body.String(), "operationId") {
+		t.Fatalf("invalid registration audit readback: %s", audit.Body)
+	}
+	expect("GET", auditPath+"?employerId=merchant-a", "hr-current", "", 400)
+	expect("GET", auditPath, "hr-current", "unexpected body", 400)
+	expect("GET", auditPath, "", "", 401)
+	expect("GET", auditPath, "no-hr", "", 403)
+	expect("GET", auditPath, "merchant", "", 403)
+	expect("GET", root+"/"+merchantID+"/registration-audit", "hr-current", "", 404)
+	expect("GET", root+"/00000000-0000-0000-0000-000000000003/registration-audit", "hr-current", "", 404)
 	expect("GET", root+"/"+merchantID, "hr-current", "", 404)
 	expect("GET", root+"/00000000-0000-0000-0000-000000000003", "hr-current", "", 404)
 	detail := expect("GET", root+"/"+id, "hr-current", "", 200)
@@ -174,6 +200,8 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 		{"detail session revoked", root + "/" + id, false, 401},
 		{"list HR grant revoked", root, true, 403},
 		{"detail HR grant revoked", root + "/" + id, true, 403},
+		{"audit session revoked", auditPath, false, 401},
+		{"audit HR grant revoked", auditPath, true, 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			transition := &employeeReadTransition{grantRevoked: tc.grantRevoked}
@@ -186,7 +214,8 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 			response := httptest.NewRecorder()
 			protected.ServeHTTP(response, request)
 			if response.Code != tc.want || transition.calls.Load() != 2 ||
-				strings.Contains(response.Body.String(), "موظف تجريبي") {
+				strings.Contains(response.Body.String(), "موظف تجريبي") ||
+				strings.Contains(response.Body.String(), "registeredByActorId") {
 				t.Fatalf("revoked read leaked owner data: status=%d calls=%d body=%s",
 					response.Code, transition.calls.Load(), response.Body.String())
 			}

@@ -13,12 +13,12 @@ export type {
   CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult,
 } from "./city-policies.ts";
 export { getCityStoreOperationalPolicy, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
-export type { CustomerAddress, CustomerAddressChange, CustomerAddressPage, CustomerAddressResult } from "./customer-addresses.ts";
-export { isCustomerAddressId, listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, saveCustomerAddress, validCustomerAddressChange } from "./customer-addresses.ts";
+export type { CustomerAddress, CustomerAddressChange, CustomerAddressPage, CustomerAddressResult, DeliveryServiceability } from "./customer-addresses.ts";
+export { evaluateDeliveryServiceability, isCustomerAddressId, listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress, validCustomerAddressChange } from "./customer-addresses.ts";
 export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";
 export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
-export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.ts";
-export { getCompanyEmployee, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
+export type { CompanyEmployee, CompanyEmployeeRegistration, CompanyEmployeeRegistrationAudit } from "./employees.ts";
+export { getCompanyEmployee, getCompanyEmployeeRegistrationAudit, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
 export { dshOperations } from "./generated/dsh-operations.ts";
 export type { MerchantCatalogDraftChange, MerchantCatalogDraftEditChange, MerchantCatalogDraftEditResult, MerchantCatalogDraftResult, MerchantCatalogOffer, MerchantCatalogPage } from "./merchant-catalog.ts";
 export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit, validMerchantCatalogSearch } from "./merchant-catalog.ts";

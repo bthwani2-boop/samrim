@@ -18,6 +18,8 @@ paths:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
   /v1/public/stores/{id}/offers/{offerId}/estimate:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers~1{offerId}~1estimate'
+  /v1/carts/{storeID}/serviceability:
+    $ref: './paths/serviceability.yaml#/paths/~1v1~1carts~1{storeID}~1serviceability'
   /v1/addresses:
     $ref: './paths/locations.yaml#/paths/~1v1~1addresses'
   /v1/addresses/{addressID}:
@@ -58,6 +60,8 @@ paths:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees'
   /v1/operators/employees/{id}:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}'
+  /v1/operators/employees/{id}/registration-audit:
+    $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}~1registration-audit'
   /v1/operators/cities/{cityID}/store-publication-review/{relation}:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-publication-review~1{relation}'
   /v1/operators/cities/{cityID}/store-registration-policy/{relation}:
@@ -144,6 +148,26 @@ components:
           maxItems: 50
           items: { $ref: '#/components/schemas/MerchantCatalogOffer' }
         nextCursor: { $ref: '#/components/schemas/PublicId' }
+    CustomerDeliveryServiceability:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, addressId, status]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        addressId: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+        status: { type: string, enum: [SERVICEABLE, UNSERVICEABLE, UNAVAILABLE] }
+        evidence:
+          type: object
+          additionalProperties: false
+          required: [storeCityId, addressCityId, addressVersion, policyVersion, radiusMetres, distanceMetres]
+          properties:
+            storeCityId: { $ref: '#/components/schemas/PublicId' }
+            addressCityId: { $ref: '#/components/schemas/PublicId' }
+            addressVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            policyVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
+            distanceMetres: { type: number, minimum: 0 }
     CustomerAddress:
       type: object
       additionalProperties: false

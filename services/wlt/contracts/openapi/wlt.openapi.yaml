@@ -4,6 +4,8 @@ info:
   version: 0.1.0
   description: Isolated development projection of posted Customer wallet funding.
 paths:
+  /health:
+    $ref: './paths/runtime.yaml#/paths/~1health'
   /v1/wallets/me:
     $ref: './paths/wallets.yaml#/paths/~1v1~1wallets~1me'
   /v1/wallets/me/transactions:

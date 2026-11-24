@@ -9,6 +9,7 @@ import MerchantStoreRegistration from "../onboarding/merchant-store-registration
 import MerchantStoreDirectory from "./merchant-store-directory";
 import {
   type MerchantSection,
+  type MerchantPublicationFilter,
   merchantMobileSections,
   merchantNavigation,
   merchantStoreSummary,
@@ -23,6 +24,15 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
   const { theme } = useMobileAppearance();
   const { desktop } = usePrimaryNavigation();
   const [section, setSection] = useState<MerchantSection>("home");
+  const [initialPublication, setInitialPublication] = useState<MerchantPublicationFilter>("all");
+  const openSection = (next: MerchantSection) => {
+    if (next === "stores" && section !== "stores") setInitialPublication("all");
+    setSection(next);
+  };
+  const openStores = (publication: MerchantPublicationFilter) => {
+    setInitialPublication(publication);
+    setSection("stores");
+  };
   const summary = merchantStoreSummary(stores);
   const selected = merchantNavigation.find(item => item.id === section) ?? merchantNavigation[0];
 
@@ -34,7 +44,7 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
         accessibilityRole="button"
         accessibilityLabel={item.label}
         accessibilityState={{ selected: active }}
-        onPress={() => setSection(item.id)}
+        onPress={() => openSection(item.id)}
         style={{
           flex: compact ? 1 : undefined,
           minHeight: 48,
@@ -56,19 +66,20 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
     );
   };
 
-  const metric = (title: string, value: number) => (
-    <View key={title} style={{
+  const metric = (title: string, value: number, publication: MerchantPublicationFilter, label: string) => (
+    <Pressable key={title} accessibilityRole="button" accessibilityLabel={label}
+      accessibilityHint={`عدد المتاجر: ${value}`} onPress={() => openStores(publication)} style={{
       flexGrow: 1, flexBasis: 120, minWidth: 110, padding: 16, gap: 8,
       borderColor: theme.borderColor, borderWidth: 1, borderRadius: 14,
       backgroundColor: theme.surface,
     }}>
       <Text style={{ color: theme.colorSecondary, textAlign: "auto" }}>{title}</Text>
       <Text style={{ color: theme.color, fontSize: 27, fontWeight: "700", textAlign: "auto" }}>{value}</Text>
-    </View>
+    </Pressable>
   );
 
   const showStores = (
-    <Pressable accessibilityRole="button" onPress={() => setSection("stores")}
+    <Pressable accessibilityRole="button" onPress={() => openStores("all")}
       style={{ alignSelf: "flex-start", minHeight: 44, justifyContent: "center",
         borderRadius: 10, paddingHorizontal: 16, backgroundColor: theme.actionBackground }}>
       <Text style={{ color: theme.onAction, fontWeight: "700" }}>عرض متاجري</Text>
@@ -118,16 +129,25 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
           {section === "home" ? (
             <>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                {metric("متاجري", summary.total)}
-                {metric("المتاجر المنشورة", summary.published)}
-                {metric("غير المنشورة", summary.unpublished)}
+                {metric("متاجري", summary.total, "all", "عرض جميع المتاجر")}
+                {metric("المتاجر المنشورة", summary.published, "published", "عرض المتاجر المنشورة")}
+                {metric("غير المنشورة", summary.unpublished, "unpublished", "عرض المتاجر غير المنشورة")}
               </View>
-              {showStores}
+              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                {showStores}
+                {stores.length > 0 && <Pressable accessibilityRole="button" accessibilityLabel="إدارة المنتجات"
+                  onPress={() => openSection("products")}
+                  style={{ minHeight: 44, paddingHorizontal: 16, justifyContent: "center",
+                    borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
+                  <Text style={{ color: theme.interactiveText, fontWeight: "700" }}>إدارة المنتجات</Text>
+                </Pressable>}
+              </View>
               {stores.length === 0 ? <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} /> : null}
             </>
           ) : section === "stores" ? (
             <>
-              <MerchantStoreDirectory actorId={actorId} stores={stores} />
+              <MerchantStoreDirectory key={JSON.stringify([actorId, initialPublication])}
+                actorId={actorId} stores={stores} initialPublication={initialPublication} />
               <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} />
             </>
           ) : section === "products" ? (

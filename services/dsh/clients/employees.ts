@@ -70,6 +70,30 @@ export async function getCompanyEmployee(
   return result;
 }
 
+export interface CompanyEmployeeRegistrationAudit {
+  employeeId: string;
+  registeredByActorId: string;
+  recordedAt: string;
+}
+
+export async function getCompanyEmployeeRegistrationAudit(
+  owner: string, bearer: string, id: string, signal?: AbortSignal,
+): Promise<CompanyEmployeeRegistrationAudit> {
+  if (!isCompanyEmployeeId(id)) throw new DshPublicError(400, "EMPLOYEE_QUERY_INVALID");
+  const path = dshOperations.getCompanyEmployeeRegistrationAudit.path.replace("{id}", encodeURIComponent(id));
+  const result = await privateOwnerRequest(owner, path, bearer, "GET", undefined, signal);
+  if (!object(result) || !onlyKeys(result, ["employeeId", "registeredByActorId", "recordedAt"]) ||
+    result.employeeId !== id || !validText(result.registeredByActorId, 128) ||
+    /\p{Cc}/u.test(result.registeredByActorId) ||
+    typeof result.recordedAt !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(result.recordedAt) ||
+    !validDate(result.recordedAt.slice(0, 10)) || !Number.isFinite(Date.parse(result.recordedAt)) ||
+    new Date(result.recordedAt).toISOString().slice(0, 19) !== result.recordedAt.slice(0, 19)) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return { employeeId: id, registeredByActorId: result.registeredByActorId, recordedAt: result.recordedAt };
+}
+
 export async function registerCompanyEmployee(
   owner: string, bearer: string, input: CompanyEmployeeRegistration, signal?: AbortSignal,
 ): Promise<string> {

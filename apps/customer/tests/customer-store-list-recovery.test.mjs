@@ -249,14 +249,15 @@ test("changing the Store vertical requests a fresh DSH page and never shows old 
   assert.equal(initial.cityId, "sanaa");
   assert.equal(initial.verticalId, "grocery");
   initial.resolve({ items: [store("grocery-store")], nextCursor: "grocery-cursor", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 1 }, { id: "pharmacy", storeCount: 1 }], revision: 1 });
   await settle();
   const prior = app.render();
   assert.ok(byId(prior, "store-grocery-store"));
   const detailLink = find(prior, node => node.type === "Link" && node.props.href?.pathname === "/store/[id]");
   assert.equal(detailLink.props.href.params.vertical, "grocery");
 
-  byId(prior, "vertical-filter-input").props.onChangeText("pharmacy");
-  byId(app.render(), "vertical-filter-apply").props.onPress();
+  assert.equal(byId(prior, "vertical-option-grocery").props.accessibilityState.selected, true);
+  byId(prior, "vertical-option-pharmacy").props.onPress();
   const changing = app.render();
   assert.equal(byId(changing, "store-grocery-store"), undefined);
   assert.equal(initial.signal.aborted, true);
@@ -268,21 +269,30 @@ test("changing the Store vertical requests a fresh DSH page and never shows old 
   const filtered = app.render();
   assert.ok(byId(filtered, "store-pharmacy-store"));
   assert.equal(byId(filtered, "store-grocery-store"), undefined);
+  assert.equal(byId(filtered, "vertical-option-pharmacy").props.accessibilityState.selected, true);
 
   byId(filtered, "vertical-filter-clear").props.onPress();
   app.render();
   assert.equal(app.read().verticalId, undefined);
 });
 
-test("an invalid Store vertical is not submitted to DSH", () => {
+test("category navigation never requires customers to enter internal identifiers", async () => {
   const app = harness();
   app.render();
-  app.read();
-  byId(app.render(), "vertical-filter-input").props.onChangeText("../private");
-  byId(app.render(), "vertical-filter-apply").props.onPress();
-  const invalid = app.render();
-  assert.ok(find(invalid, node => node.props.accessibilityRole === "alert"));
-  assert.equal(byId(invalid, "vertical-filter-clear"), undefined);
+  app.read().resolve({ items: [], revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1 });
+  await settle();
+  const view = app.render();
+  assert.equal(byId(view, "vertical-filter-input"), undefined);
+  assert.equal(byId(view, "vertical-filter-apply"), undefined);
+  assert.equal(byId(view, "vertical-filter-clear").props.accessibilityState.selected, true);
+  assert.ok(byId(view, "vertical-option-grocery"));
+});
+
+test("an invalid deep-linked Store vertical is not submitted to DSH", () => {
+  const app = harness({ params: { vertical: "../private" } });
+  app.render();
+  assert.equal(app.read().verticalId, undefined);
 });
 
 test("route navigation changes the DSH Store query without exposing old-city results", async () => {

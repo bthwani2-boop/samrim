@@ -130,7 +130,7 @@ async function readDurableCaptain(bearer: string, signal: AbortSignal) {
     }),
     (issued, before, rotated) => mutateNativeStorage(async () => {
       const pending = await SecureStore.getItemAsync(pendingKey, nativeOptions);
-      if (signal.aborted || await SecureStore.getItemAsync(key, nativeOptions) !== before ||
+      if ((!rotated && signal.aborted) || await SecureStore.getItemAsync(key, nativeOptions) !== before ||
           (pending && (!rotated || pending !== "refreshing"))) return false;
       await SecureStore.setItemAsync(refreshKey, issued.refreshToken, nativeOptions);
       if (rotated) {

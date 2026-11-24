@@ -53,6 +53,13 @@ test("Operator homepage describes only permission-derived sections and no invent
   assert.ok(!links.includes("/finance"));
   assert.ok(!links.includes("/merchants"));
   assert.equal(walk(tree, node => node.props?.["aria-label"] === "مراجعة بيانات DSH").length, 1);
+  assert.equal(walk(tree, node => node.type === "details" &&
+    walk(node, child => child.props?.["aria-label"] === "مراجعة بيانات DSH").length > 0).length, 0,
+    "verified market data must be immediately visible rather than hidden behind a disclosure");
+  assert.equal(walk(tree, node => node.props?.id === "order-trends-heading").length, 0,
+    "unavailable order trends must not occupy a dashboard panel");
+  assert.equal(walk(tree, node => node.type === "strong" && node.props.children === "—").length, 0,
+    "unavailable totals must not be presented as metric cards");
 });
 
 test("Operator homepage never exposes denied section links to an actor without grants", () => {

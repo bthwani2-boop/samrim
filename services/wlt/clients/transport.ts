@@ -26,7 +26,7 @@ export async function readOwner(origin: string, bearer: string, method: "GET", p
     response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
     response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
     void response.body?.cancel().catch(() => {});
-    throw new WltReadError(response.status === 401 || response.status === 403 ? response.status : 503);
+    throw new WltReadError([400, 401, 403].includes(response.status) ? response.status : 503);
   }
   const declaredSize = response.headers.get("Content-Length");
   if (declaredSize !== null && (!/^[0-9]+$/.test(declaredSize) || Number(declaredSize) > maxBytes)) {

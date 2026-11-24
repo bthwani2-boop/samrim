@@ -77,3 +77,28 @@ test("lost address mutation outcome is not reported as rejected or retried",asyn
   const reply=await handleCustomerAddresses(request("PUT",base+"?addressId="+id),"PUT");
   assert.equal(reply.status,503);assert.deepEqual(await reply.json(),{error:"OPERATION_RESULT_UNKNOWN"});assert.equal(owner,1);
 });
+
+
+test("serviceability BFF binds actor and both resource selectors; denies cross-context and late replies",async t=>{
+  const path="http://localhost/api/customer-auth/serviceability?storeId=store-a&addressId="+id;
+  let calls=0,identityReads=0,switched=false;
+  const value={actorId:actor,storeId:"store-a",addressId:id,status:"SERVICEABLE",evidence:{
+    storeCityId:"sanaa",addressCityId:"sanaa",addressVersion:1,policyVersion:1,radiusMetres:30000,distanceMetres:10}};
+  t.mock.method(globalThis,"fetch",async(input,init)=>{
+    if(input.toString().startsWith("http://127.0.0.1:3210")){
+      identityReads++;return json(session(switched&&identityReads>1?"customer-b":actor));
+    }
+    calls++;assert.equal(input.toString(),`http://127.0.0.1:3202/v1/carts/store-a/serviceability?addressId=${id}`);
+    assert.equal(init.method,"GET");return json(value);
+  });
+  for(const req of [request("GET",path+"&actorId=customer-b"),request("GET",path+"&storeId=store-b"),request("GET",path+"&addressId="+id)]){
+    assert.equal((await handleCustomerAddresses(req,"SERVICEABILITY")).status,400);
+  }
+  assert.equal(calls,0);
+  const accepted=await handleCustomerAddresses(request("GET",path),"SERVICEABILITY");
+  assert.equal(accepted.status,200);assert.deepEqual(await accepted.json(),value);
+  switched=true;identityReads=0;
+  const late=await handleCustomerAddresses(request("GET",path),"SERVICEABILITY");
+  assert.equal(late.status,401);assert.deepEqual(await late.json(),{error:"UNAUTHORIZED"});
+  assert.equal(calls,2);
+});

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
-  DshPublicError, getCompanyEmployee, isCompanyEmployeeId,
+  DshPublicError, getCompanyEmployee, getCompanyEmployeeRegistrationAudit, isCompanyEmployeeId,
   listCompanyEmployees, registerCompanyEmployee,
 } from "./index.ts";
 
@@ -85,6 +85,35 @@ test("individual employee lookup validates path, identity, owner scope and 403",
   await rejects(() => getCompanyEmployee(owner, token, id(1)), 403, "EMPLOYEE_FORBIDDEN");
   await rejects(() => getCompanyEmployee(owner, token, "other/employee"), 400, "EMPLOYEE_QUERY_INVALID");
   assert.equal(paths.length, 3);
+});
+
+test("registration audit reads only the selected employee and rejects unsafe owner output", async t => {
+  const audit = { employeeId: id(1), registeredByActorId: "operator-a", recordedAt: "2026-11-24T01:00:00.123456Z" };
+  let response = json(audit);
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls++;
+    assert.equal(new URL(url).pathname, `/v1/operators/employees/${id(1)}/registration-audit`);
+    assert.equal(new URL(url).search, "");
+    assert.equal(options.method, "GET");
+    assert.equal(options.headers.Authorization, `Bearer ${token}`);
+    assert.equal(options.cache, "no-store");
+    return response;
+  });
+  assert.deepEqual(await getCompanyEmployeeRegistrationAudit(owner, token, id(1)), audit);
+  for (const invalid of [
+    { ...audit, employeeId: id(2) }, { ...audit, registeredByActorId: "" },
+    { ...audit, recordedAt: "2026-02-30T01:00:00Z" }, { ...audit, requestHash: "hidden" },
+  ]) {
+    response = json(invalid);
+    await rejects(() => getCompanyEmployeeRegistrationAudit(owner, token, id(1)), 502, "OWNER_RESPONSE_INVALID");
+  }
+  response = json({ code: "EMPLOYEE_SCOPE_FORBIDDEN" }, 403);
+  await rejects(() => getCompanyEmployeeRegistrationAudit(owner, token, id(1)), 403, "EMPLOYEE_SCOPE_FORBIDDEN");
+  response = json({ code: "EMPLOYEE_NOT_FOUND" }, 404);
+  await rejects(() => getCompanyEmployeeRegistrationAudit(owner, token, id(1)), 404, "EMPLOYEE_NOT_FOUND");
+  await rejects(() => getCompanyEmployeeRegistrationAudit(owner, token, "../other"), 400, "EMPLOYEE_QUERY_INVALID");
+  assert.equal(calls, 7);
 });
 
 test("employee registration sends one idempotent authenticated write and validates the owner result", async t => {

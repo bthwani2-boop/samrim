@@ -34,6 +34,7 @@ function harness() {
   let pending = [];
   const logouts = [];
   let tick = 0;
+  const timeouts = new Map();
   const protectedChild = { type: "ProtectedScreen", props: { testID: "captain-sensitive-screen" } };
   function hook(create) {
     const at = index++;
@@ -93,8 +94,8 @@ function harness() {
       return mocks[name];
     },
     mod, mod.exports,
-    (_fn, _duration) => ++tick,
-    () => undefined,
+    fn => { const id = ++tick; timeouts.set(id, fn); return id; },
+    id => timeouts.delete(id),
     fn => { interval = fn; return ++tick; },
     () => undefined,
   );
@@ -112,6 +113,7 @@ function harness() {
     reads: () => pending.length,
     startFocus: () => focus(),
     periodic: () => interval(),
+    expire: () => { const entry = [...timeouts.entries()].at(-1); assert.ok(entry); timeouts.delete(entry[0]); entry[1](); },
     appChanged: state => appChanged(state),
   };
 }
@@ -310,4 +312,20 @@ test("Captain route rejects an Identity-only session or an unrelated, revoked or
     assert.equal(tree.type, "Redirect", "unsafe DSH standing at variant " + index);
     assert.ok(!nodes(tree).includes(h.child), "no protected subtree for unsafe standing " + index);
   }
+});
+
+
+test("access expiry rechecks the owner instead of redirecting before refresh", async () => {
+  const h = harness();
+  h.render();
+  h.startFocus();
+  h.next().resolve(approved());
+  await settle();
+  h.expire();
+  assert.notEqual(h.render().type, "Redirect");
+  const holder = nodes(h.render()).find(x => x.props?.children === h.child);
+  assert.equal(holder.props.pointerEvents, "none");
+  h.next().resolve(approved());
+  await settle();
+  assert.equal(nodes(h.render()).find(x => x.props?.children === h.child).props.pointerEvents, "auto");
 });

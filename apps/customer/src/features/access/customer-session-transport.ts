@@ -86,7 +86,7 @@ async function readDurableCustomer(bearer: string, signal: AbortSignal) {
     }),
     (issued, before, rotated) => mutateNativeStorage(async () => {
       const pending = await SecureStore.getItemAsync(pendingStorageKey, nativeOptions);
-      if (signal.aborted || await SecureStore.getItemAsync(storageKey, nativeOptions) !== before ||
+      if ((!rotated && signal.aborted) || await SecureStore.getItemAsync(storageKey, nativeOptions) !== before ||
           (pending && (!rotated || pending !== "refreshing"))) return false;
       await SecureStore.setItemAsync(refreshStorageKey, issued.refreshToken, nativeOptions);
       if (rotated) {

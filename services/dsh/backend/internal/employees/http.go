@@ -102,6 +102,27 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 		}
 		reply(w, http.StatusOK, record)
 	})
+	mux.HandleFunc("GET /v1/operators/employees/{id}/registration-audit", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		if !recordID.MatchString(id) || r.URL.RawQuery != "" || r.URL.ForceQuery ||
+			r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+			failure(w, http.StatusBadRequest, "EMPLOYEE_QUERY_INVALID")
+			return
+		}
+		event, err := owner.registrationAudit(r.Context(), id)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			failure(w, http.StatusServiceUnavailable, "EMPLOYEE_OWNER_UNAVAILABLE")
+			return
+		}
+		if !verifyEmployeeReadAuthorization(w, r, identity) {
+			return
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			failure(w, http.StatusNotFound, "EMPLOYEE_NOT_FOUND")
+			return
+		}
+		reply(w, http.StatusOK, event)
+	})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")

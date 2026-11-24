@@ -1,1 +1,14 @@
-paths: {}
+paths:
+  /health:
+    get:
+      operationId: getWltDevelopmentHealth
+      summary: Check isolated WLT runtime dependencies
+      description: Checks PostgreSQL reachability and, in container mode, Identity health. Does not attest wallet balances, authorization, ledger integrity or production readiness.
+      security: []
+      responses:
+        '200':
+          description: Configured dependencies respond; empty response
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+        '503':
+          description: A required dependency is unavailable; empty response

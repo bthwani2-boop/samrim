@@ -78,6 +78,34 @@ func (d directory) get(ctx context.Context, id string) (employee, error) {
 	return record, nil
 }
 
+type registrationEvent struct {
+	EmployeeID          string `json:"employeeId"`
+	RegisteredByActorID string `json:"registeredByActorId"`
+	RecordedAt          string `json:"recordedAt"`
+}
+
+func (d directory) registrationAudit(ctx context.Context, id string) (registrationEvent, error) {
+	tx, err := dbscope.Begin(ctx, d.db, d.schema, &sql.TxOptions{ReadOnly: true}, "employee_registration_audit")
+	if err != nil {
+		return registrationEvent{}, err
+	}
+	defer tx.Rollback()
+	var event registrationEvent
+	var recorded time.Time
+	err = tx.QueryRowContext(ctx, `SELECT employee_id,acting_actor_id,recorded_at
+		FROM employee_registration_audit
+		WHERE employer_kind='COMPANY' AND employer_id='bthwani' AND employee_id=$1`, id).
+		Scan(&event.EmployeeID, &event.RegisteredByActorID, &recorded)
+	if err != nil {
+		return registrationEvent{}, err
+	}
+	event.RecordedAt = recorded.UTC().Format(time.RFC3339Nano)
+	if err = tx.Commit(); err != nil {
+		return registrationEvent{}, err
+	}
+	return event, nil
+}
+
 type page struct {
 	Items      []employee `json:"items"`
 	NextCursor *string    `json:"nextCursor"`

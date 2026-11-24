@@ -43,7 +43,7 @@
 }
 .statsGrid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
 }
 .metricCard {
@@ -96,7 +96,7 @@
 .unavailableNote { color: var(--color-secondary); }
 .overviewGrid {
   display: grid;
-  grid-template-columns: minmax(13rem, 0.9fr) minmax(18rem, 1.6fr) minmax(13rem, 0.9fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.8rem;
   align-items: stretch;
 }
@@ -397,29 +397,11 @@
   border-radius: 0.75rem;
   color: var(--color-secondary);
 }
-@media (max-width: 75rem) {
-  .overviewGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .overviewGrid > :nth-child(2) {
-    grid-column: 1 / -1;
-    grid-row: 1;
-  }
-}
-@media (max-width: 59rem) {
-  .statsGrid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 @media (max-width: 42rem) {
   .pageIntro { align-items: flex-start; }
   .statsGrid,
   .overviewGrid {
     grid-template-columns: 1fr;
-  }
-  .overviewGrid > :nth-child(2) {
-    grid-column: auto;
-    grid-row: auto;
   }
   .metricCard {
     min-block-size: 6rem;

@@ -20,13 +20,14 @@ function relationLabel(store: MerchantOwnedStore) {
   return store.relation === "MARKETPLACE" ? "ضمن سوق بثواني" : "متجر مباشر";
 }
 
-export default function MerchantStoreDirectory({ actorId, stores }: Readonly<{
+export default function MerchantStoreDirectory({ actorId, stores, initialPublication = "all" }: Readonly<{
   actorId: string;
   stores: readonly MerchantOwnedStore[];
+  initialPublication?: MerchantPublicationFilter;
 }>) {
   const { theme } = useMobileAppearance();
   const [query, setQuery] = useState("");
-  const [publication, setPublication] = useState<MerchantPublicationFilter>("all");
+  const [publication, setPublication] = useState<MerchantPublicationFilter>(initialPublication);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = stores.find(store => store.id === selectedId);
 
@@ -92,6 +93,7 @@ export default function MerchantStoreDirectory({ actorId, stores }: Readonly<{
           </Pressable>
         ) : null}
       </View>
+      <Text accessibilityLiveRegion="polite" style={secondary}>عدد المتاجر المعروضة: {visible.length}</Text>
       {visible.length === 0 ? (
         <View style={card}>
           <Text accessibilityLiveRegion="polite" style={text}>لا توجد متاجر مطابقة.</Text>

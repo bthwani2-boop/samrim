@@ -58,7 +58,7 @@ test("all current owner OpenAPI 3.1 documents parse with their admitted operatio
     const result = validate(owner);
     assert.deepEqual(result.errors, [], `${owner} has invalid OpenAPI`);
   }
-  assert.equal(validate("wlt").operations, 2);
+  assert.equal(validate("wlt").operations, 3);
   assert.ok(validate("identity").operations > 0);
   assert.ok(validate("dsh").operations > 0);
 });
@@ -612,6 +612,20 @@ test("a repurposed public health operation cannot inherit anonymous access", () 
   const result = mutate("dsh", "paths/runtime.yaml", source =>
     source.replace("operationId: dshHealth", "operationId: readPrivateOwnerState"));
   hasError(result, "Protected operation must require OpaqueSession");
+});
+
+test("WLT health cannot grant anonymous access to another operation", () => {
+  const result = mutate("wlt", "paths/runtime.yaml", source =>
+    source.replace("operationId: getWltDevelopmentHealth", "operationId: readPrivateOwnerState"));
+  hasError(result, "Protected operation must require OpaqueSession");
+  hasError(result, "Missing successful JSON response schema");
+  hasError(result, "Missing JSON error response schema");
+});
+
+test("WLT wallet operations cannot inherit the health response exception", () => {
+  const result = mutate("wlt", "paths/wallets.yaml", source =>
+    source.replace(/('200':[\s\S]*?)\n          content:[\s\S]*?(?=\n        '\d{3}':)/, "$1"));
+  hasError(result, "Missing successful JSON response schema");
 });
 
 test("repurposing an existing public DSH path requires explicit operation identity admission", () => {

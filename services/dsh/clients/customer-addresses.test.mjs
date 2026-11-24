@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, saveCustomerAddress } from "./customer-addresses.ts";
+import { evaluateDeliveryServiceability, listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "./customer-addresses.ts";
 
 const bearer=Buffer.alloc(32,14).toString("base64url");
 const origin="http://127.0.0.1:3202";
@@ -46,4 +46,28 @@ test("bad input never dispatches; lost acknowledgement is unknown",async t=>{
   assert.equal(calls,0);
   await assert.rejects(saveCustomerAddress(origin,bearer,actor,id,change),{code:"OPERATION_RESULT_UNKNOWN"});
   assert.equal(calls,1);
+});
+
+
+test("serviceability SDK binds current actor, store, address and coherent policy evidence",async t=>{
+  const value={actorId:actor,storeId:"store-a",addressId:id,status:"SERVICEABLE",evidence:{
+    storeCityId:"sanaa",addressCityId:"sanaa",addressVersion:1,policyVersion:2,radiusMetres:30000,distanceMetres:30000}};
+  let calls=0;
+  t.mock.method(globalThis,"fetch",async(input,init)=>{
+    calls++;assert.equal(input.toString(),`${origin}/v1/carts/store-a/serviceability?addressId=${id}`);
+    assert.equal(init.method,"GET");assert.equal(init.credentials,"omit");return json(value);
+  });
+  assert.deepEqual(await evaluateDeliveryServiceability(origin,bearer,actor,"store-a",id),value);
+  for(const bad of [{...value,actorId:"customer-b"},{...value,addressId:"addr-00000000000000000000000000000002"},
+    {...value,storeId:"store-b"},{...value,status:"UNAVAILABLE"},
+    {...value,evidence:{...value.evidence,distanceMetres:30001}},
+    {...value,evidence:{...value.evidence,addressCityId:"aden"}},
+    {...value,evidence:{...value.evidence,latitude:15.3}},
+    {...value,evidence:{...value.evidence,policyVersion:0}}]) {
+    assert.throws(()=>parseDeliveryServiceability(bad,actor,"store-a",id),{code:"OWNER_RESPONSE_INVALID"});
+  }
+  await assert.rejects(evaluateDeliveryServiceability(origin,bearer,actor,"store-a","invalid"),{code:"INVALID_REQUEST"});
+  assert.equal(calls,1);
+  const unknown={actorId:actor,storeId:"store-a",addressId:id,status:"UNAVAILABLE"};
+  assert.deepEqual(parseDeliveryServiceability(unknown,actor,"store-a",id),unknown);
 });

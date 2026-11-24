@@ -1,4 +1,4 @@
-import { DshPublicError, isCustomerAddressId, listCustomerAddresses, saveCustomerAddress, validCustomerAddressChange } from "@bthwani/dsh";
+import { DshPublicError, evaluateDeliveryServiceability, isCustomerAddressId, listCustomerAddresses, saveCustomerAddress, validCustomerAddressChange } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
 import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
@@ -7,7 +7,7 @@ import { customerCartOwnerOrigins } from "../cart/cart-owner-origins.ts";
 const response = (value: unknown, status = 200) => Response.json(value, { status, headers: {
   "Cache-Control":"no-store","Referrer-Policy":"no-referrer","X-Content-Type-Options":"nosniff",
 } });
-export async function handleCustomerAddresses(request: Request, method: "GET"|"PUT"): Promise<Response> {
+export async function handleCustomerAddresses(request: Request, method: "GET"|"PUT"|"SERVICEABILITY"): Promise<Response> {
   const url = new URL(request.url);
   const owners = customerCartOwnerOrigins(url);
   if (!owners) return response({error:"OWNER_UNAVAILABLE"},503);
@@ -17,10 +17,12 @@ export async function handleCustomerAddresses(request: Request, method: "GET"|"P
   }
   const key = method === "GET" ? "after" : "addressId";
   const id = url.searchParams.get(key);
-  if (url.searchParams.size !== (id === null ? 0 : 1) ||
+  const store = method === "SERVICEABILITY" ? url.searchParams.get("storeId") : null;
+  if (url.searchParams.size !== (method === "SERVICEABILITY" ? 2 : id === null ? 0 : 1) ||
     (id !== null && !isCustomerAddressId(id)) ||
-    (method === "PUT" && id === null) ||
-    (method === "GET" && (request.body || request.headers.get("Content-Length")))) {
+    (method !== "GET" && id === null) ||
+    (method === "SERVICEABILITY" && (!store || !/^[a-z0-9-]{1,64}$/.test(store))) ||
+    (method !== "PUT" && (request.body || request.headers.get("Content-Length")))) {
     return response({error:"INVALID_REQUEST"},400);
   }
   const actor = request.headers.get("X-Customer-Context");
@@ -37,7 +39,9 @@ export async function handleCustomerAddresses(request: Request, method: "GET"|"P
     dispatched = method === "PUT";
     const value = method === "PUT" && id && validCustomerAddressChange(change)
       ? await saveCustomerAddress(owners.dsh,bearer,actor,id,change,signal)
-      : await listCustomerAddresses(owners.dsh,bearer,actor,id ?? undefined,signal);
+      : method === "SERVICEABILITY" && store && id
+        ? await evaluateDeliveryServiceability(owners.dsh,bearer,actor,store,id,signal)
+        : await listCustomerAddresses(owners.dsh,bearer,actor,id ?? undefined,signal);
     const after = await readVerifiedIdentitySession(owners.identity,bearer,signal);
     if (signal.aborted || after.actorId !== actor || after.role !== "customer") {
       return response({error:dispatched?"OPERATION_RESULT_UNKNOWN":"UNAUTHORIZED"},dispatched?503:401);

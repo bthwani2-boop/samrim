@@ -8,6 +8,7 @@ import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-previ
 import { type CartReadState, type MerchandiseEstimateReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate } from "../cart/cart-transport";
 import { readCheckoutFunding } from "./checkout-funding";
 import type { CheckoutFundingState } from "./checkout-funding-state";
+import DeliveryAddressReview from "./delivery-address-review";
 import FulfillmentChoice from "./fulfillment-choice";
 import PaymentSelection from "./payment-selection";
 import RecipientForm from "./recipient-form";
@@ -285,7 +286,8 @@ export default function CheckoutScreen() {
             تأكيد الطلب والدفع غير متاحين
           </Text>
           <View style={{ gap: 10 }}>
-            <RecipientForm label="المستلم والعنوان: لم يصدر بعد تحقق DSH من بيانات التسليم لهذا الطلب." />
+            {cart && cart.lines.length > 0 ? <DeliveryAddressReview key={`${cart.actorId}:${storeId}:${cart.version}`} actorId={cart.actorId} storeId={storeId} /> : null}
+            <RecipientForm label="المستلم: لم تصدر بعد موافقة DSH على بيانات المستلم." />
             <FulfillmentChoice label="طريقة الاستلام أو التوصيل: لم تعتمد DSH أهلية أي طريقة لهذا الطلب." />
             <PaymentSelection label="الدفع: لم يصدر تخصيص مالي معتمد من WLT لهذا الطلب." />
           </View>

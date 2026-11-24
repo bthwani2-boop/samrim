@@ -97,6 +97,7 @@ function harness(startStore = "store-one") {
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "../../components/format-exact-yer": { formatExactYer },
     "../cart/cart-preview": { previewLineSubtotalYer, summarizeCartPreview },
+    "./delivery-address-review": { __esModule: true, default: "DeliveryAddressReview" },
     "./fulfillment-choice": { __esModule: true, default: "FulfillmentChoice" },
     "./payment-selection": { __esModule: true, default: "PaymentSelection" },
     "./recipient-form": { __esModule: true, default: "RecipientForm" },

@@ -140,11 +140,9 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
   }, [session]);
 
   useEffect(() => {
-    if (!session) return;
-    const timeout = setTimeout(() => {
-      setSession(null);
-      setStanding(null);
-    }, Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now()));
+    if (!session && enabled !== null && !entryUncertain) return;
+    const timeout = session ? setTimeout(refresh,
+      Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now())) : undefined;
     const refreshTimer = setInterval(() => {
       if (AppState.currentState === "active") refresh();
     }, 30_000);
@@ -152,7 +150,7 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
       clearTimeout(timeout);
       clearInterval(refreshTimer);
     };
-  }, [refresh, session]);
+  }, [refresh, session, enabled, entryUncertain]);
 
   function requestCode() {
     if (!phoneNumber) {

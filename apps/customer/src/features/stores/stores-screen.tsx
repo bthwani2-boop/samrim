@@ -5,7 +5,7 @@ import * as React from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ServiceCityScope from "../location/service-city-scope";
-import { normalizeServiceCityId, readStoreBrowseScope, STORE_SEARCH_LIMIT, serviceCityLabel } from "../location/serviceability";
+import { readStoreBrowseScope, STORE_SEARCH_LIMIT, serviceCityLabel } from "../location/serviceability";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
 
@@ -36,9 +36,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const [showSearch, setShowSearch] = React.useState(variant === "directory" || Boolean(initial.q));
   const [draftQuery, setDraftQuery] = React.useState(initial.q);
   const [query, setQuery] = React.useState(initial.q);
-  const [draftVertical, setDraftVertical] = React.useState(initial.vertical ?? "");
   const [vertical, setVertical] = React.useState(initial.vertical ?? "");
-  const [invalidVertical, setInvalidVertical] = React.useState(false);
   const routeScope = JSON.stringify([initial.city, initial.q, initial.vertical ?? ""]);
   const [appliedRouteScope, setAppliedRouteScope] = React.useState(routeScope);
   React.useEffect(() => {
@@ -46,9 +44,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     setCityId(initial.city);
     setDraftQuery(initial.q);
     setQuery(initial.q);
-    setDraftVertical(initial.vertical ?? "");
     setVertical(initial.vertical ?? "");
-    setInvalidVertical(false);
     setAppliedRouteScope(routeScope);
   }, [appliedRouteScope, routeScope, initial.city, initial.q, initial.vertical]);
   const [verticalRetry, setVerticalRetry] = React.useState(0);
@@ -179,15 +175,6 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     alignItems: "center", backgroundColor: theme.surface } as const;
   const browseParams = { city: cityId, ...(query ? { q: query } : {}), ...(vertical ? { vertical } : {}) };
   const submitSearch = () => setQuery(draftQuery.trim());
-  const applyVertical = () => {
-    const normalized = normalizeServiceCityId(draftVertical);
-    if (draftVertical.trim() && !normalized) {
-      setInvalidVertical(true);
-      return;
-    }
-    setInvalidVertical(false);
-    setVertical(normalized);
-  };
   return (
     <SafeAreaView
       edges={variant === "home" ? ["top", "left", "right"] : ["top", "bottom", "left", "right"]}
@@ -246,14 +233,20 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
             </View>
           ) : null}
           <View style={{ gap: 6 }}>
-            <Text style={{ color: theme.colorSecondary }}>تصفية المتاجر حسب نوع النشاط</Text>
+            <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 16, fontWeight: "700" }}>ماذا تريد أن تطلب؟</Text>
             {visibleVerticals.loading ? <ActivityIndicator accessibilityLabel="جاري تحميل أنواع المتاجر" color={theme.actionBackground} /> : null}
             <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              <Pressable testID="vertical-filter-clear" accessibilityRole="button"
+                accessibilityState={{ selected: !vertical }} accessibilityLabel="كل أنواع المتاجر"
+                onPress={() => setVertical("")}
+                style={{ ...buttonStyle, backgroundColor: !vertical ? theme.actionSoft : theme.surface }}>
+                <Text style={{ color: !vertical ? theme.interactiveText : theme.color }}>الكل</Text>
+              </Pressable>
               {visibleVerticals.items.map(item => (
                 <Pressable key={item.id} testID={`vertical-option-${item.id}`}
                   accessibilityRole="button" accessibilityState={{ selected: vertical === item.id }}
                   accessibilityLabel={`عرض متاجر ${verticalLabel(item.id)}`}
-                  onPress={() => { setDraftVertical(item.id); setVertical(item.id); setInvalidVertical(false); }}
+                  onPress={() => setVertical(item.id)}
                   style={{ ...buttonStyle, backgroundColor: vertical === item.id ? theme.actionSoft : theme.surface }}>
                   <Text style={{ color: vertical === item.id ? theme.interactiveText : theme.color }}>
                     {verticalLabel(item.id)} ({item.storeCount})
@@ -275,26 +268,8 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
                 </Pressable>
               ) : null}
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <TextInput testID="vertical-filter-input" accessibilityLabel="رمز تصنيف المتجر"
-                placeholder="مثل grocery" placeholderTextColor={theme.colorSecondary}
-                value={draftVertical} autoCapitalize="none" autoCorrect={false}
-                onChangeText={value => { setDraftVertical(value); setInvalidVertical(false); }}
-                returnKeyType="search" onSubmitEditing={applyVertical} maxLength={64}
-                style={{ ...buttonStyle, ...textStyle, flexGrow: 1, minWidth: 140, backgroundColor: theme.surface }} />
-              <Pressable testID="vertical-filter-apply" accessibilityRole="button"
-                onPress={applyVertical} style={{ ...headerAction, backgroundColor: theme.actionBackground }}>
-                <Text style={{ color: theme.onAction }}>تطبيق التصنيف</Text>
-              </Pressable>
-              {vertical ? <Pressable testID="vertical-filter-clear" accessibilityRole="button"
-                onPress={() => { setDraftVertical(""); setVertical(""); setInvalidVertical(false); }}
-                style={headerAction}>
-                <Text style={{ color: theme.interactiveText }}>كل الأنواع</Text>
-              </Pressable> : null}
-            </View>
-            {invalidVertical ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
-              رمز التصنيف غير صالح. استخدم حروفًا لاتينية صغيرة وأرقامًا وشرطة فقط.
-            </Text> : null}
+            {!visibleVerticals.loading && !visibleVerticals.error && visibleVerticals.items.length === 0
+              ? <Text style={{ color: theme.colorSecondary }}>لا توجد أنواع متاجر متاحة لهذه المدينة حاليًا.</Text> : null}
           </View>
         </View>
       </View>
@@ -310,7 +285,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
         ) : null}
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتاجر" color={theme.actionBackground} /> : null}
         {!visible.loading && visible.items.length === 0 && !visible.error
-          ? <Text testID="stores-empty" style={textStyle}>{query ? "لا توجد متاجر مطابقة للبحث في هذه المدينة." : "لا توجد متاجر منشورة لهذه المدينة حاليًا."}</Text> : null}
+          ? <Text testID="stores-empty" style={textStyle}>{query || vertical ? "لا توجد متاجر مطابقة لاختيارك. جرّب تغيير البحث أو اختيار الكل." : "لا توجد متاجر منشورة لهذه المدينة حاليًا."}</Text> : null}
         {visible.items.map((store) => {
           const availability = describeStoreOrderability(store);
           return (

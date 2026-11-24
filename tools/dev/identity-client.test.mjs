@@ -12,6 +12,7 @@ import {
   revokeVerifiedIdentitySession,
   establishPersistentIdentitySession,
   rotatePersistentIdentitySession,
+  readPersistentIdentityRole,
   revokePersistentIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "../../services/identity/clients/index.ts";
@@ -422,4 +423,37 @@ test("Persistent Identity lifecycle uses isolated owner paths, exact secret sche
   }
   await withFetch(async()=>response({error:"UNAUTHORIZED"},401),
     ()=>rejectsAs(()=>rotatePersistentIdentitySession(origin,refresh),401,"UNAUTHORIZED"));
+});
+
+test("background cancellation cannot discard an acknowledged persistent rotation", async () => {
+  const controller = new AbortController();
+  const refresh = Buffer.alloc(32, 35).toString("base64url");
+  const newer = Buffer.alloc(32, 36).toString("base64url");
+  const rotated = { ...admission(), refreshToken: newer, refreshExpiresAt: expires() };
+  let prepared = false;
+  let committed = null;
+  let rotations = 0;
+  await withFetch(async (url, options) => {
+    const path = new URL(url).pathname;
+    if (path === "/v1/sessions/current") {
+      assert.equal(options.headers.Authorization, "Bearer " + bearer);
+      return response({ error: "UNAUTHORIZED" }, 401);
+    }
+    assert.equal(path, "/v1/sessions/refresh");
+    assert.equal(options.method, "POST");
+    assert.equal(prepared, true);
+    rotations++;
+    controller.abort();
+    return response(rotated);
+  }, async () => {
+    await rejectsAs(() => readPersistentIdentityRole(origin, bearer, refresh, "customer",
+      controller.signal, async () => { prepared = true; }, async (credentials, previous, rotatedFlag) => {
+        assert.equal(previous, bearer);
+        assert.equal(rotatedFlag, true);
+        committed = credentials;
+        return true;
+      }), 0, "OWNER_RESPONSE_STALE");
+    assert.deepEqual(committed, rotated);
+    assert.equal(rotations, 1);
+  });
 });

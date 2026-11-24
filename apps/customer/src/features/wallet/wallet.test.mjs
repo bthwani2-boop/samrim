@@ -336,6 +336,40 @@ test("WLT SDK forwards only a canonical cursor to its isolated owner", async (t)
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
 
+test("WLT SDK and Customer BFF preserve owner rejection of an invalid history cursor", async (t) => {
+  const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_DOCKER_WALLET_WEB_PREVIEW"];
+  const saved = names.map(name => process.env[name]);
+  t.after(() => names.forEach((name, i) => {
+    if (saved[i] === undefined) delete process.env[name];
+    else process.env[name] = saved[i];
+  }));
+  process.env.BTHWANI_SURFACE_PREVIEW = "1";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  delete process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW;
+  const bearer = Buffer.alloc(32, 17).toString("base64url");
+  const cursor = "A".repeat(20); // Bounded syntax, but not an owner-issued keyset.
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url.pathname, "/v1/wallets/me/transactions");
+    assert.equal(url.searchParams.get("cursor"), cursor);
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    return Response.json({ error: "INVALID_REQUEST" }, {
+      status: 400, headers: { "Cache-Control": "no-store" },
+    });
+  });
+  await assert.rejects(() => readCurrentCustomerWalletTransactions(
+    "http://127.0.0.1:23203", bearer, new AbortController().signal, cursor,
+  ), { status: 400 });
+  const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
+  const response = await GET(new Request(
+    "http://127.0.0.1:23101/api/customer-auth/wallet-transactions?cursor=" + cursor,
+    { headers: { Cookie: "bthwani_surface_customer_auth=" + bearer } },
+  ));
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "INVALID_REQUEST" });
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(globalThis.fetch.mock.callCount(), 2);
+});
+
 test("Customer history BFF forwards a valid cursor only and refuses all other selectors", async (t) => {
   const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN"];
   const old = names.map(name => process.env[name]);

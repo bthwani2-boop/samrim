@@ -84,6 +84,45 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 	return nil
 }
 
+func developmentHealth(db *sql.DB, identityOrigin string, containerMode bool) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		pingCtx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		if err := db.PingContext(pingCtx); err != nil {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		if containerMode {
+			check, err := http.NewRequestWithContext(pingCtx, http.MethodGet, identityOrigin+"/health", nil)
+			if err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			client := &http.Client{
+				Timeout:       time.Second,
+				CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+			}
+			response, err := client.Do(check)
+			if err != nil {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			_ = response.Body.Close()
+			if response.StatusCode != http.StatusOK {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+	}
+}
+
 func main() {
 	if len(os.Args) > 1 {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
@@ -127,42 +166,7 @@ func main() {
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", handler)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", "GET")
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		pingCtx, cancel := context.WithTimeout(r.Context(), time.Second)
-		defer cancel()
-		if err := db.PingContext(pingCtx); err != nil {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			return
-		}
-		if containerMode {
-			check, err := http.NewRequestWithContext(pingCtx, http.MethodGet, identityOrigin+"/health", nil)
-			if err != nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			client := &http.Client{
-				Timeout:       time.Second,
-				CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-			}
-			response, err := client.Do(check)
-			if err != nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			_ = response.Body.Close()
-			if response.StatusCode != http.StatusOK {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-		}
-		w.Header().Set("Cache-Control", "no-store")
-		w.WriteHeader(http.StatusOK)
-	})
+	mux.HandleFunc("/health", developmentHealth(db, identityOrigin, containerMode))
 	server := &http.Server{
 		Addr: address, Handler: mux, ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second,

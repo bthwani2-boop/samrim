@@ -13,6 +13,14 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.service_cities (
         timezone_name IS NULL OR (char_length(timezone_name) BETWEEN 3 AND 64 AND timezone_name ~ '^[A-Za-z0-9_+/-]+$')
     )
 );
+-- A missing effective policy is deliberately unavailable; no implicit radius.
+-- Versioned policy admission is separate from an address or Store registration.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.service_city_delivery_policies (
+    city_id text PRIMARY KEY REFERENCES __SCHEMA__.service_cities(id) ON DELETE RESTRICT,
+    version bigint NOT NULL CHECK (version BETWEEN 1 AND 9007199254740991),
+    radius_metres integer NOT NULL CHECK (radius_metres > 0),
+    updated_at timestamptz NOT NULL DEFAULT transaction_timestamp()
+);
 CREATE TABLE IF NOT EXISTS __SCHEMA__.verticals (
     id text PRIMARY KEY CHECK (id ~ '^[a-z0-9-]{1,64}$'),
     active boolean NOT NULL

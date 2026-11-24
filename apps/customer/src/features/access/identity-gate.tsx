@@ -88,11 +88,10 @@ export default function CustomerIdentityGate() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!session) return;
-    // Expiry hides the local projection; Identity remains the session owner.
-    // Re-read while foregrounded so revocation is observed without an app switch.
-    const expiry = setTimeout(() => setSession(null),
-      Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now()));
+    if (!session && enabled !== null) return;
+    // Expiry and temporary outages require a fresh owner decision, not login.
+    const expiry = session ? setTimeout(refresh,
+      Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now())) : undefined;
     const revalidate = setInterval(() => {
       if (AppState.currentState === "active") refresh();
     }, 30_000);
@@ -100,7 +99,7 @@ export default function CustomerIdentityGate() {
       clearTimeout(expiry);
       clearInterval(revalidate);
     };
-  }, [refresh, session]);
+  }, [refresh, session, enabled]);
 
   const requestCode = () => void run(async signal => {
     if (!phoneNumber) return;

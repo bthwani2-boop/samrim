@@ -42,8 +42,9 @@ export async function handleWalletOwnerRead<T>(
     const value = await read(origin, bearer, signal, allowCursor ? cursors[0] : undefined);
     return Response.json(value, { headers });
   } catch (error) {
-    const status = error instanceof WltReadError && [401, 403].includes(error.status) ? error.status : 503;
-    const code = status === 401 ? "UNAUTHORIZED" : status === 403 ? "FORBIDDEN" : "OWNER_UNAVAILABLE";
+    const status = error instanceof WltReadError && [400, 401, 403].includes(error.status) ? error.status : 503;
+    const code = status === 400 ? "INVALID_REQUEST" : status === 401 ? "UNAUTHORIZED" :
+      status === 403 ? "FORBIDDEN" : "OWNER_UNAVAILABLE";
     return Response.json({ error: code }, { status, headers });
   }
 }

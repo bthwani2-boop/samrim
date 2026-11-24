@@ -104,10 +104,9 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
           // Captain component tree (including private in-memory screen state).
           setVerified({ session, standing });
           setAccess("allowed");
-          expiry = setTimeout(() => {
-            current?.abort();
-            setAccess("denied");
-          }, remaining);
+          // Access expiry is not a verdict about the persistent session.
+          // Hide protected content while Identity and DSH confirm renewal.
+          expiry = setTimeout(check, remaining);
         })
         .catch(() => {
           if (active && current === request && !request.signal.aborted) {

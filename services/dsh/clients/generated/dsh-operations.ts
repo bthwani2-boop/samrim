@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: f4b1f7ba27004a146d082005287b429119856aec6d4381cdaa2a8e11582ddc5d
+// Normalized OpenAPI SHA-256: c611fb9fcd76b0b73b2d55c097b092cbd2558fea965c9f4e0fd6b6f0ee68ef2d
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   applyCurrentCustomerForCaptainStanding: { method: "POST", path: "/v1/actors/me/captain-application" },
@@ -10,8 +10,10 @@ export const dshOperations = {
   dshHealth: { method: "GET", path: "/health" },
   estimateCurrentCustomerCartMerchandise: { method: "GET", path: "/v1/carts/{storeID}/merchandise-estimate" },
   estimatePublicOffer: { method: "GET", path: "/v1/public/stores/{id}/offers/{offerId}/estimate" },
+  evaluateCurrentCustomerDeliveryAddress: { method: "GET", path: "/v1/carts/{storeID}/serviceability" },
   getCityStoreOperationalPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/store-availability-policy" },
   getCompanyEmployee: { method: "GET", path: "/v1/operators/employees/{id}" },
+  getCompanyEmployeeRegistrationAudit: { method: "GET", path: "/v1/operators/employees/{id}/registration-audit" },
   getCurrentCaptainStanding: { method: "GET", path: "/v1/captains/me/standing" },
   getCurrentCustomerCaptainApplication: { method: "GET", path: "/v1/actors/me/captain-application" },
   getCurrentCustomerCaptainEligibility: { method: "GET", path: "/v1/actors/me/captain-eligibility" },

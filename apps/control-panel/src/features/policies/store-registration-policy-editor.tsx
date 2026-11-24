@@ -5,7 +5,7 @@ import type {
   OperatorStoreRegistrationPolicyHistoryPage,
   StoreRegistrationRelation,
 } from "@bthwani/dsh";
-import { Alert, Button, Card, Checkbox, Form, Input, Radio, Space, Typography } from "antd";
+import { Alert, Button, Card, Checkbox, Form, Input, Radio, Select, Space, Typography } from "antd";
 import { useState } from "react";
 import {
   matchesPendingPolicy,
@@ -16,9 +16,14 @@ import {
   reconcileRegistrationPolicy,
 } from "./store-registration-command";
 
+import type { PolicyCityDirectory } from "./policy-city-directory";
+
 const validCity = /^[a-z0-9-]{1,64}$/;
 
-export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ actorId: string }>) {
+export default function StoreRegistrationPolicyEditor({ actorId, directory = { cities: [], status: "unavailable" } }: Readonly<{
+  actorId: string;
+  directory?: PolicyCityDirectory;
+}>) {
   const [city, setCity] = useState("");
   const [relation, setRelation] = useState<StoreRegistrationRelation>("MARKETPLACE");
   const [policy, setPolicy] = useState<OperatorStoreRegistrationPolicy | null>(null);
@@ -88,10 +93,8 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
           setReason("");
           setMessage("تم تأكيد عملية التعديل من قراءة DSH المستقلة.");
         } else if (current.version > pending.expectedVersion + 1) {
-          setPending(null);
-          setUnknown(false);
-          setNeedsRead(true);
-          setError("تقدمت السياسة إلى إصدار أحدث؛ أعد القراءة قبل إنشاء عملية جديدة.");
+          setUnknown(true);
+          setError("توجد سياسة أحدث، لكن نتيجة عمليتك السابقة لم تتأكد. أعد إرسال العملية نفسها للتحقق منها دون تكرار.");
         } else {
           setUnknown(true);
           setError("لا تثبت القراءة تنفيذ العملية. أعد إرسال العملية نفسها بمعرّفها المحفوظ.");
@@ -180,9 +183,11 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
           "تم حفظ سياسة قبول المتاجر والتحقق من قراءتها لدى DSH.");
       return;
     }
-    if (result.status === "unknown") {
+    if (result.status === "unknown" || (unknown && result.status === "denied")) {
       setUnknown(true);
-      setError("نتيجة التعديل غير مؤكدة. حافظنا على معرّف العملية ونصها؛ اقرأ DSH أو أعد المحاولة نفسها.");
+      setError(result.status === "denied"
+        ? "تعذر التحقق من صلاحيتك لاسترداد العملية. احتفظ بالعملية نفسها حتى استعادة الصلاحية."
+        : "نتيجة التعديل غير مؤكدة. حافظنا على معرّف العملية ونصها؛ اقرأ DSH أو أعد المحاولة نفسها.");
       return;
     }
     setPending(null);
@@ -211,13 +216,21 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
         description="المباشر: ظهور صفحة المتجر عبر الرابط بعد النشر. السوق: أهلية الظهور في سوق بثواني بعد المراجعة. فتح التسجيل لا يوافق تلقائيًا على نشر المتجر أو اتفاقية WLT؛ العمولة والاشتراك والتحصيل والتوصيل ليست مشتقة من النموذج." />
       <Card title="تحديد المدينة وطريقة عمل المتجر" style={{ marginBlockEnd: 16 }}>
         <Form layout="vertical" onFinish={() => void refresh()}>
-          <Form.Item label="معرّف المدينة في DSH">
-            <Input aria-label="معرّف مدينة قبول المتاجر" value={city} maxLength={64}
-              disabled={locked} placeholder="مثال: sanaa" onChange={event => {
-                setCity(event.target.value);
-                resetScope();
-              }} />
+          <Form.Item label="المدينة">
+            <Select aria-label="اختيار مدينة قبول المتاجر" showSearch optionFilterProp="label"
+              value={city || null} options={[...directory.cities]}
+              disabled={locked || directory.cities.length === 0} placeholder="اختر مدينة الخدمة"
+              onChange={value => { if (!locked) { setCity(value ?? ""); resetScope(); } }} />
           </Form.Item>
+          {directory.status === "unavailable" && <Alert type="warning" showIcon
+            message="تعذر تحميل المدن من الخدمة المالكة. أعد تحميل الصفحة أو اقرأ مدينة معروفة." />}
+          {directory.status === "current" && directory.cities.length === 0 && <Alert type="info"
+            message="لا توجد مدن خدمة نشطة حاليًا." />}
+          <details style={{ marginBlockEnd: 12 }}>
+            <summary>قراءة مدينة معروفة أو مراجعة سجل تاريخي</summary>
+            <Input aria-label="معرّف مدينة قبول المتاجر" value={city} maxLength={64}
+              disabled={locked} onChange={event => { setCity(event.target.value); resetScope(); }} />
+          </details>
           <Form.Item label="طريقة العمل">
             <Radio.Group value={relation} disabled={locked} onChange={event => {
               setRelation(event.target.value as StoreRegistrationRelation);
@@ -320,6 +333,9 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
           style={{ marginBlockStart: 12 }} />}
       </Card>
       <Card title="تحديث سياسة التسجيل">
+        <Alert type="info" showIcon style={{ marginBlockEnd: 16 }}
+          message="نطاق أثر القرار"
+          description="يسري القرار على تسجيل المتاجر الجديدة في المدينة وطريقة العمل المحددتين فقط. لا يغير النشر الحالي أو شروط الاتفاقيات القائمة أو الطلبات السابقة." />
         <Form layout="vertical" onFinish={() => void save()}>
           <Form.Item label="حالة قبول متاجر جديدة">
             <Checkbox checked={enabled} disabled={locked || needsRead || !policy} onChange={event => {
@@ -331,13 +347,19 @@ export default function StoreRegistrationPolicyEditor({ actorId }: Readonly<{ ac
           </Form.Item>
           <Form.Item label="إصدار الشروط القانونية المعتمد">
             <Input aria-label="إصدار شروط قبول المتاجر" value={termsVersion} maxLength={80}
-              disabled={locked || needsRead} onChange={event => setTermsVersion(event.target.value)}
+              disabled={locked || needsRead} onChange={event => {
+                setTermsVersion(event.target.value);
+                setReviewed(false);
+              }}
               placeholder="مثال: merchant-terms-v1" />
           </Form.Item>
           <Form.Item label="نص الشروط الذي سيقرأه التاجر قبل الموافقة">
             <Input.TextArea aria-label="نص شروط تسجيل المتجر" value={termsText} rows={5}
               maxLength={4000} disabled={locked || needsRead}
-              onChange={event => setTermsText(event.target.value)} />
+              onChange={event => {
+                setTermsText(event.target.value);
+                setReviewed(false);
+              }} />
           </Form.Item>
           <Form.Item label="سبب القرار (سجل تدقيق DSH)">
             <Input.TextArea aria-label="سبب قرار قبول المتاجر" value={reason} maxLength={300}
