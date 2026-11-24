@@ -228,6 +228,16 @@ function readState() {
   }
   return state;
 }
+function verifyManifest() {
+  const currentHead = head();
+  const currentBranch = branch();
+  assertCompatibleBranchTransition(null, null, currentBranch);
+  const state = readState();
+  const mirrorHead = /^[a-f0-9]{40}$/.test(state?.head) ? state.head : "UNVERIFIED";
+  const current = mirrorHead === currentHead && state.branch === currentBranch &&
+    isUnchanged(state, inventory(), currentHead) && head() === currentHead && branch() === currentBranch;
+  return { head: currentHead, mirrorHead, current };
+}
 function persistAt(file, state) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const pending = file + "." + process.pid + ".tmp";
@@ -663,6 +673,10 @@ function pollGraphify() {
   });
 }
 function main() {
+  if (process.argv.includes("--verify-manifest")) {
+    console.log(JSON.stringify(verifyManifest()));
+    return;
+  }
   const idx = process.argv.indexOf("--check-path");
   if (idx >= 0) {
     const name = process.argv[idx + 1] || "";
@@ -671,7 +685,7 @@ function main() {
     return;
   }
   if (!process.argv.includes("--once") && !process.argv.includes("--watch")) {
-    throw new Error("USAGE --once | --watch | --check-path <path>");
+    throw new Error("USAGE --once | --watch | --verify-manifest | --check-path <path>");
   }
   if (!fs.existsSync(path.join(root, "AGENTS.md"))) throw new Error("CANONICAL_SOURCE_MISSING");
   const cycle = () => reconcile();
@@ -754,7 +768,7 @@ export function watchInProcess(entry = new URL(import.meta.url)) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const reportFailure = e => { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; };
-  if (isMainThread && process.argv.includes("--watch") && !process.argv.includes("--check-path")) {
+  if (isMainThread && process.argv.includes("--watch") && !process.argv.includes("--check-path") && !process.argv.includes("--verify-manifest")) {
     watchInProcess().then(code => { process.exitCode = code; }, reportFailure);
   } else {
     try { main(); } catch (e) { reportFailure(e); }

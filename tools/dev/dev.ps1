@@ -252,22 +252,21 @@ function Inspect-AppSourceSync([switch]$StrictCheck) {
   $spec=$ownerTasks[0]
   $task=Task-Action $spec.Name $spec.Pattern
   $info=Get-ScheduledTaskInfo -TaskName $spec.Name -ErrorAction Stop
-  $head=(Git -argsList @('rev-parse','HEAD') | Select-Object -First 1).Trim()
-  $branch=(Git -argsList @('branch','--show-current') | Select-Object -First 1).Trim()
-  $file=Join-Path $env:LOCALAPPDATA 'BThwani\Operations\SourceSync\manifest.json'
-  $manifest=$null
-  if(Test-Path -LiteralPath $file -PathType Leaf){
-    try{$manifest=Get-Content -LiteralPath $file -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable -ErrorAction Stop}catch{}
+  $proof=@{}
+  $node=Get-Command node.exe -ErrorAction SilentlyContinue
+  if($node){
+    $result=@(& $node.Source (Join-Path $repo 'tools\dev\sync-lenovo-source.mjs') '--verify-manifest' 2>&1)
+    if($LASTEXITCODE -eq 0){
+      try{$proof=$result -join "`n" | ConvertFrom-Json -AsHashtable -ErrorAction Stop}catch{}
+    }
   }
-  $valid=$manifest -is [System.Collections.IDictionary] -and $manifest.version -eq 1 -and
-    $manifest.host -ceq $expectedLenovo -and $manifest.target -ceq 'C:\Users\bthwa\BThwaniAppRunner\source-runtime' -and
-    $manifest.head -cmatch '^[a-f0-9]{40}$' -and $manifest.branch -is [string]
-  $current=$valid -and $manifest.head -ceq $head -and $manifest.branch -ceq $branch
+  $current=$proof['current'] -eq $true
   $running=[string]$task.State -eq 'Running'
-  $mirrorHead=if($valid){$manifest.head}else{'UNVERIFIED'}
+  $mirrorHead=$proof['mirrorHead'] ?? 'UNVERIFIED'
+  $head=$proof['head'] ?? 'UNVERIFIED'
   $status=if($running -and $current){'PASS'}else{'FAIL'}
   Say 'APP_SOURCE_SYNC' ($status+' task='+$task.State+' lastResult='+$info.LastTaskResult+' mirrorHead='+$mirrorHead+' sourceHead='+$head)
-  if($StrictCheck){Assert-Ok ($running -and $current) 'APP_SOURCE_SYNC_NOT_CURRENT (existing watcher or committed mirror revision not verified)'}
+  if($StrictCheck){Assert-Ok ($running -and $current) 'APP_SOURCE_SYNC_NOT_CURRENT (existing watcher or current source digests not verified)'}
 }
 
 function Inspect-AppOwners([switch]$StrictCheck) {

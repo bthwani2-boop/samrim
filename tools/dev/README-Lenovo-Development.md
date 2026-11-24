@@ -8,7 +8,7 @@ Surface hostname BTHWANI; Lenovo hostname BTHWANI-DOCKER. The SSH target alias i
 From Surface PowerShell in `D:\samrim` run **`pnpm dev`**. This is the fast default: it verifies the existing Lenovo SSH endpoint, reuses the existing Surface sync/tunnel and Lenovo app tasks, and opens the three Chrome tabs plus Customer/Merchant/Captain on a connected Samsung. It never launches a second watcher or another Expo/Next server, and does not recreate Docker containers or touch data.
 
 - `pnpm dev apps open` — reopen the existing Chrome window and connected Android apps without touching their servers. Use `-Mode Browser` when Samsung is disconnected.
-- `pnpm dev apps status` / `pnpm dev apps verify` — targeted diagnostics, not required at every launch.
+- `pnpm dev apps status` / `pnpm dev apps verify` — targeted diagnostics, not required at every launch. The source check compares the current allowed paths and file digests with the watcher's last published manifest. It detects saved edits at the same Git SHA. The watcher's periodic Lenovo hash audit checks for remote drift.
 - `pnpm dev up` — explicit, slower isolated infrastructure startup when the development Docker containers need starting; it preserves protected Identity/WLT state.
 
 When Lenovo is unreachable on TCP port 22, the fast command reports a specific `BLOCKED` error instead of running lengthy Docker checks. The preexisting Scheduled Tasks keep retrying their SSH tunnels. Check Lenovo power/network before repeating a failed start; never launch a duplicate watcher or tunnel.

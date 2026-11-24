@@ -1,11 +1,66 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict } from "./sync-lenovo-source.mjs";
+
+test("manifest verification rejects an edit before HEAD changes and recovers after sync", {
+  skip: process.platform !== "win32",
+}, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-verify-mirror-"));
+  const root = path.join(folder, "source");
+  const localAppData = path.join(folder, "state");
+  const manifestDir = path.join(localAppData, "BThwani", "Operations", "SourceSync");
+  const entry = "tools/dev/sync-lenovo-source.mjs";
+  const mirrored = [entry, "tools/dev/sync-lenovo-reconciliation.mjs", "apps/customer/example.ts"];
+  const git = (...args) => {
+    const result = spawnSync("C:\\Program Files\\Git\\cmd\\git.exe", args, { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    for (const rel of [...mirrored, "infra/owner-preview-source.mjs", "tools/security/verify-secrets.mjs"]) {
+      const target = path.join(root, rel);
+      mkdirSync(path.dirname(target), { recursive: true });
+      if (rel.endsWith("example.ts")) writeFileSync(target, "export const value = 1;\n");
+      else copyFileSync(new URL(`../../${rel}`, import.meta.url), target);
+    }
+    git("init", "-q");
+    git("add", "apps/customer/example.ts");
+    git("-c", "user.name=Mirror Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=" + folder, "commit", "-qm", "fixture");
+    const head = git("rev-parse", "HEAD");
+    mkdirSync(manifestDir, { recursive: true });
+    const markSynced = () => writeFileSync(path.join(manifestDir, "manifest.json"), JSON.stringify({
+      version: 1,
+      host: "BTHWANI-DOCKER",
+      target: "C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime",
+      head,
+      branch: git("branch", "--show-current"),
+      files: Object.fromEntries(mirrored.map(rel => [rel,
+        createHash("sha256").update(readFileSync(path.join(root, rel))).digest("hex").toUpperCase()])),
+    }));
+    const verify = () => {
+      const result = spawnSync(process.execPath, [entry, "--verify-manifest"], {
+        cwd: root, env: { ...process.env, LOCALAPPDATA: localAppData }, encoding: "utf8", timeout: 10000,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    markSynced();
+    assert.equal(verify().current, true);
+    writeFileSync(path.join(root, "apps/customer/example.ts"), "export const value = 2;\n");
+    assert.deepEqual(verify(), { head, mirrorHead: head, current: false });
+    markSynced();
+    assert.equal(verify().current, true);
+    writeFileSync(path.join(root, "apps/customer/added.ts"), "export const added = true;\n");
+    assert.equal(verify().current, false);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
 
 test("manifest persistence replaces atomically and never deletes another pending file", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-manifest-"));

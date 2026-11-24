@@ -199,12 +199,12 @@ test("the Merchant launcher preserves existing Windows task identities", () => {
   assert.doesNotMatch(launcher, /BThwani Merchant Metro Native/);
 });
 
-test("strict app verification checks the existing watcher and its committed mirror revision", () => {
+test("strict app verification checks the existing watcher and its mirrored source digests", () => {
   const launcher=readFileSync(scriptPath,"utf8");
   assert.match(launcher,/function Inspect-AppSourceSync\b/);
   assert.match(launcher,/Get-ScheduledTaskInfo -TaskName \$spec\.Name/);
   assert.match(launcher,/APP_SOURCE_SYNC/);
-  assert.match(launcher,/\$manifest\.head -ceq \$head/);
+  assert.match(launcher,/'--verify-manifest'/);
   assert.match(launcher,/'verify'\s*\{[^\r\n]*Inspect-AppSourceSync -StrictCheck/);
 });
 test("strict app verification distinguishes copied lockfile from installed dependency graph", () => {
