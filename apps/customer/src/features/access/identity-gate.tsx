@@ -57,6 +57,8 @@ export default function CustomerIdentityGate() {
   const refresh = useCallback(() => {
     void run(async signal => {
       setSession(null);
+      // An unresolved owner read must not be mistaken for a signed-out session.
+      setEnabled(null);
       const state = await readCustomerAdmission(signal);
       if (signal.aborted) return;
       setEnabled(state.enabled);

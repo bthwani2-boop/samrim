@@ -253,3 +253,27 @@ test("Captain admission offers an accessible retry after an owner outage", async
   assert.equal(verifiedUI(h.render()), true);
   assert.ok(homeLink(h.render()));
 });
+
+
+test("Captain owner outage after verified entry blocks new login until fresh owner confirmation", async () => {
+  const h = harness();
+  h.mount();
+  h.next().resolve(approved());
+  await settle();
+  assert.equal(verifiedUI(h.render()), true);
+  h.emit("active");
+  h.next().reject(new Error("owner unreachable"));
+  await settle();
+  const uncertain = h.render();
+  assert.equal(verifiedUI(uncertain), false);
+  assert.equal(homeLink(uncertain), undefined);
+  assert.equal(nodes(uncertain).find(node => node.type === "TextInput"), undefined);
+  const retry = nodes(uncertain).find(node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق");
+  assert.ok(retry);
+  retry.props.onPress();
+  h.next().resolve(approved());
+  await settle();
+  assert.equal(verifiedUI(h.render()), true);
+  assert.ok(homeLink(h.render()));
+});

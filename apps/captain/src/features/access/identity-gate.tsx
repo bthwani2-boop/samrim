@@ -68,6 +68,8 @@ export default function CaptainIdentityGate() {
     void run(async signal => {
       // No prior actor may be displayed while new Identity/DSH owner reads run.
       setSession(null);
+      // An unresolved Identity/DSH read must not start a new admission flow.
+      setEnabled(null);
       const state = await readCaptainAdmission(signal);
       if (!signal.aborted) {
         setEnabled(state.enabled);
@@ -112,7 +114,7 @@ export default function CaptainIdentityGate() {
       clearTimeout(expiry);
       clearInterval(revalidate);
     };
-  }, [session]);
+  }, [session, refresh]);
 
   const verified = hasActiveCaptainSession(session);
   const input = {

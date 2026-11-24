@@ -238,3 +238,33 @@ test("Customer refresh replaces old expiry timers and unmount releases all timer
   h.unmount();
   assert.equal(h.timerCount(), 0);
 });
+
+function findNode(node, predicate) {
+  if (Array.isArray(node)) return node.map(child => findNode(child, predicate)).find(Boolean);
+  if (!node || typeof node !== "object") return undefined;
+  return predicate(node) ? node : findNode(node.props?.children, predicate);
+}
+
+test("Customer revalidation timeout blocks new login until the owner confirms session state", async () => {
+  const h = harness();
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.poll();
+  const pending = h.read();
+  h.advance(20000);
+  assert.equal(pending.signal.aborted, true);
+  pending.reject(new Error("aborted"));
+  await settle();
+  const uncertain = h.render();
+  assert.equal(containsTestId(uncertain, "customer-identity-verified"), false);
+  const retry = findNode(uncertain, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق");
+  assert.ok(retry);
+  assert.equal(findNode(uncertain, node => node.type === "TextInput"), undefined);
+  retry.props.onPress();
+  h.read().resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+});
