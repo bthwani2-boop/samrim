@@ -152,9 +152,12 @@ export default function WalletScreen() {
           borderColor: theme.borderColor, backgroundColor: theme.surface }}>
           {balance?.kind === "ready" ? (
             <>
-              <Text style={{ color: theme.colorSecondary }}>رصيدك المتاح من التمويل المؤكد</Text>
+              <Text style={{ color: theme.colorSecondary }}>الرصيد المسجّل في المحفظة</Text>
               <Text testID="native-wallet-balance" style={{ color: theme.color, fontSize: 30, fontWeight: "700" }}>
                 {formatExactYer(BigInt(balance.balance.balanceYer))} ريال يمني
+              </Text>
+              <Text testID="native-wallet-available" style={{ color: theme.colorSecondary }}>
+                المتاح بعد الحجوزات: {formatExactYer(BigInt(balance.balance.availableYer))} ريال يمني
               </Text>
             </>
           ) : (

@@ -23,7 +23,7 @@ test("wallet projection preserves exact YER and binds the response to the curren
   t.mock.method(globalThis, "fetch", async (path, options) => {
     assert.equal(path, "/api/customer-auth/wallet");
     assert.equal(options.credentials, "same-origin");
-    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } });
   });
   let reads = 0;
@@ -39,7 +39,7 @@ test("wallet projection preserves exact YER and binds the response to the curren
 
 test("a changed account after the wallet response cannot display the previous balance", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
-    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } }));
   const sessions = [live("actor-a"), live("actor-b")];
   const result = await readVerifiedWallet(async () => sessions.shift(), new AbortController().signal);
@@ -62,7 +62,7 @@ test("a different role or expired Customer session cannot initiate a wallet read
 
 test("a role switch for the same Identity actor discards the pending wallet balance", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
-    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } }));
   const customer = live("actor-a");
   const merchant = { ...customer, session: { ...customer.session, role: "merchant" } };
@@ -76,7 +76,7 @@ test("a wallet response after cancellation is discarded", async (t) => {
   const controller = new AbortController();
   t.mock.method(globalThis, "fetch", async () => {
     controller.abort();
-    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } });
   });
   await assert.rejects(() => readVerifiedWallet(async () => live("actor-a"), controller.signal),
@@ -89,7 +89,7 @@ test("the Web wallet route uses only the isolated loopback owner and the existin
     assert.equal(options.method, "GET");
     assert.equal(options.redirect, "error");
     assert.equal(options.headers.Authorization, "Bearer " + Buffer.alloc(32, 17).toString("base64url"));
-    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } });
   });
   const saved = [process.env.BTHWANI_SURFACE_PREVIEW, process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN];
@@ -407,7 +407,7 @@ test("WLT read-only SDK admits only the Android emulator's isolated host bridge"
     assert.equal(options.headers.Authorization, "Bearer " + token);
     assert.equal(options.redirect, "error");
     assert.equal(options.credentials, "omit");
-    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: "2500" },
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: "2500", availableYer: "2500" },
       { headers: { "Cache-Control": "no-store" } });
   });
   assert.equal((await readCurrentCustomerWallet("http://10.0.2.2:23203", token,
@@ -503,7 +503,7 @@ test("WLT SDK reads bounded text-only Native replies without depending on TextDe
   try {
     globalThis.TextDecoder = undefined;
     t.mock.method(globalThis, "fetch", async () =>
-      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500"}'));
+      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500","availableYer":"2500"}'));
     const balance = await readCurrentCustomerWallet("http://10.0.2.2:23203",
       token, new AbortController().signal);
     assert.equal(balance.balanceYer, "2500");
@@ -513,7 +513,7 @@ test("WLT SDK reads bounded text-only Native replies without depending on TextDe
     await assert.rejects(() => readCurrentCustomerWallet("http://10.0.2.2:23203",
       token, new AbortController().signal), { status: 502 });
     globalThis.fetch.mock.mockImplementation(async () =>
-      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500"}',
+      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500","availableYer":"2500"}',
         new Headers({ "Cache-Control": "no-store", "Content-Type": "application/json",
           "Content-Length": "900000" })));
     await assert.rejects(() => readCurrentCustomerWallet("http://10.0.2.2:23203",
@@ -521,4 +521,15 @@ test("WLT SDK reads bounded text-only Native replies without depending on TextDe
   } finally {
     globalThis.TextDecoder = saved;
   }
+});
+
+test("WLT wallet projection distinguishes posted from available funding without precision loss", async () => {
+  const { parseCustomerWalletBalance } = await import("@bthwani/wlt");
+  const balance = { actorId: "actor-a", currency: "YER", balanceYer: "9007199254740993", availableYer: "9007199254740992" };
+  assert.deepEqual(parseCustomerWalletBalance(balance), balance);
+  for (const availableYer of ["9007199254740994", "-1", "01", "1.5", 0, null]) {
+    assert.throws(() => parseCustomerWalletBalance({ ...balance, availableYer }), WltReadError);
+  }
+  const { availableYer, ...old } = balance;
+  assert.throws(() => parseCustomerWalletBalance(old), WltReadError);
 });

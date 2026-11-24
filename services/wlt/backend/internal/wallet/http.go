@@ -11,7 +11,8 @@ import (
 
 var decimalYER = regexp.MustCompile(`^(0|[1-9][0-9]{0,37})$`)
 
-type balanceReader func(context.Context, string) (string, error)
+type walletAmounts struct{ Posted, Available string }
+type balanceReader func(context.Context, string) (walletAmounts, error)
 type historyReader func(context.Context, string, *historyCursor) (fundingHistory, error)
 
 func newHandler(origin string, balance balanceReader) (http.Handler, error) {
@@ -34,14 +35,17 @@ func newHandlerWithHistoryMode(origin string, balance balanceReader, history his
 			if err != nil {
 				return nil, err
 			}
-			if !decimalYER.MatchString(value) {
+			if !decimalYER.MatchString(value.Posted) || !decimalYER.MatchString(value.Available) ||
+				len(value.Available) > len(value.Posted) ||
+				(len(value.Available) == len(value.Posted) && value.Available > value.Posted) {
 				return nil, errors.New("invalid wallet balance")
 			}
 			return struct {
-				ActorID    string `json:"actorId"`
-				Currency   string `json:"currency"`
-				BalanceYER string `json:"balanceYer"`
-			}{actorID, "YER", value}, nil
+				ActorID      string `json:"actorId"`
+				Currency     string `json:"currency"`
+				BalanceYER   string `json:"balanceYer"`
+				AvailableYER string `json:"availableYer"`
+			}{actorID, "YER", value.Posted, value.Available}, nil
 		}, false)
 	})
 	mux.HandleFunc("/v1/wallets/me/transactions", func(w http.ResponseWriter, r *http.Request) {

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const body = {
-  actorId: "synthetic-customer-owner", currency: "YER", balanceYer: "0",
+  actorId: "synthetic-customer-owner", currency: "YER", balanceYer: "0", availableYer: "0",
 };
 const history = {
   actorId: body.actorId, currency: "YER", items: [], hasMore: false, nextCursor: null,

@@ -126,6 +126,16 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 	if err = owner.QueryRowContext(ctx, "SELECT wlt.reserve_order_wallet($1,$2,$3,$4,$5,$6,$7)", "checkout-reversal-guard", "wallet-two", "store-a", strings.Repeat("b", 64), "WALLET", int64(57), int64(57)).Scan(&reservation); err != nil || reservation != "RESERVED" {
 		t.Fatalf("reserve before reversal %s %v", reservation, err)
 	}
+	// A held amount remains in posted funding but must disappear from available funding.
+	body = readWallet(t, ctx, wallet, customer, "/v1/wallets/me", 200)
+	if err := json.Unmarshal(body, &balance); err != nil || balance["balanceYer"] != "57" || balance["availableYer"] != "0" {
+		t.Fatalf("held funds must not be available: %s", body)
+	}
+	var otherBalance map[string]string
+	body = readWallet(t, ctx, wallet, other, "/v1/wallets/me", 200)
+	if err := json.Unmarshal(body, &otherBalance); err != nil || otherBalance["availableYer"] != "0" || otherBalance["actorId"] != "wallet-empty" {
+		t.Fatalf("other customer's funding changed or leaked: %s", body)
+	}
 	if err = reverse(customer, "interrupted-credit", io.Discard); err == nil {
 		t.Fatal("reversed reserved funding")
 	}
@@ -135,6 +145,10 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 	}
 	if err = owner.QueryRowContext(ctx, "SELECT wlt.release_order_wallet($1,$2,$3,$4)", "checkout-reversal-guard", "wallet-two", "release-reversal-guard", "synthetic cancellation").Scan(&reservation); err != nil || reservation != "RELEASED" {
 		t.Fatalf("release before reversal %s %v", reservation, err)
+	}
+	body = readWallet(t, ctx, wallet, customer, "/v1/wallets/me", 200)
+	if err := json.Unmarshal(body, &balance); err != nil || balance["balanceYer"] != "57" || balance["availableYer"] != "57" {
+		t.Fatalf("released funds must be available again: %s", body)
 	}
 	if err := reverse(customer, "interrupted-credit", lostConfirmation{}); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("expected lost reversal confirmation, got %v", err)

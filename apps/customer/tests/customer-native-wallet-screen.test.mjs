@@ -25,7 +25,7 @@ try {
 
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const wallet = actorId => ({ kind: "ready", balance: {
-  actorId, currency: "YER", balanceYer: "9007199254740993",
+  actorId, currency: "YER", balanceYer: "9007199254740993", availableYer: "9007199254740992",
 }, expiresAt: Date.now() + 60000 });
 const funding = id => ({
   fundingId: id, amountYer: "1500", postedAt: "2026-11-20T00:00:00Z",

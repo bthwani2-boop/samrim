@@ -58,12 +58,12 @@ func TestWalletReadRequiresCurrentUncachedCustomer(t *testing.T) {
 			}))
 			defer identity.Close()
 			reads := 0
-			handler, err := newHandler(identity.URL, func(_ context.Context, actor string) (string, error) {
+			handler, err := newHandler(identity.URL, func(_ context.Context, actor string) (walletAmounts, error) {
 				reads++
 				if actor != "verified-customer" {
 					t.Errorf("request-supplied actor used for ledger read: %q", actor)
 				}
-				return "9007199254740993", nil
+				return walletAmounts{"9007199254740993", "9007199254740992"}, nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -117,8 +117,8 @@ func TestWalletDiscardsBalanceOnOwnerChangeDuringRead(t *testing.T) {
 				_, _ = w.Write([]byte(scenario.nextSession))
 			}))
 			defer identity.Close()
-			handler, err := newHandler(identity.URL, func(context.Context, string) (string, error) {
-				return "100", nil
+			handler, err := newHandler(identity.URL, func(context.Context, string) (walletAmounts, error) {
+				return walletAmounts{"100", "100"}, nil
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -163,7 +163,7 @@ func TestFundingHistoryRequiresCurrentCustomerAndNeverLeaksOnChange(t *testing.T
 			defer owner.Close()
 			reads := 0
 			handler, err := newHandlerWithHistory(owner.URL,
-				func(context.Context, string) (string, error) { return "0", nil },
+				func(context.Context, string) (walletAmounts, error) { return walletAmounts{"0", "0"}, nil },
 				func(_ context.Context, actor string, _ *historyCursor) (fundingHistory, error) {
 					reads++
 					if actor != "wallet-one" {
@@ -203,7 +203,7 @@ func TestFundingHistoryRejectsActorSelectionAndWrites(t *testing.T) {
 	}))
 	defer identity.Close()
 	handler, err := newHandlerWithHistory(identity.URL,
-		func(context.Context, string) (string, error) { return "0", nil },
+		func(context.Context, string) (walletAmounts, error) { return walletAmounts{"0", "0"}, nil },
 		func(context.Context, string, *historyCursor) (fundingHistory, error) {
 			t.Fatal("untrusted history input reached the owner")
 			return fundingHistory{}, nil

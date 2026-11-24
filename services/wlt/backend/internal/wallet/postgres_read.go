@@ -13,8 +13,9 @@ const historySQL = `SELECT funding_id, amount_yer::text, posted_at, reverses_fun
         (posted_at, funding_id COLLATE "C") < ($2::timestamptz, $3::text COLLATE "C"))
     ORDER BY posted_at DESC, funding_id COLLATE "C" DESC LIMIT 11`
 
-const balanceSQL = `SELECT COALESCE(
-	(SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id = $1), 0)::text`
+const balanceSQL = `SELECT COALESCE(b.balance_yer,0)::text,COALESCE(b.available_yer,0)::text
+	FROM (SELECT $1::text AS actor_id) a
+	LEFT JOIN wlt.customer_wallet_availability b ON b.actor_id=a.actor_id`
 
 func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
 	return newWalletHandler(db, identityOrigin, false)
@@ -33,9 +34,9 @@ func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool) (ht
 	if db == nil {
 		return nil, errors.New("WLT balance reader unavailable")
 	}
-	return newHandlerWithHistoryMode(identityOrigin, func(ctx context.Context, actorID string) (string, error) {
-		var balance string
-		err := db.QueryRowContext(ctx, balanceSQL, actorID).Scan(&balance)
+	return newHandlerWithHistoryMode(identityOrigin, func(ctx context.Context, actorID string) (walletAmounts, error) {
+		var balance walletAmounts
+		err := db.QueryRowContext(ctx, balanceSQL, actorID).Scan(&balance.Posted, &balance.Available)
 		return balance, err
 	}, func(ctx context.Context, actorID string, cursor *historyCursor) (fundingHistory, error) {
 		result := fundingHistory{ActorID: actorID, Currency: "YER", Items: []fundingTransaction{}}

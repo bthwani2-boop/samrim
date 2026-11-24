@@ -212,7 +212,7 @@ export default function CheckoutScreen() {
               <Text style={{ color: theme.color, fontWeight: "700" }}>رصيد المحفظة للمراجعة فقط</Text>
               <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
                 {currentFunding?.kind === "ready"
-                  ? `رصيد WLT التجريبي الحالي: ${formatExactYer(BigInt(currentFunding.balance.balanceYer))} ريال يمني.`
+                  ? `الرصيد التجريبي المتاح بعد الحجوزات: ${formatExactYer(BigInt(currentFunding.balance.availableYer))} ريال يمني.`
                   : currentFunding?.kind === "unavailable"
                     ? "تعذّر التحقق من رصيد المحفظة؛ لا يمكن الاعتماد عليه."
                     : "جارٍ التحقق من رصيد هذا الحساب لدى WLT."}

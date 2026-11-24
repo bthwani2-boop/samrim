@@ -156,6 +156,9 @@ export default function WalletScreen() {
               <Text testID="wallet-balance" style={{ color: theme.color, fontSize: 30, fontWeight: "700" }}>
                 {formatExactYer(BigInt(state.balance.balanceYer))} ريال يمني
               </Text>
+              <Text testID="wallet-available" style={{ color: theme.colorSecondary }}>
+                المتاح بعد الحجوزات: {formatExactYer(BigInt(state.balance.availableYer))} ريال يمني
+              </Text>
             </>
           ) : (
             <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>

@@ -32,12 +32,22 @@ ON wlt.order_wallet_reservations FOR EACH STATEMENT EXECUTE FUNCTION wlt.reject_
 CREATE TRIGGER order_wallet_releases_immutable BEFORE UPDATE OR DELETE OR TRUNCATE
 ON wlt.order_wallet_releases FOR EACH STATEMENT EXECUTE FUNCTION wlt.reject_funding_rewrite();
 
--- Derive available funding from the existing journal; never maintain a second balance.
+-- One derived read model: posted journal minus outstanding reservations.
+-- Expose aggregate amounts only, not the private reservation identities or quotes.
+CREATE VIEW wlt.customer_wallet_availability WITH (security_barrier=true) AS
+SELECT b.actor_id,b.balance_yer,
+       b.balance_yer-COALESCE((
+           SELECT sum(r.wallet_yer) FROM wlt.order_wallet_reservations r
+           WHERE r.actor_id=b.actor_id
+             AND NOT EXISTS (SELECT 1 FROM wlt.order_wallet_releases x WHERE x.checkout_id=r.checkout_id)
+       ),0) AS available_yer
+FROM wlt.customer_wallet_balances b;
+REVOKE ALL ON wlt.customer_wallet_availability FROM PUBLIC;
+GRANT SELECT ON wlt.customer_wallet_availability TO bthwani_wlt_reader;
+
 CREATE FUNCTION wlt.available_order_wallet_yer(p_actor text) RETURNS numeric
 LANGUAGE sql STABLE SET search_path=pg_catalog AS $available$
-    SELECT COALESCE((SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id=p_actor),0)
-        - COALESCE((SELECT sum(h.wallet_yer) FROM wlt.order_wallet_reservations h
-            WHERE h.actor_id=p_actor AND NOT EXISTS(SELECT 1 FROM wlt.order_wallet_releases r WHERE r.checkout_id=h.checkout_id)),0);
+    SELECT COALESCE((SELECT available_yer FROM wlt.customer_wallet_availability WHERE actor_id=p_actor),0);
 $available$;
 
 -- Owner-only transaction boundary until DSH quote authenticity, current Identity

@@ -24,7 +24,7 @@ function harness({ preview = "1", origin = "http://10.0.2.2:23203", platform = "
       async readCurrentCustomerWallet(source, token, signal) {
         requests.push({ kind: "wallet", source, token, signal });
         if (error) throw new ReadError(error);
-        return { actorId: "actor-a", currency: "YER", balanceYer: "9007199254740993" };
+        return { actorId: "actor-a", currency: "YER", balanceYer: "9007199254740993", availableYer: "9007199254740992" };
       },
       async readCurrentCustomerWalletTransactions(source, token, signal, cursor) {
         requests.push({ kind: "history", source, token, signal, cursor });

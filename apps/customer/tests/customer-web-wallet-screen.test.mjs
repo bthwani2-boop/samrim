@@ -26,7 +26,7 @@ try {
 const settle = async () => { await new Promise(resolve => setImmediate(resolve)); };
 const ready = actorId => ({
   kind:"ready",
-  balance:{actorId, currency:"YER", balanceYer:"9007199254740993"},
+  balance:{actorId, currency:"YER", balanceYer:"9007199254740993", availableYer:"9007199254740992"},
   expiresAt:Date.now()+60000,
 });
 const funding = fundingId => ({fundingId, amountYer:"17", postedAt:"2026-11-21T00:00:00Z"});

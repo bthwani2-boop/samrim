@@ -5,7 +5,7 @@ import { alignCheckoutFunding } from "./checkout-funding-state.ts";
 
 const evidence = {
   kind: "ready",
-  balance: { actorId: "customer-a", currency: "YER", balanceYer: "9007199254740993" },
+  balance: { actorId: "customer-a", currency: "YER", balanceYer: "9007199254740993", availableYer: "9007199254740992" },
   expiresAt: 20000,
 };
 

@@ -72,6 +72,7 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 				('wlt.customer_funding_journal'::regclass, false),
 				('wlt.customer_funding_entries'::regclass, false),
 				('wlt.customer_wallet_balances'::regclass, true),
+				('wlt.customer_wallet_availability'::regclass, true),
 				('wlt.customer_funding_history'::regclass, true),
 				(to_regclass('wlt.store_commercial_agreement_proposals'), false),
 				(to_regclass('wlt.store_commercial_agreement_decisions'), false),

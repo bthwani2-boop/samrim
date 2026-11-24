@@ -105,6 +105,9 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		{"agreement decision execution",
 			"GRANT EXECUTE ON FUNCTION wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text) TO bthwani_wlt_reader",
 			"REVOKE EXECUTE ON FUNCTION wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text) FROM bthwani_wlt_reader"},
+		{"wallet availability write",
+			"GRANT UPDATE (available_yer) ON wlt.customer_wallet_availability TO bthwani_wlt_reader",
+			"REVOKE UPDATE (available_yer) ON wlt.customer_wallet_availability FROM bthwani_wlt_reader"},
 		{"private reservation read",
 			"GRANT SELECT (wallet_yer) ON wlt.order_wallet_reservations TO bthwani_wlt_reader",
 			"REVOKE SELECT (wallet_yer) ON wlt.order_wallet_reservations FROM bthwani_wlt_reader"},
@@ -239,8 +242,8 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	} {
 		response := readWallet(t, ctx, server.URL, check.token, "/v1/wallets/me", 200)
 		var result map[string]string
-		if err := json.Unmarshal(response, &result); err != nil || len(result) != 3 ||
-			result["actorId"] != check.id || result["balanceYer"] != check.balance || result["currency"] != "YER" {
+		if err := json.Unmarshal(response, &result); err != nil || len(result) != 4 ||
+			result["actorId"] != check.id || result["balanceYer"] != check.balance || result["availableYer"] != check.balance || result["currency"] != "YER" {
 			t.Fatalf("unexpected durable read result: %s %v", response, err)
 		}
 	}
