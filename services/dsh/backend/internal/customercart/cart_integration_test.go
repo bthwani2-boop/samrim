@@ -174,6 +174,9 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("CustomerAddressesOwnerReadback", func(t *testing.T) {
+		verifyAddressesOnRealPostgres(t, ctx, db, schema, handler, sessions)
+	})
 	// The CI runner creates this separate disposable boundary fixture.
 	// A DSH-looking schema name must not authorize Cart access there.
 	boundaryDSN := "postgres://bthwani_ci:synthetic-only@127.0.0.1:5432/bthwani_dsh_boundary_fixture?sslmode=disable"

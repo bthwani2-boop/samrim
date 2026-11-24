@@ -18,6 +18,7 @@ var reviewedFreshBaseline = map[string]string{
 	"20_store_operations.sql":   "e30e787a91bfb49250738c6912f379898e8e51b048b9a897d31b76e5b60005b5",
 	"30_store_registration.sql": "19f35f438f2ccc3e1b2abb00db6a8c30652130be9cc3956c8e1b47dc052e71d5",
 	"40_customer_cart.sql":      "2ca899bf205e32b92a4bc9b69c7917dce6b71a45c4c1aad8bd8f6f691f2bcaa7",
+	"45_customer_addresses.sql": "8412124b163e0fc611a75b395f8c2da861e2f5c38e4ef2aae8d4569003ec2836",
 	"50_captains.sql":           "d0ac2ed5b35c4fb1cd1013429b46e6e37b6b3050cfc38454f51288af276bb169",
 	"60_employees.sql":          "99a6c71c41edd1fc7cd8135f940fabe5ad1ad10c6b8cb6c84d0bd29617de6a0f",
 }

@@ -18,6 +18,10 @@ paths:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
   /v1/public/stores/{id}/offers/{offerId}/estimate:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers~1{offerId}~1estimate'
+  /v1/addresses:
+    $ref: './paths/locations.yaml#/paths/~1v1~1addresses'
+  /v1/addresses/{addressID}:
+    $ref: './paths/locations.yaml#/paths/~1v1~1addresses~1{addressID}'
   /v1/carts/{storeID}:
     $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}'
   /v1/carts/{storeID}/merchandise-estimate:
@@ -140,6 +144,48 @@ components:
           maxItems: 50
           items: { $ref: '#/components/schemas/MerchantCatalogOffer' }
         nextCursor: { $ref: '#/components/schemas/PublicId' }
+    CustomerAddress:
+      type: object
+      additionalProperties: false
+      required: [id, cityId, label, details, latitude, longitude, version]
+      properties:
+        id: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        label: { type: string, minLength: 1, maxLength: 80 }
+        details: { type: string, minLength: 1, maxLength: 300 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    CustomerAddressChange:
+      type: object
+      additionalProperties: false
+      required: [cityId, label, details, latitude, longitude, expectedVersion]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        label: { type: string, minLength: 1, maxLength: 80 }
+        details: { type: string, minLength: 1, maxLength: 300 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        expectedVersion: { type: integer, minimum: 0, maximum: 9007199254740990 }
+    CustomerAddressPage:
+      type: object
+      additionalProperties: false
+      required: [actorId, items]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CustomerAddress' }
+        nextCursor: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+    CustomerAddressResult:
+      type: object
+      additionalProperties: false
+      required: [actorId, address, replay]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        address: { $ref: '#/components/schemas/CustomerAddress' }
+        replay: { type: boolean }
     CustomerCartLine:
       type: object
       additionalProperties: false

@@ -3,6 +3,7 @@ import {
   DshCartError, readCurrentCustomerCart, replaceCurrentCustomerCart,
 } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
+import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 import { customerCartOwnerOrigins } from "./cart-owner-origins.ts";
 
@@ -19,47 +20,13 @@ function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
   return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
 }
 async function boundedChange(request: Request): Promise<CustomerCartChange | null> {
-  if (request.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") return null;
-  const textSize = 8192;
-  const declared = request.headers.get("Content-Length");
-  if (declared && (!/^[0-9]+$/.test(declared) || Number(declared) > textSize)) return null;
-  const reader = request.body?.getReader();
-  if (!reader) return null;
-  const readSignal = AbortSignal.any([request.signal, AbortSignal.timeout(2000)]);
-  let onAbort: (() => void) | undefined;
-  const interrupted = new Promise<null>(resolve => {
-    onAbort = () => resolve(null);
-    if (readSignal.aborted) resolve(null);
-    else readSignal.addEventListener("abort", onAbort, { once: true });
-  });
-  const bytes = new Uint8Array(textSize);
-  let used = 0;
-  try {
-    for (;;) {
-      const next = await Promise.race([reader.read(), interrupted]);
-      if (next === null) return null;
-      const { done, value } = next;
-      if (done) break;
-      if (used + value.length > bytes.length) return null;
-      bytes.set(value, used);
-      used += value.length;
-    }
-    const payload: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, used)));
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-    const obj = payload as Record<string, unknown>;
-    if (!exactKeys(obj, ["operationId", "expectedVersion", "lines"]) || !Array.isArray(obj.lines) ||
-      obj.lines.length > 20 || !obj.lines.every(line => line && typeof line === "object" &&
-        !Array.isArray(line) && exactKeys(line as Record<string, unknown>, ["offerId", "quantity"]))) {
-      return null;
-    }
-    return payload as CustomerCartChange;
-  } catch {
-    return null;
-  } finally {
-    if (onAbort) readSignal.removeEventListener("abort", onAbort);
-    void reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
+  const payload = await readBoundedCustomerJSON(request);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const obj = payload as Record<string, unknown>;
+  if (!exactKeys(obj, ["operationId", "expectedVersion", "lines"]) || !Array.isArray(obj.lines) ||
+    obj.lines.length > 20 || !obj.lines.every(line => line && typeof line === "object" &&
+      !Array.isArray(line) && exactKeys(line as Record<string, unknown>, ["offerId", "quantity"]))) return null;
+  return payload as CustomerCartChange;
 }
 
 /** Customer Web is a cookie-only presentation adapter. Identity and DSH own truth. */

@@ -13,6 +13,8 @@ export type {
   CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult,
 } from "./city-policies.ts";
 export { getCityStoreOperationalPolicy, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
+export type { CustomerAddress, CustomerAddressChange, CustomerAddressPage, CustomerAddressResult } from "./customer-addresses.ts";
+export { isCustomerAddressId, listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, saveCustomerAddress, validCustomerAddressChange } from "./customer-addresses.ts";
 export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";
 export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
 export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.ts";

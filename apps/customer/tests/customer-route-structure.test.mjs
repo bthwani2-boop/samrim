@@ -51,8 +51,6 @@ test("web storefront keeps its no-index policy and reuses the DSH reader", () =>
 
 test("protected feature routes delegate to feature-owned screens and fail closed", () => {
   const routes = {
-    "addresses/index.tsx": "addresses/addresses-screen.tsx",
-    "addresses/[id].tsx": "addresses/address-editor.tsx",
     "multi-store-checkout.tsx": "multi-store-checkout/multi-store-checkout-screen.tsx",
     "(tabs)/orders/index.tsx": "orders/orders-screen.tsx",
     "orders/[id].tsx": "orders/order-detail-screen.tsx",
@@ -66,6 +64,13 @@ test("protected feature routes delegate to feature-owned screens and fail closed
     assert.match(source, /CapabilityUnavailableScreen/, screen);
     assert.doesNotMatch(source, /fetch\(|checkout\(|confirm\(|credit\(/, screen);
   }
+  for (const route of ["addresses/index.tsx","addresses/[id].tsx"]) {
+    assert.match(read(route), /addresses\/addresses-screen/);
+  }
+  const addresses = readFeature("addresses/addresses-screen.tsx");
+  assert.match(addresses, /readVerifiedAddresses\(/);
+  assert.match(addresses, /writeVerifiedAddress\(/);
+  assert.doesNotMatch(addresses, /fetch\(|AsyncStorage|SecureStore/);
   assert.match(read("checkout/index.tsx"), /export \{ default \} from/);
   const checkoutScreen = readFeature("checkout/checkout-screen.tsx");
   assert.match(checkoutScreen, /readVerifiedCart\(storeId,/);

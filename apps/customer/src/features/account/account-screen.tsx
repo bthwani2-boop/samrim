@@ -27,6 +27,9 @@ export default function AccountScreen() {
             </Pressable>
           </Link>
         </View>
+        <Link href="/addresses" asChild><Pressable accessibilityRole="link" style={{ minHeight:44, justifyContent:"center", padding:12, backgroundColor:theme.actionSoft, borderRadius:10 }}>
+          <Text style={{ color:theme.interactiveText }}>عناويني</Text>
+        </Pressable></Link>
         <AccountPreferences />
         <StoreInvitations />
       </ScrollView>

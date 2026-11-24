@@ -18,7 +18,7 @@ function validCoordinate(coordinate: Coordinate) {
     && Math.abs(coordinate.latitude) <= 90 && Math.abs(coordinate.longitude) <= 180;
 }
 
-export default function AddressEditor() {
+export default function AddressEditor({ onSelect }: Readonly<{ onSelect?: (pin: Coordinate) => void }> = {}) {
   const { theme } = useMobileAppearance();
   const map = React.useRef<MapView>(null);
   const mounted = React.useRef(true);
@@ -119,8 +119,12 @@ export default function AddressEditor() {
           disabled={busy} style={{ borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.actionSoft, padding: 15, borderRadius: 12, alignItems: "center" }}>
           {busy ? <ActivityIndicator color={theme.interactiveText} /> : <Text style={{ color: theme.interactiveText }}>استخدام موقعي الحالي</Text>}
         </Pressable>
+        {onSelect && pin ? <Pressable accessibilityRole="button" onPress={() => onSelect(pin)}
+          style={{ minHeight: 44, padding: 12, backgroundColor: theme.actionSoft }}>
+          <Text style={{ color: theme.interactiveText }}>استخدام النقطة المحددة</Text>
+        </Pressable> : null}
         <Text style={{ color: theme.colorSecondary }}>
-          هذه معاينة محلية فقط؛ لا يُحفظ العنوان أو يُرسل موقعك إلى الخدمة حتى يتوفر تكامل DSH المصرح به.
+          اختيار النقطة معاينة محلية؛ يتم حفظها فقط من نموذج العنوان بعد التحقق من الحساب.
         </Text>
       </View>
     </SafeAreaView>

@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
-test("address screens retain fail-closed behavior until Identity and DSH are integrated", () => {
-  for (const file of ["addresses-screen.tsx", "address-editor.tsx"]) {
-    const source = readFileSync(new URL(file, import.meta.url), "utf8");
-    assert.match(source, /CapabilityUnavailableScreen/);
-    assert.doesNotMatch(source, /fetch\(|AsyncStorage|SecureStore|createAddress\(/);
-  }
+const source=file=>readFileSync(new URL(file,import.meta.url),"utf8");
+test("address screens read and save through the verified DSH adapter; map choice is not a write",()=>{
+  assert.match(source("addresses-screen.tsx"),/readVerifiedAddresses\(/);
+  assert.match(source("addresses-screen.tsx"),/writeVerifiedAddress\(/);
+  assert.match(source("address-transport.ts"),/withVerifiedNativeCustomerRead/);
+  assert.match(source("address-transport.ts"),/readCustomerAdmission/);
+  assert.doesNotMatch(source("addresses-screen.tsx"),/fetch\(|AsyncStorage|SecureStore/);
+  assert.doesNotMatch(source("address-editor.native.tsx"),/fetch\(|writeVerifiedAddress|saveCustomerAddress/);
+  assert.match(source("address-editor.native.tsx"),/onSelect\(pin\)/);
 });

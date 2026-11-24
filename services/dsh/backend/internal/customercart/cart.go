@@ -70,6 +70,8 @@ func NewHandler(db *sql.DB, schema string, identity Identity) (http.Handler, err
 	mux.HandleFunc("GET /v1/carts/{storeID}", h.get)
 	mux.HandleFunc("GET /v1/carts/{storeID}/merchandise-estimate", h.merchandiseEstimate)
 	mux.HandleFunc("PUT /v1/carts/{storeID}", h.put)
+	mux.HandleFunc("GET /v1/addresses", h.listAddresses)
+	mux.HandleFunc("PUT /v1/addresses/{addressID}", h.saveAddress)
 	return mux, nil
 }
 func fail(w http.ResponseWriter, status int, code string) {
