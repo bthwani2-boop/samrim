@@ -219,3 +219,15 @@ test("baseline transition is owner-local, transactional and never disables trigg
   assert.match(sql,/COMMIT;\nSELECT 'OWNER_BASELINE_TRANSITION_PASS';$/);
   assert.throws(()=>buildOwnerBaselineTransition("dsh","dsh_test_agent01","bthwani_recovery_dsh_abcdef123456",["SELECT '__SCHEMA__'; $bthwani_baseline$"]),/Reserved/);
 });
+
+test("one owner-image builder replaces the three duplicated scripts", async () => {
+  const fs = await import("node:fs");
+  const base = new URL("./", import.meta.url);
+  assert.equal(fs.existsSync(new URL("build-owner-image.ps1",base)),true);
+  for (const old of ["build-dsh-image.ps1","build-identity-verifier-image.ps1","build-wlt-image.ps1"]) {
+    assert.equal(fs.existsSync(new URL(old,base)),false,old);
+    for(const consumer of ["reconcile-owner-runtime.mjs","../tools/dev/dev.ps1","../tools/dev/sync-lenovo-source.mjs","README.md","../services/wlt/backend/README.md"]) {
+      assert.equal(fs.readFileSync(new URL(consumer,base),"utf8").includes(old),false,consumer);
+    }
+  }
+});

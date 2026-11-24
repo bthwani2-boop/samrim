@@ -1120,7 +1120,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker reconcile -Apply -PrepareDshDatabase # one-time additive DSH candidate; no cutover'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
-  Write-Output 'BUILD=use infra/build-dsh-image.ps1 or infra/build-identity-verifier-image.ps1 explicitly'
+  Write-Output 'BUILD=use infra/build-owner-image.ps1 -Owner dsh|identity|wlt explicitly'
   Write-Output 'UNSUPPORTED=prune, down -v, SQL migration execution, bootstrap, protected state operations'
 }
 function Invoke-ScopedDocker {

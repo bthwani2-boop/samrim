@@ -66,7 +66,7 @@ creates a new isolated database plus its own read-only runtime credentials
 inside ignored `infra/.env`. It must never be run automatically with Compose.
 
 After a source commit, build via
-`pwsh -NoProfile -File infra/build-wlt-image.ps1`, and configure with
+`pwsh -NoProfile -File infra/build-owner-image.ps1 -Owner wlt`, and configure with
 `docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.wlt.yaml --profile wlt-reader config --quiet`.
 Start only the admitted reader using the matching Compose invocation plus
 `up -d --no-deps wlt`. Port `3203` is bound to Lenovo loopback only;
@@ -82,7 +82,7 @@ supported independently.
 builder is pinned to the approved root `.go-version` and an immutable digest,
 and the runtime Alpine image is also digest-pinned. The context is only
 `services/dsh/` with an allowlisted `.dockerignore`; no local Go compiler or
-Windows cross-compilation is required. `infra/build-dsh-image.ps1` keeps
+Windows cross-compilation is required. `infra/build-owner-image.ps1` keeps
 committed-source SHA checks and creates a tagged image without starting it,
 modifying secrets, or executing SQL migrations. Add the **verified existing isolated** schema
 and exact permitted browser origins only to the ignored `infra/.env`:
@@ -98,7 +98,7 @@ Run from the checkout root (never start an entire profile). The default
 rollout. An image build by itself does not recreate an existing container:
 
 ```powershell
-powershell -NoProfile -File infra/build-dsh-image.ps1
+powershell -NoProfile -File infra/build-owner-image.ps1 -Owner dsh
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml config --quiet
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile implementation up -d --no-deps dsh
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile implementation ps dsh
@@ -141,7 +141,7 @@ The service is `identity`, profile `identity-verifier`. It has no
 automatic bootstrap, issuer, migrations, donor volumes or other service restarts.
 
 `services/identity/backend/Dockerfile` now builds the real Go binary in a
-pinned multi-stage Linux builder. `build-identity-verifier-image.ps1` checks
+pinned multi-stage Linux builder. `build-owner-image.ps1` checks
 that the Docker builder matches `.go-version`, rejects uncommitted owner
 source, and records the exact source SHA on the resulting image. The Docker
 context is limited to `services/identity/`; SQL is packaged for review and
@@ -195,7 +195,7 @@ separate opt-in.
 The opt-in deployment sequence is:
 
 ```powershell
-powershell -NoProfile -File infra/build-identity-verifier-image.ps1
+powershell -NoProfile -File infra/build-owner-image.ps1 -Owner identity
 docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier config --quiet
 docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier up -d --no-deps identity
 docker --context bthwani-docker compose --env-file infra/.env --env-file infra/.env.identity-verifier.local -f infra/compose.yaml -f infra/compose.identity-verifier.yaml --profile identity-verifier ps identity

@@ -28,11 +28,7 @@ const operatorOverrides = {
   IDENTITY_OPERATOR_PASSKEY_ORIGINS: "REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS",
   IDENTITY_OPERATOR_PASSKEY_RPID: "REF_IDENTITY_OPERATOR_PASSKEY_RPID",
 };
-const buildScripts = {
-  dsh: "infra/build-dsh-image.ps1",
-  identity: "infra/build-identity-verifier-image.ps1",
-  wlt: "infra/build-wlt-image.ps1",
-};
+const buildScript = "infra/build-owner-image.ps1";
 const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
 function run(executable, args, env = {}, timeout = 30000, input) {
   const out = spawnSync(executable, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 16 * 1024 * 1024, input, env: { ...process.env, ...env } });
@@ -119,7 +115,7 @@ export function sourceIdentity(labels, owner) {
   return {revision:a||b,digest:null};
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","infra/owner-baseline-transition.mjs","infra/reconcile-owner-runtime.mjs","infra/verify-isolated-postgres.ps1",".go-version"];
+const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","infra/build-owner-image.ps1","infra/owner-baseline-transition.mjs","infra/reconcile-owner-runtime.mjs","infra/verify-isolated-postgres.ps1",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -200,7 +196,7 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
   const before=sql(oldDb,fingerprint);
   if(before.split(/\r?\n/).length!==tables.length+sequences.length)throw new Error("Incomplete source data fingerprint");
   const tag="sha-"+head.slice(0,9);
-  run("pwsh",["-NoProfile","-File",buildScripts.dsh,"-DockerContext",context,"-Image",owners.dsh.image+":"+tag],{},180000);
+  run("pwsh",["-NoProfile","-File",buildScript,"-Owner","dsh","-DockerContext",context,"-Image",owners.dsh.image+":"+tag],{},180000);
   if(sourceIdentity(imageRecord(owners.dsh.image+":"+tag).Config.Labels,"dsh").revision!==head || git(["rev-parse","HEAD"])!==head || git(["status","--porcelain","--untracked-files=all"]))throw new Error("Candidate source advanced");
   const ownerSecret=randomBytes(32).toString("hex"), runtimeSecret=randomBytes(32).toString("hex");
   const candidateEnv={...env,REF_DSH_IMAGE_TAG:tag,REF_DSH_RUNTIME_DATABASE:db,REF_DSH_RUNTIME_USER:runtime,REF_DSH_RUNTIME_PASSWORD:runtimeSecret,REF_DSH_BOOTSTRAP_USER:owner,REF_DSH_BOOTSTRAP_PASSWORD:ownerSecret,REF_DSH_DISCOVERY_SCHEMA:schema};
@@ -419,7 +415,7 @@ function relocateIdentity(state,env,head,files,resume=false) {
   if(!access)throw new Error("Legacy Identity ACL proof incomplete");
   const tag="sha-"+head.slice(0,9);
   // The new owner image includes a mandatory live-principal check.
-  run("pwsh",["-NoProfile","-File",buildScripts.identity,"-DockerContext",context,"-Image",owners.identity.image+":"+tag],{},180000);
+  run("pwsh",["-NoProfile","-File",buildScript,"-Owner","identity","-DockerContext",context,"-Image",owners.identity.image+":"+tag],{},180000);
   const image=imageRecord(owners.identity.image+":"+tag);
   if(sourceIdentity(image.Config.Labels,"identity").revision!==head || !clean())throw new Error("Identity candidate source advanced");
   const targetEnv={...env,REF_IDENTITY_IMAGE_TAG:tag,REF_IDENTITY_RUNTIME_DATABASE_URL:newUrl};
@@ -778,7 +774,7 @@ function main() {
         docker(["build","--pull=false","--file",file,"--build-arg","SAMRIM_SOURCE_REVISION=worktree-"+snap.digest,"--label","com.bthwani.preview-base="+head,"--label","com.bthwani.preview-digest="+snap.digest,"--tag",owners[o].image+":"+tag,service],{},180000);
         verifyMaterializedOwner(service,snap);
         if(captureOwner(root,o).digest!==snap.digest)throw new Error("Preview input changed during build: "+o);
-      } else run("pwsh",["-NoProfile","-File",buildScripts[o],"-DockerContext",context,"-Image",owners[o].image+":"+tag],{},180000);
+      } else run("pwsh",["-NoProfile","-File",buildScript,"-Owner",o,"-DockerContext",context,"-Image",owners[o].image+":"+tag],{},180000);
       const image=imageRecord(owners[o].image+":"+tag);
       const source=sourceIdentity(image.Config.Labels,o);
       if(source.revision!==head || source.digest!==(snap?.digest||null))throw new Error("New image source mismatch: "+o);
