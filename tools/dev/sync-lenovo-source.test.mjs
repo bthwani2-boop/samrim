@@ -568,3 +568,11 @@ test("fresh baseline rehearsal is scheduled on a new runtime key, not every revi
   assert.equal(runtimeBaselineProofDue("new",{key:"new",status:"retry"}),true);
   assert.equal(runtimeBaselineProofDue("new",{key:"new",status:"uncertain"}),false);
 });
+
+test("dependency changes include workspace manifests, patches and removed inputs without reporting ordinary source edits",async()=>{
+  const {dependencyInputChanges}=await import("./sync-lenovo-reconciliation.mjs");
+  const before={files:{"pnpm-workspace.yaml":"a","packages/design-system/package.json":"a","patches/example.patch":"a","apps/customer/app/index.tsx":"a"}};
+  const current=new Map([["pnpm-workspace.yaml","b"],["packages/design-system/package.json","b"],["patches/other.patch","a"],["apps/customer/app/index.tsx","b"]]);
+  assert.deepEqual(dependencyInputChanges(before,current),["packages/design-system/package.json","patches/example.patch","patches/other.patch","pnpm-workspace.yaml"]);
+  assert.deepEqual(dependencyInputChanges({files:Object.fromEntries(current)},current),[]);
+});

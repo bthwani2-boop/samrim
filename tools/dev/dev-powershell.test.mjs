@@ -198,3 +198,45 @@ test("the Merchant launcher preserves existing Windows task identities", () => {
   assert.match(launcher, /'merchant'=@\{N='BThwani Partner Metro Native'/);
   assert.doesNotMatch(launcher, /BThwani Merchant Metro Native/);
 });
+
+test("strict app verification checks the existing watcher and its committed mirror revision", () => {
+  const launcher=readFileSync(scriptPath,"utf8");
+  assert.match(launcher,/function Inspect-AppSourceSync\b/);
+  assert.match(launcher,/Get-ScheduledTaskInfo -TaskName \$spec\.Name/);
+  assert.match(launcher,/APP_SOURCE_SYNC/);
+  assert.match(launcher,/\$manifest\.head -ceq \$head/);
+  assert.match(launcher,/'verify'\s*\{[^\r\n]*Inspect-AppSourceSync -StrictCheck/);
+});
+test("strict app verification distinguishes copied lockfile from installed dependency graph", () => {
+  const launcher=readFileSync(scriptPath,"utf8");
+  assert.match(launcher,/node_modules\\\.pnpm\\lock\.yaml/);
+  assert.match(launcher,/APP_INSTALLED_DEPENDENCIES/);
+  assert.match(launcher,/APP_INSTALLED_LOCK_MISMATCH/);
+  assert.match(launcher,/\$installedMatch/);
+});
+
+test("pnpm package-manager lock document is excluded but workspace changes are not", {
+  skip: process.platform !== "win32",
+},()=>{
+  const quoted=scriptPath.replaceAll("'","''");
+  const ps=[
+    "$ErrorActionPreference='Stop'",
+    "$tok=$null;$err=$null",
+    `$ast=[Management.Automation.Language.Parser]::ParseFile('${quoted}',[ref]$tok,[ref]$err)`,
+    "$block=$ast.FindAll({param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.StringConstantType.ToString() -eq 'SingleQuotedHereString'},$true) | Where-Object {$_.Value -match 'function Get-WorkspaceLockDocument'} | Select-Object -First 1",
+    "if(!$block){throw 'MISSING_LOCK_PROOF'}",
+    "$t=$null;$e=$null;$inner=[Management.Automation.Language.Parser]::ParseInput($block.Value,[ref]$t,[ref]$e)",
+    "$fn=$inner.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-WorkspaceLockDocument'},$true)",
+    "Invoke-Expression $fn.Extent.Text",
+    "$nl=[string][char]10;$crlf=[string][char]13+[char]10",
+    "$workspace=@('lockfileVersion: 9.0','importers:','  .:','    dependencies:','      sample:','        version: 1.0.0') -join $nl",
+    "$full=@('---','lockfileVersion: 9.0','importers:','  .:','    packageManagerDependencies: {}','---',$workspace) -join $crlf",
+    "if((Get-WorkspaceLockDocument $full) -cne (Get-WorkspaceLockDocument $workspace)){throw 'IDENTICAL_WORKSPACE_REJECTED'}",
+    "if((Get-WorkspaceLockDocument $full) -ceq (Get-WorkspaceLockDocument ($workspace.Replace('1.0.0','2.0.0')))){throw 'STALE_GRAPH_ACCEPTED'}",
+    "$invalid=$false;try{Get-WorkspaceLockDocument 'invalid' | Out-Null}catch{$invalid=$true};if(!$invalid){throw 'MALFORMED_LOCK_ACCEPTED'}",
+    "Write-Output 'WORKSPACE_LOCK_PROOF_PASS'",
+  ].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",timeout:15000,windowsHide:true});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/WORKSPACE_LOCK_PROOF_PASS/);
+});

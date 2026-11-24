@@ -247,6 +247,29 @@ function Show-AppsHelp {
   Write-Output 'pnpm dev apps restart -App captain -Apply # only if unhealthy, scoped, fail-closed'
   Write-Output 'APPS_GUARDS=never force-stop unknown PID, healthy app, Docker, SSH tunnels, cache or source watcher'
 }
+# A responding dev server is not proof the task-owned source mirror is current.
+function Inspect-AppSourceSync([switch]$StrictCheck) {
+  $spec=$ownerTasks[0]
+  $task=Task-Action $spec.Name $spec.Pattern
+  $info=Get-ScheduledTaskInfo -TaskName $spec.Name -ErrorAction Stop
+  $head=(Git -argsList @('rev-parse','HEAD') | Select-Object -First 1).Trim()
+  $branch=(Git -argsList @('branch','--show-current') | Select-Object -First 1).Trim()
+  $file=Join-Path $env:LOCALAPPDATA 'BThwani\Operations\SourceSync\manifest.json'
+  $manifest=$null
+  if(Test-Path -LiteralPath $file -PathType Leaf){
+    try{$manifest=Get-Content -LiteralPath $file -Raw -ErrorAction Stop | ConvertFrom-Json -AsHashtable -ErrorAction Stop}catch{}
+  }
+  $valid=$manifest -is [System.Collections.IDictionary] -and $manifest.version -eq 1 -and
+    $manifest.host -ceq $expectedLenovo -and $manifest.target -ceq 'C:\Users\bthwa\BThwaniAppRunner\source-runtime' -and
+    $manifest.head -cmatch '^[a-f0-9]{40}$' -and $manifest.branch -is [string]
+  $current=$valid -and $manifest.head -ceq $head -and $manifest.branch -ceq $branch
+  $running=[string]$task.State -eq 'Running'
+  $mirrorHead=if($valid){$manifest.head}else{'UNVERIFIED'}
+  $status=if($running -and $current){'PASS'}else{'FAIL'}
+  Say 'APP_SOURCE_SYNC' ($status+' task='+$task.State+' lastResult='+$info.LastTaskResult+' mirrorHead='+$mirrorHead+' sourceHead='+$head)
+  if($StrictCheck){Assert-Ok ($running -and $current) 'APP_SOURCE_SYNC_NOT_CURRENT (existing watcher or committed mirror revision not verified)'}
+}
+
 function Inspect-AppOwners([switch]$StrictCheck) {
   $lock=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
   $mode=if($StrictCheck){'$true'}else{'$false'}
@@ -265,8 +288,29 @@ if(!(Test-Path -LiteralPath $root -PathType Container)){throw 'APP_MIRROR_MISSIN
 $version=(Get-Content -LiteralPath (Join-Path $root '.node-version') -Raw).Trim()
 $actualNode=if(Test-Path -LiteralPath $node -PathType Leaf){(& $node --version).Trim().TrimStart('v')}else{'MISSING'}
 $lock=(Get-FileHash -LiteralPath (Join-Path $root 'pnpm-lock.yaml') -Algorithm SHA256).Hash
+# pnpm 12's source lock can have a leading package-manager lock document;
+# its installed virtual-store lock represents the final workspace document.
+# Compare the actual installed graph, not just the mirrored lockfile bytes.
+function Get-WorkspaceLockDocument([string]$Raw) {
+  $docs=@(($Raw -csplit '(?m)^---[ \t]*\r?$') | ForEach-Object {$_.Trim()} | Where-Object {$_})
+  if($docs.Count -lt 1 -or $docs.Count -gt 2){throw 'APP_LOCK_DOCUMENT_COUNT_INVALID'}
+  $workspace=$docs[$docs.Count-1].Replace([string][char]13+[char]10,[string][char]10)
+  if($workspace -cnotmatch '(?m)^lockfileVersion:' -or $workspace -cnotmatch '(?m)^importers:'){throw 'APP_LOCK_DOCUMENT_INVALID'}
+  return $workspace
+}
+$installed=Join-Path $root 'node_modules\.pnpm\lock.yaml'
+$installedMatch=$false
+if(Test-Path -LiteralPath $installed -PathType Leaf){
+  try{
+    $wanted=Get-WorkspaceLockDocument (Get-Content -LiteralPath (Join-Path $root 'pnpm-lock.yaml') -Raw)
+    $actual=Get-WorkspaceLockDocument (Get-Content -LiteralPath $installed -Raw)
+    $installedMatch=$wanted -ceq $actual
+  }catch{}
+}
 Write-Output ('APP_MIRROR nodePin='+$version+' nodeActual='+$actualNode+' lockMatch='+($lock -eq $expectedLock))
+Write-Output ('APP_INSTALLED_DEPENDENCIES '+$(if($installedMatch){'PASS'}else{'FAIL'}))
 if($strict -and ($version -ne '24.22.1' -or $actualNode -ne $version -or $lock -ne $expectedLock)){throw 'APP_MIRROR_TOOLCHAIN_OR_LOCK_MISMATCH'}
+if($strict -and !$installedMatch){throw 'APP_INSTALLED_LOCK_MISMATCH (mirrored lock does not match installed dependencies)'}
 foreach($s in $specs){
   $manifest=Get-Content -LiteralPath (Join-Path $root ('apps\'+$s.A+'\package.json')) -Raw | ConvertFrom-Json
   foreach($dep in $manifest.dependencies.PSObject.Properties){
@@ -680,8 +724,8 @@ function Invoke-AppAction {
   if($DockerAction -eq 'open'){Open-AppSurfaces;Show-OperatorAuthReadiness;return}
   Check-Ssh
   switch($DockerAction.ToLowerInvariant()){
-    'status' {Inspect-AppOwners}
-    'verify' {Inspect-AppOwners -StrictCheck;Verify-AppWeb}
+    'status' {Inspect-AppSourceSync;Inspect-AppOwners}
+    'verify' {Inspect-AppSourceSync -StrictCheck;Inspect-AppOwners -StrictCheck;Verify-AppWeb}
     'logs' {Show-AppLogs}
     'start' {Control-SingleApp 'start'}
     'restart' {Control-SingleApp 'restart'}
