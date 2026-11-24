@@ -29,6 +29,7 @@ function harness() {
   const standings = [];
   let index = 0;
   let appChanged;
+  let actionTimeout;
   const react = {
     useState(initial) {
       const at = index++;
@@ -86,7 +87,7 @@ function harness() {
       return mocks[name];
     },
     mod, mod.exports,
-    () => 1, () => undefined, () => 2, () => undefined,
+    callback => { actionTimeout = callback; return 1; }, () => undefined, () => 2, () => undefined,
   );
   const render = () => {
     index = 0;
@@ -107,6 +108,10 @@ function harness() {
     emit(state) {
       assert.equal(typeof appChanged, "function");
       appChanged(state);
+    },
+    timeoutAction() {
+      assert.equal(typeof actionTimeout, "function");
+      actionTimeout();
     },
     nextAdmission() {
       assert.ok(admissions.length, "a new Identity owner check must have started");
@@ -235,4 +240,40 @@ test("a different actor invalidates the old workspace before DSH grants arrive",
   assert.equal(visible(current), true);
   assert.notEqual(current.key, initial.key);
   assert.equal(current.props.children.props.actorId, other.actorId);
+});
+
+
+test("Merchant timed-out Identity revalidation requires recovery instead of starting a second login", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const initial = workspace(h.render());
+  assert.equal(visible(initial), true);
+  initial.props.children.props.onRefresh();
+  const pending = h.nextAdmission();
+  h.timeoutAction();
+  assert.equal(pending.signal.aborted, true);
+  pending.reject(new Error("aborted"));
+  await settle();
+  const tree = h.render();
+  assert.equal(visible(workspace(tree)), false);
+  const retry = findNode(tree, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق من الجلسة");
+  assert.ok(retry);
+  assert.equal(findNode(tree, node => node.type === "TextInput" &&
+    node.props.accessibilityLabel === "رقم هاتف الاختبار"), undefined);
+  retry.props.onPress();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const recovered = workspace(h.render());
+  assert.equal(visible(recovered), true);
+  assert.equal(recovered.key, initial.key);
 });

@@ -65,6 +65,8 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
   const refresh = useCallback(() => {
     void run(async signal => {
       setSession(null);
+      // An interrupted or timed-out owner read cannot establish that no session exists.
+      setEntryUncertain(true);
       try {
         const state = await readAdmission(signal);
         if (signal.aborted) return;
