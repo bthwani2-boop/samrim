@@ -68,6 +68,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       },
       "./merchant-catalog-draft-form": { __esModule: true, default: "DraftForm" },
       "./catalog-export": { __esModule: true, default: "CatalogExport" },
+      "./catalog-import": { __esModule: true, default: "CatalogImport" },
       "./inventory-summary": { __esModule: true, default: "InventorySummary" },
       "./catalog-transport": {
         readMerchantCatalogPage(storeId, actorId, signal, options) {
@@ -104,6 +105,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(requests.length, 1);
       assert.equal(requests[0].storeId, "store-a");
       assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-a");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.storeId, "store-a");
       assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.storeId, "store-a");
       assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-a");
       const choice = nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر ثان");
@@ -112,6 +114,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       tree = render("merchant-a", stores);
       assert.equal(requests.length, 2);
       assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-b");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.storeId, "store-b");
       assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.storeId, "store-b");
       assert.equal(requests[0].signal.aborted, true);
       requests[0].resolve({ actorId: "merchant-a", storeId: "store-a",
@@ -204,7 +207,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       tree = render("merchant-a", stores.slice(0, 1), "store-b");
       assert.equal(requests.length, 1, "revoking Store B must not trigger a read of Store A");
       assert.equal(requests[0].signal.aborted, true);
-      assert.ok(!nodes(tree).some(n => ["DraftForm", "CatalogExport", "InventorySummary"].includes(n.type)));
+      assert.ok(!nodes(tree).some(n => ["DraftForm", "CatalogExport", "CatalogImport", "InventorySummary"].includes(n.type)));
       nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر أول").props.onPress();
       render("merchant-a", stores.slice(0, 1), "store-b");
       assert.equal(requests[1].storeId, "store-a");

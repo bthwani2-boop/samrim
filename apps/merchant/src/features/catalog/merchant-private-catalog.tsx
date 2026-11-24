@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 import CatalogExport from "./catalog-export";
+import CatalogImport from "./catalog-import";
 import { readMerchantCatalogPage } from "./catalog-transport";
 import InventorySummary from "./inventory-summary";
 import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
@@ -188,6 +189,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     {storeId && actorId ? <InventorySummary key={JSON.stringify([actorId, storeId, retry])}
       actorId={actorId} storeId={storeId} /> : null}
     {storeId && actorId && !priceStockOnly ? <CatalogExport actorId={actorId} storeId={storeId} query={searchQuery} status={status} /> : null}
+    {storeId && actorId && !priceStockOnly ? <CatalogImport actorId={actorId} storeId={storeId} /> : null}
     {storeId && actorId && !priceStockOnly ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
       onCreated={() => setRetry(value => value + 1)} /> : null}
     {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة كتالوج المتجر" /> : null}
