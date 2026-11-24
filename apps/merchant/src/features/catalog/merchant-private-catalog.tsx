@@ -3,6 +3,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
+import CatalogExport from "./catalog-export";
 import { readMerchantCatalogPage } from "./catalog-transport";
 import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
 
@@ -138,6 +139,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
         <Text style={{ color: theme.interactiveText }}>مسح البحث</Text>
       </Pressable> : null}
     </View> : null}
+    {storeId && actorId ? <CatalogExport actorId={actorId} storeId={storeId} /> : null}
     {storeId && actorId ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
       onCreated={() => setRetry(value => value + 1)} /> : null}
     {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة كتالوج المتجر" /> : null}

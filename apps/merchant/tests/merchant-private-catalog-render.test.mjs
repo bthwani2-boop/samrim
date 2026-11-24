@@ -67,6 +67,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         } }),
       },
       "./merchant-catalog-draft-form": { default: "DraftForm" },
+      "./catalog-export": { __esModule: true, default: "CatalogExport" },
       "./catalog-transport": {
         readMerchantCatalogPage(storeId, actorId, signal, options) {
           const request = { storeId, actorId, signal, options };
@@ -101,11 +102,13 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       let tree = render("merchant-a", stores);
       assert.equal(requests.length, 1);
       assert.equal(requests[0].storeId, "store-a");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-a");
       const choice = nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر ثان");
       assert.ok(choice);
       choice.props.onPress();
       tree = render("merchant-a", stores);
       assert.equal(requests.length, 2);
+      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-b");
       assert.equal(requests[0].signal.aborted, true);
       requests[0].resolve({ actorId: "merchant-a", storeId: "store-a",
         items: [offer("old-a", "بيانات قديمة")] });
