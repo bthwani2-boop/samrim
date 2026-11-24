@@ -205,7 +205,7 @@ export default function WalletScreen() {
           </View>
         ) : null}
         {state?.kind === "signed-out" ? (
-          <Link href="/account" style={{ color: theme.interactiveText }}>انتقال إلى الحساب</Link>
+          <Link href={{ pathname: "/login", params: { returnTo: "/wallet" } }} style={{ color: theme.interactiveText }}>تسجيل الدخول إلى المحفظة</Link>
         ) : state?.kind === "unavailable" || history?.kind === "unavailable" ? (
           <Pressable accessibilityRole="button" onPress={() => refreshBalance.current?.()}>
             <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>

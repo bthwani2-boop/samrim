@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { customerAuthDestination } from "../src/features/access/auth-return-path.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const entry = fileURLToPath(new URL("../src/features/access/identity-gate.tsx", import.meta.url));
@@ -22,7 +23,7 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
-function harness() {
+function harness(returnTo) {
   const hooks = [];
   const effects = [];
   const requests = [];
@@ -66,7 +67,8 @@ function harness() {
   const fake = {
     "@bthwani/identity": { IdentityClientError: class extends Error {}, normalizeYemeniMobile: () => undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme }) },
-    "expo-router": { Link: "Link" },
+    "expo-router": { Link: "Link", useLocalSearchParams: () => ({ returnTo }) },
+    "./auth-return-path": { customerAuthDestination },
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     "react-native": {
@@ -267,4 +269,35 @@ test("Customer revalidation timeout blocks new login until the owner confirms se
   h.read().resolve({ enabled: true, session: h.session() });
   await settle();
   assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+});
+
+
+test("wallet continuation is exposed only while Identity confirms a current Customer session", async () => {
+  const h = harness("/wallet");
+  const continuation = () => findNode(h.render(), node => node.type === "Link" && node.props.href === "/wallet");
+  try {
+    h.mount();
+    assert.equal(continuation(), undefined);
+    h.read().resolve({ enabled: true, session: h.session() });
+    await settle();
+    assert.equal(continuation()?.props.replace, true);
+    h.poll();
+    assert.equal(continuation(), undefined);
+    h.read().resolve({ enabled: true, session: null });
+    await settle();
+    assert.equal(continuation(), undefined);
+  } finally { h.unmount(); }
+});
+
+test("an arbitrary internal API or external URL never becomes an authenticated continuation", async () => {
+  for (const target of ["/api/customer-auth", "//external.example", ["/wallet"]]) {
+    const h = harness(target);
+    try {
+      h.mount();
+      h.read().resolve({ enabled: true, session: h.session() });
+      await settle();
+      assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+      assert.equal(findNode(h.render(), node => node.type === "Link" && node.props.replace), undefined);
+    } finally { h.unmount(); }
+  }
 });

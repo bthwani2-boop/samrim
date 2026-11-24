@@ -181,6 +181,8 @@ test("Native wallet hides financial data immediately when sent to background, an
     await settle();
     assert.equal(byId(app.render(), "native-wallet-balance"), null);
     assert.match(textOf(app.render()), /تسجيل الدخول/);
+    const login = walk(app.render(), node => node.type === "Link" && node.props.href?.pathname === "/login");
+    assert.deepEqual(login?.props.href, { pathname: "/login", params: { returnTo: "/wallet" } });
   } finally { app.unmount(); }
 });
 

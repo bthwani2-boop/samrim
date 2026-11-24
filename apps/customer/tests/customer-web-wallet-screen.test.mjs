@@ -142,6 +142,8 @@ test("Web wallet hides funds on blur and rejects late history and revoked sessio
     h.event("focus");
     h.read("balance").resolve({kind:"signed-out"});await settle();
     assert.equal(find(h.render(),"wallet-balance"),null);
+    const login=walk(h.render(),n=>n.type==="Link"&&n.props.href?.pathname==="/login");
+    assert.deepEqual(login?.props.href,{pathname:"/login",params:{returnTo:"/wallet"}});
   }finally{h.unmount();}
 });
 

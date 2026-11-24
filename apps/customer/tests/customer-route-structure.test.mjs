@@ -113,3 +113,15 @@ test("tabs keep their URLs and no route duplicates their roots", () => {
     assert.equal(existsSync(resolve(app, duplicate)), false);
   }
 });
+
+test("Customer account exposes the existing protected wallet and signed-out wallets return through login", () => {
+  const account = readFeature("account/account-screen.tsx");
+  assert.match(account, /href="\/wallet"/);
+  for (const screen of ["wallet-screen.tsx", "wallet-screen.web.tsx"]) {
+    assert.match(readFeature(`wallet/${screen}`), /pathname: "\/login", params: \{ returnTo: "\/wallet" \}/);
+  }
+  const identity = readFeature("access/identity-gate.tsx");
+  assert.match(identity, /customerAuthDestination\(returnTo\)/);
+  assert.match(identity, /enabled && session \? \(/);
+  assert.match(identity, /href=\{destination\}/);
+});

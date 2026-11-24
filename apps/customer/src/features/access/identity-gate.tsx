@@ -1,8 +1,9 @@
 import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Link } from "expo-router";
+import { Link, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Pressable, SafeAreaView, ScrollView, Text, TextInput, View } from "react-native";
+import { customerAuthDestination } from "./auth-return-path";
 import {
   readCustomerAdmission,
   requestCustomerCode,
@@ -24,6 +25,8 @@ function friendlyError(error: unknown): string {
 /** Customer's synthetic first-factor prerequisite, never a Merchant/Captain/Operator grant. */
 export default function CustomerIdentityGate() {
   const { theme } = useMobileAppearance();
+  const { returnTo } = useLocalSearchParams<{ returnTo?: string | string[] }>();
+  const destination = customerAuthDestination(returnTo);
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [session, setSession] = useState<VerifiedIdentitySession | null>(null);
   const [phone, setPhone] = useState("");
@@ -157,6 +160,12 @@ export default function CustomerIdentityGate() {
               <Text testID="customer-identity-verified" style={{ color: theme.color }}>
                 تم التحقق من جلسة العميل عبر Identity. لا تمنح هذه الجلسة صلاحيات تاجر أو كابتن أو مشغّل.
               </Text>
+              {!busy && destination !== "/" ? (
+                <Link href={destination} replace style={{ color: theme.interactiveText, fontSize: 17,
+                  minHeight: 44, textAlign: "center", paddingVertical: 12 }}>
+                  {destination === "/wallet" ? "متابعة إلى المحفظة" : "متابعة إلى القسم المطلوب"}
+                </Link>
+              ) : null}
               {button("تسجيل الخروج", signOut)}
             </>
           ) : null}
