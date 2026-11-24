@@ -33,7 +33,13 @@ test("ambiguous headers, malformed quoting, empty inputs and overflow reject the
 test("bounded file reader preserves UTF-8, rejects inconsistent size and never reads oversized files", async () => {
   const signal = new AbortController().signal;
   const csv = header + "قهوة,1200,5";
-  assert.equal(await readCatalogCsv(new Blob([csv]), signal), csv);
+  const read = await readCatalogCsv(new Blob([csv]), signal);
+  assert.equal(read.source, csv);
+  assert.deepEqual(read.bytes,new TextEncoder().encode(csv));
+  const bom=new Uint8Array([239,187,191,...read.bytes]);
+  const withBom=await readCatalogCsv(new Blob([bom]),signal);
+  assert.equal(withBom.source,csv);
+  assert.deepEqual(withBom.bytes,bom);
   await assert.rejects(readCatalogCsv(new Blob([new Uint8Array([0xff])]), signal), /CSV_FORMAT/);
   await assert.rejects(readCatalogCsv({ size: csvPreviewByteLimit + 1, stream() { assert.fail("oversized read"); } }, signal), /CSV_LIMIT/);
   for (const [size, data, pattern] of [[1, [1,2], /CSV_LIMIT/], [2,[1],/CSV_FORMAT/]]) {

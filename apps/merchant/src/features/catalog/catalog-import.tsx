@@ -1,13 +1,15 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { CryptoDigestAlgorithm, digest } from "expo-crypto";
 import { getDocumentAsync } from "expo-document-picker";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import MerchantCapabilityScreen from "../../components/merchant-capability-screen";
 import { csvPreviewByteLimit, previewCatalogCsv, readCatalogCsv, reviewCatalogImportRows } from "./catalog-import-data";
+import CatalogImportRun from "./catalog-import-run";
 import { readMerchantCatalogPage } from "./catalog-transport";
 import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
 
-function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; storeId: string }>) {
+function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorId: string; storeId: string; onChanged?: (() => void) | undefined }>) {
   const { theme } = useMobileAppearance();
   const [rows, setRows] = useState<ReturnType<typeof previewCatalogCsv>>([]);
   const [page, setPage] = useState(0);
@@ -16,6 +18,7 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
   const [filter, setFilter] = useState<"all" | "existing-store-name" | "owner-review" | "invalid" | "duplicate-name">("all");
   const [selected, setSelected] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
+  const [sourceSha256,setSourceSha256]=useState("");
   const active = useRef<AbortController | null>(null);
   useLayoutEffect(() => () => { active.current?.abort(); active.current = null; }, []);
 
@@ -28,6 +31,7 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
     setError("");
     setNotice("");
     setRows([]);
+    setSourceSha256("");
     setPage(0);
     setFilter("all");
     let webUri: string | undefined;
@@ -52,10 +56,13 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
       const file = Platform.OS === "web" ? asset.file : new (await import("expo-file-system")).File(asset.uri);
       signal.throwIfAborted();
       if (!file) throw new Error("CSV_FORMAT");
-      const source = await readCatalogCsv(file, signal);
+      const {source,bytes} = await readCatalogCsv(file, signal);
+      signal.throwIfAborted();
+      const sourceDigest = Array.from(new Uint8Array(await digest(CryptoDigestAlgorithm.SHA256, bytes)),b=>b.toString(16).padStart(2,"0")).join("");
       signal.throwIfAborted();
       const reviewed = await reviewCatalogImportRows(previewCatalogCsv(source), actorId, storeId, signal, readMerchantCatalogPage);
       signal.throwIfAborted();
+      setSourceSha256(sourceDigest);
       setRows(reviewed);
     } catch (cause) {
       if (active.current !== controller) return;
@@ -87,7 +94,7 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
     <Text style={{ color: theme.colorSecondary }}>
       اختر CSV بترميز UTF-8 وعناوين الأعمدة name,price_yer,stock_units بهذا الترتيب.
       تُطابق الأسماء مع عروض المتجر المقروءة من DSH؛ عدم العثور على اسم لا يثبت أهلية إنشاء منتج جديد.
-      لا تُرفع بيانات الملف ولا يُنشأ أي منتج. يمكنك مراجعة سعر ومخزون مسودة مطابقة واحدة وحفظ تعديلها لدى DSH بشكل صريح؛ تبقى المسودات غير منشورة. اعتماد الاستيراد الجماعي وحل الهويات الملتبسة غير متاحين بعد.
+      المعاينة محلية؛ عند اعتماد الدفعة تُرسل بيانات الصفوف إلى DSH، ولا يُنشأ أي منتج. يمكنك مراجعة سعر ومخزون مسودة مطابقة واحدة وحفظ تعديلها لدى DSH بشكل صريح؛ تبقى المسودات غير منشورة. يمكن اعتماد دفعة لتعديل المسودات المطابقة فقط؛ إنشاء المنتجات الجماعي وحل الهويات الملتبسة غير متاحين بعد.
     </Text>
     <Pressable accessibilityRole="button" accessibilityLabel="معاينة ملف المنتجات CSV"
       accessibilityState={{ busy, disabled: busy || selected !== null }} disabled={busy || selected !== null} onPress={() => void choose()} style={button}>
@@ -95,6 +102,9 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
     </Pressable>
     {error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{error}</Text> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={{ color: theme.successText }}>{notice}</Text> : null}
+    <CatalogImportRun key={JSON.stringify([actorId,storeId])} actorId={actorId} storeId={storeId}
+      rows={selected!==null||busy?[]:rows} sourceSha256={sourceSha256}
+      onChanged={() => { setRows([]); setSourceSha256(""); setPage(0); setFilter("all"); onChanged?.(); }} />
     {selected !== null ? (() => {
       const row = rows.find(r => r.row === selected);
       if (!row?.editableDraft) return null;
@@ -104,7 +114,7 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
         <MerchantCatalogDraftForm key={JSON.stringify([actorId, storeId, row.editableDraft.id, row.editableDraft.draftVersion])}
           actorId={actorId} storeId={storeId} draft={row.editableDraft} priceStockOnly
           initialPriceStock={{ priceYer: row.priceYer, stockUnits: Number(row.stockUnits) }}
-          onSaved={() => setNotice("أكد DSH حفظ تعديل المسودة غير المنشورة. افحص الملف مجددًا لقراءة أحدث بيانات المتجر.")}
+          onSaved={() => { setNotice("أكد DSH حفظ تعديل المسودة غير المنشورة. افحص الملف مجددًا لقراءة أحدث بيانات المتجر."); onChanged?.(); }}
           onCreated={() => { setSelected(null); setRows([]); setPage(0); setFilter("all"); }} />
         <Pressable accessibilityRole="button" onPress={() => setSelected(null)} style={button}>
           <Text style={{ color: theme.interactiveText }}>العودة إلى المعاينة</Text>
@@ -148,7 +158,7 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
           onPress={() => setPage(p => Math.min(Math.max(0, Math.ceil(visible.length/25)-1), p+1))} style={button}>
           <Text style={{ color: theme.interactiveText }}>التالي</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={() => { setRows([]); setPage(0); setFilter("all"); }} style={button}>
+        <Pressable accessibilityRole="button" onPress={() => { setRows([]); setSourceSha256(""); setPage(0); setFilter("all"); }} style={button}>
           <Text style={{ color: theme.interactiveText }}>مسح المعاينة</Text>
         </Pressable>
       </View>
@@ -156,8 +166,8 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
   </View>;
 }
 
-export default function CatalogImport({ actorId, storeId }: Readonly<{ actorId?: string; storeId?: string }> = {}) {
+export default function CatalogImport({ actorId, storeId, onChanged }: Readonly<{ actorId?: string; storeId?: string; onChanged?: (() => void) | undefined }> = {}) {
   if (!actorId || !storeId) return <MerchantCapabilityScreen title="استيراد الكتالوج"
     message="افتح الكتالوج من مساحة التاجر الموثقة وحدد متجرك لفحص الملف." />;
-  return <CatalogImportPreview key={JSON.stringify([actorId, storeId])} actorId={actorId} storeId={storeId} />;
+  return <CatalogImportPreview key={JSON.stringify([actorId, storeId])} actorId={actorId} storeId={storeId} onChanged={onChanged} />;
 }

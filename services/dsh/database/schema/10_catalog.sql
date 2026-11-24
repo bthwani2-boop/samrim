@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.catalog_draft_edit_commands (
     committed_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (actor_id,operation_id),
     UNIQUE (offer_id,result_version),
+    UNIQUE (actor_id,store_id,offer_id,result_version),
     FOREIGN KEY (offer_id,store_id) REFERENCES __SCHEMA__.offers(id,store_id) ON DELETE RESTRICT
 );
 CREATE OR REPLACE FUNCTION __SCHEMA__.reject_catalog_draft_edit_rewrite()
@@ -81,4 +82,45 @@ $$;
 DROP TRIGGER IF EXISTS trg_catalog_draft_edit_immutable ON __SCHEMA__.catalog_draft_edit_commands;
 CREATE TRIGGER trg_catalog_draft_edit_immutable
 BEFORE UPDATE OR DELETE ON __SCHEMA__.catalog_draft_edit_commands
+FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.reject_catalog_draft_edit_rewrite();
+
+-- Confirmed, immutable CSV manifest and per-row receipts. A run can be
+-- resumed in bounded transactions; edits are recorded by the existing writer.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.catalog_import_runs (
+    actor_id text NOT NULL CHECK (char_length(trim(actor_id)) BETWEEN 1 AND 128),
+    run_id text NOT NULL CHECK (run_id ~ '^[A-Za-z0-9._-]{8,128}$'),
+    store_id text NOT NULL REFERENCES __SCHEMA__.stores(id) ON DELETE RESTRICT,
+    request_hash text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+    manifest jsonb NOT NULL CHECK (jsonb_typeof(manifest) = 'object' AND
+        manifest ? 'sourceSha256' AND jsonb_typeof(manifest->'sourceSha256') = 'string' AND
+        manifest->>'sourceSha256' ~ '^[a-f0-9]{64}$' AND manifest ? 'rows' AND
+        jsonb_typeof(manifest->'rows') = 'array' AND jsonb_array_length(manifest->'rows') BETWEEN 1 AND 5000),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (actor_id,run_id),
+    UNIQUE (actor_id,run_id,store_id)
+);
+CREATE TABLE IF NOT EXISTS __SCHEMA__.catalog_import_outcomes (
+    actor_id text NOT NULL,
+    run_id text NOT NULL,
+    store_id text NOT NULL,
+    row_number integer NOT NULL CHECK (row_number BETWEEN 2 AND 5001),
+    status text NOT NULL CHECK (status IN ('ACCEPTED','HELD','FAILED')),
+    reason text NOT NULL CHECK (reason IN ('UPDATED','UNSELECTED','DUPLICATE','INVALID_VALUES','AMBIGUOUS_OR_CHANGED','INELIGIBLE','STALE_VERSION_OR_NAME','OPERATION_CONFLICT')),
+    offer_id text REFERENCES __SCHEMA__.offers(id) ON DELETE RESTRICT,
+    result_version bigint,
+    recorded_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (actor_id,run_id,row_number),
+    FOREIGN KEY (actor_id,run_id,store_id) REFERENCES __SCHEMA__.catalog_import_runs(actor_id,run_id,store_id) ON DELETE RESTRICT,
+    FOREIGN KEY (actor_id,store_id,offer_id,result_version) REFERENCES __SCHEMA__.catalog_draft_edit_commands(actor_id,store_id,offer_id,result_version) ON DELETE RESTRICT,
+    CHECK ((status='ACCEPTED' AND reason='UPDATED' AND offer_id IS NOT NULL AND result_version IS NOT NULL AND result_version >= 2)
+        OR (status='FAILED' AND reason='OPERATION_CONFLICT' AND offer_id IS NULL AND result_version IS NULL)
+        OR (status='HELD' AND reason NOT IN ('UPDATED','OPERATION_CONFLICT') AND offer_id IS NULL AND result_version IS NULL))
+);
+DROP TRIGGER IF EXISTS trg_catalog_import_runs_immutable ON __SCHEMA__.catalog_import_runs;
+CREATE TRIGGER trg_catalog_import_runs_immutable
+BEFORE UPDATE OR DELETE ON __SCHEMA__.catalog_import_runs
+FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.reject_catalog_draft_edit_rewrite();
+DROP TRIGGER IF EXISTS trg_catalog_import_outcomes_immutable ON __SCHEMA__.catalog_import_outcomes;
+CREATE TRIGGER trg_catalog_import_outcomes_immutable
+BEFORE UPDATE OR DELETE ON __SCHEMA__.catalog_import_outcomes
 FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.reject_catalog_draft_edit_rewrite();

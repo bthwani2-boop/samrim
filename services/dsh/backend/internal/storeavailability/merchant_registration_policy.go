@@ -105,6 +105,29 @@ func (s *MerchantStoreRegistrar) ApplyRegistrationPolicy(
 	if !identityaccess.ValidActorID(actorID) || !validStoreRegistrationPolicyChange(change) {
 		return StoreRegistrationPolicyResult{}, ErrRegistrationInvalid
 	}
+	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
+		Isolation: sql.LevelReadCommitted,
+	})
+	if err != nil {
+		return StoreRegistrationPolicyResult{}, ErrStoreOwnerUnavailable
+	}
+	defer tx.Rollback()
+	result, err := applyRegistrationPolicyTx(ctx, tx, actorID, change)
+	if err != nil {
+		return StoreRegistrationPolicyResult{}, err
+	}
+	if err = tx.Commit(); err != nil {
+		return StoreRegistrationPolicyResult{}, ErrUnknownResult
+	}
+	return result, nil
+}
+
+// The owner transaction primitive is shared by normal Operator decisions and
+// the explicitly authorized fresh-only synthetic bootstrap.
+func applyRegistrationPolicyTx(ctx context.Context, tx *sql.Tx, actorID string, change StoreRegistrationPolicyChange) (StoreRegistrationPolicyResult, error) {
+	if !identityaccess.ValidActorID(actorID) || !validStoreRegistrationPolicyChange(change) {
+		return StoreRegistrationPolicyResult{}, ErrRegistrationInvalid
+	}
 	change.Reason = strings.TrimSpace(change.Reason)
 	change.TermsText = strings.TrimSpace(change.TermsText)
 	// City and relation are URL-bound, not JSON request fields. They must still
@@ -119,13 +142,6 @@ func (s *MerchantStoreRegistrar) ApplyRegistrationPolicy(
 	}
 	digest := sha256.Sum256(encoded)
 	fingerprint := hex.EncodeToString(digest[:])
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
-		Isolation: sql.LevelReadCommitted,
-	})
-	if err != nil {
-		return StoreRegistrationPolicyResult{}, ErrStoreOwnerUnavailable
-	}
-	defer tx.Rollback()
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(84926,hashtext($1))",
 		change.CityID+":"+change.Relation); err != nil {
 		return StoreRegistrationPolicyResult{}, ErrStoreOwnerUnavailable
@@ -146,9 +162,6 @@ func (s *MerchantStoreRegistrar) ApplyRegistrationPolicy(
 		}
 		timestamp = timestamp.UTC()
 		policy.UpdatedAt = &timestamp
-		if err = tx.Commit(); err != nil {
-			return StoreRegistrationPolicyResult{}, ErrUnknownResult
-		}
 		return StoreRegistrationPolicyResult{Policy: policy, Replay: true}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -214,9 +227,6 @@ func (s *MerchantStoreRegistrar) ApplyRegistrationPolicy(
 		actorID, change.OperationID, fingerprint, change.CityID, change.Relation, resultVersion,
 		change.Enabled, change.TermsVersion, change.Reason).Scan(&appliedAt)
 	if err != nil {
-		return StoreRegistrationPolicyResult{}, ErrUnknownResult
-	}
-	if err = tx.Commit(); err != nil {
 		return StoreRegistrationPolicyResult{}, ErrUnknownResult
 	}
 	appliedAt = appliedAt.UTC()

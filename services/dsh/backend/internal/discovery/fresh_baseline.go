@@ -8,13 +8,15 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
 // Reviewed bytes, not a filename or schema marker, authorize SQL execution.
 // Update only with the corresponding owner-domain SQL review and integration proof.
 var reviewedFreshBaseline = map[string]string{
 	"00_marketplace.sql":        "d8cf357d448e403d70be9c8bede4affee1ef680b69c92ac717532be271446438",
-	"10_catalog.sql":            "0ae80749c9d1824cbce514c57471089b004aba78dfd36db12cf84a319f0f1aa2",
+	"10_catalog.sql":            "7755db5222aaf4c510d526c4eaea589bbc5dbd70bff2db47a768aedbabf931a6",
 	"20_store_operations.sql":   "e30e787a91bfb49250738c6912f379898e8e51b048b9a897d31b76e5b60005b5",
 	"30_store_registration.sql": "19f35f438f2ccc3e1b2abb00db6a8c30652130be9cc3956c8e1b47dc052e71d5",
 	"40_customer_cart.sql":      "2ca899bf205e32b92a4bc9b69c7917dce6b71a45c4c1aad8bd8f6f691f2bcaa7",
@@ -105,6 +107,11 @@ func (o *Owner) applyFreshBaseline(ctx context.Context, files []freshBaselineSou
 	for _, file := range files {
 		if _, err := tx.ExecContext(ctx, file.sql); err != nil {
 			return fmt.Errorf("fresh DSH baseline %s failed: %w", file.name, err)
+		}
+	}
+	if os.Getenv("DSH_BOOTSTRAP_SYNTHETIC_REGISTRATION") == "true" {
+		if err := storeavailability.SeedFreshSyntheticRegistration(ctx, tx, o.Schema); err != nil {
+			return fmt.Errorf("fresh synthetic Store registration: %w", err)
 		}
 	}
 	return tx.Commit()

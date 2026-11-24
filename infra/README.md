@@ -110,7 +110,21 @@ be readable. A freshly initialized schema with an empty catalog is ready. For a
 new verified absent `dsh_test_*` namespace, explicitly run the `dsh-bootstrap`
 one-shot service in the `bootstrap` profile after building the matching owner
 image. It uses the reviewed ordered `database/schema/` files in one transaction,
-refuses existing schemas, and does not seed or upgrade. Never run it against
+refuses existing schemas, and by default does not seed or upgrade. For a new
+empty synthetic Merchant development environment explicitly approved for Sanaa
+registration, add the one-shot opt-in to the existing bootstrap command:
+
+```powershell
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.apps.yaml --profile bootstrap run --rm --no-deps -e DSH_BOOTSTRAP_SYNTHETIC_REGISTRATION=true dsh-bootstrap
+```
+
+The opt-in installs only Sanaa, the synthetic grocery vertical, one
+nonbinding terms version and two audited version-1 registration policies in
+the same fresh transaction. System provenance is not a human operator.
+No Stores, publication, orders, financial agreements or money are seeded.
+Do not set this flag on serving or retained-data reconciliation commands.
+A repeated bootstrap refuses the existing schema; changes made by Operators
+remain untouched. Never run it against
 retained state or as part of normal `implementation` startup. A retained
 schema must keep its existing applied history and any separately authorized
 upgrade path until its compatibility obligations are resolved. Do not treat HTTP health as evidence of checkout,

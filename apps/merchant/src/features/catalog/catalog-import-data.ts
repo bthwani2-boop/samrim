@@ -8,7 +8,7 @@ const rowLimit = 5000;
 
 // The native File.slice implementation reads the entire file synchronously.
 // Consume a bounded stream instead, and close it even on scope cancellation.
-export async function readCatalogCsv(file: Pick<Blob, "size" | "stream">, signal: AbortSignal): Promise<string> {
+export async function readCatalogCsv(file: Pick<Blob, "size" | "stream">, signal: AbortSignal): Promise<{source:string;bytes:Uint8Array<ArrayBuffer>}> {
   const size = file.size;
   if (!Number.isSafeInteger(size) || size <= 0 || size > csvPreviewByteLimit) throw new Error("CSV_LIMIT");
   signal.throwIfAborted();
@@ -28,7 +28,7 @@ export async function readCatalogCsv(file: Pick<Blob, "size" | "stream">, signal
       offset += chunk.value.byteLength;
     }
     if (offset !== size) throw new Error("CSV_FORMAT");
-    try { return new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+    try { return {source:new TextDecoder("utf-8", { fatal: true }).decode(bytes),bytes}; }
     catch { throw new Error("CSV_FORMAT"); }
   } finally {
     signal.removeEventListener("abort", cancel);

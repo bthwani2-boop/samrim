@@ -47,6 +47,8 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
       "react-native": {Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},
       "../../components/merchant-capability-screen":{__esModule:true,default:"Unavailable"},
       "./catalog-import-data": data,
+      "./catalog-import-run": {__esModule:true,default:"BulkRun"},
+      "expo-crypto": {CryptoDigestAlgorithm:{SHA256:"SHA256"},digest:async()=>new Uint8Array(32).fill(170).buffer},
       "./merchant-catalog-draft-form": {__esModule:true,default:"DraftForm"},
       "./catalog-transport": {readMerchantCatalogPage(storeId,actorId,signal,options) {
         return new Promise((resolve,reject)=>ownerReads.push({storeId,actorId,signal,options,resolve,reject}));

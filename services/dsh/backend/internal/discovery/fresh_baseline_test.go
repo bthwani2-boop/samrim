@@ -3,12 +3,15 @@ package discovery
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
 func TestFreshBaselineDeniedWithoutIsolatedOwnerOrCanonicalDirectory(t *testing.T) {
@@ -159,4 +162,100 @@ func TestOwnerBootstrapFreshInstallsRealDSHAndRefusesReapply(t *testing.T) {
 		retained != 6 {
 		t.Fatalf("denied reapply changed retained Store rows: count=%d err=%v", retained, err)
 	}
+	// Include the new proof in the existing mandatory owner-backed CI test.
+	t.Run("synthetic-registration-once", verifyFreshSyntheticRegistration)
+}
+
+func verifyFreshSyntheticRegistration(t *testing.T) {
+	t.Setenv("DSH_BOOTSTRAP_SYNTHETIC_REGISTRATION", "true")
+	db, err := OpenFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	owner, err := New(db, fmt.Sprintf("dsh_test_seed_%x", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	dir := filepath.Join("..", "..", "..", "database", "schema")
+	if err = owner.BootstrapFresh(ctx, dir); err != nil {
+		t.Fatal(err)
+	}
+	var policies, terms, audit, stores int
+	check := func() {
+		t.Helper()
+		q := "SELECT (SELECT count(*) FROM " + owner.Schema + ".store_registration_policies WHERE city_id='sanaa' AND enabled AND version=1 AND terms_version='dev-merchant-terms-v1'),(SELECT count(*) FROM " + owner.Schema + ".store_registration_terms),(SELECT count(*) FROM " + owner.Schema + ".store_registration_policy_commands WHERE actor_id='system:dev-registration-bootstrap'),(SELECT count(*) FROM " + owner.Schema + ".stores)"
+		if err = db.QueryRowContext(ctx, q).Scan(&policies, &terms, &audit, &stores); err != nil {
+			t.Fatal(err)
+		}
+		if policies != 2 || terms != 1 || audit != 2 || stores != 0 {
+			t.Fatalf("wrong fresh registration data: %d %d %d %d", policies, terms, audit, stores)
+		}
+	}
+	check()
+	grants, err := storeavailability.NewPostgresStoreGrants(db, owner.Schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrar, err := storeavailability.NewMerchantStoreRegistrar(seedTestIdentity{}, grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options, err := registrar.Options(ctx, "synthetic-test")
+	if err != nil || len(options.Choices) != 2 || len(options.Verticals) != 1 || options.Verticals[0] != "grocery" {
+		t.Fatalf("owner options: %+v %v", options, err)
+	}
+	lat, lon := 15.35, 44.2
+	for _, choice := range options.Choices {
+		input := storeavailability.MerchantRegistrationRequest{OperationID: "registration-proof-" + choice.Relation, Name: "Synthetic " + choice.Relation, CityID: choice.CityID, VerticalID: "grocery", Relation: choice.Relation, Latitude: &lat, Longitude: &lon, PolicyVersion: choice.PolicyVersion, TermsVersion: choice.TermsVersion, AcceptedTerms: true}
+		result, err := registrar.Register(ctx, "synthetic-test", input)
+		if err != nil || result.Store.Published || result.Store.Relation != choice.Relation {
+			t.Fatalf("register %s: %+v %v", choice.Relation, result, err)
+		}
+		replay, err := registrar.Register(ctx, "synthetic-test", input)
+		if err != nil || !replay.Replay || replay.Store.ID != result.Store.ID {
+			t.Fatalf("replay: %+v %v", replay, err)
+		}
+	}
+	owned, err := grants.ListOwnedMerchantStores(ctx, "merchant-seed-proof")
+	if err != nil || len(owned) != 2 {
+		t.Fatalf("durable owned stores: %+v %v", owned, err)
+	}
+	other, err := grants.ListOwnedMerchantStores(ctx, "other-merchant")
+	if err != nil || len(other) != 0 {
+		t.Fatalf("cross-actor rows: %+v %v", other, err)
+	}
+	policy, err := registrar.ReadRegistrationPolicy(ctx, "sanaa", "DIRECT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = registrar.ApplyRegistrationPolicy(ctx, "operator-seed-proof", storeavailability.StoreRegistrationPolicyChange{CityID: "sanaa", Relation: "DIRECT", OperationID: "disable-direct-proof", ExpectedVersion: 1, Enabled: false, TermsVersion: policy.TermsVersion, TermsText: policy.TermsText, Reason: "test disables registration"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = owner.BootstrapFresh(ctx, dir); err == nil || !strings.Contains(err.Error(), "refuses an existing schema") {
+		t.Fatalf("unsafe reapply: %v", err)
+	}
+	policy, err = registrar.ReadRegistrationPolicy(ctx, "sanaa", "DIRECT")
+	if err != nil || policy.Enabled || policy.Version != 2 {
+		t.Fatalf("operator decision overwritten: %+v %v", policy, err)
+	}
+	options, err = registrar.Options(ctx, "synthetic-test")
+	if err != nil || len(options.Choices) != 1 || options.Choices[0].Relation != "MARKETPLACE" {
+		t.Fatalf("disabled relation leaked: %+v %v", options, err)
+	}
+}
+
+type seedTestIdentity struct{}
+
+func (seedTestIdentity) ResolveCurrentSession(_ context.Context, token string) (storeavailability.VerifiedActor, error) {
+	if token != "synthetic-test" {
+		return storeavailability.VerifiedActor{}, errors.New("unauthorized test token")
+	}
+	return storeavailability.VerifiedActor{Subject: "merchant-seed-proof", Role: storeavailability.MerchantRole}, nil
+}
+func (seedTestIdentity) RequireOperatorPermission(context.Context, string, string, string) error {
+	return storeavailability.ErrForbidden
 }

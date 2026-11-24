@@ -167,3 +167,113 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+
+  /v1/stores/{storeID}/catalog-imports/{runID}:
+    parameters:
+      - name: storeID
+        in: path
+        required: true
+        schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      - name: runID
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+    get:
+      operationId: readMerchantCatalogImport
+      summary: Read durable scoped import results up to 25 rows
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 5000, default: 0 }
+      responses:
+        '200':
+          description: Manifest identity and bounded durable outcomes
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogImportResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties:
+                  code: { type: string }
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+    put:
+      operationId: startMerchantCatalogImport
+      summary: Record the confirmed immutable draft-edit manifest
+      security:
+        - OpaqueSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogImportChange' }
+      responses:
+        '200':
+          description: Manifest identity and bounded durable outcomes
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogImportResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties:
+                  code: { type: string }
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+    patch:
+      operationId: advanceMerchantCatalogImport
+      summary: Process the next bounded group with the existing draft writer
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Manifest identity and bounded durable outcomes
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogImportResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties:
+                  code: { type: string }
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'

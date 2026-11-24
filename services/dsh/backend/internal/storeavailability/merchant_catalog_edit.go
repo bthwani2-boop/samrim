@@ -10,7 +10,10 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 var ErrCatalogDraftVersionConflict = errors.New("CATALOG_DRAFT_VERSION_CONFLICT")
@@ -44,7 +47,65 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 	if err != nil {
 		return MerchantCatalogDraftEditResult{}, err
 	}
-	if !registrationPublicID.MatchString(storeID) || !registrationPublicID.MatchString(offerID) {
+	if !registrationPublicID.MatchString(storeID) || !registrationPublicID.MatchString(offerID) || strings.HasPrefix(change.OperationID, "bulk-edit-v1-") {
+		return MerchantCatalogDraftEditResult{}, ErrRegistrationInvalid
+	}
+	if _, _, err := validateMerchantCatalogEdit(change); err != nil {
+		return MerchantCatalogDraftEditResult{}, err
+	}
+	tx, err := s.beginCatalogEdit(ctx, actor, storeID)
+	if err != nil {
+		return MerchantCatalogDraftEditResult{}, err
+	}
+	defer tx.Rollback()
+	result, err := editCatalogDraftTx(ctx, tx, actor, storeID, offerID, change, false)
+	if err != nil {
+		return MerchantCatalogDraftEditResult{}, err
+	}
+	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
+		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
+	}
+	if err = tx.Commit(); err != nil {
+		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
+	}
+	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
+		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
+	}
+	return result, nil
+}
+
+// Both individual edits and import rows share this transaction and scope lock.
+func (s *MerchantStoreRegistrar) beginCatalogEdit(ctx context.Context, actor, storeID string) (*sql.Tx, error) {
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "stores", "offers", "products", "variants", "catalog_draft_commands", "catalog_draft_edit_commands")
+	if err != nil {
+		return nil, ErrStoreOwnerUnavailable
+	}
+	ready := false
+	defer func() {
+		if !ready {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(84932,hashtext($1))", actor); err != nil {
+		return nil, ErrStoreOwnerUnavailable
+	}
+	var owner string
+	err = tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1 FOR SHARE", storeID).Scan(&owner)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrForbidden
+	}
+	if err != nil {
+		return nil, ErrStoreOwnerUnavailable
+	}
+	if owner != actor {
+		return nil, ErrForbidden
+	}
+	ready = true
+	return tx, nil
+}
+
+func editCatalogDraftTx(ctx context.Context, tx *sql.Tx, actor, storeID, offerID string, change MerchantCatalogDraftEditChange, keepName bool) (MerchantCatalogDraftEditResult, error) {
+	if !registrationPublicID.MatchString(offerID) {
 		return MerchantCatalogDraftEditResult{}, ErrRegistrationInvalid
 	}
 	change, price, err := validateMerchantCatalogEdit(change)
@@ -61,25 +122,6 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 	}
 	sum := sha256.Sum256(payload)
 	fingerprint := hex.EncodeToString(sum[:])
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-	if err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrStoreOwnerUnavailable
-	}
-	defer tx.Rollback()
-	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(84932,hashtext($1))", actor); err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrStoreOwnerUnavailable
-	}
-	var owner string
-	err = tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1 FOR SHARE", storeID).Scan(&owner)
-	if errors.Is(err, sql.ErrNoRows) {
-		return MerchantCatalogDraftEditResult{}, ErrForbidden
-	}
-	if err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrStoreOwnerUnavailable
-	}
-	if owner != actor {
-		return MerchantCatalogDraftEditResult{}, ErrForbidden
-	}
 	var priorHash, priorStore, priorOffer, name string
 	var priorExpected, priorResult, priorPrice, priorStock int64
 	err = tx.QueryRowContext(ctx, `SELECT request_hash,store_id,offer_id,expected_version,result_version,
@@ -105,15 +147,6 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 		snapshot.RequiredAttributesValid = false
 		snapshot.Published = false
 		snapshot.Available = false
-		if readErr = s.confirmCatalogActor(ctx, token, actor); readErr != nil {
-			return MerchantCatalogDraftEditResult{}, ErrUnknownResult
-		}
-		if err = tx.Commit(); err != nil {
-			return MerchantCatalogDraftEditResult{}, ErrUnknownResult
-		}
-		if readErr = s.confirmCatalogActor(ctx, token, actor); readErr != nil {
-			return MerchantCatalogDraftEditResult{}, ErrUnknownResult
-		}
 		return MerchantCatalogDraftEditResult{Offer: snapshot, Replay: true}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -144,12 +177,17 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 		offer.Published || offer.Available {
 		return MerchantCatalogDraftEditResult{}, ErrForbidden
 	}
+	if keepName && offer.Name != change.Name {
+		return MerchantCatalogDraftEditResult{}, ErrCatalogDraftVersionConflict
+	}
 	if offer.DraftVersion != change.ExpectedVersion {
 		return MerchantCatalogDraftEditResult{}, ErrCatalogDraftVersionConflict
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE products SET name=$1 WHERE id=$2 AND store_id=$3",
-		change.Name, offer.ProductID, storeID); err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
+	if !keepName {
+		if _, err = tx.ExecContext(ctx, "UPDATE products SET name=$1 WHERE id=$2 AND store_id=$3",
+			change.Name, offer.ProductID, storeID); err != nil {
+			return MerchantCatalogDraftEditResult{}, ErrUnknownResult
+		}
 	}
 	result, err := tx.ExecContext(ctx, `UPDATE offers SET price_yer=$1,stock_units=$2,draft_version=draft_version+1
   WHERE id=$3 AND store_id=$4 AND draft_version=$5 AND NOT published AND NOT available`,
@@ -170,15 +208,6 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 		actor, change.OperationID, fingerprint, storeID, offerID, change.ExpectedVersion,
 		change.ExpectedVersion+1, offer.Name, offer.PriceYER, offer.StockUnits,
 		change.Name, price, change.StockUnits); err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
-	}
-	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
-	}
-	if err = tx.Commit(); err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
-	}
-	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
 		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 	}
 	offer.Name = change.Name

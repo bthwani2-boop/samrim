@@ -1,8 +1,9 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: 372eef9f998b0c28109ea697c020c765370493dadc447db41fb16ab001ce866b
+// Normalized OpenAPI SHA-256: fd1744358bfb903885d238ef7374241e0a86d41a1b2ac96f073e3c49c7f468c9
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
+  advanceMerchantCatalogImport: { method: "PATCH", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
   applyCurrentCustomerForCaptainStanding: { method: "POST", path: "/v1/actors/me/captain-application" },
   changeCaptainStandingByAuthorizedOperator: { method: "PATCH", path: "/v1/operators/captains/{actorId}/standing" },
   changeOperatorStoreRegistrationPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" },
@@ -44,6 +45,7 @@ export const dshOperations = {
   markOperatorCaptainInterestContacted: { method: "PATCH", path: "/v1/operators/captain-interest/{id}/contact" },
   previewCityDeliveryPolicy: { method: "POST", path: "/v1/operators/cities/{cityID}/delivery-policy/preview" },
   readCurrentMerchantInventorySummary: { method: "GET", path: "/v1/stores/{storeID}/inventory-summary" },
+  readMerchantCatalogImport: { method: "GET", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
   registerCompanyEmployee: { method: "POST", path: "/v1/operators/employees" },
   registerMerchantEmployee: { method: "POST", path: "/v1/stores/{storeID}/employees" },
   registerMerchantStore: { method: "POST", path: "/v1/stores" },
@@ -52,6 +54,7 @@ export const dshOperations = {
   replaceCurrentCustomerCart: { method: "PUT", path: "/v1/carts/{storeID}" },
   reviewCurrentCustomerCheckout: { method: "POST", path: "/v1/carts/{storeID}/checkout-review" },
   saveCurrentCustomerAddress: { method: "PUT", path: "/v1/addresses/{addressID}" },
+  startMerchantCatalogImport: { method: "PUT", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
   submitPublicCaptainInterest: { method: "POST", path: "/v1/captain-interest" },
   updateCurrentMerchantCatalogDraft: { method: "PATCH", path: "/v1/stores/{storeID}/catalog/{offerID}" },
   updateStoreOperationalAvailability: { method: "PATCH", path: "/v1/stores/{storeID}/availability" },

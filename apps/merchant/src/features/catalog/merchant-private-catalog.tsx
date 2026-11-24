@@ -205,7 +205,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     {storeId && actorId && !catalogBlocked ? <InventorySummary key={JSON.stringify([actorId, storeId, retry])}
       actorId={actorId} storeId={storeId} /> : null}
     {storeId && actorId && !catalogBlocked && !priceStockOnly ? <CatalogExport actorId={actorId} storeId={storeId} query={searchQuery} status={status} /> : null}
-    {storeId && actorId && !catalogBlocked && !priceStockOnly ? <CatalogImport actorId={actorId} storeId={storeId} /> : null}
+    {storeId && actorId && !catalogBlocked && !priceStockOnly ? <CatalogImport actorId={actorId} storeId={storeId} onChanged={() => setRetry(value => value + 1)} /> : null}
     {storeId && actorId && !catalogBlocked && !priceStockOnly ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
       onCreated={() => setRetry(value => value + 1)} /> : null}
     {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة كتالوج المتجر" /> : null}
