@@ -34,6 +34,10 @@ func TestMerchantCatalogSelectorsAndAuthentication(t *testing.T) {
 		{"missing bearer", "/v1/stores/store-one/catalog", "", fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, 401},
 		{"revoked bearer", "/v1/stores/store-one/catalog", "synthetic", fakeIdentity{denied: true}, 401},
 		{"revoked search", "/v1/stores/store-one/catalog?q=Draft&limit=1&cursor=of-a", "synthetic", fakeIdentity{denied: true}, 401},
+		{"revoked valid status", "/v1/stores/store-one/catalog?status=stockout&limit=1&cursor=of-a", "synthetic", fakeIdentity{denied: true}, 401},
+		{"duplicate status", "/v1/stores/store-one/catalog?status=published&status=stockout", "synthetic", fakeIdentity{denied: true}, 400},
+		{"invalid status", "/v1/stores/store-one/catalog?status=unknown", "synthetic", fakeIdentity{denied: true}, 400},
+		{"empty status", "/v1/stores/store-one/catalog?status=", "synthetic", fakeIdentity{denied: true}, 400},
 		{"duplicate search", "/v1/stores/store-one/catalog?q=a&q=b", "synthetic", fakeIdentity{denied: true}, 400},
 		{"invalid UTF8 search", "/v1/stores/store-one/catalog?q=%FF", "synthetic", fakeIdentity{denied: true}, 400},
 		{"NUL search", "/v1/stores/store-one/catalog?q=%00", "synthetic", fakeIdentity{denied: true}, 400},
@@ -224,8 +228,30 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if status != 200 || summary.PublishedOffers != 1 || summary.AvailableOffers != 0 || summary.UnavailableOffers != 1 || summary.StockoutOffers != 1 {
 		t.Fatalf("stockout not reflected: %d %+v", status, summary)
 	}
+	for _, selector := range []string{"stockout", "unavailable"} {
+		code, page := get(handler, "/v1/stores/catalog-a/catalog?status="+selector)
+		if code != 200 || len(page.Items) != 1 || page.Items[0].ID != "of-b" {
+			t.Fatalf("published stockout filter %s: %d %+v", selector, code, page)
+		}
+	}
 	if _, err = db.ExecContext(ctx, "UPDATE "+schema+".offers SET stock_units=7 WHERE id='of-b'"); err != nil {
 		t.Fatal(err)
+	}
+	for _, tc := range []struct{ selector, want string }{
+		{"published", "of-b"}, {"unpublished", "of-a"}, {"available", "of-b"},
+		{"unavailable", ""}, {"stockout", ""},
+	} {
+		code, page := get(handler, "/v1/stores/catalog-a/catalog?limit=1&status="+tc.selector)
+		if code != 200 || page.NextCursor != "" || (tc.want == "" && len(page.Items) != 0) ||
+			(tc.want != "" && (len(page.Items) != 1 || page.Items[0].ID != tc.want)) {
+			t.Fatalf("owner filter %s: %d %+v", tc.selector, code, page)
+		}
+	}
+	if code, page := get(handler, "/v1/stores/catalog-a/catalog?status=published&q=Draft"); code != 200 || len(page.Items) != 0 {
+		t.Fatalf("combined status/name mismatch: %d %+v", code, page)
+	}
+	if code, _ := get(handler, "/v1/stores/catalog-b/catalog?status=unpublished"); code != 403 {
+		t.Fatalf("foreign status filter: %d", code)
 	}
 	status, second := get(handler, "/v1/stores/catalog-a/catalog?limit=1&cursor=of-a")
 	if status != 200 || len(second.Items) != 1 || second.Items[0].ID != "of-b" ||
@@ -520,6 +546,42 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	status, summary = getSummary(merchant, summaryPath, "synthetic")
 	if status != 200 || summary != (MerchantInventorySummary{ActorID: "merchant-a", StoreID: "catalog-a", TotalOffers: 64, PublishedOffers: 61, AvailableOffers: 31, UnavailableOffers: 30, StockoutOffers: 30}) {
 		t.Fatalf("whole Store inventory must exceed page limit: %d %+v", status, summary)
+	}
+	for _, tc := range []struct {
+		selector string
+		want     int64
+	}{
+		{"published", summary.PublishedOffers}, {"unpublished", summary.TotalOffers - summary.PublishedOffers},
+		{"available", summary.AvailableOffers}, {"unavailable", summary.UnavailableOffers}, {"stockout", summary.StockoutOffers},
+	} {
+		cursor := ""
+		var count int64
+		for pageIndex := 0; pageIndex < 10; pageIndex++ {
+			path := "/v1/stores/catalog-a/catalog?limit=10&status=" + tc.selector
+			if cursor != "" {
+				path += "&cursor=" + cursor
+			}
+			code, page := get(handler, path)
+			if code != 200 || len(page.Items) > 10 {
+				t.Fatalf("filtered page %s: %d %+v", tc.selector, code, page)
+			}
+			for _, item := range page.Items {
+				if item.ID <= cursor || item.StoreID != "catalog-a" {
+					t.Fatalf("filtered cursor/scope mismatch: %+v", item)
+				}
+				cursor = item.ID
+				count++
+			}
+			if page.NextCursor == "" {
+				break
+			}
+			if page.NextCursor != cursor {
+				t.Fatalf("filtered continuation mismatch: %+v", page)
+			}
+		}
+		if count != tc.want {
+			t.Fatalf("filtered count %s=%d, summary=%d", tc.selector, count, tc.want)
+		}
 	}
 }
 

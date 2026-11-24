@@ -17,7 +17,7 @@ function compileTransport(relativePath, exports) {
 }
 const compiled = compileTransport("../src/features/access/admission-transport.ts", ["readAdmission", "readMerchantStanding", "withNativeMerchantSession"]);
 const compiledAvailability = compileTransport("../src/features/stores/store-availability-transport.ts", ["readMerchantAvailability", "saveMerchantAvailability"]);
-const compiledInventory = compileTransport("../src/features/catalog/catalog-transport.ts", ["readMerchantInventorySummary"]);
+const compiledInventory = compileTransport("../src/features/catalog/catalog-transport.ts", ["readMerchantInventorySummary", "readMerchantCatalogPage"]);
 const bearer = Buffer.alloc(32, 8).toString("base64url");
 const identity = "http://127.0.0.1:13009";
 const dsh = "http://127.0.0.1:13010";
@@ -25,11 +25,16 @@ const availability = { storeId: "store-a", timezone: "Asia/Aden", weekly: null,
   preparationMinutes: 12, version: 3, actingActorId: "owner-a", reason: "reviewed" };
 const inventorySummary = { actorId: "owner-a", storeId: "store-a", totalOffers: 64,
   publishedOffers: 50, availableOffers: 40, unavailableOffers: 10, stockoutOffers: 2 };
+const stockoutPage = { actorId: "owner-a", storeId: "store-a", items: [{
+  id: "of-a", storeId: "store-a", productId: "p-a", variantId: "v-a", name: "منتج نافد",
+  priceYer: "1500", stockUnits: 0, draftVersion: 1, productActive: true,
+  variantSellable: true, requiredAttributesValid: true, published: true, available: true,
+}] };
 const json = (value, status = 200) => Response.json(value, { status, headers: { "Cache-Control": "no-store" } });
 
 function harness(t, { role = "merchant", initialBearer = bearer, marker = null, deletionFails = false,
   identityStatus = 200, dshStatus = 200, platform = "android", change, webReply, webMalformed = false,
-  inventory = false, inventoryReply, cacheable = false, onDSH = () => {}, onIdentity = () => {} } = {}) {
+  inventory = false, inventoryReply, catalog = false, cacheable = false, onDSH = () => {}, onIdentity = () => {} } = {}) {
   let stored = initialBearer;
   let pending = marker;
   // This suite exercises DSH Store authorization with an already-persisted,
@@ -39,9 +44,16 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
   t.mock.method(globalThis, "fetch", async (url, options) => {
     calls.push({ url: String(url), options });
     if (platform === "web") {
-      assert.equal(url, inventory ? "/api/admission?inventory=store-a" : "/api/admission?availability=store-a");
+      assert.equal(url, catalog ? "/api/admission?catalog=store-a&limit=20&status=stockout" :
+        inventory ? "/api/admission?inventory=store-a" : "/api/admission?availability=store-a");
       assert.equal(options.credentials, "same-origin");
       onDSH();
+      if (catalog) {
+        assert.equal(options.headers["X-Merchant-Context"], "owner-a");
+        return Response.json(webReply ?? { catalog: stockoutPage }, {
+          status: dshStatus, headers: { "Cache-Control": cacheable ? "public" : "no-store" },
+        });
+      }
       if (inventory) {
         assert.equal(options.headers["X-Merchant-Context"], "owner-a");
         return Response.json(webReply ?? { inventory: inventorySummary }, {
@@ -66,6 +78,12 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
       onDSH();
       return dshStatus === 200 ? json({ actorId: "owner-a", stores: [] }) :
         json({ code: "STORE_ACCESS_DENIED" }, dshStatus);
+    }
+    if (catalog) {
+      assert.equal(target.href, `${dsh}/v1/stores/store-a/catalog?limit=20&status=stockout`);
+      assert.equal(options.method, "GET");
+      onDSH();
+      return json(dshStatus === 200 ? stockoutPage : { code: "STORE_OPERATION_FORBIDDEN" }, dshStatus);
     }
     if (inventory) {
       assert.equal(target.href, `${dsh}/v1/stores/store-a/inventory-summary`);
@@ -397,4 +415,24 @@ test("Web inventory uses same-origin context and rejects a foreign Store, unsafe
   const aborted = harness(t, { inventory: true, platform: "web", onDSH: () => controller.abort() });
   await assert.rejects(aborted.transport.readMerchantInventorySummary("store-a", "owner-a", controller.signal),
     { code: "OWNER_RESPONSE_STALE" });
+});
+
+test("Native and Web catalog request the same owner stockout selector", async t => {
+  for (const platform of ["android", "web"]) {
+    const h = harness(t, { catalog: true, platform });
+    assert.deepEqual(await h.transport.readMerchantCatalogPage("store-a", "owner-a", signal(),
+      { limit: 20, status: "stockout" }), stockoutPage);
+    assert.equal(h.calls.length, platform === "android" ? 2 : 1);
+  }
+});
+
+test("Web filtered catalog rejects cacheable or inconsistent results", async t => {
+  for (const options of [
+    { cacheable: true },
+    { webReply: { catalog: { ...stockoutPage, items: [{ ...stockoutPage.items[0], stockUnits: 1 }] } } },
+  ]) {
+    const h = harness(t, { catalog: true, platform: "web", ...options });
+    await assert.rejects(h.transport.readMerchantCatalogPage("store-a", "owner-a", signal(),
+      { limit: 20, status: "stockout" }), { code: "OWNER_RESPONSE_INVALID" });
+  }
 });

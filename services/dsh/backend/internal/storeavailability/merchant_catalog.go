@@ -66,7 +66,7 @@ func newMerchantCatalogReadHandler(identity IdentitySessions, db *sql.DB, schema
 			writeFailure(w, ErrUnauthorized)
 			return
 		}
-		limit, cursor, query, valid := merchantCatalogPageParameters(r)
+		limit, cursor, query, status, valid := merchantCatalogPageParameters(r)
 		if !valid || (inventory && r.URL.RawQuery != "") {
 			writeFailure(w, ErrInvalidChange)
 			return
@@ -90,7 +90,7 @@ func newMerchantCatalogReadHandler(identity IdentitySessions, db *sql.DB, schema
 		if inventory {
 			result, err = readMerchantInventorySummary(ctx, db, schema, actor.Subject, r.PathValue("storeID"))
 		} else {
-			result, err = readMerchantCatalog(ctx, db, schema, actor.Subject, r.PathValue("storeID"), limit, cursor, query)
+			result, err = readMerchantCatalog(ctx, db, schema, actor.Subject, r.PathValue("storeID"), limit, cursor, query, status)
 		}
 		if err != nil {
 			writeFailure(w, err)
@@ -109,56 +109,67 @@ func newMerchantCatalogReadHandler(identity IdentitySessions, db *sql.DB, schema
 	}), nil
 }
 
-func merchantCatalogPageParameters(r *http.Request) (int, string, string, bool) {
+func merchantCatalogPageParameters(r *http.Request) (int, string, string, string, bool) {
 	if !registrationPublicID.MatchString(r.PathValue("storeID")) ||
 		r.URL.ForceQuery || r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
-		return 0, "", "", false
+		return 0, "", "", "", false
 	}
 	params, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil || len(params) > 3 {
-		return 0, "", "", false
+	if err != nil || len(params) > 4 {
+		return 0, "", "", "", false
 	}
 	limit := 20
-	cursor, query := "", ""
+	cursor, query, status := "", "", ""
 	for key, values := range params {
 		if len(values) != 1 || (key != "q" && values[0] == "") {
-			return 0, "", "", false
+			return 0, "", "", "", false
 		}
 		switch key {
 		case "limit":
 			raw := values[0]
 			if len(raw) > 2 || (len(raw) > 1 && raw[0] == '0') {
-				return 0, "", "", false
+				return 0, "", "", "", false
 			}
 			for _, digit := range raw {
 				if digit < '0' || digit > '9' {
-					return 0, "", "", false
+					return 0, "", "", "", false
 				}
 			}
 			n, e := strconv.Atoi(raw)
 			if e != nil || n < 1 || n > 50 {
-				return 0, "", "", false
+				return 0, "", "", "", false
 			}
 			limit = n
 		case "cursor":
 			if !registrationPublicID.MatchString(values[0]) {
-				return 0, "", "", false
+				return 0, "", "", "", false
 			}
 			cursor = values[0]
 		case "q":
 			raw := values[0]
 			if !utf8.ValidString(raw) || utf8.RuneCountInString(raw) > 80 || strings.ContainsRune(raw, 0) {
-				return 0, "", "", false
+				return 0, "", "", "", false
 			}
 			query = strings.TrimSpace(raw)
+		case "status":
+			switch values[0] {
+			case "published", "unpublished", "available", "unavailable", "stockout":
+				status = values[0]
+			default:
+				return 0, "", "", "", false
+			}
 		default:
-			return 0, "", "", false
+			return 0, "", "", "", false
 		}
 	}
-	return limit, cursor, query, true
+	return limit, cursor, query, status, true
 }
 
-func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, storeID string, limit int, cursor, query string) (MerchantCatalogPage, error) {
+// The catalog summary and status filter share the same offer-level predicate.
+const catalogAvailableSQL = `o.published AND o.available AND p.active AND v.sellable
+	AND v.required_attributes_valid AND o.price_yer>0 AND o.stock_units>0`
+
+func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, storeID string, limit int, cursor, query, status string) (MerchantCatalogPage, error) {
 	result := MerchantCatalogPage{ActorID: actorID, StoreID: storeID, Items: []MerchantCatalogOffer{}}
 	tx, err := beginScopedStoreTx(ctx, db, schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
@@ -175,7 +186,16 @@ func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, store
 		JOIN variants v ON v.id=o.variant_id AND v.product_id=p.id
 		WHERE o.store_id=$1 AND o.id COLLATE "C" > $2
 		AND ($4 = '' OR strpos(lower(p.name), lower($4)) > 0)
-		ORDER BY o.id COLLATE "C" LIMIT $3`, storeID, cursor, limit+1, query)
+		AND CASE $5
+			WHEN '' THEN true
+			WHEN 'published' THEN o.published
+			WHEN 'unpublished' THEN NOT o.published
+			WHEN 'available' THEN (`+catalogAvailableSQL+`)
+			WHEN 'unavailable' THEN o.published AND NOT (`+catalogAvailableSQL+`)
+			WHEN 'stockout' THEN o.published AND o.stock_units=0
+			ELSE false
+		END
+		ORDER BY o.id COLLATE "C" LIMIT $3`, storeID, cursor, limit+1, query, status)
 	if err != nil {
 		return result, ErrStoreOwnerUnavailable
 	}
@@ -244,8 +264,7 @@ func readMerchantInventorySummary(ctx context.Context, db *sql.DB, schema, actor
 	}
 	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),
 		COUNT(*) FILTER (WHERE o.published),
-		COUNT(*) FILTER (WHERE o.published AND o.available AND p.active AND v.sellable
-			AND v.required_attributes_valid AND o.price_yer>0 AND o.stock_units>0),
+		COUNT(*) FILTER (WHERE `+catalogAvailableSQL+`),
 		COUNT(*) FILTER (WHERE o.published AND o.stock_units=0)
 		FROM offers o
 		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id

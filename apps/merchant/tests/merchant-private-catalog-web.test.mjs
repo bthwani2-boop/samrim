@@ -104,6 +104,16 @@ test("private Merchant Catalog forwards search and rejects ambiguous search befo
   }
   assert.equal(calls.length, 2);
 });
+test("private catalog status is forwarded before paging and rejects invalid selectors", async t => {
+  const calls = ownerMocks(t, { expectedSearch: "?limit=1&status=unpublished" });
+  const response = await GET(request("?catalog=store-a&limit=1&status=unpublished"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { catalog });
+  for (const selector of ["status=", "status=invalid", "status=published&status=stockout"]) {
+    assert.equal((await GET(request("?catalog=store-a&" + selector))).status, 400);
+  }
+  assert.equal(calls.length, 2);
+});
 test("private Merchant Catalog never reads Identity without a bearer", async t => {
   const calls = ownerMocks(t);
   assert.equal((await GET(request(undefined, "merchant-a", ""))).status, 401);

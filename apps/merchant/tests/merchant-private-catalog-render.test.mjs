@@ -208,6 +208,22 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر أول").props.onPress();
       render("merchant-a", stores.slice(0, 1), "store-b");
       assert.equal(requests[1].storeId, "store-a");
+      const filterView = render("merchant-a", stores.slice(0, 1), "store-b");
+      const stockout = nodes(filterView).find(n => n.props?.accessibilityLabel === "نفد المخزون");
+      assert.ok(stockout, "complete owner status filter is available");
+      stockout.props.onPress();
+      tree = render("merchant-a", stores.slice(0, 1), "store-b");
+      assert.equal(requests[1].signal.aborted, true);
+      assert.equal(requests[2].options.status, "stockout");
+      assert.equal(requests[2].options.cursor, undefined);
+      assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "نفد المخزون").props.accessibilityState.selected, true);
+      requests[1].resolve({ actorId: "merchant-a", storeId: "store-a", items: [{ ...draft, storeId: "store-a", name: "صفحة قديمة" }] });
+      await Promise.resolve(); await Promise.resolve();
+      assert.ok(!nodes(render("merchant-a", stores.slice(0, 1), "store-b")).some(n => n.props?.children === "صفحة قديمة"));
+      nodes(tree).find(n => n.props?.accessibilityLabel === "كل العروض").props.onPress();
+      render("merchant-a", stores.slice(0, 1), "store-b");
+      assert.equal(requests[2].signal.aborted, true);
+      assert.equal(requests[3].options.status, undefined);
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;

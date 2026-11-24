@@ -59,6 +59,20 @@ test("private catalog forwards literal search with keyset and rejects unsafe ter
   }
   assert.equal(calls, 1);
 });
+test("owner status filter is forwarded and incompatible owner rows fail closed", async () => {
+  let calls = 0;
+  globalThis.fetch = async url => {
+    calls++;
+    assert.equal(new URL(url).searchParams.get("status"), "unpublished");
+    return Response.json(page, { headers: { "Cache-Control": "no-store" } });
+  };
+  const read = status => listMerchantCatalog("http://127.0.0.1:3202", "store-a", "merchant-a", "synthetic-bearer", { status });
+  assert.deepEqual(await read("unpublished"), page);
+  await assert.rejects(() => read("invalid"), { message: "INVALID_REQUEST" });
+  assert.equal(calls, 1);
+  globalThis.fetch = async () => Response.json(page, { headers: { "Cache-Control": "no-store" } });
+  await assert.rejects(() => read("published"), { message: "OWNER_RESPONSE_INVALID" });
+});
 test("owner failure, cacheable response and account switches fail closed", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify(page), {
     headers: { "Content-Type": "application/json" },

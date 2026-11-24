@@ -1,4 +1,4 @@
-import { type MerchantCatalogOffer, type MerchantCatalogPage, validMerchantCatalogSearch } from "@bthwani/dsh";
+import { type MerchantCatalogOffer, type MerchantCatalogPage, type MerchantCatalogStatus, validMerchantCatalogSearch } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
@@ -17,6 +17,15 @@ type CatalogState = {
   error?: string | undefined;
 };
 
+const statusFilters: ReadonlyArray<{ value: MerchantCatalogStatus | undefined; label: string }> = [
+  { value: undefined, label: "كل العروض" },
+  { value: "unpublished", label: "غير المنشورة" },
+  { value: "published", label: "المنشورة" },
+  { value: "available", label: "المتاحة" },
+  { value: "unavailable", label: "غير المتاحة" },
+  { value: "stockout", label: "نفد المخزون" },
+];
+
 function canEditDraft(offer: MerchantCatalogOffer) {
   return !offer.published && !offer.available && !offer.productActive &&
     !offer.variantSellable && !offer.requiredAttributesValid &&
@@ -33,6 +42,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const [search, setSearch] = useState({ scope: "", draft: "", query: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [priceScope, setPriceScope] = useState<string | null>(null);
+  const [filter, setFilter] = useState<{ scope: string; status: MerchantCatalogStatus | undefined }>({ scope: "", status: undefined });
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<CatalogState>({
     scope: "", loading: false, more: false, items: [],
@@ -45,10 +55,11 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const priceStockOnly = priceScope === storeScope;
   // A different actor or Store starts in the regular catalog, even on returning to a previous Store.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the scope change resets the focused view.
-  useEffect(() => { setPriceScope(null); }, [storeScope]);
+  useEffect(() => { setPriceScope(null); setFilter({ scope: "", status: undefined }); }, [storeScope]);
   const draftSearch = search.scope === storeScope ? search.draft : "";
   const searchQuery = search.scope === storeScope ? search.query : "";
-  const scope = JSON.stringify([actorId, storeId, searchQuery]);
+  const status = filter.scope === storeScope ? filter.status : undefined;
+  const scope = JSON.stringify([actorId, storeId, searchQuery, status]);
   useEffect(() => {
     const reload = () => setRetry(value => value + 1);
     if (Platform.OS === "web") {
@@ -72,7 +83,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     const controller = new AbortController();
     active.current = controller;
     setState({ scope, loading: true, more: false, items: [] });
-    void readMerchantCatalogPage(storeId, actorId, controller.signal, { limit: 20, ...(searchQuery ? { query: searchQuery } : {}) })
+    void readMerchantCatalogPage(storeId, actorId, controller.signal, { limit: 20, ...(searchQuery ? { query: searchQuery } : {}), ...(status ? { status } : {}) })
       .then(page => {
         if (controller.signal.aborted || epoch !== generation.current) return;
         setState({ scope, loading: false, more: false, items: page.items,
@@ -84,7 +95,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
           error: "تعذّر التحقق من كتالوج هذا المتجر لدى DSH. تأكد من الصلاحية والاتصال." });
       });
     return () => { controller.abort(); generation.current++; };
-  }, [scope, storeId, actorId, searchQuery, retry]);
+  }, [scope, storeId, actorId, searchQuery, status, retry]);
 
   const visible: CatalogState = state.scope === scope ? state : {
     scope, loading: true, more: false, items: [],
@@ -103,7 +114,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     setState(previous => previous.scope === scope ? { ...previous, more: true } : previous);
     try {
       const page: MerchantCatalogPage = await readMerchantCatalogPage(storeId, actorId, controller.signal,
-        { cursor, limit: 20, ...(searchQuery ? { query: searchQuery } : {}) });
+        { cursor, limit: 20, ...(searchQuery ? { query: searchQuery } : {}), ...(status ? { status } : {}) });
       if (controller.signal.aborted || epoch !== generation.current) return;
       setState(previous => {
         if (previous.scope !== scope || previous.cursor !== cursor) return previous;
@@ -166,6 +177,14 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
         <Text style={{ color: theme.interactiveText }}>مسح البحث</Text>
       </Pressable> : null}
     </View> : null}
+    {storeId && actorId ? <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+      {statusFilters.map(item => <Pressable key={item.value ?? "all"} accessibilityRole="button"
+        accessibilityLabel={item.label} accessibilityState={{ selected: status === item.value }}
+        onPress={() => setFilter({ scope: storeScope, status: item.value })}
+        style={{ ...button, backgroundColor: status === item.value ? theme.actionSoft : theme.surface }}>
+        <Text style={{ color: theme.interactiveText }}>{item.label}</Text>
+      </Pressable>)}
+    </View> : null}
     {storeId && actorId ? <InventorySummary key={JSON.stringify([actorId, storeId, retry])}
       actorId={actorId} storeId={storeId} /> : null}
     {storeId && actorId && !priceStockOnly ? <CatalogExport actorId={actorId} storeId={storeId} /> : null}
@@ -177,7 +196,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     </Text> : null}
     {!visible.loading && !visible.error && stores.length > 0 && visible.items.length === 0 ?
       <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
-        {searchQuery ? "لا توجد عروض مطابقة للبحث." : "لا توجد عروض مسجلة لهذا المتجر حتى الآن."}
+        {searchQuery || status ? "لا توجد عروض مطابقة للبحث أو المرشح." : "لا توجد عروض مسجلة لهذا المتجر حتى الآن."}
       </Text> : null}
     {visible.items.map(offer => <View key={offer.id} style={{
       backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1,
@@ -188,7 +207,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
         {BigInt(offer.priceYer).toLocaleString("ar-YE")} ريال يمني · المخزون: {offer.stockUnits}
       </Text>
       <Text style={{ color: offer.published ? theme.successText : theme.warningText }}>
-        {offer.published ? "عرض منشور" : "عرض غير منشور"} · {offer.available ? "متاح" : "موقوف"}
+        {offer.published ? "عرض منشور" : "عرض غير منشور"} · {offer.available ? "التوافر مفعّل" : "التوافر موقوف"}
       </Text>
       {canEditDraft(offer) ?
         <Pressable accessibilityRole="button"

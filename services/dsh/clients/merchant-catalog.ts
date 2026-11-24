@@ -53,7 +53,27 @@ function validOffer(value: unknown, storeId: string): value is MerchantCatalogOf
     ["productActive", "variantSellable", "requiredAttributesValid", "published", "available"]
       .every(k => typeof v[k] === "boolean");
 }
-export function parseMerchantCatalogPage(payload: unknown, actorId: string, storeId: string): MerchantCatalogPage {
+export type MerchantCatalogStatus = "published" | "unpublished" | "available" | "unavailable" | "stockout";
+
+export function validMerchantCatalogStatus(value: unknown): value is MerchantCatalogStatus {
+  return value === "published" || value === "unpublished" || value === "available" ||
+    value === "unavailable" || value === "stockout";
+}
+
+function matchesStatus(offer: MerchantCatalogOffer, status: MerchantCatalogStatus): boolean {
+  const available = offer.published && offer.available && offer.productActive &&
+    offer.variantSellable && offer.requiredAttributesValid && BigInt(offer.priceYer) > 0n && offer.stockUnits > 0;
+  switch (status) {
+    case "published": return offer.published;
+    case "unpublished": return !offer.published;
+    case "available": return available;
+    case "unavailable": return offer.published && !available;
+    case "stockout": return offer.published && offer.stockUnits === 0;
+  }
+}
+
+export function parseMerchantCatalogPage(payload: unknown, actorId: string, storeId: string,
+  status?: MerchantCatalogStatus): MerchantCatalogPage {
   const value = object(payload);
   const items = Array.isArray(value?.items) ? value.items as MerchantCatalogOffer[] : null;
   if (!value || !items || !actorRule.test(actorId) || !key.test(storeId) ||
@@ -63,6 +83,7 @@ export function parseMerchantCatalogPage(payload: unknown, actorId: string, stor
     value.actorId !== actorId || value.storeId !== storeId ||
     !Array.isArray(value.items) || items.length > 50 ||
     !items.every(item => validOffer(item, storeId)) ||
+    (status !== undefined && (!validMerchantCatalogStatus(status) || !items.every(item => matchesStatus(item, status)))) ||
     new Set(items.map((item: MerchantCatalogOffer) => item.id)).size !== items.length ||
     items.some((item: MerchantCatalogOffer, i: number) =>
       i > 0 && item.id <= (items[i-1]?.id ?? "")) ||
@@ -80,10 +101,11 @@ export function validMerchantCatalogSearch(query: string): boolean {
 
 export async function listMerchantCatalog(
   origin: string, storeId: string, actorId: string, bearer: string,
-  options: { cursor?: string; limit?: number; query?: string; signal?: AbortSignal } = {},
+  options: { cursor?: string; limit?: number; query?: string; status?: MerchantCatalogStatus; signal?: AbortSignal } = {},
 ): Promise<MerchantCatalogPage> {
   if (!key.test(storeId) || !actorRule.test(actorId) ||
     (options.query !== undefined && !validMerchantCatalogSearch(options.query)) ||
+    (options.status !== undefined && !validMerchantCatalogStatus(options.status)) ||
     (options.cursor !== undefined && !key.test(options.cursor)) ||
     (options.limit !== undefined && (!Number.isInteger(options.limit) ||
       options.limit < 1 || options.limit > 50))) {
@@ -94,9 +116,10 @@ export async function listMerchantCatalog(
   if (options.limit !== undefined) params.set("limit", String(options.limit));
   if (options.cursor !== undefined) params.set("cursor", options.cursor);
   if (options.query?.trim()) params.set("q", options.query);
+  if (options.status !== undefined) params.set("status", options.status);
   const body = await privateOwnerRequest(origin, path + (params.size ? `?${params}` : ""),
     bearer, "GET", undefined, options.signal);
-  return parseMerchantCatalogPage(body, actorId, storeId);
+  return parseMerchantCatalogPage(body, actorId, storeId, options.status);
 }
 
 export type MerchantCatalogDraftChange = Readonly<{

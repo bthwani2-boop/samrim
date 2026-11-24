@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, readMerchantInventorySummary, readMerchantRegistrationOptions, validMerchantCatalogSearch } from "@bthwani/dsh";
+import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, readMerchantInventorySummary, readMerchantRegistrationOptions, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
 import {
   appendSessionCookies, bearerFrom, configuredOrigin, cookieName, ownerError,
@@ -41,17 +41,19 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
   const availability = storeId !== null && /^[a-z0-9-]{1,64}$/.test(storeId);
   const catalogId = query.get("catalog");
   const validCatalogKeys = [...query.keys()].every(key =>
-    ["catalog", "cursor", "limit", "q"].includes(key) && query.getAll(key).length === 1);
+    ["catalog", "cursor", "limit", "q", "status"].includes(key) && query.getAll(key).length === 1);
   const limitValue = query.get("limit");
   const cursorValue = query.get("cursor");
   const searchValue = query.get("q");
+  const statusValue = query.get("status");
   if (catalogId !== null && searchValue !== null) {
     // URLSearchParams replaces malformed UTF-8. Reject it before forwarding to DSH.
     try { decodeURIComponent(new URL(request.url).search); }
     catch { return response({ code: "INVALID_REQUEST" }, 400); }
   }
   const catalog = catalogId !== null && /^[a-z0-9-]{1,64}$/.test(catalogId) &&
-    validCatalogKeys && query.size <= 4 &&
+    validCatalogKeys && query.size <= 5 &&
+    (statusValue === null || validMerchantCatalogStatus(statusValue)) &&
     (searchValue === null || validMerchantCatalogSearch(searchValue)) &&
     (limitValue === null || /^(?:[1-9]|[1-4][0-9]|50)$/.test(limitValue)) &&
     (cursorValue === null || /^[a-z0-9-]{1,64}$/.test(cursorValue));
@@ -91,7 +93,8 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
           standingOrigin(origin), catalogId ?? "", session.actorId, bearer,
           { signal, ...(limitValue ? { limit: Number(limitValue) } : {}),
             ...(cursorValue ? { cursor: cursorValue } : {}),
-            ...(searchValue !== null ? { query: searchValue } : {}) },
+            ...(searchValue !== null ? { query: searchValue } : {}),
+            ...(validMerchantCatalogStatus(statusValue) ? { status: statusValue } : {}) },
         ) });
       }
       if (inventory) {

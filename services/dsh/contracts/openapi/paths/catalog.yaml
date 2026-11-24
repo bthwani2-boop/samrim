@@ -20,12 +20,16 @@ paths:
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
         - name: cursor
           in: query
-          description: Use the same search term on subsequent pages; start without a cursor when the search changes.
+          description: Use the same search term and status on subsequent pages; start without a cursor when either changes.
           schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
         - name: q
           in: query
           description: Case-insensitive literal Product name substring within the owned Store, including drafts. Outer whitespace is ignored; NUL and invalid UTF-8 are rejected.
           schema: { type: string, maxLength: 80 }
+        - name: status
+          in: query
+          description: Optional Store-scoped filter applied before keyset pagination. Available and unavailable partition published Offers using catalog eligibility, not checkout or Store orderability. Stockout counts published Offers with zero stock. Omit for all Offers.
+          schema: { type: string, enum: [published, unpublished, available, unavailable, stockout] }
       responses:
         '200':
           description: One DSH Store-owner private catalog page
