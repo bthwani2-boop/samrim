@@ -37,6 +37,9 @@ test("production Operator UI rechecks isolated Identity grants on every document
   let revokeCalls = 0;
   let optionsCalls = 0;
   let authenticationCalls = 0;
+  let refreshCalls = 0;
+  const refreshToken = Buffer.alloc(32, 8).toString("base64url");
+  const nextRefreshToken = Buffer.alloc(32, 9).toString("base64url");
   let dshAvailable = true;
   const publicReads = [];
   const calls = [];
@@ -87,6 +90,14 @@ test("production Operator UI rechecks isolated Identity grants on every document
         return send(200, { accessToken: token, sessionExpiresAt: expiry });
       })().catch(() => send(400, { error: "INVALID_REQUEST" }));
       return;
+    }
+    if (route === "/v1/sessions/refresh" && request.method === "POST") {
+      refreshCalls++;
+      if (request.headers.authorization !== `Bearer ${refreshToken}`) {
+        return send(401, { code: "UNAUTHORIZED" });
+      }
+      return send(200, { accessToken: token, sessionExpiresAt: expiry,
+        refreshToken: nextRefreshToken, refreshExpiresAt: new Date(Date.now() + 86400000).toISOString() });
     }
     if (request.headers.authorization !== `Bearer ${token}`) {
       return send(401, { error: "UNAUTHORIZED" });
@@ -155,6 +166,33 @@ test("production Operator UI rechecks isolated Identity grants on every document
       "the standalone sign-in page must not expose workspace navigation");
     assert.doesNotMatch(guestHtml, /id="operator-bootstrap-proof"/,
       "a bootstrap opt-in cannot permit enrollment at an unapproved origin");
+    const retained = { cookie: `bthwani_operator_refresh=${refreshToken}` };
+    const recoveryEntry = await fetch(`${base}/`, { headers: retained, signal: AbortSignal.timeout(7000) });
+    assert.equal(recoveryEntry.status, 200);
+    const recoveryHtml = await recoveryEntry.text();
+    assert.match(recoveryHtml, /id="operator-session-restore"/);
+    assert.doesNotMatch(recoveryHtml, /id="operator-passkey-sign-in"|aria-label="التنقل الرئيسي"/);
+    assert.equal(refreshCalls, 0, "document rendering must not rotate a credential");
+    ownerAvailable = false;
+    const unavailableRecovery = await fetch(`${base}/api/auth/session`, { headers: retained });
+    assert.equal(unavailableRecovery.status, 503);
+    assert.equal(unavailableRecovery.headers.get("set-cookie"), null);
+    ownerAvailable = true;
+    const recoveredSession = await fetch(`${base}/api/auth/session`, { headers: retained });
+    assert.equal(recoveredSession.status, 200);
+    assert.equal(refreshCalls, 1);
+    const recoveredBody = await recoveredSession.json();
+    assert.equal(recoveredBody.role, "operator");
+    assert.equal(recoveredBody.actorId, "operator-synthetic");
+    assert.doesNotMatch(JSON.stringify(recoveredBody), new RegExp(nextRefreshToken));
+    const recoveredCookies = recoveredSession.headers.getSetCookie();
+    assert.ok(recoveredCookies.some(value => value.startsWith(`bthwani_operator_refresh=${nextRefreshToken};`) && /httponly/i.test(value)));
+    assert.ok(recoveredCookies.some(value => value.startsWith(`bthwani_operator_session=${token};`) && /httponly/i.test(value)));
+    const rejectedRecovery = await fetch(`${base}/api/auth/session`, {
+      headers: { cookie: `bthwani_operator_refresh=${Buffer.alloc(32, 10).toString("base64url")}` },
+    });
+    assert.equal(rejectedRecovery.status, 401);
+    assert.match(rejectedRecovery.headers.get("set-cookie") ?? "", /bthwani_operator_refresh=;/);
     const guestWorkspace = await fetch(`${base}/workspace?city=sanaa`, { signal: AbortSignal.timeout(7000) });
     const guestWorkspaceHtml = await guestWorkspace.text();
     assert.equal(guestWorkspace.status, 200);

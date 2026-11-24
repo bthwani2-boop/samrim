@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "antd";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 type PasskeyOptions = {
   ceremonyId: string;
@@ -26,9 +26,39 @@ function decodeBase64Url(value: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(bytes, (value) => value.codePointAt(0) ?? 0);
 }
 
-export default function OperatorPasskeyForm() {
+export default function OperatorPasskeyForm({ recoveryOnly = false }: Readonly<{ recoveryOnly?: boolean }>) {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const recovering = useRef(false);
+
+  async function restoreSession() {
+    if (recovering.current) return;
+    recovering.current = true;
+    setBusy(true);
+    setMessage("");
+    try {
+      const response = await fetch("/api/auth/session", {
+        method: "GET", credentials: "same-origin", cache: "no-store",
+      });
+      if (response.status === 401) {
+        // The session endpoint has confirmed denial. Re-evaluate the entry on the server.
+        window.location.replace("/");
+        return;
+      }
+      if (!response.ok) throw new Error("تعذّر تأكيد استعادة الجلسة لدى Identity. لا تبدأ دخولًا جديدًا قبل التحقق.");
+      const session = await response.json() as { authenticated?: boolean; role?: string };
+      if (session.authenticated !== true || session.role !== "operator") {
+        throw new Error("الجلسة غير مخوّلة لدور المشغّل.");
+      }
+      // Server-rendered entry still checks every current workspace permission.
+      window.location.replace("/");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "تعذّر تأكيد استعادة الجلسة.");
+    } finally {
+      recovering.current = false;
+      setBusy(false);
+    }
+  }
 
   async function signIn() {
     if (busy) return;
@@ -102,9 +132,12 @@ export default function OperatorPasskeyForm() {
 
   return (
     <section aria-label="دخول المشغّل">
-      <p>استخدم مفتاح المرور المسجّل لحسابك. تظهر مساحات العمل التي مُنحت صلاحية الوصول إليها.</p>
-      <Button id="operator-passkey-sign-in" type="primary" htmlType="button" loading={busy} disabled={busy} onClick={signIn}>
-        تسجيل الدخول بمفتاح المرور
+      <p>{recoveryOnly
+        ? "توجد بيانات جلسة محفوظة. تحقق من صلاحيتها لدى Identity لاستعادة دخولك."
+        : "استخدم مفتاح المرور المسجّل لحسابك. تظهر مساحات العمل التي مُنحت صلاحية الوصول إليها."}</p>
+      <Button id={recoveryOnly ? "operator-session-restore" : "operator-passkey-sign-in"} type="primary" htmlType="button"
+        loading={busy} disabled={busy} onClick={recoveryOnly ? restoreSession : signIn}>
+        {recoveryOnly ? "استعادة الجلسة" : "تسجيل الدخول بمفتاح المرور"}
       </Button>
       {message && <p role="alert">{message}</p>}
     </section>
