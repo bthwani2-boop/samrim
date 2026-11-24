@@ -46,6 +46,7 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
   let loseNextPatchReply = false;
   const ownerCalls = [];
   const dshCalls = [];
+  const directoryCalls = [];
   let effectivePolicy = {
     cityId: city, version: 1, maxPauseSeconds: 3600, maxPreparationMinutes: 30,
     changedByActor: "operator-original", changeReason: "Initial synthetic owner baseline",
@@ -77,7 +78,16 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     return send(404, { error: "NOT_FOUND" });
   });
   const dsh = createServer((request, response) => {
-    const route = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    const route = url.pathname;
+    if (route === "/v1/public/cities") {
+      directoryCalls.push({ method: request.method, limit: url.searchParams.get("limit"), authorization: request.headers.authorization });
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("Content-Type", "application/json");
+      response.writeHead(dshAvailable && request.method === "GET" ? 200 : 503);
+      response.end(JSON.stringify(dshAvailable && request.method === "GET" ? { items: [city], revision: 1 } : { error: "OWNER_UNAVAILABLE" }));
+      return;
+    }
     dshCalls.push({ route, method: request.method });
     response.setHeader("Cache-Control", "no-store");
     response.setHeader("Content-Type", "application/json");
@@ -177,7 +187,11 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     const home = await call(`${base}/policies`);
     assert.equal(home.status, 200);
     const html = await home.text();
-    assert.match(html, /حدود إتاحة المتاجر لكل مدينة/, "real Operator policy editor must replace the placeholder");
+    assert.match(html, /id="city-availability-policy"/, "real Operator policy editor must replace the placeholder");
+    assert.match(html, /قراءة السياسة الحالية/);
+    assert.match(html, /اختيار المدينة/);
+    assert.deepEqual(directoryCalls, [{ method: "GET", limit: "50", authorization: undefined }]);
+    assert.doesNotMatch(html, /تعذر تحميل المدن من الخدمة المالكة/);
     assert.doesNotMatch(html, /البيانات والإجراءات غير مفعّلة/);
     assert.match(html, /href="\/policies"/);
 
