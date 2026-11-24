@@ -188,7 +188,7 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     assert.equal(home.status, 200);
     const html = await home.text();
     assert.match(html, /id="city-availability-policy"/, "real Operator policy editor must replace the placeholder");
-    assert.match(html, /قراءة السياسة الحالية/);
+    assert.match(html, /<button\b[^>]*type="submit"[^>]*>\s*<span>قراءة سياسات المدينة الحالية<\/span>/u);
     assert.match(html, /اختيار المدينة/);
     assert.deepEqual(directoryCalls, [{ method: "GET", limit: "50", authorization: undefined }]);
     assert.doesNotMatch(html, /تعذر تحميل المدن من الخدمة المالكة/);
