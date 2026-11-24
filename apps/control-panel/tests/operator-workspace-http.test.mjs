@@ -57,6 +57,17 @@ test("production Operator UI rechecks isolated Identity grants on every document
       if (route === "/v1/public/cities") {
         return send(200, { items: ["sanaa"], revision: 3 });
       }
+      if (route === "/v1/public/stores/market-sanaa") {
+        return send(200, { id: "market-sanaa", name: "متجر الاختبار المنشور", cityId: "sanaa",
+          verticalId: "grocery", orderabilityStatus: "OPEN_FOR_ORDERS", orderingAvailable: false });
+      }
+      if (route === "/v1/public/stores/market-sanaa/offers") {
+        if (requestUrl.searchParams.get("q") !== "دقيق" || requestUrl.searchParams.get("limit") !== "20") {
+          return send(400, { error: "INVALID_QUERY" });
+        }
+        return send(200, { items: [{ id: "offer-flour", storeId: "market-sanaa", variantId: "flour-sack",
+          name: "دقيق الاختبار", priceYer: 1350, available: true }], revision: 3 });
+      }
       if (requestUrl.searchParams.get("city_id") !== "sanaa") {
         return send(400, { error: "INVALID_CITY" });
       }
@@ -325,7 +336,31 @@ test("production Operator UI rechecks isolated Identity grants on every document
     const catalogOnlyMarket = await read("/workspace?city=sanaa");
     assert.ok(catalogOnlyMarket.includes('href="/catalog/categories?city=sanaa"'));
     assert.ok(!catalogOnlyMarket.includes('href="/merchants/public-stores?city=sanaa"'));
+
+    const products = await read("/catalog/products");
+    assert.match(products, /اختيار متجر منشور/);
+    assert.match(products, /<option value="sanaa"/);
+    assert.match(products, /action="\/catalog\/products"/);
+    const productStores = await read("/catalog/products?city=sanaa");
+    assert.match(productStores, /href="\/catalog\/products\?store=market-sanaa"/);
+    const productQuery = "/catalog/products?store=market-sanaa&q=%D8%AF%D9%82%D9%8A%D9%82";
+    const productOffers = await read(productQuery);
+    assert.match(productOffers, /دقيق الاختبار/);
+    assert.match(productOffers, /1350/);
+    assert.ok(publicReads.includes("/v1/public/stores/market-sanaa/offers"));
+
+    dshAvailable = false;
+    const productsOffline = await read(productQuery);
+    assert.match(productsOffline, /تعذّر تأكيد المتجر أو عروضه المنشورة/);
+    assert.doesNotMatch(productsOffline, /دقيق الاختبار/);
+    dshAvailable = true;
+
     allowed.delete("catalog");
+    const readsBeforeRevocation = publicReads.length;
+    const revokedProducts = await read(productQuery);
+    assert.match(revokedProducts, /الوصول إلى هذه المساحة غير متاح/);
+    assert.doesNotMatch(revokedProducts, /دقيق الاختبار/);
+    assert.equal(publicReads.length, readsBeforeRevocation, "catalog revocation stops Product reads");
 
     html = await read("/finance", { "x-bthwani-route": "/operations" });
     assert.match(html, /الوصول إلى هذه المساحة غير متاح/);
