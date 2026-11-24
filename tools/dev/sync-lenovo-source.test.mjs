@@ -425,6 +425,44 @@ test("watcher reload waits for committed code and drains existing children",asyn
   assert.equal(watcherReloadAction(base),"reload");
 });
 
+test("a drained watcher reload replaces its thread inside the same process", { timeout: 10000 }, async (t) => {
+  const { watchInProcess } = await import("./sync-lenovo-source.mjs");
+  const dir = mkdtempSync(path.join(tmpdir(), "bthwani-watch-reload-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const entry = path.join(dir, "watch.mjs");
+  const revision = path.join(dir, "revision.mjs");
+  const evidence = path.join(dir, "evidence.jsonl");
+  writeFileSync(revision, 'export const revision = "old";');
+  writeFileSync(entry, [
+    'import { appendFileSync, writeFileSync } from "node:fs";',
+    'import { threadId } from "node:worker_threads";',
+    'import { revision } from "./revision.mjs";',
+    'appendFileSync(new URL("./evidence.jsonl", import.meta.url), JSON.stringify({pid:process.pid, threadId, revision, args:process.argv.slice(2)}) + "\\n");',
+    'if (revision === "old") {',
+    '  writeFileSync(new URL("./revision.mjs", import.meta.url), \'export const revision = "new";\');',
+    '  process.exitCode = 75;',
+    '}',
+  ].join("\n"));
+  assert.equal(typeof watchInProcess, "function");
+  assert.equal(await watchInProcess(entry), 0);
+  const rows = readFileSync(evidence, "utf8").trim().split("\n").map(JSON.parse);
+  assert.deepEqual(rows.map(r => r.revision), ["old", "new"]);
+  assert.ok(rows.every(r => r.pid === process.pid && r.threadId > 0));
+  assert.notEqual(rows[0].threadId, rows[1].threadId);
+  assert.deepEqual(rows.map(r => r.args), [["--watch"], ["--watch"]]);
+});
+
+test("a watcher failure is not mistaken for a reload request", { timeout: 10000 }, async (t) => {
+  const { watchInProcess } = await import("./sync-lenovo-source.mjs");
+  const dir = mkdtempSync(path.join(tmpdir(), "bthwani-watch-failure-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const entry = path.join(dir, "watch.mjs");
+  writeFileSync(entry, 'process.exitCode = 1;');
+  assert.equal(await watchInProcess(entry), 1);
+  writeFileSync(entry, 'throw new Error("fixture worker failed");');
+  await assert.rejects(watchInProcess(entry), /fixture worker failed/);
+});
+
 test("Graphify automation refreshes stale trusted graphs but never adopts unknown provenance",async()=>{
   const {graphifyRefreshAction}=await import("./sync-lenovo-reconciliation.mjs");
   assert.equal(graphifyRefreshAction({status:"PASS",queryable:true}),"current");

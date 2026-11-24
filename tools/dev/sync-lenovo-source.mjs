@@ -7,8 +7,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { isMainThread, Worker } from "node:worker_threads";
 import { dirtyPaths, isPreviewGoPath, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeBaselineProofDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, branchTransitionPins, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -689,8 +690,8 @@ function main() {
     let reloadAction = "current";
     const attempt = () => {
       if (active) return;
-      // The existing task owns this process and has a bounded restart-on-error
-      // policy. Drain children before requesting a reload; never launch a peer.
+      // Drain both children before returning a reload request to the same
+      // task-owned process. Never run two source watchers concurrently.
       if (Date.now()>=nextReloadAudit || reloadAction==="drain") {
         nextReloadAudit=Date.now()+5_000;
         try {
@@ -710,7 +711,7 @@ function main() {
       if(reloadAction==="reload"){
         clearInterval(timer);
         graphEvents?.close();graphEvents=null;
-        process.exitCode=75; // Task Scheduler restarts the same authorized task.
+        process.exitCode=75; // Only this worker exits; its parent reloads the committed code.
         return;
       }
       active = true;
@@ -730,8 +731,34 @@ function main() {
     cycle();
   }
 }
+// Task Scheduler continues to own exactly one Node process. A fresh worker
+// loads the entire module graph; no stale ESM imports survive a planned reload.
+// The previous worker must exit before another starts, including on failure.
+export function watchInProcess(entry = new URL(import.meta.url)) {
+  return new Promise((resolve, reject) => {
+    const launch = () => {
+      let worker;
+      try { worker = new Worker(entry, { argv: ["--watch"] }); }
+      catch (error) { reject(error); return; }
+      let failure;
+      worker.once("error", error => { failure = error; });
+      worker.once("exit", code => {
+        if (failure) reject(failure);
+        else if (code === 75) launch();
+        else resolve(code);
+      });
+    };
+    launch();
+  });
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); } catch (e) { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; }
+  const reportFailure = e => { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; };
+  if (isMainThread && process.argv.includes("--watch") && !process.argv.includes("--check-path")) {
+    watchInProcess().then(code => { process.exitCode = code; }, reportFailure);
+  } else {
+    try { main(); } catch (e) { reportFailure(e); }
+  }
 }
 
 export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict } from "./sync-lenovo-reconciliation.mjs";
