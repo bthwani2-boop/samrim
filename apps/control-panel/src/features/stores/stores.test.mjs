@@ -38,13 +38,22 @@ test("publication review opens an exact Store, preserves its page, and fails clo
     let items = [record];
     let grants = ["merchant"];
     let ownerDenies = false;
+    let cityDirectoryUnavailable = false;
+    let cityCalls = 0;
     const calls = [];
     class DshPublicError extends Error { constructor(status) { super("owner denied"); this.status = status; } }
     const mocks = {
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
       "next/headers": { cookies: async () => ({ get: () => ({ value: "synthetic" }) }) },
       "server-only": {},
-      "@bthwani/dsh": { DshPublicError, listOperatorStorePublicationReview: async (_origin, city, relation, _bearer, after) => {
+      "@bthwani/dsh": { DshPublicError, listPublicCities: async (origin, options) => {
+        assert.equal(origin, "http://127.0.0.1:3202");
+        assert.equal(options.limit, 50);
+        assert.ok(options.signal instanceof AbortSignal);
+        cityCalls++;
+        if (cityDirectoryUnavailable) throw new Error("directory unavailable");
+        return { items: ["sanaa", "aden"], revision: 1 };
+      }, listOperatorStorePublicationReview: async (_origin, city, relation, _bearer, after) => {
         calls.push([city, relation, after]);
         if (ownerDenies) throw new DshPublicError(403);
         return {cityId: city, relation, items};
@@ -72,7 +81,19 @@ test("publication review opens an exact Store, preserves its page, and fails clo
     const joining = load(files[0].replace(/\.tsx$/, ".js")).default;
     const details = load(files[1].replace(/\.tsx$/, ".js")).default;
     const render = (storeId, search = scope) => details({params: Promise.resolve({storeId}), searchParams: Promise.resolve(search)});
-    const tree = nodes(await joining({searchParams: Promise.resolve(scope)}));
+    const renderJoining = (search = scope) => joining({searchParams: Promise.resolve(search)});
+    const initial = nodes(await renderJoining({}));
+    const cityInput = initial.find(node => node.type === "input" && node.props.name === "city");
+    const cityOptions = initial.find(node => node.type === "datalist");
+    assert.ok(cityOptions);
+    assert.equal(cityInput.props.list, cityOptions.props.id);
+    assert.deepEqual(nodes(cityOptions).slice(1).map(node => node.props.value), ["sanaa", "aden"]);
+    const cityPattern = new RegExp(`^${cityInput.props.pattern}$`, "v");
+    assert.ok(cityPattern.test("historical-city"));
+    assert.ok(!cityPattern.test("invalid/city"));
+    assert.equal(calls.length, 0, "an unselected city does not issue a publication review");
+
+    const tree = nodes(await renderJoining());
     assert.ok(tree.some(node => node.props.href === "/merchants/stores/store-b?city=sanaa&relation=DIRECT&after=store-a"));
     const detail = nodes(await render("store-b")).find(node => node.props.store);
     assert.deepEqual(detail?.props.store, record);
@@ -81,6 +102,8 @@ test("publication review opens an exact Store, preserves its page, and fails clo
 
     grants = ["operations"];
     assert.equal((await render("store-b")).type, "Unavailable");
+    assert.equal((await renderJoining()).type, "Unavailable");
+    assert.equal(cityCalls, 2, "city suggestions are only read for authorized list pages");
     grants = ["merchant"];
     for (const [id, query] of [["../store-b", scope], ["store-a", scope], ["store-b", {...scope, city: ["sanaa", "aden"]}]]) {
       assert.ok(nodes(await render(id, query)).some(node => node.props.role === "alert"));
@@ -90,5 +113,16 @@ test("publication review opens an exact Store, preserves its page, and fails clo
     assert.ok(!nodes(await render("store-b")).some(node => node.props.store), "a neighboring Store must not fill missing detail");
     ownerDenies = true;
     assert.equal((await render("store-b")).type, "Unavailable");
+    assert.equal((await renderJoining()).type, "Unavailable");
+    assert.equal(cityCalls, 2, "owner revocation also withholds suggestions");
+
+    ownerDenies = false;
+    cityDirectoryUnavailable = true;
+    const recovery = nodes(await renderJoining({ city: "historical-city", relation: "DIRECT" }));
+    const manual = recovery.find(node => node.type === "input" && node.props.name === "city");
+    assert.equal(manual.props.defaultValue, "historical-city");
+    assert.equal(manual.props.list, undefined);
+    assert.ok(recovery.some(node => node.props.id === manual.props["aria-describedby"]));
+    assert.deepEqual(calls.at(-1), ["historical-city", "DIRECT", undefined]);
   } finally { rmSync(temp, { recursive: true, force: true }); }
 });
