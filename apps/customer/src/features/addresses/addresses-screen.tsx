@@ -169,8 +169,8 @@ export default function AddressesScreen() {
           {cityCursor?<Pressable accessibilityRole="button" style={button} disabled={busy||!!pending} onPress={()=>void moreCities()}><Text style={{color:theme.interactiveText}}>مدن أخرى</Text></Pressable>:null}
           {field("label","اسم العنوان",80)}{field("details","تفاصيل الوصول",300)}
           {field("latitude","خط العرض",24)}{field("longitude","خط الطول",24)}
-          {Platform.OS!=="web"&&!pending?<Pressable accessibilityRole="button" style={button} onPress={()=>setMap(v=>!v)}><Text style={{color:theme.interactiveText}}>اختيار الموقع على الخريطة</Text></Pressable>:null}
-          {map&&!pending?<View style={{height:460}}><AddressEditor onSelect={pin=>{setDraft(old=>old?{...old,latitude:String(pin.latitude),longitude:String(pin.longitude)}:null);setMap(false);}}/></View>:null}
+          {!pending?<Pressable testID="address-location-open" accessibilityRole="button" accessibilityState={{expanded:map}} disabled={busy} style={button} onPress={()=>setMap(v=>!v)}><Text style={{color:theme.interactiveText}}>{map?"إغلاق محدد الموقع":Platform.OS==="web"?"تحديد الموقع الحالي":"اختيار الموقع على الخريطة"}</Text></Pressable>:null}
+          {map&&!pending?<View style={Platform.OS==="web"?undefined:{height:460}}><AddressEditor onSelect={pin=>{setDraft(old=>old?{...old,latitude:String(pin.latitude),longitude:String(pin.longitude)}:null);setMap(false);}}/></View>:null}
           <Pressable accessibilityRole="button" disabled={busy||!validCustomerAddressChange(toChange(draft))} style={button} onPress={()=>void save()}>
             <Text style={{color:theme.interactiveText}}>{busy?"جارٍ التحقق…":pending?"إعادة نفس الحفظ":"حفظ لدى DSH"}</Text>
           </Pressable>
