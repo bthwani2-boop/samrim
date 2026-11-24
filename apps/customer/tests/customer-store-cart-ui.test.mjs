@@ -7,13 +7,13 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DshCartError } from "@bthwani/dsh";
 import { formatExactYer } from "../src/components/format-exact-yer.ts";
-import { summarizeCartPreview } from "../src/features/cart/cart-preview.ts";
+import { previewLineSubtotalYer, summarizeCartPreview } from "../src/features/cart/cart-preview.ts";
 import { pendingCartChange, withPendingCartChange } from "../src/features/cart/cart-session.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const source = path.join(root, "apps/customer/src/features");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-store-cart-"));
-const files = ["cart/use-store-cart", "catalog/store-products", "catalog/product-detail"];
+const files = ["cart/use-store-cart", "catalog/store-products", "catalog/product-detail", "cart/cart-screen"];
 let compiled;
 try {
   const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
@@ -125,6 +125,94 @@ test("first tap sends quantity one, shows only the owner-confirmed result, and m
     writes[4].resolve({ cart: { ...emptyCart, version: 8 }, replay: false });
     await settle();
     assert.deepEqual(render().cart.lines, []);
+  } finally { cleanup(); }
+});
+
+function cartScreenHarness() {
+  const hooks = [], effects = new Map(), deps = new Map(), cleanups = new Map();
+  const reads = [], estimates = [];
+  let index = 0, focus, resume;
+  const deferred = (calls, signal) => new Promise(resolve => calls.push({ signal, resolve }));
+  const { default: CartScreen } = load(compiled[3], {
+    react: {
+      useState(initial) { const at = index++; if (!(at in hooks)) hooks[at] = initial;
+        return [hooks[at], value => { hooks[at] = typeof value === "function" ? value(hooks[at]) : value; }]; },
+      useRef(initial) { const at = index++; hooks[at] ??= { current: initial }; return hooks[at]; },
+      useCallback(callback) { return callback; },
+      useEffect(effect, next) { const at = index++; const old = deps.get(at);
+        if (!old || next.some((value, i) => value !== old[i])) { deps.set(at, next); effects.set(at, effect); } },
+    },
+    "expo-router": { Link: "Link", useLocalSearchParams: () => ({ storeId: "store-a" }), useFocusEffect(callback) { focus = callback; } },
+    "expo-crypto": { randomUUID: () => "test-cart-command" },
+    "react-native": { AppState: { addEventListener(_event, callback) { resume = callback; return { remove() {} }; } },
+      Platform: { OS: "android" }, Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", View: "View" },
+    "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
+    "./cart-preview": { previewLineSubtotalYer, summarizeCartPreview },
+    "./cart-transport": {
+      readVerifiedCart: (_storeId, signal) => deferred(reads, signal),
+      readVerifiedCartMerchandiseEstimate: (_storeId, _version, _actor, signal) => deferred(estimates, signal),
+    },
+  });
+  return {
+    reads, estimates,
+    render() { index = 0; const tree = CartScreen();
+      for (const [at, effect] of effects) { cleanups.get(at)?.(); cleanups.set(at, effect()); }
+      effects.clear(); return tree; },
+    start() { const cleanup = focus(); return () => { cleanup(); for (const fn of cleanups.values()) fn?.(); }; },
+    resume() { resume("active"); },
+  };
+}
+function cartText(node) {
+  if (Array.isArray(node)) return node.map(cartText).join(" ");
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  return node && typeof node === "object" ? cartText(node.props?.children) : "";
+}
+const cartWithLine = (name, version) => ({ ...emptyCart, version, lines: [{ ...ownerLine, name }] });
+
+test("overlapping foreground cart reads cannot restore an older cart after a newer owner response", async () => {
+  const h = cartScreenHarness(); h.render(); const cleanup = h.start();
+  try {
+    h.resume();
+    assert.equal(h.reads.length, 2);
+    h.reads[1].resolve({ kind: "ready", cart: cartWithLine("السلة الجديدة", 6) });
+    await settle();
+    assert.match(cartText(h.render()), /السلة الجديدة/);
+    h.reads[0].resolve({ kind: "ready", cart: cartWithLine("السلة القديمة", 5) });
+    await settle();
+    const text = cartText(h.render());
+    assert.doesNotMatch(text, /السلة القديمة/);
+    assert.match(text, /السلة الجديدة/);
+    assert.equal(h.reads[0].signal.aborted, true);
+  } finally { cleanup(); }
+});
+
+test("owner estimate session denial conceals the previously verified private cart", async () => {
+  const h = cartScreenHarness(); h.render(); const cleanup = h.start();
+  try {
+    h.reads[0].resolve({ kind: "ready", cart: cartWithLine("محتوى خاص بالسلة", 5) });
+    await settle(); assert.match(cartText(h.render()), /محتوى خاص بالسلة/);
+    assert.equal(h.estimates.length, 1);
+    h.estimates[0].resolve({ kind: "signed-out" });
+    await settle();
+    const text = cartText(h.render());
+    assert.doesNotMatch(text, /محتوى خاص بالسلة/);
+    assert.match(text, /يجب تسجيل الدخول/);
+  } finally { cleanup(); }
+});
+
+test("a denied estimate from a replaced read cannot conceal the newly verified cart", async () => {
+  const h = cartScreenHarness(); h.render(); const cleanup = h.start();
+  try {
+    h.reads[0].resolve({ kind: "ready", cart: cartWithLine("السلة السابقة", 5) });
+    await settle(); h.render();
+    const stale = h.estimates[0];
+    h.resume();
+    assert.equal(stale.signal.aborted, true);
+    h.reads[1].resolve({ kind: "ready", cart: cartWithLine("السلة الحالية", 6) });
+    await settle(); h.render();
+    stale.resolve({ kind: "signed-out" });
+    await settle();
+    assert.match(cartText(h.render()), /السلة الحالية/);
   } finally { cleanup(); }
 });
 

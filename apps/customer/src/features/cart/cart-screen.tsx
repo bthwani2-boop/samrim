@@ -19,6 +19,8 @@ export default function CartScreen() {
   const [ownerMerchandise, setOwnerMerchandise] = useState<CustomerCartMerchandiseEstimate | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = useRef<(() => void) | null>(null);
+  const cartRead = useRef<AbortController | null>(null);
+  const estimateRead = useRef<AbortController | null>(null);
   const mutation = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const view = snapshot?.kind === "ready" && snapshot.cart.storeId !== storeId ? null : snapshot;
@@ -38,24 +40,33 @@ export default function CartScreen() {
 
   useFocusEffect(useCallback(() => {
     const epoch = ++generation.current;
-    const controller = new AbortController();
     setView(null);
     setError("");
     setBusy(false);
     function load() {
-      if (controller.signal.aborted || mutation.current) return;
+      if (generation.current !== epoch || mutation.current) return;
+      cartRead.current?.abort();
+      estimateRead.current?.abort();
+      const controller = new AbortController();
+      cartRead.current = controller;
       setView(null);
+      setOwnerMerchandise(null);
       setError("");
       void readVerifiedCart(storeId, controller.signal).then(next => {
         if (!controller.signal.aborted && generation.current === epoch) setView(next);
       }).catch(() => {
         if (!controller.signal.aborted && generation.current === epoch) setView({ kind: "unavailable" });
+      }).finally(() => {
+        if (cartRead.current === controller) cartRead.current = null;
       });
     }
     refresh.current = load;
     load();
     return () => {
-      controller.abort();
+      cartRead.current?.abort();
+      cartRead.current = null;
+      estimateRead.current?.abort();
+      estimateRead.current = null;
       mutation.current?.abort();
       mutation.current = null;
       refresh.current = null;
@@ -70,23 +81,33 @@ export default function CartScreen() {
       return;
     }
     const controller = new AbortController();
+    estimateRead.current = controller;
     const actor = view.cart.actorId;
     const version = view.cart.version;
     setOwnerMerchandise(null);
     void readVerifiedCartMerchandiseEstimate(storeId, version, actor, controller.signal)
       .then(result => {
-        if (!controller.signal.aborted && result.kind === "ready") {
+        if (controller.signal.aborted) return;
+        if (result.kind === "signed-out") {
+          setOwnerMerchandise(null);
+          setView({ kind: "signed-out" });
+        } else if (result.kind === "ready" && result.estimate.storeId === storeId &&
+          result.estimate.actorId === actor && result.estimate.cartVersion === version) {
           setOwnerMerchandise(result.estimate);
         }
       })
       .catch(() => {
         if (!controller.signal.aborted) setOwnerMerchandise(null);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (estimateRead.current === controller) estimateRead.current = null;
+    };
   }, [storeId, view]);
 
   async function apply(change: CustomerCartChange, actorId: string) {
-    if (mutation.current) return;
+    if (mutation.current || cartRead.current) return;
+    estimateRead.current?.abort();
     const controller = new AbortController();
     const epoch = generation.current;
     mutation.current = controller;
@@ -198,7 +219,7 @@ export default function CartScreen() {
                   </Text>
                 ) : null}
                 {ownerMerchandise && ownerMerchandise.cartVersion === view.cart.version &&
-                  ownerMerchandise.actorId === view.cart.actorId && !busy && !pending ? (
+                  ownerMerchandise.storeId === storeId && ownerMerchandise.actorId === view.cart.actorId && !busy && !pending ? (
                     <Text testID="cart-dsh-merchandise-estimate" style={{ color: theme.color }}>
                       مجموع البضائع المحسوب لدى DSH لهذه النسخة: {formatExactYer(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني.
                     </Text>
