@@ -26,6 +26,44 @@ paths:
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
   /v1/addresses/{addressID}:
+    get:
+      operationId: getCurrentCustomerAddress
+      summary: Read one address belonging to the current verified Customer
+      description: A missing address and an address outside the current Customer scope return the same response.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: addressID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+      responses:
+        '200':
+          description: Current private address and verified Customer identity
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, address]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  address: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerAddress' }
+        '400':
+          description: Invalid address selector
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '404':
+          description: Address not found in the current Customer scope
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
     put:
       operationId: saveCurrentCustomerAddress
       summary: Create or replace a single private address with exact-version protection

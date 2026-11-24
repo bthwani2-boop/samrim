@@ -1,5 +1,5 @@
 import { type CustomerAddressChange, type CustomerAddressPage, type CustomerAddressResult, type DeliveryServiceability, DshPublicError, evaluateDeliveryServiceability,
-  listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "@bthwani/dsh";
+  getCustomerAddress, isCustomerAddressId, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "@bthwani/dsh";
 import { Platform } from "react-native";
 import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
@@ -46,6 +46,27 @@ Promise<{page:CustomerAddressPage;expiresAt:number}> {
   }
   signal.throwIfAborted();
   return {page,expiresAt};
+}
+export async function readVerifiedAddress(signal: AbortSignal, actor: string, id: string) {
+  if (!isCustomerAddressId(id)) throw new DshPublicError(400,"INVALID_REQUEST");
+  const before = await verifyAddressSession(signal,actor);
+  const expiresAt = Date.parse(before.sessionExpiresAt);
+  try {
+    if (Platform.OS === "web") {
+      const value = parseCustomerAddress(await webRead(`${route}?addressId=${encodeURIComponent(id)}`,actor,signal),actor,id);
+      const current = await verifyAddressSession(signal,actor);
+      return {address:value.address,expiresAt:Math.min(expiresAt,Date.parse(current.sessionExpiresAt))};
+    }
+    if (!nativeOwner) throw new DshPublicError(503,"OWNER_UNAVAILABLE");
+    const result = await withVerifiedNativeCustomerRead(signal,bearer=>getCustomerAddress(nativeOwner,bearer,actor,id,signal),actor);
+    if (result.kind !== "ready") throw new DshPublicError(result.kind === "signed-out" ? 401 : 503,"OWNER_UNAVAILABLE");
+    signal.throwIfAborted();
+    return {address:result.value.address,expiresAt:Math.min(expiresAt,result.expiresAt)};
+  } catch (error) {
+    // The screen may keep its already verified page when the selected address is gone.
+    if (error instanceof DshPublicError && error.status === 404) await verifyAddressSession(signal,actor);
+    throw error;
+  }
 }
 export async function writeVerifiedAddress(actor:string,id:string,change:CustomerAddressChange,signal:AbortSignal):Promise<CustomerAddressResult> {
   await verifyAddressSession(signal,actor);

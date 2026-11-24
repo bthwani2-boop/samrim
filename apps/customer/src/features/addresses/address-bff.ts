@@ -1,4 +1,4 @@
-import { DshPublicError, evaluateDeliveryServiceability, isCustomerAddressId, listCustomerAddresses, saveCustomerAddress, validCustomerAddressChange } from "@bthwani/dsh";
+import { DshPublicError, evaluateDeliveryServiceability, getCustomerAddress, isCustomerAddressId, listCustomerAddresses, saveCustomerAddress, validCustomerAddressChange } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
 import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
@@ -15,7 +15,7 @@ export async function handleCustomerAddresses(request: Request, method: "GET"|"P
   if ((site && site !== "same-origin") || (method === "PUT" && request.headers.get("Origin") !== url.origin)) {
     return response({error:"FORBIDDEN"},403);
   }
-  const key = method === "GET" ? "after" : "addressId";
+  const key = method === "GET" && !url.searchParams.has("addressId") ? "after" : "addressId";
   const id = url.searchParams.get(key);
   const store = method === "SERVICEABILITY" ? url.searchParams.get("storeId") : null;
   if (url.searchParams.size !== (method === "SERVICEABILITY" ? 2 : id === null ? 0 : 1) ||
@@ -41,7 +41,9 @@ export async function handleCustomerAddresses(request: Request, method: "GET"|"P
       ? await saveCustomerAddress(owners.dsh,bearer,actor,id,change,signal)
       : method === "SERVICEABILITY" && store && id
         ? await evaluateDeliveryServiceability(owners.dsh,bearer,actor,store,id,signal)
-        : await listCustomerAddresses(owners.dsh,bearer,actor,id ?? undefined,signal);
+        : method === "GET" && key === "addressId" && id
+          ? await getCustomerAddress(owners.dsh,bearer,actor,id,signal)
+          : await listCustomerAddresses(owners.dsh,bearer,actor,id ?? undefined,signal);
     const after = await readVerifiedIdentitySession(owners.identity,bearer,signal);
     if (signal.aborted || after.actorId !== actor || after.role !== "customer") {
       return response({error:dispatched?"OPERATION_RESULT_UNKNOWN":"UNAUTHORIZED"},dispatched?503:401);

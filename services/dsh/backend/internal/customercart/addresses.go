@@ -47,6 +47,11 @@ type AddressResult struct {
 	Replay  bool    `json:"replay"`
 }
 
+type addressRead struct {
+	ActorID string  `json:"actorId"`
+	Address Address `json:"address"`
+}
+
 var addressIDRule = regexp.MustCompile("^addr-[a-f0-9]{32}$")
 
 const addressPageLimit = 20
@@ -173,6 +178,44 @@ func (h *Handler) listAddresses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, result)
+}
+
+func (h *Handler) getAddress(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("addressID")
+	if !addressIDRule.MatchString(id) || r.URL.RawQuery != "" || r.URL.ForceQuery ||
+		r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+		fail(w, 400, "INVALID_REQUEST")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	token := tokenOf(r)
+	actor, status := h.actor(ctx, token)
+	if status != 200 {
+		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
+		return
+	}
+	tx, err := h.begin(ctx, false)
+	if err != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	defer tx.Rollback()
+	address, err := scanAddress(tx.QueryRowContext(ctx, "SELECT "+addressFields+" FROM customer_addresses WHERE actor_id=$1 AND id=$2", actor, id))
+	missing := errors.Is(err, sql.ErrNoRows)
+	if (err != nil && !missing) || tx.Commit() != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	if status = h.stillCurrent(ctx, token, actor); status != 200 {
+		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
+		return
+	}
+	if missing {
+		fail(w, 404, "ADDRESS_NOT_FOUND")
+		return
+	}
+	reply(w, addressRead{ActorID: actor, Address: address})
 }
 
 func (h *Handler) saveAddress(w http.ResponseWriter, r *http.Request) {

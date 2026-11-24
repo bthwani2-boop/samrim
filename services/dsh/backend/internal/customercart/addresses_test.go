@@ -48,6 +48,11 @@ func TestCustomerAddressStrictBoundary(t *testing.T) {
 		{"GET", "/v1/addresses?actorId=customer-b", "customer-a", nil, 400},
 		{"GET", "/v1/addresses?after=x&after=y", "customer-a", nil, 400},
 		{"GET", "/v1/addresses?after=%ZZ", "customer-a", nil, 400},
+		{"GET", "/v1/addresses/" + addressID, "", nil, 401},
+		{"GET", "/v1/addresses/" + addressID, "merchant-a", nil, 403},
+		{"GET", "/v1/addresses/bad", "customer-a", nil, 400},
+		{"GET", "/v1/addresses/" + addressID + "?actorId=customer-b", "customer-a", nil, 400},
+		{"GET", "/v1/addresses/" + addressID, "customer-a", good, 400},
 		{"PUT", "/v1/addresses/" + addressID, "", good, 401},
 		{"PUT", "/v1/addresses/" + addressID, "merchant-a", good, 403},
 		{"PUT", "/v1/addresses/bad", "customer-a", good, 400},
@@ -152,9 +157,23 @@ func verifyAddressesOnRealPostgres(t *testing.T, ctx context.Context, db *sql.DB
 	if err := json.Unmarshal(run("GET", "/v1/addresses?after="+cursor, "customer-a", nil, 200), &page); err != nil || len(page.Items) != 1 || page.NextCursor != "" {
 		t.Fatal("second page")
 	}
+	secondPageAddress := "/v1/addresses/" + page.Items[0].ID
+	var read struct {
+		ActorID string  `json:"actorId"`
+		Address Address `json:"address"`
+	}
+	if err := json.Unmarshal(run("GET", secondPageAddress, "customer-a", nil, 200), &read); err != nil || read.ActorID != "customer-a" || read.Address != page.Items[0] {
+		t.Fatalf("targeted later-page address read: %+v %v", read, err)
+	}
+	foreign := run("GET", secondPageAddress, "customer-b", nil, 404)
+	missing := run("GET", "/v1/addresses/addr-ffffffffffffffffffffffffffffffff", "customer-b", nil, 404)
+	if !bytes.Equal(foreign, missing) {
+		t.Fatal("address lookup distinguishes foreign and missing records")
+	}
 	sessions.mu.Lock()
 	sessions.revoked = true
 	sessions.mu.Unlock()
+	run("GET", secondPageAddress, "customer-a", nil, 401)
 	run("GET", "/v1/addresses", "customer-a", nil, 401)
 	run("PUT", path, "customer-a", input, 401)
 	sessions.mu.Lock()

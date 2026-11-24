@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { evaluateDeliveryServiceability, listCustomerAddresses, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "./customer-addresses.ts";
+import { evaluateDeliveryServiceability, getCustomerAddress, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "./customer-addresses.ts";
 
 const bearer=Buffer.alloc(32,14).toString("base64url");
 const origin="http://127.0.0.1:3202";
@@ -24,6 +24,21 @@ test("address SDK uses generated private routes, exact payload and no cookies",a
   assert.deepEqual(await listCustomerAddresses(origin,bearer,actor),page);
   assert.deepEqual(await saveCustomerAddress(origin,bearer,actor,id,change),result);
   assert.deepEqual(calls,[[`${origin}/v1/addresses`,"GET","omit"],[`${origin}/v1/addresses/${id}`,"PUT","omit"]]);
+});
+test("exact address read uses the generated owner operation and rejects a mismatched record", async t => {
+  const value = {actorId:actor,address};
+  const calls = [];
+  t.mock.method(globalThis,"fetch",async(url,init) => {
+    calls.push([url.toString(),init.method,init.credentials]);
+    return json(value);
+  });
+  await assert.rejects(getCustomerAddress(origin,bearer,actor,"invalid"),{code:"INVALID_REQUEST"});
+  assert.deepEqual(await getCustomerAddress(origin,bearer,actor,id),value);
+  assert.deepEqual(calls,[[`${origin}/v1/addresses/${id}`,"GET","omit"]]);
+  for (const bad of [{...value,actorId:"customer-b"},{...value,address:{...address,id:"addr-00000000000000000000000000000002"}},
+    {...value,address:{...address,latitude:91}},{...value,replay:false}]) {
+    assert.throws(()=>parseCustomerAddress(bad,actor,id),{code:"OWNER_RESPONSE_INVALID"});
+  }
 });
 test("SDK rejects mismatched actor, stale resource or invalid coordinate",()=>{
   for(const bad of [{...page,actorId:"customer-b"},{...page,items:[address,address]},

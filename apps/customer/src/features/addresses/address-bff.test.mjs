@@ -68,6 +68,34 @@ test("address BFF never dispatches for a changed actor and hides a late owner re
   assert.equal(late.status,401);assert.deepEqual(await late.json(),{error:"UNAUTHORIZED"});
   assert.equal(owner,1);
 });
+test("exact address read uses the current actor and withholds a response after an account change", async t => {
+  let ownerReads = 0;
+  let identityReads = 0;
+  let switchAfterRead = false;
+  const value = {actorId:actor,address};
+  const lookup = `${base}?addressId=${id}`;
+  t.mock.method(globalThis,"fetch",async(input,init) => {
+    if (input.toString().startsWith("http://127.0.0.1:3210")) {
+      identityReads++;
+      return json(session(switchAfterRead && identityReads === 2 ? "customer-b" : actor));
+    }
+    ownerReads++;
+    assert.equal(input.toString(),`http://127.0.0.1:3202/v1/addresses/${id}`);
+    assert.equal(init.method,"GET");
+    return json(value);
+  });
+  assert.equal((await handleCustomerAddresses(request("GET",lookup+"&after="+id),"GET")).status,400);
+  assert.equal(ownerReads,0);
+  const accepted = await handleCustomerAddresses(request("GET",lookup),"GET");
+  assert.equal(accepted.status,200);
+  assert.deepEqual(await accepted.json(),value);
+  switchAfterRead = true;
+  identityReads = 0;
+  const late = await handleCustomerAddresses(request("GET",lookup),"GET");
+  assert.equal(late.status,401);
+  assert.deepEqual(await late.json(),{error:"UNAUTHORIZED"});
+  assert.equal(ownerReads,2);
+});
 test("lost address mutation outcome is not reported as rejected or retried",async t=>{
   let owner=0;
   t.mock.method(globalThis,"fetch",async input=>{

@@ -1,4 +1,4 @@
-import { type CustomerAddress, type CustomerAddressChange, DshPublicError, listPublicCities, validCustomerAddressChange } from "@bthwani/dsh";
+import { type CustomerAddress, type CustomerAddressChange, DshPublicError, isCustomerAddressId, listPublicCities, validCustomerAddressChange } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { randomUUID } from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -7,7 +7,7 @@ import { AppState, Platform, Pressable, ScrollView, Text, TextInput, View } from
 import { SafeAreaView } from "react-native-safe-area-context";
 import { resolvePublicStoreOrigin } from "../stores/public-store-origin";
 import AddressEditor from "./address-editor";
-import { readVerifiedAddresses, verifyAddressSession, writeVerifiedAddress } from "./address-transport";
+import { readVerifiedAddress, readVerifiedAddresses, verifyAddressSession, writeVerifiedAddress } from "./address-transport";
 
 type Draft = { id:string; expectedVersion:number; cityId:string; label:string; details:string; latitude:string; longitude:string };
 type ReadState = {actor:string;items:CustomerAddress[];next?:string|undefined};
@@ -45,12 +45,30 @@ export default function AddressesScreen() {
     clear();setMessage("");
     const controller=new AbortController();
     scope.current=controller;
-    void readVerifiedAddresses(controller.signal).then(result=>{
+    void readVerifiedAddresses(controller.signal).then(async result=>{
       if(controller.signal.aborted)return;
+      let selected=result.page.items.find(address=>address.id===id);
+      let expiresAt=result.expiresAt;
+      let unavailable=false;
+      if(id!==undefined&&!selected){
+        unavailable=typeof id!=="string"||!isCustomerAddressId(id);
+        if(!unavailable){
+          try{
+            const lookup=await readVerifiedAddress(controller.signal,result.page.actorId,id);
+            selected=lookup.address;
+            expiresAt=Math.min(expiresAt,lookup.expiresAt);
+          }catch(error){
+            if(!(error instanceof DshPublicError)||error.status!==404)throw error;
+            unavailable=true;
+          }
+        }
+      }
+      if(controller.signal.aborted)return;
+      if(expiresAt<=Date.now())throw new DshPublicError(401,"UNAUTHORIZED");
       setView({actor:result.page.actorId,items:result.page.items,next:result.page.nextCursor});
-      const selected=result.page.items.find(a=>a.id===id);
       if(selected)setDraft(toDraft(selected));
-      expires.current=setTimeout(reload,Math.max(0,Math.min(2147483647,result.expiresAt-Date.now())));
+      if(unavailable)setMessage("هذا العنوان غير متاح في حسابك.");
+      expires.current=setTimeout(reload,Math.max(0,Math.min(2147483647,expiresAt-Date.now())));
     }).catch(()=>{
       if(!controller.signal.aborted)setMessage("تعذّر التحقق من عناوين حسابك. تحقق من الدخول والاتصال ثم أعد المحاولة.");
     });

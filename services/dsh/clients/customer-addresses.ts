@@ -6,6 +6,7 @@ export type CustomerAddress = Readonly<{ id: string; cityId: string; label: stri
   latitude: number; longitude: number; version: number }>;
 export type CustomerAddressChange = Readonly<Omit<CustomerAddress,"id"|"version"> & { expectedVersion: number }>;
 export type CustomerAddressPage = Readonly<{ actorId: string; items: CustomerAddress[]; nextCursor?: string }>;
+export type CustomerAddressRead = Readonly<{ actorId: string; address: CustomerAddress }>;
 export type CustomerAddressResult = Readonly<{ actorId: string; address: CustomerAddress; replay: boolean }>;
 const idRule = /^addr-[a-f0-9]{32}$/;
 const cityRule = /^[a-z0-9-]{1,64}$/;
@@ -52,6 +53,12 @@ export function parseCustomerAddressResult(v: unknown, actor: string, id: string
   }
   return v as CustomerAddressResult;
 }
+export function parseCustomerAddress(v: unknown, actor: string, id: string): CustomerAddressRead {
+  if (!obj(v) || !exact(v,["actorId","address"]) || v.actorId !== actor || !validAddress(v.address) || v.address.id !== id) {
+    throw new DshPublicError(502,"OWNER_RESPONSE_INVALID");
+  }
+  return { actorId:actor, address:v.address };
+}
 export async function listCustomerAddresses(origin: string,bearer: string,actor: string,after?: string,signal?: AbortSignal) {
   if (!bearerRule.test(bearer)) throw new DshPublicError(401,"UNAUTHENTICATED");
   if (after !== undefined && !idRule.test(after)) throw new DshPublicError(400,"INVALID_REQUEST");
@@ -64,6 +71,12 @@ export async function saveCustomerAddress(origin: string,bearer: string,actor: s
   if (!idRule.test(id) || !validCustomerAddressChange(change)) throw new DshPublicError(400,"INVALID_REQUEST");
   const path = dshOperations.saveCurrentCustomerAddress.path.replace("{addressID}",id);
   return parseCustomerAddressResult(await privateOwnerRequest(origin,path,bearer,"PUT",change,signal),actor,id,change);
+}
+export async function getCustomerAddress(origin: string,bearer: string,actor: string,id: string,signal?: AbortSignal) {
+  if (!bearerRule.test(bearer)) throw new DshPublicError(401,"UNAUTHENTICATED");
+  if (!idRule.test(id)) throw new DshPublicError(400,"INVALID_REQUEST");
+  const path = dshOperations.getCurrentCustomerAddress.path.replace("{addressID}",id);
+  return parseCustomerAddress(await privateOwnerRequest(origin,path,bearer,"GET",undefined,signal),actor,id);
 }
 
 
