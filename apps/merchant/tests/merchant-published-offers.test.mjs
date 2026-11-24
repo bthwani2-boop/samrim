@@ -11,7 +11,11 @@ test("verified Merchant products section renders private owner-scoped DSH catalo
   const privateComponent = resolve(root, "src/features/catalog/merchant-private-catalog.tsx");
   assert.ok(existsSync(privateComponent), "private Store Catalog reader must be implemented");
   assert.match(workspace, /section === "products"\s*\?\s*\(?.*MerchantPrivateCatalog/s);
-  assert.match(workspace, /<MerchantPrivateCatalog\s+actorId=\{actorId\}\s+stores=\{stores\}/);
+  const catalogInvocation = workspace.match(/<MerchantPrivateCatalog\b[^>]*\/>/s)?.[0] ?? "";
+  assert.match(catalogInvocation, /\bkey=\{actorId\}/, "account switch must remount the private catalog");
+  assert.match(catalogInvocation, /\bactorId=\{actorId\}/);
+  assert.match(catalogInvocation, /\bstores=\{stores\}/);
+  assert.match(catalogInvocation, /\binitialStoreId=\{catalogStoreId\}/, "store details must preserve the selected owner store");
   const code = readFileSync(privateComponent, "utf8");
   assert.match(code, /readMerchantCatalogPage\(/, "private owner catalog transport is required");
   assert.match(code, /actorId/, "visible read must be scoped to the current verified actor");
