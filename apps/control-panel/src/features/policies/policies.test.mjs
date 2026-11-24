@@ -326,6 +326,7 @@ test("policy center renders independently verified city admission, clears old sc
   let index = 0;
   const jsx = (type, props) => ({ type, props });
   let denied = false;
+  let currentPolicy = null;
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
     calls.push(url);
@@ -334,7 +335,7 @@ test("policy center renders independently verified city admission, clears old sc
     if (url.endsWith("?delivery=1")) return Response.json({
       cityId: "sanaa", version: 3, radiusMetres: 18000, updatedAt: "2026-11-24T05:00:00Z",
     });
-    return Response.json({}, { status: 503 });
+    return currentPolicy ? Response.json(currentPolicy) : Response.json({}, { status: 503 });
   });
   const mocks = {
     "@bthwani/dsh": require("@bthwani/dsh"),
@@ -384,6 +385,29 @@ test("policy center renders independently verified city admission, clears old sc
   assert.equal(radius(), undefined);
   assert.deepEqual(calls.slice(3), ["/api/policies/cities/aden", "aden", "/api/policies/cities/aden?delivery=1",
     "/api/policies/cities/aden", "aden", "/api/policies/cities/aden?delivery=1"]);
+
+  const history = () => render().find(n => n.type === "History");
+  assert.equal(history()?.props.onDraft, undefined, "denial cannot offer reuse");
+  denied = false;
+  city().props.onChange("sanaa");
+  currentPolicy = {...committed, version: 4};
+  read(); await new Promise(resolve => setImmediate(resolve));
+  const field = label => render().find(n => n.props?.["aria-label"] === label);
+  const submit = () => render().find(n => n.type === "Button" && n.props.type === "primary");
+  const historical = {...committed, version: 2, maxPauseSeconds: 120, maxPreparationMinutes: 10};
+  field("سبب تغيير السياسة").props.onChange({target: {value: "Previous draft reason"}});
+  const before = calls.length;
+  history().props.onDraft({...historical, cityId: "aden"});
+  history().props.onDraft({...historical, version: 4});
+  assert.equal(field("حد الإيقاف بالثواني").props.value, currentPolicy.maxPauseSeconds);
+  history().props.onDraft(historical);
+  assert.equal(field("حد الإيقاف بالثواني").props.value, 120);
+  assert.equal(field("حد التحضير بالدقائق").props.value, 10);
+  assert.equal(field("سبب تغيير السياسة").props.value, "");
+  assert.equal(submit().props.disabled, true);
+  assert.equal(calls.length, before, "draft must not issue a network mutation");
+  field("سبب تغيير السياسة").props.onChange({target: {value: "Reviewed historical values"}});
+  assert.equal(submit().props.disabled, false);
 });
 
 test("operational policy refuses mismatched endpoint before network access", async t => {

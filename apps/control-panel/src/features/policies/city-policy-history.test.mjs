@@ -30,3 +30,53 @@ test("Operator audit browser rejects cross-city, denied and abandoned responses"
   spy.mock.mockImplementation(async () => Response.json(page));
   await assert.rejects(readCityPolicyHistory(endpoint, "sanaa", "operator-a", undefined, controller.signal));
 });
+
+test("historical limits compare against verified current policy and only prepare a draft", async t => {
+  const {readFileSync} = await import("node:fs");
+  const {createRequire} = await import("node:module");
+  const require = createRequire(import.meta.url);
+  const {transformSync} = require("next/dist/build/swc/index.js");
+  const code = transformSync(readFileSync(new URL("./city-policy-history.tsx", import.meta.url), "utf8"), {
+    jsc: {parser: {syntax: "typescript", tsx: true}, target: "es2022", transform: {react: {runtime: "automatic"}}},
+    module: {type: "commonjs"},
+  }).code;
+  const states = [];
+  let index = 0;
+  const jsx = (type, props) => ({type, props});
+  const drafts = [];
+  const current = {...page.entries[0], version: 5, maxPauseSeconds: 600, maxPreparationMinutes: 45};
+  const mocks = {
+    "react/jsx-runtime": {jsx, jsxs: jsx, Fragment: "Fragment"},
+    react: {
+      useState(initial) {const i = index++; if (!(i in states)) states[i] = initial;
+        return [states[i], next => {states[i] = next;}];},
+      useRef(initial) {const i = index++; if (!(i in states)) states[i] = {current: initial}; return states[i];},
+      useEffect() {},
+    },
+    antd: {Alert: "Alert", Button: "Button", Card: "Card", Space: "Space", Typography: {Paragraph: "Paragraph"}},
+    "./city-policy-command": {readCityPolicyHistory},
+  };
+  const module = {exports: {}};
+  new Function("require", "module", "exports", code)(name => mocks[name], module, module.exports);
+  function flatten(tree) {return !tree || typeof tree !== "object" ? [] : Array.isArray(tree)
+    ? tree.flatMap(flatten) : [tree, ...flatten(tree.props?.children)];}
+  const render = (overrides = {}) => {index = 0; return flatten(module.exports.default({
+    actorId: "operator-a", city: "sanaa", endpoint, current, onDraft: entry => drafts.push(entry), ...overrides,
+  }));};
+  const fetch = t.mock.method(globalThis, "fetch", async (_url, init) => {
+    assert.equal(init.method, "GET"); return Response.json(page);
+  });
+  render().find(n => n.type === "Button").props.onClick();
+  await new Promise(resolve => setImmediate(resolve));
+  const compare = () => render().find(n => n.props?.["aria-label"] === "مقارنة الإصدار التاريخي بالحالي");
+  assert.ok(compare());
+  assert.match(JSON.stringify(compare()), /600/);
+  assert.match(JSON.stringify(compare()), /120/);
+  const draft = nodes => nodes.find(n => n.type === "Button" && n.props.children === "استخدام القيم كمسودة");
+  draft(render()).props.onClick();
+  assert.deepEqual(drafts, [page.entries[0]]);
+  assert.equal(fetch.mock.callCount(), 1);
+  for (const overrides of [{current: null}, {current: {...current, cityId: "aden"}}, {current: {...current, version: 4}}, {onDraft: undefined}]) {
+    assert.equal(draft(render(overrides)), undefined);
+  }
+});

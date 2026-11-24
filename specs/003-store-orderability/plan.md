@@ -34,3 +34,8 @@
 
 
 The target candidate is at scaffold stage. The concurrent public Store schema is not stable yet, and Identity current-session verifier / DSH checkout are not implemented. Develop independently testable code first; mark unrun cross-owner and final tests NOT_RUN, never infer PASS from pure code or mock.
+
+
+## Historical operational-policy comparison and draft reuse increment
+
+The active checkout, not the historical branch label above, supplies the candidate. Reuse CityPolicyHistory, PoliciesWorkspace and city-policy-command; no new HTTP operations, SQL, client cache or policy engine. Pass the verified current city policy into the history component; display historical/current values only when the current version is strictly newer and same-city. Offer a draft action only when the parent is ready, and recheck scope/version and command state in the parent before copying the two limits and clearing the reason. Preserve the existing command path and failure behavior. Test the parent and history rendering with the existing Node/SWC harness before implementation; run typecheck, Biome and applicable browser/owner tests; verify no PATCH on copying and deny stale/mismatched history.

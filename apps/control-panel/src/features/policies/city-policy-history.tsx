@@ -1,12 +1,14 @@
 "use client";
 
-import type { CityStoreOperationalPolicyHistoryPage } from "@bthwani/dsh";
+import type { CityStoreOperationalPolicy, CityStoreOperationalPolicyHistoryPage } from "@bthwani/dsh";
 import { Alert, Button, Card, Space, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 import { readCityPolicyHistory } from "./city-policy-command";
 
-export default function CityPolicyHistory({ actorId, city, endpoint }: Readonly<{
+export default function CityPolicyHistory({ actorId, city, endpoint, current, onDraft }: Readonly<{
   actorId: string; city: string; endpoint: string;
+  current: CityStoreOperationalPolicy | null;
+  onDraft: ((entry: CityStoreOperationalPolicy) => void) | undefined;
 }>) {
   const [page, setPage] = useState<CityStoreOperationalPolicyHistoryPage | null>(null);
   const [busy, setBusy] = useState(false);
@@ -49,6 +51,14 @@ export default function CityPolicyHistory({ actorId, city, endpoint }: Readonly<
           <p>الحد الأقصى للإيقاف: {entry.maxPauseSeconds} ثانية — التحضير: {entry.maxPreparationMinutes} دقيقة.</p>
           <p>المشغّل: {entry.changedByActor} — <time dateTime={entry.updatedAt}>{entry.updatedAt}</time></p>
           <p>السبب: {entry.changeReason}</p>
+          {current && current.cityId === city && entry.cityId === city && entry.version < current.version && (
+            <section aria-label="مقارنة الإصدار التاريخي بالحالي">
+              <Typography.Paragraph>مقارنة مع الإصدار الحالي {current.version} (التاريخي ← الحالي)</Typography.Paragraph>
+              <p>الإيقاف: {entry.maxPauseSeconds} ← {current.maxPauseSeconds} ثانية</p>
+              <p>التحضير: {entry.maxPreparationMinutes} ← {current.maxPreparationMinutes} دقيقة</p>
+              {onDraft && <Button onClick={() => onDraft(entry)}>استخدام القيم كمسودة</Button>}
+            </section>
+          )}
         </li>)}
       </ol>)}
   </Card>;

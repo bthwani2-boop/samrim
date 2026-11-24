@@ -1,7 +1,7 @@
 "use client";
 
-import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Select, Space, Typography } from "antd";
 import { type CityDeliveryPolicy, isCityDeliveryPolicy } from "@bthwani/dsh";
+import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Select, Space, Typography } from "antd";
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -10,7 +10,7 @@ import {
 import CityPolicyHistory from "./city-policy-history";
 import DeliveryPolicyPreview from "./delivery-policy-preview";
 import type { PolicyCityDirectory } from "./policy-city-directory";
-import { readRegistrationOverview, type RegistrationOverview } from "./store-registration-command";
+import { type RegistrationOverview, readRegistrationOverview } from "./store-registration-command";
 
 const validCity = /^[a-z0-9-]{1,64}$/;
 
@@ -116,6 +116,16 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
     } finally {
       setBusy(false);
     }
+  }
+
+  function draftHistoricalLimits(entry: CityPolicy) {
+    if (!policy || busy || uncertain || pending || requiresRead ||
+        entry.cityId !== city || policy.cityId !== city || entry.version >= policy.version) return;
+    setMaxPause(entry.maxPauseSeconds);
+    setMaxPreparation(entry.maxPreparationMinutes);
+    setReason("");
+    resetCommand();
+    setMessage("تم نقل القيم التاريخية إلى مسودة فقط. أدخل سببًا جديدًا واعتمدها إذا أردت تغيير السياسة.");
   }
 
   async function apply() {
@@ -301,7 +311,8 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
         )}
       </Card>
       {endpoint && !busy && !uncertain && <CityPolicyHistory key={actorId + ":" + city + ":" + (policy?.version ?? 0)}
-        actorId={actorId} city={city} endpoint={endpoint} />}
+        actorId={actorId} city={city} endpoint={endpoint} current={requiresRead ? null : policy}
+        onDraft={policy && !pending && !requiresRead ? draftHistoricalLimits : undefined} />}
       <Card title="تغيير سياسة إتاحة المتاجر" style={{ marginBlockEnd: 16 }}>
         <Alert type="info" showIcon message="أثر القرار" style={{ marginBlockEnd: 12 }}
           description="يحدد القرار حدود التشغيل للمدينة المحددة؛ لا يغير العقود أو الطلبات السابقة ولا ينشر المتاجر." />
