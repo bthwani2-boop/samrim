@@ -58,6 +58,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
     };
     const jsx = (type, props) => ({ type, props: props ?? {} });
     const mocks = {
+      "@bthwani/dsh": { validMerchantCatalogSearch: query => query.length <= 80 },
       "@bthwani/tamagui-config/appearance": {
         useMobileAppearance: () => ({ theme: {
           background: "back", surface: "surface", color: "text", colorSecondary: "secondary",
@@ -77,7 +78,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
       "react-native": {
         ActivityIndicator: "ActivityIndicator", Platform: { OS: "web" },
-        Pressable: "Pressable", Text: "Text", View: "View",
+        Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View",
         AppState: { addEventListener: () => ({ remove() {} }) },
       },
     };
@@ -132,9 +133,33 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.ok(nodes(tree).some(n => n.props?.children === "منتج ثان"));
       assert.ok(!nodes(tree).some(n => n.props?.children?.props?.children === "عرض المزيد"));
 
-      tree = render("merchant-b", []);
+      const searchInput = nodes(tree).find(n => n.props?.accessibilityLabel === "البحث باسم المنتج");
+      assert.ok(searchInput);
+      searchInput.props.onChangeText("منتج");
+      tree = render("merchant-a", stores);
+      nodes(tree).find(n => n.props?.accessibilityLabel === "بحث في الكتالوج").props.onPress();
+      tree = render("merchant-a", stores);
+      assert.equal(requests.length, 4);
+      assert.equal(requests[3].options.query, "منتج");
+      assert.equal(requests[3].options.cursor, undefined);
       assert.ok(!nodes(tree).some(n => n.props?.children === "منتج ثان"));
-      assert.equal(requests.length, 3);
+      requests[3].resolve({ actorId: "merchant-a", storeId: "store-b",
+        items: [offer("of-c", "منتج ثالث")], nextCursor: "of-c" });
+      await Promise.resolve();
+      await Promise.resolve();
+      tree = render("merchant-a", stores);
+      nodes(tree).find(n => n.props?.children?.props?.children === "عرض المزيد").props.onPress();
+      assert.equal(requests[4].options.query, "منتج");
+      assert.equal(requests[4].options.cursor, "of-c");
+      tree = render("merchant-b", stores);
+      assert.ok(!nodes(tree).some(n => n.props?.children === "منتج ثالث"));
+      assert.equal(requests[5].options.query, undefined);
+      assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "البحث باسم المنتج").props.value, "");
+      requests[4].resolve({ actorId: "merchant-a", storeId: "store-b", items: [offer("of-d", "قديم")] });
+      await Promise.resolve();
+      await Promise.resolve();
+      assert.ok(!nodes(render("merchant-b", stores)).some(n => n.props?.children === "قديم"));
+      assert.equal(requests.length, 6);
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;

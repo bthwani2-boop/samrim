@@ -33,6 +33,11 @@ func TestMerchantCatalogSelectorsAndAuthentication(t *testing.T) {
 	}{
 		{"missing bearer", "/v1/stores/store-one/catalog", "", fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, 401},
 		{"revoked bearer", "/v1/stores/store-one/catalog", "synthetic", fakeIdentity{denied: true}, 401},
+		{"revoked search", "/v1/stores/store-one/catalog?q=Draft&limit=1&cursor=of-a", "synthetic", fakeIdentity{denied: true}, 401},
+		{"duplicate search", "/v1/stores/store-one/catalog?q=a&q=b", "synthetic", fakeIdentity{denied: true}, 400},
+		{"invalid UTF8 search", "/v1/stores/store-one/catalog?q=%FF", "synthetic", fakeIdentity{denied: true}, 400},
+		{"NUL search", "/v1/stores/store-one/catalog?q=%00", "synthetic", fakeIdentity{denied: true}, 400},
+		{"long search", "/v1/stores/store-one/catalog?q=" + strings.Repeat("a", 81), "synthetic", fakeIdentity{denied: true}, 400},
 		{"operator without store access", "/v1/stores/store-one/catalog", "synthetic", fakeIdentity{actor: VerifiedActor{Subject: "operator-a", Role: OperatorRole}}, 403},
 		{"identity outage", "/v1/stores/store-one/catalog", "synthetic", unavailableIdentitySessionAdapter{}, 503},
 		{"invalid store id", "/v1/stores/INVALID/catalog", "synthetic", fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, 400},
@@ -170,6 +175,19 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if status != 200 || len(second.Items) != 1 || second.Items[0].ID != "of-b" ||
 		second.NextCursor != "" || second.Items[0].PriceYER != "1500" {
 		t.Fatalf("next page mismatch: %d %+v", status, second)
+	}
+	status, filtered := get(handler, "/v1/stores/catalog-a/catalog?q=drAFt")
+	if status != 200 || len(filtered.Items) != 1 || filtered.Items[0].ID != "of-a" {
+		t.Fatalf("private name search mismatch: %d %+v", status, filtered)
+	}
+	for _, query := range []string{"%25", "Private"} {
+		status, empty := get(handler, "/v1/stores/catalog-a/catalog?q="+query)
+		if status != 200 || len(empty.Items) != 0 {
+			t.Fatalf("literal or foreign search leaked: %d %+v", status, empty)
+		}
+	}
+	if status, _ = get(handler, "/v1/stores/catalog-b/catalog?q=Private"); status != 403 {
+		t.Fatalf("foreign Store search returned %d", status)
 	}
 	if status, _ = get(handler, "/v1/stores/catalog-b/catalog"); status != 403 {
 		t.Fatalf("foreign Store returned %d", status)

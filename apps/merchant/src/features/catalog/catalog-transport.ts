@@ -1,13 +1,14 @@
-import { createMerchantCatalogDraft, DshPublicError, listMerchantCatalog, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantCatalogDraftEditResult, type MerchantCatalogDraftResult, type MerchantCatalogPage, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, updateMerchantCatalogDraft } from "@bthwani/dsh";
+import { createMerchantCatalogDraft, DshPublicError, listMerchantCatalog, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantCatalogDraftEditResult, type MerchantCatalogDraftResult, type MerchantCatalogPage, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogSearch } from "@bthwani/dsh";
 import { Platform } from "react-native";
 import { withNativeMerchantSession } from "../access/admission-transport";
 
 /** The private catalog includes drafts; DSH verifies the current Store owner on every page. */
 export async function readMerchantCatalogPage(
   storeId: string, actorId: string, signal: AbortSignal,
-  options: { limit?: number; cursor?: string } = {},
+  options: { limit?: number; cursor?: string; query?: string } = {},
 ): Promise<MerchantCatalogPage> {
-  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId || signal.aborted) {
+  if (!/^[a-z0-9-]{1,64}$/.test(storeId) || !actorId || signal.aborted ||
+    (options.query !== undefined && !validMerchantCatalogSearch(options.query))) {
     throw new DshPublicError(400, "INVALID_REQUEST");
   }
   if (Platform.OS !== "web") return withNativeMerchantSession(signal, (bearer, origin) =>
@@ -16,6 +17,7 @@ export async function readMerchantCatalogPage(
   const query = new URLSearchParams({ catalog: storeId });
   if (options.limit !== undefined) query.set("limit", String(options.limit));
   if (options.cursor !== undefined) query.set("cursor", options.cursor);
+  if (options.query?.trim()) query.set("q", options.query);
   const reply = await fetch(`/api/admission?${query}`, {
     method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
     headers: { "X-Merchant-Context": actorId },

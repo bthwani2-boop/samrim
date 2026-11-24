@@ -42,6 +42,23 @@ test("owner GET carries bearer and keyset only to local DSH without browser cook
     "store-a", "merchant-a", "synthetic-bearer", { limit: 20 }), page);
   assert.equal(calls, 1);
 });
+test("private catalog forwards literal search with keyset and rejects unsafe terms", async () => {
+  let calls = 0;
+  globalThis.fetch = async (url) => {
+    calls++;
+    const params = new URL(url).searchParams;
+    assert.equal(params.get("q"), "مادة%_");
+    assert.equal(params.get("cursor"), "of-a");
+    return Response.json(page, { headers: { "Cache-Control": "no-store" } });
+  };
+  await listMerchantCatalog("http://127.0.0.1:3202", "store-a", "merchant-a", "synthetic-bearer",
+    { query: "مادة%_", cursor: "of-a" });
+  for (const query of ["a".repeat(81), "\u0000", "\uD800"]) {
+    await assert.rejects(() => listMerchantCatalog("http://127.0.0.1:3202",
+      "store-a", "merchant-a", "synthetic-bearer", { query }), { message: "INVALID_REQUEST" });
+  }
+  assert.equal(calls, 1);
+});
 test("owner failure, cacheable response and account switches fail closed", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify(page), {
     headers: { "Content-Type": "application/json" },

@@ -19,7 +19,7 @@ export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.t
 export { getCompanyEmployee, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
 export { dshOperations } from "./generated/dsh-operations.ts";
 export type { MerchantCatalogDraftChange, MerchantCatalogDraftEditChange, MerchantCatalogDraftEditResult, MerchantCatalogDraftResult, MerchantCatalogOffer, MerchantCatalogPage } from "./merchant-catalog.ts";
-export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
+export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit, validMerchantCatalogSearch } from "./merchant-catalog.ts";
 export type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantRegistrationResult, MerchantStoreRegistration } from "./merchant-registration.ts";
 export { parseMerchantRegistrationOptions, parseMerchantRegistrationResult, readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration } from "./merchant-registration.ts";
 // DSH-owned Merchant standing contract and transport.

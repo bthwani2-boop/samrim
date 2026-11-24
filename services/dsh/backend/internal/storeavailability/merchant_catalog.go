@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // MerchantCatalogOffer is the private Store-scoped DSH projection of the
@@ -57,7 +58,7 @@ func NewMerchantCatalogHandler(identity IdentitySessions, db *sql.DB, schema str
 			writeFailure(w, ErrUnauthorized)
 			return
 		}
-		limit, cursor, valid := merchantCatalogPageParameters(r)
+		limit, cursor, query, valid := merchantCatalogPageParameters(r)
 		if !valid {
 			writeFailure(w, ErrInvalidChange)
 			return
@@ -77,7 +78,7 @@ func NewMerchantCatalogHandler(identity IdentitySessions, db *sql.DB, schema str
 			writeFailure(w, ErrForbidden)
 			return
 		}
-		page, err := readMerchantCatalog(ctx, db, schema, actor.Subject, r.PathValue("storeID"), limit, cursor)
+		page, err := readMerchantCatalog(ctx, db, schema, actor.Subject, r.PathValue("storeID"), limit, cursor, query)
 		if err != nil {
 			writeFailure(w, err)
 			return
@@ -95,50 +96,56 @@ func NewMerchantCatalogHandler(identity IdentitySessions, db *sql.DB, schema str
 	}), nil
 }
 
-func merchantCatalogPageParameters(r *http.Request) (int, string, bool) {
+func merchantCatalogPageParameters(r *http.Request) (int, string, string, bool) {
 	if !registrationPublicID.MatchString(r.PathValue("storeID")) ||
 		r.URL.ForceQuery || r.ContentLength != 0 || len(r.TransferEncoding) > 0 {
-		return 0, "", false
+		return 0, "", "", false
 	}
 	params, err := url.ParseQuery(r.URL.RawQuery)
-	if err != nil || len(params) > 2 {
-		return 0, "", false
+	if err != nil || len(params) > 3 {
+		return 0, "", "", false
 	}
 	limit := 20
-	cursor := ""
+	cursor, query := "", ""
 	for key, values := range params {
-		if len(values) != 1 || values[0] == "" {
-			return 0, "", false
+		if len(values) != 1 || (key != "q" && values[0] == "") {
+			return 0, "", "", false
 		}
 		switch key {
 		case "limit":
 			raw := values[0]
 			if len(raw) > 2 || (len(raw) > 1 && raw[0] == '0') {
-				return 0, "", false
+				return 0, "", "", false
 			}
 			for _, digit := range raw {
 				if digit < '0' || digit > '9' {
-					return 0, "", false
+					return 0, "", "", false
 				}
 			}
 			n, e := strconv.Atoi(raw)
 			if e != nil || n < 1 || n > 50 {
-				return 0, "", false
+				return 0, "", "", false
 			}
 			limit = n
 		case "cursor":
 			if !registrationPublicID.MatchString(values[0]) {
-				return 0, "", false
+				return 0, "", "", false
 			}
 			cursor = values[0]
+		case "q":
+			raw := values[0]
+			if !utf8.ValidString(raw) || utf8.RuneCountInString(raw) > 80 || strings.ContainsRune(raw, 0) {
+				return 0, "", "", false
+			}
+			query = strings.TrimSpace(raw)
 		default:
-			return 0, "", false
+			return 0, "", "", false
 		}
 	}
-	return limit, cursor, true
+	return limit, cursor, query, true
 }
 
-func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, storeID string, limit int, cursor string) (MerchantCatalogPage, error) {
+func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, storeID string, limit int, cursor, query string) (MerchantCatalogPage, error) {
 	result := MerchantCatalogPage{ActorID: actorID, StoreID: storeID, Items: []MerchantCatalogOffer{}}
 	tx, err := beginScopedStoreTx(ctx, db, schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
@@ -161,7 +168,8 @@ func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, store
 		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
 		JOIN variants v ON v.id=o.variant_id AND v.product_id=p.id
 		WHERE o.store_id=$1 AND o.id COLLATE "C" > $2
-		ORDER BY o.id COLLATE "C" LIMIT $3`, storeID, cursor, limit+1)
+		AND ($4 = '' OR strpos(lower(p.name), lower($4)) > 0)
+		ORDER BY o.id COLLATE "C" LIMIT $3`, storeID, cursor, limit+1, query)
 	if err != nil {
 		return result, ErrStoreOwnerUnavailable
 	}

@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, readMerchantRegistrationOptions } from "@bthwani/dsh";
+import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, readMerchantRegistrationOptions, validMerchantCatalogSearch } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
 import {
   appendSessionCookies, bearerFrom, configuredOrigin, cookieName, ownerError,
@@ -41,11 +41,18 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
   const availability = storeId !== null && /^[a-z0-9-]{1,64}$/.test(storeId);
   const catalogId = query.get("catalog");
   const validCatalogKeys = [...query.keys()].every(key =>
-    ["catalog", "cursor", "limit"].includes(key) && query.getAll(key).length === 1);
+    ["catalog", "cursor", "limit", "q"].includes(key) && query.getAll(key).length === 1);
   const limitValue = query.get("limit");
   const cursorValue = query.get("cursor");
+  const searchValue = query.get("q");
+  if (catalogId !== null && searchValue !== null) {
+    // URLSearchParams replaces malformed UTF-8. Reject it before forwarding to DSH.
+    try { decodeURIComponent(new URL(request.url).search); }
+    catch { return response({ code: "INVALID_REQUEST" }, 400); }
+  }
   const catalog = catalogId !== null && /^[a-z0-9-]{1,64}$/.test(catalogId) &&
-    validCatalogKeys && query.size <= 3 &&
+    validCatalogKeys && query.size <= 4 &&
+    (searchValue === null || validMerchantCatalogSearch(searchValue)) &&
     (limitValue === null || /^(?:[1-9]|[1-4][0-9]|50)$/.test(limitValue)) &&
     (cursorValue === null || /^[a-z0-9-]{1,64}$/.test(cursorValue));
   if (query.size > 0 && !stores && !availability && !registration && !catalog) {
@@ -80,7 +87,8 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
         return response({ catalog: await listMerchantCatalog(
           standingOrigin(origin), catalogId ?? "", session.actorId, bearer,
           { signal, ...(limitValue ? { limit: Number(limitValue) } : {}),
-            ...(cursorValue ? { cursor: cursorValue } : {}) },
+            ...(cursorValue ? { cursor: cursorValue } : {}),
+            ...(searchValue !== null ? { query: searchValue } : {}) },
         ) });
       }
       if (availability) {

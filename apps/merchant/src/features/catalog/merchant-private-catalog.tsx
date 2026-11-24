@@ -1,9 +1,9 @@
-import type { MerchantCatalogOffer, MerchantCatalogPage } from "@bthwani/dsh";
+import { type MerchantCatalogOffer, type MerchantCatalogPage, validMerchantCatalogSearch } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
-import { ActivityIndicator, AppState, Platform, Pressable, Text, View } from "react-native";
-import { readMerchantCatalogPage } from "./catalog-transport";
+import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
+import { readMerchantCatalogPage } from "./catalog-transport";
 import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
 
 type CatalogState = {
@@ -21,6 +21,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
 }>) {
   const { theme } = useMobileAppearance();
   const [selectedId, setSelectedId] = useState("");
+  const [search, setSearch] = useState({ scope: "", draft: "", query: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [state, setState] = useState<CatalogState>({
@@ -30,7 +31,10 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
   const active = useRef<AbortController | null>(null);
   const selected = stores.find(store => store.id === selectedId) ?? stores[0];
   const storeId = selected?.id ?? "";
-  const scope = `${actorId}:${storeId}`;
+  const storeScope = JSON.stringify([actorId, storeId]);
+  const draftSearch = search.scope === storeScope ? search.draft : "";
+  const searchQuery = search.scope === storeScope ? search.query : "";
+  const scope = JSON.stringify([actorId, storeId, searchQuery]);
   useEffect(() => {
     const reload = () => setRetry(value => value + 1);
     if (Platform.OS === "web") {
@@ -54,7 +58,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
     const controller = new AbortController();
     active.current = controller;
     setState({ scope, loading: true, more: false, items: [] });
-    void readMerchantCatalogPage(storeId, actorId, controller.signal, { limit: 20 })
+    void readMerchantCatalogPage(storeId, actorId, controller.signal, { limit: 20, ...(searchQuery ? { query: searchQuery } : {}) })
       .then(page => {
         if (controller.signal.aborted || epoch !== generation.current) return;
         setState({ scope, loading: false, more: false, items: page.items,
@@ -66,7 +70,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
           error: "تعذّر التحقق من كتالوج هذا المتجر لدى DSH. تأكد من الصلاحية والاتصال." });
       });
     return () => { controller.abort(); generation.current++; };
-  }, [scope, storeId, actorId, retry]);
+  }, [scope, storeId, actorId, searchQuery, retry]);
 
   const visible: CatalogState = state.scope === scope ? state : {
     scope, loading: true, more: false, items: [],
@@ -85,7 +89,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
     setState(previous => previous.scope === scope ? { ...previous, more: true } : previous);
     try {
       const page: MerchantCatalogPage = await readMerchantCatalogPage(storeId, actorId, controller.signal,
-        { cursor, limit: 20 });
+        { cursor, limit: 20, ...(searchQuery ? { query: searchQuery } : {}) });
       if (controller.signal.aborted || epoch !== generation.current) return;
       setState(previous => {
         if (previous.scope !== scope || previous.cursor !== cursor) return previous;
@@ -119,7 +123,22 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
           <Text style={{ color: theme.color }}>{store.name}</Text>
         </Pressable>)}
       </View>}
-    {storeId && actorId ? <MerchantCatalogDraftForm key={scope} actorId={actorId} storeId={storeId}
+    {storeId && actorId ? <View style={{ gap: 8 }}>
+      <TextInput accessibilityLabel="البحث باسم المنتج" value={draftSearch}
+        onChangeText={draft => setSearch({ scope: storeScope, draft, query: searchQuery })}
+        placeholder="اسم المنتج" placeholderTextColor={theme.colorSecondary} maxLength={80}
+        style={{ ...button, color: theme.color }} />
+      <Pressable accessibilityRole="button" accessibilityLabel="بحث في الكتالوج" style={button}
+        disabled={!validMerchantCatalogSearch(draftSearch)}
+        onPress={() => setSearch({ scope: storeScope, draft: draftSearch, query: draftSearch.trim() })}>
+        <Text style={{ color: theme.interactiveText }}>بحث</Text>
+      </Pressable>
+      {draftSearch || searchQuery ? <Pressable accessibilityRole="button" style={button}
+        onPress={() => setSearch({ scope: storeScope, draft: "", query: "" })}>
+        <Text style={{ color: theme.interactiveText }}>مسح البحث</Text>
+      </Pressable> : null}
+    </View> : null}
+    {storeId && actorId ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
       onCreated={() => setRetry(value => value + 1)} /> : null}
     {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة كتالوج المتجر" /> : null}
     {visible.error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
@@ -127,7 +146,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
     </Text> : null}
     {!visible.loading && !visible.error && stores.length > 0 && visible.items.length === 0 ?
       <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>
-        لا توجد عروض مسجلة لهذا المتجر حتى الآن.
+        {searchQuery ? "لا توجد عروض مطابقة للبحث." : "لا توجد عروض مسجلة لهذا المتجر حتى الآن."}
       </Text> : null}
     {visible.items.map(offer => <View key={offer.id} style={{
       backgroundColor: theme.surface, borderColor: theme.borderColor, borderWidth: 1,
@@ -151,7 +170,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
         </Pressable> : null}
       {editingId === offer.id && !offer.published && !offer.available && !offer.productActive &&
         !offer.variantSellable && !offer.requiredAttributesValid ?
-        <MerchantCatalogDraftForm key={`${scope}:${offer.id}:${offer.draftVersion}`}
+        <MerchantCatalogDraftForm key={`${storeScope}:${offer.id}:${offer.draftVersion}`}
           actorId={actorId} storeId={storeId} draft={offer}
           onCreated={() => { setEditingId(null); setRetry(value => value + 1); }} /> : null}
       {!offer.productActive || !offer.variantSellable || !offer.requiredAttributesValid ?

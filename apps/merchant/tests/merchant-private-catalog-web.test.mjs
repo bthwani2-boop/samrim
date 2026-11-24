@@ -22,7 +22,7 @@ function request(search = "?catalog=store-a&limit=20", actor = "merchant-a", tok
     },
   });
 }
-function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false } = {}) {
+function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false, expectedSearch = "?limit=20" } = {}) {
   const env = {
     MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN,
     MERCHANT_SYNTHETIC_DSH_ORIGIN: process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN,
@@ -70,7 +70,7 @@ function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catal
         replay: ownerStatus === 200,
       }, { status: ownerStatus, headers: { "Cache-Control": "no-store" } });
     }
-    assert.equal(target.search, "?limit=20");
+    assert.equal(target.search, expectedSearch);
     return Response.json(ownerStatus === 200 ? ownerPage : { code: "STORE_OPERATION_FORBIDDEN" },
       { status: ownerStatus, headers: { "Cache-Control": "no-store" } });
   });
@@ -84,6 +84,19 @@ test("private Merchant Catalog BFF uses current actor and Store-bound owner GET"
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   assert.deepEqual(await response.json(), { catalog });
   assert.deepEqual(calls, ["/v1/sessions/current", "/v1/stores/store-a/catalog"]);
+});
+test("private Merchant Catalog forwards search and rejects ambiguous search before owner calls", async t => {
+  const params = new URLSearchParams({ limit: "20", q: "مسودة%_" });
+  const calls = ownerMocks(t, { expectedSearch: "?" + params.toString() });
+  const response = await GET(request("?catalog=store-a&" + params.toString()));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { catalog });
+  assert.equal(calls.length, 2);
+  for (const search of ["q=a&q=b", "q=%00", "q=%FF", "q=%ZZ", "q=" + "a".repeat(81)]) {
+    const invalid = await GET(request("?catalog=store-a&" + search));
+    assert.equal(invalid.status, 400);
+  }
+  assert.equal(calls.length, 2);
 });
 test("private Merchant Catalog never reads Identity without a bearer", async t => {
   const calls = ownerMocks(t);

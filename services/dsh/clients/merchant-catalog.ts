@@ -74,11 +74,16 @@ export function parseMerchantCatalogPage(payload: unknown, actorId: string, stor
   return value as MerchantCatalogPage;
 }
 
+export function validMerchantCatalogSearch(query: string): boolean {
+  return Array.from(query).length <= 80 && !query.includes("\u0000") && !/[\uD800-\uDFFF]/u.test(query);
+}
+
 export async function listMerchantCatalog(
   origin: string, storeId: string, actorId: string, bearer: string,
-  options: { cursor?: string; limit?: number; signal?: AbortSignal } = {},
+  options: { cursor?: string; limit?: number; query?: string; signal?: AbortSignal } = {},
 ): Promise<MerchantCatalogPage> {
   if (!key.test(storeId) || !actorRule.test(actorId) ||
+    (options.query !== undefined && !validMerchantCatalogSearch(options.query)) ||
     (options.cursor !== undefined && !key.test(options.cursor)) ||
     (options.limit !== undefined && (!Number.isInteger(options.limit) ||
       options.limit < 1 || options.limit > 50))) {
@@ -88,6 +93,7 @@ export async function listMerchantCatalog(
   const params = new URLSearchParams();
   if (options.limit !== undefined) params.set("limit", String(options.limit));
   if (options.cursor !== undefined) params.set("cursor", options.cursor);
+  if (options.query?.trim()) params.set("q", options.query);
   const body = await privateOwnerRequest(origin, path + (params.size ? `?${params}` : ""),
     bearer, "GET", undefined, options.signal);
   return parseMerchantCatalogPage(body, actorId, storeId);
