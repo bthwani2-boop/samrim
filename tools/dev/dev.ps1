@@ -24,6 +24,7 @@ param(
   [switch]$RelocateIdentityDatabase,
   [switch]$ResumeIdentityDatabase,
   [string]$PreparedSourceSha,
+  [string]$RecoverRuntimeAttempt,
   [Parameter(Position=1)]
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','reconcile','start','restart','android','open')]
   [string]$DockerAction = 'help',
@@ -1161,12 +1162,13 @@ function Invoke-ScopedDocker {
       Assert-Ok (!$CutoverDshDatabase -or ($Apply -and !$PrepareDshDatabase -and !$ResumeDshDatabase -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $PreparedSourceSha -cmatch '^[0-9a-f]{40}$')) 'DSH cutover requires explicit Apply and exact prepared source SHA'
       Assert-Ok (!$ResumeDshDatabase -or $PrepareDshDatabase) 'Resume requires -PrepareDshDatabase'
       Assert-Ok (!$PrepareDshDatabase -or ($Apply -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline)) 'Dedicated DSH database preparation requires explicit isolated -Apply without another operation'
-      $mode = if ($RelocateIdentityDatabase -and $ResumeIdentityDatabase) { '--resume-identity-database' } elseif ($RelocateIdentityDatabase) { '--relocate-identity-database' } elseif ($CutoverDshDatabase) { '--cutover-dsh-database' } elseif ($PrepareDshDatabase -and $ResumeDshDatabase) { '--resume-dsh-database' } elseif ($PrepareDshDatabase) { '--prepare-dsh-database' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
+      Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and !$PrepareDshDatabase -and !$ResumeDshDatabase -and !$CutoverDshDatabase -and !$RelocateIdentityDatabase -and !$ResumeIdentityDatabase -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
+      $mode = if ($RecoverRuntimeAttempt) { '--recover-attempt' } elseif ($RelocateIdentityDatabase -and $ResumeIdentityDatabase) { '--resume-identity-database' } elseif ($RelocateIdentityDatabase) { '--relocate-identity-database' } elseif ($CutoverDshDatabase) { '--cutover-dsh-database' } elseif ($PrepareDshDatabase -and $ResumeDshDatabase) { '--resume-dsh-database' } elseif ($PrepareDshDatabase) { '--prepare-dsh-database' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
       Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply, without capability activation'
-      $reconcileOptions = @(if ($CutoverDshDatabase) { $PreparedSourceSha } elseif ($PrepareBaseline) { '--prepare-baseline' })
+      $reconcileOptions = @(if ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($CutoverDshDatabase) { $PreparedSourceSha } elseif ($PrepareBaseline) { '--prepare-baseline' })
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {
-        if ($Apply) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
+        if ($Apply -or $RecoverRuntimeAttempt) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
         if ($CutoverDshDatabase) {
           & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode $PreparedSourceSha
         } else {
@@ -1267,6 +1269,7 @@ function Verify-Checks {
 }
 
 try {
+  Assert-Ok (!$RecoverRuntimeAttempt -or ($Action -eq 'Docker' -and $DockerAction -eq 'reconcile')) 'Runtime attempt recovery belongs to docker reconcile only'
   $readOnlyOperation = $Action -in @('Status','Verify','Migrations') -or
     ($Action -eq 'Apps' -and $DockerAction -in @('help','status','verify','logs','android')) -or
     ($Action -eq 'Apps' -and $DockerAction -eq 'reconcile' -and !$Apply) -or

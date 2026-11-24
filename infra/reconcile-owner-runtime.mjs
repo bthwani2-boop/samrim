@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, lstatSync, appendFileSync } from "node:fs";
 import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
+import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../tools/dev/sync-lenovo-reconciliation.mjs";
 import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -554,19 +555,68 @@ function rebaseAndApply(owner,state,env,head,files,tag,targetId,ensureSource) {
   }
 }
 
+function assertNoOrphanReconciler() {
+  const processes=run("pwsh",["-NoProfile","-NonInteractive","-Command",
+    "Get-CimInstance Win32_Process -Filter \"Name='node.exe'\" | Where-Object { $_.ProcessId -ne "+process.pid+" -and $_.CommandLine -like '*reconcile-owner-runtime.mjs*' } | ForEach-Object { $_.ProcessId }"]);
+  if(processes)throw new Error("Previous owner reconciler is still active");
+}
+
+function verifyRecoveryOwners(state) {
+  assertNoOrphanReconciler();
+  for(const owner of ["dsh","identity"]){
+    const args=owner==="dsh"?["/usr/local/bin/dsh","-mode=verify-development-db"]:["/usr/local/bin/identity","verify-development-db"];
+    if(!docker(["exec",state[owner].Id,...args],{},15000).includes(owner.toUpperCase()+"_DEVELOPMENT_DATABASE_PASS"))
+      throw new Error("Serving owner principal not verified: "+owner);
+    console.log("RECOVERY_OWNER_READBACK_PASS "+owner);
+  }
+  const wlt=new URL(asEnv(state.wlt.Config.Env).WLT_TEST_DATABASE_URL);
+  if(wlt.hostname!=="postgres"||wlt.pathname!=="/bthwani_wlt_test"||wlt.username!=="bthwani_wlt_reader")
+    throw new Error("WLT recovery database scope mismatch");
+  const pg=project+"-postgres-1";
+  if(docker(["inspect","--format",'{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.bthwani.environment"}}|{{.State.Health.Status}}',pg])!==project+"|refoundation|healthy")
+    throw new Error("PostgreSQL owner not verified");
+  // Read only. Re-attest the serving reader and required relations without
+  // exporting credentials or touching balances, journals or protected rows.
+  const sql="BEGIN READ ONLY; SET LOCAL ROLE bthwani_wlt_reader; SELECT current_database()='bthwani_wlt_test' AND current_user='bthwani_wlt_reader' AND has_schema_privilege('wlt','USAGE') AND NOT has_schema_privilege('wlt','CREATE') AND to_regclass('wlt.customer_funding_journal') IS NOT NULL AND to_regclass('wlt.customer_funding_entries') IS NOT NULL AND has_table_privilege('wlt.customer_wallet_balances','SELECT') AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='wlt' AND c.relkind IN ('r','p','v','m') AND (has_table_privilege(c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,TRIGGER') OR has_any_column_privilege(c.oid,'INSERT,UPDATE,REFERENCES'))); COMMIT;";
+  if(docker(["exec","-i",pg,"psql","-X","-qAt","-v","ON_ERROR_STOP=1","-U","bthwani_refoundation_admin","-d","bthwani_wlt_test","-f","-"],{},30000,sql+"\n")!=="t")
+    throw new Error("WLT serving reader not verified");
+  console.log("RECOVERY_OWNER_READBACK_PASS wlt");
+  for(const owner of Object.keys(owners)){
+    const now=inspect(owner), before=state[owner];
+    if(now.Id!==before.Id||now.Image!==before.Image||now.State.StartedAt!==before.State.StartedAt||
+       now.Config.Labels["com.docker.compose.config-hash"]!==before.Config.Labels["com.docker.compose.config-hash"])
+      throw new Error("Concurrent owner change: "+owner);
+  }
+  assertNoOrphanReconciler();
+}
+
 function main() {
   const [mode,...options] = process.argv.slice(2);
   const cutover=mode==="--cutover-dsh-database";
+  const recover=mode==="--recover-attempt";
   const prepare=options.length===1 && options[0]==="--prepare-baseline";
-  if(!cutover && options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
-  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database","--relocate-identity-database","--resume-identity-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
-  const apply = mode !== "--check";
-  if (apply && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
+  if(recover && (options.length!==1||! /^[a-f0-9]{64}$/.test(options[0])))throw new Error("Expected exact reviewed runtime attempt key");
+  if(!cutover && !recover && options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
+  if (!["--check","--recover-attempt","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database","--relocate-identity-database","--resume-identity-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
+  const apply = mode !== "--check" && !recover;
+  if ((apply||recover) && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
   if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
   if (!/^ssh:\/\/[^/]+@bthwani-docker$/.test(docker(["context", "inspect", context, "--format", "{{.Endpoints.docker.Host}}"]))) throw new Error("Wrong Docker target");
   const head = git(["rev-parse","HEAD"]);
   const branch = git(["branch","--show-current"]);
   if (!branch || branch === "main" || branch.startsWith("archive/")) throw new Error("Not an active development branch");
+  let recovery=null;
+  if(recover){
+    if(!process.env.LOCALAPPDATA)throw new Error("Missing runtime attempt directory");
+    const directory=resolve(process.env.LOCALAPPDATA,"BThwani","Operations","SourceSync");
+    const stateFile=resolve(directory,"runtime-reconcile.json"), receiptFile=resolve(directory,"runtime-reconcile.receipt.json");
+    const reviewed=readFileSync(stateFile,"utf8");
+    const attempt=JSON.parse(reviewed);
+    if(attempt.version!==1||attempt.key!==options[0]||!["running","uncertain"].includes(attempt.status))
+      throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+    assertNoOrphanReconciler();
+    recovery={stateFile,receiptFile,reviewed,key:options[0]};
+  }
   const state = Object.fromEntries(Object.keys(owners).map(o => [o, inspect(o)]));
   const activeAppFiles = liveFiles(state.dsh);
   const captain = activeAppFiles.includes(captainFile);
@@ -660,6 +710,15 @@ function main() {
   }
   const selected = selectOwners({candidates,activateCaptain:mode==="--apply-captain",currentCaptain:captain});
   console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_OVERLAY="+captain);
+  if(recovery){
+    if(partial||selected.length||change.changed.length)throw new Error("Runtime recovery requires current, clean, fully verified owners");
+    ensureSource();
+    verifyRecoveryOwners(state);
+    ensureSource();
+    acknowledgeRuntimeRecovery(recovery.stateFile,recovery.receiptFile,recovery.key,recovery.reviewed);
+    console.log("RUNTIME_ATTEMPT_REARMED HEAD="+head+" key="+recovery.key.slice(0,12));
+    return;
+  }
   if (!apply || selected.length===0) {
     if(partial || selected.length){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
     else console.log("RECONCILE_PASS HEAD="+head);
@@ -771,5 +830,16 @@ function main() {
   else console.log("RECONCILE_PASS HEAD="+head);
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  try { main(); } catch (e) { console.error("RUNTIME_RECONCILE_BLOCKED " + e.message); process.exitCode = 1; }
+  try {
+    main();
+    // The actual reconciler owns the terminal proof, not the watcher's pipe.
+    // Only a complete successful automatic apply can release the matching hold.
+    const key=process.env.BTHWANI_RUNTIME_ATTEMPT_KEY;
+    const attempt=process.env.BTHWANI_RUNTIME_ATTEMPT_ID;
+    if((key||attempt) && !process.exitCode && ["--apply","--apply-preview"].includes(process.argv[2])){
+      if(!key||!attempt||!process.env.LOCALAPPDATA)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+      const directory=resolve(process.env.LOCALAPPDATA,"BThwani","Operations","SourceSync");
+      acknowledgeRuntimeAttempt(resolve(directory,"runtime-reconcile.json"),resolve(directory,"runtime-reconcile.receipt.json"),key,attempt);
+    }
+  } catch (e) { console.error("RUNTIME_RECONCILE_BLOCKED " + e.message); process.exitCode = 1; }
 }

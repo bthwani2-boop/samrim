@@ -455,6 +455,54 @@ test("runtime reconciliation trigger is immediate for changed committed source a
   assert.equal(runtimePollDue({...base,last:{key:"old",status:"blocked"}}),true);
 });
 
+test("a reconciler can durably acknowledge only its own verified attempt after watcher loss", async()=>{
+  const { acknowledgeRuntimeAttempt, runtimeReceiptStatus } = await import("./sync-lenovo-reconciliation.mjs");
+  const folder=mkdtempSync(path.join(tmpdir(),"bthwani-runtime-receipt-"));
+  const file=path.join(folder,"runtime-reconcile.json");
+  const receipt=path.join(folder,"runtime-reconcile.receipt.json");
+  const key="a".repeat(64), attempt="11111111-1111-4111-8111-111111111111";
+  const next="22222222-2222-4222-8222-222222222222";
+  const running={version:1,key,attempt,status:"running"};
+  try {
+    writeFileSync(file,JSON.stringify(running));
+    assert.equal(runtimeReceiptStatus(file,receipt),null);
+    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,next),/RUNTIME_ATTEMPT_MISMATCH/);
+    assert.equal(existsSync(receipt),false);
+    acknowledgeRuntimeAttempt(file,receipt,key,attempt);
+    assert.deepEqual(JSON.parse(readFileSync(file,"utf8")),running);
+    assert.equal(runtimeReceiptStatus(file,receipt),"pass");
+    writeFileSync(file,JSON.stringify({...running,status:"uncertain"}));
+    assert.equal(runtimeReceiptStatus(file,receipt),"pass");
+    writeFileSync(file,JSON.stringify({...running,attempt:next}));
+    assert.equal(runtimeReceiptStatus(file,receipt),null);
+    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt),/RUNTIME_ATTEMPT_MISMATCH/);
+    assert.equal(runtimeReceiptStatus(file,receipt),null);
+    writeFileSync(receipt,"{broken");
+    assert.equal(runtimeReceiptStatus(file,receipt),null);
+  } finally { rmSync(folder,{recursive:true,force:true}); }
+});
+
+test("explicit recovery receipt releases only the exact previously reviewed hold, never a changed attempt",async()=>{
+  const { acknowledgeRuntimeRecovery, runtimeReceiptStatus }=await import("./sync-lenovo-reconciliation.mjs");
+  const folder=mkdtempSync(path.join(tmpdir(),"bthwani-runtime-recovery-"));
+  const state=path.join(folder,"runtime-reconcile.json"), receipt=path.join(folder,"runtime-reconcile.receipt.json");
+  const key="b".repeat(64), original=JSON.stringify({version:1,key,status:"running"});
+  try {
+    writeFileSync(state,original);
+    assert.throws(()=>acknowledgeRuntimeRecovery(state,receipt,"c".repeat(64),original),/RUNTIME_ATTEMPT_MISMATCH/);
+    assert.equal(existsSync(receipt),false);
+    acknowledgeRuntimeRecovery(state,receipt,key,original);
+    assert.equal(runtimeReceiptStatus(state,receipt),"retry");
+    assert.equal(readFileSync(state,"utf8"),original);
+    const changed=JSON.stringify({version:1,key,status:"uncertain"});
+    writeFileSync(state,changed);
+    assert.equal(runtimeReceiptStatus(state,receipt),null);
+    assert.throws(()=>acknowledgeRuntimeRecovery(state,receipt,key,original),/RUNTIME_ATTEMPT_MISMATCH/);
+    writeFileSync(state,JSON.stringify({version:1,key,status:"blocked"}));
+    assert.throws(()=>acknowledgeRuntimeRecovery(state,receipt,key,readFileSync(state,"utf8")),/RUNTIME_ATTEMPT_MISMATCH/);
+  } finally {rmSync(folder,{recursive:true,force:true});}
+});
+
 test("runtime attempt outcome distinguishes known readback from ambiguous writes",async()=>{
   const {runtimeAttemptResult}=await import("./sync-lenovo-reconciliation.mjs");
   assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nOWNER_APPLY_VERIFIED dsh\n","Source changed"),"retry");

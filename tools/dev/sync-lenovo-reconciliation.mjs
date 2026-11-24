@@ -1,4 +1,59 @@
-/** Pure decisions for the single Surface-to-Lenovo source mirror. */
+/** Decisions and durable outcome proof for the single Surface-to-Lenovo source mirror. */
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+
+const attemptId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+function matchingAttempt(state,key,attempt) {
+  return state?.version===1 && /^[a-f0-9]{64}$/.test(key) && attemptId.test(attempt) &&
+    state.key===key && state.attempt===attempt && ["running","uncertain"].includes(state.status);
+}
+
+// The lifecycle worker publishes proof, never the watcher's scheduling state.
+// A unique attempt identity prevents a previous success from releasing a new hold.
+export function acknowledgeRuntimeAttempt(stateFile,receiptFile,key,attempt) {
+  const state=JSON.parse(readFileSync(stateFile,"utf8"));
+  if(!matchingAttempt(state,key,attempt))throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+  writeRuntimeReceipt(receiptFile,{version:1,key,attempt,status:"pass"});
+}
+
+function writeRuntimeReceipt(receiptFile,receipt) {
+  const temporary=receiptFile+"."+randomUUID()+".tmp";
+  let created=false;
+  try {
+    writeFileSync(temporary,JSON.stringify(receipt),{flag:"wx"});
+    created=true;
+    renameSync(temporary,receiptFile);
+  } catch(error) {
+    if(created)try{rmSync(temporary,{force:true});}catch{}
+    throw error;
+  }
+}
+
+const stateDigest=text=>createHash("sha256").update(text).digest("hex");
+
+// Explicit owner-reviewed recovery is not a claim that the interrupted write
+// succeeded. Bind the authorization to the exact previously read state.
+export function acknowledgeRuntimeRecovery(stateFile,receiptFile,key,reviewed) {
+  const current=readFileSync(stateFile,"utf8");
+  const state=JSON.parse(current);
+  if(current!==reviewed || state.version!==1 || !/^[a-f0-9]{64}$/.test(key) ||
+    state.key!==key || !["running","uncertain"].includes(state.status))
+    throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+  writeRuntimeReceipt(receiptFile,{version:1,key,status:"retry",reviewed:stateDigest(current)});
+}
+
+export function runtimeReceiptStatus(stateFile,receiptFile) {
+  try {
+    const current=readFileSync(stateFile,"utf8");
+    const state=JSON.parse(current);
+    const receipt=JSON.parse(readFileSync(receiptFile,"utf8"));
+    if(receipt.version!==1)return null;
+    if(receipt.status==="pass" && matchingAttempt(state,receipt.key,receipt.attempt))return "pass";
+    if(receipt.status==="retry" && state.version===1 && state.key===receipt.key &&
+      ["running","uncertain"].includes(state.status) && receipt.reviewed===stateDigest(current))return "retry";
+    return null;
+  } catch { return null; }
+}
 
 function parseRemoteHashes(output, expected) {
   const entries = new Map();
@@ -130,4 +185,4 @@ function graphifyPollDue({now,dirtySince,lastEvent,nextAudit,busy,debounce=3000,
   return now>=nextAudit || (dirtySince!==null && (now-lastEvent>=debounce || now-dirtySince>=maxWait));
 }
 
-export { assertCompatibleBranchTransition, branchTransitionPins, isDependencyInput, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction };
+export { assertCompatibleBranchTransition, branchTransitionPins, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction };

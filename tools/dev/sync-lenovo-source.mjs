@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { dirtyPaths, isPreviewGoPath, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, dependencyInputChanges, isDependencyInput, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, runtimeReceiptStatus, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -513,6 +513,7 @@ const runtimeScope = [
 ];
 const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
 const runtimeStateFile = path.join(stateDir, "runtime-reconcile.json");
+const runtimeReceiptFile = path.join(stateDir, "runtime-reconcile.receipt.json");
 let runtimeChild = null;
 let nextRuntimeAudit = 0;
 let runtimeNotice = "";
@@ -574,17 +575,26 @@ function pollOwnerRuntime() {
   const eligible=ownerReconcilePlan({changed,committed:{},preview,captain:false}).eligible;
   const go=changed.filter(p=>isPreviewGoPath(p) && eligible.some(o=>p.startsWith("services/"+o+"/")));
   const key=crypto.createHash("sha256").update(run("git",["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(JSON.stringify(changed)).update(previewChangeKey(root,go)).update(optIn).digest("hex");
-  const last = runtimeState();
+  let last = runtimeState();
+  const recovered=last && runtimeReceiptStatus(runtimeStateFile,runtimeReceiptFile);
+  if (recovered) {
+    last={...last,status:recovered};
+    persistAt(runtimeStateFile,last);
+    runtimeLogOnce("RUNTIME_RECONCILE_RECOVERED key="+last.key.slice(0,12));
+    nextRuntimeAudit=Date.now()+60_000;
+  }
   if (last && (["running","uncertain"].includes(last.status) || (last.key === key && last.status === "blocked"))) {
     runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation"); return;
   }
   if (!runtimePollDue({enabled:true,dirty,active:false,key,last,now:Date.now(),nextAudit:nextRuntimeAudit})) return;
-  persistAt(runtimeStateFile, {version:1,key,status:"running"});
+  const attempt=crypto.randomUUID();
+  persistAt(runtimeStateFile, {version:1,key,attempt,status:"running"});
   logger("RUNTIME_RECONCILE_STARTED key="+key.slice(0,12));
   // The unified dev launcher holds the existing lifecycle mutex. Keep the app
   // file sync responsive while its one bounded build/replacement runs.
   const child = spawn("pwsh.exe", ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply",...(preview?["-Preview"]:[]),...(runtimeBaselineProofDue(key,last)?["-PrepareBaseline"]:[])], {
-    cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]
+    cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"],
+    env:{...process.env,BTHWANI_RUNTIME_ATTEMPT_KEY:key,BTHWANI_RUNTIME_ATTEMPT_ID:attempt}
   });
   runtimeChild=child;
   let output="",errors="",settled=false;
@@ -596,7 +606,10 @@ function pollOwnerRuntime() {
     runtimeChild=null;
     nextRuntimeAudit=Date.now()+60_000;
     try {
-      persistAt(runtimeStateFile,{version:1,key,status});
+      const saved=runtimeState();
+      if(saved?.key!==key||saved?.attempt!==attempt)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+      status=runtimeReceiptStatus(runtimeStateFile,runtimeReceiptFile)||status;
+      persistAt(runtimeStateFile,{version:1,key,attempt,status});
       const holds=output.split(/\r?\n/).filter(line=>/^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=[A-Z_:a-z]+$/.test(line));
       for(const hold of holds) logger(hold);
       for(const proof of output.split(/\r?\n/).filter(line=>/^BASELINE_PROOF_PASS HEAD=[a-f0-9]{40} OWNERS=[a-z,]+ CUTOVER=ELIGIBLE_IF_COMPATIBLE$/.test(line))) logger(proof);
