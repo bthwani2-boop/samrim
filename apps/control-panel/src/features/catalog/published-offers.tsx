@@ -3,11 +3,13 @@ import { currentOperatorAccess } from "../../server/current-operator-access";
 import styles from "../operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../operator-shell/workspace-unavailable";
 import { resolvePublicDshOrigin } from "../stores/public-store-query";
+import PublicMarketOverview from "../workspace/public-market-overview";
 import { parsePublishedOfferQuery, publishedOfferHref } from "./published-offer-query";
 import catalogStyles from "./published-offers.module.css";
 
-export default async function PublishedOffers({ searchParams }: Readonly<{
+export default async function PublishedOffers({ searchParams, pathname = "/catalog" }: Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
+  pathname?: "/catalog" | "/catalog/products";
 }>) {
   // A route-group layout alone is not a data authorization boundary during RSC rendering.
   const access = await currentOperatorAccess();
@@ -15,7 +17,10 @@ export default async function PublishedOffers({ searchParams }: Readonly<{
     return <WorkspaceUnavailable title="الكتالوج المركزي" description="يلزم تصريح الكتالوج الحالي من Identity." owner="Identity" />;
   }
 
-  const scope = parsePublishedOfferQuery(await searchParams);
+  const params = await searchParams;
+  const products = pathname === "/catalog/products";
+  const choosingStore = products && Object.keys(params).every(key => ["city", "storeQ", "storeCursor"].includes(key));
+  const scope = parsePublishedOfferQuery(choosingStore ? {} : params);
   const owner = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
   let store: PublicStore | null = null;
   let offers: PublicPage<PublicOffer> | null = null;
@@ -45,12 +50,15 @@ export default async function PublishedOffers({ searchParams }: Readonly<{
     <main className={styles.workspace} aria-labelledby="operator-catalog-title">
       <header className={catalogStyles.intro}>
         <span className={catalogStyles.eyebrow}>الكتالوج</span>
-        <h1 id="operator-catalog-title">الكتالوج المركزي — العروض المنشورة</h1>
+        <h1 id="operator-catalog-title">{products ? "المنتجات المنشورة" : "الكتالوج المركزي — العروض المنشورة"}</h1>
         <p>استعرض العروض العامة المؤكدة من DSH لمتجر محدد. لا تعرض هذه الصفحة المسودات أو المخزون الخاص،
           ولا تمنح صلاحية تعديل السعر أو النشر أو إنشاء طلب.</p>
       </header>
 
-      <form action="/catalog" method="get" className={catalogStyles.filters} aria-label="تصفية العروض المنشورة">
+      {choosingStore && <PublicMarketOverview searchParams={searchParams} action="/catalog/products"
+        canVisitStores={false} canVisitCatalog />}
+      {products && !choosingStore && <a href={pathname}>اختيار متجر آخر</a>}
+      <form action={pathname} method="get" className={catalogStyles.filters} aria-label="تصفية العروض المنشورة">
         <label className={catalogStyles.field}>
           معرّف المتجر المنشور
           <input name="store" aria-label="معرّف المتجر المنشور" required
@@ -65,7 +73,7 @@ export default async function PublishedOffers({ searchParams }: Readonly<{
         <button type="submit" className={catalogStyles.submit}>عرض العروض</button>
       </form>
 
-      {scope && !scope.storeId && !error ? (
+      {!products && scope && !scope.storeId && !error ? (
         <div role="status" className={catalogStyles.empty}>
           <p>أدخل معرّف متجر منشور لعرض عروضه العامة، أو اختر المتجر من دليل السوق المنشور لدى DSH.</p>
           <a href="/workspace">اختيار المتجر من لمحة السوق</a>
@@ -112,12 +120,12 @@ export default async function PublishedOffers({ searchParams }: Readonly<{
             </div>
           )}
           <nav aria-label="صفحات العروض" className={catalogStyles.pagination}>
-            {scope.cursor ? <a href={publishedOfferHref({ storeId: scope.storeId, query: scope.query })}>
+            {scope.cursor ? <a href={publishedOfferHref({ storeId: scope.storeId, query: scope.query }, pathname)}>
               العودة إلى أول صفحة
             </a> : null}
             {offers.nextCursor ? <a href={publishedOfferHref({
               storeId: scope.storeId, query: scope.query, cursor: offers.nextCursor,
-            })}>الصفحة التالية</a> : null}
+            }, pathname)}>الصفحة التالية</a> : null}
           </nav>
         </section>
       ) : null}

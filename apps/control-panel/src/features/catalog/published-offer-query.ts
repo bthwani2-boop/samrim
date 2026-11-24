@@ -28,9 +28,9 @@ export function parsePublishedOfferQuery(
   return { storeId: store, query, ...(typeof cursor === "string" ? { cursor } : {}) };
 }
 
-export function publishedOfferHref(scope: PublishedOfferQuery): string {
+export function publishedOfferHref(scope: PublishedOfferQuery, pathname: "/catalog" | "/catalog/products" = "/catalog"): string {
   const params = new URLSearchParams({ store: scope.storeId });
   if (scope.query) params.set("q", scope.query);
   if (scope.cursor) params.set("cursor", scope.cursor);
-  return `/catalog?${params.toString()}`;
+  return `${pathname}?${params.toString()}`;
 }

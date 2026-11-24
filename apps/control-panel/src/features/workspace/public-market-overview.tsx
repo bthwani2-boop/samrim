@@ -1,7 +1,7 @@
 import type { PublicPage, PublicStore, PublicVertical } from "@bthwani/dsh";
 import { listPublicCities, listPublicStores, listPublicVerticals } from "@bthwani/dsh";
 import styles from "../operator-shell/operator-shell.module.css";
-import { resolvePublicDshOrigin } from "../stores/public-store-query";
+import { parsePublicStoreBrowse, resolvePublicDshOrigin } from "../stores/public-store-query";
 import { parseOperatorHomeCity } from "./operator-home-city";
 
 const orderabilityLabels: Record<PublicStore["orderabilityStatus"], string> = {
@@ -16,12 +16,23 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
   canVisitStores: boolean;
   canVisitCatalog: boolean;
   canViewPublicMarket?: boolean;
-  action?: "/workspace" | "/merchants" | "/marketing";
+  action?: "/workspace" | "/merchants" | "/marketing" | "/catalog/products";
 }>) {
   // The workspace page is already protected by Identity, but this view
   // contains public DSH facts only. Never infer management grants from them.
   if (!canVisitStores && !canVisitCatalog && !canViewPublicMarket) return null;
-  const city = parseOperatorHomeCity(await searchParams);
+  const params = await searchParams;
+  const products = action === "/catalog/products";
+  const productStores = products
+    ? parsePublicStoreBrowse({ city: params.city, q: params.storeQ, cursor: params.storeCursor })
+    : null;
+  const city = products ? productStores?.city ?? null : parseOperatorHomeCity(params);
+  function productStoresHref(cursor?: string) {
+    const query = new URLSearchParams({ city: city ?? "" });
+    if (productStores?.query) query.set("storeQ", productStores.query);
+    if (cursor) query.set("storeCursor", cursor);
+    return `${action}?${query.toString()}`;
+  }
   const origin = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
   let cities: PublicPage<string> | null = null;
   let stores: PublicPage<PublicStore> | null = null;
@@ -43,8 +54,13 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
   } else {
     // Independent public readings: one failed endpoint must not hide the other.
     const results = await Promise.allSettled([
-      listPublicStores(origin, city, { limit: 10, signal: AbortSignal.timeout(5000) }),
-      listPublicVerticals(origin, city, { limit: 10, signal: AbortSignal.timeout(5000) }),
+      listPublicStores(origin, city, {
+        ...(productStores?.query ? { query: productStores.query } : {}),
+        ...(productStores?.cursor ? { cursor: productStores.cursor } : {}),
+        limit: products ? 20 : 10,
+        signal: AbortSignal.timeout(5000),
+      }),
+      products ? Promise.resolve(null) : listPublicVerticals(origin, city, { limit: 10, signal: AbortSignal.timeout(5000) }),
     ] as const);
     if (results[0].status === "fulfilled") stores = results[0].value;
     else storesError = "تعذّر تأكيد المتاجر المنشورة من DSH.";
@@ -54,8 +70,8 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
 
   return (
     <section aria-labelledby="operator-public-market-heading">
-      <h2 id="operator-public-market-heading">لمحة السوق المنشور</h2>
-      <p>بيانات عامة للقراءة فقط من DSH. الأعداد المعروضة تخص الصفحة المحدودة، وليست إجمالي الطلبات أو المتاجر أو الإيرادات.</p>
+      <h2 id="operator-public-market-heading">{products ? "اختيار متجر منشور" : "لمحة السوق المنشور"}</h2>
+      {!products && <p>بيانات عامة للقراءة فقط من DSH. الأعداد المعروضة تخص الصفحة المحدودة، وليست إجمالي الطلبات أو المتاجر أو الإيرادات.</p>}
       <form method="get" action={action} style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: "0.75rem" }}>
         <label style={{ display: "grid", gap: "0.25rem" }}>
           مدينة منشورة
@@ -66,8 +82,13 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
             {cities.items.map(item => <option key={item} value={item} />)}
           </datalist>}
         </label>
+        {products && <label style={{ display: "grid", gap: "0.25rem" }}>
+          اسم المتجر
+          <input name="storeQ" maxLength={80} defaultValue={productStores?.query ?? ""}
+            style={{ minHeight: 44, paddingInline: "0.75rem" }} />
+        </label>}
         <button type="submit" style={{ minHeight: 44, paddingInline: "1rem", cursor: "pointer" }}>
-          قراءة السوق من DSH
+          {products ? "البحث عن متجر" : "قراءة السوق من DSH"}
         </button>
       </form>
       {citiesError && <p role="alert">{citiesError}</p>}
@@ -78,7 +99,7 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
       {city && verticalsError && <p role="alert">{verticalsError}</p>}
       {city && stores && (
         <div>
-          <h3>المتاجر المنشورة — الصفحة الأولى</h3>
+          <h3>{products ? "المتاجر المطابقة" : "المتاجر المنشورة — الصفحة الأولى"}</h3>
           <p role="status">عدد النتائج: {stores.items.length} — مراجعة DSH: {stores.revision}</p>
           {stores.items.length === 0 ? <p>لا توجد متاجر عامة منشورة مطابقة لهذه المدينة.</p> :
             <ul className={styles.sectionGrid}>
@@ -87,13 +108,17 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
                 <span>{orderabilityLabels[store.orderabilityStatus]}</span>
                 <span>نوع النشاط: {store.verticalId}</span>
                 {canVisitCatalog && /^[a-z0-9-]{1,64}$/.test(store.id) && (
-                  <a className={styles.primaryLink} href={`/catalog?store=${encodeURIComponent(store.id)}`}>
+                  <a className={styles.primaryLink} href={`${action === "/catalog/products" ? action : "/catalog"}?store=${encodeURIComponent(store.id)}`}>
                     عرض العروض المنشورة
                   </a>
                 )}
               </li>)}
             </ul>}
-          {stores.nextCursor && <p>توجد متاجر أخرى؛ المعروض ليس إجمالي المدينة.</p>}
+          {products && (productStores?.cursor || stores.nextCursor) ? <nav aria-label="صفحات المتاجر">
+            {productStores?.cursor && <a href={productStoresHref()}>أول صفحة</a>}
+            {stores.nextCursor && <a href={productStoresHref(stores.nextCursor)}>الصفحة التالية</a>}
+          </nav> : null}
+          {!products && stores.nextCursor && <p>توجد متاجر أخرى؛ المعروض ليس إجمالي المدينة.</p>}
         </div>
       )}
       {city && verticals && (

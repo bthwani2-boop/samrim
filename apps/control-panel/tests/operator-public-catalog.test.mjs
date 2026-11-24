@@ -15,6 +15,11 @@ const compiled = transformSync(source, {
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
 }).code;
+const productsRoute = transformSync(readFileSync(new URL("../app/(workspace)/catalog/products/page.tsx", import.meta.url), "utf8"), {
+  jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
+    transform: { react: { runtime: "automatic" } } },
+  module: { type: "commonjs" },
+}).code;
 const jsx = (type, props) => ({ type, props: props ?? {} });
 const store = { id: "market-sanaa", name: "متجر صنعاء", cityId: "sanaa",
   verticalId: "grocery", orderabilityStatus: "PAUSED", orderingAvailable: false };
@@ -49,6 +54,7 @@ function harness({ permitted = true, origin = "http://127.0.0.1:3202", failStore
     "./published-offers.module.css": { intro: "intro", eyebrow: "eyebrow", filters: "filters", results: "results", table: "table" },
     "../operator-shell/workspace-unavailable": () => null,
     "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
+    "../workspace/public-market-overview": { __esModule: true, default: "MarketOverview" },
     "../../server/current-operator-access": {
       currentOperatorAccess: async () => permitted ? { grants: ["catalog"] } : { grants: ["merchant"] },
     },
@@ -62,10 +68,20 @@ function harness({ permitted = true, origin = "http://127.0.0.1:3202", failStore
       return modules[name];
     }, mod, mod.exports,
   );
+  const products = { exports: {} };
+  new Function("require", "module", "exports", productsRoute)(name => {
+    if (name === "react/jsx-runtime") return modules[name];
+    assert.equal(name, "../../../../src/features/catalog/published-offers");
+    return { __esModule: true, default: mod.exports.default };
+  }, products, products.exports);
   return {
     calls,
     render: (params = { store: "market-sanaa" }) =>
       mod.exports.default({ searchParams: Promise.resolve(params) }),
+    async renderProducts(params) {
+      const route = products.exports.default({ searchParams: Promise.resolve(params) });
+      return route.type(route.props);
+    },
   };
 }
 
@@ -150,4 +166,24 @@ test("catalog offers a permitted Store discovery route when no Store ID is known
   const link = find(tree, node => node.type === "a" && node.props.href === "/workspace");
   assert.ok(link, "catalog should link to the existing Identity-gated DSH market directory");
   assert.match(link.props.children, /المتجر/);
+});
+
+test("the Products tab opens the catalog-authorized Store directory and keeps product searches on its own route", async () => {
+  const view = harness();
+  const initial = await view.renderProducts({ city: "sanaa" });
+  const directory = find(initial, node => node.type === "MarketOverview");
+  assert.equal(directory.props.action, "/catalog/products");
+  assert.equal(directory.props.canVisitCatalog, true);
+  assert.deepEqual(await directory.props.searchParams, { city: "sanaa" });
+  assert.equal(view.calls.length, 0);
+
+  const products = await view.renderProducts({ store: store.id, q: "منتج", cursor: "old" });
+  assert.ok(find(products, node => node.type === "form" && node.props.action === "/catalog/products"));
+  assert.ok(find(products, node => node.type === "strong" && node.props.children === publishedOffer.name));
+  assert.ok(find(products, node => node.props.href === "/catalog/products?store=market-sanaa&q=%D9%85%D9%86%D8%AA%D8%AC&cursor=nextcursor"));
+
+  const denied = harness({ permitted: false });
+  const forbidden = await denied.renderProducts({ city: "sanaa" });
+  assert.equal(find(forbidden, node => node.type === "MarketOverview"), undefined);
+  assert.equal(denied.calls.length, 0);
 });

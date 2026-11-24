@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { test } from "node:test";
+import { parsePublicStoreBrowse } from "../src/features/stores/public-store-query.ts";
 import { parseOperatorHomeCity } from "../src/features/workspace/operator-home-city.ts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -77,7 +78,7 @@ test("authorized Merchant workspace includes real DSH overview with no finance o
   assert.equal(overview.props.canVisitCatalog, false);
 });
 
-function marketHarness({ cityFailure = false, storeFailure = false } = {}) {
+function marketHarness({ cityFailure = false, storeFailure = false, nextCursor, action = "/merchants" } = {}) {
   const calls = [];
   const render = compile("src/features/workspace/public-market-overview.tsx", {
     "@bthwani/dsh": {
@@ -90,7 +91,7 @@ function marketHarness({ cityFailure = false, storeFailure = false } = {}) {
         calls.push({ kind: "stores", origin, city, options });
         if (storeFailure) throw new Error("DSH stores unavailable");
         return { items: [{ id: "store-sanaa", cityId: "sanaa", verticalId: "grocery",
-          name: "متجر أ", orderabilityStatus: "OPEN_FOR_ORDERS" }], revision: 5 };
+          name: "متجر أ", orderabilityStatus: "OPEN_FOR_ORDERS" }], revision: 5, nextCursor };
       },
       async listPublicVerticals(origin, city, options) {
         calls.push({ kind: "verticals", origin, city, options });
@@ -98,12 +99,12 @@ function marketHarness({ cityFailure = false, storeFailure = false } = {}) {
       },
     },
     "../operator-shell/operator-shell.module.css": { sectionGrid: "grid", sectionCard: "card" },
-    "../stores/public-store-query": { resolvePublicDshOrigin: () => "http://127.0.0.1:23202" },
+    "../stores/public-store-query": { parsePublicStoreBrowse, resolvePublicDshOrigin: () => "http://127.0.0.1:23202" },
     "./operator-home-city": { parseOperatorHomeCity },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   });
   return { calls, render: (city = {}, canVisitStores = true, canVisitCatalog = false) => render({
-    searchParams: Promise.resolve(city), canVisitStores, canVisitCatalog, action: "/merchants",
+    searchParams: Promise.resolve(city), canVisitStores, canVisitCatalog, action,
   }) };
 }
 
@@ -151,4 +152,20 @@ test("Catalog-granted Operator can open DSH-confirmed Store offers without typin
   const merchantOnly = marketHarness();
   const noCatalog = await merchantOnly.render({ city: "sanaa" });
   assert.equal(find(noCatalog, node => node.type === "a" && node.props.href?.startsWith("/catalog?")), undefined);
+});
+
+test("the Products Store picker sends bounded owner search and retains pagination on the Products tab", async () => {
+  const page = marketHarness({ action: "/catalog/products", nextCursor: "next" });
+  const tree = await page.render({ city: "sanaa", storeQ: " market ", storeCursor: "previous" }, false, true);
+  assert.deepEqual(page.calls.map(call => call.kind), ["stores"]);
+  assert.equal(page.calls[0].options.query, "market");
+  assert.equal(page.calls[0].options.cursor, "previous");
+  assert.equal(page.calls[0].options.limit, 20);
+  assert.ok(find(tree, node => node.props.href === "/catalog/products?store=store-sanaa"));
+  assert.ok(find(tree, node => node.props.href === "/catalog/products?city=sanaa&storeQ=market&storeCursor=next"));
+  assert.ok(find(tree, node => node.props.href === "/catalog/products?city=sanaa&storeQ=market"));
+  const malformed = marketHarness({ action: "/catalog/products" });
+  const invalid = await malformed.render({ city: "sanaa", storeCursor: ["a", "b"] }, false, true);
+  assert.ok(find(invalid, node => node.props.role === "alert"));
+  assert.equal(malformed.calls.length, 0);
 });
