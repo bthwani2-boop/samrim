@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
 func TestCheckoutReviewRejectsInvalidAndUnverifiedRequests(t *testing.T) {
@@ -127,8 +129,17 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	}
 	// The existing fixture has an address one latitude degree from the Store.
 	// Configure only this synthetic DSH owner row; never seed commercial prices.
-	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".service_city_delivery_policies SET version=3,distance_bands=$1::jsonb WHERE city_id='sanaa'", `[{"upToMeters":100000,"ratePerKmMinor":100},{"upToMeters":null,"ratePerKmMinor":200}]`); err != nil {
+	owner, err := storeavailability.NewPostgresPolicySource(db, schema)
+	if err != nil {
 		t.Fatal(err)
+	}
+	bands, valid := storeavailability.DecodeDistanceBands([]byte(`[{"upToMeters":100000,"ratePerKmMinor":100},{"upToMeters":null,"ratePerKmMinor":200}]`))
+	if !valid {
+		t.Fatal("invalid fixture")
+	}
+	p, replay, err := owner.ApplyCityDeliveryPolicy(ctx, "synthetic-operator", "sanaa", "checkout-tariff-003", 2, 120000, bands, "Reviewed synthetic tariff")
+	if err != nil || replay || p.Version != 3 {
+		t.Fatalf("delivery policy owner write: %+v %v %v", p, replay, err)
 	}
 	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
 	assertCartStatus(t, status, 200, body)
@@ -147,8 +158,13 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if err := json.Unmarshal(body, &review); err != nil || review.DistanceFee != nil || review.CheckoutReady {
 		t.Fatalf("invalid tariff must not produce an estimate: %s %v", body, err)
 	}
-	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".service_city_delivery_policies SET version=5,radius_metres=30000,distance_bands=$1::jsonb WHERE city_id='sanaa'", `[{"upToMeters":null,"ratePerKmMinor":100}]`); err != nil {
-		t.Fatal(err)
+	bands, valid = storeavailability.DecodeDistanceBands([]byte(`[{"upToMeters":null,"ratePerKmMinor":100}]`))
+	if !valid {
+		t.Fatal("invalid fixture")
+	}
+	p, replay, err = owner.ApplyCityDeliveryPolicy(ctx, "synthetic-operator", "sanaa", "checkout-tariff-005", 4, 30000, bands, "Reviewed synthetic radius")
+	if err != nil || replay || p.Version != 5 {
+		t.Fatalf("delivery radius owner write: %+v %v %v", p, replay, err)
 	}
 	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
 	assertCartStatus(t, status, 200, body)

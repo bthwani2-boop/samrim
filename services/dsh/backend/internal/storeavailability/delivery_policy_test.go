@@ -111,3 +111,48 @@ func TestDeliveryPolicyPreviewBoundary(t *testing.T) {
 		})
 	}
 }
+
+type deliveryPolicyWriteFixture struct {
+	deliveryPolicyTestReader
+	writes int
+}
+
+func (f *deliveryPolicyWriteFixture) ApplyCityDeliveryPolicy(_ context.Context, actor, city, operation string, expected, radius int64, bands []DistanceBand, reason string) (CityDeliveryPolicy, bool, error) {
+	f.writes++
+	if actor != "operator-a" || city != "sanaa" || operation != "delivery-001" || expected != 2 || radius != 18000 || reason != "Reviewed" || len(bands) != 1 {
+		return CityDeliveryPolicy{}, false, ErrInvalidChange
+	}
+	return CityDeliveryPolicy{CityID: city, Version: 3, RadiusMetres: radius, DistanceBands: bands, UpdatedAt: time.Now().UTC()}, false, nil
+}
+func TestDeliveryPolicyVersionedWriteBoundary(t *testing.T) {
+	const valid = `{"operationId":"delivery-001","expectedVersion":2,"radiusMetres":18000,"distanceBands":[{"upToMeters":null,"ratePerKmMinor":300}],"reason":"Reviewed"}`
+	for _, tc := range []struct {
+		name, body, token string
+		denied            bool
+		status, writes    int
+	}{
+		{"valid", valid, "verified", false, 200, 1},
+		{"no permission", valid, "verified", true, 403, 0},
+		{"anonymous", valid, "", false, 401, 0},
+		{"invalid reason", `{"operationId":"delivery-001","expectedVersion":2,"radiusMetres":18000,"distanceBands":[{"upToMeters":null,"ratePerKmMinor":300}],"reason":""}`, "verified", false, 400, 0},
+		{"invalid tariff", `{"operationId":"delivery-001","expectedVersion":2,"radiusMetres":18000,"distanceBands":[{"upToMeters":null,"ratePerKmMinor":0}],"reason":"Reviewed"}`, "verified", false, 400, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &deliveryPolicyWriteFixture{}
+			h, e := NewCityPolicyHandler(fakeIdentity{actor: VerifiedActor{Subject: "operator-a", Role: OperatorRole}, permissionDenied: tc.denied}, f)
+			if e != nil {
+				t.Fatal(e)
+			}
+			req := httptest.NewRequest("PATCH", "/v1/operators/cities/sanaa/delivery-policy", bytes.NewBufferString(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			if tc.token != "" {
+				req.Header.Set("Authorization", "Bearer "+tc.token)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, req)
+			if w.Code != tc.status || f.writes != tc.writes {
+				t.Fatalf("status=%d writes=%d body=%s", w.Code, f.writes, w.Body.String())
+			}
+		})
+	}
+}

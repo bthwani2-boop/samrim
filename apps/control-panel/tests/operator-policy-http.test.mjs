@@ -53,6 +53,9 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     updatedAt: new Date().toISOString(),
   };
   const audit = new Map();
+  let effectiveDelivery = {cityId:city, version:4, radiusMetres:18000, updatedAt:expiry,
+    distanceBands:[{upToMeters:2000,ratePerKmMinor:300},{upToMeters:null,ratePerKmMinor:200}]};
+  const deliveryCommands = new Map();
   const owner = createServer((request, response) => {
     const route = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
     ownerCalls.push(route);
@@ -96,8 +99,22 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     if (request.headers.authorization !== `Bearer ${token}` ||
         !allowed.has("platform_policies")) return send(403, { error: "FORBIDDEN" });
     if (route === `/v1/operators/cities/${city}/delivery-policy` && request.method === "GET") {
-      return send(200, {cityId:city, version:4, radiusMetres:18000, updatedAt:expiry,
-        distanceBands:[{upToMeters:2000,ratePerKmMinor:300},{upToMeters:null,ratePerKmMinor:200}]});
+      return send(200, effectiveDelivery);
+    }
+    if (route === `/v1/operators/cities/${city}/delivery-policy` && request.method === "PATCH") {
+      void (async () => {
+        let raw = "";
+        for await (const chunk of request) raw += chunk.toString();
+        const command = JSON.parse(raw);
+        const previous = deliveryCommands.get(command.operationId);
+        if (previous) return JSON.stringify(previous.command) === JSON.stringify(command)
+          ? send(200, {policy:previous.policy,replay:true}) : send(409,{error:"OPERATION_CONFLICT"});
+        if (command.expectedVersion !== effectiveDelivery.version) return send(409,{error:"OPERATIONAL_POLICY_VERSION_CONFLICT"});
+        effectiveDelivery = {...effectiveDelivery,version:effectiveDelivery.version+1,radiusMetres:command.radiusMetres,distanceBands:command.distanceBands};
+        deliveryCommands.set(command.operationId,{command,policy:effectiveDelivery});
+        return send(200,{policy:effectiveDelivery,replay:false});
+      })().catch(()=>send(400,{error:"INVALID_REQUEST"}));
+      return;
     }
     if (route === `/v1/operators/cities/${city}/delivery-policy/preview` && request.method === "POST") {
       void (async () => {
@@ -338,6 +355,28 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     assert.equal((await preview(proposal)).status,403);
     allowed.add("platform_policies");
     assert.equal(dshCalls.length,beforeInvalidPreview);
+    const deliveryChange={operationId:"delivery-policy-001",expectedVersion:4,radiusMetres:20000,
+      distanceBands:proposal.distanceBands,reason:"Reviewed synthetic proposal"};
+    const saveDelivery=(body,headers={origin:base,"content-type":"application/json"}) =>
+      call(api+"?delivery=1",{method:"PATCH",headers,body:JSON.stringify(body)});
+    const beforeInvalidSave=dshCalls.length;
+    assert.equal((await saveDelivery({...deliveryChange,reason:""})).status,400);
+    assert.equal((await saveDelivery(deliveryChange,{origin:"http://attacker.invalid","content-type":"application/json"})).status,400);
+    allowed.clear();
+    assert.equal((await saveDelivery(deliveryChange)).status,403);
+    allowed.add("platform_policies");
+    assert.equal(dshCalls.length,beforeInvalidSave);
+    res=await saveDelivery(deliveryChange);
+    assert.equal(res.status,200);
+    const savedDelivery=await res.json();
+    assert.equal(savedDelivery.policy.version,5);
+    assert.equal(savedDelivery.replay,false);
+    res=await call(api+"?delivery=1");
+    assert.deepEqual(await res.json(),savedDelivery.policy);
+    res=await saveDelivery(deliveryChange);
+    assert.equal((await res.json()).replay,true);
+    assert.equal((await saveDelivery({...deliveryChange,radiusMetres:21000})).status,409);
+    assert.equal(deliveryCommands.size,1);
     assert.equal(effectivePolicy.version, 3);
     assert.equal(audit.size, 2);
     assert.ok(ownerCalls.includes("/v1/operators/me/permissions/platform_policies"));

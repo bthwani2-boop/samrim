@@ -13,7 +13,7 @@ import (
 // Reviewed bytes, not a filename or schema marker, authorize SQL execution.
 // Update only with the corresponding owner-domain SQL review and integration proof.
 var reviewedFreshBaseline = map[string]string{
-	"00_marketplace.sql":        "5ba417dcbca7eb188b46492788f190f6b697353952476dc51abde537bc08538a",
+	"00_marketplace.sql":        "d8cf357d448e403d70be9c8bede4affee1ef680b69c92ac717532be271446438",
 	"10_catalog.sql":            "0ae80749c9d1824cbce514c57471089b004aba78dfd36db12cf84a319f0f1aa2",
 	"20_store_operations.sql":   "e30e787a91bfb49250738c6912f379898e8e51b048b9a897d31b76e5b60005b5",
 	"30_store_registration.sql": "19f35f438f2ccc3e1b2abb00db6a8c30652130be9cc3956c8e1b47dc052e71d5",

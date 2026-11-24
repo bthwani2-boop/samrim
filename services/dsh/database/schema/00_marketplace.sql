@@ -23,6 +23,32 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.service_city_delivery_policies (
     distance_bands jsonb CHECK (distance_bands IS NULL OR (jsonb_typeof(distance_bands) = 'array' AND jsonb_array_length(distance_bands) BETWEEN 1 AND 30)),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp()
 );
+
+-- Versioned command snapshots for the existing city delivery policy. No initial
+-- business values are seeded; the command and current row commit together.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.service_city_delivery_policy_commands (
+    city_id text NOT NULL REFERENCES __SCHEMA__.service_cities(id) ON DELETE RESTRICT,
+    operation_id text NOT NULL CHECK (operation_id ~ '^[A-Za-z0-9._-]{8,128}$'),
+    request_hash text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+    acting_actor_id text NOT NULL CHECK (char_length(acting_actor_id) BETWEEN 1 AND 128 AND acting_actor_id = trim(acting_actor_id)),
+    reason text NOT NULL CHECK (char_length(trim(reason)) BETWEEN 1 AND 300),
+    resulting_version bigint NOT NULL CHECK (resulting_version BETWEEN 1 AND 9007199254740991),
+    radius_metres integer NOT NULL CHECK (radius_metres > 0),
+    distance_bands jsonb NOT NULL CHECK (jsonb_typeof(distance_bands) = 'array' AND jsonb_array_length(distance_bands) BETWEEN 1 AND 30),
+    changed_at timestamptz NOT NULL,
+    PRIMARY KEY(city_id, operation_id),
+    UNIQUE(city_id, resulting_version)
+);
+CREATE OR REPLACE FUNCTION __SCHEMA__.reject_delivery_policy_command_change()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'delivery policy command records are immutable';
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_delivery_policy_commands_immutable ON __SCHEMA__.service_city_delivery_policy_commands;
+CREATE TRIGGER trg_delivery_policy_commands_immutable
+BEFORE UPDATE OR DELETE ON __SCHEMA__.service_city_delivery_policy_commands
+FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.reject_delivery_policy_command_change();
 CREATE TABLE IF NOT EXISTS __SCHEMA__.verticals (
     id text PRIMARY KEY CHECK (id ~ '^[a-z0-9-]{1,64}$'),
     active boolean NOT NULL

@@ -30,6 +30,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
   const [uncertain, setUncertain] = useState(false);
   const [requiresRead, setRequiresRead] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [deliveryLocked, setDeliveryLocked] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -48,7 +49,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
   }
 
   function selectCity(value: string) {
-    if (busy || uncertain || pending) return;
+    if (busy || uncertain || pending || deliveryLocked) return;
     setCity(value);
     setPolicy(null);
     setAdmission(null);
@@ -62,7 +63,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
   }
 
   async function readCurrent() {
-    if (!endpoint || busy) return;
+    if (!endpoint || busy || deliveryLocked) return;
     setBusy(true);
     setMessage("");
     setErrorMessage("");
@@ -129,7 +130,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
   }
 
   async function apply() {
-    if (!endpoint || busy) return;
+    if (!endpoint || busy || deliveryLocked) return;
     let change = pending;
     if (!change) {
       if (!readyForChange || maxPause === null || maxPreparation === null) return;
@@ -238,10 +239,9 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
             لا يمكن إنشاء اتفاق أو تغيير مستحقات من إعداد قبول المتاجر.
           </Typography.Paragraph>
         </Card>
-        <Card title="نطاق التغطية والخدمة" extra={<Typography.Text type="warning">غير متاح للتحرير</Typography.Text>}>
+        <Card title="نطاق التغطية والخدمة" extra={<Typography.Text type="warning">تحرير تطويري</Typography.Text>}>
           <Typography.Paragraph>
-            نطاق المدينة ومسافة الخدمة وأهلية طرق التوصيل يملكها DSH. لا تتوفر هنا
-            عقود تعديل هذه السياسات؛ لا يمكن توسيع نطاق الخدمة من واجهة قبول المتاجر.
+            نطاق المدينة والتعرفة التقديرية يملكهما DSH؛ اقرأ السياسة الحالية لتعديلهما في بيئة التطوير. أهلية طرق التوصيل والدفع تبقى مستقلة.
           </Typography.Paragraph>
         </Card>
         <Card title="السريان وسجل التغييرات">
@@ -257,7 +257,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
           <Form.Item label="المدينة">
             <Select aria-label="اختيار المدينة" showSearch optionFilterProp="label"
               value={city || null} options={[...directory.cities]}
-              disabled={busy || uncertain || !!pending || directory.cities.length === 0}
+              disabled={busy || uncertain || !!pending || deliveryLocked || directory.cities.length === 0}
               placeholder="اختر مدينة الخدمة" onChange={value => selectCity(value ?? "")} />
           </Form.Item>
           {directory.status === "unavailable" && <Alert type="warning" showIcon
@@ -267,9 +267,9 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
           <details style={{ marginBlockEnd: 12 }}>
             <summary>قراءة مدينة معروفة أو مراجعة سجل تاريخي</summary>
             <Input aria-label="معرّف المدينة" value={city} maxLength={64}
-              disabled={busy || uncertain || !!pending} onChange={event => selectCity(event.target.value)} />
+              disabled={busy || uncertain || !!pending || deliveryLocked} onChange={event => selectCity(event.target.value)} />
           </details>
-          <Button htmlType="submit" disabled={!endpoint || busy} loading={busy}>قراءة سياسات المدينة الحالية</Button>
+          <Button htmlType="submit" disabled={!endpoint || busy || deliveryLocked} loading={busy}>قراءة سياسات المدينة الحالية</Button>
         </Form>
         {delivery && (
           <section aria-label="نطاق التوصيل الحالي" style={{ marginBlockStart: 16 }}>
@@ -279,11 +279,12 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
                 <Typography.Paragraph>المسافة الجغرافية القصوى: <strong>{delivery.radiusMetres}</strong> متر — الإصدار {delivery.version}</Typography.Paragraph>
                 <Typography.Paragraph>آخر تحديث: {delivery.updatedAt}</Typography.Paragraph>
                 <DeliveryPolicyPreview key={actorId + ":" + city + ":" + delivery.version}
-                  policy={delivery} actorId={actorId} disabled={busy || uncertain}
+                  policy={delivery} actorId={actorId} disabled={busy || uncertain || !!pending}
+                  onLockChange={setDeliveryLocked} onCommitted={current => { setDelivery(current); setMessage("تم حفظ سياسة التوصيل وقراءة الإصدار من DSH."); }}
                   onDenied={() => { setDelivery(null); setAdmission(null); setPolicy(null); setRequiresRead(true); }} />
               </>
             )}
-            <Typography.Paragraph type="secondary">قراءة سياسة الأهلية الحالية، وليست تسعيرة أو ضمانًا للتوصيل. تعديلها غير متاح حتى إثبات توافق سياسة الرسوم مع WLT.</Typography.Paragraph>
+            <Typography.Paragraph type="secondary">تعديل النطاق والتعرفة التقديرية لدى DSH في بيئة التطوير. تفعيل التسعيرة القابلة للدفع يتطلب إثبات توافق WLT.</Typography.Paragraph>
           </section>
         )}
         {admission && (
@@ -348,7 +349,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
           </Form.Item>
           <Space wrap>
             <Button type="primary" htmlType="submit" loading={busy}
-              disabled={busy || (!pending && !readyForChange)}>
+              disabled={busy || deliveryLocked || (!pending && !readyForChange)}>
               {uncertain ? "إعادة إرسال نفس العملية" : "اعتماد سياسة المدينة في DSH"}
             </Button>
             {uncertain && <Button type="default" disabled={busy} onClick={() => void readCurrent()}>

@@ -1,6 +1,6 @@
 import {
-  type CityStoreOperationalPolicyChange, DshPublicError, getCityDeliveryPolicy, getCityStoreOperationalPolicy,
-  listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy, isCityDeliveryPolicyPreviewInput, previewCityDeliveryPolicy,
+  type CityStoreOperationalPolicyChange, DshPublicError, getCityDeliveryPolicy, getCityStoreOperationalPolicy, isCityDeliveryPolicyChange, isCityDeliveryPolicyPreviewInput,
+  listCityStoreOperationalPolicyHistory, previewCityDeliveryPolicy, replaceCityDeliveryPolicy, replaceCityStoreOperationalPolicy,
 } from "@bthwani/dsh";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
@@ -42,12 +42,12 @@ function isolatedDshOrigin(raw: string | undefined): string | null {
 
 function trustedRequest(request: NextRequest, browserOrigin: string, mutation: boolean, preview: boolean) {
   const url = new URL(request.url);
-  const queryOK = url.search === "" || (!mutation && (url.search === "?delivery=1" || /^\?history=1&limit=10(?:&beforeVersion=[1-9][0-9]{0,15})?$/.test(url.search)));
+  const queryOK = url.search === "" || (!preview && url.search === "?delivery=1") || (!mutation && ( /^\?history=1&limit=10(?:&beforeVersion=[1-9][0-9]{0,15})?$/.test(url.search)));
   return queryOK &&
     request.method === (preview ? "POST" : mutation ? "PATCH" : "GET") &&
     (!mutation || request.headers.get("origin") === browserOrigin) &&
     request.headers.get("sec-fetch-site") !== "cross-site" &&
-    isTrustedOperatorLoopbackTarget(request, browserOrigin, !mutation);
+    isTrustedOperatorLoopbackTarget(request, browserOrigin, !mutation || (!preview && url.search === "?delivery=1"));
 }
 
 function parseChange(raw: string | null): CityStoreOperationalPolicyChange | null {
@@ -83,6 +83,7 @@ async function forward(
 
   let change: CityStoreOperationalPolicyChange | null = null;
   let previewInput: unknown;
+  let deliveryChange: unknown;
   if (mutation) {
     if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
       return error("INVALID_REQUEST", 400);
@@ -91,6 +92,9 @@ async function forward(
     if (preview) {
       try { previewInput = raw && JSON.parse(raw); } catch { return error("INVALID_REQUEST", 400); }
       if (!isCityDeliveryPolicyPreviewInput(previewInput)) return error("INVALID_REQUEST", 400);
+    } else if (new URL(request.url).search === "?delivery=1") {
+      try { deliveryChange = raw && JSON.parse(raw); } catch { return error("INVALID_REQUEST", 400); }
+      if (!isCityDeliveryPolicyChange(deliveryChange)) return error("INVALID_REQUEST", 400);
     } else {
       change = parseChange(raw);
       if (!change) return error("INVALID_REQUEST", 400);
@@ -102,6 +106,10 @@ async function forward(
     const history = new URL(request.url).searchParams;
     if (preview && isCityDeliveryPolicyPreviewInput(previewInput)) {
       const result = await previewCityDeliveryPolicy(dshOrigin, cityId, bearer, previewInput, signal);
+      return NextResponse.json(result, { status: 200, headers: privateHeaders });
+    }
+    if (mutation && !preview && isCityDeliveryPolicyChange(deliveryChange)) {
+      const result = await replaceCityDeliveryPolicy(dshOrigin, cityId, bearer, deliveryChange, signal);
       return NextResponse.json(result, { status: 200, headers: privateHeaders });
     }
     if (!mutation && history.has("delivery")) {
