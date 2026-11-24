@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { parseCommercialAgreementReview, readOperatorCommercialAgreementReview } from "./commercial-agreement.ts";
+import { parseCommercialAgreementReview, readOperatorCommercialAgreementReview, readOwnedMerchantCommercialAgreementReview } from "./commercial-agreement.ts";
 
 const proposal = {
   version: 2, operationId: "proposal-0002", storeRelation: "DIRECT", feeModel: "SUBSCRIPTION",
@@ -65,4 +65,30 @@ test("malformed financial terms never become accepted review data",()=>{
       {feeModel:"COMMISSION",commissionBasisPoints:100,subscriptionAmountYer:null,subscriptionPeriodDays:30},
     ].map(change=>({storeId:"store-a",proposal:{...proposal,...change}})),
   ]) assert.throws(()=>parseCommercialAgreementReview(value,"store-a"));
+});
+
+test("Merchant SDK reads only the merchant-owned agreement route and rejects store substitution", async () => {
+  const token=Buffer.alloc(32,9).toString("base64url");
+  let status=200;
+  let body={storeId:"store-a",proposal};
+  const owner=createServer((req,res)=>{
+    assert.equal(req.url,"/v1/merchants/stores/store-a/commercial-agreement");
+    assert.equal(req.method,"GET");
+    assert.equal(req.headers.authorization,`Bearer ${token}`);
+    res.writeHead(status,{"content-type":"application/json","cache-control":"no-store"});
+    res.end(JSON.stringify(body));
+  });
+  await new Promise((resolve,reject)=>{owner.once("error",reject);owner.listen(0,"127.0.0.1",resolve);});
+  try {
+    const origin=`http://127.0.0.1:${owner.address().port}`;
+    const read=()=>readOwnedMerchantCommercialAgreementReview(origin,token,"store-a",AbortSignal.timeout(1000));
+    assert.deepEqual(await read(),body);
+    body={storeId:"store-a",proposal:null};
+    assert.deepEqual(await read(),body);
+    body={storeId:"other",proposal};
+    await assert.rejects(read);
+    status=403;
+    await assert.rejects(read,error=>error.status===403);
+    await assert.rejects(()=>readOwnedMerchantCommercialAgreementReview(origin,token,"../wallets/me",AbortSignal.timeout(1000)),error=>error.status===400);
+  } finally { await new Promise(resolve=>owner.close(resolve)); }
 });

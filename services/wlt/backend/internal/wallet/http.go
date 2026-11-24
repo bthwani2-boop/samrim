@@ -23,12 +23,17 @@ func newHandlerWithHistory(origin string, balance balanceReader, history history
 	return newHandlerWithHistoryMode(origin, balance, history, nil, nil, false)
 }
 
-func newHandlerWithHistoryMode(origin string, balance balanceReader, history historyReader, agreement agreementReader, allocation allocationReader, containerMode bool) (http.Handler, error) {
+func newHandlerWithHistoryMode(origin string, balance balanceReader, history historyReader, agreement agreementReader, allocation allocationReader, containerMode bool, dshOrigin ...string) (http.Handler, error) {
 	identity, err := newIdentityReader(origin, containerMode)
 	if err != nil {
 		return nil, err
 	}
+	dsh, err := merchantStandingEndpoint(containerMode, dshOrigin)
+	if err != nil {
+		return nil, err
+	}
 	mux := http.NewServeMux()
+	mux.HandleFunc("/v1/merchants/stores/{storeID}/commercial-agreement", merchantAgreementHandler(identity, dsh, agreement))
 	mux.HandleFunc("/v1/wallets/me", func(w http.ResponseWriter, r *http.Request) {
 		serveAuthorizedRead(w, r, identity.read, func(ctx context.Context, actorID string) (any, error) {
 			value, err := balance(ctx, actorID)
@@ -135,6 +140,10 @@ func serveAuthorizedRead(w http.ResponseWriter, r *http.Request, verify func(con
 		return
 	}
 	now := time.Now()
+	if ctx.Err() != nil {
+		failure(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
+		return
+	}
 	if actor.ActorID != current.ActorID || !actor.Expires.After(now) || !current.Expires.After(now) {
 		failure(w, http.StatusUnauthorized, "UNAUTHORIZED")
 		return

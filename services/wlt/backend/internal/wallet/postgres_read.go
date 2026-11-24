@@ -17,20 +17,20 @@ const balanceSQL = `SELECT COALESCE(b.balance_yer,0)::text,COALESCE(b.available_
 	FROM (SELECT $1::text AS actor_id) a
 	LEFT JOIN wlt.customer_wallet_availability b ON b.actor_id=a.actor_id`
 
-func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
-	return newWalletHandler(db, identityOrigin, false)
+func NewHandler(db *sql.DB, identityOrigin string, dshOrigin ...string) (http.Handler, error) {
+	return newWalletHandler(db, identityOrigin, false, dshOrigin...)
 }
 
 // NewContainerHandler permits only the named, internal synthetic Identity service.
 // It does not expand the local CLI or preview origin trust boundary.
-func NewContainerHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
+func NewContainerHandler(db *sql.DB, identityOrigin string, dshOrigin ...string) (http.Handler, error) {
 	if identityOrigin != "http://identity:3302" {
 		return nil, errors.New("WLT requires the isolated container Identity origin")
 	}
-	return newWalletHandler(db, identityOrigin, true)
+	return newWalletHandler(db, identityOrigin, true, dshOrigin...)
 }
 
-func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool) (http.Handler, error) {
+func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool, dshOrigin ...string) (http.Handler, error) {
 	if db == nil {
 		return nil, errors.New("WLT balance reader unavailable")
 	}
@@ -76,5 +76,5 @@ func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool) (ht
 		return readAgreement(ctx, db, storeID)
 	}, func(ctx context.Context, actor, checkout string) (allocationReadback, error) {
 		return readOrderPaymentAllocation(ctx, db, actor, checkout)
-	}, containerMode)
+	}, containerMode, dshOrigin...)
 }

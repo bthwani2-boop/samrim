@@ -96,6 +96,10 @@ func (identity identityReader) finance(ctx context.Context, auth string) (princi
 }
 
 func (identity identityReader) readOwner(ctx context.Context, auth, endpoint string, destination any) int {
+	return identity.readBoundedOwner(ctx, auth, endpoint, destination, 4096)
+}
+
+func (identity identityReader) readBoundedOwner(ctx context.Context, auth, endpoint string, destination any, limit int64) int {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return http.StatusServiceUnavailable
@@ -117,8 +121,8 @@ func (identity identityReader) readOwner(ctx context.Context, auth, endpoint str
 		len(cache) != 1 || !strings.EqualFold(cache[0], "no-store") {
 		return http.StatusServiceUnavailable
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-	if err != nil || len(body) > 4096 || !utf8.Valid(body) {
+	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil || int64(len(body)) > limit || !utf8.Valid(body) {
 		return http.StatusServiceUnavailable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))

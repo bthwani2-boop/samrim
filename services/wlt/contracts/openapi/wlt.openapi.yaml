@@ -12,6 +12,8 @@ paths:
     $ref: './paths/wallets.yaml#/paths/~1v1~1wallets~1me~1transactions'
   /v1/wallets/me/order-payment-allocations/{checkoutID}:
     $ref: './paths/payment-intents.yaml#/paths/~1v1~1wallets~1me~1order-payment-allocations~1{checkoutID}'
+  /v1/merchants/stores/{storeID}/commercial-agreement:
+    $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1merchants~1stores~1{storeID}~1commercial-agreement'
   /v1/operators/stores/{storeID}/commercial-agreement:
     $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1operators~1stores~1{storeID}~1commercial-agreement'
 components:

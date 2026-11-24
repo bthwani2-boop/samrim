@@ -68,3 +68,11 @@ export async function readOperatorCommercialAgreementReview(origin: string, bear
   return parseCommercialAgreementReview(await readOwner(origin,bearer,operation.method,
     operation.path.replace("{storeID}",storeId),signal),storeId);
 }
+
+export async function readOwnedMerchantCommercialAgreementReview(origin: string, bearer: string,
+  storeId: string, signal: AbortSignal): Promise<CommercialAgreementReview> {
+  if (!storeRule.test(storeId)) throw new WltReadError(400);
+  const operation = wltOperations.getOwnedMerchantCommercialAgreementReview;
+  return parseCommercialAgreementReview(await readOwner(origin,bearer,operation.method,
+    operation.path.replace("{storeID}",storeId),signal),storeId);
+}

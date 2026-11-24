@@ -150,6 +150,7 @@ func main() {
 	dsn := os.Getenv("WLT_TEST_DATABASE_URL")
 	containerMode := os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true"
 	identityOrigin := os.Getenv("WLT_TEST_IDENTITY_ORIGIN")
+	dshOrigin := os.Getenv("WLT_TEST_DSH_ORIGIN")
 	if !validIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), address, dsn) &&
 		!validContainerIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"),
 			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), address, dsn, identityOrigin) {
@@ -170,9 +171,9 @@ func main() {
 	}
 	var handler http.Handler
 	if containerMode {
-		handler, err = wallet.NewContainerHandler(db, identityOrigin)
+		handler, err = wallet.NewContainerHandler(db, identityOrigin, dshOrigin)
 	} else {
-		handler, err = wallet.NewHandler(db, identityOrigin)
+		handler, err = wallet.NewHandler(db, identityOrigin, dshOrigin)
 	}
 	if err != nil {
 		log.Fatal(err)
