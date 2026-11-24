@@ -3,16 +3,19 @@ package storeavailability
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"mime"
 	"net/http"
 	"time"
 )
 
 // CityDeliveryPolicy is the same effective radius/version used by checkout.
 type CityDeliveryPolicy struct {
-	CityID       string    `json:"cityId"`
-	Version      int64     `json:"version"`
-	RadiusMetres int64     `json:"radiusMetres"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	CityID        string         `json:"cityId"`
+	Version       int64          `json:"version"`
+	RadiusMetres  int64          `json:"radiusMetres"`
+	UpdatedAt     time.Time      `json:"updatedAt"`
+	DistanceBands []DistanceBand `json:"distanceBands,omitempty"`
 }
 type CityDeliveryPolicyReader interface {
 	ReadCityDeliveryPolicy(context.Context, string) (CityDeliveryPolicy, error)
@@ -31,11 +34,19 @@ func (source *PostgresPolicySource) ReadCityDeliveryPolicy(ctx context.Context, 
 	}
 	defer tx.Rollback()
 	var p CityDeliveryPolicy
-	err = tx.QueryRowContext(ctx, `SELECT p.city_id,p.version,p.radius_metres,p.updated_at
+	var raw []byte
+	err = tx.QueryRowContext(ctx, `SELECT p.city_id,p.version,p.radius_metres,p.updated_at,p.distance_bands
  FROM service_city_delivery_policies p JOIN service_cities c ON c.id=p.city_id
- WHERE c.id=$1 AND c.active`, city).Scan(&p.CityID, &p.Version, &p.RadiusMetres, &p.UpdatedAt)
+ WHERE c.id=$1 AND c.active`, city).Scan(&p.CityID, &p.Version, &p.RadiusMetres, &p.UpdatedAt, &raw)
 	if err != nil || p.CityID != city || p.Version < 1 || p.Version > 9007199254740991 || p.RadiusMetres <= 0 || p.UpdatedAt.IsZero() {
 		return CityDeliveryPolicy{}, ErrPolicyUnavailable
+	}
+	if len(raw) != 0 {
+		var ok bool
+		p.DistanceBands, ok = DecodeDistanceBands(raw)
+		if !ok {
+			return CityDeliveryPolicy{}, ErrPolicyUnavailable
+		}
 	}
 	if tx.Commit() != nil {
 		return CityDeliveryPolicy{}, ErrPolicyUnavailable
@@ -79,5 +90,69 @@ func cityDeliveryPolicyHandler(identity IdentitySessions, reader CityDeliveryPol
 			return
 		}
 		writeJSON(w, http.StatusOK, p)
+	}
+}
+
+func cityDeliveryPolicyPreviewHandler(identity IdentitySessions, reader CityDeliveryPolicyReader) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		actor, ok := authorizeCityPolicyOperator(w, r, identity)
+		if !ok {
+			return
+		}
+		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+		if err != nil || media != "application/json" {
+			writeFailure(w, ErrInvalidChange)
+			return
+		}
+		var input struct {
+			ExpectedVersion *int64          `json:"expectedVersion"`
+			RadiusMetres    *int64          `json:"radiusMetres"`
+			DistanceMetres  *int64          `json:"distanceMetres"`
+			DistanceBands   json.RawMessage `json:"distanceBands"`
+		}
+		if decodeUniqueJSON(w, r, 8*1024, &input) != nil || input.ExpectedVersion == nil || *input.ExpectedVersion < 1 || *input.ExpectedVersion > 9007199254740991 ||
+			input.RadiusMetres == nil || *input.RadiusMetres < 1 || *input.RadiusMetres > 2147483647 ||
+			input.DistanceMetres == nil || *input.DistanceMetres < 0 || *input.DistanceMetres > *input.RadiusMetres {
+			writeFailure(w, ErrInvalidChange)
+			return
+		}
+		fee, ok := DistanceBandFee(*input.DistanceMetres, input.DistanceBands)
+		if !ok {
+			writeFailure(w, ErrInvalidChange)
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
+		defer cancel()
+		city := r.PathValue("cityID")
+		current, err := reader.ReadCityDeliveryPolicy(ctx, city)
+		if err != nil {
+			writeFailure(w, err)
+			return
+		}
+		if current.CityID != city {
+			writeFailure(w, ErrPolicyUnavailable)
+			return
+		}
+		if current.Version != *input.ExpectedVersion {
+			writeFailure(w, ErrPolicyVersionConflict)
+			return
+		}
+		currentActor, ok := authorizeCityPolicyOperator(w, r, identity)
+		if !ok {
+			return
+		}
+		if currentActor != actor {
+			writeFailure(w, ErrForbidden)
+			return
+		}
+		writeJSON(w, http.StatusOK, struct {
+			CityID         string `json:"cityId"`
+			Version        int64  `json:"version"`
+			RadiusMetres   int64  `json:"radiusMetres"`
+			DistanceMetres int64  `json:"distanceMetres"`
+			FeeYER         string `json:"feeYer"`
+			Payable        bool   `json:"payable"`
+		}{city, current.Version, *input.RadiusMetres, *input.DistanceMetres, fee, false})
 	}
 }

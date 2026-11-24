@@ -65,3 +65,30 @@ test("delivery policy SDK binds owner path, rejects foreign and malformed eviden
   await assert.rejects(getCityDeliveryPolicy("http://127.0.0.1:3202","../aden","test-token"));
   assert.equal(fetch.mock.callCount(),count);
 });
+
+test("delivery preview sends only scoped proposed inputs and refuses stale or payable responses", async t => {
+  const { previewCityDeliveryPolicy, isCityDeliveryPolicy } = await import("./city-policies.ts");
+  const input = { expectedVersion: 3, radiusMetres: 20000, distanceMetres: 2001,
+    distanceBands: [{upToMeters:2000, ratePerKmMinor:300},{upToMeters:null, ratePerKmMinor:200}] };
+  const good = {cityId:"sanaa",version:3,radiusMetres:20000,distanceMetres:2001,feeYer:"601",payable:false};
+  const policy = {cityId:"sanaa",version:3,radiusMetres:20000,updatedAt:"2026-11-24T05:00:00Z",distanceBands:input.distanceBands};
+  assert.ok(isCityDeliveryPolicy(policy,"sanaa"));
+  assert.ok(!isCityDeliveryPolicy({...policy,distanceBands:[{upToMeters:null,ratePerKmMinor:0}]},"sanaa"));
+  let response = good;
+  const spy = t.mock.method(globalThis,"fetch",async (url, init) => {
+    assert.equal(String(url), origin + "/v1/operators/cities/sanaa/delivery-policy/preview");
+    assert.equal(init.method,"POST");
+    assert.equal(init.headers.Authorization,"Bearer " + bearer);
+    assert.deepEqual(JSON.parse(init.body),input);
+    return Response.json(response,{headers:{"Cache-Control":"no-store"}});
+  });
+  assert.deepEqual(await previewCityDeliveryPolicy(origin,"sanaa",bearer,input),good);
+  for(const bad of [{...good,version:2},{...good,cityId:"aden"},{...good,payable:true},{...good,radiusMetres:1},{...good,feeYer:"-1"}]){
+    response=bad;
+    await assert.rejects(previewCityDeliveryPolicy(origin,"sanaa",bearer,input),{status:502});
+  }
+  const calls=spy.mock.callCount();
+  await assert.rejects(previewCityDeliveryPolicy(origin,"sanaa",bearer,{...input,distanceMetres:20001}),{status:400});
+  await assert.rejects(previewCityDeliveryPolicy(origin,"sanaa",bearer,{...input,distanceBands:[{upToMeters:2000,ratePerKmMinor:300}]}),{status:400});
+  assert.equal(spy.mock.callCount(),calls);
+});

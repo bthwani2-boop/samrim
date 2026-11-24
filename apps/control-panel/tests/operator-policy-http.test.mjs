@@ -95,6 +95,22 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     if (!dshAvailable) return send(503, { error: "OWNER_UNAVAILABLE" });
     if (request.headers.authorization !== `Bearer ${token}` ||
         !allowed.has("platform_policies")) return send(403, { error: "FORBIDDEN" });
+    if (route === `/v1/operators/cities/${city}/delivery-policy` && request.method === "GET") {
+      return send(200, {cityId:city, version:4, radiusMetres:18000, updatedAt:expiry,
+        distanceBands:[{upToMeters:2000,ratePerKmMinor:300},{upToMeters:null,ratePerKmMinor:200}]});
+    }
+    if (route === `/v1/operators/cities/${city}/delivery-policy/preview` && request.method === "POST") {
+      void (async () => {
+        let raw = "";
+        for await (const chunk of request) raw += chunk.toString();
+        const proposal = JSON.parse(raw);
+        if (proposal.expectedVersion !== 4) return send(409, {error:"OPERATIONAL_POLICY_VERSION_CONFLICT"});
+        assert.deepEqual(proposal, {expectedVersion:4,radiusMetres:20000,distanceMetres:2001,
+          distanceBands:[{upToMeters:2000,ratePerKmMinor:300},{upToMeters:null,ratePerKmMinor:200}]});
+        return send(200, {cityId:city,version:4,radiusMetres:20000,distanceMetres:2001,feeYer:"601",payable:false});
+      })().catch(() => send(400,{error:"INVALID_REQUEST"}));
+      return;
+    }
     if (route !== `/v1/operators/cities/${city}/store-availability-policy`) {
       return send(400, { error: "INVALID_REQUEST" });
     }
@@ -303,6 +319,25 @@ test("Operator city policy flows through real Next BFF, Identity grant and DSH v
     assert.equal(dshCalls.length, dshBefore);
     identityAvailable = true;
 
+    const proposal = {expectedVersion:4,radiusMetres:20000,distanceMetres:2001,
+      distanceBands:[{upToMeters:2000,ratePerKmMinor:300},{upToMeters:null,ratePerKmMinor:200}]};
+    const preview = (body, headers = {origin:base,"content-type":"application/json"}) =>
+      call(api,{method:"POST",headers,body:JSON.stringify(body)});
+    res = await call(api+"?delivery=1");
+    assert.equal(res.status,200);
+    assert.deepEqual((await res.json()).distanceBands,proposal.distanceBands);
+    res = await preview(proposal);
+    assert.equal(res.status,200);
+    assert.deepEqual(await res.json(),{cityId:city,version:4,radiusMetres:20000,distanceMetres:2001,feeYer:"601",payable:false});
+    res = await preview({...proposal,expectedVersion:3});
+    assert.equal(res.status,409);
+    const beforeInvalidPreview = dshCalls.length;
+    assert.equal((await preview({...proposal,distanceMetres:20001})).status,400);
+    assert.equal((await preview(proposal,{origin:"http://attacker.invalid","content-type":"application/json"})).status,400);
+    allowed.clear();
+    assert.equal((await preview(proposal)).status,403);
+    allowed.add("platform_policies");
+    assert.equal(dshCalls.length,beforeInvalidPreview);
     assert.equal(effectivePolicy.version, 3);
     assert.equal(audit.size, 2);
     assert.ok(ownerCalls.includes("/v1/operators/me/permissions/platform_policies"));

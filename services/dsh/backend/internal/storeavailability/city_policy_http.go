@@ -48,6 +48,7 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 	}
 	if delivery, ok := policies.(CityDeliveryPolicyReader); ok {
 		mux.HandleFunc("GET /v1/operators/cities/{cityID}/delivery-policy", cityDeliveryPolicyHandler(identity, delivery))
+		mux.HandleFunc("POST /v1/operators/cities/{cityID}/delivery-policy/preview", cityDeliveryPolicyPreviewHandler(identity, delivery))
 	}
 	if writer != nil {
 		mux.HandleFunc("PATCH "+path, func(w http.ResponseWriter, r *http.Request) {

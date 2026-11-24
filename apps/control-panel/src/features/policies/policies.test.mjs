@@ -347,6 +347,7 @@ test("policy center renders independently verified city admission, clears old sc
     "next/link": { __esModule: true, default: "Link" },
     "./city-policy-command": { parseCityPolicy, reconcileCityPolicy },
     "./city-policy-history": { __esModule: true, default: "History" },
+    "./delivery-policy-preview": { __esModule: true, default: "DeliveryPolicyPreview" },
     "./store-registration-command": { readRegistrationOverview: async (city, actor) => {
       assert.equal(actor, "operator-1");
       calls.push(city);

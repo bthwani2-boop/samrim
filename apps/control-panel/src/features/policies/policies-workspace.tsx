@@ -8,6 +8,7 @@ import {
   type CityPolicy, type CityPolicyChange, parseCityPolicy, reconcileCityPolicy,
 } from "./city-policy-command";
 import CityPolicyHistory from "./city-policy-history";
+import DeliveryPolicyPreview from "./delivery-policy-preview";
 import type { PolicyCityDirectory } from "./policy-city-directory";
 import { readRegistrationOverview, type RegistrationOverview } from "./store-registration-command";
 
@@ -267,6 +268,9 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
               <>
                 <Typography.Paragraph>المسافة الجغرافية القصوى: <strong>{delivery.radiusMetres}</strong> متر — الإصدار {delivery.version}</Typography.Paragraph>
                 <Typography.Paragraph>آخر تحديث: {delivery.updatedAt}</Typography.Paragraph>
+                <DeliveryPolicyPreview key={actorId + ":" + city + ":" + delivery.version}
+                  policy={delivery} actorId={actorId} disabled={busy || uncertain}
+                  onDenied={() => { setDelivery(null); setAdmission(null); setPolicy(null); setRequiresRead(true); }} />
               </>
             )}
             <Typography.Paragraph type="secondary">قراءة سياسة الأهلية الحالية، وليست تسعيرة أو ضمانًا للتوصيل. تعديلها غير متاح حتى إثبات توافق سياسة الرسوم مع WLT.</Typography.Paragraph>

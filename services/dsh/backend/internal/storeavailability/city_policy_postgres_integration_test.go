@@ -82,8 +82,21 @@ func TestRealPostgresVersionedCityPolicyWriterAndConcurrency(t *testing.T) {
 		t.Fatal(err)
 	}
 	radius, err = owner.ReadCityDeliveryPolicy(ctx, city)
-	if err != nil || radius.Version != 2 || radius.RadiusMetres != 18000 {
-		t.Fatalf("stale radius: %+v %v", radius, err)
+	if err != nil || radius.Version != 2 || radius.RadiusMetres != 18000 || radius.DistanceBands != nil {
+		t.Fatalf("stale radius or invented bands: %+v %v", radius, err)
+	}
+	if _, err = db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_city_delivery_policies SET version=3,distance_bands=$1::jsonb WHERE city_id=$2", schema), `[{"upToMeters":2000,"ratePerKmMinor":300},{"upToMeters":null,"ratePerKmMinor":200}]`, city); err != nil {
+		t.Fatal(err)
+	}
+	radius, err = owner.ReadCityDeliveryPolicy(ctx, city)
+	if err != nil || radius.Version != 3 || len(radius.DistanceBands) != 2 || radius.DistanceBands[1].RatePerKmMinor != 200 || radius.DistanceBands[1].UpToMeters != nil {
+		t.Fatalf("owner tariff readback: %+v %v", radius, err)
+	}
+	if _, err = db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_city_delivery_policies SET version=4,distance_bands=$1::jsonb WHERE city_id=$2", schema), `[{"upToMeters":null,"ratePerKmMinor":0}]`, city); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.ReadCityDeliveryPolicy(ctx, city); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("malformed stored tariff was accepted: %v", err)
 	}
 	base := CityPolicyChange{CityID: city, OperationID: "policy-create-a02", ExpectedVersion: 0, MaxPauseSeconds: 1800, MaxPreparationMinutes: 80, Reason: "Explicit initial city limits"}
 	created, replay, err := owner.ApplyCityPolicy(ctx, "operator-a", base)

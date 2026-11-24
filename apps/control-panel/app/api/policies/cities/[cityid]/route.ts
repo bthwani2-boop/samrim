@@ -1,6 +1,6 @@
 import {
   type CityStoreOperationalPolicyChange, DshPublicError, getCityDeliveryPolicy, getCityStoreOperationalPolicy,
-  listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy,
+  listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy, isCityDeliveryPolicyPreviewInput, previewCityDeliveryPolicy,
 } from "@bthwani/dsh";
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
@@ -40,11 +40,11 @@ function isolatedDshOrigin(raw: string | undefined): string | null {
   }
 }
 
-function trustedRequest(request: NextRequest, browserOrigin: string, mutation: boolean) {
+function trustedRequest(request: NextRequest, browserOrigin: string, mutation: boolean, preview: boolean) {
   const url = new URL(request.url);
   const queryOK = url.search === "" || (!mutation && (url.search === "?delivery=1" || /^\?history=1&limit=10(?:&beforeVersion=[1-9][0-9]{0,15})?$/.test(url.search)));
   return queryOK &&
-    request.method === (mutation ? "PATCH" : "GET") &&
+    request.method === (preview ? "POST" : mutation ? "PATCH" : "GET") &&
     (!mutation || request.headers.get("origin") === browserOrigin) &&
     request.headers.get("sec-fetch-site") !== "cross-site" &&
     isTrustedOperatorLoopbackTarget(request, browserOrigin, !mutation);
@@ -62,14 +62,14 @@ function parseChange(raw: string | null): CityStoreOperationalPolicyChange | nul
 }
 
 async function forward(
-  request: NextRequest, context: Context, mutation: boolean,
+  request: NextRequest, context: Context, mutation: boolean, preview = false,
 ): Promise<NextResponse> {
   const config = resolveIsolatedOperatorConfig(process.env);
   const dshOrigin = isolatedDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
   if (!config) return unavailableSessionResponse();
   if (!dshOrigin) return error("DSH_OWNER_UNAVAILABLE", 503);
   const { cityid: cityId } = await context.params;
-  if (!cityIdRule.test(cityId) || !trustedRequest(request, config.browserOrigin, mutation)) {
+  if (!cityIdRule.test(cityId) || !trustedRequest(request, config.browserOrigin, mutation, preview)) {
     return error("INVALID_REQUEST", 400);
   }
   const access = await currentOperatorAccess();
@@ -82,17 +82,28 @@ async function forward(
   if (!bearer || !/^[A-Za-z0-9_-]{43}$/.test(bearer)) return error("UNAUTHORIZED", 401);
 
   let change: CityStoreOperationalPolicyChange | null = null;
+  let previewInput: unknown;
   if (mutation) {
     if (request.headers.get("content-type")?.split(";")[0]?.trim() !== "application/json") {
       return error("INVALID_REQUEST", 400);
     }
-    change = parseChange(await boundedRequestBody(request));
-    if (!change) return error("INVALID_REQUEST", 400);
+    const raw = await boundedRequestBody(request);
+    if (preview) {
+      try { previewInput = raw && JSON.parse(raw); } catch { return error("INVALID_REQUEST", 400); }
+      if (!isCityDeliveryPolicyPreviewInput(previewInput)) return error("INVALID_REQUEST", 400);
+    } else {
+      change = parseChange(raw);
+      if (!change) return error("INVALID_REQUEST", 400);
+    }
   }
 
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
     const history = new URL(request.url).searchParams;
+    if (preview && isCityDeliveryPolicyPreviewInput(previewInput)) {
+      const result = await previewCityDeliveryPolicy(dshOrigin, cityId, bearer, previewInput, signal);
+      return NextResponse.json(result, { status: 200, headers: privateHeaders });
+    }
     if (!mutation && history.has("delivery")) {
       const result = await getCityDeliveryPolicy(dshOrigin, cityId, bearer, signal);
       return NextResponse.json(result, { status: 200, headers: privateHeaders });
@@ -128,4 +139,8 @@ export async function GET(request: NextRequest, context: Context) {
 
 export async function PATCH(request: NextRequest, context: Context) {
   return forward(request, context, true);
+}
+
+export async function POST(request: NextRequest, context: Context) {
+  return forward(request, context, true, true);
 }

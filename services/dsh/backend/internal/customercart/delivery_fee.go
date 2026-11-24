@@ -1,13 +1,11 @@
 package customercart
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
-	"io"
 	"math"
-	"strconv"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
 // DistanceFeeEstimate is advisory, not a payable quote, WLT authorization or
@@ -29,41 +27,12 @@ func estimateDistanceFee(delivery DeliveryServiceability, raw []byte) *DistanceF
 		math.IsNaN(e.DistanceMetres) || math.IsInf(e.DistanceMetres, 0) || e.DistanceMetres < 0 || e.DistanceMetres > float64(e.RadiusMetres) {
 		return nil
 	}
-	var bands []struct {
-		UpToMeters     json.RawMessage `json:"upToMeters"`
-		RatePerKmMinor int64           `json:"ratePerKmMinor"`
-	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&bands) != nil || decoder.Decode(new(any)) != io.EOF || len(bands) < 1 || len(bands) > 30 {
+	distance := int64(math.Round(e.DistanceMetres))
+	fee, ok := storeavailability.DistanceBandFee(distance, raw)
+	if !ok {
 		return nil
 	}
-	distance := int64(math.Round(e.DistanceMetres))
-	var previous, total int64
-	for i, b := range bands {
-		if b.RatePerKmMinor <= 0 || b.RatePerKmMinor > 100000000 || len(b.UpToMeters) == 0 {
-			return nil
-		}
-		var end int64
-		if i == len(bands)-1 {
-			if !bytes.Equal(bytes.TrimSpace(b.UpToMeters), []byte("null")) {
-				return nil
-			}
-			end = distance
-		} else {
-			if json.Unmarshal(b.UpToMeters, &end) != nil || end <= previous || end > 500000 {
-				return nil
-			}
-		}
-		if distance > previous {
-			limit := min(end, distance)
-			// Distance is bounded by the int32 owner radius, and every metre is
-			// counted at most once at a rate <= 1e8; total cannot overflow int64.
-			total += (limit - previous) * b.RatePerKmMinor
-		}
-		previous = end
-	}
-	return &DistanceFeeEstimate{PolicyVersion: e.PolicyVersion, DistanceMetres: distance, FeeYER: strconv.FormatInt((total+999)/1000, 10)}
+	return &DistanceFeeEstimate{PolicyVersion: e.PolicyVersion, DistanceMetres: distance, FeeYER: fee}
 }
 
 func readDistanceFeeEstimate(ctx context.Context, tx *sql.Tx, delivery DeliveryServiceability) (*DistanceFeeEstimate, error) {

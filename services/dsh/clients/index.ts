@@ -10,9 +10,9 @@ export {
   readCaptainApplication, requestCaptainApplication,
 } from "./captain-standing.ts";
 export type {
-  CityDeliveryPolicy, CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult,
+  CityDeliveryDistanceBand, CityDeliveryPolicy, CityDeliveryPolicyPreview, CityDeliveryPolicyPreviewInput, CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult,
 } from "./city-policies.ts";
-export { getCityDeliveryPolicy, isCityDeliveryPolicy, getCityStoreOperationalPolicy, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
+export { getCityDeliveryPolicy, isCityDeliveryPolicy, isCityDeliveryPolicyPreview, isCityDeliveryPolicyPreviewInput, isCityDeliveryDistanceBands, previewCityDeliveryPolicy, getCityStoreOperationalPolicy, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
 export type { CustomerAddress, CustomerAddressChange, CustomerAddressPage, CustomerAddressRead, CustomerAddressResult, DeliveryServiceability } from "./customer-addresses.ts";
 export { evaluateDeliveryServiceability, getCustomerAddress, isCustomerAddressId, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress, validCustomerAddressChange } from "./customer-addresses.ts";
 export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";

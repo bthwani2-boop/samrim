@@ -88,7 +88,7 @@ paths:
   /v1/operators/cities/{cityID}/delivery-policy:
     get:
       operationId: getCityDeliveryPolicy
-      summary: Read the active DSH city delivery radius and version used by checkout
+      summary: Read the active DSH city delivery radius, optional distance bands and version used by checkout
       description: Requires current Identity Operator platform_policies permission before and after read. Missing or inactive policy is unavailable. Geographic radius is not a fee or fulfillment admission. No mutation is exposed.
       security:
         - OpaqueSession: []
@@ -109,4 +109,35 @@ paths:
         '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
         '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
         '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+  /v1/operators/cities/{cityID}/delivery-policy/preview:
+    post:
+      operationId: previewCityDeliveryPolicy
+      summary: Preview proposed delivery radius and tariff for an existing policy version
+      description: Requires current Operator platform_policies permission before and after owner read. The proposed distance must not exceed the proposed radius. Uses the same exact tariff engine as checkout. Does not write or activate a policy, create a payable quote or authorize WLT.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cityID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryPolicyPreviewInput' }
+      responses:
+        '200':
+          description: Non-payable preview, bound to current city policy version
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryPolicyPreview' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
+        '409': { $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict' }
         '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
