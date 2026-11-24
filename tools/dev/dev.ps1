@@ -478,7 +478,14 @@ function Test-AppHttpTarget([hashtable]$Target,[int]$TimeoutSec=7,[int]$MaxAttem
   $lastFailure='UNKNOWN'
   for($attempt=1;$attempt -le $MaxAttempts;$attempt++){
     try {
-      $response=Invoke-WebRequest -UseBasicParsing -Uri $Target.U -TimeoutSec $TimeoutSec -ErrorAction Stop
+      $response=Invoke-WebRequest -UseBasicParsing -Uri $Target.U -TimeoutSec $TimeoutSec -SkipHttpErrorCheck -ErrorAction Stop
+      # Expo can return an error document during SSR. A reachable listener is
+      # not a healthy render; preserve this signature even if a retry recovers.
+      if($Target.A -in @('customer','merchant') -and
+        $response.Content -match 'Requiring unknown module' -and
+        $response.Content -match 'unknownModuleError|Server Error|metroRequire'){
+        return @{Success=$false;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error='EXPO_UNKNOWN_MODULE'}
+      }
       if($response.StatusCode -eq 200){
         return @{Success=$true;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=''}
       }

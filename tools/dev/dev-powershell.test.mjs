@@ -112,7 +112,7 @@ test("transient HTTP failure recovers and persistent failure remains negative", 
     "$node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-AppHttpTarget'},$true)",
     "if(!$node){throw 'PROBE_FUNCTION_MISSING'}",
     "Invoke-Expression $node.Extent.Text",
-    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[string]$Uri,[int]$TimeoutSec) $script:tries++; if($script:alwaysFail -or $script:tries -eq 1){throw 'temporary failure'}; return [pscustomobject]@{StatusCode=200} }",
+    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[switch]$SkipHttpErrorCheck,[string]$Uri,[int]$TimeoutSec) $script:tries++; if($script:alwaysFail -or $script:tries -eq 1){throw 'temporary failure'}; return [pscustomobject]@{StatusCode=200} }",
     "$target=@{A='test';U='http://not-used.invalid/'}",
     "$script:tries=0;$script:alwaysFail=$false",
     "$recovered=Test-AppHttpTarget -Target $target -MaxAttempts 3 -TimeoutSec 1 -RetryDelayMs 0",
@@ -127,6 +127,37 @@ test("transient HTTP failure recovers and persistent failure remains negative", 
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /RETRY_AND_FAIL_CLOSED_PASS/);
+});
+
+test("Expo readiness rejects an unknown-module error document even with HTTP 200", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted = scriptPath.replaceAll("'", "''");
+  const ps = [
+    "$ErrorActionPreference='Stop'",
+    `$source=Get-Content -LiteralPath '${quoted}' -Raw`,
+    "$tokens=$null;$errors=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)",
+    "$node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-AppHttpTarget'},$true)",
+    "Invoke-Expression $node.Extent.Text",
+    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[switch]$SkipHttpErrorCheck,[string]$Uri,[int]$TimeoutSec) return [pscustomobject]@{StatusCode=$script:status;Content=$script:body} }",
+    "$target=@{A='customer';U='http://not-used.invalid/'}",
+    "$script:status=200;$script:body='<html><body>Server Error: Requiring unknown module &quot;60&quot;. unknownModuleError</body></html>'",
+    "$failed=Test-AppHttpTarget -Target $target -MaxAttempts 1",
+    "if($failed.Success -or $failed.Error -ne 'EXPO_UNKNOWN_MODULE'){throw 'EXPO_ERROR_DOCUMENT_ACCEPTED'}",
+    "$target.A='merchant';$script:status=500",
+    "$failed=Test-AppHttpTarget -Target $target -MaxAttempts 1",
+    "if($failed.Success -or $failed.Error -ne 'EXPO_UNKNOWN_MODULE'){throw 'EXPO_ERROR_STATUS_NOT_DIAGNOSED'}",
+    "$script:status=200;$script:body='<html lang=ar dir=rtl><body>Merchant</body></html>'",
+    "$healthy=Test-AppHttpTarget -Target $target -MaxAttempts 1",
+    "if(!$healthy.Success){throw 'HEALTHY_WEB_REJECTED'}",
+    "Write-Output 'EXPO_ERROR_DOCUMENT_REJECTED'",
+  ].join("; ");
+  const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], {
+    encoding: "utf8", timeout: 15000, windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /EXPO_ERROR_DOCUMENT_REJECTED/);
 });
 
 test("Docker status verifies present WLT without misreporting it as another project", () => {
