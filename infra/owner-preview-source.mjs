@@ -10,9 +10,12 @@ const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.
 const owners = ["dsh", "identity", "wlt"];
 const goPath = /^services\/(?:dsh|identity|wlt)\/backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
 export function isPreviewGoPath(rel) { return goPath.test(rel); }
+const wltComposeInput = "infra/compose.wlt.yaml";
 function sourceOwner(rel) {
+  if (rel === wltComposeInput) return "wlt";
   return owners.find(owner => rel.startsWith("services/" + owner + "/"));
 }
+export function isSharedRuntimeInput(rel) { return !sourceOwner(rel); }
 // Client files are neither copied by the owner Dockerfiles nor present in
 // the Go preview build context. Contracts and all other inputs stay guarded.
 export function isOwnerClientPath(rel) {
@@ -33,11 +36,11 @@ export function ownerSourceState(owner, changed, committed) {
 // holds by owner, and propagate only actual runtime/contract dependency risk.
 // A successful current-SHA disposable proof is necessary, never sufficient
 // on its own: the runtime transaction still checks exact retained data.
-export function ownerReconcilePlan({changed, committed, preview, captain, schemaReady=[]}) {
+export function ownerReconcilePlan({changed, committed, preview, captain, schemaReady=[], wltConfigDrift=false}) {
   const blocked = {};
   const runtimeChanges = {};
   const order = ["dsh", "identity", "wlt"];
-  if (changed.some(rel => !sourceOwner(rel))) {
+  if (changed.some(isSharedRuntimeInput)) {
     return { eligible: [], blocked: Object.fromEntries(order.map(o => [o, "SHARED_INPUT_REVIEW_REQUIRED"])) };
   }
   for (const owner of order) {
@@ -50,7 +53,11 @@ export function ownerReconcilePlan({changed, committed, preview, captain, schema
     const schemaChanges=saved.filter(rel=>rel.startsWith(prefix+"database/"));
     const schemaAdmitted=schemaReady.includes(owner) && local.length===0 &&
       schemaChanges.every(rel=>new RegExp("^services/"+owner+"/database/"+(owner==="wlt"?"(?:schema|sandbox)":"schema")+"/[0-9]{2}_[a-z0-9_]+\\.sql$").test(rel));
-    if (schemaChanges.length && !schemaAdmitted) blocked[owner] = "SCHEMA_REVIEW_REQUIRED";
+    if (owner === "wlt" && (wltConfigDrift || local.includes(wltComposeInput))) {
+      runtimeChanges[owner] = true;
+      blocked[owner] = "CONFIG_REVIEW_REQUIRED";
+    }
+    else if (schemaChanges.length && !schemaAdmitted) blocked[owner] = "SCHEMA_REVIEW_REQUIRED";
     else if (previewChanges.some(rel => !isPreviewGoPath(rel))) blocked[owner] = "UNCOMMITTED_NON_GO";
     else if (!preview && (previewChanges.length || (local.length && imageChanges.length))) blocked[owner] = "PREVIEW_NOT_AUTHORIZED";
   }

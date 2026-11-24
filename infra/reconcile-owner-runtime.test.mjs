@@ -66,6 +66,35 @@ test("Identity runtime changes requiring review hold dependent owners, but clien
   assert.equal(shared.blocked.dsh, "SHARED_INPUT_REVIEW_REQUIRED");
 });
 
+test("WLT-only Compose review does not freeze independent owners or admit WLT writes", async () => {
+  const { ownerReconcilePlan, isSharedRuntimeInput } = await import("./owner-preview-source.mjs");
+  const base={committed:{},preview:true,captain:true};
+  const overlay="infra/compose.wlt.yaml";
+  assert.equal(isSharedRuntimeInput(overlay),false);
+  assert.equal(isSharedRuntimeInput("infra/compose.yaml"),true);
+  assert.deepEqual(ownerReconcilePlan({...base,changed:[overlay]}),{
+    eligible:["dsh","identity"],blocked:{wlt:"CONFIG_REVIEW_REQUIRED"}
+  });
+  assert.deepEqual(ownerReconcilePlan({...base,changed:[],wltConfigDrift:true}),{
+    eligible:["dsh","identity"],blocked:{wlt:"CONFIG_REVIEW_REQUIRED"}
+  });
+  assert.deepEqual(ownerReconcilePlan({...base,changed:[overlay,"infra/compose.yaml"]}).eligible,[]);
+});
+
+test("ordinary reconciliation isolates verified WLT config drift, but special transitions and shared drift fail closed", async () => {
+  const { wltConfigReviewRequired } = await import("./reconcile-owner-runtime.mjs");
+  const a="a".repeat(64), b="b".repeat(64);
+  for(const mode of ["--check","--apply","--apply-preview"]){
+    assert.equal(wltConfigReviewRequired({wlt:a},{wlt:a},mode),false);
+    assert.equal(wltConfigReviewRequired({wlt:a},{wlt:b},mode),true);
+    assert.throws(()=>wltConfigReviewRequired({wlt:undefined},{wlt:b},mode),/refusing replacement/);
+    assert.throws(()=>wltConfigReviewRequired({dsh:a,identity:a},{dsh:b,identity:a},mode),/refusing replacement/);
+  }
+  for(const mode of ["--apply-captain","--recover-attempt","--prepare-dsh-database","--relocate-identity-database"]){
+    assert.throws(()=>wltConfigReviewRequired({wlt:a},{wlt:b},mode),/refusing replacement/);
+  }
+});
+
 test("committed-only mode cannot promote a dirty Go owner", async () => {
   const { ownerReconcilePlan } = await import("./owner-preview-source.mjs");
   const plan = ownerReconcilePlan({changed:["services/wlt/backend/cmd/wlt/main.go"], committed:{}, preview:false,captain:true});

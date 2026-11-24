@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
-import { dirtyPaths, isPreviewGoPath, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
+import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
 import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, runtimeReceiptStatus, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -567,8 +567,9 @@ function pollOwnerRuntime() {
   }
   const changed=dirtyPaths(root,runtimeScope);
   // The owner reconciler owns per-service admission and dependency holds.
-  // Shared tooling/configuration remains a global hold until reviewed.
-  const dirty=changed.some(p=>!/^services\/(?:identity|dsh|wlt)\//.test(p));
+  // Only inputs shared by the active owners require a global hold.
+  // The separate WLT Compose group is reviewed by its owner reconciler.
+  const dirty=changed.some(isSharedRuntimeInput);
   if(dirty){runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (shared runtime input)");return;}
   // The periodic audit also handles committed schema holds and active overlays.
   // Do not read or hash excluded owner files just to schedule another owner.

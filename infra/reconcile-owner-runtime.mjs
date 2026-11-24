@@ -76,6 +76,15 @@ export function selectOwners({ candidates, activateCaptain, currentCaptain }) {
 export function assertSameHashes(expected, actual) {
   if (differingKeys(expected, actual).length) throw new Error("Existing Compose configuration cannot be reconstructed exactly; refusing replacement");
 }
+// The WLT overlay is used only by the WLT Compose group. Never replace a
+// mismatched owner; ordinary reconciliation may still inspect the other group.
+export function wltConfigReviewRequired(expected, actual, mode) {
+  if (!differingKeys(expected,actual).length) return false;
+  if (["--check","--apply","--apply-preview"].includes(mode) &&
+      Object.keys(expected).length === 1 && Object.keys(actual).length === 1 &&
+      /^[a-f0-9]{64}$/.test(expected.wlt || "") && /^[a-f0-9]{64}$/.test(actual.wlt || "")) return true;
+  assertSameHashes(expected,actual);
+}
 function liveFiles(v) {
   const prefix = root.toLowerCase() + "\\infra\\";
   return (v.Config.Labels["com.docker.compose.project.config_files"] || "").split(",").map(p => {
@@ -111,19 +120,19 @@ export function sourceIdentity(labels, owner) {
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
 const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","infra/owner-baseline-transition.mjs","infra/reconcile-owner-runtime.mjs","infra/verify-isolated-postgres.ps1",".go-version"];
-function currentChangeKey(committed, preview, captain) {
+function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
-  const plan=ownerReconcilePlan({changed,committed,preview,captain});
+  const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
   const go=changed.filter(p=>isPreviewGoPath(p) && plan.eligible.some(o=>p.startsWith("services/"+o+"/")));
   // Blocked inputs cannot be built; only their paths/review classification
   // affect selection. Eligible Go bytes must remain exactly stable.
   const key=createHash("sha256").update(JSON.stringify([changed,plan])).update(previewChangeKey(root,go)).digest("hex");
   return {changed,plan,key};
 }
-function checkedHead(head, key, committed, preview, captain) {
+function checkedHead(head, key, committed, preview, captain, wltConfigDrift=false) {
   const currentBranch = git(["branch", "--show-current"]);
   if (!currentBranch || currentBranch === "main" || currentBranch.startsWith("archive/")) throw new Error("Not an active development branch");
-  if (git(["rev-parse", "HEAD"]) !== head || currentChangeKey(committed,preview,captain).key !== key) throw new Error("Source changed during reconciliation");
+  if (git(["rev-parse", "HEAD"]) !== head || currentChangeKey(committed,preview,captain,wltConfigDrift).key !== key) throw new Error("Source changed during reconciliation");
 }
 function validateVolumeFiles(headTag) {
   for (const [volume, paths] of [["bthwani-refoundation-captain-dsh-ca", ["/proof/ca.pem"]], ["bthwani-refoundation-captain-dsh-tls", ["/proof/server.pem","/proof/server-key.pem"]]]) {
@@ -645,7 +654,12 @@ function main() {
   }
   const appNames = ["dsh","identity"];
   const groups = [{ names: appNames, files: activeAppFiles },{names:["wlt"],files:wltFiles}];
-  for (const group of groups) assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
+  let wltConfigDrift=false;
+  for (const group of groups) {
+    const expected=currentHashes(state,group.names);
+    const actual=configHashes(group.files,group.names,env);
+    if(wltConfigReviewRequired(expected,actual,mode)) wltConfigDrift=true;
+  }
   if(mode==="--prepare-dsh-database" || mode==="--resume-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles,mode==="--resume-dsh-database");return;}
   if(cutover){if(options.length!==1)throw new Error("Expected prepared source SHA");cutoverPreparedDsh(state,env,head,activeAppFiles,options[0]);return;}
   if(mode==="--relocate-identity-database" || mode==="--resume-identity-database"){relocateIdentity(state,env,head,activeAppFiles,mode==="--resume-identity-database");return;}
@@ -656,8 +670,8 @@ function main() {
     committed[o]=git(["diff","--name-only",revisions[o].revision,head,"--","services/"+o]).split(/\r?\n/).filter(Boolean);
   }
   const preview=mode==="--apply-preview" || !apply;
-  const change=currentChangeKey(committed,preview,captain);
-  const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain);
+  const change=currentChangeKey(committed,preview,captain,wltConfigDrift);
+  const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain,wltConfigDrift);
   let blocked=change.plan.blocked;
   const schemaReady=[];
   const proofOwners=baselineProofOwners({apply,prepare,blocked,dirtyInputs:dirtyPaths(root,baselineProofScope)});
@@ -670,7 +684,7 @@ function main() {
       ensureSource();
       if(dirtyPaths(root,baselineProofScope).length)throw new Error("Baseline proof inputs changed during rehearsal");
       schemaReady.push(...proofOwners);
-      blocked=ownerReconcilePlan({changed:change.changed,committed,preview,captain,schemaReady}).blocked;
+      blocked=ownerReconcilePlan({changed:change.changed,committed,preview,captain,schemaReady,wltConfigDrift}).blocked;
       console.log("BASELINE_PROOF_PASS HEAD="+head+" OWNERS="+proofOwners.join(",")+" CUTOVER=ELIGIBLE_IF_COMPATIBLE");
     } catch(e) {
       ensureSource();
