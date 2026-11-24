@@ -82,11 +82,20 @@ function runtimeAttemptResult(code, signal, stdout, stderr) {
 // fingerprinting, indexing and locking. Never treat unknown provenance as
 // permission to initialize or replace an index.
 function graphifyRefreshAction(assessment) {
+  if (assessment?.refreshing === true) return "busy";
+  if (assessment?.unsafeUntracked > 0) return "deferred";
   if (assessment?.status === "PASS" && assessment.queryable === true) return "current";
   if (assessment?.status === "INVALIDATED" && assessment.queryable === true) return "refresh";
   if (assessment?.status === "BLOCKED" && assessment.queryable === false &&
       assessment.reason === "indexed branch differs") return "refresh";
   return "blocked";
+}
+
+// Reload only committed watcher code, after all existing child work drains.
+function watcherReloadAction({loaded,current,dirty,busy}) {
+  if (loaded===current) return "current";
+  if (dirty) return "defer";
+  return busy ? "drain" : "reload";
 }
 
 // Ignore generated output, dependencies, credentials and internal Git noise.
@@ -102,4 +111,4 @@ function graphifyPollDue({now,dirtySince,lastEvent,nextAudit,busy,debounce=3000,
   if (busy) return false;
   return now>=nextAudit || (dirtySince!==null && (now-lastEvent>=debounce || now-dirtySince>=maxWait));
 }
-export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue };
+export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue, watcherReloadAction };

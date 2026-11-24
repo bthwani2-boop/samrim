@@ -2,14 +2,17 @@
 // Provenance/coverage warnings never silently claim current-source proof.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { forbiddenName, containsLikelySecret } from "../security/verify-secrets.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const graph = join(root, "graphify-out", "graph.json");
 const stamp = join(root, "graphify-out", "local-index-state.json");
 const lock = join(root, "graphify-out", ".local-refresh.lock");
+const candidate = join(root, "graphify-out", ".candidate");
+const candidateGraph = join(candidate, "graph.json");
 const hookNames = ["post-commit", "post-checkout", "post-merge", "post-rewrite"];
 const gitExe = process.platform === "win32" ? "git.exe" : "git";
 const graphifyExe = process.platform === "win32" ? "graphify.exe" : "graphify";
@@ -57,6 +60,7 @@ export function evaluateIndex(stored, current, graphHash) {
   if (stored.repository !== current.repository) return blocked("indexed repository differs");
   if (stored.branch !== current.branch) return blocked("indexed branch differs");
   const gaps = [];
+  if (current.unsafeUntracked) gaps.push("untracked paths require safe admission");
   if (stored.graphSha256 !== graphHash) gaps.push("graph changed since last verified local stamp; revision is unverified");
   if (stored.head !== current.head) gaps.push("indexed HEAD differs from current HEAD");
   if (stored.worktree !== current.worktree) gaps.push("local tracked, staged or untracked changes are not proven indexed");
@@ -67,19 +71,51 @@ export function evaluateIndex(stored, current, graphHash) {
   };
 }
 
-export function rejectUntrackedFiles(names) {
-  // A refresh may ask Graphify to open untracked symlinks; a read-only query never does.
-  if (names.length > 0) {
-    throw new Error("BLOCKED: review untracked files before refreshing the Graphify index");
+// Admit ordinary repository source only, never credentials, binary dumps,
+// external links or arbitrary untracked data. Hash file bytes, not just names.
+export function inspectUntracked(checkout, names) {
+  const hash = createHash("sha256");
+  const unsafe = [];
+  for (const name of [...new Set(names)].sort()) {
+    hash.update(name).update("\0");
+    const parts = name.split("/");
+    const supported = /^(?:\.[cm]?[jt]sx?|\.go|\.sql|\.mdx?|\.ya?ml|\.json|\.css|\.ps1|\.sh|\.py|\.toml)$/i.test(extname(name));
+    const sourceRoot = parts.length === 1 || /^(?:apps|services|packages|tools|infra|docs|governance|specs|tests|\.github|\.specify|\.agents)$/.test(parts[0]);
+    try {
+      if (!supported || !sourceRoot || forbiddenName(name) || parts.some(part =>
+        !part || part === "." || part === ".." || /[\\:]/.test(part) ||
+        /^(?:\.git|\.env.*|\.ssh|\.secrets|secrets|credentials|node_modules|graphify-out|\.next|\.expo|\.nx|dist|build|coverage)$/i.test(part))) {
+        throw new Error("unsafe source path");
+      }
+      let path = checkout;
+      for (const [i, part] of parts.entries()) {
+        path = join(path, part);
+        const st = lstatSync(path);
+        if (st.isSymbolicLink() || (i < parts.length - 1 ? !st.isDirectory() : !st.isFile() || st.size > 4 * 1024 * 1024)) {
+          throw new Error("unsafe source file");
+        }
+        if (!samePath(realpathSync(path), resolve(path))) throw new Error("redirected source path");
+      }
+      const bytes = readFileSync(path);
+      if (bytes.length > 4 * 1024 * 1024 || bytes.includes(0) || containsLikelySecret(bytes.toString("utf8"))) {
+        throw new Error("sensitive or unsupported source");
+      }
+      hash.update(sha256(bytes)).update("\0");
+    } catch {
+      unsafe.push(name);
+      hash.update("unsafe\0");
+    }
   }
+  return { digest: hash.digest("hex"), unsafe };
 }
 
 function currentState() {
   const beginning = branchAndHead();
   const status = git("status", "--porcelain=v1", "-z", "--untracked-files=all");
   const diff = git("diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--");
-  // Git reports untracked names in status; do not open their contents or follow symlinks.
-  const hash = createHash("sha256").update(status).update(diff);
+  const untracked = git("ls-files", "--others", "--exclude-standard", "-z").toString("utf8").split("\0").filter(Boolean);
+  const admission = inspectUntracked(root, untracked);
+  const hash = createHash("sha256").update(status).update(diff).update(admission.digest);
   const ending = branchAndHead();
   if (beginning.branch !== ending.branch || beginning.head !== ending.head) {
     throw new Error("INVALIDATED: checkout changed during fingerprinting");
@@ -90,6 +126,7 @@ function currentState() {
     head: beginning.head,
     worktree: hash.digest("hex"),
     dirty: status.length !== 0,
+    unsafeUntracked: admission.unsafe.length,
   };
 }
 
@@ -108,11 +145,9 @@ function readStamp() {
 }
 
 function validate() {
-  if (existsSync(lock)) throw new Error("BLOCKED: local Graphify refresh is in progress");
   const current = currentState();
   const indexed = readStamp();
   const graphDigest = graphHash();
-  if (existsSync(lock)) throw new Error("BLOCKED: local Graphify refresh is in progress");
   return { current, indexed, graphDigest, assessment: evaluateIndex(indexed, current, graphDigest) };
 }
 
@@ -121,7 +156,7 @@ export function planSync(indexed, current, graphDigest) {
   // authorizes a rebuild of this checkout, never a query against the old branch.
   if (indexed?.version !== 1) throw new Error("BLOCKED: unverified local Graphify index; explicit refresh required");
   if (indexed.repository !== current.repository) throw new Error("BLOCKED: indexed repository differs");
-  if (current.dirty) return "deferred";
+  if (current.unsafeUntracked) return "deferred";
   return evaluateIndex(indexed, current, graphDigest).status === "PASS" ? "current" : "refresh";
 }
 
@@ -149,43 +184,66 @@ function refresh(automatic = false) {
     if (automatic) {
       const action = planSync(stored, initial, existsSync(graph) ? graphHash() : null);
       if (action === "deferred") {
-        throw new Error("INVALIDATED: automatic Graphify refresh deferred for local edits; explicit safe refresh or next clean Git event required");
+        throw new Error("BLOCKED: untracked paths require safe admission");
       }
       if (action === "current") {
         process.stdout.write("PASS: local Graphify index already matches current checkout\n");
         return;
       }
     }
-    // Reject untracked paths without opening them.
-    const untracked = git("ls-files", "--others", "--exclude-standard", "-z").toString("utf8").split("\0").filter(Boolean);
-    rejectUntrackedFiles(untracked);
+    // Build against the actual checkout with the native incremental AST cache,
+    // but never let an interrupted extraction replace the published graph.
+    if (initial.unsafeUntracked) throw new Error("BLOCKED: untracked paths require safe admission");
     const before = currentState();
-    if (automatic && (before.dirty || JSON.stringify(initial) !== JSON.stringify(before))) {
-      throw new Error("INVALIDATED: checkout changed before automatic refresh");
+    if (JSON.stringify(initial) !== JSON.stringify(before)) {
+      throw new Error("INVALIDATED: checkout changed before refresh");
     }
-    // --no-cluster uses the local AST extractor and avoids LLM community labeling.
-    const env = { ...process.env, GRAPHIFY_OUT: "graphify-out" };
+    mkdirSync(candidate, { recursive: true });
+    if (!lstatSync(candidate).isDirectory() || !samePath(realpathSync(candidate), resolve(candidate))) {
+      throw new Error("BLOCKED: redirected candidate directory");
+    }
+    const oldGraph = existsSync(graph) ? readFileSync(graph) : null;
+    if (existsSync(candidateGraph) && !lstatSync(candidateGraph).isFile()) {
+      throw new Error("BLOCKED: non-regular candidate graph");
+    }
+    if (oldGraph) writeFileSync(candidateGraph, oldGraph);
+    else if (existsSync(candidateGraph)) unlinkSync(candidateGraph);
+    const env = { ...process.env, GRAPHIFY_OUT: "graphify-out/.candidate" };
     delete env.GRAPHIFY_CHANGED;
+    delete env.GRAPHIFY_FORCE;
     const output = execute(graphifyExe, ["update", ".", "--no-cluster"], 180000, env);
     const after = currentState();
-    rejectUntrackedFiles(git("ls-files", "--others", "--exclude-standard", "-z").toString("utf8").split("\0").filter(Boolean));
-    if (JSON.stringify(before) !== JSON.stringify(after)) {
+    if (after.unsafeUntracked || JSON.stringify(before) !== JSON.stringify(after)) {
       throw new Error("INVALIDATED: checkout changed during local Graphify indexing");
     }
-    const parsed = JSON.parse(readFileSync(graph, "utf8"));
+    const graphBytes = readFileSync(candidateGraph);
+    const parsed = JSON.parse(graphBytes.toString("utf8"));
     if (!Array.isArray(parsed.nodes) || parsed.nodes.length === 0) {
       throw new Error("FAIL: local Graphify refresh produced no nodes");
     }
     const next = {
       version: 1, repository: after.repository, branch: after.branch,
-      head: after.head, worktree: after.worktree, graphSha256: graphHash(),
+      head: after.head, worktree: after.worktree, graphSha256: sha256(graphBytes),
     };
-    const temp = stamp + "." + process.pid + ".tmp";
+    const tempGraph = graph + "." + process.pid + ".tmp";
+    const tempStamp = stamp + "." + process.pid + ".tmp";
+    const rollback = graph + "." + process.pid + ".rollback";
+    let graphPublished = false;
     try {
-      writeFileSync(temp, JSON.stringify(next, null, 2) + "\n", { flag: "wx" });
-      renameSync(temp, stamp);
+      if (oldGraph) writeFileSync(rollback, oldGraph, { flag: "wx" });
+      writeFileSync(tempGraph, graphBytes, { flag: "wx" });
+      writeFileSync(tempStamp, JSON.stringify(next, null, 2) + "\n", { flag: "wx" });
+      renameSync(tempGraph, graph);
+      graphPublished = true;
+      renameSync(tempStamp, stamp);
+    } catch (error) {
+      if (graphPublished) {
+        if (oldGraph) renameSync(rollback, graph);
+        else unlinkSync(graph);
+      }
+      throw error;
     } finally {
-      if (existsSync(temp)) unlinkSync(temp);
+      for (const path of [tempGraph, tempStamp, rollback]) if (existsSync(path)) unlinkSync(path);
     }
     process.stdout.write(output.toString("utf8"));
     process.stdout.write("\nPASS: local index matches " + after.branch + " @ " + after.head.slice(0, 12) +
@@ -306,6 +364,7 @@ function main() {
       status: assessment.status, queryable: assessment.queryable,
       reason: assessment.reason, branch: current.branch, head: current.head,
       indexedHead: indexed?.head ?? null, dirty: current.dirty,
+      refreshing: existsSync(lock), unsafeUntracked: current.unsafeUntracked,
       coverage: assessment.status === "PASS" ? "NOT_RUN" : "INVALIDATED",
     }, null, 2) + "\n");
     if (!assessment.queryable) process.exitCode = 2;

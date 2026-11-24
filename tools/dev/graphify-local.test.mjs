@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateIndex, rejectUntrackedFiles } from "./graphify-local.mjs";
+import { evaluateIndex, inspectUntracked } from "./graphify-local.mjs";
 
 const current = {
   repository: "d:/samrim",
@@ -72,20 +72,37 @@ test("combined source and graph changes preserve all coverage warnings", () => {
   assert.match(result.reason, /local tracked/);
 });
 
-test("untracked symlinks are not opened by queries and still prevent unsafe refresh", () => {
-  assert.doesNotThrow(() => rejectUntrackedFiles([]));
-  assert.throws(() => rejectUntrackedFiles(["user-supplied.ts"]), /BLOCKED: review untracked/);
-  assert.throws(() => rejectUntrackedFiles(["symlink-to-outside"]), /BLOCKED: review untracked/);
+test("new source is fingerprinted by contents; links and credential paths are refused", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "graphify-admission-"));
+  try {
+    mkdirSync(join(dir, "apps"));
+    const file = join(dir, "apps", "new.ts");
+    writeFileSync(file, "export const n=1;");
+    const first = inspectUntracked(dir, ["apps/new.ts"]);
+    assert.deepEqual(first.unsafe, []);
+    writeFileSync(file, "export const n=2;");
+    assert.notEqual(inspectUntracked(dir, ["apps/new.ts"]).digest, first.digest);
+    writeFileSync(join(dir, "apps", ".env"), "SYNTHETIC=1");
+    assert.equal(inspectUntracked(dir, ["apps/.env"]).unsafe.length, 1);
+    writeFileSync(file, "const key = 'sk_" + "live_" + "A".repeat(16) + "';");
+    assert.equal(inspectUntracked(dir, ["apps/new.ts"]).unsafe.length, 1);
+    symlinkSync(dir, join(dir, "apps", "linked"), "junction");
+    assert.equal(inspectUntracked(dir, ["apps/linked/apps/new.ts"]).unsafe.length, 1);
+    assert.equal(inspectUntracked(dir, ["../outside.ts"]).unsafe.length, 1);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("automatic sync refreshes only a clean known checkout and handles same-HEAD branch changes", async () => {
+test("automatic sync refreshes safe dirty and clean known checkouts and handles same-HEAD branch changes", async () => {
   const runner = await import("./graphify-local.mjs");
   assert.equal(typeof runner.planSync, "function");
   assert.equal(runner.planSync(indexed, { ...current, dirty: false }, "indexed-graph"), "current");
   assert.equal(runner.planSync(indexed, { ...current, dirty: false, head: "next" }, "indexed-graph"), "refresh");
   assert.equal(runner.planSync(indexed, { ...current, dirty: false, branch: "other-dev" }, "indexed-graph"), "refresh");
   assert.equal(runner.planSync(indexed, { ...current, dirty: false }, "changed"), "refresh");
-  assert.equal(runner.planSync(indexed, { ...current, dirty: true, worktree: "dirty" }, "indexed-graph"), "deferred");
+  assert.equal(runner.planSync(indexed, { ...current, dirty: true, worktree: "dirty" }, "indexed-graph"), "refresh");
   assert.throws(() => runner.planSync(indexed, { ...current, dirty: false, repository: "d:/foreign" }, "indexed-graph"), /repository differs/);
   assert.throws(() => runner.planSync(null, current, "indexed-graph"), /unverified/);
 });
@@ -157,6 +174,8 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     mkdirSync(join(dir, "tools", "dev"), { recursive: true });
     mkdirSync(join(dir, "graphify-out"));
     writeFileSync(join(dir, script), readFileSync(new URL("./graphify-local.mjs", import.meta.url)));
+    mkdirSync(join(dir, "tools", "security"), { recursive: true });
+    writeFileSync(join(dir, "tools", "security", "verify-secrets.mjs"), readFileSync(new URL("../security/verify-secrets.mjs", import.meta.url)));
     writeFileSync(join(dir, ".gitignore"), "graphify-out/\n");
     writeFileSync(join(dir, "example.ts"), "export function example() { return 1; }\n");
     git("init", "-b", "fixture-a");
@@ -172,9 +191,20 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     git("switch", "-c", "fixture-b");
     assert.equal(proof().head, first.head);
     writeFileSync(join(dir, "example.ts"), "export function example() { return 2; }\n");
-    const before = readFileSync(stamp, "utf8");
-    cli(["sync"], 2);
-    assert.equal(readFileSync(stamp, "utf8"), before);
+    cli(["sync"]);
+    assert.equal(proof().dirty, true);
+    mkdirSync(join(dir, "apps"));
+    const added = join(dir, "apps", "new.ts");
+    writeFileSync(added, "export function newGraphFixture() { return 1; }\n");
+    cli(["sync"]);
+    assert.ok(JSON.parse(readFileSync(join(dir,"graphify-out","graph.json"),"utf8")).nodes.some(n=>String(n.label).includes("newGraphFixture")));
+    writeFileSync(added, "export function changedNewGraphFixture() { return 2; }\n");
+    assert.equal(JSON.parse(cli(["status"])).status,"INVALIDATED");
+    cli(["sync"]);
+    proof();
+    rmSync(added);
+    cli(["sync"]);
+    assert.ok(!JSON.parse(readFileSync(join(dir,"graphify-out","graph.json"),"utf8")).nodes.some(n=>String(n.label).includes("changedNewGraphFixture")));
     git("add", "example.ts");
     git("commit", "-m", "fixture update");
     assert.notEqual(proof().head, first.head);
@@ -190,7 +220,7 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     const lock = join(dir, "graphify-out", ".local-refresh.lock");
     writeFileSync(lock, "");
     cli(["sync"], 2);
-    cli(["query", "example"], 2);
+    cli(["query", "example"]);
     rmSync(lock);
     proof();
   } finally {

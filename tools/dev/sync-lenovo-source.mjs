@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirtyPaths, isPreviewGoPath, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -632,13 +632,10 @@ function pollGraphify() {
     }
     const action=graphifyRefreshAction(state);
     if(action==="current"){graphLogOnce("GRAPHIFY_RECONCILE_CURRENT");return;}
+    if(action==="busy"){graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED existing refresh");return;}
+    if(action==="deferred"){graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED unsafe untracked source");return;}
     if(action!=="refresh" || state.branch?.startsWith("archive/")){
       graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED index provenance");return;
-    }
-    // Respect the runner's untracked-source admission guard until that owner
-    // provides safe snapshot support. No unknown paths are opened here.
-    if(run("git",["ls-files","--others","--exclude-standard"])){
-      graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED untracked source requires safe admission");return;
     }
     if(runnerUnderEdit()){
       graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED runner or authority under edit");return;
@@ -646,7 +643,7 @@ function pollGraphify() {
     if(!fs.existsSync(graphOptIn))return;
     const started=Date.now();
     graphLogOnce("GRAPHIFY_RECONCILE_STARTED");
-    launch("refresh",(result,terminated)=>{
+    launch("sync",(result,terminated)=>{
       if(result!==0 || terminated){
         graphLogOnce("GRAPHIFY_RECONCILE_RETRY native refresh not verified");return;
       }
@@ -679,8 +676,42 @@ function main() {
   if (process.argv.includes("--watch")) {
     let active = false;
     let lastError = "";
+    const watcherInputs = [
+      "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs",
+      "infra/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
+    ];
+    const watcherDigest = () => crypto.createHash("sha256")
+      .update(watcherInputs.map(rel=>hash(path.join(root,rel))).join("\0")).digest("hex");
+    const loaded = watcherDigest();
+    let reloadNotice = "";
+    let nextReloadAudit = 0;
+    let reloadAction = "current";
     const attempt = () => {
       if (active) return;
+      // The existing task owns this process and has a bounded restart-on-error
+      // policy. Drain children before requesting a reload; never launch a peer.
+      if (Date.now()>=nextReloadAudit || reloadAction==="drain") {
+        nextReloadAudit=Date.now()+5_000;
+        try {
+          const current=watcherDigest();
+          reloadAction=watcherReloadAction({loaded,current,
+            dirty:Boolean(run("git",["status","--porcelain","--",...watcherInputs])),
+            busy:Boolean(runtimeChild||graphChild)});
+        } catch {
+          reloadAction="defer";
+        }
+        if(reloadAction!==reloadNotice){
+          reloadNotice=reloadAction;
+          if(reloadAction!=="current")logger("SOURCE_SYNC_WATCH_RELOAD_"+reloadAction.toUpperCase());
+        }
+      }
+      if(reloadAction==="drain")return;
+      if(reloadAction==="reload"){
+        clearInterval(timer);
+        graphEvents?.close();graphEvents=null;
+        process.exitCode=75; // Task Scheduler restarts the same authorized task.
+        return;
+      }
       active = true;
       try { pollGraphify(); } catch { graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED preflight"); }
       try { pollOwnerRuntime(); } catch (e) { runtimeLogOnce("RUNTIME_UPDATE_BLOCKED "+e.message); }
@@ -691,9 +722,9 @@ function main() {
         if (e.message !== lastError) { logger("SYNC_ERROR " + e.message); lastError = e.message; }
       } finally { active = false; }
     };
+    const timer=setInterval(attempt, 1000);
+    logger("SOURCE_SYNC_WATCH_ACTIVE interval=1 remoteAuditSeconds=30 watcherDigest="+loaded.slice(0,12));
     attempt();
-    logger("SOURCE_SYNC_WATCH_ACTIVE interval=1 remoteAuditSeconds=30");
-    setInterval(attempt, 1000);
   } else {
     cycle();
   }

@@ -416,10 +416,22 @@ test("Graphify debounce, bounded audit and single active attempt",async()=>{
   assert.equal(graphifyPollDue({...base,now:30000,busy:true}),false);
   assert.equal(graphifyPollDue({...base,dirtySince:null}),false);
 });
+test("watcher reload waits for committed code and drains existing children",async()=>{
+  const {watcherReloadAction}=await import("./sync-lenovo-reconciliation.mjs");
+  const base={loaded:"old",current:"new",dirty:false,busy:false};
+  assert.equal(watcherReloadAction({...base,current:"old"}),"current");
+  assert.equal(watcherReloadAction({...base,dirty:true}),"defer");
+  assert.equal(watcherReloadAction({...base,busy:true}),"drain");
+  assert.equal(watcherReloadAction(base),"reload");
+});
+
 test("Graphify automation refreshes stale trusted graphs but never adopts unknown provenance",async()=>{
   const {graphifyRefreshAction}=await import("./sync-lenovo-reconciliation.mjs");
   assert.equal(graphifyRefreshAction({status:"PASS",queryable:true}),"current");
   assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true}),"refresh");
+  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,dirty:true,unsafeUntracked:0}),"refresh");
+  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,unsafeUntracked:1}),"deferred");
+  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,refreshing:true}),"busy");
   assert.equal(graphifyRefreshAction({status:"BLOCKED",queryable:false,reason:"indexed branch differs"}),"refresh");
   for(const reason of ["indexed repository differs","unverified local Graphify index","index locked"])assert.equal(graphifyRefreshAction({status:"BLOCKED",queryable:false,reason}),"blocked");
   assert.equal(graphifyRefreshAction(null),"blocked");
@@ -443,6 +455,8 @@ test("native Graphify refreshes changed tracked source before Commit",{
   mkdirSync(path.join(dir,"graphify-out"));
   mkdirSync(path.join(dir,"empty-hooks"));
   writeFileSync(path.join(dir,script),readFileSync(new URL("./graphify-local.mjs",import.meta.url)));
+  mkdirSync(path.join(dir,"tools","security"),{recursive:true});
+  writeFileSync(path.join(dir,"tools","security","verify-secrets.mjs"),readFileSync(new URL("../security/verify-secrets.mjs",import.meta.url)));
   writeFileSync(path.join(dir,".gitignore"),"graphify-out/\nempty-hooks/\n");
   const source=path.join(dir,"example.ts");
   writeFileSync(source,"export function originalFixture() { return 1; }\n");
