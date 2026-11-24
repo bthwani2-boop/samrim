@@ -6,8 +6,8 @@
 param([string]$DockerContext = 'bthwani-docker', [switch]$NoPull)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$compose = [IO.File]::ReadAllText((Join-Path $PSScriptRoot 'compose.yaml'))
+$root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$compose = [IO.File]::ReadAllText((Join-Path $root 'infra/compose.yaml'))
 $imageMatch = [regex]::Match($compose, '(?m)^    image: (postgis/postgis:18-3\.6@sha256:[a-f0-9]{64})$')
 if (!$imageMatch.Success) { throw 'Refusing unpinned database image' }
 if ($DockerContext -notmatch '^[A-Za-z0-9._-]+$') { throw 'Invalid Docker context' }

@@ -48,7 +48,7 @@ runs only as an isolated loopback process with its read-only database role.
 The fresh DSH bootstrap command uses its own `bootstrap` Compose profile,
 separate from `implementation`. Normal `implementation` startup cannot start
 `dsh-bootstrap`; bootstrap remains an explicit, separately verified operation on a new empty schema.
-Validate this invariant with `node --test infra/compose-policy.test.mjs` and
+Validate this invariant with `node --test tests/infra/compose-policy.test.mjs` and
 `docker compose ... --profile implementation config --services`. Never use
 `--profile '*'`, `--profile bootstrap up` or automatic schema changes in the normal
 service-start path. Existing running containers and persisted volumes are not
@@ -307,7 +307,7 @@ Before trusting a previously running Docker service after a source change, use:
 node infra/verify-runtime-provenance.mjs --context bthwani-docker
 # When the optional WLT reader is running, attest all three canonical owners.
 node infra/verify-runtime-provenance.mjs --context bthwani-docker --include-wlt
-pwsh -NoProfile -File infra/verify-isolated-postgres.ps1 -DockerContext bthwani-docker
+pwsh -NoProfile -File tests/infra/verify-isolated-postgres.ps1 -DockerContext bthwani-docker
 ```
 
 The runtime check reads the actual Compose container image ID, non-secret source
@@ -392,7 +392,7 @@ its local Docker context. The script stops only its own verified container.
 change shared database roles, alter protected volumes, restart active services
 or run real schema upgrades.
 
-The [owner integration script](verify-owner-postgres-ci.sh) also restores an
+The [owner integration script](../tests/infra/verify-owner-postgres-ci.sh) also restores an
 isolated Identity schema and checks active sessions, revoked sessions and
 Operator permissions through the Identity HTTP handler. The WLT stage restores
 the Customer balance projection and verifies that its reader still cannot
@@ -420,7 +420,7 @@ security/ledger evidence; no placeholder service counts as readiness.
 
 ## Credentials and startup
 
-`setup-env.mjs` is an idempotent local secret generator that never prints values.
+`tools/dev/setup-env.mjs` is an idempotent local secret generator that never prints values.
 An actual ignored `infra/.env` is required before starting; a missing or blocked
 secret store is a BLOCKED state, **not** permission to use old credentials.
 Necessary non-secret names are `REF_POSTGRES_USER`, `REF_POSTGRES_DB`,
@@ -430,7 +430,7 @@ Necessary non-secret names are `REF_POSTGRES_USER`, `REF_POSTGRES_DB`,
 Once authorized private credentials exist, run from the Worktree root:
 
 ```powershell
-node infra/setup-env.mjs
+node tools/dev/setup-env.mjs
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps

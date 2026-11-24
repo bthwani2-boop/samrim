@@ -1245,10 +1245,10 @@ function Stop-Docker {
 function Verify-Checks {
   Banner 'OWNERED STATIC CHECKS'
   $tests=@(
-    'infra/compose-policy.test.mjs',
-    'infra/verify-runtime-provenance.test.mjs',
-    'infra/reconcile-owner-runtime.test.mjs',
-    'infra/owner-preview-source.test.mjs',
+    'tests/infra/compose-policy.test.mjs',
+    'tests/infra/verify-runtime-provenance.test.mjs',
+    'tests/infra/reconcile-owner-runtime.test.mjs',
+    'tests/infra/owner-preview-source.test.mjs',
     'tools/dev/sync-lenovo-source.test.mjs',
     'tools/dev/dev-powershell.test.mjs',
     'tools/dev/verify-nx-project-graph.test.mjs'
@@ -1259,7 +1259,7 @@ function Verify-Checks {
   & pnpm 'exec' 'nx' 'show' 'projects'
   Assert-Ok ($LASTEXITCODE -eq 0) 'Nx graph command failed'
   if ($DeepSql) {
-    $sqlProof = Join-Path $repo 'infra\verify-isolated-postgres.ps1'
+    $sqlProof = Join-Path $repo 'tests\infra\verify-isolated-postgres.ps1'
     Assert-Ok (Test-Path -LiteralPath $sqlProof -PathType Leaf) 'missing existing synthetic isolated PostgreSQL proof'
     & $sqlProof -DockerContext $dockerContext
     Assert-Ok ($LASTEXITCODE -eq 0) 'disposable SQL migration and privilege/restore proof failed'

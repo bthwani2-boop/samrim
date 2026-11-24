@@ -15,7 +15,7 @@ if [[ "$(docker context show)" != "default" ]]; then
   echo "Refusing a nondefault or remote Docker context in CI" >&2
   exit 2
 fi
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 image="$(awk '$1 == "image:" && $2 ~ /^postgis\/postgis:18-3\.6@sha256:/ {print $2}' infra/compose.yaml)"
 if [[ ! "$image" =~ ^postgis/postgis:18-3\.6@sha256:[a-f0-9]{64}$ ]]; then
   echo "Refusing an unpinned or unexpected PostgreSQL image" >&2

@@ -115,7 +115,7 @@ export function sourceIdentity(labels, owner) {
   return {revision:a||b,digest:null};
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","infra/build-owner-image.ps1","infra/owner-baseline-transition.mjs","infra/reconcile-owner-runtime.mjs","infra/verify-isolated-postgres.ps1",".go-version"];
+const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","infra/build-owner-image.ps1","infra/owner-baseline-transition.mjs","infra/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -153,7 +153,7 @@ export function verifyBaselineProofOutput(output) {
     if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
   }
 }
-const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","infra/verify-isolated-postgres.ps1","infra/owner-baseline-transition.mjs","infra/compose.yaml"];
+const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","tests/infra/verify-isolated-postgres.ps1","infra/owner-baseline-transition.mjs","infra/compose.yaml"];
 // One-time additive preparation: the old owner remains the writer until a
 // separately verified handoff. No retained schema, role, service or volume is
 // modified. Existing target names fail closed rather than being overwritten.
@@ -675,7 +675,7 @@ function main() {
     ensureSource();
     console.log("BASELINE_PROOF_STARTED HEAD="+head+" OWNERS="+proofOwners.join(","));
     try {
-      const proof=run("pwsh",["-NoProfile","-File","infra/verify-isolated-postgres.ps1","-DockerContext",context,"-NoPull"],{},360000);
+      const proof=run("pwsh",["-NoProfile","-File","tests/infra/verify-isolated-postgres.ps1","-DockerContext",context,"-NoPull"],{},360000);
       verifyBaselineProofOutput(proof);
       ensureSource();
       if(dirtyPaths(root,baselineProofScope).length)throw new Error("Baseline proof inputs changed during rehearsal");

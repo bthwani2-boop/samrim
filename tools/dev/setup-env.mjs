@@ -3,10 +3,8 @@
 import { randomBytes } from 'node:crypto';
 import { lstatSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import path from 'node:path';
 
-const dir=path.dirname(fileURLToPath(import.meta.url));
-const dest=path.join(dir,'.env');
+const dest=fileURLToPath(new URL('../../infra/.env',import.meta.url));
 const secret=()=>randomBytes(32).toString('hex');
 const lines=[
  '# Randomized local-only refoundation secrets. NEVER commit or reuse old credentials.',

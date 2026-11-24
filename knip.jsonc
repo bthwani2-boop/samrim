@@ -3,7 +3,7 @@
   "workspaces": {
     ".": {
       "entry": [
-        "infra/setup-env.mjs"
+        "tools/dev/setup-env.mjs"
       ]
     }
   },

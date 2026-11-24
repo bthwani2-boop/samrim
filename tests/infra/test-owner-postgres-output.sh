@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Verify the CI owner-test output gate without Docker, network or SQL access.
 set -euo pipefail
-cd "$(dirname "$0")/.."
-script="infra/verify-owner-postgres-ci.sh"
+cd "$(dirname "$0")/../.."
+script="tests/infra/verify-owner-postgres-ci.sh"
 # Only load the output gate; never source the top-level Docker/test operations.
 source <(sed -n '/^run_test() {/,/^}/p' "$script")
 declare -f run_test >/dev/null

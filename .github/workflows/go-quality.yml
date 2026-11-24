@@ -23,10 +23,10 @@ on:
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
       - 'infra/payment-mock/**'
-      - 'infra/verify-owner-postgres-ci.sh'
-      - 'infra/verify-isolated-postgres.ps1'
+      - 'tests/infra/verify-owner-postgres-ci.sh'
+      - 'tests/infra/verify-isolated-postgres.ps1'
       - 'infra/owner-baseline-transition.mjs'
-      - 'infra/test-owner-postgres-output.sh'
+      - 'tests/infra/test-owner-postgres-output.sh'
       - 'nx.json'
   # Main is the protected integration target; branch names are never pinned.
   pull_request:
@@ -46,10 +46,10 @@ on:
       - 'infra/build-*image.ps1'
       - 'infra/compose*.yaml'
       - 'infra/payment-mock/**'
-      - 'infra/verify-owner-postgres-ci.sh'
-      - 'infra/verify-isolated-postgres.ps1'
+      - 'tests/infra/verify-owner-postgres-ci.sh'
+      - 'tests/infra/verify-isolated-postgres.ps1'
       - 'infra/owner-baseline-transition.mjs'
-      - 'infra/test-owner-postgres-output.sh'
+      - 'tests/infra/test-owner-postgres-output.sh'
       - 'nx.json'
 
 permissions:
@@ -157,10 +157,10 @@ jobs:
           cache: false
       - name: Validate expected owner test names and reject incomplete passing output
         shell: bash
-        run: bash infra/test-owner-postgres-output.sh
+        run: bash tests/infra/test-owner-postgres-output.sh
       - name: Run isolated, network-disabled owner PostgreSQL tests
         shell: bash
-        run: bash infra/verify-owner-postgres-ci.sh
+        run: bash tests/infra/verify-owner-postgres-ci.sh
       - name: Verify fresh Identity, DSH and WLT baselines, restore and least-privilege access
         shell: pwsh
-        run: ./infra/verify-isolated-postgres.ps1 -DockerContext default
+        run: ./tests/infra/verify-isolated-postgres.ps1 -DockerContext default

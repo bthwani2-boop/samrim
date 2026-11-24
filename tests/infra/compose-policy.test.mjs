@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import YAML from "yaml";
 
-const infra = path.dirname(fileURLToPath(import.meta.url));
+const infra = fileURLToPath(new URL("../../infra/", import.meta.url));
 function compose(name) {
   const document = YAML.parseDocument(readFileSync(path.join(infra, name), "utf8"), {
     strict: true, uniqueKeys: true,

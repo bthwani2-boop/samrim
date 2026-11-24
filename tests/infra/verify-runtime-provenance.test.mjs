@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateService, main, readService } from "./verify-runtime-provenance.mjs";
+import { evaluateService, main, readService } from "../../infra/verify-runtime-provenance.mjs";
 
 const sha = "a".repeat(40);
 const good = {

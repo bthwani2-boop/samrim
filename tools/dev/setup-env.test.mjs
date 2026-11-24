@@ -12,7 +12,8 @@ function isolatedFixture(t) {
   const root = mkdtempSync(path.join(tmpdir(), 'bthwani-env-exclusive-'));
   const infra = path.join(root, 'infra');
   mkdirSync(infra);
-  const script = path.join(infra, 'setup-env.mjs');
+  const script = path.join(root, 'tools', 'dev', 'setup-env.mjs');
+  mkdirSync(path.dirname(script), { recursive: true });
   copyFileSync(source, script);
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return { root, script, dest: path.join(infra, '.env') };
