@@ -103,8 +103,20 @@ test("fresh baseline preparation is confined to explicit isolated apply with com
   for(const patch of [{apply:false},{prepare:false},{dirtyInputs:["services/dsh/database/schema/00_marketplace.sql"]},{blocked:{identity:"UNCOMMITTED_NON_GO"}}]) {
     assert.deepEqual(baselineProofOwners({...base,...patch}),[]);
   }
-  const proof=["PG_FRESH_DSH_BASELINE=PASS count=8","PG_READER_ACCESS=PASS","PG_RESTORE_READBACK=PASS","PG_FRESH_IDENTITY_BASELINE=PASS","PG_FRESH_WLT_BASELINE=PASS","PG_ISOLATION=PASS"].join("\n");
+  const proof=["PG_FRESH_DSH_BASELINE=PASS count=8","PG_READER_ACCESS=PASS","PG_RESTORE_READBACK=PASS","PG_DSH_DEDICATED_RUNTIME=PASS","PG_FRESH_IDENTITY_BASELINE=PASS","PG_FRESH_WLT_BASELINE=PASS","PG_ISOLATION=PASS"].join("\n");
   assert.doesNotThrow(()=>verifyBaselineProofOutput(proof));
   assert.throws(()=>verifyBaselineProofOutput(proof+"\nPG_ISOLATION=FAIL"),/BASELINE_PROOF_INCOMPLETE/);
   assert.throws(()=>verifyBaselineProofOutput(proof.replace("PG_RESTORE_READBACK=PASS","PG_RESTORE_READBACK=FAIL")),/BASELINE_PROOF_INCOMPLETE/);
+});
+
+test("dedicated DSH transfer fingerprints only validated owner tables and sequences",async()=>{
+  const {ownerDataFingerprintSql}=await import("./reconcile-owner-runtime.mjs");
+  const sql=ownerDataFingerprintSql("dsh_test_agent01",["stores","public_revision"],["employee_id_seq"]);
+  assert.match(sql,/REPEATABLE READ READ ONLY/);
+  assert.match(sql,/sha256/);
+  assert.match(sql,/dsh_test_agent01\.stores/);
+  assert.match(sql,/last_value,is_called/);
+  assert.throws(()=>ownerDataFingerprintSql("identity_test_actor",["actors"],[]),/Invalid owner snapshot scope/);
+  assert.throws(()=>ownerDataFingerprintSql("dsh_test_agent01",["stores;drop"],[]),/Invalid owner snapshot scope/);
+  assert.throws(()=>ownerDataFingerprintSql("dsh_test_agent01",["stores","stores"],[]),/Invalid owner snapshot scope/);
 });

@@ -308,6 +308,20 @@ production suitability. Building a
 new `sha-<commit>` image is a separate operation and does **not** update the
 container already running. Readiness always attaches to the *running* image ID.
 
+The approved DSH target is `bthwani_dsh_dev` on the existing PostgreSQL
+server, with `bthwani_dsh_runtime` (no DDL/cluster administration) and separate
+offline bootstrap authority. Normal serving Compose reads only
+`REF_DSH_RUNTIME_DATABASE`, `REF_DSH_RUNTIME_USER`, and
+`REF_DSH_RUNTIME_PASSWORD` from ignored local configuration; bootstrap uses
+separate credentials. The existing unified launcher supports the one-time,
+explicit `pnpm dev docker reconcile -Apply -PrepareDshDatabase` preparation
+of an absent target using the reviewed owner bootstrap and constraint-preserving
+native data-only restore. It compares old/new owner data and sequence hashes,
+verifies the real limited login, and retains the old runtime as sole writer.
+An existing target or incomplete outcome requires readback before any retry.
+This command does not switch the serving container. A verified writer handoff
+and current data parity remain required before cutover.
+
 For a committed owner schema change, the existing source watcher requests one
 isolated baseline rehearsal per new runtime input key through the unified
 lifecycle mutex. The explicit equivalent is

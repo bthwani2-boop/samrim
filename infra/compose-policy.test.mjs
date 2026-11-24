@@ -75,6 +75,11 @@ test("a normal implementation profile can never implicitly bootstrap SQL", () =>
   assert.ok(service.cap_drop.includes("ALL"));
   assert.ok(service.ports.every((v) => v.startsWith("127.0.0.1:")));
   assert.equal(service.depends_on.postgres.condition, "service_healthy");
+  assert.equal(service.environment.REF_POSTGRES_USER, "${REF_DSH_RUNTIME_USER:?provision limited DSH runtime role}");
+  assert.equal(service.environment.REF_POSTGRES_PASSWORD, "${REF_DSH_RUNTIME_PASSWORD:?provision dedicated DSH runtime credentials}");
+  assert.equal(service.environment.REF_POSTGRES_DB, "${REF_DSH_RUNTIME_DATABASE:?provision dedicated DSH database}");
+  assert.equal(bootstrap.environment.REF_POSTGRES_USER, "${REF_DSH_BOOTSTRAP_USER:-}");
+  assert.equal(bootstrap.environment.REF_POSTGRES_PASSWORD, "${REF_DSH_BOOTSTRAP_PASSWORD:-}");
   assert.equal(service.environment.DSH_IDENTITY_VERIFIER_URL, "${REF_DSH_IDENTITY_VERIFIER_URL:-}");
   assert.equal(service.environment.DSH_ENABLE_ISOLATED_CUSTOMER_CART, "${REF_DSH_ENABLE_ISOLATED_CUSTOMER_CART:-false}");
   assert.equal(service.environment.BTHWANI_ISOLATED_TEST_MODE, "true");

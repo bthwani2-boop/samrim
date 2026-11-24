@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/customercart"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
@@ -166,7 +167,7 @@ func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch
 }
 
 func main() {
-	mode := flag.String("mode", "serve", "serve, bootstrap, or isolated-seed")
+	mode := flag.String("mode", "serve", "serve, bootstrap, isolated-seed, or verify-development-db")
 	flag.Parse()
 	schema := os.Getenv("DSH_DB_SCHEMA")
 	if schema == "" {
@@ -189,6 +190,14 @@ func main() {
 		log.Fatal("DSH owner DB unavailable")
 	}
 	switch *mode {
+	case "verify-development-db":
+		if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
+			log.Fatal("DSH development database verification requires isolated mode")
+		}
+		if err := dbscope.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("DSH_DEVELOPMENT_DATABASE_PASS")
 	case "bootstrap":
 		if err := owner.BootstrapFresh(ctx, "database/schema"); err != nil {
 			log.Fatal("fresh DSH baseline denied: ", err)
@@ -200,6 +209,14 @@ func main() {
 		}
 		fmt.Println("DSH_ISOLATED_OWNER_IMPORT_PASS schema=" + schema)
 	case "serve":
+		if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" || os.Getenv("REF_POSTGRES_DB") == dbscope.DevelopmentDatabase {
+			if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
+				log.Fatal("DSH development runtime requires isolated mode")
+			}
+			if err := dbscope.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
+				log.Fatal(err)
+			}
+		}
 		origins := map[string]bool{}
 		for _, origin := range strings.Split(os.Getenv("DSH_PUBLIC_CORS_ORIGINS"), ",") {
 			if v := strings.TrimSpace(origin); v != "" {

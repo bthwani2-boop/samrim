@@ -147,6 +147,61 @@ SELECT jsonb_build_object(
     }
   }
   Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,functions,revision,reader-grants,city-timezone-constraint'
+
+  # Exercise a nonempty data-only transfer into the dedicated DSH database.
+  # The original fixture remains intact. New baseline tables are not seeded
+  # from a historical source; all FKs and triggers remain enabled.
+  function Invoke-ProofSql([string]$Database, [string]$Sql) {
+    $result = $Sql | & docker --context $DockerContext exec -i $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -f - 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'Dedicated owner database proof SQL failed' }
+    return ($result | Out-String).Trim()
+  }
+  $null = Invoke-ProofSql $db "INSERT INTO $schema.service_cities(id,active,timezone_name) VALUES ('preserved-city',true,'Asia/Aden'); UPDATE $schema.public_revision SET revision=7 WHERE singleton;"
+  $dshDb = 'bthwani_dsh_dev'
+  $null = Invoke-ProofSql 'postgres' 'CREATE ROLE bthwani_dsh_owner NOLOGIN NOINHERIT; CREATE ROLE bthwani_dsh_runtime LOGIN NOINHERIT;'
+  $null = & docker --context $DockerContext exec $containerId createdb -U $user -O bthwani_dsh_owner $dshDb
+  if ($LASTEXITCODE -ne 0) { throw 'Dedicated DSH fixture database failed' }
+  $null = Invoke-ProofSql 'postgres' "REVOKE ALL ON DATABASE $dshDb FROM PUBLIC; GRANT CONNECT ON DATABASE $dshDb TO bthwani_dsh_runtime;"
+  $null = Invoke-ProofSql $dshDb "REVOKE ALL ON SCHEMA public FROM PUBLIC;"
+  foreach ($file in $baseline) {
+    $sql = "SET ROLE bthwani_dsh_owner;`n" + [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__', $schema)
+    $null = Invoke-ProofSql $dshDb $sql
+  }
+  $dshDataDump = '/tmp/agent01-dsh-data.dump'
+  $null = & docker --context $DockerContext exec $containerId pg_dump -Fc --data-only --no-owner --no-acl "--schema=$schema" "--exclude-table=$schema.customer_addresses" "--exclude-table=$schema.service_city_delivery_policies" -U $user -d $db -f $dshDataDump
+  if ($LASTEXITCODE -ne 0) { throw 'DSH synthetic compatible data export failed' }
+  # Only the just-created fixture singleton is replaced; no old database is written.
+  $null = Invoke-ProofSql $dshDb "DELETE FROM $schema.public_revision WHERE singleton;"
+  $null = & docker --context $DockerContext exec $containerId pg_restore --data-only --no-owner --no-acl --exit-on-error --single-transaction -U $user -d $dshDb $dshDataDump
+  if ($LASTEXITCODE -ne 0) { throw 'DSH synthetic compatible data restore failed' }
+  $null = Invoke-ProofSql $dshDb "GRANT USAGE ON SCHEMA $schema TO bthwani_dsh_runtime; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA $schema TO bthwani_dsh_runtime; GRANT USAGE ON ALL SEQUENCES IN SCHEMA $schema TO bthwani_dsh_runtime;"
+  $proof = Invoke-ProofSql $dshDb "SELECT CASE WHEN (SELECT count(*) FROM $schema.service_cities WHERE id='preserved-city' AND active AND timezone_name='Asia/Aden')=1 AND (SELECT revision FROM $schema.public_revision WHERE singleton)=7 AND (SELECT count(*) FROM $schema.customer_addresses)=0 AND (SELECT count(*) FROM $schema.service_city_delivery_policies)=0 THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'Dedicated DSH fixture data transfer readback failed' }
+  $sourceProof = Invoke-ProofSql $db "SELECT count(*) FROM $schema.service_cities WHERE id='preserved-city';"
+  if ($sourceProof -cne '1') { throw 'DSH original fixture data no longer present' }
+  # Execute the actual Go database boundary, not a second copy of its predicate.
+  $binary = Join-Path ([IO.Path]::GetTempPath()) ('bthwani-dsh-dbproof-' + [guid]::NewGuid().ToString('N'))
+  $priorGo = @{}
+  foreach ($key in @('GOOS','GOARCH','CGO_ENABLED','GOTOOLCHAIN','GOWORK')) { $priorGo[$key] = [Environment]::GetEnvironmentVariable($key,'Process') }
+  try {
+    $env:GOOS='linux'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'; $env:GOTOOLCHAIN='local'; $env:GOWORK='off'
+    Push-Location (Join-Path $root 'services/dsh/backend')
+    try {
+      & go test -c -o $binary ./internal/dbscope
+      if ($LASTEXITCODE -ne 0) { throw 'DSH database boundary test build failed' }
+    } finally { Pop-Location }
+    & docker --context $DockerContext cp $binary "${containerId}:/tmp/dsh-dbproof"
+    if ($LASTEXITCODE -ne 0) { throw 'DSH database boundary test copy failed' }
+    & docker --context $DockerContext exec $containerId chmod 755 /tmp/dsh-dbproof
+    if ($LASTEXITCODE -ne 0) { throw 'DSH database boundary test permission failed' }
+    $result = & docker --context $DockerContext exec -e BTHWANI_DSH_DEV_DB_PROOF=network-none-disposable $containerId /tmp/dsh-dbproof '-test.v' '-test.run' '^TestDedicatedDevelopmentRuntimePostgres$' '-test.count=1'
+    if ($LASTEXITCODE -ne 0 -or ($result | Out-String) -notmatch '(?m)^--- PASS: TestDedicatedDevelopmentRuntimePostgres ' -or ($result | Out-String) -match '(?m)^--- SKIP:') { throw ('DSH real database runtime boundary failed: ' + ($result | Out-String)) }
+  } finally {
+    foreach ($key in $priorGo.Keys) { [Environment]::SetEnvironmentVariable($key,$priorGo[$key],'Process') }
+    if ([IO.File]::Exists($binary)) { [IO.File]::Delete($binary) }
+  }
+  Write-Output 'PG_DSH_DEDICATED_RUNTIME=PASS data-preserved owner-ddl-denied admin-denied shared-db-denied'
+
   # Reuse the SAME network-disabled/tmpfs container to prove fresh Identity and
   # WLT baselines. Never connect these tests to retained or shared databases.
   $identitySchema = 'identity_test_fresh_baseline'

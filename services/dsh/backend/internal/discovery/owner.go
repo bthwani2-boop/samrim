@@ -25,7 +25,7 @@ var identifier = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 // Fresh bootstrap and synthetic import are isolated developer-only operations. Do not accept a similarly
 // named production/donor database even when it contains a dsh_test_* schema.
 func isRefoundationDatabase(name string) bool {
-	return name == "bthwani_refoundation"
+	return dbscope.IsDevelopmentDatabase(name)
 }
 
 func (o *Owner) isIsolatedTestOwner() bool {

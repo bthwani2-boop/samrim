@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Isolated development owner reconciliation; no SQL, secret output or volume mutations.
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { readFileSync, lstatSync, appendFileSync } from "node:fs";
 import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -32,8 +32,8 @@ const buildScripts = {
   wlt: "infra/build-wlt-image.ps1",
 };
 const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
-function run(executable, args, env = {}, timeout = 30000) {
-  const out = spawnSync(executable, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, ...env } });
+function run(executable, args, env = {}, timeout = 30000, input) {
+  const out = spawnSync(executable, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 16 * 1024 * 1024, input, env: { ...process.env, ...env } });
   // Docker/config output may contain secret values. Never print raw stdout/stderr on failure.
   if (out.error || out.status !== 0) {
     const error = new Error(executable + " " + args.slice(0, 3).join(" ") + " failed (" + (out.error?.code || out.status) + ")");
@@ -43,7 +43,7 @@ function run(executable, args, env = {}, timeout = 30000) {
   return out.stdout.trim();
 }
 const git = args => run(gitExe, args);
-const docker = (args, env, timeout) => run("docker", ["--context", context, ...args], env, timeout);
+const docker = (args, env, timeout, input) => run("docker", ["--context", context, ...args], env, timeout, input);
 function composeArgs(activeFiles) {
   return ["compose", "--env-file", "infra/.env", "--env-file", "infra/.env.identity-verifier.local",
     ...activeFiles.flatMap(f => ["-f", "infra/" + f]),
@@ -140,18 +140,91 @@ export function baselineProofOwners({apply,prepare,blocked,dirtyInputs}) {
   return Object.keys(owners).filter(o=>blocked[o]==="SCHEMA_REVIEW_REQUIRED");
 }
 export function verifyBaselineProofOutput(output) {
-  const expected=["PG_FRESH_DSH_BASELINE","PG_READER_ACCESS","PG_RESTORE_READBACK","PG_FRESH_IDENTITY_BASELINE","PG_FRESH_WLT_BASELINE","PG_ISOLATION"];
+  const expected=["PG_FRESH_DSH_BASELINE","PG_READER_ACCESS","PG_RESTORE_READBACK","PG_DSH_DEDICATED_RUNTIME","PG_FRESH_IDENTITY_BASELINE","PG_FRESH_WLT_BASELINE","PG_ISOLATION"];
   for(const name of expected) {
     const evidence=output.split(/\r?\n/).filter(line=>line.startsWith(name+"="));
     if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
   }
 }
 const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","infra/verify-isolated-postgres.ps1","infra/compose.yaml"];
+// One-time additive preparation: the old owner remains the writer until a
+// separately verified handoff. No retained schema, role, service or volume is
+// modified. Existing target names fail closed rather than being overwritten.
+export function ownerDataFingerprintSql(schema, tables, sequences) {
+  const identifier=/^[a-z][a-z0-9_]{0,62}$/;
+  if(!/^dsh_test_[a-z0-9_]{1,50}$/.test(schema) ||
+     [...tables,...sequences].some(t=>!identifier.test(t)) ||
+     !tables.length || new Set(tables).size!==tables.length || new Set(sequences).size!==sequences.length) throw new Error("Invalid owner snapshot scope");
+  return "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='15s'; SET LOCAL timezone='UTC'; SET LOCAL datestyle='ISO, YMD'; SET LOCAL intervalstyle='postgres'; SET LOCAL extra_float_digits=3;\n"+
+    [...tables].sort().map(t=>"SELECT 'table:"+t+"',count(*),encode(sha256(convert_to(coalesce(string_agg(h,'' ORDER BY h),''),'UTF8')),'hex') FROM (SELECT encode(sha256(convert_to(to_jsonb(x)::text,'UTF8')),'hex') h FROM "+schema+"."+t+" x) q;").join("\n")+"\n"+
+    [...sequences].sort().map(t=>"SELECT 'sequence:"+t+"',last_value,is_called FROM "+schema+"."+t+";").join("\n")+"\nCOMMIT;";
+}
+function prepareDedicatedDsh(state, env, head, activeFiles) {
+  if(git(["status","--porcelain","--untracked-files=all"]))throw new Error("Dedicated database preparation requires a clean committed checkout");
+  const live=asEnv(state.dsh.Config.Env);
+  const schema=live.DSH_DB_SCHEMA;
+  const oldDb="bthwani_refoundation", admin="bthwani_refoundation_admin";
+  const db="bthwani_dsh_dev", owner="bthwani_dsh_owner", runtime="bthwani_dsh_runtime";
+  if(live.REF_POSTGRES_DB!==oldDb || live.REF_POSTGRES_USER!==admin || !/^dsh_test_[a-z0-9_]{1,50}$/.test(schema||""))throw new Error("Expected legacy isolated DSH source not proven");
+  const pg=project+"-postgres-1";
+  const pgRecord=docker(["inspect","--format",'{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.bthwani.environment"}}|{{.State.Health.Status}}',pg]);
+  if(pgRecord!==project+"|refoundation|healthy")throw new Error("Unexpected PostgreSQL owner");
+  const sql=(database,statement)=>docker(["exec","-i",pg,"psql","-X","-qAt","-v","ON_ERROR_STOP=1","-U",admin,"-d",database,"-f","-"],{},45000,statement+"\n");
+  const envPath=resolve(root,"infra/.env");
+  const envInfo=lstatSync(envPath);
+  if(!envInfo.isFile() || envInfo.isSymbolicLink())throw new Error("Unsafe local environment file");
+  git(["check-ignore","infra/.env"]);
+  const original=readFileSync(envPath,"utf8");
+  if(/^REF_DSH_RUNTIME_(?:DATABASE|USER|PASSWORD)=/m.test(original))throw new Error("Dedicated DSH credentials already exist; do not overwrite");
+  const absent=sql("postgres","BEGIN READ ONLY; SELECT (SELECT count(*) FROM pg_database WHERE datname='"+db+"')+(SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"')); COMMIT;");
+  if(absent!=="0")throw new Error("Dedicated DSH namespace already exists; inspect before retry");
+  const list=kind=>sql(oldDb,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='"+kind+"' ORDER BY 1; COMMIT;").split(/\r?\n/).filter(Boolean);
+  const tables=list("r"),sequences=list("S");
+  if(!tables.includes("public_revision") || tables.length>100 || sequences.length>100)throw new Error("Unexpected source owner data inventory");
+  const fingerprint=ownerDataFingerprintSql(schema,tables,sequences);
+  const before=sql(oldDb,fingerprint);
+  if(before.split(/\r?\n/).length!==tables.length+sequences.length)throw new Error("Incomplete source data fingerprint");
+  const tag="sha-"+head.slice(0,9);
+  run("pwsh",["-NoProfile","-File",buildScripts.dsh,"-DockerContext",context,"-Image",owners.dsh.image+":"+tag],{},180000);
+  if(sourceIdentity(imageRecord(owners.dsh.image+":"+tag).Config.Labels,"dsh").revision!==head || git(["rev-parse","HEAD"])!==head || git(["status","--porcelain","--untracked-files=all"]))throw new Error("Candidate source advanced");
+  const ownerSecret=randomBytes(32).toString("hex"), runtimeSecret=randomBytes(32).toString("hex");
+  sql("postgres","BEGIN; CREATE ROLE "+owner+" LOGIN NOINHERIT PASSWORD '"+ownerSecret+"'; CREATE ROLE "+runtime+" LOGIN NOINHERIT PASSWORD '"+runtimeSecret+"'; COMMIT;");
+  sql("postgres","CREATE DATABASE "+db+" OWNER "+owner+" TEMPLATE template0;");
+  sql("postgres","REVOKE ALL ON DATABASE "+db+" FROM PUBLIC; GRANT CONNECT ON DATABASE "+db+" TO "+runtime+";");
+  sql(db,"REVOKE ALL ON SCHEMA public FROM PUBLIC;");
+  const candidateEnv={...env,REF_DSH_IMAGE_TAG:tag,REF_DSH_RUNTIME_DATABASE:db,REF_DSH_RUNTIME_USER:runtime,REF_DSH_RUNTIME_PASSWORD:runtimeSecret,REF_DSH_BOOTSTRAP_USER:owner,REF_DSH_BOOTSTRAP_PASSWORD:ownerSecret,REF_DSH_DISCOVERY_SCHEMA:schema};
+  const proof=docker([...composeArgs(activeFiles),"--profile","bootstrap","run","--rm","--no-deps","--pull","never","dsh-bootstrap"],candidateEnv,90000);
+  if(!proof.includes("DSH_FRESH_BASELINE_PASS schema="+schema))throw new Error("Canonical DSH bootstrap did not confirm");
+  sql("postgres","ALTER ROLE "+owner+" NOLOGIN PASSWORD NULL;");
+  // The archive remains within the verified PostgreSQL container. Only new
+  // fixture data is replaced; original rows are never altered.
+  const archive="/tmp/bthwani-dsh-copy-"+randomBytes(12).toString("hex")+".dump";
+  try {
+    docker(["exec",pg,"pg_dump","-Fc","--data-only","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive],{},45000);
+    sql(db,"DELETE FROM "+schema+".public_revision WHERE singleton;");
+    docker(["exec",pg,"pg_restore","--data-only","--no-owner","--no-acl","--exit-on-error","--single-transaction","-U",admin,"-d",db,archive],{},45000);
+    if(sql(oldDb,fingerprint)!==before || sql(db,fingerprint)!==before)throw new Error("Source or candidate data changed; preserve both and review");
+    if(sql(db,"BEGIN READ ONLY; SELECT (SELECT count(*) FROM "+schema+".customer_addresses)+(SELECT count(*) FROM "+schema+".service_city_delivery_policies); COMMIT;")!=="0")throw new Error("Fresh policy or address facts must remain empty");
+    const legacyAccess=sql(oldDb,"BEGIN READ ONLY; SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' AND (has_table_privilege('"+runtime+"',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_any_column_privilege('"+runtime+"',c.oid,'SELECT,INSERT,UPDATE,REFERENCES')); COMMIT;");
+    if(legacyAccess!=="0" || sql("postgres","BEGIN READ ONLY; SELECT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="f")throw new Error("Dedicated runtime has unexpected legacy or WLT access");
+
+    sql(db,"GRANT USAGE ON SCHEMA "+schema+" TO "+runtime+"; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA "+schema+" TO "+runtime+"; GRANT USAGE ON ALL SEQUENCES IN SCHEMA "+schema+" TO "+runtime+";");
+    const verified=docker([...composeArgs(activeFiles),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
+    if(!verified.includes("DSH_DEVELOPMENT_DATABASE_PASS"))throw new Error("Dedicated runtime login not verified");
+    if(sql(oldDb,fingerprint)!==before || git(["rev-parse","HEAD"])!==head || git(["status","--porcelain","--untracked-files=all"]) || readFileSync(envPath,"utf8")!==original)throw new Error("Source, data or local configuration changed; do not publish candidate credentials");
+    appendFileSync(envPath,"\nREF_DSH_RUNTIME_DATABASE="+db+"\nREF_DSH_RUNTIME_USER="+runtime+"\nREF_DSH_RUNTIME_PASSWORD="+runtimeSecret+"\n",{encoding:"utf8"});
+    console.log("DSH_DEDICATED_DATABASE_PREPARED HEAD="+head+" TABLES="+tables.length+" DATA_PARITY=PASS RUNTIME_LOGIN=PASS CUTOVER=NOT_RUN");
+  } finally {
+    // Exact owned archive only; never remove a retained database.
+    try {docker(["exec",pg,"rm","-f","--",archive]);}catch{console.error("DSH_COPY_ARCHIVE_CLEANUP_BLOCKED");}
+  }
+}
+
 function main() {
   const [mode,...options] = process.argv.slice(2);
   const prepare=options.length===1 && options[0]==="--prepare-baseline";
   if(options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
-  if (!["--check","--apply","--apply-captain","--apply-preview"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
+  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
   const apply = mode !== "--check";
   if (apply && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
   if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
@@ -172,6 +245,13 @@ function main() {
   }
   // Preserve existing explicitly enabled Operator preview flags, including their
   // origin, without writing credentials or silently reverting active sessions.
+  // Reconstruct the exact running DSH settings only for attestation and
+  // rollback. Normal Compose no longer injects the cluster administrator.
+  const dshEnv=asEnv(state.dsh.Config.Env);
+  for(const [name,key] of Object.entries({REF_POSTGRES_USER:"REF_DSH_RUNTIME_USER",REF_POSTGRES_PASSWORD:"REF_DSH_RUNTIME_PASSWORD",REF_POSTGRES_DB:"REF_DSH_RUNTIME_DATABASE"})){
+    if(!dshEnv[name]) throw new Error("Missing existing DSH database configuration: "+name);
+    env[key]=dshEnv[name];
+  }
   const identityEnv = asEnv(state.identity.Config.Env);
   for (const [name, key] of Object.entries(operatorOverrides)) {
     if (!Object.hasOwn(identityEnv,name)) throw new Error("Missing current Operator setting: " + name);
@@ -180,6 +260,7 @@ function main() {
   const appNames = ["dsh","identity"];
   const groups = [{ names: appNames, files: activeAppFiles },{names:["wlt"],files:wltFiles}];
   for (const group of groups) assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
+  if(mode==="--prepare-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles);return;}
   const revisions=Object.fromEntries(Object.keys(owners).map(o=>[o,ownerRevision(state,o)]));
   const committed={};
   for(const o of Object.keys(owners)){
@@ -198,7 +279,7 @@ function main() {
     if(!proofOwners.length)return;
     ensureSource();
     console.log("BASELINE_PROOF_STARTED HEAD="+head+" OWNERS="+proofOwners.join(","));
-    const proof=run("pwsh",["-NoProfile","-File","infra/verify-isolated-postgres.ps1","-DockerContext",context,"-NoPull"],{},180000);
+    const proof=run("pwsh",["-NoProfile","-File","infra/verify-isolated-postgres.ps1","-DockerContext",context,"-NoPull"],{},360000);
     verifyBaselineProofOutput(proof);
     ensureSource();
     if(dirtyPaths(root,baselineProofScope).length)throw new Error("Baseline proof inputs changed during rehearsal");

@@ -9,9 +9,9 @@ services:
     restart: "no"
     entrypoint: ["/usr/local/bin/dsh", "-mode=bootstrap"]
     environment:
-      REF_POSTGRES_USER: "${REF_POSTGRES_USER:?missing isolated user}"
-      REF_POSTGRES_PASSWORD: "${REF_POSTGRES_PASSWORD:?missing isolated password}"
-      REF_POSTGRES_DB: "${REF_POSTGRES_DB:?missing isolated database}"
+      REF_POSTGRES_USER: "${REF_DSH_BOOTSTRAP_USER:-}"
+      REF_POSTGRES_PASSWORD: "${REF_DSH_BOOTSTRAP_PASSWORD:-}"
+      REF_POSTGRES_DB: "${REF_DSH_RUNTIME_DATABASE:?provision dedicated DSH database}"
       DSH_DB_HOST: postgres
       DSH_DB_SCHEMA: "${REF_DSH_DISCOVERY_SCHEMA:?choose verified isolated dsh_test_* schema}"
       BTHWANI_ISOLATED_TEST_MODE: "true"
@@ -32,9 +32,9 @@ services:
       com.bthwani.worktree: samrim-refoundation-clean-20261112
       com.bthwani.capability: customer-store-catalog
     environment:
-      REF_POSTGRES_USER: "${REF_POSTGRES_USER:?missing isolated user}"
-      REF_POSTGRES_PASSWORD: "${REF_POSTGRES_PASSWORD:?missing isolated password}"
-      REF_POSTGRES_DB: "${REF_POSTGRES_DB:?missing isolated database}"
+      REF_POSTGRES_USER: "${REF_DSH_RUNTIME_USER:?provision limited DSH runtime role}"
+      REF_POSTGRES_PASSWORD: "${REF_DSH_RUNTIME_PASSWORD:?provision dedicated DSH runtime credentials}"
+      REF_POSTGRES_DB: "${REF_DSH_RUNTIME_DATABASE:?provision dedicated DSH database}"
       DSH_DB_HOST: postgres
       DSH_DB_SCHEMA: "${REF_DSH_DISCOVERY_SCHEMA:?choose verified isolated dsh_test_* schema}"
       DSH_PUBLIC_CORS_ORIGINS: "${REF_DSH_PUBLIC_CORS_ORIGINS:?configure development browser origins}"

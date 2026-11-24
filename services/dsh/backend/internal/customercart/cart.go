@@ -140,8 +140,7 @@ func (h *Handler) begin(ctx context.Context, write bool) (*sql.Tx, error) {
 	// Never run Customer draft reads/writes against a protected or donor DB.
 	var databaseName, currentRole string
 	if err = tx.QueryRowContext(ctx, "SELECT pg_catalog.current_database(), current_user").Scan(&databaseName, &currentRole); err != nil ||
-		databaseName != "bthwani_refoundation" ||
-		(currentRole != "bthwani_ci" && currentRole != "bthwani_agent02") {
+		!dbscope.IsCartPrincipal(databaseName, currentRole) {
 		_ = tx.Rollback()
 		return nil, errors.New("Customer Cart requires an isolated DSH database and role")
 	}

@@ -13,6 +13,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
@@ -57,9 +58,9 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 		return nil, errors.New("employee directory requires an isolated DSH schema and Identity")
 	}
 	var ready bool
-	err := db.QueryRowContext(ctx, `SELECT pg_catalog.current_database()='bthwani_refoundation'
+	err := db.QueryRowContext(ctx, `SELECT pg_catalog.current_database() IN ('bthwani_refoundation',$3)
 		AND pg_catalog.to_regclass($1) IS NOT NULL AND pg_catalog.to_regclass($2) IS NOT NULL`,
-		schema+".employees", schema+".employee_registration_audit").Scan(&ready)
+		schema+".employees", schema+".employee_registration_audit", dbscope.DevelopmentDatabase).Scan(&ready)
 	if err != nil || !ready {
 		return nil, errors.New("isolated employee directory migration unavailable")
 	}

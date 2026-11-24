@@ -17,6 +17,7 @@ param(
   [switch]$EnableCaptain,
   [switch]$Preview,
   [switch]$PrepareBaseline,
+  [switch]$PrepareDshDatabase,
   [Parameter(Position=1)]
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','reconcile','start','restart','android','open')]
   [string]$DockerAction = 'help',
@@ -721,6 +722,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
   Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit Captain overlay activation'
   Write-Output 'pnpm dev docker reconcile -Apply -Preview # isolated uncommitted Go snapshot'
+  Write-Output 'pnpm dev docker reconcile -Apply -PrepareDshDatabase # one-time additive DSH candidate; no cutover'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=use infra/build-dsh-image.ps1 or infra/build-identity-verifier-image.ps1 explicitly'
@@ -760,7 +762,8 @@ function Invoke-ScopedDocker {
     'reconcile' {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain overlay requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
-      $mode = if ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
+      Assert-Ok (!$PrepareDshDatabase -or ($Apply -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline)) 'Dedicated DSH database preparation requires explicit isolated -Apply without another operation'
+      $mode = if ($PrepareDshDatabase) { '--prepare-dsh-database' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
       Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply, without capability activation'
       $reconcileOptions = if ($PrepareBaseline) { @('--prepare-baseline') } else { @() }
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
