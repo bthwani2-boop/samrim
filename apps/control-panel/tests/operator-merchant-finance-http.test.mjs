@@ -46,6 +46,17 @@ test("merchant finance routes keep protected real-HTTP backward compatibility", 
     if (request.headers.authorization !== "Bearer " + token) {
       return send(401, { error: "UNAUTHORIZED" });
     }
+    if (route === "/v1/operators/stores/store-a/commercial-agreement") {
+      return permissions.has("finance") ? send(200, {storeId:"store-a", proposal:{
+        version:2,operationId:"proposal-0002",storeRelation:"DIRECT",feeModel:"SUBSCRIPTION",collector:"STORE_MANAGED",
+        currency:"YER",commissionBasisPoints:null,subscriptionAmountYer:"9007199254740993",subscriptionPeriodDays:30,
+        fulfillmentModes:["CUSTOMER_PICKUP"],proposedEffectiveAt:"2027-01-01T00:00:00Z",
+        reviewState:"REVIEW_APPROVED_PENDING_ACTIVATION",
+      }}) : send(403,{error:"FORBIDDEN"});
+    }
+    if (route === "/v1/operators/stores/absent/commercial-agreement") {
+      return send(200,{storeId:"absent",proposal:null});
+    }
     if (route === "/v1/sessions/current") {
       return send(200, {
         actorId: "operator-finance-rename", role: "operator", sessionExpiresAt: expiry,
@@ -75,6 +86,7 @@ test("merchant finance routes keep protected real-HTTP backward compatibility", 
       OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF: "true",
       OPERATOR_PASSKEY_BROWSER_ORIGIN: base,
       OPERATOR_PASSKEY_IDENTITY_ORIGIN: "http://127.0.0.1:" + ownerPort,
+      OPERATOR_FINANCE_WLT_ORIGIN: "http://127.0.0.1:" + ownerPort,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -126,6 +138,25 @@ test("merchant finance routes keep protected real-HTTP backward compatibility", 
       permissions.clear();
       permissions.add("finance");
     }
+    const review = await request("/finance/merchant-store-commissions?storeId=store-a");
+    assert.equal(review.status,200);
+    const html=await review.text();
+    assert.match(html,/data-owner-readback="ready"/);
+    assert.match(html,/9007199254740993/);
+    assert.match(html,/بانتظار التفعيل/);
+    const absent = await request("/finance/merchant-store-commissions?storeId=absent");
+    assert.match(await absent.text(),/data-owner-readback="absent"/);
+    const before=ownerCalls.filter(path=>path.includes("/commercial-agreement")).length;
+    const invalid = await request("/finance/merchant-store-commissions?storeId=store-a&storeId=store-b");
+    assert.doesNotMatch(await invalid.text(),/data-owner-readback="ready"/);
+    assert.equal(ownerCalls.filter(path=>path.includes("/commercial-agreement")).length,before);
+    permissions.clear();
+    permissions.add("merchant");
+    const denied = await request("/finance/merchant-store-commissions?storeId=store-a");
+    assert.doesNotMatch(await denied.text(),/9007199254740993/);
+    assert.equal(ownerCalls.filter(path=>path.includes("/commercial-agreement")).length,before);
+    permissions.clear();
+    permissions.add("finance");
     identityAvailable = false;
     const outage = await request("/finance/partner-store-commissions");
     assert.equal(outage.status, 200);

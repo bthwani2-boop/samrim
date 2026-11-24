@@ -9,7 +9,7 @@ const panel = resolve(import.meta.dirname, "..");
 const page = (relative) => resolve(panel, "app/(workspace)/finance", relative, "page.tsx");
 
 const renames = [
-  ["partner-store-commissions", "merchant-store-commissions", "Settlements"],
+  ["partner-store-commissions", "merchant-store-commissions", "CommercialAgreementReviewPage"],
   ["partner-commission-receivables", "merchant-commission-receivables", "Receivables"],
 ];
 

@@ -20,17 +20,17 @@ func newHandler(origin string, balance balanceReader) (http.Handler, error) {
 }
 
 func newHandlerWithHistory(origin string, balance balanceReader, history historyReader) (http.Handler, error) {
-	return newHandlerWithHistoryMode(origin, balance, history, false)
+	return newHandlerWithHistoryMode(origin, balance, history, nil, false)
 }
 
-func newHandlerWithHistoryMode(origin string, balance balanceReader, history historyReader, containerMode bool) (http.Handler, error) {
+func newHandlerWithHistoryMode(origin string, balance balanceReader, history historyReader, agreement agreementReader, containerMode bool) (http.Handler, error) {
 	identity, err := newIdentityReader(origin, containerMode)
 	if err != nil {
 		return nil, err
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/wallets/me", func(w http.ResponseWriter, r *http.Request) {
-		serveAuthorizedRead(w, r, identity, func(ctx context.Context, actorID string) (any, error) {
+		serveAuthorizedRead(w, r, identity.read, func(ctx context.Context, actorID string) (any, error) {
 			value, err := balance(ctx, actorID)
 			if err != nil {
 				return nil, err
@@ -59,7 +59,7 @@ func newHandlerWithHistoryMode(origin string, balance balanceReader, history his
 				failure(w, http.StatusBadRequest, "INVALID_REQUEST")
 				return
 			}
-			serveAuthorizedRead(w, r, identity, func(ctx context.Context, actorID string) (any, error) {
+			serveAuthorizedRead(w, r, identity.read, func(ctx context.Context, actorID string) (any, error) {
 				if history == nil {
 					return nil, errors.New("funding history unavailable")
 				}
@@ -67,14 +67,27 @@ func newHandlerWithHistoryMode(origin string, balance balanceReader, history his
 			}, true)
 			return
 		}
-		serveAuthorizedRead(w, r, identity, nil, false)
+		serveAuthorizedRead(w, r, identity.read, nil, false)
+	})
+	mux.HandleFunc("/v1/operators/stores/{storeID}/commercial-agreement", func(w http.ResponseWriter, r *http.Request) {
+		store := r.PathValue("storeID")
+		if !storeIDRule.MatchString(store) {
+			failure(w, http.StatusBadRequest, "INVALID_REQUEST")
+			return
+		}
+		serveAuthorizedRead(w, r, identity.finance, func(ctx context.Context, _ string) (any, error) {
+			if agreement == nil {
+				return nil, errors.New("agreement read unavailable")
+			}
+			return agreement(ctx, store)
+		}, false)
 	})
 	return mux, nil
 }
 
 // The same Identity bearer is verified before and after the PostgreSQL read.
 // No caller-supplied actor, role or other query input can choose the ledger scope.
-func serveAuthorizedRead(w http.ResponseWriter, r *http.Request, identity identityReader,
+func serveAuthorizedRead(w http.ResponseWriter, r *http.Request, verify func(context.Context, string) (principal, int),
 	read func(context.Context, string) (any, error), allowCursor bool,
 ) {
 	if r.Method != http.MethodGet {
@@ -93,7 +106,7 @@ func serveAuthorizedRead(w http.ResponseWriter, r *http.Request, identity identi
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
-	actor, status := identity.read(ctx, auth[0])
+	actor, status := verify(ctx, auth[0])
 	if status != http.StatusOK {
 		identityFailure(w, status)
 		return
@@ -103,7 +116,7 @@ func serveAuthorizedRead(w http.ResponseWriter, r *http.Request, identity identi
 		failure(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
 		return
 	}
-	current, status := identity.read(ctx, auth[0])
+	current, status := verify(ctx, auth[0])
 	if status != http.StatusOK {
 		identityFailure(w, status)
 		return

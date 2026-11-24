@@ -34,6 +34,7 @@ if ($EnableDockerCustomerAndroidIdentityPreview -and ($Surface -or $App -ne 'cus
 }
 Remove-Item Env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW -ErrorAction SilentlyContinue
 Remove-Item Env:BTHWANI_DOCKER_CART_WEB_PREVIEW -ErrorAction SilentlyContinue
+Remove-Item Env:OPERATOR_FINANCE_WLT_ORIGIN -ErrorAction SilentlyContinue
 
 # The scheduled launcher owns the native job handle, never the Node children.
 # CreateProcess assigns the child to that job atomically, even under a nested
@@ -399,6 +400,27 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
   $env:OPERATOR_PASSKEY_BROWSER_ORIGIN='http://localhost:13000'
   $env:OPERATOR_PASSKEY_IDENTITY_ORIGIN=$identityOrigin
   $env:OPERATOR_POLICY_DSH_ORIGIN='http://127.0.0.1:3202'
+  # Finance readback uses the same shared isolated Identity, never the separate
+  # disposable Operator sandbox. Keep other workspaces available on WLT failure.
+  if (!$UseDisposableOperatorSandbox) {
+    try {
+      $wltRuntime = @(& docker inspect bthwani-refoundation-wlt-1 | ConvertFrom-Json)
+      if ($LASTEXITCODE -ne 0 -or $wltRuntime.Count -ne 1) { throw 'WLT_OWNER_UNAVAILABLE' }
+      $wltOwner = $wltRuntime[0]
+      $wltBindings = @($wltOwner.HostConfig.PortBindings.'8080/tcp')
+      if ($wltOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+          $wltOwner.Config.Labels.'com.bthwani.capability' -cne 'customer-wallet-read-only' -or
+          $wltOwner.Config.Labels.'com.docker.compose.project' -cne $identityOwner.Config.Labels.'com.docker.compose.project' -or
+          $wltOwner.State.Health.Status -cne 'healthy' -or
+          @($wltOwner.Config.Env) -cnotcontains 'WLT_TEST_IDENTITY_ORIGIN=http://identity:3302' -or
+          $wltBindings.Count -ne 1 -or $wltBindings[0].HostIp -cne '127.0.0.1' -or
+          $wltBindings[0].HostPort -cne '3203') { throw 'WLT_OWNER_NOT_VERIFIED' }
+      Assert-SurfaceCapability 'http://127.0.0.1:3203/v1/operators/stores/capability-probe/commercial-agreement' 401
+      $env:OPERATOR_FINANCE_WLT_ORIGIN='http://127.0.0.1:3203'
+    } catch {
+      Write-Warning 'OPERATOR_FINANCE_WLT_READBACK_UNAVAILABLE'
+    }
+  }
   if ($EnableIsolatedRootBootstrap) {
     if ($ownerEnv -cnotcontains 'IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true') {
       throw 'OPERATOR_ROOT_BOOTSTRAP_OWNER_NOT_OPTED_IN'

@@ -1,4 +1,6 @@
 // Public WLT read-only SDK. The owner alone selects and writes financial facts.
+
+export { type CommercialAgreementReview, parseCommercialAgreementReview, readOperatorCommercialAgreementReview } from "./commercial-agreement.ts";
 export { WltReadError } from "./errors.ts";
 export { parseCustomerFundingHistory, readCurrentCustomerWalletTransactions } from "./funding-history.ts";
 export type { CustomerFundingHistory, CustomerFundingTransaction, CustomerWalletBalance } from "./types.ts";

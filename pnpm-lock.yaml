@@ -405,6 +405,9 @@ importers:
       '@bthwani/identity':
         specifier: workspace:*
         version: link:../../services/identity
+      '@bthwani/wlt':
+        specifier: workspace:*
+        version: link:../../services/wlt
       '@date-fns/tz':
         specifier: 'catalog:'
         version: 1.5.0

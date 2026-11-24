@@ -223,3 +223,16 @@ LEFT JOIN wlt.store_commercial_agreement_decisions f ON f.store_id=p.store_id AN
 
 REVOKE ALL ON wlt.store_commercial_agreement_decisions,wlt.commercial_agreement_review_states FROM PUBLIC;
 REVOKE ALL ON FUNCTION wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text) FROM PUBLIC;
+
+-- Read-only latest terms, deliberately excludes private decision actors/reasons.
+-- WLT transport checks the live Identity finance grant before and after reading.
+CREATE VIEW wlt.latest_commercial_agreement_reviews WITH (security_barrier=true) AS
+SELECT DISTINCT ON (p.store_id) p.store_id,p.version,p.operation_id,p.store_relation,
+    p.fee_model,p.collector,p.currency,p.commission_basis_points,
+    p.subscription_amount_yer,p.subscription_period_days,p.fulfillment_modes,
+    p.proposed_effective_at,s.review_state
+FROM wlt.store_commercial_agreement_proposals p
+JOIN wlt.commercial_agreement_review_states s USING (store_id,version)
+ORDER BY p.store_id,p.version DESC;
+REVOKE ALL ON wlt.latest_commercial_agreement_reviews FROM PUBLIC;
+GRANT SELECT ON wlt.latest_commercial_agreement_reviews TO bthwani_wlt_reader;

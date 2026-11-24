@@ -178,3 +178,14 @@ test("first Root WebAuthn enrollment is a second explicitly opted-in localhost-o
   assert.match(launcher, /\$env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='false'/);
   assert.match(launcher, /\$env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'/);
 });
+
+test("Operator finance projection is enabled only for the matching verified isolated WLT owner", () => {
+  assert.match(launcher, /Remove-Item Env:OPERATOR_FINANCE_WLT_ORIGIN -ErrorAction SilentlyContinue/);
+  const boundary = launcher.slice(launcher.indexOf("# Finance readback uses the same shared isolated Identity"));
+  assert.match(boundary, /if \(!\$UseDisposableOperatorSandbox\)/);
+  assert.match(boundary, /WLT_TEST_IDENTITY_ORIGIN=http:\/\/identity:3302/);
+  assert.match(boundary, /\$wltOwner\.Config\.Labels\.'com\.docker\.compose\.project' -cne \$identityOwner\.Config\.Labels\.'com\.docker\.compose\.project'/);
+  assert.match(boundary, /\$wltBindings\[0\]\.HostIp -cne '127\.0\.0\.1'/);
+  assert.match(boundary, /Assert-SurfaceCapability 'http:\/\/127\.0\.0\.1:3203\/v1\/operators\/stores\/capability-probe\/commercial-agreement' 401\s+\$env:OPERATOR_FINANCE_WLT_ORIGIN='http:\/\/127\.0\.0\.1:3203'/);
+  assert.match(boundary, /Write-Warning 'OPERATOR_FINANCE_WLT_READBACK_UNAVAILABLE'/);
+});

@@ -96,6 +96,9 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	for _, privilege := range []struct {
 		name, grant, revoke string
 	}{
+		{"agreement review projection write",
+			"GRANT UPDATE (review_state) ON wlt.latest_commercial_agreement_reviews TO bthwani_wlt_reader",
+			"REVOKE UPDATE (review_state) ON wlt.latest_commercial_agreement_reviews FROM bthwani_wlt_reader"},
 		{"private agreement decision read",
 			"GRANT SELECT (decision) ON wlt.store_commercial_agreement_decisions TO bthwani_wlt_reader",
 			"REVOKE SELECT (decision) ON wlt.store_commercial_agreement_decisions FROM bthwani_wlt_reader"},
@@ -233,6 +236,72 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
+	t.Run("finance agreement read", func(t *testing.T) {
+		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.actors(id,status) VALUES ('finance-reader','ACTIVE'),('other-operator','ACTIVE')")
+		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.actor_roles(actor_id,role,status) VALUES ('finance-reader','operator','ACTIVE'),('other-operator','operator','ACTIVE')")
+		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.operator_permissions(actor_id,permission) VALUES ('finance-reader','finance')")
+		finance := session("finance-reader", "operator", 11)
+		other := session("other-operator", "operator", 12)
+		const path = "/v1/operators/stores/store-a/commercial-agreement"
+		body := readWallet(t, ctx, server.URL, finance, path, 200)
+		var result struct {
+			StoreID  string `json:"storeId"`
+			Proposal struct {
+				Version               int64   `json:"version"`
+				ReviewState           string  `json:"reviewState"`
+				CommissionBasisPoints int     `json:"commissionBasisPoints"`
+				SubscriptionAmountYER *string `json:"subscriptionAmountYer"`
+			} `json:"proposal"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil || result.StoreID != "store-a" || result.Proposal.Version != 2 || result.Proposal.CommissionBasisPoints != 425 || result.Proposal.ReviewState != "REVIEW_APPROVED_PENDING_ACTIVATION" {
+			t.Fatalf("wrong reviewed agreement: %s %v", body, err)
+		}
+		body = readWallet(t, ctx, server.URL, finance, "/v1/operators/stores/store-b/commercial-agreement", 200)
+		if err := json.Unmarshal(body, &result); err != nil || result.StoreID != "store-b" || result.Proposal.SubscriptionAmountYER == nil || *result.Proposal.SubscriptionAmountYER != "9007199254740993" || result.Proposal.ReviewState != "DECLINED" {
+			t.Fatalf("exact subscription: %s %v", body, err)
+		}
+		body = readWallet(t, ctx, server.URL, finance, "/v1/operators/stores/absent/commercial-agreement", 200)
+		if !strings.Contains(string(body), `"proposal":null`) {
+			t.Fatalf("missing proposal: %s", body)
+		}
+		readWallet(t, ctx, server.URL, other, path, 403)
+		readWallet(t, ctx, server.URL, merchant, path, 403)
+		readWallet(t, ctx, server.URL, one, path, 403)
+		readWallet(t, ctx, server.URL, finance, path+"?actorId=other-operator", 400)
+		// The second current-grant verification must discard a completed SQL read
+		// when Finance access was revoked while that read was blocked.
+		lock, err := owner.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Rollback()
+		if _, err = lock.ExecContext(ctx, "LOCK TABLE wlt.store_commercial_agreement_proposals IN ACCESS EXCLUSIVE MODE"); err != nil {
+			t.Fatal(err)
+		}
+		pending := make(chan *httptest.ResponseRecorder, 1)
+		request := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+		request.Header.Set("Authorization", "Bearer "+finance)
+		go func() {
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, request)
+			pending <- rec
+		}()
+		waitForWalletQuery(t, ctx, reader, "wlt.latest_commercial_agreement_reviews")
+		executeFixture(t, ctx, identity, "UPDATE identity_test_wlt.operator_permissions SET state='REVOKED' WHERE actor_id='finance-reader' AND permission='finance'")
+		if err = lock.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case rec := <-pending:
+			if rec.Code != 403 || strings.Contains(rec.Body.String(), "\"proposal\"") {
+				t.Fatalf("revoked finance leaked review: %d %s", rec.Code, rec.Body.String())
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		readWallet(t, ctx, server.URL, finance, path, 403)
+		t.Log("WLT_FINANCE_AGREEMENT_READ_PASS exact_terms=true explicit_grant=true revoked_during_read=true no_activation=true")
+	})
 	for _, check := range []struct {
 		id, balance, token string
 	}{
