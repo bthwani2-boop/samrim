@@ -331,7 +331,7 @@ components:
     CustomerCheckoutReview:
       type: object
       additionalProperties: false
-      required: [actorId, storeId, cartVersion, recipientPurpose, fulfillmentMode, merchandise, checkoutReady, blockers]
+      required: [actorId, storeId, cartVersion, recipientPurpose, fulfillmentMode, merchandise, checkoutReady, blockers, storeSchedule]
       properties:
         actorId: { type: string, minLength: 1, maxLength: 128 }
         storeId: { $ref: '#/components/schemas/PublicId' }
@@ -340,6 +340,20 @@ components:
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         merchandise: { $ref: '#/components/schemas/CustomerCartMerchandiseEstimate' }
         delivery: { $ref: '#/components/schemas/CustomerDeliveryServiceability' }
+        storeSchedule:
+          type: object
+          additionalProperties: false
+          required: [status]
+          properties:
+            status: { type: string, enum: [UNAVAILABLE, OPEN_BY_SCHEDULE, CLOSED_BY_SCHEDULE, PAUSED] }
+            version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+          if:
+            properties:
+              status: { const: UNAVAILABLE }
+          then:
+            not: { required: [version] }
+          else:
+            required: [version]
         checkoutReady: { type: boolean, const: false }
         blockers:
           type: array

@@ -41,15 +41,7 @@ type publicStoreSelection struct {
 func (s *Server) queryPublicStores(ctx context.Context, tx *sql.Tx, selection publicStoreSelection) (*sql.Rows, error) {
 	args := []any{selection.id, selection.city, selection.after, selection.search, selection.vertical, selection.limit}
 	if s.StoreAvailabilityEnabled {
-		return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,(SELECT CASE
-			WHEN a.paused_until > transaction_timestamp() THEN jsonb_build_object('paused', true)
-			WHEN a.preparation_minutes IS NOT NULL AND a.store_timezone=c.timezone_name THEN
-				jsonb_build_object('timezone', a.store_timezone, 'weekly', COALESCE(
-					(SELECT jsonb_agg(jsonb_build_object('weekday', h.weekday,
-						'opens', h.opens_minute, 'closes', h.closes_minute))
-					 FROM store_operational_weekly_hours h WHERE h.store_id=a.store_id),
-					'[]'::jsonb))
-			END FROM store_operational_availability a WHERE a.store_id=s.id),
+		return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,`+storeavailability.PublicScheduleSQL+`,
 			transaction_timestamp()
 			FROM stores s
 			JOIN service_cities c ON c.id=s.city_id
@@ -82,20 +74,10 @@ func scanPublicStore(scan func(...any) error) (publicStore, error) {
 	// An active pause and a closed schedule are public browse information. A checkout decision
 	// still requires the currently unavailable fulfillment and WLT flow.
 	st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
-	if len(hoursJSON) == 0 {
-		return st, nil
-	}
-	var hours struct {
-		Paused   bool                             `json:"paused"`
-		Timezone string                           `json:"timezone"`
-		Weekly   []storeavailability.WeeklyWindow `json:"weekly"`
-	}
-	if err := json.Unmarshal(hoursJSON, &hours); err != nil {
-		return st, nil
-	}
-	if hours.Paused {
+	switch storeavailability.EvaluateCustomerSchedule(now, hoursJSON).Status {
+	case "PAUSED":
 		st.OrderabilityStatus = string(storeavailability.Paused)
-	} else if open, err := storeavailability.WithinWeeklyHours(now, hours.Timezone, hours.Weekly); err == nil && !open {
+	case "CLOSED_BY_SCHEDULE":
 		st.OrderabilityStatus = string(storeavailability.ClosedBySchedule)
 	}
 	return st, nil

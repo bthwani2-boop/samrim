@@ -97,6 +97,18 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if review.ActorID != "customer-a" || review.StoreID != "store-a" || review.CartVersion != 1 || review.Merchandise.MerchandiseSubtotalYER != "1100" || review.CheckoutReady || review.Delivery != nil || len(review.Blockers) != 3 {
 		t.Fatalf("wrong pickup review: %s", body)
 	}
+	if review.StoreSchedule.Status != "UNAVAILABLE" || review.StoreSchedule.Version != 0 {
+		t.Fatalf("unconfigured schedule fabricated evidence: %s", body)
+	}
+	if _, err := db.ExecContext(ctx, "INSERT INTO "+schema+".store_operational_availability(store_id,store_timezone,paused_until,preparation_minutes,changed_by_actor,change_reason) VALUES ('store-a','UTC',transaction_timestamp()+interval '1 hour',15,'synthetic-operator','checkout test')"); err != nil {
+		t.Fatal(err)
+	}
+	status, body = checkoutReviewRequest(t, h, "customer-a", pickup)
+	assertCartStatus(t, status, 200, body)
+	review = checkoutReviewResult{}
+	if err := json.Unmarshal(body, &review); err != nil || review.StoreSchedule.Status != "PAUSED" || review.StoreSchedule.Version != 1 || review.CheckoutReady {
+		t.Fatalf("pause must be read from owner: %s %v", body, err)
+	}
 	delivery := map[string]any{"expectedCartVersion": 1, "recipientPurpose": "OTHER", "fulfillmentMode": "BTHWANI_CAPTAIN", "addressId": addressID, "expectedAddressVersion": 2, "recipientName": "Synthetic recipient", "recipientPhone": "+967700000001"}
 	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
 	assertCartStatus(t, status, 200, body)

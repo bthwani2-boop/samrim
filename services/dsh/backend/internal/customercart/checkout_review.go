@@ -12,6 +12,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
 // Review is a non-persisted, version-bound DSH snapshot, not a quote or Order.
@@ -28,15 +30,16 @@ type checkoutReviewInput struct {
 }
 
 type checkoutReviewResult struct {
-	ActorID          string                  `json:"actorId"`
-	StoreID          string                  `json:"storeId"`
-	CartVersion      int64                   `json:"cartVersion"`
-	RecipientPurpose string                  `json:"recipientPurpose"`
-	FulfillmentMode  string                  `json:"fulfillmentMode"`
-	Merchandise      MerchandiseEstimate     `json:"merchandise"`
-	Delivery         *DeliveryServiceability `json:"delivery,omitempty"`
-	CheckoutReady    bool                    `json:"checkoutReady"`
-	Blockers         []string                `json:"blockers"`
+	ActorID          string                                     `json:"actorId"`
+	StoreID          string                                     `json:"storeId"`
+	CartVersion      int64                                      `json:"cartVersion"`
+	RecipientPurpose string                                     `json:"recipientPurpose"`
+	FulfillmentMode  string                                     `json:"fulfillmentMode"`
+	Merchandise      MerchandiseEstimate                        `json:"merchandise"`
+	Delivery         *DeliveryServiceability                    `json:"delivery,omitempty"`
+	CheckoutReady    bool                                       `json:"checkoutReady"`
+	Blockers         []string                                   `json:"blockers"`
+	StoreSchedule    storeavailability.CustomerScheduleEvidence `json:"storeSchedule"`
 }
 
 var checkoutRecipientPhone = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
@@ -169,6 +172,16 @@ func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 	result := checkoutReviewResult{ActorID: actor, StoreID: store, CartVersion: cart.Version,
 		RecipientPurpose: input.RecipientPurpose, FulfillmentMode: input.FulfillmentMode, Merchandise: amount,
 		CheckoutReady: false, Blockers: []string{"FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"}}
+	var scheduleJSON []byte
+	var evaluatedAt time.Time
+	err = tx.QueryRowContext(ctx, `SELECT `+storeavailability.PublicScheduleSQL+`,transaction_timestamp()
+	FROM stores s JOIN service_cities c ON c.id=s.city_id
+	WHERE s.id=$1 AND s.published AND c.active`, store).Scan(&scheduleJSON, &evaluatedAt)
+	if err != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	result.StoreSchedule = storeavailability.EvaluateCustomerSchedule(evaluatedAt, scheduleJSON)
 	if input.AddressID != "" {
 		delivery, err := readDeliveryServiceability(ctx, tx, actor, store, input.AddressID)
 		if err != nil {

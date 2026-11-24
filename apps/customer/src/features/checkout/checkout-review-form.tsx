@@ -99,6 +99,12 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion }: Re
       <Text style={{ color: theme.color }}>مجموع البضائع المراجع: {formatExactYer(BigInt(result.merchandise.merchandiseSubtotalYer))} ريال يمني</Text>
       <Text style={{ color: theme.colorSecondary }}>تمت مراجعة صيغة بيانات المستلم والنسخة الحالية للسلة لدى DSH.</Text>
       {result.delivery ? <Text style={{ color: theme.colorSecondary }}>{result.delivery.status === "SERVICEABLE" ? "العنوان ضمن النطاق الجغرافي." : "العنوان خارج النطاق الجغرافي."}</Text> : null}
+      <Text style={{ color: theme.colorSecondary }}>
+        {result.storeSchedule.status === "OPEN_BY_SCHEDULE" ? "المتجر ضمن ساعات العمل، دون اعتماد طريقة التنفيذ."
+          : result.storeSchedule.status === "PAUSED" ? "المتجر متوقف مؤقتًا."
+          : result.storeSchedule.status === "CLOSED_BY_SCHEDULE" ? "المتجر خارج ساعات العمل."
+          : "لم تتوفر أدلة كافية على ساعات عمل المتجر."}
+      </Text>
       <Text accessibilityRole="alert" style={{ color: theme.warningText }}>لم تُعتمد طريقة التنفيذ أو رسومها أو تخصيص الدفع. لا يمكن تأكيد الطلب.</Text>
     </View> : null}
   </View>;

@@ -17,6 +17,7 @@ export type CustomerCheckoutReview = Readonly<{
   recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
   merchandise: CustomerCartMerchandiseEstimate; delivery?: DeliveryServiceability;
   checkoutReady: false; blockers: CustomerCheckoutBlocker[];
+  storeSchedule: Readonly<{status: "UNAVAILABLE" | "OPEN_BY_SCHEDULE" | "CLOSED_BY_SCHEDULE" | "PAUSED"; version?: number}>;
 }>;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const version = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 1;
@@ -45,11 +46,17 @@ export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actor
   input: CustomerCheckoutReviewInput): CustomerCheckoutReview {
   const invalid = () => new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   if (!validCustomerCheckoutReviewInput(input) || !object(raw)) throw invalid();
-  const keys = ["actorId", "storeId", "cartVersion", "recipientPurpose", "fulfillmentMode", "merchandise", "checkoutReady", "blockers",
+  const keys = ["actorId", "storeId", "cartVersion", "recipientPurpose", "fulfillmentMode", "merchandise", "checkoutReady", "blockers", "storeSchedule",
     ...(input.addressId ? ["delivery"] : [])];
   if (Object.keys(raw).length !== keys.length || keys.some(k => !Object.hasOwn(raw, k)) ||
     raw.actorId !== actorId || raw.storeId !== storeId || raw.cartVersion !== input.expectedCartVersion ||
     raw.recipientPurpose !== input.recipientPurpose || raw.fulfillmentMode !== input.fulfillmentMode || raw.checkoutReady !== false) throw invalid();
+  const schedule = raw.storeSchedule;
+  if (!object(schedule)) throw invalid();
+  const status = schedule.status;
+  if (status !== "UNAVAILABLE" && status !== "OPEN_BY_SCHEDULE" && status !== "CLOSED_BY_SCHEDULE" && status !== "PAUSED") throw invalid();
+  if (status === "UNAVAILABLE" ? Object.keys(schedule).length !== 1 : Object.keys(schedule).length !== 2 || !version(schedule.version)) throw invalid();
+  const storeSchedule: CustomerCheckoutReview["storeSchedule"] = { status, ...(status !== "UNAVAILABLE" && version(schedule.version) ? { version: schedule.version } : {}) };
   let merchandise: CustomerCartMerchandiseEstimate;
   let delivery: DeliveryServiceability | undefined;
   try {
@@ -65,7 +72,7 @@ export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actor
   if (!Array.isArray(returnedBlockers) || returnedBlockers.length !== blockers.length ||
     blockers.some((b, i) => returnedBlockers[i] !== b)) throw invalid();
   return { actorId, storeId, cartVersion: input.expectedCartVersion, recipientPurpose: input.recipientPurpose,
-    fulfillmentMode: input.fulfillmentMode, merchandise, ...(delivery ? { delivery } : {}), checkoutReady: false, blockers };
+    fulfillmentMode: input.fulfillmentMode, merchandise, ...(delivery ? { delivery } : {}), checkoutReady: false, blockers, storeSchedule };
 }
 export async function reviewCurrentCustomerCheckout(origin: string, bearer: string, actorId: string,
   storeId: string, input: CustomerCheckoutReviewInput, signal?: AbortSignal): Promise<CustomerCheckoutReview> {

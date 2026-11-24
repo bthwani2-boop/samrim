@@ -13,6 +13,7 @@ const result = { actorId: "customer-a", storeId: "store-a", cartVersion: 4,
   merchandise: { actorId: "customer-a", storeId: "store-a", cartVersion: 4,
     lines: [{ offerId: "offer-a", variantId: "variant-a", quantity: 2, unitYer: "550", lineTotalYer: "1100" }],
     merchandiseSubtotalYer: "1100", checkoutReady: false },
+  storeSchedule: { status: "OPEN_BY_SCHEDULE", version: 3 },
   checkoutReady: false, blockers: ["FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"] };
 const request = (body = input, extra = {}, url = page) => new Request(url, { method: "POST",
   headers: { Cookie: "bthwani_surface_customer_auth=" + bearer, Origin: "http://localhost",
@@ -24,6 +25,9 @@ test("review SDK refuses unsolicited PII, changed scope, prices and payable stat
   for (const invalid of [{ ...result, recipientPhone: "+967770000001" }, { ...result, actorId: "customer-b" },
     { ...result, cartVersion: 5 }, { ...result, fulfillmentMode: "BTHWANI_CAPTAIN" },
     { ...result, checkoutReady: true }, { ...result, blockers: [] },
+    { ...result, storeSchedule: { status: "OPEN_FOR_ORDERS", version: 3 } },
+    { ...result, storeSchedule: { status: "PAUSED" } },
+    { ...result, storeSchedule: { status: "UNAVAILABLE", version: 1 } },
     { ...result, merchandise: { ...result.merchandise, merchandiseSubtotalYer: "1" } }]) {
     assert.throws(() => parseCustomerCheckoutReview(invalid, "store-a", "customer-a", input));
   }
