@@ -16,6 +16,7 @@ export type CustomerCheckoutReview = Readonly<{
   actorId: string; storeId: string; cartVersion: number;
   recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
   merchandise: CustomerCartMerchandiseEstimate; delivery?: DeliveryServiceability;
+  distanceFeeEstimate?: Readonly<{policyVersion: number; distanceMetres: number; feeYer: string}>;
   checkoutReady: false; blockers: CustomerCheckoutBlocker[];
   storeSchedule: Readonly<{status: "UNAVAILABLE" | "OPEN_BY_SCHEDULE" | "CLOSED_BY_SCHEDULE" | "PAUSED"; version?: number}>;
 }>;
@@ -47,7 +48,8 @@ export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actor
   const invalid = () => new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   if (!validCustomerCheckoutReviewInput(input) || !object(raw)) throw invalid();
   const keys = ["actorId", "storeId", "cartVersion", "recipientPurpose", "fulfillmentMode", "merchandise", "checkoutReady", "blockers", "storeSchedule",
-    ...(input.addressId ? ["delivery"] : [])];
+    ...(input.addressId ? ["delivery"] : []),
+    ...(Object.hasOwn(raw, "distanceFeeEstimate") ? ["distanceFeeEstimate"] : [])];
   if (Object.keys(raw).length !== keys.length || keys.some(k => !Object.hasOwn(raw, k)) ||
     raw.actorId !== actorId || raw.storeId !== storeId || raw.cartVersion !== input.expectedCartVersion ||
     raw.recipientPurpose !== input.recipientPurpose || raw.fulfillmentMode !== input.fulfillmentMode || raw.checkoutReady !== false) throw invalid();
@@ -66,13 +68,28 @@ export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actor
       if (!delivery.evidence || delivery.evidence.addressVersion !== input.expectedAddressVersion) throw invalid();
     }
   } catch { throw invalid(); }
+  let distanceFeeEstimate: CustomerCheckoutReview["distanceFeeEstimate"];
+  if (Object.hasOwn(raw, "distanceFeeEstimate")) {
+    const fee = raw.distanceFeeEstimate;
+    const evidence = delivery?.evidence;
+    if (!object(fee) || Object.keys(fee).length !== 3 ||
+      delivery?.status !== "SERVICEABLE" || !evidence || fee.policyVersion !== evidence.policyVersion ||
+      typeof fee.distanceMetres !== "number" || !Number.isSafeInteger(fee.distanceMetres) ||
+      fee.distanceMetres !== Math.round(evidence.distanceMetres) || fee.distanceMetres < 0 ||
+      fee.distanceMetres > evidence.radiusMetres || typeof fee.feeYer !== "string" ||
+      !/^(0|[1-9][0-9]{0,18})$/.test(fee.feeYer) ||
+      BigInt(fee.feeYer) > BigInt(fee.distanceMetres) * 100000n ||
+      (fee.distanceMetres > 0 && fee.feeYer === "0")) throw invalid();
+    distanceFeeEstimate = { policyVersion: evidence.policyVersion, distanceMetres: fee.distanceMetres, feeYer: fee.feeYer };
+  }
   const blockers: CustomerCheckoutBlocker[] = ["FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"];
   if (delivery?.status === "UNSERVICEABLE") blockers.push("ADDRESS_UNSERVICEABLE");
   const returnedBlockers = raw.blockers;
   if (!Array.isArray(returnedBlockers) || returnedBlockers.length !== blockers.length ||
     blockers.some((b, i) => returnedBlockers[i] !== b)) throw invalid();
   return { actorId, storeId, cartVersion: input.expectedCartVersion, recipientPurpose: input.recipientPurpose,
-    fulfillmentMode: input.fulfillmentMode, merchandise, ...(delivery ? { delivery } : {}), checkoutReady: false, blockers, storeSchedule };
+    fulfillmentMode: input.fulfillmentMode, merchandise, ...(delivery ? { delivery } : {}),
+    ...(distanceFeeEstimate ? { distanceFeeEstimate } : {}), checkoutReady: false, blockers, storeSchedule };
 }
 export async function reviewCurrentCustomerCheckout(origin: string, bearer: string, actorId: string,
   storeId: string, input: CustomerCheckoutReviewInput, signal?: AbortSignal): Promise<CustomerCheckoutReview> {

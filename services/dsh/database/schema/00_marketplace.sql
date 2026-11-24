@@ -19,6 +19,8 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.service_city_delivery_policies (
     city_id text PRIMARY KEY REFERENCES __SCHEMA__.service_cities(id) ON DELETE RESTRICT,
     version bigint NOT NULL CHECK (version BETWEEN 1 AND 9007199254740991),
     radius_metres integer NOT NULL CHECK (radius_metres > 0),
+    -- Nullable until a city tariff is approved. Same version as the geographic policy.
+    distance_bands jsonb CHECK (distance_bands IS NULL OR (jsonb_typeof(distance_bands) = 'array' AND jsonb_array_length(distance_bands) BETWEEN 1 AND 30)),
     updated_at timestamptz NOT NULL DEFAULT transaction_timestamp()
 );
 CREATE TABLE IF NOT EXISTS __SCHEMA__.verticals (

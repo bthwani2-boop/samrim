@@ -110,7 +110,10 @@ paths:
         Authenticated non-mutating review. Rechecks Identity and the exact Cart version,
         current Offer quantities, stock and merchandise price. Delivery requires a current
         owned Address version and evaluates canonical geographic serviceability in the same
-        snapshot. Recipient contact syntax is validated without storing or echoing PII.
+        snapshot. A valid versioned DSH distance-band tariff yields an optional
+        non-payable distance fee estimate using the same geographic evidence. Missing or
+        invalid tariffs and out-of-scope addresses produce no estimate.
+        Recipient contact syntax is validated without storing or echoing PII.
         The selected mode is not admitted merely by this review. This is not a payable quote,
         reservation, WLT allocation, or Order confirmation.
       security:

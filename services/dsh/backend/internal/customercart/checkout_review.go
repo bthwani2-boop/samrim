@@ -37,6 +37,7 @@ type checkoutReviewResult struct {
 	FulfillmentMode  string                                     `json:"fulfillmentMode"`
 	Merchandise      MerchandiseEstimate                        `json:"merchandise"`
 	Delivery         *DeliveryServiceability                    `json:"delivery,omitempty"`
+	DistanceFee      *DistanceFeeEstimate                       `json:"distanceFeeEstimate,omitempty"`
 	CheckoutReady    bool                                       `json:"checkoutReady"`
 	Blockers         []string                                   `json:"blockers"`
 	StoreSchedule    storeavailability.CustomerScheduleEvidence `json:"storeSchedule"`
@@ -197,6 +198,11 @@ func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result.Delivery = &delivery
+		result.DistanceFee, err = readDistanceFeeEstimate(ctx, tx, delivery)
+		if err != nil {
+			fail(w, 503, "OWNER_UNAVAILABLE")
+			return
+		}
 		if delivery.Status != "SERVICEABLE" {
 			result.Blockers = append(result.Blockers, "ADDRESS_UNSERVICEABLE")
 		}

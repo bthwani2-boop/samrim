@@ -342,6 +342,15 @@ components:
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         merchandise: { $ref: '#/components/schemas/CustomerCartMerchandiseEstimate' }
         delivery: { $ref: '#/components/schemas/CustomerDeliveryServiceability' }
+        distanceFeeEstimate:
+          description: Non-payable DSH cumulative distance-band estimate from the same serviceability policy version; absent for pickup, unavailable tariff or ineligible address. No WLT allocation or payable quote.
+          type: object
+          additionalProperties: false
+          required: [policyVersion, distanceMetres, feeYer]
+          properties:
+            policyVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            distanceMetres: { type: integer, minimum: 0, maximum: 2147483647 }
+            feeYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
         storeSchedule:
           type: object
           additionalProperties: false

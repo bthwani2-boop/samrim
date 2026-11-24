@@ -68,3 +68,23 @@ test("review BFF withholds result after actor switch", async t => {
   assert.equal(res.status, 401); assert.equal((await res.json()).error, "UNAUTHORIZED");
   assert.equal(reads, 2);
 });
+
+test("delivery distance estimate is accepted only with matching eligible owner evidence", () => {
+  const addressId = "addr-00000000000000000000000000000001";
+  const deliveryInput = { ...input, fulfillmentMode: "BTHWANI_CAPTAIN", addressId, expectedAddressVersion: 2 };
+  const evidence = { storeCityId: "sanaa", addressCityId: "sanaa", addressVersion: 2, policyVersion: 7, radiusMetres: 30000, distanceMetres: 2000.6 };
+  const delivery = { actorId: "customer-a", storeId: "store-a", addressId, status: "SERVICEABLE", evidence };
+  const fee = { policyVersion: 7, distanceMetres: 2001, feeYer: "601" };
+  const candidate = { ...result, fulfillmentMode: "BTHWANI_CAPTAIN", delivery, distanceFeeEstimate: fee };
+  assert.deepEqual(parseCustomerCheckoutReview(candidate, "store-a", "customer-a", deliveryInput), candidate);
+  const withoutFee = { ...candidate }; delete withoutFee.distanceFeeEstimate;
+  assert.deepEqual(parseCustomerCheckoutReview(withoutFee, "store-a", "customer-a", deliveryInput), withoutFee);
+  for (const bad of [null, { ...fee, policyVersion: 6 }, { ...fee, distanceMetres: 2000 },
+    { ...fee, feeYer: "0" }, { ...fee, feeYer: "-1" }, { ...fee, feeYer: "1.2" }, { ...fee, feeYer: "0601" },
+    { ...fee, feeYer: 601 }, { ...fee, feeYer: "9999999999999999999" }, { ...fee, payable: true }]) {
+    assert.throws(() => parseCustomerCheckoutReview({ ...candidate, distanceFeeEstimate: bad }, "store-a", "customer-a", deliveryInput));
+  }
+  assert.throws(() => parseCustomerCheckoutReview({ ...result, distanceFeeEstimate: fee }, "store-a", "customer-a", input));
+  assert.throws(() => parseCustomerCheckoutReview({ ...candidate, delivery: { ...delivery, status: "UNSERVICEABLE", evidence: {...evidence, addressCityId: "aden"} },
+    blockers: [...result.blockers, "ADDRESS_UNSERVICEABLE"] }, "store-a", "customer-a", deliveryInput));
+});

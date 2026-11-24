@@ -122,6 +122,44 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if strings.Contains(string(body), "Synthetic recipient") || strings.Contains(string(body), "+967700000001") {
 		t.Fatal("private contact echoed")
 	}
+	if review.DistanceFee != nil {
+		t.Fatal("unconfigured tariff fabricated an estimate")
+	}
+	// The existing fixture has an address one latitude degree from the Store.
+	// Configure only this synthetic DSH owner row; never seed commercial prices.
+	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".service_city_delivery_policies SET version=3,distance_bands=$1::jsonb WHERE city_id='sanaa'", `[{"upToMeters":100000,"ratePerKmMinor":100},{"upToMeters":null,"ratePerKmMinor":200}]`); err != nil {
+		t.Fatal(err)
+	}
+	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
+	assertCartStatus(t, status, 200, body)
+	review = checkoutReviewResult{}
+	if err := json.Unmarshal(body, &review); err != nil || review.DistanceFee == nil ||
+		review.DistanceFee.PolicyVersion != 3 || review.DistanceFee.DistanceMetres != 111195 ||
+		review.DistanceFee.FeeYER != "12239" || review.CheckoutReady || review.Delivery.Evidence.PolicyVersion != 3 {
+		t.Fatalf("expected same-version exact non-payable estimate: %s %v", body, err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".service_city_delivery_policies SET version=4,distance_bands=$1::jsonb WHERE city_id='sanaa'", `[{"upToMeters":null,"ratePerKmMinor":0}]`); err != nil {
+		t.Fatal(err)
+	}
+	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
+	assertCartStatus(t, status, 200, body)
+	review = checkoutReviewResult{}
+	if err := json.Unmarshal(body, &review); err != nil || review.DistanceFee != nil || review.CheckoutReady {
+		t.Fatalf("invalid tariff must not produce an estimate: %s %v", body, err)
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".service_city_delivery_policies SET version=5,radius_metres=30000,distance_bands=$1::jsonb WHERE city_id='sanaa'", `[{"upToMeters":null,"ratePerKmMinor":100}]`); err != nil {
+		t.Fatal(err)
+	}
+	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
+	assertCartStatus(t, status, 200, body)
+	review = checkoutReviewResult{}
+	if err := json.Unmarshal(body, &review); err != nil || review.DistanceFee != nil || review.Delivery.Status != "UNSERVICEABLE" || review.CheckoutReady {
+		t.Fatalf("out of range must not produce a fee: %s %v", body, err)
+	}
+	// Keep the fixture compatible with subsequent cart checks.
+	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".service_city_delivery_policies SET version=6,radius_metres=120000,distance_bands=NULL WHERE city_id='sanaa'"); err != nil {
+		t.Fatal(err)
+	}
 	delivery["expectedAddressVersion"] = 1
 	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
 	assertCartStatus(t, status, 409, body)
