@@ -524,6 +524,50 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if e = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".catalog_draft_edit_commands WHERE actor_id='merchant-a'").Scan(&records); e != nil || records != 2 {
 		t.Fatalf("edit replay wrote unexpected journal count=%d err=%v", records, e)
 	}
+	// Verify both historical transitions independently, including the old values
+	// from the locked version rather than a later read of the current Offer.
+	for _, entry := range []struct {
+		before MerchantCatalogDraftChange
+		after  MerchantCatalogDraftEditChange
+	}{
+		{command, winning},
+		{MerchantCatalogDraftChange{Name: winning.Name, PriceYER: winning.PriceYER, StockUnits: winning.StockUnits}, next},
+	} {
+		var oldName, oldPrice, newName, newPrice, auditStore, auditOffer string
+		var oldStock, newStock, expectedVersion, resultVersion int64
+		e = independent.QueryRowContext(ctx, `SELECT store_id,offer_id,expected_version,result_version,
+			old_name,old_price_yer::text,old_stock_units,result_name,result_price_yer::text,result_stock_units
+			FROM `+schema+`.catalog_draft_edit_commands WHERE actor_id=$1 AND operation_id=$2`,
+			"merchant-a", entry.after.OperationID).Scan(&auditStore, &auditOffer, &expectedVersion, &resultVersion,
+			&oldName, &oldPrice, &oldStock, &newName, &newPrice, &newStock)
+		if e != nil || auditStore != "catalog-a" || auditOffer != draftOfferID ||
+			expectedVersion != entry.after.ExpectedVersion || resultVersion != expectedVersion+1 ||
+			oldName != strings.TrimSpace(entry.before.Name) || oldPrice != entry.before.PriceYER ||
+			oldStock != entry.before.StockUnits || newName != entry.after.Name ||
+			newPrice != entry.after.PriceYER || newStock != entry.after.StockUnits {
+			t.Fatalf("durable audit transition mismatch for %s: %v", entry.after.OperationID, e)
+		}
+	}
+	for _, entry := range []struct {
+		store, operation, state string
+		expected                int64
+	}{
+		{"catalog-b", "audit-cross-store-0001", "23503", 10},
+		{"catalog-a", "audit-duplicate-version-0001", "23505", 1},
+	} {
+		_, e = independent.ExecContext(ctx, `INSERT INTO `+schema+`.catalog_draft_edit_commands
+			(actor_id,operation_id,request_hash,store_id,offer_id,expected_version,result_version,
+			old_name,old_price_yer,old_stock_units,result_name,result_price_yer,result_stock_units)
+			VALUES ('merchant-a',$1,repeat('a',64),$2,$3,$4,$5,'old',1,0,'new',2,1)`,
+			entry.operation, entry.store, draftOfferID, entry.expected, entry.expected+1)
+		var pgErr interface{ SQLState() string }
+		if !errors.As(e, &pgErr) || pgErr.SQLState() != entry.state {
+			t.Fatalf("audit integrity: expected %s for %s, got %v", entry.state, entry.operation, e)
+		}
+	}
+	if _, e = independent.ExecContext(ctx, "DELETE FROM "+schema+".catalog_draft_edit_commands WHERE actor_id='merchant-a'"); e == nil {
+		t.Fatal("draft edit journal can be deleted")
+	}
 	if _, e = independent.ExecContext(ctx, "UPDATE "+schema+".catalog_draft_edit_commands SET result_price_yer=1 WHERE actor_id='merchant-a'"); e == nil {
 		t.Fatal("draft edit journal can be rewritten")
 	}

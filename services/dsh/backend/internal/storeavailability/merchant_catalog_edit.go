@@ -161,12 +161,15 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 	if e != nil || changed != 1 {
 		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 	}
+	// Preserve the locked pre-edit snapshot and the new values atomically
+	// with the same command used for version checks and replay.
 	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog_draft_edit_commands
   (actor_id,operation_id,request_hash,store_id,offer_id,expected_version,result_version,
-  result_name,result_price_yer,result_stock_units)
-  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+  old_name,old_price_yer,old_stock_units,result_name,result_price_yer,result_stock_units)
+  VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 		actor, change.OperationID, fingerprint, storeID, offerID, change.ExpectedVersion,
-		change.ExpectedVersion+1, change.Name, price, change.StockUnits); err != nil {
+		change.ExpectedVersion+1, offer.Name, offer.PriceYER, offer.StockUnits,
+		change.Name, price, change.StockUnits); err != nil {
 		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
 	}
 	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {

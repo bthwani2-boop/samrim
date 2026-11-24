@@ -58,14 +58,19 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.catalog_draft_edit_commands (
     operation_id text NOT NULL CHECK (operation_id ~ '^[A-Za-z0-9._-]{8,128}$'),
     request_hash text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
     store_id text NOT NULL REFERENCES __SCHEMA__.stores(id) ON DELETE RESTRICT,
-    offer_id text NOT NULL REFERENCES __SCHEMA__.offers(id) ON DELETE RESTRICT,
+    offer_id text NOT NULL,
     expected_version bigint NOT NULL CHECK (expected_version >= 1),
     result_version bigint NOT NULL CHECK (result_version = expected_version + 1),
+    old_name text NOT NULL CHECK (char_length(trim(old_name)) BETWEEN 1 AND 160),
+    old_price_yer bigint NOT NULL CHECK (old_price_yer >= 0),
+    old_stock_units integer NOT NULL CHECK (old_stock_units >= 0),
     result_name text NOT NULL CHECK (char_length(trim(result_name)) BETWEEN 1 AND 160),
     result_price_yer bigint NOT NULL CHECK (result_price_yer > 0),
     result_stock_units integer NOT NULL CHECK (result_stock_units >= 0),
     committed_at timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (actor_id,operation_id)
+    PRIMARY KEY (actor_id,operation_id),
+    UNIQUE (offer_id,result_version),
+    FOREIGN KEY (offer_id,store_id) REFERENCES __SCHEMA__.offers(id,store_id) ON DELETE RESTRICT
 );
 CREATE OR REPLACE FUNCTION __SCHEMA__.reject_catalog_draft_edit_rewrite()
 RETURNS trigger LANGUAGE plpgsql AS $$
