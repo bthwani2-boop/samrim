@@ -399,3 +399,99 @@ test("runtime attempt outcome distinguishes known readback from ambiguous writes
   assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_BLOCKED"),"uncertain");
   assert.equal(runtimeAttemptResult(1,"SIGTERM","",""),"uncertain");
 });
+
+test("Graphify scheduling responds to saved code and ignores its own generated output",async()=>{
+  const {graphifySourceEvent}=await import("./sync-lenovo-reconciliation.mjs");
+  for(const rel of ["services\\dsh\\backend\\cmd\\dsh\\main.go","apps/customer/src/new.tsx","AGENTS.md","docs/reference/a.md",".git/HEAD",".git/refs/heads/codex/test"])assert.equal(graphifySourceEvent(rel),true,rel);
+  for(const rel of ["graphify-out/graph.json","apps/customer/node_modules/pkg/index.js","apps/customer/.expo/a.json","infra/.env.local",".git/index",".git/objects/aa/bb","apps/customer/coverage/data.json"])assert.equal(graphifySourceEvent(rel),false,rel);
+  assert.equal(graphifySourceEvent(null),true);
+});
+test("Graphify debounce, bounded audit and single active attempt",async()=>{
+  const {graphifyPollDue}=await import("./sync-lenovo-reconciliation.mjs");
+  const base={now:10000,dirtySince:8000,lastEvent:9500,nextAudit:30000,busy:false};
+  assert.equal(graphifyPollDue(base),false);
+  assert.equal(graphifyPollDue({...base,now:12500}),true);
+  assert.equal(graphifyPollDue({...base,now:23000,lastEvent:22999}),true);
+  assert.equal(graphifyPollDue({...base,now:30000,dirtySince:null}),true);
+  assert.equal(graphifyPollDue({...base,now:30000,busy:true}),false);
+  assert.equal(graphifyPollDue({...base,dirtySince:null}),false);
+});
+test("Graphify automation refreshes stale trusted graphs but never adopts unknown provenance",async()=>{
+  const {graphifyRefreshAction}=await import("./sync-lenovo-reconciliation.mjs");
+  assert.equal(graphifyRefreshAction({status:"PASS",queryable:true}),"current");
+  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true}),"refresh");
+  assert.equal(graphifyRefreshAction({status:"BLOCKED",queryable:false,reason:"indexed branch differs"}),"refresh");
+  for(const reason of ["indexed repository differs","unverified local Graphify index","index locked"])assert.equal(graphifyRefreshAction({status:"BLOCKED",queryable:false,reason}),"blocked");
+  assert.equal(graphifyRefreshAction(null),"blocked");
+});
+
+test("native Graphify refreshes changed tracked source before Commit",{
+  skip:process.env.BTHWANI_GRAPHIFY_INTEGRATION!=="1",timeout:240000,
+},t=>{
+  const dir=mkdtempSync(path.join(tmpdir(),"bthwani-graphify-preview-test-"));
+  t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const script="tools/dev/graphify-local.mjs";
+  const exe=process.platform==="win32"?"git.exe":"git";
+  const call=(program,args)=>{
+    const result=spawnSync(program,args,{cwd:dir,encoding:"utf8",windowsHide:true,timeout:180000});
+    assert.equal(result.status,0,result.stderr||result.error?.message);
+    return result.stdout;
+  };
+  const git=(...args)=>call(exe,args);
+  const cli=(action)=>call(process.execPath,[script,action]);
+  mkdirSync(path.join(dir,"tools","dev"),{recursive:true});
+  mkdirSync(path.join(dir,"graphify-out"));
+  mkdirSync(path.join(dir,"empty-hooks"));
+  writeFileSync(path.join(dir,script),readFileSync(new URL("./graphify-local.mjs",import.meta.url)));
+  writeFileSync(path.join(dir,".gitignore"),"graphify-out/\nempty-hooks/\n");
+  const source=path.join(dir,"example.ts");
+  writeFileSync(source,"export function originalFixture() { return 1; }\n");
+  writeFileSync(path.join(dir,"other.ts"),"export function stableFixture() { return 2; }\n");
+  git("init","-q","-b","fixture");
+  git("config","core.hooksPath",path.join(dir,"empty-hooks"));
+  git("config","user.name","Graphify fixture");
+  git("config","user.email","graphify-fixture@example.invalid");
+  git("config","commit.gpgsign","false");
+  git("add",".");git("commit","-qm","fixture");
+  const initial=Date.now();cli("refresh");const firstMs=Date.now()-initial;
+  const head=git("rev-parse","HEAD").trim();
+  writeFileSync(source,"export function originalFixture() { return 3; }\nexport function addedBeforeCommitFixture() { return originalFixture(); }\n");
+  assert.equal(JSON.parse(cli("status")).status,"INVALIDATED");
+  const started=Date.now();const output=cli("refresh");const updateMs=Date.now()-started;
+  const state=JSON.parse(cli("status"));
+  assert.equal(state.status,"PASS");assert.equal(state.dirty,true);
+  assert.equal(state.indexedHead,head);assert.equal(git("rev-parse","HEAD").trim(),head);
+  const graph=JSON.parse(readFileSync(path.join(dir,"graphify-out","graph.json"),"utf8"));
+  assert.ok(graph.nodes.some(n=>String(n.label).includes("addedBeforeCommitFixture")));
+  assert.ok(graph.nodes.some(n=>String(n.label).includes("stableFixture")));
+  t.diagnostic("native initialMs="+firstMs+" changedSourceMs="+updateMs);
+  const cacheLines=output.split(/\r?\n/).filter(line=>/uncached|cached/i.test(line)).slice(0,3);
+  if(cacheLines.length)t.diagnostic(cacheLines.join(" | "));
+});
+
+test("native recursive file event reaches Graphify scheduling without a Git commit",{timeout:10000},async t=>{
+  const {watch}=await import("node:fs");
+  const {graphifySourceEvent,graphifyPollDue}=await import("./sync-lenovo-reconciliation.mjs");
+  const dir=mkdtempSync(path.join(tmpdir(),"bthwani-graphify-event-"));
+  const app=path.join(dir,"apps","customer","src");
+  mkdirSync(app,{recursive:true});
+  const source=path.join(app,"example.ts");
+  writeFileSync(source,"export const example=1;\n");
+  let watcher;
+  try{
+    const observed=new Promise((resolve,reject)=>{
+      watcher=watch(dir,{recursive:true},(_event,name)=>{
+        if(name && graphifySourceEvent(name) && String(name).endsWith("example.ts"))resolve(String(name));
+      });
+      watcher.once("error",reject);
+    });
+    t.after(()=>watcher?.close());
+    const timer=setTimeout(()=>writeFileSync(source,"export const example=2;\n"),50);
+    let deadline;
+    try{
+      const name=await Promise.race([observed,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error("source event not delivered")),4000);})]);
+      assert.equal(name.replaceAll("\\","/"),"apps/customer/src/example.ts");
+      assert.equal(graphifyPollDue({now:3000,dirtySince:0,lastEvent:0,nextAudit:30000,busy:false}),true);
+    }finally{clearTimeout(timer);clearTimeout(deadline);}
+  }finally{watcher?.close();rmSync(dir,{recursive:true,force:true});}
+});

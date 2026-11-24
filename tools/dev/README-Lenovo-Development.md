@@ -77,6 +77,14 @@ Historical Windows registration keys for Customer/Merchant tasks may still conta
 ## Cleanup rule
 Keep currently used app tasks, tunnel tasks, active SSH sessions and guarded rollback data. Disabled tasks pointing to deleted scripts may be exported and retired only after proving no user or service depends on them; no blanket deletion of backups, mirror directories, Android packages or private keys.
 
+## Local Graphify reconciliation
+
+The existing Surface source-sync process can also schedule the **native local Graphify runner**. With explicit human authorization, write the exact value `local-graphify-reconcile-v1` to `%LOCALAPPDATA%\BThwani\Operations\SourceSync\graphify-reconcile.enabled`, then reload the same existing watcher through its authorized owner. Do not launch another source-sync process or a standalone Graphify watcher.
+
+The in-process source event subscription coalesces changes for 3 seconds (maximum coalescing window 15 seconds); a 30-second status audit is the fallback for missed events. These are scheduling targets, not guaranteed end-to-end latency: source reconciliation, host load and native extraction may delay them. Generated graphs, dependencies and internal Git writes do not trigger another refresh. The runner owns the index fingerprint, native incremental AST cache, exclusive refresh lock and provenance check; the scheduler never writes the graph directly. A trusted, current index is not rebuilt. The scheduler defers while the runner or AGENTS authority is being edited and while untracked source is not safely admitted by the runner. The present runner may block queries during refresh; do not describe that as continuous query availability until its publication mechanism is verified.
+
+The local sync log records `GRAPHIFY_RECONCILE_STARTED`, `GRAPHIFY_RECONCILE_PASS elapsedMs=...`, or the applicable `DEFERRED`, `RETRY` or `BLOCKED` reason. `PASS` here means the runner's verified index freshness, not full-source graph coverage or engineering acceptance. Read `node tools/dev/graphify-local.mjs status` for the exact current provenance. No SSH or Docker changes are needed for Graphify itself.
+
 ## Lenovo SSH CLI control (manual, not a new watcher)
 
 Use `tools/dev/Control-Lenovo-SSH.ps1` from PowerShell on **Surface**. This is a manually invoked SSH/SCP helper; it does not replace the existing tunnel or source-sync task, expose the Docker daemon to TCP, or change Lenovo configuration by itself. SSH host alias defaults to `bthwani-docker`. The helper requires strict host-key checking and checks the remote host identity.

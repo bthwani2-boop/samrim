@@ -75,4 +75,28 @@ function runtimeAttemptResult(code, signal, stdout, stderr) {
   return starts.length===verified.length && starts.every((v,i)=>v===verified[i]) ? "retry":"uncertain";
 }
 
-export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult };
+// The watcher schedules the existing Graphify runner; the runner owns all
+// fingerprinting, indexing and locking. Never treat unknown provenance as
+// permission to initialize or replace an index.
+function graphifyRefreshAction(assessment) {
+  if (assessment?.status === "PASS" && assessment.queryable === true) return "current";
+  if (assessment?.status === "INVALIDATED" && assessment.queryable === true) return "refresh";
+  if (assessment?.status === "BLOCKED" && assessment.queryable === false &&
+      assessment.reason === "indexed branch differs") return "refresh";
+  return "blocked";
+}
+
+// Ignore generated output, dependencies, credentials and internal Git noise.
+function graphifySourceEvent(name) {
+  if (!name) return true; // platform omitted filename: reconcile conservatively
+  const rel=String(name).replaceAll("\\","/");
+  if (/^\.git\/(?:HEAD|refs\/heads\/)/.test(rel)) return true;
+  const parts=rel.split("/");
+  if (parts.some(p=>!p || p===".." || /^(?:\.git|node_modules|graphify-out|\.next|\.expo|\.nx|dist|build|coverage|\.cache|\.pnpm-store|\.env(?:\..*)?|\.ssh|\.secrets)$/i.test(p))) return false;
+  return /^(?:apps|services|packages|infra|tools|governance|specs|docs|tests|\.specify|\.github)(?:\/|$)/.test(rel) || !rel.includes("/");
+}
+function graphifyPollDue({now,dirtySince,lastEvent,nextAudit,busy,debounce=3000,maxWait=15000}) {
+  if (busy) return false;
+  return now>=nextAudit || (dirtySince!==null && (now-lastEvent>=debounce || now-dirtySince>=maxWait));
+}
+export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue };

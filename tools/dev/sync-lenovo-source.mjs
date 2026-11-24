@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirtyPaths, isPreviewGoPath, previewChangeKey } from "../../infra/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -550,6 +550,111 @@ function pollOwnerRuntime() {
   child.on("error",()=>finish("retry"));
   child.on("close",(code,signal)=>finish(runtimeAttemptResult(code,signal,output,errors)));
 }
+// Same process as the existing source mirror. The native Graphify runner
+// remains the exclusive index writer; the event subscription only schedules it.
+const graphOptIn = path.join(stateDir,"graphify-reconcile.enabled");
+let graphChild = null;
+let nextGraphAudit = 0;
+let graphDirtySince = null;
+let graphLastEvent = 0;
+let graphNotice = "";
+let graphEvents = null;
+let nextGraphEventRetry = 0;
+function graphLogOnce(message) {
+  if(message!==graphNotice){logger(message);graphNotice=message;}
+}
+function signalGraphChange(name,now=Date.now()) {
+  if(!graphifySourceEvent(name)) return;
+  graphDirtySince ??= now;
+  graphLastEvent=now;
+}
+function startGraphEvents() {
+  if(graphEvents || Date.now()<nextGraphEventRetry || !fs.existsSync(graphOptIn))return;
+  nextGraphEventRetry=Date.now()+30_000;
+  try{
+    graphEvents=fs.watch(root,{recursive:true},(_event,name)=>signalGraphChange(name));
+    graphEvents.on("error",()=>{
+      graphEvents?.close();graphEvents=null;
+      graphLogOnce("GRAPHIFY_EVENTS_DEGRADED periodic audit remains active");
+    });
+  }catch{graphLogOnce("GRAPHIFY_EVENTS_DEGRADED periodic audit remains active");}
+}
+function pollGraphify() {
+  if(!fs.existsSync(graphOptIn)){
+    graphEvents?.close();graphEvents=null;return;
+  }
+  startGraphEvents();
+  if(!graphifyPollDue({now:Date.now(),dirtySince:graphDirtySince,lastEvent:graphLastEvent,nextAudit:nextGraphAudit,busy:Boolean(graphChild)}))return;
+  nextGraphAudit=Date.now()+30_000;
+  graphDirtySince=null;
+  if(fs.readFileSync(graphOptIn,"utf8").trim()!=="local-graphify-reconcile-v1"){
+    graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED invalid opt-in");return;
+  }
+  if(process.env.COMPUTERNAME?.toUpperCase()!=="BTHWANI" || root.toLowerCase()!=="d:\\samrim"){
+    graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED wrong source checkout");return;
+  }
+  // Never execute a runner or authority file being edited by another session.
+  const runnerUnderEdit=()=>Boolean(run("git",["status","--porcelain","--","tools/dev/graphify-local.mjs","AGENTS.md"]));
+  if(runnerUnderEdit()){
+    graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED runner or authority under edit");return;
+  }
+  const runner=path.join(root,"tools","dev","graphify-local.mjs");
+  const launch=(action,done)=>{
+    const child=spawn(process.execPath,[runner,action],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
+    graphChild=child;
+    let out="",settled=false;
+    child.stdout.on("data",chunk=>{out=(out+chunk.toString()).slice(-65536);});
+    child.stderr.resume(); // no raw native diagnostics in shared logs
+    const finish=(code,signal)=>{
+      if(settled)return;
+      settled=true;graphChild=null;
+      nextGraphAudit=Date.now()+30_000;
+      try{done(code,signal,out);}catch{graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED preflight or runner failure");}
+    };
+    child.on("error",()=>finish(-1,null));
+    child.on("close",finish);
+  };
+  launch("status",(code,signal,out)=>{
+    if(signal || ![0,2].includes(code)){
+      graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED status failed");return;
+    }
+    let state;
+    try{state=JSON.parse(out);}catch{
+      graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED status unavailable or index locked");return;
+    }
+    const action=graphifyRefreshAction(state);
+    if(action==="current"){graphLogOnce("GRAPHIFY_RECONCILE_CURRENT");return;}
+    if(action!=="refresh" || state.branch?.startsWith("archive/")){
+      graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED index provenance");return;
+    }
+    // Respect the runner's untracked-source admission guard until that owner
+    // provides safe snapshot support. No unknown paths are opened here.
+    if(run("git",["ls-files","--others","--exclude-standard"])){
+      graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED untracked source requires safe admission");return;
+    }
+    if(runnerUnderEdit()){
+      graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED runner or authority under edit");return;
+    }
+    if(!fs.existsSync(graphOptIn))return;
+    const started=Date.now();
+    graphLogOnce("GRAPHIFY_RECONCILE_STARTED");
+    launch("refresh",(result,terminated)=>{
+      if(result!==0 || terminated){
+        graphLogOnce("GRAPHIFY_RECONCILE_RETRY native refresh not verified");return;
+      }
+      launch("status",(verified,interrupted,output)=>{
+        let current;
+        try{current=JSON.parse(output);}catch{}
+        if(verified===0 && !interrupted && graphifyRefreshAction(current)==="current"){
+          logger("GRAPHIFY_RECONCILE_PASS elapsedMs="+(Date.now()-started));
+          graphNotice="GRAPHIFY_RECONCILE_CURRENT";
+        }else{
+          graphLogOnce("GRAPHIFY_RECONCILE_RETRY source advanced or index not verified");
+        }
+      });
+    });
+  });
+}
 function main() {
   const idx = process.argv.indexOf("--check-path");
   if (idx >= 0) {
@@ -569,6 +674,7 @@ function main() {
     const attempt = () => {
       if (active) return;
       active = true;
+      try { pollGraphify(); } catch { graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED preflight"); }
       try { pollOwnerRuntime(); } catch (e) { runtimeLogOnce("RUNTIME_UPDATE_BLOCKED "+e.message); }
       try {
         cycle();
