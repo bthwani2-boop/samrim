@@ -92,10 +92,10 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         assert.ok(Object.hasOwn(mocks, name), "unexpected dependency " + name);
         return mocks[name];
       }, mod, mod.exports);
-      function render(actorId, stores) {
+      function render(actorId, stores, initialStoreId) {
         index = 0;
         scheduled = [];
-        const tree = mod.exports.default({ actorId, stores });
+        const tree = mod.exports.default({ actorId, stores, initialStoreId });
         for (const effect of scheduled) effect();
         return tree;
       }
@@ -192,6 +192,22 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       tree = render("merchant-c", stores);
       assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && n.props.draft));
       assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات").props.accessibilityState.selected, false);
+
+      // Remount via the directory with a second Store selected, then revoke that Store.
+      for (const effect of effects) effect?.cleanup?.();
+      hooks.length = 0;
+      effects.length = 0;
+      requests.length = 0;
+      tree = render("merchant-a", stores, "store-b");
+      assert.equal(requests[0].storeId, "store-b");
+      assert.equal(nodes(tree).find(n => n.type === "DraftForm").props.storeId, "store-b");
+      tree = render("merchant-a", stores.slice(0, 1), "store-b");
+      assert.equal(requests.length, 1, "revoking Store B must not trigger a read of Store A");
+      assert.equal(requests[0].signal.aborted, true);
+      assert.ok(!nodes(tree).some(n => ["DraftForm", "CatalogExport", "InventorySummary"].includes(n.type)));
+      nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر أول").props.onPress();
+      render("merchant-a", stores.slice(0, 1), "store-b");
+      assert.equal(requests[1].storeId, "store-a");
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;

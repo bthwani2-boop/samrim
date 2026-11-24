@@ -8,8 +8,8 @@ import MerchantPrivateCatalog from "../catalog/merchant-private-catalog";
 import MerchantStoreRegistration from "../onboarding/merchant-store-registration";
 import MerchantStoreDirectory from "./merchant-store-directory";
 import {
-  type MerchantSection,
   type MerchantPublicationFilter,
+  type MerchantSection,
   merchantMobileSections,
   merchantNavigation,
   merchantStoreSummary,
@@ -25,13 +25,25 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
   const { desktop } = usePrimaryNavigation();
   const [section, setSection] = useState<MerchantSection>("home");
   const [initialPublication, setInitialPublication] = useState<MerchantPublicationFilter>("all");
+  const [catalogTarget, setCatalogTarget] = useState<{ actorId: string; storeId: string } | null>(null);
+  const catalogStoreId = catalogTarget?.actorId === actorId ? catalogTarget.storeId : undefined;
   const openSection = (next: MerchantSection) => {
-    if (next === "stores" && section !== "stores") setInitialPublication("all");
+    if (next === "stores" && section !== "stores") {
+      setInitialPublication("all");
+      setCatalogTarget(null);
+    }
+    if (next === "products" && section !== "products") setCatalogTarget(null);
     setSection(next);
   };
   const openStores = (publication: MerchantPublicationFilter) => {
     setInitialPublication(publication);
+    setCatalogTarget(null);
     setSection("stores");
+  };
+  const openCatalog = (storeId: string) => {
+    if (!stores.some(store => store.id === storeId)) return;
+    setCatalogTarget({ actorId, storeId });
+    setSection("products");
   };
   const summary = merchantStoreSummary(stores);
   const selected = merchantNavigation.find(item => item.id === section) ?? merchantNavigation[0];
@@ -147,11 +159,20 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
           ) : section === "stores" ? (
             <>
               <MerchantStoreDirectory key={JSON.stringify([actorId, initialPublication])}
-                actorId={actorId} stores={stores} initialPublication={initialPublication} />
+                actorId={actorId} stores={stores} initialPublication={initialPublication}
+                initialStoreId={catalogStoreId} onOpenCatalog={openCatalog} />
               <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} />
             </>
           ) : section === "products" ? (
-            <MerchantPrivateCatalog actorId={actorId} stores={stores} />
+            <>
+              {catalogStoreId && stores.some(store => store.id === catalogStoreId) ? (
+                <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى تفاصيل المتجر السابق"
+                  onPress={() => setSection("stores")} style={{ alignSelf: "flex-start", minHeight: 44, justifyContent: "center" }}>
+                  <Text style={{ color: theme.interactiveText }}>العودة إلى تفاصيل المتجر السابق</Text>
+                </Pressable>
+              ) : null}
+              <MerchantPrivateCatalog key={actorId} actorId={actorId} stores={stores} initialStoreId={catalogStoreId} />
+            </>
           ) : section === "more" ? (
             <View style={{ gap: 10 }}>
               {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home")

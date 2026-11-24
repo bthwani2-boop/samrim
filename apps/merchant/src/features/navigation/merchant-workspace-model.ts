@@ -21,15 +21,18 @@ export function merchantStoreSummary(stores: readonly MerchantOwnedStore[]) {
 }
 
 export type MerchantPublicationFilter = "all" | "published" | "unpublished";
+export type MerchantRelationFilter = "all" | MerchantOwnedStore["relation"];
 
 export function filterMerchantStores(
   stores: readonly MerchantOwnedStore[],
   query: string,
   publication: MerchantPublicationFilter,
+  relation: MerchantRelationFilter = "all",
 ) {
   const term = query.trim().normalize("NFKC").toLowerCase();
   return stores.filter(store =>
     (publication === "all" || store.published === (publication === "published")) &&
+    (relation === "all" || store.relation === relation) &&
     (store.name.normalize("NFKC").toLowerCase().includes(term) || store.id.includes(term)),
   );
 }

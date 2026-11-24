@@ -4,12 +4,18 @@ import { Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantOwnedStore } from "../access/dsh-standing";
 import MerchantPublicLink from "../stores/merchant-public-link";
 import StoreAvailability from "../stores/store-availability";
-import { filterMerchantStores, type MerchantPublicationFilter } from "./merchant-workspace-model";
+import { filterMerchantStores, type MerchantPublicationFilter, type MerchantRelationFilter } from "./merchant-workspace-model";
 
 const publicationOptions = [
   { id: "all", label: "الكل" },
   { id: "published", label: "منشورة" },
   { id: "unpublished", label: "غير منشورة" },
+] as const;
+
+const relationOptions = [
+  { id: "all", label: "كل الأنواع" },
+  { id: "MARKETPLACE", label: "سوق بثواني" },
+  { id: "DIRECT", label: "مباشر" },
 ] as const;
 
 function publicationLabel(store: MerchantOwnedStore) {
@@ -20,15 +26,18 @@ function relationLabel(store: MerchantOwnedStore) {
   return store.relation === "MARKETPLACE" ? "ضمن سوق بثواني" : "متجر مباشر";
 }
 
-export default function MerchantStoreDirectory({ actorId, stores, initialPublication = "all" }: Readonly<{
+export default function MerchantStoreDirectory({ actorId, stores, initialPublication = "all", initialStoreId, onOpenCatalog }: Readonly<{
   actorId: string;
   stores: readonly MerchantOwnedStore[];
   initialPublication?: MerchantPublicationFilter;
+  initialStoreId?: string | undefined;
+  onOpenCatalog: (storeId: string) => void;
 }>) {
   const { theme } = useMobileAppearance();
   const [query, setQuery] = useState("");
   const [publication, setPublication] = useState<MerchantPublicationFilter>(initialPublication);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [relation, setRelation] = useState<MerchantRelationFilter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(initialStoreId ?? null);
   const selected = stores.find(store => store.id === selectedId);
 
   const button = {
@@ -56,6 +65,10 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
           <Text style={text}>{publicationLabel(selected)}</Text>
           <Text style={secondary}>{relationLabel(selected)}</Text>
           <Text selectable accessibilityLabel={`معرّف المتجر ${selected.id}`} style={secondary}>{selected.id}</Text>
+          <Pressable accessibilityRole="button" style={{ ...button, alignSelf: "flex-start" }}
+            onPress={() => onOpenCatalog(selected.id)}>
+            <Text style={{ color: theme.interactiveText }}>إدارة منتجات هذا المتجر</Text>
+          </Pressable>
         </View>
         <MerchantPublicLink key={`${actorId}:${selected.id}:public`} actorId={actorId}
           storeId={selected.id} published={selected.published} />
@@ -68,8 +81,8 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
     return <View style={card}><Text style={text}>لا توجد متاجر مرتبطة بحسابك حاليًا.</Text></View>;
   }
 
-  const visible = filterMerchantStores(stores, query, publication);
-  const hasFilter = query.trim() !== "" || publication !== "all";
+  const visible = filterMerchantStores(stores, query, publication, relation);
+  const hasFilter = query.trim() !== "" || publication !== "all" || relation !== "all";
   return (
     <View testID="merchant-store-directory" style={{ gap: 12 }}>
       <TextInput value={query} onChangeText={setQuery} maxLength={120}
@@ -87,8 +100,19 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
             <Text style={{ color: publication === option.id ? theme.interactiveText : theme.color }}>{option.label}</Text>
           </Pressable>
         ))}
+      </View>
+      <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+        {relationOptions.map(option => (
+          <Pressable key={option.id} accessibilityRole="button"
+            accessibilityState={{ selected: relation === option.id }}
+            onPress={() => setRelation(option.id)}
+            style={{ ...button, backgroundColor: relation === option.id ? theme.actionSoft : theme.surface }}>
+            <Text style={{ color: relation === option.id ? theme.interactiveText : theme.color }}>{option.label}</Text>
+          </Pressable>
+        ))}
         {hasFilter ? (
-          <Pressable accessibilityRole="button" style={button} onPress={() => { setQuery(""); setPublication("all"); }}>
+          <Pressable accessibilityRole="button" style={button}
+            onPress={() => { setQuery(""); setPublication("all"); setRelation("all"); }}>
             <Text style={{ color: theme.interactiveText }}>مسح التصفية</Text>
           </Pressable>
         ) : null}

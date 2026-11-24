@@ -23,12 +23,13 @@ function canEditDraft(offer: MerchantCatalogOffer) {
     /^of-[a-f0-9]{32}$/.test(offer.id);
 }
 
-export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
+export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "" }: Readonly<{
   actorId: string;
   stores: MerchantDSHStanding["stores"];
+  initialStoreId?: string | undefined;
 }>) {
   const { theme } = useMobileAppearance();
-  const [selectedId, setSelectedId] = useState("");
+  const [selectedId, setSelectedId] = useState(initialStoreId);
   const [search, setSearch] = useState({ scope: "", draft: "", query: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [priceScope, setPriceScope] = useState<string | null>(null);
@@ -38,7 +39,7 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
   });
   const generation = useRef(0);
   const active = useRef<AbortController | null>(null);
-  const selected = stores.find(store => store.id === selectedId) ?? stores[0];
+  const selected = selectedId ? stores.find(store => store.id === selectedId) : stores[0];
   const storeId = selected?.id ?? "";
   const storeScope = JSON.stringify([actorId, storeId]);
   const priceStockOnly = priceScope === storeScope;
@@ -125,6 +126,9 @@ export default function MerchantPrivateCatalog({ actorId, stores }: Readonly<{
     <Text style={{ color: theme.colorSecondary, lineHeight: 24 }}>
       يعرض DSH منتجات وعروض متجرك. يمكن تعديل المسودات المؤهلة، أما العروض المنشورة فتظل للقراءة فقط.
     </Text>
+    {selectedId && !selected ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
+      المتجر المحدد غير متاح في حسابك الآن.
+    </Text> : null}
     {stores.length === 0 ? <Text style={{ color: theme.color }}>سجّل متجرًا لعرض كتالوجه.</Text> :
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         {stores.map(store => <Pressable key={store.id} accessibilityRole="button"
