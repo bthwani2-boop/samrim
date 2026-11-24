@@ -10,6 +10,8 @@ paths:
     $ref: './paths/wallets.yaml#/paths/~1v1~1wallets~1me'
   /v1/wallets/me/transactions:
     $ref: './paths/wallets.yaml#/paths/~1v1~1wallets~1me~1transactions'
+  /v1/wallets/me/order-payment-allocations/{checkoutID}:
+    $ref: './paths/payment-intents.yaml#/paths/~1v1~1wallets~1me~1order-payment-allocations~1{checkoutID}'
   /v1/operators/stores/{storeID}/commercial-agreement:
     $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1operators~1stores~1{storeID}~1commercial-agreement'
 components:
@@ -67,6 +69,30 @@ components:
           type: [string, 'null']
           minLength: 20
           maxLength: 240
+    CustomerOrderPaymentReadback:
+      type: object
+      additionalProperties: false
+      required: [actorId, checkoutId, allocation]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        checkoutId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        allocation:
+          oneOf:
+            - { type: 'null' }
+            - { $ref: '#/components/schemas/OrderPaymentAllocation' }
+    OrderPaymentAllocation:
+      type: object
+      additionalProperties: false
+      required: [storeId, method, totalYer, walletYer, cashYer, currency, state]
+      description: Exact whole-YER owner allocation and release evidence, not a charge, a captured payment, an admitted order or an authorization to retry a write. Total equals wallet plus cash; COD is cash-only, WALLET wallet-only, MIXED requires both positive.
+      properties:
+        storeId: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+        method: { type: string, enum: [COD, WALLET, MIXED] }
+        totalYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        walletYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
+        cashYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
+        currency: { type: string, const: YER }
+        state: { type: string, enum: [ALLOCATED, RELEASED] }
     CommercialAgreementReview:
       type: object
       additionalProperties: false

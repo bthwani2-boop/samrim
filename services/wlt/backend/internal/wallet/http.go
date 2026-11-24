@@ -20,10 +20,10 @@ func newHandler(origin string, balance balanceReader) (http.Handler, error) {
 }
 
 func newHandlerWithHistory(origin string, balance balanceReader, history historyReader) (http.Handler, error) {
-	return newHandlerWithHistoryMode(origin, balance, history, nil, false)
+	return newHandlerWithHistoryMode(origin, balance, history, nil, nil, false)
 }
 
-func newHandlerWithHistoryMode(origin string, balance balanceReader, history historyReader, agreement agreementReader, containerMode bool) (http.Handler, error) {
+func newHandlerWithHistoryMode(origin string, balance balanceReader, history historyReader, agreement agreementReader, allocation allocationReader, containerMode bool) (http.Handler, error) {
 	identity, err := newIdentityReader(origin, containerMode)
 	if err != nil {
 		return nil, err
@@ -80,6 +80,19 @@ func newHandlerWithHistoryMode(origin string, balance balanceReader, history his
 				return nil, errors.New("agreement read unavailable")
 			}
 			return agreement(ctx, store)
+		}, false)
+	})
+	mux.HandleFunc("/v1/wallets/me/order-payment-allocations/{checkoutID}", func(w http.ResponseWriter, r *http.Request) {
+		checkout := r.PathValue("checkoutID")
+		if !fundingIDPattern.MatchString(checkout) {
+			failure(w, http.StatusBadRequest, "INVALID_REQUEST")
+			return
+		}
+		serveAuthorizedRead(w, r, identity.read, func(ctx context.Context, actor string) (any, error) {
+			if allocation == nil {
+				return nil, errors.New("allocation read unavailable")
+			}
+			return allocation(ctx, actor, checkout)
 		}, false)
 	})
 	return mux, nil

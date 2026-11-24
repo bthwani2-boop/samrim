@@ -78,6 +78,7 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 				(to_regclass('wlt.store_commercial_agreement_decisions'), false),
 				(to_regclass('wlt.commercial_agreement_review_states'), false),
 				('wlt.latest_commercial_agreement_reviews'::regclass, true),
+				('wlt.customer_order_payment_readback'::regclass, true),
 				('wlt.order_payment_allocations'::regclass, false),
 				('wlt.order_payment_releases'::regclass, false)
 			) AS relation(id, readable)

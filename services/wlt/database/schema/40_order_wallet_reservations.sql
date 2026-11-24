@@ -142,3 +142,14 @@ FOR EACH ROW WHEN (NEW.reverses_funding_id IS NOT NULL) EXECUTE FUNCTION wlt.gua
 REVOKE ALL ON wlt.order_payment_allocations,wlt.order_payment_releases FROM PUBLIC;
 REVOKE ALL ON FUNCTION wlt.available_order_wallet_yer(text),wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint),
     wlt.release_order_payment(text,text,text,text),wlt.guard_reserved_funding_reversal() FROM PUBLIC;
+
+-- Customer-scoped recovery projection. The transport binds both predicates to
+-- the authenticated actor and checkout identity; no quote digest, decision
+-- reason, release operation, payment authorization or posted charge is exposed.
+CREATE VIEW wlt.customer_order_payment_readback WITH (security_barrier=true) AS
+SELECT a.actor_id,a.checkout_id,a.store_id,a.method,a.total_yer,a.wallet_yer,a.cash_yer,a.currency,
+       CASE WHEN r.checkout_id IS NULL THEN 'ALLOCATED' ELSE 'RELEASED' END AS state
+FROM wlt.order_payment_allocations a
+LEFT JOIN wlt.order_payment_releases r USING(checkout_id);
+REVOKE ALL ON wlt.customer_order_payment_readback FROM PUBLIC;
+GRANT SELECT ON wlt.customer_order_payment_readback TO bthwani_wlt_reader;

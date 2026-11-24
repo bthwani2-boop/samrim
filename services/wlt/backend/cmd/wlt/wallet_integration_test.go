@@ -111,6 +111,9 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		{"wallet availability write",
 			"GRANT UPDATE (available_yer) ON wlt.customer_wallet_availability TO bthwani_wlt_reader",
 			"REVOKE UPDATE (available_yer) ON wlt.customer_wallet_availability FROM bthwani_wlt_reader"},
+		{"allocation projection write",
+			"GRANT UPDATE (wallet_yer) ON wlt.customer_order_payment_readback TO bthwani_wlt_reader",
+			"REVOKE UPDATE (wallet_yer) ON wlt.customer_order_payment_readback FROM bthwani_wlt_reader"},
 		{"private reservation read",
 			"GRANT SELECT (wallet_yer) ON wlt.order_payment_allocations TO bthwani_wlt_reader",
 			"REVOKE SELECT (wallet_yer) ON wlt.order_payment_allocations FROM bthwani_wlt_reader"},
@@ -236,6 +239,76 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	}
 	server := httptest.NewServer(handler)
 	defer server.Close()
+	t.Run("allocation readback is actor scoped", func(t *testing.T) {
+		const base = "/v1/wallets/me/order-payment-allocations/"
+		body := readWallet(t, ctx, server.URL, one, base+"checkout-exact-big", 200)
+		var actual struct {
+			ActorID    string `json:"actorId"`
+			CheckoutID string `json:"checkoutId"`
+			Allocation *struct {
+				State    string `json:"state"`
+				Method   string `json:"method"`
+				Total    string `json:"totalYer"`
+				Wallet   string `json:"walletYer"`
+				Cash     string `json:"cashYer"`
+				StoreID  string `json:"storeId"`
+				Currency string `json:"currency"`
+			} `json:"allocation"`
+		}
+		if err := json.Unmarshal(body, &actual); err != nil || actual.ActorID != "wallet-one" || actual.CheckoutID != "checkout-exact-big" ||
+			actual.Allocation == nil || actual.Allocation.State != "RELEASED" || actual.Allocation.Method != "WALLET" ||
+			actual.Allocation.Total != "9007199254740993" || actual.Allocation.Wallet != "9007199254740993" ||
+			actual.Allocation.Cash != "0" || actual.Allocation.StoreID != "store-a" || actual.Allocation.Currency != "YER" {
+			t.Fatalf("wrong durable allocation: %s %v", body, err)
+		}
+		for _, key := range []string{"checkout-exact-big", "checkout-not-found"} {
+			body = readWallet(t, ctx, server.URL, two, base+key, 200)
+			if err := json.Unmarshal(body, &actual); err != nil || actual.ActorID != "wallet-two" || actual.CheckoutID != key || actual.Allocation != nil {
+				t.Fatalf("cross-actor or missing read leaked: %s %v", body, err)
+			}
+		}
+		readWallet(t, ctx, server.URL, merchant, base+"checkout-exact-big", 403)
+		readWallet(t, ctx, server.URL, one, base+"checkout-exact-big?actorId=wallet-two", 400)
+		readWallet(t, ctx, server.URL, one, base+"short", 400)
+		readWallet(t, ctx, server.URL, empty, base+"checkout-cash-only", 200)
+		t.Run("owner read failure returns no allocation", func(t *testing.T) {
+			executeFixture(t, ctx, owner, "REVOKE SELECT ON wlt.customer_order_payment_readback FROM bthwani_wlt_reader")
+			defer executeFixture(t, ctx, owner, "GRANT SELECT ON wlt.customer_order_payment_readback TO bthwani_wlt_reader")
+			body := readWallet(t, ctx, server.URL, one, base+"checkout-exact-big", 503)
+			if strings.Contains(string(body), "allocation") {
+				t.Fatalf("unavailable owner leaked allocation: %s", body)
+			}
+		})
+		// A separate session is revoked while the allocation projection is locked.
+		pendingToken := session("wallet-one", "customer", 13)
+		lock, err := owner.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer lock.Rollback()
+		if _, err = lock.ExecContext(ctx, "LOCK TABLE wlt.order_payment_allocations IN ACCESS EXCLUSIVE MODE"); err != nil {
+			t.Fatal(err)
+		}
+		request := httptest.NewRequestWithContext(ctx, http.MethodGet, base+"checkout-exact-big", nil)
+		request.Header.Set("Authorization", "Bearer "+pendingToken)
+		pending := make(chan *httptest.ResponseRecorder, 1)
+		go func() { rec := httptest.NewRecorder(); handler.ServeHTTP(rec, request); pending <- rec }()
+		waitForWalletQuery(t, ctx, reader, "wlt.customer_order_payment_readback")
+		digest := sha256.Sum256(bytes.Repeat([]byte{13}, 32))
+		executeFixture(t, ctx, identity, "UPDATE identity_test_wlt.auth_sessions SET revoked_at=now() WHERE token_digest=$1", digest[:])
+		if err = lock.Rollback(); err != nil {
+			t.Fatal(err)
+		}
+		select {
+		case rec := <-pending:
+			if rec.Code != 401 || strings.Contains(rec.Body.String(), "allocation") {
+				t.Fatalf("revoked allocation leaked: %d %s", rec.Code, rec.Body.String())
+			}
+		case <-ctx.Done():
+			t.Fatal(ctx.Err())
+		}
+		t.Log("WLT_ALLOCATION_READBACK_PASS exact_yer=true cross_actor_denied=true revoked_during_read=true")
+	})
 	t.Run("finance agreement read", func(t *testing.T) {
 		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.actors(id,status) VALUES ('finance-reader','ACTIVE'),('other-operator','ACTIVE')")
 		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.actor_roles(actor_id,role,status) VALUES ('finance-reader','operator','ACTIVE'),('other-operator','operator','ACTIVE')")

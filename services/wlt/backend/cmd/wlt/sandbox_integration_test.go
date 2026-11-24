@@ -126,6 +126,15 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 	if err = owner.QueryRowContext(ctx, "SELECT wlt.allocate_order_payment($1,$2,$3,$4,$5,$6,$7)", "checkout-reversal-guard", "wallet-two", "store-a", strings.Repeat("b", 64), "WALLET", int64(57), int64(57)).Scan(&reservation); err != nil || reservation != "ALLOCATED" {
 		t.Fatalf("reserve before reversal %s %v", reservation, err)
 	}
+	const allocationPath = "/v1/wallets/me/order-payment-allocations/checkout-reversal-guard"
+	body = readWallet(t, ctx, wallet, customer, allocationPath, 200)
+	if !strings.Contains(string(body), `"state":"ALLOCATED"`) || !strings.Contains(string(body), `"walletYer":"57"`) {
+		t.Fatalf("held allocation readback: %s", body)
+	}
+	body = readWallet(t, ctx, wallet, other, allocationPath, 200)
+	if !strings.Contains(string(body), `"allocation":null`) {
+		t.Fatalf("another actor read held allocation: %s", body)
+	}
 	// A held amount remains in posted funding but must disappear from available funding.
 	body = readWallet(t, ctx, wallet, customer, "/v1/wallets/me", 200)
 	if err := json.Unmarshal(body, &balance); err != nil || balance["balanceYer"] != "57" || balance["availableYer"] != "0" {
@@ -145,6 +154,10 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 	}
 	if err = owner.QueryRowContext(ctx, "SELECT wlt.release_order_payment($1,$2,$3,$4)", "checkout-reversal-guard", "wallet-two", "release-reversal-guard", "synthetic cancellation").Scan(&reservation); err != nil || reservation != "RELEASED" {
 		t.Fatalf("release before reversal %s %v", reservation, err)
+	}
+	body = readWallet(t, ctx, wallet, customer, allocationPath, 200)
+	if !strings.Contains(string(body), `"state":"RELEASED"`) {
+		t.Fatalf("released allocation readback: %s", body)
 	}
 	body = readWallet(t, ctx, wallet, customer, "/v1/wallets/me", 200)
 	if err := json.Unmarshal(body, &balance); err != nil || balance["balanceYer"] != "57" || balance["availableYer"] != "57" {

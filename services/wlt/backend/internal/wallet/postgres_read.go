@@ -74,5 +74,7 @@ func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool) (ht
 		return result, nil
 	}, func(ctx context.Context, storeID string) (agreementResult, error) {
 		return readAgreement(ctx, db, storeID)
+	}, func(ctx context.Context, actor, checkout string) (allocationReadback, error) {
+		return readOrderPaymentAllocation(ctx, db, actor, checkout)
 	}, containerMode)
 }

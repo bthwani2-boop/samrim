@@ -1,1 +1,47 @@
-paths: {}
+paths:
+  /v1/wallets/me/order-payment-allocations/{checkoutID}:
+    get:
+      operationId: getCurrentCustomerOrderPaymentAllocation
+      summary: Read current Customer's exact checkout allocation and release state
+      description: Isolated read-only recovery for a known checkout identity. Current Identity Customer is checked before and after the actor-bound WLT read. Unknown checkout and checkout belonging to another actor return the same null allocation. A null allocation is not a guarantee that an in-flight command failed. Never implies confirmed Order, captured payment or collection authority.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: checkoutID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+      responses:
+        '200':
+          description: Actor-scoped allocation readback or explicit absence
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/CustomerOrderPaymentReadback' }
+        '400':
+          description: Invalid checkout ID, query or body
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Current Identity session required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: Current Customer role required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: Read-only resource permits GET only
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Owner unavailable or current authorization could not be verified
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
