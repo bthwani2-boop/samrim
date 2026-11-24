@@ -160,6 +160,42 @@ test("the existing package script replaces the obsolete self-install branch", ()
   assert.doesNotMatch(launcher, /'install'\s*\{\s*Install-CLI/);
 });
 
+test("Lenovo shutdown owns the complete pinned Node tree and rejects foreign descendants", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted=scriptPath.replaceAll("'", "''");
+  const ps=[
+    "$ErrorActionPreference='Stop'",
+    "$tok=$null;$err=$null",
+    `$ast=[Management.Automation.Language.Parser]::ParseFile('${quoted}',[ref]$tok,[ref]$err)`,
+    "$block=$ast.Find({param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -match '^function Get-OwnedAppProcessTree'},$true)",
+    "if(!$block){throw 'OWNED_TREE_HELPER_MISSING'}",
+    "Invoke-Expression $block.Value",
+    "$root='C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime';$node='C:\\Users\\bthwa\\BThwaniAppRunner\\tools\\node-v24.22.1-refoundation\\node.exe'",
+    "$now=[datetime]'2026-11-24T00:00:00Z'",
+    "function P($id,$parent,$name,$exe,$cmd,$seconds){[pscustomobject]@{ProcessId=$id;ParentProcessId=$parent;Name=$name;ExecutablePath=$exe;CommandLine=$cmd;CreationDate=$now.AddSeconds($seconds)}}",
+    "$launcher=P 10 1 'pwsh.exe' 'C:\\Windows\\pwsh.exe' ('pwsh -File '+$root+'\\infra\\Start-RefoundationApp.ps1 -App control-panel') 0",
+    "$parent=P 20 10 'node.exe' $node 'next dev' 1",
+    "$child=P 30 20 'node.exe' $node 'next child' 2",
+    "$other=P 40 1 'node.exe' $node 'unrelated' 1",
+    "$console=P 45 10 'conhost.exe' (Join-Path $env:WINDIR 'System32\\conhost.exe') 'console' 1",
+    "$tree=@(Get-OwnedAppProcessTree 'control-panel' @($launcher,$parent,$child,$other,$console) $root $node)",
+    "if(($tree.ProcessId -join ',') -ne '10,20,30'){throw 'OWNED_DESCENDANTS_WRONG'}",
+    "$reuse=P 30 20 'node.exe' $node 'next child' 4",
+    "if(Test-SameOwnedAppProcess $child $reuse){throw 'REUSED_PID_ACCEPTED'}",
+    "if(!(Test-SameOwnedAppProcess $child $child)){throw 'SAME_PID_REJECTED'}",
+    "$foreign=P 50 20 'cmd.exe' 'C:\\Windows\\cmd.exe' 'foreign' 3",
+    "$rejected=$false;try{Get-OwnedAppProcessTree 'control-panel' @($launcher,$parent,$child,$foreign) $root $node|Out-Null}catch{$rejected=$_.Exception.Message -match 'APP_TREE_FOREIGN'};if(!$rejected){throw 'FOREIGN_DESCENDANT_ACCEPTED'}",
+    "Write-Output 'OWNED_APP_TREE_POLICY_PASS'",
+  ].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",windowsHide:true,timeout:15000});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/OWNED_APP_TREE_POLICY_PASS/);
+  const launcher=readFileSync(scriptPath,"utf8");
+  assert.match(launcher,/function Stop-LenovoTasks[\s\S]*?Stop-OwnedAppTree/);
+  assert.match(launcher,/function Control-SingleApp[\s\S]*?Stop-OwnedAppTree/);
+});
+
 test("the unified dev launcher and each embedded PowerShell block parse on Windows", {
   skip: process.platform !== "win32",
 }, () => {

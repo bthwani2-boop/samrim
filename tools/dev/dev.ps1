@@ -205,6 +205,102 @@ foreach($s in $specs){
   Write-Output ('LENOVO_APP app='+$s.A+' task='+$task.State+' port='+$s.P+' listen='+$port)
 }
 '@
+# The existing launcher task owns the entire pinned Node descendant tree.
+# Snapshot before stopping Task Scheduler: afterward parent links can disappear.
+$remoteAppProcessLifecycle = @'
+function Get-OwnedAppProcessTree([string]$App,[object[]]$Processes,[string]$Root,[string]$PinnedNode) {
+  $launcherPath=Join-Path $Root 'infra\Start-RefoundationApp.ps1'
+  $pattern='(?i)(?:^|\s)-App\s+"?'+[regex]::Escape($App)+'"?(?:\s|$)'
+  $launchers=@($Processes | Where-Object {
+    $_.Name -in @('pwsh.exe','powershell.exe') -and $_.CommandLine -and
+    $_.CommandLine.IndexOf($launcherPath,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine -match $pattern
+  })
+  if($launchers.Count -ne 1){throw ('APP_TREE_LAUNCHER_UNPROVEN '+$App)}
+  $tree=[Collections.Generic.List[object]]::new()
+  $tree.Add($launchers[0])
+  for($i=0;$i -lt $tree.Count;$i++){
+    $parent=$tree[$i]
+    foreach($child in @($Processes | Where-Object {
+      $_.ParentProcessId -eq $parent.ProcessId -and $_.ProcessId -ne $parent.ProcessId -and
+      $_.CreationDate -ge $parent.CreationDate
+    })){
+      # The OS-owned console host is not an application worker; never terminate it.
+      if($child.Name -eq 'conhost.exe' -and $child.ExecutablePath -eq (Join-Path $env:WINDIR 'System32\conhost.exe')){continue}
+      if($child.Name -ne 'node.exe' -or $child.ExecutablePath -ne $PinnedNode -or
+        $tree.ProcessId -contains $child.ProcessId){throw ('APP_TREE_FOREIGN '+$App+' pid='+$child.ProcessId)}
+      $tree.Add($child)
+    }
+  }
+  return $tree.ToArray()
+}
+function Test-SameOwnedAppProcess($Saved,$Live) {
+  return ($Saved.ProcessId -eq $Live.ProcessId -and $Saved.ParentProcessId -eq $Live.ParentProcessId -and
+    $Saved.CreationDate -eq $Live.CreationDate -and $Saved.Name -eq $Live.Name -and
+    $Saved.ExecutablePath -eq $Live.ExecutablePath -and $Saved.CommandLine -ceq $Live.CommandLine)
+}
+function Assert-OwnedAppPort([string]$App,[int]$Port,[object[]]$Tree) {
+  $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+  if($listeners.Count -gt 1 -or ($listeners.Count -eq 1 -and $Tree.ProcessId -notcontains $listeners[0].OwningProcess)){
+    throw ('APP_PORT_OWNER_UNPROVEN '+$App)
+  }
+}
+function Stop-OwnedAppTree([string]$TaskName,[string]$App,[int]$Port,[object[]]$Tree) {
+  if($Tree.Count -lt 1 -or (Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop).State -ne 'Running'){
+    throw ('APP_TASK_STATE_CHANGED '+$App)
+  }
+  $liveLauncher=Get-CimInstance Win32_Process -Filter ('ProcessId='+$Tree[0].ProcessId)
+  if(!$liveLauncher -or !(Test-SameOwnedAppProcess $Tree[0] $liveLauncher)){throw ('APP_TREE_CHANGED '+$App)}
+  Assert-OwnedAppPort $App $Port $Tree
+  # Hold verified process handles before stopping the task. WMI metadata may
+  # disappear during exit, and a PID alone may be recycled after the stop.
+  $handles=[Collections.Generic.List[object]]::new()
+  try{
+    foreach($saved in @($Tree | Where-Object Name -eq 'node.exe')){
+      $live=Get-CimInstance Win32_Process -Filter ('ProcessId='+$saved.ProcessId)
+      if(!$live){continue}
+      if(!(Test-SameOwnedAppProcess $saved $live)){throw ('APP_TREE_PID_CHANGED '+$App)}
+      $process=Get-Process -Id $saved.ProcessId -ErrorAction SilentlyContinue
+      if(!$process){continue}
+      try{
+        $null=$process.Handle
+        if([Math]::Abs(($process.StartTime.ToUniversalTime()-$saved.CreationDate.ToUniversalTime()).Ticks) -gt 10){
+          throw ('APP_TREE_PID_REUSED '+$App)
+        }
+        $handles.Add(@{Saved=$saved;Process=$process})
+      }catch{$process.Dispose();throw}
+    }
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    $deadline=[DateTime]::UtcNow.AddSeconds(15)
+    while((Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop).State -eq 'Running'){
+      if([DateTime]::UtcNow -ge $deadline){throw ('APP_TASK_STILL_RUNNING '+$App)}
+      Start-Sleep -Milliseconds 250
+    }
+    foreach($entry in $handles){
+      if(!$entry.Process.HasExited){$entry.Process.Kill()}
+      if(!$entry.Process.WaitForExit(10000)){throw ('APP_TREE_EXIT_TIMEOUT '+$App)}
+      Write-Output ('APP_OWNED_DESCENDANT_STOPPED '+$App+' pid='+$entry.Saved.ProcessId)
+    }
+    $deadline=[DateTime]::UtcNow.AddSeconds(10)
+    do{
+      $remaining=@(Get-CimInstance Win32_Process)
+      $residual=@(foreach($saved in $Tree){
+        foreach($live in @($remaining | Where-Object {
+          ($_.ProcessId -eq $saved.ProcessId -and $_.CreationDate -eq $saved.CreationDate) -or
+          ($_.ParentProcessId -eq $saved.ProcessId -and $_.CreationDate -ge $saved.CreationDate)
+        })){
+          if($live.Name -ne 'conhost.exe' -or $live.ExecutablePath -ne (Join-Path $env:WINDIR 'System32\conhost.exe')){$live}
+        }
+      })
+      $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue)
+      if($residual.Count -eq 0 -and $listeners.Count -eq 0){Write-Output ('APP_PROCESS_TREE_DRAINED '+$App);return}
+      Start-Sleep -Milliseconds 250
+    }while([DateTime]::UtcNow -lt $deadline)
+    if($residual.Count -gt 0){throw ('APP_TREE_NOT_DRAINED '+$App+' pid='+($residual.ProcessId -join ','))}
+    throw ('APP_PORT_STILL_OCCUPIED_NO_UNKNOWN_PROCESS_KILL '+$App)
+  }finally{foreach($entry in $handles){$entry.Process.Dispose()}}
+}
+'@
+
 function Show-LenovoTasks { Invoke-Lenovo $remoteTasksScript }
 function Start-LenovoTasks {
   $start = $remoteTasksScript + @'
@@ -220,13 +316,23 @@ foreach($s in $specs){
   Invoke-Lenovo $start
 }
 function Stop-LenovoTasks {
-  $stop = $remoteTasksScript + @'
+  $stop = $remoteTasksScript + [Environment]::NewLine + $remoteAppProcessLifecycle + [Environment]::NewLine + @'
+$root='C:\Users\bthwa\BThwaniAppRunner\source-runtime'
+$node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe'
+$snapshot=@(Get-CimInstance Win32_Process)
+$plans=@()
 foreach($s in $specs){
   $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
   if([string]$task.State -eq 'Running') {
-    Stop-ScheduledTask -TaskName $s.N -ErrorAction Stop
-    Write-Output ('LENOVO_APP_STOP_REQUESTED '+$s.A)
+    $tree=@(Get-OwnedAppProcessTree $s.A $snapshot $root $node)
+    Assert-OwnedAppPort $s.A $s.P $tree
+    $plans+=@{Spec=$s;Tree=$tree}
+  }elseif(@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count -gt 0){
+    throw ('APP_STOP_UNPROVEN_ORPHAN '+$s.A)
   }
+}
+foreach($plan in $plans){
+  Stop-OwnedAppTree $plan.Spec.N $plan.Spec.A $plan.Spec.P $plan.Tree
 }
 '@
   Invoke-Lenovo $stop
@@ -488,9 +594,8 @@ if($mode -eq 'start'){
     }catch{}
   }
   if($t.State -eq 'Running'){
-    Stop-ScheduledTask -TaskName $s.N -ErrorAction Stop
-    Write-Output ('APP_STOP_TASK_REQUESTED '+$app)
-    for($i=0;$i -lt 10;$i++){Start-Sleep -Milliseconds 500;if((Get-ScheduledTask -TaskName $s.N).State -ne 'Running'){break}}
+    $tree=@(Get-OwnedAppProcessTree $app @(Get-CimInstance Win32_Process) $source $node)
+    Stop-OwnedAppTree $s.N $app $s.P $tree
   }
 }
 for($i=0;$i -lt 12;$i++){
@@ -513,7 +618,7 @@ throw ('APP_LISTENER_NOT_READY '+$app)
 '@
   $lockHash=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
   $body=$body.Replace('__APP__',$App).Replace('__MODE__',$operation).Replace('__LOCK__',$lockHash)
-  Invoke-Lenovo $body
+  Invoke-Lenovo ($remoteAppProcessLifecycle + [Environment]::NewLine + $body)
 }
 function Probe-App([string]$url,[string]$accept='text/html',[string]$platform='') {
   $curl=Join-Path $env:WINDIR 'System32\curl.exe'
