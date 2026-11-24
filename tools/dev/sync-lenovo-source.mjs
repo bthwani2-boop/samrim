@@ -7,7 +7,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { dirtyPaths, isPreviewGoPath, previewChangeKey } from "../../infra/owner-preview-source.mjs";
+import { dirtyPaths, isPreviewGoPath, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
 import { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimePollDue, runtimeAttemptResult, graphifyRefreshAction, graphifySourceEvent, graphifyPollDue } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -516,9 +516,15 @@ function pollOwnerRuntime() {
     runtimeLogOnce("RUNTIME_UPDATE_BLOCKED branch"); return;
   }
   const changed=dirtyPaths(root,runtimeScope);
-  const dirty=changed.some(p=>!isPreviewGoPath(p)) || (!preview && changed.length>0);
-  if(dirty){runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (non-Go input or preview not authorized)");return;}
-  const key=crypto.createHash("sha256").update(run("git",["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(previewChangeKey(root,changed)).update(optIn).digest("hex");
+  // The owner reconciler owns per-service admission and dependency holds.
+  // Shared tooling/configuration remains a global hold until reviewed.
+  const dirty=changed.some(p=>!/^services\/(?:identity|dsh|wlt)\//.test(p));
+  if(dirty){runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (shared runtime input)");return;}
+  // The periodic audit also handles committed schema holds and active overlays.
+  // Do not read or hash excluded owner files just to schedule another owner.
+  const eligible=ownerReconcilePlan({changed,committed:{},preview,captain:false}).eligible;
+  const go=changed.filter(p=>isPreviewGoPath(p) && eligible.some(o=>p.startsWith("services/"+o+"/")));
+  const key=crypto.createHash("sha256").update(run("git",["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(JSON.stringify(changed)).update(previewChangeKey(root,go)).update(optIn).digest("hex");
   const last = runtimeState();
   if (last && (["running","uncertain"].includes(last.status) || (last.key === key && last.status === "blocked"))) {
     runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation"); return;
@@ -542,6 +548,8 @@ function pollOwnerRuntime() {
     nextRuntimeAudit=Date.now()+60_000;
     try {
       persistAt(runtimeStateFile,{version:1,key,status});
+      const holds=output.split(/\r?\n/).filter(line=>/^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=[A-Z_:a-z]+$/.test(line));
+      for(const hold of holds) logger(hold);
       runtimeLogOnce("RUNTIME_RECONCILE_"+status.toUpperCase()+" key="+key.slice(0,12));
     } catch {
       runtimeLogOnce("RUNTIME_UPDATE_BLOCKED attempt state could not be persisted");

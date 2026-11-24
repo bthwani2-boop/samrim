@@ -10,6 +10,40 @@ const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.
 const owners = ["dsh", "identity", "wlt"];
 const goPath = /^services\/(?:dsh|identity|wlt)\/backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
 export function isPreviewGoPath(rel) { return goPath.test(rel); }
+function sourceOwner(rel) {
+  return owners.find(owner => rel.startsWith("services/" + owner + "/"));
+}
+
+// The existing preview authority is intentionally Go-only. Partition review
+// holds by owner, and propagate only actual runtime/contract dependency risk.
+export function ownerReconcilePlan({changed, committed, preview, captain}) {
+  const blocked = {};
+  const runtimeChanges = {};
+  const order = ["dsh", "identity", "wlt"];
+  if (changed.some(rel => !sourceOwner(rel))) {
+    return { eligible: [], blocked: Object.fromEntries(order.map(o => [o, "SHARED_INPUT_REVIEW_REQUIRED"])) };
+  }
+  for (const owner of order) {
+    const prefix = "services/" + owner + "/";
+    const local = changed.filter(rel => sourceOwner(rel) === owner);
+    const saved = committed[owner] || [];
+    runtimeChanges[owner] = [...local, ...saved].some(rel =>
+      !/^(?:clients\/|package\.json$|tsconfig\.json$|README\.md$)/.test(rel.slice(prefix.length)));
+    if (saved.some(rel => rel.startsWith(prefix + "database/"))) blocked[owner] = "SCHEMA_REVIEW_REQUIRED";
+    else if (local.some(rel => !isPreviewGoPath(rel))) blocked[owner] = "UNCOMMITTED_NON_GO";
+    else if (local.length && !preview) blocked[owner] = "PREVIEW_NOT_AUTHORIZED";
+  }
+  // DSH and WLT consume Identity; Captain-enabled Identity consumes DSH.
+  // A blocked peer with no runtime input change is not a dependency hold.
+  const edges = [["identity", "dsh"], ["identity", "wlt"], ...(captain ? [["dsh", "identity"]] : [])];
+  for (let i = 0; i < order.length; i++) {
+    for (const [peer, consumer] of edges) {
+      if (blocked[peer] && runtimeChanges[peer] && !blocked[consumer]) blocked[consumer] = "PEER_REVIEW_REQUIRED:" + peer;
+    }
+  }
+  return { eligible: order.filter(owner => !blocked[owner]), blocked };
+}
+
 function gitList(root, args) {
   return execFileSync(gitExe, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000, maxBuffer: 8*1024*1024 }).split("\0").filter(Boolean);
 }

@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Isolated development owner reconciliation; no SQL, secret output or volume mutations.
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync } from "node:fs";
-import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
+import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const context = "bthwani-docker";
@@ -108,15 +109,19 @@ export function sourceIdentity(labels, owner) {
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
 const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml",".go-version"];
-function currentChangeKey() {
+function currentChangeKey(committed, preview, captain) {
   const changed=dirtyPaths(root,guardedScope);
-  if(changed.some(p=>!isPreviewGoPath(p))) throw new Error("Only uncommitted owner Go code is eligible; review configuration, contracts, dependencies and SQL explicitly");
-  return {changed,key:previewChangeKey(root,changed)};
+  const plan=ownerReconcilePlan({changed,committed,preview,captain});
+  const go=changed.filter(p=>isPreviewGoPath(p) && plan.eligible.some(o=>p.startsWith("services/"+o+"/")));
+  // Blocked inputs cannot be built; only their paths/review classification
+  // affect selection. Eligible Go bytes must remain exactly stable.
+  const key=createHash("sha256").update(JSON.stringify([changed,plan])).update(previewChangeKey(root,go)).digest("hex");
+  return {changed,plan,key};
 }
-function checkedHead(head, key) {
+function checkedHead(head, key, committed, preview, captain) {
   const currentBranch = git(["branch", "--show-current"]);
   if (!currentBranch || currentBranch === "main" || currentBranch.startsWith("archive/")) throw new Error("Not an active development branch");
-  if (git(["rev-parse", "HEAD"]) !== head || currentChangeKey().key !== key) throw new Error("Source changed during reconciliation");
+  if (git(["rev-parse", "HEAD"]) !== head || currentChangeKey(committed,preview,captain).key !== key) throw new Error("Source changed during reconciliation");
 }
 function validateVolumeFiles(headTag) {
   for (const [volume, paths] of [["bthwani-refoundation-captain-dsh-ca", ["/proof/ca.pem"]], ["bthwani-refoundation-captain-dsh-tls", ["/proof/server.pem","/proof/server-key.pem"]]]) {
@@ -159,32 +164,46 @@ function main() {
   const appNames = ["dsh","identity"];
   const groups = [{ names: appNames, files: activeAppFiles },{names:["wlt"],files:wltFiles}];
   for (const group of groups) assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
-  const change=currentChangeKey();
-  if(apply && change.changed.length && mode!=="--apply-preview")throw new Error("Explicit isolated preview authorization required for uncommitted Go");
+  const revisions=Object.fromEntries(Object.keys(owners).map(o=>[o,ownerRevision(state,o)]));
+  const committed={};
+  for(const o of Object.keys(owners)){
+    git(["merge-base","--is-ancestor",revisions[o].revision,head]);
+    committed[o]=git(["diff","--name-only",revisions[o].revision,head,"--","services/"+o]).split(/\r?\n/).filter(Boolean);
+  }
+  const preview=mode==="--apply-preview" || !apply;
+  const change=currentChangeKey(committed,preview,captain);
+  const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain);
+  const blocked=change.plan.blocked;
+  const partial=Object.keys(blocked).length>0;
+  if(mode==="--apply-captain" && (partial || change.changed.length)) throw new Error("Captain activation requires a fully reviewed committed source");
   const snapshots=new Map();
   const candidates=[];
   for(const o of Object.keys(owners)){
-    const old=ownerRevision(state,o);
-    git(["merge-base","--is-ancestor",old.revision,head]);
-    const committed=git(["diff","--name-only",old.revision,head,"--","services/"+o]);
-    if(committed.split(/\r?\n/).some(p=>p.startsWith("services/"+o+"/database/"))) throw new Error("Migration or schema review required: "+o);
+    const old=revisions[o];
+    if(blocked[o]){
+      console.log(o+" RUNTIME=BLOCKED revision="+old.revision+" reason="+blocked[o]);
+      continue;
+    }
     const dirty=change.changed.some(p=>p.startsWith("services/"+o+"/"));
     if(dirty) snapshots.set(o,captureOwner(root,o));
     const snapshot=snapshots.get(o);
-    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(committed || old.digest);
+    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(committed[o].length || old.digest);
     if(stale)candidates.push(o);
     console.log(o+" RUNTIME="+(stale?"STALE":snapshot?"PREVIEW_CURRENT":"CURRENT")+" revision="+old.revision+(old.digest?" preview="+old.digest:""));
   }
   const selected = selectOwners({candidates,activateCaptain:mode==="--apply-captain",currentCaptain:captain});
   console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_OVERLAY="+captain);
-  if (!apply || selected.length===0) return;
-  checkedHead(head,change.key);
+  if (!apply || selected.length===0) {
+    if(partial){console.log("RECONCILE_PARTIAL");process.exitCode=3;}
+    return;
+  }
+  ensureSource();
   const tags={};
   const targetIds={};
   const nextEnv = {...env};
   for (const o of selected) {
     // Fresh local unit tests, with the pinned toolchain. No migration or DB writes.
-    checkedHead(head,change.key);
+    ensureSource();
     const snap=snapshots.get(o);
     const tag=snap?"preview-"+head.slice(0,9)+"-"+snap.digest:"sha-"+head.slice(0,9);
     tags[o]=tag;
@@ -220,7 +239,7 @@ function main() {
       console.log("OWNER_IMAGE_PASS "+o+" "+image.Id+(snap?" preview="+snap.digest:""));
     } finally { staged?.dispose(); }
   }
-  checkedHead(head,change.key);
+  ensureSource();
   for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("Preview source changed: "+o);
   const activate = mode==="--apply-captain" && !captain;
   if (activate) validateVolumeFiles(tags.dsh);
@@ -233,7 +252,7 @@ function main() {
     const names=group.names.filter(o=>selected.includes(o));
     if(!names.length) continue;
     const newFiles=activate && group.names.includes("dsh") ? [...group.files,captainFile]:group.files;
-    checkedHead(head,change.key);
+    ensureSource();
     for(const o of names) if(imageRecord(owners[o].image+":"+tags[o]).Id!==targetIds[o])throw new Error("Candidate image tag changed: "+o);
     assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
     const newHashes=configHashes(newFiles,group.names,nextEnv);
@@ -264,9 +283,10 @@ function main() {
       throw new Error("ROLLBACK_PASS "+names.join(",")+" after failed replacement: "+e.message);
     }
   }
-  checkedHead(head,change.key);
+  ensureSource();
   for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("RUNTIME_STALE preview input advanced: "+o);
-  console.log("RECONCILE_PASS HEAD="+head);
+  if(partial){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
+  else console.log("RECONCILE_PASS HEAD="+head);
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { main(); } catch (e) { console.error("RUNTIME_RECONCILE_BLOCKED " + e.message); process.exitCode = 1; }

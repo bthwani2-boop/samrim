@@ -31,3 +31,44 @@ test("preview provenance is distinct from an accepted Git source SHA",()=>{
   assert.throws(()=>sourceIdentity({...labels,"com.bthwani.preview-digest":"c".repeat(64)},"dsh"),/Invalid preview/);
   assert.deepEqual(sourceIdentity({"org.opencontainers.image.revision":base,"com.bthwani.source-sha":base},"dsh"),{revision:base,digest:null});
 });
+
+test("an unrelated WLT contract change does not block DSH or Identity", async () => {
+  const { ownerReconcilePlan } = await import("./owner-preview-source.mjs");
+  const plan = ownerReconcilePlan({
+    changed: ["services/wlt/contracts/openapi/wlt.openapi.yaml", "services/dsh/backend/cmd/dsh/main.go"],
+    committed: {}, preview: true, captain: true,
+  });
+  assert.deepEqual(plan.eligible, ["dsh", "identity"]);
+  assert.equal(plan.blocked.wlt, "UNCOMMITTED_NON_GO");
+});
+
+test("a committed DSH schema change stays blocked without suppressing independent WLT", async () => {
+  const { ownerReconcilePlan } = await import("./owner-preview-source.mjs");
+  const plan = ownerReconcilePlan({
+    changed: [], committed: { dsh: ["services/dsh/database/schema/45_customer_addresses.sql"] },
+    preview: true, captain: true,
+  });
+  assert.deepEqual(plan.eligible, ["wlt"]);
+  assert.equal(plan.blocked.dsh, "SCHEMA_REVIEW_REQUIRED");
+  assert.equal(plan.blocked.identity, "PEER_REVIEW_REQUIRED:dsh");
+});
+
+test("Identity runtime changes requiring review hold dependent owners, but client-only dirt does not", async () => {
+  const { ownerReconcilePlan } = await import("./owner-preview-source.mjs");
+  const base = { committed: {}, preview: true, captain: true };
+  const schema = ownerReconcilePlan({...base, changed:["services/identity/database/schema/20_sessions.sql"]});
+  assert.deepEqual(schema.eligible, []);
+  const client = ownerReconcilePlan({...base, changed:["services/identity/clients/session.ts"]});
+  assert.deepEqual(client.eligible, ["dsh","wlt"]);
+  assert.equal(client.blocked.identity, "UNCOMMITTED_NON_GO");
+  const shared = ownerReconcilePlan({...base, changed:["infra/compose.yaml"]});
+  assert.deepEqual(shared.eligible, []);
+  assert.equal(shared.blocked.dsh, "SHARED_INPUT_REVIEW_REQUIRED");
+});
+
+test("committed-only mode cannot promote a dirty Go owner", async () => {
+  const { ownerReconcilePlan } = await import("./owner-preview-source.mjs");
+  const plan = ownerReconcilePlan({changed:["services/wlt/backend/cmd/wlt/main.go"], committed:{}, preview:false,captain:true});
+  assert.deepEqual(plan.eligible, ["dsh","identity"]);
+  assert.equal(plan.blocked.wlt, "PREVIEW_NOT_AUTHORIZED");
+});
