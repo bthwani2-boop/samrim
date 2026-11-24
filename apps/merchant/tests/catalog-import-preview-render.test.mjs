@@ -47,6 +47,7 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
       "react-native": {Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},
       "../../components/merchant-capability-screen":{__esModule:true,default:"Unavailable"},
       "./catalog-import-data": data,
+      "./merchant-catalog-draft-form": {__esModule:true,default:"DraftForm"},
       "./catalog-transport": {readMerchantCatalogPage(storeId,actorId,signal,options) {
         return new Promise((resolve,reject)=>ownerReads.push({storeId,actorId,signal,options,resolve,reject}));
       }},
@@ -102,8 +103,9 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
     assert.equal(secondRead(),1);
     assert.ok(JSON.stringify(screen()).includes("قهوة"));
     assert.ok(JSON.stringify(screen()).includes("اسم موجود في كتالوج المتجر"));
-    assert.ok(JSON.stringify(screen()).includes("لم يُحفظ أي سجل"));
+    assert.ok(JSON.stringify(screen()).includes("المعاينة لا تحفظ أي سجل"));
     assert.ok(JSON.stringify(screen()).includes("1200"));
+    assert.ok(!nodes(screen()).some(n=>String(n.props?.accessibilityLabel).includes("مراجعة تعديل المسودة")), "published offers stay held");
     const conflictFilter = nodes(screen()).find(n=>n.props?.accessibilityLabel==="عرض تعارضات المتجر");
     assert.ok(conflictFilter, "conflict filter must be reachable");
     conflictFilter.props.onPress();
@@ -126,10 +128,29 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
     await tick();
     ownerReads[5].resolve({});
     await until(() => ownerReads.length === 7);
-    ownerReads[6].resolve(ownerPage([]));
+    ownerReads[6].resolve(ownerPage([{
+      ...offer("of-draft", "قهوة"), published:false, available:false, productActive:false,
+      variantSellable:false, requiredAttributesValid:false, draftVersion:7, productId:"pr-draft", variantId:"va-draft",
+    }]));
     await until(() => states[2] === false);
     assert.equal(nativeRead(),1);
     assert.ok(JSON.stringify(screen()).includes("قهوة"));
-    assert.ok(JSON.stringify(screen()).includes("يحتاج مراجعة DSH"));
+    assert.ok(!nodes(screen()).some(n=>n.type==="DraftForm"), "no implicit save or selection");
+    const resolve = nodes(screen()).find(n=>n.props?.accessibilityLabel==="مراجعة تعديل المسودة للسجل 2");
+    assert.ok(resolve, "a unique editable draft can be explicitly reviewed");
+    resolve.props.onPress();
+    const form = nodes(screen()).find(n=>n.type==="DraftForm");
+    assert.equal(form.props.actorId,"merchant-a");
+    assert.equal(form.props.storeId,"store-a");
+    assert.equal(form.props.draft.id,"of-draft");
+    assert.equal(form.props.draft.draftVersion,7);
+    assert.equal(form.props.priceStockOnly,true);
+    assert.deepEqual(form.props.initialPriceStock,{priceYer:"1000",stockUnits:2});
+    assert.ok(!nodes(screen()).some(n=>n.props?.accessibilityLabel==="معاينة ملف المنتجات CSV" && !n.props.disabled));
+    form.props.onSaved();
+    form.props.onCreated();
+    assert.ok(JSON.stringify(screen()).includes("أكد DSH حفظ تعديل المسودة"));
+    assert.ok(!nodes(screen()).some(n=>n.type==="DraftForm"));
+    assert.ok(!JSON.stringify(screen()).includes("of-draft"));
   } finally {rmSync(tmp,{recursive:true,force:true});}
 });

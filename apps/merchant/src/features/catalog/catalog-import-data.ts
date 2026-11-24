@@ -1,4 +1,4 @@
-import { validMerchantCatalogDraft } from "@bthwani/dsh";
+import { type MerchantCatalogOffer, validMerchantCatalogDraft } from "@bthwani/dsh";
 import { type CatalogReader, collectMerchantCatalogOffers } from "./catalog-pages.ts";
 
 // This is only a local syntax/shape preflight. Even valid rows require a DSH
@@ -42,6 +42,7 @@ type PreviewRow = Readonly<{
   row: number; name: string; priceYer: string; stockUnits: string;
   reason: "invalid" | "duplicate-name" | "owner-review" | "existing-store-name";
   match?: StoreNameMatch;
+  editableDraft?: MerchantCatalogOffer;
 }>;
 
 export function previewCatalogCsv(input: string): PreviewRow[] {
@@ -114,16 +115,22 @@ export async function reviewCatalogImportRows(
   const offers = await collectMerchantCatalogOffers(actorId, storeId, signal, read);
   signal.throwIfAborted();
   const key = (name: string) => name.trim().normalize("NFC").toLowerCase();
-  const existing = new Map<string, StoreNameMatch>();
+  const existing = new Map<string, StoreNameMatch & { draft?: MerchantCatalogOffer }>();
   for (const offer of offers) {
     const name = key(offer.name);
     const previous = existing.get(name);
     existing.set(name, previous ? { count: previous.count + 1 } : {
       count: 1, priceYer: offer.priceYer, stockUnits: offer.stockUnits, published: offer.published,
+      ...(offer.published === false && offer.available === false && offer.productActive === false &&
+        offer.variantSellable === false && offer.requiredAttributesValid === false &&
+        Number.isSafeInteger(offer.draftVersion) && offer.draftVersion >= 1 &&
+        offer.draftVersion < Number.MAX_SAFE_INTEGER ? { draft: offer } : {}),
     });
   }
   return rows.map(row => {
     const match = row.reason === "owner-review" ? existing.get(key(row.name)) : undefined;
-    return match ? { ...row, reason: "existing-store-name", match } : row;
+    if (!match) return row;
+    const { draft, ...observation } = match;
+    return { ...row, reason: "existing-store-name", match: observation, ...(draft ? { editableDraft: draft } : {}) };
   });
 }

@@ -66,16 +66,20 @@ function clearAttempt(key: string, editing: boolean, operationId: string) {
   });
 }
 
-export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, draft, priceStockOnly = false }: Readonly<{
+export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, draft, priceStockOnly = false, initialPriceStock, onSaved }: Readonly<{
   actorId: string; storeId: string; onCreated: () => void;
   draft?: MerchantCatalogOffer;
   priceStockOnly?: boolean;
+  initialPriceStock?: Readonly<{ priceYer: string; stockUnits: number }>;
+  onSaved?: () => void;
 }>) {
   const { theme } = useMobileAppearance();
   const focused = priceStockOnly && !!draft;
   const [name, setName] = useState(draft?.name ?? "");
-  const [price, setPrice] = useState(draft?.priceYer ?? "");
-  const [quantity, setQuantity] = useState(draft ? String(draft.stockUnits) : "0");
+  const initialPrice = focused && initialPriceStock ? initialPriceStock.priceYer : draft?.priceYer ?? "";
+  const initialStock = focused && initialPriceStock ? String(initialPriceStock.stockUnits) : draft ? String(draft.stockUnits) : "0";
+  const [price, setPrice] = useState(initialPrice);
+  const [quantity, setQuantity] = useState(initialStock);
   const [pending, setPending] = useState<MerchantCatalogDraftChange | MerchantCatalogDraftEditChange | null>(null);
   const [recovery, setRecovery] = useState<{ key: string; attempt: DraftAttempt | null } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -88,8 +92,8 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
     session.current?.abort();
     inFlight.current = false;
     setName(draft?.name ?? "");
-    setPrice(draft?.priceYer ?? "");
-    setQuantity(draft ? String(draft.stockUnits) : "0");
+    setPrice(initialPrice);
+    setQuantity(initialStock);
     setPending(null);
     setRecovery(null);
     setSaving(false);
@@ -112,7 +116,7 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
       }
     })();
     return () => { controller.abort(); };
-  }, [actorId, storeId, draft?.id, draft?.draftVersion, focused]);
+  }, [actorId, storeId, draft?.id, draft?.draftVersion, focused, initialPriceStock?.priceYer, initialPriceStock?.stockUnits]);
   const rawStock = digits(quantity).trim();
   const normalizedPrice = digits(price).trim();
   const parsedStock = /^[0-9]{1,10}$/.test(rawStock) ? Number(rawStock) : -1;
@@ -184,6 +188,7 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
       setPrice("");
       setQuantity("0");
       setMessage(draft ? "حُفظ تعديل المسودة لدى DSH، وبقيت غير منشورة." : "حُفظت مسودة غير منشورة لدى DSH. يلزم استكمال الأهلية قبل البيع.");
+      onSaved?.();
       onCreated();
     } catch (error) {
       if (controller.signal.aborted) return;

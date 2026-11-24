@@ -5,6 +5,7 @@ import { Platform, Pressable, Text, View } from "react-native";
 import MerchantCapabilityScreen from "../../components/merchant-capability-screen";
 import { csvPreviewByteLimit, previewCatalogCsv, readCatalogCsv, reviewCatalogImportRows } from "./catalog-import-data";
 import { readMerchantCatalogPage } from "./catalog-transport";
+import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
 
 function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; storeId: string }>) {
   const { theme } = useMobileAppearance();
@@ -13,16 +14,19 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "existing-store-name" | "owner-review" | "invalid" | "duplicate-name">("all");
+  const [selected, setSelected] = useState<number | null>(null);
+  const [notice, setNotice] = useState("");
   const active = useRef<AbortController | null>(null);
   useLayoutEffect(() => () => { active.current?.abort(); active.current = null; }, []);
 
   async function choose() {
-    if (active.current) return;
+    if (active.current || selected !== null) return;
     const controller = new AbortController();
     active.current = controller;
     const { signal } = controller;
     setBusy(true);
     setError("");
+    setNotice("");
     setRows([]);
     setPage(0);
     setFilter("all");
@@ -83,16 +87,32 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
     <Text style={{ color: theme.colorSecondary }}>
       اختر CSV بترميز UTF-8 وعناوين الأعمدة name,price_yer,stock_units بهذا الترتيب.
       تُطابق الأسماء مع عروض المتجر المقروءة من DSH؛ عدم العثور على اسم لا يثبت أهلية إنشاء منتج جديد.
-      لا تُرفع بيانات الملف ولا يُنشأ أي منتج. حل تعارضات الهوية واعتماد الاستيراد لدى المالك غير متاحين بعد.
+      لا تُرفع بيانات الملف ولا يُنشأ أي منتج. يمكنك مراجعة سعر ومخزون مسودة مطابقة واحدة وحفظ تعديلها لدى DSH بشكل صريح؛ تبقى المسودات غير منشورة. اعتماد الاستيراد الجماعي وحل الهويات الملتبسة غير متاحين بعد.
     </Text>
     <Pressable accessibilityRole="button" accessibilityLabel="معاينة ملف المنتجات CSV"
-      accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void choose()} style={button}>
+      accessibilityState={{ busy, disabled: busy || selected !== null }} disabled={busy || selected !== null} onPress={() => void choose()} style={button}>
       <Text style={{ color: theme.interactiveText }}>{busy ? "جارٍ فحص الملف…" : "اختيار ملف CSV وفحصه"}</Text>
     </Pressable>
     {error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{error}</Text> : null}
-    {rows.length > 0 ? <>
+    {notice ? <Text accessibilityLiveRegion="polite" style={{ color: theme.successText }}>{notice}</Text> : null}
+    {selected !== null ? (() => {
+      const row = rows.find(r => r.row === selected);
+      if (!row?.editableDraft) return null;
+      return <View style={{ gap: 8 }}>
+        <Text style={{ color: theme.color }}>السجل {row.row} · مراجعة العرض {row.editableDraft.id}</Text>
+        <Text style={{ color: theme.colorSecondary }}>الاسم ومعرّف العرض ثابتان؛ راجع القيم قبل الحفظ. يتحقق DSH من صلاحيتك ونسخة المسودة.</Text>
+        <MerchantCatalogDraftForm key={JSON.stringify([actorId, storeId, row.editableDraft.id, row.editableDraft.draftVersion])}
+          actorId={actorId} storeId={storeId} draft={row.editableDraft} priceStockOnly
+          initialPriceStock={{ priceYer: row.priceYer, stockUnits: Number(row.stockUnits) }}
+          onSaved={() => setNotice("أكد DSH حفظ تعديل المسودة غير المنشورة. افحص الملف مجددًا لقراءة أحدث بيانات المتجر.")}
+          onCreated={() => { setSelected(null); setRows([]); setPage(0); setFilter("all"); }} />
+        <Pressable accessibilityRole="button" onPress={() => setSelected(null)} style={button}>
+          <Text style={{ color: theme.interactiveText }}>العودة إلى المعاينة</Text>
+        </Pressable>
+      </View>;
+    })() : rows.length > 0 ? <>
       <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
-        {rows.length} سجل · {held} يحتاج مراجعة DSH · {existing} اسم موجود في المتجر · {rows.length-held-existing} غير صالح أو مكرر · لم يُحفظ أي سجل.
+        {rows.length} سجل · {held} يحتاج مراجعة DSH · {existing} اسم موجود في المتجر · {rows.length-held-existing} غير صالح أو مكرر · المعاينة لا تحفظ أي سجل.
       </Text>
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         {filters.map(([value, label]) => <Pressable key={value} accessibilityRole="button"
@@ -113,6 +133,10 @@ function CatalogImportPreview({ actorId, storeId }: Readonly<{ actorId: string; 
           {row.match.count === 1 ? `العرض الحالي: ${row.match.priceYer} ريال يمني · المخزون ${row.match.stockUnits} · ${row.match.published ? "منشور" : "غير منشور"}` :
             `توجد ${row.match.count} عروض بالاسم نفسه؛ لم يُحدد أي عرض تلقائيًا.`}
         </Text> : null}
+        {row.editableDraft ? <Pressable accessibilityRole="button" accessibilityLabel={`مراجعة تعديل المسودة للسجل ${row.row}`}
+          onPress={() => setSelected(row.row)} style={button}>
+          <Text style={{ color: theme.interactiveText }}>مراجعة تعديل المسودة الحالية</Text>
+        </Pressable> : null}
       </View>)}
       <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
         <Pressable accessibilityRole="button" disabled={page === 0}

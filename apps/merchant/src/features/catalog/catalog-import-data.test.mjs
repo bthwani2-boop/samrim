@@ -108,3 +108,24 @@ test("conflict detail preserves exact owner price and stock only for a unique ma
   assert.equal(result[2].reason,"owner-review");
   assert.equal(rows[0].match,undefined);
 });
+
+test("only one inactive versioned draft can be selected; duplicate and active identities remain held", async () => {
+  const rows = previewCatalogCsv(header + "قهوة,100,2\nشاي,200,3\nماء,300,4\nسكر,400,5\nملح,500,6");
+  const offer = (id,name,change={}) => ({
+    id, name, storeId:"store-a", productId:"pr-"+id, variantId:"va-"+id,
+    priceYer:"20", stockUnits:1, draftVersion:7,
+    published:false, available:false, productActive:false, variantSellable:false,
+    requiredAttributesValid:false, ...change,
+  });
+  const selected = offer("of-a","قهوة");
+  const result = await reviewCatalogImportRows(rows,"merchant-a","store-a",new AbortController().signal,
+    async () => ({actorId:"merchant-a",storeId:"store-a",items:[
+      selected, offer("of-b","شاي"), offer("of-c","شاي"),
+      offer("of-d","ماء",{published:true}), offer("of-e","سكر",{productActive:true}),
+      offer("of-f","ملح",{draftVersion:Number.MAX_SAFE_INTEGER}),
+    ]}));
+  assert.deepEqual(result[0].editableDraft,selected);
+  assert.deepEqual(result.slice(1).map(row=>row.editableDraft),[undefined,undefined,undefined,undefined]);
+  assert.equal(result[1].match.count,2);
+  assert.equal(rows[0].editableDraft,undefined);
+});
