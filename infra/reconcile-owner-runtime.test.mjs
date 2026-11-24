@@ -120,3 +120,13 @@ test("dedicated DSH transfer fingerprints only validated owner tables and sequen
   assert.throws(()=>ownerDataFingerprintSql("dsh_test_agent01",["stores;drop"],[]),/Invalid owner snapshot scope/);
   assert.throws(()=>ownerDataFingerprintSql("dsh_test_agent01",["stores","stores"],[]),/Invalid owner snapshot scope/);
 });
+
+// Public extension reference reads are distinct from owner tables and never allow writes.
+test("legacy DSH access excludes only named extension reference reads", async () => {
+  const { legacyDshAccessSql } = await import("./reconcile-owner-runtime.mjs");
+  const sql = legacyDshAccessSql();
+  assert.match(sql, /BEGIN READ ONLY/);
+  assert.match(sql, /INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER/);
+  assert.match(sql, /d\.deptype=\x27e\x27/);
+  assert.match(sql, /e\.extname=\x27postgis\x27 AND n\.nspname=\x27public\x27 AND c\.relname IN/);
+});

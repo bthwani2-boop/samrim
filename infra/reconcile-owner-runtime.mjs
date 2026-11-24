@@ -159,7 +159,10 @@ export function ownerDataFingerprintSql(schema, tables, sequences) {
     [...tables].sort().map(t=>"SELECT 'table:"+t+"',count(*),encode(sha256(convert_to(coalesce(string_agg(h,'' ORDER BY h),''),'UTF8')),'hex') FROM (SELECT encode(sha256(convert_to(to_jsonb(x)::text,'UTF8')),'hex') h FROM "+schema+"."+t+" x) q;").join("\n")+"\n"+
     [...sequences].sort().map(t=>"SELECT 'sequence:"+t+"',last_value,is_called FROM "+schema+"."+t+";").join("\n")+"\nCOMMIT;";
 }
-function prepareDedicatedDsh(state, env, head, activeFiles) {
+export function legacyDshAccessSql() {
+  return "BEGIN READ ONLY; SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' AND (has_table_privilege('bthwani_dsh_runtime',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_any_column_privilege('bthwani_dsh_runtime',c.oid,'INSERT,UPDATE,REFERENCES') OR ((has_table_privilege('bthwani_dsh_runtime',c.oid,'SELECT') OR has_any_column_privilege('bthwani_dsh_runtime',c.oid,'SELECT')) AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND ((e.extname='postgis' AND n.nspname='public' AND c.relname IN ('geography_columns','geometry_columns','spatial_ref_sys')) OR (e.extname='postgis_tiger_geocoder' AND n.nspname='tiger' AND c.relname IN ('geocode_settings','geocode_settings_default','loader_lookuptables','loader_platform','loader_variables','pagc_gaz','pagc_lex','pagc_rules')) OR (e.extname='postgis_topology' AND n.nspname='topology' AND c.relname IN ('layer','topology')))))); COMMIT;";
+}
+function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
   if(git(["status","--porcelain","--untracked-files=all"]))throw new Error("Dedicated database preparation requires a clean committed checkout");
   const live=asEnv(state.dsh.Config.Env);
   const schema=live.DSH_DB_SCHEMA;
@@ -177,7 +180,7 @@ function prepareDedicatedDsh(state, env, head, activeFiles) {
   const original=readFileSync(envPath,"utf8");
   if(/^REF_DSH_RUNTIME_(?:DATABASE|USER|PASSWORD)=/m.test(original))throw new Error("Dedicated DSH credentials already exist; do not overwrite");
   const absent=sql("postgres","BEGIN READ ONLY; SELECT (SELECT count(*) FROM pg_database WHERE datname='"+db+"')+(SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"')); COMMIT;");
-  if(absent!=="0")throw new Error("Dedicated DSH namespace already exists; inspect before retry");
+  if(absent!==(resume?"3":"0"))throw new Error("Dedicated DSH namespace is not in the explicitly selected preparation state");
   const list=kind=>sql(oldDb,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='"+kind+"' ORDER BY 1; COMMIT;").split(/\r?\n/).filter(Boolean);
   const tables=list("r"),sequences=list("S");
   if(!tables.includes("public_revision") || tables.length>100 || sequences.length>100)throw new Error("Unexpected source owner data inventory");
@@ -188,26 +191,35 @@ function prepareDedicatedDsh(state, env, head, activeFiles) {
   run("pwsh",["-NoProfile","-File",buildScripts.dsh,"-DockerContext",context,"-Image",owners.dsh.image+":"+tag],{},180000);
   if(sourceIdentity(imageRecord(owners.dsh.image+":"+tag).Config.Labels,"dsh").revision!==head || git(["rev-parse","HEAD"])!==head || git(["status","--porcelain","--untracked-files=all"]))throw new Error("Candidate source advanced");
   const ownerSecret=randomBytes(32).toString("hex"), runtimeSecret=randomBytes(32).toString("hex");
+  const candidateEnv={...env,REF_DSH_IMAGE_TAG:tag,REF_DSH_RUNTIME_DATABASE:db,REF_DSH_RUNTIME_USER:runtime,REF_DSH_RUNTIME_PASSWORD:runtimeSecret,REF_DSH_BOOTSTRAP_USER:owner,REF_DSH_BOOTSTRAP_PASSWORD:ownerSecret,REF_DSH_DISCOVERY_SCHEMA:schema};
+  if(!resume){
   sql("postgres","BEGIN; CREATE ROLE "+owner+" LOGIN NOINHERIT PASSWORD '"+ownerSecret+"'; CREATE ROLE "+runtime+" LOGIN NOINHERIT PASSWORD '"+runtimeSecret+"'; COMMIT;");
   sql("postgres","CREATE DATABASE "+db+" OWNER "+owner+" TEMPLATE template0;");
   sql("postgres","REVOKE ALL ON DATABASE "+db+" FROM PUBLIC; GRANT CONNECT ON DATABASE "+db+" TO "+runtime+";");
   sql(db,"REVOKE ALL ON SCHEMA public FROM PUBLIC;");
-  const candidateEnv={...env,REF_DSH_IMAGE_TAG:tag,REF_DSH_RUNTIME_DATABASE:db,REF_DSH_RUNTIME_USER:runtime,REF_DSH_RUNTIME_PASSWORD:runtimeSecret,REF_DSH_BOOTSTRAP_USER:owner,REF_DSH_BOOTSTRAP_PASSWORD:ownerSecret,REF_DSH_DISCOVERY_SCHEMA:schema};
   const proof=docker([...composeArgs(activeFiles),"--profile","bootstrap","run","--rm","--no-deps","--pull","never","dsh-bootstrap"],candidateEnv,90000);
   if(!proof.includes("DSH_FRESH_BASELINE_PASS schema="+schema))throw new Error("Canonical DSH bootstrap did not confirm");
   sql("postgres","ALTER ROLE "+owner+" NOLOGIN PASSWORD NULL;");
+  }
   // The archive remains within the verified PostgreSQL container. Only new
   // fixture data is replaced; original rows are never altered.
   const archive="/tmp/bthwani-dsh-copy-"+randomBytes(12).toString("hex")+".dump";
   try {
+    if(!resume){
     docker(["exec",pg,"pg_dump","-Fc","--data-only","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive],{},45000);
     sql(db,"DELETE FROM "+schema+".public_revision WHERE singleton;");
     docker(["exec",pg,"pg_restore","--data-only","--no-owner","--no-acl","--exit-on-error","--single-transaction","-U",admin,"-d",db,archive],{},45000);
+    } else {
+      const candidateProof=sql(db,"BEGIN READ ONLY; SELECT (SELECT pg_get_userbyid(datdba)='"+owner+"' FROM pg_database WHERE datname=current_database()) AND NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()) AND (SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"') AND NOT(rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit) AND rolcanlogin=(rolname='"+runtime+"'))=2 AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member IN (SELECT oid FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"'))) AND (SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname NOT IN ('information_schema','public'))=1 AND EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='"+schema+"' AND pg_get_userbyid(nspowner)='"+owner+"') AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND pg_get_userbyid(c.relowner)<>'"+owner+"'); COMMIT;");
+      const candidateTables=sql(db,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='r' ORDER BY 1; COMMIT;").split(/\r?\n/);
+      if(candidateProof!=="t" || !equal(candidateTables,[...new Set([...tables,"customer_addresses","service_city_delivery_policies"])].sort()))throw new Error("Existing unpublished DSH candidate ownership or inventory differs; do not alter");
+    }
     if(sql(oldDb,fingerprint)!==before || sql(db,fingerprint)!==before)throw new Error("Source or candidate data changed; preserve both and review");
     if(sql(db,"BEGIN READ ONLY; SELECT (SELECT count(*) FROM "+schema+".customer_addresses)+(SELECT count(*) FROM "+schema+".service_city_delivery_policies); COMMIT;")!=="0")throw new Error("Fresh policy or address facts must remain empty");
-    const legacyAccess=sql(oldDb,"BEGIN READ ONLY; SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' AND (has_table_privilege('"+runtime+"',c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_any_column_privilege('"+runtime+"',c.oid,'SELECT,INSERT,UPDATE,REFERENCES')); COMMIT;");
+    const legacyAccess=sql(oldDb,legacyDshAccessSql());
     if(legacyAccess!=="0" || sql("postgres","BEGIN READ ONLY; SELECT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="f")throw new Error("Dedicated runtime has unexpected legacy or WLT access");
 
+    if(resume)sql("postgres","ALTER ROLE "+runtime+" PASSWORD '"+runtimeSecret+"';");
     sql(db,"GRANT USAGE ON SCHEMA "+schema+" TO "+runtime+"; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA "+schema+" TO "+runtime+"; GRANT USAGE ON ALL SEQUENCES IN SCHEMA "+schema+" TO "+runtime+";");
     const verified=docker([...composeArgs(activeFiles),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
     if(!verified.includes("DSH_DEVELOPMENT_DATABASE_PASS"))throw new Error("Dedicated runtime login not verified");
@@ -216,7 +228,7 @@ function prepareDedicatedDsh(state, env, head, activeFiles) {
     console.log("DSH_DEDICATED_DATABASE_PREPARED HEAD="+head+" TABLES="+tables.length+" DATA_PARITY=PASS RUNTIME_LOGIN=PASS CUTOVER=NOT_RUN");
   } finally {
     // Exact owned archive only; never remove a retained database.
-    try {docker(["exec",pg,"rm","-f","--",archive]);}catch{console.error("DSH_COPY_ARCHIVE_CLEANUP_BLOCKED");}
+    try {if(!resume)docker(["exec",pg,"rm","-f","--",archive]);}catch{console.error("DSH_COPY_ARCHIVE_CLEANUP_BLOCKED");}
   }
 }
 
@@ -224,7 +236,7 @@ function main() {
   const [mode,...options] = process.argv.slice(2);
   const prepare=options.length===1 && options[0]==="--prepare-baseline";
   if(options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
-  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
+  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
   const apply = mode !== "--check";
   if (apply && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
   if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
@@ -260,7 +272,7 @@ function main() {
   const appNames = ["dsh","identity"];
   const groups = [{ names: appNames, files: activeAppFiles },{names:["wlt"],files:wltFiles}];
   for (const group of groups) assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
-  if(mode==="--prepare-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles);return;}
+  if(mode==="--prepare-dsh-database" || mode==="--resume-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles,mode==="--resume-dsh-database");return;}
   const revisions=Object.fromEntries(Object.keys(owners).map(o=>[o,ownerRevision(state,o)]));
   const committed={};
   for(const o of Object.keys(owners)){
