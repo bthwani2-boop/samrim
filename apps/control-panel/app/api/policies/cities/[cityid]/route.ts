@@ -1,5 +1,5 @@
 import {
-  type CityStoreOperationalPolicyChange, DshPublicError, getCityStoreOperationalPolicy,
+  type CityStoreOperationalPolicyChange, DshPublicError, getCityDeliveryPolicy, getCityStoreOperationalPolicy,
   listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy,
 } from "@bthwani/dsh";
 import { cookies } from "next/headers";
@@ -42,7 +42,7 @@ function isolatedDshOrigin(raw: string | undefined): string | null {
 
 function trustedRequest(request: NextRequest, browserOrigin: string, mutation: boolean) {
   const url = new URL(request.url);
-  const queryOK = url.search === "" || (!mutation && /^\?history=1&limit=10(?:&beforeVersion=[1-9][0-9]{0,15})?$/.test(url.search));
+  const queryOK = url.search === "" || (!mutation && (url.search === "?delivery=1" || /^\?history=1&limit=10(?:&beforeVersion=[1-9][0-9]{0,15})?$/.test(url.search)));
   return queryOK &&
     request.method === (mutation ? "PATCH" : "GET") &&
     (!mutation || request.headers.get("origin") === browserOrigin) &&
@@ -93,6 +93,10 @@ async function forward(
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
     const history = new URL(request.url).searchParams;
+    if (!mutation && history.has("delivery")) {
+      const result = await getCityDeliveryPolicy(dshOrigin, cityId, bearer, signal);
+      return NextResponse.json(result, { status: 200, headers: privateHeaders });
+    }
     if (!mutation && history.has("history")) {
       const result = await listCityStoreOperationalPolicyHistory(dshOrigin, cityId, bearer, 10,
         history.get("beforeVersion") ?? undefined, signal);

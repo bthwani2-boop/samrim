@@ -44,3 +44,24 @@ test("city history refuses mismatched owner responses and revoked permissions", 
   spy.mock.mockImplementation(async () => Response.json({ code: "FORBIDDEN" }, { status: 403 }));
   await assert.rejects(listCityStoreOperationalPolicyHistory(origin, "sanaa", bearer, 2), { status: 403 });
 });
+
+test("delivery policy SDK binds owner path, rejects foreign and malformed evidence", async t => {
+  const { getCityDeliveryPolicy } = await import("./city-policies.ts");
+  const good = { cityId:"sanaa", version:2, radiusMetres:30000, updatedAt:"2026-11-24T05:00:00Z" };
+  let body = good;
+  const fetch = t.mock.method(globalThis, "fetch", async (url, init) => {
+    assert.equal(String(url), "http://127.0.0.1:3202/v1/operators/cities/sanaa/delivery-policy");
+    assert.equal(init.method, "GET");
+    assert.equal(init.cache, "no-store");
+    assert.equal(init.redirect, "error");
+    return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+  });
+  assert.deepEqual(await getCityDeliveryPolicy("http://127.0.0.1:3202","sanaa","test-token"),good);
+  for (const bad of [{...good,cityId:"aden"}, {...good,version:0}, {...good,radiusMetres:-1}, {...good,updatedAt:"bad"}, {...good,unexpected:true}]) {
+    body=bad;
+    await assert.rejects(getCityDeliveryPolicy("http://127.0.0.1:3202","sanaa","test-token"));
+  }
+  const count=fetch.mock.callCount();
+  await assert.rejects(getCityDeliveryPolicy("http://127.0.0.1:3202","../aden","test-token"));
+  assert.equal(fetch.mock.callCount(),count);
+});

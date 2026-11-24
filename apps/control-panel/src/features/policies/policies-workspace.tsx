@@ -1,6 +1,7 @@
 "use client";
 
 import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Select, Space, Typography } from "antd";
+import { type CityDeliveryPolicy, isCityDeliveryPolicy } from "@bthwani/dsh";
 import Link from "next/link";
 import { useState } from "react";
 import {
@@ -19,6 +20,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
   const [city, setCity] = useState("");
   const [policy, setPolicy] = useState<CityPolicy | null>(null);
   const [admission, setAdmission] = useState<RegistrationOverview | null>(null);
+  const [delivery, setDelivery] = useState<CityDeliveryPolicy | "unavailable" | null>(null);
   const [maxPause, setMaxPause] = useState<number | null>(null);
   const [maxPreparation, setMaxPreparation] = useState<number | null>(null);
   const [reason, setReason] = useState("");
@@ -49,6 +51,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
     setCity(value);
     setPolicy(null);
     setAdmission(null);
+    setDelivery(null);
     setRequiresRead(false);
     setMaxPause(null);
     setMaxPreparation(null);
@@ -63,21 +66,33 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
     setMessage("");
     setErrorMessage("");
     setAdmission(null);
+    setDelivery(null);
     try {
       // Independent owner reads: a failed relation or availability policy must
       // never become an implicit admission, closure or default configuration.
-      const [response, overview] = await Promise.allSettled([
+      const [response, overview, radius] = await Promise.allSettled([
         fetch(endpoint, {
           method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
           headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
         }),
         readRegistrationOverview(city, actorId),
+        fetch(endpoint + "?delivery=1", {
+          method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
+        }).then(async result => {
+          if (result.status === 401 || result.status === 403) return "denied" as const;
+          if (!result.ok) return "unavailable" as const;
+          const value: unknown = await result.json();
+          return isCityDeliveryPolicy(value, city) ? value : "unavailable" as const;
+        }),
       ]);
-      if (response.status === "fulfilled" && (response.value.status === 401 || response.value.status === 403)) {
+      if ((response.status === "fulfilled" && (response.value.status === 401 || response.value.status === 403)) ||
+          (radius.status === "fulfilled" && radius.value === "denied")) {
         setRequiresRead(true);
         throw new Error("Identity لا يثبت صلاحية إدارة السياسات الحالية.");
       }
       if (overview.status === "fulfilled") setAdmission(overview.value);
+      setDelivery(radius.status === "fulfilled" && radius.value !== "denied" ? radius.value : "unavailable");
       if (response.status === "rejected") throw response.reason;
       const responseValue = response.value;
       if (!responseValue.ok) {
@@ -148,6 +163,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
     }
     if (result.status === "unknown" || uncertain) {
       if (result.status === "denied") {
+        setDelivery(null);
         setAdmission(null);
         setPolicy(null);
       }
@@ -159,6 +175,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
     }
     setPending(null);
     if (result.status === "denied") {
+      setDelivery(null);
       setAdmission(null);
       setPolicy(null);
       setProvision(false);
@@ -243,6 +260,18 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
           </details>
           <Button htmlType="submit" disabled={!endpoint || busy} loading={busy}>قراءة سياسات المدينة الحالية</Button>
         </Form>
+        {delivery && (
+          <section aria-label="نطاق التوصيل الحالي" style={{ marginBlockStart: 16 }}>
+            <Typography.Title level={4}>نطاق التوصيل — DSH</Typography.Title>
+            {delivery === "unavailable" ? <Alert type="warning" message="تعذر التحقق من نطاق التوصيل الفعلي. لا توجد قيمة افتراضية." /> : (
+              <>
+                <Typography.Paragraph>المسافة الجغرافية القصوى: <strong>{delivery.radiusMetres}</strong> متر — الإصدار {delivery.version}</Typography.Paragraph>
+                <Typography.Paragraph>آخر تحديث: {delivery.updatedAt}</Typography.Paragraph>
+              </>
+            )}
+            <Typography.Paragraph type="secondary">قراءة سياسة الأهلية الحالية، وليست تسعيرة أو ضمانًا للتوصيل. تعديلها غير متاح حتى إثبات توافق سياسة الرسوم مع WLT.</Typography.Paragraph>
+          </section>
+        )}
         {admission && (
           <section aria-label="قبول المتاجر حسب النموذج" style={{ marginBlockStart: 16 }}>
             <Typography.Title level={4}>قبول المتاجر الجديدة — DSH</Typography.Title>

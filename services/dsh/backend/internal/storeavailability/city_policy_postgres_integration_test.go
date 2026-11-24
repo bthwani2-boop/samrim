@@ -64,6 +64,27 @@ func TestRealPostgresVersionedCityPolicyWriterAndConcurrency(t *testing.T) {
 	if _, err = owner.ReadCityPolicy(ctx, city); !errors.Is(err, ErrPolicyUnavailable) {
 		t.Fatalf("missing initial policy was not unavailable: %v", err)
 	}
+	if _, err = owner.ReadCityDeliveryPolicy(ctx, city); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("missing radius defaulted: %v", err)
+	}
+	// Only this freshly bootstrapped synthetic schema receives fixture facts.
+	if _, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s.service_city_delivery_policies(city_id,version,radius_metres) VALUES ($1,1,30000)", schema), city); err != nil {
+		t.Fatal(err)
+	}
+	radius, err := owner.ReadCityDeliveryPolicy(ctx, city)
+	if err != nil || radius.CityID != city || radius.Version != 1 || radius.RadiusMetres != 30000 {
+		t.Fatalf("unexpected effective radius: %+v %v", radius, err)
+	}
+	if _, err = owner.ReadCityDeliveryPolicy(ctx, "unknown-city"); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("foreign city radius was exposed: %v", err)
+	}
+	if _, err = db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_city_delivery_policies SET radius_metres=18000,version=2 WHERE city_id=$1", schema), city); err != nil {
+		t.Fatal(err)
+	}
+	radius, err = owner.ReadCityDeliveryPolicy(ctx, city)
+	if err != nil || radius.Version != 2 || radius.RadiusMetres != 18000 {
+		t.Fatalf("stale radius: %+v %v", radius, err)
+	}
 	base := CityPolicyChange{CityID: city, OperationID: "policy-create-a02", ExpectedVersion: 0, MaxPauseSeconds: 1800, MaxPreparationMinutes: 80, Reason: "Explicit initial city limits"}
 	created, replay, err := owner.ApplyCityPolicy(ctx, "operator-a", base)
 	if err != nil || replay || created.Version != 1 || created.MaxPauseSeconds != 1800 {

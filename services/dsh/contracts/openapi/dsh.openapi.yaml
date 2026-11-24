@@ -72,6 +72,8 @@ paths:
     $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}'
   /v1/operators/cities/{cityID}/store-registration-policy/{relation}/history:
     $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}~1history'
+  /v1/operators/cities/{cityID}/delivery-policy:
+    $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1delivery-policy'
   /v1/operators/cities/{cityID}/store-availability-policy/history:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy~1history'
   /v1/operators/cities/{cityID}/store-availability-policy:
@@ -574,6 +576,15 @@ components:
             - { type: integer, minimum: 1, maximum: 9007199254740991 }
             - { type: string, pattern: '^[1-9][0-9]{15,18}$' }
         available: { type: boolean, const: true }
+    CityDeliveryPolicy:
+      type: object
+      additionalProperties: false
+      required: [cityId, version, radiusMetres, updatedAt]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
+        updatedAt: { type: string, format: date-time }
     CityStoreOperationalPolicy:
       type: object
       additionalProperties: false

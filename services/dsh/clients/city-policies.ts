@@ -137,3 +137,27 @@ export async function listCityStoreOperationalPolicyHistory(
   }
   return page;
 }
+
+export interface CityDeliveryPolicy {
+  cityId: string;
+  version: number;
+  radiusMetres: number;
+  updatedAt: string;
+}
+export function isCityDeliveryPolicy(value: unknown, cityId: string): value is CityDeliveryPolicy {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 4 && onlyKeys(v, ["cityId", "version", "radiusMetres", "updatedAt"]) &&
+    v.cityId === cityId && Number.isSafeInteger(v.version) && Number(v.version) >= 1 &&
+    Number.isSafeInteger(v.radiusMetres) && Number(v.radiusMetres) >= 1 &&
+    Number(v.radiusMetres) <= 2147483647 && isDateTime(v.updatedAt);
+}
+export async function getCityDeliveryPolicy(
+  baseUrl: string, cityId: string, bearer: string, signal?: AbortSignal,
+): Promise<CityDeliveryPolicy> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityId)) throw new DshPublicError(400, "CITY_ID_INVALID");
+  const body = await privateOwnerRequest(baseUrl,
+    dshOperations.getCityDeliveryPolicy.path.replace("{cityID}", cityId), bearer, "GET", undefined, signal);
+  if (!isCityDeliveryPolicy(body, cityId)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  return body;
+}

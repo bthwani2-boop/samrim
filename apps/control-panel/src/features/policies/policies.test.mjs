@@ -330,9 +330,14 @@ test("policy center renders independently verified city admission, clears old sc
   t.mock.method(globalThis, "fetch", async (url, init) => {
     calls.push(url);
     assert.equal(init.headers["X-BThwani-Operator"], "operator-1");
-    return denied ? Response.json({}, { status: 403 }) : Response.json({}, { status: 503 });
+    if (denied) return Response.json({}, { status: 403 });
+    if (url.endsWith("?delivery=1")) return Response.json({
+      cityId: "sanaa", version: 3, radiusMetres: 18000, updatedAt: "2026-11-24T05:00:00Z",
+    });
+    return Response.json({}, { status: 503 });
   });
   const mocks = {
+    "@bthwani/dsh": require("@bthwani/dsh"),
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     react: { useState(initial) { const i = index++; if (!(i in states)) states[i] = initial;
       return [states[i], next => { states[i] = typeof next === "function" ? next(states[i]) : next; }]; } },
@@ -364,11 +369,20 @@ test("policy center renders independently verified city admission, clears old sc
   assert.ok(overview());
   assert.match(JSON.stringify(overview()), /القبول متاح — الإصدار 2/);
   assert.match(JSON.stringify(overview()), /تعذر التحقق من المالك/);
-  assert.deepEqual(calls, ["/api/policies/cities/sanaa", "sanaa"]);
+  const radius = () => render().find(n => n.props?.["aria-label"] === "نطاق التوصيل الحالي");
+  assert.ok(radius());
+  assert.match(JSON.stringify(radius()), /18000/);
+  assert.deepEqual(calls, ["/api/policies/cities/sanaa", "sanaa", "/api/policies/cities/sanaa?delivery=1"]);
   city().props.onChange("aden"); assert.equal(overview(), undefined);
+  assert.equal(radius(), undefined);
+  read(); await new Promise(resolve => setImmediate(resolve));
+  assert.ok(radius());
+  assert.doesNotMatch(JSON.stringify(radius()), /18000/);
   denied = true; read(); await new Promise(resolve => setImmediate(resolve));
   assert.equal(overview(), undefined);
-  assert.deepEqual(calls.slice(2), ["/api/policies/cities/aden", "aden"]);
+  assert.equal(radius(), undefined);
+  assert.deepEqual(calls.slice(3), ["/api/policies/cities/aden", "aden", "/api/policies/cities/aden?delivery=1",
+    "/api/policies/cities/aden", "aden", "/api/policies/cities/aden?delivery=1"]);
 });
 
 test("operational policy refuses mismatched endpoint before network access", async t => {
