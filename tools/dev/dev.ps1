@@ -774,7 +774,11 @@ function Invoke-ScopedDocker {
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {
         if ($Apply) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
-        & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode @reconcileOptions
+        if ($CutoverDshDatabase) {
+          & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode $PreparedSourceSha
+        } else {
+          & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode @reconcileOptions
+        }
         Assert-Ok ($LASTEXITCODE -eq 0) 'owner runtime reconciliation failed; inspect explicit result'
       } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }
