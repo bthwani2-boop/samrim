@@ -109,7 +109,7 @@ test("automatic sync refreshes safe dirty and clean known checkouts and handles 
 
 test("one exclusive lock covers the complete sync and is released on failure", async () => {
   const runner = await import("./graphify-local.mjs");
-  const { mkdtempSync, existsSync, rmSync } = await import("node:fs");
+  const { mkdtempSync, existsSync, readFileSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "graphify-lock-test-"));
@@ -118,12 +118,81 @@ test("one exclusive lock covers the complete sync and is released on failure", a
     assert.equal(typeof runner.withRefreshLock, "function");
     assert.throws(() => runner.withRefreshLock(lock, () => {
       assert.equal(existsSync(lock), true);
+      const owner = JSON.parse(readFileSync(lock, "utf8"));
+      assert.equal(owner.pid, process.pid);
+      assert.equal(owner.version, 1);
+      assert.ok(Number.isFinite(Date.parse(owner.startedAt)));
       assert.throws(() => runner.withRefreshLock(lock, () => assert.fail("second writer")), /BLOCKED.*refresh/);
+      assert.deepEqual(JSON.parse(readFileSync(lock, "utf8")), owner);
       throw new Error("simulated rebuild error");
     }), /simulated rebuild error/);
     assert.equal(existsSync(lock), false);
     assert.equal(runner.withRefreshLock(lock, () => "ok"), "ok");
   } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("reviewed lock recovery preserves evidence and refuses a live or changed lock", async () => {
+  const runner = await import("./graphify-local.mjs");
+  const { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { createHash } = await import("node:crypto");
+  const dir = mkdtempSync(join(tmpdir(), "graphify-recover-test-"));
+  const lock = join(dir, "refresh.lock");
+  const digest = bytes => createHash("sha256").update(bytes).digest("hex");
+  try {
+    runner.withRefreshLock(lock, () => {
+      const hash = digest(readFileSync(lock));
+      assert.throws(() => runner.recoverRefreshLock(lock, hash, () => {}), /BLOCKED.*owner/);
+      assert.equal(existsSync(lock), true);
+    });
+    writeFileSync(lock, "");
+    const legacy = digest(readFileSync(lock));
+    assert.throws(() => runner.recoverRefreshLock(lock, "0".repeat(64), () => {}), /BLOCKED.*changed/);
+    assert.throws(() => runner.recoverRefreshLock(lock, legacy, () => { throw new Error("BLOCKED: native writer"); }), /native writer/);
+    assert.equal(existsSync(lock), true);
+    const saved = runner.recoverRefreshLock(lock, legacy, () => {});
+    assert.equal(existsSync(lock), false);
+    assert.equal(readFileSync(saved, "utf8"), "");
+    assert.equal(runner.withRefreshLock(lock, () => "ok"), "ok");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("a terminated lock owner leaves durable recovery evidence, without authorizing a concurrent writer", { timeout: 15000 }, async () => {
+  const runner = await import("./graphify-local.mjs");
+  const { mkdtempSync, readFileSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { createHash } = await import("node:crypto");
+  const { spawn } = await import("node:child_process");
+  const { once } = await import("node:events");
+  const dir = mkdtempSync(join(tmpdir(), "graphify-crashed-owner-"));
+  const lock = join(dir, "refresh.lock");
+  const script = `import { withRefreshLock } from ${JSON.stringify(new URL("./graphify-local.mjs", import.meta.url).href)};
+    withRefreshLock(process.argv[1], () => { process.stdout.write("locked"); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,30000); });`;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", script, lock], { stdio: ["ignore", "pipe", "ignore"], windowsHide: true });
+  const closed = once(child, "exit");
+  try {
+    const [chunk] = await once(child.stdout, "data");
+    assert.equal(chunk.toString(), "locked");
+    const bytes = readFileSync(lock);
+    assert.equal(JSON.parse(bytes).pid, child.pid);
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    assert.throws(() => runner.recoverRefreshLock(lock, hash, () => {}), /BLOCKED.*owner/);
+    assert.throws(() => runner.withRefreshLock(lock, () => assert.fail("concurrent refresh")), /BLOCKED.*refresh/);
+    child.kill("SIGKILL");
+    await closed;
+    assert.equal(existsSync(lock), true);
+    const saved = runner.recoverRefreshLock(lock, hash, () => {});
+    assert.deepEqual(readFileSync(saved), bytes);
+    assert.equal(runner.withRefreshLock(lock, () => "recovered"), "recovered");
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      child.kill("SIGKILL");
+      await closed;
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 });

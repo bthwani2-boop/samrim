@@ -1,11 +1,11 @@
 // Read the locally indexed graph even when Git has pending changes.
 // Provenance/coverage warnings never silently claim current-source proof.
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { forbiddenName, containsLikelySecret } from "../security/verify-secrets.mjs";
+import { containsLikelySecret, forbiddenName } from "../security/verify-secrets.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const graph = join(root, "graphify-out", "graph.json");
@@ -169,11 +169,76 @@ export function withRefreshLock(path, operation) {
     throw error;
   }
   try {
-    closeSync(descriptor);
+    try {
+      // Keep a durable owner record: a crashed process no longer leaves an
+      // anonymous lock indistinguishable from a live refresh.
+      writeFileSync(descriptor, JSON.stringify({ version: 1, pid: process.pid, startedAt: new Date().toISOString() }) + "\n");
+      fsyncSync(descriptor);
+    } finally {
+      closeSync(descriptor);
+    }
     return operation();
   } finally {
     unlinkSync(path);
   }
+}
+
+function inspectRefreshLock(path) {
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096 ||
+      !samePath(realpathSync(path), resolve(path))) {
+    throw new Error("BLOCKED: unsafe refresh lock path");
+  }
+  const bytes = readFileSync(path);
+  const digest = sha256(bytes);
+  let owner = null;
+  if (bytes.length) {
+    try { owner = JSON.parse(bytes.toString("utf8")); } catch {
+      throw new Error("BLOCKED: unreadable refresh lock owner");
+    }
+    if (owner?.version !== 1 || !Number.isSafeInteger(owner.pid) || owner.pid <= 0 ||
+        !Number.isFinite(Date.parse(owner.startedAt))) {
+      throw new Error("BLOCKED: invalid refresh lock owner");
+    }
+  }
+  return { digest, owner, identity: [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.birthtimeMs] };
+}
+
+// Recovery is a separate, explicitly reviewed operation by the sole local
+// coordinator. A dead PID alone is not sufficient: a native child can survive.
+export function recoverRefreshLock(path, expectedDigest, assertNoWriters) {
+  const initial = inspectRefreshLock(path);
+  if (!/^[a-f0-9]{64}$/.test(expectedDigest) || initial.digest !== expectedDigest) {
+    throw new Error("BLOCKED: reviewed refresh lock changed");
+  }
+  if (initial.owner) {
+    try {
+      process.kill(initial.owner.pid, 0);
+      throw new Error("BLOCKED: refresh lock owner is alive");
+    } catch (error) {
+      if (error.code !== "ESRCH") throw error;
+    }
+  }
+  assertNoWriters();
+  const current = inspectRefreshLock(path);
+  if (JSON.stringify(current) !== JSON.stringify(initial)) {
+    throw new Error("BLOCKED: reviewed refresh lock changed");
+  }
+  // Keep the interrupted attempt's evidence rather than deleting it. All
+  // regular writers still acquire the same exclusive lock.
+  const saved = path + ".recovered-" + randomUUID();
+  renameSync(path, saved);
+  return saved;
+}
+
+function assertNoLocalGraphifyWriters() {
+  if (process.platform !== "win32" || process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI") {
+    throw new Error("BLOCKED: refresh recovery requires the authorized Surface process inventory");
+  }
+  const script = '$ErrorActionPreference="Stop"; $writers = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne ' +
+    process.pid + ' -and ($_.Name -match "^graphify.*\\.exe$" -or ($_.Name -match "^(node|pythonw?|uv|uvx).*\\.exe$" -and ' +
+    '(-not $_.CommandLine -or $_.CommandLine -match "graphify"))) }); if ($writers.Count -gt 0) { exit 3 }';
+  execute("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 15000);
 }
 
 function refresh(automatic = false) {
@@ -355,6 +420,13 @@ function query(question) {
 
 function main() {
   const [action, ...args] = process.argv.slice(2);
+  if (action === "recover-lock" && args.length === 1) {
+    const { assessment } = validate();
+    if (!assessment.queryable) throw new Error("BLOCKED: unverified index provenance");
+    recoverRefreshLock(lock, args[0], assertNoLocalGraphifyWriters);
+    process.stdout.write("PASS: reviewed orphan lock archived; existing sync remains the index writer\n");
+    return;
+  }
   if (action === "refresh" && args.length === 0) return refresh();
   if (action === "sync" && args.length === 0) return refresh(true);
   if (action === "install-hooks" && args.length === 0) return installHooks();
@@ -365,13 +437,19 @@ function main() {
       reason: assessment.reason, branch: current.branch, head: current.head,
       indexedHead: indexed?.head ?? null, dirty: current.dirty,
       refreshing: existsSync(lock), unsafeUntracked: current.unsafeUntracked,
+      lockReview: existsSync(lock) ? (() => {
+        try {
+          const { digest, owner } = inspectRefreshLock(lock);
+          return { digest, owner };
+        } catch { return null; }
+      })() : null,
       coverage: assessment.status === "PASS" ? "NOT_RUN" : "INVALIDATED",
     }, null, 2) + "\n");
     if (!assessment.queryable) process.exitCode = 2;
     return;
   }
   if (action === "query" && args.length === 1 && args[0].trim()) return query(args[0]);
-  throw new Error("Usage: node tools/dev/graphify-local.mjs status | refresh | sync | install-hooks | query \"question\"");
+  throw new Error("Usage: node tools/dev/graphify-local.mjs status | refresh | sync | recover-lock <reviewed SHA-256> | install-hooks | query \"question\"");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
