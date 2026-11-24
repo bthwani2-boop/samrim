@@ -66,7 +66,7 @@ export default async function PublicStoresMonitor({
           معرّف المدينة لدى DSH
           <input name="city" aria-label="معرّف المدينة" required maxLength={64}
             defaultValue={scope?.city ?? ""} placeholder="sanaa"
-            pattern="[a-z0-9-]{1,64}" style={{ minHeight: 44 }} />
+            pattern="[a-z0-9\-]{1,64}" style={{ minHeight: 44 }} />
         </label>
         <label style={{ display: "grid", gap: "0.25rem", flex: "1 1 12rem" }}>
           البحث باسم المتجر
@@ -78,7 +78,7 @@ export default async function PublicStoresMonitor({
           نوع النشاط لدى DSH
           <input name="vertical" aria-label="رمز نوع النشاط" maxLength={64}
             list="operator-public-vertical-options" defaultValue={scope?.vertical ?? ""}
-            placeholder="grocery" pattern="[a-z0-9-]{1,64}" style={{ minHeight: 44 }} />
+            placeholder="grocery" pattern="[a-z0-9\-]{1,64}" style={{ minHeight: 44 }} />
           {verticals ? <datalist id="operator-public-vertical-options">
             {verticals.items.map(item => <option key={item.id} value={item.id}
               label={`${item.id} (${item.storeCount})`} />)}

@@ -64,7 +64,7 @@ export default async function Page({ searchParams }: Readonly<{
         <label style={{ display: "grid", gap: "0.25rem" }}>
           معرف المدينة المعتمدة
           <input name="city" aria-label="معرف المدينة" required
-            list="operator-catalog-city-options" pattern="[a-z0-9-]{1,64}"
+            list="operator-catalog-city-options" pattern="[a-z0-9\-]{1,64}"
             maxLength={64} defaultValue={scope?.city ?? ""} placeholder="sanaa"
             style={{ minHeight: 44 }} />
           {cities ? <datalist id="operator-catalog-city-options">

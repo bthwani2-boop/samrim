@@ -1,6 +1,27 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { isolatedPublicDshOrigin, parsePublicStoreBrowse, publicStorePageHref, resolvePublicDshOrigin } from "./public-store-query.ts";
+
+test("Operator ID fields enforce the owner format with the browser's Unicode Sets syntax", () => {
+  for (const route of [
+    "../workspace/public-market-overview.tsx",
+    "../catalog/published-offers.tsx",
+    "../../../app/(workspace)/catalog/categories/page.tsx",
+    "../../../app/(workspace)/merchants/joining/page.tsx",
+    "../../../app/(workspace)/merchants/public-stores/page.tsx",
+    "../../../app/(workspace)/operations/store-availability/page.tsx",
+  ]) {
+    const source = readFileSync(new URL(route, import.meta.url), "utf8");
+    const patterns = Array.from(source.matchAll(/pattern="([^"]+)"/g), match => match[1]);
+    assert.ok(patterns.length, route);
+    for (const pattern of patterns) {
+      const rule = new RegExp(`^(?:${pattern})$`, "v");
+      for (const id of ["sanaa", "store-001", "a".repeat(64)]) assert.ok(rule.test(id), route);
+      for (const id of ["", "Sanaa", "store/1", "store 1", "a".repeat(65)]) assert.ok(!rule.test(id), route);
+    }
+  }
+});
 
 test("operator public Store query accepts bounded city/search and preserves safe paging", () => {
   assert.deepEqual(parsePublicStoreBrowse({ city: "sanaa", q: "  مخبز  ", cursor: "Ab_12" }), {

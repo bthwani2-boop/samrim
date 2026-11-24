@@ -55,7 +55,7 @@ export default async function StoreOperationalInspector({
         <label style={{ display: "grid", gap: "0.25rem", flex: "1 1 15rem" }}>
           معرّف المتجر في DSH
           <input name="storeId" aria-label="معرّف المتجر" required
-            maxLength={64} pattern="[a-z0-9-]{1,64}"
+            maxLength={64} pattern="[a-z0-9\-]{1,64}"
             defaultValue={storeId ?? ""} placeholder="معرّف متجر فعلي"
             style={{ minHeight: 44, width: "100%" }} />
         </label>

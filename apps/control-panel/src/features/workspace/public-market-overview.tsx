@@ -60,7 +60,7 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
         <label style={{ display: "grid", gap: "0.25rem" }}>
           مدينة منشورة
           <input type="text" name="city" list="operator-home-cities" defaultValue={city ?? ""}
-            required pattern="[a-z0-9-]{1,64}" maxLength={64} placeholder="sanaa"
+            required pattern="[a-z0-9\-]{1,64}" maxLength={64} placeholder="sanaa"
             style={{ minHeight: 44, paddingInline: "0.75rem" }} />
           {cities && <datalist id="operator-home-cities">
             {cities.items.map(item => <option key={item} value={item} />)}

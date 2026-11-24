@@ -54,7 +54,7 @@ export default async function PublishedOffers({ searchParams }: Readonly<{
         <label className={catalogStyles.field}>
           معرّف المتجر المنشور
           <input name="store" aria-label="معرّف المتجر المنشور" required
-            pattern="[a-z0-9-]{1,64}" maxLength={64} placeholder="market-sanaa"
+            pattern="[a-z0-9\-]{1,64}" maxLength={64} placeholder="market-sanaa"
             defaultValue={scope?.storeId ?? ""} autoComplete="off" />
         </label>
         <label className={catalogStyles.field}>
