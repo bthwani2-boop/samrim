@@ -232,11 +232,115 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
   }
 }
 
+
+// Reuse the prepared owner candidate; never recreate or overwrite its data.
+// A data-bearing cutover is deliberately separate from image-only rollback.
+export function assertHandoffParity(source, candidate, expectedLines) {
+  if (!source || !Number.isSafeInteger(expectedLines) || expectedLines < 1 ||
+      source.split(/\r?\n/).length !== expectedLines || source !== candidate) {
+    throw new Error("OWNER_HANDOFF_DATA_PARITY_FAILED");
+  }
+}
+function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
+  const transitionScope=[...guardedScope,"infra/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
+  const dirty=()=>dirtyPaths(root,transitionScope).length>0;
+  if (!/^[0-9a-f]{40}$/.test(preparedRevision || "") || dirty()) throw new Error("Cutover requires a clean committed checkout and exact prepared source SHA");
+  git(["merge-base","--is-ancestor",preparedRevision,head]);
+  if (git(["diff","--name-only",preparedRevision,head,"--","services/dsh","services/identity/database/schema",".go-version"]))
+    throw new Error("Prepared DSH owner inputs changed; prepare a compatible candidate first");
+  const old=state.dsh, live=asEnv(old.Config.Env);
+  const schema=live.DSH_DB_SCHEMA, oldDb="bthwani_refoundation", db="bthwani_dsh_dev";
+  const runtime="bthwani_dsh_runtime", admin="bthwani_refoundation_admin", pg=project+"-postgres-1";
+  if(live.REF_POSTGRES_DB!==oldDb || live.REF_POSTGRES_USER!==admin || !/^dsh_test_[a-z0-9_]{1,50}$/.test(schema||""))
+    throw new Error("Expected legacy DSH owner is not active");
+  if(docker(["inspect","--format",'{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.bthwani.environment"}}|{{.State.Health.Status}}',pg])!==project+"|refoundation|healthy")
+    throw new Error("PostgreSQL ownership not verified");
+  const sql=(database,statement)=>docker(["exec","-i",pg,"psql","-X","-qAt","-v","ON_ERROR_STOP=1","-U",admin,"-d",database,"-f","-"],{},45000,statement+"\n");
+  const tag="sha-"+preparedRevision.slice(0,9);
+  const image=imageRecord(owners.dsh.image+":"+tag);
+  if(sourceIdentity(image.Config.Labels,"dsh").revision!==preparedRevision)throw new Error("Prepared image provenance mismatch");
+  const candidateEnv={...env,REF_DSH_IMAGE_TAG:tag};
+  for(const k of ["REF_DSH_RUNTIME_DATABASE","REF_DSH_RUNTIME_USER","REF_DSH_RUNTIME_PASSWORD"])delete candidateEnv[k];
+  const config=JSON.parse(docker([...composeArgs(files),"config","--format","json"],candidateEnv));
+  const target=config.services.dsh.environment;
+  if(target.REF_POSTGRES_DB!==db || target.REF_POSTGRES_USER!==runtime ||
+    !/^[a-f0-9]{64}$/.test(target.REF_POSTGRES_PASSWORD||"") || target.DSH_DB_SCHEMA!==schema)
+    throw new Error("Prepared DSH runtime configuration not verified");
+  Object.assign(candidateEnv,{REF_DSH_RUNTIME_DATABASE:db,REF_DSH_RUNTIME_USER:runtime,REF_DSH_RUNTIME_PASSWORD:target.REF_POSTGRES_PASSWORD});
+  const queryList=(database,kind)=>sql(database,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='"+kind+"' ORDER BY 1; COMMIT;").split(/\r?\n/).filter(Boolean);
+  const tables=queryList(oldDb,"r"), sequences=queryList(oldDb,"S");
+  const allTables=queryList(db,"r"), allSequences=queryList(db,"S");
+  if(!equal(allTables,[...new Set([...tables,"customer_addresses","service_city_delivery_policies"])].sort()) || !equal(allSequences,sequences))
+    throw new Error("Prepared DSH schema inventory changed");
+  const fp=ownerDataFingerprintSql(schema,tables,sequences), full=ownerDataFingerprintSql(schema,allTables,allSequences);
+  const checkParity=()=>assertHandoffParity(sql(oldDb,fp),sql(db,fp),tables.length+sequences.length);
+  const verifyEmptyNewTables=()=>{if(sql(db,"BEGIN READ ONLY; SELECT (SELECT count(*) FROM "+schema+".customer_addresses)+(SELECT count(*) FROM "+schema+".service_city_delivery_policies); COMMIT;")!=="0")throw new Error("Prepared DSH candidate has independent new data");};
+  const noWriters=()=>{
+    if(sql("postgres","BEGIN READ ONLY; SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND pid<>pg_backend_pid() AND (datname='"+db+"' OR (datname='"+oldDb+"' AND usename='"+admin+"')); COMMIT;")!=="0")
+      throw new Error("DSH writer exclusivity unproven");
+  };
+  checkParity(); verifyEmptyNewTables();
+  if(sql(oldDb,legacyDshAccessSql())!=="0" || sql("postgres","BEGIN READ ONLY; SELECT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="f")
+    throw new Error("DSH cross-owner access not excluded");
+  const proof=docker([...composeArgs(files),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
+  if(!proof.includes("DSH_DEVELOPMENT_DATABASE_PASS"))throw new Error("Prepared DSH runtime login proof failed");
+  const beforeFull=sql(db,full);
+  const oldHashes=currentHashes(state,["dsh","identity"]);
+  assertSameHashes(oldHashes,configHashes(files,["dsh","identity"],env));
+  const newHashes=configHashes(files,["dsh","identity"],candidateEnv);
+  if(newHashes.identity!==oldHashes.identity || newHashes.dsh===oldHashes.dsh)throw new Error("Unexpected peer configuration change");
+  const unchanged=()=>{
+    if(git(["rev-parse","HEAD"])!==head || dirty() ||
+       imageRecord(old.Config.Image).Id!==old.Image || imageRecord(owners.dsh.image+":"+tag).Id!==image.Id)
+      throw new Error("Source or rollback image advanced");
+  };
+  unchanged();
+  if(inspect("dsh").Id!==old.Id || inspect("identity").Id!==state.identity.Id || inspect("wlt").Id!==state.wlt.Id)
+    throw new Error("Concurrent runtime change");
+  let stopped=false, applyStarted=false;
+  try {
+    console.log("DSH_HANDOFF_STARTED HEAD="+head);
+    docker(["stop","--time","20",old.Id],{},45000);
+    stopped=true;
+    if(inspect("dsh",false).State.Running)throw new Error("Old DSH writer still active");
+    noWriters(); checkParity(); verifyEmptyNewTables(); unchanged();
+    if(sql(db,full)!==beforeFull)throw new Error("Prepared DSH candidate changed before handoff");
+    applyStarted=true;
+    docker([...composeArgs(files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60","dsh"],candidateEnv,95000);
+    const now=inspect("dsh");
+    const nowEnv=asEnv(now.Config.Env);
+    if(now.Image!==image.Id || now.Config.Labels["com.docker.compose.config-hash"]!==newHashes.dsh ||
+      nowEnv.REF_POSTGRES_DB!==db || nowEnv.REF_POSTGRES_USER!==runtime ||
+      nowEnv.DSH_DB_SCHEMA!==schema || inspect("identity").Id!==state.identity.Id || inspect("wlt").Id!==state.wlt.Id)
+      throw new Error("DSH handoff runtime readback mismatch");
+    // Verify the actual serving container's private database principal too.
+    if(!docker(["exec",now.Id,"/usr/local/bin/dsh","-mode=verify-development-db"],{},15000).includes("DSH_DEVELOPMENT_DATABASE_PASS"))
+      throw new Error("Serving DSH principal readback failed");
+    if(sql("postgres","BEGIN READ ONLY; SELECT count(*) FROM pg_stat_activity WHERE backend_type='client backend' AND datname='"+oldDb+"' AND usename='"+admin+"'; COMMIT;")!=="0")
+      throw new Error("Legacy DSH writer remains connected");
+    console.log("DSH_HANDOFF_PASS DATA_PARITY=PASS RUNTIME_LOGIN=PASS IMAGE_SOURCE="+preparedRevision+" HEAD="+head);
+  } catch(e) {
+    if(e.code==="ETIMEDOUT")throw new Error("DSH_HANDOFF_BLOCKED ambiguous Docker operation; inspect durable state before retry");
+    if(!stopped)throw e;
+    const now=inspect("dsh",false);
+    // Never roll back to stale data once a replacement may have accepted a write.
+    // A pre-promotion failure is safe to recover using the same old container.
+    if(!applyStarted && now.Id===old.Id && !now.State.Running){
+      docker(["start",old.Id],{},45000);
+      docker(["exec",old.Id,"wget","-q","-O","/dev/null","http://127.0.0.1:8080/health"],{},15000);
+      if(inspect("dsh",false).Id!==old.Id || !inspect("dsh",false).State.Running)throw new Error("DSH_HANDOFF_RECOVERY_BLOCKED");
+      throw new Error("DSH_HANDOFF_ABORTED old writer restored: "+e.message);
+    }
+    throw new Error("DSH_HANDOFF_REVIEW_REQUIRED candidate may have accepted writes; no automatic rollback: "+e.message);
+  }
+}
+
 function main() {
   const [mode,...options] = process.argv.slice(2);
+  const cutover=mode==="--cutover-dsh-database";
   const prepare=options.length===1 && options[0]==="--prepare-baseline";
-  if(options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
-  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
+  if(!cutover && options.length && (!prepare || !["--apply","--apply-preview"].includes(mode))) throw new Error("Baseline preparation requires an explicit isolated apply");
+  if (!["--check","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
   const apply = mode !== "--check";
   if (apply && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
   if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
@@ -273,6 +377,7 @@ function main() {
   const groups = [{ names: appNames, files: activeAppFiles },{names:["wlt"],files:wltFiles}];
   for (const group of groups) assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
   if(mode==="--prepare-dsh-database" || mode==="--resume-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles,mode==="--resume-dsh-database");return;}
+  if(cutover){if(options.length!==1)throw new Error("Expected prepared source SHA");cutoverPreparedDsh(state,env,head,activeAppFiles,options[0]);return;}
   const revisions=Object.fromEntries(Object.keys(owners).map(o=>[o,ownerRevision(state,o)]));
   const committed={};
   for(const o of Object.keys(owners)){

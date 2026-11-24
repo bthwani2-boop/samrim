@@ -130,3 +130,11 @@ test("legacy DSH access excludes only named extension reference reads", async ()
   assert.match(sql, /d\.deptype=\x27e\x27/);
   assert.match(sql, /e\.extname=\x27postgis\x27 AND n\.nspname=\x27public\x27 AND c\.relname IN/);
 });
+
+test("database handoff rejects a changed or incomplete owner snapshot", async()=>{
+  const {assertHandoffParity}=await import("./reconcile-owner-runtime.mjs");
+  assert.doesNotThrow(()=>assertHandoffParity("a|1\nb|2","a|1\nb|2",2));
+  assert.throws(()=>assertHandoffParity("a|1\nb|2","a|1\nb|3",2),/DATA_PARITY_FAILED/);
+  assert.throws(()=>assertHandoffParity("a|1","a|1",2),/DATA_PARITY_FAILED/);
+  assert.throws(()=>assertHandoffParity("","",0),/DATA_PARITY_FAILED/);
+});
