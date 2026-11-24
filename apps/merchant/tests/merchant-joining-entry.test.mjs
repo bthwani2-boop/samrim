@@ -25,7 +25,7 @@ test("joining only reveals Store admission after both Identity and DSH owner sta
   assert.match(gate, /تسجيل الدخول أو الانضمام/);
   assert.match(gate, /standing\?\.session === session/);
   assert.match(gate, /<MerchantWorkspace actorId=\{standing\.session\.actorId\}/);
-  assert.match(workspace, /stores\.length === 0 \? <MerchantStoreRegistration actorId=\{actorId\}/);
+  assert.match(workspace, /stores\.length === 0 \? \(\s*<View testID="merchant-onboarding-next-step"[\s\S]*?<MerchantStoreRegistration actorId=\{actorId\} onCreated=\{onRefresh\} \/>[\s\S]*?<\/View>\s*\) : \(/);
   assert.match(workspace, /<MerchantStoreRegistration actorId=\{actorId\} onCreated=\{onRefresh\}/);
   assert.doesNotMatch(read("src/features/onboarding/merchant-application.tsx"), /storeRegistration:|role:\s*["']merchant/);
 });

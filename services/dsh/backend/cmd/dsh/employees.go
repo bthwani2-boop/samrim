@@ -32,6 +32,9 @@ func isolatedEmployeeHandler(ctx context.Context, db *sql.DB, schema, listen str
 	mux := http.NewServeMux()
 	mux.Handle("/v1/operators/employees", handler)
 	mux.Handle("/v1/operators/employees/", handler)
+	mux.Handle("/v1/stores/{storeID}/employees", handler)
+	mux.Handle("/v1/stores/{storeID}/employees/{id}", handler)
+	mux.Handle("/v1/stores/{storeID}/employees/{id}/registration-audit", handler)
 	mux.Handle("/", existing)
 	return mux, nil
 }

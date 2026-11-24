@@ -6,17 +6,18 @@ import type {
   StoreRegistrationRelation,
 } from "@bthwani/dsh";
 import { Alert, Button, Card, Checkbox, Form, Input, Radio, Select, Space, Typography } from "antd";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { PolicyCityDirectory } from "./policy-city-directory";
 import {
-  matchesPendingPolicy,
+  clearPendingRegistrationPolicy,
   type RegistrationOverview,
+  readPendingRegistrationPolicy,
   readRegistrationHistory,
   readRegistrationOverview,
   readStoreRegistrationPolicy,
   reconcileRegistrationPolicy,
+  savePendingRegistrationPolicy,
 } from "./store-registration-command";
-
-import type { PolicyCityDirectory } from "./policy-city-directory";
 
 const validCity = /^[a-z0-9-]{1,64}$/;
 
@@ -43,12 +44,33 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [recoveryReady, setRecoveryReady] = useState(false);
+  const saving = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = readPendingRegistrationPolicy(window.sessionStorage, actorId);
+      if (saved) {
+        setCity(saved.cityId);
+        setRelation(saved.relation);
+        setPending(saved.change);
+        setUnknown(true);
+        setEnabled(saved.change.enabled);
+        setTermsVersion(saved.change.termsVersion);
+        setTermsText(saved.change.termsText);
+        setReason(saved.change.reason);
+        setError("توجد عملية حفظ غير مؤكدة. أعد نفس العملية للتحقق منها لدى DSH.");
+      }
+      setRecoveryReady(true);
+    } catch {
+      setError("تعذر استرداد سجل عملية التسجيل في جلسة المتصفح. لن تُرسل عملية جديدة.");
+    }
+  }, [actorId]);
 
   const endpoint = validCity.test(city)
     ? `/api/policies/cities/${city}/store-registration/${relation}`
     : null;
-  const locked = busy || overviewBusy || historyBusy || pending !== null;
-  const canWrite = !!endpoint && !needsRead && !busy && !overviewBusy && !historyBusy && policy !== null &&
+  const locked = !recoveryReady || busy || overviewBusy || historyBusy || pending !== null;
+  const canWrite = recoveryReady && !!endpoint && !needsRead && !busy && !overviewBusy && !historyBusy && policy !== null &&
     /^[a-z0-9._-]{3,80}$/.test(termsVersion) &&
     termsText.trim().length >= 1 && [...termsText].length <= 4000 &&
     reason.trim().length >= 1 && [...reason].length <= 300 &&
@@ -83,22 +105,9 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
       setPolicy(current);
       setNeedsRead(false);
       if (pending) {
-        if (matchesPendingPolicy(current, actorId, pending)) {
-          setPending(null);
-          setUnknown(false);
-          setEnabled(current.enabled);
-          setTermsVersion(current.termsVersion ?? "");
-          setTermsText(current.termsText ?? "");
-          setReviewed(false);
-          setReason("");
-          setMessage("تم تأكيد عملية التعديل من قراءة DSH المستقلة.");
-        } else if (current.version > pending.expectedVersion + 1) {
-          setUnknown(true);
-          setError("توجد سياسة أحدث، لكن نتيجة عمليتك السابقة لم تتأكد. أعد إرسال العملية نفسها للتحقق منها دون تكرار.");
-        } else {
-          setUnknown(true);
-          setError("لا تثبت القراءة تنفيذ العملية. أعد إرسال العملية نفسها بمعرّفها المحفوظ.");
-        }
+        // A matching current policy is not proof of this exact operation ID.
+        setUnknown(true);
+        setError("قراءة السياسة لا تؤكد معرّف العملية السابقة. أعد إرسال العملية نفسها للتحقق دون تكرار.");
       } else {
         setEnabled(current.enabled);
         setTermsVersion(current.termsVersion ?? "");
@@ -150,7 +159,7 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
   }
 
   async function save() {
-    if (!endpoint || busy || (!pending && !canWrite)) return;
+    if (!recoveryReady || !endpoint || busy || saving.current || (!pending && !canWrite)) return;
     const change: OperatorStoreRegistrationChange = pending ?? {
       operationId: crypto.randomUUID(),
       expectedVersion: policy?.version ?? 0,
@@ -159,6 +168,14 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
       termsText,
       reason,
     };
+    const recovery = { cityId: city, relation, change };
+    try {
+      savePendingRegistrationPolicy(window.sessionStorage, actorId, recovery);
+    } catch {
+      setError("تعذر حفظ معرّف العملية بأمان. لم يُرسل التعديل.");
+      return;
+    }
+    saving.current = true;
     setPending(change);
     setBusy(true);
     setMessage("");
@@ -167,7 +184,17 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
     setHistory(null);
     setHistoryError("");
     const result = await reconcileRegistrationPolicy(endpoint, city, relation, actorId, change);
+    saving.current = false;
     setBusy(false);
+    if (result.status === "confirmed" || (!unknown && result.status !== "unknown")) {
+      try {
+        clearPendingRegistrationPolicy(window.sessionStorage, actorId, recovery);
+      } catch {
+        setUnknown(true);
+        setError("تعذر تحديث سجل العملية. أعد نفس العملية للتحقق، ولا تبدأ عملية جديدة.");
+        return;
+      }
+    }
     if (result.status === "confirmed") {
       setPending(null);
       setUnknown(false);
@@ -183,7 +210,7 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
           "تم حفظ سياسة قبول المتاجر والتحقق من قراءتها لدى DSH.");
       return;
     }
-    if (result.status === "unknown" || (unknown && result.status === "denied")) {
+    if (result.status === "unknown" || unknown) {
       setUnknown(true);
       setError(result.status === "denied"
         ? "تعذر التحقق من صلاحيتك لاسترداد العملية. احتفظ بالعملية نفسها حتى استعادة الصلاحية."
@@ -240,7 +267,7 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
               <Radio value="DIRECT">متجر مباشر</Radio>
             </Radio.Group>
           </Form.Item>
-          <Button htmlType="submit" disabled={!endpoint || busy || overviewBusy} loading={busy}>قراءة السياسة من DSH</Button>
+          <Button htmlType="submit" disabled={!recoveryReady || !endpoint || busy || overviewBusy} loading={busy}>قراءة السياسة من DSH</Button>
         </Form>
         <Button style={{ marginBlockStart: 12 }} disabled={!validCity.test(city) || locked}
           loading={overviewBusy} onClick={() => void checkBothModels()}>
@@ -373,7 +400,7 @@ export default function StoreRegistrationPolicyEditor({ actorId, directory = { c
           )}
           <Space wrap style={{ marginBlockStart: 16 }}>
             <Button type="primary" htmlType="submit" loading={busy}
-              disabled={busy || (!pending && !canWrite)}>
+              disabled={!recoveryReady || busy || (!pending && !canWrite)}>
               {unknown ? "إعادة العملية نفسها دون تكرار" : "حفظ سياسة قبول المتاجر في DSH"}
             </Button>
             {pending && <Button disabled={busy} onClick={() => void refresh()}>التحقق من نتيجة العملية لدى DSH</Button>}

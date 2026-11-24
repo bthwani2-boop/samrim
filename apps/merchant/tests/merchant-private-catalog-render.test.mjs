@@ -90,13 +90,13 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
     try {
       const mod = { exports: {} };
       new Function("require", "module", "exports", source)(name => {
-        assert.ok(Object.hasOwn(mocks, name), "unexpected dependency " + name);
+        assert.ok(Object.hasOwn(mocks, name), `unexpected dependency ${name}`);
         return mocks[name];
       }, mod, mod.exports);
-      function render(actorId, stores, initialStoreId) {
+      function render(actorId, stores, initialStoreId, initialPriceStockOnly = false) {
         index = 0;
         scheduled = [];
-        const tree = mod.exports.default({ actorId, stores, initialStoreId });
+        const tree = mod.exports.default({ actorId, stores, initialStoreId, initialPriceStockOnly });
         for (const effect of scheduled) effect();
         return tree;
       }
@@ -201,9 +201,12 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       hooks.length = 0;
       effects.length = 0;
       requests.length = 0;
-      tree = render("merchant-a", stores, "store-b");
+      tree = render("merchant-a", stores, "store-b", true);
       assert.equal(requests[0].storeId, "store-b");
-      assert.equal(nodes(tree).find(n => n.type === "DraftForm").props.storeId, "store-b");
+      assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات").props.accessibilityState.selected, true);
+      assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && !n.props.draft));
+      tree = render("merchant-a", stores, "store-b", true);
+      assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات").props.accessibilityState.selected, true);
       tree = render("merchant-a", stores.slice(0, 1), "store-b");
       assert.equal(requests.length, 1, "revoking Store B must not trigger a read of Store A");
       assert.equal(requests[0].signal.aborted, true);

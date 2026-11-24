@@ -108,7 +108,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
     void readMerchantStoreRegistrationOptions(actorId, controller.signal).then(value => {
       if (!controller.signal.aborted) setOptions(value);
     }).catch(() => {
-      if (!controller.signal.aborted) setMessage("تعذّر قراءة خيارات تسجيل المتجر من DSH.");
+      if (!controller.signal.aborted) setMessage("تعذّر تحميل خيارات تسجيل المتجر. حاول مرة أخرى.");
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false);
     });
@@ -262,16 +262,21 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         إنشاء متجر في بثواني
       </Text>
       <Text style={{ color: theme.colorSecondary }}>
-        الحساب موثّق عبر Identity. يُنشئ DSH المتجر مستقلًا عن الحساب، غير منشور ولا يقبل طلبات قبل الاعتماد.
+        تم التحقق من حسابك. يمكنك إنشاء متجر مستقل، واستكمال بياناته قبل اعتماده ونشره واستقبال الطلبات.
       </Text>
       {loading ? <Text style={{ color: theme.colorSecondary }}>جارٍ قراءة سياسة التسجيل…</Text> : null}
-      {!loading && (!options || options.choices.length === 0) ? button("إعادة التحقق من إتاحة التسجيل", () => setReload(n => n + 1), busy || unknown) : null}
-      {!loading && options?.choices.length === 0 ? (
-        <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
-          تسجيل المتاجر مغلق حاليًا لدى DSH؛ يجب اعتماد سياسة المدينة وطريقة عمل المتجر أولًا.
+      {!loading && (!options || options.choices.length === 0 || options.verticals.length === 0) ? button("إعادة التحقق من إتاحة التسجيل", () => setReload(n => n + 1), busy || unknown) : null}
+      {!loading && options?.verticals.length === 0 ? (
+        <Text testID="merchant-registration-no-activities" accessibilityRole="alert" style={{ color: theme.warningText }}>
+          لا توجد أنشطة تجارية متاحة للتسجيل حاليًا. أعد التحقق عند تحديث خيارات التسجيل.
         </Text>
       ) : null}
-      {options && options.choices.length > 0 ? (
+      {!loading && options?.choices.length === 0 && options.verticals.length > 0 ? (
+        <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
+          تسجيل المتاجر غير متاح حاليًا. يجب اعتماد خيارات التسجيل للمدينة وطريقة عمل المتجر أولًا. يمكنك إعادة التحقق من الإتاحة.
+        </Text>
+      ) : null}
+      {options && options.choices.length > 0 && options.verticals.length > 0 ? (
         <>
           <StoreRelationChoice choices={options.choices} selectedKey={choiceKey}
             disabled={locked} onSelect={key => {

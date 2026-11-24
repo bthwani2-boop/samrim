@@ -70,7 +70,7 @@ export async function readRegistrationHistory(
 ): Promise<OperatorStoreRegistrationPolicyHistoryPage> {
   if (!/^[a-z0-9-]{1,64}$/.test(cityId) ||
     !["DIRECT", "MARKETPLACE"].includes(relation) ||
-    endpoint !== "/api/policies/cities/" + cityId + "/store-registration/" + relation ||
+    endpoint !== `/api/policies/cities/${cityId}/store-registration/${relation}` ||
     (beforeVersion !== undefined && !/^[1-9][0-9]{0,18}$/.test(beforeVersion))) {
     throw new Error("Invalid DSH history scope");
   }
@@ -131,4 +131,47 @@ export function matchesPendingPolicy(
   policy: OperatorStoreRegistrationPolicy, actorId: string, change: OperatorStoreRegistrationChange,
 ) {
   return matchesCommittedPolicy(policy, actorId, change);
+}
+
+export type PendingRegistrationPolicy = {
+  cityId: string;
+  relation: StoreRegistrationRelation;
+  change: OperatorStoreRegistrationChange;
+};
+type RecoveryStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
+function recoveryKey(actorId: string) {
+  return `bthwani:store-registration-policy:pending:${encodeURIComponent(actorId)}`;
+}
+function validPendingRegistrationPolicy(value: unknown): value is PendingRegistrationPolicy {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const pending = value as Record<string, unknown>;
+  return Object.keys(pending).length === 3 &&
+    typeof pending.cityId === "string" && /^[a-z0-9-]{1,64}$/.test(pending.cityId) &&
+    (pending.relation === "MARKETPLACE" || pending.relation === "DIRECT") &&
+    validOperatorStoreRegistrationChange(pending.change);
+}
+export function readPendingRegistrationPolicy(storage: RecoveryStorage, actorId: string): PendingRegistrationPolicy | null {
+  const raw = storage.getItem(recoveryKey(actorId));
+  if (raw === null) return null;
+  const value: unknown = JSON.parse(raw);
+  if (!validPendingRegistrationPolicy(value)) throw new Error("Invalid pending registration policy");
+  return value;
+}
+function samePending(a: PendingRegistrationPolicy, b: PendingRegistrationPolicy) {
+  return a.cityId === b.cityId && a.relation === b.relation &&
+    a.change.operationId === b.change.operationId && a.change.expectedVersion === b.change.expectedVersion &&
+    a.change.enabled === b.change.enabled && a.change.termsVersion === b.change.termsVersion &&
+    a.change.termsText === b.change.termsText && a.change.reason === b.change.reason;
+}
+export function savePendingRegistrationPolicy(storage: RecoveryStorage, actorId: string, pending: PendingRegistrationPolicy) {
+  const existing = readPendingRegistrationPolicy(storage, actorId);
+  if (!validPendingRegistrationPolicy(pending) || (existing && !samePending(existing, pending))) {
+    throw new Error("Another registration policy command is pending");
+  }
+  storage.setItem(recoveryKey(actorId), JSON.stringify(pending));
+}
+export function clearPendingRegistrationPolicy(storage: RecoveryStorage, actorId: string, pending: PendingRegistrationPolicy) {
+  const existing = readPendingRegistrationPolicy(storage, actorId);
+  if (!existing || !samePending(existing, pending)) throw new Error("Pending registration policy mismatch");
+  storage.removeItem(recoveryKey(actorId));
 }

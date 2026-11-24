@@ -19,8 +19,8 @@ export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMe
 export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
 export type { CheckoutFulfillmentMode, CheckoutRecipientPurpose, CustomerCheckoutBlocker, CustomerCheckoutReview, CustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
 export { parseCustomerCheckoutReview, reviewCurrentCustomerCheckout, validCustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
-export type { CompanyEmployee, CompanyEmployeeRegistration, CompanyEmployeeRegistrationAudit } from "./employees.ts";
-export { getCompanyEmployee, getCompanyEmployeeRegistrationAudit, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
+export type { CompanyEmployee, CompanyEmployeeRegistration, CompanyEmployeeRegistrationAudit, EmployeeRecord, EmployeeRegistration } from "./employees.ts";
+export { getCompanyEmployee, getCompanyEmployeeRegistrationAudit, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, isCompanyEmployeeId, listCompanyEmployees, listMerchantEmployees, parseEmployeeDetail, parseEmployeePage, parseEmployeeRegistrationAudit, registerCompanyEmployee, registerMerchantEmployee, validEmployeeRegistration } from "./employees.ts";
 export { dshOperations } from "./generated/dsh-operations.ts";
 export type { MerchantCatalogDraftChange, MerchantCatalogDraftEditChange, MerchantCatalogDraftEditResult, MerchantCatalogDraftResult, MerchantCatalogOffer, MerchantCatalogPage, MerchantCatalogStatus, MerchantInventorySummary } from "./merchant-catalog.ts";
 export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, parseMerchantInventorySummary, readMerchantInventorySummary, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit, validMerchantCatalogSearch, validMerchantCatalogStatus } from "./merchant-catalog.ts";

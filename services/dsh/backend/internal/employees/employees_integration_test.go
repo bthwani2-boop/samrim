@@ -48,7 +48,7 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
 		token := r.Header.Get("Authorization")
-		roles := map[string]string{"Bearer hr-current": "operator", "Bearer no-hr": "operator", "Bearer merchant": "merchant"}
+		roles := map[string]string{"Bearer hr-current": "operator", "Bearer no-hr": "operator", "Bearer merchant": "merchant", "Bearer merchant-a": "merchant", "Bearer merchant-b": "merchant"}
 		role := roles[token]
 		if role == "" || (token == "Bearer hr-current" && revoked.Load()) {
 			w.WriteHeader(401)
@@ -221,6 +221,113 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 			}
 		})
 	}
+	// The same canonical employee engine now admits the individual merchant
+	// proprietor, but never a delegated staff account or another owner.
+	for _, query := range []string{
+		"INSERT INTO " + schema + ".service_cities(id,active) VALUES ('sanaa',true)",
+		"INSERT INTO " + schema + ".verticals(id,active) VALUES ('grocery',true)",
+		"INSERT INTO " + schema + ".stores(id,owner_actor_id,city_id,vertical_id,relation,name,published) VALUES " +
+			"('staff-store-a','merchant-a','sanaa','grocery','MARKETPLACE','A',false)," +
+			"('staff-store-a2','merchant-a','sanaa','grocery','DIRECT','A2',false)," +
+			"('staff-store-b','merchant-b','sanaa','grocery','DIRECT','B',false)",
+	} {
+		if _, err = readback.ExecContext(t.Context(), query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const aRoot = "/v1/stores/staff-store-a/employees"
+	const a2Root = "/v1/stores/staff-store-a2/employees"
+	const bRoot = "/v1/stores/staff-store-b/employees"
+	expect("GET", aRoot, "", "", 401)
+	expect("GET", aRoot, "hr-current", "", 403)
+	expect("GET", aRoot, "merchant", "", 403)
+	expect("GET", aRoot, "merchant-b", "", 403)
+	expect("GET", aRoot+"?employerId=merchant-b", "merchant-a", "", 400)
+	expect("GET", aRoot+"/"+id, "merchant-a", "", 404)
+	expect("GET", bRoot+"/"+merchantID, "merchant-b", "", 404)
+	expect("GET", aRoot+"/"+merchantID, "merchant-a", "", 200)
+	expect("GET", aRoot+"/"+merchantID+"/registration-audit", "merchant-a", "", 200)
+	expect("GET", bRoot+"/"+merchantID+"/registration-audit", "merchant-b", "", 404)
+	expect("POST", bRoot, "merchant-a", data, 403)
+	expect("POST", aRoot, "merchant-a", strings.Replace(data, "{", `{"employerId":"merchant-b",`, 1), 400)
+
+	// The same operation ID remains scoped by employer and actor, even when
+	// the proprietor reopens the directory using a second owned Store.
+	merchantPost := strings.Replace(data, "موظف تجريبي", "موظف المتجر", 1)
+	var firstID map[string]string
+	if err = json.Unmarshal(expect("POST", aRoot, "merchant-a", merchantPost, 200).Body.Bytes(), &firstID); err != nil {
+		t.Fatal(err)
+	}
+	created := firstID["id"]
+	if !recordID.MatchString(created) || created == id || created == merchantID {
+		t.Fatal("invalid merchant registration ID")
+	}
+	if err = json.Unmarshal(expect("POST", a2Root, "merchant-a", merchantPost, 200).Body.Bytes(), &firstID); err != nil || firstID["id"] != created {
+		t.Fatal("replay across owned stores created another employee")
+	}
+	expect("POST", aRoot, "merchant-a", strings.Replace(merchantPost, "منسق", "مشرف", 1), 409)
+	expect("GET", a2Root+"/"+created, "merchant-a", "", 200)
+	expect("GET", bRoot+"/"+created, "merchant-b", "", 404)
+	expect("GET", root+"/"+created, "hr-current", "", 404)
+	var count, auditCount int
+	if err = readback.QueryRowContext(t.Context(), "SELECT count(*) FROM "+schema+".employees WHERE employer_kind='MERCHANT' AND employer_id='merchant-a' AND id=$1", created).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("merchant record readback %d: %v", count, err)
+	}
+	if err = readback.QueryRowContext(t.Context(), "SELECT count(*) FROM "+schema+".employee_registration_audit WHERE employer_kind='MERCHANT' AND employer_id='merchant-a' AND acting_actor_id='merchant-a' AND employee_id=$1", created).Scan(&auditCount); err != nil || auditCount != 1 {
+		t.Fatalf("merchant audit readback %d: %v", auditCount, err)
+	}
+	var bCreated map[string]string
+	if err = json.Unmarshal(expect("POST", bRoot, "merchant-b", merchantPost, 200).Body.Bytes(), &bCreated); err != nil || bCreated["id"] == created {
+		t.Fatal("different employer did not receive independent ID")
+	}
+	expect("GET", aRoot+"/"+bCreated["id"], "merchant-a", "", 404)
+	expect("GET", bRoot+"/"+bCreated["id"], "merchant-b", "", 200)
+
+	// A revocation before the owner commit must roll back both the
+	// employment record and immutable registration audit.
+	revokedData := strings.Replace(merchantPost, "00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000099", 1)
+	revokedWrite := &merchantEmployeeWriteTransition{}
+	revokedHandler, e := NewHandler(t.Context(), db, schema, revokedWrite)
+	if e != nil {
+		t.Fatal(e)
+	}
+	writeReq := httptest.NewRequest(http.MethodPost, aRoot, strings.NewReader(revokedData))
+	writeReq.Header.Set("Authorization", "Bearer synthetic")
+	writeReq.Header.Set("Content-Type", "application/json")
+	writeResp := httptest.NewRecorder()
+	revokedHandler.ServeHTTP(writeResp, writeReq)
+	if writeResp.Code != 401 || revokedWrite.calls.Load() != 3 {
+		t.Fatalf("revoked write: %d %s", writeResp.Code, writeResp.Body)
+	}
+	if err = readback.QueryRowContext(t.Context(), "SELECT count(*) FROM "+schema+".employee_registration_audit WHERE employer_kind='MERCHANT' AND employer_id='merchant-a' AND operation_id='00000000-0000-0000-0000-000000000099'").Scan(&auditCount); err != nil || auditCount != 0 {
+		t.Fatalf("revoked write audit persisted: %d %v", auditCount, err)
+	}
+	if err = readback.QueryRowContext(t.Context(), "SELECT count(*) FROM "+schema+".employees WHERE employer_kind='MERCHANT' AND employer_id='merchant-a'").Scan(&count); err != nil || count != 2 {
+		t.Fatalf("revoked write employee persisted: %d %v", count, err)
+	}
+
+	// An ownership change during a read must suppress the earlier result.
+	transition := &merchantEmployeeReadTransition{
+		afterRead: func() error {
+			_, e := readback.ExecContext(t.Context(), "UPDATE "+schema+".stores SET owner_actor_id='merchant-b' WHERE id='staff-store-a'")
+			return e
+		},
+	}
+	transitionHandler, e := NewHandler(t.Context(), db, schema, transition)
+	if e != nil {
+		t.Fatal(e)
+	}
+	req := httptest.NewRequest(http.MethodGet, aRoot+"/"+created, nil)
+	req.Header.Set("Authorization", "Bearer synthetic")
+	response := httptest.NewRecorder()
+	transitionHandler.ServeHTTP(response, req)
+	if response.Code != 403 || strings.Contains(response.Body.String(), "موظف المتجر") {
+		t.Fatalf("ownership change disclosed prior data: %d %s", response.Code, response.Body)
+	}
+	expect("GET", aRoot, "merchant-a", "", 403)
+	expect("GET", a2Root+"/"+created, "merchant-a", "", 200)
+	expect("GET", aRoot+"/"+created, "merchant-b", "", 404)
+
 	revoked.Store(true)
 	expect("GET", root+"/"+id, "hr-current", "", 401)
 	expect("POST", root, "hr-current", data, 401)
@@ -245,4 +352,34 @@ func (identity *employeeReadTransition) RequireOperatorPermission(_ context.Cont
 		return identityaccess.ErrForbidden
 	}
 	return nil
+}
+
+type merchantEmployeeReadTransition struct {
+	calls     atomic.Int32
+	afterRead func() error
+}
+
+func (i *merchantEmployeeReadTransition) ResolveCurrentSession(context.Context, string) (identityaccess.VerifiedActor, error) {
+	if i.calls.Add(1) == 2 {
+		if err := i.afterRead(); err != nil {
+			return identityaccess.VerifiedActor{}, err
+		}
+	}
+	return identityaccess.VerifiedActor{Subject: "merchant-a", Role: identityaccess.MerchantRole}, nil
+}
+
+func (*merchantEmployeeReadTransition) RequireOperatorPermission(context.Context, string, string, string) error {
+	return identityaccess.ErrForbidden
+}
+
+type merchantEmployeeWriteTransition struct{ calls atomic.Int32 }
+
+func (i *merchantEmployeeWriteTransition) ResolveCurrentSession(context.Context, string) (identityaccess.VerifiedActor, error) {
+	if i.calls.Add(1) >= 3 {
+		return identityaccess.VerifiedActor{}, identityaccess.ErrUnauthorized
+	}
+	return identityaccess.VerifiedActor{Subject: "merchant-a", Role: identityaccess.MerchantRole}, nil
+}
+func (*merchantEmployeeWriteTransition) RequireOperatorPermission(context.Context, string, string, string) error {
+	return identityaccess.ErrForbidden
 }

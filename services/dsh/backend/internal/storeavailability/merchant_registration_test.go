@@ -159,6 +159,25 @@ func TestMerchantStoreRegistrationIsolatedPostgresDurability(t *testing.T) {
 		options.Choices[0].CityID != "sanaa" || options.Choices[0].Relation != "MARKETPLACE" {
 		t.Fatalf("options must match live DSH policy: %+v %v", options, err)
 	}
+	// A policy alone is not a usable registration option when the catalog
+	// has no eligible commercial activity. Re-enabling an activity restores it.
+	if _, err = db.ExecContext(ctx, "UPDATE "+schema+".verticals SET active=false WHERE id='grocery'"); err != nil {
+		t.Fatal(err)
+	}
+	empty, err := first.Options(ctx, "synthetic")
+	if err != nil || len(empty.Choices) != 0 || len(empty.Verticals) != 0 {
+		t.Fatalf("registration without active activities must be closed: %+v %v", empty, err)
+	}
+	if _, err = first.Register(ctx, "synthetic", merchantRegisterFixture()); !errors.Is(err, ErrRegistrationClosed) {
+		t.Fatalf("inactive activity admitted: %v", err)
+	}
+	if _, err = db.ExecContext(ctx, "UPDATE "+schema+".verticals SET active=true WHERE id='grocery'"); err != nil {
+		t.Fatal(err)
+	}
+	options, err = first.Options(ctx, "synthetic")
+	if err != nil || len(options.Choices) != 1 || len(options.Verticals) != 1 {
+		t.Fatalf("registration must recover with an active activity: %+v %v", options, err)
+	}
 	denied := merchantRegisterFixture()
 	denied.Relation = "DIRECT"
 	if _, err = first.Register(ctx, "synthetic", denied); !errors.Is(err, ErrRegistrationClosed) {

@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: a3113504064e549ed3c834d89e301f28fd9a68bdf2c7c297dfa98f9ac8afa56f
+// Normalized OpenAPI SHA-256: 372eef9f998b0c28109ea697c020c765370493dadc447db41fb16ab001ce866b
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   applyCurrentCustomerForCaptainStanding: { method: "POST", path: "/v1/actors/me/captain-application" },
@@ -20,6 +20,8 @@ export const dshOperations = {
   getCurrentCustomerCaptainApplication: { method: "GET", path: "/v1/actors/me/captain-application" },
   getCurrentCustomerCaptainEligibility: { method: "GET", path: "/v1/actors/me/captain-eligibility" },
   getCurrentCustomerCart: { method: "GET", path: "/v1/carts/{storeID}" },
+  getMerchantEmployee: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}" },
+  getMerchantEmployeeRegistrationAudit: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}/registration-audit" },
   getMerchantStoreRegistrationOptions: { method: "GET", path: "/v1/stores/registration-options" },
   getOperatorCaptainStanding: { method: "GET", path: "/v1/operators/captains/{actorId}/standing" },
   getOperatorStoreRegistrationPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" },
@@ -30,6 +32,7 @@ export const dshOperations = {
   listCurrentCustomerAddresses: { method: "GET", path: "/v1/addresses" },
   listCurrentMerchantStoreCatalog: { method: "GET", path: "/v1/stores/{storeID}/catalog" },
   listCurrentMerchantStores: { method: "GET", path: "/v1/stores/mine" },
+  listMerchantEmployees: { method: "GET", path: "/v1/stores/{storeID}/employees" },
   listOperatorCaptainInterest: { method: "GET", path: "/v1/operators/captain-interest" },
   listOperatorCaptainStandings: { method: "GET", path: "/v1/operators/captains" },
   listOperatorStorePublicationReview: { method: "GET", path: "/v1/operators/cities/{cityID}/store-publication-review/{relation}" },
@@ -42,6 +45,7 @@ export const dshOperations = {
   previewCityDeliveryPolicy: { method: "POST", path: "/v1/operators/cities/{cityID}/delivery-policy/preview" },
   readCurrentMerchantInventorySummary: { method: "GET", path: "/v1/stores/{storeID}/inventory-summary" },
   registerCompanyEmployee: { method: "POST", path: "/v1/operators/employees" },
+  registerMerchantEmployee: { method: "POST", path: "/v1/stores/{storeID}/employees" },
   registerMerchantStore: { method: "POST", path: "/v1/stores" },
   replaceCityDeliveryPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/delivery-policy" },
   replaceCityStoreOperationalPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/store-availability-policy" },

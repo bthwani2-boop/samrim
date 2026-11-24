@@ -66,6 +66,12 @@ paths:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}'
   /v1/operators/employees/{id}/registration-audit:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}~1registration-audit'
+  /v1/stores/{storeID}/employees:
+    $ref: './paths/employees.yaml#/paths/~1v1~1stores~1{storeID}~1employees'
+  /v1/stores/{storeID}/employees/{id}:
+    $ref: './paths/employees.yaml#/paths/~1v1~1stores~1{storeID}~1employees~1{id}'
+  /v1/stores/{storeID}/employees/{id}/registration-audit:
+    $ref: './paths/employees.yaml#/paths/~1v1~1stores~1{storeID}~1employees~1{id}~1registration-audit'
   /v1/operators/cities/{cityID}/store-publication-review/{relation}:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-publication-review~1{relation}'
   /v1/operators/cities/{cityID}/store-registration-policy/{relation}:

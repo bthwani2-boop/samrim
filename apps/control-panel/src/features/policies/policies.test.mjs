@@ -5,7 +5,7 @@ import test from "node:test";
 import { findWorkspaceEntry } from "../navigation/workspace-registry.ts";
 import { canShowNavigation } from "../session/operator-permissions.ts";
 import { parseCityPolicy, reconcileCityPolicy } from "./city-policy-command.ts";
-import { readRegistrationHistory, readRegistrationOverview } from "./store-registration-command.ts";
+import { clearPendingRegistrationPolicy, readPendingRegistrationPolicy, readRegistrationHistory, readRegistrationOverview, savePendingRegistrationPolicy } from "./store-registration-command.ts";
 
 test("policies: routes have the expected navigation permission boundary", () => {
   for (const path of ["/policies","/policies/stage-sla"]) {
@@ -142,7 +142,7 @@ test("Operator policy audit pages bind the request to current city and relation"
 test("Operator policy audit reader refuses bad cursors, mismatched pages and denied access", async t => {
   const endpoint = "/api/policies/cities/sanaa/store-registration/DIRECT";
   const fetch = t.mock.method(globalThis, "fetch", async url => {
-    assert.equal(url, endpoint + "?history=1&limit=10&beforeVersion=2");
+    assert.equal(url, `${endpoint}?history=1&limit=10&beforeVersion=2`);
     return Response.json({ entries: [{
       version: 2, enabled: true, termsVersion: "merchant-terms-v1",
       changedByActor: "operator-1", changeReason: "Invalid non-descending cursor",
@@ -161,7 +161,7 @@ test("Operator policy audit reader refuses bad cursors, mismatched pages and den
     /Identity rejected/);
 });
 
-test("registration editor requires review of changed terms and preserves an uncertain operation across newer reads and denial", async () => {
+test("registration editor provisions the first policy only after review and restores the exact command across reload, newer reads and denial", async () => {
   const require = createRequire(import.meta.url);
   const { transformSync } = require("next/dist/build/swc/index.js");
   const source = readFileSync(new URL("./store-registration-policy-editor.tsx", import.meta.url), "utf8");
@@ -172,9 +172,10 @@ test("registration editor requires review of changed terms and preserves an unce
   }).code;
   const values = [];
   let index = 0;
-  let current = { cityId: "sanaa", relation: "MARKETPLACE", version: 1, enabled: true,
-    termsVersion: "terms-v1", termsText: "Original", changedByActor: "operator-1",
-    changeReason: "Initial", updatedAt: "2026-11-23T00:00:00Z" };
+  let current = { cityId: "sanaa", relation: "MARKETPLACE", version: 0, enabled: false };
+  const storage = new Map();
+  const browser = { sessionStorage: { getItem: key => storage.get(key) ?? null,
+    setItem: (key, value) => storage.set(key, value), removeItem: key => storage.delete(key) } };
   let result = { status: "unknown" };
   const submitted = [];
   const jsx = (type, props) => ({ type, props });
@@ -184,6 +185,13 @@ test("registration editor requires review of changed terms and preserves an unce
       const i = index++;
       if (!(i in values)) values[i] = initial;
       return [values[i], next => { values[i] = typeof next === "function" ? next(values[i]) : next; }];
+    }, useRef(initial) {
+      const i = index++;
+      if (!(i in values)) values[i] = { current: initial };
+      return values[i];
+    }, useEffect(callback) {
+      const i = index++;
+      if (!(i in values)) { values[i] = true; callback(); }
     } },
     antd: {
       Alert: "Alert", Button: "Button", Card: "Card", Checkbox: "Checkbox", Space: "Space", Select: "Select",
@@ -192,18 +200,19 @@ test("registration editor requires review of changed terms and preserves an unce
     },
     "./store-registration-command": {
       readStoreRegistrationPolicy: async () => current,
-      matchesPendingPolicy: () => false,
-      reconcileRegistrationPolicy: async (_endpoint, _city, _relation, _actor, change) => {
+      clearPendingRegistrationPolicy, readPendingRegistrationPolicy, savePendingRegistrationPolicy,
+      reconcileRegistrationPolicy: async (_endpoint, cityId, relation, actorId, change) => {
+        assert.deepEqual(readPendingRegistrationPolicy(browser.sessionStorage, actorId), { cityId, relation, change });
         submitted.push(change);
         return result;
       },
     },
   };
   const module = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
+  new Function("require", "module", "exports", "window", compiled)(name => {
     assert.ok(Object.hasOwn(mocks, name), name);
     return mocks[name];
-  }, module, module.exports);
+  }, module, module.exports, browser);
   function flatten(tree) {
     return !tree || typeof tree !== "object" ? [] : Array.isArray(tree)
       ? tree.flatMap(flatten) : [tree, ...flatten(tree.props?.children)];
@@ -215,13 +224,19 @@ test("registration editor requires review of changed terms and preserves an unce
   const submit = () => render().find(n => n.type === "Button" && n.props.type === "primary");
   const form = (position) => render().filter(n => n.type === mocks.antd.Form)[position];
   const settle = () => new Promise(resolve => setImmediate(resolve));
+  render(); // mount effect restores the browser command before the editor is usable
   const citySelect = field("اختيار مدينة قبول المتاجر");
   assert.deepEqual(citySelect.props.options, directory.cities);
   assert.equal(citySelect.props.disabled, false);
   citySelect.props.onChange("sanaa");
   form(0).props.onFinish();
   await settle();
+  const enable = render().find(n => n.type === "Checkbox" && String(n.props.children).includes("السماح بإنشاء متاجر"));
+  enable.props.onChange({ target: { checked: true } });
+  field("إصدار شروط قبول المتاجر").props.onChange({ target: { value: "terms-v1" } });
+  field("نص شروط تسجيل المتجر").props.onChange({ target: { value: "Original" } });
   field("سبب قرار قبول المتاجر").props.onChange({ target: { value: "Review" } });
+  assert.equal(submit().props.disabled, true);
   review().props.onChange({ target: { checked: true } });
   assert.equal(submit().props.disabled, false);
   field("نص شروط تسجيل المتجر").props.onChange({ target: { value: "Revised" } });
@@ -234,7 +249,20 @@ test("registration editor requires review of changed terms and preserves an unce
   form(1).props.onFinish();
   await settle();
   assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].expectedVersion, 0);
   assert.equal(field("معرّف مدينة قبول المتاجر").props.disabled, true);
+  values.length = 0;
+  render(); // reload: new component state, same tab sessionStorage
+  assert.equal(field("اختيار مدينة قبول المتاجر").props.value, "sanaa");
+  assert.equal(field("نص شروط تسجيل المتجر").props.value, "Revised");
+  assert.equal(submit().props.disabled, false);
+  assert.equal(field("معرّف مدينة قبول المتاجر").props.disabled, true);
+  current = { cityId: "sanaa", relation: "MARKETPLACE", version: 1, enabled: true,
+    termsVersion: submitted[0].termsVersion, termsText: submitted[0].termsText,
+    changedByActor: "operator-1", changeReason: submitted[0].reason, updatedAt: "2026-11-23T00:00:00Z" };
+  form(0).props.onFinish();
+  await settle();
+  assert.equal(storage.size, 1, "identical policy fields do not prove the command ID");
   current = { ...current, version: 3, changedByActor: "operator-2" };
   form(0).props.onFinish();
   await settle();
@@ -246,6 +274,13 @@ test("registration editor requires review of changed terms and preserves an unce
   assert.deepEqual(submitted[1], submitted[0]);
   assert.equal(field("معرّف مدينة قبول المتاجر").props.disabled, true, "denial does not discard the uncertain command");
   assert.equal(field("اختيار مدينة قبول المتاجر").props.disabled, true);
+  result = { status: "confirmed", current, replay: true, superseded: true };
+  form(1).props.onFinish();
+  await settle();
+  assert.equal(submitted.length, 3);
+  assert.deepEqual(submitted[2], submitted[0]);
+  assert.equal(storage.size, 0);
+  assert.equal(field("اختيار مدينة قبول المتاجر").props.disabled, false);
 });
 
 test("policy city directory reads the bounded owner pages without treating partial or failed reads as empty", async () => {

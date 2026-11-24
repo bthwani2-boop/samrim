@@ -2,6 +2,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantOwnedStore } from "../access/dsh-standing";
+import EmployeesScreen from "../employees/employees-screen";
 import MerchantPublicLink from "../stores/merchant-public-link";
 import StoreAvailability from "../stores/store-availability";
 import { filterMerchantStores, type MerchantPublicationFilter, type MerchantRelationFilter } from "./merchant-workspace-model";
@@ -39,6 +40,8 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
   const [relation, setRelation] = useState<MerchantRelationFilter>("all");
   const [selectedId, setSelectedId] = useState<string | null>(initialStoreId ?? null);
   const selected = stores.find(store => store.id === selectedId);
+  const [teamScope,setTeamScope]=useState<string|null>(null);
+  const currentTeamScope=JSON.stringify([actorId,selected?.id]);
 
   const button = {
     minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, justifyContent: "center" as const,
@@ -54,7 +57,7 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
   if (selected) {
     return (
       <View testID="merchant-store-details" style={{ gap: 12 }}>
-        <Pressable accessibilityRole="button" onPress={() => setSelectedId(null)}
+        <Pressable accessibilityRole="button" onPress={() => {setSelectedId(null);setTeamScope(null);}}
           style={{ ...button, alignSelf: "flex-start" }}>
           <Text style={{ color: theme.interactiveText }}>العودة إلى المتاجر</Text>
         </Pressable>
@@ -73,6 +76,11 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
         <MerchantPublicLink key={`${actorId}:${selected.id}:public`} actorId={actorId}
           storeId={selected.id} published={selected.published} />
         <StoreAvailability key={selected.id} storeId={selected.id} actorId={actorId} />
+        <Pressable accessibilityRole="button" accessibilityLabel="إدارة موظفي التاجر" style={button}
+          onPress={()=>setTeamScope(current=>current===currentTeamScope?null:currentTeamScope)}>
+          <Text style={{color:theme.interactiveText}}>{teamScope===currentTeamScope?"إغلاق سجل الموظفين":"إدارة موظفي التاجر"}</Text>
+        </Pressable>
+        {teamScope===currentTeamScope?<EmployeesScreen actorId={actorId} storeId={selected.id}/>:null}
       </View>
     );
   }

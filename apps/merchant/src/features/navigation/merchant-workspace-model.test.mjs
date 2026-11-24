@@ -81,6 +81,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       "./merchant-store-directory": { __esModule: true, default: "Directory" },
       "../stores/merchant-public-link": { __esModule: true, default: "PublicLink" },
       "../stores/store-availability": { __esModule: true, default: "Availability" },
+      "../employees/employees-screen": { __esModule: true, default: "Employees" },
       "./merchant-workspace-model": { filterMerchantStores, merchantNavigation, merchantMobileSections, merchantStoreSummary },
     };
     const load = code => {
@@ -102,6 +103,37 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       assert.ok(button, label);
       button.props.onPress();
     };
+    // Home shortcuts use only the current owner-verified stores, including on mobile.
+    for (const wide of [true, false]) {
+      desktop = wide;
+      click("فتح متجر ب");
+      assert.equal(render().find(n => n.type === "Directory")?.props.initialStoreId, "b");
+      click("الرئيسية");
+      click("منتجات متجر ب");
+      assert.equal(render().find(n => n.type === "Catalog")?.props.initialStoreId, "b");
+      click("الرئيسية");
+      click("أسعار ومخزون متجر ب");
+      assert.equal(render().find(n => n.type === "Catalog")?.props.initialStoreId, "b");
+      assert.equal(render().find(n => n.type === "Catalog")?.props.initialPriceStockOnly, true);
+      click("الرئيسية");
+      click("الطلبات");
+      assert.ok(render().some(n => n.props?.testID === "merchant-section-unavailable"));
+      click("الرئيسية");
+      click("المحفظة");
+      assert.ok(render().some(n => n.props?.testID === "merchant-section-unavailable"));
+      click("الرئيسية");
+    }
+    desktop = true;
+    index = 0;
+    const empty = nodes(Workspace({ actorId: "merchant-a", stores: [], onRefresh() {}, onSignOut() {} }));
+    assert.ok(empty.some(n => n.type === "Registration"));
+    assert.ok(empty.some(n => n.props?.testID === "merchant-onboarding-next-step"));
+    assert.ok(empty.some(n => n.props?.testID === "merchant-onboarding-roadmap"));
+    assert.ok(empty.some(n => n.props?.testID === "merchant-navigation-group-operations"));
+    assert.ok(empty.some(n => n.props?.testID === "merchant-navigation-group-account"));
+    assert.ok(!empty.some(n => n.props?.accessibilityLabel === "فتح متجر ب"));
+    assert.ok(!empty.some(n => n.props?.accessibilityLabel === "عرض جميع المتاجر"));
+    assert.ok(!empty.some(n => n.props?.accessibilityLabel === "إدارة المنتجات"));
     click("عرض المتاجر المنشورة");
     let directory = render().find(n => n.type === "Directory");
     assert.equal(directory.props.initialPublication, "published");
@@ -143,6 +175,11 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     renderDirectory().find(n => n.props.accessibilityLabel === "عرض ب").props.onPress();
     action("إدارة منتجات هذا المتجر").props.onPress();
     assert.deepEqual(opened, ["b"]);
+    assert.ok(!renderDirectory().some(n => n.type === "Employees"));
+    renderDirectory().find(n => n.props?.accessibilityLabel === "إدارة موظفي التاجر").props.onPress();
+    const employees = renderDirectory().find(n => n.type === "Employees");
+    assert.deepEqual(employees?.props, { actorId: "merchant-a", storeId: "b" });
+    assert.ok(!renderDirectory(stores.slice(0, 1)).some(n => n.type === "Employees"));
     assert.ok(!renderDirectory(stores.slice(0, 1)).some(n => n.props?.testID === "merchant-store-details"));
   } finally { rmSync(temp, { recursive: true, force: true }); }
 });

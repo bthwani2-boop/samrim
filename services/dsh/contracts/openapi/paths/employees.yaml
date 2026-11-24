@@ -129,6 +129,153 @@ paths:
         '403': { $ref: '#/components/responses/EmployeeError' }
         '404': { $ref: '#/components/responses/EmployeeError' }
         '503': { $ref: '#/components/responses/EmployeeError' }
+  /v1/stores/{storeID}/employees:
+    get:
+      operationId: listMerchantEmployees
+      summary: List employment records of the authenticated individual Merchant proprietor
+      description: Current Merchant role and direct ownership of the selected Store are required. The Store identifies the proprietor, not a separate employer. Returns only that proprietor's employment records, up to 30 by ID. Company, other Merchant, and delegated personnel are excluded.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+        - name: cursor
+          in: query
+          schema: { $ref: '#/components/schemas/EmployeeId' }
+      responses:
+        '200':
+          description: Current proprietor employees and the cursor for the next page, if available
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, nextCursor]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 30
+                    items: { $ref: '#/components/schemas/Employee' }
+                  nextCursor:
+                    anyOf:
+                      - { $ref: '#/components/schemas/EmployeeId' }
+                      - { type: 'null' }
+        '400': { $ref: '#/components/responses/EmployeeError' }
+        '401': { $ref: '#/components/responses/EmployeeError' }
+        '403': { $ref: '#/components/responses/EmployeeError' }
+        '503': { $ref: '#/components/responses/EmployeeError' }
+    post:
+      operationId: registerMerchantEmployee
+      summary: Register an individual Merchant employee and audit the author in one transaction
+      description: Current Merchant role and direct Store ownership are required. The same proprietor, actor and operation ID replay the same employee for an identical normalized request even through another directly owned Store. Changed input conflicts. No Identity account or Store grant is created.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operationId, displayName, department, jobTitle, startDate]
+              properties:
+                operationId: { $ref: '#/components/schemas/EmployeeId' }
+                displayName: { type: string, minLength: 1, maxLength: 120 }
+                department: { type: string, minLength: 1, maxLength: 80 }
+                jobTitle: { type: string, minLength: 1, maxLength: 80 }
+                startDate: { type: string, format: date }
+      responses:
+        '200':
+          description: Durable employee registration or confirmed replay
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id]
+                properties:
+                  id: { $ref: '#/components/schemas/EmployeeId' }
+        '400': { $ref: '#/components/responses/EmployeeError' }
+        '401': { $ref: '#/components/responses/EmployeeError' }
+        '403': { $ref: '#/components/responses/EmployeeError' }
+        '409': { $ref: '#/components/responses/EmployeeError' }
+        '503': { $ref: '#/components/responses/EmployeeError' }
+  /v1/stores/{storeID}/employees/{id}:
+    get:
+      operationId: getMerchantEmployee
+      summary: Read one current proprietor employment record
+      description: Absent employees and IDs from other employers return the same not-found response.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/EmployeeId' }
+      responses:
+        '200':
+          description: Private Merchant employment record
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Employee' }
+        '400': { $ref: '#/components/responses/EmployeeError' }
+        '401': { $ref: '#/components/responses/EmployeeError' }
+        '403': { $ref: '#/components/responses/EmployeeError' }
+        '404': { $ref: '#/components/responses/EmployeeError' }
+        '503': { $ref: '#/components/responses/EmployeeError' }
+  /v1/stores/{storeID}/employees/{id}/registration-audit:
+    get:
+      operationId: getMerchantEmployeeRegistrationAudit
+      summary: Read the immutable registration event for a Merchant employee
+      description: Current Merchant role and direct Store ownership are rechecked before disclosure. Only the registration event is returned; no request hash, operation key, other employer or Identity grant is exposed. Absent or out-of-scope events have the same not-found response.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+        - name: id
+          in: path
+          required: true
+          schema: { $ref: '#/components/schemas/EmployeeId' }
+      responses:
+        '200':
+          description: Immutable Merchant registration event
+          headers:
+            Cache-Control: { schema: { type: string, const: no-store } }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [employeeId, registeredByActorId, recordedAt]
+                properties:
+                  employeeId: { $ref: '#/components/schemas/EmployeeId' }
+                  registeredByActorId: { type: string, minLength: 1, maxLength: 128 }
+                  recordedAt: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/EmployeeError' }
+        '401': { $ref: '#/components/responses/EmployeeError' }
+        '403': { $ref: '#/components/responses/EmployeeError' }
+        '404': { $ref: '#/components/responses/EmployeeError' }
+        '503': { $ref: '#/components/responses/EmployeeError' }
 components:
   schemas:
     EmployeeId:

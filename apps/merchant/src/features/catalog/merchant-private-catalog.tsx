@@ -33,16 +33,19 @@ function canEditDraft(offer: MerchantCatalogOffer) {
     /^of-[a-f0-9]{32}$/.test(offer.id);
 }
 
-export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "" }: Readonly<{
+export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "", initialPriceStockOnly = false }: Readonly<{
   actorId: string;
   stores: MerchantDSHStanding["stores"];
   initialStoreId?: string | undefined;
+  initialPriceStockOnly?: boolean;
 }>) {
   const { theme } = useMobileAppearance();
   const [selectedId, setSelectedId] = useState(initialStoreId);
   const [search, setSearch] = useState({ scope: "", draft: "", query: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [priceScope, setPriceScope] = useState<string | null>(null);
+  const [priceScope, setPriceScope] = useState<string | null>(
+    initialPriceStockOnly && initialStoreId ? JSON.stringify([actorId, initialStoreId]) : null,
+  );
   const [filter, setFilter] = useState<{ scope: string; status: MerchantCatalogStatus | undefined }>({ scope: "", status: undefined });
   const [retry, setRetry] = useState(0);
   const [blockedScopes, setBlockedScopes] = useState<ReadonlySet<string>>(new Set<string>());
@@ -57,8 +60,10 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const priceStockOnly = priceScope === storeScope;
   const catalogBlocked = blockedScopes.has(storeScope);
   // A different actor or Store starts in the regular catalog, even on returning to a previous Store.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the scope change resets the focused view.
-  useEffect(() => { setPriceScope(null); setFilter({ scope: "", status: undefined }); }, [storeScope]);
+  useEffect(() => {
+    setPriceScope(previous => previous === storeScope ? previous : null);
+    setFilter({ scope: "", status: undefined });
+  }, [storeScope]);
   const draftSearch = search.scope === storeScope ? search.draft : "";
   const searchQuery = search.scope === storeScope ? search.query : "";
   const status = filter.scope === storeScope ? filter.status : undefined;

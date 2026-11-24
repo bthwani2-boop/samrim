@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isCityDeliveryPolicyChange, isCityDeliveryPolicyPreviewInput } from "../../../services/dsh/clients/city-policies.ts";
 import { validOperatorStoreRegistrationChange as validateDSHPolicyChange } from "../../../services/dsh/clients/operator-store-registration-policy.ts";
 import { isTrustedOperatorLoopbackTarget } from "../src/server/operator-passkey-config.ts";
 
@@ -91,6 +92,8 @@ function harness(t, cityRoute = false) {
     },
   };
   if (cityRoute) {
+    owner.isCityDeliveryPolicyChange = isCityDeliveryPolicyChange;
+    owner.isCityDeliveryPolicyPreviewInput = isCityDeliveryPolicyPreviewInput;
     owner.getCityStoreOperationalPolicy = owner.getOperatorStoreRegistrationPolicy;
     owner.listCityStoreOperationalPolicyHistory = owner.listOperatorStoreRegistrationPolicyHistory;
     owner.replaceCityStoreOperationalPolicy = async (...args) => {

@@ -26,8 +26,9 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
   const { desktop } = usePrimaryNavigation();
   const [section, setSection] = useState<MerchantSection>("home");
   const [initialPublication, setInitialPublication] = useState<MerchantPublicationFilter>("all");
-  const [catalogTarget, setCatalogTarget] = useState<{ actorId: string; storeId: string } | null>(null);
-  const catalogStoreId = catalogTarget?.actorId === actorId ? catalogTarget.storeId : undefined;
+  const [catalogTarget, setCatalogTarget] = useState<{ actorId: string; storeId: string; priceStockOnly?: boolean } | null>(null);
+  const catalogStoreId = catalogTarget?.actorId === actorId && stores.some(store => store.id === catalogTarget.storeId)
+    ? catalogTarget.storeId : undefined;
   const openSection = (next: MerchantSection) => {
     if (next === "stores" && section !== "stores") {
       setInitialPublication("all");
@@ -41,9 +42,15 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
     setCatalogTarget(null);
     setSection("stores");
   };
-  const openCatalog = (storeId: string) => {
+  const openStore = (storeId: string) => {
     if (!stores.some(store => store.id === storeId)) return;
+    setInitialPublication("all");
     setCatalogTarget({ actorId, storeId });
+    setSection("stores");
+  };
+  const openCatalog = (storeId: string, priceStockOnly = false) => {
+    if (!stores.some(store => store.id === storeId)) return;
+    setCatalogTarget({ actorId, storeId, priceStockOnly });
     setSection("products");
   };
   const summary = merchantStoreSummary(stores);
@@ -111,8 +118,19 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
               بثواني
             </Text>
             <Text style={{ color: theme.colorSecondary, textAlign: "auto" }}>مساحة التاجر</Text>
-            <View accessibilityRole="menu" style={{ gap: 4, marginTop: 18 }}>
-              {merchantNavigation.map(item => navigationButton(item))}
+            <View accessibilityRole="menu" style={{ gap: 16, marginTop: 18 }}>
+              <View testID="merchant-navigation-group-operations" style={{ gap: 4 }}>
+                <Text style={{ color: theme.colorSecondary, fontSize: 12, paddingHorizontal: 14 }}>إدارة الأعمال</Text>
+                {merchantNavigation.filter(item => item.id !== "wallet" && item.id !== "more").map(item => navigationButton(item))}
+              </View>
+              <View testID="merchant-navigation-group-account" style={{ gap: 4 }}>
+                <Text style={{ color: theme.colorSecondary, fontSize: 12, paddingHorizontal: 14 }}>المالية والحساب</Text>
+                {merchantNavigation.filter(item => item.id === "wallet" || item.id === "more").map(item => navigationButton(item))}
+              </View>
+            </View>
+            <View style={{ marginTop: "auto", borderTopWidth: 1, borderColor: theme.borderColor, paddingTop: 14, gap: 4 }}>
+              <Text style={{ color: theme.color, fontWeight: "600" }}>الحساب موثّق</Text>
+              <Text style={{ color: theme.colorSecondary, fontSize: 13 }}>{stores.length ? `المتاجر المرتبطة: ${stores.length}` : "لم يتم إنشاء متجر بعد"}</Text>
             </View>
           </View>
         ) : null}
@@ -141,21 +159,97 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
 
           {section === "home" ? (
             <>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                {metric("متاجري", summary.total, "all", "عرض جميع المتاجر")}
-                {metric("المتاجر المنشورة", summary.published, "published", "عرض المتاجر المنشورة")}
-                {metric("غير المنشورة", summary.unpublished, "unpublished", "عرض المتاجر غير المنشورة")}
-              </View>
-              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
-                {showStores}
-                {stores.length > 0 && <Pressable accessibilityRole="button" accessibilityLabel="إدارة المنتجات"
-                  onPress={() => openSection("products")}
-                  style={{ minHeight: 44, paddingHorizontal: 16, justifyContent: "center",
-                    borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
-                  <Text style={{ color: theme.interactiveText, fontWeight: "700" }}>إدارة المنتجات</Text>
-                </Pressable>}
-              </View>
-              {stores.length === 0 ? <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} /> : null}
+              {stores.length > 0 ? (
+                <>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                    {metric("متاجري", summary.total, "all", "عرض جميع المتاجر")}
+                    {metric("المتاجر المنشورة", summary.published, "published", "عرض المتاجر المنشورة")}
+                    {metric("غير المنشورة", summary.unpublished, "unpublished", "عرض المتاجر غير المنشورة")}
+                  </View>
+                  <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
+                    {showStores}
+                    <Pressable accessibilityRole="button" accessibilityLabel="إدارة المنتجات"
+                      onPress={() => openSection("products")}
+                      style={{ minHeight: 44, paddingHorizontal: 16, justifyContent: "center",
+                        borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
+                      <Text style={{ color: theme.interactiveText, fontWeight: "700" }}>إدارة المنتجات</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : null}
+              {stores.length === 0 ? (
+                <View testID="merchant-onboarding-next-step" style={{ gap: 20 }}>
+                  <View style={{ backgroundColor: theme.actionSoft, borderRadius: 18, padding: 22, gap: 10 }}>
+                    <Text style={{ color: theme.interactiveText, fontWeight: "700", fontSize: 13 }}>البدء مع بثواني</Text>
+                    <Text accessibilityRole="header" style={{ color: theme.color, fontSize: desktop ? 30 : 24, fontWeight: "700" }}>
+                      جهّز متجرك لبدء البيع
+                    </Text>
+                    <Text style={{ color: theme.colorSecondary, lineHeight: 25 }}>حسابك جاهز. تحتاج إلى تسجيل متجر واستكمال متطلبات اعتماده قبل استقبال الطلبات.</Text>
+                  </View>
+                  <View style={{ flexDirection: desktop ? "row" : "column", gap: 16, alignItems: "stretch" }}>
+                    <View style={{ flex: 2, minWidth: 0 }}>
+                      <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} />
+                    </View>
+                    <View testID="merchant-onboarding-roadmap" style={{
+                      flex: 1, minWidth: 0, backgroundColor: theme.surface, borderWidth: 1,
+                      borderColor: theme.borderColor, borderRadius: 14, padding: 18, gap: 18,
+                    }}>
+                      <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 19, fontWeight: "700" }}>رحلة إعداد المتجر</Text>
+                      {[
+                        ["١", "التحقق من الحساب", "تم التحقق من حسابك", theme.successText],
+                        ["٢", "تسجيل المتجر", "المدينة، طريقة العمل وبيانات المتجر", theme.interactiveText],
+                        ["٣", "استكمال التجهيز", "المنتجات، أوقات العمل والشروط المطلوبة", theme.colorSecondary],
+                        ["٤", "الاعتماد والنشر", "حسب أهلية متجرك والمتطلبات المعتمدة", theme.colorSecondary],
+                      ].map(([number, title, detail, color]) => (
+                        <View key={number} style={{ flexDirection: "row", gap: 12, alignItems: "flex-start" }}>
+                          <View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: theme.actionSoft, alignItems: "center", justifyContent: "center" }}>
+                            <Text style={{ color, fontWeight: "700" }}>{number}</Text>
+                          </View>
+                          <View style={{ flex: 1, gap: 4 }}>
+                            <Text style={{ color: theme.color, fontWeight: "700" }}>{title}</Text>
+                            <Text style={{ color: theme.colorSecondary, lineHeight: 21 }}>{detail}</Text>
+                          </View>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ gap: 12 }}>
+                  <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 20, fontWeight: "700" }}>إدارة متاجرك</Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                    {stores.slice(0, 4).map(store => (
+                      <View key={store.id} style={{
+                        flexGrow: 1, flexBasis: desktop ? 240 : "100%", minWidth: 0,
+                        borderWidth: 1, borderColor: theme.borderColor, borderRadius: 14,
+                        backgroundColor: theme.surface, padding: 16, gap: 10,
+                      }}>
+                        <Text style={{ color: theme.color, fontSize: 18, fontWeight: "700" }}>{store.name}</Text>
+                        <Text style={{ color: theme.colorSecondary }}>
+                          {store.relation === "MARKETPLACE" ? "سوق بثواني" : "متجر مباشر"} · {store.published ? "منشور" : "غير منشور"}
+                        </Text>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`فتح متجر ${store.name}`}
+                            onPress={() => openStore(store.id)}
+                            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 8, backgroundColor: theme.actionBackground }}>
+                            <Text style={{ color: theme.onAction, fontWeight: "700" }}>إدارة المتجر</Text>
+                          </Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`منتجات متجر ${store.name}`}
+                            onPress={() => openCatalog(store.id)}
+                            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.borderColor }}>
+                            <Text style={{ color: theme.interactiveText }}>المنتجات</Text>
+                          </Pressable>
+                          <Pressable accessibilityRole="button" accessibilityLabel={`أسعار ومخزون متجر ${store.name}`}
+                            onPress={() => openCatalog(store.id, true)}
+                            style={{ minHeight: 44, justifyContent: "center", paddingHorizontal: 12, borderRadius: 8, borderWidth: 1, borderColor: theme.borderColor }}>
+                            <Text style={{ color: theme.interactiveText }}>أسعار ومخزون المسودات</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
             </>
           ) : section === "stores" ? (
             <>
@@ -172,7 +266,8 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
                   <Text style={{ color: theme.interactiveText }}>العودة إلى تفاصيل المتجر السابق</Text>
                 </Pressable>
               ) : null}
-              <MerchantPrivateCatalog key={actorId} actorId={actorId} stores={stores} initialStoreId={catalogStoreId} />
+              <MerchantPrivateCatalog key={actorId} actorId={actorId} stores={stores} initialStoreId={catalogStoreId}
+                initialPriceStockOnly={Boolean(catalogStoreId && catalogTarget?.priceStockOnly)} />
             </>
           ) : section === "more" ? (
             <View style={{ gap: 10 }}>
@@ -181,10 +276,17 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
                 .map(item => navigationButton(item))}
             </View>
           ) : (
-            <View style={{
+            <View testID="merchant-section-unavailable" style={{
               padding: 24, borderWidth: 1, borderColor: theme.borderColor,
               borderRadius: 14, gap: 10, backgroundColor: theme.surface,
             }}>
+              <Text accessibilityRole="alert" style={{ color: theme.warningText, fontSize: 18, fontWeight: "700" }}>
+                هذه الوظيفة غير متاحة حاليًا
+              </Text>
+              <Text style={{ color: theme.colorSecondary }}>
+                {section === "orders" ? "لم تُفعّل إدارة الطلبات بعد. يمكنك متابعة إعداد متجرك ومنتجاته." :
+                  "لم تُفعّل الأرصدة والمستحقات بعد. لن تُعرض مبالغ غير مؤكدة."}
+              </Text>
               {showStores}
             </View>
           )}

@@ -45,7 +45,7 @@ function allNodes(node) {
   return [node, ...allNodes(node.props?.children)];
 }
 
-function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = false, platform = "web" }) {
+function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = false, platform = "web", registrationOptions = options }) {
   const hooks = [];
   let hookIndex = 0;
   const effects = [];
@@ -110,7 +110,7 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
       Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View",
     },
     "./store-registration-transport": {
-      async readMerchantStoreRegistrationOptions() { return options; },
+      async readMerchantStoreRegistrationOptions() { return registrationOptions; },
       async createMerchantStore(actor, input, signal) {
         createCount++;
         assert.equal(actor, actorId);
@@ -190,6 +190,22 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
     close() { globalThis.window = previousWindow; },
   };
 }
+
+test("registration distinguishes missing commercial activities from closed city policy, on Web and Android", async () => {
+  for (const platform of ["web", "android"]) {
+    for (const registrationOptions of [{ choices: [], verticals: [] }, { choices: options.choices, verticals: [] }]) {
+      const h = createHarness({ storage: new Map(), platform, registrationOptions, onCreate() { assert.fail("must not submit"); } });
+      try {
+        await h.mount();
+        const tree = allNodes(h.render());
+        assert.ok(tree.some(n => n.props?.testID === "merchant-registration-no-activities"));
+        assert.ok(tree.some(n => n.props?.accessibilityLabel === "إعادة التحقق من إتاحة التسجيل" && !n.props.disabled));
+        assert.ok(!tree.some(n => n.type === "TextInput" || n.props?.accessibilityRole === "checkbox"));
+        assert.equal(h.createCount, 0);
+      } finally { h.close(); }
+    }
+  }
+});
 
 test("real Web component recovers the same DSH operation ID after a failed request and remount", async t => {
   const storage = new Map();

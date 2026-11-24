@@ -160,3 +160,31 @@ test("unconfirmed employee writes do not retry or report success on network loss
   await rejects(() => registerCompanyEmployee(owner, token, input), 503, "OPERATION_RESULT_UNKNOWN");
   assert.equal(calls, 2, "each explicit submission dispatches exactly one write");
 });
+
+
+test("Merchant employee API preserves exact Store scope and reuses employee validation", async t => {
+  const input = { operationId: id(10), displayName: "Nadia", department: "Support", jobTitle: "Agent", startDate: "2026-11-20" };
+  const paths = [];
+  const audit = { employeeId:id(1), registeredByActorId:"merchant-a", recordedAt:"2026-11-24T01:00:00Z" };
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const path = new URL(url).pathname;
+    paths.push(path);
+    assert.equal(options.headers.Authorization, "Bearer " + token);
+    assert.equal(options.cache,"no-store");
+    if (options.method === "POST") {
+      assert.deepEqual(JSON.parse(options.body),input);
+      return json({id:id(1)});
+    }
+    if (path.endsWith("/registration-audit")) return json(audit);
+    if (path.endsWith("/"+id(1))) return json(employee(1));
+    return json({items:[employee(1)],nextCursor:null});
+  });
+  const { listMerchantEmployees, getMerchantEmployee, registerMerchantEmployee, getMerchantEmployeeRegistrationAudit } = await import("./employees.ts");
+  assert.deepEqual(await listMerchantEmployees(owner,token,"store-a"),{items:[employee(1)],nextCursor:null});
+  assert.deepEqual(await getMerchantEmployee(owner,token,"store-a",id(1)),employee(1));
+  assert.deepEqual(await getMerchantEmployeeRegistrationAudit(owner,token,"store-a",id(1)),audit);
+  assert.equal(await registerMerchantEmployee(owner,token,"store-a",input),id(1));
+  await rejects(()=>listMerchantEmployees(owner,token,"../other"),400,"EMPLOYEE_QUERY_INVALID");
+  await rejects(()=>registerMerchantEmployee(owner,token,"store-a",{...input,employerId:"merchant-b"}),400,"EMPLOYEE_REGISTRATION_INVALID");
+  assert.deepEqual(paths,["/v1/stores/store-a/employees","/v1/stores/store-a/employees/"+id(1),"/v1/stores/store-a/employees/"+id(1)+"/registration-audit","/v1/stores/store-a/employees"]);
+});

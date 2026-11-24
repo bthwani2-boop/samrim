@@ -1,4 +1,4 @@
-import { DshPublicError, getStoreOperationalAvailability, listMerchantCatalog, readMerchantInventorySummary, readMerchantRegistrationOptions, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
+import { DshPublicError, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, getStoreOperationalAvailability, isCompanyEmployeeId, listMerchantCatalog, listMerchantEmployees, readMerchantInventorySummary, readMerchantRegistrationOptions, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
 import {
   appendSessionCookies, bearerFrom, configuredOrigin, cookieName, ownerError,
@@ -59,7 +59,14 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
     (cursorValue === null || /^[a-z0-9-]{1,64}$/.test(cursorValue));
   const inventoryId = query.size === 1 ? query.get("inventory") : null;
   const inventory = inventoryId !== null && /^[a-z0-9-]{1,64}$/.test(inventoryId);
-  const protectedRead = stores || availability || registration || catalog || inventory;
+  const employeeStore = query.get("employees");
+  const employeeCursor = query.get("cursor");
+  const employeeId = query.get("employeeId");
+  const employees = employeeStore !== null && /^[a-z0-9-]{1,64}$/.test(employeeStore) &&
+    [...query.keys()].every(key => ["employees","cursor","employeeId"].includes(key) && query.getAll(key).length===1) &&
+    (employeeCursor===null || isCompanyEmployeeId(employeeCursor)) &&
+    (employeeId===null || (employeeCursor===null && isCompanyEmployeeId(employeeId)));
+  const protectedRead = stores || availability || registration || catalog || inventory || employees;
   if (query.size > 0 && !protectedRead) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
@@ -96,6 +103,18 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
             ...(searchValue !== null ? { query: searchValue } : {}),
             ...(validMerchantCatalogStatus(statusValue) ? { status: statusValue } : {}) },
         ) });
+      }
+      if (employees) {
+        const actorId=request.headers.get("X-Merchant-Context");
+        if (!actorId || actorId!==session.actorId) return response({code:"MERCHANT_CONTEXT_CHANGED"},403);
+        if (employeeId!==null) {
+          const owner=standingOrigin(origin);
+          const employee=await getMerchantEmployee(owner,bearer,employeeStore,employeeId,signal);
+          const audit=await getMerchantEmployeeRegistrationAudit(owner,bearer,employeeStore,employeeId,signal);
+          return response({employees:{actorId,storeId:employeeStore,detail:{employee,audit}}});
+        }
+        const page=await listMerchantEmployees(standingOrigin(origin),bearer,employeeStore,employeeCursor??undefined,signal);
+        return response({employees:{actorId,storeId:employeeStore,page}});
       }
       if (inventory) {
         const actorId = request.headers.get("X-Merchant-Context");
