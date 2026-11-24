@@ -1,8 +1,10 @@
-import type { MerchantCatalogPage } from "@bthwani/dsh";
+import type { MerchantCatalogPage, MerchantCatalogStatus } from "@bthwani/dsh";
+
+type CatalogSelectors = { query?: string; status?: MerchantCatalogStatus };
 
 type CatalogReader = (
   storeId: string, actorId: string, signal: AbortSignal,
-  options: { limit: number; cursor?: string },
+  options: { limit: number; cursor?: string } & CatalogSelectors,
 ) => Promise<MerchantCatalogPage>;
 
 const pageSize = 50;
@@ -18,13 +20,16 @@ function cell(value: string | number | boolean): string {
 
 export async function collectCatalogExport(
   actorId: string, storeId: string, signal: AbortSignal, read: CatalogReader,
+  selectors: CatalogSelectors = {},
 ): Promise<{ csv: string; count: number }> {
+  const { query, status } = selectors;
   const rows = ["offer_id,store_id,product_id,variant_id,name,price_yer,stock_units,draft_version,product_active,variant_sellable,required_attributes_valid,published,available"];
   let cursor: string | undefined;
   let count = 0;
   for (let i = 0; i < maxRows / pageSize; i++) {
     signal.throwIfAborted();
-    const page = await read(storeId, actorId, signal, { limit: pageSize, ...(cursor ? { cursor } : {}) });
+    const page = await read(storeId, actorId, signal, { limit: pageSize, ...(cursor ? { cursor } : {}),
+      ...(query ? { query } : {}), ...(status ? { status } : {}) });
     signal.throwIfAborted();
     if (page.actorId !== actorId || page.storeId !== storeId || page.items.length > pageSize) {
       throw new Error("CATALOG_EXPORT_SCOPE");

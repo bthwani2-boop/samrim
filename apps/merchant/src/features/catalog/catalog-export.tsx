@@ -1,3 +1,4 @@
+import type { MerchantCatalogStatus } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { randomUUID } from "expo-crypto";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -40,7 +41,9 @@ async function deliverCsv(csv: string, signal: AbortSignal) {
   }
 }
 
-function CatalogExportAction({ actorId, storeId }: Readonly<{ actorId: string; storeId: string }>) {
+function CatalogExportAction({ actorId, storeId, query, status }: Readonly<{
+  actorId: string; storeId: string; query?: string | undefined; status?: MerchantCatalogStatus | undefined;
+}>) {
   const { theme } = useMobileAppearance();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -51,7 +54,7 @@ function CatalogExportAction({ actorId, storeId }: Readonly<{ actorId: string; s
     active.current = null;
   }, []);
 
-  async function start() {
+  async function start(filtered = false) {
     if (active.current) return;
     const controller = new AbortController();
     active.current = controller;
@@ -59,7 +62,8 @@ function CatalogExportAction({ actorId, storeId }: Readonly<{ actorId: string; s
     setMessage("");
     const timeout = setTimeout(() => controller.abort(), 120000);
     try {
-      const result = await collectCatalogExport(actorId, storeId, controller.signal, readMerchantCatalogPage);
+      const result = await collectCatalogExport(actorId, storeId, controller.signal, readMerchantCatalogPage,
+        filtered ? { ...(query ? { query } : {}), ...(status ? { status } : {}) } : {});
       // The last page and each preceding page are checked by DSH. A changed
       // mounted scope cancels the request before the file can be handed off.
       await deliverCsv(result.csv, controller.signal);
@@ -80,16 +84,22 @@ function CatalogExportAction({ actorId, storeId }: Readonly<{ actorId: string; s
     }
   }
 
+  const buttonStyle = { minHeight: 44, justifyContent: "center" as const, borderColor: theme.borderColor,
+    borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 };
   return <View style={{ gap: 8 }}>
     <Pressable accessibilityRole="button" accessibilityLabel="تصدير كتالوج المتجر CSV"
       accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void start()}
-      style={{ minHeight: 44, justifyContent: "center", borderColor: theme.borderColor,
-        borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10 }}>
+      style={buttonStyle}>
       <Text style={{ color: theme.interactiveText }}>{busy ? "جارٍ تجهيز التصدير…" : "تصدير الكتالوج (CSV)"}</Text>
     </Pressable>
+    {query || status ? <Pressable accessibilityRole="button" accessibilityLabel="تصدير نتائج التصفية CSV"
+      accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void start(true)}
+      style={buttonStyle}>
+      <Text style={{ color: theme.interactiveText }}>تصدير نتائج التصفية (CSV)</Text>
+    </Pressable> : null}
     <Text style={{ color: theme.colorSecondary }}>
-      يشمل التصدير عروض المتجر ومسوداته (حتى 5000 عرض)، دون تصفية البحث الحالية. تُقرأ الصفحات من DSH تباعًا؛
-      لا يُعد الملف لقطة متزامنة إذا تغيّر الكتالوج أثناء القراءة. احفظه في مكان آمن.
+      يمكنك تصدير الكتالوج بالكامل أو جميع نتائج البحث والتصفية الحالية (حتى 5000 عرض).
+      تُقرأ الصفحات من DSH تباعًا؛ لا يُعد الملف لقطة متزامنة إذا تغيّر الكتالوج أثناء القراءة. احفظه في مكان آمن.
     </Text>
     {message ? <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>{message}</Text> : null}
   </View>;
@@ -97,8 +107,11 @@ function CatalogExportAction({ actorId, storeId }: Readonly<{ actorId: string; s
 
 // The protected legacy route has no owner scope and cannot invoke export.
 // The active verified Merchant workspace passes its current actor and Store.
-export default function CatalogExport({ actorId, storeId }: Readonly<{ actorId?: string; storeId?: string }> = {}) {
+export default function CatalogExport({ actorId, storeId, query, status }: Readonly<{
+  actorId?: string; storeId?: string; query?: string | undefined; status?: MerchantCatalogStatus | undefined;
+}> = {}) {
   if (!actorId || !storeId) return <MerchantCapabilityScreen title="تصدير الكتالوج"
     message="افتح الكتالوج من مساحة التاجر الموثقة وحدد متجرك للتصدير." />;
-  return <CatalogExportAction key={JSON.stringify([actorId, storeId])} actorId={actorId} storeId={storeId} />;
+  return <CatalogExportAction key={JSON.stringify([actorId, storeId, query, status])}
+    actorId={actorId} storeId={storeId} query={query} status={status} />;
 }

@@ -32,6 +32,23 @@ test("export reads fresh owner pages and preserves exact YER and draft status", 
   assert.doesNotMatch(result.csv, /merchant-a/);
 });
 
+test("filtered export sends the same owner selectors on every page, never just loaded rows", async () => {
+  const calls = [];
+  const items = Array.from({ length: 50 }, (_, i) => ({ ...offer("of-a" + String(i).padStart(2, "0")), published: true, stockUnits: 0 }));
+  const last = { ...offer("of-b"), published: true, stockUnits: 0 };
+  const result = await collectCatalogExport("merchant-a", "store-a", new AbortController().signal,
+    async (_store, _actor, _signal, options) => {
+      calls.push(options);
+      return options.cursor ? page([last]) : page(items, "of-a49");
+    }, { query: "قهوة", status: "stockout" });
+  assert.deepEqual(calls, [
+    { limit: 50, query: "قهوة", status: "stockout" },
+    { limit: 50, cursor: "of-a49", query: "قهوة", status: "stockout" },
+  ]);
+  assert.equal(result.count, 51);
+  assert.match(result.csv, /of-b/);
+});
+
 test("formula-like names and identifiers are escaped as spreadsheet text", async () => {
   const result = await run(async () => page([
     {...offer("of-a", "  =1+2"), productId: "@SUM(1)"},

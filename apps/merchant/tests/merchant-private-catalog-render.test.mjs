@@ -215,6 +215,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       tree = render("merchant-a", stores.slice(0, 1), "store-b");
       assert.equal(requests[1].signal.aborted, true);
       assert.equal(requests[2].options.status, "stockout");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogExport").props.status, "stockout");
       assert.equal(requests[2].options.cursor, undefined);
       assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "نفد المخزون").props.accessibilityState.selected, true);
       requests[1].resolve({ actorId: "merchant-a", storeId: "store-a", items: [{ ...draft, storeId: "store-a", name: "صفحة قديمة" }] });

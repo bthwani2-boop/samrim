@@ -60,7 +60,7 @@ test("export button hands off fresh CSV only in its current owner scope", async 
       },
       useLayoutEffect(fn) { if (!mounted) { cleanup = fn(); mounted = true; } },
     };
-    const jsx = (type, props) => ({ type, props: props ?? {} });
+    const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
     const mocks = {
       "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
       "expo-crypto": { randomUUID: () => "synthetic" },
@@ -152,6 +152,42 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     requests[5].resolve(result);
     await tick();
     assert.equal(nativeFiles.length, 2, "unavailable sharing creates no file");
+
+    // A change in the accepted selectors remounts and aborts the old export.
+    cleanup();
+    mounted = false;
+    states.length = 0;
+    refs.length = 0;
+    platform.OS = "web";
+    const filterScope = { ...scope, query: "قهوة", status: "unpublished" };
+    const selected = mod.exports.default(filterScope);
+    const replacement = mod.exports.default({ ...filterScope, status: "stockout" });
+    assert.notEqual(selected.key, replacement.key);
+    stateIndex = 0; refIndex = 0;
+    const buttons = nodes(selected.type(selected.props)).filter(n => n.type === "Pressable");
+    assert.equal(buttons.length, 2);
+    buttons.find(n => n.props.accessibilityLabel === "تصدير نتائج التصفية CSV").props.onPress();
+    assert.deepEqual(requests[6].options, { limit: 50, query: "قهوة", status: "unpublished" });
+    cleanup();
+    assert.equal(requests[6].signal.aborted, true);
+    requests[6].resolve(result);
+    await tick();
+    assert.equal(downloads.length, 1, "old filtered export cannot hand off a file");
+
+    mounted = false; states.length = 0; refs.length = 0; stateIndex = 0; refIndex = 0;
+    const fresh = nodes(selected.type(selected.props)).filter(n => n.type === "Pressable");
+    fresh.find(n => n.props.accessibilityLabel === "تصدير كتالوج المتجر CSV").props.onPress();
+    assert.deepEqual(requests[7].options, { limit: 50 }, "whole export stays unfiltered");
+    requests[7].resolve(result);
+    await tick();
+    assert.equal(downloads.length, 2);
+    stateIndex = 0; refIndex = 0;
+    nodes(selected.type(selected.props)).find(n => n.props?.accessibilityLabel === "تصدير نتائج التصفية CSV").props.onPress();
+    assert.deepEqual(requests[8].options, { limit: 50, query: "قهوة", status: "unpublished" });
+    requests[8].resolve(result);
+    await tick();
+    assert.equal(downloads.length, 3);
+    assert.match(await downloads[2].blob.text(), /قهوة يمنية/);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
