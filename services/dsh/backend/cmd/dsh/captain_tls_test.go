@@ -65,6 +65,17 @@ func TestIsolatedCaptainTLSOnlyAllowsReadOnAdmittedContainer(t *testing.T) {
 	if _, err := isolatedCaptainTLS("public", get, owner); err == nil {
 		t.Fatal("non-isolated schema accepted")
 	}
+	if _, err := isolatedCaptainTLS("dsh_test_captain", get, nil); err == nil {
+		t.Fatal("nil standing handler accepted")
+	}
+	// A missing or malformed certificate must fail before opening a listener.
+	for _, invalid := range []string{filepath.Join(dir, "missing.pem"), key} {
+		env["DSH_ISOLATED_CAPTAIN_TLS_CERT"] = invalid
+		if _, err := isolatedCaptainTLS("dsh_test_captain", get, owner); err == nil {
+			t.Fatal("invalid certificate accepted")
+		}
+	}
+	env["DSH_ISOLATED_CAPTAIN_TLS_CERT"] = cert
 	delete(env, "DSH_ISOLATED_CAPTAIN_TLS_CERT")
 	delete(env, "DSH_ISOLATED_CAPTAIN_TLS_KEY")
 	if server, err := isolatedCaptainTLS("dsh_test_captain", get, owner); err != nil || server != nil {
