@@ -105,7 +105,7 @@ paths:
               schema: { type: string, const: no-store }
           content:
             application/json:
-              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryPolicy' }
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryPolicyState' }
         '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
         '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
         '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
@@ -113,7 +113,7 @@ paths:
     patch:
       operationId: replaceCityDeliveryPolicy
       summary: Replace the active city radius and advisory distance tariff atomically
-      description: Requires current Operator platform_policies permission and an existing expected version. Records the actor, reason and immutable command snapshot. Retry the identical operationId and payload on an unknown result. Does not grant fulfillment admission or payable WLT authorization.
+      description: Requires current Operator platform_policies permission and an expected version (zero explicitly provisions an active city without a policy). Records the actor, reason and immutable command snapshot. Retry the identical operationId and payload on an unknown result. Does not grant fulfillment admission or payable WLT authorization.
       security:
         - OpaqueSession: []
       parameters:
@@ -131,7 +131,7 @@ paths:
               required: [operationId, expectedVersion, radiusMetres, distanceBands, reason]
               properties:
                 operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
-                expectedVersion: { type: integer, minimum: 1, maximum: 9007199254740990 }
+                expectedVersion: { type: integer, minimum: 0, maximum: 9007199254740990 }
                 radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
                 distanceBands: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryDistanceBands' }
                 reason: { type: string, minLength: 1, maxLength: 300 }

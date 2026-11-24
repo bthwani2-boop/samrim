@@ -612,12 +612,22 @@ components:
         radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
         updatedAt: { type: string, format: date-time }
         distanceBands: { $ref: '#/components/schemas/CityDeliveryDistanceBands' }
+    CityDeliveryPolicyState:
+      oneOf:
+        - $ref: '#/components/schemas/CityDeliveryPolicy'
+        - type: object
+          additionalProperties: false
+          required: [cityId, version]
+          properties:
+            cityId: { $ref: '#/components/schemas/PublicId' }
+            version: { type: integer, const: 0 }
+          description: Verified active city with no configured delivery policy; no default tariff or radius.
     CityDeliveryPolicyPreviewInput:
       type: object
       additionalProperties: false
       required: [expectedVersion, radiusMetres, distanceMetres, distanceBands]
       properties:
-        expectedVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        expectedVersion: { type: integer, minimum: 0, maximum: 9007199254740991 }
         radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
         distanceMetres: { type: integer, minimum: 0, maximum: 2147483647 }
         distanceBands: { $ref: '#/components/schemas/CityDeliveryDistanceBands' }
@@ -627,7 +637,7 @@ components:
       required: [cityId, version, radiusMetres, distanceMetres, feeYer, payable]
       properties:
         cityId: { $ref: '#/components/schemas/PublicId' }
-        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        version: { type: integer, minimum: 0, maximum: 9007199254740991 }
         radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
         distanceMetres: { type: integer, minimum: 0, maximum: 2147483647 }
         feeYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }

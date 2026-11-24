@@ -1,16 +1,16 @@
 "use client";
 
-import { type CityDeliveryPolicy, type CityDeliveryPolicyChange, type CityDeliveryPolicyPreview, isCityDeliveryPolicy, isCityDeliveryPolicyChange, isCityDeliveryPolicyPreview, isCityDeliveryPolicyPreviewInput, isCityDeliveryPolicyResult, matchesCityDeliveryPolicy } from "@bthwani/dsh";
+import { type CityDeliveryPolicy, type CityDeliveryPolicyChange, type CityDeliveryPolicyPreview, type CityDeliveryPolicyState, isCityDeliveryPolicy, isCityDeliveryPolicyChange, isCityDeliveryPolicyPreview, isCityDeliveryPolicyPreviewInput, isCityDeliveryPolicyResult, matchesCityDeliveryPolicy } from "@bthwani/dsh";
 import { Alert, Button, Input, InputNumber, Space, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 
 type Band = { draftId: string; upToMeters: number | null; ratePerKmMinor: number | null };
 
 export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDenied, onLockChange, onCommitted }: Readonly<{
-  policy: CityDeliveryPolicy; actorId: string; disabled: boolean; onDenied: () => void;
+  policy: CityDeliveryPolicyState; actorId: string; disabled: boolean; onDenied: () => void;
   onLockChange: (locked: boolean) => void; onCommitted: (current: CityDeliveryPolicy) => void;
 }>) {
-  const [radius, setRadius] = useState<number | null>(policy.radiusMetres);
+  const [radius, setRadius] = useState<number | null>(policy.radiusMetres ?? null);
   const [distance, setDistance] = useState<number | null>(null);
   const [bands, setBands] = useState<Band[]>(policy.distanceBands?.map((b,i) => ({...b,draftId:`band-${i}`})) ?? [{ draftId:"band-0", upToMeters: null, ratePerKmMinor: null }]);
   const [result, setResult] = useState<CityDeliveryPolicyPreview | null>(null);
@@ -20,8 +20,29 @@ export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDen
   const [reason, setReason] = useState("");
   const [pending, setPending] = useState<CityDeliveryPolicyChange | null>(null);
   const active = useRef<AbortController | null>(null);
+  const recoveryKey = `bthwani:delivery-policy:pending:${encodeURIComponent(actorId)}:${policy.cityId}`;
+  const [recoveryReady,setRecoveryReady] = useState(false);
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(recoveryKey);
+      if (raw !== null) {
+        const restored:unknown=JSON.parse(raw);
+        if (!isCityDeliveryPolicyChange(restored)) throw new Error("invalid pending command");
+        setPending(restored);
+        onLockChange(true);
+      }
+      setRecoveryReady(true);
+    } catch {
+      setError("تعذر استرداد عملية الحفظ في جلسة المتصفح. لن تُرسل عملية جديدة قبل التحقق.");
+    }
+  }, [recoveryKey,onLockChange]);
+  function clearPending() {
+    window.sessionStorage.removeItem(recoveryKey);
+    setPending(null);
+    onLockChange(false);
+  }
   useEffect(() => () => { active.current?.abort(); active.current = null; }, []);
-  const blocked = disabled || busy || stale || pending !== null;
+  const blocked = disabled || busy || stale || !recoveryReady || pending !== null;
   const distanceBands = bands.map(({upToMeters,ratePerKmMinor})=>({upToMeters,ratePerKmMinor}));
   const input = { expectedVersion: policy.version, radiusMetres: radius, distanceMetres: distance, distanceBands };
   const valid = isCityDeliveryPolicyPreviewInput(input);
@@ -59,10 +80,16 @@ export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDen
     }
   }
   async function save() {
-    if (disabled || busy || active.current || stale) return;
+    if (disabled || busy || active.current || stale || !recoveryReady) return;
     const candidate = pending ?? { operationId: crypto.randomUUID(), expectedVersion: policy.version,
       radiusMetres: radius, distanceBands, reason };
     if (!isCityDeliveryPolicyChange(candidate) || (!pending && !result)) return;
+    try {
+      window.sessionStorage.setItem(recoveryKey, JSON.stringify(candidate));
+    } catch {
+      setError("تعذر حفظ معرّف العملية في جلسة المتصفح. لم يُرسل التعديل.");
+      return;
+    }
     const controller = new AbortController();
     active.current = controller;
     setPending(candidate); onLockChange(true); setBusy(true); setError("");
@@ -74,19 +101,25 @@ export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDen
         headers: { ...binding, "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
       if (controller.signal.aborted || active.current !== controller) return;
       if (response.status === 409 || (!pending && [400,401,403].includes(response.status))) {
-        setPending(null); onLockChange(false);
+        clearPending();
         if (response.status === 401 || response.status === 403) { onDenied(); return; }
         setStale(response.status === 409); setError("رفض DSH التعديل أو تغير الإصدار. أعد قراءة السياسة قبل المحاولة.");
         return;
       }
+      if (response.status === 401 || response.status === 403) {
+        onLockChange(false); onDenied(); return;
+      }
       const saved: unknown = response.ok ? await response.json() : null;
+      if (controller.signal.aborted || active.current !== controller) return;
       if (!isCityDeliveryPolicyResult(saved, policy.cityId, candidate)) throw new Error("unknown");
       const read = await fetch(endpoint, { ...options, method: "GET", headers: binding });
+      if (controller.signal.aborted || active.current !== controller) return;
+      if (read.status === 401 || read.status === 403) { onLockChange(false); onDenied(); return; }
       const current: unknown = read.ok ? await read.json() : null;
       if (controller.signal.aborted || active.current !== controller) return;
       if (!isCityDeliveryPolicy(current, policy.cityId) || current.version < candidate.expectedVersion + 1 ||
           (current.version === candidate.expectedVersion + 1 && (!matchesCityDeliveryPolicy(current, candidate) || current.updatedAt !== saved.policy.updatedAt))) throw new Error("unknown");
-      setPending(null); onLockChange(false); onCommitted(current);
+      clearPending(); onCommitted(current);
     } catch {
       if (!controller.signal.aborted && active.current === controller)
         setError("لم تتأكد نتيجة الحفظ. أعد إرسال نفس العملية دون تغيير معرّفها أو قيمها.");
@@ -96,6 +129,11 @@ export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDen
   }
   if (pending) return <section aria-label="استرداد عملية سياسة التوصيل">
     <Alert type="warning" message="عملية حفظ بانتظار التحقق من DSH" description={pending.operationId} />
+    <Typography.Paragraph>الإصدار السابق: {pending.expectedVersion} — النطاق: {pending.radiusMetres} متر</Typography.Paragraph>
+    {pending.distanceBands.map(band => <Typography.Paragraph key={band.upToMeters ?? "open"}>
+      {band.upToMeters === null ? "المسافة المتبقية" : `حتى ${band.upToMeters} متر`}: {band.ratePerKmMinor} ريال/كم
+    </Typography.Paragraph>)}
+    <Typography.Paragraph>سبب التعديل: {pending.reason}</Typography.Paragraph>
     {error && <Alert type="error" message={error} role="alert" />}
     <Button disabled={busy || disabled} loading={busy} onClick={() => void save()}>إعادة نفس العملية والتحقق</Button>
   </section>;

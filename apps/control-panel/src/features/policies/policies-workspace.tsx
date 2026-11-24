@@ -1,6 +1,6 @@
 "use client";
 
-import { type CityDeliveryPolicy, isCityDeliveryPolicy } from "@bthwani/dsh";
+import { type CityDeliveryPolicyState, isCityDeliveryPolicyState } from "@bthwani/dsh";
 import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Select, Space, Typography } from "antd";
 import Link from "next/link";
 import { useState } from "react";
@@ -21,7 +21,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
   const [city, setCity] = useState("");
   const [policy, setPolicy] = useState<CityPolicy | null>(null);
   const [admission, setAdmission] = useState<RegistrationOverview | null>(null);
-  const [delivery, setDelivery] = useState<CityDeliveryPolicy | "unavailable" | null>(null);
+  const [delivery, setDelivery] = useState<CityDeliveryPolicyState | "unavailable" | null>(null);
   const [maxPause, setMaxPause] = useState<number | null>(null);
   const [maxPreparation, setMaxPreparation] = useState<number | null>(null);
   const [reason, setReason] = useState("");
@@ -85,7 +85,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
           if (result.status === 401 || result.status === 403) return "denied" as const;
           if (!result.ok) return "unavailable" as const;
           const value: unknown = await result.json();
-          return isCityDeliveryPolicy(value, city) ? value : "unavailable" as const;
+          return isCityDeliveryPolicyState(value, city) ? value : "unavailable" as const;
         }),
       ]);
       if ((response.status === "fulfilled" && (response.value.status === 401 || response.value.status === 403)) ||
@@ -276,8 +276,10 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
             <Typography.Title level={4}>نطاق التوصيل — DSH</Typography.Title>
             {delivery === "unavailable" ? <Alert type="warning" message="تعذر التحقق من نطاق التوصيل الفعلي. لا توجد قيمة افتراضية." /> : (
               <>
-                <Typography.Paragraph>المسافة الجغرافية القصوى: <strong>{delivery.radiusMetres}</strong> متر — الإصدار {delivery.version}</Typography.Paragraph>
-                <Typography.Paragraph>آخر تحديث: {delivery.updatedAt}</Typography.Paragraph>
+                {delivery.version === 0 ? <Alert type="info" message="لم تُنشأ سياسة توصيل لهذه المدينة بعد. أدخل النطاق والتعرفة صراحةً." /> : <>
+                  <Typography.Paragraph>المسافة الجغرافية القصوى: <strong>{delivery.radiusMetres}</strong> متر — الإصدار {delivery.version}</Typography.Paragraph>
+                  <Typography.Paragraph>آخر تحديث: {delivery.updatedAt}</Typography.Paragraph>
+                </>}
                 <DeliveryPolicyPreview key={actorId + ":" + city + ":" + delivery.version}
                   policy={delivery} actorId={actorId} disabled={busy || uncertain || !!pending}
                   onLockChange={setDeliveryLocked} onCommitted={current => { setDelivery(current); setMessage("تم حفظ سياسة التوصيل وقراءة الإصدار من DSH."); }}

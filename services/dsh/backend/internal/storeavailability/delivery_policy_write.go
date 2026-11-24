@@ -22,7 +22,7 @@ func validDeliveryPolicyChange(city, operation string, expected, radius int64, b
 	raw, err := json.Marshal(bands)
 	_, valid := DecodeDistanceBands(raw)
 	return err == nil && valid && cityPolicyIDRule.MatchString(city) && operationIDRule.MatchString(operation) &&
-		expected >= 1 && expected < 9007199254740991 && radius >= 1 && radius <= 2147483647 &&
+		expected >= 0 && expected < 9007199254740991 && radius >= 1 && radius <= 2147483647 &&
 		utf8.ValidString(reason) && utf8.RuneCountInString(reason) <= 300 && strings.TrimSpace(reason) != ""
 }
 
@@ -150,8 +150,13 @@ func (source *PostgresPolicySource) ApplyCityDeliveryPolicy(ctx context.Context,
 		return prior, true, nil
 	}
 	var p CityDeliveryPolicy
-	err = tx.QueryRowContext(ctx, `UPDATE service_city_delivery_policies SET version=version+1,radius_metres=$3,distance_bands=$4::jsonb,updated_at=transaction_timestamp()
+	if expected == 0 {
+		err = tx.QueryRowContext(ctx, `INSERT INTO service_city_delivery_policies(city_id,version,radius_metres,distance_bands)
+ VALUES($1,1,$2,$3::jsonb) ON CONFLICT(city_id) DO NOTHING RETURNING city_id,version,radius_metres,updated_at`, city, radius, string(raw)).Scan(&p.CityID, &p.Version, &p.RadiusMetres, &p.UpdatedAt)
+	} else {
+		err = tx.QueryRowContext(ctx, `UPDATE service_city_delivery_policies SET version=version+1,radius_metres=$3,distance_bands=$4::jsonb,updated_at=transaction_timestamp()
  WHERE city_id=$1 AND version=$2 RETURNING city_id,version,radius_metres,updated_at`, city, expected, radius, string(raw)).Scan(&p.CityID, &p.Version, &p.RadiusMetres, &p.UpdatedAt)
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return CityDeliveryPolicy{}, false, ErrPolicyVersionConflict
 	}

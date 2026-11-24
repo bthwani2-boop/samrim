@@ -9,7 +9,8 @@ import (
 	"time"
 )
 
-// CityDeliveryPolicy is the same effective radius/version used by checkout.
+// CityDeliveryPolicy carries the effective radius/version used by checkout.
+// A zero version is an internal absence marker for a verified active city, not a usable policy.
 type CityDeliveryPolicy struct {
 	CityID        string         `json:"cityId"`
 	Version       int64          `json:"version"`
@@ -35,6 +36,16 @@ func (source *PostgresPolicySource) ReadCityDeliveryPolicy(ctx context.Context, 
 	defer tx.Rollback()
 	var p CityDeliveryPolicy
 	var raw []byte
+	var exists bool
+	if err = tx.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM service_city_delivery_policies WHERE city_id=c.id) FROM service_cities c WHERE c.id=$1 AND c.active", city).Scan(&exists); err != nil {
+		return CityDeliveryPolicy{}, ErrPolicyUnavailable
+	}
+	if !exists {
+		if tx.Commit() != nil {
+			return CityDeliveryPolicy{}, ErrPolicyUnavailable
+		}
+		return CityDeliveryPolicy{CityID: city}, nil
+	}
 	err = tx.QueryRowContext(ctx, `SELECT p.city_id,p.version,p.radius_metres,p.updated_at,p.distance_bands
  FROM service_city_delivery_policies p JOIN service_cities c ON c.id=p.city_id
  WHERE c.id=$1 AND c.active`, city).Scan(&p.CityID, &p.Version, &p.RadiusMetres, &p.UpdatedAt, &raw)
@@ -89,6 +100,17 @@ func cityDeliveryPolicyHandler(identity IdentitySessions, reader CityDeliveryPol
 			writeFailure(w, ErrPolicyUnavailable)
 			return
 		}
+		if p.Version == 0 {
+			if p.RadiusMetres != 0 || !p.UpdatedAt.IsZero() || p.DistanceBands != nil {
+				writeFailure(w, ErrPolicyUnavailable)
+				return
+			}
+			writeJSON(w, http.StatusOK, struct {
+				CityID  string `json:"cityId"`
+				Version int64  `json:"version"`
+			}{p.CityID, 0})
+			return
+		}
 		writeJSON(w, http.StatusOK, p)
 	}
 }
@@ -111,7 +133,7 @@ func cityDeliveryPolicyPreviewHandler(identity IdentitySessions, reader CityDeli
 			DistanceMetres  *int64          `json:"distanceMetres"`
 			DistanceBands   json.RawMessage `json:"distanceBands"`
 		}
-		if decodeUniqueJSON(w, r, 8*1024, &input) != nil || input.ExpectedVersion == nil || *input.ExpectedVersion < 1 || *input.ExpectedVersion > 9007199254740991 ||
+		if decodeUniqueJSON(w, r, 8*1024, &input) != nil || input.ExpectedVersion == nil || *input.ExpectedVersion < 0 || *input.ExpectedVersion > 9007199254740991 ||
 			input.RadiusMetres == nil || *input.RadiusMetres < 1 || *input.RadiusMetres > 2147483647 ||
 			input.DistanceMetres == nil || *input.DistanceMetres < 0 || *input.DistanceMetres > *input.RadiusMetres {
 			writeFailure(w, ErrInvalidChange)

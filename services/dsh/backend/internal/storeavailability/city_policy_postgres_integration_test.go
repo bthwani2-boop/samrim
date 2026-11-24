@@ -64,9 +64,31 @@ func TestRealPostgresVersionedCityPolicyWriterAndConcurrency(t *testing.T) {
 	if _, err = owner.ReadCityPolicy(ctx, city); !errors.Is(err, ErrPolicyUnavailable) {
 		t.Fatalf("missing initial policy was not unavailable: %v", err)
 	}
-	if _, err = owner.ReadCityDeliveryPolicy(ctx, city); !errors.Is(err, ErrPolicyUnavailable) {
-		t.Fatalf("missing radius defaulted: %v", err)
+	if empty, e := owner.ReadCityDeliveryPolicy(ctx, city); e != nil || empty.CityID != city || empty.Version != 0 || empty.RadiusMetres != 0 || !empty.UpdatedAt.IsZero() {
+		t.Fatalf("missing radius not explicitly unconfigured: %+v %v", empty, e)
 	}
+	firstCity := "policy-initial-a02"
+	if _, err = db.ExecContext(ctx, "INSERT INTO "+schema+".service_cities(id,active,timezone_name) VALUES ($1,true,'Asia/Aden')", firstCity); err != nil {
+		t.Fatal(err)
+	}
+	initialBands, validInitial := DecodeDistanceBands([]byte(`[{"upToMeters":null,"ratePerKmMinor":100}]`))
+	if !validInitial {
+		t.Fatal("invalid fixture")
+	}
+	initial, initialReplay, e := owner.ApplyCityDeliveryPolicy(ctx, "operator-a", firstCity, "initial-command-001", 0, 30000, initialBands, "Synthetic initial policy")
+	if e != nil || initialReplay || initial.Version != 1 {
+		t.Fatalf("initial write %+v %v %v", initial, initialReplay, e)
+	}
+	if _, _, e = owner.ApplyCityDeliveryPolicy(ctx, "operator-a", firstCity, "initial-command-002", 0, 30000, initialBands, "Synthetic initial policy"); !errors.Is(e, ErrPolicyVersionConflict) {
+		t.Fatalf("second initialization %v", e)
+	}
+	if _, replayed, e := owner.ApplyCityDeliveryPolicy(ctx, "operator-a", firstCity, "initial-command-001", 0, 30000, initialBands, "Synthetic initial policy"); e != nil || !replayed {
+		t.Fatalf("initial replay %v %v", replayed, e)
+	}
+	if latest, e := owner.ReadCityDeliveryPolicy(ctx, firstCity); e != nil || latest.Version != 1 || latest.RadiusMetres != 30000 {
+		t.Fatalf("initial readback %+v %v", latest, e)
+	}
+	t.Log("REAL_INITIAL_DELIVERY_POLICY_PASS version=1")
 	// Only this freshly bootstrapped synthetic schema receives fixture facts.
 	if _, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s.service_city_delivery_policies(city_id,version,radius_metres) VALUES ($1,1,30000)", schema), city); err != nil {
 		t.Fatal(err)

@@ -149,6 +149,13 @@ export interface CityDeliveryPolicy {
   updatedAt: string;
   distanceBands?: CityDeliveryDistanceBand[];
 }
+export type CityDeliveryPolicyState = CityDeliveryPolicy | { cityId: string; version: 0; radiusMetres?: never; updatedAt?: never; distanceBands?: never };
+export function isCityDeliveryPolicyState(value: unknown,cityId: string): value is CityDeliveryPolicyState {
+  if (isCityDeliveryPolicy(value,cityId)) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v=value as Record<string,unknown>;
+  return Object.keys(v).length===2 && onlyKeys(v,["cityId","version"]) && v.cityId===cityId && v.version===0;
+}
 export interface CityDeliveryPolicyPreviewInput {
   expectedVersion: number;
   radiusMetres: number;
@@ -180,7 +187,7 @@ export function isCityDeliveryPolicyPreviewInput(value: unknown): value is CityD
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const v = value as Record<string, unknown>;
   return Object.keys(v).length === 4 && onlyKeys(v, ["expectedVersion", "radiusMetres", "distanceMetres", "distanceBands"]) &&
-    Number.isSafeInteger(v.expectedVersion) && Number(v.expectedVersion) >= 1 &&
+    Number.isSafeInteger(v.expectedVersion) && Number(v.expectedVersion) >= 0 &&
     Number.isSafeInteger(v.radiusMetres) && Number(v.radiusMetres) >= 1 && Number(v.radiusMetres) <= 2147483647 &&
     Number.isSafeInteger(v.distanceMetres) && Number(v.distanceMetres) >= 0 && Number(v.distanceMetres) <= Number(v.radiusMetres) &&
     isCityDeliveryDistanceBands(v.distanceBands);
@@ -207,11 +214,11 @@ export function isCityDeliveryPolicy(value: unknown, cityId: string): value is C
 }
 export async function getCityDeliveryPolicy(
   baseUrl: string, cityId: string, bearer: string, signal?: AbortSignal,
-): Promise<CityDeliveryPolicy> {
+): Promise<CityDeliveryPolicyState> {
   if (!/^[a-z0-9-]{1,64}$/.test(cityId)) throw new DshPublicError(400, "CITY_ID_INVALID");
   const body = await privateOwnerRequest(baseUrl,
     dshOperations.getCityDeliveryPolicy.path.replace("{cityID}", cityId), bearer, "GET", undefined, signal);
-  if (!isCityDeliveryPolicy(body, cityId)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  if (!isCityDeliveryPolicyState(body, cityId)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   return body;
 }
 
@@ -242,7 +249,7 @@ export function isCityDeliveryPolicyChange(value: unknown): value is CityDeliver
   return Object.keys(v).length === 5 &&
     onlyKeys(v, ["operationId", "expectedVersion", "radiusMetres", "distanceBands", "reason"]) &&
     typeof v.operationId === "string" && /^[A-Za-z0-9._-]{8,128}$/.test(v.operationId) &&
-    Number.isSafeInteger(v.expectedVersion) && Number(v.expectedVersion) >= 1 && Number(v.expectedVersion) < Number.MAX_SAFE_INTEGER &&
+    Number.isSafeInteger(v.expectedVersion) && Number(v.expectedVersion) >= 0 && Number(v.expectedVersion) < Number.MAX_SAFE_INTEGER &&
     Number.isSafeInteger(v.radiusMetres) && Number(v.radiusMetres) >= 1 && Number(v.radiusMetres) <= 2147483647 &&
     isCityDeliveryDistanceBands(v.distanceBands) && typeof v.reason === "string" &&
     v.reason.trim().length > 0 && Array.from(v.reason).length <= 300;

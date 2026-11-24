@@ -92,3 +92,16 @@ test("delivery preview sends only scoped proposed inputs and refuses stale or pa
   await assert.rejects(previewCityDeliveryPolicy(origin,"sanaa",bearer,{...input,distanceBands:[{upToMeters:2000,ratePerKmMinor:300}]}),{status:400});
   assert.equal(spy.mock.callCount(),calls);
 });
+
+test("an active city without a delivery policy is explicit and admits only deliberate version zero provisioning",async t=>{
+  const { getCityDeliveryPolicy, isCityDeliveryPolicyChange, isCityDeliveryPolicyPreviewInput }=await import("./city-policies.ts");
+  const absent={cityId:"sanaa",version:0};
+  let value=absent;
+  t.mock.method(globalThis,"fetch",async()=>Response.json(value,{headers:{"Cache-Control":"no-store"}}));
+  assert.deepEqual(await getCityDeliveryPolicy(origin,"sanaa",bearer),absent);
+  value={...absent,radiusMetres:30000};
+  await assert.rejects(getCityDeliveryPolicy(origin,"sanaa",bearer),{status:502});
+  const change={operationId:"initial-delivery-1",expectedVersion:0,radiusMetres:20000,distanceBands:[{upToMeters:null,ratePerKmMinor:100}],reason:"Synthetic terms"};
+  assert.equal(isCityDeliveryPolicyChange(change),true);
+  assert.equal(isCityDeliveryPolicyPreviewInput({expectedVersion:0,radiusMetres:20000,distanceMetres:1000,distanceBands:change.distanceBands}),true);
+});
