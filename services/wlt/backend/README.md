@@ -55,7 +55,7 @@ part of Compose or on another database. If a step fails, inspect the actual
 durable database state before any attempted recovery; do not delete, reset or
 rerun the provisioner blindly.
 
-Build the committed WLT source image using `infra/build-owner-image.ps1 -Owner wlt`,
+Build the committed WLT source image using `tools/dev/docker/build-owner-image.ps1 -Owner wlt`,
 then use Compose with both `infra/compose.yaml` and
 `infra/compose.wlt.yaml`, selecting `--profile wlt-reader` and
 `--no-deps` for `wlt` only after Identity and PostgreSQL are confirmed

@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
-import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerReconcilePlan, previewChangeKey } from "../../infra/owner-preview-source.mjs";
+import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
 import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, runtimeReceiptStatus, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -71,6 +71,7 @@ function allowed(rel) {
   if (parts.some(x => !x || x === "." || x === ".." || /[<>:"|?*]/.test(x) ||
       [...x].some(char => char.codePointAt(0) < 32) ||
       blockedDirs.has(x.toLowerCase()) || secret.test(x))) return false;
+  if (rel === "tools/dev/docker" || rel.startsWith("tools/dev/docker/")) return false;
   return include.some(x => x === rel || rel.startsWith(x + "/"));
 }
 function failureDetail(result) {
@@ -506,8 +507,8 @@ const runtimeScope = [
   "services/identity", "services/dsh", "services/wlt", ".go-version",
   "infra/compose.yaml", "infra/compose.apps.yaml", "infra/compose.identity-verifier.yaml",
   "infra/compose.merchant-development.yaml", "infra/compose.captain-development.yaml",
-  "infra/compose.wlt.yaml", "infra/build-owner-image.ps1", "infra/reconcile-owner-runtime.mjs", "infra/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1",
-  "infra/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
+  "infra/compose.wlt.yaml", "tools/dev/docker/build-owner-image.ps1", "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1",
+  "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
   "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
 ];
 const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
@@ -749,7 +750,7 @@ function main() {
     let lastError = "";
     const watcherInputs = [
       "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs",
-      "infra/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
+      "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
     ];
     const watcherDigest = () => crypto.createHash("sha256")
       .update(watcherInputs.map(rel=>hash(path.join(root,rel))).join("\0")).digest("hex");

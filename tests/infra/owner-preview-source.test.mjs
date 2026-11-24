@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { captureOwner, dirtyPaths, digestEntries, isPreviewGoPath, materializeOwner, previewChangeKey, verifyMaterializedOwner } from "../../infra/owner-preview-source.mjs";
+import { captureOwner, dirtyPaths, digestEntries, isPreviewGoPath, materializeOwner, previewChangeKey, verifyMaterializedOwner } from "../../tools/dev/docker/owner-preview-source.mjs";
 
 const exe=process.platform==="win32"?"C:\\Program Files\\Git\\cmd\\git.exe":"/usr/bin/git";
 function fixture(t){

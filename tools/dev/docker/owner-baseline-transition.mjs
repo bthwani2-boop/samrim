@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync, lstatSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
 export function transitionScope(owner,schema,archive) {
   const definitions = {

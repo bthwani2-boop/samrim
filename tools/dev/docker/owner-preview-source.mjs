@@ -4,7 +4,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { containsLikelySecret, forbiddenName } from "../tools/security/verify-secrets.mjs";
+import { containsLikelySecret, forbiddenName } from "../../security/verify-secrets.mjs";
 
 const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
 const owners = ["dsh", "identity", "wlt"];
@@ -18,7 +18,7 @@ function sourceOwner(rel) {
 export function isSharedRuntimeInput(rel) { return !sourceOwner(rel); }
 // Client files are neither copied by the owner Dockerfiles nor present in
 // the Go preview build context. Contracts and all other inputs stay guarded.
-export function isOwnerClientPath(rel) {
+function isOwnerClientPath(rel) {
   return /^services\/(?:identity|dsh|wlt)\/clients\//.test(rel);
 }
 export function ownerSourceState(owner, changed, committed) {

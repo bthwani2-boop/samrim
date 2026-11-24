@@ -18,7 +18,7 @@ if ($DockerContext -notmatch '^[A-Za-z0-9._-]+$' -or
     $Image -cnotmatch ('^' + [regex]::Escape($namespace) + ':[a-z0-9._-]+$')) {
   throw 'Invalid isolated Docker context or owner image name.'
 }
-$root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+$root = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
 $service = Join-Path $root ('services/' + $Owner)
 $dockerfile = Join-Path $service 'backend/Dockerfile'
 $pin = (Get-Content -LiteralPath (Join-Path $root '.go-version') -Raw).Trim()
@@ -31,7 +31,7 @@ function Read-Revision {
   return $value[0]
 }
 function Assert-CleanOwner {
-  $changes = @(& git -C $root status --porcelain --untracked-files=all -- ('services/' + $Owner) '.go-version' 'infra/build-owner-image.ps1')
+  $changes = @(& git -C $root status --porcelain --untracked-files=all -- ('services/' + $Owner) '.go-version' 'tools/dev/docker/build-owner-image.ps1')
   if ($LASTEXITCODE -ne 0 -or $changes.Count -gt 0) { throw 'Owner or shared build input is not committed: refusing misleading image provenance.' }
 }
 $sha = Read-Revision

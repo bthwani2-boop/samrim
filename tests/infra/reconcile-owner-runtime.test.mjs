@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { differingKeys, selectOwners, assertSameHashes, isolatedTestEnv, sourceIdentity } from "../../infra/reconcile-owner-runtime.mjs";
+import { differingKeys, selectOwners, assertSameHashes, isolatedTestEnv, sourceIdentity } from "../../tools/dev/docker/reconcile-owner-runtime.mjs";
 
 test("runtime reconciliation never rebuilds unaffected owners", () => {
   assert.deepEqual(selectOwners({ candidates: [], activateCaptain: false, currentCaptain: true }), []);
@@ -33,7 +33,7 @@ test("preview provenance is distinct from an accepted Git source SHA",()=>{
 });
 
 test("an unrelated WLT contract change does not block DSH or Identity", async () => {
-  const { ownerReconcilePlan } = await import("../../infra/owner-preview-source.mjs");
+  const { ownerReconcilePlan } = await import("../../tools/dev/docker/owner-preview-source.mjs");
   const plan = ownerReconcilePlan({
     changed: ["services/wlt/contracts/openapi/wlt.openapi.yaml", "services/dsh/backend/cmd/dsh/main.go"],
     committed: {}, preview: true, captain: true,
@@ -43,7 +43,7 @@ test("an unrelated WLT contract change does not block DSH or Identity", async ()
 });
 
 test("a committed DSH schema change stays blocked without suppressing independent WLT", async () => {
-  const { ownerReconcilePlan } = await import("../../infra/owner-preview-source.mjs");
+  const { ownerReconcilePlan } = await import("../../tools/dev/docker/owner-preview-source.mjs");
   const plan = ownerReconcilePlan({
     changed: [], committed: { dsh: ["services/dsh/database/schema/45_customer_addresses.sql"] },
     preview: true, captain: true,
@@ -54,7 +54,7 @@ test("a committed DSH schema change stays blocked without suppressing independen
 });
 
 test("Identity runtime changes requiring review hold dependent owners, but client-only dirt does not", async () => {
-  const { ownerReconcilePlan } = await import("../../infra/owner-preview-source.mjs");
+  const { ownerReconcilePlan } = await import("../../tools/dev/docker/owner-preview-source.mjs");
   const base = { committed: {}, preview: true, captain: true };
   const schema = ownerReconcilePlan({...base, changed:["services/identity/database/schema/20_sessions.sql"]});
   assert.deepEqual(schema.eligible, []);
@@ -67,7 +67,7 @@ test("Identity runtime changes requiring review hold dependent owners, but clien
 });
 
 test("WLT-only Compose review does not freeze independent owners or admit WLT writes", async () => {
-  const { ownerReconcilePlan, isSharedRuntimeInput } = await import("../../infra/owner-preview-source.mjs");
+  const { ownerReconcilePlan, isSharedRuntimeInput } = await import("../../tools/dev/docker/owner-preview-source.mjs");
   const base={committed:{},preview:true,captain:true};
   const overlay="infra/compose.wlt.yaml";
   assert.equal(isSharedRuntimeInput(overlay),false);
@@ -82,7 +82,7 @@ test("WLT-only Compose review does not freeze independent owners or admit WLT wr
 });
 
 test("ordinary reconciliation isolates verified WLT config drift, but special transitions and shared drift fail closed", async () => {
-  const { wltConfigReviewRequired } = await import("../../infra/reconcile-owner-runtime.mjs");
+  const { wltConfigReviewRequired } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const a="a".repeat(64), b="b".repeat(64);
   for(const mode of ["--check","--apply","--apply-preview"]){
     assert.equal(wltConfigReviewRequired({wlt:a},{wlt:a},mode),false);
@@ -96,14 +96,14 @@ test("ordinary reconciliation isolates verified WLT config drift, but special tr
 });
 
 test("committed-only mode cannot promote a dirty Go owner", async () => {
-  const { ownerReconcilePlan } = await import("../../infra/owner-preview-source.mjs");
+  const { ownerReconcilePlan } = await import("../../tools/dev/docker/owner-preview-source.mjs");
   const plan = ownerReconcilePlan({changed:["services/wlt/backend/cmd/wlt/main.go"], committed:{}, preview:false,captain:true});
   assert.deepEqual(plan.eligible, ["dsh","identity"]);
   assert.equal(plan.blocked.wlt, "PREVIEW_NOT_AUTHORIZED");
 });
 
 test("client-only edits cannot make the Go image stale or admit changed contracts", async () => {
-  const { ownerReconcilePlan, ownerSourceState } = await import("../../infra/owner-preview-source.mjs");
+  const { ownerReconcilePlan, ownerSourceState } = await import("../../tools/dev/docker/owner-preview-source.mjs");
   const changed=["services/identity/clients/persistent-sessions.ts"];
   const committed={identity:["services/identity/clients/index.ts"]};
   const plan=ownerReconcilePlan({changed,committed,preview:true,captain:true});
@@ -118,7 +118,7 @@ test("client-only edits cannot make the Go image stale or admit changed contract
 });
 
 test("committed client-only changes eventually refresh strict provenance without rebuilding for ongoing client edits",async()=>{
-  const {ownerSourceState}=await import("../../infra/owner-preview-source.mjs");
+  const {ownerSourceState}=await import("../../tools/dev/docker/owner-preview-source.mjs");
   const clients=["services/identity/clients/persistent-sessions.ts"];
   assert.equal(ownerSourceState("identity",[],clients).requiresCommittedRefresh,true);
   assert.equal(ownerSourceState("identity",clients,clients).requiresCommittedRefresh,false);
@@ -126,7 +126,7 @@ test("committed client-only changes eventually refresh strict provenance without
 });
 
 test("fresh baseline preparation is confined to explicit isolated apply with committed schema drift", async () => {
-  const { baselineProofOwners, verifyBaselineProofOutput }=await import("../../infra/reconcile-owner-runtime.mjs");
+  const { baselineProofOwners, verifyBaselineProofOutput }=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const base={apply:true,prepare:true,blocked:{dsh:"SCHEMA_REVIEW_REQUIRED",identity:"PEER_REVIEW_REQUIRED:dsh"},dirtyInputs:[]};
   assert.deepEqual(baselineProofOwners(base),["dsh"]);
   for(const patch of [{apply:false},{prepare:false},{dirtyInputs:["services/dsh/database/schema/00_marketplace.sql"]},{blocked:{identity:"UNCOMMITTED_NON_GO"}}]) {
@@ -139,7 +139,7 @@ test("fresh baseline preparation is confined to explicit isolated apply with com
 });
 
 test("dedicated DSH transfer fingerprints only validated owner tables and sequences",async()=>{
-  const {ownerDataFingerprintSql}=await import("../../infra/reconcile-owner-runtime.mjs");
+  const {ownerDataFingerprintSql}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const sql=ownerDataFingerprintSql("dsh_test_agent01",["stores","public_revision"],["employee_id_seq"]);
   assert.match(sql,/REPEATABLE READ READ ONLY/);
   assert.match(sql,/sha256/);
@@ -152,7 +152,7 @@ test("dedicated DSH transfer fingerprints only validated owner tables and sequen
 
 // Public extension reference reads are distinct from owner tables and never allow writes.
 test("legacy DSH access excludes only named extension reference reads", async () => {
-  const { legacyOwnerAccessSql } = await import("../../infra/reconcile-owner-runtime.mjs");
+  const { legacyOwnerAccessSql } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const sql = legacyOwnerAccessSql();
   assert.match(sql, /BEGIN READ ONLY/);
   assert.match(sql, /INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER/);
@@ -161,7 +161,7 @@ test("legacy DSH access excludes only named extension reference reads", async ()
 });
 
 test("database handoff rejects a changed or incomplete owner snapshot", async()=>{
-  const {assertHandoffParity}=await import("../../infra/reconcile-owner-runtime.mjs");
+  const {assertHandoffParity}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   assert.doesNotThrow(()=>assertHandoffParity("a|1\nb|2","a|1\nb|2",2));
   assert.throws(()=>assertHandoffParity("a|1\nb|2","a|1\nb|3",2),/DATA_PARITY_FAILED/);
   assert.throws(()=>assertHandoffParity("a|1","a|1",2),/DATA_PARITY_FAILED/);
@@ -169,7 +169,7 @@ test("database handoff rejects a changed or incomplete owner snapshot", async()=
 });
 
 test("Identity relocation admits only the verified owner URL and changes only owner credentials and database",async()=>{
-  const {identityDestinationUrl,identityAclSql,ownerDataFingerprintSql,legacyOwnerAccessSql}=await import("../../infra/reconcile-owner-runtime.mjs");
+  const {identityDestinationUrl,identityAclSql,ownerDataFingerprintSql,legacyOwnerAccessSql}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const source="postgres://identity_runtime_docker_abcdef123456:fixture@postgres:5432/bthwani_refoundation?sslmode=disable";
   const result=new URL(identityDestinationUrl(source,"a".repeat(64)));
   assert.equal(result.username,"bthwani_identity_runtime");
@@ -188,7 +188,7 @@ test("Identity relocation admits only the verified owner URL and changes only ow
 });
 
 test("Identity schema normalization tolerates only known redundant CHECK grouping",async()=>{
-  const {normalizeIdentitySchemaDump}=await import("../../infra/reconcile-owner-runtime.mjs");
+  const {normalizeIdentitySchemaDump}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const original="    CONSTRAINT operator_permission_commands_reason_check CHECK ((((char_length(reason) >= 10) AND (char_length(reason) <= 500)) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
   const restored="    CONSTRAINT operator_permission_commands_reason_check CHECK (((char_length(reason) >= 10) AND (char_length(reason) <= 500) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
   assert.equal(normalizeIdentitySchemaDump(original),normalizeIdentitySchemaDump(restored));
@@ -197,7 +197,7 @@ test("Identity schema normalization tolerates only known redundant CHECK groupin
 });
 
 test("only a current successful committed baseline proof admits canonical schema changes", async()=>{
-  const {ownerReconcilePlan}=await import("../../infra/owner-preview-source.mjs");
+  const {ownerReconcilePlan}=await import("../../tools/dev/docker/owner-preview-source.mjs");
   const base={changed:[],committed:{dsh:["services/dsh/database/schema/45_customer_addresses.sql"]},preview:true,captain:true};
   assert.equal(ownerReconcilePlan(base).blocked.dsh,"SCHEMA_REVIEW_REQUIRED");
   assert.deepEqual(ownerReconcilePlan({...base,schemaReady:["dsh"]}).eligible,["dsh","identity","wlt"]);
@@ -206,7 +206,7 @@ test("only a current successful committed baseline proof admits canonical schema
   assert.equal(ownerReconcilePlan({...base,schemaReady:["wlt"]}).blocked.dsh,"SCHEMA_REVIEW_REQUIRED");
 });
 test("baseline transition is owner-local, transactional and never disables triggers",async()=>{
-  const {buildOwnerBaselineTransition,transitionScope}=await import("../../infra/owner-baseline-transition.mjs");
+  const {buildOwnerBaselineTransition,transitionScope}=await import("../../tools/dev/docker/owner-baseline-transition.mjs");
   assert.throws(()=>transitionScope("dsh","identity_test_actor","bthwani_recovery_dsh_abcdef123456"),/Invalid/);
   assert.throws(()=>transitionScope("wlt","wlt","public"),/Invalid/);
   const sql=buildOwnerBaselineTransition("dsh","dsh_test_agent01","bthwani_recovery_dsh_abcdef123456");
@@ -222,12 +222,15 @@ test("baseline transition is owner-local, transactional and never disables trigg
 
 test("one owner-image builder replaces the three duplicated scripts", async () => {
   const fs = await import("node:fs");
-  const base = new URL("../../infra/", import.meta.url);
+  const root = new URL("../../", import.meta.url);
+  const base = new URL("tools/dev/docker/", root);
   assert.equal(fs.existsSync(new URL("build-owner-image.ps1",base)),true);
+  assert.equal(fs.existsSync(new URL("infra/build-owner-image.ps1",root)),false);
   for (const old of ["build-dsh-image.ps1","build-identity-verifier-image.ps1","build-wlt-image.ps1"]) {
     assert.equal(fs.existsSync(new URL(old,base)),false,old);
-    for(const consumer of ["reconcile-owner-runtime.mjs","../tools/dev/dev.ps1","../tools/dev/sync-lenovo-source.mjs","README.md","../services/wlt/backend/README.md"]) {
-      assert.equal(fs.readFileSync(new URL(consumer,base),"utf8").includes(old),false,consumer);
+    assert.equal(fs.existsSync(new URL("infra/"+old,root)),false,old);
+    for(const consumer of ["tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","tools/dev/sync-lenovo-source.mjs","infra/README.md","services/wlt/backend/README.md"]) {
+      assert.equal(fs.readFileSync(new URL(consumer,root),"utf8").includes(old),false,consumer);
     }
   }
 });

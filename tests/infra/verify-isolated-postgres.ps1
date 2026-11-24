@@ -285,7 +285,7 @@ THEN 'PASS' ELSE 'FAIL' END;
   # Execute the exact transaction builder consumed by the owner reconciler,
   # against only the disposable container. No live database is involved.
   function Invoke-BaselineTransition([string]$Owner,[string]$Database,[string]$Schema,[string]$Archive,[bool]$ExpectPass=$true) {
-    $transition = & node (Join-Path $root 'infra/owner-baseline-transition.mjs') '--fixture-sql' $Owner $Schema $Archive
+    $transition = & node (Join-Path $root 'tools/dev/docker/owner-baseline-transition.mjs') '--fixture-sql' $Owner $Schema $Archive
     if ($LASTEXITCODE -ne 0 -or !$transition) { throw 'Cannot generate reviewed owner transition' }
     $result = ($transition -join [Environment]::NewLine) | & docker --context $DockerContext exec -i $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -f - 2>&1
     $ok = $LASTEXITCODE -eq 0

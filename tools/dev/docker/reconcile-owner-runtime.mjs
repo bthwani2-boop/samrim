@@ -6,10 +6,10 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, lstatSync, appendFileSync } from "node:fs";
 import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
-import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../tools/dev/sync-lenovo-reconciliation.mjs";
+import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
 import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const context = "bthwani-docker";
 const project = "bthwani-refoundation";
 const owners = {
@@ -28,7 +28,7 @@ const operatorOverrides = {
   IDENTITY_OPERATOR_PASSKEY_ORIGINS: "REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS",
   IDENTITY_OPERATOR_PASSKEY_RPID: "REF_IDENTITY_OPERATOR_PASSKEY_RPID",
 };
-const buildScript = "infra/build-owner-image.ps1";
+const buildScript = "tools/dev/docker/build-owner-image.ps1";
 const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
 function run(executable, args, env = {}, timeout = 30000, input) {
   const out = spawnSync(executable, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 16 * 1024 * 1024, input, env: { ...process.env, ...env } });
@@ -115,7 +115,7 @@ export function sourceIdentity(labels, owner) {
   return {revision:a||b,digest:null};
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","infra/build-owner-image.ps1","infra/owner-baseline-transition.mjs","infra/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1",".go-version"];
+const guardedScope = ["services","infra/compose.yaml","infra/compose.apps.yaml","infra/compose.identity-verifier.yaml","infra/compose.merchant-development.yaml","infra/compose.captain-development.yaml","infra/compose.wlt.yaml","tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -153,7 +153,7 @@ export function verifyBaselineProofOutput(output) {
     if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
   }
 }
-const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","tests/infra/verify-isolated-postgres.ps1","infra/owner-baseline-transition.mjs","infra/compose.yaml"];
+const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","tests/infra/verify-isolated-postgres.ps1","tools/dev/docker/owner-baseline-transition.mjs","infra/compose.yaml"];
 // One-time additive preparation: the old owner remains the writer until a
 // separately verified handoff. No retained schema, role, service or volume is
 // modified. Existing target names fail closed rather than being overwritten.
@@ -250,7 +250,7 @@ export function assertHandoffParity(source, candidate, expectedLines) {
   }
 }
 function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
-  const transitionScope=[...guardedScope,"infra/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
+  const transitionScope=[...guardedScope,"tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
   const dirty=()=>dirtyPaths(root,transitionScope).length>0;
   if (!/^[0-9a-f]{40}$/.test(preparedRevision || "") || dirty()) throw new Error("Cutover requires a clean committed checkout and exact prepared source SHA");
   git(["merge-base","--is-ancestor",preparedRevision,head]);
@@ -379,7 +379,7 @@ export function normalizeIdentitySchemaDump(dump) {
   return dump.split(/\r?\n/).filter(line=>!/^\\(?:un)?restrict /.test(line)).map(line=>line===original?restored:line).join("\n").trim();
 }
 function relocateIdentity(state,env,head,files,resume=false) {
-  const scope=[...guardedScope,"infra/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
+  const scope=[...guardedScope,"tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
   const clean=()=>git(["rev-parse","HEAD"])===head && !dirtyPaths(root,scope).length;
   if(!clean())throw new Error("Identity relocation requires a committed stable source");
   const old=state.identity,live=asEnv(old.Config.Env),schema=live.IDENTITY_DB_SCHEMA;

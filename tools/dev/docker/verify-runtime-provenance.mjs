@@ -5,7 +5,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
+const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 // Do not resolve Git from a caller-controlled PATH when verifying provenance.
 const gitExecutable = process.platform === "win32"
   ? "C:\\Program Files\\Git\\cmd\\git.exe"
@@ -105,7 +105,7 @@ export function main(argv = process.argv.slice(2)) {
   if (argv.filter(arg => arg === "--include-wlt").length > 1 ||
       contextArgs.length > 2 || (contextArgs[0] && contextArgs[0] !== "--context") ||
       (contextArgs.length === 1 && contextArgs[0] === "--context")) {
-    throw new Error("Usage: node infra/verify-runtime-provenance.mjs [--context CONTEXT] [--include-wlt]");
+    throw new Error("Usage: node tools/dev/docker/verify-runtime-provenance.mjs [--context CONTEXT] [--include-wlt]");
   }
   const context = contextArgs.length === 2 ? contextArgs[1] : checked("docker", ["context", "show"]);
   if (!/^[a-zA-Z0-9._-]+$/.test(context)) throw new Error("invalid Docker context");

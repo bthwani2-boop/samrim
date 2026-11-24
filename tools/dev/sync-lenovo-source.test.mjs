@@ -22,7 +22,7 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
     return result.stdout.trim();
   };
   try {
-    for (const rel of [...mirrored, "infra/owner-preview-source.mjs", "tools/security/verify-secrets.mjs"]) {
+    for (const rel of [...mirrored, "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs"]) {
       const target = path.join(root, rel);
       mkdirSync(path.dirname(target), { recursive: true });
       if (rel.endsWith("example.ts")) writeFileSync(target, "export const value = 1;\n");
@@ -186,7 +186,7 @@ test("canonical source paths accepted without path injection", () => {
 });
 test("credentials, generated state, services and unowned paths rejected", () => {
   for (const path of [
-    ".git/config", "infra/local/.env", "tools/dev/.env.tunnels.local", "apps/customer/.env",
+    ".git/config", "infra/local/.env", "tools/dev/.env.tunnels.local", "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/build-owner-image.ps1", "apps/customer/.env",
     "apps/customer/.env.production", "apps/customer/google-services.json",
     "apps/customer/credentials.json", "apps/customer/keys.pem",
     "apps/customer/node_modules/expo/package.json",

@@ -1093,8 +1093,8 @@ function Show-Docker {
   } else {
     Say 'WLT' 'NOT_RUN (optional WLT container not present)'
   }
-  if (Test-Path -LiteralPath (Join-Path $repo 'infra\verify-runtime-provenance.mjs')) {
-    $result = @(& node (Join-Path $repo 'infra\verify-runtime-provenance.mjs') @verifyArgs 2>&1)
+  if (Test-Path -LiteralPath (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs')) {
+    $result = @(& node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') @verifyArgs 2>&1)
     $code = $LASTEXITCODE
     foreach ($line in $result) { Write-Output $line.ToString() }
     Say 'PROVENANCE_EXIT' $code
@@ -1120,7 +1120,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker reconcile -Apply -PrepareDshDatabase # one-time additive DSH candidate; no cutover'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
-  Write-Output 'BUILD=use infra/build-owner-image.ps1 -Owner dsh|identity|wlt explicitly'
+  Write-Output 'BUILD=use tools/dev/docker/build-owner-image.ps1 -Owner dsh|identity|wlt explicitly'
   Write-Output 'UNSUPPORTED=prune, down -v, SQL migration execution, bootstrap, protected state operations'
 }
 function Invoke-ScopedDocker {
@@ -1170,15 +1170,15 @@ function Invoke-ScopedDocker {
       try {
         if ($Apply -or $RecoverRuntimeAttempt) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
         if ($CutoverDshDatabase) {
-          & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode $PreparedSourceSha
+          & node (Join-Path $repo 'tools\dev\docker\reconcile-owner-runtime.mjs') $mode $PreparedSourceSha
         } else {
-          & node (Join-Path $repo 'infra\reconcile-owner-runtime.mjs') $mode @reconcileOptions
+          & node (Join-Path $repo 'tools\dev\docker\reconcile-owner-runtime.mjs') $mode @reconcileOptions
         }
         Assert-Ok ($LASTEXITCODE -eq 0) 'owner runtime reconciliation failed; inspect explicit result'
       } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }
     'verify' {
-      & node (Join-Path $repo 'infra\verify-runtime-provenance.mjs') '--context' $dockerContext
+      & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext
       Assert-Ok ($LASTEXITCODE -eq 0) 'Docker owner provenance incomplete; inspect pnpm dev docker status'
       Say 'DOCKER_PROVENANCE' 'PASS'
     }
