@@ -78,6 +78,93 @@ Historical Windows registration keys for Customer/Merchant tasks may still conta
 ## Cleanup rule
 Keep currently used app tasks, tunnel tasks, active SSH sessions and guarded rollback data. Disabled tasks pointing to deleted scripts may be exported and retired only after proving no user or service depends on them; no blanket deletion of backups, mirror directories, Android packages or private keys.
 
+## Isolated Surface app preview
+
+`tools/dev/Start-RefoundationApp.ps1 -Surface -App <app>` runs the named app from
+the current checkout. It uses separate loopback ports for Control Panel
+(`localhost:23100`), Customer (`127.0.0.1:23101`), Merchant
+(`127.0.0.1:23102`) and Captain Metro (`127.0.0.1:23103`).
+The default Identity and DSH preview ports are `23201` and `23202`.
+
+Use locally running owners with fresh synthetic schemas and the relevant
+phone, Passkey and DSH standing capabilities enabled. Configure DSH to allow
+the Customer preview origin and Identity to accept the Operator's exact
+`http://localhost:23100` WebAuthn origin. Only synthetic test phones and
+enrolled synthetic Operator credentials belong in this preview.
+
+To enroll the first synthetic Operator on Surface, start the Identity
+owner with the two isolated Passkey and bootstrap opt-ins, the exact
+`http://localhost:23100` origin, and the dedicated disposable WebAuthn
+database described in [Identity](../../services/identity/README.md). Then start
+Control Panel using
+`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -Surface -App control-panel -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap`.
+The launcher requires both bootstrap routes on the local Identity owner.
+
+For a **synthetic Android emulator only**, the Customer can opt into WLT's
+read-only wallet and posted-funding history once **Identity, DSH and WLT** are
+running locally with isolated synthetic data. Start the Surface Customer
+presentation using
+`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -Surface -App customer -EnableAndroidWalletPreview -WltPort 23203`.
+The launcher checks the WLT loopback listener and its unauthenticated read
+must return HTTP 401. Android receives the emulator-to-host `10.0.2.2` origins
+for both Identity and WLT; the Web BFF continues using `127.0.0.1`.
+Absent owner, revoked session, wrong role and physical-device/private-LAN
+origins keep the Native finance display closed. No Cash-In, payment, protected
+database migration or real-user finance access is activated by this flag.
+
+### Opt-in Lenovo Customer Web wallet
+
+The active Lenovo Customer Web server is **not** silently reconfigured when
+Docker WLT appears. With its existing default launcher environment, its
+`/api/customer-auth/wallet` and `/wallet-transactions` routes remain disabled
+(`503`). Once the isolated `identity` and `wlt` containers are healthy,
+a **separately controlled Customer Web start** on Lenovo can use
+`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -App customer -EnableDockerWalletWebPreview`
+from the verified runtime source. Only this opt-in sets the Web BFF's private
+`BTHWANI_DOCKER_WALLET_WEB_PREVIEW` flag, explicit isolated-test mode,
+and fixed local Identity `3201`
+and WLT `3203` owner origins. The launcher validates the actual Docker
+container capability labels, health and unauthenticated route denial before
+starting Expo. It refuses Surface/native previews and all other applications;
+the browser session is still an HttpOnly same-origin Customer cookie.
+The public/native Expo preview flags stay disabled and the BFF refuses any
+other wallet port even if other preview flags are set. **Do not restart the
+shared running Customer task to opt in without checking its ownership and
+other active sessions.** Only the synthetic development customer can sign in
+through Mailpit. No payment mutation is enabled.
+Neither an Expo Android JS export nor source tests prove actual emulator/device
+execution; test its complete network and session behavior separately.
+
+### Opt-in Lenovo Customer Android sign-in
+
+Use `-EnableDockerCustomerAndroidIdentityPreview` on the Customer launcher
+with the standard Customer Metro tunnel and ADB reverse on port `18101`.
+The isolated Identity owner must be published on Lenovo loopback port `3201`.
+Forward that owner over the approved private SSH connection to a Surface
+loopback port and map device port `3201` to that Surface port with ADB reverse.
+This preview uses a separate Android session namespace and synthetic phones.
+The Web wallet option can coexist with it and continues to use its own cookie.
+
+The existing Surface development launcher adds ADB reverse mappings for the
+three Metro ports and the two owner ports (Identity 3201, DSH 3202) only after
+verifying that the latter are listening through the canonical loopback SSH
+tunnel. The existing Customer SSH tunnel carries both owner forwards; do not
+start another SSH process for them or replace an unrelated ADB mapping.
+A change to tunnel arguments requires a separately controlled reload of that
+existing task before the new mappings can be used. The Lenovo Merchant and
+Captain launchers require healthy, isolated Identity and DSH owners before
+considering native admission. Merchant admission stays blocked when its owner
+endpoint is unavailable. If the isolated DSH has not enabled Captain standing
+and returns exactly HTTP 404, the Captain launcher keeps the verified isolated
+Identity origin so the public phone login form remains visible, but removes
+the DSH origin. The Captain form explains that code submission is disabled
+until owner standing is available; it never consumes OTP or grants workspace
+access while DSH is missing. Any other unexpected Captain owner response aborts
+startup. Once the DSH owner is migrated and independently enabled, an
+unauthenticated standing read must return HTTP 401 before Captain native
+admission can be configured. Browser
+cookies and native SecureStore remain separate.
+
 ## Local Graphify reconciliation
 
 The existing Surface source-sync process can also schedule the **native local Graphify runner**. With explicit human authorization, write the exact value `local-graphify-reconcile-v1` to `%LOCALAPPDATA%\BThwani\Operations\SourceSync\graphify-reconcile.enabled`, then reload the same existing watcher through its authorized owner. Do not launch another source-sync process or a standalone Graphify watcher.

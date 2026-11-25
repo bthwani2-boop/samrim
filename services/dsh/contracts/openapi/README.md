@@ -41,8 +41,7 @@ is activated by this incremental contract.
 The fragments point back only to the **same DSH owner's** canonical
 `components` in `dsh.openapi.yaml`. No schemas, response contracts or
 parameter definitions are duplicated; no new endpoints, authentication
-grants or checkout permissions are introduced for public reads. Empty
-`paths/*.yaml` fragments reserve names for future owner operations.
+grants or checkout permissions are introduced for public reads. Add a path fragment only when its owner contract defines actual operations; historical reserved names remain in the donor inventory.
 
 The original scaffold note `no server, no security scheme` described the
 **historical empty contract**, not the admitted public discovery API.
@@ -54,8 +53,7 @@ The [source- and SHA-pinned inventory](../../../../docs/reference/OPENAPI-DONOR-
 is historical evidence, not a live API. `paths/cart.yaml` now specifies authenticated
 Customer Cart **draft** GET/PUT only. Checkout/Order confirmation and financial
 allocation remain NOT_IMPLEMENTED, so cart operations cannot be used as payment
-authorization or a confirmed price promise. `financial-views` is a WLT-backed
-read projection only. Historical donor endpoints require source and Product
+authorization or a confirmed price promise. Any future financial read projection must use WLT-owned facts. Historical donor endpoints require source and Product
 reconciliation before any transfer.
 
 The Foundation source-boundary guard is **not arbitrary OpenAPI validity**.

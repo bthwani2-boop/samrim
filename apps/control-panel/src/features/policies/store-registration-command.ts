@@ -41,7 +41,7 @@ export async function readStoreRegistrationPolicy(
   return policy;
 }
 
-export type RegistrationOverviewEntry =
+type RegistrationOverviewEntry =
   | { status: "current"; policy: OperatorStoreRegistrationPolicy }
   | { status: "unavailable" };
 export type RegistrationOverview = Record<StoreRegistrationRelation, RegistrationOverviewEntry>;

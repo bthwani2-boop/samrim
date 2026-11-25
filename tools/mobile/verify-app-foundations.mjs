@@ -15,6 +15,10 @@ const sdkManaged = (name) => name === "expo" || name.startsWith("expo-") ||
   name.startsWith("@expo/") || name === "react-native" ||
   name === "react-native-safe-area-context" || name === "react-native-screens" ||
   name === "@react-native/metro-config";
+const retiredDirectLibraries = new Set([
+  "@date-fns/tz", "date-fns", "zod", "zustand",
+  "@hookform/resolvers", "@tanstack/react-query", "react-hook-form",
+]);
 const expectedIds = {
   customer: ["customer", "com.bthwani.customer", "customer", "9b97c906-0dfc-4cf7-8d2b-079593523dc7"],
   merchant: ["merchant", "com.bthwani.merchant", "merchant", "c56092bf-d41b-4944-a28c-de227b3d8e8a"],
@@ -32,6 +36,7 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
     for (const [dependency, version] of Object.entries(original ?? {})) {
       if (dependency.startsWith("@bthwani/")) continue; // Deferred owner clients, not false mocks.
       if (sdkManaged(dependency)) continue; // Expo SDK validation replaces donor pin check.
+      if (kind === "dependencies" && retiredDirectLibraries.has(dependency) && !Object.hasOwn(current[kind], dependency)) continue;
       assert.equal(current[kind][dependency], version, `${name} drift in ${kind} ${dependency}`);
       external++;
     }
@@ -102,6 +107,7 @@ const newPanel=json("apps/control-panel/package.json");
 for(const kind of ["dependencies","devDependencies"]) {
   for(const [dep,version] of Object.entries(oldPanel?.[kind] ?? {})) {
     if(dep.startsWith("@bthwani/")||dep==="xlsx"||dep==="next")continue; // features deferred; Next security upgrade is pinned and asserted below
+    if (kind === "dependencies" && retiredDirectLibraries.has(dep) && !Object.hasOwn(newPanel[kind], dep)) continue;
     assert.equal(newPanel[kind][dep],version,"Operator dependency drift "+dep);
     external++;
   }

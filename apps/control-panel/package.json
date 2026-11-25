@@ -18,14 +18,11 @@
     "@bthwani/dsh": "workspace:*",
     "@bthwani/identity": "workspace:*",
     "@bthwani/wlt": "workspace:*",
-    "@date-fns/tz": "catalog:",
     "antd": "6.6.7",
-    "date-fns": "catalog:",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "0.0.1",
-    "zod": "catalog:"
+    "server-only": "0.0.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

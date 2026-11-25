@@ -12,7 +12,7 @@ Deliver the smallest genuine Customer marketplace Store discovery backed by DSH-
 - **Language/Version**: Existing source-pinned Go 1.27.3 (future DSH backend); installed TypeScript 7.0.2 and pinned Node 24.22.1/pnpm 12.15.0 in the current worktree.
 - **Primary Dependencies**: Existing Expo Customer, Expo Router, Tamagui, @bthwani/tamagui-config and @bthwani/design-system. Do not upgrade or install new dependencies as a planning side effect.
 - **Storage**: DSH-owned PostgreSQL target (exact physical isolation, schemas and upgrade plan require a separate reviewed decision); Customer may not persist canonical Store/Offer truth.
-- **Contract**: existing services/dsh/contracts/openapi/dsh.openapi.yaml and reserved paths/customer-discovery.yaml, paths/stores.yaml, paths/catalog.yaml and paths/offers.yaml are zero-operation placeholders. Do not hand-invent paths, auth schemas, DTOs or prices.
+- **Contract (original plan context)**: the DSH entrypoint and reserved discovery fragments were initially zero-operation placeholders. Use the current owner entrypoint and populated fragments for executable paths; retired empty group names remain in the historical donor census. Do not hand-invent paths, auth schemas, DTOs or prices.
 - **Tests**: contract parser/ref validations once admitted, DSH Go owner tests, negative visibility/ACL and real query tests, cross-store isolation, genuine Customer Web/Android smoke; Postman read of old local-readiness collection is not a new service test.
 - **Platform**: Customer Expo Web SSR and Android. Actual iOS acceptance remains unproven until tested.
 

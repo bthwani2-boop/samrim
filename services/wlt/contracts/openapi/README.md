@@ -6,7 +6,7 @@ Customer bearer verified by Identity and return exact posted YER as decimal
 text. `paths/runtime.yaml` describes the existing isolated `/health` probe:
 PostgreSQL reachability and, in container mode, Identity health. Its empty
 200/503 responses do not establish financial or production readiness.
-The remaining path groups reserve names for future financial contracts.
+Future financial operations require actual owner contracts; historical reserved group names remain in the donor inventory, not empty executable files.
 
 Run `pnpm check:contracts` to validate local references, operation security
 and generated method and path metadata. The PostgreSQL owner suite exercises

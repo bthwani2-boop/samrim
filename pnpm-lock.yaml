@@ -162,27 +162,6 @@ settings:
   autoInstallPeers: false
   excludeLinksFromLockfile: false
 
-catalogs:
-  default:
-    '@date-fns/tz':
-      specifier: 1.5.0
-      version: 1.5.0
-    '@hookform/resolvers':
-      specifier: 6.0.0
-      version: 6.0.0
-    '@tanstack/react-query':
-      specifier: 5.104.5
-      version: 5.104.5
-    date-fns:
-      specifier: 4.4.0
-      version: 4.4.0
-    react-hook-form:
-      specifier: 7.91.0
-      version: 7.91.0
-    zod:
-      specifier: 4.6.7
-      version: 4.6.7
-
 overrides:
   uuid: 11.1.1
   decode-uri-component: 0.5.0
@@ -236,18 +215,12 @@ importers:
       '@bthwani/tamagui-config':
         specifier: workspace:*
         version: link:../../packages/tamagui-config
-      '@date-fns/tz':
-        specifier: 'catalog:'
-        version: 1.5.0
       '@expo/ui':
         specifier: ~58.0.28
         version: 58.0.28(@babel/core@7.29.7(supports-color@8.1.1))(expo@58.0.25)(react-dom@19.3.0(react@19.3.0))(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       '@shopify/flash-list':
         specifier: 2.3.2
         version: 2.3.2(@babel/runtime@8.0.8)(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
-      date-fns:
-        specifier: 'catalog:'
-        version: 4.4.0
       expo:
         specifier: ~58.0.25
         version: 58.0.25(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.17)(expo-router@58.0.31)(react-dom@19.3.0(react@19.3.0))(react-native-web@0.21.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@7.0.2)
@@ -371,12 +344,6 @@ importers:
       tamagui:
         specifier: 3.3.1
         version: 3.3.1(552871a7faa99c40d59beefa7c30af59)
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.7
-      zustand:
-        specifier: 5.0.16
-        version: 5.0.16(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
     devDependencies:
       '@react-native/metro-config':
         specifier: 0.88.1
@@ -408,15 +375,9 @@ importers:
       '@bthwani/wlt':
         specifier: workspace:*
         version: link:../../services/wlt
-      '@date-fns/tz':
-        specifier: 'catalog:'
-        version: 1.5.0
       antd:
         specifier: 6.6.7
         version: 6.6.7(date-fns@4.4.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
-      date-fns:
-        specifier: 'catalog:'
-        version: 4.4.0
       next:
         specifier: 16.4.5
         version: 16.4.5(@babel/core@7.29.7(supports-color@8.1.1))(@playwright/test@1.63.0)(@types/node@24.10.1)(babel-plugin-react-compiler@1.0.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
@@ -429,9 +390,6 @@ importers:
       server-only:
         specifier: 0.0.1
         version: 0.0.1
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.7
     devDependencies:
       '@types/node':
         specifier: 24.10.1
@@ -460,9 +418,6 @@ importers:
       '@bthwani/wlt':
         specifier: workspace:*
         version: link:../../services/wlt
-      '@date-fns/tz':
-        specifier: 'catalog:'
-        version: 1.5.0
       '@expo/metro-runtime':
         specifier: 58.0.17
         version: 58.0.17(expo@58.0.25)(react-dom@19.3.0(react@19.3.0))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
@@ -472,9 +427,6 @@ importers:
       '@shopify/flash-list':
         specifier: 2.3.2
         version: 2.3.2(@babel/runtime@8.0.8)(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
-      date-fns:
-        specifier: 'catalog:'
-        version: 4.4.0
       expo:
         specifier: 58.0.25
         version: 58.0.25(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.17)(expo-router@58.0.31)(react-dom@19.3.0(react@19.3.0))(react-native-web@0.21.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@7.0.2)
@@ -616,12 +568,6 @@ importers:
       tamagui:
         specifier: 3.3.1
         version: 3.3.1(552871a7faa99c40d59beefa7c30af59)
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.7
-      zustand:
-        specifier: 5.0.16
-        version: 5.0.16(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
     devDependencies:
       '@react-native/metro-config':
         specifier: 0.88.1
@@ -644,27 +590,15 @@ importers:
       '@bthwani/tamagui-config':
         specifier: workspace:*
         version: link:../../packages/tamagui-config
-      '@date-fns/tz':
-        specifier: 'catalog:'
-        version: 1.5.0
       '@expo/metro-runtime':
         specifier: 58.0.17
         version: 58.0.17(expo@58.0.25)(react-dom@19.3.0(react@19.3.0))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
       '@expo/ui':
         specifier: ~58.0.28
         version: 58.0.28(@babel/core@7.29.7(supports-color@8.1.1))(expo@58.0.25)(react-dom@19.3.0(react@19.3.0))(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
-      '@hookform/resolvers':
-        specifier: 'catalog:'
-        version: 6.0.0(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.7)
       '@shopify/flash-list':
         specifier: 2.3.2
         version: 2.3.2(@babel/runtime@8.0.8)(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)
-      '@tanstack/react-query':
-        specifier: 'catalog:'
-        version: 5.104.5(@types/react@19.3.0)(react@19.3.0)
-      date-fns:
-        specifier: 'catalog:'
-        version: 4.4.0
       expo:
         specifier: 58.0.25
         version: 58.0.25(@babel/core@7.29.7(supports-color@8.1.1))(@expo/metro-runtime@58.0.17)(expo-router@58.0.31)(react-dom@19.3.0(react@19.3.0))(react-native-web@0.21.4(react-dom@19.3.0(react@19.3.0))(react@19.3.0))(react-native-worklets@0.13.0(@babel/core@7.29.7(supports-color@8.1.1))(@react-native/metro-config@0.88.1(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1))(react-native@0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1))(react@19.3.0)(supports-color@8.1.1)(typescript@7.0.2)
@@ -779,9 +713,6 @@ importers:
       react-dom:
         specifier: 19.3.0
         version: 19.3.0(react@19.3.0)
-      react-hook-form:
-        specifier: 'catalog:'
-        version: 7.91.0(@types/react@19.3.0)(react@19.3.0)
       react-native:
         specifier: 0.88.1
         version: 0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
@@ -812,12 +743,6 @@ importers:
       tamagui:
         specifier: 3.3.1
         version: 3.3.1(552871a7faa99c40d59beefa7c30af59)
-      zod:
-        specifier: 'catalog:'
-        version: 4.6.7
-      zustand:
-        specifier: 5.0.16
-        version: 5.0.16(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0))
     devDependencies:
       '@react-native/metro-config':
         specifier: 0.88.1
@@ -1386,9 +1311,6 @@ packages:
     resolution: {integrity: sha512-y7/yvZ2TPAnR9+jnc00klvNNLkJiXFFrQA/hlLCcxA9a2A4zQIOimyFQ9XfwYKiGD1fb5GY8vbKIIgO8d5Tb2A==}
     engines: {node: '>= 20.12.0'}
 
-  '@date-fns/tz@1.5.0':
-    resolution: {integrity: sha512-lwYN/vDPeNRULcepoE/LO2Pgx+7/RV+S9ARfbc9lr2DtGkOD7pAiruHvbR1RX3Qyf6ja47EWJDMsNK5vK08DJg==}
-
   '@emnapi/core@1.11.2':
     resolution: {integrity: sha512-TC8MkTuZUtcTSiFeuC0ksCh9QIJ5+F21MvZ4Wn4ORfYaFJ/0dsiudv5tVkejgwZlwQ39jL9WWDe2lz8x0WglOA==}
 
@@ -1656,84 +1578,6 @@ packages:
 
   '@floating-ui/utils@0.2.12':
     resolution: {integrity: sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww==}
-
-  '@hookform/resolvers@6.0.0':
-    resolution: {integrity: sha512-6iBzQnB+YwAveVc8HUi6QYLITn5X+xNKRMFIcNXHZlvp2aTI7yWbj4n/JodXxirMCcBc4VCjb2aYAJh4x07mVw==}
-    peerDependencies:
-      '@sinclair/typebox': '>=0.25.24'
-      '@standard-schema/spec': ^1.0.0
-      '@typeschema/main': '>=0.13.7'
-      '@vinejs/vine': ^2.0.0 || ^3.0.0 || ^4.0.0
-      ajv: ^8.12.0
-      ajv-errors: ^3.0.0
-      ajv-formats: ^2.1.1
-      arktype: ^2.0.0
-      ata-validator: ^1.23.0
-      class-transformer: '>=0.4.0'
-      class-validator: '>=0.12.0'
-      computed-types: ^1.0.0
-      effect: ^4.0.0
-      fluentvalidation-ts: ^3.0.0
-      fp-ts: ^2.7.0
-      io-ts: ^2.0.0
-      joi: ^17.0.0 || ^18.0.0
-      nope-validator: '>=0.12.0'
-      react-hook-form: ^7.55.0
-      superstruct: '>=0.12.0'
-      typanion: ^3.3.2
-      valibot: '>=0.31.0 || ^1.0.0-beta.4 || ^1.0.0-rc'
-      vest: '>=6.0.0'
-      yup: ^1.0.0
-      zod: ^3.25.0 || ^4.0.0
-    peerDependenciesMeta:
-      '@sinclair/typebox':
-        optional: true
-      '@standard-schema/spec':
-        optional: true
-      '@typeschema/main':
-        optional: true
-      '@vinejs/vine':
-        optional: true
-      ajv:
-        optional: true
-      ajv-errors:
-        optional: true
-      ajv-formats:
-        optional: true
-      arktype:
-        optional: true
-      ata-validator:
-        optional: true
-      class-transformer:
-        optional: true
-      class-validator:
-        optional: true
-      computed-types:
-        optional: true
-      effect:
-        optional: true
-      fluentvalidation-ts:
-        optional: true
-      fp-ts:
-        optional: true
-      io-ts:
-        optional: true
-      joi:
-        optional: true
-      nope-validator:
-        optional: true
-      superstruct:
-        optional: true
-      typanion:
-        optional: true
-      valibot:
-        optional: true
-      vest:
-        optional: true
-      yup:
-        optional: true
-      zod:
-        optional: true
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -2884,12 +2728,6 @@ packages:
   '@sinclair/typebox@0.27.12':
     resolution: {integrity: sha512-hhyNJ+nbR6ZR7pToHvllEFun9TL0sbL+tk/ON75lo+Xas054uez98qRbsuNt7MBCyZKK4+8Yli/OAGZhmfBZ/g==}
 
-  '@standard-schema/spec@1.1.0':
-    resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
-
-  '@standard-schema/utils@0.3.0':
-    resolution: {integrity: sha512-e7Mew686owMaPJVNNLs55PUvgz371nKgwsc4vxE49zsODpJEnxgxRo2y/OKrqueavXgZNMDVj3DdHFlaSAeU8g==}
-
   '@swc/helpers@0.5.23':
     resolution: {integrity: sha512-5lSsMOTXURePglDfvuAQUqkGek9Hg2kksOYay2m0+XR++b2NWYL/4sWyuvVBIs8oKnJaxkdi9whaL/sqN13afw==}
 
@@ -3485,18 +3323,6 @@ packages:
     resolution: {integrity: sha512-kM2hzhGdsGyAxOF4yHlGZs/lll9IFUcnfUumRw3ORAOUaikVTfn4vaJ+CBfYzIHN3oXpDKA/hQOlq7hBtuYs1g==}
     peerDependencies:
       react: '>=19'
-
-  '@tanstack/query-core@5.104.5':
-    resolution: {integrity: sha512-Q94gI8Opd+CbdVNOdj8ZCyV8WqLYitrDq1t96Xc8WZT6lY0r5iRnJLXYDxMex7EEf2v+mXvn4FcjaBKSxXZQ9A==}
-
-  '@tanstack/react-query@5.104.5':
-    resolution: {integrity: sha512-RORgFe052U+93weaNuqg7qHq7vNVNzXN/VrXqD4bbAuQCWUqOl2lV5Ui9flWk5CVvMyL/Bh27QWhzwH0aaOx9g==}
-    peerDependencies:
-      '@types/react': ^18 || ^19
-      react: ^18 || ^19
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
 
   '@tybys/wasm-util@0.10.4':
     resolution: {integrity: sha512-W3c4gRigFS0T/Ma4qIYF3GDAc5AQdHb1yL5znJT1Zv1YaD9Kitx656wBjvr19qbiosmZT8lWDM5BEMynUqX65A==}
@@ -4642,9 +4468,6 @@ packages:
     resolution: {integrity: sha512-/8UvqAPU9DGTI9k4mxtf49U37Isfwr8Uts96+SBHIkFxPJnHS0Ew4f00sM4Scd8V8EjM0jUNtVDdv1kPdt35lg==}
     engines: {node: '>= 4'}
 
-  immer@11.2.9:
-    resolution: {integrity: sha512-IQ4UEtXjZjyefyWjtLEDXUSrF6T2hwjKPi6BIJl3bY/2XXW24d6cNGdXJSBOA/+KNnuiXkZY6DR0C3efolhitA==}
-
   inherits@2.0.4:
     resolution: {integrity: sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==}
 
@@ -5235,16 +5058,6 @@ packages:
     peerDependencies:
       react: '>=17.0.0'
 
-  react-hook-form@7.91.0:
-    resolution: {integrity: sha512-5BEBUnCBwa28AFXYTYmOaB/+CSpJ/+CWVASHEvIGUzFdHyUiPHeRhG7r5hOZ8nZi0yP7pbHdFNXO/p31EKTJFQ==}
-    engines: {node: '>=18.0.0'}
-    peerDependencies:
-      '@types/react': '*'
-      react: ^16.8.0 || ^17 || ^18 || ^19
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-
   react-is@18.3.1:
     resolution: {integrity: sha512-/LLMVyas0ljjAtoYiPqYiL8VWXzUUdThrmU5+n20DZv+a+ClRoevUzw5JxU+Ieh5/c87ytoTBV9G1FiKfNJdmg==}
 
@@ -5733,11 +5546,6 @@ packages:
     peerDependencies:
       react: '>=16.8'
 
-  use-sync-external-store@1.7.0:
-    resolution: {integrity: sha512-6L+EeigHMQhdaIPNIFUKwfWJSwWFQ8gJbJ2DLOs5sDIegTwR9fRxvnM3uciHKjIZhFz+KAv2emhWMRvDmMcY8A==}
-    peerDependencies:
-      react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
-
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
@@ -5864,24 +5672,6 @@ packages:
 
   zod@4.6.7:
     resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
-
-  zustand@5.0.16:
-    resolution: {integrity: sha512-Uv7e327ihlCfayfja3hDc0M64Upev1LWBKpRobdK4NyovDDPeeX4imWXc/wzC1yc6fkYPoAY/ncKVPAs2jrtQw==}
-    engines: {node: '>=12.20.0'}
-    peerDependencies:
-      '@types/react': '>=18.0.0'
-      immer: '>=9.0.6'
-      react: '>=18.0.0'
-      use-sync-external-store: '>=1.2.0'
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-      immer:
-        optional: true
-      react:
-        optional: true
-      use-sync-external-store:
-        optional: true
 
   zxing-wasm@3.1.3:
     resolution: {integrity: sha512-3lC9BJk4fR5ZJxcGjb0hVnDFOW7KpLXHIebiBmVd4FDRQZVeObztoTKxRUPxlWwSgxrMRONK0u50hBD1aTYEKg==}
@@ -6481,8 +6271,6 @@ snapshots:
       fast-wrap-ansi: 0.2.0
       sisteransi: 1.0.5
 
-  '@date-fns/tz@1.5.0': {}
-
   '@emnapi/core@1.11.2':
     dependencies:
       '@emnapi/wasi-threads': 1.2.2
@@ -6934,15 +6722,6 @@ snapshots:
       react-native: 0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
 
   '@floating-ui/utils@0.2.12': {}
-
-  '@hookform/resolvers@6.0.0(@sinclair/typebox@0.27.12)(@standard-schema/spec@1.1.0)(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.0))(zod@4.6.7)':
-    dependencies:
-      '@standard-schema/utils': 0.3.0
-      react-hook-form: 7.91.0(@types/react@19.3.0)(react@19.3.0)
-    optionalDependencies:
-      '@sinclair/typebox': 0.27.12
-      '@standard-schema/spec': 1.1.0
-      zod: 4.6.7
 
   '@img/colour@1.1.0':
     optional: true
@@ -7951,11 +7730,6 @@ snapshots:
       react-native: 0.88.1(@react-native/metro-config@0.88.1(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.0)(supports-color@8.1.1)
 
   '@sinclair/typebox@0.27.12': {}
-
-  '@standard-schema/spec@1.1.0':
-    optional: true
-
-  '@standard-schema/utils@0.3.0': {}
 
   '@swc/helpers@0.5.23':
     dependencies:
@@ -9881,15 +9655,6 @@ snapshots:
     dependencies:
       react: 19.3.0
 
-  '@tanstack/query-core@5.104.5': {}
-
-  '@tanstack/react-query@5.104.5(@types/react@19.3.0)(react@19.3.0)':
-    dependencies:
-      '@tanstack/query-core': 5.104.5
-      react: 19.3.0
-    optionalDependencies:
-      '@types/react': 19.3.0
-
   '@tybys/wasm-util@0.10.4':
     dependencies:
       tslib: 2.8.1
@@ -10388,7 +10153,8 @@ snapshots:
 
   csstype@3.2.3: {}
 
-  date-fns@4.4.0: {}
+  date-fns@4.4.0:
+    optional: true
 
   dayjs@1.11.23: {}
 
@@ -11053,9 +10819,6 @@ snapshots:
   ignore@5.3.2: {}
 
   ignore@7.0.12: {}
-
-  immer@11.2.9:
-    optional: true
 
   inherits@2.0.4: {}
 
@@ -11833,12 +11596,6 @@ snapshots:
     dependencies:
       react: 19.3.0
 
-  react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.0):
-    dependencies:
-      react: 19.3.0
-    optionalDependencies:
-      '@types/react': 19.3.0
-
   react-is@18.3.1: {}
 
   react-is@19.2.8: {}
@@ -12439,11 +12196,6 @@ snapshots:
     dependencies:
       react: 19.3.0
 
-  use-sync-external-store@1.7.0(react@19.3.0):
-    dependencies:
-      react: 19.3.0
-    optional: true
-
   util-deprecate@1.0.2: {}
 
   utils-merge@1.0.1: {}
@@ -12539,13 +12291,6 @@ snapshots:
       yargs-parser: 21.1.1
 
   zod@4.6.7: {}
-
-  zustand@5.0.16(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)(use-sync-external-store@1.7.0(react@19.3.0)):
-    optionalDependencies:
-      '@types/react': 19.3.0
-      immer: 11.2.9
-      react: 19.3.0
-      use-sync-external-store: 1.7.0(react@19.3.0)
 
   zxing-wasm@3.1.3:
     dependencies:
