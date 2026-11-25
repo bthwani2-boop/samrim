@@ -5,7 +5,7 @@ Surface hostname BTHWANI; Lenovo hostname BTHWANI-DOCKER. The SSH target alias i
 
 ## Daily launch — one command
 
-From Surface PowerShell in `D:\samrim` run **`pnpm dev`**. This is the fast default: it verifies the existing Lenovo SSH endpoint, reuses the existing Surface sync/tunnel and Lenovo app tasks, and opens the three Chrome tabs plus Customer/Merchant/Captain on a connected Samsung. It never launches a second watcher or another Expo/Next server, and does not recreate Docker containers or touch data. After opening existing surfaces, it checks the complete Compose configuration, all three committed owner images and actual app source/dependencies/ownership/HTTP. A partial environment is reported as BLOCKED and exits nonzero even when independent surfaces were opened. The same read-only readiness checks run after up/warm and in verify. This is not proof of authenticated journeys, financial correctness or visual Fast Refresh.
+From Surface PowerShell 7 in `D:\samrim` run **`pnpm dev`**. This is the fast default: it verifies the existing Lenovo SSH endpoint, reuses the existing Surface sync/tunnel and Lenovo app tasks, and opens the three Chrome tabs plus Customer/Merchant/Captain on a connected Samsung. It never launches a second watcher or another Expo/Next server, and does not recreate Docker containers or touch data. After opening existing surfaces, it checks the complete Compose configuration, all three committed owner images and actual app source/dependencies/ownership/HTTP. A partial environment is reported as BLOCKED and exits nonzero even when independent surfaces were opened. The same read-only readiness checks run after up/warm and in verify. This is not proof of authenticated journeys, financial correctness or visual Fast Refresh.
 
 - `pnpm dev apps open` — reopen the existing Chrome window and connected Android apps without touching their servers. Use `-Mode Browser` when Samsung is disconnected.
 - `pnpm dev apps status` / `pnpm dev apps verify` — targeted diagnostics, reusable by the launch readiness check. The source check compares the current allowed paths and file digests with the watcher's last published manifest. It detects saved edits at the same Git SHA. The watcher's periodic Lenovo hash audit checks for remote drift.
@@ -16,7 +16,7 @@ When Lenovo is unreachable on TCP port 22, the fast command reports a specific `
 
 ## Operator login is a separate Identity acceptance gate
 
-The canonical **WebAuthn/Passkey browser origin is `http://localhost:13000`**, not `127.0.0.1:13000`; the latter redirects to the canonical entry. The URL is forwarded over the existing Surface SSH tunnel to Lenovo's Next.js port `23010`. `localhost:23100` belongs to a **different, optional Surface-only preview** and is not evidence of a logged-in Lenovo Operator.
+The canonical **WebAuthn/Passkey browser origin is `http://localhost:13000`**, not `127.0.0.1:13000`; the latter redirects to the canonical entry. The URL is forwarded over the existing Surface SSH tunnel to Lenovo's Next.js port `23010`.
 
 `pnpm dev` reports `OPERATOR_AUTH` separately from `SURFACES_LAUNCH` and `ENVIRONMENT_READINESS`. A successful app launch or an HTTP 200 does not prove Operator identity, enrollment, a verified cookie, or any of the seven Identity-owned grants. A `503` session response means the isolated login BFF or its owner is unavailable; do not restart Identity or bypass the gate automatically.
 
@@ -78,39 +78,11 @@ Historical Windows registration keys for Customer/Merchant tasks may still conta
 ## Cleanup rule
 Keep currently used app tasks, tunnel tasks, active SSH sessions and guarded rollback data. Disabled tasks pointing to deleted scripts may be exported and retired only after proving no user or service depends on them; no blanket deletion of backups, mirror directories, Android packages or private keys.
 
-## Isolated Surface app preview
+## Isolated verification (not a second daily runtime)
 
-`tools/dev/Start-App.ps1 -Surface -App <app>` runs the named app from
-the current checkout. It uses separate loopback ports for Control Panel
-(`localhost:23100`), Customer (`127.0.0.1:23101`), Merchant
-(`127.0.0.1:23102`) and Captain Metro (`127.0.0.1:23103`).
-The default Identity and DSH preview ports are `23201` and `23202`.
+The daily launcher runs only on Lenovo using PowerShell 7 and the existing owner services. The old Surface app launcher and its reserved preview ports have been retired. Tests can still use isolated fixtures and temporary loopback endpoints: existing Customer wallet/cart BFF and Native wallet tests, Operator Passkey BFF tests, and the disposable Operator WebAuthn sandbox. The Expo Web verification harness in tools/mobile/verify-expo-web-http.mjs manages its own temporary test server. These fixtures do not authorize a second persistent environment.
 
-Use locally running owners with fresh synthetic schemas and the relevant
-phone, Passkey and DSH standing capabilities enabled. Configure DSH to allow
-the Customer preview origin and Identity to accept the Operator's exact
-`http://localhost:23100` WebAuthn origin. Only synthetic test phones and
-enrolled synthetic Operator credentials belong in this preview.
-
-To enroll the first synthetic Operator on Surface, start the Identity
-owner with the two isolated Passkey and bootstrap opt-ins, the exact
-`http://localhost:23100` origin, and the dedicated disposable WebAuthn
-database described in [Identity](../../services/identity/README.md). Then start
-Control Panel using
-`pwsh -NoProfile -File tools/dev/Start-App.ps1 -Surface -App control-panel -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap`.
-The launcher requires both bootstrap routes on the local Identity owner.
-
-For a **synthetic Android emulator only**, the Customer can opt into WLT's
-read-only wallet and posted-funding history once **Identity, DSH and WLT** are
-running locally with isolated synthetic data. Start the Surface Customer
-presentation using
-`pwsh -NoProfile -File tools/dev/Start-App.ps1 -Surface -App customer -EnableAndroidWalletPreview -WltPort 23203`.
-The launcher checks the WLT loopback listener and its unauthenticated read
-must return HTTP 401. Android receives the emulator-to-host `10.0.2.2` origins
-for both Identity and WLT; the Web BFF continues using `127.0.0.1`.
-Absent owner, revoked session, wrong role and physical-device/private-LAN
-origins keep the Native finance display closed. No Cash-In, payment, protected
-database migration or real-user finance access is activated by this flag.
+Native wallet emulator/device end-to-end verification remains a separate acceptance requirement; the existing isolated source tests are not proof of device execution. Do not enable a private finance origin on a real user device or use shared development state for destructive tests.
 
 ### Opt-in Lenovo Customer Web wallet
 

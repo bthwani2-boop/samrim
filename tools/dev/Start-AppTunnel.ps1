@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 <# One loopback-only Surface -> Lenovo development tunnel; one scheduled owner. #>
 [CmdletBinding()]
 param([switch]$ValidateOnly)

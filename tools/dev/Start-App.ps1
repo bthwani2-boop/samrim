@@ -1,16 +1,8 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 param(
   [Parameter(Mandatory=$true)]
   [ValidateSet('customer','merchant','captain','control-panel')]
   [string]$App,
-  [switch]$Surface,
-  [ValidateRange(1024,65535)]
-  [int]$IdentityPort=23201,
-  [ValidateRange(1024,65535)]
-  [int]$DshPort=23202,
-  [switch]$EnableAndroidWalletPreview,
-  [ValidateRange(1024,65535)]
-  [int]$WltPort=23203,
   [switch]$EnableDockerWalletWebPreview,
   [switch]$EnableDockerCartWebPreview,
   [switch]$EnableDockerCustomerAndroidIdentityPreview,
@@ -20,18 +12,21 @@ param(
 )
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
-if ($EnableAndroidWalletPreview -and (!$Surface -or $App -ne 'customer')) {
-  throw 'NATIVE_WALLET_PREVIEW_REQUIRES_SURFACE_CUSTOMER'
-}
-if ($EnableDockerWalletWebPreview -and ($Surface -or $App -ne 'customer' -or $EnableAndroidWalletPreview)) {
+if ($EnableDockerWalletWebPreview -and ($App -ne 'customer')) {
   throw 'DOCKER_WALLET_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
 }
-if ($EnableDockerCartWebPreview -and ($Surface -or $App -ne 'customer' -or $EnableAndroidWalletPreview)) {
+if ($EnableDockerCartWebPreview -and ($App -ne 'customer')) {
   throw 'DOCKER_CART_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
 }
-if ($EnableDockerCustomerAndroidIdentityPreview -and ($Surface -or $App -ne 'customer')) {
+if ($EnableDockerCustomerAndroidIdentityPreview -and ($App -ne 'customer')) {
   throw 'DOCKER_ANDROID_IDENTITY_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY'
 }
+if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+  throw 'APP_LAUNCH_REQUIRES_VERIFIED_LENOVO_HOST'
+}
+# Never inherit the retired Surface test mode into the shared daily runtime.
+$env:BTHWANI_SURFACE_PREVIEW='0'
+$env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
 Remove-Item Env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW -ErrorAction SilentlyContinue
 Remove-Item Env:BTHWANI_DOCKER_CART_WEB_PREVIEW -ErrorAction SilentlyContinue
 Remove-Item Env:OPERATOR_FINANCE_WLT_ORIGIN -ErrorAction SilentlyContinue
@@ -160,7 +155,7 @@ function Wait-LenovoOwnerHealth {
   } while ($clock.ElapsedMilliseconds -lt ($TimeoutSeconds*1000))
   throw ('LENOVO_OWNER_READINESS_TIMEOUT owners='+($Owners -join ','))
 }
-function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
+function Assert-OwnerEndpoint([string]$Uri, [int]$ExpectedStatus) {
   try {
     $status=[int](Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 3 -MaximumRedirection 0).StatusCode
   } catch {
@@ -169,202 +164,190 @@ function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
     $status=[int]$httpResponse.Value.StatusCode
   }
   if ($status -ne $ExpectedStatus) {
-    throw ('SURFACE_PREVIEW_CAPABILITY_NOT_READY uri=' + $Uri + ' status=' + $status)
+    throw ('OWNER_ENDPOINT_NOT_READY uri=' + $Uri + ' status=' + $status)
   }
 }
 
 $developmentPorts=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'ports.json') -Raw | ConvertFrom-Json
 $ports=@{}
 foreach($entry in $developmentPorts.apps.PSObject.Properties){$ports[$entry.Name]=[int]$entry.Value.lenovo}
-if ($Surface) {
-  $source=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
-  $node=(Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
-  $nodeDir=Split-Path -Parent $node
-  $logs=Join-Path $source '.tmp\surface-preview-logs'
-  foreach($entry in $developmentPorts.apps.PSObject.Properties){$ports[$entry.Name]=[int]$entry.Value.preview}
-} else {
-  $runner='C:\Users\bthwa\BThwaniAppRunner'
-  $source=Join-Path $runner 'source-runtime'
-  $nodeDir=Join-Path $runner 'tools\node-v24.22.1-refoundation'
-  $node=Join-Path $nodeDir 'node.exe'
-  $logs=Join-Path $runner 'logs'
-  if ($EnableDockerWalletWebPreview) {
-    if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
-      throw 'DOCKER_WALLET_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
+$runner='C:\Users\bthwa\BThwaniAppRunner'
+$source=Join-Path $runner 'source-runtime'
+$nodeDir=Join-Path $runner 'tools\node-v24.22.1-refoundation'
+$node=Join-Path $nodeDir 'node.exe'
+$logs=Join-Path $runner 'logs'
+if ($EnableDockerWalletWebPreview) {
+  if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+    throw 'DOCKER_WALLET_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
+  }
+  Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-wlt-1')
+  foreach ($owner in @(
+    @{ Name='bthwani-refoundation-identity-1'; Capability='identity-synthetic-session-verifier' },
+    @{ Name='bthwani-refoundation-wlt-1'; Capability='customer-wallet-read-only' }
+  )) {
+    $proof=(& docker inspect $owner.Name --format '{{index .Config.Labels "com.bthwani.capability"}}|{{index .Config.Labels "com.bthwani.environment"}}|{{.State.Health.Status}}').Trim()
+    if ($LASTEXITCODE -ne 0 -or $proof -cne ($owner.Capability + '|refoundation|healthy')) {
+      throw 'DOCKER_WALLET_WEB_PREVIEW_OWNER_NOT_VERIFIED'
     }
-    Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-wlt-1')
-    foreach ($owner in @(
-      @{ Name='bthwani-refoundation-identity-1'; Capability='identity-synthetic-session-verifier' },
-      @{ Name='bthwani-refoundation-wlt-1'; Capability='customer-wallet-read-only' }
-    )) {
-      $proof=(& docker inspect $owner.Name --format '{{index .Config.Labels "com.bthwani.capability"}}|{{index .Config.Labels "com.bthwani.environment"}}|{{.State.Health.Status}}').Trim()
-      if ($LASTEXITCODE -ne 0 -or $proof -cne ($owner.Capability + '|refoundation|healthy')) {
-        throw 'DOCKER_WALLET_WEB_PREVIEW_OWNER_NOT_VERIFIED'
+  }
+  Assert-OwnerEndpoint 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
+  Assert-OwnerEndpoint 'http://127.0.0.1:3203/v1/wallets/me' 401
+  $env:BTHWANI_ISOLATED_TEST_MODE='true'
+  $env:BTHWANI_DOCKER_WALLET_WEB_PREVIEW='1'
+  $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+  $env:CUSTOMER_SYNTHETIC_WLT_ORIGIN='http://127.0.0.1:3203'
+  Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
+}
+if ($EnableDockerCartWebPreview) {
+  if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+    throw 'DOCKER_CART_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
+  }
+  Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-dsh-1')
+  $identityOwner = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0 -or $identityOwner.Count -ne 1) {
+    throw 'DOCKER_CART_WEB_IDENTITY_OWNER_UNAVAILABLE'
+  }
+  $dshOwner = @(& docker inspect bthwani-refoundation-dsh-1 | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0 -or $dshOwner.Count -ne 1) {
+    throw 'DOCKER_CART_WEB_DSH_OWNER_UNAVAILABLE'
+  }
+  $identityRuntime = $identityOwner[0]
+  $dshRuntime = $dshOwner[0]
+  $identityEnv = @($identityRuntime.Config.Env)
+  $dshEnv = @($dshRuntime.Config.Env)
+  $identitySchemas = @($identityEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
+  $dshSchemas = @($dshEnv | Where-Object { $_ -clike 'DSH_DB_SCHEMA=*' })
+  $identityBindings = @($identityRuntime.HostConfig.PortBindings.'3302/tcp')
+  $dshBindings = @($dshRuntime.HostConfig.PortBindings.'8080/tcp')
+  if ($identityRuntime.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+      $identityRuntime.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
+      $identityRuntime.State.Health.Status -cne 'healthy' -or
+      $dshRuntime.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+      $dshRuntime.Config.Labels.'com.bthwani.capability' -cne 'customer-store-catalog' -or
+      $dshRuntime.State.Health.Status -cne 'healthy' -or
+      $identityEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
+      $identityEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
+      $identityEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
+      $dshEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
+      $dshEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
+      $dshEnv -cnotcontains 'DSH_ENABLE_ISOLATED_CUSTOMER_CART=true' -or
+      $dshEnv -cnotcontains 'DSH_IDENTITY_VERIFIER_URL=https://identity:3343' -or
+      $dshEnv -cnotcontains 'DSH_LISTEN_ADDR=0.0.0.0:8080' -or
+      $identitySchemas.Count -ne 1 -or $identitySchemas[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
+      $dshSchemas.Count -ne 1 -or $dshSchemas[0] -cnotmatch '^DSH_DB_SCHEMA=dsh_test_[a-z0-9_]+$' -or
+      $identityBindings.Count -ne 1 -or $identityBindings[0].HostIp -cne '127.0.0.1' -or
+      $identityBindings[0].HostPort -cne '3201' -or
+      $dshBindings.Count -ne 1 -or $dshBindings[0].HostIp -cne '127.0.0.1' -or
+      $dshBindings[0].HostPort -cne '3202') {
+    throw 'DOCKER_CART_WEB_OWNERS_NOT_ISOLATED'
+  }
+  Assert-OwnerEndpoint 'http://127.0.0.1:3201/v1/sessions/current' 401
+  Assert-OwnerEndpoint 'http://127.0.0.1:3202/v1/carts/store-a' 401
+  Assert-OwnerEndpoint 'http://127.0.0.1:3202/v1/carts/store-a/merchandise-estimate?expectedVersion=0' 401
+  $env:BTHWANI_ISOLATED_TEST_MODE='true'
+  $env:BTHWANI_DOCKER_CART_WEB_PREVIEW='1'
+  $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+  $env:CUSTOMER_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
+  Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN -ErrorAction SilentlyContinue
+}
+if ($EnableDockerCustomerAndroidIdentityPreview) {
+  if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+    throw 'DOCKER_ANDROID_IDENTITY_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
+  }
+  Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1')
+  $identity = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0 -or $identity.Count -ne 1) { throw 'DOCKER_ANDROID_IDENTITY_OWNER_UNAVAILABLE' }
+  $owner = $identity[0]
+  $ownerEnv = @($owner.Config.Env)
+  $schema = @($ownerEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
+  $binding = @($owner.HostConfig.PortBindings.'3302/tcp')
+  if ($owner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+      $owner.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
+      $owner.State.Health.Status -cne 'healthy' -or
+      $ownerEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
+      $ownerEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
+      $ownerEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
+      $schema.Count -ne 1 -or $schema[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
+      $binding.Count -ne 1 -or $binding[0].HostIp -cne '127.0.0.1' -or $binding[0].HostPort -cne '3201') {
+    throw 'DOCKER_ANDROID_IDENTITY_OWNER_NOT_ISOLATED'
+  }
+  Assert-OwnerEndpoint 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
+  Assert-OwnerEndpoint 'http://127.0.0.1:3201/v1/sessions/current' 401
+  $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+  $env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW='1'
+  # Android reaches this Metro server through the standard Surface USB tunnel.
+  $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18101'
+}
+if ($App -in @('merchant','captain')) {
+  # Native admission requires verified isolated owners.
+  if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
+    throw 'DOCKER_ROLE_ANDROID_IDENTITY_REQUIRES_VERIFIED_LENOVO'
+  }
+  Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-dsh-1')
+  $identity = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
+  $dsh = @(& docker inspect bthwani-refoundation-dsh-1 | ConvertFrom-Json)
+  if ($LASTEXITCODE -ne 0 -or $identity.Count -ne 1 -or $dsh.Count -ne 1) {
+    throw 'DOCKER_ROLE_ANDROID_OWNER_UNAVAILABLE'
+  }
+  $identityOwner = $identity[0]
+  $dshOwner = $dsh[0]
+  $identityEnv = @($identityOwner.Config.Env)
+  $dshEnv = @($dshOwner.Config.Env)
+  $identitySchemas = @($identityEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
+  $dshSchemas = @($dshEnv | Where-Object { $_ -clike 'DSH_DB_SCHEMA=*' })
+  $identityPorts = @($identityOwner.HostConfig.PortBindings.'3302/tcp')
+  $dshPorts = @($dshOwner.HostConfig.PortBindings.'8080/tcp')
+  if ($identityOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+      $identityOwner.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
+      $identityOwner.State.Health.Status -cne 'healthy' -or
+      $identityEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
+      $identityEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
+      $identityEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
+      $identitySchemas.Count -ne 1 -or $identitySchemas[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
+      $identityPorts.Count -ne 1 -or $identityPorts[0].HostIp -cne '127.0.0.1' -or
+      $identityPorts[0].HostPort -cne '3201' -or
+      $dshOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
+      $dshOwner.Config.Labels.'com.bthwani.capability' -cne 'customer-store-catalog' -or
+      $dshOwner.State.Health.Status -cne 'healthy' -or
+      $dshSchemas.Count -ne 1 -or $dshSchemas[0] -cnotmatch '^DSH_DB_SCHEMA=dsh_test_[a-z0-9_]+$' -or
+      $dshPorts.Count -ne 1 -or $dshPorts[0].HostIp -cne '127.0.0.1' -or
+      $dshPorts[0].HostPort -cne '3202') {
+    throw 'DOCKER_ROLE_ANDROID_OWNERS_NOT_ISOLATED'
+  }
+  Assert-OwnerEndpoint 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
+  Assert-OwnerEndpoint 'http://127.0.0.1:3201/v1/sessions/current' 401
+  if ($App -eq 'merchant') {
+    Assert-OwnerEndpoint 'http://127.0.0.1:3202/v1/stores/mine' 401
+    $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+    $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
+    $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18102'
+  } else {
+    # An isolated DSH may be running without the opt-in Captain routes.
+    # Keep the public Expo shell available, but never present a Native
+    # admission path until the authoritative standing read denies 401.
+    $captainStandingReady=$false
+    try {
+      Assert-OwnerEndpoint 'http://127.0.0.1:3202/v1/captains/me/standing' 401
+      $captainStandingReady=$true
+    } catch {
+      if ($_.Exception.Message -notmatch '^OWNER_ENDPOINT_NOT_READY uri=http://127[.]0[.]0[.]1:3202/v1/captains/me/standing status=404$') {
+        throw
       }
+      Write-Warning 'CAPTAIN_NATIVE_ADMISSION_DISABLED_DSH_ROUTE_NOT_ACTIVATED'
     }
-    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
-    Assert-SurfaceCapability 'http://127.0.0.1:3203/v1/wallets/me' 401
-    $env:BTHWANI_SURFACE_PREVIEW='0'
-    $env:BTHWANI_ISOLATED_TEST_MODE='true'
-    $env:BTHWANI_DOCKER_WALLET_WEB_PREVIEW='1'
-    $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
-    $env:CUSTOMER_SYNTHETIC_WLT_ORIGIN='http://127.0.0.1:3203'
-    $env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
-    Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
-  }
-  if ($EnableDockerCartWebPreview) {
-    if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
-      throw 'DOCKER_CART_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
-    }
-    Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-dsh-1')
-    $identityOwner = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
-    if ($LASTEXITCODE -ne 0 -or $identityOwner.Count -ne 1) {
-      throw 'DOCKER_CART_WEB_IDENTITY_OWNER_UNAVAILABLE'
-    }
-    $dshOwner = @(& docker inspect bthwani-refoundation-dsh-1 | ConvertFrom-Json)
-    if ($LASTEXITCODE -ne 0 -or $dshOwner.Count -ne 1) {
-      throw 'DOCKER_CART_WEB_DSH_OWNER_UNAVAILABLE'
-    }
-    $identityRuntime = $identityOwner[0]
-    $dshRuntime = $dshOwner[0]
-    $identityEnv = @($identityRuntime.Config.Env)
-    $dshEnv = @($dshRuntime.Config.Env)
-    $identitySchemas = @($identityEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
-    $dshSchemas = @($dshEnv | Where-Object { $_ -clike 'DSH_DB_SCHEMA=*' })
-    $identityBindings = @($identityRuntime.HostConfig.PortBindings.'3302/tcp')
-    $dshBindings = @($dshRuntime.HostConfig.PortBindings.'8080/tcp')
-    if ($identityRuntime.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
-        $identityRuntime.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
-        $identityRuntime.State.Health.Status -cne 'healthy' -or
-        $dshRuntime.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
-        $dshRuntime.Config.Labels.'com.bthwani.capability' -cne 'customer-store-catalog' -or
-        $dshRuntime.State.Health.Status -cne 'healthy' -or
-        $identityEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
-        $identityEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
-        $identityEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
-        $dshEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
-        $dshEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
-        $dshEnv -cnotcontains 'DSH_ENABLE_ISOLATED_CUSTOMER_CART=true' -or
-        $dshEnv -cnotcontains 'DSH_IDENTITY_VERIFIER_URL=https://identity:3343' -or
-        $dshEnv -cnotcontains 'DSH_LISTEN_ADDR=0.0.0.0:8080' -or
-        $identitySchemas.Count -ne 1 -or $identitySchemas[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
-        $dshSchemas.Count -ne 1 -or $dshSchemas[0] -cnotmatch '^DSH_DB_SCHEMA=dsh_test_[a-z0-9_]+$' -or
-        $identityBindings.Count -ne 1 -or $identityBindings[0].HostIp -cne '127.0.0.1' -or
-        $identityBindings[0].HostPort -cne '3201' -or
-        $dshBindings.Count -ne 1 -or $dshBindings[0].HostIp -cne '127.0.0.1' -or
-        $dshBindings[0].HostPort -cne '3202') {
-      throw 'DOCKER_CART_WEB_OWNERS_NOT_ISOLATED'
-    }
-    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
-    Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/carts/store-a' 401
-    Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/carts/store-a/merchandise-estimate?expectedVersion=0' 401
-    $env:BTHWANI_SURFACE_PREVIEW='0'
-    $env:BTHWANI_ISOLATED_TEST_MODE='true'
-    $env:BTHWANI_DOCKER_CART_WEB_PREVIEW='1'
-    $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
-    $env:CUSTOMER_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
-    $env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
-    Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN -ErrorAction SilentlyContinue
-  }
-  if ($EnableDockerCustomerAndroidIdentityPreview) {
-    if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
-      throw 'DOCKER_ANDROID_IDENTITY_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
-    }
-    Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1')
-    $identity = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
-    if ($LASTEXITCODE -ne 0 -or $identity.Count -ne 1) { throw 'DOCKER_ANDROID_IDENTITY_OWNER_UNAVAILABLE' }
-    $owner = $identity[0]
-    $ownerEnv = @($owner.Config.Env)
-    $schema = @($ownerEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
-    $binding = @($owner.HostConfig.PortBindings.'3302/tcp')
-    if ($owner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
-        $owner.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
-        $owner.State.Health.Status -cne 'healthy' -or
-        $ownerEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
-        $ownerEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
-        $ownerEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
-        $schema.Count -ne 1 -or $schema[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
-        $binding.Count -ne 1 -or $binding[0].HostIp -cne '127.0.0.1' -or $binding[0].HostPort -cne '3201') {
-      throw 'DOCKER_ANDROID_IDENTITY_OWNER_NOT_ISOLATED'
-    }
-    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
-    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
-    $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
-    $env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW='1'
-    # Android reaches this Metro server through the standard Surface USB tunnel.
-    $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18101'
-  }
-  if ($App -in @('merchant','captain')) {
-    # Native admission requires verified isolated owners.
-    if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
-      throw 'DOCKER_ROLE_ANDROID_IDENTITY_REQUIRES_VERIFIED_LENOVO'
-    }
-    Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-dsh-1')
-    $identity = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
-    $dsh = @(& docker inspect bthwani-refoundation-dsh-1 | ConvertFrom-Json)
-    if ($LASTEXITCODE -ne 0 -or $identity.Count -ne 1 -or $dsh.Count -ne 1) {
-      throw 'DOCKER_ROLE_ANDROID_OWNER_UNAVAILABLE'
-    }
-    $identityOwner = $identity[0]
-    $dshOwner = $dsh[0]
-    $identityEnv = @($identityOwner.Config.Env)
-    $dshEnv = @($dshOwner.Config.Env)
-    $identitySchemas = @($identityEnv | Where-Object { $_ -clike 'IDENTITY_DB_SCHEMA=*' })
-    $dshSchemas = @($dshEnv | Where-Object { $_ -clike 'DSH_DB_SCHEMA=*' })
-    $identityPorts = @($identityOwner.HostConfig.PortBindings.'3302/tcp')
-    $dshPorts = @($dshOwner.HostConfig.PortBindings.'8080/tcp')
-    if ($identityOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
-        $identityOwner.Config.Labels.'com.bthwani.capability' -cne 'identity-synthetic-session-verifier' -or
-        $identityOwner.State.Health.Status -cne 'healthy' -or
-        $identityEnv -cnotcontains 'BTHWANI_ISOLATED_TEST_MODE=true' -or
-        $identityEnv -cnotcontains 'BTHWANI_ISOLATED_CONTAINER_MODE=true' -or
-        $identityEnv -cnotcontains 'IDENTITY_SYNTHETIC_PHONE_AUTH=true' -or
-        $identitySchemas.Count -ne 1 -or $identitySchemas[0] -cnotmatch '^IDENTITY_DB_SCHEMA=identity_test_[a-z0-9_]+$' -or
-        $identityPorts.Count -ne 1 -or $identityPorts[0].HostIp -cne '127.0.0.1' -or
-        $identityPorts[0].HostPort -cne '3201' -or
-        $dshOwner.Config.Labels.'com.bthwani.environment' -cne 'refoundation' -or
-        $dshOwner.Config.Labels.'com.bthwani.capability' -cne 'customer-store-catalog' -or
-        $dshOwner.State.Health.Status -cne 'healthy' -or
-        $dshSchemas.Count -ne 1 -or $dshSchemas[0] -cnotmatch '^DSH_DB_SCHEMA=dsh_test_[a-z0-9_]+$' -or
-        $dshPorts.Count -ne 1 -or $dshPorts[0].HostIp -cne '127.0.0.1' -or
-        $dshPorts[0].HostPort -cne '3202') {
-      throw 'DOCKER_ROLE_ANDROID_OWNERS_NOT_ISOLATED'
-    }
-    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/customer-auth/phone-challenges' 405
-    Assert-SurfaceCapability 'http://127.0.0.1:3201/v1/sessions/current' 401
-    if ($App -eq 'merchant') {
-      Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/stores/mine' 401
-      $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
-      $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
-      $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18102'
+    # Identity's isolated phone entry is independent of DSH standing.
+    # Keep the real phone form visible but do not permit code consumption
+    # or workspace admission until DSH's owner endpoint is available.
+    $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
+    if ($captainStandingReady) {
+      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
     } else {
-      # An isolated DSH may be running without the opt-in Captain routes.
-      # Keep the public Expo shell available, but never present a Native
-      # admission path until the authoritative standing read denies 401.
-      $captainStandingReady=$false
-      try {
-        Assert-SurfaceCapability 'http://127.0.0.1:3202/v1/captains/me/standing' 401
-        $captainStandingReady=$true
-      } catch {
-        if ($_.Exception.Message -notmatch '^SURFACE_PREVIEW_CAPABILITY_NOT_READY uri=http://127[.]0[.]0[.]1:3202/v1/captains/me/standing status=404$') {
-          throw
-        }
-        Write-Warning 'CAPTAIN_NATIVE_ADMISSION_DISABLED_DSH_ROUTE_NOT_ACTIVATED'
-      }
-      # Identity's isolated phone entry is independent of DSH standing.
-      # Keep the real phone form visible but do not permit code consumption
-      # or workspace admission until DSH's owner endpoint is available.
-      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
-      if ($captainStandingReady) {
-        $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
-      } else {
-        Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN -ErrorAction SilentlyContinue
-      }
-      $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18103'
+      Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN -ErrorAction SilentlyContinue
     }
+    $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18103'
   }
 }
-if ($UseDisposableOperatorSandbox -and (!$EnableIsolatedOperatorPasskeyPreview -or $Surface -or $App -ne 'control-panel')) {
+if ($UseDisposableOperatorSandbox -and (!$EnableIsolatedOperatorPasskeyPreview -or $App -ne 'control-panel')) {
   throw 'OPERATOR_SANDBOX_REQUIRES_LENOVO_CONTROL_PASSKEY_PREVIEW'
 }
 if ($EnableIsolatedRootBootstrap -and !$EnableIsolatedOperatorPasskeyPreview) {
@@ -377,7 +360,7 @@ if ($App -eq 'control-panel') {
   $env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='false'
 }
 # Starting the app never creates or recovers an Operator.
-if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
+if ($EnableIsolatedOperatorPasskeyPreview) {
   if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
     throw 'OPERATOR_PASSKEY_PREVIEW_REQUIRES_VERIFIED_LENOVO_OPERATOR'
   }
@@ -440,9 +423,9 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
       $bindings[0].HostPort -cne "$identityPort") {
     throw 'OPERATOR_PASSKEY_IDENTITY_PORT_NOT_LOOPBACK'
   }
-  Assert-SurfaceCapability "$identityOrigin/v1/operators/passkey/authentication/options" 405
-  Assert-SurfaceCapability "$identityOrigin/v1/operators/passkey/authentication" 405
-  Assert-SurfaceCapability "$identityOrigin/v1/sessions/current" 401
+  Assert-OwnerEndpoint "$identityOrigin/v1/operators/passkey/authentication/options" 405
+  Assert-OwnerEndpoint "$identityOrigin/v1/operators/passkey/authentication" 405
+  Assert-OwnerEndpoint "$identityOrigin/v1/sessions/current" 401
   $env:BTHWANI_ISOLATED_TEST_MODE='true'
   $env:OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF='true'
   $env:OPERATOR_PASSKEY_BROWSER_ORIGIN='http://localhost:13000'
@@ -464,7 +447,7 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
           @($wltOwner.Config.Env) -cnotcontains 'WLT_TEST_IDENTITY_ORIGIN=http://identity:3302' -or
           $wltBindings.Count -ne 1 -or $wltBindings[0].HostIp -cne '127.0.0.1' -or
           $wltBindings[0].HostPort -cne '3203') { throw 'WLT_OWNER_NOT_VERIFIED' }
-      Assert-SurfaceCapability 'http://127.0.0.1:3203/v1/operators/stores/capability-probe/commercial-agreement' 401
+      Assert-OwnerEndpoint 'http://127.0.0.1:3203/v1/operators/stores/capability-probe/commercial-agreement' 401
       $env:OPERATOR_FINANCE_WLT_ORIGIN='http://127.0.0.1:3203'
     } catch {
       Write-Warning 'OPERATOR_FINANCE_WLT_READBACK_UNAVAILABLE'
@@ -474,8 +457,8 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
     if ($ownerEnv -cnotcontains 'IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP=true') {
       throw 'OPERATOR_ROOT_BOOTSTRAP_OWNER_NOT_OPTED_IN'
     }
-    Assert-SurfaceCapability "$identityOrigin/v1/operators/passkey/bootstrap/options" 405
-    Assert-SurfaceCapability "$identityOrigin/v1/operators/passkey/bootstrap" 405
+    Assert-OwnerEndpoint "$identityOrigin/v1/operators/passkey/bootstrap/options" 405
+    Assert-OwnerEndpoint "$identityOrigin/v1/operators/passkey/bootstrap" 405
     $env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'
   }
 }
@@ -490,86 +473,14 @@ if (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyCon
     Select-Object -First 1) {
   throw ('REFOUNDATION_APP_PORT_IN_USE app=' + $App + ' port=' + $port)
 }
-if ($Surface) {
-  if ($IdentityPort -eq $DshPort -or $ports.Values -contains $IdentityPort -or $ports.Values -contains $DshPort) {
-    throw 'SURFACE_PREVIEW_PORT_COLLISION'
-  }
-  foreach ($ownerPort in @($IdentityPort,$DshPort)) {
-    $listener=Get-NetTCPConnection -State Listen -LocalPort $ownerPort -LocalAddress '127.0.0.1' -ErrorAction SilentlyContinue |
-      Select-Object -First 1
-    if (!$listener -or (Get-Process -Id $listener.OwningProcess).ProcessName -match '^(ssh|plink)$') {
-      throw ('SURFACE_PREVIEW_OWNER_NOT_LOCAL port=' + $ownerPort)
-    }
-    $health=Invoke-RestMethod -Uri ("http://127.0.0.1:$ownerPort/health") -TimeoutSec 3 -MaximumRedirection 0
-    if ($health.status -ne 'ok') { throw ('SURFACE_PREVIEW_OWNER_NOT_READY port=' + $ownerPort) }
-  }
-  $identity="http://127.0.0.1:$IdentityPort"
-  $dsh="http://127.0.0.1:$DshPort"
-  if ($EnableAndroidWalletPreview) {
-    if ($WltPort -eq $IdentityPort -or $WltPort -eq $DshPort -or
-        $ports.Values -contains $WltPort) { throw 'SURFACE_PREVIEW_WLT_PORT_COLLISION' }
-    $wltListener=Get-NetTCPConnection -State Listen -LocalPort $WltPort -LocalAddress '127.0.0.1' -ErrorAction SilentlyContinue |
-      Select-Object -First 1
-    if (!$wltListener -or (Get-Process -Id $wltListener.OwningProcess).ProcessName -match '^(ssh|plink)$') {
-      throw 'SURFACE_PREVIEW_WLT_OWNER_NOT_LOCAL'
-    }
-    Assert-SurfaceCapability "http://127.0.0.1:$WltPort/v1/wallets/me" 401
-  }
-  if ($App -eq 'control-panel') {
-    Assert-SurfaceCapability "$identity/v1/operators/passkey/authentication/options" 405
-    if ($EnableIsolatedRootBootstrap) {
-      Assert-SurfaceCapability "$identity/v1/operators/passkey/bootstrap/options" 405
-      Assert-SurfaceCapability "$identity/v1/operators/passkey/bootstrap" 405
-      Assert-SurfaceCapability "$identity/v1/sessions/current" 401
-      $env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='true'
-    }
-  } else {
-    Assert-SurfaceCapability "$identity/v1/customer-auth/phone-challenges" 405
-  }
-  if ($App -eq 'captain') { Assert-SurfaceCapability "$dsh/v1/captains/me/standing" 401 }
-  if ($App -eq 'merchant') { Assert-SurfaceCapability "$dsh/v1/stores/mine" 401 }
-  $env:BTHWANI_SURFACE_PREVIEW='1'
-  $env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='1'
-  switch ($App) {
-    'customer' {
-      $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN=$identity
-      $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN=$identity
-      $env:EXPO_PUBLIC_DSH_API_URL=$dsh
-      if ($EnableAndroidWalletPreview) {
-        # 10.0.2.2 maps from Android emulator back to Surface loopback.
-        # The Web BFF retains 127.0.0.1 and an unrelated HttpOnly cookie.
-        $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN="http://10.0.2.2:$IdentityPort"
-        $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN="http://10.0.2.2:$WltPort"
-        $env:CUSTOMER_SYNTHETIC_WLT_ORIGIN="http://127.0.0.1:$WltPort"
-      }
-    }
-    'merchant' {
-      $env:MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=$identity
-      $env:MERCHANT_SYNTHETIC_DSH_ORIGIN=$dsh
-      $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=$identity
-      $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN=$dsh
-    }
-    'captain' {
-      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN=$identity
-      $env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN=$dsh
-    }
-    'control-panel' {
-      $env:BTHWANI_ISOLATED_TEST_MODE='true'
-      $env:OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF='true'
-      $env:OPERATOR_PASSKEY_BROWSER_ORIGIN="http://localhost:$port"
-      $env:OPERATOR_PASSKEY_IDENTITY_ORIGIN=$identity
-      $env:OPERATOR_POLICY_DSH_ORIGIN=$dsh
-    }
-  }
-}
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
 $env:PATH="$nodeDir;$env:PATH"
 $env:NODE_OPTIONS='--dns-result-order=ipv4first'
 # Expo Web/Metro exhausted Node's default ~4 GiB V8 heap on Lenovo (exit 134).
 # The ceiling is per process and does not reserve memory. Restrict the larger
 # heap to the two Web Metro owners on a verified >=24 GiB development host;
-# never alter Surface previews, Captain Metro or the Next.js Operator process.
-if (!$Surface -and $App -in @('customer','merchant')) {
+# never alter Captain Metro or the Next.js Operator process.
+if ($App -in @('customer','merchant')) {
   if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
     throw 'WEB_METRO_HEAP_REQUIRES_VERIFIED_LENOVO'
   }
@@ -587,7 +498,7 @@ $log=Join-Path $logs ('refoundation-'+$App+'.out.log')
 $err=Join-Path $logs ('refoundation-'+$App+'.err.log')
 if ($App -eq 'control-panel') {
   $cli=Join-Path $dir 'node_modules\next\dist\bin\next'
-  $bind=if ($Surface) {'localhost'} else {'127.0.0.1'}
+  $bind='127.0.0.1'
   $args=@('dev','-H',$bind,'-p',"$port")
 } else {
   $cli=Join-Path $dir 'node_modules\expo\bin\cli'
@@ -595,18 +506,9 @@ if ($App -eq 'control-panel') {
   if ($App -in @('customer','merchant')) { $args+=@('--web') }
   $args+=@('--dev-client','--localhost','--port',"$port")
 }
-if ($Surface -and $App -ne 'control-panel') { $args+=@('--max-workers','2') }
 if(!(Test-Path -LiteralPath $cli)){throw ('REFOUNDATION_APP_CLI_MISSING '+$cli)}
-"START refoundation app=$App source=$source port=$port surface=$Surface" | Out-File -FilePath $log -Append -Encoding utf8
-# PowerShell 5.1 wraps native stderr warnings as NativeCommandError when
-# ErrorActionPreference=Stop. Keep stderr logged, but judge failure by exit code.
-if (!$Surface) {
-  $nativeExit=Invoke-OwnedAppProcess -Executable $node -Arguments ([string[]](@($cli)+$args)) -WorkingDirectory $dir -Stdout $log -Stderr $err
-} else {
-  $ErrorActionPreference='Continue'
-  & $node $cli @args 1>> $log 2>> $err
-  $nativeExit=$LASTEXITCODE
-}
+"START refoundation app=$App source=$source port=$port" | Out-File -FilePath $log -Append -Encoding utf8
+$nativeExit=Invoke-OwnedAppProcess -Executable $node -Arguments ([string[]](@($cli)+$args)) -WorkingDirectory $dir -Stdout $log -Stderr $err
 if($nativeExit -ne 0){
   "EXIT app=$App code=$nativeExit" | Out-File -FilePath $err -Append -Encoding utf8
 }

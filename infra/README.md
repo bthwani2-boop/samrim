@@ -194,7 +194,7 @@ separately tested before the new healthcheck can be claimed live. No
 production authentication or production permission administration is authorized by this isolated verifier.
 Synthetic phone, WebAuthn and Operator permission capabilities remain explicitly admitted and independently verified.
 
-Application launch, Surface previews and Lenovo Web/Android admission are documented in the [canonical development guide](../tools/dev/README-Lenovo-Development.md).
+Application launch, isolated verification and Lenovo Web/Android admission are documented in the [canonical development guide](../tools/dev/README-Lenovo-Development.md).
 
 ## Non-invasive runtime attestation and disposable PostgreSQL proof
 

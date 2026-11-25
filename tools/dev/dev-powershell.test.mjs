@@ -551,15 +551,17 @@ test("normal startup starts only seven already provisioned services through nati
   assert.doesNotMatch(start[1],/\x27(?:up|run|build|bootstrap)\x27/);
 });
 
-test("canonical application task layout survives Windows PowerShell 5.1 JSON array semantics", {skip:process.platform!=="win32"},()=>{
+test("canonical application task layout is identical in PowerShell 7 and Windows PowerShell 5.1", {skip:process.platform!=="win32"},()=>{
   const source=readFileSync(scriptPath,"utf8");
   const block=source.match(/\$remoteSpecs = @\(foreach[\s\S]*?\n\$remoteAppSpecs = [^\n]+/);
   assert.ok(block);
   const layoutPath=path.join(path.dirname(scriptPath),"ports.json").replaceAll("\x27","\x27\x27");
-  const command=["$ErrorActionPreference=\x27Stop\x27","$developmentPorts=Get-Content -LiteralPath \x27"+layoutPath+"\x27 -Raw|ConvertFrom-Json",block[0],"& ([scriptblock]::Create($remoteAppSpecs))", "$specs=@(); . ([scriptblock]::Create($remoteAppSpecs))", "ConvertTo-Json -InputObject @($specs) -Compress"].join("; ");
-  const result=spawnSync("powershell.exe",["-NoProfile","-NonInteractive","-Command",command],{encoding:"utf8",windowsHide:true,timeout:15000});
-  assert.equal(result.status,0,result.stderr||result.stdout);
-  const records=JSON.parse(result.stdout.trim());
-  assert.deepEqual(records.map(r=>r.A),["customer","merchant","captain","control-panel"]);
-  assert.deepEqual(records.map(r=>r.P),[28111,28112,28113,23010]);
+  const command=["$ErrorActionPreference=\x27Stop\x27","$developmentPorts=Get-Content -LiteralPath \x27"+layoutPath+"\x27 -Raw|ConvertFrom-Json",block[0],"$specs=@(); . ([scriptblock]::Create($remoteAppSpecs))", "ConvertTo-Json -InputObject @($specs) -Compress"].join("; ");
+  for(const shell of ["pwsh.exe","powershell.exe"]){
+    const result=spawnSync(shell,["-NoProfile","-NonInteractive","-Command",command],{encoding:"utf8",windowsHide:true,timeout:15000});
+    assert.equal(result.status,0,shell+": "+(result.stderr||result.stdout));
+    const records=JSON.parse(result.stdout.trim());
+    assert.deepEqual(records.map(r=>r.A),["customer","merchant","captain","control-panel"]);
+    assert.deepEqual(records.map(r=>r.P),[28111,28112,28113,23010]);
+  }
 });
