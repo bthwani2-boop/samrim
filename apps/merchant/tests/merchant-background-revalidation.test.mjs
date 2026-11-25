@@ -289,6 +289,43 @@ test("Merchant timed-out Identity revalidation requires recovery instead of star
 });
 
 
+test("a noncooperative Merchant Identity read releases retry at its deadline and cannot disturb its successor", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  workspace(h.render()).props.children.props.onRefresh();
+  const stale = h.nextAdmission();
+  h.timeoutAction();
+  assert.equal(stale.signal.aborted, true);
+  const tree = h.render();
+  assert.equal(visible(workspace(tree)), false);
+  assert.equal(findNode(tree, node => node.type === "TextInput" &&
+    node.props.accessibilityLabel === "رقم هاتف الاختبار"), undefined);
+  const retry = findNode(tree, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق من الجلسة");
+  assert.ok(retry);
+  assert.equal(retry.props.disabled, false, "deadline must release retry without waiting for stale read");
+  retry.props.onPress();
+  const fresh = h.nextAdmission();
+  stale.resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+  const pendingRetry = findNode(h.render(), node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق من الجلسة");
+  assert.equal(pendingRetry.props.disabled, true, "late completion must not clear successor busy state");
+  fresh.resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  assert.equal(visible(workspace(h.render())), true);
+});
+
 test("DSH denial conceals Merchant workspace without prompting for a new OTP", async () => {
   const h = harness();
   h.mount();

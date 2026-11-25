@@ -52,7 +52,13 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
     setMessage("");
     const timeout = setTimeout(() => {
       controller.abort();
-      if (action.current === controller) onTimeout?.();
+      if (action.current === controller && onTimeout) {
+        // Revalidation may stall even after abort. Release only its UI slot;
+        // the session transport retains ownership of pending credential work.
+        onTimeout();
+        action.current = null;
+        setBusy(false);
+      }
     }, 20000);
     try {
       await operation(controller.signal);
