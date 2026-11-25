@@ -77,6 +77,26 @@ export function issuedSessionFrom(value: unknown): IssuedRoleSession {
   }
   return v as unknown as IssuedRoleSession;
 }
+// AbortSignal must settle the caller even if a native fetch bridge ignores it.
+// The race observes late rejection as well as success; only the active result is used.
+async function awaitOwnerOperation<T>(start: () => Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (!signal) return start();
+  if (signal.aborted) throw new Error("Owner operation cancelled");
+  let onAbort: (() => void) | undefined;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(new Error("Owner operation cancelled"));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(() => {
+      if (signal.aborted) throw new Error("Owner operation cancelled");
+      return start();
+    }), cancelled]);
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function ownerRequest(
   baseUrl: string, path: string, bearer: string | null,
   method: "GET" | "POST" | "PATCH" | "DELETE", expectedStatus: number, signal?: AbortSignal,
@@ -88,7 +108,7 @@ export async function ownerRequest(
   const url = new URL(path, root);
   let response: Response;
   try {
-    response = await fetch(url.toString(), {
+    response = await awaitOwnerOperation(() => fetch(url.toString(), {
       method, redirect: "error", credentials: "omit", cache: "no-store",
       signal: signal ?? null,
       headers: {
@@ -97,7 +117,7 @@ export async function ownerRequest(
         ...(payload === undefined ? {} : { "Content-Type": "application/json" }),
       },
       ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
-    });
+    }), signal);
   } catch {
     throw new IdentityClientError(0, mutation ? "OPERATION_RESULT_UNKNOWN" :
       signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_NETWORK_UNAVAILABLE");
@@ -109,7 +129,7 @@ export async function ownerRequest(
       "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
     let code = "OWNER_REQUEST_FAILED";
     try {
-      const err: unknown = await response.json();
+      const err: unknown = await awaitOwnerOperation(() => response.json(), signal);
       if (err && typeof err === "object" && "error" in err &&
         typeof err.error === "string" && allowedErrors.has(err.error)) {
         code = err.error;
@@ -131,12 +151,14 @@ export async function ownerRequest(
     throw new IdentityClientError(502, mutation ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
   try {
-    const text = await response.text();
+    const text = await awaitOwnerOperation(() => response.text(), signal);
     if (text.length > 16384) throw new Error("Identity response too large");
     const body: unknown = JSON.parse(text);
     if (signal?.aborted) throw new Error("Stale response");
     return body;
   } catch {
+    if (signal?.aborted) throw new IdentityClientError(0, mutation ?
+      "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
     throw new IdentityClientError(502, mutation ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   }
 }

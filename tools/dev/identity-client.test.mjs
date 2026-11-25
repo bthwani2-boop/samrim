@@ -3,17 +3,17 @@ import { test } from "node:test";
 import {
   admitCurrentCustomerAsMerchant,
   changeOriginalOperatorPermission,
+  establishPersistentIdentitySession,
   IdentityClientError,
   issueCustomerPhoneChallenge,
   normalizeYemeniMobile,
+  readPersistentIdentityRole,
   readVerifiedIdentitySession,
   resumeCurrentCustomerMerchantSession,
   reviewOriginalOperatorPermissions,
-  revokeVerifiedIdentitySession,
-  establishPersistentIdentitySession,
-  rotatePersistentIdentitySession,
-  readPersistentIdentityRole,
   revokePersistentIdentitySession,
+  revokeVerifiedIdentitySession,
+  rotatePersistentIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "../../services/identity/clients/index.ts";
 
@@ -455,5 +455,79 @@ test("background cancellation cannot discard an acknowledged persistent rotation
       }), 0, "OWNER_RESPONSE_STALE");
     assert.deepEqual(committed, rotated);
     assert.equal(rotations, 1);
+  });
+});
+
+async function expectPromptCancellation(call, started, controller, code, release) {
+  let outcome;
+  const pending = call().then(value => { outcome = { value }; }, error => { outcome = { error }; });
+  await started;
+  controller.abort();
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    assert.ok(outcome, "aborted Identity request must settle before the bridge");
+    assert.ok(outcome.error instanceof IdentityClientError);
+    assert.equal(outcome.error.status, 0);
+    assert.equal(outcome.error.code, code);
+  } finally { release(); await pending; }
+}
+
+test("non-cooperative Identity headers cancel and allow a successor", async () => {
+  const controller = new AbortController(), stalled = Promise.withResolvers(), started = Promise.withResolvers();
+  let calls = 0;
+  await withFetch((_url, opts) => {
+    calls++;
+    if (calls === 1) { assert.equal(opts.signal, controller.signal); started.resolve(); return stalled.promise; }
+    return Promise.resolve(response(principal()));
+  }, async () => {
+    await expectPromptCancellation(() => readPersistentIdentityRole(origin, bearer, rotatedBearer, "customer",
+      controller.signal, async () => assert.fail("must not rotate"), async () => assert.fail("must not commit")),
+      started.promise, controller, "OWNER_RESPONSE_STALE", () => stalled.resolve(response(principal())));
+    assert.equal((await readVerifiedIdentitySession(origin, bearer)).actorId, "actor-123");
+    assert.equal(calls, 2);
+  });
+});
+
+for (const status of [200, 401]) {
+  test(`non-cooperative Identity body cancellation: ${status}`, async () => {
+    const controller = new AbortController(), stalled = Promise.withResolvers(), started = Promise.withResolvers();
+    const res = response(status === 200 ? principal() : { error: "UNAUTHORIZED" }, status);
+    const read = () => { started.resolve(); return stalled.promise; };
+    if (status === 200) res.text = read; else res.json = read;
+    await withFetch(async () => res, () => expectPromptCancellation(
+      () => readVerifiedIdentitySession(origin, bearer, controller.signal), started.promise, controller,
+      "OWNER_RESPONSE_STALE", () => stalled.reject(new Error("late bridge failure"))));
+  });
+}
+
+test("non-cooperative Identity POST remains unknown and is not retried", async () => {
+  const controller = new AbortController(), stalled = Promise.withResolvers(), started = Promise.withResolvers();
+  let calls = 0;
+  await withFetch((_url, opts) => { calls++; assert.equal(opts.method, "POST"); started.resolve(); return stalled.promise; },
+    () => expectPromptCancellation(() => admitCurrentCustomerAsMerchant(origin, bearer, controller.signal),
+      started.promise, controller, "OPERATION_RESULT_UNKNOWN", () => stalled.resolve(response(admission(), 201))));
+  assert.equal(calls, 1);
+});
+
+test("pre-cancelled Identity operations never dispatch", async () => {
+  const controller = new AbortController(); controller.abort();
+  let calls = 0;
+  await withFetch(async () => { calls++; return response(principal()); }, async () => {
+    await rejectsAs(() => readVerifiedIdentitySession(origin, bearer, controller.signal), 0, "OWNER_RESPONSE_STALE");
+    await rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer, controller.signal), 0, "OPERATION_RESULT_UNKNOWN");
+    assert.equal(calls, 0);
+  });
+});
+
+test("Identity removes its abort listeners after completion", async () => {
+  const signal = new AbortController().signal;
+  const add = signal.addEventListener.bind(signal), remove = signal.removeEventListener.bind(signal);
+  const active = new Set();
+  signal.addEventListener = (name, fn, opts) => { if (name === "abort") active.add(fn); add(name, fn, opts); };
+  signal.removeEventListener = (name, fn, opts) => { if (name === "abort") active.delete(fn); remove(name, fn, opts); };
+  const expected = principal();
+  await withFetch(async () => response(expected), async () => {
+    assert.deepEqual(await readVerifiedIdentitySession(origin, bearer, signal), expected);
+    assert.equal(active.size, 0);
   });
 });
