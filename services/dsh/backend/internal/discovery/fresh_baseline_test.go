@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -258,4 +259,160 @@ func (seedTestIdentity) ResolveCurrentSession(_ context.Context, token string) (
 }
 func (seedTestIdentity) RequireOperatorPermission(context.Context, string, string, string) error {
 	return storeavailability.ErrForbidden
+}
+
+func TestOwnerBackedPersistentSyntheticRegistrationSeed(t *testing.T) {
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || os.Getenv("DSH_TEST_SEED_BOUNDARY") != "true" {
+		t.Skip("only in the explicit disposable DSH boundary fixture")
+	}
+	if os.Getenv("REF_POSTGRES_DB") != "bthwani_refoundation" || os.Getenv("REF_POSTGRES_USER") != "bthwani_ci" || os.Getenv("DSH_DB_HOST") != "127.0.0.1" {
+		t.Fatal("refusing a non-CI seed fixture")
+	}
+	t.Setenv("REF_POSTGRES_DB", "bthwani_dsh_dev")
+	t.Setenv("DSH_BOOTSTRAP_SYNTHETIC_REGISTRATION", "false")
+	db, err := OpenFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	ctx, cancel := context.WithTimeout(t.Context(), 40*time.Second)
+	defer cancel()
+	owner, err := New(db, fmt.Sprintf("dsh_test_registration_seed_%x", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = owner.BootstrapFresh(ctx, filepath.Join("..", "..", "..", "database", "schema")); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		"INSERT INTO " + owner.Schema + ".service_cities(id,active,timezone_name) VALUES('sanaa',true,'Asia/Aden')",
+		"INSERT INTO " + owner.Schema + ".verticals(id,active) VALUES('grocery',true)",
+		"INSERT INTO " + owner.Schema + ".stores(id,owner_actor_id,city_id,vertical_id,relation,name,published) VALUES('retained-store','retained-merchant','sanaa','grocery','DIRECT','Retained store',true)",
+		"GRANT USAGE ON SCHEMA " + owner.Schema + " TO bthwani_dsh_runtime",
+		"GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA " + owner.Schema + " TO bthwani_dsh_runtime",
+	} {
+		if _, err = db.ExecContext(ctx, q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	grants, err := storeavailability.NewPostgresStoreGrants(db, owner.Schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	registrar, err := storeavailability.NewMerchantStoreRegistrar(seedTestIdentity{}, grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = registrar.ApplyRegistrationPolicy(ctx, "operator-retained-proof", storeavailability.StoreRegistrationPolicyChange{
+		CityID: "sanaa", Relation: "DIRECT", OperationID: "retained-disabled-direct",
+		ExpectedVersion: 0, Enabled: false, TermsVersion: "retained-terms-v1",
+		TermsText: "Retained operator terms", Reason: "Retained disabled decision",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runSeed := func(schema, user, database, isolated string) error {
+		cmd := exec.CommandContext(ctx, "/agent02/bin/dsh", "-mode", "isolated-seed", "-seed-profile", "development-registration")
+		cmd.Env = append(os.Environ(), "REF_POSTGRES_USER="+user, "REF_POSTGRES_DB="+database,
+			"DSH_DB_SCHEMA="+schema, "BTHWANI_ISOLATED_TEST_MODE="+isolated)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("seed command: %w: %s", err, output)
+		}
+		if !strings.Contains(string(output), "DSH_ISOLATED_OWNER_IMPORT_PASS") {
+			return errors.New("seed did not report success")
+		}
+		return nil
+	}
+	// Real CLI and two dedicated-runtime connections race for the same missing
+	// policy. Both complete without overwriting the existing disabled policy.
+	results := make(chan error, 2)
+	for range 2 {
+		go func() { results <- runSeed(owner.Schema, "bthwani_dsh_runtime", "bthwani_dsh_dev", "true") }()
+	}
+	for range 2 {
+		if err = <-results; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = runSeed(owner.Schema, "bthwani_dsh_runtime", "bthwani_dsh_dev", "true"); err != nil {
+		t.Fatalf("repeat: %v", err)
+	}
+	for _, tc := range []struct{ user, database, isolated string }{
+		{"bthwani_ci", "bthwani_dsh_dev", "true"},
+		{"bthwani_dsh_runtime", "bthwani_dsh_dev", "false"},
+		{"bthwani_ci", "bthwani_refoundation", "true"},
+	} {
+		if err = runSeed(owner.Schema, tc.user, tc.database, tc.isolated); err == nil {
+			t.Fatalf("unsafe seed accepted: %+v", tc)
+		}
+	}
+	direct, err := registrar.ReadRegistrationPolicy(ctx, "sanaa", "DIRECT")
+	if err != nil || direct.Version != 1 || direct.Enabled || direct.TermsVersion != "retained-terms-v1" || direct.TermsText != "Retained operator terms" || direct.ChangedByActor != "operator-retained-proof" {
+		t.Fatalf("operator policy changed: %+v %v", direct, err)
+	}
+	market, err := registrar.ReadRegistrationPolicy(ctx, "sanaa", "MARKETPLACE")
+	if err != nil || market.Version != 1 || !market.Enabled || market.TermsVersion != "dev-merchant-terms-v1" {
+		t.Fatalf("missing policy not seeded: %+v %v", market, err)
+	}
+	q := "SELECT (SELECT count(*) FROM " + owner.Schema + ".store_registration_policies),(SELECT count(*) FROM " + owner.Schema + ".store_registration_terms),(SELECT count(*) FROM " + owner.Schema + ".store_registration_policy_commands),(SELECT count(*) FROM " + owner.Schema + ".stores WHERE id='retained-store' AND owner_actor_id='retained-merchant' AND name='Retained store' AND published),(SELECT count(*) FROM " + owner.Schema + ".stores),(SELECT count(*) FROM " + owner.Schema + ".store_registration_commands)"
+	var policies, terms, audit, retained, stores, registrations int
+	if err = db.QueryRowContext(ctx, q).Scan(&policies, &terms, &audit, &retained, &stores, &registrations); err != nil {
+		t.Fatal(err)
+	}
+	if policies != 2 || terms != 2 || audit != 2 || retained != 1 || stores != 1 || registrations != 0 {
+		t.Fatalf("durable missing-only result: policies=%d terms=%d audit=%d retained=%d stores=%d registrations=%d", policies, terms, audit, retained, stores, registrations)
+	}
+	// A missing row with existing policy-command history is corruption, not a
+	// first-time seed. Never recreate it or add a new command.
+	if _, err = db.ExecContext(ctx, "DELETE FROM "+owner.Schema+".store_registration_policies WHERE relation='MARKETPLACE' AND city_id='sanaa'"); err != nil {
+		t.Fatal(err)
+	}
+	if err = runSeed(owner.Schema, "bthwani_dsh_runtime", "bthwani_dsh_dev", "true"); err == nil {
+		t.Fatal("seed recreated a policy with existing history")
+	}
+	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM "+owner.Schema+".store_registration_policies").Scan(&policies); err != nil || policies != 1 {
+		t.Fatalf("inconsistent policy was recreated: %d %v", policies, err)
+	}
+	t.Run("all-missing", func(t *testing.T) {
+		empty, err := New(db, fmt.Sprintf("dsh_test_registration_empty_%x", time.Now().UnixNano()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err = empty.BootstrapFresh(ctx, filepath.Join("..", "..", "..", "database", "schema")); err != nil {
+			t.Fatal(err)
+		}
+		execSQL := func(query string) {
+			t.Helper()
+			if _, err := db.ExecContext(ctx, query); err != nil {
+				t.Fatal(err)
+			}
+		}
+		schema := empty.Schema
+		execSQL("GRANT USAGE ON SCHEMA " + schema + " TO bthwani_dsh_runtime")
+		execSQL("GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA " + schema + " TO bthwani_dsh_runtime")
+		execSQL("INSERT INTO " + schema + ".service_cities(id,active,timezone_name) VALUES('sanaa',true,'Asia/Aden')")
+		execSQL("INSERT INTO " + schema + ".verticals(id,active) VALUES('grocery',false)")
+		check := func(wantPolicies, wantTerms, wantAudit int) {
+			t.Helper()
+			var policies, terms, audit int
+			q := "SELECT (SELECT count(*) FROM " + schema + ".store_registration_policies WHERE enabled AND version=1),(SELECT count(*) FROM " + schema + ".store_registration_terms),(SELECT count(*) FROM " + schema + ".store_registration_policy_commands)"
+			if err := db.QueryRowContext(ctx, q).Scan(&policies, &terms, &audit); err != nil || policies != wantPolicies || terms != wantTerms || audit != wantAudit {
+				t.Fatalf("all-missing seed readback: %d:%d:%d, err=%v", policies, terms, audit, err)
+			}
+		}
+		seed := func() error { return runSeed(schema, "bthwani_dsh_runtime", "bthwani_dsh_dev", "true") }
+		if err := seed(); err == nil {
+			t.Fatal("inactive reference data admitted")
+		}
+		check(0, 0, 0)
+		execSQL("UPDATE " + schema + ".verticals SET active=true WHERE id='grocery'")
+		for range 2 {
+			if err := seed(); err != nil {
+				t.Fatal(err)
+			}
+			check(2, 1, 2)
+		}
+	})
+	t.Log("PERSISTENT_SYNTHETIC_REGISTRATION_SEED_PASS")
 }

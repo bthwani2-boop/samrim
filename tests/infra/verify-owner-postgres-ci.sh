@@ -162,7 +162,10 @@ start_stage bthwani-ci-discovery-pg bthwani_ci bthwani_refoundation
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -c "CREATE DATABASE bthwani_dsh_boundary_fixture OWNER bthwani_ci;" \
   -c "CREATE DATABASE bthwani_dsh_dev OWNER bthwani_ci;" \
-  -c "CREATE DATABASE bthwani_refoundation_identity_restore OWNER bthwani_ci;"
+  -c "CREATE DATABASE bthwani_refoundation_identity_restore OWNER bthwani_ci;" \
+  -c "CREATE ROLE bthwani_dsh_runtime LOGIN NOINHERIT PASSWORD '$ci_password';" \
+  -c "REVOKE ALL ON DATABASE bthwani_dsh_dev FROM PUBLIC;" \
+  -c "GRANT CONNECT ON DATABASE bthwani_dsh_dev TO bthwani_dsh_runtime;"
 for boundary_db in bthwani_dsh_boundary_fixture bthwani_dsh_dev; do
   docker exec "$current" sh -c \
     "set -e; for f in /agent02/services/dsh/database/schema/*.sql; do sed 's/__SCHEMA__/dsh_test_seed_boundary/g' \"\$f\" | psql -X -q -v ON_ERROR_STOP=1 -U bthwani_ci -d $boundary_db; done"
@@ -182,7 +185,7 @@ restored_identity="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bt
 [[ "$restored_identity" == '1' ]] || { echo "Identity restore must produce one isolated schema" >&2; exit 1; }
 echo 'IDENTITY_DISPOSABLE_RESTORE_PASS real_postgresql=true active_and_revoked_authorizations=true'
 run_test "$current" /agent02/services/dsh/backend/internal/discovery \
-  /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped|TestOwnerBootstrapFresh)' 'TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedDiscoveryDemoSeed,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedCaptainStandingFreshBaseline,TestOwnerBootstrapFreshRollsBackIncompleteSchema,TestOwnerBootstrapFreshInstallsRealDSHAndRefusesReapply,TestOwnerBackedActiveCityDirectory,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch,TestOwnerBackedOfferEstimate' \
+  /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped|TestOwnerBootstrapFresh)' 'TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedDiscoveryDemoSeed,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedCaptainStandingFreshBaseline,TestOwnerBootstrapFreshRollsBackIncompleteSchema,TestOwnerBootstrapFreshInstallsRealDSHAndRefusesReapply,TestOwnerBackedActiveCityDirectory,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch,TestOwnerBackedOfferEstimate,TestOwnerBackedPersistentSyntheticRegistrationSeed' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_TEST_SEED_BOUNDARY=true \
   -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD="$ci_password" \
   -e REF_POSTGRES_DB=bthwani_refoundation \

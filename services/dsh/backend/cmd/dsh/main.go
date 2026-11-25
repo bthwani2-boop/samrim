@@ -163,9 +163,9 @@ func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch
 
 func main() {
 	mode := flag.String("mode", "serve", "serve, bootstrap, isolated-seed, or verify-development-db")
-	seedProfile := flag.String("seed-profile", "regression", "isolated-seed profile: regression or discovery-demo")
+	seedProfile := flag.String("seed-profile", "regression", "isolated-seed profile: regression, discovery-demo, or development-registration")
 	flag.Parse()
-	if *seedProfile != "regression" && (*mode != "isolated-seed" || *seedProfile != "discovery-demo") {
+	if *seedProfile != "regression" && (*mode != "isolated-seed" || (*seedProfile != "discovery-demo" && *seedProfile != "development-registration")) {
 		log.Fatal("invalid seed profile for mode")
 	}
 	schema := os.Getenv("DSH_DB_SCHEMA")
@@ -203,9 +203,12 @@ func main() {
 		}
 		fmt.Println("DSH_FRESH_BASELINE_PASS schema=" + schema)
 	case "isolated-seed":
-		if *seedProfile == "discovery-demo" {
+		switch *seedProfile {
+		case "discovery-demo":
 			err = owner.ImportSyntheticDemo(ctx)
-		} else {
+		case "development-registration":
+			err = storeavailability.SeedDevelopmentRegistration(ctx, db, schema)
+		default:
 			err = owner.ImportSynthetic(ctx)
 		}
 		if err != nil {
