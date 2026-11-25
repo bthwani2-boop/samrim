@@ -55,18 +55,19 @@ test("DSH SQL migrations invalidate their owner backend without affecting Identi
   assert.ok(!projects.has("identity-backend"));
 });
 
-test("WLT contracts and isolated SQL affect the owner and its Customer and Operator consumers", () => {
+test("WLT contracts and isolated SQL affect the owner and its Customer, Merchant and Operator consumers", () => {
   for (const file of [
     "services/wlt/contracts/openapi/paths/wallets.yaml",
+    "services/wlt/contracts/openapi/paths/commercial-agreements.yaml",
     "services/wlt/database/migrations/999_future_wallet_test.sql",
     "services/wlt/database/schema/00_ledger.sql",
     "services/wlt/database/sandbox/20_test_reversal.sql",
   ]) {
     const projects = affected(file);
-    for (const name of ["@bthwani/wlt", "wlt-backend", "@bthwani/customer", "@bthwani/control-panel"]) {
+    for (const name of ["@bthwani/wlt", "wlt-backend", "@bthwani/customer", "@bthwani/merchant", "@bthwani/control-panel"]) {
       assert.ok(projects.has(name), `${file} must affect ${name}`);
     }
-    for (const name of ["identity-backend", "dsh-backend", "@bthwani/merchant", "@bthwani/captain"]) {
+    for (const name of ["identity-backend", "dsh-backend", "@bthwani/captain"]) {
       assert.ok(!projects.has(name), `${file} should not affect ${name}`);
     }
   }
