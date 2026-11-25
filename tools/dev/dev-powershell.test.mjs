@@ -167,6 +167,20 @@ test("Docker status verifies present WLT without misreporting it as another proj
   assert.doesNotMatch(launcher, /WLT.*outside this Docker project/);
 });
 
+test("strict Docker verification always includes WLT and configuration validates every owner", () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  const commands = launcher.slice(launcher.indexOf("function Invoke-ScopedDocker {"), launcher.indexOf("function Wait-AppStatus {"));
+  const verify = commands.slice(commands.indexOf("    'verify' {"));
+  assert.match(verify, /verify-runtime-provenance\.mjs'\) '--context' \$dockerContext '--include-wlt'/);
+  assert.match(verify, /Assert-Ok \(\$LASTEXITCODE -eq 0\)/);
+  const config = commands.slice(commands.indexOf("    'config' {"), commands.indexOf("    'reconcile' {"));
+  for (const input of ["$baseCompose", "$appCompose", "compose.identity.yaml", "compose.merchant.yaml", "compose.captain.yaml", "compose.wlt.yaml"]) {
+    assert.ok(config.includes(input), "missing Compose input " + input);
+  }
+  for (const profile of ["implementation", "identity-verifier", "wlt-reader"]) assert.ok(config.includes("'" + profile + "'"));
+  assert.match(config, /'config','--quiet'/);
+  assert.doesNotMatch(config, /'up'|'run'|'bootstrap'/);
+});
 test("read-only diagnostics do not monopolize the global app lifecycle mutex", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   assert.match(launcher, /\$readOnlyOperation\s*=/);

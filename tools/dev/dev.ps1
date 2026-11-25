@@ -1111,8 +1111,8 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker images         # refoundation image tags'
   Write-Output 'pnpm dev docker volumes        # project-scoped volumes'
   Write-Output 'pnpm dev docker networks       # project-scoped networks'
-  Write-Output 'pnpm dev docker config         # validate base and DSH Compose safely'
-  Write-Output 'pnpm dev docker verify         # strict DSH + Identity live image provenance'
+  Write-Output 'pnpm dev docker config         # validate the complete admitted Compose configuration safely'
+  Write-Output 'pnpm dev docker verify         # strict DSH + Identity + WLT live image provenance'
   Write-Output 'pnpm dev docker reconcile      # check existing runtime and owner source drift'
   Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
   Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit Captain overlay activation'
@@ -1151,8 +1151,12 @@ function Invoke-ScopedDocker {
     }
     'config' {
       Assert-Compose
-      $null=Invoke-DockerCli -argsList @('compose','--env-file',$baseEnv,'-f',$baseCompose,'-f',$appCompose,'--profile','implementation','config','--quiet')
-      Say 'COMPOSE_CONFIG' 'PASS base and DSH overlay; no SQL execution or secret output'
+      $files=@($baseCompose,$appCompose,(Join-Path $repo 'infra\compose.identity.yaml'),(Join-Path $repo 'infra\compose.merchant.yaml'),(Join-Path $repo 'infra\compose.captain.yaml'),(Join-Path $repo 'infra\compose.wlt.yaml'))
+      $argsList=@('compose','--env-file',$baseEnv)
+      foreach($file in $files){$argsList+=@('-f',$file)}
+      $argsList+=@('--profile','implementation','--profile','identity-verifier','--profile','wlt-reader','config','--quiet')
+      $null=Invoke-DockerCli -argsList $argsList
+      Say 'COMPOSE_CONFIG' 'PASS complete owner and capability configuration; no SQL execution or secret output'
     }
     'reconcile' {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain overlay requires explicit -Apply'
@@ -1178,7 +1182,7 @@ function Invoke-ScopedDocker {
       } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }
     'verify' {
-      & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext
+      & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--include-wlt'
       Assert-Ok ($LASTEXITCODE -eq 0) 'Docker owner provenance incomplete; inspect pnpm dev docker status'
       Say 'DOCKER_PROVENANCE' 'PASS'
     }
