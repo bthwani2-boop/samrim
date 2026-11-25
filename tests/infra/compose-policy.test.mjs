@@ -82,6 +82,7 @@ test("a normal implementation profile can never implicitly bootstrap SQL", () =>
   assert.equal(bootstrap.environment.REF_POSTGRES_PASSWORD, "${REF_DSH_BOOTSTRAP_PASSWORD:-}");
   assert.equal(service.environment.DSH_IDENTITY_VERIFIER_URL, "${REF_DSH_IDENTITY_VERIFIER_URL:-}");
   assert.equal(service.environment.DSH_ENABLE_ISOLATED_CUSTOMER_CART, "${REF_DSH_ENABLE_ISOLATED_CUSTOMER_CART:-false}");
+  assert.equal(service.environment.DSH_ENABLE_ISOLATED_EMPLOYEES, "${REF_DSH_ENABLE_ISOLATED_EMPLOYEES:-false}", "Employee directory must require explicit isolated opt-in");
   assert.equal(service.environment.BTHWANI_ISOLATED_TEST_MODE, "true");
   assert.equal(service.environment.BTHWANI_ISOLATED_CONTAINER_MODE, "true");
 });

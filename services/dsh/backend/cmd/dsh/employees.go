@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net"
 	"net/http"
 	"os"
 
@@ -16,10 +15,10 @@ func isolatedEmployeeHandler(ctx context.Context, db *sql.DB, schema, listen str
 	if os.Getenv("DSH_ENABLE_ISOLATED_EMPLOYEES") != "true" {
 		return existing, nil
 	}
-	host, _, err := net.SplitHostPort(listen)
+	// Use the same verified DSH transport as protected Store availability.
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
-		err != nil || (host != "127.0.0.1" && host != "::1") {
-		return nil, errors.New("employee directory requires loopback and explicit DSH isolation")
+		!isolatedDSHSchema.MatchString(schema) || !isolatedAvailabilityTransport(listen, os.Getenv) {
+		return nil, errors.New("employee directory requires isolated DSH schema and verified transport")
 	}
 	identity, err := identityaccess.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
 	if err != nil {
