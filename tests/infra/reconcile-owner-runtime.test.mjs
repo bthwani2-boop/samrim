@@ -363,3 +363,45 @@ test("source host guard accepts only the actual Surface and canonical checkout",
   assert.throws(() => assertSourceHost("BTHWANI-DOCKER", undefined, checkout), /Wrong source host/);
   assert.throws(() => assertSourceHost("BTHWANI", undefined, "D:\\other"), /Wrong source host/);
 });
+
+test("database copy archives use an exclusive private directory and exact cleanup", async () => {
+  const { createPrivateCopyArchive, removePrivateCopyArchive } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  for (const owner of ["dsh", "identity"]) {
+    const calls = [];
+    const directory = "/tmp/bthwani-" + owner + "-copy-aB12Cd34Ef";
+    const run = args => { calls.push(args); return args[2] === "mktemp" ? directory : ""; };
+    const archive = createPrivateCopyArchive("verified-pg", owner, run);
+    assert.deepEqual(archive, { directory, file: directory + "/archive.dump" });
+    assert.deepEqual(calls, [["exec", "verified-pg", "mktemp", "-d", "/tmp/bthwani-" + owner + "-copy-XXXXXXXXXX"]]);
+    removePrivateCopyArchive("verified-pg", archive, run);
+    assert.deepEqual(calls.slice(1), [
+      ["exec", "verified-pg", "rm", "-f", "--", archive.file],
+      ["exec", "verified-pg", "rmdir", "--", directory],
+    ]);
+  }
+  assert.throws(() => createPrivateCopyArchive("verified-pg", "unknown", () => { throw new Error("must not execute"); }), /owner/);
+  assert.throws(() => createPrivateCopyArchive("verified-pg", "dsh", () => "/tmp/other"), /archive directory/);
+  assert.throws(() => removePrivateCopyArchive("verified-pg", { directory: "/tmp/other", file: "/tmp/other/archive.dump" }, () => { throw new Error("must not execute"); }), /archive directory/);
+  assert.throws(() => removePrivateCopyArchive("verified-pg", { directory: "/tmp/bthwani-dsh-copy-aB12Cd34Ef", file: "/tmp/other" }, () => { throw new Error("must not execute"); }), /archive directory/);
+});
+
+test("private copy archive has actual Unix owner-only directory permissions", { skip: process.platform === "win32" }, async () => {
+  const { createPrivateCopyArchive, removePrivateCopyArchive } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const { spawnSync } = await import("node:child_process");
+  const { existsSync, statSync, writeFileSync } = await import("node:fs");
+  const run = args => {
+    assert.deepEqual(args.slice(0, 2), ["exec", "fixture"]);
+    const result = spawnSync(args[2], args.slice(3), { encoding: "utf8", timeout: 5000 });
+    assert.equal(result.status, 0, result.error?.message || result.stderr);
+    return result.stdout.trim();
+  };
+  const archive = createPrivateCopyArchive("fixture", "identity", run);
+  try {
+    assert.equal(statSync(archive.directory).mode & 0o777, 0o700);
+    writeFileSync(archive.file, "synthetic archive");
+    assert.equal(existsSync(archive.file), true);
+  } finally {
+    removePrivateCopyArchive("fixture", archive, run);
+  }
+  assert.equal(existsSync(archive.directory), false);
+});

@@ -82,6 +82,26 @@ function run(executable, args, env = {}, timeout = 30000, input) {
 }
 const git = args => run(gitExe, args);
 const docker = (args, env, timeout, input) => run("docker", ["--context", context, ...args], env, timeout, input);
+function privateCopyDirectory(directory, owner) {
+  const prefix = "/tmp/bthwani-" + owner + "-copy-";
+  return ["dsh", "identity"].includes(owner) && typeof directory === "string" &&
+    directory.startsWith(prefix) && directory.length === prefix.length + 10 &&
+    /^[A-Za-z0-9]+$/.test(directory.slice(prefix.length));
+}
+// Allocate an exclusive directory inside the already verified PostgreSQL
+// container. mktemp -d creates it with owner-only permissions.
+export function createPrivateCopyArchive(pg, owner, execute = docker) {
+  if (!["dsh", "identity"].includes(owner)) throw new Error("Invalid copy archive owner");
+  const directory = execute(["exec", pg, "mktemp", "-d", "/tmp/bthwani-" + owner + "-copy-XXXXXXXXXX"]);
+  if (!privateCopyDirectory(directory, owner)) throw new Error("Unexpected copy archive directory");
+  return { directory, file: directory + "/archive.dump" };
+}
+export function removePrivateCopyArchive(pg, archive, execute = docker) {
+  if (!archive || !["dsh", "identity"].some(owner => privateCopyDirectory(archive.directory, owner)) ||
+      archive.file !== archive.directory + "/archive.dump") throw new Error("Unexpected copy archive directory");
+  execute(["exec", pg, "rm", "-f", "--", archive.file]);
+  execute(["exec", pg, "rmdir", "--", archive.directory]);
+}
 function composeArgs(activeFiles) {
   return ["compose", "--env-file", "infra/.env",
     ...activeFiles.flatMap(f => ["-f", "infra/" + f]),
@@ -272,12 +292,13 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
   }
   // The archive remains within the verified PostgreSQL container. Only new
   // fixture data is replaced; original rows are never altered.
-  const archive="/tmp/bthwani-dsh-copy-"+randomBytes(12).toString("hex")+".dump";
+  let archive=null;
   try {
     if(!resume){
-    docker(["exec",pg,"pg_dump","-Fc","--data-only","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive],{},45000);
+    archive=createPrivateCopyArchive(pg,"dsh");
+    docker(["exec",pg,"pg_dump","-Fc","--data-only","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive.file],{},45000);
     sql(db,"DELETE FROM "+schema+".public_revision WHERE singleton;");
-    docker(["exec",pg,"pg_restore","--data-only","--no-owner","--no-acl","--exit-on-error","--single-transaction","-U",admin,"-d",db,archive],{},45000);
+    docker(["exec",pg,"pg_restore","--data-only","--no-owner","--no-acl","--exit-on-error","--single-transaction","-U",admin,"-d",db,archive.file],{},45000);
     } else {
       const candidateProof=sql(db,"BEGIN READ ONLY; SELECT (SELECT pg_get_userbyid(datdba)='"+owner+"' FROM pg_database WHERE datname=current_database()) AND NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()) AND (SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"') AND NOT(rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit) AND rolcanlogin=(rolname='"+runtime+"'))=2 AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member IN (SELECT oid FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"'))) AND (SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname NOT IN ('information_schema','public'))=1 AND EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='"+schema+"' AND pg_get_userbyid(nspowner)='"+owner+"') AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND pg_get_userbyid(c.relowner)<>'"+owner+"'); COMMIT;");
       const candidateTables=sql(db,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='r' ORDER BY 1; COMMIT;").split(/\r?\n/);
@@ -297,7 +318,7 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
     console.log("DSH_DEDICATED_DATABASE_PREPARED HEAD="+head+" TABLES="+tables.length+" DATA_PARITY=PASS RUNTIME_LOGIN=PASS CUTOVER=NOT_RUN");
   } finally {
     // Exact owned archive only; never remove a retained database.
-    try {if(!resume)docker(["exec",pg,"rm","-f","--",archive]);}catch{console.error("DSH_COPY_ARCHIVE_CLEANUP_BLOCKED");}
+    try {if(archive)removePrivateCopyArchive(pg,archive);}catch{console.error("DSH_COPY_ARCHIVE_CLEANUP_BLOCKED");}
   }
 }
 
@@ -493,12 +514,13 @@ function relocateIdentity(state,env,head,files,resume=false) {
     if(ownership!=="t" || !equal(list(db,"r"),tables) || !equal(list(db,"S"),sequences))
       throw new Error("Existing unpublished Identity candidate ownership differs; preserve and review");
   }
-  const archive="/tmp/bthwani-identity-copy-"+randomBytes(12).toString("hex")+".dump";
+  let archive=null;
   let stopped=false,applyStarted=false;
   try {
     // Build and validate configuration before pausing the sole legacy writer.
     if(!clean() || inspect("identity").Id!==old.Id || inspect("dsh").Id!==state.dsh.Id || inspect("wlt").Id!==state.wlt.Id)
       throw new Error("Identity source or peer runtime changed");
+    if(!resume)archive=createPrivateCopyArchive(pg,"identity");
     console.log("IDENTITY_HANDOFF_STARTED HEAD="+head);
     docker(["stop","--time","20",old.Id],{},45000); stopped=true;
     if(inspect("identity",false).State.Running)throw new Error("Legacy Identity writer still running");
@@ -510,8 +532,8 @@ function relocateIdentity(state,env,head,files,resume=false) {
     const constraintProof=sql(oldDb,constraintSql);
     const originalSchema=schemaDump(oldDb);
     if(!resume){
-      docker(["exec",pg,"pg_dump","-Fc","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive],{},45000);
-      docker(["exec",pg,"pg_restore","--no-owner","--no-acl","--role="+owner,"--exit-on-error","--single-transaction","-U",admin,"-d",db,archive],{},60000);
+      docker(["exec",pg,"pg_dump","-Fc","--no-owner","--no-acl","--schema="+schema,"-U",admin,"-d",oldDb,"-f",archive.file],{},45000);
+      docker(["exec",pg,"pg_restore","--no-owner","--no-acl","--role="+owner,"--exit-on-error","--single-transaction","-U",admin,"-d",db,archive.file],{},60000);
     }
     if(schemaDump(db)!==originalSchema || !constraintProof || sql(db,constraintSql)!==constraintProof || !equal(list(db,"r"),tables) || !equal(list(db,"S"),sequences))throw new Error("Identity restored schema differs");
     assertHandoffParity(before,sql(db,fp),tables.length+sequences.length);
@@ -547,7 +569,7 @@ function relocateIdentity(state,env,head,files,resume=false) {
     }
     throw new Error("IDENTITY_HANDOFF_REVIEW_REQUIRED "+e.message);
   } finally {
-    try {if(!resume)docker(["exec",pg,"rm","-f","--",archive]);}catch{console.error("IDENTITY_COPY_ARCHIVE_CLEANUP_BLOCKED");}
+    try {if(archive)removePrivateCopyArchive(pg,archive);}catch{console.error("IDENTITY_COPY_ARCHIVE_CLEANUP_BLOCKED");}
   }
 }
 
