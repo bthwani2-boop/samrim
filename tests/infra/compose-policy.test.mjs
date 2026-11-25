@@ -165,3 +165,38 @@ test("the disposable Operator stack remains separate from shared owner state", (
   assert.equal(stack.services.identity.read_only, true);
   assert.ok(stack.services.identity.cap_drop.includes("ALL"));
 });
+
+test("the public environment example covers every Compose input without granting credentials or activating capabilities", () => {
+  const files = ["compose.yaml", "compose.dsh.yaml", "compose.identity.yaml", "compose.merchant.yaml", "compose.captain.yaml", "compose.wlt.yaml"];
+  const required = new Set();
+  const defaults = new Map();
+  for (const file of files) {
+    const source = readFileSync(path.join(infra, file), "utf8");
+    for (const [, key, op, value] of source.matchAll(/\$\{(REF_[A-Z0-9_]+):([-?])([^}]*)\}/g)) {
+      if (op === "?") required.add(key);
+      else {
+        assert.ok(!defaults.has(key) || defaults.get(key) === value, "inconsistent default: " + key);
+        defaults.set(key, value);
+      }
+    }
+  }
+  const entries = readFileSync(path.join(infra, ".env.example"), "utf8").split(/\r?\n/).filter(line => line && !line.startsWith("#"));
+  const keys = new Set();
+  const values = new Map();
+  for (const line of entries) {
+    const match = /^(REF_[A-Z0-9_]+)=(.*)$/.exec(line);
+    assert.ok(match, "invalid template entry");
+    assert.ok(!keys.has(match[1]), "duplicate template key: " + match[1]);
+    keys.add(match[1]);
+    values.set(match[1], match[2]);
+  }
+  assert.deepEqual([...keys].sort(), [...new Set([...required, ...defaults.keys()])].sort());
+  for (const [key, value] of defaults) assert.equal(values.get(key), value, key);
+  for (const key of required) {
+    if (key === "REF_POSTGRES_USER") assert.equal(values.get(key), "bthwani_refoundation_admin");
+    else if (key === "REF_POSTGRES_DB") assert.equal(values.get(key), "bthwani_refoundation");
+    else if (key === "REF_DSH_RUNTIME_DATABASE") assert.equal(values.get(key), "bthwani_dsh_dev");
+    else if (key === "REF_DSH_RUNTIME_USER") assert.equal(values.get(key), "bthwani_dsh_runtime");
+    else assert.equal(values.get(key), "", "must be explicitly provisioned: " + key);
+  }
+});

@@ -420,6 +420,7 @@ security/ledger evidence; no placeholder service counts as readiness.
 `tools/dev/setup-env.mjs` is an idempotent local secret generator that never prints values.
 An actual ignored `infra/.env` is required before starting; a missing or blocked
 secret store is a BLOCKED state, **not** permission to use old credentials.
+The tracked [.env.example](.env.example) enumerates every Compose interpolation input. It deliberately leaves required private credentials and unprovisioned owner settings blank; the base generator creates only base infrastructure credentials. Owner admission, database grants, image selection and TLS volumes still require their existing verified preparation. Do not copy the example over an existing .env or treat its defaults as proof of runtime admission.
 Necessary non-secret names are `REF_POSTGRES_USER`, `REF_POSTGRES_DB`,
 `REF_MEDIA_BUCKET` and port variables; secrets are `REF_POSTGRES_PASSWORD`,
 `REF_MEDIA_ACCESS_KEY` and `REF_MEDIA_SECRET_KEY`.
