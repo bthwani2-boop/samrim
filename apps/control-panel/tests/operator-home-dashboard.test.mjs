@@ -3,13 +3,18 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { workspaceGroupLabels, workspaceRegistry } from "../src/features/navigation/workspace-registry.ts";
 import { operatorPermissions, visibleWorkspaceEntries } from "../src/features/session/operator-permissions.ts";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
-const source = readFileSync(resolve(import.meta.dirname, "../src/features/workspace/home-dashboard.tsx"), "utf8");
-const compiled = transformSync(source, {
+// Retain uncached fixture modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+const source = resolve(import.meta.dirname, "../src/features/workspace/home-dashboard.tsx");
+const compiled = transformSync(readFileSync(source, "utf8"), {
+  filename: source, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
@@ -17,7 +22,6 @@ const compiled = transformSync(source, {
 const jsx = (type, props) => ({ type, props: props ?? {} });
 
 function render(grants, originalOperator = false) {
-  const mod = { exports: {} };
   const dependencies = {
     "../navigation/workspace-registry": { workspaceRegistry, workspaceGroupLabels },
     "../operator-shell/operator-icon": { OperatorIcon: ({ name }) => jsx("OperatorIcon", { name }) },
@@ -26,10 +30,8 @@ function render(grants, originalOperator = false) {
     "../session/operator-permissions": { visibleWorkspaceEntries },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(dependencies, name), `unexpected dependency ${name}`);
-    return dependencies[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(compiled, source, dependencies);
+  loadedModules.push(mod);
   return mod.exports.default({ grants, originalOperator, marketOverview: jsx("section", { "aria-label": "مراجعة بيانات DSH" }) });
 }
 function walk(node, predicate, out = []) {
@@ -96,13 +98,14 @@ test("empty grant state does not claim verified permissions", () => {
   assert.equal(walk(render([]), node => node.type === "strong" && node.props.children === "مؤكدة").length, 0);
 });
 
-const pageCompiled = transformSync(readFileSync(resolve(import.meta.dirname, "../app/(workspace)/workspace/page.tsx"), "utf8"), {
+const pageSource = resolve(import.meta.dirname, "../app/(workspace)/workspace/page.tsx");
+const pageCompiled = transformSync(readFileSync(pageSource, "utf8"), {
+  filename: pageSource, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022", transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
 }).code;
 
 async function renderPage(access, original) {
-  const mod = { exports: {} };
   const dependencies = {
     "../../../src/features/workspace/home-dashboard": () => null,
     "../../../src/features/workspace/public-market-overview": () => null,
@@ -112,10 +115,8 @@ async function renderPage(access, original) {
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   };
-  new Function("require", "module", "exports", pageCompiled)(name => {
-    assert.ok(Object.hasOwn(dependencies, name), `unexpected dependency ${name}`);
-    return dependencies[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(pageCompiled, pageSource, dependencies);
+  loadedModules.push(mod);
   return mod.exports.default({ searchParams: Promise.resolve({}) });
 }
 
