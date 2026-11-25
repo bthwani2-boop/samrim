@@ -40,6 +40,8 @@
   "ignoreBinaries": [
     // Expo and the npm "build" script are invoked by GitHub Actions.
     "expo",
-    "build"
+    "build",
+    // PowerShell is an installed OS toolchain, not an npm package.
+    "^pwsh(?:\\.exe)?$"
   ]
 }

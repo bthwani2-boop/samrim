@@ -33,6 +33,10 @@ secrets, applied migrations and media are never copied or changed.
 
 ## Owner overlays and explicit capabilities
 
+The six Compose files describe one project, not six separate stacks. The normal admitted DSH/Identity configuration is loaded in this order: compose.yaml, compose.dsh.yaml, compose.identity.yaml, compose.merchant.yaml, followed by compose.captain.yaml only when Captain admission is enabled. WLT uses compose.yaml plus compose.wlt.yaml in the same project. The capability overlays add explicit flags and private TLS material; they do not create application containers. Keep independent base-only and owner-only startup available for fresh isolated verification. Do not merge capability overlays, change owner ports, or expose TLS listeners simply to reduce file count.
+
+For an already running environment, use the existing pnpm dev docker status / verify and guarded reconciliation commands. The reduced Compose examples below are first-start examples for their respective isolated configuration, not replacement commands for an active full overlay group. A replacement must preserve the complete effective configuration, source provenance, data and peer ownership.
+
 `compose.dsh.yaml` now contains **only** the two real DSH owner roles:
 `dsh` and opt-in `dsh-bootstrap`. Placeholder Identity services and nonexistent bootstrap commands are not
 advertised as runnable. The separate `compose.wlt.yaml` now defines the real
@@ -70,8 +74,8 @@ After a source commit, build via
 `docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml -f infra/compose.wlt.yaml --profile wlt-reader config --quiet`.
 Start only the admitted reader using the matching Compose invocation plus
 `up -d --no-deps wlt`. Port `3203` is bound to Lenovo loopback only;
-WLT uses the existing synthetic Identity verifier `identity:3302` and a
-separate read-only WLT database identity. A successful Docker healthcheck
+WLT uses the existing synthetic Identity verifier `identity:3302` and the configured DSH peer origin `http://dsh:8080`, with a
+separate read-only WLT database identity. The peer origin does not grant payment-mutation authority. A successful Docker healthcheck
 indicates only local process/SQL readiness; financial delivery, checkout and
 production remain disabled. The local executable loopback reader remains
 supported independently.
@@ -314,8 +318,8 @@ access the funding journal.
 
 The DSH container is an **isolated development owner** with explicitly admitted capabilities: non-root runtime,
 read-only container root filesystem, all Linux capabilities dropped, no new
-privileges and loopback-only published port. It has no application volume mounts,
-and its PostgreSQL dependency is on the project's internal bridge network.
+privileges and loopback-only published port. It has no application-data or host bind mounts; admitted TLS overlays mount only the dedicated read-only trust and certificate volumes.
+Its PostgreSQL dependency is on the project's internal bridge network.
 
 **Deployment boundary:** The isolated DSH runtime uses its dedicated
 `bthwani_dsh_runtime` login and separate non-login owner. Before any protected
@@ -371,9 +375,7 @@ Expo and Next development processes are native, not Docker containers.
 
 ## What counts as proof
 
-Check Docker project labels, two new volume names and two project-scoped networks, the
-four dependency health/readiness states, and the old container IDs and volume
-names before/after. Check a fresh database contains no business tables.
+Check Docker project labels, existing project-scoped volume and network identities, required external TLS volumes, dependency health and the actual owner image IDs before and after a controlled change. A newly created empty owner database must be verified before bootstrap; after bootstrap, verify the owning schema, data constraints, grants and required baseline readback, not the absence of business tables.
 HTTP 200 and healthy Docker containers do NOT prove Go implementation,
 authorization, ledger invariants, Android/iOS journeys or production readiness.
 Production and GitHub merge remain separately blocked until their gates pass.
