@@ -7,9 +7,9 @@ paths:
   /health:
     $ref: './paths/runtime.yaml#/paths/~1health'
   /v1/customer-auth/phone-challenges:
-    $ref: './paths/client-auth.yaml#/paths/~1v1~1customer-auth~1phone-challenges'
+    $ref: './paths/customer-auth.yaml#/paths/~1v1~1customer-auth~1phone-challenges'
   /v1/customer-auth/phone-verification:
-    $ref: './paths/client-auth.yaml#/paths/~1v1~1customer-auth~1phone-verification'
+    $ref: './paths/customer-auth.yaml#/paths/~1v1~1customer-auth~1phone-verification'
   /v1/sessions/current:
     $ref: './paths/session.yaml#/paths/~1v1~1sessions~1current'
   /v1/sessions/persistent:

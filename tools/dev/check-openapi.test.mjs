@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -61,6 +61,14 @@ test("all current owner OpenAPI 3.1 documents parse with their admitted operatio
   assert.equal(validate("wlt").operations, 6);
   assert.ok(validate("identity").operations > 0);
   assert.ok(validate("dsh").operations > 0);
+});
+
+test("Customer contract groups use canonical internal names without duplicate legacy fragments", () => {
+  for (const [owner, group] of [["identity", "auth"], ["dsh", "shares"]]) {
+    const folder = path.join(root, "services", owner, "contracts/openapi/paths");
+    assert.ok(existsSync(path.join(folder, `customer-${group}.yaml`)), `missing canonical ${owner} group`);
+    assert.equal(existsSync(path.join(folder, `client-${group}.yaml`)), false, `legacy ${owner} group remains`);
+  }
 });
 
 test("reject duplicate YAML mapping keys instead of silently accepting the last value", () => {
@@ -635,7 +643,7 @@ test("repurposing an existing public DSH path requires explicit operation identi
 });
 
 test("repurposing an existing public Identity path cannot inherit anonymous permission", () => {
-  const result = mutate("identity", "paths/client-auth.yaml", source =>
+  const result = mutate("identity", "paths/customer-auth.yaml", source =>
     source.replace("operationId: issueCustomerPhoneChallenge", "operationId: issueOperatorRootSession"));
   hasError(result, "Protected operation must require OpaqueSession");
 });
@@ -656,10 +664,10 @@ test("new DSH public-prefixed endpoint is protected until explicitly admitted", 
 test("new Identity customer-auth-prefixed endpoint is protected until explicitly admitted", () => {
   const result = mutateOwnerFiles("identity", {
     "identity.openapi.yaml": source => source.replace(
-      "/v1/customer-auth/phone-challenges:\n    $ref: './paths/client-auth.yaml#/paths/~1v1~1customer-auth~1phone-challenges'",
-      "/v1/customer-auth/admin-reset:\n    $ref: './paths/client-auth.yaml#/paths/~1v1~1customer-auth~1admin-reset'",
+      "/v1/customer-auth/phone-challenges:\n    $ref: './paths/customer-auth.yaml#/paths/~1v1~1customer-auth~1phone-challenges'",
+      "/v1/customer-auth/admin-reset:\n    $ref: './paths/customer-auth.yaml#/paths/~1v1~1customer-auth~1admin-reset'",
     ),
-    "paths/client-auth.yaml": source => source.replace(
+    "paths/customer-auth.yaml": source => source.replace(
       "  /v1/customer-auth/phone-challenges:\n", "  /v1/customer-auth/admin-reset:\n",
     ),
   });
