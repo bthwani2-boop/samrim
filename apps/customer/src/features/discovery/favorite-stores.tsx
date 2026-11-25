@@ -89,12 +89,19 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
     return renderedScope!==null && scope.current===renderedScope && !renderedScope.signal.aborted && currentView.current===view;
   }
 
-  async function toggle() {
-    if(!isCurrentScope()||view?.kind!=="detail"||view.storeId!==storeId||action.current||view.expiresAt<=Date.now())return;
+  async function changeFavorite(id:string, favorite:boolean) {
+    if(!isCurrentScope()||!view||action.current||!(view.expiresAt>Date.now()))return;
+    if(view.kind==="detail" ? view.storeId!==storeId||view.storeId!==id||favorite===view.favorite :
+      storeId!==undefined||favorite||!view.items.some(item=>item.id===id))return;
     const controller=new AbortController();action.current=controller;setBusy(true);setMessage("");
     try {
-      const result=await writeFavoriteStore(controller.signal,view.actor,view.storeId,!view.favorite);
-      if(!controller.signal.aborted)publishView({...view,favorite:result.value.favorite,expiresAt:result.expiresAt});
+      const result=await writeFavoriteStore(controller.signal,view.actor,id,favorite);
+      if(controller.signal.aborted)return;
+      if(result.value.actorId!==view.actor||result.value.storeId!==id||result.value.favorite!==favorite||
+        !(result.expiresAt>Date.now()))throw new Error("FAVORITE_RECEIPT_UNCONFIRMED");
+      const expiresAt=Math.min(view.expiresAt,result.expiresAt);
+      publishView(view.kind==="detail"?{...view,favorite,expiresAt}:
+        {...view,items:view.items.filter(item=>item.id!==id),expiresAt});
     } catch {
       if(!controller.signal.aborted){
         clear();setMessage("لم تتأكد نتيجة التغيير. أعد قراءة المفضلة قبل تعديل جديد.");
@@ -118,15 +125,21 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
   return <View testID={storeId?"favorite-store-action":"favorite-store-list"} style={{gap:8}}>
     {storeId===undefined?<Text accessibilityRole="header" style={{color:theme.color,fontWeight:"700"}}>المتاجر المفضلة</Text>:null}
     {visible?.kind==="detail"?<Pressable accessibilityRole="button" accessibilityState={{disabled:busy,selected:visible.favorite}}
-      accessibilityLabel={visible.favorite?"إزالة المتجر من المفضلة":"إضافة المتجر إلى المفضلة"} disabled={busy} onPress={()=>void toggle()} style={button}>
+      accessibilityLabel={visible.favorite?"إزالة المتجر من المفضلة":"إضافة المتجر إلى المفضلة"} disabled={busy} onPress={()=>void changeFavorite(visible.storeId,!visible.favorite)} style={button}>
       <Text style={{color:theme.interactiveText}}>{busy?"جارٍ التحقق…":visible.favorite?"إزالة من المفضلة":"إضافة إلى المفضلة"}</Text>
     </Pressable>:null}
     {visible?.kind==="list"?<>
       {!visible.items.length&&!visible.next?<Text style={{color:theme.colorSecondary}}>لا توجد متاجر مفضلة متاحة.</Text>:null}
-      {visible.items.map(item=><Link key={item.id} href={{pathname:"/storefront/[storeId]",params:{storeId:item.id}}} asChild>
-        <Pressable accessibilityRole="link" style={button}><Text style={{color:theme.interactiveText}}>{item.name}</Text></Pressable>
-      </Link>)}
-      {visible.next?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void more()} style={button}>
+      {visible.items.map(item=><View key={item.id} style={{flexDirection:"row",alignItems:"center",gap:8}}>
+        <Link href={{pathname:"/storefront/[storeId]",params:{storeId:item.id}}} asChild>
+          <Pressable accessibilityRole="link" style={{...button,flex:1}}><Text style={{color:theme.interactiveText}}>{item.name}</Text></Pressable>
+        </Link>
+        <Pressable accessibilityRole="button" accessibilityLabel={"إزالة "+item.name+" من المفضلة"} disabled={busy}
+          onPress={()=>void changeFavorite(item.id,false)} style={button}>
+          <Text style={{color:theme.interactiveText}}>إزالة</Text>
+        </Pressable>
+      </View>)}
+      {visible.next?<Pressable accessibilityRole="button" accessibilityLabel="عرض المزيد" disabled={busy} onPress={()=>void more()} style={button}>
         <Text style={{color:theme.interactiveText}}>عرض المزيد</Text>
       </Pressable>:null}
     </>:null}
