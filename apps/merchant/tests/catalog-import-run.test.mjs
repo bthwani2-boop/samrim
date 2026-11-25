@@ -6,6 +6,7 @@ import {tmpdir} from "node:os";
 import path from "node:path";
 import {test} from "node:test";
 import * as dsh from "@bthwani/dsh";
+import { buildImportManifest } from "../src/features/catalog/catalog-import-data.ts";
 import {GET,PATCH, PUT} from "../app/api/admission+api.ts";
 
 const actorId="merchant-a",storeId="store-a",runId="run-0001",sourceSha256="a".repeat(64);
@@ -60,7 +61,7 @@ test("bulk import requires explicit confirmation and recovers one durable run af
     const react={useState(initial){const i=si++;if(!(i in states))states[i]=initial;return [states[i],next=>{states[i]=typeof next==="function"?next(states[i]):next;}];},useRef(initial){const i=ri++;refs[i]??={current:initial};return refs[i];},useLayoutEffect(fn,deps){const i=ei++;const old=effects[i];if(!old||!deps||deps.some((v,j)=>v!==old.deps[j])){old?.cleanup?.();effects[i]={deps,cleanup:fn()};}}};
     const jsx=(type,props,key)=>({type,props:props??{},key});
     const get=k=>storage.get(k)??null,set=(k,v)=>storage.set(k,v),remove=k=>storage.delete(k);
-    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},"expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(alg,v)=>createHash(alg).update(v).digest("hex")},"expo-secure-store":{WHEN_UNLOCKED_THIS_DEVICE_ONLY:1,getItemAsync:async k=>get(k),setItemAsync:async(k,v)=>set(k,v),deleteItemAsync:async k=>remove(k)},react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},"./catalog-import-transport":{async requestCatalogImport(a,s,r,m,signal,change){
+    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},"expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(alg,v)=>createHash(alg).update(v).digest("hex")},"expo-secure-store":{WHEN_UNLOCKED_THIS_DEVICE_ONLY:1,getItemAsync:async k=>get(k),setItemAsync:async(k,v)=>set(k,v),deleteItemAsync:async k=>remove(k)},react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},"./catalog-import-data":{buildImportManifest},"./catalog-import-transport":{async requestCatalogImport(a,s,r,m,signal,change){
       signal.throwIfAborted();assert.equal(a,actorId);assert.equal(s,storeId);calls.push({r,m,change});
       if(m==="PUT"){assert.equal(storage.size,1);assert.deepEqual(change,manifest);ownerRun=r;throw Error("lost start ack");}
       assert.equal(r,ownerRun);
@@ -69,7 +70,7 @@ test("bulk import requires explicit confirmation and recovers one durable run af
     }}};
     const mod={exports:{}};
     new Function("require","module","exports","window",code)(n=>{assert.ok(Object.hasOwn(mocks,n),n);return mocks[n];},mod,mod.exports,{localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{}});
-    const mixed=mod.exports.buildImportManifest([
+    const mixed=buildImportManifest([
       ...props.rows,
       {row:3,name:"x".repeat(6000),priceYer:"100",stockUnits:"2",reason:"invalid"},
       {row:4,name:"Extra columns",priceYer:"100",stockUnits:"2",reason:"invalid"},

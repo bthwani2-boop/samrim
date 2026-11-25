@@ -1,4 +1,4 @@
-import { type MerchantCatalogOffer, validMerchantCatalogDraft } from "@bthwani/dsh";
+import { type MerchantCatalogImportChange, type MerchantCatalogOffer, validMerchantCatalogDraft } from "@bthwani/dsh";
 import { type CatalogReader, collectMerchantCatalogOffers } from "./catalog-pages.ts";
 
 // This is only a local syntax/shape preflight. Even valid rows require a DSH
@@ -133,4 +133,18 @@ export async function reviewCatalogImportRows(
     const { draft, ...observation } = match;
     return { ...row, reason: "existing-store-name", match: observation, ...(draft ? { editableDraft: draft } : {}) };
   });
+}
+
+export function buildImportManifest(rows:ReturnType<typeof previewCatalogCsv>,sourceSha256:string,selected:ReadonlySet<number>):MerchantCatalogImportChange{
+  return {sourceSha256,rows:rows.map(row=>{
+    // Retain bounded diagnostic fields; the exact original file is identified
+    // by its byte digest. Malformed records can never acquire an edit target.
+    if(row.reason==="invalid"){
+      const field=(value:string,max:number)=>[...value].length<=max&&![...value].some(c=>{const code=c.codePointAt(0)??0;return code<32||code===127;})?value:"";
+      return {row:row.row,name:field(row.name,160),priceYer:field(row.priceYer,19),stockUnits:field(row.stockUnits,10),sourceIssue:"INVALID_ROW"};
+    }
+    const draft=row.editableDraft;
+    return {row:row.row,name:row.name,priceYer:row.priceYer,stockUnits:row.stockUnits,
+      ...(draft&&selected.has(row.row)?{offerId:draft.id,expectedVersion:draft.draftVersion}:{})};
+  })};
 }

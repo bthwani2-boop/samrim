@@ -41,6 +41,8 @@
     // Expo and the npm "build" script are invoked by GitHub Actions.
     "expo",
     "build",
+    // Existing owner-local pnpm scripts (ci.yml), not an external binary.
+    "contract",
     // PowerShell is an installed OS toolchain, not an npm package.
     "^pwsh(?:\\.exe)?$"
   ]

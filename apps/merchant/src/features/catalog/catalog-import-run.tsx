@@ -1,10 +1,10 @@
-import { type MerchantCatalogImportChange, type MerchantCatalogImportResult, validMerchantCatalogImportChange } from "@bthwani/dsh";
+import { type MerchantCatalogImportResult, validMerchantCatalogImportChange } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import type { previewCatalogCsv } from "./catalog-import-data";
+import { buildImportManifest, type previewCatalogCsv } from "./catalog-import-data";
 import { requestCatalogImport } from "./catalog-import-transport";
 
 const digest=(value:string)=>digestStringAsync(CryptoDigestAlgorithm.SHA256,value);
@@ -29,19 +29,6 @@ async function write(key:string,a:Attempt|null){
   else await SecureStore.deleteItemAsync(key,options);
 }
 type Rows=ReturnType<typeof previewCatalogCsv>;
-export function buildImportManifest(rows:Rows,sourceSha256:string,selected:ReadonlySet<number>):MerchantCatalogImportChange{
-  return {sourceSha256,rows:rows.map(row=>{
-    // Retain bounded diagnostic fields; the exact original file is identified
-    // by its byte digest. Malformed records can never acquire an edit target.
-    if(row.reason==="invalid"){
-      const field=(value:string,max:number)=>[...value].length<=max&&![...value].some(c=>{const code=c.codePointAt(0)??0;return code<32||code===127;})?value:"";
-      return {row:row.row,name:field(row.name,160),priceYer:field(row.priceYer,19),stockUnits:field(row.stockUnits,10),sourceIssue:"INVALID_ROW"};
-    }
-    const draft=row.editableDraft;
-    return {row:row.row,name:row.name,priceYer:row.priceYer,stockUnits:row.stockUnits,
-      ...(draft&&selected.has(row.row)?{offerId:draft.id,expectedVersion:draft.draftVersion}:{})};
-  })};
-}
 const reasons:Record<string,string>={UPDATED:"تم التعديل",UNSELECTED:"لم يُعتمد للتعديل",DUPLICATE:"مكرر",INVALID_VALUES:"قيم غير صالحة",AMBIGUOUS_OR_CHANGED:"مطابقة ملتبسة أو متغيرة",INELIGIBLE:"غير مؤهل",STALE_VERSION_OR_NAME:"تغيرت المسودة",OPERATION_CONFLICT:"تعارض العملية"};
 export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onChanged}:Readonly<{
   actorId:string;storeId:string;rows:Rows;sourceSha256:string;onChanged?:(()=>void)|undefined;
