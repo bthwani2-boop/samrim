@@ -23,6 +23,11 @@ async function publicDetails(ids:readonly string[],signal:AbortSignal):Promise<P
 export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
   const {theme}=useMobileAppearance();
   const [view,setView]=useState<ReadState|null>(null);
+  // Invalidate superseded callbacks synchronously, before React renders the next confirmed view.
+  const currentView=useRef<ReadState|null>(null);
+  const publishView=useCallback((next:ReadState|null)=>{
+    currentView.current=next;setView(next);
+  },[]);
   const [message,setMessage]=useState("");
   const [busy,setBusy]=useState(false);
   const [retry,setRetry]=useState(0);
@@ -31,8 +36,8 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
   const expires=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
   const clear=useCallback(()=>{
     scope.current?.abort();scope.current=null;action.current?.abort();action.current=null;
-    clearTimeout(expires.current);setView(null);setBusy(false);
-  },[]);
+    clearTimeout(expires.current);publishView(null);setBusy(false);
+  },[publishView]);
   const reload=useCallback(()=>{clear();setRetry(v=>v+1);},[clear]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry deliberately re-reads the current actor's owner state.
   useFocusEffect(useCallback(()=>{
@@ -41,18 +46,18 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
     async function read(){
       if(storeId!==undefined){
         const result=await readFavoriteStore(controller.signal,storeId);
-        if(!controller.signal.aborted) setView({kind:"detail",actor:result.value.actorId,storeId,favorite:result.value.favorite,expiresAt:result.expiresAt});
+        if(!controller.signal.aborted) publishView({kind:"detail",actor:result.value.actorId,storeId,favorite:result.value.favorite,expiresAt:result.expiresAt});
       } else {
         const result=await readFavoriteStores(controller.signal);
         const items=await publicDetails(result.value.storeIds,controller.signal);
         const session=await verifyFavoriteSession(controller.signal,result.value.actorId);
-        if(!controller.signal.aborted) setView({kind:"list",actor:result.value.actorId,items,
+        if(!controller.signal.aborted) publishView({kind:"list",actor:result.value.actorId,items,
           ...(result.value.nextCursor?{next:result.value.nextCursor}:{}),expiresAt:Math.min(result.expiresAt,Date.parse(session.sessionExpiresAt))});
       }
     }
     void read().catch(()=>{if(!controller.signal.aborted)setMessage("سجّل الدخول أو أعد المحاولة للتحقق من المفضلة.");});
     return clear;
-  },[storeId,retry,clear]));
+  },[storeId,retry,clear,publishView]));
   useEffect(()=>{
     if(Platform.OS==="web"){
       const visibility=()=>{if(document.visibilityState==="hidden")clear();else reload();};
@@ -81,7 +86,7 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
 
   const renderedScope=scope.current;
   function isCurrentScope() {
-    return renderedScope!==null && scope.current===renderedScope && !renderedScope.signal.aborted;
+    return renderedScope!==null && scope.current===renderedScope && !renderedScope.signal.aborted && currentView.current===view;
   }
 
   async function toggle() {
@@ -89,7 +94,7 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
     const controller=new AbortController();action.current=controller;setBusy(true);setMessage("");
     try {
       const result=await writeFavoriteStore(controller.signal,view.actor,view.storeId,!view.favorite);
-      if(!controller.signal.aborted)setView({...view,favorite:result.value.favorite,expiresAt:result.expiresAt});
+      if(!controller.signal.aborted)publishView({...view,favorite:result.value.favorite,expiresAt:result.expiresAt});
     } catch {
       if(!controller.signal.aborted){
         clear();setMessage("لم تتأكد نتيجة التغيير. أعد قراءة المفضلة قبل تعديل جديد.");
@@ -103,7 +108,7 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
       const result=await readFavoriteStores(controller.signal,view.actor,view.next);
       const items=await publicDetails(result.value.storeIds,controller.signal);
       const session=await verifyFavoriteSession(controller.signal,view.actor);
-      if(!controller.signal.aborted)setView({...view,items:[...view.items,...items],
+      if(!controller.signal.aborted)publishView({...view,items:[...view.items,...items],
         ...(result.value.nextCursor?{next:result.value.nextCursor}:{next:undefined}),expiresAt:Math.min(view.expiresAt,result.expiresAt,Date.parse(session.sessionExpiresAt))});
     } catch {if(!controller.signal.aborted){clear();setMessage("تعذّر قراءة المفضلة. أعد المحاولة.");}}
     finally {if(action.current===controller){action.current=null;setBusy(false);}}

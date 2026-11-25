@@ -141,3 +141,21 @@ test("favorite pagination refuses an expired verified view even before expiry ti
   assert.equal(h.reads.length,1,"expired view must not dispatch a continuation");
   h.blur();
 });
+
+test("superseded favorite toggle is rejected even within the same focus before rerender",async()=>{
+  const h=harness("store-a"); h.render(); h.focus(); h.reads[0].resolve(state(false)); await settle();
+  const old=action(h.render()).props.onPress; old(); old(); assert.equal(h.writes.length,1);
+  h.writes[0].resolve(state(true)); await settle(); old(); assert.equal(h.writes.length,1,"superseded callback must not dispatch before rerender");
+  const fresh=action(h.render()).props.onPress; old(); assert.equal(h.writes.length,1,"superseded callback must not dispatch after rerender");
+  fresh(); assert.equal(h.writes.length,2); assert.equal(h.writes[1].favorite,false); h.blur();
+});
+test("superseded favorite continuation cannot reuse an old cursor within the same focus",async()=>{
+  const h=harness(); const next=()=>nodes(h.render()).find(n=>n.type==="Pressable"&&typeof n.props.onPress==="function");
+  const page=(id)=>({value:{actorId:"customer-a",storeIds:[id],nextCursor:id},expiresAt:Date.now()+60000});
+  h.render(); h.focus(); h.reads[0].resolve(page("store-a")); await settle();
+  const old=next().props.onPress; old(); old(); assert.equal(h.reads.length,2);
+  h.reads[1].resolve(page("store-b")); await settle(); old(); assert.equal(h.reads.length,2,"old cursor must not dispatch before rerender");
+  const fresh=next().props.onPress; old(); assert.equal(h.reads.length,2,"old cursor must not dispatch after rerender");
+  fresh(); assert.equal(h.reads.length,3); assert.equal(h.reads[2].after,"store-b");
+  assert.deepEqual(nodes(h.render()).filter(n=>n.type==="Link").map(n=>n.props.href.params.storeId),["store-a","store-b"]); h.blur();
+});
