@@ -171,3 +171,35 @@ test("late failed or successful permission request after blur cannot change the 
     h.blur();
   }
 });
+
+
+test("successful dialog refreshes a newer focus scope using current OS facts", async () => {
+  const h = harness(); h.render(); h.focus(); await settle();
+  let finish; h.request(() => new Promise(resolve => { finish = resolve; }));
+  find(h.render(), "captain-location-request").props.onPress(); h.blur();
+  h.render(); h.focus(); await settle();
+  assert.ok(find(h.render(), "captain-location-request"));
+  h.setPermission({ granted: true, canAskAgain: true }); h.setServices(true);
+  finish({ granted: false }); await settle();
+  assert.equal(h.calls.permissions, 3, "fresh active scope must re-read OS permission");
+  assert.equal(h.calls.services, 3);
+  assert.equal(find(h.render(), "captain-location-request"), undefined);
+  assert.equal(h.calls.requests, 1);
+  h.blur();
+});
+test("a successful dialog does not read device settings while no scope is active", async () => {
+  for (const inactive of ["blurred", "background"]) {
+    const h = harness(); h.render(); h.focus(); await settle();
+    let finish; h.request(() => new Promise(resolve => { finish = resolve; }));
+    find(h.render(), "captain-location-request").props.onPress();
+    if (inactive === "blurred") h.blur(); else h.state("background");
+    const before = h.calls.permissions;
+    h.setPermission({ granted: true, canAskAgain: true }); finish({ granted: true }); await settle();
+    assert.equal(h.calls.permissions, before);
+    if (inactive === "blurred") { h.render(); h.focus(); } else h.state("active");
+    await settle();
+    assert.equal(h.calls.permissions, before + 1);
+    assert.equal(find(h.render(), "captain-location-request"), undefined);
+    h.blur();
+  }
+});

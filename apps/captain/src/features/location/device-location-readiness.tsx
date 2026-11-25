@@ -84,8 +84,9 @@ export default function CaptainDeviceLocationReadiness() {
     } finally {
       requestPending.current = false;
     }
-    // An OS permission dialog may trigger AppState transitions; read current facts again.
-    if (scope.current === s && s.active) void read(s);
+    // The OS dialog may outlive its original focus. Re-read current device facts, not the old result.
+    const active = scope.current;
+    if (active?.active) void read(active);
   }
 
   const actionStyle = { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
