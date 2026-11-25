@@ -3,13 +3,13 @@
     "customer": {
       "surface": 18101,
       "lenovo": 28111,
-      "task": "BThwani Client Metro Native",
+      "task": "BThwani Customer Metro Native",
       "cli": "expo"
     },
     "merchant": {
       "surface": 18102,
       "lenovo": 28112,
-      "task": "BThwani Partner Metro Native",
+      "task": "BThwani Merchant Metro Native",
       "cli": "expo"
     },
     "captain": {

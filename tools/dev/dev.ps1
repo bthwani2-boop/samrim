@@ -192,8 +192,8 @@ function Stop-LocalTasks {
 }
 # Legacy Windows task keys are used only to find existing Task Scheduler owners.
 # Canonical app names are customer, merchant, captain, control-panel.
-$remoteSpecs = @(foreach($app in $developmentPorts.apps.PSObject.Properties){
-  @{A=$app.Name;N=$app.Value.task;P=[int]$app.Value.lenovo;Cli=$app.Value.cli}
+$remoteSpecs = @(foreach($entry in $developmentPorts.apps.PSObject.Properties){
+  @{A=$entry.Name;N=$entry.Value.task;P=[int]$entry.Value.lenovo;Cli=$entry.Value.cli}
 })
 $remoteAppSpecs = '$specs=@((ConvertFrom-Json ''' + (ConvertTo-Json -InputObject $remoteSpecs -Compress).Replace("'","''") + ''') | ForEach-Object { $_ })'
 $remoteTasksScript = $remoteAppSpecs + [Environment]::NewLine + @'

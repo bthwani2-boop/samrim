@@ -361,14 +361,16 @@ test("the app verifier detects missing workspace dependency links", () => {
   assert.ok(launcher.includes("Test-Path -LiteralPath $dependencyPackage -PathType Leaf"));
 });
 
-test("the Merchant launcher preserves existing Windows task identities", () => {
+test("the launcher consumes canonical Customer and Merchant Windows task identities", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   const layout=JSON.parse(readFileSync(new URL("./ports.json",import.meta.url),"utf8"));
-  assert.equal(layout.apps.merchant.task,"BThwani Partner Metro Native");
-  assert.match(launcher,/N=\$app\.Value\.task/);
+  assert.equal(layout.apps.customer.task,"BThwani Customer Metro Native");
+  assert.equal(layout.apps.merchant.task,"BThwani Merchant Metro Native");
+  assert.match(launcher,/N=\$entry\.Value\.task/);
   assert.match(launcher,/\$script=\$remoteAppSpecs/);
   assert.match(launcher,/Invoke-Lenovo \(\$remoteAppSpecs/);
-  assert.doesNotMatch(launcher, /BThwani Merchant Metro Native/);
+  assert.doesNotMatch(launcher, /BThwani (?:Client|Partner|Customer|Merchant) Metro Native/);
+  assert.ok(Object.values(layout.apps).every(a=>!(/\b(?:Client|Partner)\b/.test(a.task))));
 });
 
 test("strict app verification checks the existing watcher and its mirrored source digests", () => {
@@ -556,7 +558,7 @@ test("canonical application task layout is identical in PowerShell 7 and Windows
   const block=source.match(/\$remoteSpecs = @\(foreach[\s\S]*?\n\$remoteAppSpecs = [^\n]+/);
   assert.ok(block);
   const layoutPath=path.join(path.dirname(scriptPath),"ports.json").replaceAll("\x27","\x27\x27");
-  const command=["$ErrorActionPreference=\x27Stop\x27","$developmentPorts=Get-Content -LiteralPath \x27"+layoutPath+"\x27 -Raw|ConvertFrom-Json",block[0],"$specs=@(); . ([scriptblock]::Create($remoteAppSpecs))", "ConvertTo-Json -InputObject @($specs) -Compress"].join("; ");
+  const command=["$ErrorActionPreference=\x27Stop\x27","[ValidateSet(\x27customer\x27,\x27merchant\x27,\x27captain\x27,\x27control-panel\x27)][string]$App=\x27customer\x27","$developmentPorts=Get-Content -LiteralPath \x27"+layoutPath+"\x27 -Raw|ConvertFrom-Json",block[0],"if($App -cne \x27customer\x27){throw \x27APP_PARAMETER_MUTATED\x27}","$specs=@(); . ([scriptblock]::Create($remoteAppSpecs))", "ConvertTo-Json -InputObject @($specs) -Compress"].join("; ");
   for(const shell of ["pwsh.exe","powershell.exe"]){
     const result=spawnSync(shell,["-NoProfile","-NonInteractive","-Command",command],{encoding:"utf8",windowsHide:true,timeout:15000});
     assert.equal(result.status,0,shell+": "+(result.stderr||result.stdout));
