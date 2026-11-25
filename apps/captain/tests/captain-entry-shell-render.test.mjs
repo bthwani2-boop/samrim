@@ -130,7 +130,7 @@ test("Captain interest leaves definite rejection retryable but stops after recei
         "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable", TextInput: "TextInput" },
         "@bthwani/dsh": {
           DshPublicError,
-          validCaptainInterest: input => Boolean(input.name),
+          validCaptainInterest: input => Boolean(input.name) && /^(?:\+967)?7\d{8}$/.test(input.phone),
           submitCaptainInterest: async (_origin, input) => {
             requests.push(input);
             if (requests.length === 1) throw new DshPublicError(429, "RATE_LIMITED");
@@ -143,18 +143,26 @@ test("Captain interest leaves definite rejection retryable but stops after recei
         return nodes(screen());
       };
       const findSubmit = view => view.find(node => node.props.accessibilityRole === "button");
-      render().find(node => node.props.accessibilityLabel === "الاسم الكامل").props.onChangeText("اسم تجريبي");
-      findSubmit(render()).props.onPress();
+      const typedPhone = finalError ? "٧٧٠١٢٣٤٥٦" : "+۹۶۷۷۷۰۱۲۳۴۵۶";
+      const wirePhone = finalError ? "770123456" : "+967770123456";
+      const field = (view, label) => view.find(node => node.props.accessibilityLabel === label);
+      field(render(), "الاسم الكامل").props.onChangeText("اسم تجريبي");
+      field(render(), "رقم الهاتف").props.onChangeText(typedPhone);
+      const submit = findSubmit(render());
+      assert.equal(submit.props.disabled, false, "Arabic digit input must enable a valid registration");
+      submit.props.onPress();
       await Promise.resolve();
       const afterRejection = render();
       assert.match(afterRejection.find(node => node.props.accessibilityRole === "alert").props.children, /تجاوز عدد المحاولات/);
       assert.equal(findSubmit(afterRejection).props.disabled, false);
       assert.equal(afterRejection.find(node => node.props.accessibilityLabel === "الاسم الكامل").props.value, "اسم تجريبي");
+      assert.equal(field(afterRejection, "رقم الهاتف").props.value, typedPhone);
       findSubmit(afterRejection).props.onPress();
       await Promise.resolve();
       const afterFinal = render();
       assert.equal(findSubmit(afterFinal), undefined, "the screen must not offer another submission after the result");
       assert.equal(requests.length, 2);
+      assert.deepEqual(requests.map(input => input.phone), [wirePhone, wirePhone]);
       assert.ok(afterFinal.some(node => node.type === "Link" && node.props.href === "/"));
       const notice = afterFinal.find(node => node.props.accessibilityRole === "alert");
       assert.equal(notice.props.testID, finalError ? "captain-interest-uncertain" : "captain-interest-received");

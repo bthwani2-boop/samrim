@@ -72,3 +72,5 @@ apps/control-panel/
 Keep a single client-side receipt state in the public Captain form. Existing DSH acknowledgment validation distinguishes definite rejections from an unknown result. Preserve the DSH one-way contract and write path. Extend the existing registration test to exercise the mounted screen and verify success, uncertain outcome and retry after a definite rejection.
 
 Use a history of owner cursors in the Operator list. Reuse the existing GET and filters for forward and backward navigation, reset history when the result set changes, and verify that denial removes the displayed list.
+
+Normalize the two Arabic decimal digit ranges at the Captain form boundary before applying the existing DSH input validator. Use component assertions for the transmitted contact and retained input. Keep the guest registration endpoint, DSH validation and receipt handling in place.

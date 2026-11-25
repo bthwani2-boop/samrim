@@ -37,8 +37,10 @@ export default function CaptainInterestScreen() {
   useEffect(() => () => { controller.current?.abort(); }, []);
 
   const vehicleNeedsPlate = vehicleType === "MOTORCYCLE" || vehicleType === "ELECTRIC";
+  const contactPhone = phone.trim().replace(/[٠-٩۰-۹]/g, digit =>
+    String(digit.charCodeAt(0) - (digit <= "٩" ? 0x660 : 0x6f0)));
   const input: CaptainInterestInput = {
-    name: name.trim(), phone: phone.trim(), city: city.trim(), district: district.trim(),
+    name: name.trim(), phone: contactPhone, city: city.trim(), district: district.trim(),
     vehicleType, ...(vehicleNeedsPlate && plateRegistered !== null ? { plateRegistered } : {}),
     phoneType, experienced,
     ...(experienced && experienceDetails.trim() ? { experienceDetails: experienceDetails.trim() } : {}),
