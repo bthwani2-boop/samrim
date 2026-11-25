@@ -42,15 +42,22 @@ test("an unrelated WLT contract change does not block DSH or Identity", async ()
   assert.equal(plan.blocked.wlt, "UNCOMMITTED_NON_GO");
 });
 
-test("a committed DSH schema change stays blocked without suppressing independent WLT", async () => {
+test("WLT consumes DSH standing even without Captain admission and cannot advance across unreviewed DSH runtime changes", async () => {
   const { ownerReconcilePlan } = await import("../../tools/dev/docker/owner-preview-source.mjs");
-  const plan = ownerReconcilePlan({
-    changed: [], committed: { dsh: ["services/dsh/database/schema/45_customer_addresses.sql"] },
-    preview: true, captain: true,
-  });
-  assert.deepEqual(plan.eligible, ["wlt"]);
-  assert.equal(plan.blocked.dsh, "SCHEMA_REVIEW_REQUIRED");
-  assert.equal(plan.blocked.identity, "PEER_REVIEW_REQUIRED:dsh");
+  for (const captain of [false, true]) {
+    const plan = ownerReconcilePlan({
+      changed: [], committed: { dsh: ["services/dsh/database/schema/45_customer_addresses.sql"] },
+      preview: true, captain,
+    });
+    assert.deepEqual(plan.eligible, captain ? [] : ["identity"]);
+    assert.equal(plan.blocked.dsh, "SCHEMA_REVIEW_REQUIRED");
+    assert.equal(plan.blocked.wlt, "PEER_REVIEW_REQUIRED:dsh");
+    assert.equal(plan.blocked.identity, captain ? "PEER_REVIEW_REQUIRED:dsh" : undefined);
+  }
+  const client = ownerReconcilePlan({changed:["services/dsh/clients/index.ts"],committed:{},preview:true,captain:false});
+  assert.deepEqual(client.eligible, ["dsh","identity","wlt"]);
+  const config = ownerReconcilePlan({changed:[],committed:{dsh:["services/dsh/database/schema/45_customer_addresses.sql"]},preview:true,captain:false,wltConfigDrift:true});
+  assert.equal(config.blocked.wlt,"CONFIG_REVIEW_REQUIRED");
 });
 
 test("Identity runtime changes requiring review hold dependent owners, but client-only dirt does not", async () => {

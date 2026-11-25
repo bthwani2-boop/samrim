@@ -61,9 +61,10 @@ export function ownerReconcilePlan({changed, committed, preview, captain, schema
     else if (previewChanges.some(rel => !isPreviewGoPath(rel))) blocked[owner] = "UNCOMMITTED_NON_GO";
     else if (!preview && (previewChanges.length || (local.length && imageChanges.length))) blocked[owner] = "PREVIEW_NOT_AUTHORIZED";
   }
-  // DSH and WLT consume Identity; Captain-enabled Identity consumes DSH.
+  // DSH and WLT consume Identity; WLT consumes DSH Merchant standing;
+  // Captain-enabled Identity consumes DSH.
   // A blocked peer with no runtime input change is not a dependency hold.
-  const edges = [["identity", "dsh"], ["identity", "wlt"], ...(captain ? [["dsh", "identity"]] : [])];
+  const edges = [["identity", "dsh"], ["identity", "wlt"], ["dsh", "wlt"], ...(captain ? [["dsh", "identity"]] : [])];
   for (let i = 0; i < order.length; i++) {
     for (const [peer, consumer] of edges) {
       if (blocked[peer] && runtimeChanges[peer] && !blocked[consumer]) blocked[consumer] = "PEER_REVIEW_REQUIRED:" + peer;
