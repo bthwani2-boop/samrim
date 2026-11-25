@@ -116,10 +116,12 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10,
     justifyContent: "center" as const };
 
+  const renderedGeneration = generation.current;
   async function more() {
-    if (!storeId || !visible.cursor || visible.loading || visible.more) return;
+    // Consume the rendered continuation before it can abort a newer owner read.
+    if (!storeId || !visible.cursor || visible.loading || visible.more || renderedGeneration !== generation.current) return;
     const cursor = visible.cursor;
-    const epoch = generation.current;
+    const epoch = ++generation.current;
     const controller = new AbortController();
     active.current?.abort();
     active.current = controller;

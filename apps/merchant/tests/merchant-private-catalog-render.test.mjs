@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -25,15 +26,26 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
     const compiled = spawnSync(process.execPath, [
       path.join(root, "node_modules/typescript/bin/tsc"), src, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--outDir", tmp,
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-    const source = readFileSync(path.join(tmp, "merchant-private-catalog.js"), "utf8");
+    const source = readFileSync(path.join(tmp, "merchant-private-catalog.js"), "utf8").replace(
+      /(\/\/# sourceMappingURL=data:application\/json;base64,)([A-Za-z0-9+/=]+)/,
+      (_, prefix, encoded) => {
+        const map = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+        map.sourceRoot = "";
+        map.sources = [path.basename(src)];
+        return prefix + Buffer.from(JSON.stringify(map)).toString("base64");
+      },
+    );
     const hooks = [];
     const effects = [];
     const requests = [];
     let index = 0;
     let scheduled = [];
+    const platform = { OS: "web" };
+    let appStateChange, focus;
+    let nativeRemoved = 0;
     const react = {
       useState(initial) {
         const n = index++;
@@ -80,19 +92,22 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       react,
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
       "react-native": {
-        ActivityIndicator: "ActivityIndicator", Platform: { OS: "web" },
+        ActivityIndicator: "ActivityIndicator", Platform: platform,
         Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View",
-        AppState: { addEventListener: () => ({ remove() {} }) },
+        AppState: { addEventListener: (_event, cb) => { appStateChange = cb; return { remove() { nativeRemoved++; } }; } },
       },
     };
     const previousWindow = globalThis.window;
-    globalThis.window = { addEventListener() {}, removeEventListener() {} };
+    globalThis.window = { addEventListener(_event, cb) { focus = cb; }, removeEventListener() { focus = undefined; } };
     try {
-      const mod = { exports: {} };
-      new Function("require", "module", "exports", source)(name => {
-        assert.ok(Object.hasOwn(mocks, name), `unexpected dependency ${name}`);
+      const filename = src + ".compiled.cjs";
+      const mod = new Module(filename);
+      mod.filename = filename;
+      mod.require = name => {
+        assert.ok(Object.hasOwn(mocks, name), name);
         return mocks[name];
-      }, mod, mod.exports);
+      };
+      mod._compile(source, filename);
       function render(actorId, stores, initialStoreId, initialPriceStockOnly = false, inventoryOnly = false) {
         index = 0;
         scheduled = [];
@@ -132,7 +147,9 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         n.props?.children?.props?.children === "عرض المزيد");
       assert.ok(more);
       more.props.onPress();
-      assert.equal(requests.length, 3);
+      more.props.onPress();
+      assert.equal(requests.length, 3, "duplicate continuation must not start another page");
+      assert.equal(requests[2].signal.aborted, false);
       assert.equal(requests[2].options.cursor, "of-a");
       requests[2].resolve({ actorId: "merchant-a", storeId: "store-b",
         items: [offer("of-b", "منتج ثان")] });
@@ -149,6 +166,9 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       nodes(tree).find(n => n.props?.accessibilityLabel === "بحث في الكتالوج").props.onPress();
       tree = render("merchant-a", stores);
       assert.equal(requests.length, 4);
+      more.props.onPress();
+      assert.equal(requests.length, 4, "obsolete continuation must not start a previous cursor");
+      assert.equal(requests[3].signal.aborted, false);
       assert.equal(requests[3].options.query, "منتج");
       assert.equal(requests[3].options.cursor, undefined);
       assert.ok(!nodes(tree).some(n => n.props?.children === "منتج ثان"));
@@ -330,6 +350,116 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       tree = inventory("merchant-a", stores.slice(0, 1));
       assert.ok(!nodes(tree).some(privateControls), "revoked store hides inventory and editor");
       assert.equal(requests.length, 2, "no silent fallback to another Store");
+      // Exercise the same owner read lifecycle on Android, including return to
+      // foreground, empty authority, form acknowledgments and same-filter refresh.
+      assert.equal(typeof focus, "function");
+      for (const effect of effects) effect?.cleanup?.();
+      assert.equal(focus, undefined);
+      hooks.length = 0;
+      effects.length = 0;
+      requests.length = 0;
+      platform.OS = "android";
+      const native = (actor = "merchant-a", scoped = stores) => render(actor, scoped);
+      const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
+      const press = (view, label) => nodes(view).find(n =>
+        n.props?.accessibilityLabel === label || n.props?.children?.props?.children === label);
+      const nativeRows = [
+        { ...draft, storeId: "store-a" },
+        { ...draft, id: "of-available", name: "available", available: true },
+        { ...draft, id: "of-active", name: "active", productActive: true },
+        { ...draft, id: "of-sellable", name: "sellable", variantSellable: true },
+        { ...draft, id: "of-validated", name: "validated", requiredAttributesValid: true },
+        { ...draft, id: "invalid-draft-id", name: "invalid id" },
+      ];
+      const answer = async (items = nativeRows, nextCursor) => {
+        requests.at(-1).resolve({ actorId: "merchant-a", storeId: "store-a", items, nextCursor });
+        await flush();
+        return native();
+      };
+      native("merchant-a", []);
+      assert.equal(requests.length, 0);
+      native("", stores);
+      assert.equal(requests.length, 0);
+      native();
+      assert.equal(requests.length, 1);
+      tree = await answer();
+      assert.equal(nodes(tree).filter(n => n.props?.accessibilityLabel?.startsWith("تعديل ")).length, 1);
+      const draftEdit = press(tree, "تعديل مسودة للسعر");
+      draftEdit.props.onPress();
+      tree = native();
+      assert.equal(nodes(tree).find(n => n.type === "DraftForm" && n.props.draft)?.props.draft.id, draftId);
+      press(tree, "تعديل مسودة للسعر").props.onPress();
+      tree = native();
+      assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && n.props.draft));
+      press(tree, "تعديل مسودة للسعر").props.onPress();
+      tree = native();
+      nodes(tree).find(n => n.type === "DraftForm" && n.props.draft).props.onCreated();
+      native();
+      assert.equal(requests.length, 2);
+      tree = await answer();
+      nodes(tree).find(n => n.type === "DraftForm" && !n.props.draft).props.onCreated();
+      native();
+      assert.equal(requests.length, 3);
+      tree = await answer();
+      nodes(tree).find(n => n.type === "CatalogImport").props.onChanged();
+      native();
+      assert.equal(requests.length, 4);
+      tree = await answer();
+      press(tree, "الأسعار والمخزون للمسودات").props.onPress();
+      tree = native();
+      press(tree, "الأسعار والمخزون للمسودات").props.onPress();
+      tree = native();
+      assert.ok(nodes(tree).some(n => n.type === "CatalogImport"));
+      press(tree, "البحث باسم المنتج").props.onChangeText("x".repeat(81));
+      tree = native();
+      assert.equal(press(tree, "بحث في الكتالوج").props.disabled, true);
+      press(tree, "البحث باسم المنتج").props.onChangeText("test");
+      tree = native();
+      press(tree, "بحث في الكتالوج").props.onPress();
+      native();
+      assert.equal(requests.at(-1).options.query, "test");
+      tree = await answer();
+      press(tree, "مسح البحث").props.onPress();
+      native();
+      assert.equal(requests.at(-1).options.query, undefined);
+      tree = await answer([nativeRows[0]], "of-b");
+      const oldMore = press(tree, "عرض المزيد");
+      oldMore.props.onPress();
+      const pendingPage = requests.at(-1);
+      tree = native();
+      assert.equal(press(tree, "جارٍ التحميل...").props.disabled, true);
+      const count = requests.length;
+      appStateChange("background");
+      native();
+      assert.equal(requests.length, count);
+      appStateChange("active");
+      native();
+      assert.equal(requests.length, count + 1);
+      assert.equal(pendingPage.signal.aborted, true);
+      oldMore.props.onPress();
+      assert.equal(requests.length, count + 1);
+      pendingPage.reject(new Error("superseded page"));
+      await flush();
+      assert.equal(requests.at(-1).signal.aborted, false);
+      tree = await answer([nativeRows[0]], "of-b");
+      press(tree, "عرض المزيد").props.onPress();
+      requests.at(-1).resolve({ actorId: "merchant-a", storeId: "store-a", items: [], nextCursor: "of-a" });
+      await flush();
+      tree = native();
+      assert.ok(!nodes(tree).some(privateControls), "backward empty-page cursor must withdraw verified controls");
+      press(tree, "إعادة المحاولة").props.onPress();
+      native();
+      tree = await answer([]);
+      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStockout();
+      native();
+      assert.equal(requests.at(-1).options.status, "stockout");
+      tree = await answer([]);
+      const beforeStockout = requests.length;
+      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStockout();
+      native();
+      assert.equal(requests.length, beforeStockout + 1, "same stockout shortcut must read fresh owner state");
+      for (const effect of effects) effect?.cleanup?.();
+      assert.equal(nativeRemoved, 1);
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;
