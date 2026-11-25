@@ -24,7 +24,7 @@ function find(node, predicate) {
   return predicate(node) ? node : find(node.props?.children, predicate);
 }
 
-async function run({ listBinding = "operator-a", omitListBinding = false, detailBinding = "operator-a", status = 200 } = {}, scenario) {
+async function run({ listBinding = "operator-a", omitListBinding = false, detailBinding = "operator-a", status = 200, listReply, detailReply } = {}, scenario) {
   const hooks = [], effects = new Map(), requests = [];
   let index = 0, scheduled = [];
   const react = {
@@ -34,7 +34,12 @@ async function run({ listBinding = "operator-a", omitListBinding = false, detail
       return [hooks[at], value => { hooks[at] = typeof value === "function" ? value(hooks[at]) : value; }];
     },
     useRef(initial) { const at = index++; hooks[at] ??= { current: initial }; return hooks[at]; },
-    useCallback(fn) { index++; return fn; },
+    useCallback(fn, deps) {
+      const at = index++;
+      const previous = hooks[at];
+      if (!previous || deps.some((value, i) => value !== previous.deps[i])) hooks[at] = { fn, deps };
+      return hooks[at].fn;
+    },
     useEffect(fn, deps) {
       const at = index++;
       const old = effects.get(at);
@@ -56,9 +61,11 @@ async function run({ listBinding = "operator-a", omitListBinding = false, detail
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
     if (url.includes("/standing")) {
+      if (detailReply) return detailReply(url, options);
       if (new Headers(options.headers).get(bindingHeader) !== "operator-a") return response({}, detailBinding, 403);
       return response(standing, detailBinding, status);
     }
+    if (listReply) return listReply(new URL(url, "http://localhost").searchParams, options);
     return response({ items: [standing] }, omitListBinding ? undefined : listBinding);
   };
   try {
@@ -168,4 +175,105 @@ test("Captain standing rejects malformed actor identity, status and version", ()
     assert.equal(client.isCaptainStanding(value), false);
   }
   assert.equal(client.isCaptainStanding(standing), true);
+});
+
+
+function queueButton(tree, label) {
+  return find(tree, node => node.type === "Button" && node.props.children === label);
+}
+
+test("Captain continuation binds the request and response to the verified operator", async (t) => {
+  const transport = t.mock.method(globalThis, "fetch", async () => response({ items: [] }, "operator-b"));
+  const signal = new AbortController().signal;
+  await assert.rejects(client.readCaptainPage("/api/captains?cursor=page2", signal, "operator-a"));
+  assert.equal(new Headers(transport.mock.calls[0].arguments[1].headers).get(bindingHeader), "operator-a");
+  transport.mock.mockImplementation(async () => response({ items: [] }, "operator-a"));
+  assert.equal((await client.readCaptainPage("/api/captains?cursor=page2", signal, "operator-a")).operatorBinding, "operator-a");
+});
+
+test("Captain queue returns from an empty final page with a fresh bound read and the same filter", async () => {
+  await run({
+    listReply: params => response(params.has("cursor") ? { items: [] } : { items: [standing], nextCursor: "page2" }, "operator-a"),
+  }, async ({ tree, render, requests }) => {
+    queueButton(tree, "الصفحة التالية").props.onClick();
+    render(); await settle();
+    const last = render();
+    assert.deepEqual(table(last).props.dataSource, []);
+    const previous = queueButton(last, "الصفحة السابقة");
+    assert.ok(previous, "empty final page must offer previous navigation");
+    assert.equal(new URL(requests[1].url, "http://localhost").searchParams.get("cursor"), "page2");
+    assert.equal(new Headers(requests[1].options.headers).get(bindingHeader), "operator-a");
+    previous.props.onClick();
+    render(); await settle();
+    assert.equal(table(render()).props.dataSource[0].actorId, standing.actorId);
+    const back = new URL(requests.at(-1).url, "http://localhost").searchParams;
+    assert.equal(back.get("status"), "PENDING");
+    assert.equal(back.has("cursor"), false);
+    assert.equal(new Headers(requests.at(-1).options.headers).get(bindingHeader), "operator-a");
+  });
+});
+
+test("Captain queue cancels a pending quick read immediately and rejects stale row callbacks on filter change", async () => {
+  let finish;
+  await run({
+    detailReply: () => new Promise(resolve => { finish = resolve; }),
+    listReply: params => response({ items: params.get("status") === "PENDING" ? [standing] : [] }, "operator-a"),
+  }, async ({ tree, render, requests }) => {
+    quickRead(tree);
+    const oldDetail = requests[1].options.signal;
+    find(tree, node => node.type === "Select").props.onChange("APPROVED");
+    assert.equal(oldDetail.aborted, true, "filter change must cancel before the next render");
+    quickRead(tree);
+    assert.equal(requests.length, 2, "stale row action must not issue a request");
+    finish(response(standing, "operator-a"));
+    render(); await settle();
+    assert.equal(detail(render()), undefined);
+    assert.deepEqual(table(render()).props.dataSource, []);
+  });
+});
+
+test("Captain BFF rejects a missing or switched continuation binding before contacting DSH", async () => {
+  const bffCode = transformSync(readFileSync(new URL("../src/features/captains/captains-read-bff.ts", import.meta.url), "utf8"), {
+    jsc: { parser: { syntax: "typescript" }, target: "es2022" }, module: { type: "commonjs" },
+  }).code;
+  let ownerReads = 0;
+  const imports = {
+    "server-only": {},
+    "@bthwani/dsh": {
+      captainStandingStatuses: ["PENDING", "APPROVED", "SUSPENDED", "REVOKED"],
+      DshPublicError: Error,
+      listOperatorCaptainStandings: async (_owner, _bearer, params) => {
+        ownerReads++;
+        assert.equal(params.status, "PENDING");
+        return { items: [standing] };
+      },
+    },
+    "next/headers": { cookies: async () => ({ get: () => ({ value: "A".repeat(43) }) }) },
+    "next/server": { NextResponse: { json: (body, options) => Response.json(body, options) } },
+    "../../server/operator-passkey-bff": {
+      isTrustedOperatorLoopbackTarget: () => true, OPERATOR_COOKIE: "operator",
+      readVerifiedOperatorAccess: async () => ({ actorId: "operator-a", grants: ["operations"] }),
+      resolveIsolatedOperatorConfig: () => ({ browserOrigin: "http://localhost" }),
+    },
+    "../stores/public-store-query": { isolatedPublicDshOrigin: () => "http://localhost" },
+  };
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", bffCode)(name => {
+    assert.ok(Object.hasOwn(imports, name), name); return imports[name];
+  }, mod, mod.exports);
+  for (const binding of [undefined, "operator-b"]) {
+    const res = await mod.exports.readCaptainReview(new Request("http://localhost/api/captains?cursor=page2", {
+      headers: binding ? { [bindingHeader]: binding } : {},
+    }));
+    assert.equal(res.status, 403);
+    assert.deepEqual(await res.json(), { code: "FORBIDDEN" });
+    assert.equal(ownerReads, 0);
+  }
+  const res = await mod.exports.readCaptainReview(new Request("http://localhost/api/captains?cursor=page2", {
+    headers: { [bindingHeader]: "operator-a" },
+  }));
+  assert.equal(res.status, 200);
+  assert.equal(ownerReads, 1);
+  assert.match(res.headers.get("Cache-Control"), /no-store/);
+  assert.equal(res.headers.get(bindingHeader), "operator-a");
 });

@@ -40,8 +40,8 @@ export async function readCaptainJson(url: string, signal: AbortSignal, operator
   return (await readCaptainResponse(url, signal, operatorBinding)).json();
 }
 
-export async function readCaptainPage(url: string, signal: AbortSignal): Promise<{ value: unknown; operatorBinding: string }> {
-  const response = await readCaptainResponse(url, signal);
+export async function readCaptainPage(url: string, signal: AbortSignal, expectedBinding?: string): Promise<{ value: unknown; operatorBinding: string }> {
+  const response = await readCaptainResponse(url, signal, expectedBinding);
   const operatorBinding = response.headers.get("X-BThwani-Operator");
   if (!operatorBinding) throw new Error("تعذّر ربط سجل الكباتن بجلسة المشغّل الحالية.");
   return { value: await response.json(), operatorBinding };

@@ -56,8 +56,9 @@ export async function readCaptainReview(request: Request, actorId?: string) {
   const access = await readVerifiedOperatorAccess(config, bearer);
   if (!access) return error("UNAUTHORIZED", 401);
   const operatorBinding = encodeURIComponent(access.actorId);
+  const expectedBinding = request.headers.get("X-BThwani-Operator");
   if (!access.grants.includes("operations") ||
-    (actorId !== undefined && request.headers.get("X-BThwani-Operator") !== operatorBinding)) {
+    ((actorId !== undefined || cursor !== null || expectedBinding !== null) && expectedBinding !== operatorBinding)) {
     return error("FORBIDDEN", 403);
   }
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
