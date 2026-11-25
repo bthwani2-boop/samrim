@@ -89,19 +89,14 @@ test("Identity runtime changes requiring review hold dependent owners, but clien
   assert.equal(shared.blocked.dsh, "SHARED_INPUT_REVIEW_REQUIRED");
 });
 
-test("WLT-only Compose review does not freeze independent owners or admit WLT writes", async () => {
+test("shared Compose changes hold all owners; observed WLT-only drift stays owner-scoped", async () => {
   const { ownerReconcilePlan, isSharedRuntimeInput } = await import("../../tools/dev/docker/owner-preview-source.mjs");
   const base={committed:{},preview:true,captain:true};
-  const overlay="infra/compose.wlt.yaml";
-  assert.equal(isSharedRuntimeInput(overlay),false);
   assert.equal(isSharedRuntimeInput("infra/compose.yaml"),true);
-  assert.deepEqual(ownerReconcilePlan({...base,changed:[overlay]}),{
-    eligible:["dsh","identity"],blocked:{wlt:"CONFIG_REVIEW_REQUIRED"}
-  });
+  assert.deepEqual(ownerReconcilePlan({...base,changed:["infra/compose.yaml"]}).eligible,[]);
   assert.deepEqual(ownerReconcilePlan({...base,changed:[],wltConfigDrift:true}),{
     eligible:["dsh","identity"],blocked:{wlt:"CONFIG_REVIEW_REQUIRED"}
   });
-  assert.deepEqual(ownerReconcilePlan({...base,changed:[overlay,"infra/compose.yaml"]}).eligible,[]);
 });
 
 test("ordinary reconciliation isolates verified WLT config drift, but special transitions and shared drift fail closed", async () => {
@@ -264,6 +259,7 @@ test("Compose provenance accepts exact old or current names only within the cano
   const files = names => names.map(name => root + "/infra/" + name).join(",");
   const canonical = ["compose.yaml","compose.dsh.yaml","compose.identity.yaml","compose.merchant.yaml","compose.captain.yaml"];
   assert.deepEqual(composeFileNames(files(canonical),root),canonical);
+  assert.deepEqual(composeFileNames(files(["compose.yaml"]),root),["compose.yaml"]);
   assert.deepEqual(composeFileNames(files(["compose.yaml","compose.apps.yaml","compose.identity-verifier.yaml","compose.merchant-development.yaml","compose.captain-development.yaml"]),root),canonical);
   assert.throws(()=>composeFileNames(files(["compose.apps.yaml","compose.dsh.yaml"]),root),/Duplicate/);
   assert.throws(()=>composeFileNames("D:/other/infra/compose.apps.yaml",root),/Unowned/);
@@ -439,4 +435,15 @@ test("configuration rollback admits only a proven image and its paired config ha
   assert.equal(isKnownImageConfigPair("new-image","new-hash",prior,candidate),true);
   for(const [image,hash] of [["old-image","new-hash"],["new-image","old-hash"],["unknown","new-hash"],["new-image","unknown"]])
     assert.equal(isKnownImageConfigPair(image,hash,prior,candidate),false);
+});
+
+test("historical single-field reconstruction requires absence in old owner source and a unique current field", async () => {
+  const {priorCanonicalWithoutField}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const before="services:\n  dsh:\n    environment:\n      A: x\n";
+  const field="DSH_ENABLE_ISOLATED_EMPLOYEES";
+  const current=before+"      "+field+": false\n";
+  assert.equal(priorCanonicalWithoutField(current,field,before),before);
+  assert.equal(priorCanonicalWithoutField(current,field,current),null);
+  assert.equal(priorCanonicalWithoutField(current+current,field,before),null);
+  assert.equal(priorCanonicalWithoutField(before,field,before),null);
 });

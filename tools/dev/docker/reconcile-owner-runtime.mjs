@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
 import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
-import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeGroups, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
+import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const context = "bthwani-docker";
@@ -19,9 +19,13 @@ const owners = {
   identity: { tag: "REF_IDENTITY_IMAGE_TAG", image: "bthwani-refoundation-identity-verifier", profile: "identity-verifier" },
   wlt: { tag: "REF_WLT_IMAGE_TAG", image: "bthwani-refoundation-wlt", profile: "wlt-reader" },
 };
-const appFiles = ownerComposeGroups.identityDsh;
-const captainFile = ownerComposeGroups.captain;
-const wltFiles = ownerComposeGroups.wlt;
+const appFiles = Object.freeze(["compose.yaml"]);
+const wltFiles = appFiles;
+const canonicalComposePath = resolve(root,"infra/compose.yaml");
+// These names are accepted only as historical container provenance, not configuration inputs.
+const legacyAppFiles = Object.freeze(["compose.yaml","compose.dsh.yaml","compose.identity.yaml","compose.merchant.yaml"]);
+const legacyCaptainFile = "compose.captain.yaml";
+const legacyWltFiles = Object.freeze(["compose.yaml","compose.wlt.yaml"]);
 const operatorOverrides = {
   IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP: "REF_IDENTITY_OPERATOR_BOOTSTRAP",
   IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH: "REF_IDENTITY_OPERATOR_PASSKEY_AUTH",
@@ -103,9 +107,8 @@ export function removePrivateCopyArchive(pg, archive, execute = docker) {
   execute(["exec", pg, "rmdir", "--", archive.directory]);
 }
 function composeArgs(activeFiles) {
-  return ["compose", "--env-file", "infra/.env",
-    ...activeFiles.flatMap(f => ["-f", "infra/" + f]),
-    ...Object.entries(owners).filter(([o]) => o === "wlt" ? activeFiles.includes("compose.wlt.yaml") : activeFiles.includes("compose.dsh.yaml")).flatMap(([,o]) => ["--profile", o.profile])];
+  if (!equal(activeFiles,appFiles)) throw new Error("Only the canonical Compose source is executable");
+  return ["compose","--project-directory",resolve(root,"infra"),"--env-file","infra/.env","-f",canonicalComposePath, ...Object.values(owners).flatMap(o=>["--profile",o.profile])];
 }
 function asEnv(values) {
   return Object.fromEntries(values.map(v => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
@@ -151,7 +154,7 @@ export function composeFileNames(label, repoRoot = root) {
     ["compose.merchant-development.yaml", "compose.merchant.yaml"],
     ["compose.captain-development.yaml", "compose.captain.yaml"],
   ]);
-  const allowed = new Set([...appFiles, captainFile, ...wltFiles]);
+  const allowed = new Set([...legacyAppFiles, legacyCaptainFile, ...legacyWltFiles]);
   const names = (label || "").split(",").map(p => {
     const normalized = p.replaceAll("/", "\\");
     if (!normalized.toLowerCase().startsWith(prefix)) throw new Error("Unowned Compose file");
@@ -190,10 +193,28 @@ export function isAdmittedWltOriginAddition(previous, current) {
     lines.filter(value => value !== line).join("\n") === before;
 }
 function historicalWltHashes(previous, env) {
-  const args = composeArgs(wltFiles).map(value => value === "infra/compose.wlt.yaml" ? "-" : value);
-  const result = /^wlt\s+([a-f0-9]{64})$/.exec(docker([...args, "config", "--hash", "wlt"], env, 30000, previous + "\n"));
-  if (!result) throw new Error("Incomplete historical WLT Compose hash");
-  return { wlt: result[1] };
+  return configHashes(wltFiles,["wlt"],env,{file:canonicalComposePath,content:previous});
+}
+
+// Reconstruct only an already-admitted historical one-field transition.
+// The old image revision must contain the owner definition without that key,
+// and native Compose must independently match its exact running hash.
+export function priorCanonicalWithoutField(current,field,oldOwnerSource) {
+  if (typeof oldOwnerSource!=="string" || oldOwnerSource.includes(field)) return null;
+  const lines=current.replaceAll("\r\n","\n").split("\n");
+  const matches=lines.filter(line=>line.startsWith("      "+field+": "));
+  if(matches.length!==1)return null;
+  return lines.filter(line=>line!==matches[0]).join("\n");
+}
+function previousOwnerCompose(revision,owner,field,current) {
+  const legacy=owner==="dsh"?["infra/compose.dsh.yaml","infra/compose.apps.yaml"]:["infra/compose.wlt.yaml"];
+  const paths=[...legacy,"infra/compose.yaml"];
+  const found=git(["ls-tree","--name-only",revision,"--",...paths]).split(/\r?\n/);
+  const file=paths.find(p=>found.includes(p));
+  if(!file)return null;
+  const source=git(["show",revision+":"+file]);
+  if(!source.includes("  "+owner+":"))return null;
+  return priorCanonicalWithoutField(current,field,source);
 }
 // An explicitly requested default-off employee configuration addition has no
 // permission effect on either the previous or current DSH binary. All other
@@ -219,7 +240,7 @@ export function isKnownImageConfigPair(image,hash,previous,candidate) {
   return (image===previous.image && hash===previous.hash) || (image===candidate.image && hash===candidate.hash);
 }
 function historicalDshHashes(files,names,env,previous) {
-  return configHashes(files,names,env,{file:"infra/compose.dsh.yaml",content:previous});
+  return configHashes(files,names,env,{file:canonicalComposePath,content:previous});
 }
 function imageRecord(image) {
   return JSON.parse(docker(["image", "inspect", image]))[0];
@@ -742,9 +763,16 @@ function main() {
     recovery={stateFile,receiptFile,reviewed,key:options[0]};
   }
   const state = Object.fromEntries(Object.keys(owners).map(o => [o, inspect(o)]));
-  const activeAppFiles = liveFiles(state.dsh);
-  const captain = activeAppFiles.includes(captainFile);
-  if (!equal(activeAppFiles,captain ? [...appFiles,captainFile] : appFiles) || !equal(liveFiles(state.identity),activeAppFiles) || !equal(liveFiles(state.wlt),wltFiles)) throw new Error("Unexpected current Compose overlays");
+  const activeAppFiles=appFiles;
+  const captain=asEnv(state.identity.Config.Env).IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION==="true";
+  const allowedLegacyApp=captain?[...legacyAppFiles,legacyCaptainFile]:legacyAppFiles;
+  for(const owner of ["dsh","identity"]){
+    const files=liveFiles(state[owner]);
+    if(!equal(files,appFiles)&&!equal(files,allowedLegacyApp))throw new Error("Unexpected historical Compose layout: "+owner);
+  }
+  if(!equal(liveFiles(state.wlt),appFiles)&&!equal(liveFiles(state.wlt),legacyWltFiles))throw new Error("Unexpected historical WLT Compose layout");
+  // A legacy disabled layout never gets new trust mounts or routes automatically.
+  // Existing exact hash checks below require a compatible explicit transition.
   const env = {};
   for (const [o, v] of Object.entries(state)) {
     const prefix = owners[o].image + ":";
@@ -762,6 +790,24 @@ function main() {
     env[key]=dshEnv[name];
   }
   const identityEnv = asEnv(state.identity.Config.Env);
+  // Preserve the actual admitted settings formerly encoded by overlays.
+  // Values are read from the verified existing owner containers, never inferred from an application.
+  for (const [value,key] of [
+    [dshEnv.DSH_ENABLE_ISOLATED_MERCHANT_STANDING,"REF_DSH_ENABLE_ISOLATED_MERCHANT_STANDING"],
+    [dshEnv.DSH_ENABLE_ISOLATED_CAPTAIN_STANDING,"REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING"],
+    [identityEnv.IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION,"REF_IDENTITY_CAPTAIN_ADMISSION"],
+  ]) {
+    if(value!==undefined&&!["true","false"].includes(value))throw new Error("Invalid running owner admission setting: "+key);
+    env[key]=value??"false";
+  }
+  for(const [value,key,allowed] of [
+    [dshEnv.DSH_ISOLATED_CAPTAIN_TLS_CERT,"REF_DSH_PRIVATE_TLS_CERT","/run/dsh-captain-tls/server.pem"],
+    [dshEnv.DSH_ISOLATED_CAPTAIN_TLS_KEY,"REF_DSH_PRIVATE_TLS_KEY","/run/dsh-captain-tls/server-key.pem"],
+  ]) {
+    if(value&&value!==allowed)throw new Error("Unexpected running private TLS path");
+    env[key]=value??"";
+  }
+  if(captain&&(env.REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING!=="true"||!env.REF_DSH_PRIVATE_TLS_CERT||!env.REF_DSH_PRIVATE_TLS_KEY))throw new Error("Active peer trust is incomplete");
   env.REF_IDENTITY_RUNTIME_DATABASE_URL=identityEnv.IDENTITY_TEST_DATABASE_URL;
   for (const [name, key] of Object.entries(operatorOverrides)) {
     if (!Object.hasOwn(identityEnv,name)) throw new Error("Missing current Operator setting: " + name);
@@ -783,10 +829,10 @@ function main() {
       git(["merge-base","--is-ancestor",peer.revision,head]);
       const schemaChanged=Boolean(git(["diff","--name-only",old.revision,head,"--","services/dsh/database"]) ||
                                   git(["diff","--name-only",peer.revision,head,"--","services/identity/database"]));
-      const previous=git(["show",old.revision+":infra/compose.dsh.yaml"]);
-      const current=readFileSync(resolve(root,"infra/compose.dsh.yaml"),"utf8");
+      const current=readFileSync(canonicalComposePath,"utf8");
+      const previous=previousOwnerCompose(old.revision,"dsh","DSH_ENABLE_ISOLATED_EMPLOYEES",current);
       const disabledHandlerProven=[old.revision,head].every(revision=>/if os\.Getenv\("DSH_ENABLE_ISOLATED_EMPLOYEES"\) != "true" \{\s*return existing, nil\s*\}/.test(git(["show",revision+":services/dsh/backend/cmd/dsh/employees.go"])));
-      if(!old.digest && !peer.digest && admittedDshConfigTransition({
+      if(previous && !old.digest && !peer.digest && admittedDshConfigTransition({
         mode,automatic:false,clean:true,schemaChanged,disabledHandlerProven,oldFlagPresent:Object.hasOwn(dshEnv,"DSH_ENABLE_ISOLATED_EMPLOYEES"),
         previous,current,live:expected,historical:historicalDshHashes(group.files,group.names,env,previous),
         desired:actual,disabled:configHashes(group.files,group.names,{...env,REF_DSH_ENABLE_ISOLATED_EMPLOYEES:"false"})
@@ -816,9 +862,9 @@ function main() {
       !dirtyPaths(root,guardedScope).length &&
       committed.wlt.some(rel=>rel.startsWith("services/wlt/database/schema/")) &&
       !Object.hasOwn(asEnv(state.wlt.Config.Env),"WLT_TEST_DSH_ORIGIN")) {
-    const previous=git(["show",revisions.wlt.revision+":infra/compose.wlt.yaml"]);
-    const desired=readFileSync(resolve(root,"infra/compose.wlt.yaml"),"utf8");
-    if (isAdmittedWltOriginAddition(previous,desired) &&
+    const desired=readFileSync(canonicalComposePath,"utf8");
+    const previous=previousOwnerCompose(revisions.wlt.revision,"wlt","WLT_TEST_DSH_ORIGIN",desired);
+    if (previous && isAdmittedWltOriginAddition(previous,desired) &&
         !differingKeys(currentHashes(state,["wlt"]),historicalWltHashes(previous,env)).length) {
       wltConfigTransition={previous,desired:configHashes(wltFiles,["wlt"],env)};
       wltConfigDrift=false;
@@ -880,7 +926,7 @@ function main() {
   }
   const selected = selectOwners({candidates,activateCaptain:mode==="--apply-captain",currentCaptain:captain});
   if(dshConfigTransition&&!selected.includes("dsh")) throw new Error("DSH configuration transition requires an eligible DSH candidate");
-  console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_OVERLAY="+captain);
+  console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_ADMISSION="+captain);
   if(recovery){
     if(partial||selected.length||change.changed.length)throw new Error("Runtime recovery requires current, clean, fully verified owners");
     ensureSource();
@@ -948,7 +994,10 @@ function main() {
   ensureSource();
   for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("Preview source changed: "+o);
   const activate = mode==="--apply-captain" && !captain;
-  if (activate) validateVolumeFiles(tags.dsh);
+  if (activate) {
+    validateVolumeFiles(tags.dsh);
+    Object.assign(nextEnv,{REF_IDENTITY_CAPTAIN_ADMISSION:"true",REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING:"true",REF_DSH_PRIVATE_TLS_CERT:"/run/dsh-captain-tls/server.pem",REF_DSH_PRIVATE_TLS_KEY:"/run/dsh-captain-tls/server-key.pem"});
+  }
   // Re-read every owner before mutation. Do not overwrite another writer.
   for (const o of Object.keys(owners)) {
     const now=inspect(o);
@@ -965,7 +1014,7 @@ function main() {
     const names=group.names.filter(o=>selected.includes(o)&&!schemaSelected.includes(o));
     if(!names.length) continue;
     if(wltConfigTransition && names.includes("wlt")) throw new Error("WLT configuration transition requires successful baseline proof");
-    const newFiles=activate && group.names.includes("dsh") ? [...group.files,captainFile]:group.files;
+    const newFiles=group.files;
     ensureSource();
     for(const o of names) if(imageRecord(owners[o].image+":"+tags[o]).Id!==targetIds[o])throw new Error("Candidate image tag changed: "+o);
     const transition=group.names===appNames ? dshConfigTransition : null;

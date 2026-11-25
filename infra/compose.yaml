@@ -1,5 +1,5 @@
 # Isolated Compose environment for D:/samrim; Git branch changes do not rename its runtime identity.
-# No bind mounts, no external networks/volumes, no reuse of samrim-local state.
+# No host bind mounts or donor state. The shared owner trust volumes retain their existing physical identities.
 name: bthwani-refoundation
 
 x-logging: &logging
@@ -77,6 +77,161 @@ services:
       - "127.0.0.1:${REF_PAYMENT_MOCK_PORT:-3290}:8080"
     networks: [isolated, loopback]
 
+  # Service owners; profiles select lifecycle roles, not applications.
+  dsh-bootstrap:
+    # Deliberately separate from the normal implementation service profile.
+    profiles: [bootstrap]
+    image: "bthwani-refoundation-dsh:${REF_DSH_IMAGE_TAG:-dev}"
+    restart: "no"
+    entrypoint: ["/usr/local/bin/dsh", "-mode=bootstrap"]
+    environment:
+      REF_POSTGRES_USER: "${REF_DSH_BOOTSTRAP_USER:-}"
+      REF_POSTGRES_PASSWORD: "${REF_DSH_BOOTSTRAP_PASSWORD:-}"
+      REF_POSTGRES_DB: "${REF_DSH_RUNTIME_DATABASE:-}"
+      DSH_DB_HOST: postgres
+      DSH_DB_SCHEMA: "${REF_DSH_DISCOVERY_SCHEMA:-}"
+      BTHWANI_ISOLATED_TEST_MODE: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated]
+
+  dsh:
+    profiles: [implementation]
+    image: "bthwani-refoundation-dsh:${REF_DSH_IMAGE_TAG:-dev}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    labels:
+      com.bthwani.environment: refoundation
+      com.bthwani.worktree: samrim-refoundation-clean-20261112
+      com.bthwani.capability: customer-store-catalog
+    environment:
+      REF_POSTGRES_USER: "${REF_DSH_RUNTIME_USER:-}"
+      REF_POSTGRES_PASSWORD: "${REF_DSH_RUNTIME_PASSWORD:-}"
+      REF_POSTGRES_DB: "${REF_DSH_RUNTIME_DATABASE:-}"
+      DSH_DB_HOST: postgres
+      DSH_DB_SCHEMA: "${REF_DSH_DISCOVERY_SCHEMA:-}"
+      DSH_PUBLIC_CORS_ORIGINS: "${REF_DSH_PUBLIC_CORS_ORIGINS:-}"
+      DSH_IDENTITY_VERIFIER_URL: https://identity:3343
+      BTHWANI_ISOLATED_TEST_MODE: "true"
+      BTHWANI_ISOLATED_CONTAINER_MODE: "true"
+      DSH_ENABLE_ISOLATED_CUSTOMER_CART: "${REF_DSH_ENABLE_ISOLATED_CUSTOMER_CART:-false}"
+      DSH_ENABLE_ISOLATED_EMPLOYEES: "${REF_DSH_ENABLE_ISOLATED_EMPLOYEES:-false}"
+      # Owner-owned admission and private service trust; no application-specific Compose layer.
+      DSH_ENABLE_ISOLATED_MERCHANT_STANDING: "${REF_DSH_ENABLE_ISOLATED_MERCHANT_STANDING:-false}"
+      DSH_ENABLE_ISOLATED_STORE_AVAILABILITY: "${REF_DSH_ENABLE_ISOLATED_STORE_AVAILABILITY:-false}"
+      DSH_ENABLE_ISOLATED_CAPTAIN_STANDING: "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING:-false}"
+      DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST: "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST:-false}"
+      DSH_LISTEN_ADDR: "0.0.0.0:8080"
+      SSL_CERT_FILE: /run/identity-ca/ca.pem
+      DSH_ISOLATED_CAPTAIN_TLS_CERT: "${REF_DSH_PRIVATE_TLS_CERT:-}"
+      DSH_ISOLATED_CAPTAIN_TLS_KEY: "${REF_DSH_PRIVATE_TLS_KEY:-}"
+    volumes:
+      - merchant-identity-ca:/run/identity-ca:ro
+      - captain-dsh-tls:/run/dsh-captain-tls:ro
+    ports:
+      - "127.0.0.1:${REF_DSH_PORT:-3202}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated, loopback]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  identity:
+    profiles: [identity-verifier]
+    image: "bthwani-refoundation-identity-verifier:${REF_IDENTITY_IMAGE_TAG:-dev}"
+    # Recover after Docker Desktop/Lenovo restarts; explicit stop stays stopped.
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    labels:
+      com.bthwani.environment: refoundation
+      # Preserve existing Compose runtime identity across Git branch switches.
+      com.bthwani.worktree: samrim-refoundation-clean-20261112
+      com.bthwani.capability: identity-synthetic-session-verifier
+    environment:
+      BTHWANI_ISOLATED_TEST_MODE: "true"
+      BTHWANI_ISOLATED_CONTAINER_MODE: "true"
+      IDENTITY_DB_SCHEMA: "${REF_IDENTITY_TEST_SCHEMA:-}"
+      IDENTITY_TEST_DATABASE_URL: "${REF_IDENTITY_RUNTIME_DATABASE_URL:-}"
+      IDENTITY_DEV_LISTEN_ADDR: "0.0.0.0:3302"
+      IDENTITY_SYNTHETIC_PHONE_AUTH: "${REF_IDENTITY_SYNTHETIC_PHONE_AUTH:-false}"
+      IDENTITY_SYNTHETIC_YEMEN_PHONES: "${REF_IDENTITY_SYNTHETIC_YEMEN_PHONES:-+967770000001}"
+      IDENTITY_SYNTHETIC_PHONE_HMAC_KEY: "${REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY:-}"
+      IDENTITY_SYNTHETIC_PHONE_SMTP: "mailpit:1025"
+      # Explicit isolated-only WebAuthn: never enrolls or recovers an Operator.
+      # Enabling requires migration 006 and a separately authorized real Passkey.
+      IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH: "${REF_IDENTITY_OPERATOR_PASSKEY_AUTH:-false}"
+      # Separate explicit approval required for first-Owner registration.
+      IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP: "${REF_IDENTITY_OPERATOR_BOOTSTRAP:-false}"
+      # Local refoundation first Owner with preexisting synthetic Operator rows.
+      # Explicit opt-in; defaults to false and never activates production.
+      IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR: "${REF_IDENTITY_LOCAL_DEV_FIRST_OPERATOR:-false}"
+      IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN: "${REF_IDENTITY_OPERATOR_PERMISSION_ADMIN:-false}"
+      IDENTITY_OPERATOR_PASSKEY_RPID: "${REF_IDENTITY_OPERATOR_PASSKEY_RPID:-}"
+      IDENTITY_OPERATOR_PASSKEY_ORIGINS: "${REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS:-}"
+      # Private service-to-service trust, independent of application containers.
+      IDENTITY_ISOLATED_VERIFIER_TLS_CERT: /run/identity-tls/server.pem
+      IDENTITY_ISOLATED_VERIFIER_TLS_KEY: /run/identity-tls/server-key.pem
+      IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION: "${REF_IDENTITY_CAPTAIN_ADMISSION:-false}"
+      IDENTITY_DSH_CAPTAIN_STANDING_URL: https://dsh:3344
+      IDENTITY_DSH_CAPTAIN_STANDING_CA: /run/dsh-captain-ca/ca.pem
+    volumes:
+      - merchant-identity-tls:/run/identity-tls:ro
+      - captain-dsh-ca:/run/dsh-captain-ca:ro
+    ports:
+      - "127.0.0.1:${REF_IDENTITY_VERIFIER_PORT:-3201}:3302"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated, loopback]
+    # Readiness is scoped to the synthetic database, not Identity authorization.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3302/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
+  wlt:
+    profiles: [wlt-reader]
+    image: "bthwani-refoundation-wlt:${REF_WLT_IMAGE_TAG:-dev}"
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    labels:
+      com.bthwani.environment: refoundation
+      com.bthwani.capability: customer-wallet-read-only
+      com.bthwani.worktree: samrim-refoundation-clean-20261112
+    environment:
+      BTHWANI_ISOLATED_TEST_MODE: "true"
+      BTHWANI_ISOLATED_CONTAINER_MODE: "true"
+      WLT_DEV_LISTEN_ADDR: "0.0.0.0:8080"
+      WLT_TEST_DATABASE_URL: "${REF_WLT_TEST_DATABASE_URL:-}"
+      WLT_TEST_IDENTITY_ORIGIN: "http://identity:3302"
+      WLT_TEST_DSH_ORIGIN: "http://dsh:8080"
+    ports:
+      - "127.0.0.1:${REF_WLT_PORT:-3203}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [isolated, loopback]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
+
 networks:
   isolated:
     driver: bridge
@@ -87,3 +242,16 @@ networks:
 volumes:
   refoundation-postgres-data:
   refoundation-media-data:
+  # Historical volume identifiers are retained to preserve existing trust material.
+  merchant-identity-tls:
+    name: bthwani-refoundation-merchant-identity-tls
+    external: true
+  merchant-identity-ca:
+    name: bthwani-refoundation-merchant-identity-ca
+    external: true
+  captain-dsh-ca:
+    name: bthwani-refoundation-captain-dsh-ca
+    external: true
+  captain-dsh-tls:
+    name: bthwani-refoundation-captain-dsh-tls
+    external: true

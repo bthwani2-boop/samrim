@@ -6,9 +6,7 @@ import test from "node:test";
 import YAML from "yaml";
 
 const infra = fileURLToPath(new URL("../../infra/", import.meta.url));
-// Closed transitional allowlist; shrink it when each existing overlay is retired.
-// A runtime consumer cannot admit new application-specific definitions by editing its own list.
-const admittedComposeFiles = ["compose.yaml", "compose.dsh.yaml", "compose.identity.yaml", "compose.merchant.yaml", "compose.captain.yaml", "compose.wlt.yaml"];
+const admittedComposeFiles = ["compose.yaml"];
 function compose(name) {
   const document = YAML.parseDocument(readFileSync(path.join(infra, name), "utf8"), {
     strict: true, uniqueKeys: true,
@@ -29,13 +27,12 @@ test("database and mock integrations stay in one isolated project", () => {
   assert.equal(base.services["payment-mock"].build.context, "../tests/infra/payment-mock");
   assert.equal(base.services["payment-mock"].image, "bthwani/payment-mock:local");
   assert.ok(!base.services["payment-mock"].volumes?.length, "synthetic provider must not mount host/legacy data");
-  assert.ok(!base.services.wlt, "No fake WLT runtime until real ledger owner exists");
+  assert.deepEqual(Object.keys(base.services).sort(), ["dsh","dsh-bootstrap","identity","mailpit","media","payment-mock","postgres","wlt"]);
+  assert.deepEqual(Object.keys(base.services).filter(name=>!base.services[name].profiles?.length).sort(), ["mailpit","media","payment-mock","postgres"]);
 });
 
 test("WLT is the real isolated read-only owner and never a migration service", () => {
-  const overlay = compose("compose.wlt.yaml");
-  assert.deepEqual(Object.keys(overlay.services), ["wlt"]);
-  const wlt = overlay.services.wlt;
+  const wlt = compose("compose.yaml").services.wlt;
   assert.deepEqual(wlt.profiles, ["wlt-reader"]);
   assert.equal(wlt.restart, "unless-stopped");
   assert.equal(wlt.read_only, true);
@@ -49,7 +46,7 @@ test("WLT is the real isolated read-only owner and never a migration service", (
   assert.equal(wlt.environment.WLT_TEST_IDENTITY_ORIGIN, "http://identity:3302");
   assert.equal(wlt.environment.WLT_DEV_LISTEN_ADDR, "0.0.0.0:8080");
   assert.equal(wlt.environment.WLT_TEST_DATABASE_URL,
-    "${REF_WLT_TEST_DATABASE_URL:?isolated WLT read-only PostgreSQL URL required}");
+    "${REF_WLT_TEST_DATABASE_URL:-}");
   assert.ok(!wlt.environment.WLT_SANDBOX_DATABASE_URL);
   assert.ok(!wlt.volumes?.length);
   assert.ok(wlt.healthcheck.test.includes("wget -q -O /dev/null http://127.0.0.1:8080/health || exit 1"));
@@ -61,7 +58,7 @@ test("WLT is the real isolated read-only owner and never a migration service", (
 });
 
 test("a normal implementation profile can never implicitly bootstrap SQL", () => {
-  const apps = compose("compose.dsh.yaml");
+  const apps = compose("compose.yaml");
   const service = apps.services.dsh;
   const bootstrap = apps.services["dsh-bootstrap"];
   assert.equal(apps.services["dsh-migrate"], undefined);
@@ -78,12 +75,12 @@ test("a normal implementation profile can never implicitly bootstrap SQL", () =>
   assert.ok(service.cap_drop.includes("ALL"));
   assert.ok(service.ports.every((v) => v.startsWith("127.0.0.1:")));
   assert.equal(service.depends_on.postgres.condition, "service_healthy");
-  assert.equal(service.environment.REF_POSTGRES_USER, "${REF_DSH_RUNTIME_USER:?provision limited DSH runtime role}");
-  assert.equal(service.environment.REF_POSTGRES_PASSWORD, "${REF_DSH_RUNTIME_PASSWORD:?provision dedicated DSH runtime credentials}");
-  assert.equal(service.environment.REF_POSTGRES_DB, "${REF_DSH_RUNTIME_DATABASE:?provision dedicated DSH database}");
+  assert.equal(service.environment.REF_POSTGRES_USER, "${REF_DSH_RUNTIME_USER:-}");
+  assert.equal(service.environment.REF_POSTGRES_PASSWORD, "${REF_DSH_RUNTIME_PASSWORD:-}");
+  assert.equal(service.environment.REF_POSTGRES_DB, "${REF_DSH_RUNTIME_DATABASE:-}");
   assert.equal(bootstrap.environment.REF_POSTGRES_USER, "${REF_DSH_BOOTSTRAP_USER:-}");
   assert.equal(bootstrap.environment.REF_POSTGRES_PASSWORD, "${REF_DSH_BOOTSTRAP_PASSWORD:-}");
-  assert.equal(service.environment.DSH_IDENTITY_VERIFIER_URL, "${REF_DSH_IDENTITY_VERIFIER_URL:-}");
+  assert.equal(service.environment.DSH_IDENTITY_VERIFIER_URL, "https://identity:3343");
   assert.equal(service.environment.DSH_ENABLE_ISOLATED_CUSTOMER_CART, "${REF_DSH_ENABLE_ISOLATED_CUSTOMER_CART:-false}");
   assert.equal(service.environment.DSH_ENABLE_ISOLATED_EMPLOYEES, "${REF_DSH_ENABLE_ISOLATED_EMPLOYEES:-false}", "Employee directory must require explicit isolated opt-in");
   assert.equal(service.environment.BTHWANI_ISOLATED_TEST_MODE, "true");
@@ -91,16 +88,14 @@ test("a normal implementation profile can never implicitly bootstrap SQL", () =>
 });
 
 test("Identity verifier is synthetic only and has no privileged host exposure", () => {
-  const overlay = compose("compose.identity.yaml");
-  const id = overlay.services.identity;
-  assert.ok(!overlay.services.wlt);
+  const id = compose("compose.yaml").services.identity;
   assert.deepEqual(id.profiles, ["identity-verifier"]);
   assert.equal(id.restart, "unless-stopped", "Identity must recover after Docker engine restart");
   assert.equal(id.read_only, true);
   assert.ok(id.cap_drop.includes("ALL"));
   assert.equal(id.environment.BTHWANI_ISOLATED_TEST_MODE, "true");
   assert.equal(id.environment.BTHWANI_ISOLATED_CONTAINER_MODE, "true");
-  assert.equal(id.environment.IDENTITY_TEST_DATABASE_URL, "${REF_IDENTITY_RUNTIME_DATABASE_URL:?provision dedicated Identity runtime credentials}");
+  assert.equal(id.environment.IDENTITY_TEST_DATABASE_URL, "${REF_IDENTITY_RUNTIME_DATABASE_URL:-}");
   assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_AUTH, "${REF_IDENTITY_SYNTHETIC_PHONE_AUTH:-false}");
   assert.equal(id.environment.IDENTITY_SYNTHETIC_YEMEN_PHONES, "${REF_IDENTITY_SYNTHETIC_YEMEN_PHONES:-+967770000001}");
   assert.equal(id.environment.IDENTITY_SYNTHETIC_PHONE_HMAC_KEY, "${REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY:-}");
@@ -120,44 +115,29 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
   assert.ok(id.healthcheck.test.includes("wget -q -O /dev/null http://127.0.0.1:3302/health || exit 1"));
 });
 
-test("Merchant development overlay adds only private TLS and read-side standing", () => {
-  const overlay = compose("compose.merchant.yaml");
-  assert.deepEqual(Object.keys(overlay.services).sort(), ["dsh", "identity"]);
-  const { dsh, identity } = overlay.services;
-  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_MERCHANT_STANDING, "true");
-  for (const key of ["BTHWANI_ISOLATED_TEST_MODE", "BTHWANI_ISOLATED_CONTAINER_MODE"]) {
-    assert.equal(dsh.environment[key], undefined, "base DSH owns isolation mode");
-    assert.equal(compose("compose.dsh.yaml").services.dsh.environment[key], "true");
+test("owner admission and private trust stay in one environment, default off", () => {
+  const model = compose("compose.yaml");
+  const {dsh, identity} = model.services;
+  const variable=(key, value="")=>"$"+"{"+key+":-"+value+"}";
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_MERCHANT_STANDING,variable("REF_DSH_ENABLE_ISOLATED_MERCHANT_STANDING","false"));
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_STANDING,variable("REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING","false"));
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST,variable("REF_DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST","false"));
+  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_STORE_AVAILABILITY,variable("REF_DSH_ENABLE_ISOLATED_STORE_AVAILABILITY","false"));
+  assert.equal(identity.environment.IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION,variable("REF_IDENTITY_CAPTAIN_ADMISSION","false"));
+  assert.equal(dsh.environment.DSH_IDENTITY_VERIFIER_URL,"https://identity:3343");
+  assert.equal(dsh.environment.SSL_CERT_FILE,"/run/identity-ca/ca.pem");
+  assert.equal(identity.environment.IDENTITY_ISOLATED_VERIFIER_TLS_CERT,"/run/identity-tls/server.pem");
+  assert.equal(identity.environment.IDENTITY_ISOLATED_VERIFIER_TLS_KEY,"/run/identity-tls/server-key.pem");
+  assert.equal(identity.environment.IDENTITY_DSH_CAPTAIN_STANDING_URL,"https://dsh:3344");
+  assert.equal(identity.environment.IDENTITY_DSH_CAPTAIN_STANDING_CA,"/run/dsh-captain-ca/ca.pem");
+  assert.equal(dsh.environment.DSH_ISOLATED_CAPTAIN_TLS_CERT,variable("REF_DSH_PRIVATE_TLS_CERT"));
+  assert.equal(dsh.environment.DSH_ISOLATED_CAPTAIN_TLS_KEY,variable("REF_DSH_PRIVATE_TLS_KEY"));
+  assert.deepEqual(dsh.volumes,["merchant-identity-ca:/run/identity-ca:ro","captain-dsh-tls:/run/dsh-captain-tls:ro"]);
+  assert.deepEqual(identity.volumes,["merchant-identity-tls:/run/identity-tls:ro","captain-dsh-ca:/run/dsh-captain-ca:ro"]);
+  for(const name of ["merchant-identity-ca","merchant-identity-tls","captain-dsh-ca","captain-dsh-tls"]){
+    assert.deepEqual(model.volumes[name],{name:"bthwani-refoundation-"+name,external:true});
   }
-  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_STANDING,
-    "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING:-false}");
-  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST,
-    "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST:-false}");
-  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_STORE_AVAILABILITY,
-    "${REF_DSH_ENABLE_ISOLATED_STORE_AVAILABILITY:-false}", "Store operations and policy history require their own explicit opt-in");
-  assert.equal(dsh.environment.DSH_IDENTITY_VERIFIER_URL, "https://identity:3343");
-  assert.equal(dsh.environment.SSL_CERT_FILE, "/run/identity-ca/ca.pem");
-  assert.deepEqual(dsh.volumes, ["merchant-identity-ca:/run/identity-ca:ro"]);
-  assert.deepEqual(identity.volumes, ["merchant-identity-tls:/run/identity-tls:ro"]);
-  assert.equal(identity.ports, undefined);
-  assert.equal(dsh.ports, undefined);
-});
-
-test("Captain admission uses only the private DSH TLS owner and a dedicated trust volume", () => {
-  const overlay = compose("compose.captain.yaml");
-  const { identity, dsh } = overlay.services;
-  assert.equal(identity.environment.IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION, "true");
-  assert.equal(identity.environment.IDENTITY_DSH_CAPTAIN_STANDING_URL, "https://dsh:3344");
-  assert.equal(identity.environment.IDENTITY_DSH_CAPTAIN_STANDING_CA, "/run/dsh-captain-ca/ca.pem");
-  assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_STANDING, "true");
-  assert.equal(dsh.environment.DSH_ISOLATED_CAPTAIN_TLS_CERT, "/run/dsh-captain-tls/server.pem");
-  assert.equal(dsh.environment.DSH_ISOLATED_CAPTAIN_TLS_KEY, "/run/dsh-captain-tls/server-key.pem");
-  assert.deepEqual(identity.volumes, ["captain-dsh-ca:/run/dsh-captain-ca:ro"]);
-  assert.deepEqual(dsh.volumes, ["captain-dsh-tls:/run/dsh-captain-tls:ro"]);
-  assert.equal(identity.ports, undefined);
-  assert.equal(dsh.ports, undefined);
-  assert.equal(overlay.volumes["captain-dsh-ca"].external, true);
-  assert.equal(overlay.volumes["captain-dsh-tls"].external, true);
+  for(const owner of [dsh,identity]) assert.ok(owner.ports.every(port=>port.startsWith("127.0.0.1:")&&!/:(3343|3344)$/.test(port)));
 });
 test("the disposable Operator stack remains separate from shared owner state", () => {
   const stack = compose("../tests/infra/compose.operator-webauthn-sandbox.yaml");
@@ -218,6 +198,6 @@ test("shared infrastructure admits no new application or capability Compose file
     .sort();
   assert.ok(files.includes("infra/compose.yaml"), "canonical environment definition is required");
   const allowed = admittedComposeFiles.map(name => "infra/" + name).sort();
-  assert.deepEqual([...ownerComposeInputs].sort(), allowed, "runtime input scope must match the transitional allowlist");
-  assert.deepEqual(files, allowed, "new application/capability Compose files are forbidden; existing overlays are transitional");
+  assert.deepEqual([...ownerComposeInputs].sort(), allowed, "runtime input scope must match the single canonical definition");
+  assert.deepEqual(files, allowed, "application/capability Compose files are forbidden");
 });

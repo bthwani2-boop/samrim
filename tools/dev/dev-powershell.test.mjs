@@ -193,11 +193,13 @@ test("strict Docker verification and complete environment verification share the
   assert.match(owner[1], /Assert-Ok \(\$LASTEXITCODE -eq 0\)/);
   const config = launcher.match(/function Assert-CompleteCompose \{([\s\S]*?)\n\}/);
   assert.ok(config);
-  for (const input of ["$baseCompose", "$appCompose", "compose.identity.yaml", "compose.merchant.yaml", "compose.captain.yaml", "compose.wlt.yaml"]) {
+  for (const input of ["$baseCompose"]) {
     assert.ok(config[1].includes(input), "missing Compose input " + input);
   }
   for (const profile of ["implementation", "identity-verifier", "wlt-reader"]) assert.ok(config[1].includes("'" + profile + "'"));
-  assert.match(config[1], /'config','--quiet'/);
+  assert.match(config[1], /'config','--format','json'/);
+  assert.match(config[1], /unprovisioned owner Compose input/);
+  assert.doesNotMatch(config[1], /compose\.(?:dsh|identity|wlt|merchant|captain)\.yaml/);
   assert.doesNotMatch(config[1], /'up'|'run'|'bootstrap'/);
   const scoped = launcher.match(/function Invoke-ScopedDocker \{([\s\S]*?)\n\}/);
   assert.ok(scoped);

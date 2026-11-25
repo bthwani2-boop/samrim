@@ -31,7 +31,7 @@ The five experimental migrations remain available in Git at
 
 ### Isolated Docker development reader
 
-`infra/compose.wlt.yaml` defines the opt-in `wlt` service in the
+`infra/compose.yaml` defines the opt-in `wlt` service in the
 existing `bthwani-refoundation` Compose project. Its pinned `Dockerfile`
 runs the actual Go reader as UID 65532 with no writable filesystem or container
 capabilities and loopback-only host port `3203`. It uses an explicit
@@ -56,8 +56,7 @@ durable database state before any attempted recovery; do not delete, reset or
 rerun the provisioner blindly.
 
 Build the committed WLT source image using `tools/dev/docker/build-owner-image.ps1 -Owner wlt`,
-then use Compose with both `infra/compose.yaml` and
-`infra/compose.wlt.yaml`, selecting `--profile wlt-reader` and
+then use the canonical `infra/compose.yaml`, selecting `--profile wlt-reader` and
 `--no-deps` for `wlt` only after Identity and PostgreSQL are confirmed
 healthy. Verify `/health`, unauthenticated `401` and
 read-only `405`, then real Identity session authorization/denial on

@@ -49,7 +49,6 @@ $expectedLenovo = 'BTHWANI-DOCKER'
 $project = 'bthwani-refoundation'
 $baseEnv = Join-Path $repo 'infra\.env'
 $baseCompose = Join-Path $repo 'infra\compose.yaml'
-$appCompose = Join-Path $repo 'infra\compose.dsh.yaml'
 $ownerTasks = @(
   @{Name='BThwani Lenovo Source Sync'; Pattern='sync-lenovo-source\.mjs'},
   @{Name='BThwani Customer Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'},
@@ -1117,11 +1116,16 @@ function Invoke-AppAction {
 
 function Assert-CompleteCompose {
   Assert-Compose
-  $files=@($baseCompose,$appCompose,(Join-Path $repo 'infra\compose.identity.yaml'),(Join-Path $repo 'infra\compose.merchant.yaml'),(Join-Path $repo 'infra\compose.captain.yaml'),(Join-Path $repo 'infra\compose.wlt.yaml'))
-  $argsList=@('compose','--env-file',$baseEnv)
-  foreach($file in $files){$argsList+=@('-f',$file)}
-  $argsList+=@('--profile','implementation','--profile','identity-verifier','--profile','wlt-reader','config','--quiet')
-  $null=Invoke-DockerCli -argsList $argsList
+  $argsList=@('compose','--env-file',$baseEnv,'-f',$baseCompose,'--profile','implementation','--profile','identity-verifier','--profile','wlt-reader','config','--format','json')
+  # Keep the resolved configuration private and report only a bounded failure.
+  $raw=@(& docker --context $dockerContext @argsList 2>$null)
+  Assert-Ok ($LASTEXITCODE -eq 0) 'native owner Compose configuration could not be resolved'
+  try { $model=($raw -join [Environment]::NewLine) | ConvertFrom-Json -ErrorAction Stop }
+  catch { throw 'native owner Compose model is invalid' }
+  foreach($check in @(@('dsh','REF_POSTGRES_USER'),@('dsh','REF_POSTGRES_PASSWORD'),@('dsh','REF_POSTGRES_DB'),@('dsh','DSH_DB_SCHEMA'),@('dsh','DSH_PUBLIC_CORS_ORIGINS'),@('identity','IDENTITY_DB_SCHEMA'),@('identity','IDENTITY_TEST_DATABASE_URL'),@('wlt','WLT_TEST_DATABASE_URL'))){
+    $owner=$check[0];$key=$check[1]
+    Assert-Ok (![string]::IsNullOrWhiteSpace([string]$model.services.$owner.environment.$key)) ('unprovisioned owner Compose input '+$owner+'/'+$key)
+  }
   Say 'COMPOSE_CONFIG' 'PASS complete owner and capability configuration; no SQL execution or secret output'
 }
 function Assert-OwnerRuntime {
@@ -1185,7 +1189,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker verify         # strict DSH + Identity + WLT live image provenance'
   Write-Output 'pnpm dev docker reconcile      # check existing runtime and owner source drift'
   Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
-  Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit Captain overlay activation'
+  Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit owner admission activation'
   Write-Output 'pnpm dev docker reconcile -Apply -Preview # isolated uncommitted Go snapshot'
   Write-Output 'pnpm dev docker reconcile -Apply -PrepareDshDatabase # one-time additive DSH candidate; no cutover'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
@@ -1221,7 +1225,7 @@ function Invoke-ScopedDocker {
     }
     'config' { Assert-CompleteCompose }
     'reconcile' {
-      Assert-Ok (!$EnableCaptain -or $Apply) 'Captain overlay requires explicit -Apply'
+      Assert-Ok (!$EnableCaptain -or $Apply) 'Captain admission requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
       Assert-Ok (!$ResumeIdentityDatabase -or $RelocateIdentityDatabase) 'Resume requires Identity relocation'
       Assert-Ok (!$RelocateIdentityDatabase -or ($Apply -and !$CutoverDshDatabase -and !$PrepareDshDatabase -and !$ResumeDshDatabase -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline)) 'Identity relocation requires explicit isolated Apply'
