@@ -7,7 +7,7 @@ import { formatExactYer } from "../../components/format-exact-yer";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview";
 import { type CartReadState, type MerchandiseEstimateReadState, readVerifiedCart, readVerifiedCartMerchandiseEstimate } from "../cart/cart-transport";
 import { readCheckoutFunding } from "./checkout-funding";
-import CheckoutReviewForm from "./checkout-review-form";
+import CheckoutReviewForm, { type CheckoutInputDraft } from "./checkout-review-form";
 import type { CheckoutFundingState } from "./checkout-funding-state";
 import DeliveryAddressReview from "./delivery-address-review";
 import FulfillmentChoice from "./fulfillment-choice";
@@ -34,6 +34,14 @@ export default function CheckoutScreen() {
   const [merchandise, setMerchandise] = useState<CurrentMerchandise | null>(null);
   const [retry, setRetry] = useState(0);
   const generation = useRef(0);
+  // Only unsubmitted input, never an authorization, quote or payment proof.
+  const draftCache = useRef<{ scope: string; storeId: string; active: boolean; draft?: CheckoutInputDraft } | null>(null);
+  const rememberDraft = useCallback((scope: string, draft: CheckoutInputDraft | null) => {
+    const current = draftCache.current;
+    if (current?.active && current.scope === scope) {
+      draftCache.current = { scope, storeId: current.storeId, active: true, ...(draft ? { draft } : {}) };
+    }
+  }, []);
 
   useEffect(() => {
     const reload = () => setRetry(value => value + 1);
@@ -50,6 +58,8 @@ export default function CheckoutScreen() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry deliberately refreshes the same DSH Store review.
   useFocusEffect(useCallback(() => {
     const epoch = ++generation.current;
+    if (draftCache.current?.storeId !== storeId) draftCache.current = null;
+    else if (draftCache.current) draftCache.current.active = false;
     const controller = new AbortController();
     let expires: ReturnType<typeof setTimeout> | undefined;
     setResult(null);
@@ -58,6 +68,16 @@ export default function CheckoutScreen() {
     if (storeId) {
       void readVerifiedCart(storeId, controller.signal).then(view => {
         if (controller.signal.aborted || generation.current !== epoch) return;
+        if (view.kind === "signed-out") draftCache.current = null;
+        if (view.kind === "ready") {
+          const scope = JSON.stringify([view.cart.actorId, view.cart.storeId, view.cart.version]);
+          if (view.cart.storeId !== storeId || !view.cart.lines.length || !view.cart.lines.every(line => line.previewAvailable)) {
+            draftCache.current = null;
+          } else {
+            const draft = draftCache.current?.scope === scope ? draftCache.current.draft : undefined;
+            draftCache.current = { scope, storeId, active: true, ...(draft ? { draft } : {}) };
+          }
+        }
         setResult({ storeId, view });
         if (view.kind !== "ready") return;
         const actorId = view.cart.actorId;
@@ -68,6 +88,7 @@ export default function CheckoutScreen() {
           .then(read => {
             if (controller.signal.aborted || generation.current !== epoch) return;
             if (read.kind === "signed-out") {
+              draftCache.current = null;
               setResult({ storeId, view: { kind: "signed-out" } });
               setFunding(null);
               setMerchandise(null);
@@ -88,6 +109,7 @@ export default function CheckoutScreen() {
         void readCheckoutFunding(actorId, controller.signal).then(proof => {
           if (controller.signal.aborted || generation.current !== epoch) return;
           if (proof.kind === "signed-out") {
+            draftCache.current = null;
             setResult({ storeId, view: { kind: "signed-out" } });
             setFunding(null);
             setMerchandise(null);
@@ -97,8 +119,10 @@ export default function CheckoutScreen() {
           if (proof.kind === "ready") {
             expires = setTimeout(() => {
               if (!controller.signal.aborted && generation.current === epoch) {
+                if (draftCache.current) draftCache.current.active = false;
                 setFunding(null);
-                setResult({ storeId, view: { kind: "signed-out" } });
+                setResult(null);
+                setRetry(value => value + 1);
               }
             }, Math.max(0, proof.expiresAt - Date.now()));
           }
@@ -117,6 +141,7 @@ export default function CheckoutScreen() {
       controller.abort();
       if (expires) clearTimeout(expires);
       generation.current++;
+      if (draftCache.current) draftCache.current.active = false;
       setResult(null);
       setFunding(null);
       setMerchandise(null);
@@ -288,7 +313,10 @@ export default function CheckoutScreen() {
           </Text>
           <View style={{ gap: 10 }}>
             {cart && cart.lines.length > 0 && cart.lines.every(line => line.previewAvailable) ? (
-              <CheckoutReviewForm key={`${cart.actorId}:${storeId}:${cart.version}`} actorId={cart.actorId} storeId={storeId} cartVersion={cart.version} />
+              <CheckoutReviewForm key={JSON.stringify([cart.actorId, storeId, cart.version])}
+                actorId={cart.actorId} storeId={storeId} cartVersion={cart.version}
+                initialDraft={draftCache.current?.scope === JSON.stringify([cart.actorId, storeId, cart.version]) ? draftCache.current.draft : undefined}
+                onDraftChange={rememberDraft} />
             ) : (
               <>
                 {cart && cart.lines.length > 0 ? <DeliveryAddressReview key={`${cart.actorId}:${storeId}:${cart.version}`} actorId={cart.actorId} storeId={storeId} /> : null}

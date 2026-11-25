@@ -330,3 +330,37 @@ test("eligible cart mounts the interactive owner review with the exact cart scop
   h.blur();
   assert.ok(!nodes(h.render()).some(n => n.type === "CheckoutReviewForm"));
 });
+
+test("checkout retains only same actor/store/cart draft through transient owner outage and clears on denial or scope change", async () => {
+  const h = harness("store-a");
+  const cart = fixture("store-a");
+  cart.lines = cart.lines.filter(line => line.previewAvailable);
+  const form = () => nodes(h.render()).find(n => n.type === "CheckoutReviewForm");
+  const draft = { recipient: { purpose: "OTHER", name: "Synthetic Recipient", phone: "+967770000099", instructions: "" }, mode: "CUSTOMER_PICKUP" };
+  const reload = async result => {
+    h.blur(); h.render(); h.focus();
+    h.calls.at(-1).resolve(result);
+    await settle();
+  };
+  h.render(); h.focus(); h.calls[0].resolve({ kind: "ready", cart }); await settle();
+  const scope = JSON.stringify([cart.actorId, cart.storeId, cart.version]);
+  form().props.onDraftChange(scope, draft);
+  await reload({ kind: "unavailable" });
+  assert.equal(form(), undefined);
+  await reload({ kind: "ready", cart });
+  assert.deepEqual(form().props.initialDraft, draft);
+  await reload({ kind: "signed-out" });
+  assert.equal(form(), undefined);
+  await reload({ kind: "ready", cart });
+  assert.equal(form().props.initialDraft, undefined);
+  form().props.onDraftChange(scope, draft);
+  await reload({ kind: "ready", cart: { ...cart, actorId: "customer-two" } });
+  assert.equal(form().props.initialDraft, undefined);
+  form().props.onDraftChange(scope, draft);
+  await reload({ kind: "ready", cart });
+  assert.equal(form().props.initialDraft, undefined, "late previous scope callback must not restore old draft");
+  form().props.onDraftChange(scope, draft);
+  await reload({ kind: "ready", cart: { ...cart, version: 9 } });
+  assert.equal(form().props.initialDraft, undefined);
+  h.blur();
+});

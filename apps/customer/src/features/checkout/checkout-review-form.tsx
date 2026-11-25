@@ -1,4 +1,4 @@
-import { type CheckoutFulfillmentMode, type CustomerAddress, type CustomerCheckoutReview, type CustomerCheckoutReviewInput, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
+import { DshPublicError, type CheckoutFulfillmentMode, type CustomerAddress, type CustomerCheckoutReview, type CustomerCheckoutReviewInput, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
@@ -11,12 +11,19 @@ import { readCheckoutReview } from "./checkout-review-transport";
 
 const emptyRecipient = () => ({ purpose: "SELF" as "SELF" | "OTHER", name: "", phone: "", instructions: "" });
 type AddressSelection = Pick<CustomerAddress, "id" | "version">;
-export default function CheckoutReviewForm({ actorId, storeId, cartVersion }: Readonly<{
+export type CheckoutInputDraft = Readonly<{
+  recipient: ReturnType<typeof emptyRecipient>;
+  mode: CheckoutFulfillmentMode | null;
+}>;
+export default function CheckoutReviewForm({ actorId, storeId, cartVersion, initialDraft, onDraftChange }: Readonly<{
   actorId: string; storeId: string; cartVersion: number;
+  initialDraft?: CheckoutInputDraft | undefined;
+  onDraftChange?: ((scope: string, draft: CheckoutInputDraft | null) => void) | undefined;
 }>) {
   const { theme } = useMobileAppearance();
-  const [recipient, setRecipient] = useState(emptyRecipient);
-  const [mode, setMode] = useState<CheckoutFulfillmentMode | null>(null);
+  const scope = JSON.stringify([actorId, storeId, cartVersion]);
+  const [recipient, setRecipient] = useState(() => initialDraft?.recipient ?? emptyRecipient());
+  const [mode, setMode] = useState<CheckoutFulfillmentMode | null>(initialDraft?.mode ?? null);
   const [address, setAddress] = useState<AddressSelection | null>(null);
   const [result, setResult] = useState<CustomerCheckoutReview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -27,28 +34,42 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion }: Re
     active.current?.abort(); active.current = null;
     setResult(null); setBusy(false); setError("");
   }, []);
-  const clear = useCallback(() => {
-    invalidate(); setRecipient(emptyRecipient()); setMode(null); setAddress(null); setAdmitted(false);
+  const conceal = useCallback(() => {
+    invalidate(); setAddress(null); setAdmitted(false);
   }, [invalidate]);
+  const clear = useCallback(() => {
+    conceal(); setRecipient(emptyRecipient()); setMode(null); onDraftChange?.(scope, null);
+  }, [conceal, scope, onDraftChange]);
   useEffect(() => {
     let controller = new AbortController();
     let expiry: ReturnType<typeof setTimeout> | undefined;
     let visible = true;
+    let checking: AbortSignal | null = null;
     const stop = () => {
-      visible = false; controller.abort(); clearTimeout(expiry); clear();
+      visible = false; controller.abort(); clearTimeout(expiry); conceal();
     };
     const verify = async () => {
-      if (!visible || controller.signal.aborted) return;
+      if (!visible || controller.signal.aborted || checking === controller.signal) return;
       const signal = controller.signal;
+      checking = signal;
       try {
         const session = await verifyAddressSession(signal, actorId);
         if (signal.aborted || !visible) return;
         clearTimeout(expiry);
         const remaining = Date.parse(session.sessionExpiresAt) - Date.now();
-        if (!Number.isFinite(remaining) || remaining <= 0) { stop(); return; }
-        expiry = setTimeout(stop, Math.min(2147483647, remaining));
+        if (!Number.isFinite(remaining) || remaining <= 0) { conceal(); return; }
+        expiry = setTimeout(() => { conceal(); void verify(); }, Math.min(2147483647, remaining));
         setAdmitted(true);
-      } catch { if (!signal.aborted) stop(); }
+      } catch (failure) {
+        if (!signal.aborted && visible) {
+          clearTimeout(expiry);
+          if (failure instanceof DshPublicError && [401, 403].includes(failure.status)) {
+            clear();
+          } else conceal();
+        }
+      } finally {
+        if (checking === signal) checking = null;
+      }
     };
     const resume = () => { controller.abort(); controller = new AbortController(); visible = true; void verify(); };
     void verify();
@@ -62,7 +83,7 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion }: Re
     }
     const listener = AppState.addEventListener("change", state => { if (state === "active") resume(); else stop(); });
     return () => { controller.abort(); clearTimeout(expiry); clearInterval(timer); active.current?.abort(); listener.remove(); };
-  }, [actorId, clear]);
+  }, [actorId, clear, conceal]);
   const selectAddress = useCallback((value: AddressSelection | null) => { invalidate(); setAddress(value); }, [invalidate]);
   const input: CustomerCheckoutReviewInput | null = mode ? {
     expectedCartVersion: cartVersion, recipientPurpose: recipient.purpose, fulfillmentMode: mode,
@@ -80,15 +101,24 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion }: Re
       if (read.kind === "signed-out") { clear(); setError("انتهت جلسة العميل. أعد فتح المراجعة."); return; }
       if (read.kind === "ready") setResult(read.review);
       else setError("تعذّر التحقق من المراجعة لدى DSH. راجع السلة والعنوان وحاول مجددًا.");
+    } catch {
+      if (!controller.signal.aborted && active.current === controller) {
+        setError("تعذّر التحقق من المراجعة. حاول مجددًا.");
+      }
     } finally {
       if (active.current === controller) { active.current = null; setBusy(false); }
     }
   }
   if (!admitted) return <Text style={{ color: theme.colorSecondary }}>{error || "جارٍ التحقق من جلسة العميل للمراجعة."}</Text>;
   return <View testID="checkout-review-inputs" style={{ gap: 12 }}>
-    <FulfillmentChoice value={mode} onChange={next => { invalidate(); setMode(next); if (next === "CUSTOMER_PICKUP") setAddress(null); }} />
+    <FulfillmentChoice value={mode} onChange={next => {
+      invalidate(); setMode(next); onDraftChange?.(scope, { recipient, mode: next });
+      if (next === "CUSTOMER_PICKUP") setAddress(null);
+    }} />
     {mode && mode !== "CUSTOMER_PICKUP" ? <DeliveryAddressReview actorId={actorId} storeId={storeId} onSelectionChange={selectAddress} /> : null}
-    <RecipientForm value={recipient} pickup={mode === "CUSTOMER_PICKUP"} onChange={next => { invalidate(); setRecipient(next); }} />
+    <RecipientForm value={recipient} pickup={mode === "CUSTOMER_PICKUP"} onChange={next => {
+      invalidate(); setRecipient(next); onDraftChange?.(scope, { recipient: next, mode });
+    }} />
     <Pressable accessibilityRole="button" accessibilityState={{ disabled: !valid || busy }} disabled={!valid || busy}
       style={{ minHeight: 44, padding: 12, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 8, opacity: valid && !busy ? 1 : 0.5 }}
       onPress={() => void review()}>

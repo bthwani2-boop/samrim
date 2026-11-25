@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { validCustomerCheckoutReviewInput } from "@bthwani/dsh";
+import { DshPublicError, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
 import { formatExactYer } from "../../components/format-exact-yer.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../..");
@@ -33,7 +33,9 @@ function flatten(tree) {
 }
 function harness() {
   const hooks = [], reads = [];
-  let index = 0, listener, cleanup;
+  let index = 0, listener, cleanup, poll;
+  let verify = async () => ({ sessionExpiresAt: "2030-01-01T00:00:00Z" });
+  const drafts = [];
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const react = {
     useState(initial) {
@@ -53,14 +55,14 @@ function harness() {
     },
   };
   const mocks = {
-    "@bthwani/dsh": { validCustomerCheckoutReviewInput },
+    "@bthwani/dsh": { DshPublicError, validCustomerCheckoutReviewInput },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "react-native": { AppState: { addEventListener(_event, fn) { listener = fn; return { remove() {} }; } },
       Platform: { OS: "android" }, Pressable: "Pressable", Text: "Text", View: "View" },
     "../../components/format-exact-yer": { formatExactYer },
-    "../addresses/address-transport": { verifyAddressSession: async () => ({ sessionExpiresAt: "2030-01-01T00:00:00Z" }) },
+    "../addresses/address-transport": { verifyAddressSession: (...args) => verify(...args) },
     "./delivery-address-review": { __esModule: true, default: "DeliveryAddressReview" },
     "./fulfillment-choice": { __esModule: true, default: "FulfillmentChoice" },
     "./recipient-form": { __esModule: true, default: "RecipientForm" },
@@ -72,12 +74,15 @@ function harness() {
     },
   };
   const module = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
+  new Function("require", "module", "exports", "setInterval", "clearInterval", compiled)(name => {
     assert.ok(Object.hasOwn(mocks, name), "Unexpected dependency " + name);
     return mocks[name];
-  }, module, module.exports);
+  }, module, module.exports, callback => { poll = callback; return 1; }, () => undefined);
+  const remember = (scope, draft) => drafts.push({ scope, draft });
   return {
-    reads, render() { index = 0; return module.exports.default({ actorId: "customer-a", storeId: "store-a", cartVersion: 4 }); },
+    reads, drafts, render() { index = 0; return module.exports.default({ actorId: "customer-a", storeId: "store-a", cartVersion: 4, onDraftChange: remember }); },
+    poll() { poll(); },
+    setVerify(fn) { verify = fn; },
     background() { listener("background"); },
     cleanup() { cleanup?.(); },
   };
@@ -114,5 +119,27 @@ test("checkout renders only owner distance fee evidence and clears it on method 
     assert.equal(h.reads[1].signal.aborted, true);
     h.reads[1].resolve(read); await settle();
     assert.equal(fee(), undefined);
+  } finally { h.cleanup(); }
+});
+
+test("transient verification failure hides checkout draft and restores it only after fresh same-actor verification", async () => {
+  const h = harness();
+  const find = type => nodes(h.render()).find(n => n.type === type);
+  const recipient = { purpose: "OTHER", name: "Synthetic Recipient", phone: "+967770000099", instructions: "" };
+  try {
+    h.render(); await settle();
+    find("FulfillmentChoice").props.onChange("CUSTOMER_PICKUP");
+    find("RecipientForm").props.onChange(recipient);
+    h.setVerify(async () => { throw new DshPublicError(503, "OWNER_UNAVAILABLE"); });
+    h.poll(); await settle();
+    assert.equal(find("RecipientForm"), undefined);
+    h.setVerify(async () => ({ sessionExpiresAt: "2030-01-01T00:00:00Z" }));
+    h.poll(); await settle();
+    assert.deepEqual(find("RecipientForm").props.value, recipient);
+    assert.equal(find("FulfillmentChoice").props.value, "CUSTOMER_PICKUP");
+    h.setVerify(async () => { throw new DshPublicError(401, "UNAUTHORIZED"); });
+    h.poll(); await settle();
+    assert.equal(find("RecipientForm"), undefined);
+    assert.equal(h.drafts.at(-1)?.draft, null);
   } finally { h.cleanup(); }
 });
