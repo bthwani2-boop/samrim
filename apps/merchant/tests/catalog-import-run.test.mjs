@@ -6,8 +6,8 @@ import {tmpdir} from "node:os";
 import path from "node:path";
 import {test} from "node:test";
 import * as dsh from "@bthwani/dsh";
-import { buildImportManifest } from "../src/features/catalog/catalog-import-data.ts";
 import {GET,PATCH, PUT} from "../app/api/admission+api.ts";
+import { buildImportManifest } from "../src/features/catalog/catalog-import-data.ts";
 
 const actorId="merchant-a",storeId="store-a",runId="run-0001",sourceSha256="a".repeat(64);
 const manifest={sourceSha256,rows:[{row:2,name:"Milk",priceYer:"100",stockUnits:"2",offerId:"of-a",expectedVersion:1}]};
@@ -57,12 +57,12 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
     const code=readFileSync(path.join(tmp,"catalog-import-run.js"),"utf8");
     const storage=new Map(),calls=[];let states=[],refs=[],effects=[],si=0,ri=0,ei=0;
     const platform={OS:os};
-    let digestGate=null,storageGate=null,storageWaiting=false;
+    let digestGate=null,storageGate=null,storageWaiting=false,writeGate=null,writeWaiting=false;
     let ownerRun=null,ownerProcessed=0,refreshes=0,props={actorId,storeId,sourceSha256,onChanged(){refreshes++;},rows:[{row:2,name:"Milk",priceYer:"100",stockUnits:"2",reason:"existing-store-name",editableDraft:{id:"of-a",draftVersion:1}}]};
     const react={useState(initial){const i=si++;if(!(i in states))states[i]=initial;return [states[i],next=>{states[i]=typeof next==="function"?next(states[i]):next;}];},useRef(initial){const i=ri++;refs[i]??={current:initial};return refs[i];},useLayoutEffect(fn,deps){const i=ei++;const old=effects[i];if(!old||!deps||deps.some((v,j)=>v!==old.deps[j])){old?.cleanup?.();effects[i]={deps,cleanup:fn()};}}};
     const jsx=(type,props,key)=>({type,props:props??{},key});
     const get=k=>storage.get(k)??null,set=(k,v)=>storage.set(k,v),remove=k=>storage.delete(k);
-    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},"expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(alg,v)=>{if(digestGate&&v.startsWith("{"))await digestGate;return createHash(alg).update(v).digest("hex");}},"expo-secure-store":{WHEN_UNLOCKED_THIS_DEVICE_ONLY:1,getItemAsync:async k=>{if(storageGate){storageWaiting=true;await storageGate;}return get(k);},setItemAsync:async(k,v)=>set(k,v),deleteItemAsync:async k=>remove(k)},react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},"./catalog-import-data":{buildImportManifest},"./catalog-import-transport":{async requestCatalogImport(a,s,r,m,signal,change){
+    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},"expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(alg,v)=>{if(digestGate&&v.startsWith("{"))await digestGate;return createHash(alg).update(v).digest("hex");}},"expo-secure-store":{WHEN_UNLOCKED_THIS_DEVICE_ONLY:1,getItemAsync:async k=>{if(storageGate){storageWaiting=true;await storageGate;}return get(k);},setItemAsync:async(k,v)=>{if(writeGate){writeWaiting=true;await writeGate;}set(k,v);},deleteItemAsync:async k=>remove(k)},react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},"./catalog-import-data":{buildImportManifest},"./catalog-import-transport":{async requestCatalogImport(a,s,r,m,signal,change){
       signal.throwIfAborted();assert.equal(a,actorId);assert.equal(s,storeId);calls.push({r,m,change});
       if(m==="PUT"){assert.equal(storage.size,1);assert.deepEqual(change,manifest);ownerRun=r;throw Error("lost start ack");}
       assert.equal(r,ownerRun);
@@ -133,6 +133,19 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
     await until(()=>!button("تحديد جميع المسودات المطابقة").props.disabled);
     assert.equal(calls.length,0,"preview replacement while acquiring recovery storage must not dispatch");
     assert.equal(storage.size,0,"preview replacement while acquiring recovery storage must not persist a run");
+    if(os==="android"){
+      rowChoice().props.onPress();
+      let releaseWrite;
+      writeGate=new Promise(resolve=>{releaseWrite=resolve;});
+      click("اعتماد وتسجيل الدفعة المحددة");
+      await until(()=>writeWaiting);
+      props={...props,rows:[...props.rows]};
+      render();
+      releaseWrite();writeGate=null;
+      await until(()=>!button("تحديد جميع المسودات المطابقة").props.disabled);
+      assert.equal(calls.length,0,"preview replacement during durable write must not dispatch");
+      assert.equal(storage.size,0,"undispatched attempt must not strand recovery");
+    }
     rowChoice().props.onPress();click("اعتماد وتسجيل الدفعة المحددة");
     await until(()=>calls.length===1&&button("قراءة حالة الدفعة")&&!button("قراءة حالة الدفعة").props.disabled);
     const original=ownerRun;assert.equal(storage.size,1);

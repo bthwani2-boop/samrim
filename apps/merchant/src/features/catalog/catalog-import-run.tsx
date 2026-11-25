@@ -74,26 +74,36 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
     const signal=controller.signal;
     setBusy(true);setMessage("");
     try{
-      let attempt=recovery.attempt;
+      const attempt=recovery.attempt;
       const key=recovery.key;
       if(action==="start"){
         const fingerprint=await digest(JSON.stringify(manifest));
         if(!currentStart())return;
-        attempt=await locked(key,async()=>{
+        const confirmed=await locked(key,async()=>{
           signal.throwIfAborted();
           const previous=await read(key);
           signal.throwIfAborted();
           if(!currentStart())throw new Error("SELECTION_CHANGED");
-          if(previous){
-            if(previous.fingerprint!==fingerprint)throw new Error("MANIFEST_CHANGED");
-            return previous;
+          if(previous&&previous.fingerprint!==fingerprint)throw new Error("MANIFEST_CHANGED");
+          if(!previous&&recovery.attempt)throw new Error("RECOVERY_CHANGED");
+          const registered=previous??{runId:randomUUID(),fingerprint};
+          if(!previous){
+            await write(key,registered);
+            if(!signal.aborted)setRecovery({key,attempt:registered});
+            // This new attempt has not reached DSH. Only its creator may
+            // discard it, under the same lock, before any owner dispatch.
+            if(signal.aborted||!currentStart()){
+              await write(key,null);
+              if(!signal.aborted)setRecovery({key,attempt:null});
+              signal.throwIfAborted();
+              throw new Error("SELECTION_CHANGED");
+            }
           }
-          if(recovery.attempt)throw new Error("RECOVERY_CHANGED");
-          const created={runId:randomUUID(),fingerprint};
-          await write(key,created);return created;
+          signal.throwIfAborted();
+          if(!currentStart())throw new Error("SELECTION_CHANGED");
+          setRecovery({key,attempt:registered});
+          return requestCatalogImport(actorId,storeId,registered.runId,"PUT",signal,manifest);
         });
-        signal.throwIfAborted();setRecovery({key,attempt});
-        const confirmed=await requestCatalogImport(actorId,storeId,attempt.runId,"PUT",signal,manifest);
         signal.throwIfAborted();setResult(confirmed);
         setMessage("أكد DSH تسجيل الدفعة. اختر تنفيذ الصفوف المعتمدة.");
       }else if(attempt){
