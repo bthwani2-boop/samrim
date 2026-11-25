@@ -25,19 +25,35 @@ async function webRequest(actor: string, query: string, signal: AbortSignal, wri
   return await result.json();
 }
 async function verified<T extends {actorId:string}>(signal: AbortSignal,actor: string|undefined,
-  web: (actor:string)=>Promise<T>,native:(actor:string,bearer:string)=>Promise<T>) {
+  web: (actor:string)=>Promise<T>,native:(actor:string,bearer:string)=>Promise<T>,mutating=false) {
   const before=await verifyFavoriteSession(signal,actor);
   let expiresAt=Date.parse(before.sessionExpiresAt);
-  if (Platform.OS==="web") {
-    const value=await web(before.actorId);
-    const after=await verifyFavoriteSession(signal,before.actorId);
-    expiresAt=Math.min(expiresAt,Date.parse(after.sessionExpiresAt));
-    return {value,expiresAt};
+  let dispatched=false;
+  try {
+    if (Platform.OS==="web") {
+      dispatched=mutating;
+      const value=await web(before.actorId);
+      const after=await verifyFavoriteSession(signal,before.actorId);
+      expiresAt=Math.min(expiresAt,Date.parse(after.sessionExpiresAt));
+      signal.throwIfAborted();
+      return {value,expiresAt};
+    }
+    if (!nativeOwner) throw new DshPublicError(503,"OWNER_UNAVAILABLE");
+    const result=await withVerifiedNativeCustomerRead(signal,bearer=>{
+      dispatched=mutating;
+      return native(before.actorId,bearer);
+    },before.actorId);
+    if (result.kind!=="ready") throw new DshPublicError(result.kind==="signed-out"?401:503,"OWNER_UNAVAILABLE");
+    signal.throwIfAborted();
+    return {value:result.value,expiresAt:Math.min(expiresAt,result.expiresAt)};
+  } catch(error) {
+    // Once a write was dispatched, loss of the verified session or response
+    // cannot prove that the owner's durable transaction was rolled back.
+    if (dispatched && (!(error instanceof DshPublicError) || ![400,404].includes(error.status))) {
+      throw new DshPublicError(503,"OPERATION_RESULT_UNKNOWN");
+    }
+    throw error;
   }
-  if (!nativeOwner) throw new DshPublicError(503,"OWNER_UNAVAILABLE");
-  const result=await withVerifiedNativeCustomerRead(signal,bearer=>native(before.actorId,bearer),before.actorId);
-  if (result.kind!=="ready") throw new DshPublicError(result.kind==="signed-out"?401:503,"OWNER_UNAVAILABLE");
-  return {value:result.value,expiresAt:Math.min(expiresAt,result.expiresAt)};
 }
 export async function readFavoriteStores(signal:AbortSignal,actor?:string,after?:string):Promise<{value:FavoriteStorePage;expiresAt:number}> {
   if (after!==undefined && !isFavoriteStoreId(after)) throw new DshPublicError(400,"INVALID_REQUEST");
@@ -52,5 +68,5 @@ export async function readFavoriteStore(signal:AbortSignal,id:string,actor?:stri
 export async function writeFavoriteStore(signal:AbortSignal,actor:string,id:string,favorite:boolean) {
   if (!isFavoriteStoreId(id)) throw new DshPublicError(400,"INVALID_REQUEST");
   return verified(signal,actor,async a=>parseFavoriteStoreState(await webRequest(a,"?storeId="+id+"&favorite="+favorite,signal,true),a,id,favorite),
-    (a,b)=>setCustomerFavoriteStore(nativeOwner??"",b,a,id,favorite,signal));
+    (a,b)=>setCustomerFavoriteStore(nativeOwner??"",b,a,id,favorite,signal),true);
 }
