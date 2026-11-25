@@ -357,7 +357,9 @@ test("retained Merchant placeholder exemptions are explicit and cannot hide impl
   assert.ok(start >= 0 && end > start, "missing explicit preserved-placeholder Knip boundary");
   const block = config.slice(start, end);
   const retained = [...block.matchAll(/"([^"]+\.tsx)"/g)].map((match) => match[1]);
-  assert.equal(retained.length, 16, "preserve the remaining unconnected Merchant placeholders");
+  assert.equal(retained.length, 15, "preserve the remaining unconnected Merchant placeholders");
+  assert.ok(!retained.includes("apps/merchant/src/features/finance/wallet-screen.tsx"),
+    "the owner-backed Merchant finance workspace must be checked as live source");
   assert.ok(!retained.includes("apps/merchant/src/features/catalog/inventory-summary.tsx"),
     "the owner-backed inventory summary must be checked as live source");
   assert.equal(new Set(retained).size, retained.length, "duplicate Knip exclusion");

@@ -24,7 +24,6 @@
     "apps/merchant/src/features/employees/employee-access.tsx",
     "apps/merchant/src/features/finance/earnings-summary.tsx",
     "apps/merchant/src/features/finance/payout-recipients.tsx",
-    "apps/merchant/src/features/finance/wallet-screen.tsx",
     "apps/merchant/src/features/marketing/store-banners.tsx",
     "apps/merchant/src/features/marketing/store-design.tsx",
     "apps/merchant/src/features/marketing/store-reels.tsx",
