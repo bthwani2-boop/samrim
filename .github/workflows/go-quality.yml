@@ -106,6 +106,21 @@ jobs:
         run: node --test tools/dev/check-go.test.mjs
       - name: Verify real Go modules with race detector and measured coverage
         run: node tools/dev/check-go.mjs --ci
+      - name: Scan deployed Go owner source for reachable vulnerabilities
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          scanner_dir="$(mktemp -d "$RUNNER_TEMP/govulncheck.XXXXXX")"
+          trap 'rm -rf -- "$scanner_dir"' EXIT
+          GOBIN="$scanner_dir" GOSUMDB=sum.golang.org go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          scanner="$scanner_dir/govulncheck"
+          go version -m "$scanner"
+          for service in identity dsh wlt; do
+            echo "Scanning Go owner: $service (CGO_ENABLED=0)"
+            (cd "services/$service/backend" && "$scanner" ./...)
+          done
       - name: Build and inspect isolated service images
         shell: bash
         run: |
@@ -137,7 +152,7 @@ jobs:
         shell: bash
         run: bash tests/infra/payment-mock/smoke.sh
       - name: State validation limits
-        run: echo 'This Go source job does not prove PostgreSQL integration; see the separate disposable owner-postgres-integration job. NOT_RUN - govulncheck, golangci-lint, gosec and fuzz campaigns'
+        run: echo 'This Go source job does not prove PostgreSQL integration; see the separate disposable owner-postgres-integration job. NOT_RUN - golangci-lint, gosec and fuzz campaigns'
 
 
   owner-postgres-integration:

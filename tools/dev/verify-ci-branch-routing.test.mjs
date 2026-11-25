@@ -157,3 +157,18 @@ test("explicit candidate verification is isolated from automatic run cancellatio
     assert.match(content, /^  cancel-in-progress: true$/m);
   }
 });
+
+test("Go quality runs a pinned fail-closed vulnerability scan for every deployed owner", () => {
+  const { content } = events(workflows[2]);
+  const start = content.indexOf("      - name: Scan deployed Go owner source for reachable vulnerabilities");
+  const end = content.indexOf("      - name: Build and inspect isolated service images", start);
+  assert.ok(start >= 0 && end > start, "missing vulnerability scan before image build");
+  const step = content.slice(start, end);
+  assert.match(step, /CGO_ENABLED: '0'/);
+  assert.match(step, /set -euo pipefail/);
+  assert.match(step, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@v1\.8\.0/);
+  assert.match(step, /for service in identity dsh wlt; do/);
+  assert.match(step, /cd "services\/\$service\/backend"/);
+  assert.match(step, /"\$scanner" \.\/\.\.\./);
+  assert.doesNotMatch(step, /continue-on-error|\|\| true/);
+});
