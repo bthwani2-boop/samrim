@@ -49,26 +49,25 @@ $expectedLenovo = 'BTHWANI-DOCKER'
 $project = 'bthwani-refoundation'
 $baseEnv = Join-Path $repo 'infra\.env'
 $baseCompose = Join-Path $repo 'infra\compose.yaml'
+$developmentPorts = Get-Content -LiteralPath (Join-Path $repo 'tools\dev\ports.json') -Raw | ConvertFrom-Json
 $ownerTasks = @(
   @{Name='BThwani Lenovo Source Sync'; Pattern='sync-lenovo-source\.mjs'},
-  @{Name='BThwani Customer Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'},
-  @{Name='BThwani Merchant Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'},
-  @{Name='BThwani Captain Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'},
-  @{Name='BThwani Control Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'}
+  @{Name='BThwani Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'}
 )
-$localPorts = @(18101,18102,18103,13000)
+$nativeOwnerPorts = @($developmentPorts.ownerForwards.PSObject.Properties | ForEach-Object {[int]$_.Value})
+$localPorts = @($developmentPorts.apps.PSObject.Properties | ForEach-Object {[int]$_.Value.surface}) + $nativeOwnerPorts
 $device='R5CX14S4PZW'
 $chrome='C:\Program Files\Google\Chrome\Application\chrome.exe'
 $chromeProfile='Profile 1'
 $urls=@(
-  'http://127.0.0.1:18101/',
-  'http://127.0.0.1:18102/',
+  ("http://127.0.0.1:$($developmentPorts.apps.customer.surface)/"),
+  ("http://127.0.0.1:$($developmentPorts.apps.merchant.surface)/"),
   'http://localhost:13000/'
 )
 $android=@(
-  @{Name='customer'; Package='com.bthwani.customer'; Scheme='exp+customer'; Port=18101},
-  @{Name='merchant'; Package='com.bthwani.merchant'; Scheme='exp+merchant'; Port=18102},
-  @{Name='captain'; Package='com.bthwani.captain'; Scheme='exp+app-captain'; Port=18103}
+  @{Name='customer'; Package='com.bthwani.customer'; Scheme='exp+customer'; Port=[int]$developmentPorts.apps.customer.surface},
+  @{Name='merchant'; Package='com.bthwani.merchant'; Scheme='exp+merchant'; Port=[int]$developmentPorts.apps.merchant.surface},
+  @{Name='captain'; Package='com.bthwani.captain'; Scheme='exp+app-captain'; Port=[int]$developmentPorts.apps.captain.surface}
 )
 $logRoot = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\UnifiedDev'
 $mutex = [System.Threading.Mutex]::new($false,'Local\BThwaniUnifiedDevV1')
@@ -164,11 +163,8 @@ function Start-LocalTasks {
     $task = Task-Action $spec.Name $spec.Pattern
     if ([string]$task.State -eq 'Running') { Say 'SURFACE_TASK' ($spec.Name+' already_running'); continue }
     if ($spec.Name -match 'SSH Tunnel') {
-      $port = switch -Regex ($spec.Name) {
-        'Customer' {18101;break}; 'Merchant' {18102;break}; 'Captain' {18103;break}; 'Control' {13000;break}
-      }
-      $busy = @(Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue).Count -gt 0
-      Assert-Ok (-not $busy) ("port $port occupied while task stopped; inspect owner")
+      $busy = @(Get-NetTCPConnection -State Listen -LocalPort $localPorts -ErrorAction SilentlyContinue)
+      Assert-Ok ($busy.Count -eq 0) 'forward port occupied while tunnel task stopped; inspect owner'
     }
     Start-ScheduledTask -TaskName $spec.Name -ErrorAction Stop
     Say 'SURFACE_TASK' ($spec.Name+' start_requested')
@@ -196,14 +192,10 @@ function Stop-LocalTasks {
 }
 # Legacy Windows task keys are used only to find existing Task Scheduler owners.
 # Canonical app names are customer, merchant, captain, control-panel.
-$remoteAppSpecs = @'
-$specs=@(
- @{N='BThwani Client Metro Native';A='customer';P=28111},
- @{N='BThwani Partner Metro Native';A='merchant';P=28112},
- @{N='BThwani Captain Metro Native';A='captain';P=28113},
- @{N='BThwani Control Next Native';A='control-panel';P=23010}
-)
-'@
+$remoteSpecs = @(foreach($app in $developmentPorts.apps.PSObject.Properties){
+  @{A=$app.Name;N=$app.Value.task;P=[int]$app.Value.lenovo;Cli=$app.Value.cli}
+})
+$remoteAppSpecs = '$specs=@((ConvertFrom-Json ''' + (ConvertTo-Json -InputObject $remoteSpecs -Compress).Replace("'","''") + ''') | ForEach-Object { $_ })'
 $remoteTasksScript = $remoteAppSpecs + [Environment]::NewLine + @'
 foreach($s in $specs){
   $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
@@ -397,13 +389,7 @@ function Get-WorkspaceLockDocument([string]$Raw) {
 function Inspect-AppOwners([switch]$StrictCheck) {
   $lock=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
   $mode=if($StrictCheck){'$true'}else{'$false'}
-  $script=$remoteDependencyLock + [Environment]::NewLine + @'
-$specs=@(
- @{A='customer';N='BThwani Client Metro Native';P=28111;Cli='expo'}
- @{A='merchant';N='BThwani Partner Metro Native';P=28112;Cli='expo'}
- @{A='captain';N='BThwani Captain Metro Native';P=28113;Cli='expo'}
- @{A='control-panel';N='BThwani Control Next Native';P=23010;Cli='next'}
-)
+  $script=$remoteAppSpecs + [Environment]::NewLine + $remoteDependencyLock + [Environment]::NewLine + @'
 $root='C:\Users\bthwa\BThwaniAppRunner\source-runtime'
 $node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe'
 $strict=__STRICT__
@@ -469,11 +455,11 @@ foreach($s in $specs){
 }
 function Get-AppHttpTargets {
   @(
-    @{A='customer';U='http://127.0.0.1:18101/'},
-    @{A='customer';U='http://127.0.0.1:18101/stores'},
-    @{A='merchant';U='http://127.0.0.1:18102/'},
-    @{A='captain-metro';U='http://127.0.0.1:18103/status'},
-    @{A='control-panel';U='http://127.0.0.1:13000/'}
+    @{A='customer';U="http://127.0.0.1:$($developmentPorts.apps.customer.surface)/"},
+    @{A='customer';U="http://127.0.0.1:$($developmentPorts.apps.customer.surface)/stores"},
+    @{A='merchant';U="http://127.0.0.1:$($developmentPorts.apps.merchant.surface)/"},
+    @{A='captain-metro';U="http://127.0.0.1:$($developmentPorts.apps.captain.surface)/status"},
+    @{A='control-panel';U="http://127.0.0.1:$($developmentPorts.apps.'control-panel'.surface)/"}
   )
 }
 function Test-AppHttpTarget {
@@ -540,7 +526,7 @@ function Inspect-AppAndroid {
   Say 'ANDROID_ADB' ('SAMSUNG_DEVICE='+$devicePresent)
   $reverses=@(& $adb.Source 'reverse' '--list' 2>&1)
   Assert-Ok ($LASTEXITCODE -eq 0) 'adb reverse list failed'
-  foreach($port in @(18101,18102,18103,3201,3202)){
+  foreach($port in (@($android | ForEach-Object { [int]$_.Port }) + $nativeOwnerPorts)){
     $mapped=@($reverses | Where-Object {$_.ToString() -match ('tcp:'+$port+'\s+tcp:'+$port+'\b')}).Count -gt 0
     Say 'ANDROID_REVERSE' ('port='+$port+' configured='+$mapped)
   }
@@ -614,14 +600,9 @@ function Control-SingleApp([string]$operation) {
   $body=@'
 $app='__APP__'
 $mode='__MODE__'
-$specs=@{
- 'customer'=@{N='BThwani Client Metro Native';P=28111;Cli='expo'}
- 'merchant'=@{N='BThwani Partner Metro Native';P=28112;Cli='expo'}
- 'captain'=@{N='BThwani Captain Metro Native';P=28113;Cli='expo'}
- 'control-panel'=@{N='BThwani Control Next Native';P=23010;Cli='next'}
-}
-$s=$specs[$app]
-if(!$s){throw 'APP_NOT_ALLOWED'}
+$s=@($specs|Where-Object A -eq $app)
+if($s.Count -ne 1){throw 'APP_NOT_ALLOWED'}
+$s=$s[0]
 $t=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
 $actions=@($t.Actions)
 $action=($actions | ForEach-Object {[string]$_.Execute+' '+[string]$_.Arguments}) -join ' '
@@ -685,7 +666,7 @@ throw ('APP_LISTENER_NOT_READY '+$app)
   $lockHash=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
   $body=$body.Replace('__APP__',$App).Replace('__MODE__',$operation).Replace('__LOCK__',$lockHash)
   $httpProbe="function Test-AppHttpTarget {`n$((Get-Command Test-AppHttpTarget -CommandType Function).Definition)`n}`nfunction Test-AppRestartHealth {`n$((Get-Command Test-AppRestartHealth -CommandType Function).Definition)`n}"
-  Invoke-Lenovo ($remoteAppProcessLifecycle + [Environment]::NewLine + $httpProbe + [Environment]::NewLine + $body)
+  Invoke-Lenovo ($remoteAppSpecs + [Environment]::NewLine + $remoteAppProcessLifecycle + [Environment]::NewLine + $httpProbe + [Environment]::NewLine + $body)
 }
 function Probe-App([string]$url,[string]$accept='text/html',[string]$platform='') {
   $curl=Join-Path $env:WINDIR 'System32\curl.exe'
@@ -760,8 +741,8 @@ public static class BthwaniChromeWindowLocator {
 function Open-Browser {
   Assert-Ok (Test-Path -LiteralPath $chrome -PathType Leaf) 'GOOGLE_CHROME_MISSING'
   $statusUrls=@(
-    'http://127.0.0.1:18101/status',
-    'http://127.0.0.1:18102/status',
+    ("http://127.0.0.1:$($developmentPorts.apps.customer.surface)/status"),
+    ("http://127.0.0.1:$($developmentPorts.apps.merchant.surface)/status"),
     'http://localhost:13000/'
   )
   for($i=0;$i -lt $statusUrls.Count;$i++){
@@ -798,9 +779,9 @@ function Open-Android {
   $devices=@(& $adb.Source 'devices' | ForEach-Object {$_.ToString()})
   Assert-Ok (@($devices|Where-Object{$_ -match ('^'+[regex]::Escape($device)+'\s+device\s*$')}).Count -eq 1) 'EXPECTED_SAMSUNG_NOT_CONNECTED'
   $existing=@(& $adb.Source '-s' $device 'reverse' '--list' | ForEach-Object{$_.ToString()})
-  $nativePorts = @($android | ForEach-Object { [int]$_.Port }) + @(3201,3202)
+  $nativePorts = @($android | ForEach-Object { [int]$_.Port }) + $nativeOwnerPorts
   foreach($p in $nativePorts){
-    if ($p -in @(3201,3202)) {
+    if ($p -in $nativeOwnerPorts) {
       $listeners=@(Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $p -ErrorAction SilentlyContinue)
       Assert-Ok ($listeners.Count -eq 1) ('NATIVE_OWNER_SSH_TUNNEL_NOT_LISTENING '+$p)
       $owner=Get-CimInstance Win32_Process -Filter ('ProcessId=' + $listeners[0].OwningProcess)

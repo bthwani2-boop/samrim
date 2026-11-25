@@ -173,13 +173,15 @@ function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
   }
 }
 
-$ports = @{ customer=28111; merchant=28112; captain=28113; 'control-panel'=23010 }
+$developmentPorts=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'ports.json') -Raw | ConvertFrom-Json
+$ports=@{}
+foreach($entry in $developmentPorts.apps.PSObject.Properties){$ports[$entry.Name]=[int]$entry.Value.lenovo}
 if ($Surface) {
   $source=(Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '../..')).Path
   $node=(Get-Command node.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
   $nodeDir=Split-Path -Parent $node
   $logs=Join-Path $source '.tmp\surface-preview-logs'
-  $ports = @{ customer=23101; merchant=23102; captain=23103; 'control-panel'=23100 }
+  foreach($entry in $developmentPorts.apps.PSObject.Properties){$ports[$entry.Name]=[int]$entry.Value.preview}
 } else {
   $runner='C:\Users\bthwa\BThwaniAppRunner'
   $source=Join-Path $runner 'source-runtime'

@@ -80,7 +80,9 @@ foreach($n in @('ssh.exe','scp.exe','sftp.exe','docker.exe','node.exe','git.exe'
 }
 '@
         Invoke-Lenovo $remote
-        foreach($port in @(18101,18102,18103,13000)){
+        $layout=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'ports.json') -Raw | ConvertFrom-Json
+        $ports=@($layout.apps.PSObject.Properties|ForEach-Object {[int]$_.Value.surface})+@($layout.ownerForwards.PSObject.Properties|ForEach-Object {[int]$_.Value})
+        foreach($port in $ports){
             $listeners=@(Get-NetTCPConnection -State Listen -LocalAddress 127.0.0.1 -LocalPort $port -ErrorAction SilentlyContinue)
             Write-Output ('SURFACE_TUNNEL_127.0.0.1:'+$port+'='+$listeners.Count)
         }

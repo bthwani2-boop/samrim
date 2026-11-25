@@ -23,7 +23,7 @@ The canonical **WebAuthn/Passkey browser origin is `http://localhost:13000`**, n
 For a genuinely usable **isolated** Operator login, independently verify that the existing Identity test schema is disposable, its required owner migrations are applied, its Passkey origin/RP ID and authentication opt-ins are correct, and the actual Lenovo Control task is launched with `-EnableIsolatedOperatorPasskeyPreview`. The one-time initial Root bootstrap is a **separate protected operation**, never inferred from UI readiness. A real user must enroll their own Passkey; only Identity-owned current session and permission readback permits the workspace. Never fabricate a Root, re-enroll another identity or expose a bootstrap ticket in logs. See `governance/identity.md` and `services/identity/README.md` for owner authorization and recovery requirements.
 
 ## Single existing owners
-- SSH tunnels: four Scheduled Tasks invoke `tools/dev/Start-AppTunnel.ps1`. Customer uses Surface 18101 → Lenovo 28111 and Merchant uses 18102 → 28112. Optional local overrides use `SAMRIM_APP_CUSTOMER_METRO_PORT` and `SAMRIM_APP_MERCHANT_METRO_PORT`. Captain uses 18103 → 28113 and Control Panel uses 13000 → 23010. The existing Customer tunnel also carries loopback-only Identity 3201 and DSH 3202 for native synthetic authentication; those owner forwards require that the existing tunnel task actually reload the current script.
+- SSH: the single BThwani Lenovo SSH Tunnel Scheduled Task invokes tools/dev/Start-AppTunnel.ps1 with all six loopback forwards. tools/dev/ports.json owns app transport ports and the two shared owner forwards (Identity and DSH); WebAuthn's existing localhost origin remains fixed. WLT is accessed on Lenovo by its existing Web BFF, not exposed by another tunnel.
 - Source sync: the existing Scheduled Task BThwani Lenovo Source Sync directly runs pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch. Its direct process ownership ensures stopping the task also stops its Node watcher, without orphan duplicates. The scheduled task directly owns the sole watch process; no manual wrapper or second watcher is necessary.
 - The Surface sync target is `C:\Users\bthwa\BThwaniAppRunner\source-runtime`. The Lenovo app tasks invoke `tools\dev\Start-App.ps1` in that mirror with `-App customer`, `-App merchant`, `-App captain`, or `-App control-panel`. Verify the task action, synced source revision, and listener owner when diagnosing a runtime issue.
 
@@ -148,7 +148,7 @@ The Web wallet option can coexist with it and continues to use its own cookie.
 The existing Surface development launcher adds ADB reverse mappings for the
 three Metro ports and the two owner ports (Identity 3201, DSH 3202) only after
 verifying that the latter are listening through the canonical loopback SSH
-tunnel. The existing Customer SSH tunnel carries both owner forwards; do not
+tunnel. The unified SSH tunnel carries both owner forwards; do not
 start another SSH process for them or replace an unrelated ADB mapping.
 A change to tunnel arguments requires a separately controlled reload of that
 existing task before the new mappings can be used. The Lenovo Merchant and

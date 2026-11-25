@@ -1,0 +1,36 @@
+{
+  "apps": {
+    "customer": {
+      "surface": 18101,
+      "lenovo": 28111,
+      "preview": 23101,
+      "task": "BThwani Client Metro Native",
+      "cli": "expo"
+    },
+    "merchant": {
+      "surface": 18102,
+      "lenovo": 28112,
+      "preview": 23102,
+      "task": "BThwani Partner Metro Native",
+      "cli": "expo"
+    },
+    "captain": {
+      "surface": 18103,
+      "lenovo": 28113,
+      "preview": 23103,
+      "task": "BThwani Captain Metro Native",
+      "cli": "expo"
+    },
+    "control-panel": {
+      "surface": 13000,
+      "lenovo": 23010,
+      "preview": 23100,
+      "task": "BThwani Control Next Native",
+      "cli": "next"
+    }
+  },
+  "ownerForwards": {
+    "identity": 3201,
+    "dsh": 3202
+  }
+}

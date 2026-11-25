@@ -86,23 +86,28 @@ test("one dev command opens existing app surfaces after the owner tasks are read
 test("native owner traffic reuses the verified SSH tunnel and cannot take over an arbitrary ADB port", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   const tunnel = readFileSync(new URL("./Start-AppTunnel.ps1", import.meta.url), "utf8");
-  assert.match(tunnel, /if \(\$App -eq 'customer'\)/);
-  assert.match(tunnel, /foreach \(\$ownerPort in @\(3201,3202\)\)/);
-  assert.match(tunnel, /'127\.0\.0\.1:' \+ \$ownerPort/);
-  assert.match(tunnel, /\$argsList \+= \$target/);
+  const layout=JSON.parse(readFileSync(new URL("./ports.json",import.meta.url),"utf8"));
+  assert.deepEqual(Object.values(layout.apps).map(a=>a.surface),[18101,18102,18103,13000]);
+  assert.deepEqual(Object.values(layout.apps).map(a=>a.lenovo),[28111,28112,28113,23010]);
+  assert.deepEqual(layout.ownerForwards,{identity:3201,dsh:3202});
+  assert.match(tunnel,/ports\.json/);
+  assert.match(tunnel,/foreach\(\$forward in \$expectedForwards\)/);
+  assert.match(tunnel,/\$argsList \+= \$target/);
+  assert.doesNotMatch(tunnel,/\$App\b|\.env\.tunnels\.local/);
+  assert.equal((launcher.match(/Name=\x27BThwani Lenovo SSH Tunnel\x27/g)||[]).length,1);
   assert.match(launcher, /\$nativePorts = @\(\$android \| ForEach-Object/);
   assert.match(launcher, /NATIVE_OWNER_SSH_TUNNEL_NOT_LISTENING/);
   assert.match(launcher, /NATIVE_OWNER_SSH_TUNNEL_UNVERIFIED/);
   assert.match(launcher, /ADB_REVERSE_COLLISION/);
-  assert.match(launcher, /18101,18102,18103,3201,3202/);
+  assert.match(launcher, /\+ \$nativeOwnerPorts/);
 });
 
 test("Web and Metro readiness share endpoints and report bounded cold-start retries", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   const targets = launcher.match(/function Get-AppHttpTargets \{([\s\S]*?)\n\}/);
   assert.ok(targets, "one endpoint inventory must serve both status and verification");
-  for (const port of [18101, 18102, 18103, 13000]) {
-    assert.match(targets[1], new RegExp(String(port)));
+  for (const app of ["customer", "merchant", "captain", "'control-panel'"]) {
+    assert.ok(targets[1].includes("$developmentPorts.apps."+app+".surface"));
   }
   assert.match(launcher, /function Test-AppHttpTarget\b/);
   assert.match(launcher, /\$attempt -le \$MaxAttempts/);
@@ -358,9 +363,11 @@ test("the app verifier detects missing workspace dependency links", () => {
 
 test("the Merchant launcher preserves existing Windows task identities", () => {
   const launcher = readFileSync(scriptPath, "utf8");
-  assert.match(launcher, /N='BThwani Partner Metro Native';A='merchant'/);
-  assert.match(launcher, /A='merchant';N='BThwani Partner Metro Native'/);
-  assert.match(launcher, /'merchant'=@\{N='BThwani Partner Metro Native'/);
+  const layout=JSON.parse(readFileSync(new URL("./ports.json",import.meta.url),"utf8"));
+  assert.equal(layout.apps.merchant.task,"BThwani Partner Metro Native");
+  assert.match(launcher,/N=\$app\.Value\.task/);
+  assert.match(launcher,/\$script=\$remoteAppSpecs/);
+  assert.match(launcher,/Invoke-Lenovo \(\$remoteAppSpecs/);
   assert.doesNotMatch(launcher, /BThwani Merchant Metro Native/);
 });
 
@@ -542,4 +549,17 @@ test("normal startup starts only seven already provisioned services through nati
   assert.match(start[1],/--start-preflight[\s\S]*?missing existing Compose service[\s\S]*?\x27start\x27,\x27--wait\x27,\x27--wait-timeout\x27,\x2760\x27[\s\S]*?Assert-OwnerRuntime/);
   assert.match(start[1],/\$services=@\(\x27postgres\x27,\x27media\x27,\x27mailpit\x27,\x27payment-mock\x27,\x27identity\x27,\x27dsh\x27,\x27wlt\x27\)/);
   assert.doesNotMatch(start[1],/\x27(?:up|run|build|bootstrap)\x27/);
+});
+
+test("canonical application task layout survives Windows PowerShell 5.1 JSON array semantics", {skip:process.platform!=="win32"},()=>{
+  const source=readFileSync(scriptPath,"utf8");
+  const block=source.match(/\$remoteSpecs = @\(foreach[\s\S]*?\n\$remoteAppSpecs = [^\n]+/);
+  assert.ok(block);
+  const layoutPath=path.join(path.dirname(scriptPath),"ports.json").replaceAll("\x27","\x27\x27");
+  const command=["$ErrorActionPreference=\x27Stop\x27","$developmentPorts=Get-Content -LiteralPath \x27"+layoutPath+"\x27 -Raw|ConvertFrom-Json",block[0],"& ([scriptblock]::Create($remoteAppSpecs))", "$specs=@(); . ([scriptblock]::Create($remoteAppSpecs))", "ConvertTo-Json -InputObject @($specs) -Compress"].join("; ");
+  const result=spawnSync("powershell.exe",["-NoProfile","-NonInteractive","-Command",command],{encoding:"utf8",windowsHide:true,timeout:15000});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  const records=JSON.parse(result.stdout.trim());
+  assert.deepEqual(records.map(r=>r.A),["customer","merchant","captain","control-panel"]);
+  assert.deepEqual(records.map(r=>r.P),[28111,28112,28113,23010]);
 });
