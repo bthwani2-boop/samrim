@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DshPublicError } from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import * as serviceability from "../src/features/location/serviceability.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -16,7 +17,7 @@ try {
   const result = spawnSync(process.execPath, [
     path.join(root, "node_modules/typescript/bin/tsc"), entry,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
   ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(path.join(temp, "stores-screen.js"), "utf8");
@@ -24,6 +25,9 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
+// Retain uncached fixture modules until Node collects their original-source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 function harness({ variant = "directory", params = {} } = {}) {
   const hooks = [];
   const requests = [];
@@ -76,13 +80,16 @@ function harness({ variant = "directory", params = {} } = {}) {
     "./orderability": { describeStoreOrderability: () => ({}) },
     "./public-store-origin": { resolvePublicStoreOrigin: () => "" },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "process", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(imports, name), `unexpected import ${name}`);
-      return imports[name];
-    }, mod, mod.exports, { env: { EXPO_PUBLIC_DSH_CITY_ID: "sanaa" } },
-  );
+  const previousCity = process.env.EXPO_PUBLIC_DSH_CITY_ID;
+  let mod;
+  try {
+    process.env.EXPO_PUBLIC_DSH_CITY_ID = "sanaa";
+    mod = loadMappedRenderFixture(compiled, entry, imports);
+    loadedModules.push(mod);
+  } finally {
+    if (previousCity === undefined) delete process.env.EXPO_PUBLIC_DSH_CITY_ID;
+    else process.env.EXPO_PUBLIC_DSH_CITY_ID = previousCity;
+  }
   return {
     render() {
       index = 0;
