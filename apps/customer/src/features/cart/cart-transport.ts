@@ -5,6 +5,7 @@ import {
   readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart,
 } from "@bthwani/dsh";
 import { Platform } from "react-native";
+import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import {
   readCustomerAdmission, withVerifiedNativeCustomerRead,
 } from "../access/customer-session-transport";
@@ -19,7 +20,7 @@ async function admission(signal: AbortSignal) {
   const result = await readCustomerAdmission(signal);
   if (!result.enabled) return { kind: "unavailable" as const };
   if (result.session?.role !== "customer" ||
-    Date.parse(result.session.sessionExpiresAt) <= Date.now()) return { kind: "signed-out" as const };
+    !(Date.parse(result.session.sessionExpiresAt) > Date.now())) return { kind: "signed-out" as const };
   return { kind: "ready" as const, session: result.session };
 }
 function requireStore(storeId: string) {
@@ -31,6 +32,18 @@ function cartPath(storeId: string) {
 async function currentAfter(signal: AbortSignal, originalActor: string): Promise<boolean> {
   const current = await admission(signal);
   return !signal.aborted && current.kind === "ready" && current.session.actorId === originalActor;
+}
+
+// Match the existing DSH cart SDK's 64 KiB bound; reuse the shared Customer
+// body reader's MIME validation, deadline and cancellation.
+async function readCartResponse(response: Response, signal: AbortSignal, mutating = false): Promise<unknown> {
+  const body = await readBoundedCustomerJSON({ headers: response.headers, body: response.body, signal }, 65536);
+  if (body === null || signal.aborted) {
+    void response.body?.cancel().catch(() => {});
+    throw new DshCartError(signal.aborted ? 0 : 502, mutating ? "OPERATION_RESULT_UNKNOWN" :
+      signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
+  }
+  return body;
 }
 
 /** Customer's identity and Store scope must be current both before and after every read. */
@@ -46,13 +59,13 @@ export async function readVerifiedCart(storeId: string, signal: AbortSignal): Pr
         redirect: "error", signal,
       });
     } catch { throw new DshCartError(503, "OWNER_NETWORK_UNAVAILABLE"); }
-    if (signal.aborted) throw new DshCartError(0, "OWNER_RESPONSE_STALE");
-    if (response.status === 401 || response.status === 403) return { kind: "signed-out" };
-    if (response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
+    if (signal.aborted || response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
+      void response.body?.cancel().catch(() => {});
+      if (signal.aborted) throw new DshCartError(0, "OWNER_RESPONSE_STALE");
+      if (response.status === 401 || response.status === 403) return { kind: "signed-out" };
       throw new DshCartError(503, "OWNER_UNAVAILABLE");
     }
-    let value: unknown;
-    try { value = await response.json(); } catch { throw new DshCartError(502, "OWNER_RESPONSE_INVALID"); }
+    const value = await readCartResponse(response, signal);
     const cart = parseCustomerCart(value, storeId, state.session.actorId);
     if (!await currentAfter(signal, state.session.actorId)) return { kind: "signed-out" };
     return { kind: "ready", cart };
@@ -92,16 +105,19 @@ async function sendVerifiedCartChange(storeId: string, change: CustomerCartChang
         body: JSON.stringify(change),
       });
     } catch { throw new DshCartError(0, "OPERATION_RESULT_UNKNOWN"); }
-    if (signal.aborted) throw new DshCartError(0, "OPERATION_RESULT_UNKNOWN");
+    if (signal.aborted || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
+      void response.body?.cancel().catch(() => {});
+      throw new DshCartError(signal.aborted ? 0 : 502, "OPERATION_RESULT_UNKNOWN");
+    }
     if (response.status !== 200) {
+      void response.body?.cancel().catch(() => {});
       throw new DshCartError(response.status,
         response.status === 409 ? "CART_VERSION_OR_OPERATION_CONFLICT" :
         response.status === 400 ? "INVALID_REQUEST" :
         response.status === 401 || response.status === 403 ? "UNAUTHORIZED" :
         response.status === 404 ? "STORE_OR_OFFER_NOT_AVAILABLE" : "OPERATION_RESULT_UNKNOWN");
     }
-    let value: unknown;
-    try { value = await response.json(); } catch { throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN"); }
+    const value = await readCartResponse(response, signal, true);
     let result: CustomerCartResult;
     try { result = parseCustomerCartResult(value, storeId, actorId, change.expectedVersion); }
     catch { throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN"); }
@@ -153,13 +169,13 @@ export async function readVerifiedCartMerchandiseEstimate(storeId: string, expec
         redirect: "error", signal,
       });
     } catch { throw new DshCartError(503, "OWNER_NETWORK_UNAVAILABLE"); }
-    if (signal.aborted) throw new DshCartError(0, "OWNER_RESPONSE_STALE");
-    if (response.status === 401 || response.status === 403) return { kind: "signed-out" };
-    if (response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
+    if (signal.aborted || response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
+      void response.body?.cancel().catch(() => {});
+      if (signal.aborted) throw new DshCartError(0, "OWNER_RESPONSE_STALE");
+      if (response.status === 401 || response.status === 403) return { kind: "signed-out" };
       throw new DshCartError(response.status, "ESTIMATE_NOT_AVAILABLE");
     }
-    let raw: unknown;
-    try { raw = await response.json(); } catch { throw new DshCartError(502, "OWNER_RESPONSE_INVALID"); }
+    const raw = await readCartResponse(response, signal);
     const estimate = parseCustomerCartMerchandiseEstimate(raw, storeId, expectedActorId, expectedVersion);
     if (!await currentAfter(signal, expectedActorId)) return { kind: "signed-out" };
     return { kind: "ready", estimate };
