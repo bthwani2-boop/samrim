@@ -59,7 +59,7 @@ export default function CaptainInterestScreen() {
         <Pressable key={item.value} accessibilityRole="radio"
           accessibilityState={{ selected: item.value === selected, disabled: busy }}
           disabled={busy}
-          onPress={() => { if (!controller.current) choose(item.value); }}
+          onPress={() => { if (!controller.current && item.value !== selected) choose(item.value); }}
           style={{ borderWidth: 1, borderColor: item.value === selected ? theme.actionBackground : theme.borderColor,
             borderRadius: 10, padding: 12, minHeight: 44 }}>
           <Text style={{ color: theme.color }}>{item.value === selected ? "◉  " : "○  "}{item.label}</Text>
@@ -178,7 +178,7 @@ export default function CaptainInterestScreen() {
                   <Pressable key={item.label} accessibilityRole="radio"
                     accessibilityState={{ selected: experienced === item.value, disabled: busy }}
                     disabled={busy}
-                    onPress={() => { if (!controller.current) { setExperienced(item.value); setExperienceDetails(""); } }}
+                    onPress={() => { if (!controller.current && item.value !== experienced) { setExperienced(item.value); setExperienceDetails(""); } }}
                     style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10,
                       borderColor: experienced === item.value ? theme.actionBackground : theme.borderColor,
                       justifyContent: "center", padding: 8 }}>

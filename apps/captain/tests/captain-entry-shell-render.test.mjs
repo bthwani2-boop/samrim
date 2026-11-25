@@ -149,6 +149,24 @@ test("Captain interest leaves definite rejection retryable but stops after recei
       const field = (view, label) => view.find(node => node.props.accessibilityLabel === label);
       field(render(), "الاسم الكامل").props.onChangeText("اسم تجريبي");
       field(render(), "رقم الهاتف").props.onChangeText(typedPhone);
+      const radios = () => render().filter(node => node.props.accessibilityRole === "radio");
+      radios()[4].props.onPress();
+      radios().at(-2).props.onPress();
+      field(render(), "تفاصيل الخبرة").props.onChangeText("خبرة تجريبية");
+      radios()[0].props.onPress();
+      radios().at(-2).props.onPress();
+      assert.deepEqual([
+        radios()[4].props.accessibilityState.selected,
+        field(render(), "تفاصيل الخبرة").props.value,
+      ], [true, "خبرة تجريبية"], "reselecting the same choices must preserve the entered facts");
+      radios()[1].props.onPress();
+      assert.equal(radios()[4].props.accessibilityState.selected, false, "changing vehicle clears the old plate choice");
+      radios()[4].props.onPress();
+      radios().at(-1).props.onPress();
+      assert.equal(field(render(), "تفاصيل الخبرة"), undefined);
+      radios().at(-2).props.onPress();
+      assert.equal(field(render(), "تفاصيل الخبرة").props.value, "", "changing experience clears obsolete details");
+      field(render(), "تفاصيل الخبرة").props.onChangeText("خبرة تجريبية");
       const submit = findSubmit(render());
       assert.equal(submit.props.disabled, false, "Arabic digit input must enable a valid registration");
       const beforeRadios = render().filter(node => node.props.accessibilityRole === "radio");
