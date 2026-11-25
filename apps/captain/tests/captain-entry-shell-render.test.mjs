@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const captain = path.join(root, "apps/captain");
@@ -17,7 +18,8 @@ try {
   const result = spawnSync(process.execPath, [
     path.join(root, "node_modules/typescript/bin/tsc"), ...sources.map(source => path.join(captain, `${source}.tsx`)),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--rootDir", captain, "--outDir", temporary,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources",
+    "--rootDir", captain, "--outDir", temporary,
   ], { cwd: root, timeout: 20_000, encoding: "utf8", windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   for (const source of sources) compiled.set(source, readFileSync(path.join(temporary, `${source}.js`), "utf8"));
@@ -27,7 +29,6 @@ try {
 
 const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
 function renderable(source, dependencies = {}) {
-  const module = { exports: {} };
   const mocks = {
     "react/jsx-runtime": { jsx, jsxs: jsx },
     react: { useRef: current => ({ current }), useState: initial => [initial, () => undefined] },
@@ -37,11 +38,7 @@ function renderable(source, dependencies = {}) {
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     ...dependencies,
   };
-  new Function("require", "module", "exports", compiled.get(source))(name => {
-    assert.ok(Object.hasOwn(mocks, name), `unexpected dependency ${name}`);
-    return mocks[name];
-  }, module, module.exports);
-  return module.exports.default;
+  return loadMappedRenderFixture(compiled.get(source), path.join(captain, `${source}.tsx`), mocks).exports.default;
 }
 function nodes(tree) {
   if (tree === null || tree === undefined || typeof tree !== "object") return [];
