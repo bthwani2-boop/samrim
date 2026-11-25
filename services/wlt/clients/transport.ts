@@ -1,6 +1,37 @@
 import { WltReadError } from "./errors.ts";
 import { wltOperations } from "./generated/wlt-operations.ts";
 
+// A non-cooperative native bridge may ignore AbortSignal. Bound the local
+// wait independently, observe late rejection, and never return stale data.
+async function awaitRead<T>(signal: AbortSignal, start: () => Promise<T>,
+  discard?: (value: T) => void): Promise<T> {
+  if (signal.aborted) throw new WltReadError(503);
+  let onAbort: (() => void) | undefined;
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    onAbort = () => reject(new WltReadError(503));
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+  try {
+    const value = await Promise.race([Promise.resolve().then(() => {
+      if (signal.aborted) throw new WltReadError(503);
+      return start();
+    }).then(value => {
+      if (signal.aborted) {
+        discard?.(value);
+        throw new WltReadError(503);
+      }
+      return value;
+    }), cancelled]);
+    if (signal.aborted) {
+      discard?.(value);
+      throw new WltReadError(503);
+    }
+    return value;
+  } finally {
+    if (onAbort) signal.removeEventListener("abort", onAbort);
+  }
+}
+
 export async function readOwner(origin: string, bearer: string, method: "GET", path: string,
   signal: AbortSignal, cursor?: string): Promise<unknown> {
   // Only isolated local WLT and the Android emulator's host-loopback alias.
@@ -18,10 +49,10 @@ export async function readOwner(origin: string, bearer: string, method: "GET", p
     }
     requestURL.searchParams.set("cursor", cursor);
   }
-  const response = await fetch(requestURL, {
+  const response = await awaitRead(signal, () => fetch(requestURL, {
     method, signal, redirect: "error", credentials: "omit", cache: "no-store",
     headers: { Accept: "application/json", Authorization: "Bearer " + bearer },
-  });
+  }), late => { void late.body?.cancel().catch(() => {}); });
   if (response.status !== 200 ||
     response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
     response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
@@ -37,7 +68,7 @@ export async function readOwner(origin: string, bearer: string, method: "GET", p
   // TextDecoder. In that case validate the decoded UTF-8 byte count before
   // parsing. The WLT owner is limited to isolated host-loopback origins.
   if (!response.body?.getReader || typeof TextDecoder !== "function") {
-    const text = await response.text();
+    const text = await awaitRead(signal, () => response.text());
     let bytes = 0;
     for (const rune of text) {
       const value = rune.codePointAt(0) ?? 0xfffd;
@@ -53,7 +84,7 @@ export async function readOwner(origin: string, bearer: string, method: "GET", p
   let size = 0;
   try {
     for (;;) {
-      const { value, done } = await stream.read();
+      const { value, done } = await awaitRead(signal, () => stream.read());
       if (done) break;
       if (size + value.length > bytes.length) {
         void stream.cancel().catch(() => {});
@@ -69,6 +100,7 @@ export async function readOwner(origin: string, bearer: string, method: "GET", p
       throw new WltReadError(502);
     }
   } finally {
+    if (signal.aborted) void stream.cancel().catch(() => {});
     stream.releaseLock();
   }
 }
