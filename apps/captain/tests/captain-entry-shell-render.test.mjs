@@ -113,6 +113,7 @@ test("Captain interest leaves definite rejection retryable but stops after recei
       const hooks = [];
       const requests = [];
       let nextHook = 0;
+      let rejectFirst;
       const screen = renderable("src/features/join/captain-interest-screen", {
         react: {
           useState(initial) {
@@ -133,7 +134,7 @@ test("Captain interest leaves definite rejection retryable but stops after recei
           validCaptainInterest: input => Boolean(input.name) && /^(?:\+967)?7\d{8}$/.test(input.phone),
           submitCaptainInterest: async (_origin, input) => {
             requests.push(input);
-            if (requests.length === 1) throw new DshPublicError(429, "RATE_LIMITED");
+            if (requests.length === 1) return new Promise((_resolve, reject) => { rejectFirst = reject; });
             if (finalError) throw finalError;
           },
         },
@@ -150,9 +151,22 @@ test("Captain interest leaves definite rejection retryable but stops after recei
       field(render(), "رقم الهاتف").props.onChangeText(typedPhone);
       const submit = findSubmit(render());
       assert.equal(submit.props.disabled, false, "Arabic digit input must enable a valid registration");
+      const beforeRadios = render().filter(node => node.props.accessibilityRole === "radio");
+      const selected = beforeRadios.map(node => node.props.accessibilityState.selected);
       submit.props.onPress();
-      await Promise.resolve();
+      const pending = render().filter(node => node.props.accessibilityRole === "radio");
+      assert.ok(pending.length > 0);
+      assert.ok(pending.every(node => node.props.disabled && node.props.accessibilityState.disabled),
+        "all choices must be disabled while submission is pending");
+      for (const radio of beforeRadios) {
+        if (!radio.props.accessibilityState.selected) radio.props.onPress();
+      }
+      rejectFirst(new DshPublicError(429, "RATE_LIMITED"));
+      await new Promise(setImmediate);
       const afterRejection = render();
+      const recovered = afterRejection.filter(node => node.props.accessibilityRole === "radio");
+      assert.deepEqual(recovered.map(node => node.props.accessibilityState.selected), selected);
+      assert.ok(recovered.every(node => !node.props.disabled));
       assert.match(afterRejection.find(node => node.props.accessibilityRole === "alert").props.children, /تجاوز عدد المحاولات/);
       assert.equal(findSubmit(afterRejection).props.disabled, false);
       assert.equal(afterRejection.find(node => node.props.accessibilityLabel === "الاسم الكامل").props.value, "اسم تجريبي");

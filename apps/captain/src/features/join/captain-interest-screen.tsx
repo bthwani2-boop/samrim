@@ -56,8 +56,9 @@ export default function CaptainInterestScreen() {
     <View style={{ gap: 8 }}>
       {values.map(item => (
         <Pressable key={item.value} accessibilityRole="radio"
-          accessibilityState={{ selected: item.value === selected }}
-          onPress={() => choose(item.value)}
+          accessibilityState={{ selected: item.value === selected, disabled: busy }}
+          disabled={busy}
+          onPress={() => { if (!controller.current) choose(item.value); }}
           style={{ borderWidth: 1, borderColor: item.value === selected ? theme.actionBackground : theme.borderColor,
             borderRadius: 10, padding: 12, minHeight: 44 }}>
           <Text style={{ color: theme.color }}>{item.value === selected ? "◉  " : "○  "}{item.label}</Text>
@@ -149,8 +150,9 @@ export default function CaptainInterestScreen() {
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   {([{label:"نعم",value:true},{label:"لا",value:false}] as const).map(item =>
                     <Pressable key={item.label} accessibilityRole="radio"
-                      accessibilityState={{ selected: plateRegistered === item.value }}
-                      onPress={() => setPlateRegistered(item.value)}
+                      accessibilityState={{ selected: plateRegistered === item.value, disabled: busy }}
+                      disabled={busy}
+                      onPress={() => { if (!controller.current) setPlateRegistered(item.value); }}
                       style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10,
                         borderColor: plateRegistered === item.value ? theme.actionBackground : theme.borderColor,
                         justifyContent: "center", padding: 8 }}>
@@ -169,8 +171,9 @@ export default function CaptainInterestScreen() {
               <View style={{ flexDirection: "row", gap: 8 }}>
                 {([{label:"نعم",value:true},{label:"لا",value:false}] as const).map(item =>
                   <Pressable key={item.label} accessibilityRole="radio"
-                    accessibilityState={{ selected: experienced === item.value }}
-                    onPress={() => { setExperienced(item.value); setExperienceDetails(""); }}
+                    accessibilityState={{ selected: experienced === item.value, disabled: busy }}
+                    disabled={busy}
+                    onPress={() => { if (!controller.current) { setExperienced(item.value); setExperienceDetails(""); } }}
                     style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10,
                       borderColor: experienced === item.value ? theme.actionBackground : theme.borderColor,
                       justifyContent: "center", padding: 8 }}>
