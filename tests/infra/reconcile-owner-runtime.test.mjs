@@ -323,3 +323,31 @@ test("baseline SQL read is bounded, regular and rejects hard links", async()=>{
     assert.throws(()=>readBaselineFile(dir));
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
+
+test("owner config publication is bound to the original file and exact bytes", async()=>{
+  const {readOwnerEnv,appendOwnerEnv}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const {mkdtempSync,writeFileSync,readFileSync,renameSync,linkSync,rmSync}=await import("node:fs");
+  const {tmpdir}=await import("node:os");
+  const {join}=await import("node:path");
+  const dir=mkdtempSync(join(tmpdir(),"bthwani-owner-config-"));
+  try {
+    const file=join(dir,"fixture.env"), prior=join(dir,"prior.env"), alias=join(dir,"alias.env");
+    writeFileSync(file,"FIXTURE=1\n");
+    const original=readOwnerEnv(file);
+    appendOwnerEnv(file,original,"FIXTURE_SECOND=2\n");
+    assert.equal(readFileSync(file,"utf8"),"FIXTURE=1\nFIXTURE_SECOND=2\n");
+    assert.throws(()=>appendOwnerEnv(file,original,"MUST_NOT_WRITE=1\n"),/configuration changed/);
+    const current=readOwnerEnv(file);
+    renameSync(file,prior);
+    writeFileSync(file,current.text);
+    assert.throws(()=>appendOwnerEnv(file,current,"MUST_NOT_WRITE=1\n"),/configuration changed/);
+    assert.equal(readFileSync(file,"utf8"),current.text);
+    linkSync(file,alias);
+    assert.throws(()=>readOwnerEnv(alias),/Unsafe local configuration/);
+    rmSync(alias);
+    const latest=readOwnerEnv(file);
+    writeFileSync(file,"FIXTURE=3\n");
+    assert.throws(()=>appendOwnerEnv(file,latest,"MUST_NOT_WRITE=1\n"),/configuration changed/);
+    assert.equal(readFileSync(file,"utf8"),"FIXTURE=3\n");
+  } finally {rmSync(dir,{recursive:true,force:true});}
+});

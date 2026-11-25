@@ -2,12 +2,12 @@
 // Isolated development owner reconciliation; SQL transitions use one verified owner-local transaction. No credential output or volume mutations.
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
+import { appendFileSync, closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { readFileSync, lstatSync, appendFileSync } from "node:fs";
-import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
 import { resolvePinnedGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
+import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
 import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -31,6 +31,44 @@ const operatorOverrides = {
 };
 const buildScript = "tools/dev/docker/build-owner-image.ps1";
 const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
+// Keep the original identity and exact bytes, never log configuration values.
+// The existing exclusive owner-operation coordination still owns the writer.
+const compareNames = (a,b) => a<b?-1:a>b?1:0;
+function envSnapshot(fd,file) {
+  const stat=fstatSync(fd,{bigint:true});
+  const identity=entry=>[entry.dev,entry.ino,entry.size,entry.mtimeNs,entry.ctimeNs].map(String);
+  const matches=entry=>entry.isFile()&&!entry.isSymbolicLink()&&entry.nlink===1n&&identity(entry).every((v,i)=>v===identity(stat)[i]);
+  const samePath=process.platform==="win32"?realpathSync(file).toLowerCase()===resolve(file).toLowerCase():realpathSync(file)===resolve(file);
+  if(!stat.isFile()||stat.nlink!==1n||stat.size>1024n*1024n||!samePath||!matches(lstatSync(file,{bigint:true})))throw new Error("Unsafe local configuration");
+  const buffer=Buffer.alloc(Number(stat.size)+1);
+  let count=0;
+  while(count<buffer.length){
+    const n=readSync(fd,buffer,count,buffer.length-count,count);
+    if(!n)break;
+    count+=n;
+  }
+  if(BigInt(count)!==stat.size||!matches(fstatSync(fd,{bigint:true}))||!matches(lstatSync(file,{bigint:true})))throw new Error("Unsafe local configuration changed");
+  const bytes=buffer.subarray(0,count);
+  return {bytes,text:bytes.toString("utf8"),identity:identity(stat)};
+}
+function withOwnerEnv(file,writable,operation) {
+  const fd=openSync(file,(writable?constants.O_RDWR|constants.O_APPEND:constants.O_RDONLY)|(constants.O_NOFOLLOW??0)|(constants.O_NONBLOCK??0));
+  try {return operation(fd,envSnapshot(fd,file));} finally {closeSync(fd);}
+}
+export function readOwnerEnv(file) {
+  return withOwnerEnv(file,false,(_fd,snapshot)=>snapshot);
+}
+export function appendOwnerEnv(file,expected,addition) {
+  return withOwnerEnv(file,true,(fd,current)=>{
+    if(!current.bytes.equals(expected.bytes)||!current.identity.every((v,i)=>v===expected.identity[i]))throw new Error("Local configuration changed; do not publish candidate credentials");
+    const appended=Buffer.from(addition,"utf8");
+    if(current.bytes.length+appended.length>1024*1024)throw new Error("Unsafe local configuration");
+    appendFileSync(fd,appended);
+    fsyncSync(fd);
+    const actual=envSnapshot(fd,file);
+    if(actual.identity[0]!==current.identity[0]||actual.identity[1]!==current.identity[1]||!actual.bytes.equals(Buffer.concat([current.bytes,appended])))throw new Error("Local configuration publication uncertain; inspect before retry");
+  });
+}
 function run(executable, args, env = {}, timeout = 30000, input) {
   const out = spawnSync(executable, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 16 * 1024 * 1024, input, env: { ...process.env, ...env } });
   // Docker/config output may contain secret values. Never print raw stdout/stderr on failure.
@@ -52,7 +90,7 @@ function asEnv(values) {
   return Object.fromEntries(values.map(v => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
 }
 export function differingKeys(before, after) {
-  return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(k => before[k] !== after[k]).sort();
+  return [...new Set([...Object.keys(before), ...Object.keys(after)])].filter(k => before[k] !== after[k]).sort(compareNames);
 }
 function inspect(owner, requireHealthy = true) {
   const result = JSON.parse(docker(["inspect", project + "-" + owner + "-1"]))[0];
@@ -187,8 +225,8 @@ export function ownerDataFingerprintSql(schema, tables, sequences, owner="dsh") 
      [...tables,...sequences].some(t=>!identifier.test(t)) ||
      !tables.length || new Set(tables).size!==tables.length || new Set(sequences).size!==sequences.length) throw new Error("Invalid owner snapshot scope");
   return "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY; SET LOCAL statement_timeout='15s'; SET LOCAL timezone='UTC'; SET LOCAL datestyle='ISO, YMD'; SET LOCAL intervalstyle='postgres'; SET LOCAL extra_float_digits=3;\n"+
-    [...tables].sort().map(t=>"SELECT 'table:"+t+"',count(*),encode(sha256(convert_to(coalesce(string_agg(h,'' ORDER BY h),''),'UTF8')),'hex') FROM (SELECT encode(sha256(convert_to(to_jsonb(x)::text,'UTF8')),'hex') h FROM "+schema+"."+t+" x) q;").join("\n")+"\n"+
-    [...sequences].sort().map(t=>"SELECT 'sequence:"+t+"',last_value,is_called FROM "+schema+"."+t+";").join("\n")+"\nCOMMIT;";
+    [...tables].sort(compareNames).map(t=>"SELECT 'table:"+t+"',count(*),encode(sha256(convert_to(coalesce(string_agg(h,'' ORDER BY h),''),'UTF8')),'hex') FROM (SELECT encode(sha256(convert_to(to_jsonb(x)::text,'UTF8')),'hex') h FROM "+schema+"."+t+" x) q;").join("\n")+"\n"+
+    [...sequences].sort(compareNames).map(t=>"SELECT 'sequence:"+t+"',last_value,is_called FROM "+schema+"."+t+";").join("\n")+"\nCOMMIT;";
 }
 export function legacyOwnerAccessSql(runtime="bthwani_dsh_runtime") {
   if(!["bthwani_dsh_runtime","bthwani_identity_runtime"].includes(runtime))throw new Error("Invalid dedicated owner principal");
@@ -206,11 +244,9 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
   if(pgRecord!==project+"|refoundation|healthy")throw new Error("Unexpected PostgreSQL owner");
   const sql=(database,statement)=>docker(["exec","-i",pg,"psql","-X","-qAt","-v","ON_ERROR_STOP=1","-U",admin,"-d",database,"-f","-"],{},45000,statement+"\n");
   const envPath=resolve(root,"infra/.env");
-  const envInfo=lstatSync(envPath);
-  if(!envInfo.isFile() || envInfo.isSymbolicLink())throw new Error("Unsafe local environment file");
   git(["check-ignore","infra/.env"]);
-  const original=readFileSync(envPath,"utf8");
-  if(/^REF_DSH_RUNTIME_(?:DATABASE|USER|PASSWORD)=/m.test(original))throw new Error("Dedicated DSH credentials already exist; do not overwrite");
+  const original=readOwnerEnv(envPath);
+  if(/^REF_DSH_RUNTIME_(?:DATABASE|USER|PASSWORD)=/m.test(original.text))throw new Error("Dedicated DSH credentials already exist; do not overwrite");
   const absent=sql("postgres","BEGIN READ ONLY; SELECT (SELECT count(*) FROM pg_database WHERE datname='"+db+"')+(SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"')); COMMIT;");
   if(absent!==(resume?"3":"0"))throw new Error("Dedicated DSH namespace is not in the explicitly selected preparation state");
   const list=kind=>sql(oldDb,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='"+kind+"' ORDER BY 1; COMMIT;").split(/\r?\n/).filter(Boolean);
@@ -244,7 +280,7 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
     } else {
       const candidateProof=sql(db,"BEGIN READ ONLY; SELECT (SELECT pg_get_userbyid(datdba)='"+owner+"' FROM pg_database WHERE datname=current_database()) AND NOT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND pid<>pg_backend_pid()) AND (SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"') AND NOT(rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit) AND rolcanlogin=(rolname='"+runtime+"'))=2 AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member IN (SELECT oid FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"'))) AND (SELECT count(*) FROM pg_namespace WHERE nspname NOT LIKE 'pg_%' AND nspname NOT IN ('information_schema','public'))=1 AND EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='"+schema+"' AND pg_get_userbyid(nspowner)='"+owner+"') AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND pg_get_userbyid(c.relowner)<>'"+owner+"'); COMMIT;");
       const candidateTables=sql(db,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='r' ORDER BY 1; COMMIT;").split(/\r?\n/);
-      if(candidateProof!=="t" || !equal(candidateTables,[...new Set([...tables,"customer_addresses","service_city_delivery_policies"])].sort()))throw new Error("Existing unpublished DSH candidate ownership or inventory differs; do not alter");
+      if(candidateProof!=="t" || !equal(candidateTables,[...new Set([...tables,"customer_addresses","service_city_delivery_policies"])].sort(compareNames)))throw new Error("Existing unpublished DSH candidate ownership or inventory differs; do not alter");
     }
     if(sql(oldDb,fingerprint)!==before || sql(db,fingerprint)!==before)throw new Error("Source or candidate data changed; preserve both and review");
     if(sql(db,"BEGIN READ ONLY; SELECT (SELECT count(*) FROM "+schema+".customer_addresses)+(SELECT count(*) FROM "+schema+".service_city_delivery_policies); COMMIT;")!=="0")throw new Error("Fresh policy or address facts must remain empty");
@@ -255,8 +291,8 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
     sql(db,"GRANT USAGE ON SCHEMA "+schema+" TO "+runtime+"; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA "+schema+" TO "+runtime+"; GRANT USAGE ON ALL SEQUENCES IN SCHEMA "+schema+" TO "+runtime+";");
     const verified=docker([...composeArgs(activeFiles),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
     if(!verified.includes("DSH_DEVELOPMENT_DATABASE_PASS"))throw new Error("Dedicated runtime login not verified");
-    if(sql(oldDb,fingerprint)!==before || git(["rev-parse","HEAD"])!==head || git(["status","--porcelain","--untracked-files=all"]) || readFileSync(envPath,"utf8")!==original)throw new Error("Source, data or local configuration changed; do not publish candidate credentials");
-    appendFileSync(envPath,"\nREF_DSH_RUNTIME_DATABASE="+db+"\nREF_DSH_RUNTIME_USER="+runtime+"\nREF_DSH_RUNTIME_PASSWORD="+runtimeSecret+"\n",{encoding:"utf8"});
+    if(sql(oldDb,fingerprint)!==before || git(["rev-parse","HEAD"])!==head || git(["status","--porcelain","--untracked-files=all"]))throw new Error("Source, data or local configuration changed; do not publish candidate credentials");
+    appendOwnerEnv(envPath,original,"\nREF_DSH_RUNTIME_DATABASE="+db+"\nREF_DSH_RUNTIME_USER="+runtime+"\nREF_DSH_RUNTIME_PASSWORD="+runtimeSecret+"\n");
     console.log("DSH_DEDICATED_DATABASE_PREPARED HEAD="+head+" TABLES="+tables.length+" DATA_PARITY=PASS RUNTIME_LOGIN=PASS CUTOVER=NOT_RUN");
   } finally {
     // Exact owned archive only; never remove a retained database.
@@ -302,7 +338,7 @@ function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
   const queryList=(database,kind)=>sql(database,"BEGIN READ ONLY; SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='"+schema+"' AND c.relkind='"+kind+"' ORDER BY 1; COMMIT;").split(/\r?\n/).filter(Boolean);
   const tables=queryList(oldDb,"r"), sequences=queryList(oldDb,"S");
   const allTables=queryList(db,"r"), allSequences=queryList(db,"S");
-  if(!equal(allTables,[...new Set([...tables,"customer_addresses","service_city_delivery_policies"])].sort()) || !equal(allSequences,sequences))
+  if(!equal(allTables,[...new Set([...tables,"customer_addresses","service_city_delivery_policies"])].sort(compareNames)) || !equal(allSequences,sequences))
     throw new Error("Prepared DSH schema inventory changed");
   const fp=ownerDataFingerprintSql(schema,tables,sequences), full=ownerDataFingerprintSql(schema,allTables,allSequences);
   const checkParity=()=>assertHandoffParity(sql(oldDb,fp),sql(db,fp),tables.length+sequences.length);
@@ -420,10 +456,8 @@ function relocateIdentity(state,env,head,files,resume=false) {
   const sql=(database,statement)=>docker(["exec","-i",pg,"psql","-X","-qAt","-v","ON_ERROR_STOP=1","-U",admin,"-d",database,"-f","-"],{},45000,statement+"\n");
   const envPath=resolve(root,"infra/.env");
   git(["check-ignore","infra/.env"]);
-  const info=lstatSync(envPath);
-  if(!info.isFile()||info.isSymbolicLink())throw new Error("Unsafe local configuration");
-  const original=readFileSync(envPath,"utf8");
-  if(/^REF_IDENTITY_RUNTIME_DATABASE_URL=/m.test(original))throw new Error("Identity candidate configuration already exists; inspect before retry");
+  const original=readOwnerEnv(envPath);
+  if(/^REF_IDENTITY_RUNTIME_DATABASE_URL=/m.test(original.text))throw new Error("Identity candidate configuration already exists; inspect before retry");
   if(sql("postgres","BEGIN READ ONLY; SELECT (SELECT count(*) FROM pg_database WHERE datname='"+db+"')+(SELECT count(*) FROM pg_roles WHERE rolname IN ('"+owner+"','"+runtime+"')); COMMIT;")!==(resume?"3":"0"))
     throw new Error("Identity candidate is not in the explicitly selected preparation state");
   const roleCheck=sql(oldDb,"BEGIN READ ONLY; SELECT NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member=r.oid) AND has_schema_privilege(rolname,'"+schema+"','USAGE') AND NOT has_schema_privilege(rolname,'"+schema+"','CREATE') FROM pg_roles r WHERE rolname='"+oldRole+"'; COMMIT;");
@@ -491,10 +525,10 @@ function relocateIdentity(state,env,head,files,resume=false) {
     noWriters();
     assertHandoffParity(before,sql(oldDb,fp),tables.length+sequences.length);
     assertHandoffParity(before,sql(db,fp),tables.length+sequences.length);
-    if(!clean() || readFileSync(envPath,"utf8")!==original || imageRecord(owners.identity.image+":"+tag).Id!==image.Id ||
+    if(!clean() || imageRecord(owners.identity.image+":"+tag).Id!==image.Id ||
        inspect("identity",false).Id!==old.Id || inspect("dsh").Id!==state.dsh.Id || inspect("wlt").Id!==state.wlt.Id)
       throw new Error("Identity source, peers or local configuration advanced");
-    appendFileSync(envPath,"\nREF_IDENTITY_RUNTIME_DATABASE_URL="+newUrl+"\n",{encoding:"utf8"});
+    appendOwnerEnv(envPath,original,"\nREF_IDENTITY_RUNTIME_DATABASE_URL="+newUrl+"\n");
     applyStarted=true;
     docker([...composeArgs(files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60","identity"],targetEnv,95000);
     const now=inspect("identity");
