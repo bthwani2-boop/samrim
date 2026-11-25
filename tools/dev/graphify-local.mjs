@@ -418,6 +418,62 @@ function query(question) {
   process.stdout.write(output.toString("utf8"));
 }
 
+function assertCoverageScope(paths) {
+  if (!Array.isArray(paths) || paths.length === 0 || new Set(paths).size !== paths.length ||
+      paths.some(name => typeof name !== "string" || /[\\:]/.test(name) || [...name].some(char => char.charCodeAt(0) < 32) ||
+        name.split("/").some(part => !part || part === "." || part === "..") || forbiddenName(name))) {
+    throw new Error("BLOCKED: invalid coverage scope; use unique repository-relative authored paths");
+  }
+}
+
+export function measureFileCoverage(paths, authored, nodes) {
+  assertCoverageScope(paths);
+  if (!Array.isArray(nodes)) throw new Error("BLOCKED: invalid graph nodes");
+  const indexed = new Set(nodes.map(node => node?.source_file).filter(name => typeof name === "string"));
+  const represented = paths.filter(name => authored.has(name) && indexed.has(name));
+  const missing = paths.filter(name => authored.has(name) && !indexed.has(name));
+  const unadmitted = paths.filter(name => !authored.has(name));
+  return { coverage: missing.length || unadmitted.length ? "FAIL" : "PASS",
+    requested: [...paths], represented, missing, unadmitted };
+}
+
+function coverage(paths) {
+  assertCoverageScope(paths);
+  const before = validate();
+  const emit = (result) => {
+    process.stdout.write(JSON.stringify({
+      ...result, coverageKind: "FILE_NODE_MEMBERSHIP_ONLY",
+      branch: before.current.branch, head: before.current.head,
+      indexedHead: before.indexed?.head ?? null, graphSha256: before.graphDigest,
+      sourceFingerprint: before.current.worktree,
+    }, null, 2) + "\n");
+    if (result.coverage !== "PASS") process.exitCode = 2;
+  };
+  if (before.assessment.status !== "PASS") {
+    return emit({ coverage: before.assessment.status, requested: paths, reason: before.assessment.reason });
+  }
+  const bytes = readFileSync(graph);
+  if (sha256(bytes) !== before.graphDigest) {
+    return emit({ coverage: "INVALIDATED", requested: paths, reason: "graph changed during coverage measurement" });
+  }
+  const authored = new Set(git("ls-files", "--cached", "--others", "--exclude-standard", "-z").toString("utf8").split("\0"));
+  const admitted = new Set(paths.filter(name => {
+    if (!authored.has(name)) return false;
+    const path = resolve(root, name);
+    try {
+      return lstatSync(path).isFile() && samePath(realpathSync(path), path);
+    } catch { return false; }
+  }));
+  const result = measureFileCoverage(paths, admitted, JSON.parse(bytes.toString("utf8")).nodes);
+  const after = validate();
+  if (!after.assessment.queryable || JSON.stringify(before) !== JSON.stringify(after)) {
+    return emit({ coverage: after.assessment.queryable ? "INVALIDATED" : "BLOCKED",
+      requested: paths, reason: "source or graph changed during coverage measurement" });
+  }
+  return emit(result);
+}
+
+
 function main() {
   const [action, ...args] = process.argv.slice(2);
   if (action === "recover-lock" && args.length === 1) {
@@ -448,8 +504,9 @@ function main() {
     if (!assessment.queryable) process.exitCode = 2;
     return;
   }
+  if (action === "coverage" && args.length > 0) return coverage(args);
   if (action === "query" && args.length === 1 && args[0].trim()) return query(args[0]);
-  throw new Error("Usage: node tools/dev/graphify-local.mjs status | refresh | sync | recover-lock <reviewed SHA-256> | install-hooks | query \"question\"");
+  throw new Error("Usage: node tools/dev/graphify-local.mjs status | refresh | sync | recover-lock <reviewed SHA-256> | install-hooks | coverage <repo-relative paths...> | query \"question\"");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

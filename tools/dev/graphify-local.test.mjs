@@ -256,6 +256,16 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     git("commit", "-m", "fixture initial");
     cli(["refresh"]);
     const first = proof();
+    const measured = JSON.parse(cli(["coverage", "example.ts"]));
+    assert.equal(measured.coverage, "PASS");
+    assert.equal(measured.coverageKind, "FILE_NODE_MEMBERSHIP_ONLY");
+    assert.deepEqual(measured.represented, ["example.ts"]);
+    assert.equal(measured.head, first.head);
+    assert.equal(measured.indexedHead, first.head);
+    assert.match(measured.graphSha256, /^[a-f0-9]{64}$/);
+    assert.match(measured.sourceFingerprint, /^[a-f0-9]{64}$/);
+    assert.deepEqual(JSON.parse(cli(["coverage", "missing.ts"], 2)).unadmitted, ["missing.ts"]);
+    cli(["coverage", "../outside.ts"], 2);
     cli(["install-hooks"]);
     git("switch", "-c", "fixture-b");
     assert.equal(proof().head, first.head);
@@ -267,13 +277,16 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     writeFileSync(added, "export function newGraphFixture() { return 1; }\n");
     cli(["sync"]);
     assert.ok(JSON.parse(readFileSync(join(dir,"graphify-out","graph.json"),"utf8")).nodes.some(n=>String(n.label).includes("newGraphFixture")));
+    assert.equal(JSON.parse(cli(["coverage", "apps/new.ts"])).coverage, "PASS");
     writeFileSync(added, "export function changedNewGraphFixture() { return 2; }\n");
     assert.equal(JSON.parse(cli(["status"])).status,"INVALIDATED");
+    assert.equal(JSON.parse(cli(["coverage", "apps/new.ts"], 2)).coverage, "INVALIDATED");
     cli(["sync"]);
     proof();
     rmSync(added);
     cli(["sync"]);
     assert.ok(!JSON.parse(readFileSync(join(dir,"graphify-out","graph.json"),"utf8")).nodes.some(n=>String(n.label).includes("changedNewGraphFixture")));
+    assert.deepEqual(JSON.parse(cli(["coverage", "apps/new.ts"], 2)).unadmitted, ["apps/new.ts"]);
     git("add", "example.ts");
     git("commit", "-m", "fixture update");
     assert.notEqual(proof().head, first.head);
@@ -283,6 +296,7 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     writeFileSync(stamp, JSON.stringify(wrong));
     cli(["sync"], 2);
     cli(["status"], 2);
+    assert.equal(JSON.parse(cli(["coverage", "example.ts"], 2)).coverage, "BLOCKED");
     assert.equal(JSON.parse(readFileSync(stamp, "utf8")).repository, "foreign");
     writeFileSync(stamp, verified);
     proof();
@@ -295,4 +309,34 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("explicit graph coverage reports exact authored paths, not labels or duplicate nodes", async () => {
+  const { measureFileCoverage } = await import("./graphify-local.mjs");
+  assert.equal(typeof measureFileCoverage, "function", "missing scoped graph coverage");
+  const authored = new Set(["tools/a.mjs", "tools/b.mjs"]);
+  const nodes = [
+    { source_file: "tools/a.mjs" },
+    { source_file: "tools/a.mjs" },
+    { label: "tools/b.mjs" },
+    { source_file: "tools/deleted.mjs" },
+  ];
+  assert.deepEqual(measureFileCoverage(["tools/a.mjs"], authored, nodes), {
+    coverage: "PASS", requested: ["tools/a.mjs"], represented: ["tools/a.mjs"],
+    missing: [], unadmitted: [],
+  });
+  assert.deepEqual(measureFileCoverage(["tools/a.mjs", "tools/b.mjs", "tools/deleted.mjs"], authored, nodes), {
+    coverage: "FAIL", requested: ["tools/a.mjs", "tools/b.mjs", "tools/deleted.mjs"],
+    represented: ["tools/a.mjs"], missing: ["tools/b.mjs"], unadmitted: ["tools/deleted.mjs"],
+  });
+});
+
+test("explicit graph coverage rejects ambiguous or unsafe path scopes and malformed graphs", async () => {
+  const { measureFileCoverage } = await import("./graphify-local.mjs");
+  assert.equal(typeof measureFileCoverage, "function", "missing scoped graph coverage");
+  for (const paths of [[], ["../outside.ts"], ["C:/outside.ts"], ["./tools/a.mjs"], ["tools\\a.mjs"],
+    ["tools/a.mjs", "tools/a.mjs"], ["tools/.env"]]) {
+    assert.throws(() => measureFileCoverage(paths, new Set(), []), /coverage scope/i);
+  }
+  assert.throws(() => measureFileCoverage(["tools/a.mjs"], new Set(["tools/a.mjs"]), null), /graph nodes/i);
 });
