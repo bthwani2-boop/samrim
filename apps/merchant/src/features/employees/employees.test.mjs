@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import { GET, POST } from "../../../app/api/admission+api.ts";
 import * as recovery from "../onboarding/merchant-registration-attempt.ts";
 
@@ -79,16 +80,19 @@ test("Merchant employees BFF scopes GET and POST to a verified actor and Store",
   assert.deepEqual(await response.json(),{code:"EMPLOYEE_SCOPE_FORBIDDEN"});
 });
 
+// Retain uncached modules until Node collects source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 const nodes=tree=>Array.isArray(tree)?tree.flatMap(nodes):!tree||typeof tree!=="object"?[]:[tree,...nodes(tree.props?.children)];
 const tick=()=>new Promise(setImmediate);
 async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;await tick();}assert.fail("employee UI did not settle");}
-test("Employee screen loads current scope and retains the original operation through network loss and remount",async()=>{
+test("Employee screen loads current scope and retains the original operation through network loss and remount",async t=>{
   const tmp=mkdtempSync(join(tmpdir(),"merchant-employees-"));
   try{
     const root=resolve(import.meta.dirname,"../../../../..");
     const source=resolve(import.meta.dirname,"employees-screen.tsx");
     const compiled=spawnSync(process.execPath,[join(root,"node_modules/typescript/bin/tsc"),source,
-      "--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--outDir",tmp],
+      "--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",tmp],
       {cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
     assert.equal(compiled.status,0,compiled.stderr||compiled.stdout);
     const code=readFileSync(join(tmp,"employees-screen.js"),"utf8");
@@ -109,9 +113,17 @@ test("Employee screen loads current scope and retains the original operation thr
       "../../components/merchant-capability-screen":{__esModule:true,default:"Unavailable"},"../onboarding/merchant-registration-attempt":recovery,
       "./employee-transport":{readEmployeeDetail(actorId,storeId,id,signal){return new Promise((resolve,reject)=>details.push({actorId,storeId,id,signal,resolve,reject}));},readEmployees(actorId,storeId,signal,cursor,endState){return new Promise((resolve,reject)=>reads.push({actorId,storeId,signal,cursor,endState,resolve,reject}));},
         saveEmployee(actorId,storeId,input,signal){return new Promise((resolve,reject)=>writes.push({actorId,storeId,input,signal,resolve,reject}));}}};
-    const mod={exports:{}};
-    new Function("require","module","exports","window",code)(name=>{assert.ok(Object.hasOwn(mocks,name),name);return mocks[name];},mod,mod.exports,
-      {localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{locks:{request:(_key,fn)=>fn()}},addEventListener(type,listener){assert.equal(type,"focus");focusListener=listener;},removeEventListener(){focusListener=undefined;}});
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    t.after(() => {
+      if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+      else delete globalThis.window;
+    });
+    Object.defineProperty(globalThis, "window", {
+      configurable: true, writable: true,
+      value: {localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{locks:{request:(_key,fn)=>fn()}},addEventListener(type,listener){assert.equal(type,"focus");focusListener=listener;},removeEventListener(){focusListener=undefined;}},
+    });
+    const mod = loadMappedRenderFixture(code, source, mocks);
+    loadedModules.push(mod);
     const scope={actorId:"merchant-a",storeId:"store-a"};
     const render=(p=scope)=>{si=0;ri=0;const c=mod.exports.default(p);return c.type(c.props);};
     const findInput=label=>nodes(render()).find(n=>n.type==="TextInput"&&n.props.accessibilityLabel===label);

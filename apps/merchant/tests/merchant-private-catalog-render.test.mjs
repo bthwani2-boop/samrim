@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
+// Retain uncached inventory modules until Node collects source coverage.
+const loadedInventoryModules = [];
+process.once("exit", () => loadedInventoryModules.length);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const src = fileURLToPath(new URL("../src/features/catalog/merchant-private-catalog.tsx", import.meta.url));
 const offer = (id, name) => ({
@@ -501,7 +505,7 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     const compiled = spawnSync(process.execPath, [
       path.join(root, "node_modules/typescript/bin/tsc"), inventorySrc, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--outDir", tmp,
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
     const hooks = [], effects = [], requests = [];
@@ -531,11 +535,8 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
         },
       },
     };
-    const mod = {exports:{}};
-    new Function("require","module","exports",readFileSync(path.join(tmp,"inventory-summary.js"),"utf8"))(name=>{
-      assert.ok(Object.hasOwn(mocks,name),name);
-      return mocks[name];
-    },mod,mod.exports);
+    const mod = loadMappedRenderFixture(readFileSync(path.join(tmp, "inventory-summary.js"), "utf8"), inventorySrc, mocks);
+    loadedInventoryModules.push(mod);
     let stockoutClicks = 0;
     const stockoutButton = tree => tree.find(n => n.type === "Pressable" && n.props?.children?.props?.children === "عرض العروض النافدة");
     function render(actorId,storeId,showStockout = true) {

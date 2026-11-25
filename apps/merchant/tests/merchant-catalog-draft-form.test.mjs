@@ -6,21 +6,25 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const src = fileURLToPath(new URL("../src/features/catalog/merchant-catalog-draft-form.tsx", import.meta.url));
+// Retain uncached modules until Node collects source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 function nodes(tree) {
   if (!tree || typeof tree !== "object") return [];
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
-test("Merchant draft form retries the identical operation after unknown outcome and clears state on Store switch", async () => {
+test("Merchant draft form retries the identical operation after unknown outcome and clears state on Store switch", async t => {
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-draft-render-"));
   try {
     const run = spawnSync(process.execPath, [
       path.join(root, "node_modules/typescript/bin/tsc"), src, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--outDir", tmp,
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const srcCode = readFileSync(path.join(tmp, "merchant-catalog-draft-form.js"), "utf8");
@@ -105,11 +109,16 @@ test("Merchant draft form retries the identical operation after unknown outcome 
         Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View", Platform: platform,
       },
     };
-    const mod = { exports: {} };
-    new Function("require", "module", "exports", "window", srcCode)(name => {
-      assert.ok(Object.hasOwn(mocks, name), `unexpected module: ${name}`);
-      return mocks[name];
-    }, mod, mod.exports, { localStorage });
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    t.after(() => {
+      if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+      else delete globalThis.window;
+    });
+    Object.defineProperty(globalThis, "window", {
+      configurable: true, writable: true, value: { localStorage },
+    });
+    const mod = loadMappedRenderFixture(srcCode, src, mocks);
+    loadedModules.push(mod);
     let created = 0;
     function render(actorId = "merchant-a", storeId = "store-a", draft, priceStockOnly = false, initialPriceStock) {
       hooksCursor = 0;
