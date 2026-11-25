@@ -17,7 +17,7 @@ Session authority, revocation and mutation remain on Identity's Go/PostgreSQL ow
 
 The transport refuses unsafe non-HTTPS endpoints outside explicit development loopback addresses, malformed opaque tokens, expired or wrong-shaped responses, unsafe response caching, oversized declared response bodies and unexpected owner statuses. Recovery is explicit. An uncertain versioned permission change is recoverable through its original operation ID and payload. Cancellation prevents a late result from being displayed as a current session.
 
-**Development admission only:** The Node client has owner-local positive/negative tests in `../../tools/dev/identity-client.test.mjs` and is TypeScript-checked. These tests include synthetic HTTP responses; they are not proof of first-factor login, a real app consumer, session persistence on a connected device, production activation or WLT financial access. Do not expose a protected workspace until real Identity and DSH scoped authorization is integrated and independently tested.
+**Development admission only:** The Node client has owner-local positive/negative tests in `./identity-client.test.mjs` and is TypeScript-checked. These tests include synthetic HTTP responses; they are not proof of first-factor login, a real app consumer, session persistence on a connected device, production activation or WLT financial access. Do not expose a protected workspace until real Identity and DSH scoped authorization is integrated and independently tested.
 
 The service's Go backend, OpenAPI and SQL are owned under `backend/`, `contracts/openapi/` and `database/` respectively. This file describes only its client transport, not another identity session engine or decision source.
 

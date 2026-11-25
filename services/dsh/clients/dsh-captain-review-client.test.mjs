@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import * as sdk from "../../services/dsh/clients/index.ts";
+import * as sdk from "./index.ts";
 
 const base = "http://127.0.0.1:3202";
 const bearer = "A".repeat(43);

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readBoundedOwnerJSON } from "../../services/dsh/clients/client-core.ts";
+import { readBoundedOwnerJSON } from "./client-core.ts";
 import {
   changeOperatorCaptainStanding, DshPublicError, estimatePublicOffer, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
   replaceCityStoreOperationalPolicy,
-} from "../../services/dsh/clients/index.ts";
+} from "./index.ts";
 
 const base = "http://127.0.0.1:3202";
 const store = Object.freeze({
@@ -312,8 +312,8 @@ test("an owner response arriving after a context switch cannot revive a cancelle
 });
 
 test("owner SDK keeps helper functions private and shares one public error class", async () => {
-  const sdk = await import("../../services/dsh/clients/index.ts");
-  const discovery = await import("../../services/dsh/clients/public-discovery.ts");
+  const sdk = await import("./index.ts");
+  const discovery = await import("./public-discovery.ts");
   assert.equal(sdk.DshPublicError, discovery.DshPublicError);
   for (const name of ["endpoint", "onlyKeys", "privateOwnerRequest"]) {
     assert.equal(Object.hasOwn(sdk, name), false, name + " must not become a public SDK export");

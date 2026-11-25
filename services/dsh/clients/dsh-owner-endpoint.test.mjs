@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DshPublicError, endpoint } from "../../services/dsh/clients/client-core.ts";
-import { privateOwnerRequest } from "../../services/dsh/clients/private-owner-request.ts";
-import { getPublicStore } from "../../services/dsh/clients/public-discovery.ts";
+import { DshPublicError, endpoint } from "./client-core.ts";
+import { privateOwnerRequest } from "./private-owner-request.ts";
+import { getPublicStore } from "./public-discovery.ts";
 
 function denied(action) {
   assert.throws(action, error => error instanceof DshPublicError &&

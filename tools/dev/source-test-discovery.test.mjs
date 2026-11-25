@@ -169,7 +169,7 @@ function coverageFixture(callback) {
       "tools/mobile/verify-application-boundaries.test.mjs",
       "packages/tamagui-config/tools/appearance.test.mjs",
       "tools/dev/verify-source-execution.test.mjs",
-      "tools/dev/dsh-public-client.test.mjs",
+      "services/dsh/clients/dsh-public-client.test.mjs",
       "tools/dev/check-openapi.test.mjs",
       "tools/dev/source-test-discovery.test.mjs",
       "tools/mobile/verify-native-config.test.mjs",

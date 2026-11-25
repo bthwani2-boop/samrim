@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DshPublicError } from "../../services/dsh/clients/client-core.ts";
-import { privateOwnerRequest } from "../../services/dsh/clients/private-owner-request.ts";
+import { DshPublicError } from "./client-core.ts";
+import { privateOwnerRequest } from "./private-owner-request.ts";
 
 const origin = "http://127.0.0.1:3202";
 const bearer = "synthetic-opaque-bearer";

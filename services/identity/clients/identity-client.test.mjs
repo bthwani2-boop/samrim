@@ -15,7 +15,7 @@ import {
   revokeVerifiedIdentitySession,
   rotatePersistentIdentitySession,
   verifyCustomerPhoneChallenge,
-} from "../../services/identity/clients/index.ts";
+} from "./index.ts";
 
 test("Yemeni mobile input becomes one canonical owner number", () => {
   for (const input of ["770000001", "+967770000001", "٧٧٠٠٠٠٠٠١", " ۷۷۰۰۰۰۰۰۱ "]) {

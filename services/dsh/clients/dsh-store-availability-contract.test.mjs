@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DshPublicError, getStoreOperationalAvailability, updateStoreOperationalAvailability,
-} from "../../services/dsh/clients/index.ts";
+} from "./index.ts";
 
 const base = "http://127.0.0.1:3202";
 const storeId = "store-a";
