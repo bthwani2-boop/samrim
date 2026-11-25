@@ -282,3 +282,84 @@ test("Unfocusing the native wallet aborts pending reads and prevents old account
   await settle();
   assert.equal(byId(app.render(), "native-wallet-balance"), null);
 });
+
+test("Native wallet aborts stalled continuation and resumes foreground verification without waiting for transport", async () => {
+  const app = harness();
+  try {
+    app.mount();
+    app.read("wallet").resolve(wallet("actor-a"));
+    await settle();
+    app.read("history").resolve(history("actor-a", [funding("old")], "next"));
+    await settle();
+    byId(app.render(), "native-wallet-more").props.onPress();
+    const stalled = app.read("history");
+    app.deadline();
+    assert.equal(stalled.signal.aborted, true);
+    assert.equal(byId(app.render(), "native-wallet-more").props.disabled, false);
+    app.poll();
+    const fresh = app.read("wallet");
+    fresh.resolve({ kind: "signed-out" });
+    await settle();
+    stalled.resolve(history("actor-a", [funding("late-private")]));
+    await settle();
+    assert.equal(byId(app.render(), "native-wallet-balance"), null);
+    assert.equal(byId(app.render(), "native-wallet-more"), null);
+  } finally { app.unmount(); }
+});
+
+test("Native wallet continuation timeout allows retry and ignores an older late page", async () => {
+  const app = harness();
+  try {
+    app.mount();
+    app.read("wallet").resolve(wallet("actor-a"));
+    await settle();
+    app.read("history").resolve(history("actor-a", [funding("old")], "next"));
+    await settle();
+    byId(app.render(), "native-wallet-more").props.onPress();
+    const old = app.read("history");
+    app.deadline();
+    byId(app.render(), "native-wallet-more").props.onPress();
+    const retry = app.read("history");
+    assert.equal(retry.cursor, "next");
+    old.resolve(history("actor-a", [funding("stale")]));
+    await settle();
+    assert.equal(byId(app.render(), "native-wallet-more").props.disabled, true);
+    retry.resolve(history("actor-a", [funding("new")]));
+    await settle();
+    assert.equal(byId(app.render(), "native-wallet-more"), null);
+    assert.ok(byId(app.render(), "native-wallet-balance"));
+  } finally { app.unmount(); }
+});
+
+test("Native wallet conceals funds when continuation returns a different actor or expired proof", async () => {
+  for (const response of [history("actor-b", [funding("other")]), { ...history("actor-a", [funding("expired")]), expiresAt: Date.now() - 1 }]) {
+    const app = harness();
+    try {
+      app.mount(); app.read("wallet").resolve(wallet("actor-a")); await settle();
+      app.read("history").resolve(history("actor-a", [funding("old")], "next")); await settle();
+      byId(app.render(), "native-wallet-more").props.onPress();
+      app.read("history").resolve(response);
+      await settle();
+      assert.equal(byId(app.render(), "native-wallet-balance"), null);
+      assert.equal(byId(app.render(), "native-wallet-more"), null);
+      assert.throws(() => app.deadline(), /bounded refresh deadline/);
+    } finally { app.unmount(); }
+  }
+});
+
+test("Native wallet continuation deadline is removed on background or successful completion", async () => {
+  for (const background of [true, false]) {
+    const app = harness();
+    try {
+      app.mount(); app.read("wallet").resolve(wallet("actor-a")); await settle();
+      app.read("history").resolve(history("actor-a", [funding("old")], "next")); await settle();
+      byId(app.render(), "native-wallet-more").props.onPress();
+      const next = app.read("history");
+      if (background) app.appState("background");
+      next.resolve(history("actor-a", [funding("new")]));
+      await settle();
+      assert.throws(() => app.deadline(), /bounded refresh deadline/);
+      if (background) assert.equal(byId(app.render(), "native-wallet-balance"), null);
+    } finally { app.unmount(); }
+  }
+});

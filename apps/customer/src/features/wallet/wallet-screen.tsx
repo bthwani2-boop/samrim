@@ -21,6 +21,8 @@ export default function WalletScreen() {
   const generation = useRef(0);
   const pending = useRef<AbortController | null>(null);
   const morePending = useRef<AbortController | null>(null);
+  const moreTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const concealRef = useRef<(() => void) | null>(null);
   const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const refreshRef = useRef<(() => void) | null>(null);
   const scheduleExpiryRef = useRef<((expiresAt: number) => void) | null>(null);
@@ -34,6 +36,8 @@ export default function WalletScreen() {
       morePending.current?.abort();
       pending.current = null;
       morePending.current = null;
+      clearTimeout(moreTimeout.current);
+      moreTimeout.current = undefined;
       actor = undefined;
       clearTimeout(refreshTimeout);
       if (expiryTimer.current) clearTimeout(expiryTimer.current);
@@ -43,12 +47,13 @@ export default function WalletScreen() {
       setLoadingMore(false);
       setMoreError(false);
     }
+    function conceal() {
+      hide();
+      setBalance({ kind: "signed-out" });
+    }
     function scheduleExpiry(expiresAt: number) {
       if (expiryTimer.current) clearTimeout(expiryTimer.current);
-      expiryTimer.current = setTimeout(() => {
-        hide();
-        setBalance({ kind: "signed-out" });
-      }, Math.max(0, expiresAt - Date.now()));
+      expiryTimer.current = setTimeout(conceal, Math.max(0, expiresAt - Date.now()));
     }
     function refresh(silent = false) {
       if (AppState.currentState !== "active") {
@@ -116,6 +121,7 @@ export default function WalletScreen() {
       })();
     }
     scheduleExpiryRef.current = scheduleExpiry;
+    concealRef.current = conceal;
     refreshRef.current = refresh;
     const subscription = AppState.addEventListener("change", status => {
       if (status === "active") refresh();
@@ -127,6 +133,7 @@ export default function WalletScreen() {
       clearInterval(interval);
       refreshRef.current = null;
       scheduleExpiryRef.current = null;
+      concealRef.current = null;
       subscription.remove();
       hide();
     };
@@ -142,15 +149,26 @@ export default function WalletScreen() {
     morePending.current = controller;
     setLoadingMore(true);
     setMoreError(false);
+    const stillCurrent = () => !controller.signal.aborted && generation.current === current && morePending.current === controller;
+    // A non-cooperative transport must not hold the foreground verification lock.
+    moreTimeout.current = setTimeout(() => {
+      if (!stillCurrent()) return;
+      controller.abort();
+      clearTimeout(moreTimeout.current);
+      moreTimeout.current = undefined;
+      morePending.current = null;
+      setLoadingMore(false);
+      setMoreError(true);
+    }, 12000);
     try {
       const next = await readNativeWalletTransactions(controller.signal, cursor, balance.balance.actorId);
-      if (controller.signal.aborted || generation.current !== current) return;
-      if (next.kind === "signed-out") {
-        setBalance({ kind: "signed-out" });
-        setHistory(null);
+      if (!stillCurrent()) return;
+      if (next.kind === "signed-out" || (next.kind === "ready" &&
+          (next.history.actorId !== actorId || Math.min(balance.expiresAt, history.expiresAt, next.expiresAt) <= Date.now()))) {
+        concealRef.current?.();
         return;
       }
-      if (next.kind !== "ready" || next.history.actorId !== actorId ||
+      if (next.kind !== "ready" ||
         (next.history.nextCursor !== null && next.history.nextCursor === cursor)) {
         setMoreError(true);
         return;
@@ -169,9 +187,11 @@ export default function WalletScreen() {
       });
       scheduleExpiryRef.current?.(Math.min(balance.expiresAt, history.expiresAt, next.expiresAt));
     } catch {
-      if (!controller.signal.aborted && generation.current === current) setMoreError(true);
+      if (stillCurrent()) setMoreError(true);
     } finally {
       if (morePending.current === controller) {
+        clearTimeout(moreTimeout.current);
+        moreTimeout.current = undefined;
         morePending.current = null;
         setLoadingMore(false);
       }
