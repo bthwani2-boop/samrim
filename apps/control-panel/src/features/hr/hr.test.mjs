@@ -19,14 +19,21 @@ test("hr: unauthenticated or unmapped sessions never expose navigation", () => {
 // renderer. Only the owner boundary is substituted; no fixture is a live E2E.
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import * as dsh from "@bthwani/dsh";
 import { DshPublicError, isCompanyEmployeeId } from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 const requirePanel = createRequire(new URL("../../../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
 const jsxRuntime = requirePanel("react/jsx-runtime");
 const { renderToStaticMarkup } = requirePanel("react-dom/server");
-const component = transformSync(readFileSync(new URL("./employee-detail.tsx", import.meta.url), "utf8"), {
+// Retain uncached fixture modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+const detailSource = fileURLToPath(new URL("./employee-detail.tsx", import.meta.url));
+const component = transformSync(readFileSync(detailSource, "utf8"), {
+  filename: detailSource, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
@@ -39,7 +46,6 @@ const audit = { employeeId, registeredByActorId: "HR-private-author", recordedAt
 
 async function renderDetail({ event = audit, employee = record, status = "available" } = {}) {
   const calls = [];
-  const mod = { exports: {} };
   const result = async (name, value, id) => {
     assert.equal(id, employeeId);
     calls.push(name);
@@ -56,10 +62,8 @@ async function renderDetail({ event = audit, employee = record, status = "availa
     "./employees.module.css": { details: "details" },
     "react/jsx-runtime": jsxRuntime,
   };
-  new Function("require", "module", "exports", component)(name => {
-    assert.ok(Object.hasOwn(dependencies, name), name);
-    return dependencies[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(component, detailSource, dependencies);
+  loadedModules.push(mod);
   const html = renderToStaticMarkup(await mod.exports.default({ id: employeeId }));
   return { html, calls };
 }
@@ -97,7 +101,9 @@ test("an old or unavailable audit operation preserves independently authorized e
   }
 });
 
-const directoryComponent = transformSync(readFileSync(new URL("./employees-workspace.tsx", import.meta.url), "utf8"), {
+const directorySource = fileURLToPath(new URL("./employees-workspace.tsx", import.meta.url));
+const directoryComponent = transformSync(readFileSync(directorySource, "utf8"), {
+  filename: directorySource, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
@@ -106,7 +112,6 @@ const directoryComponent = transformSync(readFileSync(new URL("./employees-works
 async function renderDirectory({ cursor, endState, nextCursor=null, failure, status = "available" } = {}) {
   const filters=[];
   const calls = [];
-  const mod = { exports: {} };
   const dependencies = {
     "@bthwani/dsh": { DshPublicError, isCompanyEmployeeId, validEmployeeEndState:value=>value==="NO_END_DATE"||value==="HAS_END_DATE",
       listCompanyEmployees: async (_origin, _bearer, requestedCursor, _signal, requestedEndState) => {
@@ -122,10 +127,8 @@ async function renderDirectory({ cursor, endState, nextCursor=null, failure, sta
     "./employees.module.css": { table: "table", tableScroll: "scroll", pagination: "pagination" },
     "react/jsx-runtime": jsxRuntime,
   };
-  new Function("require", "module", "exports", directoryComponent)(name => {
-    assert.ok(Object.hasOwn(dependencies, name), name);
-    return dependencies[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(directoryComponent, directorySource, dependencies);
+  loadedModules.push(mod);
   const html = renderToStaticMarkup(await mod.exports.default({ searchParams: Promise.resolve({...(cursor===undefined?{}:{cursor}),...(endState===undefined?{}:{endState})}) }));
   return { html, calls, filters };
 }
@@ -167,11 +170,15 @@ test("first-page owner outage remains unavailable and malformed cursor never rea
 });
 
 
-const registrationComponent = transformSync(readFileSync(new URL("./employee-registration.tsx", import.meta.url), "utf8"), {
+const registrationSource = fileURLToPath(new URL("./employee-registration.tsx", import.meta.url));
+const registrationComponent = transformSync(readFileSync(registrationSource, "utf8"), {
+  filename: registrationSource, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022", transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
 }).code;
-const registrationAction = transformSync(readFileSync(new URL("./register-employee-action.ts", import.meta.url), "utf8"), {
+const actionSource = fileURLToPath(new URL("./register-employee-action.ts", import.meta.url));
+const registrationAction = transformSync(readFileSync(actionSource, "utf8"), {
+  filename: actionSource, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript" }, target: "es2022" }, module: { type: "commonjs" },
 }).code;
 const employeeDraft = { displayName: "Synthetic Employee", department: "Operations", jobTitle: "Coordinator", startDate: "2026-11-25" };
@@ -216,11 +223,11 @@ async function exerciseRegistration(scenario, { storage = new Map(), actorId = "
     localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
     navigator: { locks: { request: (_key, action) => action() } },
   };
-  const mod = { exports: {} };
   try {
-    new Function("require", "module", "exports", registrationComponent)(name => ({
+    const mod = loadMappedRenderFixture(registrationComponent, registrationSource, {
       react, "react/jsx-runtime": { jsx, jsxs: jsx }, "./employees.module.css": {}, "@bthwani/dsh": dsh,
-    })[name], mod, mod.exports);
+    });
+    loadedModules.push(mod);
     const submit = (id, form) => {
       calls.push({ id, fields: Object.fromEntries(form) });
       return new Promise((resolve, reject) => responses.push({ resolve, reject }));
@@ -305,14 +312,15 @@ test("company registration navigates only on a confirmed owner ID and never repe
 });
 
 async function runRegistrationAction({ outcome, owner = { status: "available", actorId: "operator-a", origin: "http://127.0.0.1:3202", bearer: "synthetic" } }) {
-  const calls = [], mod = { exports: {} };
-  new Function("require", "module", "exports", registrationAction)(name => ({
+  const calls = [];
+  const mod = loadMappedRenderFixture(registrationAction, actionSource, {
     "@bthwani/dsh": { ...dsh, registerCompanyEmployee: async (_origin, _bearer, input) => {
       calls.push(input); if (outcome instanceof Error) throw outcome; return outcome;
     } },
     "next/navigation": { redirect: () => { throw new Error("unexpected redirect"); } },
     "./employee-owner": { employeeOwner: async () => owner },
-  })[name], mod, mod.exports);
+  });
+  loadedModules.push(mod);
   const result = await mod.exports.registerEmployee("operator-a", employeeId, makeForm(employeeDraft));
   return { result, calls };
 }
