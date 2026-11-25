@@ -24,8 +24,8 @@ function find(node, predicate) {
   return predicate(node) ? node : find(node.props?.children, predicate);
 }
 
-async function run({ listBinding = "operator-a", omitListBinding = false, detailBinding = "operator-a", status = 200, listReply, detailReply } = {}, scenario) {
-  const hooks = [], effects = new Map(), requests = [];
+async function run({ listBinding = "operator-a", omitListBinding = false, detailBinding = "operator-a", status = 200, listReply, detailReply, component = compiled, props = {} } = {}, scenario) {
+  const hooks = [], effects = new Map(), requests = [], listeners = new Map();
   let index = 0, scheduled = [];
   const react = {
     useState(initial) {
@@ -50,14 +50,17 @@ async function run({ listBinding = "operator-a", omitListBinding = false, detail
   };
   const imports = {
     antd: { Alert: "Alert", Button: "Button", Card: "Card", Select: "Select",
+      Input: { TextArea: "TextArea" }, Popconfirm: "Popconfirm", Spin: "Spin",
       Space: "Space", Table: "Table", Tag: "Tag",
       Typography: { Title: "Title", Paragraph: "Paragraph", Text: "Text" } },
     react, "react/jsx-runtime": { jsx, jsxs: jsx },
     "./captains-read-client": client,
   };
   const originals = { fetch: globalThis.fetch, window: globalThis.window, document: globalThis.document };
-  globalThis.window = { addEventListener() {}, removeEventListener() {} };
-  globalThis.document = { visibilityState: "visible", addEventListener() {}, removeEventListener() {} };
+  const events = { addEventListener(name, callback) { listeners.set(name, callback); },
+    removeEventListener(name) { listeners.delete(name); } };
+  globalThis.window = events;
+  globalThis.document = { visibilityState: "visible", ...events };
   globalThis.fetch = async (url, options) => {
     requests.push({ url, options });
     if (url.includes("/standing")) {
@@ -70,18 +73,18 @@ async function run({ listBinding = "operator-a", omitListBinding = false, detail
   };
   try {
     const mod = { exports: {} };
-    new Function("require", "module", "exports", compiled)(name => {
+    new Function("require", "module", "exports", component)(name => {
       assert.ok(Object.hasOwn(imports, name), name); return imports[name];
     }, mod, mod.exports);
     const render = () => {
       index = 0; scheduled = [];
-      const tree = mod.exports.default({});
+      const tree = mod.exports.default(props);
       for (const effect of scheduled) effect();
       return tree;
     };
     render(); await settle();
     const tree = render();
-    await scenario({ tree, render, requests });
+    await scenario({ tree, render, requests, listeners });
   } finally {
     for (const effect of effects.values()) effect.cleanup?.();
     globalThis.fetch = originals.fetch;
@@ -276,4 +279,122 @@ test("Captain BFF rejects a missing or switched continuation binding before cont
   assert.equal(ownerReads, 1);
   assert.match(res.headers.get("Cache-Control"), /no-store/);
   assert.equal(res.headers.get(bindingHeader), "operator-a");
+});
+
+
+const detailCompiled = transformSync(readFileSync(new URL("../src/features/captains/captain-standing-detail.tsx", import.meta.url), "utf8"), {
+  jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
+    transform: { react: { runtime: "automatic" } } },
+  module: { type: "commonjs" },
+}).code;
+
+const confirmation = tree => find(tree, node => node.type === "Popconfirm");
+const reviewReason = (tree, value) => find(tree, node => node.type === "TextArea").props.onChange({ target: { value } });
+const patchesSent = requests => requests.filter(request => request.options.method === "PATCH");
+
+async function runStandingReview(scenario) {
+  const pending = [];
+  let ownerStanding = standing;
+  await run({
+    component: detailCompiled,
+    props: { actorId: standing.actorId, operatorId: "operator-a" },
+    detailReply: (_url, options) => options.method === "PATCH"
+      ? new Promise(resolve => pending.push(resolve))
+      : response(ownerStanding, "operator-a"),
+  }, async ({ tree, render, requests, listeners }) => {
+    reviewReason(tree, "synthetic reason");
+    try {
+      await scenario({ ready: render(), render, requests, listeners,
+        reject: (status = 400) => pending.shift()(response({}, "operator-a", status)),
+        approve: () => {
+          ownerStanding = { ...standing, status: "APPROVED", version: standing.version + 1 };
+          pending.shift()(response(ownerStanding, "operator-a"));
+        } });
+    } finally {
+      for (const resolve of pending.splice(0)) resolve(response({}, "operator-a", 400));
+      await settle();
+    }
+  });
+}
+
+test("Captain decision confirmation is single-flight before React rerenders", async () => {
+  await runStandingReview(async ({ ready, requests, reject, render }) => {
+    const confirm = confirmation(ready).props.onConfirm;
+    confirm(); confirm();
+    assert.equal(patchesSent(requests).length, 1);
+    reject(); await settle();
+    confirm();
+    assert.equal(patchesSent(requests).length, 1, "old confirmation cannot retry a definite rejection");
+    confirmation(render()).props.onConfirm();
+    assert.equal(patchesSent(requests).length, 2, "new explicit confirmation can retry");
+  });
+});
+
+test("foreground revalidation immediately invalidates an old standing confirmation", async () => {
+  await runStandingReview(async ({ ready, requests, listeners, render }) => {
+    const confirm = confirmation(ready).props.onConfirm;
+    listeners.get("focus")();
+    confirm();
+    assert.equal(patchesSent(requests).length, 0);
+    await settle();
+    const fresh = render();
+    reviewReason(fresh, "new confirmed reason");
+    confirmation(render()).props.onConfirm();
+    assert.equal(patchesSent(requests).length, 1);
+  });
+});
+
+test("changing the review draft immediately invalidates a captured confirmation", async () => {
+  await runStandingReview(async ({ ready, requests, render }) => {
+    const confirm = confirmation(ready).props.onConfirm;
+    reviewReason(ready, "updated reason");
+    confirm();
+    assert.equal(patchesSent(requests).length, 0);
+    confirmation(render()).props.onConfirm();
+    assert.equal(JSON.parse(patchesSent(requests)[0].options.body).reason, "updated reason");
+  });
+});
+
+test("uncertain decision result blocks repeated confirmation, including captured actions", async () => {
+  await runStandingReview(async ({ ready, requests, reject, render }) => {
+    const confirm = confirmation(ready).props.onConfirm;
+    confirm();
+    reject(503); await settle();
+    confirm();
+    assert.equal(patchesSent(requests).length, 1);
+    assert.ok(find(render(), node => node.type === "Alert"));
+  });
+});
+
+
+test("confirmed Captain decision requires a fresh owner read before a new decision", async () => {
+  await runStandingReview(async ({ ready, requests, approve, render }) => {
+    const confirm = confirmation(ready).props.onConfirm;
+    confirm();
+    const sent = patchesSent(requests)[0];
+    assert.equal(JSON.parse(sent.options.body).expectedVersion, 1);
+    assert.equal(new Headers(sent.options.headers).get(bindingHeader), "operator-a");
+    approve(); await settle();
+    assert.equal(requests.length, 3, "confirmed PATCH must be followed by a current owner GET");
+    confirm();
+    assert.equal(patchesSent(requests).length, 1);
+    const fresh = render();
+    assert.equal(find(fresh, node => node.type === "Select").props.value, "SUSPENDED");
+    assert.equal(find(fresh, node => node.type === "TextArea").props.value, "");
+    reviewReason(fresh, "new review");
+    confirmation(render()).props.onConfirm();
+    assert.equal(JSON.parse(patchesSent(requests)[1].options.body).expectedVersion, 2);
+  });
+});
+
+test("a denied Captain review immediately withdraws the standing and old confirmation", async () => {
+  await runStandingReview(async ({ ready, requests, reject, render }) => {
+    const confirm = confirmation(ready).props.onConfirm;
+    confirm();
+    reject(403); await settle();
+    confirm();
+    assert.equal(patchesSent(requests).length, 1);
+    assert.equal(confirmation(render()), undefined);
+    assert.ok(find(render(), node => node.type === "Alert"));
+  });
 });
