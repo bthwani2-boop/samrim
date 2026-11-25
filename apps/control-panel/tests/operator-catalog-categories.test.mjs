@@ -123,3 +123,13 @@ test("independent city outage preserves valid taxonomy, vertical outage fails cl
   const emptyView = await empty.render();
   assert.ok(find(emptyView, node => node.props?.role === "status"));
 });
+
+test("failed vertical continuation offers a first-page recovery link for the same city", async () => {
+  const h = harness({ failVertical: true });
+  const view = await h.render({ city: "sanaa", cursor: "previouscursor" });
+  assert.ok(find(view, node => node.props?.role === "alert"));
+  assert.ok(find(view, node => node.type === "a" && node.props.href === "/catalog/categories?city=sanaa"));
+  assert.equal(find(view, node => node.type === "strong"), undefined);
+  const firstPage = await h.render({ city: "sanaa" });
+  assert.equal(find(firstPage, node => node.type === "a" && node.props.href === "/catalog/categories?city=sanaa"), undefined);
+});

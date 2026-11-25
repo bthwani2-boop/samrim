@@ -91,6 +91,9 @@ export default async function PublicStoresMonitor({
       {!scope?.city && !error ? <p role="status">حدد مدينة لقراءة متاجرها من DSH.</p> : null}
       {verticalsError ? <p role="status">{verticalsError}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
+      {error && scope?.cursor ? <a href={publicStorePageHref({ city: scope.city, query: scope.query, vertical: scope.vertical })}>
+        العودة إلى أول صفحة
+      </a> : null}
       {page && scope ? (
         <section aria-label="نتائج المتاجر المنشورة">
           <p role="status">عدد المتاجر في هذه الصفحة: {page.items.length} — مراجعة DSH: {page.revision}</p>

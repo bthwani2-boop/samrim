@@ -77,6 +77,7 @@ export default async function Page({ searchParams }: Readonly<{
       </form>
       {citiesWarning ? <p role="status">{citiesWarning}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
+      {error && scope?.city && scope.cursor ? <a href={categoryPageHref(scope.city)}>العودة إلى أول صفحة</a> : null}
       {scope && !scope.city && !error ? <p role="status">اختر مدينة لقراءة أنواع النشاط من DSH.</p> : null}
       {verticals && scope?.city ? (
         <section aria-label="أنواع النشاط المنشورة">

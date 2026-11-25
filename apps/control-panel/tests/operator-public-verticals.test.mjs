@@ -118,3 +118,17 @@ test("Store owner outage never displays invented Stores despite valid vertical c
   assert.ok(find(view, node => node.type === "datalist"));
   assert.ok(find(view, node => node.props?.role === "alert"));
 });
+
+test("failed Store continuation recovers the first page with the same city, query and vertical", async () => {
+  const h = harness({ failStores: true });
+  const view = await h.render({ city: "sanaa", q: "market", vertical: "grocery", cursor: "previouscursor" });
+  assert.ok(find(view, node => node.props?.role === "alert"));
+  const link = find(view, node => node.type === "a" && node.props.href?.startsWith("/merchants/public-stores?"));
+  assert.ok(link);
+  assert.deepEqual(Object.fromEntries(new URL(link.props.href, "https://example.test").searchParams), {
+    city: "sanaa", q: "market", vertical: "grocery",
+  });
+  assert.equal(find(view, node => node.type === "strong"), undefined);
+  const firstPage = await h.render({ city: "sanaa", q: "market", vertical: "grocery" });
+  assert.equal(find(firstPage, node => node.type === "a"), undefined);
+});
