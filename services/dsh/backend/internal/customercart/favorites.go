@@ -10,8 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 const favoritePageLimit = 20
@@ -93,16 +91,13 @@ func (h *Handler) favorites(w http.ResponseWriter, r *http.Request) {
 		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
 		return
 	}
-	tx, err := h.begin(ctx, write)
+	tx, err := h.begin(ctx, write, "customer_favorite_stores", "stores", "service_cities", "verticals")
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
 	}
 	defer tx.Rollback()
-	if err = dbscope.Bind(ctx, tx, h.schema, "customer_favorite_stores", "stores", "service_cities", "verticals"); err != nil {
-		fail(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
+
 	var result any
 	switch {
 	case list:

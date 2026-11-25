@@ -150,7 +150,11 @@ func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store := r.PathValue("storeID")
-	tx, err := h.begin(ctx, false)
+	relations := append(snapshotRelations(), "store_operational_availability", "store_operational_weekly_hours")
+	if input.AddressID != "" {
+		relations = append(relations, "customer_addresses", "service_city_delivery_policies")
+	}
+	tx, err := h.begin(ctx, false, relations...)
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return

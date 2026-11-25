@@ -444,6 +444,9 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 	status, body = runCart(t, handler, "GET", "store-a", "customer-a", nil)
 	assertCartStatus(t, status, 401, body)
 	t.Logf("DSH_CART_OWNER_POSTGRES_PASS version=%d commands=%d lines=%d replay_and_actor_isolation=true", version, commands, lines)
+	t.Run("RejectTemporaryOwnerRelations", func(t *testing.T) {
+		verifyMissingOwnerRelations(t, dsn, schema)
+	})
 }
 
 // The public contract requires an explicit optimistic version. Without it,
@@ -498,6 +501,79 @@ func TestCustomerCartRequiresCurrentVerifiedCustomer(t *testing.T) {
 	for _, c := range changes {
 		if validChange(c) {
 			t.Fatal("invalid Cart payload passed")
+		}
+	}
+}
+
+// A synthetic namespace without its real tables must not silently resolve a
+// relation to a temporary table on the pooled connection, even for empty reads.
+// The fixture role may create temporary tables; the dedicated runtime role cannot.
+func verifyMissingOwnerRelations(t *testing.T, dsn, sourceSchema string) {
+	t.Helper()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	var database, role string
+	if err = db.QueryRow("SELECT current_database(),current_user").Scan(&database, &role); err != nil || database != "bthwani_refoundation" || role != "bthwani_ci" {
+		t.Fatalf("wrong disposable owner: %v", err)
+	}
+	const schema = "dsh_test_cart_scope_fixture"
+	if _, err = db.Exec("CREATE SCHEMA " + schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, relation := range []string{"customer_carts", "customer_cart_lines", "customer_cart_commands", "customer_addresses", "customer_favorite_stores", "stores", "service_cities", "verticals", "products", "variants", "offers", "service_city_delivery_policies", "store_operational_availability", "store_operational_weekly_hours"} {
+		if _, err = db.Exec("CREATE TEMP TABLE " + relation + " (LIKE " + sourceSchema + "." + relation + " INCLUDING ALL)"); err != nil {
+			t.Fatalf("temporary fixture %s: %v", relation, err)
+		}
+	}
+	if _, err = db.Exec("INSERT INTO pg_temp.service_cities(id,active) VALUES ('sanaa',true)"); err != nil {
+		t.Fatal(err)
+	}
+	h, err := NewHandler(db, schema, cartSessionAdapter{&testSession{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const cart = "/v1/carts/store-a"
+	const address = "/v1/addresses/" + addressID
+	const favorites = "/v1/customers/me/favorite-stores"
+	addr, err := json.Marshal(addressInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ method, path, body string }{
+		{"GET", "/v1/carts", ""},
+		{"GET", cart, ""},
+		{"GET", cart + "/merchandise-estimate?expectedVersion=0", ""},
+		{"GET", cart + "/serviceability?addressId=" + addressID, ""},
+		{"POST", cart + "/checkout-review", "{\"expectedCartVersion\":1,\"recipientPurpose\":\"SELF\",\"fulfillmentMode\":\"CUSTOMER_PICKUP\"}"},
+		{"PUT", cart, "{\"operationId\":\"scope-fixture-cart-01\",\"expectedVersion\":0,\"lines\":[]}"},
+		{"GET", "/v1/addresses", ""},
+		{"GET", address, ""},
+		{"PUT", address, string(addr)},
+		{"GET", favorites, ""},
+		{"GET", favorites + "/store-a", ""},
+		{"PUT", favorites + "/store-a", "{\"favorite\":true}"},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			var body []byte
+			if tc.body != "" {
+				body = []byte(tc.body)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, addressRequest(tc.method, tc.path, "customer-a", body))
+			if w.Code != 503 || w.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("absent owner relation must return unavailable, not temporary data: status=%d body=%s", w.Code, w.Body.String())
+			}
+		})
+	}
+	for _, relation := range []string{"customer_carts", "customer_cart_lines", "customer_cart_commands", "customer_addresses", "customer_favorite_stores"} {
+		var count int
+		if err = db.QueryRow("SELECT count(*) FROM pg_temp." + relation).Scan(&count); err != nil || count != 0 {
+			t.Errorf("unexpected temporary %s write: rows=%d error=%v", relation, count, err)
 		}
 	}
 }

@@ -144,7 +144,7 @@ func (h *Handler) listAddresses(w http.ResponseWriter, r *http.Request) {
 		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
 		return
 	}
-	tx, err := h.begin(ctx, false)
+	tx, err := h.begin(ctx, false, "customer_addresses")
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -195,7 +195,7 @@ func (h *Handler) getAddress(w http.ResponseWriter, r *http.Request) {
 		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
 		return
 	}
-	tx, err := h.begin(ctx, false)
+	tx, err := h.begin(ctx, false, "customer_addresses")
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -258,7 +258,7 @@ func (h *Handler) saveAddress(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) writeAddress(ctx context.Context, actor, token, id string, c AddressChange) (AddressResult, int) {
-	tx, err := h.begin(ctx, true)
+	tx, err := h.begin(ctx, true, "customer_addresses", "service_cities")
 	if err != nil {
 		return AddressResult{}, 503
 	}

@@ -5,8 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"time"
-
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 const cartDirectoryLimit = 20
@@ -39,16 +37,13 @@ func (h *Handler) listCarts(w http.ResponseWriter, r *http.Request) {
 		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
 		return
 	}
-	tx, err := h.begin(ctx, false)
+	tx, err := h.begin(ctx, false, "customer_carts", "customer_cart_lines", "stores", "service_cities", "verticals")
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
 	}
 	defer tx.Rollback()
-	if err = dbscope.Bind(ctx, tx, h.schema, "customer_carts", "customer_cart_lines", "stores", "service_cities", "verticals"); err != nil {
-		fail(w, 503, "OWNER_UNAVAILABLE")
-		return
-	}
+
 	rows, err := tx.QueryContext(ctx, `SELECT c.store_id,
    CASE WHEN s.published AND sc.active AND v.active THEN trim(s.name) ELSE '' END,
    c.version, lines.count

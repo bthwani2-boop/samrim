@@ -133,7 +133,10 @@ func (h *Handler) stillCurrent(ctx context.Context, token, actor string) int {
 	}
 	return http.StatusOK
 }
-func (h *Handler) begin(ctx context.Context, write bool) (*sql.Tx, error) {
+func (h *Handler) begin(ctx context.Context, write bool, requiredRelations ...string) (*sql.Tx, error) {
+	if len(requiredRelations) == 0 {
+		return nil, errors.New("Customer transaction requires owner relations")
+	}
 	level := sql.LevelReadCommitted
 	if !write {
 		level = sql.LevelRepeatableRead
@@ -150,11 +153,15 @@ func (h *Handler) begin(ctx context.Context, write bool) (*sql.Tx, error) {
 		_ = tx.Rollback()
 		return nil, errors.New("Customer Cart requires an isolated DSH database and role")
 	}
-	if err = dbscope.Bind(ctx, tx, h.schema); err != nil {
+	if err = dbscope.Bind(ctx, tx, h.schema, requiredRelations...); err != nil {
 		_ = tx.Rollback()
 		return nil, err
 	}
 	return tx, nil
+}
+
+func snapshotRelations() []string {
+	return []string{"customer_carts", "customer_cart_lines", "offers", "products", "variants", "stores", "service_cities", "verticals"}
 }
 
 const getLinesSQL = `SELECT l.offer_id,o.variant_id,p.name,l.quantity,o.price_yer::text,
@@ -207,7 +214,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
 		return
 	}
-	tx, err := h.begin(ctx, false)
+	tx, err := h.begin(ctx, false, snapshotRelations()...)
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -289,7 +296,7 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 	reply(w, result)
 }
 func (h *Handler) change(ctx context.Context, actor, store, token string, change Change, digest []byte) (ChangeResult, int) {
-	tx, err := h.begin(ctx, true)
+	tx, err := h.begin(ctx, true, append(snapshotRelations(), "customer_cart_commands")...)
 	if err != nil {
 		return ChangeResult{}, 503
 	}

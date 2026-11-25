@@ -60,7 +60,7 @@ func (h *Handler) deliveryServiceability(w http.ResponseWriter, r *http.Request)
 		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
 		return
 	}
-	tx, err := h.begin(ctx, false)
+	tx, err := h.begin(ctx, false, "stores", "service_cities", "verticals", "customer_addresses", "service_city_delivery_policies")
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
