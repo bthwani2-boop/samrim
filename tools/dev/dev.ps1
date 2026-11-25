@@ -940,10 +940,14 @@ function Write-DependencyReceipt([string]$status,[string]$backup) {
   [IO.File]::Move($pending,$receipt,$true)
 }
 Assert-DependencyInputs
-$last=if(Test-Path -LiteralPath $receipt){Get-Content -LiteralPath $receipt -Raw|ConvertFrom-Json -AsHashtable}else{$null}
-if($last -and ($last.version -ne 1 -or $last.status -notin @('running','pass','failed','blocked') -or $last.key -notmatch '^[A-F0-9]{64}$')){throw 'DEPENDENCY_RECEIPT_INVALID'}
+$last=$null
+if(Test-Path -LiteralPath $receipt -ErrorAction Stop){
+  $last=Get-Content -LiteralPath $receipt -Raw -ErrorAction Stop|ConvertFrom-Json -AsHashtable -ErrorAction Stop
+  if($last -isnot [Collections.IDictionary] -or $last.version -ne 1 -or $last.status -isnot [string] -or $last.status -cnotin @('running','pass','failed','blocked') -or $last.key -isnot [string] -or $last.key -notmatch '^[A-F0-9]{64}$'){throw 'DEPENDENCY_RECEIPT_INVALID'}
+}
 if($last -and $last.status -in @('running','blocked')){throw 'DEPENDENCY_PREVIOUS_ATTEMPT_REQUIRES_READBACK'}
-if(@(Get-Process pnpm -ErrorAction SilentlyContinue).Count){throw 'DEPENDENCY_INSTALL_ALREADY_RUNNING'}
+$dependencyProcesses=@([Diagnostics.Process]::GetProcessesByName('pnpm'))
+try{if($dependencyProcesses.Count){throw 'DEPENDENCY_INSTALL_ALREADY_RUNNING'}}finally{foreach($process in $dependencyProcesses){$process.Dispose()}}
 if((Test-InstalledDependencies) -and (!$last -or ($last.key -ceq $key -and $last.status -eq 'pass'))){
   if($apply -and !$last){New-Item -ItemType Directory -Path $state -Force|Out-Null;Write-DependencyReceipt 'pass' ''}
   Write-Output 'APP_DEPENDENCY_CURRENT';return
@@ -1061,6 +1065,23 @@ Write-DependencyReceipt 'pass' $backup
 Write-Output 'APP_DEPENDENCY_RECONCILE_PASS'
 '@
   $script=$script.Replace('__INPUTS__',$json.Replace("'","''")).Replace('__KEY__',$key).Replace('__APPLY__',$(if($Apply){'$true'}else{'$false'})).Replace('__AUTOMATIC__',$(if($Automatic){'$true'}else{'$false'}))
+  if($Apply){
+    # Share the Lenovo input-publication mutex with the existing source mirror.
+    # Hold it through install, rollback, app recovery and the terminal receipt.
+    $lockWrapper=@'
+$dependencyInputLock=[Threading.Mutex]::new($false,'Global\BThwaniDependencyInputsV1')
+$dependencyInputHeld=$false
+try{
+  try{$dependencyInputHeld=$dependencyInputLock.WaitOne(0)}catch [Threading.AbandonedMutexException]{$dependencyInputHeld=$true;throw 'DEPENDENCY_INPUT_RECOVERY_REQUIRED'}
+  if(!$dependencyInputHeld){throw 'DEPENDENCY_INPUT_BUSY'}
+  __DEPENDENCY_SCRIPT__
+}finally{
+  if($dependencyInputHeld){$dependencyInputLock.ReleaseMutex()}
+  $dependencyInputLock.Dispose()
+}
+'@
+    $script=$lockWrapper.Replace('__DEPENDENCY_SCRIPT__',$script)
+  }
   Invoke-Lenovo $script
 }
 function Invoke-AppAction {
@@ -1312,6 +1333,7 @@ function Verify-Checks {
   Say 'STATIC_VERIFY' 'PASS static/policy only; authenticated journeys and finance remain separate gates'
 }
 
+$originalLauncherPath=$env:Path
 try {
   Assert-Ok (!$RecoverRuntimeAttempt -or ($Action -eq 'Docker' -and $DockerAction -eq 'reconcile')) 'Runtime attempt recovery belongs to docker reconcile only'
   $readOnlyOperation = $Action -in @('Status','Verify','Migrations') -or
@@ -1329,6 +1351,9 @@ try {
   $transcript = $true
   Say 'ACTION' $Action
   Check-LocalIdentity
+  # Docker and its Node children must use the same SSH client as the launcher.
+  # Keep the change in this process and restore the caller's PATH on exit.
+  $env:Path=(Split-Path -Parent $ssh)+';'+$env:Path
   switch ($Action.ToLowerInvariant()) {
     'docker' { Invoke-ScopedDocker; break }
     'apps' { Invoke-AppAction; break }
@@ -1414,6 +1439,7 @@ try {
   Write-Error ('UNIFIED_DEV_FAILED action='+$Action+' detail='+$_.Exception.Message) -ErrorAction Continue
   exit 1
 } finally {
+  $env:Path=$originalLauncherPath
   if($transcript) { Stop-Transcript | Out-Null }
   if($hasMutex) { $mutex.ReleaseMutex() }
   $mutex.Dispose()

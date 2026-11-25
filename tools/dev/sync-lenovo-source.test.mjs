@@ -5,7 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict } from "./sync-lenovo-source.mjs";
+import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict, remoteInvocation } from "./sync-lenovo-source.mjs";
 
 test("manifest verification rejects an edit before HEAD changes and recovers after sync", {
   skip: process.platform !== "win32",
@@ -687,4 +687,127 @@ test("dependency changes include workspace manifests, patches and removed inputs
   const current=new Map([["pnpm-workspace.yaml","b"],["packages/design-system/package.json","b"],["patches/other.patch","a"],["apps/customer/app/index.tsx","b"]]);
   assert.deepEqual(dependencyInputChanges(before,current),["packages/design-system/package.json","patches/example.patch","patches/other.patch","pnpm-workspace.yaml"]);
   assert.deepEqual(dependencyInputChanges({files:Object.fromEntries(current)},current),[]);
+});
+
+
+test("dependency publish and deletion defer across processes while the install owns the input mutex", { skip: process.platform !== "win32" }, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-dependency-input-lock-"));
+  try {
+    const dependencyMutex = "Global\\BThwaniDependencyFixture-" + path.basename(folder);
+    const dependencyReceipt=path.join(folder,"dependency-reconcile.json");
+    const dependencyProcessName="BThwaniDep"+path.basename(folder).slice(-6);
+    const dest = path.join(folder, "pnpm-workspace.yaml");
+    const stage = path.join(folder, "stage");
+    const backup = path.join(folder, "backup");
+    const archive = path.join(folder, "archive");
+    const quarantine = path.join(folder, "quarantine");
+    const digest = text => createHash("sha256").update(text).digest("hex").toUpperCase();
+    writeFileSync(dest, "previous");
+    writeFileSync(stage, "next");
+    const args = {dest, stage, backup, archive, actual:digest("previous"), expected:digest("next"), conflict:false, root:folder, dependencyMutex, dependencyReceipt, dependencyProcessName};
+    const deletion = {dest, quarantine, archive, actual:digest("previous"), conflict:false, root:folder, dependencyMutex, dependencyReceipt, dependencyProcessName};
+    const runWhileHeld = code => {
+      const encoded = Buffer.from(code, "utf16le").toString("base64");
+      return isolatedPowerShell("$lock=[Threading.Mutex]::new($false,'" + dependencyMutex + "');$null=$lock.WaitOne();try{& pwsh.exe -NoProfile -NonInteractive -EncodedCommand '" + encoded + "';if($LASTEXITCODE){exit $LASTEXITCODE}}finally{$lock.ReleaseMutex();$lock.Dispose()}");
+    };
+    for (const code of [buildPublishCode(args), buildManagedDeleteCode(deletion)]) {
+      const held = runWhileHeld(code);
+      assert.equal(held.status, 0, held.stderr);
+      assert.equal(held.stdout.trim(), "DEPENDENCY_INPUT_BUSY");
+      assert.equal(readFileSync(dest, "utf8"), "previous");
+      assert.equal(existsSync(stage), true);
+    }
+    const ordinary = path.join(folder, "screen.ts");
+    const ordinaryStage = path.join(folder, "ordinary-stage");
+    writeFileSync(ordinaryStage, "ordinary");
+    const normal = runWhileHeld(buildPublishCode({dest:ordinary,stage:ordinaryStage,backup:ordinary+".bak",archive:ordinary+".archive",actual:"MISSING",expected:digest("ordinary"),conflict:false,root:folder}));
+    assert.equal(normal.status, 0, normal.stderr);
+    assert.equal(readFileSync(ordinary,"utf8"), "ordinary");
+    const published = isolatedPowerShell(buildPublishCode(args));
+    assert.equal(published.status, 0, published.stderr);
+    assert.equal(published.stdout.trim(), "PUBLISHED");
+    assert.equal(readFileSync(dest, "utf8"), "next");
+    const deleted = isolatedPowerShell(buildManagedDeleteCode({...deletion,actual:digest("next")}));
+    assert.equal(deleted.status, 0, deleted.stderr);
+    assert.equal(deleted.stdout.trim(), "DELETED");
+    assert.equal(existsSync(dest), false);
+  } finally {
+    rmSync(folder, {recursive:true,force:true});
+  }
+});
+
+test("dependency inputs fail closed across interrupted installs and resume only after durable readback", {skip:process.platform !== "win32"}, () => {
+  const folder=mkdtempSync(path.join(tmpdir(),"bthwani-dependency-recovery-"));
+  try {
+    const dependencyMutex="Global\\BThwaniDependencyRecovery-"+path.basename(folder);
+    const dependencyReceipt=path.join(folder,"dependency-reconcile.json");
+    const dependencyProcessName="BThwaniDep"+path.basename(folder).slice(-6);
+    const guard={dependencyMutex,dependencyReceipt,dependencyProcessName};
+    const dest=path.join(folder,"pnpm-lock.yaml"),stage=path.join(folder,"stage");
+    const digest=text=>createHash("sha256").update(text).digest("hex").toUpperCase();
+    const q=text=>"'"+text.replaceAll("'","''")+"'";
+    const enc=code=>Buffer.from(code,"utf16le").toString("base64");
+    const args={dest,stage,backup:path.join(folder,"backup"),archive:path.join(folder,"archive"),actual:digest("previous"),expected:digest("next"),conflict:false,root:folder,...guard};
+    const del={dest,quarantine:path.join(folder,"quarantine"),archive:args.archive,actual:args.actual,conflict:false,root:folder,...guard};
+    writeFileSync(dest,"previous");writeFileSync(stage,"next");
+    const publish=buildPublishCode(args),remove=buildManagedDeleteCode(del);
+    const check=(result,expected)=>{
+      assert.equal(result.status,0,result.stderr);
+      assert.equal(result.stdout.trim(),expected);
+      assert.equal(readFileSync(dest,"utf8"),"previous");
+      assert.equal(readFileSync(stage,"utf8"),"next");
+    };
+    for(const receipt of [
+      JSON.stringify({version:1,key:"A".repeat(64),status:"running"}),
+      JSON.stringify({version:1,key:"A".repeat(64),status:"blocked"}),
+      JSON.stringify({version:1,key:"invalid",status:"pass"}),
+      "null","{","{}"
+    ]){
+      writeFileSync(dependencyReceipt,receipt);
+      for(const code of [publish,remove]) check(isolatedPowerShell(code),"DEPENDENCY_INPUT_RECOVERY_REQUIRED");
+    }
+    writeFileSync(dependencyReceipt,JSON.stringify({version:1,key:"A".repeat(64),status:"pass"}));
+    const abandonedHolder="$m=[Threading.Mutex]::new($false,"+q(dependencyMutex)+");$null=$m.WaitOne();[Environment]::Exit(0)";
+    const abandonedRun=code=>isolatedPowerShell("$keeper=[Threading.Mutex]::new($false,"+q(dependencyMutex)+");try{& pwsh.exe -NoProfile -NonInteractive -EncodedCommand "+q(enc(abandonedHolder))+";if($LASTEXITCODE){exit $LASTEXITCODE};& pwsh.exe -NoProfile -NonInteractive -EncodedCommand "+q(enc(code))+";if($LASTEXITCODE){exit $LASTEXITCODE}}finally{$keeper.Dispose()}");
+    check(abandonedRun(publish),"DEPENDENCY_INPUT_RECOVERY_REQUIRED");
+    check(abandonedRun(remove),"DEPENDENCY_INPUT_RECOVERY_REQUIRED");
+    const launcher=readFileSync(new URL("./dev.ps1",import.meta.url),"utf8");
+    const wrapper=launcher.match(/\$lockWrapper=@'\r?\n([\s\S]*?)\r?\n'@/)[1].replace("Global\\BThwaniDependencyInputsV1",dependencyMutex);
+    const abandonedInstall=abandonedRun(wrapper.replace("__DEPENDENCY_SCRIPT__","Write-Output 'INSTALL_BODY_RAN'"));
+    assert.notEqual(abandonedInstall.status,0);
+    assert.match(abandonedInstall.stdout+abandonedInstall.stderr,/DEPENDENCY_INPUT_RECOVERY_REQUIRED/);
+    assert.doesNotMatch(abandonedInstall.stdout,/INSTALL_BODY_RAN/);
+    // A real disposable process with the fixture executable name stands in for
+    // a surviving native package-manager process; never run a package install.
+    const exe=path.join(folder,dependencyProcessName+".exe");
+    copyFileSync(path.join(process.env.SystemRoot,"System32","ping.exe"),exe);
+    const withOrphan=code=>isolatedPowerShell("$p=Start-Process -FilePath "+q(exe)+" -ArgumentList @('-n','12','127.0.0.1') -WindowStyle Hidden -PassThru;try{if($p.HasExited){throw 'FIXTURE_PROCESS_EXITED'};& pwsh.exe -NoProfile -NonInteractive -EncodedCommand "+q(enc(code))+";if($LASTEXITCODE){exit $LASTEXITCODE}}finally{if(!$p.HasExited){$p.Kill();$p.WaitForExit()};$p.Dispose()}");
+    check(withOrphan(publish),"DEPENDENCY_INPUT_BUSY");
+    check(withOrphan(remove),"DEPENDENCY_INPUT_BUSY");
+    const resumed=isolatedPowerShell(publish);
+    assert.equal(resumed.status,0,resumed.stderr);assert.equal(resumed.stdout.trim(),"PUBLISHED");
+    assert.equal(readFileSync(dest,"utf8"),"next");
+    const removed=isolatedPowerShell(buildManagedDeleteCode({...del,actual:digest("next")}));
+    assert.equal(removed.status,0,removed.stderr);assert.equal(removed.stdout.trim(),"DELETED");
+    assert.equal(existsSync(dest),false);
+  }finally{rmSync(folder,{recursive:true,force:true});}
+});
+
+test("long SSH commands use the existing bounded text-line transport", {skip:process.platform !== "win32"}, () => {
+  const short="Write-Output 'short'";
+  const small=remoteInvocation(short);
+  assert.equal(small.input,undefined);
+  assert.equal(Buffer.from(small.args.at(-1),"base64").toString("utf16le"),short);
+  const long="$ErrorActionPreference='Stop';$value='"+("x".repeat(10000))+"';Write-Output $value.Length";
+  const large=remoteInvocation(long);
+  assert.ok(large.args.at(-1).length<4500);
+  assert.equal(large.input.split("\n").length,2);
+  assert.equal(Buffer.from(large.input.trim(),"base64").toString("utf8"),long);
+  const decoded=Buffer.from(large.args.at(-1),"base64").toString("utf16le");
+  assert.match(decoded,/ReadLine\(\)/);
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-EncodedCommand",large.args.at(-1)],{
+    input:large.input,encoding:"utf8",windowsHide:true,timeout:15000
+  });
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(result.stdout.trim(),"10000");
 });

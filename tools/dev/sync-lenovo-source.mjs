@@ -77,25 +77,36 @@ function allowed(rel) {
 function failureDetail(result) {
   return String(result.error?.message || result.stderr || result.status).slice(0, 250);
 }
-function run(which, args, timeout = 20000) {
+function run(which, args, timeout = 20000, input) {
   const result = spawnSync(exe[which], args, {
-    cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024
+    cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 8 * 1024 * 1024, input
   });
   if (result.error || result.status !== 0) throw new Error(which + " failure: " + failureDetail(result));
   return (result.stdout || "").trim();
 }
-function remote(code) {
-  return run("ssh", [
+function remoteInvocation(code) {
+  const encoded = Buffer.from(code, "utf16le").toString("base64");
+  const args = [
     "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
     "-o", "ConnectTimeout=6", targetHost, "pwsh.exe", "-NoProfile",
-    "-NonInteractive", "-EncodedCommand", Buffer.from(code, "utf16le").toString("base64")
-  ], 30000);
+    "-NonInteractive", "-EncodedCommand"
+  ];
+  if (encoded.length <= 4500) return { args: [...args, encoded] };
+  // Same bounded text-line transport as Invoke-Lenovo in dev.ps1.
+  // File bytes still travel by SCP, never as binary stdin.
+  const bootstrap = '$data=[Console]::In.ReadLine(); if(!$data){throw "SSH_STDIN_EMPTY"}; $cmd=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($data)); & ([ScriptBlock]::Create($cmd))';
+  return { args: [...args, Buffer.from(bootstrap, "utf16le").toString("base64")],
+    input: Buffer.from(code, "utf8").toString("base64") + "\n" };
+}
+function remote(code) {
+  const {args, input} = remoteInvocation(code);
+  return run("ssh", args, 30000, input);
 }
 function remoteHashes(paths) {
   if (!paths.length) return new Map();
   for (const rel of paths) if (!allowed(rel)) throw new Error("REMOTE_HASH_PATH_INVALID");
   const payload = JSON.stringify(paths);
-  // Inline small lists in the PowerShell command, never through SSH stdin.
+  // Inline small lists in the PowerShell command; file bytes use SCP.
   // Larger inventories use a verified SFTP staging file to stay under the
   // Windows command-line limit.
   const inline = Buffer.byteLength(payload, "utf8") <= 2048;
@@ -279,7 +290,35 @@ function remoteReady() {
     throw new Error("SOURCE_SYNC_MUST_RUN_ON_SURFACE_CANONICAL");
   }
 }
-function buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, root = targetRoot}) {
+const dependencyInputMutex = "Global\\BThwaniDependencyInputsV1";
+// The installer holds this same Lenovo mutex until its receipt and rollback
+// are settled. Ordinary source files never take the dependency mutex.
+function withDependencyInputMutex(code, name, receiptPath, processName = "pnpm") {
+  if (!name) return code;
+  const receipt = receiptPath ? quote(receiptPath) : "(Join-Path $env:LOCALAPPDATA 'BThwani\\Operations\\SourceSync\\dependency-reconcile.json')";
+  return [
+    "$ErrorActionPreference='Stop'",
+    "$dependencyInputLock=[Threading.Mutex]::new($false," + quote(name) + ")",
+    "$dependencyInputHeld=$false",
+    "try{",
+    // WaitOne grants ownership even on abandonment; release it but never mutate
+    // on that acquisition. A subsequent attempt must prove the durable state.
+    "try{$dependencyInputHeld=$dependencyInputLock.WaitOne(0)}catch [Threading.AbandonedMutexException]{$dependencyInputHeld=$true;Write-Output 'DEPENDENCY_INPUT_RECOVERY_REQUIRED';return}",
+    "if(!$dependencyInputHeld){Write-Output 'DEPENDENCY_INPUT_BUSY';return}",
+    "try{",
+    "$dependencyReceipt=" + receipt,
+    "if(Test-Path -LiteralPath $dependencyReceipt -ErrorAction Stop){",
+    "$dependencyLast=Get-Content -LiteralPath $dependencyReceipt -Raw -ErrorAction Stop|ConvertFrom-Json -AsHashtable -ErrorAction Stop",
+    "if($dependencyLast -isnot [Collections.IDictionary] -or $dependencyLast.version -ne 1 -or $dependencyLast.key -isnot [string] -or $dependencyLast.key -notmatch '^[A-F0-9]{64}$' -or $dependencyLast.status -isnot [string] -or $dependencyLast.status -cnotin @('pass','failed')){Write-Output 'DEPENDENCY_INPUT_RECOVERY_REQUIRED';return}",
+    "}",
+    "$dependencyProcesses=@([Diagnostics.Process]::GetProcessesByName(" + quote(processName) + "))",
+    "try{if($dependencyProcesses.Count){Write-Output 'DEPENDENCY_INPUT_BUSY';return}}finally{foreach($process in $dependencyProcesses){$process.Dispose()}}",
+    "}catch{Write-Output 'DEPENDENCY_INPUT_RECOVERY_REQUIRED';return}",
+    code,
+    "}finally{if($dependencyInputHeld){$dependencyInputLock.ReleaseMutex()};$dependencyInputLock.Dispose()}"
+  ].join(";");
+}
+function buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, root = targetRoot, dependencyMutex, dependencyReceipt, dependencyProcessName}) {
   const code = [
     "$ErrorActionPreference='Stop'",
     "$root=" + quote(root),
@@ -327,13 +366,13 @@ function buildPublishCode({dest, stage, backup, archive, actual, expected, confl
     "Write-Output $(if($displacedConflict){'PUBLISHED_PRESERVED'}else{'PUBLISHED'})",
     "}finally{if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Force}}"
   ].join(";");
-  return code;
+  return withDependencyInputMutex(code, dependencyMutex, dependencyReceipt, dependencyProcessName);
 }
 function publish(rel, expected, previous, observed) {
   const full = path.join(root, ...rel.split("/"));
   if (hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
   const actual = observed ?? remoteHash(rel);
-  if (actual === expected) return;
+  if (actual === expected) return true;
   // The Windows SSH stdin pipe can stall on binary payloads. SFTP-backed scp
   // transports bytes; one SSH invocation verifies and commits the staged copy.
   const dest = destination(rel);
@@ -344,7 +383,7 @@ function publish(rel, expected, previous, observed) {
     "BThwani", "Operations", "SourceSync", "conflicts");
   const archive = path.win32.join(archiveRoot,
     new Date().toISOString().replaceAll(":", "-") + "-" + crypto.randomUUID(), ...rel.split("/"));
-  const code = buildPublishCode({dest, stage, backup, archive, actual, expected, conflict});
+  const code = buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, dependencyMutex: isDependencyInput(rel) ? dependencyInputMutex : undefined});
   let committed = false;
   try {
     run("scp", [
@@ -353,6 +392,7 @@ function publish(rel, expected, previous, observed) {
     ], 45000);
     if (hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_COPYING " + rel);
     const result = remote(code);
+    if (["DEPENDENCY_INPUT_BUSY", "DEPENDENCY_INPUT_RECOVERY_REQUIRED"].includes(result)) return false;
     if (result !== "PUBLISHED" && result !== "PUBLISHED_PRESERVED") {
       throw new Error("REMOTE_PUBLISH_RESPONSE_INVALID " + rel);
     }
@@ -370,8 +410,9 @@ function publish(rel, expected, previous, observed) {
     }
   }
   if (conflict) logger("REMOTE_DRIFT_ARCHIVED " + rel);
+  return true;
 }
-function buildManagedDeleteCode({dest, actual, archive, conflict, quarantine, root = targetRoot}) {
+function buildManagedDeleteCode({dest, actual, archive, conflict, quarantine, root = targetRoot, dependencyMutex, dependencyReceipt, dependencyProcessName}) {
   const code = [
     "$ErrorActionPreference='Stop'",
     "$p=" + quote(dest),
@@ -411,11 +452,11 @@ function buildManagedDeleteCode({dest, actual, archive, conflict, quarantine, ro
     "};throw",
     "}"
   ].join(";");
-  return code;
+  return withDependencyInputMutex(code, dependencyMutex, dependencyReceipt, dependencyProcessName);
 }
 function managedDelete(rel, expected, observed) {
   const actual = observed ?? remoteHash(rel);
-  if (actual === "MISSING") return;
+  if (actual === "MISSING") return true;
   const dest = destination(rel);
   const conflict = actual !== expected;
   const archive = path.win32.join("C:\\Users\\bthwa\\AppData\\Local", "BThwani",
@@ -425,12 +466,14 @@ function managedDelete(rel, expected, observed) {
   // Rename within the same directory before checking or removing bytes:
   // an editor's save after the initial hash must not be deleted unarchived.
   const quarantine = dest + ".source-sync-" + crypto.randomUUID() + ".quarantine";
-  const code = buildManagedDeleteCode({dest, actual, archive, conflict, quarantine});
+  const code = buildManagedDeleteCode({dest, actual, archive, conflict, quarantine, dependencyMutex: isDependencyInput(rel) ? dependencyInputMutex : undefined});
   const result = remote(code);
+  if (["DEPENDENCY_INPUT_BUSY", "DEPENDENCY_INPUT_RECOVERY_REQUIRED"].includes(result)) return false;
   if (result !== "DELETED" && result !== "DELETED_PRESERVED") {
     throw new Error("REMOTE_DELETE_RESPONSE_INVALID " + rel);
   }
   if (result === "DELETED_PRESERVED") logger("REMOTE_DRIFT_ARCHIVED " + rel);
+  return true;
 }
 function baseline(current, observed) {
   const checks = ["package.json", "pnpm-lock.yaml", "apps/customer/package.json",
@@ -447,6 +490,7 @@ function baseline(current, observed) {
 }
 const remoteAuditMs = 30_000;
 let nextRemoteAudit = 0;
+let dependencySyncDeferred = false;
 function reconcile() {
   const currentBranch = branch();
   const currentHead = head();
@@ -475,16 +519,23 @@ function reconcile() {
   const dependencyChanges = dependencyInputChanges(previous,current);
   const files = { ...state.files };
   let changed = 0;
+  let deferred = false;
   for (const [rel, digest] of current) {
     if (state.files[rel] === digest && (!observed.has(rel) || observed.get(rel) === digest)) continue;
-    publish(rel, digest, state.files[rel], observed.get(rel));
+    if ((dependencyChild && isDependencyInput(rel)) || publish(rel, digest, state.files[rel], observed.get(rel)) === false) {
+      deferred = true;
+      continue;
+    }
     files[rel] = digest;
     changed++;
     logger("SYNC " + rel);
   }
   for (const [rel, digest] of Object.entries(state.files)) {
     if (current.has(rel)) continue;
-    managedDelete(rel, digest, observed.get(rel));
+    if ((dependencyChild && isDependencyInput(rel)) || managedDelete(rel, digest, observed.get(rel)) === false) {
+      deferred = true;
+      continue;
+    }
     delete files[rel];
     changed++;
     logger("MANAGED_DELETE " + rel);
@@ -494,12 +545,19 @@ function reconcile() {
   if (branch() !== currentBranch || head() !== currentHead) {
     throw new Error("SOURCE_REVISION_CHANGED_DURING_SYNC");
   }
-  if (changed || state.head !== currentHead || state.branch !== currentBranch) {
-    persist({ ...state, branch: currentBranch, files, head: currentHead });
+  // Do not certify a newer revision while dependency inputs are deferred.
+  const publishedHead = deferred ? state.head : currentHead;
+  const publishedBranch = deferred ? state.branch : currentBranch;
+  if (changed || state.head !== publishedHead || state.branch !== publishedBranch) {
+    persist({ ...state, branch: publishedBranch, files, head: publishedHead });
   }
   if (auditDue) nextRemoteAudit = Date.now() + remoteAuditMs;
-  if (changed) logger("SYNC_PASS files=" + changed + " head=" + currentHead.slice(0, 12));
-  if (dependencyChanges.length) logger("DEPENDENCY_INSTALL_REQUIRED paths=" + dependencyChanges.join(","));
+  if (changed) logger((deferred ? "SYNC_PARTIAL" : "SYNC_PASS") + " files=" + changed + " head=" + publishedHead.slice(0, 12));
+  if (deferred !== dependencySyncDeferred) {
+    logger(deferred ? "DEPENDENCY_SYNC_DEFERRED install active or recovery requires readback" : "DEPENDENCY_SYNC_RESUMED");
+    dependencySyncDeferred = deferred;
+  }
+  if (!deferred && dependencyChanges.length) logger("DEPENDENCY_INSTALL_REQUIRED paths=" + dependencyChanges.join(","));
 }
 // Reuse the existing scheduled watcher; no second watcher or Docker daemon.
 // Backend source is built from Surface, not copied into the app-only mirror.
@@ -515,6 +573,7 @@ const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
 const runtimeStateFile = path.join(stateDir, "runtime-reconcile.json");
 const runtimeReceiptFile = path.join(stateDir, "runtime-reconcile.receipt.json");
 let runtimeChild = null;
+let dependencyChild = false;
 let nextRuntimeAudit = 0;
 let runtimeNotice = "";
 function runtimeLogOnce(message) {
@@ -542,11 +601,12 @@ function pollAppDependencies() {
   nextDependencyAudit=Date.now()+60_000;
   const child=spawn("pwsh.exe",["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Apps","reconcile","-Apply","-Automatic"],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
   runtimeChild=child;
+  dependencyChild=true;
   let output="",errors="",settled=false;
   child.stdout.on("data",chunk=>{output=(output+chunk.toString()).slice(-65536);});
   child.stderr.on("data",chunk=>{errors=(errors+chunk.toString()).slice(-65536);});
   const finish=(code)=>{
-    if(settled)return;settled=true;runtimeChild=null;
+    if(settled)return;settled=true;runtimeChild=null;dependencyChild=false;
     const result=code===0&&output.includes("APP_DEPENDENCY_RECONCILE_PASS")?"DEPENDENCY_RECONCILE_PASS":
       code===0&&output.includes("APP_DEPENDENCY_CURRENT")?"DEPENDENCY_CURRENT":
       "DEPENDENCY_RECONCILE_BLOCKED "+(errors.match(/DEPENDENCY_[A-Z_]+|APP_SOURCE_SYNC_NOT_CURRENT|another unified dev operation/i)?.[0]||"inspect unified dev log");
@@ -833,4 +893,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 }
 
 export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict } from "./sync-lenovo-reconciliation.mjs";
-export { allowed, appendLogFile, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, persistAt, publish, remoteHashes };
+export { allowed, appendLogFile, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, persistAt, publish, remoteHashes, remoteInvocation };
