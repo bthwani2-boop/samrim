@@ -34,6 +34,7 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
   let disposed = false;
   // Serialize storage writes: the last user choice must also win on disk.
   let writeQueue: Promise<void> = Promise.resolve();
+  let pendingWrite: Promise<void> | undefined;
   const notify = () => listeners.forEach(listener => { listener(); });
   const update = (preference: ThemePreference, ready = snapshot.ready) => {
     snapshot = snapshotFor(preference, ready);
@@ -76,23 +77,28 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
       if (disposed) throw new Error("Appearance controller disposed");
       if (!isThemePreference(preference)) throw new Error("Invalid theme preference");
       // An explicit tap during initial restore still supersedes the stored value.
-      if (snapshot.preference === preference && snapshot.ready) return;
+      // An optimistic same-choice snapshot is not proof of a completed save.
+      if (snapshot.preference === preference && snapshot.ready) return pendingWrite;
       const revision = ++intentRevision;
-      applyNative(preference);
-      update(preference, true);
       // Do not allow an earlier slow write to overwrite a later preference.
       const write = writeQueue.then(() => storage.setItem(key, preference));
       writeQueue = write.then(() => undefined, () => undefined);
+      pendingWrite = write;
+      applyNative(preference);
+      update(preference, true);
       try {
         await write;
         confirmedPreference = preference;
       } catch (error) {
+        if (pendingWrite === write) pendingWrite = undefined;
         // Failure of an older request must never roll back a newer choice.
         if (!disposed && revision === intentRevision) {
           applyNative(confirmedPreference);
           update(confirmedPreference, true);
         }
         throw error;
+      } finally {
+        if (pendingWrite === write) pendingWrite = undefined;
       }
     },
     dispose() {

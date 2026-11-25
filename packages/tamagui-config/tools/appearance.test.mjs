@@ -175,3 +175,50 @@ test("system preference responds to the platform scheme without a second theme s
   assert.equal(controller.getSnapshot().themeName, "light");
   controller.dispose();
 });
+
+test("identical pending preference requests wait for the same durable save and share failure", async () => {
+  const pending = deferred();
+  const writes = [];
+  const { controller } = harness({
+    getItem: async () => "light",
+    setItem: (_, value) => { writes.push(value); return pending.promise; },
+  });
+  await controller.restore();
+  const first = controller.setPreference("dark");
+  let settled = false;
+  const second = controller.setPreference("dark");
+  const observed = second.then(() => { settled = true; }, () => { settled = true; });
+  const failures = Promise.allSettled([first, second]);
+  await new Promise(resolve => setImmediate(resolve));
+  const premature = settled;
+  pending.reject(new Error("storage failure"));
+  const results = await failures;
+  await observed;
+  assert.equal(premature, false);
+  assert.deepEqual(results.map(result => result.status), ["rejected", "rejected"]);
+  assert.deepEqual(writes, ["dark"]);
+  assert.equal(controller.getSnapshot().preference, "light");
+  controller.dispose();
+});
+
+test("identical pending preference requests share successful persistence without duplicate writes", async () => {
+  const pending = deferred();
+  const writes = [];
+  const { controller } = harness({
+    getItem: async () => null,
+    setItem: (_, value) => { writes.push(value); return pending.promise; },
+  });
+  await controller.restore();
+  const first = controller.setPreference("dark");
+  let settled = false;
+  const second = controller.setPreference("dark").then(() => { settled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  const premature = settled;
+  pending.resolve();
+  await Promise.all([first, second]);
+  assert.equal(premature, false);
+  await controller.setPreference("dark");
+  assert.deepEqual(writes, ["dark"]);
+  assert.equal(controller.getSnapshot().preference, "dark");
+  controller.dispose();
+});
