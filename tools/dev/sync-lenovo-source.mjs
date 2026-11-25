@@ -38,6 +38,7 @@ const exe = {
 const stateDir = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local"), "BThwani", "Operations", "SourceSync");
 const stateFile = path.join(stateDir, "manifest.json");
 const logFile = path.join(stateDir, "sync.log");
+const sshOptions = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=6"];
 const quote = v => "'" + v.replaceAll("'", "''") + "'";
 const destination = rel => path.win32.join(targetRoot, ...rel.split("/"));
 function hash(file) {
@@ -87,8 +88,7 @@ function run(which, args, timeout = 20000, input) {
 function remoteInvocation(code) {
   const encoded = Buffer.from(code, "utf16le").toString("base64");
   const args = [
-    "-T", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
-    "-o", "ConnectTimeout=6", targetHost, "pwsh.exe", "-NoProfile",
+    "-T", ...sshOptions, targetHost, "pwsh.exe", "-NoProfile",
     "-NonInteractive", "-EncodedCommand"
   ];
   if (encoded.length <= 4500) return { args: [...args, encoded] };
@@ -101,6 +101,9 @@ function remoteInvocation(code) {
 function remote(code) {
   const {args, input} = remoteInvocation(code);
   return run("ssh", args, 30000, input);
+}
+function copyToRemote(local, remotePath) {
+  run("scp", ["-q", ...sshOptions, local, targetHost + ":" + remotePath.replaceAll("\\", "/")], 45000);
 }
 function remoteHashes(paths) {
   if (!paths.length) return new Map();
@@ -156,10 +159,7 @@ function remoteHashes(paths) {
   fs.writeFileSync(localStage, payload, { flag: "wx", mode: 0o600 });
   let completed = false;
   try {
-    run("scp", [
-      "-q", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
-      "-o", "ConnectTimeout=6", localStage, targetHost + ":" + remoteStage.replaceAll("\\", "/")
-    ], 45000);
+    copyToRemote(localStage, remoteStage);
     const observed = parseRemoteHashes(remote(code), paths);
     completed = true;
     return observed;
@@ -280,9 +280,7 @@ function persist(state) {
   persistAt(stateFile, state);
 }
 function remoteHash(rel) {
-  const file = destination(rel);
-  return remote("$p=" + quote(file) +
-    ";if(Test-Path -LiteralPath $p -PathType Leaf){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}else{'MISSING'}").toUpperCase();
+  return remoteHashes([rel]).get(rel);
 }
 function remoteReady() {
   if ((process.env.COMPUTERNAME || "").toUpperCase() !== "BTHWANI" ||
@@ -318,6 +316,24 @@ function withDependencyInputMutex(code, name, receiptPath, processName = "pnpm")
     "}finally{if($dependencyInputHeld){$dependencyInputLock.ReleaseMutex()};$dependencyInputLock.Dispose()}"
   ].join(";");
 }
+// Keep the same reparse-point protection for publication and managed deletion.
+function targetParentChecks(target) {
+  return [
+    "$part=Split-Path -Parent " + target,
+    "while($part -and $part.Length -ge $root.Length){",
+    "if(Test-Path -LiteralPath $part){",
+    "$parent=Get-Item -LiteralPath $part -Force",
+    "if($parent.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_DIRECTORY'}",
+    "};if($part -ieq $root){break};$part=Split-Path -Parent $part",
+    "}"
+  ];
+}
+function conflictArchive(rel) {
+  return path.win32.join("C:\\Users\\bthwa\\AppData\\Local", "BThwani",
+    "Operations", "SourceSync", "conflicts",
+    new Date().toISOString().replaceAll(":", "-") + "-" + crypto.randomUUID(),
+    ...rel.split("/"));
+}
 function buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, root = targetRoot, dependencyMutex, dependencyReceipt, dependencyProcessName}) {
   const code = [
     "$ErrorActionPreference='Stop'",
@@ -329,13 +345,7 @@ function buildPublishCode({dest, stage, backup, archive, actual, expected, confl
     "$expectedOld=" + quote(actual),
     "$expectedNew=" + quote(expected),
     "$archiveConflict=" + (conflict ? "$true" : "$false"),
-    "$part=Split-Path -Parent $dest",
-    "while($part -and $part.Length -ge $root.Length){",
-    "if(Test-Path -LiteralPath $part){",
-    "$item=Get-Item -LiteralPath $part -Force;",
-    "if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_DIRECTORY'}",
-    "};if($part -ieq $root){break};$part=Split-Path -Parent $part",
-    "}",
+    ...targetParentChecks("$dest"),
     "try{",
     "if((Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash -ne $expectedNew){throw 'STAGE_HASH_MISMATCH'}",
     "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest)|Out-Null",
@@ -379,17 +389,11 @@ function publish(rel, expected, previous, observed) {
   const stage = path.win32.join(targetRoot, ".source-sync-" + crypto.randomUUID() + ".tmp");
   const backup = dest + ".source-sync-" + crypto.randomUUID() + ".bak";
   const conflict = remoteConflict(actual, expected, previous);
-  const archiveRoot = path.win32.join("C:\\Users\\bthwa\\AppData\\Local",
-    "BThwani", "Operations", "SourceSync", "conflicts");
-  const archive = path.win32.join(archiveRoot,
-    new Date().toISOString().replaceAll(":", "-") + "-" + crypto.randomUUID(), ...rel.split("/"));
+  const archive = conflictArchive(rel);
   const code = buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, dependencyMutex: isDependencyInput(rel) ? dependencyInputMutex : undefined});
   let committed = false;
   try {
-    run("scp", [
-      "-q", "-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes",
-      "-o", "ConnectTimeout=6", full, targetHost + ":" + stage.replaceAll("\\", "/")
-    ], 45000);
+    copyToRemote(full, stage);
     if (hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_COPYING " + rel);
     const result = remote(code);
     if (["DEPENDENCY_INPUT_BUSY", "DEPENDENCY_INPUT_RECOVERY_REQUIRED"].includes(result)) return false;
@@ -417,13 +421,7 @@ function buildManagedDeleteCode({dest, actual, archive, conflict, quarantine, ro
     "$ErrorActionPreference='Stop'",
     "$p=" + quote(dest),
     "$root=" + quote(root),
-    "$part=Split-Path -Parent $p",
-    "while($part -and $part.Length -ge $root.Length){",
-    "if(Test-Path -LiteralPath $part){",
-    "$parent=Get-Item -LiteralPath $part -Force",
-    "if($parent.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_DIRECTORY'}",
-    "};if($part -ieq $root){break};$part=Split-Path -Parent $part",
-    "}",
+    ...targetParentChecks("$p"),
     "$quarantine=" + quote(quarantine),
     "$expected=" + quote(actual),
     "$archive=" + quote(archive),
@@ -459,10 +457,7 @@ function managedDelete(rel, expected, observed) {
   if (actual === "MISSING") return true;
   const dest = destination(rel);
   const conflict = actual !== expected;
-  const archive = path.win32.join("C:\\Users\\bthwa\\AppData\\Local", "BThwani",
-    "Operations", "SourceSync", "conflicts",
-    new Date().toISOString().replaceAll(":", "-") + "-" + crypto.randomUUID(),
-    ...rel.split("/"));
+  const archive = conflictArchive(rel);
   // Rename within the same directory before checking or removing bytes:
   // an editor's save after the initial hash must not be deleted unarchived.
   const quarantine = dest + ".source-sync-" + crypto.randomUUID() + ".quarantine";

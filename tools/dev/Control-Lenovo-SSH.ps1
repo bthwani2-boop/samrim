@@ -8,7 +8,7 @@ param(
     [string]$RemotePath,
     [string]$PackageId,
     [switch]$Recursive,
-    [ValidatePattern('^[A-Za-z0-9._-]+$')][string]$SshHost='bthwani-docker'
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')][string]$SshHost='bthwani-docker'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
@@ -20,6 +20,7 @@ $scpClient = Join-Path $env:WINDIR 'System32\OpenSSH\scp.exe'
 foreach ($client in @($sshClient,$scpClient)) {
     if (-not (Test-Path -LiteralPath $client -PathType Leaf)) { throw ('Canonical OpenSSH client missing on Surface: ' + $client) }
 }
+$scpOptions=@('-B','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=8','-o','ConnectionAttempts=1')
 function Invoke-Lenovo([string]$body) {
     $wrapped = @'
 $ErrorActionPreference='Stop'
@@ -44,6 +45,21 @@ if ($null -ne $global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
 }
 function Assert-RemotePath([string]$p) {
     if ($p -notmatch '^[A-Za-z]:[\\/]') { throw 'RemotePath must be absolute, e.g. C:\Users\bthwa\BThwaniAppRunner\incoming' }
+}
+function Get-RemoteFileHash([string]$path) {
+    $literal=$path.Replace("'","''")
+    $lines=@(Invoke-Lenovo "(Get-FileHash -LiteralPath '$literal' -Algorithm SHA256).Hash")
+    if ($lines.Count -ne 1 -or $lines[0] -notmatch '^[A-Fa-f0-9]{64}$') { throw 'Invalid remote SHA256 result.' }
+    return $lines[0]
+}
+function Assert-RemoteDirectory([string]$path) {
+    $literal=$path.Replace("'","''")
+    Invoke-Lenovo "if (-not (Test-Path -LiteralPath '$literal' -PathType Container)) { throw 'Remote directory does not exist.' }"
+}
+function Assert-FileHash([string]$path,[string]$expected) {
+    $actual=(Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
+    if ($actual -ine $expected) { throw 'SHA256 verification failed after transfer.' }
+    return $actual
 }
 switch ($Action) {
     'Check' {
@@ -83,22 +99,16 @@ foreach($n in @('ssh.exe','scp.exe','sftp.exe','docker.exe','node.exe','git.exe'
         if ($item.PSIsContainer -and -not $Recursive) { throw 'Uploading a folder requires -Recursive.' }
         $destination=$SshHost+':'+$RemotePath.Replace('\','/')
         if ($PSCmdlet.ShouldProcess($destination,'SCP upload '+$source)) {
-            $args=@('-B','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=8','-o','ConnectionAttempts=1')
+            # Verify the authorized host and destination before any remote write.
+            Assert-RemoteDirectory $RemotePath
+            $args=@($scpOptions)
             if($item.PSIsContainer){$args+='-r'}
             $args+=@($source,$destination)
             & $scpClient @args
             if($LASTEXITCODE -ne 0){throw('SCP upload failed, exit '+$LASTEXITCODE)}
             if(-not $item.PSIsContainer){
                 $fullRemote=$RemotePath.TrimEnd('\','/')+'\'+$item.Name
-                $literal=$fullRemote.Replace("'","''")
-                $hashCommand='(Get-FileHash -LiteralPath '+"'"+$literal+"'"+' -Algorithm SHA256).Hash'
-                $remoteLines=@(Invoke-Lenovo $hashCommand)
-                $remoteHash=$remoteLines | Where-Object {$_ -match '^[A-Fa-f0-9]{64}$'} | Select-Object -First 1
-                $sha=[System.Security.Cryptography.SHA256]::Create()
-                $stream=[System.IO.File]::OpenRead($source)
-                try {$localHash=[BitConverter]::ToString($sha.ComputeHash($stream)).Replace('-','')}
-                finally {$stream.Dispose();$sha.Dispose()}
-                if(!$remoteHash -or $remoteHash.Trim() -ine $localHash){throw 'SHA256 check failed after upload.'}
+                $localHash=Assert-FileHash $source (Get-RemoteFileHash $fullRemote)
                 Write-Output ('UPLOAD_PASS SHA256='+$localHash)
             }else{Write-Output 'UPLOAD_COMPLETE: recursive directory checksum verification NOT_RUN'}
         }
@@ -110,12 +120,19 @@ foreach($n in @('ssh.exe','scp.exe','sftp.exe','docker.exe','node.exe','git.exe'
         if (-not (Test-Path -LiteralPath $dest -PathType Container)) { throw 'LocalPath must be a directory.' }
         $source=$SshHost+':'+$RemotePath.Replace('\','/')
         if ($PSCmdlet.ShouldProcess($dest,'SCP download '+$source)) {
-            $args=@('-B','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=8','-o','ConnectionAttempts=1')
+            if($Recursive){Assert-RemoteDirectory $RemotePath}
+            else{$expected=Get-RemoteFileHash $RemotePath}
+            $args=@($scpOptions)
             if($Recursive){$args+='-r'}
             $args+=@($source,$dest)
             & $scpClient @args
             if($LASTEXITCODE -ne 0){throw('SCP download failed, exit '+$LASTEXITCODE)}
-            Write-Output 'DOWNLOAD_COMPLETE (file checksum verification NOT_RUN)'
+            if($Recursive){Write-Output 'DOWNLOAD_COMPLETE: recursive directory checksum verification NOT_RUN'}
+            else{
+                $downloaded=Join-Path $dest ([IO.Path]::GetFileName($RemotePath))
+                $localHash=Assert-FileHash $downloaded $expected
+                Write-Output ('DOWNLOAD_PASS SHA256='+$localHash)
+            }
         }
     }
     'Install' {
