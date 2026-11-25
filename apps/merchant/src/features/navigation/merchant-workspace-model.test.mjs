@@ -14,7 +14,7 @@ import {
 
 test("Merchant workspace has unique functional navigation targets on desktop and mobile", () => {
   const ids = merchantNavigation.map(item => item.id);
-  assert.deepEqual(ids, ["home", "stores", "orders", "products", "staff", "wallet", "more"]);
+  assert.deepEqual(ids, ["home", "stores", "orders", "products", "staff", "wallet", "account", "more"]);
   assert.equal(new Set(ids).size, ids.length);
   for (const section of merchantMobileSections) {
     assert.ok(ids.includes(section), `mobile section ${section} must also exist on desktop`);
@@ -63,6 +63,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const compiled = readFileSync(path.join(temp, "merchant-workspace.js"), "utf8");
     let values = [], index = 0, desktop = true;
+    const platform = { OS: "web" };
     const jsx = (type, props, key) => ({ type, props, key });
     const mocks = {
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
@@ -71,7 +72,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
         if (!(i in values)) values[i] = initial;
         return [values[i], next => { values[i] = typeof next === "function" ? next(values[i]) : next; }];
       } },
-      "react-native": { Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View" },
+      "react-native": { Platform: platform, Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View" },
       "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
       "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
       "@bthwani/tamagui-config/navigation": { usePrimaryNavigation: () => ({ desktop }) },
@@ -106,6 +107,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     // Home shortcuts use only the current owner-verified stores, including on mobile.
     for (const wide of [true, false]) {
       desktop = wide;
+      platform.OS = wide ? "web" : "android";
       click("فتح متجر ب");
       assert.equal(render().find(n => n.type === "Directory")?.props.initialStoreId, "b");
       click("الرئيسية");
@@ -128,6 +130,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       click("الرئيسية");
     }
     desktop = true;
+    platform.OS = "web";
     index = 0;
     const empty = nodes(Workspace({ actorId: "merchant-a", stores: [], onRefresh() {}, onSignOut() {} }));
     assert.ok(empty.some(n => n.type === "Registration"));
@@ -158,9 +161,20 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     assert.deepEqual(render().find(n => n.type === "Catalog").props.stores, stores);
     assert.equal(render().find(n => n.type === "Catalog").props.initialStoreId, undefined);
 
-    click("المزيد");
-    assert.ok(render().some(n => n.type === "Account"), "Desktop More must expose working account preferences");
+    for (const wide of [true, false]) {
+      desktop = wide;
+      platform.OS = "web";
+      assert.ok(!render().some(n => n.props?.accessibilityLabel === "المزيد"), "Web must not render More at either width");
+      click("الحساب والإعدادات");
+      assert.ok(render().some(n => n.type === "Account"), "Web Account must expose the existing preferences directly");
+      click("المتاجر");
+      assert.ok(render().some(n => n.type === "Directory"), "Web stores must be directly reachable");
+      click("الموظفون");
+      assert.ok(!render().some(n => n.type === "Employees"), "Web staff must require Store selection");
+      click("الرئيسية");
+    }
     desktop = false;
+    platform.OS = "android";
     click("الرئيسية");
     click("المزيد");
     assert.ok(render().some(n => n.type === "Account"), "Mobile More must expose working account preferences");

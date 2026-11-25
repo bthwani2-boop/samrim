@@ -1,7 +1,7 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { usePrimaryNavigation } from "@bthwani/tamagui-config/navigation";
 import { useState } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
 import AccountScreen from "../account/account-screen";
@@ -25,6 +25,8 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
 }>) {
   const { theme } = useMobileAppearance();
   const { desktop } = usePrimaryNavigation();
+  const web = Platform.OS === "web";
+  const webNavigation = merchantNavigation.filter(item => item.id !== "more");
   const [section, setSection] = useState<MerchantSection>("home");
   const [initialPublication, setInitialPublication] = useState<MerchantPublicationFilter>("all");
   const [catalogTarget, setCatalogTarget] = useState<{ actorId: string; storeId: string; priceStockOnly?: boolean } | null>(null);
@@ -130,11 +132,11 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
             <View accessibilityRole="menu" style={{ gap: 16, marginTop: 18 }}>
               <View testID="merchant-navigation-group-operations" style={{ gap: 4 }}>
                 <Text style={{ color: theme.colorSecondary, fontSize: 12, paddingHorizontal: 14 }}>إدارة الأعمال</Text>
-                {merchantNavigation.filter(item => item.id !== "wallet" && item.id !== "more").map(item => navigationButton(item))}
+                {webNavigation.filter(item => item.id !== "wallet" && item.id !== "account").map(item => navigationButton(item))}
               </View>
               <View testID="merchant-navigation-group-account" style={{ gap: 4 }}>
                 <Text style={{ color: theme.colorSecondary, fontSize: 12, paddingHorizontal: 14 }}>المالية والحساب</Text>
-                {merchantNavigation.filter(item => item.id === "wallet" || item.id === "more").map(item => navigationButton(item))}
+                {webNavigation.filter(item => item.id === "wallet" || item.id === "account").map(item => navigationButton(item))}
               </View>
             </View>
             <View style={{ marginTop: "auto", borderTopWidth: 1, borderColor: theme.borderColor, paddingTop: 14, gap: 4 }}>
@@ -303,10 +305,12 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
               )}
               {staffStore ? <EmployeesScreen key={JSON.stringify([actorId, staffStore.id])} actorId={actorId} storeId={staffStore.id} /> : null}
             </View>
-          ) : section === "more" ? (
+          ) : section === "account" ? (
+            <AccountScreen />
+          ) : section === "more" && !web ? (
             <View style={{ gap: 10 }}>
               <AccountScreen />
-              {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home")
+              {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home" && item.id !== "account")
                 .map(item => navigationButton(item))}
             </View>
           ) : (
@@ -326,7 +330,13 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
           )}
         </ScrollView>
       </View>
-      {!desktop ? (
+      {!desktop && web ? (
+        <ScrollView horizontal keyboardShouldPersistTaps="handled" style={{
+          flexGrow: 0, backgroundColor: theme.surface, borderTopWidth: 1, borderColor: theme.borderColor,
+        }} contentContainerStyle={{ gap: 4, padding: 4, alignItems: "center" }}>
+          {webNavigation.map(item => navigationButton(item))}
+        </ScrollView>
+      ) : !desktop ? (
         <View accessibilityRole="tablist" style={{
           backgroundColor: theme.surface, borderTopWidth: 1,
           borderColor: theme.borderColor, paddingHorizontal: 4,
