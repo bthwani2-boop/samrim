@@ -10,7 +10,6 @@
   },
   "scripts": {
     "dev": "pwsh -NoProfile -File tools/dev/dev.ps1",
-    "rename:merchant:plan": "node tools/dev/prepare-merchant-rename.mjs plan",
     "check:workspace": "node tools/dev/verify-workspace.mjs",
      "check:coverage": "node tools/dev/run-coverage.mjs",
     "check:contracts": "node tools/dev/check-openapi.mjs identity dsh wlt && node tools/dev/generate-openapi-operations.mjs --check",
