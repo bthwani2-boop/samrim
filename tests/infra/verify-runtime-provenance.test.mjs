@@ -194,6 +194,21 @@ test("startup preflight checks shared Compose source without weakening runtime v
   assert.throws(()=>main(["--start-preflight"]),/Usage/);
 });
 
+test("committed test and README changes preserve serving provenance without relaxing runtime guards",()=>{
+  for(const owner of ["identity","dsh","wlt"]){
+    const prefix="services/"+owner+"/";
+    const nonRuntime=[prefix+"backend/cmd/"+owner+"/main_test.go",prefix+"README.md",prefix+"backend/README.md"];
+    for(const startPreflight of [false,true]){
+      const fixture=serviceRecords({owner,sourceDiff:nonRuntime.join("\n")});
+      assert.equal(readService(owner,"isolated",sha,fixture.execute,()=>true,{startPreflight}).passed,true);
+      for(const runtime of [prefix+"backend/cmd/"+owner+"/main.go",prefix+"database/schema/00.sql",prefix+"contracts/openapi/"+owner+".openapi.yaml","infra/compose.yaml"]){
+        const mixed=serviceRecords({owner,sourceDiff:[...nonRuntime,runtime].join("\n")});
+        assert.equal(readService(owner,"isolated",sha,mixed.execute,()=>true,{startPreflight}).passed,false);
+      }
+    }
+  }
+});
+
 test("committed client-only changes preserve runtime provenance, but mixed runtime changes do not",()=>{
   for(const startPreflight of [false,true]){
     const client="services/dsh/clients/dsh-public-client.test.mjs";

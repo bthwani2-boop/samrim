@@ -31,17 +31,24 @@ function sourceOwner(rel) {
   return owners.find(owner => rel.startsWith("services/" + owner + "/"));
 }
 export function isSharedRuntimeInput(rel) { return !sourceOwner(rel); }
-// Client files are neither copied by the owner Dockerfiles nor present in
-// the Go preview build context. Contracts and all other inputs stay guarded.
-export function isOwnerClientPath(rel) {
+// SDK files, exact owner README files and Go test files are not serving image inputs.
+// All three owner .dockerignore files explicitly exclude *_test.go. Keep tests
+// in isolated preview snapshots for proof, but never select a serving rebuild
+// solely because of their edits. Contracts, schema and other inputs stay guarded.
+function isOwnerClientPath(rel) {
   return /^services\/(?:identity|dsh|wlt)\/clients\//.test(rel);
+}
+export function isOwnerNonRuntimePath(rel) {
+  return isOwnerClientPath(rel) ||
+    /^services\/(?:identity|dsh|wlt)\/(?:backend\/)?README\.md$/.test(rel) ||
+    (isPreviewGoPath(rel) && rel.endsWith("_test.go"));
 }
 export function ownerSourceState(owner, changed, committed) {
   const prefix="services/"+owner+"/";
   const local=changed.filter(rel=>rel.startsWith(prefix));
   return {
-    imageChanges:committed.filter(rel=>!isOwnerClientPath(rel)),
-    previewChanges:local.filter(rel=>!isOwnerClientPath(rel)),
+    imageChanges:committed.filter(rel=>!isOwnerNonRuntimePath(rel)),
+    previewChanges:local.filter(rel=>!isOwnerNonRuntimePath(rel)),
     clientPending:[...local,...committed].some(isOwnerClientPath),
   };
 }
@@ -136,7 +143,7 @@ export function captureOwner(root, owner) {
   const prefix="services/"+owner+"/";
   const scope=[prefix+".dockerignore",prefix+"backend",prefix+"database/schema"];
   const changes=dirtyPaths(root,["services/"+owner]);
-  if(changes.some(p=>!isPreviewGoPath(p) && !isOwnerClientPath(p))) throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
+  if(changes.some(p=>!isPreviewGoPath(p) && !isOwnerNonRuntimePath(p))) throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
   const files=[...new Set(gitList(root,["ls-files","--cached","--others","--exclude-standard","-z","--",...scope]))].sort((a,b)=>a<b?-1:a>b?1:0);
   const entries=[];
   for(const p of files){

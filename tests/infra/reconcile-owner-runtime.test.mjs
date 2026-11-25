@@ -135,6 +135,35 @@ test("client-only edits cannot make the Go image stale or admit changed contract
   assert.equal(ownerReconcilePlan({changed,committed:{identity:[go]},preview:false,captain:true}).blocked.identity,"PREVIEW_NOT_AUTHORIZED");
 });
 
+test("owner Go test and README changes do not select a serving image rebuild", async()=>{
+  const {ownerSourceState,ownerReconcilePlan}=await import("../../tools/dev/docker/owner-preview-source.mjs");
+  const {readFileSync}=await import("node:fs");
+  for(const owner of ["identity","dsh","wlt"]){
+    const prefix=`services/${owner}/`;
+    // Keep the runtime classifier tied to the actual build boundary. A new
+    // context input or test re-inclusion requires reviewing this exclusion.
+    const ignore=readFileSync(new URL(`../../${prefix}.dockerignore`,import.meta.url),"utf8");
+    assert.equal(ignore.split(/\r?\n/).map(line=>line.trim()).filter(line=>line && !line.startsWith("#")).at(-1),"**/*_test.go");
+    const dockerfile=readFileSync(new URL(`../../${prefix}backend/Dockerfile`,import.meta.url),"utf8");
+    assert.deepEqual(dockerfile.split(/\r?\n/).filter(line=>/^COPY\s/.test(line) && !/^COPY --from=build\s/.test(line)),[
+      "COPY backend/go.mod backend/go.sum ./",
+      "COPY backend/cmd/ ./cmd/",
+      "COPY backend/internal/ ./internal/",
+      ...(owner==="dsh"?["COPY database/schema/ /app/database/schema/"]:[]),
+    ]);
+    const nonRuntime=[prefix+"backend/internal/example/example_test.go",prefix+"README.md",prefix+"backend/README.md"];
+    const saved=ownerSourceState(owner,[],nonRuntime);
+    assert.deepEqual(saved.imageChanges,[]);
+    const local=ownerSourceState(owner,nonRuntime,[]);
+    assert.deepEqual(local.previewChanges,[]);
+    assert.deepEqual(ownerReconcilePlan({changed:nonRuntime,committed:{},preview:false,captain:true}).blocked,{});
+    for(const runtime of [prefix+"backend/internal/example/example.go",prefix+"backend/go.mod",prefix+"backend/Dockerfile",prefix+".dockerignore",prefix+"database/schema/00.sql",prefix+"contracts/openapi/"+owner+".openapi.yaml"]){
+      assert.deepEqual(ownerSourceState(owner,[],[...nonRuntime,runtime]).imageChanges,[runtime]);
+      assert.deepEqual(ownerSourceState(owner,[...nonRuntime,runtime],[]).previewChanges,[runtime]);
+    }
+  }
+});
+
 test("committed client-only changes never require a Go image refresh",async()=>{
   const {ownerSourceState}=await import("../../tools/dev/docker/owner-preview-source.mjs");
   const clients=["services/identity/clients/persistent-sessions.ts"];

@@ -71,6 +71,20 @@ test("a snapshot cannot materialize path traversal",()=>{
   assert.throws(()=>materializeOwner({owner:"dsh",entries,digest:digestEntries(entries)}),/PREVIEW_PATH_INVALID/);
 });
 
+test("preview captures necessary Go source and test evidence alongside unrelated README edits",t=>{
+  const {dir,write,base}=fixture(t);
+  write(base+"README.md","owner documentation");
+  write(base+"backend/README.md","backend documentation");
+  write(base+"backend/cmd/dsh/main_test.go","package main\n");
+  write(base+"backend/cmd/dsh/main.go","package main\n// changed\n");
+  const snapshot=captureOwner(dir,"dsh");
+  assert.ok(snapshot.entries.some(([name])=>name==="backend/cmd/dsh/main_test.go"));
+  assert.ok(snapshot.entries.some(([name])=>name==="backend/cmd/dsh/main.go"));
+  assert.ok(snapshot.entries.every(([name])=>name!=="README.md"));
+  write(base+"contracts/openapi/dsh.openapi.yaml","openapi: 3.1.0");
+  assert.throws(()=>captureOwner(dir,"dsh"),/PREVIEW_ONLY_GO_SOURCE_ALLOWED/);
+});
+
 test("preview snapshots omit unrelated client edits but still reject contract changes",t=>{
   const {dir,write,base}=fixture(t);
   const before=captureOwner(dir,"dsh");
