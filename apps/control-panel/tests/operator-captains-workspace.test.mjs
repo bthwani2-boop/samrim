@@ -3,8 +3,11 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { DshPublicError } from "../../../services/dsh/clients/client-core.ts";
+import * as captainSdk from "../../../services/dsh/clients/operator-captains.ts";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import * as client from "../src/features/captains/captains-read-client.ts";
+import { isTrustedOperatorLoopbackTarget } from "../src/server/operator-passkey-config.ts";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
@@ -290,6 +293,120 @@ test("Captain BFF rejects a missing or switched continuation binding before cont
   assert.equal(res.headers.get(bindingHeader), "operator-a");
 });
 
+
+
+const decision = { status: "APPROVED", expectedVersion: 1, operationId: "synthetic-operation", reason: "synthetic review" };
+const approvedStanding = { ...standing, status: "APPROVED", version: 2 };
+const browserOrigin = "http://localhost:13000";
+const ownerOrigin = "http://127.0.0.1:18102";
+const decisionURL = `${browserOrigin}/api/captains/captain-a/standing`;
+
+function captainMutationFixture(t, { access = { actorId: "operator-a", grants: ["operations"] }, bearer = "A".repeat(43), ownerReply = () => Response.json(approvedStanding, { headers: { "Cache-Control": "no-store" } }) } = {}) {
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    requests.push({ url, options });
+    return ownerReply();
+  });
+  const mod = loadFixture(compileFixture("captains-read-bff.ts", false), {
+    "server-only": {},
+    "@bthwani/dsh": { ...captainSdk, DshPublicError },
+    "next/headers": { cookies: async () => ({ get: () => bearer ? { value: bearer } : undefined }) },
+    "next/server": { NextResponse: { json: (body, options) => Response.json(body, options) } },
+    "../../server/operator-passkey-bff": {
+      isTrustedOperatorLoopbackTarget, OPERATOR_COOKIE: "operator",
+      readVerifiedOperatorAccess: async () => access,
+      resolveIsolatedOperatorConfig: () => ({ browserOrigin }),
+    },
+    "../stores/public-store-query": { isolatedPublicDshOrigin: () => ownerOrigin },
+  });
+  const mutate = (body = JSON.stringify(decision), headers = {}, actorId = standing.actorId) =>
+    mod.exports.readCaptainReview(new Request(decisionURL, {
+      method: "PATCH", body,
+      headers: { host: "localhost:13000", origin: browserOrigin, "content-type": "application/json",
+        [bindingHeader]: "operator-a", ...headers },
+    }), actorId);
+  return { mutate, requests };
+}
+
+async function assertCaptainMutationError(reply, status, code) {
+  assert.equal(reply.status, status);
+  assert.deepEqual(await reply.json(), { code });
+  assert.match(reply.headers.get("Cache-Control"), /no-store/);
+  assert.equal(reply.headers.has(bindingHeader), false);
+}
+
+test("Captain BFF forwards a bound versioned decision to the actual DSH client", async t => {
+  const { mutate, requests } = captainMutationFixture(t);
+  const reply = await mutate();
+  assert.equal(reply.status, 200);
+  assert.deepEqual(await reply.json(), approvedStanding);
+  assert.match(reply.headers.get("Cache-Control"), /no-store/);
+  assert.equal(reply.headers.get(bindingHeader), "operator-a");
+  assert.equal(requests.length, 1);
+  const { url, options } = requests[0];
+  assert.equal(url, `${ownerOrigin}/v1/operators/captains/captain-a/standing`);
+  assert.equal(options.method, "PATCH");
+  assert.deepEqual(JSON.parse(options.body), decision);
+  assert.equal(new Headers(options.headers).get("Authorization"), `Bearer ${"A".repeat(43)}`);
+  assert.equal(options.credentials, "omit");
+  assert.equal(options.cache, "no-store");
+  assert.equal(options.redirect, "error");
+});
+
+test("Captain BFF refuses origin, operator binding and forged authority before owner mutation", async t => {
+  const { mutate, requests } = captainMutationFixture(t);
+  for (const headers of [
+    { origin: "http://localhost:9999" }, { [bindingHeader]: "operator-b" },
+    { "content-type": "text/plain" }, { "sec-fetch-site": "cross-site" },
+    { "x-actor-id": "operator-a" }, { "x-forwarded-host": "localhost:9999" },
+  ]) {
+    await assertCaptainMutationError(await mutate(undefined, headers), 403, "FORBIDDEN");
+  }
+  assert.equal(requests.length, 0);
+});
+
+test("Captain BFF refuses a missing or revoked session and missing operations grant", async t => {
+  for (const [name, config, status, code] of [
+    ["missing cookie", { bearer: "" }, 401, "UNAUTHORIZED"],
+    ["revoked access", { access: null }, 401, "UNAUTHORIZED"],
+    ["wrong scope", { access: { actorId: "operator-a", grants: ["merchant"] } }, 403, "FORBIDDEN"],
+  ]) {
+    await t.test(name, async sub => {
+      const { mutate, requests } = captainMutationFixture(sub, config);
+      await assertCaptainMutationError(await mutate(), status, code);
+      assert.equal(requests.length, 0);
+    });
+  }
+});
+
+test("Captain BFF rejects malformed and wrongly typed decisions before contacting DSH", async t => {
+  const { mutate, requests } = captainMutationFixture(t);
+  for (const body of [
+    "{", "null", "[]", JSON.stringify({ ...decision, actorId: "captain-b" }),
+    JSON.stringify({ ...decision, expectedVersion: "1" }),
+    JSON.stringify({ ...decision, reason: "x".repeat(2100) }),
+    JSON.stringify({ ...decision, operationId: 12345678 }),
+    JSON.stringify({ ...decision, operationId: ["synthetic-operation"] }),
+  ]) {
+    await assertCaptainMutationError(await mutate(body), 400, "INVALID_REQUEST");
+    assert.equal(requests.length, 0);
+  }
+});
+
+test("Captain BFF distinguishes definite conflicts from uncertain owner responses", async t => {
+  for (const [name, ownerReply, status, code] of [
+    ["conflict", () => Response.json({ code: "VERSION_CONFLICT" }, { status: 409 }), 409, "CONFLICT"],
+    ["server failure", () => Response.json({ code: "UNAVAILABLE" }, { status: 503 }), 503, "OPERATION_RESULT_UNKNOWN"],
+    ["wrong actor", () => Response.json({ ...approvedStanding, actorId: "captain-b" }, { headers: { "Cache-Control": "no-store" } }), 503, "OPERATION_RESULT_UNKNOWN"],
+    ["lost reply", () => { throw new TypeError("synthetic network failure"); }, 503, "OPERATION_RESULT_UNKNOWN"],
+  ]) {
+    await t.test(name, async sub => {
+      const { mutate, requests } = captainMutationFixture(sub, { ownerReply });
+      await assertCaptainMutationError(await mutate(), status, code);
+      assert.equal(requests.length, 1, "no implicit write retry");
+    });
+  }
+});
 
 const detailCompiled = compileFixture("captain-standing-detail.tsx");
 

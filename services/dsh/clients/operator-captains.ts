@@ -67,7 +67,7 @@ export async function changeOperatorCaptainStanding(
   if (!isCaptainStandingActorId(actorId) ||
     !["APPROVED", "SUSPENDED", "REVOKED"].includes(change.status) ||
     !Number.isSafeInteger(change.expectedVersion) || change.expectedVersion < 1 ||
-    !/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
+    typeof change.operationId !== "string" || !/^[A-Za-z0-9._-]{8,128}$/.test(change.operationId) ||
     typeof change.reason !== "string" || change.reason.trim() !== change.reason ||
     Array.from(change.reason).length < 1 || Array.from(change.reason).length > 300) {
     throw new DshPublicError(400, "INVALID_REQUEST");
