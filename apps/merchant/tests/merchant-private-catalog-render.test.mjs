@@ -101,27 +101,23 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         return tree;
       }
       const stores = [{ id: "store-a", name: "متجر أول" }, { id: "store-b", name: "متجر ثان" }];
+      const privateControls = n => ["DraftForm", "CatalogExport", "CatalogImport", "InventorySummary"].includes(n.type);
       let tree = render("merchant-a", stores);
       assert.equal(requests.length, 1);
       assert.equal(requests[0].storeId, "store-a");
-      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-a");
-      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.storeId, "store-a");
-      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.storeId, "store-a");
-      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-a");
+      assert.ok(!nodes(tree).some(privateControls), "first Store read must verify scope before mounting private controls");
       const choice = nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر ثان");
       assert.ok(choice);
       choice.props.onPress();
       tree = render("merchant-a", stores);
       assert.equal(requests.length, 2);
-      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-b");
-      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.storeId, "store-b");
-      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.storeId, "store-b");
+      assert.ok(!nodes(tree).some(privateControls), "the second Store must wait for its own verification");
       assert.equal(requests[0].signal.aborted, true);
       requests[0].resolve({ actorId: "merchant-a", storeId: "store-a",
         items: [offer("old-a", "بيانات قديمة")] });
       await Promise.resolve();
       await Promise.resolve();
-      assert.ok(!nodes(render("merchant-a", stores)).some(n => n.props?.children === "بيانات قديمة"));
+      assert.ok(!nodes(render("merchant-a", stores)).some(n => privateControls(n) || n.props?.children === "بيانات قديمة"));
 
       requests[1].resolve({ actorId: "merchant-a", storeId: "store-b",
         items: [offer("of-a", "منتج أول")], nextCursor: "of-a" });
@@ -129,6 +125,9 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       await Promise.resolve();
       tree = render("merchant-a", stores);
       assert.ok(nodes(tree).some(n => n.props?.children === "منتج أول"));
+      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-b");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.storeId, "store-b");
+      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-a");
       const more = nodes(tree).find(n => n.props?.accessibilityRole === "button" &&
         n.props?.children?.props?.children === "عرض المزيد");
       assert.ok(more);
@@ -153,6 +152,8 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(requests[3].options.query, "منتج");
       assert.equal(requests[3].options.cursor, undefined);
       assert.ok(!nodes(tree).some(n => n.props?.children === "منتج ثان"));
+      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.query, "منتج");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.storeId, "store-b");
       requests[3].resolve({ actorId: "merchant-a", storeId: "store-b",
         items: [offer("of-c", "منتج ثالث")], nextCursor: "of-c" });
       await Promise.resolve();
@@ -162,7 +163,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(requests[4].options.query, "منتج");
       assert.equal(requests[4].options.cursor, "of-c");
       tree = render("merchant-b", stores);
-      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-b");
+      assert.ok(!nodes(tree).some(privateControls), "a new actor must independently verify the same Store");
       assert.ok(!nodes(tree).some(n => n.props?.children === "منتج ثالث"));
       assert.equal(requests[5].options.query, undefined);
       assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "البحث باسم المنتج").props.value, "");
@@ -178,6 +179,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         items: [draft, { ...draft, id: "of-2234567890abcdef1234567890abcdef", name: "عرض منشور", published: true }] });
       await Promise.resolve(); await Promise.resolve();
       tree = render("merchant-b", stores);
+      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-b");
       const quickMode = nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات");
       assert.ok(quickMode, "Merchant can open focused draft price editing");
       quickMode.props.onPress();
@@ -195,6 +197,8 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       tree = render("merchant-c", stores);
       assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && n.props.draft));
       assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات").props.accessibilityState.selected, false);
+      tree = render("merchant-b", stores);
+      assert.ok(!nodes(tree).some(privateControls), "returning to the previous actor still requires fresh verification");
 
       // Remount via the directory with a second Store selected, then revoke that Store.
       for (const effect of effects) effect?.cleanup?.();
@@ -221,7 +225,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       tree = render("merchant-a", stores.slice(0, 1), "store-b");
       assert.equal(requests[1].signal.aborted, true);
       assert.equal(requests[2].options.status, "stockout");
-      assert.equal(nodes(tree).find(n => n.type === "CatalogExport").props.status, "stockout");
+      assert.ok(!nodes(tree).some(privateControls), "a filter change before the first success cannot mount controls");
       assert.equal(requests[2].options.cursor, undefined);
       assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "نفد المخزون").props.accessibilityState.selected, true);
       requests[1].resolve({ actorId: "merchant-a", storeId: "store-a", items: [{ ...draft, storeId: "store-a", name: "صفحة قديمة" }] });
@@ -241,7 +245,6 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       requests[4].reject(Object.assign(new Error("revoked"), { status: 403 }));
       await Promise.resolve(); await Promise.resolve();
       tree = render("merchant-a", stores.slice(0, 1), "store-b");
-      const privateControls = n => ["DraftForm", "CatalogExport", "CatalogImport", "InventorySummary"].includes(n.type);
       assert.ok(!nodes(tree).some(n => n.props?.children === privateRow.name), "revocation must remove previously loaded rows");
       assert.ok(!nodes(tree).some(privateControls), "revocation must remove all scoped controls");
       nodes(tree).find(n => n.props?.accessibilityLabel === "نفد المخزون").props.onPress();

@@ -31,7 +31,7 @@ export default function CaptainInterestScreen() {
   const [experienced, setExperienced] = useState(false);
   const [experienceDetails, setExperienceDetails] = useState("");
   const [busy, setBusy] = useState(false);
-  const [received, setReceived] = useState(false);
+  const [receipt, setReceipt] = useState<"received" | "unknown" | null>(null);
   const [message, setMessage] = useState("");
   const controller = useRef<AbortController | null>(null);
   useEffect(() => () => { controller.current?.abort(); }, []);
@@ -43,7 +43,7 @@ export default function CaptainInterestScreen() {
     phoneType, experienced,
     ...(experienced && experienceDetails.trim() ? { experienceDetails: experienceDetails.trim() } : {}),
   };
-  const canSubmit = validCaptainInterest(input) && !busy && !received && !!dshOrigin;
+  const canSubmit = validCaptainInterest(input) && !busy && receipt === null && !!dshOrigin;
   const fieldStyle = {
     borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
     color: theme.color, padding: 12, fontSize: 16, minHeight: 48,
@@ -71,11 +71,11 @@ export default function CaptainInterestScreen() {
     setMessage("");
     try {
       await submitCaptainInterest(dshOrigin, input, next.signal);
-      if (!next.signal.aborted) setReceived(true);
+      if (!next.signal.aborted) setReceipt("received");
     } catch (reason) {
       if (next.signal.aborted) return;
       if (reason instanceof DshPublicError && reason.code === "OPERATION_RESULT_UNKNOWN") {
-        setMessage("تعذّر تأكيد استلام البيانات. ربما وصلت بالفعل، لذلك لا حاجة لإعادة إرسالها الآن.");
+        setReceipt("unknown");
       } else if (reason instanceof DshPublicError && reason.status === 429) {
         setMessage("تم تجاوز عدد المحاولات المسموح. حاول لاحقًا.");
       } else {
@@ -98,11 +98,14 @@ export default function CaptainInterestScreen() {
         <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 26, fontWeight: "700" }}>
           انضم إلى كباتن بثواني
         </Text>
-        {received ? (
+        {receipt ? (
           <View style={{ backgroundColor: theme.surface, padding: 18, borderRadius: 12 }}>
-            <Text accessibilityRole="alert" testID="captain-interest-received"
-              style={{ color: theme.successText, fontSize: 17 }}>
-              تم استلام بياناتك بنجاح. سيتم التواصل هاتفيًا مع الأشخاص المناسبين عند توفر الفرص.
+            <Text accessibilityRole="alert"
+              testID={receipt === "received" ? "captain-interest-received" : "captain-interest-uncertain"}
+              style={{ color: receipt === "received" ? theme.successText : theme.warningText, fontSize: 17 }}>
+              {receipt === "received"
+                ? "تم استلام بياناتك بنجاح. سيتم التواصل هاتفيًا مع الأشخاص المناسبين عند توفر الفرص."
+                : "تعذّر تأكيد استلام البيانات. ربما وصلت بالفعل، ويمكنك العودة إلى تسجيل الدخول."}
             </Text>
           </View>
         ) : (

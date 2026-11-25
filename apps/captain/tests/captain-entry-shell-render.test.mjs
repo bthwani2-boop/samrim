@@ -9,7 +9,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const captain = path.join(root, "apps/captain");
 const sources = ["src/components/captain-capability-screen",
-  "src/features/dispatch/captain-home-screen", "app/(tabs)/account", "app/offers"];
+  "src/features/dispatch/captain-home-screen", "src/features/join/captain-interest-screen",
+  "app/(tabs)/account", "app/offers"];
 const temporary = mkdtempSync(path.join(tmpdir(), "bthwani-captain-guest-navigation-"));
 const compiled = new Map();
 try {
@@ -95,4 +96,72 @@ test("Captain account renders verified session and can request owner logout", ()
   assert.equal(content.some(node => node.props.testID === "captain-capability-unavailable"), false);
   content.find(node => node.type === "Pressable" && node.props.accessibilityRole === "button").props.onPress();
   assert.equal(requested, true);
+});
+
+test("Captain interest leaves definite rejection retryable but stops after receipt or unknown outcome", async () => {
+  class DshPublicError extends Error {
+    constructor(status, code) {
+      super(code);
+      this.status = status;
+      this.code = code;
+    }
+  }
+  const savedOrigin = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
+  process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = "https://dsh.example";
+  try {
+    for (const finalError of [new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"), null]) {
+      const hooks = [];
+      const requests = [];
+      let nextHook = 0;
+      const screen = renderable("src/features/join/captain-interest-screen", {
+        react: {
+          useState(initial) {
+            const index = nextHook++;
+            if (!(index in hooks)) hooks[index] = initial;
+            return [hooks[index], value => { hooks[index] = value; }];
+          },
+          useRef(initial) {
+            const index = nextHook++;
+            hooks[index] ??= { current: initial };
+            return hooks[index];
+          },
+          useEffect() {},
+        },
+        "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable", TextInput: "TextInput" },
+        "@bthwani/dsh": {
+          DshPublicError,
+          validCaptainInterest: input => Boolean(input.name),
+          submitCaptainInterest: async (_origin, input) => {
+            requests.push(input);
+            if (requests.length === 1) throw new DshPublicError(429, "RATE_LIMITED");
+            if (finalError) throw finalError;
+          },
+        },
+      });
+      const render = () => {
+        nextHook = 0;
+        return nodes(screen());
+      };
+      const findSubmit = view => view.find(node => node.props.accessibilityRole === "button");
+      render().find(node => node.props.accessibilityLabel === "الاسم الكامل").props.onChangeText("اسم تجريبي");
+      findSubmit(render()).props.onPress();
+      await Promise.resolve();
+      const afterRejection = render();
+      assert.match(afterRejection.find(node => node.props.accessibilityRole === "alert").props.children, /تجاوز عدد المحاولات/);
+      assert.equal(findSubmit(afterRejection).props.disabled, false);
+      assert.equal(afterRejection.find(node => node.props.accessibilityLabel === "الاسم الكامل").props.value, "اسم تجريبي");
+      findSubmit(afterRejection).props.onPress();
+      await Promise.resolve();
+      const afterFinal = render();
+      assert.equal(findSubmit(afterFinal), undefined, "the screen must not offer another submission after the result");
+      assert.equal(requests.length, 2);
+      assert.ok(afterFinal.some(node => node.type === "Link" && node.props.href === "/"));
+      const notice = afterFinal.find(node => node.props.accessibilityRole === "alert");
+      assert.equal(notice.props.testID, finalError ? "captain-interest-uncertain" : "captain-interest-received");
+      assert.match(notice.props.children, finalError ? /تعذّر تأكيد/ : /تم استلام بياناتك/);
+    }
+  } finally {
+    if (savedOrigin === undefined) delete process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
+    else process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = savedOrigin;
+  }
 });

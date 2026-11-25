@@ -66,3 +66,9 @@ apps/control-panel/
 - Each owner uses a separate exclusive file scope. Shared index controlled with one `GIT-TURN` claim, check foreign staged changes, exact diff and UTF-8, test the slice and local Commit. Push is a distinct operation requiring explicit human authorization and subsequent SHA readback. Do not combine other agents' changes.
 - Mark `PASS` only for executed checks on exact revision and environment, `REVIEW_BLOCKED` for missing material policy/assurance, `NOT_RUN` for unbuilt backend/native/SQL. Never update cutover or promote Stage5 silently.
 - No project-wide “100%” conclusion from the existence of this plan or a structural `pnpm check`.
+
+## Captain public interest receipt recovery (BTH-10)
+
+Keep a single client-side receipt state in the public Captain form. Existing DSH acknowledgment validation distinguishes definite rejections from an unknown result. Preserve the DSH one-way contract and write path. Extend the existing registration test to exercise the mounted screen and verify success, uncertain outcome and retry after a definite rejection.
+
+Use a history of owner cursors in the Operator list. Reuse the existing GET and filters for forward and backward navigation, reset history when the result set changes, and verify that denial removes the displayed list.
