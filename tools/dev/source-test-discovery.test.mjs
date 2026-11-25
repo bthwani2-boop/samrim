@@ -4,7 +4,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { discoverNodeSourceTests, discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
 function fixture(callback) {
@@ -236,4 +236,25 @@ test("discovery-only leaves prior evidence untouched and real success publishes 
   assert.match(lcov, /SF:tools\/mobile\/verify-app-foundations\.mjs/);
   assert.doesNotMatch(lcov, /STALE_REPORT/);
   assert.deepEqual(readdirSync(join(root, "coverage")), ["lcov.info"]);
+}));
+
+test("external measured modules never enter the owner LCOV report", () => coverageFixture(({ add, report, run }) => {
+  const external = mkdtempSync(join(tmpdir(), "bthwani-external-coverage-"));
+  try {
+    const externalFile = join(external, "external-measured.mjs");
+    writeFileSync(externalFile, "export const measured = 42;\n");
+    add("tools/dev/external.test.mjs", [
+      `import { measured } from ${JSON.stringify(pathToFileURL(externalFile).href)};`,
+      'import test from "node:test";',
+      'import assert from "node:assert/strict";',
+      'test("actually execute external source", () => assert.equal(measured, 42));',
+    ].join("\n"));
+    const result = run();
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const lcov = readFileSync(report, "utf8");
+    assert.match(lcov, /SF:tools\/mobile\/verify-app-foundations\.mjs/);
+    assert.doesNotMatch(lcov, /SF:[^\r\n]*external-measured\.mjs/);
+  } finally {
+    rmSync(external, { recursive: true, force: true });
+  }
 }));

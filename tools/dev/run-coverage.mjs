@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
@@ -64,9 +64,25 @@ try {
   if (testRun.error) throw testRun.error;
   assert.equal(testRun.status, 0, "Actual source test suite must pass before reporting coverage");
   const raw = readFileSync(candidateReport, "utf8");
-  const lcov = raw.split(/\r?\n/).map(line =>
-    line.startsWith("SF:") ? `SF:${line.slice(3).replaceAll("\\", "/")}` : line
-  ).join("\n");
+  // Node can measure tooling and imported fixtures outside the checkout.
+  // Drop entire external records, not individual counters or owner sources.
+  const records = [];
+  let externalRecords = 0;
+  for (const record of raw.split(/^end_of_record\r?$/m)) {
+    const lines = record.split(/\r?\n/).filter(Boolean);
+    if (lines.length === 0) continue;
+    const sourceLines = lines.filter(line => line.startsWith("SF:"));
+    assert.equal(sourceLines.length, 1, "Invalid LCOV source record");
+    const source = relative(root, resolve(root, sourceLines[0].slice(3).replaceAll("\\", "/"))).replaceAll("\\", "/");
+    if (isAbsolute(source) || source === ".." || source.startsWith("../")) {
+      externalRecords++;
+      continue;
+    }
+    assert.ok(source, "Invalid LCOV source path");
+    records.push(lines.map(line => line.startsWith("SF:") ? `SF:${source}` : line).join("\n"));
+  }
+  const lcov = records.map(record => `${record}\nend_of_record\n`).join("");
+  console.log(`LCOV_EXTERNAL_RECORDS_EXCLUDED count=${externalRecords}`);
   const sources = new Set();
   let linesHit = 0;
   let linesFound = 0;
