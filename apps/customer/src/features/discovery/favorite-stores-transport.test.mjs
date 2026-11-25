@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import * as dsh from "@bthwani/dsh";
+import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root=fileURLToPath(new URL("../../../../../",import.meta.url));
 const entry=fileURLToPath(new URL("./favorite-stores-transport.ts",import.meta.url));
@@ -22,7 +23,8 @@ const actor="customer-a", storeId="store-a";
 const session=(actorId=actor)=>({enabled:true,session:{actorId,role:"customer",sessionExpiresAt:"2030-01-01T00:00:00Z"}});
 function harness(platform, read, native){
   const modules={"@bthwani/dsh":dsh,"react-native":{Platform:{OS:platform}},
-    "../access/customer-session-transport":{readCustomerAdmission:read,withVerifiedNativeCustomerRead:native}};
+    "../access/customer-session-transport":{readCustomerAdmission:read,withVerifiedNativeCustomerRead:native},
+    "../access/bounded-customer-json":{readBoundedCustomerJSON}};
   const mod={exports:{}};
   const env={EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN:"http://127.0.0.1:3202"};
   new Function("require","module","exports","process",compiled)(name=>{
@@ -73,4 +75,22 @@ test("pre-dispatch account mismatch does not invoke the owner",async t=>{
   t.mock.method(globalThis,"fetch",async()=>{calls++;return reply(validState);});
   await assert.rejects(api.writeFavoriteStore(new AbortController().signal,actor,storeId,true),e=>e.status===401);
   assert.equal(calls,0);
+});
+
+test("Web rejects incorrect response media type before exposing a favorite", async t=>{
+  const api=harness("web",async()=>session());
+  t.mock.method(globalThis,"fetch",async()=>new Response(JSON.stringify(validState),
+    {headers:{"Cache-Control":"no-store","Content-Type":"text/html"}}));
+  await assert.rejects(api.readFavoriteStore(new AbortController().signal,storeId,actor),
+    e=>e instanceof dsh.DshPublicError&&e.code==="OWNER_RESPONSE_INVALID");
+});
+
+test("Web refuses oversized owner replies even when the JSON shape is valid", async t=>{
+  const api=harness("web",async()=>session());
+  const body=JSON.stringify(validState)+" ".repeat(33000);
+  t.mock.method(globalThis,"fetch",async()=>new Response(body,
+    {headers:{"Cache-Control":"no-store","Content-Type":"application/json"}}));
+  await assert.rejects(api.readFavoriteStore(new AbortController().signal,storeId,actor),
+    e=>e instanceof dsh.DshPublicError&&e.code==="OWNER_RESPONSE_INVALID");
+  await assert.rejects(api.writeFavoriteStore(new AbortController().signal,actor,storeId,true),unknown);
 });

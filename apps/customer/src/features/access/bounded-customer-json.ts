@@ -1,4 +1,4 @@
-export async function readBoundedCustomerJSON(request: Request, textSize = 8192): Promise<unknown> {
+export async function readBoundedCustomerJSON(request: Pick<Request, "headers" | "body" | "signal">, textSize = 8192): Promise<unknown> {
   if (request.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") return null;
   const declared = request.headers.get("Content-Length");
   if (declared && (!/^[0-9]+$/.test(declared) || Number(declared) > textSize)) return null;

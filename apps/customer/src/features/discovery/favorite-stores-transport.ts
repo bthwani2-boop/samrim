@@ -1,6 +1,7 @@
 import { DshPublicError, type FavoriteStorePage, type FavoriteStoreState, getCustomerFavoriteStore, isFavoriteStoreId,
   listCustomerFavoriteStores, parseFavoriteStorePage, parseFavoriteStoreState, setCustomerFavoriteStore } from "@bthwani/dsh";
 import { Platform } from "react-native";
+import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
 const nativeOwner=process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
@@ -22,7 +23,13 @@ async function webRequest(actor: string, query: string, signal: AbortSignal, wri
   signal.throwIfAborted();
   if (!result.ok) throw new DshPublicError(result.status,write && result.status>=500?"OPERATION_RESULT_UNKNOWN":"FAVORITE_REQUEST_REJECTED");
   if (result.headers.get("Cache-Control")!=="no-store") throw new DshPublicError(502,write?"OPERATION_RESULT_UNKNOWN":"OWNER_RESPONSE_INVALID");
-  return await result.json();
+  const body=await readBoundedCustomerJSON({headers:result.headers,body:result.body,signal});
+  signal.throwIfAborted();
+  if (body===null) {
+    void result.body?.cancel().catch(()=>{});
+    throw new DshPublicError(502,write?"OPERATION_RESULT_UNKNOWN":"OWNER_RESPONSE_INVALID");
+  }
+  return body;
 }
 async function verified<T extends {actorId:string}>(signal: AbortSignal,actor: string|undefined,
   web: (actor:string)=>Promise<T>,native:(actor:string,bearer:string)=>Promise<T>,mutating=false) {
