@@ -105,7 +105,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
         setState({ scope, loading: false, more: false, items: [],
           error: "تعذّر التحقق من كتالوج هذا المتجر لدى DSH. تأكد من الصلاحية والاتصال." });
       });
-    return () => { controller.abort(); generation.current++; };
+    return () => { active.current?.abort(); active.current = null; generation.current++; };
   }, [scope, storeId, actorId, storeScope, searchQuery, status, retry]);
 
   const visible: CatalogState = state.scope === scope ? state : {

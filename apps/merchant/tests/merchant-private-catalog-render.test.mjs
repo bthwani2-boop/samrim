@@ -282,6 +282,24 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(requests[10].storeId, "store-a");
       assert.equal(requests[10].options.status, "stockout");
       assert.equal(requests[10].options.query, undefined);
+
+      // Leaving the products section must cancel the current continuation,
+      // not just the already completed initial page.
+      requests[10].resolve({ actorId: "merchant-a", storeId: "store-a",
+        items: [privateRow], nextCursor: "of-b" });
+      await Promise.resolve(); await Promise.resolve();
+      tree = render("merchant-a", stores.slice(0, 1), "store-b");
+      nodes(tree).find(n => n.props?.children?.props?.children === "عرض المزيد").props.onPress();
+      const continuation = requests[11];
+      assert.equal(continuation.options.cursor, "of-b");
+      assert.equal(continuation.signal.aborted, false);
+      for (const effect of effects) effect?.cleanup?.();
+      assert.equal(continuation.signal.aborted, true, "unmount must cancel the active continuation");
+      const afterUnmount = hooks.slice();
+      continuation.resolve({ actorId: "merchant-a", storeId: "store-a",
+        items: [{ ...privateRow, id: "of-c" }] });
+      await Promise.resolve(); await Promise.resolve();
+      assert.deepEqual(hooks, afterUnmount, "late continuation must not update unmounted state");
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;
