@@ -164,7 +164,7 @@ test("initial pending, unavailable and background-aborted checks do not mount Ca
   assert.ok(nodes(h.render()).includes(h.child), "fresh approved owner checks mount protected tree");
 });
 
-test("periodic revalidation hides but preserves mounted Captain tree until owner confirms", async () => {
+test("healthy periodic revalidation keeps Captain tree visible and deduplicates pending reads", async () => {
   const h = harness();
   h.render();
   h.startFocus();
@@ -180,9 +180,11 @@ test("periodic revalidation hides but preserves mounted Captain tree until owner
   current = h.render();
   assert.ok(nodes(current).includes(h.child), "revalidation must preserve the mounted subtree");
   holder = nodes(current).find(x => x.props?.children === h.child);
-  assert.equal(holder.props.style.display, "none");
-  assert.equal(holder.props.pointerEvents, "none");
-  assert.equal(holder.props.importantForAccessibility, "no-hide-descendants");
+  assert.deepEqual(holder.props.style, { flex: 1 });
+  assert.equal(holder.props.pointerEvents, "auto");
+  assert.equal(holder.props.importantForAccessibility, "auto");
+  h.periodic();
+  assert.equal(h.reads(), 1, "a slow periodic check must not spawn another owner read");
 
   h.next().resolve(approved());
   await settle();
@@ -326,6 +328,27 @@ test("access expiry rechecks the owner instead of redirecting before refresh", a
   const holder = nodes(h.render()).find(x => x.props?.children === h.child);
   assert.equal(holder.props.pointerEvents, "none");
   h.next().resolve(approved());
+  await settle();
+  assert.equal(nodes(h.render()).find(x => x.props?.children === h.child).props.pointerEvents, "auto");
+});
+
+test("expiry during a pending periodic check conceals the workspace without starting another request", async () => {
+  const h = harness();
+  h.render();
+  h.startFocus();
+  h.next().resolve(approved());
+  await settle();
+  h.periodic();
+  assert.equal(h.reads(), 1);
+  const pending = h.next();
+  h.expire();
+  const holder = nodes(h.render()).find(x => x.props?.children === h.child);
+  assert.equal(holder.props.pointerEvents, "none");
+  assert.equal(holder.props.importantForAccessibility, "no-hide-descendants");
+  assert.equal(pending.signal.aborted, false);
+  h.periodic();
+  assert.equal(h.reads(), 0);
+  pending.resolve(approved());
   await settle();
   assert.equal(nodes(h.render()).find(x => x.props?.children === h.child).props.pointerEvents, "auto");
 });
