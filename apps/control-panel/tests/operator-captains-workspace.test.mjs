@@ -2,15 +2,32 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import * as client from "../src/features/captains/captains-read-client.ts";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
-const compiled = transformSync(readFileSync(new URL("../src/features/captains/captains-workspace.tsx", import.meta.url), "utf8"), {
-  jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
-    transform: { react: { runtime: "automatic" } } },
-  module: { type: "commonjs" },
-}).code;
+// Node evicts source maps when their uncached CommonJS module is collected.
+// Retain these test-worker-local instances until coverage is collected.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+function loadFixture(fixture, imports) {
+  const mod = loadMappedRenderFixture(fixture.code, fixture.source, imports);
+  loadedModules.push(mod);
+  return mod;
+}
+function compileFixture(name, tsx = true) {
+  const source = fileURLToPath(new URL(`../src/features/captains/${name}`, import.meta.url));
+  const code = transformSync(readFileSync(source, "utf8"), {
+    filename: source, sourceMaps: "inline", inlineSourcesContent: true,
+    jsc: { parser: { syntax: "typescript", tsx }, target: "es2022",
+      ...(tsx ? { transform: { react: { runtime: "automatic" } } } : {}) },
+    module: { type: "commonjs" },
+  }).code;
+  return { source, code };
+}
+const compiled = compileFixture("captains-workspace.tsx");
 const jsx = (type, props) => ({ type, props: props ?? {} });
 const standing = { actorId: "captain-a", status: "PENDING", version: 1 };
 const bindingHeader = "X-BThwani-Operator";
@@ -72,10 +89,7 @@ async function run({ listBinding = "operator-a", omitListBinding = false, detail
     return response({ items: [standing] }, omitListBinding ? undefined : listBinding);
   };
   try {
-    const mod = { exports: {} };
-    new Function("require", "module", "exports", component)(name => {
-      assert.ok(Object.hasOwn(imports, name), name); return imports[name];
-    }, mod, mod.exports);
+    const mod = loadFixture(component, imports);
     const render = () => {
       index = 0; scheduled = [];
       const tree = mod.exports.default(props);
@@ -236,9 +250,7 @@ test("Captain queue cancels a pending quick read immediately and rejects stale r
 });
 
 test("Captain BFF rejects a missing or switched continuation binding before contacting DSH", async () => {
-  const bffCode = transformSync(readFileSync(new URL("../src/features/captains/captains-read-bff.ts", import.meta.url), "utf8"), {
-    jsc: { parser: { syntax: "typescript" }, target: "es2022" }, module: { type: "commonjs" },
-  }).code;
+  const bff = compileFixture("captains-read-bff.ts", false);
   let ownerReads = 0;
   const imports = {
     "server-only": {},
@@ -260,10 +272,7 @@ test("Captain BFF rejects a missing or switched continuation binding before cont
     },
     "../stores/public-store-query": { isolatedPublicDshOrigin: () => "http://localhost" },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", bffCode)(name => {
-    assert.ok(Object.hasOwn(imports, name), name); return imports[name];
-  }, mod, mod.exports);
+  const mod = loadFixture(bff, imports);
   for (const binding of [undefined, "operator-b"]) {
     const res = await mod.exports.readCaptainReview(new Request("http://localhost/api/captains?cursor=page2", {
       headers: binding ? { [bindingHeader]: binding } : {},
@@ -282,11 +291,7 @@ test("Captain BFF rejects a missing or switched continuation binding before cont
 });
 
 
-const detailCompiled = transformSync(readFileSync(new URL("../src/features/captains/captain-standing-detail.tsx", import.meta.url), "utf8"), {
-  jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
-    transform: { react: { runtime: "automatic" } } },
-  module: { type: "commonjs" },
-}).code;
+const detailCompiled = compileFixture("captain-standing-detail.tsx");
 
 const confirmation = tree => find(tree, node => node.type === "Popconfirm");
 const reviewReason = (tree, value) => find(tree, node => node.type === "TextArea").props.onChange({ target: { value } });
