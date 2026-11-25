@@ -227,6 +227,9 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 		t.Fatalf("invalid Cart owner result: %s", body)
 	}
 	// Review the exact same owner cart, recipient purpose and owned address.
+	t.Run("CartDirectoryOwnerReadback", func(t *testing.T) {
+		verifyCartDirectoryOnPostgres(t, ctx, db, schema, handler)
+	})
 	t.Run("CheckoutReviewOwnerReadback", func(t *testing.T) {
 		verifyCheckoutReviewOnPostgres(t, ctx, db, schema, handler)
 	})

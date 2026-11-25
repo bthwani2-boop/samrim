@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: 88795e337587b110489d7f3c21f1c82f7f4e4ad34774909677f69bb91733d92c
+// Normalized OpenAPI SHA-256: d815fda29add63c4c002d41be19882414a6c2b322cf9e316a2bec7386d06ec45
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   advanceMerchantCatalogImport: { method: "PATCH", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
@@ -32,6 +32,7 @@ export const dshOperations = {
   listCityStoreOperationalPolicyHistory: { method: "GET", path: "/v1/operators/cities/{cityID}/store-availability-policy/history" },
   listCompanyEmployees: { method: "GET", path: "/v1/operators/employees" },
   listCurrentCustomerAddresses: { method: "GET", path: "/v1/addresses" },
+  listCurrentCustomerCarts: { method: "GET", path: "/v1/carts" },
   listCurrentCustomerFavoriteStores: { method: "GET", path: "/v1/customers/me/favorite-stores" },
   listCurrentMerchantStoreCatalog: { method: "GET", path: "/v1/stores/{storeID}/catalog" },
   listCurrentMerchantStores: { method: "GET", path: "/v1/stores/mine" },

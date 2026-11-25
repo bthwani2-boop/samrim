@@ -62,6 +62,11 @@ func TestCustomerCartDockerOptInRequiresIsolatedContainerAndOwner(t *testing.T) 
 				if rec.Code != http.StatusUnauthorized {
 					t.Fatalf("Cart route did not enforce current Identity: %d", rec.Code)
 				}
+				rec = httptest.NewRecorder()
+				h.ServeHTTP(rec, httptest.NewRequest("GET", "/v1/carts", nil))
+				if rec.Code != http.StatusUnauthorized {
+					t.Fatalf("Cart directory mount did not enforce Identity: %d", rec.Code)
+				}
 			}
 		})
 	}

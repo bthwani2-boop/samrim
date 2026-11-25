@@ -28,6 +28,8 @@ paths:
     $ref: './paths/locations.yaml#/paths/~1v1~1addresses'
   /v1/addresses/{addressID}:
     $ref: './paths/locations.yaml#/paths/~1v1~1addresses~1{addressID}'
+  /v1/carts:
+    $ref: './paths/cart.yaml#/paths/~1v1~1carts'
   /v1/carts/{storeID}:
     $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}'
   /v1/carts/{storeID}/merchandise-estimate:
@@ -300,6 +302,25 @@ components:
         quantity: { type: integer, minimum: 1, maximum: 2147483647 }
         previewUnitYer: { type: string, pattern: '^[0-9]{1,19}$' }
         previewAvailable: { type: boolean }
+    CustomerCartDirectory:
+      type: object
+      additionalProperties: false
+      required: [actorId, carts]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        carts:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [storeId, storeName, version, lineCount]
+            properties:
+              storeId: { $ref: '#/components/schemas/PublicId' }
+              storeName: { type: string, maxLength: 120 }
+              version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+              lineCount: { type: integer, minimum: 1, maximum: 20 }
+        nextCursor: { $ref: '#/components/schemas/PublicId' }
     CustomerCart:
       type: object
       additionalProperties: false

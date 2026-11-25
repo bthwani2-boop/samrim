@@ -1,4 +1,34 @@
 paths:
+  /v1/carts:
+    get:
+      operationId: listCurrentCustomerCarts
+      summary: List the current Customer's nonempty single-Store cart drafts
+      description: Read-only bounded directory of existing DSH drafts. Actor comes only from verified Identity. Unpublished or inactive Store names are withheld. Neither combined checkout nor Order, stock or payment authorization.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Current Customer draft page, sorted by Store ID
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCartDirectory' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+
   /v1/carts/{storeID}:
     get:
       operationId: getCurrentCustomerCart

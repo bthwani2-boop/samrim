@@ -34,6 +34,11 @@ export default function AccountScreen() {
             <Text style={{ color: theme.interactiveText }}>محفظتي</Text>
           </Pressable>
         </Link>
+        <Link href="/multi-store-checkout" asChild>
+          <Pressable accessibilityRole="link" style={{minHeight:44,justifyContent:"center",padding:12,backgroundColor:theme.actionSoft,borderRadius:10}}>
+            <Text style={{color:theme.interactiveText}}>سلال التسوق المحفوظة</Text>
+          </Pressable>
+        </Link>
         <Link href="/addresses" asChild><Pressable accessibilityRole="link" style={{ minHeight:44, justifyContent:"center", padding:12, backgroundColor:theme.actionSoft, borderRadius:10 }}>
           <Text style={{ color:theme.interactiveText }}>عناويني</Text>
         </Pressable></Link>

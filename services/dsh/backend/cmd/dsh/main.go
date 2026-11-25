@@ -108,6 +108,7 @@ func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http
 		return nil, err
 	}
 	mux := http.NewServeMux()
+	mux.Handle("/v1/carts", cart)
 	mux.Handle("/v1/carts/", cart)
 	mux.Handle("/v1/customers/me/favorite-stores", cart)
 	mux.Handle("/v1/customers/me/favorite-stores/", cart)
