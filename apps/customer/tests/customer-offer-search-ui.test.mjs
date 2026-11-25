@@ -294,3 +294,33 @@ test("leaving Store detail aborts an in-flight Offer continuation", async () => 
   continuation.resolve({ items: [offer("late")], revision: 1 });
   await more;
 });
+
+test("obsolete Offer continuation cannot cancel a newly selected Store read", async () => {
+  const app = harness();
+  await open(app, { nextCursor: "old-page" });
+  const oldMore = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress;
+  app.store("store-b"); app.render(); app.render();
+  const currentStore = app.read("store"), currentOffers = app.read();
+  const stale = oldMore();
+  assert.equal(currentStore.signal.aborted, false);
+  assert.equal(currentOffers.signal.aborted, false);
+  await stale;
+  currentStore.resolve(store("store-b"));
+  currentOffers.resolve({ items: [offer("b", "store-b")], revision: 2 }); await settle();
+  assert.deepEqual(products(app.render()).map(item => item.id), ["b"]);
+});
+
+test("duplicate Offer continuation cannot cancel the current page or reuse its cursor", async () => {
+  const app = harness(); await open(app, { nextCursor: "next-page" });
+  const more = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress;
+  const active = more(); const next = app.read();
+  const duplicate = more();
+  assert.equal(next.signal.aborted, false);
+  next.resolve({ items: [offer("second")], revision: 1, nextCursor: "third-page" });
+  await Promise.all([active, duplicate]);
+  await more();
+  const current = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress();
+  const third = app.read(); assert.equal(third.cursor, "third-page");
+  third.resolve({ items: [offer("third")], revision: 1 }); await current;
+  assert.deepEqual(products(app.render()).map(item => item.id), ["first", "second", "third"]);
+});

@@ -54,9 +54,11 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
   const cartSession = useStoreCart(visible.store?.id);
   const textStyle = { color: theme.color };
   const availability = visible.store ? describeStoreOrderability(visible.store) : undefined;
+  const renderedRevision = revision.current;
   const more = async () => {
-    if (!visible.cursor || visible.more) return;
-    const current = revision.current;
+    if (!visible.cursor || visible.loading || visible.more || renderedRevision !== revision.current) return;
+    // A continuation belongs to one rendered owner snapshot and can be consumed only once.
+    const current = ++revision.current;
     const abort = new AbortController();
     pending.current?.abort();
     pending.current = abort;
