@@ -132,6 +132,71 @@ const history = {
   items: [{ fundingId: "funding-0001", amountYer: amount, postedAt: "2026-11-20T00:00:00Z" }],
 };
 
+test("Web wallet rejects invalid session expiry without requesting financial data", async t => {
+  const invalid = live("actor-a");
+  invalid.session.sessionExpiresAt = "invalid";
+  t.mock.method(globalThis, "fetch", async () => Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
+    { headers: { "Cache-Control": "no-store" } }));
+  assert.deepEqual(await readVerifiedWallet(async () => invalid, new AbortController().signal), { kind: "signed-out" });
+  assert.deepEqual(await readVerifiedWalletTransactions(async () => invalid, new AbortController().signal), { kind: "signed-out" });
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test("Web balance and history reject non-JSON and oversized owner evidence using the existing owner limits", async t => {
+  const balance = { actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount };
+  const replies = [];
+  t.mock.method(globalThis, "fetch", async () => replies.shift());
+  for (const [value, limit, read] of [[balance, 4096, readVerifiedWallet], [history, 8192, readVerifiedWalletTransactions]]) {
+    for (const response of [
+      new Response(JSON.stringify(value), { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } }),
+      new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json", "Content-Length": String(limit + 1), "Cache-Control": "no-store" } }),
+      new Response(JSON.stringify(value) + " ".repeat(limit + 1), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
+    ]) {
+      replies.push(response);
+      await assert.rejects(read(async () => live("actor-a"), new AbortController().signal), { name: "WltReadError", status: 502 });
+    }
+    replies.push(Response.json(value, { headers: { "Cache-Control": "no-store" } }));
+    assert.equal((await read(async () => live("actor-a"), new AbortController().signal)).kind, "ready");
+  }
+});
+
+test("Web wallet releases rejected and cancelled response bodies without revealing financial values", async t => {
+  const replies = [];
+  t.mock.method(globalThis, "fetch", async () => replies.shift());
+  for (const [status, cache, kind] of [[401, "no-store", "signed-out"], [403, "no-store", "signed-out"], [503, "no-store", "unavailable"], [200, "public", "unavailable"]]) {
+    let cancelled = false;
+    replies.push(new Response(new ReadableStream({ cancel() { cancelled = true; } }), { status, headers: { "Cache-Control": cache } }));
+    assert.deepEqual(await readVerifiedWallet(async () => live("actor-a"), new AbortController().signal), { kind });
+    assert.equal(cancelled, true);
+  }
+});
+
+test("Web history abort interrupts a stalled response and a fresh read can recover", async t => {
+  const ctl = new AbortController();
+  let stream, cancelled = false, timer;
+  const replies = [new Response(new ReadableStream({
+    start(c) { stream = c; },
+    cancel() { cancelled = true; },
+  }), { headers: { "Cache-Control": "no-store", "Content-Type": "application/json" } })];
+  t.mock.method(globalThis, "fetch", async () => replies.shift());
+  const pending = readVerifiedWalletTransactions(async () => live("actor-a"), ctl.signal)
+    .then(() => "UNEXPECTED", error => error.name);
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    ctl.abort();
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 500); })]), "AbortError");
+    assert.equal(cancelled, true);
+  } finally {
+    clearTimeout(timer);
+    if (!cancelled) stream.close();
+    await pending;
+  }
+  replies.push(Response.json(history, { headers: { "Cache-Control": "no-store" } }));
+  const fresh = await readVerifiedWalletTransactions(async () => live("actor-a"), new AbortController().signal);
+  assert.equal(fresh.kind, "ready");
+  assert.deepEqual(fresh.history, history);
+});
+
 test("funding history rejects provider details, other actors, non-integer money and invalid time", () => {
   assert.deepEqual(parseCustomerFundingHistory(history), history);
   for (const invalid of [
