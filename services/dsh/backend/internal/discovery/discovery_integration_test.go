@@ -403,3 +403,112 @@ func TestOwnerScopedTransactionSearchPathResetsOnPooledConnection(t *testing.T) 
 		t.Fatalf("cross-scope DSH schema contamination: %q", otherPath)
 	}
 }
+
+func TestOwnerBackedDiscoveryDemoSeed(t *testing.T) {
+	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
+		t.Skip("requires disposable owner PostgreSQL")
+	}
+	t.Setenv("DSH_BOOTSTRAP_SYNTHETIC_REGISTRATION", "false")
+	db, err := OpenFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel()
+	owner, err := New(db, fmt.Sprintf("dsh_test_demo_%x", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = owner.BootstrapFresh(ctx, filepath.Join("..", "..", "..", "database", "schema")); err != nil {
+		t.Fatal(err)
+	}
+	if err = owner.ImportSynthetic(ctx); err == nil {
+		t.Fatal("regression seed must refuse demo schema")
+	}
+	var wg sync.WaitGroup
+	outcomes := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); outcomes <- owner.ImportSyntheticDemo(ctx) }()
+	}
+	wg.Wait()
+	close(outcomes)
+	committed := 0
+	for e := range outcomes {
+		if e == nil {
+			committed++
+		} else if !strings.Contains(e.Error(), "empty demo schema") {
+			t.Fatal(e)
+		}
+	}
+	if committed != 1 {
+		t.Fatalf("exactly one seed may commit, got %d", committed)
+	}
+	var stores, products, variants, offers int
+	var revision int64
+	q := "SELECT (SELECT count(*) FROM " + owner.Schema + ".stores),(SELECT count(*) FROM " + owner.Schema + ".products),(SELECT count(*) FROM " + owner.Schema + ".variants),(SELECT count(*) FROM " + owner.Schema + ".offers),(SELECT revision FROM " + owner.Schema + ".public_revision WHERE singleton)"
+	if err = db.QueryRowContext(ctx, q).Scan(&stores, &products, &variants, &offers, &revision); err != nil {
+		t.Fatal(err)
+	}
+	if stores != 30 || products != 500 || variants != 500 || offers != 500 || revision != 1 {
+		t.Fatalf("unexpected durable demo result %d/%d/%d/%d revision=%d", stores, products, variants, offers, revision)
+	}
+	if err = owner.ImportSyntheticDemo(ctx); err == nil {
+		t.Fatal("must refuse reimport")
+	}
+	s := &Server{Owner: owner}
+	assertPages := func(path string, want int) {
+		t.Helper()
+		seen := map[string]bool{}
+		next := path
+		for i := 0; i < 4; i++ {
+			w, body := request(s, next)
+			if w.Code != 200 {
+				t.Fatalf("%s: %d %s", next, w.Code, w.Body.String())
+			}
+			if body["revision"] != float64(1) {
+				t.Fatalf("revision %v", body)
+			}
+			for _, v := range results(t, body) {
+				item := v.(map[string]any)
+				id := item["id"].(string)
+				if seen[id] {
+					t.Fatalf("duplicate %s", id)
+				}
+				seen[id] = true
+				if item["orderingAvailable"] == true {
+					t.Fatal("demo cannot promise checkout")
+				}
+			}
+			cursor, _ := body["nextCursor"].(string)
+			if cursor == "" {
+				if len(seen) != want {
+					t.Fatalf("%s got %d, want %d", path, len(seen), want)
+				}
+				return
+			}
+			next = path + "&cursor=" + cursor
+		}
+		t.Fatal("pagination did not terminate")
+	}
+	assertPages("/v1/public/stores?city_id=sanaa&limit=20", 25)
+	assertPages("/v1/public/stores?city_id=aden&limit=20", 3)
+	assertPages("/v1/public/stores/demo-store-01/offers?limit=20", 23)
+	if w, _ := request(s, "/v1/public/stores/demo-store-29"); w.Code != 200 {
+		t.Fatal("Direct Store link missing")
+	}
+	if w, _ := request(s, "/v1/public/stores/demo-store-30"); w.Code != 404 {
+		t.Fatal("draft Store exposed")
+	}
+	if err = db.QueryRowContext(ctx, q).Scan(&stores, &products, &variants, &offers, &revision); err != nil || stores != 30 || offers != 500 || revision != 1 {
+		t.Fatalf("rejected replay changed fixture: %v", err)
+	}
+	other, err := New(db, "dsh_test_not_demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = other.ImportSyntheticDemo(ctx); err == nil {
+		t.Fatal("demo seed accepted ordinary schema")
+	}
+}

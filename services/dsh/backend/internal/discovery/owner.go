@@ -88,6 +88,9 @@ func (o *Owner) revision(ctx context.Context, tx *sql.Tx) (int64, error) {
 // It has no public HTTP route, requires an opt-in dsh_test_* schema in the isolated database,
 // and never claims a Merchant/Identity enrollment or signed WLT agreement.
 func (o *Owner) ImportSynthetic(ctx context.Context) error {
+	if o != nil && strings.HasPrefix(o.Schema, "dsh_test_demo_") {
+		return errors.New("regression import refuses dedicated demo schema")
+	}
 	if !o.isIsolatedTestOwner() {
 		return errors.New("synthetic import disabled outside isolated DSH test schema")
 	}
@@ -167,6 +170,70 @@ func (o *Owner) ImportSynthetic(ctx context.Context) error {
 	}
 	if _, err = tx.ExecContext(ctx, "UPDATE public_revision SET revision=revision+1 WHERE singleton=true"); err != nil {
 		return err
+	}
+	return tx.Commit()
+}
+
+// ImportSyntheticDemo extends the isolated seed entrypoint with a one-shot,
+// disposable browsing fixture. Published flags are synthetic projection test
+// facts only: they do not represent Identity enrollment or WLT agreements.
+func (o *Owner) ImportSyntheticDemo(ctx context.Context) error {
+	if !o.isIsolatedTestOwner() || !strings.HasPrefix(o.Schema, "dsh_test_demo_") || len(o.Schema) <= len("dsh_test_demo_") {
+		return errors.New("demo import requires a dedicated isolated dsh_test_demo_* schema")
+	}
+	tx, err := o.beginScopedTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err = requireRefoundationDatabase(ctx, tx); err != nil {
+		return err
+	}
+	// Serialize fixture creation and prevent concurrent writes to its source facts.
+	if _, err = tx.ExecContext(ctx, `LOCK TABLE service_cities, verticals, stores, products, variants, offers IN SHARE ROW EXCLUSIVE MODE`); err != nil {
+		return err
+	}
+	var rev int64
+	var nonempty bool
+	if err = tx.QueryRowContext(ctx, `SELECT revision FROM public_revision WHERE singleton FOR UPDATE`).Scan(&rev); err != nil {
+		return err
+	}
+	if err = tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM service_cities) OR EXISTS(SELECT 1 FROM verticals) OR EXISTS(SELECT 1 FROM stores) OR EXISTS(SELECT 1 FROM products) OR EXISTS(SELECT 1 FROM variants) OR EXISTS(SELECT 1 FROM offers)`).Scan(&nonempty); err != nil {
+		return err
+	}
+	if rev != 0 || nonempty {
+		return errors.New("demo import requires an empty demo schema")
+	}
+	// One transaction, no upsert and no overwrite. Keep ordering unavailable.
+	queries := []string{
+		`INSERT INTO service_cities(id,active,timezone_name) VALUES ('sanaa',true,'Asia/Aden'),('aden',true,'Asia/Aden')`,
+		`INSERT INTO verticals(id,active) VALUES ('grocery',true),('restaurant',true),('pharmacy',true)`,
+		`INSERT INTO stores(id,owner_actor_id,city_id,vertical_id,relation,name,published)
+		 SELECT 'demo-store-'||lpad(n::text,2,'0'), 'synthetic-demo-merchant-'||lpad(n::text,2,'0'),
+		 CASE WHEN n BETWEEN 26 AND 28 THEN 'aden' ELSE 'sanaa' END,
+		 CASE n%3 WHEN 1 THEN 'grocery' WHEN 2 THEN 'restaurant' ELSE 'pharmacy' END,
+		 CASE WHEN n=29 THEN 'DIRECT' ELSE 'MARKETPLACE' END,
+		 CASE n%3 WHEN 1 THEN 'متجر مقاضي تجريبي ' WHEN 2 THEN 'مطعم تجريبي ' ELSE 'صيدلية تجريبية ' END || lpad(n::text,2,'0'), n<>30
+		 FROM generate_series(1,30) n`,
+		`INSERT INTO products(id,store_id,name,active)
+		 SELECT s.id||'-p-'||lpad(p::text,2,'0'),s.id,
+		 CASE s.vertical_id WHEN 'grocery' THEN (ARRAY['دقيق','أرز','ماء','سكر','زيت'])[1+(p-1)%5]
+		 WHEN 'restaurant' THEN (ARRAY['وجبة','ساندويتش','عصير','سلطة','حلوى'])[1+(p-1)%5]
+		 ELSE (ARRAY['ضمادات','صابون','معجون أسنان','مناديل','شاش'])[1+(p-1)%5] END || ' ' || lpad(p::text,2,'0'), true
+		 FROM stores s CROSS JOIN LATERAL generate_series(1,CASE WHEN s.id='demo-store-01' THEN 25 WHEN s.id BETWEEN 'demo-store-02' AND 'demo-store-12' THEN 17 ELSE 16 END) p`,
+		`INSERT INTO variants(id,product_id,sellable,required_attributes_valid)
+		 SELECT id||'-v',id,true,true FROM products`,
+		`INSERT INTO offers(id,store_id,product_id,variant_id,published,available,price_yer,stock_units)
+		 SELECT p.id||'-o',p.store_id,p.id,v.id,
+		 right(p.id,2)<>'02',true,100+50*right(p.id,2)::integer,
+		 CASE WHEN right(p.id,2)='03' THEN 0 ELSE 10+right(p.id,2)::integer END
+		 FROM products p JOIN variants v ON v.product_id=p.id`,
+		`UPDATE public_revision SET revision=revision+1 WHERE singleton`,
+	}
+	for _, query := range queries {
+		if _, err = tx.ExecContext(ctx, query); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
