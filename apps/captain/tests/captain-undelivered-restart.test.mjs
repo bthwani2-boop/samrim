@@ -1,16 +1,42 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
-const source = readFileSync(new URL("../src/features/access/admission-transport.ts", import.meta.url), "utf8");
-const compiled = stripTypeScriptTypes(source, { mode: "transform" })
-  .replace(/import\s+\{([^}]*)\}\s+from\s+["']([^"']+)["'];/gs,
-    (_match, names, name) => `const {${names}} = require("${name}");`)
-  .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
-    (_match, name, module) => `const ${name} = require("${module}");`)
-  .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = { readCaptainAdmission, verifyCaptainCode, leaveCaptainAdmission };";
+const source = fileURLToPath(new URL("../src/features/access/admission-transport.ts", import.meta.url));
+const root = path.resolve(import.meta.dirname, "../../..");
+const temporary = mkdtempSync(path.join(tmpdir(), "captain-admission-coverage-"));
+let compiled;
+try {
+  const result = spawnSync(process.execPath, [
+    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
+    "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,
+  ], { cwd: root, timeout: 20_000, encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  compiled = readFileSync(path.join(temporary, "admission-transport.js"), "utf8");
+} finally {
+  rmSync(temporary, { recursive: true, force: true });
+}
+
+function loadAdmissionFixture(dependencies, env) {
+  // The source reads these three fixture values synchronously at module load.
+  // Restore the test worker's environment before any asynchronous operation.
+  const previous = new Map(Object.keys(env).map(key => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, env);
+    return loadMappedRenderFixture(compiled, source, dependencies).exports;
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 
 function harness() {
   const tokens = {
@@ -98,18 +124,11 @@ function harness() {
     },
   };
   const reload = ({ preview = false } = {}) => {
-    const module = { exports: {} };
-    new Function("require", "module", "exports", "process", "setTimeout", "clearTimeout", compiled)(
-      name => {
-        assert.ok(Object.hasOwn(dependencies, name), `unknown dependency ${name}`);
-        return dependencies[name];
-      }, module, module.exports, { env: {
-        EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
-        EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
-        EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: preview ? "1" : "0",
-      } }, setTimeout, clearTimeout,
-    );
-    return module.exports;
+    return loadAdmissionFixture(dependencies, {
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+      EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: preview ? "1" : "0",
+    });
   };
   return {
     tokens, stored, reload,
@@ -131,6 +150,20 @@ function harness() {
     pending() { return [...stored].find(([key]) => key.endsWith(".pending.v1"))?.[1] ?? null; },
   };
 }
+
+test("mapped admission fixture restores worker environment on success and failure", () => {
+  const env = {
+    EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+    EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+    EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: "1",
+  };
+  const snapshot = () => Object.keys(env).map(key => process.env[key]);
+  const before = snapshot();
+  harness().reload({ preview: true });
+  assert.deepEqual(snapshot(), before);
+  assert.throws(() => loadAdmissionFixture({}, env), /unexpected fixture dependency/);
+  assert.deepEqual(snapshot(), before);
+});
 
 test("Surface preview never reads or revokes the installed app session", async () => {
   const h = harness();
