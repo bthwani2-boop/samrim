@@ -19,7 +19,13 @@ export default function CartScreen() {
   const [error, setError] = useState("");
   const [ownerMerchandise, setOwnerMerchandise] = useState<CustomerCartMerchandiseEstimate | null>(null);
   const [busy, setBusy] = useState(false);
-  const [clearSelection, setClearSelection] = useState<CustomerCart | null>(null);
+  type CleanupSelection = Readonly<{ cart: CustomerCart; kind: "all" | "unavailable" }>;
+  const [clearSelection, setClearSelection] = useState<CleanupSelection | null>(null);
+  const activeSelection = useRef<CleanupSelection | null>(null);
+  const selectCleanup = useCallback((selection: CleanupSelection | null) => {
+    activeSelection.current = selection;
+    setClearSelection(selection);
+  }, []);
   const refresh = useRef<(() => void) | null>(null);
   const cartRead = useRef<AbortController | null>(null);
   const estimateRead = useRef<AbortController | null>(null);
@@ -54,7 +60,7 @@ export default function CartScreen() {
       cartRead.current = controller;
       currentView.current = null;
       setView(null);
-      setClearSelection(null);
+      selectCleanup(null);
       setOwnerMerchandise(null);
       setError("");
       void readVerifiedCart(storeId, controller.signal).then(next => {
@@ -85,7 +91,7 @@ export default function CartScreen() {
       currentView.current = null;
       setView(null);
     };
-  }, [storeId]));
+  }, [storeId, selectCleanup]));
 
   useEffect(() => {
     if (view?.kind !== "ready" || view.cart.lines.length === 0) {
@@ -125,7 +131,7 @@ export default function CartScreen() {
     const epoch = generation.current;
     mutation.current = controller;
     setBusy(true);
-    setClearSelection(null);
+    selectCleanup(null);
     setOwnerMerchandise(null);
     setError("");
     try {
@@ -173,6 +179,16 @@ export default function CartScreen() {
       expectedVersion: cart.version,
       lines,
     }, cart.actorId);
+  }
+
+  function confirmCleanup(selection: CleanupSelection) {
+    if (activeSelection.current !== selection || view?.kind !== "ready" ||
+      currentView.current !== view || selection.cart !== view.cart || busy || pendingCartChange(view.cart.actorId, storeId)) return;
+    const lines = selection.kind === "all" ? [] : selection.cart.lines
+      .filter(line => line.previewAvailable)
+      .map(line => ({ offerId: line.offerId, quantity: line.quantity }));
+    selectCleanup(null);
+    replaceLines(selection.cart, lines);
   }
 
   const preview = view?.kind === "ready" ? summarizeCartPreview(view.cart.lines) : null;
@@ -227,24 +243,31 @@ export default function CartScreen() {
               </View>
             ))}
             {view.cart.lines.length > 0 && !busy && !pending && !error ? (
-              clearSelection === view.cart ? (
+              clearSelection?.cart === view.cart ? (
                 <View style={{ gap: 8 }}>
                   <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
-                    هل تريد إزالة جميع المنتجات من سلة هذا المتجر؟
+                    {clearSelection.kind === "all" ? "هل تريد إزالة جميع المنتجات من سلة هذا المتجر؟" : "هل تريد إزالة المنتجات غير المتاحة فقط مع الإبقاء على المنتجات الأخرى؟"}
                   </Text>
                   <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                    <Pressable accessibilityRole="button" onPress={() => replaceLines(view.cart, [])} style={buttonStyle}>
-                      <Text style={{ color: theme.dangerText }}>تأكيد التفريغ</Text>
+                    <Pressable accessibilityRole="button" onPress={() => confirmCleanup(clearSelection)} style={buttonStyle}>
+                      <Text style={{ color: theme.dangerText }}>{clearSelection.kind === "all" ? "تأكيد التفريغ" : "تأكيد إزالة غير المتاح"}</Text>
                     </Pressable>
-                    <Pressable accessibilityRole="button" onPress={() => setClearSelection(null)} style={buttonStyle}>
+                    <Pressable accessibilityRole="button" onPress={() => selectCleanup(null)} style={buttonStyle}>
                       <Text style={{ color: theme.interactiveText }}>إلغاء</Text>
                     </Pressable>
                   </View>
                 </View>
               ) : (
-                <Pressable accessibilityRole="button" onPress={() => setClearSelection(view.cart)} style={buttonStyle}>
-                  <Text style={{ color: theme.dangerText }}>تفريغ السلة</Text>
-                </Pressable>
+                <View style={{ gap: 8 }}>
+                  {preview && preview.unavailableLines > 0 && preview.unavailableLines < view.cart.lines.length ? (
+                    <Pressable accessibilityRole="button" onPress={() => selectCleanup({ cart: view.cart, kind: "unavailable" })} style={buttonStyle}>
+                      <Text style={{ color: theme.dangerText }}>إزالة المنتجات غير المتاحة</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable accessibilityRole="button" onPress={() => selectCleanup({ cart: view.cart, kind: "all" })} style={buttonStyle}>
+                    <Text style={{ color: theme.dangerText }}>تفريغ السلة</Text>
+                  </Pressable>
+                </View>
               )
             ) : null}
             {preview ? (

@@ -367,3 +367,44 @@ test("Store cart revalidates on native resume and discards superseded owner read
     assert.equal(render().cart, null);
   } finally { cleanup(); effectCleanup?.(); }
 });
+
+test("bulk unavailable cleanup keeps eligible lines, requires confirmation and retries exact command", async () => {
+  const h = cartScreenHarness(); h.render(); const cleanup = h.start();
+  const nodes = node => !node || typeof node !== "object" ? [] :
+    Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
+  const action = label => nodes(h.render()).find(node => node.type === "Pressable" && cartText(node) === label);
+  const press = label => { const b = action(label); assert.ok(b, "missing action: " + label); b.props.onPress(); };
+  try {
+    const cart = { ...emptyCart, actorId: "customer-bulk-clean", version: 5, lines: [
+      { ...ownerLine, name: "Eligible", quantity: 3 },
+      { ...ownerLine, offerId: "gone-a", name: "Unavailable A", previewAvailable: false },
+      { ...ownerLine, offerId: "gone-b", name: "Unavailable B", previewAvailable: false },
+    ] };
+    h.reads[0].resolve({ kind: "ready", cart }); await settle();
+    press("إزالة المنتجات غير المتاحة");
+    assert.equal(h.writes.length, 0);
+    const cancelled = action("تأكيد إزالة غير المتاح");
+    press("إلغاء");
+    cancelled.props.onPress();
+    assert.equal(h.writes.length, 0);
+    press("إزالة المنتجات غير المتاحة");
+    const stale = action("تأكيد إزالة غير المتاح");
+    h.resume(); h.reads[1].resolve({ kind: "ready", cart: { ...cart, version: 6 } }); await settle();
+    stale.props.onPress();
+    assert.equal(h.writes.length, 0);
+    press("إزالة المنتجات غير المتاحة"); press("تأكيد إزالة غير المتاح");
+    assert.equal(h.writes.length, 1);
+    const first = h.writes[0];
+    assert.deepEqual(first.original, { operationId: "cart-test-cart-command", expectedVersion: 6,
+      lines: [{ offerId: ownerLine.offerId, quantity: 3 }] });
+    assert.match(cartText(h.render()), /Unavailable A/);
+    first.reject(new DshCartError(0, "OPERATION_RESULT_UNKNOWN")); await settle();
+    assert.equal(action("إزالة المنتجات غير المتاحة"), undefined);
+    press("التحقق من نتيجة آخر تعديل");
+    assert.equal(h.writes[1].original, first.original);
+    h.writes[1].resolve({ cart: { ...cart, version: 7, lines: [cart.lines[0]] }, replay: true }); await settle();
+    assert.match(cartText(h.render()), /Eligible/);
+    assert.doesNotMatch(cartText(h.render()), /Unavailable [AB]/);
+    assert.equal(action("إزالة المنتجات غير المتاحة"), undefined);
+  } finally { cleanup(); }
+});
