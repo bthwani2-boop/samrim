@@ -1,4 +1,5 @@
 import {
+  establishPersistentIdentitySession,
   IdentityClientError,
   issueCustomerPhoneChallenge,
   readVerifiedIdentitySession,
@@ -249,6 +250,7 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
     try {
       const session = await readVerifiedIdentitySession(origin, issued.accessToken, signal);
       if (signal.aborted || session.role !== "customer") throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+      const persistent = await establishPersistentIdentitySession(origin, issued.accessToken, signal);
       await mutateNativeStorage(async () => {
         if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
         const current = await SecureStore.getItemAsync(storageKey, nativeOptions);
@@ -256,8 +258,10 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
         await SecureStore.setItemAsync(pendingStorageKey, "in-flight", nativeOptions);
         await SecureStore.setItemAsync(storageKey, issued.accessToken, nativeOptions);
         if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-        // Native commit point: the issued credential write was acknowledged.
-        // After an acknowledged bearer write, uncertain marker deletion cannot
+        await SecureStore.setItemAsync(refreshStorageKey, persistent.refreshToken, nativeOptions);
+        if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+        // Native commit point: both issued credential writes were acknowledged.
+        // After acknowledged writes, uncertain marker deletion cannot
         // turn a committed token into an undelivered error. If it remains, the
         // next cold-start read will still reject the bearer until cleanup.
         await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => {});

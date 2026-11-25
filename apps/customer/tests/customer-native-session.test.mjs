@@ -15,6 +15,7 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
 const original = Buffer.alloc(32, 1).toString("base64url");
 const next = Buffer.alloc(32, 2).toString("base64url");
 const expiry = new Date(Date.now() + 240000).toISOString();
+const refreshGrant = Buffer.alloc(32, 3).toString("base64url");
 class IdentityError extends Error {
   constructor(status, code = "UNAUTHORIZED") {
     super(code);
@@ -31,8 +32,10 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
   let pendingMarker = null;
   let read = async value => ({ ...customer(value), role: ownerRole });
   let codeVerification = async () => ({ accessToken: next, sessionExpiresAt: expiry });
+  let enroll = async () => ({ refreshToken: refreshGrant, refreshExpiresAt: expiry });
   let revoke = async value => { revoked.push(value); };
   let onStorageWrite = () => {};
+  let onRefreshWrite = () => {};
   const revoked = [];
   const storageReads = [];
   const secure = {
@@ -45,7 +48,7 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
     },
     async setItemAsync(key, value) {
       if (key.endsWith(".pending.v1")) { pendingMarker = value; return; }
-      if (key.endsWith(".refresh.v1")) { refresh = value; return; }
+      if (key.endsWith(".refresh.v1")) { refresh = value; onRefreshWrite(); return; }
       bearer = value;
       onStorageWrite();
     },
@@ -65,16 +68,19 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
       IdentityClientError: IdentityError,
       issueCustomerPhoneChallenge: async () => "ticket",
       readVerifiedIdentitySession: (_origin, value, signal) => read(value, signal),
+      establishPersistentIdentitySession: (_origin, value, signal) => {
+        assert.equal(value, next);
+        return enroll(signal);
+      },
       async readPersistentIdentityRole(_origin, value, token, role, signal) {
-        // Legacy access tests exercise current role verification. The refresh
-        // client and rotation are tested separately against their owner contract.
-        assert.equal(token, null, "fixture must not mistake a bearer for a refresh credential");
+        assert.equal(token, refresh, "fixture must supply the persisted refresh credential");
+        assert.ok(token === null || token === refreshGrant);
         const session = await read(value, signal);
         if (session.role !== role) throw new IdentityError(403, "FORBIDDEN");
         return { session, bearer: value };
       },
-      async revokePersistentIdentitySession() {
-        throw new Error("no refresh credential was issued in this fixture");
+      async revokePersistentIdentitySession(_origin, value) {
+        assert.equal(value, refreshGrant);
       },
       revokeVerifiedIdentitySession: (_origin, value, signal) => revoke(value, signal),
       verifyCustomerPhoneChallenge: (_origin, ticket, code, signal) => codeVerification(ticket, code, signal),
@@ -96,11 +102,14 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
   return {
     transport: mount(), reload: mount, revoked, storageReads, pending: () => pendingMarker,
     current: () => bearer,
+    currentRefresh: () => refresh,
+    setEnrollment(fn) { enroll = fn; },
     setCurrent(value) { bearer = value; },
     setRead(fn) { read = fn; },
     setVerification(fn) { codeVerification = fn; },
     setRevoke(fn) { revoke = fn; },
     setOnStorageWrite(fn) { onStorageWrite = fn; },
+    setRefreshWrite(fn) { onRefreshWrite = fn; },
   };
 }
 
@@ -155,11 +164,13 @@ test("native owner outage retains bearer for retry instead of authorizing user",
   assert.equal(h.current(), original);
 });
 
-test("native verified phone proof stores only Customer bearer after owner read", async () => {
+test("native verified phone proof stores both Customer credentials before success", async () => {
   const h = harness({ stored: null });
   const entry = await h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal);
   assert.deepEqual(entry, customer(next));
   assert.equal(h.current(), next);
+  assert.equal(h.currentRefresh(), refreshGrant);
+  assert.equal(h.pending(), null);
 });
 
 test("wrong-role result after proof never stores token and revokes issued credential", async () => {
@@ -458,4 +469,27 @@ test("native financial reader suppresses a revoked or expired Customer without c
     assert.equal(result.kind, "signed-out");
     assert.equal(calls, 0);
   }
+});
+
+test("native Customer enrollment failure cannot report successful short-lived login", async () => {
+  const h = harness({ stored: null });
+  h.setEnrollment(async () => { throw new IdentityError(503, "OWNER_UNAVAILABLE"); });
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal),
+    { status: 503 });
+  assert.equal(h.current(), null);
+  assert.equal(h.currentRefresh(), null);
+  assert.deepEqual(h.revoked, [next]);
+});
+
+test("Customer refresh write uncertainty cannot expose an incomplete durable login after restart", async () => {
+  const h = harness({ stored: null });
+  h.setRefreshWrite(() => { throw new Error("refresh write acknowledgment lost"); });
+  const signal = new AbortController().signal;
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", signal), /refresh write acknowledgment lost/);
+  assert.equal(h.current(), null);
+  assert.equal(h.currentRefresh(), refreshGrant);
+  assert.ok(h.pending());
+  assert.deepEqual(await h.reload().readCustomerAdmission(signal), { enabled: true, session: null });
+  assert.equal(h.currentRefresh(), null);
+  assert.equal(h.pending(), null);
 });
