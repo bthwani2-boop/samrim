@@ -61,6 +61,7 @@ test("Merchant settings select the existing appearance preference and recover fr
     const render = () => { index = 0; return nodes(Account()); };
     const radios = () => render().filter(n => n.props?.accessibilityRole === "radio");
     assert.equal(radios().length, 3);
+    assert.deepEqual(radios().map(r => r.props["aria-checked"]), [true, false, false]);
     assert.ok(radios().every(n => n.props.disabled));
     radios().find(n => n.props.accessibilityLabel === "داكن").props.onPress();
     assert.deepEqual(calls, []);
@@ -79,6 +80,7 @@ test("Merchant settings select the existing appearance preference and recover fr
     settle(true);
     await retry;
     assert.deepEqual(calls, ["dark", "dark"]);
+    assert.deepEqual(radios().map(r => r.props["aria-checked"]), [false, false, true]);
     assert.equal(radios().find(n => n.props.accessibilityLabel === "داكن").props.accessibilityState.checked, true);
     assert.ok(!render().some(n => n.props?.accessibilityRole === "alert"));
     for (const [label, value] of [["فاتح", "light"], ["حسب النظام", "system"]]) {
@@ -86,6 +88,7 @@ test("Merchant settings select the existing appearance preference and recover fr
       settle(true);
       await save;
       assert.equal(calls.at(-1), value);
+      assert.deepEqual(radios().map(r => r.props["aria-checked"]), value === "light" ? [false, true, false] : [true, false, false]);
       assert.equal(radios().find(n => n.props.accessibilityLabel === label).props.accessibilityState.checked, true);
     }
   } finally { rmSync(temp, { recursive: true, force: true }); }

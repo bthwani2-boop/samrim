@@ -36,7 +36,7 @@ export default function AccountScreen() {
           const selected = value === preference;
           return (
             <Pressable key={value} accessibilityRole="radio" accessibilityLabel={label}
-              accessibilityState={{ checked: selected, disabled }}
+              aria-checked={selected} accessibilityState={{ checked: selected, disabled }}
               disabled={disabled} onPress={() => change(value)} style={{
                 backgroundColor: selected ? theme.actionSoft : theme.surface,
                 borderWidth: 1, borderColor: selected ? theme.interactiveText : theme.borderColor,

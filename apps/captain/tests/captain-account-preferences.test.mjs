@@ -68,9 +68,12 @@ test("Captain account exposes three accessible theme choices backed by the exist
   const initial = radios(app.render());
   assert.equal(initial.length, 3);
   assert.equal(initial[0].props.accessibilityState.checked, true);
+  assert.deepEqual(initial.map(r => r.props["aria-checked"]), [true, false, false]);
+  assert.deepEqual(initial.map(r => r.props.accessibilityLabel), ["\u062d\u0633\u0628 \u0627\u0644\u0646\u0638\u0627\u0645", "\u0641\u0627\u062a\u062d", "\u062f\u0627\u0643\u0646"]);
   await initial[2].props.onPress();
   assert.deepEqual(app.writes, ["dark"]);
   assert.equal(radios(app.render())[2].props.accessibilityState.checked, true);
+  assert.deepEqual(radios(app.render()).map(r => r.props["aria-checked"]), [false, false, true]);
 });
 
 test("Captain account does not issue preference writes before restore or during a pending save", async () => {
@@ -91,6 +94,7 @@ test("Captain account does not issue preference writes before restore or during 
   finish();
   await first;
   assert.equal(radios(app.render())[1].props.accessibilityState.checked, true);
+  assert.deepEqual(radios(app.render()).map(r => r.props["aria-checked"]), [false, true, false]);
 });
 
 test("Captain account reports a failed save without inventing a persisted choice", async () => {
@@ -100,6 +104,7 @@ test("Captain account reports a failed save without inventing a persisted choice
   await options[2].props.onPress();
   const tree = app.render();
   assert.equal(radios(tree)[0].props.accessibilityState.checked, true);
+  assert.deepEqual(radios(tree).map(r => r.props["aria-checked"]), [true, false, false]);
   assert.ok(nodes(tree).some(n => n.props?.accessibilityRole === "alert"));
   assert.ok(radios(tree).every(r => !r.props.disabled));
 });
