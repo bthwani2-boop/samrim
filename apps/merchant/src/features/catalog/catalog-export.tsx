@@ -33,7 +33,7 @@ async function deliverCsv(csv: string, signal: AbortSignal) {
   try {
     file.create();
     created = true;
-    file.write(csv);
+    await file.write(csv);
     signal.throwIfAborted();
     await sharing.shareAsync(file.uri, { mimeType: "text/csv", dialogTitle: "تصدير كتالوج المتجر" });
   } finally {

@@ -48,6 +48,7 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     let sharingAvailable = true;
     let shareFails = false;
     let deferDelete = false, releaseDelete;
+    let deferWrite = false, releaseWrite, writeFails = false;
     class NativeFile {
       constructor(_cache, name) {
         this.uri = `file:///synthetic-cache/${name}`;
@@ -55,7 +56,15 @@ test("export button hands off fresh CSV only in its current owner scope", async 
         nativeFiles.push(this);
       }
       create() { this.exists = true; }
-      write(csv) { assert.equal(this.exists, true); this.csv = csv; }
+      write(csv) {
+        assert.equal(this.exists, true);
+        if (!deferWrite) {
+          if (writeFails) return Promise.reject(new Error("write failed"));
+          this.csv = csv;
+          return Promise.resolve();
+        }
+        return new Promise(resolve => { releaseWrite = () => { this.csv = csv; resolve(); }; });
+      }
       delete() {
         if (!deferDelete) { this.exists = false; return Promise.resolve(); }
         return new Promise(resolve => { releaseDelete = () => { this.exists = false; resolve(); }; });
@@ -156,8 +165,14 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     refs.length = 0;
     platform.OS = "android";
     deferDelete = true;
+    deferWrite = true;
     button().props.onPress();
     requests[3].resolve(result);
+    await tick();
+    assert.equal(shared.length, 0, "sharing must wait for completed native write");
+    assert.equal(button().props.disabled, true);
+    releaseWrite();
+    deferWrite = false;
     await tick();
     assert.equal(shared.length, 1);
     assert.match(shared[0], /قهوة يمنية/);
@@ -254,6 +269,15 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     await tick();
     assert.match(shared.at(-1), /^\uFEFFname,price_yer,stock_units\r\n/);
     assert.equal(nativeFiles.at(-1).exists, false);
+
+    const sharesBeforeFailure = shared.length;
+    writeFails = true;
+    draftButton().props.onPress();
+    requests.at(-1).resolve(draftResult);
+    await tick();
+    assert.equal(shared.length, sharesBeforeFailure, "rejected write cannot share a file");
+    assert.equal(nativeFiles.at(-1).exists, false, "rejected write cleans temporary file");
+    assert.equal(draftButton().props.disabled, false, "failed write permits retry");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
