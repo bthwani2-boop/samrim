@@ -93,10 +93,10 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         assert.ok(Object.hasOwn(mocks, name), `unexpected dependency ${name}`);
         return mocks[name];
       }, mod, mod.exports);
-      function render(actorId, stores, initialStoreId, initialPriceStockOnly = false) {
+      function render(actorId, stores, initialStoreId, initialPriceStockOnly = false, inventoryOnly = false) {
         index = 0;
         scheduled = [];
-        const tree = mod.exports.default({ actorId, stores, initialStoreId, initialPriceStockOnly });
+        const tree = mod.exports.default({ actorId, stores, initialStoreId, initialPriceStockOnly, inventoryOnly });
         for (const effect of scheduled) effect();
         return tree;
       }
@@ -300,6 +300,36 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         items: [{ ...privateRow, id: "of-c" }] });
       await Promise.resolve(); await Promise.resolve();
       assert.deepEqual(hooks, afterUnmount, "late continuation must not update unmounted state");
+
+      hooks.length = 0;
+      effects.length = 0;
+      requests.length = 0;
+      const inventory = (actor = "merchant-a", scoped = stores) => render(actor, scoped, undefined, false, true);
+      tree = inventory();
+      assert.equal(requests[0].storeId, "store-a");
+      requests[0].resolve({ actorId: "merchant-a", storeId: "store-a", items: [{ ...draft, storeId: "store-a" }] });
+      await Promise.resolve(); await Promise.resolve();
+      tree = inventory();
+      assert.ok(nodes(tree).some(n => n.props?.accessibilityLabel === "تعديل سعر ومخزون مسودة للسعر"));
+      assert.ok(!nodes(tree).some(n => ["CatalogImport", "CatalogExport"].includes(n.type) || (n.type === "DraftForm" && !n.props.draft)));
+      assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.storeId, "store-a");
+      nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر ثان").props.onPress();
+      tree = inventory();
+      assert.equal(requests[1].storeId, "store-b");
+      assert.ok(!nodes(tree).some(privateControls));
+      requests[1].resolve({ actorId: "merchant-a", storeId: "store-b", items: [draft] });
+      await Promise.resolve(); await Promise.resolve();
+      tree = inventory();
+      const focusedEdit = nodes(tree).find(n => n.props?.accessibilityLabel === "تعديل سعر ومخزون مسودة للسعر");
+      assert.ok(focusedEdit);
+      focusedEdit.props.onPress();
+      tree = inventory();
+      assert.equal(nodes(tree).find(n => n.type === "DraftForm")?.props.priceStockOnly, true);
+      assert.equal(nodes(tree).find(n => n.type === "DraftForm")?.props.storeId, "store-b");
+      assert.ok(!nodes(tree).some(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات"));
+      tree = inventory("merchant-a", stores.slice(0, 1));
+      assert.ok(!nodes(tree).some(privateControls), "revoked store hides inventory and editor");
+      assert.equal(requests.length, 2, "no silent fallback to another Store");
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;

@@ -14,7 +14,7 @@ import {
 
 test("Merchant workspace has unique functional navigation targets on desktop and mobile", () => {
   const ids = merchantNavigation.map(item => item.id);
-  assert.deepEqual(ids, ["home", "stores", "orders", "products", "staff", "wallet", "account", "more"]);
+  assert.deepEqual(ids, ["home", "stores", "orders", "products", "inventory", "staff", "wallet", "account", "more"]);
   assert.equal(new Set(ids).size, ids.length);
   for (const section of merchantMobileSections) {
     assert.ok(ids.includes(section), `mobile section ${section} must also exist on desktop`);
@@ -116,7 +116,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       click("الرئيسية");
       click("أسعار ومخزون متجر ب");
       assert.equal(render().find(n => n.type === "Catalog")?.props.initialStoreId, "b");
-      assert.equal(render().find(n => n.type === "Catalog")?.props.initialPriceStockOnly, true);
+      assert.equal(render().find(n => n.type === "Catalog")?.props.inventoryOnly, true);
       click("الرئيسية");
       click("موظفو متجر ب");
       assert.equal(render().find(n => n.type === "Employees")?.props.storeId, "b");
@@ -165,6 +165,11 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       desktop = wide;
       platform.OS = "web";
       assert.ok(!render().some(n => n.props?.accessibilityLabel === "المزيد"), "Web must not render More at either width");
+      click("المخزون");
+      assert.equal(render().find(n => n.type === "Catalog")?.props.inventoryOnly, true);
+      assert.equal(render().find(n => n.type === "Catalog")?.props.initialStoreId, undefined);
+      click("المنتجات");
+      assert.notEqual(render().find(n => n.type === "Catalog")?.props.inventoryOnly, true);
       click("الحساب والإعدادات");
       assert.ok(render().some(n => n.type === "Account"), "Web Account must expose the existing preferences directly");
       click("المتاجر");
@@ -178,6 +183,9 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     click("الرئيسية");
     click("المزيد");
     assert.ok(render().some(n => n.type === "Account"), "Mobile More must expose working account preferences");
+    click("المخزون");
+    assert.equal(render().find(n => n.type === "Catalog")?.props.inventoryOnly, true);
+    click("المزيد");
     click("الموظفون");
     assert.ok(!render().some(n => n.type === "Employees"), "a scope must be selected before reading staff");
     click("موظفو متجر أ");

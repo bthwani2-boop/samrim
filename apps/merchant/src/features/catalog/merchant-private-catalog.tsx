@@ -33,11 +33,12 @@ function canEditDraft(offer: MerchantCatalogOffer) {
     /^of-[a-f0-9]{32}$/.test(offer.id);
 }
 
-export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "", initialPriceStockOnly = false }: Readonly<{
+export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "", initialPriceStockOnly = false, inventoryOnly = false }: Readonly<{
   actorId: string;
   stores: MerchantDSHStanding["stores"];
   initialStoreId?: string | undefined;
   initialPriceStockOnly?: boolean;
+  inventoryOnly?: boolean;
 }>) {
   const { theme } = useMobileAppearance();
   const [selectedId, setSelectedId] = useState(initialStoreId);
@@ -57,9 +58,9 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const selected = selectedId ? stores.find(store => store.id === selectedId) : stores[0];
   const storeId = selected?.id ?? "";
   const storeScope = JSON.stringify([actorId, storeId]);
-  const priceStockOnly = priceScope === storeScope;
+  const priceStockOnly = inventoryOnly || priceScope === storeScope;
   const catalogVerified = Boolean(storeId && actorId && verifiedStoreScope === storeScope);
-  // A different actor or Store starts in the regular catalog, even on returning to a previous Store.
+  // Products reset optional focus on scope changes; the dedicated Inventory destination stays focused.
   useEffect(() => {
     setPriceScope(previous => previous === storeScope ? previous : null);
     setVerifiedStoreScope(previous => previous === storeScope ? previous : null);
@@ -163,7 +164,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
           <Text style={{ color: theme.color }}>{store.name}</Text>
         </Pressable>)}
       </View>}
-    {storeId && actorId ? <Pressable accessibilityRole="button"
+    {storeId && actorId && !inventoryOnly ? <Pressable accessibilityRole="button"
       accessibilityLabel="الأسعار والمخزون للمسودات"
       accessibilityState={{ selected: priceStockOnly }}
       style={{ ...button, backgroundColor: priceStockOnly ? theme.actionSoft : theme.surface }}
