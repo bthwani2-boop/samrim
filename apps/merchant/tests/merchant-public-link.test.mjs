@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { publicStorefrontPath } from "../../customer/src/features/sharing/store-share.ts";
 import { publicStorefrontLink } from "../src/features/stores/public-storefront-link.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -17,12 +18,15 @@ function nodes(tree) {
 }
 
 test("Merchant link uses Customer's canonical public path and rejects forged origins", () => {
-  for (const id of ["market-sanaa", "shop-42", "store-1"]) {
+  for (const id of ["market-sanaa", "shop-42", "store-1", "a", "a".repeat(64)]) {
     assert.equal(publicStorefrontLink(id), null, "relative Merchant links are not Customer share URLs");
+    assert.equal(new URL(publicStorefrontLink(id, "https://customer.example")).pathname, publicStorefrontPath(id));
     assert.equal(publicStorefrontLink(id, "https://customer.example"), `https://customer.example/storefront/${id}`);
     assert.equal(publicStorefrontLink(id, "http://127.0.0.1:18101"), `http://127.0.0.1:18101/storefront/${id}`);
   }
   for (const id of ["", "../danger", "UPPER", " a", "%2F", "a/b", "a".repeat(65)]) {
+    assert.equal(publicStorefrontLink(id, "https://customer.example"), null);
+    assert.equal(publicStorefrontPath(id), "/stores");
     assert.equal(publicStorefrontLink(id), null);
   }
   for (const origin of [
@@ -31,8 +35,6 @@ test("Merchant link uses Customer's canonical public path and rejects forged ori
     "https://user:password@customer.example", "https://customer.example#h",
     "javascript:alert(1)", "//customer.example",
   ]) assert.equal(publicStorefrontLink("shop-42", origin), null, origin);
-  const customer = readFileSync(new URL("../../customer/src/features/sharing/store-share.ts", import.meta.url), "utf8");
-  assert.match(customer, /\x60\/storefront\/\$\{encodeURIComponent\(value\)\}\x60/);
 });
 
 test("Merchant copies only after fresh DSH publication proof; actor/Store switch cancels stale copy", async () => {
