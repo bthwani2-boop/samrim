@@ -130,7 +130,7 @@ test("first tap sends quantity one, shows only the owner-confirmed result, and m
 
 function cartScreenHarness() {
   const hooks = [], effects = new Map(), deps = new Map(), cleanups = new Map();
-  const reads = [], estimates = [];
+  const reads = [], estimates = [], writes = [];
   let index = 0, focus, resume;
   const deferred = (calls, signal) => new Promise(resolve => calls.push({ signal, resolve }));
   const { default: CartScreen } = load(compiled[3], {
@@ -151,10 +151,12 @@ function cartScreenHarness() {
     "./cart-transport": {
       readVerifiedCart: (_storeId, signal) => deferred(reads, signal),
       readVerifiedCartMerchandiseEstimate: (_storeId, _version, _actor, signal) => deferred(estimates, signal),
+      replaceVerifiedCart: (storeId, change, actorId, signal) => withPendingCartChange(actorId, storeId, change,
+        original => new Promise((resolve, reject) => writes.push({ storeId, actorId, signal, original, resolve, reject }))),
     },
   });
   return {
-    reads, estimates,
+    reads, estimates, writes,
     render() { index = 0; const tree = CartScreen();
       for (const [at, effect] of effects) { cleanups.get(at)?.(); cleanups.set(at, effect()); }
       effects.clear(); return tree; },
@@ -168,6 +170,50 @@ function cartText(node) {
   return node && typeof node === "object" ? cartText(node.props?.children) : "";
 }
 const cartWithLine = (name, version) => ({ ...emptyCart, version, lines: [{ ...ownerLine, name }] });
+
+test("clearing a Customer Store cart requires fresh confirmation and reconciles the same operation", async () => {
+  const h = cartScreenHarness(); h.render(); const cleanup = h.start();
+  function nodes(node) {
+    if (!node || typeof node !== "object") return [];
+    return Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
+  }
+  const action = label => nodes(h.render()).find(node => node.type === "Pressable" && cartText(node) === label);
+  const press = label => {
+    const button = action(label);
+    assert.ok(button, `missing cart action: ${label}`);
+    button.props.onPress();
+  };
+  try {
+    const cart = { ...cartWithLine("ماء", 5), actorId: "customer-clear" };
+    h.reads[0].resolve({ kind: "ready", cart });
+    await settle();
+    press("تفريغ السلة");
+    assert.equal(h.writes.length, 0);
+    press("إلغاء");
+    assert.equal(action("تأكيد التفريغ"), undefined);
+    press("تفريغ السلة");
+    h.resume();
+    h.reads[1].resolve({ kind: "ready", cart: { ...cart, version: 6 } });
+    await settle();
+    assert.equal(action("تأكيد التفريغ"), undefined);
+    press("تفريغ السلة");
+    press("تأكيد التفريغ");
+    assert.equal(h.writes.length, 1);
+    const first = h.writes[0];
+    assert.equal(first.storeId, "store-a");
+    assert.equal(first.actorId, "customer-clear");
+    assert.deepEqual(first.original, { operationId: "cart-test-cart-command", expectedVersion: 6, lines: [] });
+    first.reject(new DshCartError(0, "OPERATION_RESULT_UNKNOWN"));
+    await settle();
+    assert.match(cartText(h.render()), /ماء/);
+    assert.equal(action("تفريغ السلة"), undefined);
+    press("التحقق من نتيجة آخر تعديل");
+    assert.equal(h.writes[1].original, first.original);
+    h.writes[1].resolve({ cart: { ...cart, version: 7, lines: [] }, replay: true });
+    await settle();
+    assert.match(cartText(h.render()), /سلتك فارغة/);
+  } finally { cleanup(); }
+});
 
 test("overlapping foreground cart reads cannot restore an older cart after a newer owner response", async () => {
   const h = cartScreenHarness(); h.render(); const cleanup = h.start();

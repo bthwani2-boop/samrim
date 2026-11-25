@@ -1,4 +1,4 @@
-import { type CustomerCartChange, type CustomerCartMerchandiseEstimate, DshCartError } from "@bthwani/dsh";
+import { type CustomerCart, type CustomerCartChange, type CustomerCartMerchandiseEstimate, DshCartError } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import * as Crypto from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -18,6 +18,7 @@ export default function CartScreen() {
   const [error, setError] = useState("");
   const [ownerMerchandise, setOwnerMerchandise] = useState<CustomerCartMerchandiseEstimate | null>(null);
   const [busy, setBusy] = useState(false);
+  const [clearSelection, setClearSelection] = useState<CustomerCart | null>(null);
   const refresh = useRef<(() => void) | null>(null);
   const cartRead = useRef<AbortController | null>(null);
   const estimateRead = useRef<AbortController | null>(null);
@@ -50,6 +51,7 @@ export default function CartScreen() {
       const controller = new AbortController();
       cartRead.current = controller;
       setView(null);
+      setClearSelection(null);
       setOwnerMerchandise(null);
       setError("");
       void readVerifiedCart(storeId, controller.signal).then(next => {
@@ -112,6 +114,7 @@ export default function CartScreen() {
     const epoch = generation.current;
     mutation.current = controller;
     setBusy(true);
+    setClearSelection(null);
     setOwnerMerchandise(null);
     setError("");
     try {
@@ -146,12 +149,15 @@ export default function CartScreen() {
     const lines = cart.lines.filter(item => item.offerId !== offerId)
       .map(item => ({ offerId: item.offerId, quantity: item.quantity }));
     if (quantity > 0) lines.push({ offerId, quantity });
-    const change: CustomerCartChange = {
+    replaceLines(cart, lines);
+  }
+
+  function replaceLines(cart: CustomerCart, lines: CustomerCartChange["lines"]) {
+    void apply({
       operationId: `cart-${Crypto.randomUUID()}`,
       expectedVersion: cart.version,
       lines,
-    };
-    void apply(change, cart.actorId);
+    }, cart.actorId);
   }
 
   const preview = view?.kind === "ready" ? summarizeCartPreview(view.cart.lines) : null;
@@ -205,6 +211,27 @@ export default function CartScreen() {
                 </View>
               </View>
             ))}
+            {view.cart.lines.length > 0 && !busy && !pending && !error ? (
+              clearSelection === view.cart ? (
+                <View style={{ gap: 8 }}>
+                  <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
+                    هل تريد إزالة جميع المنتجات من سلة هذا المتجر؟
+                  </Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    <Pressable accessibilityRole="button" onPress={() => replaceLines(view.cart, [])} style={buttonStyle}>
+                      <Text style={{ color: theme.dangerText }}>تأكيد التفريغ</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" onPress={() => setClearSelection(null)} style={buttonStyle}>
+                      <Text style={{ color: theme.interactiveText }}>إلغاء</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <Pressable accessibilityRole="button" onPress={() => setClearSelection(view.cart)} style={buttonStyle}>
+                  <Text style={{ color: theme.dangerText }}>تفريغ السلة</Text>
+                </Pressable>
+              )
+            ) : null}
             {preview ? (
               <View testID="cart-preview-summary" style={{
                 padding: 14, borderWidth: 1, borderColor: theme.borderColor,

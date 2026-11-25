@@ -37,3 +37,4 @@
 ## Stop conditions
 
 Continue analysis and isolated development while reporting unmet evidence accurately; never invent Product approval, mock owner-backed readback, signed consent, real-money tests or an unlocked Git turn. GOVERNANCE_CUTOVER: NOT_READY does not bar this existing-capability development; an unreviewed material security, financial or data risk still blocks the affected activation and prevents false closure. This checklist does not attest that any commercial service or screen currently exists.
+- [x] T017-CART-CLEAR (BTH-15), local behavior: RED/GREEN for confirmation, cancellation, stale-snapshot invalidation and same-key recovery. Thirty-one affected Customer cart tests passed. Authenticated Web and Android journey evidence stays open.

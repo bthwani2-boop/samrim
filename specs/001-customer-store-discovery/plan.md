@@ -54,3 +54,6 @@ Deliver the smallest genuine Customer marketplace Store discovery backed by DSH-
 ## Complexity and dependencies
 
 No new packages, caches, parallel Store writers, fake transport endpoints or environment/process supervisors are justified now. Adapt the existing guard for tested progressive service source within this admitted journey, protecting unauthorized operations and unsafe data/permission changes. Do not confuse structural PASS with functional closure.
+## Cart clear
+
+Bind a two-step confirmation in the shared Customer cart screen to the verified snapshot. Reuse the versioned DSH replacement and existing pending-operation recovery. Exercise cancellation, refresh, lost response and owner confirmation on the component path. The cart schema and API already allow an empty line list.
