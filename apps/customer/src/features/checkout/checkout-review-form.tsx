@@ -1,13 +1,13 @@
-import { DshPublicError, type CheckoutFulfillmentMode, type CustomerAddress, type CustomerCheckoutReview, type CustomerCheckoutReviewInput, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
+import { type CheckoutFulfillmentMode, type CustomerAddress, type CustomerCheckoutReview, type CustomerCheckoutReviewInput, DshPublicError, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
 import { formatExactYer } from "../../components/format-exact-yer";
 import { verifyAddressSession } from "../addresses/address-transport";
+import { readCheckoutReview } from "./checkout-review-transport";
 import DeliveryAddressReview from "./delivery-address-review";
 import FulfillmentChoice from "./fulfillment-choice";
 import RecipientForm from "./recipient-form";
-import { readCheckoutReview } from "./checkout-review-transport";
 
 const emptyRecipient = () => ({ purpose: "SELF" as "SELF" | "OTHER", name: "", phone: "", instructions: "" });
 type AddressSelection = Pick<CustomerAddress, "id" | "version">;
@@ -43,7 +43,10 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
   useEffect(() => {
     let controller = new AbortController();
     let expiry: ReturnType<typeof setTimeout> | undefined;
-    let visible = true;
+    const isForeground = () => Platform.OS === "web"
+      ? document.visibilityState === "visible" && document.hasFocus()
+      : AppState.currentState === "active";
+    let visible = isForeground();
     let checking: AbortSignal | null = null;
     const stop = () => {
       visible = false; controller.abort(); clearTimeout(expiry); conceal();
@@ -71,7 +74,10 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
         if (checking === signal) checking = null;
       }
     };
-    const resume = () => { controller.abort(); controller = new AbortController(); visible = true; void verify(); };
+    const resume = () => {
+      if (!isForeground()) { stop(); return; }
+      controller.abort(); controller = new AbortController(); visible = true; void verify();
+    };
     void verify();
     const timer = setInterval(() => void verify(), 15000);
     if (Platform.OS === "web") {

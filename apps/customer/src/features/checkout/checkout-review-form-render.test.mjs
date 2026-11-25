@@ -31,9 +31,18 @@ function flatten(tree) {
   if (Array.isArray(tree)) return tree.map(flatten).join(" ");
   return flatten(tree.props?.children);
 }
-function harness() {
-  const hooks = [], reads = [];
+function harness({ platform = "android", initialState = "active", initiallyVisible = true } = {}) {
+  const hooks = [], reads = [], verifications = [];
+  const windowEvents = new Map(), documentEvents = new Map();
   let index = 0, listener, cleanup, poll;
+  let appState = initialState, visible = initiallyVisible, focused = initiallyVisible;
+  const eventTarget = events => ({
+    addEventListener(name, fn) { events.set(name, fn); },
+    removeEventListener(name) { events.delete(name); },
+  });
+  const browserWindow = eventTarget(windowEvents);
+  const browserDocument = { ...eventTarget(documentEvents), get visibilityState() { return visible ? "visible" : "hidden"; },
+    hasFocus() { return focused; } };
   let verify = async () => ({ sessionExpiresAt: "2030-01-01T00:00:00Z" });
   const drafts = [];
   const jsx = (type, props) => ({ type, props: props ?? {} });
@@ -59,10 +68,10 @@ function harness() {
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": { AppState: { addEventListener(_event, fn) { listener = fn; return { remove() {} }; } },
-      Platform: { OS: "android" }, Pressable: "Pressable", Text: "Text", View: "View" },
+    "react-native": { AppState: { get currentState() { return appState; }, addEventListener(_event, fn) { listener = fn; return { remove() {} }; } },
+      Platform: { OS: platform }, Pressable: "Pressable", Text: "Text", View: "View" },
     "../../components/format-exact-yer": { formatExactYer },
-    "../addresses/address-transport": { verifyAddressSession: (...args) => verify(...args) },
+    "../addresses/address-transport": { verifyAddressSession: (...args) => { verifications.push(args); return verify(...args); } },
     "./delivery-address-review": { __esModule: true, default: "DeliveryAddressReview" },
     "./fulfillment-choice": { __esModule: true, default: "FulfillmentChoice" },
     "./recipient-form": { __esModule: true, default: "RecipientForm" },
@@ -74,16 +83,20 @@ function harness() {
     },
   };
   const module = { exports: {} };
-  new Function("require", "module", "exports", "setInterval", "clearInterval", compiled)(name => {
+  new Function("require", "module", "exports", "setInterval", "clearInterval", "window", "document", compiled)(name => {
     assert.ok(Object.hasOwn(mocks, name), "Unexpected dependency " + name);
     return mocks[name];
-  }, module, module.exports, callback => { poll = callback; return 1; }, () => undefined);
+  }, module, module.exports, callback => { poll = callback; return 1; }, () => undefined, browserWindow, browserDocument);
   const remember = (scope, draft) => drafts.push({ scope, draft });
   return {
-    reads, drafts, render() { index = 0; return module.exports.default({ actorId: "customer-a", storeId: "store-a", cartVersion: 4, onDraftChange: remember }); },
+    reads, drafts, verifications, render() { index = 0; return module.exports.default({ actorId: "customer-a", storeId: "store-a", cartVersion: 4, onDraftChange: remember }); },
     poll() { poll(); },
     setVerify(fn) { verify = fn; },
-    background() { listener("background"); },
+    background() { appState = "background"; listener(appState); },
+    foreground() { appState = "active"; listener(appState); },
+    browserFocus() { focused = true; windowEvents.get("focus")?.(); },
+    browserVisible() { visible = true; documentEvents.get("visibilitychange")?.(); },
+    browserBlur() { focused = false; windowEvents.get("blur")?.(); },
     cleanup() { cleanup?.(); },
   };
 }
@@ -141,5 +154,40 @@ test("transient verification failure hides checkout draft and restores it only a
     h.poll(); await settle();
     assert.equal(find("RecipientForm"), undefined);
     assert.equal(h.drafts.at(-1)?.draft, null);
+  } finally { h.cleanup(); }
+});
+
+test("checkout never verifies or reveals a draft before native foreground admission", async () => {
+  for (const initialState of ["background", "inactive", null]) {
+    const h = harness({ initialState });
+    const find = type => nodes(h.render()).find(n => n.type === type);
+    try {
+      h.render(); await settle(); h.poll(); await settle();
+      assert.equal(h.verifications.length, 0, "hidden or unknown native state must not verify");
+      assert.equal(find("RecipientForm"), undefined);
+      h.foreground(); await settle();
+      assert.equal(h.verifications.length, 1);
+      assert.ok(find("RecipientForm"));
+      h.background(); await settle(); h.poll(); await settle();
+      assert.equal(h.verifications.length, 1);
+      assert.equal(find("RecipientForm"), undefined);
+    } finally { h.cleanup(); }
+  }
+});
+
+test("hidden browser checkout stays concealed even after a focus event until visible", async () => {
+  const h = harness({ platform: "web", initiallyVisible: false });
+  const find = type => nodes(h.render()).find(n => n.type === type);
+  try {
+    h.render(); await settle();
+    h.browserFocus(); await settle(); h.poll(); await settle();
+    assert.equal(h.verifications.length, 0, "focus cannot admit a hidden tab");
+    assert.equal(find("RecipientForm"), undefined);
+    h.browserVisible(); await settle();
+    assert.equal(h.verifications.length, 1);
+    assert.ok(find("RecipientForm"));
+    h.browserBlur(); await settle(); h.poll(); await settle();
+    assert.equal(h.verifications.length, 1);
+    assert.equal(find("RecipientForm"), undefined);
   } finally { h.cleanup(); }
 });
