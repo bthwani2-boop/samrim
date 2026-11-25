@@ -315,7 +315,7 @@ function refresh(automatic = false) {
     if (after.unsafeUntracked || JSON.stringify(before) !== JSON.stringify(after)) {
       throw new Error("INVALIDATED: checkout changed during local Graphify indexing");
     }
-    const graphBytes = readFileSync(candidateGraph);
+    const graphBytes = readVerifiedFile(candidateGraph, 64 * 1024 * 1024).bytes;
     const parsed = JSON.parse(graphBytes.toString("utf8"));
     if (!Array.isArray(parsed.nodes) || parsed.nodes.length === 0) {
       throw new Error("FAIL: local Graphify refresh produced no nodes");

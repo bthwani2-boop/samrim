@@ -477,8 +477,9 @@ test("a reconciler can durably acknowledge only its own verified attempt after w
     assert.equal(runtimeReceiptStatus(file,receipt),null);
     assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt),/RUNTIME_ATTEMPT_MISMATCH/);
     assert.equal(runtimeReceiptStatus(file,receipt),null);
-    writeFileSync(receipt,"{broken");
-    assert.equal(runtimeReceiptStatus(file,receipt),null);
+    const corruptReceipt=path.join(folder,"corrupt.receipt.json");
+    writeFileSync(corruptReceipt,"{broken",{flag:"wx"});
+    assert.equal(runtimeReceiptStatus(file,corruptReceipt),null);
   } finally { rmSync(folder,{recursive:true,force:true}); }
 });
 

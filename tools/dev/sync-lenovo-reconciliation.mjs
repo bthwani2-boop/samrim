@@ -104,7 +104,7 @@ function dependencyInputChanges(previous,current) {
   if(!previous)return [];
   const before=previous.files;
   return [...new Set([...Object.keys(before),...current.keys()])]
-    .filter(rel=>isDependencyInput(rel)&&before[rel]!==current.get(rel)).sort();
+    .filter(rel=>isDependencyInput(rel)&&before[rel]!==current.get(rel)).sort((a,b)=>a<b?-1:a>b?1:0);
 }
 
 function assertCompatibleBranchTransition(previous, current, currentBranch) {

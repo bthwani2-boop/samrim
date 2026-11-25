@@ -1,6 +1,7 @@
 // Shared owner source identity and isolated Go preview. Never writes Git.
-import { createHash } from "node:crypto";
+
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -95,7 +96,7 @@ export function dirtyPaths(root, scope) {
   return [...new Set(records.map(record=>{
     if(!/^[ MADRCU?!][ MADRCU?!] /.test(record))throw new Error("PREVIEW_STATUS_INVALID");
     return record.slice(3);
-  }))].sort();
+  }))].sort((a,b)=>a<b?-1:a>b?1:0);
 }
 function safeRead(root, rel, missing = false) {
   const parts = rel.split("/");
@@ -137,7 +138,7 @@ export function captureOwner(root, owner) {
   const scope=[prefix+".dockerignore",prefix+"backend",prefix+"database/schema"];
   const changes=dirtyPaths(root,["services/"+owner]);
   if(changes.some(p=>!isPreviewGoPath(p) && !isOwnerClientPath(p))) throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
-  const files=[...new Set(gitList(root,["ls-files","--cached","--others","--exclude-standard","-z","--",...scope]))].sort();
+  const files=[...new Set(gitList(root,["ls-files","--cached","--others","--exclude-standard","-z","--",...scope]))].sort((a,b)=>a<b?-1:a>b?1:0);
   const entries=[];
   for(const p of files){
     if(!p.startsWith(prefix)) throw new Error("PREVIEW_PATH_INVALID");
