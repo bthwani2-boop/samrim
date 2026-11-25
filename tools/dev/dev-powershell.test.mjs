@@ -7,6 +7,16 @@ import { fileURLToPath } from "node:url";
 
 const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "dev.ps1");
 
+test("manual Lenovo control pins the same OpenSSH executables as the tunnel and source watcher", () => {
+  const helper = readFileSync(new URL("./Control-Lenovo-SSH.ps1", import.meta.url), "utf8");
+  assert.match(helper, /\$sshClient = Join-Path \$env:WINDIR 'System32\\OpenSSH\\ssh\.exe'/);
+  assert.match(helper, /\$scpClient = Join-Path \$env:WINDIR 'System32\\OpenSSH\\scp\.exe'/);
+  assert.match(helper, /& \$sshClient -T -o BatchMode=yes -o StrictHostKeyChecking=yes/);
+  assert.equal((helper.match(/& \$scpClient @args/g) || []).length, 2);
+  assert.doesNotMatch(helper, /& (?:ssh|scp)\.exe\b/);
+});
+
+
 test("opening Chrome and Android is owned by the single dev launcher", () => {
   assert.equal(existsSync(new URL("./open-dev-apps.ps1", import.meta.url)), false);
 });

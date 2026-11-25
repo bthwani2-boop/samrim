@@ -13,8 +13,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 if ($env:COMPUTERNAME -ine 'BTHWANI') { throw 'Run on Surface (BTHWANI) only.' }
-foreach ($name in @('ssh.exe','scp.exe')) {
-    if (-not (Get-Command $name -ErrorAction SilentlyContinue)) { throw ($name + ' missing on Surface.') }
+# Match the existing tunnel, source-sync and unified dev owners. Never select
+# a second OpenSSH installation through a caller-specific PATH.
+$sshClient = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
+$scpClient = Join-Path $env:WINDIR 'System32\OpenSSH\scp.exe'
+foreach ($client in @($sshClient,$scpClient)) {
+    if (-not (Test-Path -LiteralPath $client -PathType Leaf)) { throw ('Canonical OpenSSH client missing on Surface: ' + $client) }
 }
 function Invoke-Lenovo([string]$body) {
     $wrapped = @'
@@ -35,7 +39,7 @@ if ($null -ne $global:LASTEXITCODE -and $global:LASTEXITCODE -ne 0) {
 '@
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($wrapped))
     if ($encoded.Length -gt 14000) { throw 'Command too long; transfer a script to Lenovo as an explicit runtime artifact.' }
-    & ssh.exe -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 $SshHost pwsh.exe -NoProfile -NonInteractive -EncodedCommand $encoded
+    & $sshClient -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 $SshHost pwsh.exe -NoProfile -NonInteractive -EncodedCommand $encoded
     if ($LASTEXITCODE -ne 0) { throw ('SSH or remote command failed: exit=' + $LASTEXITCODE) }
 }
 function Assert-RemotePath([string]$p) {
@@ -82,7 +86,7 @@ foreach($n in @('ssh.exe','scp.exe','sftp.exe','docker.exe','node.exe','git.exe'
             $args=@('-B','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=8','-o','ConnectionAttempts=1')
             if($item.PSIsContainer){$args+='-r'}
             $args+=@($source,$destination)
-            & scp.exe @args
+            & $scpClient @args
             if($LASTEXITCODE -ne 0){throw('SCP upload failed, exit '+$LASTEXITCODE)}
             if(-not $item.PSIsContainer){
                 $fullRemote=$RemotePath.TrimEnd('\','/')+'\'+$item.Name
@@ -109,7 +113,7 @@ foreach($n in @('ssh.exe','scp.exe','sftp.exe','docker.exe','node.exe','git.exe'
             $args=@('-B','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=8','-o','ConnectionAttempts=1')
             if($Recursive){$args+='-r'}
             $args+=@($source,$dest)
-            & scp.exe @args
+            & $scpClient @args
             if($LASTEXITCODE -ne 0){throw('SCP download failed, exit '+$LASTEXITCODE)}
             Write-Output 'DOWNLOAD_COMPLETE (file checksum verification NOT_RUN)'
         }
