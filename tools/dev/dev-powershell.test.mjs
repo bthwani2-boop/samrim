@@ -480,3 +480,28 @@ test("app log diagnostics read a bounded tail and never emit partial or secret l
   assert.equal(result.status,0,result.stderr||result.stdout);
   assert.match(result.stdout,/BOUNDED_LOG_READER_PASS/);
 });
+
+test("Surface identity uses the actual Windows host and rejects contradictory environment claims", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted = scriptPath.replaceAll("'", "''");
+  const ps = [
+    "$ErrorActionPreference='Stop'",
+    `$source=Get-Content -LiteralPath '${quoted}' -Raw`,
+    "$tokens=$null;$errors=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)",
+    "foreach($name in @('Assert-Ok','Assert-SurfaceIdentity','Check-LocalIdentity')){$n=$ast.Find({param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $name},$true);if($n){Invoke-Expression $n.Extent.Text}}",
+    "function Test-Path { return $true }; function Git { if($argsList -contains 'branch'){return 'test-branch'};return 'test-head' }; function Say {}",
+    "$repo='test';$git='test';$ssh='test';$expectedSurface=[Environment]::MachineName",
+    "$env:COMPUTERNAME=$null;Check-LocalIdentity",
+    "$env:COMPUTERNAME=$expectedSurface;Check-LocalIdentity",
+    "$env:COMPUTERNAME='CONTRADICTORY-TEST-HOST';$denied=$false;try{Check-LocalIdentity}catch{if($_.Exception.Message -match 'must run on Surface'){$denied=$true}else{throw}};if(!$denied){throw 'CONTRADICTORY_ENV_ACCEPTED'}",
+    "$expectedSurface='OTHER-TEST-HOST';$env:COMPUTERNAME=$expectedSurface;$denied=$false;try{Check-LocalIdentity}catch{if($_.Exception.Message -match 'must run on Surface'){$denied=$true}else{throw}};if(!$denied){throw 'ENV_SPOOFED_ACTUAL_HOST'}",
+    "Write-Output 'ACTUAL_SURFACE_GUARD_PASS'",
+  ].join("; ");
+  const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], {
+    encoding: "utf8", timeout: 15000, windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /ACTUAL_SURFACE_GUARD_PASS/);
+});

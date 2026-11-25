@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { appendFileSync, closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, readFileSync, readSync, realpathSync } from "node:fs";
+import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
@@ -658,6 +659,12 @@ function verifyRecoveryOwners(state) {
   assertNoOrphanReconciler();
 }
 
+export function assertSourceHost(machineName, reportedName, checkoutRoot) {
+  if (machineName?.toUpperCase() !== "BTHWANI" ||
+    (reportedName && reportedName.toUpperCase() !== "BTHWANI") ||
+    checkoutRoot.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
+}
+
 function main() {
   const [mode,...options] = process.argv.slice(2);
   const cutover=mode==="--cutover-dsh-database";
@@ -668,7 +675,7 @@ function main() {
   if (!["--check","--recover-attempt","--apply","--apply-captain","--apply-preview","--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database","--relocate-identity-database","--resume-identity-database"].includes(mode)) throw new Error("Usage: --check | --apply | --apply-captain | --apply-preview [--prepare-baseline]");
   const apply = mode !== "--check" && !recover;
   if ((apply||recover) && process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
-  if (process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI" || root.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
+  assertSourceHost(hostname(), process.env.COMPUTERNAME, root);
   if (!/^ssh:\/\/[^/]+@bthwani-docker$/.test(docker(["context", "inspect", context, "--format", "{{.Endpoints.docker.Host}}"]))) throw new Error("Wrong Docker target");
   const head = git(["rev-parse","HEAD"]);
   const branch = git(["branch","--show-current"]);

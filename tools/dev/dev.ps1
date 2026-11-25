@@ -89,8 +89,13 @@ function Invoke-DockerCli([string[]]$argsList) {
   if ($LASTEXITCODE -ne 0) { throw ('DOCKER_FAIL command='+(@($argsList | Select-Object -First 3) -join ' ')+' output='+($out -join ' | ')) }
   return @($out | ForEach-Object { $_.ToString() })
 }
+function Assert-SurfaceIdentity([string]$message) {
+  # The process environment can omit COMPUTERNAME; the Windows host itself must still match.
+  Assert-Ok (([Environment]::MachineName -ieq $expectedSurface) -and
+    ([string]::IsNullOrEmpty($env:COMPUTERNAME) -or $env:COMPUTERNAME -ieq $expectedSurface)) $message
+}
 function Check-LocalIdentity {
-  Assert-Ok ($env:COMPUTERNAME -ieq $expectedSurface) ('must run on Surface '+$expectedSurface)
+  Assert-SurfaceIdentity ('must run on Surface '+$expectedSurface)
   Assert-Ok (Test-Path -LiteralPath $git -PathType Leaf) 'Git executable missing'
   Assert-Ok (Test-Path -LiteralPath $ssh -PathType Leaf) 'OpenSSH client missing'
   Assert-Ok (Test-Path -LiteralPath (Join-Path $repo 'AGENTS.md')) 'canonical repo missing'
@@ -855,7 +860,7 @@ function Show-OperatorAuthReadiness {
 }
 
 function Open-AppSurfaces {
-  Assert-Ok ($env:COMPUTERNAME -ieq $expectedSurface) 'SURFACE_ONLY'
+  Assert-SurfaceIdentity 'SURFACE_ONLY'
   $selection = $Mode
   if ($selection -eq 'All') {
     $adb = Get-Command adb.exe -ErrorAction SilentlyContinue

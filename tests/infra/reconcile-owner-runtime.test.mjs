@@ -351,3 +351,15 @@ test("owner config publication is bound to the original file and exact bytes", a
     assert.equal(readFileSync(file,"utf8"),"FIXTURE=3\n");
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
+
+test("source host guard accepts only the actual Surface and canonical checkout", async () => {
+  const { assertSourceHost } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const checkout = "D:\\samrim";
+  assert.doesNotThrow(() => assertSourceHost("BTHWANI", undefined, checkout));
+  assert.doesNotThrow(() => assertSourceHost("bthwani", "BTHWANI", checkout));
+  assert.doesNotThrow(() => assertSourceHost("BTHWANI", "", checkout));
+  assert.throws(() => assertSourceHost("BTHWANI", "BTHWANI-DOCKER", checkout), /Wrong source host/);
+  assert.throws(() => assertSourceHost("BTHWANI-DOCKER", "BTHWANI", checkout), /Wrong source host/);
+  assert.throws(() => assertSourceHost("BTHWANI-DOCKER", undefined, checkout), /Wrong source host/);
+  assert.throws(() => assertSourceHost("BTHWANI", undefined, "D:\\other"), /Wrong source host/);
+});
