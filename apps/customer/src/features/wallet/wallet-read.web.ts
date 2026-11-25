@@ -45,10 +45,10 @@ async function readVerifiedFinance<T extends { actorId: string }>(
 }
 
 export async function readVerifiedWallet(
-  readCustomerAdmission: AdmissionReader, signal: AbortSignal,
+  readCustomerAdmission: AdmissionReader, signal: AbortSignal, expectedActorId?: string,
 ): Promise<WalletReadState> {
   const result = await readVerifiedFinance("/api/customer-auth/wallet",
-    parseCustomerWalletBalance, readCustomerAdmission, signal);
+    parseCustomerWalletBalance, readCustomerAdmission, signal, expectedActorId);
   return result.kind === "ready"
     ? { kind: "ready", balance: result.value, expiresAt: result.expiresAt } : result;
 }

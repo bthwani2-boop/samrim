@@ -34,9 +34,10 @@ function harness({ preview = "1", origin = "http://10.0.2.2:23203", platform = "
     },
     "react-native": { Platform: { OS: platform } },
     "../access/customer-session-transport": {
-      async withVerifiedNativeCustomerRead(signal, readOwner) {
+      async withVerifiedNativeCustomerRead(signal, readOwner, expectedActorId) {
         proofs++;
         if (proofKind !== "ready") return { kind: proofKind };
+        if (expectedActorId !== undefined && expectedActorId !== "actor-a") return { kind: "signed-out" };
         const value = await readOwner(bearer);
         return { kind: "ready", value, expiresAt: Date.now() + 60000 };
       },
@@ -81,6 +82,16 @@ test("Native read-only owner transport reads exact YER from the validated Custom
     token: "opaque-test-session", signal,
   }]);
   assert.equal(h.proofs(), 1);
+});
+
+test("Native checkout balance refuses a different verified actor before WLT dispatch", async () => {
+  const h = harness();
+  const signal = new AbortController().signal;
+  assert.deepEqual(await h.readNativeWallet(signal, "actor-b"), { kind: "signed-out" });
+  assert.deepEqual(h.requests, []);
+  assert.equal(h.proofs(), 1);
+  assert.equal((await h.readNativeWallet(signal, "actor-a")).kind, "ready");
+  assert.equal(h.requests.length, 1);
 });
 
 test("Native funding history forwards only the continuation to WLT, never caller actor ID", async () => {

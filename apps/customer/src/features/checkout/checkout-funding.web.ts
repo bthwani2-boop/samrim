@@ -7,7 +7,7 @@ import { alignCheckoutFunding, type CheckoutFundingState } from "./checkout-fund
 export async function readCheckoutFunding(
   cartActorId: string, signal: AbortSignal,
 ): Promise<CheckoutFundingState> {
-  const result = await readVerifiedWallet(readCustomerAdmission, signal);
+  const result = await readVerifiedWallet(readCustomerAdmission, signal, cartActorId);
   signal.throwIfAborted();
   return alignCheckoutFunding(cartActorId, result);
 }

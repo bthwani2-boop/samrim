@@ -40,9 +40,9 @@ async function readNativeFinance<T extends { actorId: string }>(
   }
 }
 
-export async function readNativeWallet(signal: AbortSignal): Promise<NativeWalletRead> {
+export async function readNativeWallet(signal: AbortSignal, expectedActorId?: string): Promise<NativeWalletRead> {
   const result = await readNativeFinance(signal, (origin, bearer) =>
-    readCurrentCustomerWallet(origin, bearer, signal));
+    readCurrentCustomerWallet(origin, bearer, signal), expectedActorId);
   return result.kind === "ready"
     ? { kind: "ready", balance: result.value, expiresAt: result.expiresAt } : result;
 }

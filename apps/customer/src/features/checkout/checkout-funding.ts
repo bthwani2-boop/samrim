@@ -6,7 +6,7 @@ import { alignCheckoutFunding, type CheckoutFundingState } from "./checkout-fund
 export async function readCheckoutFunding(
   cartActorId: string, signal: AbortSignal,
 ): Promise<CheckoutFundingState> {
-  const result = await readNativeWallet(signal);
+  const result = await readNativeWallet(signal, cartActorId);
   signal.throwIfAborted();
   return alignCheckoutFunding(cartActorId, result);
 }

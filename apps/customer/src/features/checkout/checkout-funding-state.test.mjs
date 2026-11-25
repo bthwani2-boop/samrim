@@ -31,7 +31,7 @@ test("checkout web and native adapters reuse existing verified WLT reader, not a
     assert.doesNotMatch(source, /fetch\(|writeWallet|charge\(|createOrder\(/);
   }
   assert.match(readFileSync(new URL("./checkout-funding.web.ts", import.meta.url), "utf8"),
-    /readVerifiedWallet\(readCustomerAdmission, signal\)/);
+    /readVerifiedWallet\(readCustomerAdmission, signal, cartActorId\)/);
   assert.match(readFileSync(new URL("./checkout-funding.ts", import.meta.url), "utf8"),
-    /readNativeWallet\(signal\)/);
+    /readNativeWallet\(signal, cartActorId\)/);
 });

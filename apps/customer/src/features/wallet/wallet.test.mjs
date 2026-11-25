@@ -37,6 +37,16 @@ test("wallet projection preserves exact YER and binds the response to the curren
   assert.equal(result.balance.balanceYer, amount);
 });
 
+test("checkout balance rejects a different current Customer before fetching WLT", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => {
+    assert.fail("a stale cart must not fetch another Customer balance");
+  });
+  const signal = new AbortController().signal;
+  assert.deepEqual(await readVerifiedWallet(async () => live("actor-b"), signal, "actor-a"),
+    { kind: "signed-out" });
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
 test("a changed account after the wallet response cannot display the previous balance", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
     Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
