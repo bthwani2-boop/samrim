@@ -181,6 +181,33 @@ test("strict Docker verification always includes WLT and configuration validates
   assert.match(config, /'config','--quiet'/);
   assert.doesNotMatch(config, /'up'|'run'|'bootstrap'/);
 });
+test("down preflights all Docker peers before stopping any applications or tunnels", {
+  skip: process.platform !== "win32",
+}, () => {
+  const launcher = readFileSync(scriptPath, "utf8");
+  const down = launcher.match(/'down'\s*\{([\s\S]*?)\n\s*break/);
+  assert.ok(down);
+  assert.match(down[1], /Get-DockerStopPlan[\s\S]*Stop-LenovoTasks[\s\S]*Stop-LocalTasks[\s\S]*Stop-Docker/);
+  const quoted = scriptPath.replaceAll("'", "''");
+  const ps = [
+    "$ErrorActionPreference='Stop'; $project='bthwani-refoundation'",
+    "$tok=$null;$err=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseFile('" + quoted + "',[ref]$tok,[ref]$err)",
+    "foreach($name in @('Assert-Ok','Get-DockerStopPlan')){$fn=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true);if(!$fn){throw 'MISSING_HELPER'};Invoke-Expression $fn.Extent.Text}",
+    "function Invoke-DockerCli($argsList){if($argsList[0] -ne 'ps'){throw 'MUTATION_FORBIDDEN'}; $script:rows}",
+    "function Row($id,$service,$state){($id*64)+'|'+$project+'-'+$service+'-1|'+$service+'|'+$state}",
+    "$script:rows=@((Row a postgres running),(Row b dsh running),(Row c identity exited),(Row d wlt created))",
+    "$plan=@(Get-DockerStopPlan);if(($plan.Name -join ',') -ne 'bthwani-refoundation-dsh-1,bthwani-refoundation-postgres-1'){throw 'STOP_ORDER_WRONG'}",
+    "foreach($service in @('identity','wlt','unknown')){$script:rows=@((Row a postgres running),(Row b $service running));$rejected=$false;try{$null=@(Get-DockerStopPlan)}catch{$rejected=$_.Exception.Message -match 'BLOCKED'};if(!$rejected){throw ('UNSAFE_STOP '+$service)}}",
+    "$script:rows=@((Row a postgres running),(Row b postgres running));$rejected=$false;try{$null=@(Get-DockerStopPlan)}catch{$rejected=$_.Exception.Message -match 'duplicate'};if(!$rejected){throw 'DUPLICATE_ACCEPTED'}",
+    "Write-Output 'STOP_PREFLIGHT_POLICY_PASS'",
+  ].join("; ");
+  const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], {
+    encoding: "utf8", timeout: 15000, windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /STOP_PREFLIGHT_POLICY_PASS/);
+});
 test("read-only diagnostics do not monopolize the global app lifecycle mutex", () => {
   const launcher = readFileSync(scriptPath, "utf8");
   assert.match(launcher, /\$readOnlyOperation\s*=/);

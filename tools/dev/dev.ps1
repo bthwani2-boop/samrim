@@ -1227,24 +1227,42 @@ function Start-DSHIfVerified {
   Invoke-DockerCli -argsList @('start',$name) | ForEach-Object { Write-Output $_ }
   Say 'DSH' 'START_EXISTING_IMAGE requested'
 }
-function Stop-Docker {
-  # Stop only known isolated containers. No `compose down`, no `-v`, no prune.
-  $identity = @(& docker --context $dockerContext inspect 'bthwani-refoundation-identity-1' '--format' '{{.State.Running}}' 2>&1)
-  if($LASTEXITCODE -eq 0 -and @($identity | Where-Object { $_.ToString().Trim() -eq 'true' }).Count -gt 0){
-    throw 'BLOCKED: Identity currently runs against this PostgreSQL; do not stop shared state without scoped Identity lifecycle approval'
-  }
-  foreach($name in @('bthwani-refoundation-dsh-1','bthwani-refoundation-postgres-1','bthwani-refoundation-media-1','bthwani-refoundation-mailpit-1','bthwani-refoundation-payment-mock-1')) {
-    $state = @(& docker --context $dockerContext inspect $name '--format' '{{json .}}' 2>&1)
-    if ($LASTEXITCODE -ne 0) { continue }
-    $record = (($state | Select-Object -First 1).ToString() | ConvertFrom-Json)
-    Assert-Ok ($record.Config.Labels.'com.docker.compose.project' -eq $project) ('unexpected container owner '+$name)
-    if($record.State.Running -eq $true) {
-      Invoke-DockerCli -argsList @('stop','--time','20',$name) | ForEach-Object { Write-Output $_ }
-      Say 'DOCKER_STOP' $name
+function Get-DockerStopPlan {
+  # Read only. Fail closed on inventory/ownership errors or live protected peers.
+  $order=@('dsh','payment-mock','mailpit','media','postgres')
+  $protected=@('identity','wlt')
+  $rows=@(Invoke-DockerCli -argsList @('ps','-a','--no-trunc','--filter',('label=com.docker.compose.project='+$project),'--format','{{.ID}}|{{.Names}}|{{.Label "com.docker.compose.service"}}|{{.State}}'))
+  $byService=@{}
+  foreach($row in $rows){
+    $parts=$row.Split('|')
+    Assert-Ok ($parts.Length -eq 4) 'unexpected Docker inventory record'
+    $id,$name,$service,$state=$parts
+    Assert-Ok ($id -cmatch '^[a-f0-9]{64}$' -and $name -ceq ($project+'-'+$service+'-1') -and ($service -cin ($order+$protected))) ('unexpected project container '+$name)
+    Assert-Ok (!$byService.ContainsKey($service)) ('duplicate project service '+$service)
+    Assert-Ok ($state -cin @('created','exited','running')) ('unresolved container state '+$name)
+    if($service -cin $protected){
+      Assert-Ok ($state -ne 'running') ($service+' currently runs against shared PostgreSQL; scoped lifecycle approval required before stopping the environment')
     }
+    $byService[$service]=@{Id=$id;Name=$name;State=$state}
+  }
+  foreach($service in $order){
+    if($byService.ContainsKey($service) -and $byService[$service].State -eq 'running'){ $byService[$service] }
+  }
+}
+function Stop-Docker {
+  # Revalidate after application shutdown. Stop exact owned IDs, never volumes.
+  $plan=@(Get-DockerStopPlan)
+  foreach($target in $plan){
+    if($target.Name -ceq ($project+'-postgres-1')){
+      $null=@(Get-DockerStopPlan)
+    }
+    Invoke-DockerCli -argsList @('stop','--time','20',$target.Id) | ForEach-Object { Write-Output $_ }
+    $state=@(Invoke-DockerCli -argsList @('inspect',$target.Id,'--format','{{.State.Running}}'))
+    Assert-Ok (($state -join '') -ceq 'false') ('container stop not proven '+$target.Name)
+    Say 'DOCKER_STOP' $target.Name
   }
   Say 'DOCKER_VOLUMES' 'PRESERVED'
-  Say 'IDENTITY' 'UNTOUCHED (requires separate acceptance)'
+  Say 'IDENTITY_WLT' 'UNTOUCHED (requires separate acceptance)'
 }
 function Verify-Checks {
   Banner 'OWNERED STATIC CHECKS'
@@ -1347,6 +1365,7 @@ try {
     'down' {
       Check-Ssh
       Check-DockerContext
+      $null=@(Get-DockerStopPlan)
       Stop-LenovoTasks
       Stop-LocalTasks
       Stop-Docker
