@@ -389,46 +389,72 @@ test("source host guard accepts only the actual Surface and canonical checkout",
   assert.throws(() => assertSourceHost("BTHWANI", undefined, "D:\\other"), /Wrong source host/);
 });
 
-test("database copy archives use an exclusive private directory and exact cleanup", async () => {
+test("database copy archives use a root-controlled private directory and exact cleanup", async () => {
   const { createPrivateCopyArchive, removePrivateCopyArchive } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   for (const owner of ["dsh", "identity"]) {
     const calls = [];
-    const directory = "/tmp/bthwani-" + owner + "-copy-aB12Cd34Ef";
-    const run = args => { calls.push(args); return args[2] === "mktemp" ? directory : ""; };
+    const directory = "/run/bthwani-" + owner + "-copy-aB12Cd34Ef";
+    const run = args => { calls.push(args); return args[2] === "stat" ? "41ed:0:0" : args[2] === "mktemp" ? directory : ""; };
     const archive = createPrivateCopyArchive("verified-pg", owner, run);
     assert.deepEqual(archive, { directory, file: directory + "/archive.dump" });
-    assert.deepEqual(calls, [["exec", "verified-pg", "mktemp", "-d", "/tmp/bthwani-" + owner + "-copy-XXXXXXXXXX"]]);
+    assert.deepEqual(calls, [
+      ["exec", "verified-pg", "stat", "-c", "%f:%u:%g", "/run"],
+      ["exec", "verified-pg", "mktemp", "-d", "/run/bthwani-" + owner + "-copy-XXXXXXXXXX"],
+    ]);
     removePrivateCopyArchive("verified-pg", archive, run);
-    assert.deepEqual(calls.slice(1), [
+    assert.deepEqual(calls.slice(2), [
       ["exec", "verified-pg", "rm", "-f", "--", archive.file],
       ["exec", "verified-pg", "rmdir", "--", directory],
     ]);
   }
   assert.throws(() => createPrivateCopyArchive("verified-pg", "unknown", () => { throw new Error("must not execute"); }), /owner/);
-  assert.throws(() => createPrivateCopyArchive("verified-pg", "dsh", () => "/tmp/other"), /archive directory/);
-  assert.throws(() => removePrivateCopyArchive("verified-pg", { directory: "/tmp/other", file: "/tmp/other/archive.dump" }, () => { throw new Error("must not execute"); }), /archive directory/);
-  assert.throws(() => removePrivateCopyArchive("verified-pg", { directory: "/tmp/bthwani-dsh-copy-aB12Cd34Ef", file: "/tmp/other" }, () => { throw new Error("must not execute"); }), /archive directory/);
+  for (const parent of ["43ff:0:0", "41ed:999:0", "a1ff:0:0", "41ed:0:999"]) {
+    const calls = [];
+    assert.throws(() => createPrivateCopyArchive("verified-pg", "dsh", args => { calls.push(args); return parent; }), /archive parent/);
+    assert.deepEqual(calls, [["exec", "verified-pg", "stat", "-c", "%f:%u:%g", "/run"]]);
+  }
+  assert.throws(() => createPrivateCopyArchive("verified-pg", "dsh", args => args[2] === "stat" ? "41ed:0:0" : "/run/other"), /archive directory/);
+  for (const directory of ["/run/other", "/tmp/bthwani-dsh-copy-aB12Cd34Ef", "/run/bthwani-dsh-copy-../otherxx"]) {
+    assert.throws(() => removePrivateCopyArchive("verified-pg", { directory, file: directory + "/archive.dump" }, () => { throw new Error("must not execute"); }), /archive directory/);
+  }
+  assert.throws(() => removePrivateCopyArchive("verified-pg", { directory: "/run/bthwani-dsh-copy-aB12Cd34Ef", file: "/run/other" }, () => { throw new Error("must not execute"); }), /archive directory/);
 });
 
 test("private copy archive has actual Unix owner-only directory permissions", { skip: process.platform === "win32" }, async () => {
   const { createPrivateCopyArchive, removePrivateCopyArchive } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const { spawnSync } = await import("node:child_process");
-  const { existsSync, statSync, writeFileSync } = await import("node:fs");
+  const { existsSync, mkdtempSync, rmdirSync, statSync, writeFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  // Map the container's verified root-controlled /run into an owned fixture,
+  // so the native permission check also runs on unprivileged CI workers.
+  const parent = mkdtempSync(join(tmpdir(), "bthwani-archive-proof-"));
+  const localPath = value => value.startsWith("/run/") ? join(parent, value.slice(5)) : value;
   const run = args => {
     assert.deepEqual(args.slice(0, 2), ["exec", "fixture"]);
-    const result = spawnSync(args[2], args.slice(3), { encoding: "utf8", timeout: 5000 });
+    if (args[2] === "stat") {
+      assert.deepEqual(args.slice(3), ["-c", "%f:%u:%g", "/run"]);
+      assert.equal(statSync(parent).mode & 0o777, 0o700);
+      return "41ed:0:0";
+    }
+    const result = spawnSync(args[2], args.slice(3).map(localPath), { encoding: "utf8", timeout: 5000 });
     assert.equal(result.status, 0, result.error?.message || result.stderr);
-    return result.stdout.trim();
+    const output = result.stdout.trim();
+    return args[2] === "mktemp" ? "/run/" + output.slice(parent.length + 1) : output;
   };
-  const archive = createPrivateCopyArchive("fixture", "identity", run);
   try {
-    assert.equal(statSync(archive.directory).mode & 0o777, 0o700);
-    writeFileSync(archive.file, "synthetic archive");
-    assert.equal(existsSync(archive.file), true);
+    const archive = createPrivateCopyArchive("fixture", "identity", run);
+    try {
+      assert.equal(statSync(localPath(archive.directory)).mode & 0o777, 0o700);
+      writeFileSync(localPath(archive.file), "synthetic archive", { mode: 0o600 });
+      assert.equal(statSync(localPath(archive.file)).mode & 0o777, 0o600);
+    } finally {
+      removePrivateCopyArchive("fixture", archive, run);
+    }
+    assert.equal(existsSync(localPath(archive.directory)), false);
   } finally {
-    removePrivateCopyArchive("fixture", archive, run);
+    rmdirSync(parent);
   }
-  assert.equal(existsSync(archive.directory), false);
 });
 
 test("only a manual, committed, exact default-off DSH employee setting transition is eligible", async () => {

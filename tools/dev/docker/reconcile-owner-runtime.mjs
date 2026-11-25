@@ -87,7 +87,7 @@ function run(executable, args, env = {}, timeout = 30000, input) {
 const git = args => run(gitExe, args);
 const docker = (args, env, timeout, input) => run("docker", ["--context", context, ...args], env, timeout, input);
 function privateCopyDirectory(directory, owner) {
-  const prefix = "/tmp/bthwani-" + owner + "-copy-";
+  const prefix = "/run/bthwani-" + owner + "-copy-";
   return ["dsh", "identity"].includes(owner) && typeof directory === "string" &&
     directory.startsWith(prefix) && directory.length === prefix.length + 10 &&
     /^[A-Za-z0-9]+$/.test(directory.slice(prefix.length));
@@ -96,7 +96,8 @@ function privateCopyDirectory(directory, owner) {
 // container. mktemp -d creates it with owner-only permissions.
 export function createPrivateCopyArchive(pg, owner, execute = docker) {
   if (!["dsh", "identity"].includes(owner)) throw new Error("Invalid copy archive owner");
-  const directory = execute(["exec", pg, "mktemp", "-d", "/tmp/bthwani-" + owner + "-copy-XXXXXXXXXX"]);
+  if (execute(["exec", pg, "stat", "-c", "%f:%u:%g", "/run"]) !== "41ed:0:0") throw new Error("Unexpected copy archive parent");
+  const directory = execute(["exec", pg, "mktemp", "-d", "/run/bthwani-" + owner + "-copy-XXXXXXXXXX"]);
   if (!privateCopyDirectory(directory, owner)) throw new Error("Unexpected copy archive directory");
   return { directory, file: directory + "/archive.dump" };
 }
