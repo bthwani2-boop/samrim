@@ -19,8 +19,18 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
   const [selected, setSelected] = useState<number | null>(null);
   const [notice, setNotice] = useState("");
   const [sourceSha256,setSourceSha256]=useState("");
+  const [reviewController, setReviewController] = useState<AbortController | null>(null);
   const active = useRef<AbortController | null>(null);
   useLayoutEffect(() => () => { active.current?.abort(); active.current = null; }, []);
+
+  function cancelReview() {
+    if (!reviewController || active.current !== reviewController) return;
+    active.current = null;
+    reviewController.abort();
+    setReviewController(null);
+    setBusy(false);
+    setNotice("أُلغيت مراجعة الملف. يمكنك إعادة المحاولة.");
+  }
 
   async function choose() {
     if (active.current || selected !== null) return;
@@ -49,6 +59,7 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
       signal.throwIfAborted();
       if (!asset || picked.assets.length !== 1 || !/\.csv$/i.test(asset.name)) throw new Error("CSV_FORMAT");
       if (asset.size !== undefined && asset.size > csvPreviewByteLimit) throw new Error("CSV_LIMIT");
+      setReviewController(controller);
       timeout = setTimeout(() => controller.abort(), 120000);
       // Verify the current Store grant before accessing any selected file content.
       await readMerchantCatalogPage(storeId, actorId, signal, { limit: 1 });
@@ -75,7 +86,11 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
       if (webUri) URL.revokeObjectURL(webUri);
-      if (active.current === controller) { active.current = null; setBusy(false); }
+      if (active.current === controller) {
+        active.current = null;
+        setReviewController(null);
+        setBusy(false);
+      }
     }
   }
 
@@ -100,6 +115,10 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
       accessibilityState={{ busy, disabled: busy || selected !== null }} disabled={busy || selected !== null} onPress={() => void choose()} style={button}>
       <Text style={{ color: theme.interactiveText }}>{busy ? "جارٍ فحص الملف…" : "اختيار ملف CSV وفحصه"}</Text>
     </Pressable>
+    {reviewController ? <Pressable accessibilityRole="button" accessibilityLabel="إلغاء مراجعة الملف"
+      onPress={cancelReview} style={button}>
+      <Text style={{ color: theme.interactiveText }}>إلغاء مراجعة الملف</Text>
+    </Pressable> : null}
     {error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{error}</Text> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={{ color: theme.successText }}>{notice}</Text> : null}
     <CatalogImportRun key={JSON.stringify([actorId,storeId])} actorId={actorId} storeId={storeId}
