@@ -62,7 +62,8 @@ function harness({ platform = "android", initial = "active", permission = { gran
   let index = 0, focus, cleanup, listener, currentState = initial;
   let readPermission = async () => permission, readServices = async () => services;
   let request = async () => { permission = { granted: true, canAskAgain: true }; return permission; };
-  const calls = { permissions: 0, services: 0, requests: 0, removed: 0 };
+  let openSettings = async () => {};
+  const calls = { permissions: 0, services: 0, requests: 0, removed: 0, settings: 0 };
   const component = load(location, {
     react: {
       useState(value) { const i = index++; if (!(i in hooks)) hooks[i] = value; return [hooks[i], next => { hooks[i] = next; }]; },
@@ -71,6 +72,7 @@ function harness({ platform = "android", initial = "active", permission = { gran
     },
     "expo-router": { useFocusEffect(callback) { focus = callback; } },
     "react-native": { ...base["react-native"], Platform: { OS: platform },
+      Linking: { openSettings() { calls.settings++; return openSettings(); } },
       AppState: { get currentState() { return currentState; }, addEventListener(event, callback) {
         assert.equal(event, "change"); listener = callback;
         return { remove() { calls.removed++; listener = undefined; } };
@@ -87,7 +89,7 @@ function harness({ platform = "android", initial = "active", permission = { gran
     state(value) { currentState = value; listener?.(value); },
     setPermission(value) { permission = value; }, setServices(value) { services = value; },
     readPermission(value) { readPermission = value; }, readServices(value) { readServices = value; },
-    request(value) { request = value; }, get listener() { return listener; } };
+    request(value) { request = value; }, openSettings(value) { openSettings = value; }, get listener() { return listener; } };
 }
 test("real Home route mounts the device readiness only for the verified Captain", () => {
   const session = { actorId: "captain-a", role: "captain", sessionExpiresAt: "2099-01-01T00:00:00Z" };
@@ -220,4 +222,36 @@ test("initial non-active states never read device settings before foreground act
     assert.ok(find(h.render(), "captain-location-request"));
     h.blur();
   }
+});
+
+test("permanent denial opens native app settings only once and re-reads on return", async () => {
+  const h = harness({ permission: { granted: false, canAskAgain: false } });
+  h.render(); h.focus(); await settle();
+  assert.equal(h.calls.settings, 0);
+  const action = find(h.render(), "captain-location-settings");
+  assert.ok(action);
+  let finish;
+  h.openSettings(() => new Promise(resolve => { finish = resolve; }));
+  const press = action.props.onPress;
+  press(); press(); assert.equal(h.calls.settings, 1); assert.equal(h.calls.requests, 0);
+  h.state("background"); press(); assert.equal(h.calls.settings, 1);
+  h.setPermission({ granted: true, canAskAgain: true }); h.state("active"); await settle();
+  finish(); await settle();
+  assert.equal(find(h.render(), "captain-location-settings"), undefined);
+  assert.equal(find(h.render(), "captain-location-request"), undefined);
+  h.blur(); press(); assert.equal(h.calls.settings, 1);
+});
+test("native settings failure recovers and Web does not expose settings", async () => {
+  const h = harness({ permission: { granted: false, canAskAgain: false } });
+  h.openSettings(async () => { throw Error("settings unavailable"); });
+  h.render(); h.focus(); await settle();
+  const action = find(h.render(), "captain-location-settings");
+  assert.ok(action); action.props.onPress(); await settle();
+  assert.ok(nodes(h.render()).some(n => n.props.accessibilityRole === "alert"));
+  find(h.render(), "captain-location-refresh").props.onPress(); await settle();
+  assert.ok(find(h.render(), "captain-location-settings")); h.blur();
+  const web = harness({ platform: "web", permission: { granted: false, canAskAgain: false } });
+  web.render(); web.focus(); await settle();
+  assert.equal(find(web.render(), "captain-location-settings"), undefined);
+  assert.equal(web.calls.settings, 0); web.blur();
 });

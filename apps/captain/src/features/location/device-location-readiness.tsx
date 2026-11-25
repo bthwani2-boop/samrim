@@ -2,7 +2,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import * as Location from "expo-location";
 import { useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import { AppState, Platform, Pressable, Text, View } from "react-native";
+import { AppState, Linking, Platform, Pressable, Text, View } from "react-native";
 
 type Reading =
   | { kind: "checking" }
@@ -89,6 +89,25 @@ export default function CaptainDeviceLocationReadiness() {
     if (active?.active) void read(active);
   }
 
+
+  async function openSettings() {
+    const s = currentScope();
+    if (!s || reading.kind !== "ready" || reading.granted || reading.canAskAgain || requestPending.current) return;
+    requestPending.current = true;
+    const revision = ++s.revision;
+    publish({ kind: "checking" });
+    try {
+      await Linking.openSettings();
+    } catch {
+      if (current(s, revision)) publish({ kind: "unavailable" });
+      return;
+    } finally {
+      requestPending.current = false;
+    }
+    const active = scope.current;
+    if (active?.active) void read(active);
+  }
+
   const actionStyle = { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
     minHeight: 48, justifyContent: "center" as const, paddingHorizontal: 14, alignSelf: "flex-start" as const };
   return (
@@ -114,7 +133,9 @@ export default function CaptainDeviceLocationReadiness() {
               <Text style={{ color: theme.interactiveText }}>منح إذن الموقع</Text>
             </Pressable>
           ) : !reading.granted ? (
-            <Text style={{ color: theme.colorSecondary }}>امنح الإذن من إعدادات التطبيق، ثم أعد التحقق.</Text>
+            <Pressable accessibilityRole="button" testID="captain-location-settings" onPress={() => void openSettings()} style={actionStyle}>
+              <Text style={{ color: theme.interactiveText }}>فتح إعدادات التطبيق لمنح إذن الموقع</Text>
+            </Pressable>
           ) : null}
           {!reading.servicesEnabled ? <Text style={{ color: theme.colorSecondary }}>فعّل خدمات الموقع من إعدادات الجهاز.</Text> : null}
         </>
