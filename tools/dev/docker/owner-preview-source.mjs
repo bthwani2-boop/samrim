@@ -25,7 +25,18 @@ export function sourceIdentity(labels, owner) {
 }
 const goPath = /^services\/(?:dsh|identity|wlt)\/backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
 export function isPreviewGoPath(rel) { return goPath.test(rel); }
-const wltComposeInput = "infra/compose.wlt.yaml";
+// Transitional configuration groups: preserve live attestation until the
+// single environment definition has proven equivalent runtime/rollback.
+export const ownerComposeGroups = Object.freeze({
+  identityDsh: Object.freeze(["compose.yaml", "compose.dsh.yaml", "compose.identity.yaml", "compose.merchant.yaml"]),
+  captain: "compose.captain.yaml",
+  wlt: Object.freeze(["compose.yaml", "compose.wlt.yaml"]),
+});
+export const ownerComposeInputs = Object.freeze(
+  [...new Set([...ownerComposeGroups.identityDsh, ownerComposeGroups.captain, ...ownerComposeGroups.wlt])]
+    .map(file => "infra/" + file)
+);
+const wltComposeInput = "infra/" + ownerComposeGroups.wlt[1];
 function sourceOwner(rel) {
   if (rel === wltComposeInput) return "wlt";
   return owners.find(owner => rel.startsWith("services/" + owner + "/"));

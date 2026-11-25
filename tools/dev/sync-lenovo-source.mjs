@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
-import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
+import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
 import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, runtimeReceiptStatus, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -559,9 +559,7 @@ function reconcile() {
 // Backend source is built from Surface, not copied into the app-only mirror.
 const runtimeScope = [
   "services/identity", "services/dsh", "services/wlt", ".go-version",
-  "infra/compose.yaml", "infra/compose.dsh.yaml", "infra/compose.identity.yaml",
-  "infra/compose.merchant.yaml", "infra/compose.captain.yaml",
-  "infra/compose.wlt.yaml", "tools/dev/docker/build-owner-image.ps1", "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1",
+  ...ownerComposeInputs, "tools/dev/docker/build-owner-image.ps1", "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1",
   "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
   "tools/dev/check-go.mjs", "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
 ];

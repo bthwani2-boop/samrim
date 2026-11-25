@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import YAML from "yaml";
 
 const infra = fileURLToPath(new URL("../../infra/", import.meta.url));
+// Closed transitional allowlist; shrink it when each existing overlay is retired.
+// A runtime consumer cannot admit new application-specific definitions by editing its own list.
+const admittedComposeFiles = ["compose.yaml", "compose.dsh.yaml", "compose.identity.yaml", "compose.merchant.yaml", "compose.captain.yaml", "compose.wlt.yaml"];
 function compose(name) {
   const document = YAML.parseDocument(readFileSync(path.join(infra, name), "utf8"), {
     strict: true, uniqueKeys: true,
@@ -172,7 +175,7 @@ test("the disposable Operator stack remains separate from shared owner state", (
 });
 
 test("the public environment example covers every Compose input without granting credentials or activating capabilities", () => {
-  const files = ["compose.yaml", "compose.dsh.yaml", "compose.identity.yaml", "compose.merchant.yaml", "compose.captain.yaml", "compose.wlt.yaml"];
+  const files = admittedComposeFiles;
   const required = new Set();
   const defaults = new Map();
   for (const file of files) {
@@ -204,4 +207,17 @@ test("the public environment example covers every Compose input without granting
     else if (key === "REF_DSH_RUNTIME_USER") assert.equal(values.get(key), "bthwani_dsh_runtime");
     else assert.equal(values.get(key), "", "must be explicitly provisioned: " + key);
   }
+});
+
+test("shared infrastructure admits no new application or capability Compose files", async () => {
+  const { ownerComposeInputs } = await import("../../tools/dev/docker/owner-preview-source.mjs");
+  const files = readdirSync(infra, { recursive: true })
+    .map(name => name.replaceAll("\\", "/"))
+    .filter(name => /(?:^|\/)(?:docker-)?compose(?:[.-][^/]*)?\.ya?ml$/i.test(name))
+    .map(name => "infra/" + name)
+    .sort();
+  assert.ok(files.includes("infra/compose.yaml"), "canonical environment definition is required");
+  const allowed = admittedComposeFiles.map(name => "infra/" + name).sort();
+  assert.deepEqual([...ownerComposeInputs].sort(), allowed, "runtime input scope must match the transitional allowlist");
+  assert.deepEqual(files, allowed, "new application/capability Compose files are forbidden; existing overlays are transitional");
 });

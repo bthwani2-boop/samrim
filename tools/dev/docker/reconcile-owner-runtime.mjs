@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
 import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
-import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
+import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeGroups, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const context = "bthwani-docker";
@@ -19,9 +19,9 @@ const owners = {
   identity: { tag: "REF_IDENTITY_IMAGE_TAG", image: "bthwani-refoundation-identity-verifier", profile: "identity-verifier" },
   wlt: { tag: "REF_WLT_IMAGE_TAG", image: "bthwani-refoundation-wlt", profile: "wlt-reader" },
 };
-const appFiles = ["compose.yaml", "compose.dsh.yaml", "compose.identity.yaml", "compose.merchant.yaml"];
-const captainFile = "compose.captain.yaml";
-const wltFiles = ["compose.yaml", "compose.wlt.yaml"];
+const appFiles = ownerComposeGroups.identityDsh;
+const captainFile = ownerComposeGroups.captain;
+const wltFiles = ownerComposeGroups.wlt;
 const operatorOverrides = {
   IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP: "REF_IDENTITY_OPERATOR_BOOTSTRAP",
   IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH: "REF_IDENTITY_OPERATOR_PASSKEY_AUTH",
@@ -225,7 +225,7 @@ function imageRecord(image) {
   return JSON.parse(docker(["image", "inspect", image]))[0];
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services","infra/compose.yaml","infra/compose.dsh.yaml","infra/compose.identity.yaml","infra/compose.merchant.yaml","infra/compose.captain.yaml","infra/compose.wlt.yaml","tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version"];
+const guardedScope = ["services",...ownerComposeInputs,"tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
