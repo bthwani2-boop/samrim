@@ -812,3 +812,28 @@ test("long SSH commands use the existing bounded text-line transport", {skip:pro
   assert.equal(result.status,0,result.stderr);
   assert.equal(result.stdout.trim(),"10000");
 });
+
+test("local reconciliation uses a protected absolute PowerShell executable", () => {
+  const source = readFileSync(new URL("./sync-lenovo-source.mjs", import.meta.url), "utf8");
+  const executable = path.win32.normalize("C:/Program Files/PowerShell/7/pwsh.exe");
+  assert.ok(source.includes("pwsh: " + JSON.stringify(executable)));
+  assert.equal(source.split("spawn(exe.pwsh,").length - 1, 2);
+  assert.equal(source.includes('spawn("pwsh.exe"'), false);
+});
+
+test("fixed local PowerShell executable runs without PATH lookup", {
+  skip: process.platform !== "win32",
+}, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-fixed-pwsh-"));
+  try {
+    const executable = path.win32.normalize("C:/Program Files/PowerShell/7/pwsh.exe");
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== "path"));
+    const result = spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", "$PSHOME"], {
+      cwd: folder, env: { ...env, PATH: folder }, encoding: "utf8", timeout: 15000, windowsHide: true,
+    });
+    assert.equal(result.status, 0, result.error?.message || result.stderr);
+    assert.equal(result.stdout.trim().toLowerCase(), path.dirname(executable).toLowerCase());
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});

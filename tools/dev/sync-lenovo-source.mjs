@@ -31,6 +31,7 @@ const blockedDirs = new Set([
 ]);
 const secret = /^(?:\.env(?:\..*)?|\.npmrc|\.git-credentials|google-services\.json|GoogleService-Info\.plist|credentials(?:\..*)?|id_rsa|id_ed25519|.*\.(?:pem|key|p12|pfx|jks|keystore))$/i;
 const exe = {
+  pwsh: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
   git: "C:\\Program Files\\Git\\cmd\\git.exe",
   ssh: "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
   scp: "C:\\Windows\\System32\\OpenSSH\\scp.exe"
@@ -594,7 +595,7 @@ function pollAppDependencies() {
   if(run("git",["status","--porcelain","--","tools/dev/dev.ps1","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"]))return;
   dependencyKey=key;
   nextDependencyAudit=Date.now()+60_000;
-  const child=spawn("pwsh.exe",["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Apps","reconcile","-Apply","-Automatic"],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
+  const child=spawn(exe.pwsh,["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Apps","reconcile","-Apply","-Automatic"],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
   runtimeChild=child;
   dependencyChild=true;
   let output="",errors="",settled=false;
@@ -648,7 +649,7 @@ function pollOwnerRuntime() {
   logger("RUNTIME_RECONCILE_STARTED key="+key.slice(0,12));
   // The unified dev launcher holds the existing lifecycle mutex. Keep the app
   // file sync responsive while its one bounded build/replacement runs.
-  const child = spawn("pwsh.exe", ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply",...(preview?["-Preview"]:[]),...(runtimeBaselineProofDue(key,last)?["-PrepareBaseline"]:[])], {
+  const child = spawn(exe.pwsh, ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply",...(preview?["-Preview"]:[]),...(runtimeBaselineProofDue(key,last)?["-PrepareBaseline"]:[])], {
     cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"],
     env:{...process.env,BTHWANI_RUNTIME_ATTEMPT_KEY:key,BTHWANI_RUNTIME_ATTEMPT_ID:attempt}
   });
