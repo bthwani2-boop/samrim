@@ -41,6 +41,7 @@ const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes) : tree && typeof
 const find = (tree, id) => nodes(tree).find(node => node.props.testID === id);
 const settle = () => new Promise(resolve => setImmediate(resolve));
 const base = {
+  "expo-router": { Link: "Link" },
   "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
   "react-native": { ScrollView: "ScrollView", Text: "Text", View: "View", Pressable: "Pressable" },
   "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
