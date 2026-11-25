@@ -176,6 +176,9 @@ test("Captain interest leaves definite rejection retryable but stops after recei
       const afterFinal = render();
       assert.equal(findSubmit(afterFinal), undefined, "the screen must not offer another submission after the result");
       assert.equal(requests.length, 2);
+      submit.props.onPress();
+      await new Promise(setImmediate);
+      assert.equal(requests.length, 2, "a retained submit callback cannot repeat a terminal intake");
       assert.deepEqual(requests.map(input => input.phone), [wirePhone, wirePhone]);
       assert.ok(afterFinal.some(node => node.type === "Link" && node.props.href === "/"));
       const notice = afterFinal.find(node => node.props.accessibilityRole === "alert");

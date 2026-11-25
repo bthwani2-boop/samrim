@@ -34,6 +34,7 @@ export default function CaptainInterestScreen() {
   const [receipt, setReceipt] = useState<"received" | "unknown" | null>(null);
   const [message, setMessage] = useState("");
   const controller = useRef<AbortController | null>(null);
+  const terminal = useRef(false);
   useEffect(() => () => { controller.current?.abort(); }, []);
 
   const vehicleNeedsPlate = vehicleType === "MOTORCYCLE" || vehicleType === "ELECTRIC";
@@ -67,17 +68,21 @@ export default function CaptainInterestScreen() {
     </View>
   );
   async function submit() {
-    if (!canSubmit || controller.current) return;
+    if (!canSubmit || controller.current || terminal.current) return;
     const next = new AbortController();
     controller.current = next;
     setBusy(true);
     setMessage("");
     try {
       await submitCaptainInterest(dshOrigin, input, next.signal);
-      if (!next.signal.aborted) setReceipt("received");
+      if (!next.signal.aborted) {
+        terminal.current = true;
+        setReceipt("received");
+      }
     } catch (reason) {
       if (next.signal.aborted) return;
       if (reason instanceof DshPublicError && reason.code === "OPERATION_RESULT_UNKNOWN") {
+        terminal.current = true;
         setReceipt("unknown");
       } else if (reason instanceof DshPublicError && reason.status === 429) {
         setMessage("تم تجاوز عدد المحاولات المسموح. حاول لاحقًا.");

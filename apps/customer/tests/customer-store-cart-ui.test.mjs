@@ -194,10 +194,13 @@ test("clearing a Customer Store cart requires fresh confirmation and reconciles 
     press("إلغاء");
     assert.equal(action("تأكيد التفريغ"), undefined);
     press("تفريغ السلة");
+    const staleClear = action("تأكيد التفريغ");
     h.resume();
     h.reads[1].resolve({ kind: "ready", cart: { ...cart, version: 6 } });
     await settle();
     assert.equal(action("تأكيد التفريغ"), undefined);
+    staleClear.props.onPress();
+    assert.equal(h.writes.length, 0, "a superseded clear confirmation cannot dispatch a cart write");
     press("تفريغ السلة");
     press("تأكيد التفريغ");
     assert.equal(h.writes.length, 1);
@@ -350,6 +353,8 @@ test("Store cart revalidates on native resume and discards superseded owner read
     reads[2].resolve({ kind: "ready", cart: { ...emptyCart, actorId: "customer-b" } });
     await settle();
     assert.equal(render().cart.actorId, "customer-b");
+    stale.adjust(offer, 1);
+    assert.equal(writes.length, 0, "a superseded actor callback cannot dispatch after a fresh owner read");
     resume("active");
     reads[3].resolve({ kind: "signed-out" });
     await settle();

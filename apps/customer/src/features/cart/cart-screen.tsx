@@ -15,6 +15,7 @@ export default function CartScreen() {
   const { storeId: storeParam } = useLocalSearchParams<{ storeId?: string }>();
   const storeId = typeof storeParam === "string" ? storeParam : "";
   const [snapshot, setView] = useState<CartReadState | null>(null);
+  const currentView = useRef<CartReadState | null>(null);
   const [error, setError] = useState("");
   const [ownerMerchandise, setOwnerMerchandise] = useState<CustomerCartMerchandiseEstimate | null>(null);
   const [busy, setBusy] = useState(false);
@@ -41,6 +42,7 @@ export default function CartScreen() {
 
   useFocusEffect(useCallback(() => {
     const epoch = ++generation.current;
+    currentView.current = null;
     setView(null);
     setError("");
     setBusy(false);
@@ -50,14 +52,21 @@ export default function CartScreen() {
       estimateRead.current?.abort();
       const controller = new AbortController();
       cartRead.current = controller;
+      currentView.current = null;
       setView(null);
       setClearSelection(null);
       setOwnerMerchandise(null);
       setError("");
       void readVerifiedCart(storeId, controller.signal).then(next => {
-        if (!controller.signal.aborted && generation.current === epoch) setView(next);
+        if (!controller.signal.aborted && generation.current === epoch) {
+          currentView.current = next;
+          setView(next);
+        }
       }).catch(() => {
-        if (!controller.signal.aborted && generation.current === epoch) setView({ kind: "unavailable" });
+        if (!controller.signal.aborted && generation.current === epoch) {
+          currentView.current = { kind: "unavailable" };
+          setView(currentView.current);
+        }
       }).finally(() => {
         if (cartRead.current === controller) cartRead.current = null;
       });
@@ -73,6 +82,7 @@ export default function CartScreen() {
       mutation.current = null;
       refresh.current = null;
       generation.current++;
+      currentView.current = null;
       setView(null);
     };
   }, [storeId]));
@@ -92,7 +102,8 @@ export default function CartScreen() {
         if (controller.signal.aborted) return;
         if (result.kind === "signed-out") {
           setOwnerMerchandise(null);
-          setView({ kind: "signed-out" });
+          currentView.current = { kind: "signed-out" };
+          setView(currentView.current);
         } else if (result.kind === "ready" && result.estimate.storeId === storeId &&
           result.estimate.actorId === actor && result.estimate.cartVersion === version) {
           setOwnerMerchandise(result.estimate);
@@ -108,7 +119,7 @@ export default function CartScreen() {
   }, [storeId, view]);
 
   async function apply(change: CustomerCartChange, actorId: string) {
-    if (mutation.current || cartRead.current) return;
+    if (currentView.current !== view || view?.kind !== "ready" || view.cart.actorId !== actorId || mutation.current || cartRead.current) return;
     estimateRead.current?.abort();
     const controller = new AbortController();
     const epoch = generation.current;
@@ -120,14 +131,18 @@ export default function CartScreen() {
     try {
       const result = await replaceVerifiedCart(storeId, change, actorId, controller.signal);
       if (controller.signal.aborted || generation.current !== epoch) return;
-      setView({ kind: "ready", cart: result.cart });
+      currentView.current = { kind: "ready", cart: result.cart };
+      setView(currentView.current);
     } catch (reason) {
       if (controller.signal.aborted || generation.current !== epoch) return;
       const code = reason instanceof DshCartError ? reason.code : "OPERATION_RESULT_UNKNOWN";
       if (code === "OPERATION_RESULT_UNKNOWN" || code === "CART_PENDING_RECONCILIATION") {
         setError("لم تتأكد نتيجة التعديل. أعد تأكيد نفس العملية قبل إجراء تعديل جديد.");
       } else {
-        if (code === "UNAUTHORIZED") setView({ kind: "signed-out" });
+        if (code === "UNAUTHORIZED") {
+          currentView.current = { kind: "signed-out" };
+          setView(currentView.current);
+        }
         setError(code === "CART_VERSION_OR_OPERATION_CONFLICT"
           ? "تغيّرت السلة. حدّث البيانات قبل إعادة التعديل."
           : code === "STORE_OR_OFFER_NOT_AVAILABLE"

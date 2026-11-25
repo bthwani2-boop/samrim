@@ -51,8 +51,11 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
   const scope=useRef<AbortController|null>(null);
   const activeWrite=useRef<AbortController|null>(null);
   const refreshAfterWrite=useRef(false);
+  const actionEpoch=useRef(0);
+  const renderedEpoch=actionEpoch.current;
   async function load(next?:string){
     if(active.current || !scope.current || scope.current.signal.aborted)return;
+    actionEpoch.current++;
     const request=new AbortController();
     active.current=request;
     setBusy(true);
@@ -75,6 +78,7 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
     void load();
     const reload=()=>{
       if(controller.signal.aborted)return;
+      actionEpoch.current++;
       setReady(false);setItems([]);setCursor(null);setDetail(null);
       // Never cancel a possibly committed registration just to refresh the directory.
       if(activeWrite.current){refreshAfterWrite.current=true;return;}
@@ -99,13 +103,13 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
     };
   },[actorId,storeId]);
   async function openDetail(id:string){
-    if(!ready||active.current||!scope.current||scope.current.signal.aborted)return;
+    if(renderedEpoch!==actionEpoch.current||!ready||active.current||!scope.current||scope.current.signal.aborted)return;
     const request=new AbortController();active.current=request;setBusy(true);setDetail(null);setMessage("");
     try{
       const result=await readEmployeeDetail(actorId,storeId,id,request.signal);
       request.signal.throwIfAborted();setDetail(result);
     }catch{
-      if(!request.signal.aborted){setDetail(null);setItems([]);setCursor(null);setReady(false);setMessage("تعذر التحقق من تفاصيل الموظف أو صلاحية المتجر. حدّث السجل.");}
+      if(!request.signal.aborted){actionEpoch.current++;setDetail(null);setItems([]);setCursor(null);setReady(false);setMessage("تعذر التحقق من تفاصيل الموظف أو صلاحية المتجر. حدّث السجل.");}
     }finally{
       if(active.current===request){active.current=null;setBusy(false);}
     }
@@ -113,7 +117,8 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
   const proposed={operationId:"00000000-0000-4000-8000-000000000000",displayName:draft.displayName.trim(),
     department:draft.department.trim(),jobTitle:draft.jobTitle.trim(),startDate:draft.startDate.trim()};
   async function save(){
-    if(!ready || !recovery || active.current || !scope.current || scope.current.signal.aborted || (!pending&&!validEmployeeRegistration(proposed)))return;
+    if(renderedEpoch!==actionEpoch.current || !ready || !recovery || active.current || !scope.current || scope.current.signal.aborted || (!pending&&!validEmployeeRegistration(proposed)))return;
+    actionEpoch.current++;
     const request=new AbortController();active.current=request;activeWrite.current=request;setBusy(true);setMessage("");setDetail(null);
     const values=pending??proposed;
     try{
@@ -192,7 +197,7 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
         <Text style={{color:theme.colorSecondary}}>وقت التسجيل (UTC): {detail.audit.recordedAt}</Text>
         <Pressable accessibilityRole="button" onPress={()=>setDetail(null)} style={button}><Text style={{color:theme.interactiveText}}>إغلاق التفاصيل</Text></Pressable>
       </View>:null}
-      {cursor?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>void load(cursor)} style={button}>
+      {cursor?<Pressable accessibilityRole="button" disabled={busy} onPress={()=>{if(renderedEpoch===actionEpoch.current)void load(cursor);}} style={button}>
         <Text style={{color:theme.interactiveText}}>عرض المزيد</Text>
       </Pressable>:null}
       <Text accessibilityRole="header" style={{color:theme.color,fontWeight:"700"}}>تسجيل موظف</Text>
