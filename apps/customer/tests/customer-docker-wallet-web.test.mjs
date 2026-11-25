@@ -70,6 +70,9 @@ test("isolated Docker Customer Web uses only the existing HttpOnly session and v
   process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
   process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "0";
   assert.equal((await wallet(new Request(url + "wallet", { headers }))).status, 503);
+  process.env.BTHWANI_SURFACE_PREVIEW = "1";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  assert.equal((await wallet(new Request(url + "wallet", { headers }))).status, 503);
   assert.equal(calls.length, 2);
 });
 

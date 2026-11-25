@@ -17,8 +17,7 @@ const configuredNativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTI
 const nativeOrigin = !lenovoAndroidPreview ||
   (Platform.OS === "android" && configuredNativeOrigin === "http://127.0.0.1:3201")
   ? configuredNativeOrigin : undefined;
-const storageScope = lenovoAndroidPreview ? ".lenovo-android"
-  : process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1" ? ".surface" : "";
+const storageScope = lenovoAndroidPreview ? ".lenovo-android" : "";
 const storageKey = `bthwani.customer.synthetic-identity${storageScope}.v1`;
 // Survives a process restart when a device write cannot be confirmed or undone.
 const pendingStorageKey = `${storageKey}.pending.v1`;

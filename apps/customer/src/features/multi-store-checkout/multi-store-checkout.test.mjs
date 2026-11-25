@@ -21,12 +21,13 @@ const entry={storeId:"store-a",storeName:"Test Store",version:1,lineCount:1};
 const page={actorId:actor,carts:[entry]};
 const json=value=>Response.json(value,{headers:{"Cache-Control":"no-store"}});
 const session=actorId=>({actorId,role:"customer",sessionExpiresAt:"2030-01-01T00:00:00Z"});
-process.env.BTHWANI_SURFACE_PREVIEW="1";
+process.env.BTHWANI_DOCKER_CART_WEB_PREVIEW = "1";
+process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
 process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN="http://127.0.0.1:3202";
-process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN="http://127.0.0.1:3210";
+process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN="http://127.0.0.1:3201";
 const {handleCustomerCartDirectory}=await import("../cart/cart-directory-bff.ts");
 const base="http://localhost/api/customer-auth/carts";
-const request=(suffix="",headers={})=>new Request(base+suffix,{headers:{Cookie:"bthwani_surface_customer_auth="+bearer,"X-Customer-Context":actor,...headers}});
+const request=(suffix="",headers={})=>new Request(base+suffix,{headers:{Cookie:"bthwani_customer_auth="+bearer,"X-Customer-Context":actor,...headers}});
 test("directory BFF rejects caller-selected actors, cross-site and duplicate cursor without owner dispatch",async t=>{
   let calls=0;t.mock.method(globalThis,"fetch",async()=>{calls++;throw Error("unexpected");});
   for(const [req,status] of [[new Request(base),401],[request("?actorId=customer-b"),400],[request("?after=a&after=b"),400],[request("",{"Sec-Fetch-Site":"cross-site"}),403],[request("",{Origin:"https://other.example"}),403]]) {
@@ -38,7 +39,7 @@ test("directory BFF checks identity before and after owner read; changed actor c
   let calls=[],changed=false,reads=0;
   t.mock.method(globalThis,"fetch",async(url,init)=>{
     calls.push([String(url),init.method]);assert.equal(init.headers.Authorization,"Bearer "+bearer);
-    if(String(url).startsWith("http://127.0.0.1:3210")) return json(session(changed&&++reads>1?"customer-b":actor));
+    if(String(url).startsWith("http://127.0.0.1:3201")) return json(session(changed&&++reads>1?"customer-b":actor));
     return json(page);
   });
   assert.deepEqual(await (await handleCustomerCartDirectory(request())).json(),page);

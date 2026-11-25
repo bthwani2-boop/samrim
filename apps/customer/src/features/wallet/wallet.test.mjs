@@ -85,33 +85,34 @@ test("a wallet response after cancellation is discarded", async (t) => {
 
 test("the Web wallet route uses only the isolated loopback owner and the existing HttpOnly session", async (t) => {
   t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url.href, "http://127.0.0.1:23203/v1/wallets/me");
+    assert.equal(url.href, "http://127.0.0.1:3203/v1/wallets/me");
     assert.equal(options.method, "GET");
     assert.equal(options.redirect, "error");
     assert.equal(options.headers.Authorization, "Bearer " + Buffer.alloc(32, 17).toString("base64url"));
     return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } });
   });
-  const saved = [process.env.BTHWANI_SURFACE_PREVIEW, process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN];
+  const saved = [process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW, process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN, process.env.BTHWANI_ISOLATED_TEST_MODE];
   t.after(() => {
-    const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN"];
+    const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
     names.forEach((name, index) => {
       if (saved[index] === undefined) delete process.env[name];
       else process.env[name] = saved[index];
     });
   });
-  process.env.BTHWANI_SURFACE_PREVIEW = "1";
-  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
   const { GET } = await import("../../../app/api/customer-auth/wallet+api.ts");
-  const path = "http://127.0.0.1:23101/api/customer-auth/wallet";
-  const headers = { Cookie: "bthwani_surface_customer_auth=" + Buffer.alloc(32, 17).toString("base64url") };
+  const path = "http://127.0.0.1:18101/api/customer-auth/wallet";
+  const headers = { Cookie: "bthwani_customer_auth=" + Buffer.alloc(32, 17).toString("base64url") };
   assert.equal((await GET(new Request(path))).status, 401);
   assert.equal((await GET(new Request(path + "?actorId=other", { headers }))).status, 400);
   assert.equal((await GET(new Request(path, { headers: { ...headers, "Sec-Fetch-Site": "cross-site" } }))).status, 403);
   const shown = await GET(new Request(path, { headers }));
   assert.equal(shown.headers.get("Cache-Control"), "no-store");
   assert.equal((await shown.json()).balanceYer, amount);
-  delete process.env.BTHWANI_SURFACE_PREVIEW;
+  delete process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW;
   assert.equal((await GET(new Request(path, { headers }))).status, 503);
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
@@ -214,7 +215,7 @@ test("funding history cannot survive a role or actor switch after the HTTP read"
 test("WLT funding history SDK uses only the isolated owner operation", async (t) => {
   const bearer = Buffer.alloc(32, 17).toString("base64url");
   t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url.href, "http://127.0.0.1:23203/v1/wallets/me/transactions");
+    assert.equal(url.href, "http://127.0.0.1:3203/v1/wallets/me/transactions");
     assert.equal(options.method, "GET");
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     assert.equal(options.redirect, "error");
@@ -222,7 +223,7 @@ test("WLT funding history SDK uses only the isolated owner operation", async (t)
     return Response.json(history, { headers: { "Cache-Control": "no-store" } });
   });
   assert.deepEqual(await readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", bearer, new AbortController().signal,
+    "http://127.0.0.1:3203", bearer, new AbortController().signal,
   ), history);
   await assert.rejects(() => readCurrentCustomerWalletTransactions(
     "http://attacker.invalid", bearer, new AbortController().signal,
@@ -231,19 +232,20 @@ test("WLT funding history SDK uses only the isolated owner operation", async (t)
 });
 
 test("Customer wallet history BFF denies cross-site and arbitrary actor queries", async (t) => {
-  const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN"];
+  const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
   const saved = names.map(name => process.env[name]);
   t.after(() => names.forEach((name, i) => {
     if (saved[i] === undefined) delete process.env[name];
     else process.env[name] = saved[i];
   }));
-  process.env.BTHWANI_SURFACE_PREVIEW = "1";
-  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
   const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
   t.mock.method(globalThis, "fetch", async () => Response.json(history,
     { headers: { "Cache-Control": "no-store" } }));
-  const path = "http://127.0.0.1:23101/api/customer-auth/wallet-transactions";
-  const headers = { Cookie: `bthwani_surface_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}` };
+  const path = "http://127.0.0.1:18101/api/customer-auth/wallet-transactions";
+  const headers = { Cookie: `bthwani_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}` };
   assert.equal((await GET(new Request(path))).status, 401);
   assert.equal((await GET(new Request(`${path}?actorId=other`, { headers }))).status, 400);
   assert.equal((await GET(new Request(path, { headers: { ...headers, "Sec-Fetch-Site": "cross-site" } }))).status, 403);
@@ -322,30 +324,30 @@ test("wallet history stays bound to the Customer whose balance is already displa
 test("WLT SDK forwards only a canonical cursor to its isolated owner", async (t) => {
   const bearer = Buffer.alloc(32, 17).toString("base64url");
   t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url.href, `http://127.0.0.1:23203/v1/wallets/me/transactions?cursor=${nextCursor}`);
+    assert.equal(url.href, `http://127.0.0.1:3203/v1/wallets/me/transactions?cursor=${nextCursor}`);
     assert.equal(options.method, "GET");
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     return Response.json(pageOne, { headers: { "Cache-Control": "no-store" } });
   });
   assert.deepEqual(await readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", bearer, new AbortController().signal, nextCursor,
+    "http://127.0.0.1:3203", bearer, new AbortController().signal, nextCursor,
   ), pageOne);
   await assert.rejects(() => readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", bearer, new AbortController().signal, "invalid",
+    "http://127.0.0.1:3203", bearer, new AbortController().signal, "invalid",
   ), { status: 400 });
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
 
 test("WLT SDK and Customer BFF preserve owner rejection of an invalid history cursor", async (t) => {
-  const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_DOCKER_WALLET_WEB_PREVIEW"];
+  const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
   const saved = names.map(name => process.env[name]);
   t.after(() => names.forEach((name, i) => {
     if (saved[i] === undefined) delete process.env[name];
     else process.env[name] = saved[i];
   }));
-  process.env.BTHWANI_SURFACE_PREVIEW = "1";
-  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
-  delete process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW;
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
   const bearer = Buffer.alloc(32, 17).toString("base64url");
   const cursor = "A".repeat(20); // Bounded syntax, but not an owner-issued keyset.
   t.mock.method(globalThis, "fetch", async (url, options) => {
@@ -357,12 +359,12 @@ test("WLT SDK and Customer BFF preserve owner rejection of an invalid history cu
     });
   });
   await assert.rejects(() => readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", bearer, new AbortController().signal, cursor,
+    "http://127.0.0.1:3203", bearer, new AbortController().signal, cursor,
   ), { status: 400 });
   const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
   const response = await GET(new Request(
-    "http://127.0.0.1:23101/api/customer-auth/wallet-transactions?cursor=" + cursor,
-    { headers: { Cookie: "bthwani_surface_customer_auth=" + bearer } },
+    "http://127.0.0.1:18101/api/customer-auth/wallet-transactions?cursor=" + cursor,
+    { headers: { Cookie: "bthwani_customer_auth=" + bearer } },
   ));
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "INVALID_REQUEST" });
@@ -371,18 +373,19 @@ test("WLT SDK and Customer BFF preserve owner rejection of an invalid history cu
 });
 
 test("Customer history BFF forwards a valid cursor only and refuses all other selectors", async (t) => {
-  const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN"];
+  const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
   const old = names.map(name => process.env[name]);
   t.after(() => names.forEach((name, index) => {
     if (old[index] === undefined) delete process.env[name];
     else process.env[name] = old[index];
   }));
-  process.env.BTHWANI_SURFACE_PREVIEW = "1";
-  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
   const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
-  const base = "http://127.0.0.1:23101/api/customer-auth/wallet-transactions";
+  const base = "http://127.0.0.1:18101/api/customer-auth/wallet-transactions";
   const headers = {
-    Cookie: `bthwani_surface_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}`,
+    Cookie: `bthwani_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}`,
   };
   t.mock.method(globalThis, "fetch", async (url) => {
     assert.equal(url.search, `?cursor=${nextCursor}`);
@@ -441,7 +444,7 @@ test("WLT history accepts ten maximum-size postings without dropping a valid own
   let reply = Response.json(page, { headers: { "Cache-Control": "no-store" } });
   t.mock.method(globalThis, "fetch", async () => reply);
   const read = () => readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", token, new AbortController().signal,
+    "http://127.0.0.1:3203", token, new AbortController().signal,
   );
   assert.deepEqual(await read(), page);
 
@@ -477,7 +480,7 @@ test("WLT SDK rejects malformed or oversized streamed owner replies", async (t) 
   const headers = { "Cache-Control": "no-store", "Content-Type": "application/json" };
   let reply = new Response(Uint8Array.of(0xff), { headers });
   t.mock.method(globalThis, "fetch", async () => reply);
-  const read = () => readCurrentCustomerWallet("http://127.0.0.1:23203",
+  const read = () => readCurrentCustomerWallet("http://127.0.0.1:3203",
     token, new AbortController().signal);
 
   await assert.rejects(read, { status: 502 }, "invalid UTF-8 must fail closed");

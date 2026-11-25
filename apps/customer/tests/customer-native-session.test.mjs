@@ -26,7 +26,7 @@ class IdentityError extends Error {
 const customer = bearer => ({ actorId: bearer === original ? "actor-old" : "actor-new",
   role: "customer", sessionExpiresAt: expiry });
 
-function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false, lenovoPreview, platform = "android" } = {}) {
+function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false, lenovoPreview, legacySetting, platform = "android" } = {}) {
   let bearer = stored;
   let refresh = null;
   let pendingMarker = null;
@@ -95,6 +95,7 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
       module, module.exports, { env: {
         EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin,
         EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW: lenovoPreview,
+        EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: legacySetting,
       } },
     );
     return module.exports;
@@ -492,4 +493,16 @@ test("Customer refresh write uncertainty cannot expose an incomplete durable log
   assert.deepEqual(await h.reload().readCustomerAdmission(signal), { enabled: true, session: null });
   assert.equal(h.currentRefresh(), null);
   assert.equal(h.pending(), null);
+});
+
+test("retired Surface flag cannot select another native Customer storage namespace", async () => {
+  const signal = new AbortController().signal;
+  for (const lenovoPreview of [undefined, "1"]) {
+    const nativeOrigin = lenovoPreview ? "http://127.0.0.1:3201" : "http://127.0.0.1:33221";
+    const h = harness({ legacySetting: "1", lenovoPreview, nativeOrigin });
+    assert.deepEqual(await h.transport.readCustomerAdmission(signal), { enabled: true, session: customer(original) });
+    const key = lenovoPreview ? "bthwani.customer.synthetic-identity.lenovo-android.v1" : "bthwani.customer.synthetic-identity.v1";
+    assert.ok(h.storageReads.length > 0);
+    assert.ok(h.storageReads.every(name => [key, key + ".refresh.v1", key + ".pending.v1"].includes(name)));
+  }
 });

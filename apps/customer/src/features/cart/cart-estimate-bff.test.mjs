@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-process.env.BTHWANI_SURFACE_PREVIEW = "1";
+process.env.BTHWANI_DOCKER_CART_WEB_PREVIEW = "1";
+process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
 process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN = "http://127.0.0.1:3202";
-process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN = "http://127.0.0.1:3210";
+process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN = "http://127.0.0.1:3201";
 const { handleCustomerMerchandiseEstimate } = await import("./cart-estimate-bff.ts");
 
 const bearer = Buffer.alloc(32, 14).toString("base64url");
@@ -18,7 +19,7 @@ const session = actorId => ({
   actorId, role: "customer", sessionExpiresAt: "2030-01-01T00:00:00Z",
 });
 const request = (url = page, extra = {}) => new Request(url, {
-  headers: { Cookie: "bthwani_surface_customer_auth=" + bearer, ...extra },
+  headers: { Cookie: "bthwani_customer_auth=" + bearer, ...extra },
 });
 const json = (body, status = 200) => Response.json(body, {
   status, headers: { "Cache-Control": "no-store" },
@@ -50,7 +51,7 @@ test("merchandise BFF verifies Identity before and after one DSH owner read", as
     const url = input.toString();
     events.push({ url, method: init.method, credentials: init.credentials });
     assert.equal(init.headers.Authorization, "Bearer " + bearer);
-    if (url.startsWith("http://127.0.0.1:3210")) return json(session("customer-a"));
+    if (url.startsWith("http://127.0.0.1:3201")) return json(session("customer-a"));
     if (url.startsWith("http://127.0.0.1:3202")) {
       assert.match(url, /\/v1\/carts\/store-a\/merchandise-estimate\?expectedVersion=4$/);
       assert.equal(init.method, "GET");
@@ -69,7 +70,7 @@ test("merchandise BFF never reveals result after Identity account switch", async
   let identityReads = 0;
   t.mock.method(globalThis, "fetch", async input => {
     const url = input.toString();
-    if (url.startsWith("http://127.0.0.1:3210")) {
+    if (url.startsWith("http://127.0.0.1:3201")) {
       identityReads++;
       return json(session(identityReads === 1 ? "customer-a" : "customer-b"));
     }
@@ -86,7 +87,7 @@ test("merchandise BFF fails closed on DSH denial and does not retry", async t =>
   let dshReads = 0;
   t.mock.method(globalThis, "fetch", async input => {
     const url = input.toString();
-    if (url.startsWith("http://127.0.0.1:3210")) {
+    if (url.startsWith("http://127.0.0.1:3201")) {
       identityReads++;
       return json(session("customer-a"));
     }

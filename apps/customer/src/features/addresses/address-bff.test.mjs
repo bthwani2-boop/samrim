@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-process.env.BTHWANI_SURFACE_PREVIEW="1";
+process.env.BTHWANI_DOCKER_CART_WEB_PREVIEW = "1";
+process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
 process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN="http://127.0.0.1:3202";
-process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN="http://127.0.0.1:3210";
+process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN="http://127.0.0.1:3201";
 const {handleCustomerAddresses}=await import("./address-bff.ts");
 const {GET,PUT}=await import("../../../app/api/customer-auth/addresses+api.ts");
 const bearer=Buffer.alloc(32,14).toString("base64url");
@@ -18,7 +19,7 @@ const result={actorId:actor,address,replay:false};
 const session=actorId=>({actorId,role:"customer",sessionExpiresAt:"2030-01-01T00:00:00Z"});
 const json=(body,status=200)=>Response.json(body,{status,headers:{"Cache-Control":"no-store"}});
 function request(method="GET",url=base,headers={},body=change){
-  return new Request(url,{method,headers:{Cookie:`bthwani_surface_customer_auth=${bearer}`,"X-Customer-Context":actor,
+  return new Request(url,{method,headers:{Cookie:`bthwani_customer_auth=${bearer}`,"X-Customer-Context":actor,
     ...(method==="PUT"?{Origin:"http://localhost","Content-Type":"application/json"}:{}),...headers},
     ...(method==="PUT"?{body:JSON.stringify(body)}:{})});
 }
@@ -41,7 +42,7 @@ test("address BFF verifies current actor before and after DSH read and write",as
   t.mock.method(globalThis,"fetch",async(input,init)=>{
     const url=input.toString();events.push([url,init.method,init.credentials]);
     assert.equal(init.headers.Authorization,`Bearer ${bearer}`);
-    if(url.startsWith("http://127.0.0.1:3210"))return json(session(actor));
+    if(url.startsWith("http://127.0.0.1:3201"))return json(session(actor));
     if(init.method==="PUT"){assert.deepEqual(JSON.parse(init.body),change);return json(result);}
     return json(page);
   });
@@ -57,7 +58,7 @@ test("address BFF verifies current actor before and after DSH read and write",as
 test("address BFF never dispatches for a changed actor and hides a late owner response",async t=>{
   let reads=0,owner=0,switched=true;
   t.mock.method(globalThis,"fetch",async input=>{
-    if(input.toString().startsWith("http://127.0.0.1:3210")){
+    if(input.toString().startsWith("http://127.0.0.1:3201")){
       reads++;return json(session(switched||reads>1?"customer-b":actor));
     }
     owner++;return json(page);
@@ -76,7 +77,7 @@ test("exact address read uses the current actor and withholds a response after a
   const value = {actorId:actor,address};
   const lookup = `${base}?addressId=${id}`;
   t.mock.method(globalThis,"fetch",async(input,init) => {
-    if (input.toString().startsWith("http://127.0.0.1:3210")) {
+    if (input.toString().startsWith("http://127.0.0.1:3201")) {
       identityReads++;
       return json(session(switchAfterRead && identityReads === 2 ? "customer-b" : actor));
     }
@@ -100,7 +101,7 @@ test("exact address read uses the current actor and withholds a response after a
 test("lost address mutation outcome is not reported as rejected or retried",async t=>{
   let owner=0;
   t.mock.method(globalThis,"fetch",async input=>{
-    if(input.toString().startsWith("http://127.0.0.1:3210"))return json(session(actor));
+    if(input.toString().startsWith("http://127.0.0.1:3201"))return json(session(actor));
     owner++;throw Error("lost reply");
   });
   const reply=await PUT(request("PUT",base+"?addressId="+id));
@@ -114,7 +115,7 @@ test("serviceability BFF binds actor and both resource selectors; denies cross-c
   const value={actorId:actor,storeId:"store-a",addressId:id,status:"SERVICEABLE",evidence:{
     storeCityId:"sanaa",addressCityId:"sanaa",addressVersion:1,policyVersion:1,radiusMetres:30000,distanceMetres:10}};
   t.mock.method(globalThis,"fetch",async(input,init)=>{
-    if(input.toString().startsWith("http://127.0.0.1:3210")){
+    if(input.toString().startsWith("http://127.0.0.1:3201")){
       identityReads++;return json(session(switched&&identityReads>1?"customer-b":actor));
     }
     calls++;assert.equal(input.toString(),`http://127.0.0.1:3202/v1/carts/store-a/serviceability?addressId=${id}`);

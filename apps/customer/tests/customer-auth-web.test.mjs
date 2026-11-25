@@ -359,3 +359,18 @@ test("Fresh Customer proof cannot return successful access-only login when enrol
   assert.equal(res.headers.get("Set-Cookie"), null);
   assert.deepEqual(calls.map(x => x.method + " " + x.path), ["POST /v1/customer-auth/phone-verification", "GET /v1/sessions/current", "POST /v1/sessions/persistent", "DELETE /v1/sessions/current"]);
 });
+
+test("Customer cookie namespace is canonical even with retired environment settings", async t => {
+  const previous = process.env.BTHWANI_SURFACE_PREVIEW;
+  t.after(() => {
+    if (previous === undefined) delete process.env.BTHWANI_SURFACE_PREVIEW;
+    else process.env.BTHWANI_SURFACE_PREVIEW = previous;
+  });
+  process.env.BTHWANI_SURFACE_PREVIEW = "1";
+  const { customerCookieName, bearerForCustomerRequest } = await import("../src/features/access/customer-session-cookie.ts?retired-surface");
+  const retired = "bthwani_surface_customer_auth=" + "x".repeat(43);
+  const req = cookie => new Request(host + "/api/customer-auth", { headers: { Cookie: cookie } });
+  assert.equal(customerCookieName, "bthwani_customer_auth");
+  assert.equal(bearerForCustomerRequest(req(retired)), null);
+  assert.equal(bearerForCustomerRequest(req(retired + "; " + cookie)), token);
+});

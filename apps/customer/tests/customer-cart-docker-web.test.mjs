@@ -88,7 +88,6 @@ test("Docker Cart refuses flag-only, unisolated, unpinned and non-local owner co
     ["BTHWANI_ISOLATED_TEST_MODE", "false"],
     ["CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN", "http://127.0.0.1:3205"],
     ["CUSTOMER_SYNTHETIC_DSH_ORIGIN", "http://127.0.0.1:3290"],
-    ["BTHWANI_SURFACE_PREVIEW", "1"],
   ]) {
     const before = process.env[name];
     process.env[name] = value;
@@ -123,6 +122,30 @@ test("Docker Customer Cart opt-in rejects Surface and a different app before lau
       "-NoProfile", "-File", launcher, ...args, "-EnableDockerCartWebPreview",
     ], { encoding: "utf8", timeout: 12000, windowsHide: true });
     assert.equal(invoked.status, 1, invoked.stderr || invoked.error?.message);
-    assert.match(invoked.stderr, /DOCKER_CART_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY/);
+    assert.match(invoked.stderr, args.includes("-Surface")
+      ? /parameter name .Surface./i : /DOCKER_CART_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY/);
   }
+});
+
+test("retired Surface settings cannot enable Cart traffic or redirect the canonical owner", async t => {
+  const names = ["BTHWANI_SURFACE_PREVIEW", "BTHWANI_DOCKER_CART_WEB_PREVIEW",
+    "CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN", "CUSTOMER_SYNTHETIC_DSH_ORIGIN"];
+  const saved = names.map(name => process.env[name]);
+  t.after(() => names.forEach((name, i) => {
+    if (saved[i] === undefined) delete process.env[name];
+    else process.env[name] = saved[i];
+  }));
+  const { customerCartOwnerOrigins } = await import("../src/features/cart/cart-owner-origins.ts");
+  const url = new URL(base + "cart");
+  process.env.BTHWANI_SURFACE_PREVIEW = "1";
+  assert.deepEqual(customerCartOwnerOrigins(url), {
+    dsh: "http://127.0.0.1:3202", identity: "http://127.0.0.1:3201",
+  });
+  process.env.BTHWANI_DOCKER_CART_WEB_PREVIEW = "0";
+  process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN = "http://127.0.0.1:3210";
+  process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN = "http://127.0.0.1:33222";
+  assert.equal(customerCartOwnerOrigins(url), null);
+  t.mock.method(globalThis, "fetch", async () => assert.fail("retired owner must not receive credentials"));
+  assert.equal((await GET(new Request(base + "cart?storeId=store-a", { headers }))).status, 503);
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
 });
