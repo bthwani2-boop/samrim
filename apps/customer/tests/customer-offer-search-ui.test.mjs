@@ -5,27 +5,31 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import * as serviceability from "../src/features/location/serviceability.ts";
 import * as loader from "../src/features/stores/store-detail-loader.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const entry = fileURLToPath(new URL("../src/features/stores/store-detail-screen.tsx", import.meta.url));
+const routeEntry = fileURLToPath(new URL("../app/storefront/[storeId].tsx", import.meta.url));
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-offer-search-"));
 let compiled, compiledStorefrontRoute;
 try {
   const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), entry,
-    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(path.join(temp, "store-detail-screen.js"), "utf8");
-  const routeEntry = fileURLToPath(new URL("../app/storefront/[storeId].tsx", import.meta.url));
   const routeResult = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), routeEntry,
-    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(routeResult.status, 0, routeResult.stderr || routeResult.stdout);
   compiledStorefrontRoute = readFileSync(path.join(temp, "[storeId].js"), "utf8");
 } finally { rmSync(temp, { recursive: true, force: true }); }
 
+// Retain uncached modules until Node collects original-source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 function harness({ params = {}, id = "store-a" } = {}) {
   const hooks = [], requests = [], effects = new Map(), deps = new Map(), cleanups = new Map();
   let index = 0;
@@ -57,10 +61,8 @@ function harness({ params = {}, id = "store-a" } = {}) {
     "./public-store-origin": { resolvePublicStoreOrigin: () => "" },
     "./store-detail-loader": loader,
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`); return modules[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(compiled, entry, modules);
+  loadedModules.push(mod);
   return {
     render() { index = 0; const view = mod.exports.default({ storeID: id });
       for (const [at, effect] of effects) { cleanups.get(at)?.(); cleanups.set(at, effect()); }
@@ -116,21 +118,38 @@ test("unscoped public storefront link remains canonical", async () => {
   assert.equal(link.props.href, "/s/store-a");
 });
 
-function renderNativeStorefrontRoute(params) {
-  const mod = { exports: {} };
+function loadStorefrontRoute(params, platform = "android") {
   const jsx = (type, props) => ({ type, props });
   const modules = {
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "expo-router": { Redirect: "Redirect", useLocalSearchParams: () => params },
-    "react-native": { Platform: { OS: "android" } },
+    "react-native": { Platform: { OS: platform } },
     "../../src/features/stores/storefront-screen": { __esModule: true, default: "StorefrontScreen" },
     "../../src/features/location/serviceability": serviceability,
   };
-  new Function("require", "module", "exports", compiledStorefrontRoute)(name => {
-    assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`); return modules[name];
-  }, mod, mod.exports);
-  return mod.exports.default();
+  const mod = loadMappedRenderFixture(compiledStorefrontRoute, routeEntry, modules);
+  loadedModules.push(mod);
+  return mod.exports;
 }
+
+function renderNativeStorefrontRoute(params) {
+  return loadStorefrontRoute(params).default();
+}
+
+test("Web storefront renders only a validated public Store ID and remains excluded from search indexing", () => {
+  const route = loadStorefrontRoute({ storeId: "store-a", actorId: "ignored", city: "aden" }, "web");
+  assert.deepEqual(route.default(), { type: "StorefrontScreen", props: { storeId: "store-a" } });
+  assert.deepEqual(route.generateMetadata().robots, { index: false, follow: false });
+});
+
+test("invalid storefront IDs redirect without exposing a Store on Web or Android", () => {
+  for (const platform of ["web", "android"]) {
+    const scoped = loadStorefrontRoute({ storeId: ["store-a"], city: " ADEN ", q: " متجر " }, platform).default();
+    assert.deepEqual(scoped, { type: "Redirect", props: { href: { pathname: "/stores", params: { city: "aden", q: "متجر" } } } });
+    const invalid = loadStorefrontRoute({ storeId: "../private", city: "../private" }, platform).default();
+    assert.deepEqual(invalid, { type: "Redirect", props: { href: "/stores" } });
+  }
+});
 
 test("native storefront redirect preserves only validated directory context", () => {
   const route = renderNativeStorefrontRoute({ storeId: "store-a", city: " ADEN ", q: " متجر ", vertical: "GROCERY", actorId: "ignored" });
