@@ -11,6 +11,7 @@ on:
       - '!41'
     paths:
       - '.go-version'
+      - '.node-version'
       - '.github/workflows/go-quality.yml'
       - 'tools/dev/check-go.mjs'
       - 'tools/dev/check-go.test.mjs'
@@ -35,6 +36,7 @@ on:
       - main
     paths:
       - '.go-version'
+      - '.node-version'
       - '.github/workflows/go-quality.yml'
       - 'tools/dev/check-go.mjs'
       - 'tools/dev/check-go.test.mjs'

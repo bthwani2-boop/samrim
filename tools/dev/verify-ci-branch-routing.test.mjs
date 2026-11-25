@@ -131,3 +131,18 @@ test("the relocated disposable WebAuthn stack still triggers owner CI", () => {
   assert.ok(push.includes(pattern));
   assert.ok(pr.includes(pattern));
 });
+
+test("CI reruns the relevant checks when shared toolchain or dependency inputs change", () => {
+  for (const file of [workflows[1], workflows[2]]) {
+    const { push, pr } = events(file);
+    for (const block of [push, pr]) {
+      assert.ok(block.includes("      - '.node-version'"), file + ": missing pinned Node trigger");
+    }
+  }
+  const { push, pr } = events(workflows[1]);
+  for (const block of [push, pr]) {
+    for (const pattern of [".npmrc", "tsconfig.base.json", "**/tsconfig.json", "patches/**"]) {
+      assert.ok(block.includes("      - '" + pattern + "'"), "Dependency/Nx missing " + pattern);
+    }
+  }
+});
