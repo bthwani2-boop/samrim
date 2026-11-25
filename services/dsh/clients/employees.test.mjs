@@ -260,6 +260,58 @@ test("employee recovery serializes claims and rejects stale tabs even after owne
 });
 
 
+test("employee recovery does not persist a new attempt when cancelled during the locked read", async () => {
+  const { openEmployeeRegistrationRecovery, claimEmployeeRegistration } = await import("./index.ts");
+  const { createHash, randomUUID } = await import("node:crypto");
+  const controller = new AbortController();
+  const records = new Map();
+  let abortOnRead = false;
+  const port = {
+    read: async key => {
+      if (abortOnRead) controller.abort();
+      return records.get(key) ?? null;
+    },
+    write: async (key, value) => { records.set(key, value); },
+    lock: async (_key, action) => action(),
+    digest: async text => createHash("sha256").update(text).digest("hex"),
+    randomUUID,
+  };
+  const draft = { displayName: "Employee", department: "Operations", jobTitle: "Coordinator", startDate: "2026-11-20" };
+  const recovery = await openEmployeeRegistrationRecovery(port, "merchant", "actor-a");
+  abortOnRead = true;
+  await assert.rejects(claimEmployeeRegistration(port, recovery, draft, controller.signal), { name: "AbortError" });
+  assert.equal(records.size, 0, "cancelled read must not create a pending operation");
+  abortOnRead = false;
+  const reopened = await openEmployeeRegistrationRecovery(port, "merchant", "actor-a");
+  const next = await claimEmployeeRegistration(port, reopened, { ...draft, displayName: "Corrected" });
+  assert.equal(next.status, "claimed");
+  assert.equal(next.replay, false);
+});
+
+test("employee recovery retains an opaque attempt when cancellation occurs during persistence", async () => {
+  const { openEmployeeRegistrationRecovery, claimEmployeeRegistration } = await import("./index.ts");
+  const { createHash, randomUUID } = await import("node:crypto");
+  const controller = new AbortController();
+  const records = new Map();
+  const port = {
+    read: async key => records.get(key) ?? null,
+    write: async (key, value) => { records.set(key, value); controller.abort(); },
+    lock: async (_key, action) => action(),
+    digest: async text => createHash("sha256").update(text).digest("hex"),
+    randomUUID,
+  };
+  const draft = { displayName: "Employee", department: "Operations", jobTitle: "Coordinator", startDate: "2026-11-20" };
+  const recovery = await openEmployeeRegistrationRecovery(port, "merchant", "actor-a");
+  await assert.rejects(claimEmployeeRegistration(port, recovery, draft, controller.signal), { name: "AbortError" });
+  const reopened = await openEmployeeRegistrationRecovery(port, "merchant", "actor-a");
+  assert.ok(reopened.attempt);
+  assert.equal((await claimEmployeeRegistration(port, reopened, { ...draft, displayName: "Different" })).status, "mismatch");
+  const replay = await claimEmployeeRegistration(port, reopened, draft);
+  assert.equal(replay.status, "claimed");
+  assert.equal(replay.replay, true);
+  assert.equal(replay.input.operationId, reopened.attempt.operationId);
+});
+
 test("registration outcomes retire only a verified validation rejection, not an arbitrary HTTP 400", async () => {
   const { employeeRegistrationErrorOutcome } = await import("./index.ts");
   assert.equal(employeeRegistrationErrorOutcome(new DshPublicError(400, "EMPLOYEE_REGISTRATION_INVALID")), "invalid");

@@ -66,7 +66,9 @@ export async function claimEmployeeRegistration(port: EmployeeRegistrationRecove
   const fingerprint = await port.digest(JSON.stringify([fields.displayName, fields.department, fields.jobTitle, fields.startDate]));
   return port.lock(recovery.key, async () => {
     signal?.throwIfAborted();
-    const current = parseAttempt(await port.read(recovery.key));
+    const raw = await port.read(recovery.key);
+    signal?.throwIfAborted();
+    const current = parseAttempt(raw);
     if (!sameAttempt(current, recovery.attempt)) return { status: "changed" };
     const pending = current && !current.settled ? current : null;
     if (pending && pending.fingerprint !== fingerprint) return { status: "mismatch" };
