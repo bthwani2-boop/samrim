@@ -443,3 +443,53 @@ test("leaving the Store directory aborts active Store and vertical continuations
   verticals.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
   await Promise.all([storeMore, verticalMore]);
 });
+
+test("superseded Store and vertical continuation callbacks cannot cancel a new city read", async () => {
+  const app = harness();
+  app.render();
+  app.read().resolve({ items: [store("old")], nextCursor: "old-store-cursor", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], nextCursor: "old-vertical-cursor", revision: 1 });
+  await settle();
+  const old = app.render();
+  const staleStore = button(old, "عرض المزيد").props.onPress;
+  const staleVertical = byId(old, "vertical-options-more").props.onPress;
+  app.setParams({ city: "aden" });
+  app.render();
+  app.render();
+  const currentStore = app.read();
+  const currentVertical = app.readCategory();
+  const stale = staleStore();
+  const staleV = staleVertical();
+  assert.equal(currentStore.signal.aborted, false, "old Store callback cancelled the current city");
+  assert.equal(currentVertical.signal.aborted, false, "old vertical callback cancelled the current city");
+  await Promise.all([stale, staleV]);
+  currentStore.resolve({ items: [{ ...store("current"), cityId: "aden" }], revision: 2 });
+  currentVertical.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 2 });
+  await settle();
+  assert.ok(byId(app.render(), "store-current"));
+  assert.ok(byId(app.render(), "vertical-option-pharmacy"));
+});
+
+test("a duplicate Store or vertical continuation callback must not cancel the active continuation", async () => {
+  const app = harness();
+  app.render();
+  app.read().resolve({ items: [store("first")], nextCursor: "stores-next", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], nextCursor: "vertical-next", revision: 1 });
+  await settle();
+  const ready = app.render();
+  const loadStore = button(ready, "عرض المزيد").props.onPress;
+  const loadVertical = byId(ready, "vertical-options-more").props.onPress;
+  const storePending = loadStore();
+  const verticalPending = loadVertical();
+  const stores = app.read();
+  const verticals = app.readCategory();
+  const duplicateStore = loadStore();
+  const duplicateVertical = loadVertical();
+  assert.equal(stores.signal.aborted, false, "duplicate callback cancelled the Store read");
+  assert.equal(verticals.signal.aborted, false, "duplicate callback cancelled the vertical read");
+  stores.resolve({ items: [store("second")], revision: 1 });
+  verticals.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
+  await Promise.all([storePending, verticalPending, duplicateStore, duplicateVertical]);
+  assert.ok(byId(app.render(), "store-second"));
+  assert.ok(byId(app.render(), "vertical-option-pharmacy"));
+});

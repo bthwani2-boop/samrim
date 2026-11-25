@@ -80,10 +80,13 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   }, [api, cityId, verticalRetry]);
   const visibleVerticals: VerticalState = verticalState.city === cityId ? verticalState :
     { city: cityId, loading: true, loadingMore: false, items: [] };
+  const renderedVerticalGeneration = verticalGeneration.current;
   const loadMoreVerticals = async () => {
-    if (!visibleVerticals.cursor || visibleVerticals.loading || visibleVerticals.loadingMore) return;
+    if (!visibleVerticals.cursor || visibleVerticals.loading || visibleVerticals.loadingMore ||
+      renderedVerticalGeneration !== verticalGeneration.current) return;
     const cursor = visibleVerticals.cursor;
-    const current = verticalGeneration.current;
+    // Consume this rendered continuation before it can cancel a newer owner read.
+    const current = ++verticalGeneration.current;
     const abort = new AbortController();
     verticalAbort.current?.abort();
     verticalAbort.current = abort;
@@ -137,10 +140,12 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   }, [api, cityId, query, vertical, scope, retry]);
   const visible: PageState = appliedRouteScope === routeScope && state.scope === scope
     ? state : { scope, loading: true, loadingMore: false, items: [] };
+  const renderedGeneration = generation.current;
   const loadMore = async () => {
-    if (!visible.cursor || visible.loadingMore || visible.loading) return;
+    if (!visible.cursor || visible.loadingMore || visible.loading ||
+      renderedGeneration !== generation.current) return;
     const scopedCity = cityId;
-    const current = generation.current;
+    const current = ++generation.current;
     const abort = new AbortController();
     pageAbort.current?.abort();
     pageAbort.current = abort;
