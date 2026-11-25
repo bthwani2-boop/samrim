@@ -280,15 +280,24 @@ for (const stage of ["identity", "dsh"]) {
   });
 }
 
-test("Native Merchant standing revokes the denied current bearer without invalidating a newer account", async t => {
+test("Native Merchant standing rejects DSH denial while preserving valid Identity credentials", async t => {
   const same = harness(t, { dshStatus: 403 });
   await assert.rejects(same.transport.readMerchantStanding(signal()), { code: "STORE_ACCESS_DENIED" });
-  assert.equal(same.current(), null, "current denied credential must be removed");
+  assert.equal(same.current(), bearer);
+  assert.equal((await same.transport.readAdmission(signal())).session?.role, "merchant");
 
   let switched;
   switched = harness(t, { dshStatus: 403, onDSH: () => switched.switchBearer() });
   await assert.rejects(switched.transport.readMerchantStanding(signal()), { code: "STORE_ACCESS_DENIED" });
   assert.notEqual(switched.current(), bearer, "late rejection may not delete replacement credential");
+  assert.ok(switched.current(), "the replacement credential must remain present");
+});
+
+test("Native Merchant standing removes an Identity-rejected current credential before contacting DSH", async t => {
+  const denied = harness(t, { identityStatus: 403 });
+  await assert.rejects(denied.transport.readMerchantStanding(signal()), { status: 403 });
+  assert.equal(denied.current(), null);
+  assert.deepEqual(denied.calls.map(call => new URL(call.url).pathname), ["/v1/sessions/current"]);
 });
 
 test("Web Merchant PATCH must not confirm a stale or implausible DSH version", async t => {
