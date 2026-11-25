@@ -31,6 +31,8 @@ For platform Captain dispatch, DSH may retain only a current bounded **latest av
 - Protect Root Owner, users, sessions, wallet balances, Orders, media, provider secrets, schemas and shared environment data. No direct SQL/test fixture may manufacture financial or security PASS. Test credentials and synthetic data need authorization/isolation and secure disposal.
 - A new Docker/Compose environment uses separately named project/services, networks, ports and volumes. Do not start or replace containers in the old environment merely to assemble governance.
 
+**Synthetic environment boundary:** Before any seed, fixture or sandbox writes, verify the actual target database/namespace, role, isolated configuration and operation-specific admission; fail closed if identity, ownership or isolation is uncertain. Never use production credentials, real customer contact details or real payment/message rails; isolate automated test runs from shared development and each other. Preserve unknown-origin or retained development data, sessions, media and ledger history. The normal development lifecycle cannot reset shared state. The preparation workflow and repeatability rules belong to [engineering.md](engineering.md#local-development-data-lifecycle).
+
 ## Software and supply-chain safeguards
 - Retain proven dependencies, signing identities, domain routes and credential boundaries. Do not add a plugin, wrapper, CI agent, secret store or external provider without a concrete owner and necessity.
 - GitHub Actions use minimum token permissions and do not expose secrets to untrusted PR/fork code. Fast Guard and provider review checks are proof instruments, not authority to approve business decisions.

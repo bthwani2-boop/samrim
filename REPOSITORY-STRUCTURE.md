@@ -128,6 +128,10 @@ The following is **placement law**, not a requirement to create empty folders or
 | Cohesion and consumer investigation | [Source inventory](tools/dev/source-inventory.mjs) and its [fixtures](tools/dev/source-inventory.test.mjs) inspect authored tracked/untracked paths and known consumers; findings require a code-owner decision, not automatic split/deletion. |
 | New test discovery and Nx affected routing | `pnpm check:test-inclusion` and [Nx impact fixtures](tools/dev/verify-nx-project-graph.test.mjs) detect missed tests and changed owner/consumer paths; passing graph checks are not runtime proof. |
 
+### Development data placement
+
+Keep synthetic bootstrap/seed implementation beside its actual service owner's existing backend commands or domain source, WLT synthetic SQL in its admitted sandbox, and focused fixtures/factories beside their owner tests. Cross-owner integration scenarios belong in existing root tests; coordination belongs in the existing tools/dev launcher, Compose in infra, and operating instructions in infra/README.md. No mandatory new seed/factory directory, generic cross-owner data writer or duplicate schema loader. Follow [engineering governance](governance/engineering.md#local-development-data-lifecycle) for lifecycle and safety.
+
 ### Names which must not be conflated
 
 - **Actor/Merchant** is an Identity-authenticated person or delegated role; **Store** is a DSH-owned business resource. A Merchant may operate multiple Stores. See `governance/identity.md` and `governance/stores.md` for Product semantics.
