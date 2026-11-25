@@ -65,6 +65,16 @@ func TestCheckoutReviewRejectsInvalidAndUnverifiedRequests(t *testing.T) {
 			}
 		})
 	}
+	t.Run("SQL syntax rejected in Store selector", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/v1/carts/store-a%27%20OR%201%3D1--/checkout-review", bytes.NewBufferString(self))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+cartTestBearer("customer-a"))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != 400 || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("invalid Store selector accepted: %d %s", rec.Code, rec.Body.String())
+		}
+	})
 }
 
 func checkoutReviewRequest(t *testing.T, h http.Handler, actor string, payload map[string]any) (int, []byte) {
