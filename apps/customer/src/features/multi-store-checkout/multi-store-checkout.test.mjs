@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 test("multi-Store directory lists verified drafts without order orchestration", () => {
   const source = readFileSync(new URL("./multi-store-checkout-screen.tsx", import.meta.url), "utf8");
@@ -51,7 +52,7 @@ const screen=fileURLToPath(new URL("./multi-store-checkout-screen.tsx",import.me
 const temp=mkdtempSync(path.join(tmpdir(),"bthwani-cart-directory-render-"));
 let compiled;
 try {
-  const result=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),screen,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--outDir",temp],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
+  const result=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),screen,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",temp],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
   assert.equal(result.status,0,result.stderr||result.stdout);
   compiled=readFileSync(path.join(temp,"multi-store-checkout-screen.js"),"utf8");
 }finally{rmSync(temp,{recursive:true,force:true});}
@@ -76,8 +77,7 @@ function harness(){
       verifyCartDirectorySession:async()=>session(actor),
     },
   };
-  const mod={exports:{}};
-  new Function("require","module","exports",compiled)(name=>{assert.ok(Object.hasOwn(modules,name),name);return modules[name];},mod,mod.exports);
+  const mod=loadMappedRenderFixture(compiled,screen,modules);
   return {reads,render(){index=0;return mod.exports.default();},focus(){cleanup?.();cleanup=focus();},blur(){cleanup?.();}};
 }
 const settle=()=>new Promise(setImmediate);
@@ -95,4 +95,37 @@ test("actual screen renders owner Store links, rejects stale continuation and la
   h.focus();next();assert.equal(h.reads.length,3);
   h.reads[2].resolve({value:{...page,carts:[]},expiresAt:Date.now()+60000});await settle();
   assert.equal(links(h.render()).length,0);h.blur();
+});
+
+const buttonByText = (h,label) => nodes(h.render()).find(n=>n.type==="Pressable"&&nodes(n.props.children).some(child=>child.type==="Text"&&child.props.children===label));
+
+test("failed directory continuation retries the same cursor and verified actor; old retry cannot dispatch again",async()=>{
+  const h=harness();h.render();h.focus();
+  h.reads[0].resolve({value:{...page,nextCursor:"store-a"},expiresAt:Date.now()+60000});await settle();
+  buttonByText(h,"المزيد من السلال").props.onPress();
+  h.reads[1].reject(new Error("owner temporarily unavailable"));await settle();
+  assert.equal(links(h.render()).length,0);
+  const retry=buttonByText(h,"إعادة المحاولة").props.onPress;
+  retry();retry();
+  assert.equal(h.reads.length,3,"retry dispatches once");
+  assert.equal(h.reads[2].after,"store-a","retry must not reset to first page");
+  assert.equal(h.reads[2].actorId,actor);
+  h.reads[2].resolve({value:{...page,carts:[{...entry,storeId:"store-b"}]},expiresAt:Date.now()+60000});await settle();
+  assert.equal(links(h.render())[0].props.href.params.storeId,"store-b");
+  retry();assert.equal(h.reads.length,3);h.blur();
+});
+
+test("return to first page is bound to the verified actor and old callback cannot restart a new focus",async()=>{
+  const h=harness();h.render();h.focus();
+  h.reads[0].resolve({value:{...page,nextCursor:"store-a"},expiresAt:Date.now()+60000});await settle();
+  buttonByText(h,"المزيد من السلال").props.onPress();
+  h.reads[1].resolve({value:{...page,carts:[{...entry,storeId:"store-b"}]},expiresAt:Date.now()+60000});await settle();
+  const restart=buttonByText(h,"العودة إلى البداية").props.onPress;
+  restart();restart();
+  assert.equal(h.reads.length,3);
+  assert.equal(h.reads[2].after,undefined);
+  assert.equal(h.reads[2].actorId,actor);
+  h.blur();h.render();h.focus();restart();
+  assert.equal(h.reads.length,4,"old callback cannot interrupt new focus");
+  h.blur();
 });

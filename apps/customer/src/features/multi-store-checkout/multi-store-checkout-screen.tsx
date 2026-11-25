@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { readVerifiedCartDirectory, verifyCartDirectorySession } from "../cart/cart-directory-transport";
 
 type Ready={page:CustomerCartDirectory;expiresAt:number;after?:string};
-type State={kind:"loading"|"hidden"|"signed-out"|"unavailable"}|{kind:"ready";data:Ready};
+type State={kind:"loading"|"hidden"|"signed-out"}|{kind:"unavailable";after:string|undefined;actor:string|undefined}|{kind:"ready";data:Ready};
 
 export default function MultiStoreCheckoutScreen(){
   const {theme}=useMobileAppearance();
@@ -24,18 +24,23 @@ export default function MultiStoreCheckoutScreen(){
     scope.current?.abort();
     const controller=new AbortController();scope.current=controller;
     publish({kind:"loading"});
+    const unavailable=()=>publish({kind:"unavailable",after,actor});
     const signal=controller.signal;
     const deadline=setTimeout(()=>{
-      if(scope.current===controller&&!signal.aborted){controller.abort();publish({kind:"unavailable"});}
+      if(scope.current===controller&&!signal.aborted){controller.abort();unavailable();}
     },12000);
+    const cancelDeadline=()=>clearTimeout(deadline);
+    signal.addEventListener("abort",cancelDeadline,{once:true});
     void readVerifiedCartDirectory(signal,after,actor).then(result=>{
       if(scope.current!==controller||controller.signal.aborted)return;
-      if(signal.aborted||result.expiresAt<=Date.now()){publish({kind:"unavailable"});return;}
+      if(!(result.expiresAt>Date.now())){unavailable();return;}
       publish({kind:"ready",data:{page:result.value,expiresAt:result.expiresAt,...(after?{after}:{})}});
     }).catch(error=>{
-      if(scope.current===controller&&!controller.signal.aborted)
-        publish({kind:error instanceof DshPublicError&&error.status===401?"signed-out":"unavailable"});
-    }).finally(()=>clearTimeout(deadline));
+      if(scope.current===controller&&!controller.signal.aborted){
+        if(error instanceof DshPublicError&&error.status===401)publish({kind:"signed-out"});
+        else unavailable();
+      }
+    }).finally(()=>{cancelDeadline();signal.removeEventListener("abort",cancelDeadline);});
   },[publish]);
   useFocusEffect(useCallback(()=>{
     focused.current=true;load();
@@ -68,9 +73,16 @@ export default function MultiStoreCheckoutScreen(){
     return ()=>{clearTimeout(expiry);clearInterval(check);};
   },[state,clear,publish]);
   const button={minHeight:44,padding:12,borderRadius:10,backgroundColor:theme.actionSoft,justifyContent:"center" as const};
+  const isCurrentReady=()=>state.kind==="ready"&&current.current===state&&scope.current&&!scope.current.signal.aborted&&state.data.expiresAt>Date.now();
   const next=()=>{
-    if(state.kind==="ready"&&current.current===state&&scope.current&&!scope.current.signal.aborted&&state.data.expiresAt>Date.now()&&state.data.page.nextCursor)
+    if(state.kind==="ready"&&isCurrentReady()&&state.data.page.nextCursor)
       load(state.data.page.nextCursor,state.data.page.actorId);
+  };
+  const restart=()=>{
+    if(state.kind==="ready"&&isCurrentReady())load(undefined,state.data.page.actorId);
+  };
+  const retry=()=>{
+    if(state.kind==="unavailable"&&current.current===state)load(state.after,state.actor);
   };
   return <SafeAreaView style={{flex:1,backgroundColor:theme.background}}>
     <ScrollView contentContainerStyle={{gap:16,padding:20,maxWidth:720,width:"100%",alignSelf:"center"}}>
@@ -86,10 +98,10 @@ export default function MultiStoreCheckoutScreen(){
           </Pressable></Link>
         </View>)}
         {state.data.page.nextCursor?<Pressable accessibilityRole="button" onPress={next} style={button}><Text style={{color:theme.interactiveText}}>المزيد من السلال</Text></Pressable>:null}
-        {state.data.after?<Pressable accessibilityRole="button" onPress={()=>load()} style={button}><Text style={{color:theme.interactiveText}}>العودة إلى البداية</Text></Pressable>:null}
+        {state.data.after?<Pressable accessibilityRole="button" onPress={restart} style={button}><Text style={{color:theme.interactiveText}}>العودة إلى البداية</Text></Pressable>:null}
       </>:state.kind==="signed-out"?<Link href="/login" style={{color:theme.interactiveText}}>سجّل الدخول لعرض سلالك</Link>:
         state.kind==="unavailable"?<><Text accessibilityRole="alert" style={{color:theme.color}}>تعذر التحقق من السلال.</Text>
-          <Pressable accessibilityRole="button" onPress={()=>load()} style={button}><Text style={{color:theme.interactiveText}}>إعادة المحاولة</Text></Pressable></>:
+          <Pressable accessibilityRole="button" onPress={retry} style={button}><Text style={{color:theme.interactiveText}}>إعادة المحاولة</Text></Pressable></>:
           <Text accessibilityLiveRegion="polite" style={{color:theme.colorSecondary}}>جارٍ التحقق من السلال.</Text>}
       <Text testID="checkout-confirmation-unavailable" style={{color:theme.colorSecondary}}>تأكيد الطلب من عدة متاجر والدفع الموحّد غير متاحين حاليًا.</Text>
       <Link href="/stores" style={{color:theme.interactiveText}}>متابعة تصفح المتاجر</Link>
