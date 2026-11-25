@@ -118,3 +118,54 @@ test("a changed operator binding or revoked operator never renders the quick sta
     });
   }
 });
+
+for (const [status, message] of [
+  [401, /انتهت جلسة/],
+  [403, /لا تملك صلاحية/],
+  [404, /لا يوجد/],
+  [503, /تعذّر قراءة/],
+]) {
+  test(`Captain client rejects HTTP ${status} before exposing owner data`, async (t) => {
+    t.mock.method(globalThis, "fetch", async () => response(standing, "operator-a", status));
+    await assert.rejects(client.readCaptainJson("/api/captains/captain-a/standing", new AbortController().signal, "operator-a"), { message });
+  });
+}
+
+test("Captain client rejects absent or changed operator binding even with valid standing data", async (t) => {
+  let binding;
+  t.mock.method(globalThis, "fetch", async () => response(standing, binding));
+  const signal = new AbortController().signal;
+  await assert.rejects(client.readCaptainPage("/api/captains", signal));
+  await assert.rejects(client.readCaptainJson("/api/captains/captain-a/standing", signal, "operator-a"));
+  binding = "operator-b";
+  await assert.rejects(client.readCaptainJson("/api/captains/captain-a/standing", signal, "operator-a"));
+});
+
+test("Captain client propagates malformed JSON and cancellation without fallback data", async (t) => {
+  const signal = new AbortController().signal;
+  const transport = t.mock.method(globalThis, "fetch", async () => new Response("not-json", {
+    headers: { [bindingHeader]: "operator-a" },
+  }));
+  await assert.rejects(client.readCaptainJson("/api/captains/captain-a/standing", signal, "operator-a"), SyntaxError);
+  const controller = new AbortController();
+  controller.abort();
+  transport.mock.mockImplementation(async (_url, options) => {
+    assert.equal(options.signal, controller.signal);
+    assert.equal(options.credentials, "same-origin");
+    assert.equal(options.cache, "no-store");
+    options.signal.throwIfAborted();
+  });
+  await assert.rejects(client.readCaptainPage("/api/captains", controller.signal), { name: "AbortError" });
+});
+
+test("Captain standing rejects malformed actor identity, status and version", () => {
+  for (const value of [
+    null, {}, { ...standing, actorId: 1 }, { ...standing, actorId: "" },
+    { ...standing, status: "INVALID" }, { ...standing, version: 0 },
+    { ...standing, version: 1.5 }, { ...standing, version: NaN },
+    { ...standing, version: Number.MAX_SAFE_INTEGER + 1 },
+  ]) {
+    assert.equal(client.isCaptainStanding(value), false);
+  }
+  assert.equal(client.isCaptainStanding(standing), true);
+});
