@@ -123,11 +123,11 @@ function harness() {
       async requestCaptainApplication() { return "PENDING"; },
     },
   };
-  const reload = ({ preview = false } = {}) => {
+  const reload = ({ legacySetting = false } = {}) => {
     return loadAdmissionFixture(dependencies, {
       EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
       EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
-      EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: preview ? "1" : "0",
+      EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: legacySetting ? "1" : "0",
     });
   };
   return {
@@ -159,23 +159,33 @@ test("mapped admission fixture restores worker environment on success and failur
   };
   const snapshot = () => Object.keys(env).map(key => process.env[key]);
   const before = snapshot();
-  harness().reload({ preview: true });
+  harness().reload({ legacySetting: true });
   assert.deepEqual(snapshot(), before);
   assert.throws(() => loadAdmissionFixture({}, env), /unexpected fixture dependency/);
   assert.deepEqual(snapshot(), before);
 });
 
-test("Surface preview never reads or revokes the installed app session", async () => {
+test("retired Surface setting cannot select another Captain credential namespace", async () => {
   const h = harness();
-  const legacyKey = "bthwani.captain.synthetic-admission.v1";
-  h.stored.set(legacyKey, h.tokens.captain);
-  const preview = h.reload({ preview: true });
+  const installedKey = "bthwani.captain.synthetic-admission.v1";
+  const retiredKey = "bthwani.captain.synthetic-admission.surface.v1";
+  h.stored.set(installedKey, h.tokens.captain);
   const signal = new AbortController().signal;
-  assert.deepEqual(await preview.readCaptainAdmission(signal), { enabled: true, standingReady: true, session: null });
-  await preview.leaveCaptainAdmission(signal);
-  assert.equal(h.ownerReads, 0);
+  const api = h.reload({ legacySetting: true });
+  assert.equal((await api.readCaptainAdmission(signal)).session?.actorId, "captain-owner-one");
+  h.stored.set(retiredKey, h.tokens.customer);
+  assert.equal((await api.readCaptainAdmission(signal)).session?.role, "captain");
+  assert.equal(h.stored.get(installedKey), h.tokens.captain);
+  assert.equal(h.stored.get(retiredKey), h.tokens.customer);
+  const isolated = harness();
+  isolated.stored.set(retiredKey, isolated.tokens.captain);
+  const retired = isolated.reload({ legacySetting: true });
+  assert.deepEqual(await retired.readCaptainAdmission(signal), { enabled: true, standingReady: true, session: null });
+  await retired.leaveCaptainAdmission(signal);
+  assert.equal(isolated.ownerReads, 0);
+  assert.equal(isolated.captainRevocationAttempts, 0);
+  assert.equal(isolated.stored.get(retiredKey), isolated.tokens.captain);
   assert.equal(h.captainRevocationAttempts, 0);
-  assert.equal(h.stored.get(legacyKey), h.tokens.captain);
 });
 
 test("Captain account logout cannot revoke a newer or different actor", async () => {

@@ -26,7 +26,6 @@ try {
 const fixtureEnv = {
   EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:33221",
   EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:33222",
-  EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: "0",
 };
 function loadNativeFixture(dependencies) {
   const previous = new Map(Object.keys(fixtureEnv).map(key => [key, process.env[key]]));

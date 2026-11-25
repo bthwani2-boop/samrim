@@ -138,11 +138,11 @@ function transportHarness() {
       async readMerchantDSHStanding(_origin, bearer) { assert.equal(bearer, merchantBearer); return { stores: [] }; },
     },
   };
-  function load({ preview = false, platform = "android", enabled = true } = {}) {
+  function load({ legacySetting = false, platform = "android", enabled = true } = {}) {
     const env = {
       EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: enabled ? "http://127.0.0.1:3201" : "",
       EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
-      EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: preview ? "1" : "0",
+      EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: legacySetting ? "1" : "0",
     };
     const previous = new Map(Object.keys(env).map(key => [key, process.env[key]]));
     try {
@@ -163,18 +163,56 @@ function transportHarness() {
   };
 }
 
-test("native Merchant admission requires the configured owner and keeps preview separate from the installed session", async () => {
+test("native Merchant admission requires the owner and ignores the retired Surface setting", async () => {
   const h = transportHarness();
   const signal = new AbortController().signal;
+  const retiredKey = "bthwani.merchant.synthetic-admission.surface.v1";
   h.storage.set(installedKey, merchantBearer);
   h.storage.set(refreshKey, refreshToken);
+  h.setRead(async bearer => {
+    assert.equal(bearer, merchantBearer);
+    return { session: h.state, bearer };
+  });
   assert.deepEqual(await h.load({ enabled: false }).readAdmission(signal), { enabled: false, session: null });
-  const preview = h.load({ preview: true });
-  assert.deepEqual(await preview.readAdmission(signal), { enabled: true, session: null });
-  await preview.signOutOfAdmission(signal);
+  const api = h.load({ legacySetting: true });
+  assert.deepEqual(await api.readAdmission(signal), { enabled: true, session: h.state });
+  h.storage.set(retiredKey, customerBearer);
+  assert.deepEqual(await api.readAdmission(signal), { enabled: true, session: h.state });
+  const isolated = transportHarness();
+  isolated.storage.set(retiredKey, customerBearer);
+  isolated.storage.set(retiredKey + ".refresh.v1", refreshToken);
+  const retired = isolated.load({ legacySetting: true });
+  assert.deepEqual(await retired.readAdmission(signal), { enabled: true, session: null });
+  await retired.signOutOfAdmission(signal);
+  assert.deepEqual(isolated.revoked, []);
+  assert.equal(isolated.storage.get(retiredKey), customerBearer);
+  assert.equal(isolated.storage.get(retiredKey + ".refresh.v1"), refreshToken);
   assert.deepEqual(h.revoked, []);
   assert.equal(h.storage.get(installedKey), merchantBearer);
   assert.equal(h.storage.get(refreshKey), refreshToken);
+});
+
+test("Merchant browser admission ignores retired cookies and the retired Surface setting", async () => {
+  const previous = process.env.BTHWANI_SURFACE_PREVIEW;
+  try {
+    process.env.BTHWANI_SURFACE_PREVIEW = "1";
+    const api = await import("../src/features/access/browser-admission-http.ts?retired-surface-cookie");
+    const canonical = "bthwani_merchant_admission";
+    const retired = "bthwani_surface_merchant_admission";
+    assert.equal(api.cookieName, canonical);
+    assert.equal(api.refreshCookieName, canonical + ".refresh");
+    const oldCookies = retired + "=" + customerBearer + "; " + retired + ".refresh=" + customerBearer;
+    const request = cookies => new Request("https://localhost/api/admission", { headers: { cookie: cookies } });
+    assert.equal(api.bearerFrom(request(oldCookies)), undefined);
+    assert.equal(api.refreshFrom(request(oldCookies)), null);
+    const both = request(oldCookies + "; " + canonical + "=" + merchantBearer + "; " + canonical + ".refresh=" + refreshToken);
+    assert.equal(api.bearerFrom(both), merchantBearer);
+    assert.equal(api.refreshFrom(both), refreshToken);
+    assert.equal(api.sessionCookie(both, merchantBearer, 60), canonical + "=" + merchantBearer + "; Path=/api/admission; HttpOnly; SameSite=Strict; Max-Age=60; Secure");
+  } finally {
+    if (previous === undefined) delete process.env.BTHWANI_SURFACE_PREVIEW;
+    else process.env.BTHWANI_SURFACE_PREVIEW = previous;
+  }
 });
 
 test("native Merchant admission persists its credential pair, verifies the current role and revokes only that pair on sign-out", async () => {
