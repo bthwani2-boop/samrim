@@ -184,6 +184,17 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     alignItems: "center", backgroundColor: theme.surface } as const;
   const browseParams = { city: cityId, ...(query ? { q: query } : {}), ...(vertical ? { vertical } : {}) };
   const submitSearch = () => setQuery(draftQuery.trim());
+  const refresh = () => {
+    if (renderedGeneration !== generation.current || renderedVerticalGeneration !== verticalGeneration.current) return;
+    generation.current++;
+    verticalGeneration.current++;
+    pageAbort.current?.abort();
+    verticalAbort.current?.abort();
+    setState({ scope, loading: true, loadingMore: false, items: [] });
+    setVerticalState({ city: cityId, loading: true, loadingMore: false, items: [] });
+    setRetry(value => value + 1);
+    setVerticalRetry(value => value + 1);
+  };
   return (
     <SafeAreaView
       edges={variant === "home" ? ["top", "left", "right"] : ["top", "bottom", "left", "right"]}
@@ -200,6 +211,10 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
                 accessibilityState={{ expanded: showSearch }} style={headerAction}
                 onPress={() => { setShowSearch(value => !value); setShowCityPicker(false); }}>
                 <Text style={{ color: theme.interactiveText, fontWeight: "700" }}>بحث</Text>
+              </Pressable>
+              <Pressable testID="stores-refresh" accessibilityRole="button"
+                accessibilityLabel="تحديث المتاجر والتصنيفات" style={headerAction} onPress={refresh}>
+                <Text style={{ color: theme.interactiveText, fontWeight: "700" }}>تحديث</Text>
               </Pressable>
               <Link href="/notifications" asChild>
                 <Pressable accessibilityRole="link" style={headerAction}>

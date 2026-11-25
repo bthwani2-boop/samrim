@@ -493,3 +493,60 @@ test("a duplicate Store or vertical continuation callback must not cancel the ac
   assert.ok(byId(app.render(), "store-second"));
   assert.ok(byId(app.render(), "vertical-option-pharmacy"));
 });
+
+for (const variant of ["home", "directory"]) {
+  test(`${variant}: explicit refresh reloads empty Store and vertical lists with the active scope`, async () => {
+    const app = harness({ variant, params: { city: "aden", q: "مخبز", vertical: "grocery" } });
+    app.render();
+    app.read().resolve({ items: [], revision: 1 });
+    app.readCategory().resolve({ items: [], revision: 1 });
+    await settle();
+    const empty = app.render();
+    assert.ok(byId(empty, "stores-empty"));
+    byId(empty, "stores-refresh").props.onPress();
+    app.render();
+    const stores = app.read();
+    const verticals = app.readCategory();
+    assert.equal(stores.cityId, "aden");
+    assert.equal(stores.query, "مخبز");
+    assert.equal(stores.verticalId, "grocery");
+    assert.equal(stores.cursor, undefined);
+    assert.equal(verticals.cityId, "aden");
+    assert.equal(verticals.cursor, undefined);
+    stores.resolve({ items: [{ ...store("new"), cityId: "aden" }], revision: 2 });
+    verticals.resolve({ items: [{ id: "grocery", storeCount: 1 }], revision: 2 });
+    await settle();
+    assert.ok(byId(app.render(), "store-new"));
+    assert.ok(byId(app.render(), "vertical-option-grocery"));
+  });
+}
+
+test("refresh supersedes both active continuations and ignores their late responses", async () => {
+  const app = harness();
+  app.render();
+  app.read().resolve({ items: [store("first")], nextCursor: "stores-next", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 1 }], nextCursor: "vertical-next", revision: 1 });
+  await settle();
+  const ready = app.render();
+  const more = button(ready, "عرض المزيد").props.onPress();
+  const moreCategories = byId(ready, "vertical-options-more").props.onPress();
+  const previous = app.read();
+  const previousCategories = app.readCategory();
+  byId(app.render(), "stores-refresh").props.onPress();
+  app.render();
+  assert.equal(previous.signal.aborted, true);
+  assert.equal(previousCategories.signal.aborted, true);
+  const current = app.read();
+  const currentCategories = app.readCategory();
+  previous.resolve({ items: [store("late")], revision: 1 });
+  previousCategories.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
+  await Promise.all([more, moreCategories]);
+  current.resolve({ items: [store("current")], revision: 2 });
+  currentCategories.resolve({ items: [{ id: "restaurant", storeCount: 1 }], revision: 2 });
+  await settle();
+  const view = app.render();
+  assert.ok(byId(view, "store-current"));
+  assert.ok(byId(view, "vertical-option-restaurant"));
+  assert.equal(byId(view, "store-late"), undefined);
+  assert.equal(byId(view, "vertical-option-pharmacy"), undefined);
+});
