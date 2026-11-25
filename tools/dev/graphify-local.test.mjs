@@ -374,3 +374,26 @@ test("reviewed recovery refuses a hard-linked lock before inspecting ownership",
     assert.equal(existsSync(lock), true);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("native Windows spelling resolves only to the same authored physical file", {skip:process.platform!=="win32"}, async () => {
+  const { measureFileCoverage } = await import("./graphify-local.mjs");
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir=mkdtempSync(join(tmpdir(),"graphify-coverage-case-"));
+  try {
+    mkdirSync(join(dir,"tools"));
+    writeFileSync(join(dir,"tools","Start-AppTunnel.ps1"),"Write-Output 'test'\n");
+    const paths=["tools/Start-AppTunnel.ps1","tools/compose.yaml"];
+    const authored=new Set(paths);
+    const result=measureFileCoverage(paths,authored,[{source_file:"tools/start-apptunnel.ps1"},{label:"tools/compose.yaml"}],dir);
+    assert.deepEqual(result.represented,["tools/Start-AppTunnel.ps1"]);
+    assert.deepEqual(result.missing,["tools/compose.yaml"]);
+    assert.equal(result.coverage,"FAIL");
+    assert.equal(measureFileCoverage([paths[0]],authored,[{source_file:"tools/start-apptunnel.ps1"}],dir).coverage,"PASS");
+    assert.equal(measureFileCoverage([paths[0]],authored,[{source_file:"../tools/start-apptunnel.ps1"}],dir).coverage,"FAIL");
+    assert.equal(measureFileCoverage([paths[0]],new Set(),[{source_file:"tools/start-apptunnel.ps1"}],dir).coverage,"FAIL");
+    rmSync(join(dir,"tools","Start-AppTunnel.ps1"));
+    assert.equal(measureFileCoverage([paths[0]],authored,[{source_file:"tools/start-apptunnel.ps1"}],dir).coverage,"FAIL");
+  } finally {rmSync(dir,{recursive:true,force:true});}
+});

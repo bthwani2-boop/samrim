@@ -459,12 +459,29 @@ function assertCoverageScope(paths) {
   }
 }
 
-export function measureFileCoverage(paths, authored, nodes) {
+export function measureFileCoverage(paths, authored, nodes, checkout) {
   assertCoverageScope(paths);
   if (!Array.isArray(nodes)) throw new Error("BLOCKED: invalid graph nodes");
   const indexed = new Set(nodes.map(node => node?.source_file).filter(name => typeof name === "string"));
-  const represented = paths.filter(name => authored.has(name) && indexed.has(name));
-  const missing = paths.filter(name => authored.has(name) && !indexed.has(name));
+  // The Windows extractor can emit physical path casing rather than Git casing.
+  // Accept only the identical existing file, never a label, guessed alias or absent path.
+  const physicalFile = name => {
+    const path = resolve(checkout, name);
+    try {
+      const physical = realpathSync.native(path);
+      return lstatSync(path).isFile() && samePath(physical, path) ? physical : null;
+    } catch { return null; }
+  };
+  const hasNode = name => {
+    if (indexed.has(name)) return true;
+    if (process.platform !== "win32" || !checkout) return false;
+    const physical = physicalFile(name);
+    if (!physical) return false;
+    return [...indexed].some(source => source.toLowerCase() === name.toLowerCase() &&
+      physicalFile(source) === physical);
+  };
+  const represented = paths.filter(name => authored.has(name) && hasNode(name));
+  const missing = paths.filter(name => authored.has(name) && !represented.includes(name));
   const unadmitted = paths.filter(name => !authored.has(name));
   return { coverage: missing.length || unadmitted.length ? "FAIL" : "PASS",
     requested: [...paths], represented, missing, unadmitted };
@@ -497,7 +514,7 @@ function coverage(paths) {
       return lstatSync(path).isFile() && samePath(realpathSync(path), path);
     } catch { return false; }
   }));
-  const result = measureFileCoverage(paths, admitted, JSON.parse(bytes.toString("utf8")).nodes);
+  const result = measureFileCoverage(paths, admitted, JSON.parse(bytes.toString("utf8")).nodes, root);
   const after = validate();
   if (!after.assessment.queryable || JSON.stringify(before) !== JSON.stringify(after)) {
     return emit({ coverage: after.assessment.queryable ? "INVALIDATED" : "BLOCKED",
