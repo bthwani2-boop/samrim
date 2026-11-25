@@ -37,13 +37,16 @@ export default function CustomerIdentityGate() {
   const [message, setMessage] = useState("");
   const active = useRef<AbortController | null>(null);
 
-  const run = useCallback(async (operation: (signal: AbortSignal) => Promise<void>) => {
+  const run = useCallback(async (operation: (signal: AbortSignal) => Promise<void>, onTimeout?: () => void) => {
     if (active.current) return;
     const controller = new AbortController();
     active.current = controller;
     setBusy(true);
     setMessage("");
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => {
+      controller.abort();
+      if (active.current === controller) onTimeout?.();
+    }, 20000);
     try {
       await operation(controller.signal);
     } catch (error) {
@@ -57,16 +60,24 @@ export default function CustomerIdentityGate() {
     }
   }, []);
 
-  const refresh = useCallback(() => {
-    void run(async signal => {
+  const refresh = useCallback((silent = false) => {
+    const conceal = () => {
       setSession(null);
       // An unresolved owner read must not be mistaken for a signed-out session.
       setEnabled(null);
-      const state = await readCustomerAdmission(signal);
-      if (signal.aborted) return;
-      setEnabled(state.enabled);
-      setSession(state.session);
-    });
+    };
+    void run(async signal => {
+      if (silent !== true) conceal();
+      try {
+        const state = await readCustomerAdmission(signal);
+        if (signal.aborted) return;
+        setEnabled(state.enabled);
+        setSession(state.enabled ? state.session : null);
+      } catch (error) {
+        if (!signal.aborted) conceal();
+        throw error;
+      }
+    }, conceal);
   }, [run]);
 
   useEffect(() => {
@@ -93,10 +104,14 @@ export default function CustomerIdentityGate() {
   useEffect(() => {
     if (!session && enabled !== null) return;
     // Expiry and temporary outages require a fresh owner decision, not login.
-    const expiry = session ? setTimeout(refresh,
-      Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now())) : undefined;
+    const expiry = session ? setTimeout(() => {
+      // An outstanding poll cannot extend the previous grant past its deadline.
+      setSession(null);
+      setEnabled(null);
+      refresh();
+    }, Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now())) : undefined;
     const revalidate = setInterval(() => {
-      if (AppState.currentState === "active") refresh();
+      if (AppState.currentState === "active") refresh(true);
     }, 30_000);
     return () => {
       clearTimeout(expiry);
@@ -149,9 +164,9 @@ export default function CustomerIdentityGate() {
           <Text accessibilityRole="header" style={{ fontSize: 23, fontWeight: "700", color: theme.color }}>
             التحقق من حساب العميل
           </Text>
-          {busy ? <Text style={{ color: theme.colorSecondary }}>جارٍ التحقق…</Text> : null}
+          {busy && !session ? <Text style={{ color: theme.colorSecondary }}>جارٍ التحقق…</Text> : null}
           {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
-          {enabled === null && !busy ? button("إعادة التحقق", refresh) : null}
+          {enabled === null && !busy ? button("إعادة التحقق", () => refresh()) : null}
           {enabled === false ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
             تسجيل الدخول غير متاح في هذه البيئة.
           </Text> : null}
@@ -160,7 +175,7 @@ export default function CustomerIdentityGate() {
               <Text testID="customer-identity-verified" style={{ color: theme.color }}>
                 تم التحقق من جلسة العميل عبر Identity. لا تمنح هذه الجلسة صلاحيات تاجر أو كابتن أو مشغّل.
               </Text>
-              {!busy && destination !== "/" ? (
+              {destination !== "/" ? (
                 <Link href={destination} replace style={{ color: theme.interactiveText, fontSize: 17,
                   minHeight: 44, textAlign: "center", paddingVertical: 12 }}>
                   {destination === "/wallet" ? "متابعة إلى المحفظة" : "متابعة إلى القسم المطلوب"}

@@ -198,7 +198,7 @@ test("Customer verified status expires while continuously in the foreground", as
   assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
 });
 
-test("Customer foreground polling hides stale status and fails closed on owner outage", async () => {
+test("Customer foreground polling retains valid status and fails closed on owner outage", async () => {
   const h = harness();
   h.mount();
   h.read().resolve({ enabled: true, session: h.session() });
@@ -206,7 +206,7 @@ test("Customer foreground polling hides stale status and fails closed on owner o
   h.render();
   h.poll();
   const fresh = h.read();
-  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
   fresh.reject(new Error("Identity unavailable"));
   await settle();
   assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
@@ -282,7 +282,7 @@ test("wallet continuation is exposed only while Identity confirms a current Cust
     await settle();
     assert.equal(continuation()?.props.replace, true);
     h.poll();
-    assert.equal(continuation(), undefined);
+    assert.equal(continuation()?.props.replace, true);
     h.read().resolve({ enabled: true, session: null });
     await settle();
     assert.equal(continuation(), undefined);
@@ -300,4 +300,23 @@ test("an arbitrary internal API or external URL never becomes an authenticated c
       assert.equal(findNode(h.render(), node => node.type === "Link" && node.props.replace), undefined);
     } finally { h.unmount(); }
   }
+});
+
+
+test("Customer expiry conceals status even when a periodic read is already pending", async () => {
+  const h = harness("/wallet");
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session(1000) });
+  await settle();
+  h.render();
+  h.poll();
+  const pending = h.read();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.advance(1000);
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+  assert.equal(pending.signal.aborted, false);
+  pending.resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.unmount();
 });
