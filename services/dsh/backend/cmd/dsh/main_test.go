@@ -30,6 +30,8 @@ func TestCustomerCartDockerOptInRequiresIsolatedContainerAndOwner(t *testing.T) 
 	defer db.Close()
 	t.Setenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART", "true")
 	t.Setenv("DSH_IDENTITY_VERIFIER_URL", "https://identity:3343")
+	t.Setenv("DSH_DB_HOST", "postgres")
+	t.Setenv("REF_POSTGRES_DB", "bthwani_dsh_dev")
 	for _, tc := range []struct {
 		name, isolated, container, schema, addr string
 		allowed                                 bool
@@ -247,6 +249,34 @@ func TestPrivatePolicyPreflightCannotAuthorizePolicyMutation(t *testing.T) {
 			}
 			if tc.want == http.StatusNoContent && rec.Header().Get("Access-Control-Allow-Methods") != "GET, PATCH" {
 				t.Fatal("Operator policy preflight advertised unexpected methods")
+			}
+		})
+	}
+}
+
+func TestCustomerCartContainerRejectsUnverifiedDatabaseTransport(t *testing.T) {
+	t.Setenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART", "true")
+	t.Setenv("BTHWANI_ISOLATED_TEST_MODE", "true")
+	t.Setenv("BTHWANI_ISOLATED_CONTAINER_MODE", "true")
+	t.Setenv("DSH_IDENTITY_VERIFIER_URL", isolatedDSHVerifierURL)
+	db, err := sql.Open("postgres", "postgres://synthetic@127.0.0.1:1/unused?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	fallback := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusTeapot) })
+	for _, tc := range []struct{ name, host, database string }{
+		{"foreign host", "outside.invalid", "bthwani_dsh_dev"},
+		{"protected database", "postgres", "production"},
+		{"empty database", "postgres", ""},
+		{"empty host", "", "bthwani_dsh_dev"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("DSH_DB_HOST", tc.host)
+			t.Setenv("REF_POSTGRES_DB", tc.database)
+			h, err := isolatedCustomerCartHandler(db, "dsh_test_cart", "0.0.0.0:8080", fallback)
+			if h != nil || err == nil {
+				t.Fatal("unverified database transport admitted cart, address and favorite routes")
 			}
 		})
 	}

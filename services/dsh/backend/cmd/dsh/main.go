@@ -87,16 +87,8 @@ func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http
 	if os.Getenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART") != "true" {
 		return public, nil
 	}
-	host, _, err := net.SplitHostPort(address)
-	// Inside the isolated Docker network, the listener must bind 0.0.0.0:8080
-	// to be reachable through Compose's host-loopback-only published port.
-	// Outside that explicit container contract, only loopback is admitted.
-	dockerLoopback := address == "0.0.0.0:8080" &&
-		os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" &&
-		os.Getenv("DSH_IDENTITY_VERIFIER_URL") == isolatedDSHVerifierURL
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
-		!strings.HasPrefix(schema, "dsh_test_") || len(schema) <= len("dsh_test_") ||
-		err != nil || (!dockerLoopback && host != "127.0.0.1" && host != "::1") {
+		!isolatedDSHSchema.MatchString(schema) || !isolatedAvailabilityTransport(address, os.Getenv) {
 		return nil, fmt.Errorf("Customer Cart requires isolated DSH schema and loopback-only transport")
 	}
 	identity, err := identityaccess.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
