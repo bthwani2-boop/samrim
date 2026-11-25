@@ -45,7 +45,13 @@ export default function CustomerIdentityGate() {
     setMessage("");
     const timeout = setTimeout(() => {
       controller.abort();
-      if (active.current === controller) onTimeout?.();
+      if (active.current === controller && onTimeout) {
+        // Only owner revalidation may release its UI slot before settlement.
+        // Mutating admission operations retain their existing serialization.
+        onTimeout();
+        active.current = null;
+        setBusy(false);
+      }
     }, 20000);
     try {
       await operation(controller.signal);

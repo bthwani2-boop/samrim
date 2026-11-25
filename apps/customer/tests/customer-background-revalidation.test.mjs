@@ -272,6 +272,35 @@ test("Customer revalidation timeout blocks new login until the owner confirms se
 });
 
 
+test("Customer read deadline releases retry even when the owner ignores cancellation", async () => {
+  const h = harness("/wallet");
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session() });
+  await settle();
+  h.render();
+  h.poll();
+  const stale = h.read();
+  h.advance(20000);
+  assert.equal(stale.signal.aborted, true);
+  const tree = h.render();
+  assert.equal(containsTestId(tree, "customer-identity-verified"), false);
+  assert.equal(findNode(tree, node => node.type === "TextInput"), undefined);
+  const retry = findNode(tree, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق");
+  assert.ok(retry, "retry must not wait for the aborted owner promise");
+  retry.props.onPress();
+  const fresh = h.read();
+  stale.resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+  assert.equal(findNode(h.render(), node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق"), undefined);
+  fresh.resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.unmount();
+});
+
 test("wallet continuation is exposed only while Identity confirms a current Customer session", async () => {
   const h = harness("/wallet");
   const continuation = () => findNode(h.render(), node => node.type === "Link" && node.props.href === "/wallet");

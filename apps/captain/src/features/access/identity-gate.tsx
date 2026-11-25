@@ -44,13 +44,21 @@ export default function CaptainIdentityGate() {
   const [message, setMessage] = useState("");
   const controller = useRef<AbortController | null>(null);
 
-  const run = useCallback(async (task: (signal: AbortSignal) => Promise<void>) => {
+  const run = useCallback(async (task: (signal: AbortSignal) => Promise<void>, ownerRead = false) => {
     if (controller.current) return;
     const next = new AbortController();
     controller.current = next;
     setBusy(true);
     setMessage("");
-    const deadline = setTimeout(() => next.abort(), 20000);
+    const deadline = setTimeout(() => {
+      next.abort();
+      // A stalled owner read may release the UI without allowing a second
+      // admission mutation or trusting an unknown session.
+      if (ownerRead && controller.current === next) {
+        controller.current = null;
+        setBusy(false);
+      }
+    }, 20000);
     try {
       await task(next.signal);
     } catch (error) {
@@ -76,7 +84,7 @@ export default function CaptainIdentityGate() {
         setStandingReady(state.standingReady !== false);
         setSession(state.session);
       }
-    });
+    }, true);
   }, [run]);
 
   useEffect(() => {

@@ -28,6 +28,8 @@ function harness() {
   const pending = [];
   let index = 0;
   let appChanged;
+  let deadline;
+  let timerId = 0;
   const react = {
     useState(initial) {
       const at = index++;
@@ -80,7 +82,9 @@ function harness() {
     name => {
       assert.ok(Object.hasOwn(mocks, name), `unexpected dependency ${name}`);
       return mocks[name];
-    }, module, module.exports, false, () => 1, () => undefined
+    }, module, module.exports, false,
+    fn => { deadline = { fn, id: ++timerId }; return timerId; },
+    id => { if (deadline?.id === id) deadline = undefined; }
   );
   const render = () => {
     index = 0;
@@ -99,6 +103,7 @@ function harness() {
       assert.equal(typeof appChanged, "function");
       appChanged(state);
     },
+    timeout() { assert.ok(deadline); const timer = deadline; deadline = undefined; timer.fn(); },
     next() {
       assert.ok(pending.length, "expected a new owner session check");
       return pending.shift();
@@ -234,6 +239,30 @@ test("background aborts in-flight Captain admission and foreground forces fresh 
   const sendButton = nodes(h.render()).find(node => node.type === "Pressable" &&
     node.props.children.props.children === "إرسال رمز التحقق");
   assert.equal(sendButton?.props.accessibilityState.disabled, true);
+});
+
+test("Captain entry read timeout releases retry without admitting a late owner response", async () => {
+  const h = harness();
+  h.mount();
+  const stale = h.next();
+  h.timeout();
+  assert.equal(stale.signal.aborted, true);
+  const tree = h.render();
+  assert.equal(homeLink(tree), undefined);
+  assert.equal(nodes(tree).find(node => node.type === "TextInput"), undefined);
+  const retry = nodes(tree).find(node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق");
+  assert.ok(retry, "retry must not wait for the aborted owner promise");
+  retry.props.onPress();
+  const fresh = h.next();
+  stale.resolve(approved());
+  await settle();
+  assert.equal(homeLink(h.render()), undefined);
+  assert.equal(nodes(h.render()).find(node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق"), undefined);
+  fresh.resolve(approved());
+  await settle();
+  assert.equal(verifiedUI(h.render()), true);
 });
 
 test("Captain admission offers an accessible retry after an owner outage", async () => {
