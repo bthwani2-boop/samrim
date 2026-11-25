@@ -4,7 +4,7 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { sourceIdentity } from "./owner-preview-source.mjs";
+import { isOwnerClientPath, sourceIdentity } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 // Do not resolve Git from a caller-controlled PATH when verifying provenance.
@@ -56,7 +56,7 @@ export function evaluateService(input, { startPreflight = false } = {}) {
   if (input.health !== "healthy" && !eligibleStopped) errors.push("container health not proven");
   if (!/^sha256:[0-9a-f]{64}$/.test(input.imageId || "") || input.imageId !== input.containerImageId) errors.push("runtime image ID absent, invalid or mismatched");
   if (input.committedAncestor !== true) errors.push("source is not an ancestor of HEAD");
-  if (input.ownerChanges?.length) errors.push("owner source changed since image build");
+  if (input.ownerChanges?.some(rel => !isOwnerClientPath(rel))) errors.push("owner source changed since image build");
   if (input.localOwnerChanges?.length) errors.push("owner worktree is not clean");
   return { revision, errors, passed: errors.length === 0 };
 }
@@ -93,7 +93,7 @@ export function readService(owner, dockerContext, head, execute = checked, isAnc
   if (/^[0-9a-f]{40}$/.test(revision)) {
     committedAncestor = isAncestor(revision, head);
     if (committedAncestor) {
-      ownerChanges = execute("git", ["diff", "--name-only", revision, head,
+      ownerChanges = execute("git", ["diff", "--name-only", "--no-renames", revision, head,
         "--", ...paths]).split("\n").filter(Boolean);
     }
   }

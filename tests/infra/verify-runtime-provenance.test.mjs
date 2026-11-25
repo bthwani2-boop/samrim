@@ -77,7 +77,7 @@ test("runtime attestation checks actual owner metadata, SHA ancestry and scoped 
   assert.deepEqual(verified, { revision: sha, errors: [], passed: true });
   assert.equal(fixture.calls.length, 4);
   assert.deepEqual(fixture.calls.filter((c) => c.command === "git").map((c) => c.args), [
-    ["diff", "--name-only", sha, sha, "--", "services/dsh"],
+    ["diff", "--name-only", "--no-renames", sha, sha, "--", "services/dsh"],
     ["status", "--porcelain", "--", "services/dsh"],
   ]);
   assert.ok(fixture.calls.filter((c) => c.command === "docker")
@@ -104,7 +104,7 @@ test("opt-in WLT attestation verifies the real owner container and WLT-only sour
   assert.equal(fixture.calls.find(c => c.command === "docker" && c.args[2] === "inspect")
     ?.args.at(-1), "bthwani-refoundation-wlt-1");
   assert.deepEqual(fixture.calls.filter(c => c.command === "git").map(c => c.args), [
-    ["diff", "--name-only", sha, sha, "--", "services/wlt"],
+    ["diff", "--name-only", "--no-renames", sha, sha, "--", "services/wlt"],
     ["status", "--porcelain", "--", "services/wlt"],
   ]);
 
@@ -192,4 +192,16 @@ test("startup preflight checks shared Compose source without weakening runtime v
   const dirty=serviceRecords({running:"false",health:"unhealthy",localStatus:" M infra/compose.yaml"});
   assert.equal(readService("dsh","isolated",sha,dirty.execute,()=>true,{startPreflight:true}).passed,false);
   assert.throws(()=>main(["--start-preflight"]),/Usage/);
+});
+
+test("committed client-only changes preserve runtime provenance, but mixed runtime changes do not",()=>{
+  for(const startPreflight of [false,true]){
+    const client="services/dsh/clients/dsh-public-client.test.mjs";
+    const fixture=serviceRecords({sourceDiff:client});
+    assert.equal(readService("dsh","isolated",sha,fixture.execute,()=>true,{startPreflight}).passed,true);
+    for(const path of ["services/dsh/backend/cmd/dsh/main.go","services/dsh/contracts/openapi/dsh.openapi.yaml","services/dsh/database/schema/00.sql","services/dsh/.dockerignore"]){
+      const mixed=serviceRecords({sourceDiff:client+"\n"+path});
+      assert.equal(readService("dsh","isolated",sha,mixed.execute,()=>true,{startPreflight}).passed,false);
+    }
+  }
 });

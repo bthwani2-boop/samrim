@@ -852,7 +852,7 @@ function main() {
   const committed={};
   for(const o of Object.keys(owners)){
     git(["merge-base","--is-ancestor",revisions[o].revision,head]);
-    committed[o]=git(["diff","--name-only",revisions[o].revision,head,"--","services/"+o]).split(/\r?\n/).filter(Boolean);
+    committed[o]=git(["diff","--name-only","--no-renames",revisions[o].revision,head,"--","services/"+o]).split(/\r?\n/).filter(Boolean);
   }
   // A committed SQL transition can include the specific WLT peer-origin
   // addition only when the exact historical configuration is reconstructable.
@@ -920,7 +920,7 @@ function main() {
     }
     if(dirty && (source.previewChanges.length || source.imageChanges.length || old.digest)) snapshots.set(o,captureOwner(root,o));
     const snapshot=snapshots.get(o);
-    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(source.imageChanges.length || source.requiresCommittedRefresh || old.digest || (o==="dsh"&&dshConfigTransition));
+    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(source.imageChanges.length || old.digest || (o==="dsh"&&dshConfigTransition));
     if(stale)candidates.push(o);
     console.log(o+" RUNTIME="+(stale?"STALE":snapshot?"PREVIEW_CURRENT":"CURRENT")+" revision="+old.revision+(old.digest?" preview="+old.digest:"")+(source.clientPending && dirty?" SOURCE=CLIENT_REVIEW_PENDING":""));
   }

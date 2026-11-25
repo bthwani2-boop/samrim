@@ -33,7 +33,7 @@ function sourceOwner(rel) {
 export function isSharedRuntimeInput(rel) { return !sourceOwner(rel); }
 // Client files are neither copied by the owner Dockerfiles nor present in
 // the Go preview build context. Contracts and all other inputs stay guarded.
-function isOwnerClientPath(rel) {
+export function isOwnerClientPath(rel) {
   return /^services\/(?:identity|dsh|wlt)\/clients\//.test(rel);
 }
 export function ownerSourceState(owner, changed, committed) {
@@ -43,7 +43,6 @@ export function ownerSourceState(owner, changed, committed) {
     imageChanges:committed.filter(rel=>!isOwnerClientPath(rel)),
     previewChanges:local.filter(rel=>!isOwnerClientPath(rel)),
     clientPending:[...local,...committed].some(isOwnerClientPath),
-    requiresCommittedRefresh:local.length===0 && committed.length>0,
   };
 }
 

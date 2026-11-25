@@ -127,7 +127,7 @@ test("client-only edits cannot make the Go image stale or admit changed contract
   const plan=ownerReconcilePlan({changed,committed,preview:true,captain:true});
   assert.equal(plan.blocked.identity,undefined);
   assert.deepEqual(ownerSourceState("identity",changed,committed.identity),{
-    imageChanges:[], previewChanges:[], clientPending:true, requiresCommittedRefresh:false
+    imageChanges:[], previewChanges:[], clientPending:true
   });
   const contract="services/identity/contracts/openapi/identity.openapi.yaml";
   assert.equal(ownerReconcilePlan({changed:[...changed,contract],committed,preview:true,captain:true}).blocked.identity,"UNCOMMITTED_NON_GO");
@@ -135,12 +135,12 @@ test("client-only edits cannot make the Go image stale or admit changed contract
   assert.equal(ownerReconcilePlan({changed,committed:{identity:[go]},preview:false,captain:true}).blocked.identity,"PREVIEW_NOT_AUTHORIZED");
 });
 
-test("committed client-only changes eventually refresh strict provenance without rebuilding for ongoing client edits",async()=>{
+test("committed client-only changes never require a Go image refresh",async()=>{
   const {ownerSourceState}=await import("../../tools/dev/docker/owner-preview-source.mjs");
   const clients=["services/identity/clients/persistent-sessions.ts"];
-  assert.equal(ownerSourceState("identity",[],clients).requiresCommittedRefresh,true);
-  assert.equal(ownerSourceState("identity",clients,clients).requiresCommittedRefresh,false);
-  assert.equal(ownerSourceState("identity",clients,[]).requiresCommittedRefresh,false);
+  assert.deepEqual(ownerSourceState("identity",[],clients).imageChanges,[]);
+  assert.deepEqual(ownerSourceState("identity",clients,clients).imageChanges,[]);
+  assert.deepEqual(ownerSourceState("identity",clients,[]).imageChanges,[]);
 });
 
 test("fresh baseline preparation is confined to explicit isolated apply with committed schema drift", async () => {
