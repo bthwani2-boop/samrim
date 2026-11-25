@@ -266,10 +266,27 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     assert.match(measured.sourceFingerprint, /^[a-f0-9]{64}$/);
     assert.deepEqual(JSON.parse(cli(["coverage", "missing.ts"], 2)).unadmitted, ["missing.ts"]);
     cli(["coverage", "../outside.ts"], 2);
+    // A hard link to another file is not an admitted existing hook.
+    const hookPath = join(dir, ".git", "hooks", "post-commit");
+    const outsideHook = join(dir, "graphify-out", "unrelated-hook");
+    writeFileSync(outsideHook, "#!/bin/sh\n# graphify-hook-start\nold\n# graphify-hook-end\n");
+    const { linkSync } = await import("node:fs");
+    linkSync(outsideHook, hookPath);
+    cli(["install-hooks"], 2);
+    assert.equal(readFileSync(hookPath, "utf8"), readFileSync(outsideHook, "utf8"));
+    rmSync(hookPath);
     cli(["install-hooks"]);
     git("switch", "-c", "fixture-b");
     assert.equal(proof().head, first.head);
     writeFileSync(join(dir, "example.ts"), "export function example() { return 2; }\n");
+    const seedPath = join(dir, "graphify-out", ".candidate", "graph.json");
+    const outsideSeed = join(dir, "graphify-out", "unrelated-seed");
+    writeFileSync(outsideSeed, "must not overwrite");
+    rmSync(seedPath);
+    linkSync(outsideSeed, seedPath);
+    cli(["sync"], 2);
+    assert.equal(readFileSync(outsideSeed, "utf8"), "must not overwrite");
+    rmSync(seedPath);
     cli(["sync"]);
     assert.equal(proof().dirty, true);
     mkdirSync(join(dir, "apps"));
@@ -339,4 +356,21 @@ test("explicit graph coverage rejects ambiguous or unsafe path scopes and malfor
     assert.throws(() => measureFileCoverage(paths, new Set(), []), /coverage scope/i);
   }
   assert.throws(() => measureFileCoverage(["tools/a.mjs"], new Set(["tools/a.mjs"]), null), /graph nodes/i);
+});
+
+test("reviewed recovery refuses a hard-linked lock before inspecting ownership", async () => {
+  const { recoverRefreshLock } = await import("./graphify-local.mjs");
+  const { mkdtempSync, writeFileSync, linkSync, existsSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { createHash } = await import("node:crypto");
+  const dir = mkdtempSync(join(tmpdir(), "graphify-linked-lock-"));
+  try {
+    const original = join(dir, "original"), lock = join(dir, "refresh.lock");
+    writeFileSync(original, "");
+    linkSync(original, lock);
+    const digest = createHash("sha256").update("").digest("hex");
+    assert.throws(() => recoverRefreshLock(lock, digest, () => assert.fail("unsafe lock")), /BLOCKED.*unsafe/);
+    assert.equal(existsSync(lock), true);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

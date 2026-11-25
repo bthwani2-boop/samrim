@@ -2,7 +2,7 @@
 // Provenance/coverage warnings never silently claim current-source proof.
 import { spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, constants, existsSync, fstatSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { containsLikelySecret, forbiddenName } from "../security/verify-secrets.mjs";
@@ -76,7 +76,7 @@ export function evaluateIndex(stored, current, graphHash) {
 export function inspectUntracked(checkout, names) {
   const hash = createHash("sha256");
   const unsafe = [];
-  for (const name of [...new Set(names)].sort()) {
+  for (const name of [...new Set(names)].sort((a, b) => a < b ? -1 : a > b ? 1 : 0)) {
     hash.update(name).update("\0");
     const parts = name.split("/");
     const supported = /^(?:\.[cm]?[jt]sx?|\.go|\.sql|\.mdx?|\.ya?ml|\.json|\.css|\.ps1|\.sh|\.py|\.toml)$/i.test(extname(name));
@@ -183,13 +183,34 @@ export function withRefreshLock(path, operation) {
   }
 }
 
+function readVerifiedFile(path, limit) {
+  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+  try {
+    const stat = fstatSync(fd, { bigint: true });
+    const matches = entry => entry.isFile() && !entry.isSymbolicLink() &&
+      entry.nlink === 1n && entry.dev === stat.dev && entry.ino === stat.ino &&
+      entry.size === stat.size && entry.mtimeNs === stat.mtimeNs && entry.ctimeNs === stat.ctimeNs;
+    if (!stat.isFile() || stat.nlink !== 1n || stat.size > BigInt(limit) ||
+        !matches(lstatSync(path, { bigint: true })) || !samePath(realpathSync(path), resolve(path))) {
+      throw new Error("BLOCKED: unsafe file path");
+    }
+    const buffer = Buffer.alloc(Number(stat.size) + 1);
+    let count = 0;
+    while (count < buffer.length) {
+      const n = readSync(fd, buffer, count, buffer.length - count, null);
+      if (!n) break;
+      count += n;
+    }
+    if (BigInt(count) !== stat.size || !matches(fstatSync(fd, { bigint: true })) ||
+        !matches(lstatSync(path, { bigint: true })) || !samePath(realpathSync(path), resolve(path))) {
+      throw new Error("BLOCKED: unsafe or changed file");
+    }
+    return { bytes: buffer.subarray(0, count), stat };
+  } finally { closeSync(fd); }
+}
+
 function inspectRefreshLock(path) {
-  const stat = lstatSync(path);
-  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 4096 ||
-      !samePath(realpathSync(path), resolve(path))) {
-    throw new Error("BLOCKED: unsafe refresh lock path");
-  }
-  const bytes = readFileSync(path);
+  const { bytes, stat } = readVerifiedFile(path, 4096);
   const digest = sha256(bytes);
   let owner = null;
   if (bytes.length) {
@@ -201,7 +222,7 @@ function inspectRefreshLock(path) {
       throw new Error("BLOCKED: invalid refresh lock owner");
     }
   }
-  return { digest, owner, identity: [stat.dev, stat.ino, stat.size, stat.mtimeMs, stat.birthtimeMs] };
+  return { digest, owner, identity: [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.birthtimeNs].map(String) };
 }
 
 // Recovery is a separate, explicitly reviewed operation by the sole local
@@ -268,11 +289,24 @@ function refresh(automatic = false) {
       throw new Error("BLOCKED: redirected candidate directory");
     }
     const oldGraph = existsSync(graph) ? readFileSync(graph) : null;
-    if (existsSync(candidateGraph) && !lstatSync(candidateGraph).isFile()) {
-      throw new Error("BLOCKED: non-regular candidate graph");
+    // Replace the candidate directory entry, never truncate a path after a
+    // separate validation. The existing exclusive refresh lock owns it.
+    try {
+      const info = lstatSync(candidateGraph);
+      if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) {
+        throw new Error("BLOCKED: non-regular candidate graph");
+      }
+    } catch (error) { if (error.code !== "ENOENT") throw error; }
+    if (oldGraph) {
+      const seed = candidateGraph + "." + randomUUID() + ".seed";
+      const seedDescriptor = openSync(seed, "wx");
+      try {
+        try { writeFileSync(seedDescriptor, oldGraph); } finally { closeSync(seedDescriptor); }
+        renameSync(seed, candidateGraph);
+      } finally { rmSync(seed, { force: true }); }
+    } else {
+      try { unlinkSync(candidateGraph); } catch (error) { if (error.code !== "ENOENT") throw error; }
     }
-    if (oldGraph) writeFileSync(candidateGraph, oldGraph);
-    else if (existsSync(candidateGraph)) unlinkSync(candidateGraph);
     const env = { ...process.env, GRAPHIFY_OUT: "graphify-out/.candidate" };
     delete env.GRAPHIFY_CHANGED;
     delete env.GRAPHIFY_FORCE;
@@ -361,7 +395,7 @@ function installHooks() {
   const gitDir = resolve(root, gitString("rev-parse", "--absolute-git-dir"));
   if (!samePath(gitDir, join(root, ".git"))) throw new Error("BLOCKED: hooks must belong to the primary checkout");
   const hooks = resolve(root, gitString("rev-parse", "--git-path", "hooks"));
-  if (!samePath(hooks, join(gitDir, "hooks")) || !lstatSync(hooks).isDirectory()) {
+  if (!samePath(hooks, join(gitDir, "hooks")) || !lstatSync(hooks).isDirectory() || !samePath(realpathSync(hooks), resolve(hooks))) {
     throw new Error("BLOCKED: custom or redirected hooks directory");
   }
   return withRefreshLock(lock, () => {
@@ -369,8 +403,7 @@ function installHooks() {
       const path = join(hooks, name);
       let content = null;
       try {
-        if (!lstatSync(path).isFile()) throw new Error("BLOCKED: non-regular Git hook " + name);
-        content = readFileSync(path, "utf8");
+        content = readVerifiedFile(path, 1024 * 1024).bytes.toString("utf8");
       } catch (error) {
         if (error.code !== "ENOENT") throw error;
       }
