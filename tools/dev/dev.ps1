@@ -477,7 +477,8 @@ function Get-AppHttpTargets {
     @{A='control-panel';U='http://127.0.0.1:13000/'}
   )
 }
-function Test-AppHttpTarget([hashtable]$Target,[int]$TimeoutSec=7,[int]$MaxAttempts=1,[int]$RetryDelayMs=250) {
+function Test-AppHttpTarget {
+  param([hashtable]$Target,[int]$TimeoutSec=7,[int]$MaxAttempts=1,[int]$RetryDelayMs=250)
   # First Expo Web compilation can outlast a short readiness probe.
   # Retry only within a fixed budget; never turn a persistent failure into PASS.
   $timer=[Diagnostics.Stopwatch]::StartNew()
@@ -504,6 +505,17 @@ function Test-AppHttpTarget([hashtable]$Target,[int]$TimeoutSec=7,[int]$MaxAttem
     if($attempt -lt $MaxAttempts -and $RetryDelayMs -gt 0){Start-Sleep -Milliseconds $RetryDelayMs}
   }
   return @{Success=$false;Attempts=$MaxAttempts;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=$lastFailure}
+}
+function Test-AppRestartHealth {
+  param([hashtable]$Target)
+  # A single good SSR response can hide an intermittent Metro error.
+  # Only skip an Expo Web restart after three consecutive healthy probes.
+  $samples=if($Target.A -in @('customer','merchant')){3}else{1}
+  for($i=0;$i -lt $samples;$i++){
+    if(-not (Test-AppHttpTarget -Target $Target -TimeoutSec 4 -MaxAttempts 1).Success){return $false}
+    if($i -lt ($samples-1)){Start-Sleep -Milliseconds 250}
+  }
+  return $true
 }
 function Verify-AppWeb {
   $failures=0
@@ -645,11 +657,8 @@ if($mode -eq 'start'){
 }else{
   if($listeners.Count -eq 1){
     $route=if($app -eq 'captain'){'/status'}else{'/'}
-    try{
-      $uri='http://127.0.0.1:'+$s.P+$route
-      $resp=Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 4 -ErrorAction Stop
-      if($resp.StatusCode -eq 200){Write-Output ('APP_RESTART_SKIPPED_HEALTHY '+$app);return}
-    }catch{}
+    $target=@{A=$app;U=('http://127.0.0.1:'+$s.P+$route)}
+    if(Test-AppRestartHealth $target){Write-Output ('APP_RESTART_SKIPPED_HEALTHY '+$app);return}
   }
   if($t.State -eq 'Running'){
     $tree=@(Get-OwnedAppProcessTree $app @(Get-CimInstance Win32_Process) $source $node)
@@ -676,7 +685,8 @@ throw ('APP_LISTENER_NOT_READY '+$app)
 '@
   $lockHash=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
   $body=$body.Replace('__APP__',$App).Replace('__MODE__',$operation).Replace('__LOCK__',$lockHash)
-  Invoke-Lenovo ($remoteAppProcessLifecycle + [Environment]::NewLine + $body)
+  $httpProbe="function Test-AppHttpTarget {`n$((Get-Command Test-AppHttpTarget -CommandType Function).Definition)`n}`nfunction Test-AppRestartHealth {`n$((Get-Command Test-AppRestartHealth -CommandType Function).Definition)`n}"
+  Invoke-Lenovo ($remoteAppProcessLifecycle + [Environment]::NewLine + $httpProbe + [Environment]::NewLine + $body)
 }
 function Probe-App([string]$url,[string]$accept='text/html',[string]$platform='') {
   $curl=Join-Path $env:WINDIR 'System32\curl.exe'

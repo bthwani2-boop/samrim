@@ -505,3 +505,30 @@ test("Surface identity uses the actual Windows host and rejects contradictory en
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /ACTUAL_SURFACE_GUARD_PASS/);
 });
+
+test("scoped restart reuses the canonical Expo probe and requires consecutive healthy renders", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted = scriptPath.replaceAll("'", "''");
+  const ps = [
+    "$ErrorActionPreference='Stop'",
+    "$tok=$null;$err=$null",
+    `$ast=[Management.Automation.Language.Parser]::ParseFile('${quoted}',[ref]$tok,[ref]$err)`,
+    "foreach($name in @('Assert-Ok','Test-AppHttpTarget','Test-AppRestartHealth','Control-SingleApp')){$n=$ast.Find({param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $name},$true);if($n){Invoke-Expression $n.Extent.Text}}",
+    "function Invoke-Lenovo([string]$body){$script:payload=$body}",
+    "$App='merchant';$Apply=$true;$repo=(Get-Location).Path;$remoteAppProcessLifecycle=''",
+    "Control-SingleApp 'restart'",
+    "$tok=$null;$err=$null;$remote=[Management.Automation.Language.Parser]::ParseInput($script:payload,[ref]$tok,[ref]$err);if($err.Count){throw 'REMOTE_PARSE_FAILED'}",
+    "foreach($name in @('Test-AppHttpTarget','Test-AppRestartHealth')){$n=$remote.Find({param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $name},$true);if(!$n){throw ('REMOTE_PROBE_MISSING '+$name)};Invoke-Expression $n.Extent.Text}",
+    "if($script:payload -notmatch 'if\\(Test-AppRestartHealth.*APP_RESTART_SKIPPED_HEALTHY'){throw 'REMOTE_SKIP_NOT_GUARDED'}",
+    "function Start-Sleep {}",
+    "function Invoke-WebRequest {param([switch]$UseBasicParsing,[switch]$SkipHttpErrorCheck,[string]$Uri,[int]$TimeoutSec) $script:count++;return $script:responses[[Math]::Min($script:count-1,$script:responses.Count-1)]}",
+    "$good=@{StatusCode=200;Content='<html>healthy</html>'};$bad=@{StatusCode=200;Content='<html>Server Error: Requiring unknown module 60. unknownModuleError</html>'};$failed=@{StatusCode=500;Content='Server Error'}",
+    "foreach($app in @('customer','merchant')){$target=@{A=$app;U='http://not-used.invalid/'};foreach($case in @(@{responses=@($good,$good,$good);expected=$true;count=3},@{responses=@($bad);expected=$false;count=1},@{responses=@($good,$bad);expected=$false;count=2},@{responses=@($good,$good,$failed);expected=$false;count=3})){$script:responses=$case.responses;$script:count=0;$actual=Test-AppRestartHealth $target;if($actual -ne $case.expected -or $script:count -ne $case.count){throw ('FALSE_RESTART_HEALTH '+$app)}}}",
+    "$script:responses=@($good);$script:count=0;if(!(Test-AppRestartHealth @{A='captain';U='http://not-used.invalid/status'}) -or $script:count -ne 1){throw 'NON_EXPO_PROBE_CHANGED'}",
+    "Write-Output 'RESTART_HEALTH_PROOF_PASS'",
+  ].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",windowsHide:true,timeout:15000});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/RESTART_HEALTH_PROOF_PASS/);
+});
