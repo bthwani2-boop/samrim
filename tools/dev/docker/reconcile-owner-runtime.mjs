@@ -8,7 +8,7 @@ import { readFileSync, lstatSync, appendFileSync } from "node:fs";
 import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
 import { resolvePinnedGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
-import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
+import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const context = "bthwani-docker";
@@ -137,18 +137,6 @@ function historicalWltHashes(previous, env) {
 }
 function imageRecord(image) {
   return JSON.parse(docker(["image", "inspect", image]))[0];
-}
-export function sourceIdentity(labels, owner) {
-  const a=labels?.["org.opencontainers.image.revision"];
-  const b=labels?.["com.bthwani.source-sha"];
-  const base=labels?.["com.bthwani.preview-base"];
-  const digest=labels?.["com.bthwani.preview-digest"];
-  if(base || digest || a?.startsWith("worktree-")){
-    if(b || !/^[0-9a-f]{40}$/.test(base||"") || !/^[0-9a-f]{64}$/.test(digest||"") || a!=="worktree-"+digest) throw new Error("Invalid preview provenance: "+owner);
-    return {revision:base,digest};
-  }
-  if(!/^[0-9a-f]{40}$/.test(a||b||"") || (a&&b&&a!==b)) throw new Error("Invalid source provenance: "+owner);
-  return {revision:a||b,digest:null};
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
 const guardedScope = ["services","infra/compose.yaml","infra/compose.dsh.yaml","infra/compose.identity.yaml","infra/compose.merchant.yaml","infra/compose.captain.yaml","infra/compose.wlt.yaml","tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version"];

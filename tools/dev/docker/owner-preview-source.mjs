@@ -1,4 +1,4 @@
-// Shared identity of an isolated, uncommitted Go preview. Never writes Git.
+// Shared owner source identity and isolated Go preview. Never writes Git.
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
@@ -8,6 +8,20 @@ import { containsLikelySecret, forbiddenName } from "../../security/verify-secre
 
 const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
 const owners = ["dsh", "identity", "wlt"];
+// One decoder for committed image and immutable worktree provenance.
+export function sourceIdentity(labels, owner) {
+  const a=labels?.["org.opencontainers.image.revision"];
+  const b=labels?.["com.bthwani.source-sha"];
+  const base=labels?.["com.bthwani.preview-base"];
+  const digest=labels?.["com.bthwani.preview-digest"];
+  if(base || digest || a?.startsWith("worktree-")){
+    if(b || !/^[0-9a-f]{40}$/.test(base||"") || !/^[0-9a-f]{64}$/.test(digest||"") || a!=="worktree-"+digest) throw new Error("Invalid preview provenance: "+owner);
+    return {revision:base,digest};
+  }
+  if(a&&b&&a!==b) throw new Error("conflicting image source labels: "+owner);
+  if(!/^[0-9a-f]{40}$/.test(a||b||"")) throw new Error("source revision absent or invalid: "+owner);
+  return {revision:a||b,digest:null};
+}
 const goPath = /^services\/(?:dsh|identity|wlt)\/backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
 export function isPreviewGoPath(rel) { return goPath.test(rel); }
 const wltComposeInput = "infra/compose.wlt.yaml";

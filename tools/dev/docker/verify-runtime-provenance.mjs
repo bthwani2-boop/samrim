@@ -4,6 +4,7 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { sourceIdentity } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 // Do not resolve Git from a caller-controlled PATH when verifying provenance.
@@ -33,20 +34,25 @@ function checked(command, args) {
 export function evaluateService(input) {
   const errors = [];
   const revision = input.revisionPrimary || input.revisionFallback || "";
-  const shaPattern = /^[0-9a-f]{40}$/;
-  if (input.revisionPrimary && input.revisionFallback &&
-    input.revisionPrimary !== input.revisionFallback) {
-    errors.push("conflicting image source labels");
+  try {
+    const source = sourceIdentity({
+      "org.opencontainers.image.revision": input.revisionPrimary,
+      "com.bthwani.source-sha": input.revisionFallback,
+      "com.bthwani.preview-base": input.previewBase,
+      "com.bthwani.preview-digest": input.previewDigest,
+    }, input.owner);
+    if (source.digest) errors.push("uncommitted preview is not committed acceptance; use docker reconcile to check preview parity");
+  } catch (error) {
+    errors.push(error.message);
   }
-  if (/^worktree-[0-9a-f]{64}$/.test(revision)) errors.push("uncommitted preview is not committed acceptance; use docker reconcile to check preview parity");
-  else if (!shaPattern.test(revision)) errors.push("source revision absent or invalid");
-  if (input.project !== "bthwani-refoundation" || input.service !== input.owner) {
+  if (input.project !== "bthwani-refoundation" || input.service !== input.owner || input.environment !== "refoundation" ||
+      (input.owner === "wlt" && input.capability !== "customer-wallet-read-only")) {
     errors.push("not the expected isolated Compose project and owner");
   }
   if (!input.running) errors.push("container is not running");
   if (input.health !== "healthy") errors.push("container health not proven");
-  if (input.imageId !== input.containerImageId) errors.push("runtime image ID mismatch");
-  if (input.committedAncestor === false) errors.push("source is not an ancestor of HEAD");
+  if (!/^sha256:[0-9a-f]{64}$/.test(input.imageId || "") || input.imageId !== input.containerImageId) errors.push("runtime image ID absent, invalid or mismatched");
+  if (input.committedAncestor !== true) errors.push("source is not an ancestor of HEAD");
   if (input.ownerChanges?.length) errors.push("owner source changed since image build");
   if (input.localOwnerChanges?.length) errors.push("owner worktree is not clean");
   return { revision, errors, passed: errors.length === 0 };
@@ -66,13 +72,13 @@ export function readService(owner, dockerContext, head, execute = checked, isAnc
   const docker = (args) => execute("docker", ["--context", dockerContext, ...args]);
   // Templates intentionally extract only non-secret metadata.
   const containerRecord = docker(["inspect", "--format",
-    '{{.Image}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}NOT_CONFIGURED{{end}}',
+    '{{.Image}}|{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}|{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}NOT_CONFIGURED{{end}}|{{index .Config.Labels "com.bthwani.environment"}}|{{index .Config.Labels "com.bthwani.capability"}}',
     name]).split("|");
-  if (containerRecord.length !== 5) throw new Error("unexpected container metadata");
+  if (containerRecord.length !== 7 || !/^sha256:[0-9a-f]{64}$/.test(containerRecord[0])) throw new Error("unexpected container metadata");
   const imageRecord = docker(["image", "inspect", "--format",
-    '{{.Id}}|{{index .Config.Labels "org.opencontainers.image.revision"}}|{{index .Config.Labels "com.bthwani.source-sha"}}',
+    '{{.Id}}|{{index .Config.Labels "org.opencontainers.image.revision"}}|{{index .Config.Labels "com.bthwani.source-sha"}}|{{index .Config.Labels "com.bthwani.preview-base"}}|{{index .Config.Labels "com.bthwani.preview-digest"}}',
     containerRecord[0]]).split("|");
-  if (imageRecord.length !== 3) throw new Error("unexpected image metadata");
+  if (imageRecord.length !== 5) throw new Error("unexpected image metadata");
   // Docker Go templates render absent label values as the literal '<no value>'.
   const label = (value) => value === "<no value>" ? "" : value;
   const primaryRevision = label(imageRecord[1]);
@@ -91,10 +97,12 @@ export function readService(owner, dockerContext, head, execute = checked, isAnc
     "--", "services/" + owner]).split("\n").filter(Boolean);
   return evaluateService({
     owner, project: containerRecord[1], service: containerRecord[2],
+    environment: containerRecord[5], capability: label(containerRecord[6]),
     running: containerRecord[3] === "true", health: containerRecord[4],
     containerImageId: containerRecord[0], imageId: imageRecord[0],
     revisionPrimary: primaryRevision || undefined,
     revisionFallback: fallbackRevision || undefined,
+    previewBase: label(imageRecord[3]), previewDigest: label(imageRecord[4]),
     committedAncestor, ownerChanges, localOwnerChanges,
   });
 }

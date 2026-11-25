@@ -4,9 +4,9 @@ import { evaluateService, main, readService } from "../../tools/dev/docker/verif
 
 const sha = "a".repeat(40);
 const good = {
-  owner: "dsh", service: "dsh", project: "bthwani-refoundation",
+  owner: "dsh", service: "dsh", project: "bthwani-refoundation", environment: "refoundation",
   running: true, health: "healthy",
-  imageId: "sha256:123", containerImageId: "sha256:123",
+  imageId: "sha256:"+"1".repeat(64), containerImageId: "sha256:"+"1".repeat(64),
   revisionPrimary: sha, revisionFallback: sha,
   committedAncestor: true, ownerChanges: [], localOwnerChanges: [],
 };
@@ -24,7 +24,7 @@ test("reject a committed but stale Go or contract image", () => {
 test("reject missing and contradictory source revision labels", () => {
   assert.equal(evaluateService({ ...good, revisionPrimary: "", revisionFallback: "" }).passed, false);
   assert.ok(evaluateService({ ...good, revisionFallback: "b".repeat(40) })
-    .errors.includes("conflicting image source labels"));
+    .errors.some(e=>e.includes("conflicting image source labels")));
 });
 
 test("reject a healthy-looking container from another environment or service", () => {
@@ -48,7 +48,8 @@ test("reject revision outside history and owner-local uncommitted edits", () => 
 // These tests verify the command/attestation parser. They deliberately do not
 // claim that a real Docker runtime or source revision has been attested.
 function serviceRecords({
-  owner = "dsh", project = "bthwani-refoundation", imageId = "sha256:123",
+  owner = "dsh", project = "bthwani-refoundation", imageId = "sha256:"+"1".repeat(64),
+  environment = "refoundation", capability = owner==="wlt"?"customer-wallet-read-only":"", previewBase = "", previewDigest = "",
   revision = sha, fallback = sha, running = "true", health = "healthy",
   sourceDiff = "", localStatus = "", malformed = "",
 } = {}) {
@@ -57,11 +58,11 @@ function serviceRecords({
     calls.push({ command, args });
     if (command === "docker" && args[2] === "inspect") {
       if (malformed === "container") return "not-a-container-record";
-      return [imageId, project, owner, running, health].join("|");
+      return [imageId, project, owner, running, health, environment, capability || "<no value>"].join("|");
     }
     if (command === "docker" && args[2] === "image" && args[3] === "inspect") {
       if (malformed === "image") return "not-an-image-record";
-      return [imageId, revision || "<no value>", fallback || "<no value>"].join("|");
+      return [imageId, revision || "<no value>", fallback || "<no value>", previewBase || "<no value>", previewDigest || "<no value>"].join("|");
     }
     if (command === "git" && args[0] === "diff") return sourceDiff;
     if (command === "git" && args[0] === "status") return localStatus;
@@ -155,7 +156,22 @@ test("runtime command-line refuses unsafe or incomplete Docker context names bef
 });
 
 test("a preview never satisfies committed runtime acceptance",()=>{
-  const result=evaluateService({...good,revisionPrimary:"worktree-"+"a".repeat(64),revisionFallback:undefined});
+  const result=evaluateService({...good,revisionPrimary:"worktree-"+"a".repeat(64),revisionFallback:undefined,previewBase:sha,previewDigest:"a".repeat(64)});
   assert.equal(result.passed,false);
   assert.ok(result.errors.some(e=>e.includes("uncommitted preview")));
+});
+
+test("committed attestation rejects absent image IDs, unknown ancestry, and preview metadata on a committed SHA", () => {
+  for (const changes of [
+    { imageId: "", containerImageId: "" },
+    { imageId: undefined, containerImageId: undefined },
+    { committedAncestor: undefined },
+    { environment: undefined },
+    { environment: "production" },
+    { owner: "wlt", service: "wlt", capability: "other" },
+    { imageId: "sha256:invalid", containerImageId: "sha256:invalid" },
+    { previewBase: sha, previewDigest: "b".repeat(64) },
+    { previewBase: sha },
+    { previewDigest: "b".repeat(64) },
+  ]) assert.equal(evaluateService({ ...good, ...changes }).passed, false, JSON.stringify(changes));
 });
