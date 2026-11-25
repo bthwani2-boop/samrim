@@ -37,6 +37,33 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 	_, err = sandbox.ExecContext(ctx, "UPDATE wlt.customer_funding_journal SET amount_yer = 9")
 	assertSQLState(t, err, "42501")
 
+	// The command must refuse excess authority even when the synthetic
+	// session and DSN are valid. Only the disposable fixture owner changes ACLs.
+	for _, tc := range []struct{ name, grant, revoke string }{
+		{"private journal read",
+			"GRANT SELECT (provider_reference) ON wlt.customer_funding_journal TO bthwani_wlt_sandbox",
+			"REVOKE SELECT (provider_reference) ON wlt.customer_funding_journal FROM bthwani_wlt_sandbox"},
+		{"unrelated allocation command",
+			"GRANT EXECUTE ON FUNCTION wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint) TO bthwani_wlt_sandbox",
+			"REVOKE EXECUTE ON FUNCTION wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint) FROM bthwani_wlt_sandbox"},
+		{"schema creation",
+			"GRANT CREATE ON SCHEMA wlt TO bthwani_wlt_sandbox",
+			"REVOKE CREATE ON SCHEMA wlt FROM bthwani_wlt_sandbox"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			executeFixture(t, ctx, owner, tc.grant)
+			defer executeFixture(t, ctx, owner, tc.revoke)
+			if err := run(customer, "excess-authority-credit", "9", io.Discard); err == nil ||
+				!strings.Contains(err.Error(), "database role is not admitted") {
+				t.Fatalf("command accepted excess sandbox privilege or failed for another reason: %v", err)
+			}
+			var count int
+			if err := owner.QueryRowContext(ctx, "SELECT count(*) FROM wlt.customer_funding_journal WHERE provider_reference='excess-authority-credit'").Scan(&count); err != nil || count != 0 {
+				t.Fatalf("denied sandbox command changed the journal: count=%d err=%v", count, err)
+			}
+		})
+	}
+
 	for _, input := range []struct{ token, reference, amount string }{
 		{revoked, "revoked-session", "9"}, {merchant, "wrong-role", "9"},
 		{"invalid", "invalid-session", "9"}, {customer, "invalid-reference!", "9"},

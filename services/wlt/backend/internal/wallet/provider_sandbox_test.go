@@ -1,12 +1,19 @@
 package wallet
 
 import (
+	"bytes"
 	"context"
+	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	_ "github.com/lib/pq"
 )
 
 func TestSandboxProviderOriginIsLoopbackOnly(t *testing.T) {
@@ -84,5 +91,41 @@ func TestSandboxProviderNetworkAmbiguityFailsClosed(t *testing.T) {
 	}
 	if err := verifySandboxProviderEvidence(context.Background(), "http://127.0.0.1:0", "cash-in-accepted-01", "wallet-one", 17); err == nil {
 		t.Fatal("an unavailable provider was treated as success")
+	}
+}
+
+func TestSandboxProviderFundingRejectsActorChangeBeforeDatabase(t *testing.T) {
+	token := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	var reads atomic.Int32
+	identity := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			t.Error("unexpected session token")
+		}
+		actor := "wallet-one"
+		if reads.Add(1) > 1 {
+			actor = "wallet-two"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"actorId": actor, "role": "customer", "sessionExpiresAt": "2099-01-01T00:00:00Z",
+		})
+	}))
+	defer identity.Close()
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"reference":"actor-change-01","actorId":"wallet-one","amountYer":"17","currency":"YER","status":"SUCCEEDED"}`)
+	}))
+	defer provider.Close()
+	db, err := sql.Open("postgres", "postgres://127.0.0.1:1/bthwani_wlt_test?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	state, err := VerifySandboxProviderFunding(t.Context(), db, identity.URL, provider.URL, token, "actor-change-01", 17)
+	if state != "" || err == nil || !strings.Contains(err.Error(), "provider actor changed") || reads.Load() != 2 {
+		t.Fatalf("expected actor change denial before database access: state=%q err=%v reads=%d", state, err, reads.Load())
 	}
 }
