@@ -1,4 +1,4 @@
-import { establishPersistentIdentitySession, identityOperations } from "@bthwani/identity";
+import { establishPersistentIdentitySession, identityOperations, revokeVerifiedIdentitySession } from "@bthwani/identity";
 import { NextResponse } from "next/server";
 import {
   boundedRequestBody,
@@ -45,6 +45,7 @@ export async function POST(request: Request) {
   if (!validAssertion(input)) {
     return NextResponse.json({ code: "INVALID_REQUEST" }, { status: 400, headers: privateHeaders });
   }
+  let undelivered: string | null = null;
   try {
     const auth = await operatorIdentityRequest(
       config,
@@ -61,6 +62,7 @@ export async function POST(request: Request) {
     if (!issued) {
       return NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });
     }
+    undelivered = issued.accessToken;
     const owner = await operatorIdentityRequest(
       config,
       identityOperations.getVerifiedIdentitySession,
@@ -72,8 +74,11 @@ export async function POST(request: Request) {
     }
     const response = NextResponse.json({ authenticated: true }, { status: 200, headers: privateHeaders });
     const persistent = await establishPersistentIdentitySession(config.identityOrigin, issued.accessToken,
-      AbortSignal.timeout(5000)).catch(() => null);
-    if (persistent) response.cookies.set(OPERATOR_REFRESH_COOKIE, persistent.refreshToken, {
+      AbortSignal.timeout(5000));
+    if (cookieLifetimeSeconds(issued.sessionExpiresAt) <= 0) {
+      return NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });
+    }
+    response.cookies.set(OPERATOR_REFRESH_COOKIE, persistent.refreshToken, {
       path: "/", httpOnly: true, secure: false, sameSite: "strict",
       maxAge: Math.max(0,Math.floor((Date.parse(persistent.refreshExpiresAt)-Date.now())/1000)),
     });
@@ -84,8 +89,13 @@ export async function POST(request: Request) {
       sameSite: "strict",
       maxAge: cookieLifetimeSeconds(issued.sessionExpiresAt),
     });
+    undelivered = null;
     return response;
   } catch {
     return NextResponse.json({ code: "OWNER_UNAVAILABLE" }, { status: 503, headers: privateHeaders });
+  } finally {
+    if (undelivered !== null) {
+      await revokeVerifiedIdentitySession(config.identityOrigin, undelivered, AbortSignal.timeout(2000)).catch(() => undefined);
+    }
   }
 }

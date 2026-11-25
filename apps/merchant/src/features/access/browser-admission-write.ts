@@ -1,6 +1,6 @@
 import { createMerchantCatalogDraft, DshPublicError, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantStoreRegistration, registerMerchantEmployee, registerMerchantStore, type StoreOperationalChange, updateMerchantCatalogDraft, updateStoreOperationalAvailability, validEmployeeRegistration, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "@bthwani/dsh";
 import { establishPersistentIdentitySession, IdentityClientError, issueCustomerPhoneChallenge, readVerifiedIdentitySession, revokePersistentIdentitySession, revokeVerifiedIdentitySession } from "@bthwani/identity";
-import { verifyMerchantAdmission } from "./admission.ts";
+import { revokeUndeliveredAdmissionSession, verifyMerchantAdmission } from "./admission.ts";
 import {
   appendSessionCookies, bearerFrom, configuredOrigin, isLocalMutation, noStoreHeaders,
   ownerError, readMutationBody, refreshFrom, response, standingOrigin,
@@ -134,9 +134,16 @@ export async function POST(request: Request) {
         }
       }
       const { bearer, session } = await verifyMerchantAdmission(origin, data.ticket, data.code, signal);
-      const result = response({ session }, 200);
-      const persistent = await establishPersistentIdentitySession(origin, bearer, signal).catch(() => null);
-      return appendSessionCookies(result,request,bearer,session.sessionExpiresAt,persistent);
+      try {
+        const persistent = await establishPersistentIdentitySession(origin, bearer, signal);
+        if (signal.aborted || Date.parse(session.sessionExpiresAt) <= Date.now()) {
+          throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+        }
+        return appendSessionCookies(response({ session }, 200),request,bearer,session.sessionExpiresAt,persistent);
+      } catch (error) {
+        await revokeUndeliveredAdmissionSession(origin, bearer);
+        throw error;
+      }
     }
     return response({ code: "INVALID_REQUEST" }, 400);
   } catch (error) {

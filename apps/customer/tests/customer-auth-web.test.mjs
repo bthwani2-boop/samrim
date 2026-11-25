@@ -337,9 +337,13 @@ test("Customer must explicitly sign out before phone verification when only a re
   assert.equal(calls.length, 0);
 });
 
-test("Fresh Customer proof clears an unusable old refresh cookie when persistent enrollment fails", async t => {
+test("Fresh Customer proof cannot return successful access-only login when enrollment fails", async t => {
   const calls = mockOwner(t, (path, opts) => {
     if (path === "/v1/customer-auth/phone-verification") return success({ accessToken: token, sessionExpiresAt: expiry });
+    if (path === "/v1/sessions/current" && opts.method === "DELETE") {
+      assert.equal(opts.headers.Authorization, "Bearer " + token);
+      return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    }
     if (path === "/v1/sessions/current") return success(verified);
     if (path === "/v1/sessions/persistent") return Response.json({ error: "OWNER_UNAVAILABLE" },
       { status: 503, headers: { "Cache-Control": "no-store" } });
@@ -350,9 +354,8 @@ test("Fresh Customer proof clears an unusable old refresh cookie when persistent
     headers: { Origin: host, "Content-Type": "application/json", Cookie: "bthwani_customer_auth.refresh=invalid" },
     body: JSON.stringify({ ticket, code: "123456" }),
   }));
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), { session: verified });
-  assert.ok(res.headers.getSetCookie().some(value => value.startsWith("bthwani_customer_auth=" + token + ";")));
-  assert.ok(res.headers.getSetCookie().some(value => value.startsWith("bthwani_customer_auth.refresh=;") && value.includes("Max-Age=0")));
-  assert.deepEqual(calls.map(x => x.path), ["/v1/customer-auth/phone-verification", "/v1/sessions/current", "/v1/sessions/persistent"]);
+  assert.equal(res.status, 503);
+  assert.deepEqual(await res.json(), { code: "OWNER_UNAVAILABLE" });
+  assert.equal(res.headers.get("Set-Cookie"), null);
+  assert.deepEqual(calls.map(x => x.method + " " + x.path), ["POST /v1/customer-auth/phone-verification", "GET /v1/sessions/current", "POST /v1/sessions/persistent", "DELETE /v1/sessions/current"]);
 });

@@ -8,7 +8,7 @@ const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
 const root = resolve(import.meta.dirname, "..");
 const jsx = (type, props) => ({ type, props: props ?? {} });
-function compile(file, deps, bindings = {}) {
+function compile(file, deps, bindings = {}, exportName = "default") {
   const code = transformSync(readFileSync(resolve(root, file), "utf8"), {
     jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
       transform: { react: { runtime: "automatic" } } },
@@ -20,7 +20,7 @@ function compile(file, deps, bindings = {}) {
       assert.ok(Object.hasOwn(deps, name), `unexpected dependency ${name}`);
       return deps[name];
     }, mod, mod.exports, ...Object.values(bindings));
-  return mod.exports.default;
+  return mod.exports[exportName];
 }
 function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
@@ -133,4 +133,53 @@ test("Concurrent recovery clicks issue a single owner request", async () => {
   await Promise.all([button.props.onClick(), button.props.onClick()]);
   assert.equal(h.calls.length, 1);
   assert.deepEqual(h.redirects, ["/"]);
+});
+
+test("Operator passkey admission requires a persistent family before setting either cookie", async () => {
+  const token = Buffer.alloc(32, 51).toString("base64url");
+  const refresh = Buffer.alloc(32, 52).toString("base64url");
+  const expires = new Date(Date.now() + 300000).toISOString();
+  for (const enrollmentFails of [true, false]) {
+    const revoked = [];
+    const post = compile("app/api/auth/passkey/authentication/route.ts", {
+      "@bthwani/identity": {
+        identityOperations: { finishOperatorPasskeyAuthentication: "finish", getVerifiedIdentitySession: "current" },
+        async establishPersistentIdentitySession(_origin, bearer) {
+          assert.equal(bearer, token);
+          if (enrollmentFails) throw new Error("persistent enrollment unavailable");
+          return { refreshToken: refresh, refreshExpiresAt: expires };
+        },
+        async revokeVerifiedIdentitySession(_origin, bearer) { revoked.push(bearer); },
+      },
+      "next/server": requirePanel("next/server"),
+      "../../../../../src/server/operator-passkey-bff": {
+        boundedRequestBody: async () => JSON.stringify({ ceremonyId: "synthetic" }),
+        boundedResponseJSON: response => response.json(),
+        cookieLifetimeSeconds: () => 300,
+        isTrustedOperatorRequest: () => true,
+        OPERATOR_COOKIE: "bthwani_operator_session",
+        OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
+        operatorIdentityRequest: async (_config, operation) => Response.json(operation === "finish"
+          ? { accessToken: token, sessionExpiresAt: expires }
+          : { actorId: "operator-synthetic", role: "operator", sessionExpiresAt: expires }),
+        parseIssuedOperatorToken: value => value,
+        parseVerifiedOperatorPrincipal: value => value,
+        resolveIsolatedOperatorConfig: () => ({ identityOrigin: "http://127.0.0.1:3201" }),
+        validAssertion: () => true,
+      },
+      "../../../../../src/server/request-security": { unavailableSessionResponse: () => Response.json({}, { status: 503 }) },
+    }, {}, "POST");
+    const response = await post(new Request("http://localhost:13000/api/auth/passkey/authentication", {
+      method: "POST", headers: { "content-type": "application/json" },
+    }));
+    assert.equal(response.status, enrollmentFails ? 503 : 200);
+    if (enrollmentFails) {
+      assert.equal(response.headers.get("Set-Cookie"), null);
+      assert.deepEqual(revoked, [token]);
+    } else {
+      assert.equal(response.cookies.get("bthwani_operator_session")?.value, token);
+      assert.equal(response.cookies.get("bthwani_operator_refresh")?.value, refresh);
+      assert.deepEqual(revoked, []);
+    }
+  }
 });

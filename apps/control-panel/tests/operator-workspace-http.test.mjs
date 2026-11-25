@@ -113,6 +113,9 @@ test("production Operator UI rechecks isolated Identity grants on every document
     if (request.headers.authorization !== `Bearer ${token}`) {
       return send(401, { error: "UNAUTHORIZED" });
     }
+    if (route === "/v1/sessions/persistent" && request.method === "POST") {
+      return send(201, { refreshToken, refreshExpiresAt: new Date(Date.now() + 3600000).toISOString() });
+    }
     if (route === "/v1/sessions/current") {
       if (request.method === "DELETE") {
         revokeCalls++;
@@ -255,6 +258,7 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.equal(authenticationCalls, 1);
     const cookie = authentication.headers.get("set-cookie") ?? "";
     assert.match(cookie, /bthwani_operator_session=/);
+    assert.match(cookie, /bthwani_operator_refresh=/);
     assert.match(cookie, /httponly/i, "Identity bearer must remain server-managed");
     assert.match(cookie, /samesite=strict/i);
     const sessionReadback = await fetch(`${base}/api/auth/session`, {

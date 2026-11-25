@@ -342,13 +342,16 @@ test("Merchant admission abandons an aborted stalled JSON body without contactin
   }
 });
 
-test("Fresh Merchant proof clears an unusable old refresh cookie when enrollment fails", async t => {
+for (const enrollmentFails of [true, false]) {
+test("Fresh Merchant proof requires durable enrollment (failure=" + enrollmentFails + ")", async t => {
   process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
   const customer = Buffer.alloc(32, 70).toString("base64url");
   const merchant = Buffer.alloc(32, 71).toString("base64url");
   const sessionExpiresAt = new Date(Date.now() + 120000).toISOString();
   const verified = { actorId: "merchant-new", role: "merchant", sessionExpiresAt };
   const calls = [];
+  const revoked = [];
+  const refresh = Buffer.alloc(32, 72).toString("base64url");
   t.mock.method(globalThis, "fetch", async (url, options) => {
     const path = new URL(url).pathname;
     const credential = options.headers.Authorization;
@@ -360,13 +363,14 @@ test("Fresh Merchant proof clears an unusable old refresh cookie when enrollment
     }
     if (path === "/v1/sessions/current") {
       if (options.method === "DELETE") {
-        assert.equal(credential, "Bearer " + customer);
+        revoked.push(credential);
         return new Response(null, { status: 204, headers: {"Cache-Control":"no-store"} });
       }
       return json(credential === "Bearer " + customer ? { ...verified, role: "customer" } : verified);
     }
     if (path === "/v1/sessions/persistent") {
       assert.equal(credential, "Bearer " + merchant);
+      if (!enrollmentFails) return Response.json({ refreshToken: refresh, refreshExpiresAt: sessionExpiresAt }, { status: 201, headers: {"Cache-Control":"no-store"} });
       return Response.json({ error: "OWNER_UNAVAILABLE" }, { status: 503, headers: {"Cache-Control":"no-store"} });
     }
     assert.fail(path);
@@ -376,13 +380,22 @@ test("Fresh Merchant proof clears an unusable old refresh cookie when enrollment
     method: "POST", headers: { Origin: host, "Content-Type": "application/json", Cookie: "bthwani_merchant_admission.refresh=invalid" },
     body: JSON.stringify({ ticket: "f".repeat(48), code: "123456" }),
   }));
-  assert.equal(reply.status, 200);
-  assert.deepEqual(await reply.json(), { session: verified });
-  assert.ok(reply.headers.getSetCookie().some(value => value.startsWith("bthwani_merchant_admission=" + merchant + ";")));
-  assert.ok(reply.headers.getSetCookie().some(value => value.startsWith("bthwani_merchant_admission.refresh=;") && value.includes("Max-Age=0")));
+  assert.equal(reply.status, enrollmentFails ? 503 : 200);
+  if (enrollmentFails) {
+    assert.deepEqual(await reply.json(), { code: "OWNER_UNAVAILABLE" });
+    assert.equal(reply.headers.get("Set-Cookie"), null);
+    assert.deepEqual(revoked, ["Bearer " + customer, "Bearer " + merchant]);
+  } else {
+    assert.deepEqual(await reply.json(), { session: verified });
+    assert.ok(reply.headers.getSetCookie().some(value => value.startsWith("bthwani_merchant_admission=" + merchant + ";")));
+    assert.ok(reply.headers.getSetCookie().some(value => value.startsWith("bthwani_merchant_admission.refresh=" + refresh + ";")));
+    assert.deepEqual(revoked, ["Bearer " + customer]);
+  }
   assert.deepEqual(calls, ["POST /v1/customer-auth/phone-verification", "GET /v1/sessions/current",
-    "POST /v1/actors/me/merchant-role", "GET /v1/sessions/current", "DELETE /v1/sessions/current", "POST /v1/sessions/persistent"]);
+    "POST /v1/actors/me/merchant-role", "GET /v1/sessions/current", "DELETE /v1/sessions/current", "POST /v1/sessions/persistent",
+    ...(enrollmentFails ? ["DELETE /v1/sessions/current"] : [])]);
 });
+}
 
 test("Merchant body deadline rejects an unfinished JSON stream even without caller cancellation", async t => {
   process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
