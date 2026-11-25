@@ -282,3 +282,15 @@ test("Customer Offer detail invalidates reused IDs or revision-changed pages ins
     assert.deepEqual(products(app.render()).map(item => item.id), ["fresh"], scenario);
   }
 });
+
+test("leaving Store detail aborts an in-flight Offer continuation", async () => {
+  const app = harness();
+  await open(app, { nextCursor: "next-page" });
+  const more = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress();
+  const continuation = app.read();
+  assert.equal(continuation.cursor, "next-page");
+  app.unmount();
+  assert.equal(continuation.signal.aborted, true);
+  continuation.resolve({ items: [offer("late")], revision: 1 });
+  await more;
+});

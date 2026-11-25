@@ -6,8 +6,8 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useStoreCart } from "../cart/use-store-cart";
 import StoreProducts, { StoreCartBar } from "../catalog/store-products";
-import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import FavoriteStores from "../discovery/favorite-stores";
+import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
@@ -48,7 +48,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         if (!abort.signal.aborted && revision.current === current)
           setState({ scope, loading: false, offers: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
-    return () => { abort.abort(); revision.current++; };
+    return () => { revision.current++; pending.current?.abort(); };
   }, [api, id, query, scope, retry]);
   const visible: PublicStoreDetailState = state.scope === scope ? state : { scope, loading: true, offers: [] };
   const cartSession = useStoreCart(visible.store?.id);

@@ -95,6 +95,7 @@ function harness({ variant = "directory", params = {} } = {}) {
       return view;
     },
     setParams(next) { Object.assign(params, next); },
+    unmount() { for (const cleanup of cleanups.values()) cleanup?.(); },
     read() {
       assert.ok(requests.length, "expected a Store list request");
       return requests.shift();
@@ -422,4 +423,23 @@ test("reopening the selector and choosing the same city does not lose its filter
   find(app.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string").props.onApply("sanaa");
   assert.equal(byId(app.render(), "vertical-option-grocery").props.accessibilityState.selected, true);
   assert.equal(old.signal.aborted, false);
+});
+
+test("leaving the Store directory aborts active Store and vertical continuations", async () => {
+  const app = harness();
+  app.render();
+  app.read().resolve({ items: [store("first")], nextCursor: "stores-next", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], nextCursor: "vertical-next", revision: 1 });
+  await settle();
+  const view = app.render();
+  const storeMore = button(view, "عرض المزيد").props.onPress();
+  const verticalMore = byId(view, "vertical-options-more").props.onPress();
+  const stores = app.read();
+  const verticals = app.readCategory();
+  app.unmount();
+  assert.equal(stores.signal.aborted, true, "active Store continuation must be aborted on unmount");
+  assert.equal(verticals.signal.aborted, true, "active vertical continuation must be aborted on unmount");
+  stores.resolve({ items: [store("late")], revision: 1 });
+  verticals.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
+  await Promise.all([storeMore, verticalMore]);
 });

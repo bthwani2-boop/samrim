@@ -76,7 +76,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
             items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
         }
       });
-    return () => { abort.abort(); verticalGeneration.current++; };
+    return () => { verticalGeneration.current++; verticalAbort.current?.abort(); };
   }, [api, cityId, verticalRetry]);
   const visibleVerticals: VerticalState = verticalState.city === cityId ? verticalState :
     { city: cityId, loading: true, loadingMore: false, items: [] };
@@ -133,7 +133,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
         if (!abort.signal.aborted && generation.current === current)
           setState({ scope, loading: false, loadingMore: false, items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
-    return () => { abort.abort(); generation.current++; };
+    return () => { generation.current++; pageAbort.current?.abort(); };
   }, [api, cityId, query, vertical, scope, retry]);
   const visible: PageState = appliedRouteScope === routeScope && state.scope === scope
     ? state : { scope, loading: true, loadingMore: false, items: [] };
