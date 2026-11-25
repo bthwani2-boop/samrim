@@ -6,6 +6,7 @@ import {tmpdir} from "node:os";
 import path from "node:path";
 import {test} from "node:test";
 import * as dsh from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import {GET,PATCH, PUT} from "../app/api/admission+api.ts";
 import { buildImportManifest } from "../src/features/catalog/catalog-import-data.ts";
 
@@ -44,15 +45,18 @@ test("import admission binds owner scope, denies foreign origin/actor and rechec
   assert.deepEqual(calls,["PUT","PATCH","GET","GET"]);
 });
 
+// Retain uncached fixture modules for original-source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 const nodes=t=>Array.isArray(t)?t.flatMap(nodes):!t||typeof t!=="object"?[]:[t,...nodes(t.props?.children)];
 const tick=()=>new Promise(setImmediate);
 async function until(f){for(let i=0;i<120;i++){if(f())return;await tick();}assert.fail("UI did not settle");}
-for(const os of ["web","android"])test("bulk import requires explicit confirmation and recovers one durable run after lost acknowledgments"+(os==="web"?"":" (Android)"),async()=>{
+for(const os of ["web","android"])test("bulk import requires explicit confirmation and recovers one durable run after lost acknowledgments"+(os==="web"?"":" (Android)"),async t=>{
   const tmp=mkdtempSync(path.join(tmpdir(),"catalog-import-run-"));
   try{
     const root=path.resolve(import.meta.dirname,"../../..");
     const source=path.resolve(import.meta.dirname,"../src/features/catalog/catalog-import-run.tsx");
-    const compiled=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),source,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--outDir",tmp],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
+    const compiled=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),source,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",tmp],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
     assert.equal(compiled.status,0,compiled.stderr||compiled.stdout);
     const code=readFileSync(path.join(tmp,"catalog-import-run.js"),"utf8");
     const storage=new Map(),calls=[];let states=[],refs=[],effects=[],si=0,ri=0,ei=0;
@@ -69,8 +73,17 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
       if(m==="PATCH"){ownerProcessed++;throw Error("lost progress ack");}
       return {...(ownerProcessed?complete:initial),runId:r};
     }}};
-    const mod={exports:{}};
-    new Function("require","module","exports","window",code)(n=>{assert.ok(Object.hasOwn(mocks,n),n);return mocks[n];},mod,mod.exports,{localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{locks:{async request(_key,fn){if(storageGate){storageWaiting=true;await storageGate;}return fn();}}}});
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    t.after(() => {
+      if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+      else delete globalThis.window;
+    });
+    Object.defineProperty(globalThis, "window", {
+      configurable: true, writable: true,
+      value: {localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{locks:{async request(_key,fn){if(storageGate){storageWaiting=true;await storageGate;}return fn();}}}},
+    });
+    const mod = loadMappedRenderFixture(code, source, mocks);
+    loadedModules.push(mod);
     const mixed=buildImportManifest([
       ...props.rows,
       {row:3,name:"x".repeat(6000),priceYer:"100",stockUnits:"2",reason:"invalid"},

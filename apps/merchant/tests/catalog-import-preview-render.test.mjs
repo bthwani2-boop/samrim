@@ -4,10 +4,14 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import * as data from "../src/features/catalog/catalog-import-data.ts";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const source = path.resolve(import.meta.dirname, "../src/features/catalog/catalog-import.tsx");
+// Retain uncached fixture modules for original-source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 const tick = () => new Promise(setImmediate);
 async function until(predicate) {
   for (let i = 0; i < 100; i++) {
@@ -17,12 +21,12 @@ async function until(predicate) {
   assert.fail("preview did not settle");
 }
 const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes) : !tree || typeof tree !== "object" ? [] : [tree, ...nodes(tree.props?.children)];
-test("CSV preview is owner-scoped and drops the selected file on revocation or account change", async () => {
+test("CSV preview is owner-scoped and drops the selected file on revocation or account change", async t => {
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-import-render-"));
   try {
     const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--outDir", tmp], {cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp], {cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const code = readFileSync(path.join(tmp, "catalog-import.js"), "utf8");
     let states = [], refs = [], stateIndex = 0, refIndex = 0, cleanup, mounted = false;
@@ -59,10 +63,9 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
         stream() { return files.at(-1).stream(); }
       }},
     };
-    const mod = {exports:{}};
-    new Function("require","module","exports","URL",code)(
-      name=>{assert.ok(Object.hasOwn(mocks,name), name);return mocks[name];},
-      mod,mod.exports,{revokeObjectURL:uri=>revoked.push(uri)});
+    t.mock.method(URL, "revokeObjectURL", uri => revoked.push(uri));
+    const mod = loadMappedRenderFixture(code, source, mocks);
+    loadedModules.push(mod);
     const scope = {actorId:"merchant-a",storeId:"store-a"};
     const screen = () => {stateIndex=0;refIndex=0;const c=mod.exports.default(scope);return c.type(c.props);};
     const button = () => nodes(screen()).find(n=>n.props?.accessibilityLabel==="معاينة ملف المنتجات CSV");
