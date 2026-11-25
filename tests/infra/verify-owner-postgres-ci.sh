@@ -53,11 +53,12 @@ ci_password="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-captainstanding.test" ./internal/captainstanding && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-customercart.test" ./internal/customercart && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-employees.test" ./internal/employees && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -cover -o "$scratch/dsh-employee-mount.test" ./cmd/dsh && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/dsh" ./cmd/dsh)
 (cd services/wlt/backend && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/wlt-wallet.test" ./cmd/wlt)
 [[ -s "$scratch/wlt-wallet.test" ]] || { echo "Missing compiled WLT owner test" >&2; exit 1; }
-for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh; do
+for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh-employee-mount.test dsh; do
   [[ -s "$scratch/$executable" ]] || { echo "Missing compiled owner: $executable" >&2; exit 1; }
 done
 
@@ -108,10 +109,11 @@ start_stage() {
     /agent02/services/dsh/backend/internal/discovery \
     /agent02/services/dsh/backend/internal/storeavailability \
     /agent02/services/dsh/backend/internal/captainstanding \
-    /agent02/services/dsh/backend/internal/employees
+    /agent02/services/dsh/backend/internal/employees \
+    /agent02/services/dsh/backend/cmd/dsh
   docker cp services/identity/database/schema "$name:/agent02/services/identity/database/schema"
   docker cp services/dsh/database/schema "$name:/agent02/services/dsh/database/schema"
-  for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh; do
+  for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh-employee-mount.test dsh; do
     docker cp "$scratch/$executable" "$name:/agent02/bin/$executable"
   done
   # Joined tests use only these fresh binaries and localhost within --network none.
@@ -187,6 +189,11 @@ run_test "$current" /agent02/bin /agent02/bin/dsh-customercart.test \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_CART_CI_TEST=true
 run_test "$current" /agent02/services/dsh/backend/internal/employees \
   /agent02/bin/dsh-employees.test '^TestCompanyEmployeeDirectoryPostgres$' 'TestCompanyEmployeeDirectoryPostgres' \
+  -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_EMPLOYEES_TEST=true \
+  -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD="$ci_password" \
+  -e REF_POSTGRES_DB=bthwani_refoundation -e DSH_DB_HOST=127.0.0.1
+run_test "$current" /agent02/services/dsh/backend/cmd/dsh \
+  /agent02/bin/dsh-employee-mount.test '^(TestEmployeeDirectoryExplicitIsolatedTransport|TestEmployeeDirectoryMountPostgres)$' 'TestEmployeeDirectoryExplicitIsolatedTransport,TestEmployeeDirectoryMountPostgres' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_EMPLOYEES_TEST=true \
   -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD="$ci_password" \
   -e REF_POSTGRES_DB=bthwani_refoundation -e DSH_DB_HOST=127.0.0.1
