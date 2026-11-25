@@ -298,7 +298,7 @@ THEN 'PASS' ELSE 'FAIL' END;
   Write-Output "PG_FRESH_WLT_BASELINE=PASS schema=$($wltSchemaFiles.Count) sandbox=$($wltSandboxFiles.Count) privilege-isolation=yes posting-replay=yes reversal-replay=yes entries=4 net=0"
   # Execute the exact transaction builder consumed by the owner reconciler,
   # against only the disposable container. No live database is involved.
-  function Invoke-BaselineTransition([string]$Owner,[string]$Database,[string]$Schema,[string]$Archive,[bool]$ExpectPass=$true) {
+  function Invoke-BaselineTransition([string]$Owner,[string]$Database,[string]$Schema,[string]$Archive,[bool]$ExpectPass=$true,[string]$ExpectedError='') {
     $transition = & node (Join-Path $root 'tools/dev/docker/owner-baseline-transition.mjs') '--fixture-sql' $Owner $Schema $Archive
     if ($LASTEXITCODE -ne 0 -or !$transition) { throw 'Cannot generate reviewed owner transition' }
     $result = ($transition -join [Environment]::NewLine) | & docker --context $DockerContext exec -i $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -f - 2>&1
@@ -306,6 +306,7 @@ THEN 'PASS' ELSE 'FAIL' END;
     if ($ExpectPass) {
       if (!$ok -or ($result | Out-String).Trim() -cne 'OWNER_BASELINE_TRANSITION_PASS') { throw ('Disposable owner transition failed: '+($result | Out-String)) }
     } elseif ($ok) { throw 'Incompatible or wrong-database transition unexpectedly committed' }
+    elseif ($ExpectedError -and ($result | Out-String) -notmatch [regex]::Escape($ExpectedError)) { throw ('Wrong transition refusal: '+($result | Out-String)) }
   }
   # Wrong database and incompatible retained columns must leave the source
   # exactly as it was. The temporary change is exclusively in our fixture.
@@ -352,7 +353,25 @@ GRANT UPDATE(revoked_at) ON $identitySchema.auth_sessions TO bthwani_identity_ru
   Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000001'
   $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND (SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id='$testCustomer')=0 AND NOT has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT') AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE') AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000001','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
   if ($proof -cne 'PASS') { throw 'WLT baseline transition ledger or reader boundary failed' }
-  Write-Output 'PG_BASELINE_TRANSITION_WLT=PASS immutable-ledger reversal-parity reader-denied net=0'
+  # Reproduce retired reservation names in a disposable fixture, without
+  # relying on historical Git objects in shallow CI checkouts.
+  $legacyRename = 'ALTER TABLE wlt.order_payment_allocations RENAME TO order_wallet_reservations; ALTER TABLE wlt.order_payment_releases RENAME TO order_wallet_releases;'
+  $null = Invoke-ProofSql $wltDb $legacyRename
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000002'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN to_regclass('wlt.order_wallet_reservations') IS NULL AND to_regclass('wlt.order_wallet_releases') IS NULL AND (SELECT count(*) FROM bthwani_recovery_wlt_000000000002.order_wallet_reservations)=0 AND (SELECT count(*) FROM bthwani_recovery_wlt_000000000002.order_wallet_releases)=0 AND (SELECT count(*) FROM wlt.order_payment_allocations)=0 AND (SELECT count(*) FROM wlt.order_payment_releases)=0 AND (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000002','USAGE') AND NOT has_schema_privilege('bthwani_wlt_sandbox','bthwani_recovery_wlt_000000000002','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT empty historical table retirement readback failed' }
+  # A populated historical table must prevent transition, even if its
+  # replacement exists. This is an isolated fixture, not a real checkout.
+  $null = Invoke-ProofSql $wltDb "SET ROLE bthwani_wlt_owner; INSERT INTO wlt.order_payment_allocations(checkout_id,actor_id,store_id,quote_digest,method,total_yer,wallet_yer) VALUES('fixture-old-checkout','synthetic-retained','store-a',repeat('a',64),'MIXED',20,10); RESET ROLE; $legacyRename"
+  $legacyOid = Invoke-ProofSql $wltDb "SELECT oid::text FROM pg_namespace WHERE nspname='wlt';"
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000003' $false 'retired relation has retained data: order_wallet_reservations'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT oid::text FROM pg_namespace WHERE nspname='wlt')='$legacyOid' AND to_regnamespace('bthwani_recovery_wlt_000000000003') IS NULL AND (SELECT count(*) FROM wlt.order_wallet_reservations WHERE checkout_id='fixture-old-checkout' AND wallet_yer=10)=1 AND has_schema_privilege('bthwani_wlt_reader','wlt','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT retained legacy reservation did not roll back' }
+  $null = Invoke-ProofSql $wltDb "SET ROLE bthwani_wlt_owner; INSERT INTO wlt.order_wallet_releases(checkout_id,operation_id,reason) VALUES('fixture-old-checkout','fixture-old-release','synthetic cancellation');"
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000004' $false 'retired relation has retained data: order_wallet_releases'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT oid::text FROM pg_namespace WHERE nspname='wlt')='$legacyOid' AND to_regnamespace('bthwani_recovery_wlt_000000000004') IS NULL AND (SELECT count(*) FROM wlt.order_wallet_releases WHERE checkout_id='fixture-old-checkout' AND operation_id='fixture-old-release')=1 AND (SELECT count(*) FROM wlt.order_wallet_reservations WHERE checkout_id='fixture-old-checkout')=1 THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT retained legacy release did not roll back' }
+  Write-Output 'PG_BASELINE_TRANSITION_WLT=PASS immutable-ledger reversal-parity reader-denied net=0 empty-legacy-archive=yes nonempty-legacy-rollback=yes'
 
   Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'
 } finally {

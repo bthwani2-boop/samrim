@@ -43,7 +43,14 @@ export function buildOwnerBaselineTransition(owner,schema,archive,sources) {
   const roles=owner==="wlt"?[d.runtime,"bthwani_wlt_sandbox"]:[d.runtime];
   const roleList=roles.map(r=>"'"+r+"'").join(",");
   const roleNames=roles.join(",");
-  const archivedTableException=owner==="identity"?"t='operator_merchant_scope_cutover_audit'":"false";
+  // Only the exact retired WLT reservation pair may remain archive-only.
+  // The locked historical tables must be empty; populated records require a
+  // separately reviewed mapping. Mixed or incomplete table pairs fail closed.
+  const archivedTableException=owner==="identity"?"t='operator_merchant_scope_cutover_audit'":owner==="wlt"?`t IN('order_wallet_reservations','order_wallet_releases')
+    AND (SELECT count(*) FROM pg_class c JOIN pg_namespace ns ON ns.oid=c.relnamespace WHERE ns.nspname='${archive}' AND c.relkind='r' AND c.relname IN('order_wallet_reservations','order_wallet_releases'))=2
+    AND (SELECT count(*) FROM pg_class c JOIN pg_namespace ns ON ns.oid=c.relnamespace WHERE ns.nspname='${schema}' AND c.relkind='r' AND c.relname IN('order_payment_allocations','order_payment_releases'))=2
+    AND to_regclass('${archive}.order_payment_allocations') IS NULL AND to_regclass('${archive}.order_payment_releases') IS NULL
+    AND to_regclass('${schema}.order_wallet_reservations') IS NULL AND to_regclass('${schema}.order_wallet_releases') IS NULL`:"false";
   const ordering=owner==="wlt"?"CASE WHEN t='customer_funding_journal' THEN ' ORDER BY reverses_funding_id IS NOT NULL, posted_at, funding_id' ELSE '' END":"''";
   return [
 "BEGIN;",
@@ -97,7 +104,7 @@ BEGIN
       IF target_oid IS NULL THEN
         IF NOT (${archivedTableException}) THEN RAISE EXCEPTION 'retained relation missing from baseline: %',t; END IF;
         EXECUTE format('SELECT count(*) FROM %I.%I','${archive}',t) INTO n;
-        IF n<>0 THEN RAISE EXCEPTION 'historical audit has retained data'; END IF;
+        IF n<>0 THEN RAISE EXCEPTION 'retired relation has retained data: %',t; END IF;
         pending:=array_remove(pending,t); progress:=true; CONTINUE;
       END IF;
       IF EXISTS(SELECT 1 FROM pg_constraint c JOIN pg_class r ON r.oid=c.confrelid JOIN pg_namespace ns ON ns.oid=r.relnamespace WHERE c.conrelid=target_oid AND c.contype='f' AND (ns.nspname<>'${schema}' OR (r.relname<>t AND NOT(r.relname::text=ANY(copied)) AND r.relname::text=ANY(pending)))) THEN CONTINUE; END IF;
