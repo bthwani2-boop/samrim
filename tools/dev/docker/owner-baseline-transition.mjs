@@ -1,5 +1,5 @@
 // Transaction builder used only by the existing owner reconciler and its disposable proof.
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,16 +17,33 @@ export function transitionScope(owner,schema,archive) {
   return {...d,schema,archive};
 }
 
+export function readBaselineFile(file) {
+  const limit=512*1024;
+  const fd=openSync(file,constants.O_RDONLY|(constants.O_NOFOLLOW??0)|(constants.O_NONBLOCK??0));
+  try {
+    const opened=fstatSync(fd,{bigint:true});
+    const matches=entry=>entry.isFile()&&!entry.isSymbolicLink()&&entry.dev===opened.dev&&entry.ino===opened.ino&&entry.nlink===1n&&entry.size===opened.size&&entry.mtimeNs===opened.mtimeNs&&entry.ctimeNs===opened.ctimeNs;
+    if(!opened.isFile()||opened.nlink!==1n||opened.size>BigInt(limit)||!matches(lstatSync(file,{bigint:true})))throw new Error("Unexpected baseline entry");
+    const buffer=Buffer.alloc(Number(opened.size)+1);
+    let count=0;
+    while(count<buffer.length){
+      const n=readSync(fd,buffer,count,buffer.length-count,null);
+      if(!n)break;
+      count+=n;
+    }
+    if(BigInt(count)!==opened.size||!matches(fstatSync(fd,{bigint:true}))||!matches(lstatSync(file,{bigint:true})))throw new Error("Unexpected baseline entry");
+    return buffer.subarray(0,count).toString("utf8");
+  } finally {closeSync(fd);}
+}
 function baselineSources(owner) {
   return ["schema",...(owner==="wlt"?["sandbox"]:[])].flatMap(dir=>{
     const folder=resolve(root,"services",owner,"database",dir);
     const names=readdirSync(folder,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name,"en"));
     if(!names.length || names.length>64)throw new Error("Invalid baseline inventory");
     return names.map(entry=>{
-      const file=resolve(folder,entry.name), info=lstatSync(file);
-      if(!/^[0-9]{2}_[a-z0-9_]+\.sql$/.test(entry.name)||!entry.isFile()||!info.isFile()||info.isSymbolicLink()||info.size>512*1024)
+      if(!/^[0-9]{2}_[a-z0-9_]+\.sql$/.test(entry.name)||!entry.isFile())
         throw new Error("Unexpected baseline entry");
-      return readFileSync(file,"utf8");
+      return readBaselineFile(resolve(folder,entry.name));
     });
   });
 }

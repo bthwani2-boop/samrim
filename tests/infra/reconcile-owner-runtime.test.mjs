@@ -304,3 +304,22 @@ test("baseline owner and archive scope rejects inherited keys, coercion and wron
   assert.equal(transitionScope("identity","identity_test_agent01","bthwani_recovery_identity_abcdef123456").database,"bthwani_identity_dev");
   assert.equal(transitionScope("wlt","wlt","bthwani_recovery_wlt_abcdef123456").runtime,"bthwani_wlt_reader");
 });
+
+test("baseline SQL read is bounded, regular and rejects hard links", async()=>{
+  const {readBaselineFile}=await import("../../tools/dev/docker/owner-baseline-transition.mjs");
+  const {mkdtempSync,writeFileSync,linkSync,rmSync}=await import("node:fs");
+  const {tmpdir}=await import("node:os");
+  const {join}=await import("node:path");
+  const dir=mkdtempSync(join(tmpdir(),"bthwani-baseline-read-"));
+  try {
+    const file=join(dir,"00_schema.sql"), alias=join(dir,"01_alias.sql");
+    writeFileSync(file,"SELECT 1;");
+    assert.equal(readBaselineFile(file),"SELECT 1;");
+    linkSync(file,alias);
+    assert.throws(()=>readBaselineFile(alias),/Unexpected baseline entry/);
+    rmSync(alias);
+    writeFileSync(file,Buffer.alloc(512*1024+1,65));
+    assert.throws(()=>readBaselineFile(file),/Unexpected baseline entry/);
+    assert.throws(()=>readBaselineFile(dir));
+  } finally {rmSync(dir,{recursive:true,force:true});}
+});
