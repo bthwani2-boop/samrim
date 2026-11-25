@@ -79,4 +79,39 @@ test("historical limits compare against verified current policy and only prepare
   for (const overrides of [{current: null}, {current: {...current, cityId: "aden"}}, {current: {...current, version: 4}}, {onDraft: undefined}]) {
     assert.equal(draft(render(overrides)), undefined);
   }
+
+  const newest = { ...page, entries: Array.from({ length: 10 }, (_, i) => ({ ...page.entries[0], version: 14 - i })), nextBeforeVersion: "5" };
+  const cursors = [];
+  let failed = false;
+  fetch.mock.mockImplementation(async (url, init) => {
+    assert.equal(init.method, "GET");
+    const before = new URL(url, "http://localhost").searchParams.get("beforeVersion");
+    cursors.push(before);
+    if (before && !failed) {
+      failed = true;
+      return Response.json({ code: "OWNER_UNAVAILABLE" }, { status: 503 });
+    }
+    return Response.json(before ? page : newest);
+  });
+  const click = label => {
+    const nodes = render();
+    const button = [...nodes, ...nodes.flatMap(node => flatten(node.props?.action))]
+      .find(node => node.type === "Button" && node.props.children === label);
+    assert.ok(button, `missing action: ${label}`);
+    button.props.onClick();
+  };
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  click("قراءة سجل الإصدارات");
+  await settle();
+  click("الإصدارات الأقدم");
+  await settle();
+  assert.ok(render().some(node => node.type === "Alert"));
+  assert.ok(!render().some(node => node.type === "li"));
+  assert.equal(draft(render()), undefined);
+  click("إعادة قراءة الصفحة");
+  await settle();
+  assert.ok(draft(render()));
+  click("الإصدارات الأحدث");
+  await settle();
+  assert.deepEqual(cursors, [null, "5", "5", null]);
 });

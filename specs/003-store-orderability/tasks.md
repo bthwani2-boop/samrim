@@ -64,6 +64,7 @@ Evidence must refer to real code, owner readback and exact revision; unchecked c
 ## 2026-11-24 — Historical city limits comparison and draft reuse (BTH-11)
 
 - [ ] T018-HISTORY: Reproduce missing comparison/draft action using existing operator policy tests. Implement same-city older-version comparison and copy to the existing form only; keep reason mandatory and never send a write from history. Verify scope, busy/pending/uncertain and required-reread rejection, current evidence and preserved command reconciliation. Verify owner and browser behavior separately; do not close STORE_ORDERABILITY from this UI increment.
+- [x] T018-HISTORY-PAGING (local behavior): RED/GREEN for a failed older page, retry of the same cursor, and return to a newer page through fresh owner reads. Same-city and draft-safety checks passed. Authenticated browser acceptance stays open.
 
 - [x] T020-DELIVERY-POLICY (BTH-15, local slice): DSH versioned delivery radius/tariff replacement with immutable command evidence, HTTP and UI, real isolated PostgreSQL owner and checkout readback, negative and replay/concurrency checks. Next production build and synthetic BFF integration passed. WLT payable quote, live runtime activation, real operator/browser journey and full BTH-15 closure remain unverified.
 

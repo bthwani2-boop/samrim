@@ -43,3 +43,5 @@ Trace: BTH-11; STORE_OPERATIONAL_AVAILABILITY; SC-04/SC-06; governance/stores.md
 
 ## BTH-15 increment — city delivery policy replacement
 An authorized Operator can replace the current DSH city radius and cumulative distance tariff together using the existing policy owner, an expected current version, a stable operation ID and a reason. Immutable commands attribute actor and retain the resulting snapshot; conflicts, inactive cities, missing evidence and malformed tariffs fail closed. Independent readback must agree or be newer; future geographic/advisory checkout reads use the same version, not a payable WLT quote. No production activation or changed tariff formula.
+
+**SC-HISTORY-PAGING (BTH-11).** An Operator can revisit a newer history page or retry the same page after a failed read. Each action reads the same city through the existing scoped DSH contract. A failed read clears displayed audit rows and draft actions until fresh readback confirms the page.

@@ -11,20 +11,22 @@ export default function CityPolicyHistory({ actorId, city, endpoint, current, on
   onDraft: ((entry: CityStoreOperationalPolicy) => void) | undefined;
 }>) {
   const [page, setPage] = useState<CityStoreOperationalPolicyHistoryPage | null>(null);
+  const [cursors, setCursors] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(false);
   const active = useRef<AbortController | null>(null);
   useEffect(() => () => { active.current?.abort(); active.current = null; }, []);
 
-  async function read(beforeVersion?: string) {
+  async function read(target: readonly string[] = []) {
     if (active.current) return;
     const controller = new AbortController();
     active.current = controller;
+    setCursors(target);
     setBusy(true);
     setPage(null);
     setError(false);
     try {
-      const result = await readCityPolicyHistory(endpoint, city, actorId, beforeVersion, controller.signal);
+      const result = await readCityPolicyHistory(endpoint, city, actorId, target.at(-1), controller.signal);
       if (!controller.signal.aborted && active.current === controller) setPage(result);
     } catch {
       if (!controller.signal.aborted && active.current === controller) setError(true);
@@ -36,14 +38,18 @@ export default function CityPolicyHistory({ actorId, city, endpoint, current, on
     }
   }
 
+  const olderCursor = page?.nextBeforeVersion;
   return <Card title="سجل تغييرات سياسة المدينة" style={{ marginBlockEnd: 16 }}>
     <Typography.Paragraph>سجل DSH غير القابل للتعديل. لا تُعد السياسة التاريخية إتاحة حالية للمتاجر.</Typography.Paragraph>
     <Space wrap>
       <Button disabled={busy} loading={busy} onClick={() => void read()}>قراءة سجل الإصدارات</Button>
-      {page?.nextBeforeVersion && <Button disabled={busy}
-        onClick={() => void read(page.nextBeforeVersion)}>الإصدارات الأقدم</Button>}
+      {cursors.length > 0 && <Button disabled={busy}
+        onClick={() => void read(cursors.slice(0, -1))}>الإصدارات الأحدث</Button>}
+      {olderCursor && <Button disabled={busy}
+        onClick={() => void read([...cursors, olderCursor])}>الإصدارات الأقدم</Button>}
     </Space>
-    {error && <Alert showIcon type="error" role="alert" message="تعذرت قراءة السجل من DSH أو لم تعد الصلاحية متاحة." />}
+    {error && <Alert showIcon type="error" role="alert" message="تعذرت قراءة السجل من DSH أو لم تعد الصلاحية متاحة."
+      action={<Button onClick={() => void read(cursors)}>إعادة قراءة الصفحة</Button>} />}
     {page && (page.entries.length === 0 ? <p role="status">لا توجد إصدارات موثقة في هذه الصفحة.</p> :
       <ol aria-label="الإصدارات التاريخية">
         {page.entries.map(entry => <li key={entry.version} style={{ marginBlock: 12 }}>
