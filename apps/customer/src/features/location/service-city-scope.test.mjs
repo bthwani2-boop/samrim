@@ -44,14 +44,17 @@ function harness(disabled = false) {
         if (!(i in hooks)) hooks[i] = { current: initial };
         return hooks[i];
       },
-      useCallback(fn) {
+      useCallback(fn, deps) {
         const i = index++;
-        hooks[i] ??= fn;
-        return hooks[i];
+        if (!hooks[i] || deps.some((value, j) => !Object.is(value, hooks[i].deps[j]))) hooks[i] = { fn, deps };
+        return hooks[i].fn;
       },
-      useEffect(fn) {
+      useEffect(fn, deps) {
         const i = index++;
-        if (!(i in hooks)) effects.push(() => { hooks[i] = { cleanup: fn() }; });
+        if (!hooks[i] || deps.some((value, j) => !Object.is(value, hooks[i].deps[j]))) effects.push(() => {
+          hooks[i]?.cleanup?.();
+          hooks[i] = { cleanup: fn(), deps };
+        });
       },
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
@@ -66,10 +69,10 @@ function harness(disabled = false) {
   }, mod, mod.exports);
   return {
     requests, selected,
-    render() {
+    render(origin = "test") {
       index = 0;
       effects.length = 0;
-      const view = mod.exports.default({ origin: "test", currentCity: "sanaa", disabled, onApply: city => selected.push(city) });
+      const view = mod.exports.default({ origin, currentCity: "sanaa", disabled, onApply: city => selected.push(city) });
       effects.forEach(fn => { fn(); });
       return view;
     },
@@ -140,4 +143,25 @@ test("address forms reuse the existing owner-backed city selector instead of mai
   assert.match(source, /<ServiceCityScope/);
   assert.doesNotMatch(source, /listPublicCities\(|moreCities\(/);
   assert.match(source, /writeVerifiedAddress\(/);
+});
+
+test("changing owner origin hides old city options before effects and aborts the old continuation", async () => {
+  const h = harness();
+  h.render("first");
+  h.requests[0].resolve({ items: ["sanaa"], revision: 1, nextCursor: "page2" });
+  await settle();
+  button(h.render("first"), "عرض المزيد من المدن").props.onPress();
+  const oldPage = h.requests[1];
+  const switched = h.render("second");
+  assert.equal(oldPage.signal.aborted, true);
+  assert.equal(h.requests[2].origin, "second");
+  assert.equal(h.requests[2].cursor, undefined);
+  assert.equal(button(switched, "صنعاء"), undefined);
+  oldPage.resolve({ items: ["sanaa"], revision: 1 });
+  await settle();
+  assert.equal(button(h.render("second"), "صنعاء"), undefined);
+  h.requests[2].resolve({ items: ["aden"], revision: 2 });
+  await settle();
+  button(h.render("second"), "عدن").props.onPress();
+  assert.deepEqual(h.selected, ["aden"]);
 });

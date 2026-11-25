@@ -11,6 +11,7 @@ type Props = Readonly<{
   onApply: (cityId: string) => void;
 }>;
 type Directory = {
+  origin: string;
   items: string[];
   loading: boolean;
   error?: string | undefined;
@@ -20,7 +21,8 @@ type Directory = {
 
 export default function ServiceCityScope({ origin, currentCity, onApply, disabled = false }: Props) {
   const { theme } = useMobileAppearance();
-  const [directory, setDirectory] = useState<Directory>({ items: [], loading: true });
+  const [snapshot, setDirectory] = useState<Directory>({ origin, items: [], loading: true });
+  const directory: Directory = snapshot.origin === origin ? snapshot : { origin, items: [], loading: true };
   const pending = useRef<AbortController | null>(null);
 
   const load = useCallback(async (previous?: Directory) => {
@@ -29,7 +31,7 @@ export default function ServiceCityScope({ origin, currentCity, onApply, disable
     pending.current = abort;
     const items = previous?.items ?? [];
     const nextCursor = previous?.nextCursor;
-    setDirectory({ ...previous, items, loading: true, error: undefined });
+    setDirectory({ ...previous, origin, items, loading: true, error: undefined });
     try {
       const page = await listPublicCities(origin, {
         signal: abort.signal, ...(nextCursor ? { cursor: nextCursor } : {}),
@@ -40,14 +42,14 @@ export default function ServiceCityScope({ origin, currentCity, onApply, disable
           (page.nextCursor !== undefined && page.nextCursor === nextCursor)))) {
         throw new DshPublicError(409, "STALE_CURSOR");
       }
-      setDirectory({ ...page, items: [...items, ...page.items], loading: false });
+      setDirectory({ ...page, origin, items: [...items, ...page.items], loading: false });
     } catch (error) {
       if (abort.signal.aborted) return;
       const stale = error instanceof DshPublicError &&
         ["STALE_CURSOR", "INVALID_CURSOR", "OWNER_RESPONSE_INVALID"].includes(error.code);
       setDirectory(stale
-        ? { items: [], loading: false, error: "تغيّرت المدن المتاحة. حدّث القائمة." }
-        : { ...previous, items, loading: false, error: "تعذّر تحميل المدن المتاحة." });
+        ? { origin, items: [], loading: false, error: "تغيّرت المدن المتاحة. حدّث القائمة." }
+        : { ...previous, origin, items, loading: false, error: "تعذّر تحميل المدن المتاحة." });
     } finally {
       if (pending.current === abort) pending.current = null;
     }
