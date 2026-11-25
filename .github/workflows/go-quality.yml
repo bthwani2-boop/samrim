@@ -60,7 +60,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: go-quality-${{ github.ref }}
+  group: go-quality-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', github.sha) || github.event_name }}
   cancel-in-progress: true
 
 jobs:

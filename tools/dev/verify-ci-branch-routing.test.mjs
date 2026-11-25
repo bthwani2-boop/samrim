@@ -146,3 +146,14 @@ test("CI reruns the relevant checks when shared toolchain or dependency inputs c
     }
   }
 });
+
+test("explicit candidate verification is isolated from automatic run cancellation", () => {
+  for (const file of workflows) {
+    const { content } = events(file);
+    const group = content.split("\n").find((line) => line.startsWith("  group: "));
+    assert.ok(group, file + ": missing concurrency group");
+    assert.ok(group.includes("${{ github.ref }}"), file + ": missing ref scope");
+    assert.ok(group.includes("${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', github.sha) || github.event_name }}"), file + ": manual verification must be isolated by candidate SHA and automatic event");
+    assert.match(content, /^  cancel-in-progress: true$/m);
+  }
+});
