@@ -117,6 +117,24 @@ function configHashes(activeFiles, names, env) {
 function currentHashes(state, names) {
   return Object.fromEntries(names.map(o => [o, state[o].Config.Labels["com.docker.compose.config-hash"]]));
 }
+// Accept only the explicitly admitted isolated peer-origin addition. The old
+// effective Compose hash must still be reconstructed before any owner mutation.
+export function isAdmittedWltOriginAddition(previous, current) {
+  const normalize = value => value.replace(/\r\n/g, "\n").trimEnd();
+  const before = normalize(previous), after = normalize(current);
+  const line = '      WLT_TEST_DSH_ORIGIN: "http://dsh:8080"';
+  const lines = after.split("\n");
+  return !before.includes("WLT_TEST_DSH_ORIGIN") &&
+    lines.filter(value => value === line).length === 1 &&
+    after.includes('      WLT_TEST_IDENTITY_ORIGIN: "http://identity:3302"\n' + line + "\n") &&
+    lines.filter(value => value !== line).join("\n") === before;
+}
+function historicalWltHashes(previous, env) {
+  const args = composeArgs(wltFiles).map(value => value === "infra/compose.wlt.yaml" ? "-" : value);
+  const result = /^wlt\s+([a-f0-9]{64})$/.exec(docker([...args, "config", "--hash", "wlt"], env, 30000, previous + "\n"));
+  if (!result) throw new Error("Incomplete historical WLT Compose hash");
+  return { wlt: result[1] };
+}
 function imageRecord(image) {
   return JSON.parse(docker(["image", "inspect", image]))[0];
 }
@@ -510,7 +528,7 @@ function relocateIdentity(state,env,head,files,resume=false) {
   }
 }
 
-function rebaseAndApply(owner,state,env,head,files,tag,targetId,ensureSource) {
+function rebaseAndApply(owner,state,env,head,files,tag,targetId,ensureSource,wltConfigTransition=null) {
   const old=state[owner], live=asEnv(old.Config.Env);
   const schema=owner==="dsh"?live.DSH_DB_SCHEMA:owner==="identity"?live.IDENTITY_DB_SCHEMA:"wlt";
   const archive="bthwani_recovery_"+owner+"_"+randomBytes(6).toString("hex");
@@ -529,7 +547,12 @@ function rebaseAndApply(owner,state,env,head,files,tag,targetId,ensureSource) {
   const transaction=buildOwnerBaselineTransition(owner,schema,archive);
   const candidateEnv={...env,[owners[owner].tag]:tag};
   const groupNames=owner==="wlt"?["wlt"]:["dsh","identity"];
-  assertSameHashes(currentHashes(state,groupNames),configHashes(files,groupNames,env));
+  if (owner === "wlt" && wltConfigTransition) {
+    assertSameHashes(currentHashes(state,groupNames),historicalWltHashes(wltConfigTransition.previous,env));
+    assertSameHashes(wltConfigTransition.desired,configHashes(files,groupNames,env));
+  } else {
+    assertSameHashes(currentHashes(state,groupNames),configHashes(files,groupNames,env));
+  }
   const hashes=configHashes(files,groupNames,candidateEnv);
   if(groupNames.some(o=>o!==owner&&hashes[o]!==currentHashes(state,[o])[o]))throw new Error("Schema transition changes peer configuration");
   ensureSource();
@@ -683,6 +706,23 @@ function main() {
     git(["merge-base","--is-ancestor",revisions[o].revision,head]);
     committed[o]=git(["diff","--name-only",revisions[o].revision,head,"--","services/"+o]).split(/\r?\n/).filter(Boolean);
   }
+  // A committed SQL transition can include the specific WLT peer-origin
+  // addition only when the exact historical configuration is reconstructable.
+  // Unknown drift, dirty inputs and ordinary automatic reconciliation still hold.
+  let wltConfigTransition=null;
+  if (wltConfigDrift && apply && prepare && !revisions.wlt.digest &&
+      !dirtyPaths(root,guardedScope).length &&
+      committed.wlt.some(rel=>rel.startsWith("services/wlt/database/schema/")) &&
+      !Object.hasOwn(asEnv(state.wlt.Config.Env),"WLT_TEST_DSH_ORIGIN")) {
+    const previous=git(["show",revisions.wlt.revision+":infra/compose.wlt.yaml"]);
+    const desired=readFileSync(resolve(root,"infra/compose.wlt.yaml"),"utf8");
+    if (isAdmittedWltOriginAddition(previous,desired) &&
+        !differingKeys(currentHashes(state,["wlt"]),historicalWltHashes(previous,env)).length) {
+      wltConfigTransition={previous,desired:configHashes(wltFiles,["wlt"],env)};
+      wltConfigDrift=false;
+      console.log("WLT_CONFIG_TRANSITION_ELIGIBLE exact_prior_hash=yes baseline_proof=required");
+    }
+  }
   const preview=mode==="--apply-preview" || !apply;
   const change=currentChangeKey(committed,preview,captain,wltConfigDrift);
   const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain,wltConfigDrift);
@@ -815,11 +855,12 @@ function main() {
   const schemaSelected=selected.filter(o=>schemaReady.includes(o));
   for(const o of ["identity","dsh","wlt"].filter(o=>schemaSelected.includes(o))){
     ensureSource();
-    rebaseAndApply(o,state,env,head,o==="wlt"?wltFiles:activeAppFiles,tags[o],targetIds[o],ensureSource);
+    rebaseAndApply(o,state,env,head,o==="wlt"?wltFiles:activeAppFiles,tags[o],targetIds[o],ensureSource,o==="wlt"?wltConfigTransition:null);
   }
   for (const group of groups) {
     const names=group.names.filter(o=>selected.includes(o)&&!schemaSelected.includes(o));
     if(!names.length) continue;
+    if(wltConfigTransition && names.includes("wlt")) throw new Error("WLT configuration transition requires successful baseline proof");
     const newFiles=activate && group.names.includes("dsh") ? [...group.files,captainFile]:group.files;
     ensureSource();
     for(const o of names) if(imageRecord(owners[o].image+":"+tags[o]).Id!==targetIds[o])throw new Error("Candidate image tag changed: "+o);

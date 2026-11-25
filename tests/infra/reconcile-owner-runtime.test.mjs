@@ -269,3 +269,21 @@ test("Compose provenance accepts exact old or current names only within the cano
   assert.throws(()=>composeFileNames(files(["../infra/compose.dsh.yaml"]),root),/Unowned/);
   assert.throws(()=>composeFileNames(files(["compose.unknown.yaml"]),root),/Unowned/);
 });
+
+
+test("only the exact committed isolated WLT DSH origin addition can enter baseline preparation", async () => {
+  const { isAdmittedWltOriginAddition } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const before = 'services:\n  wlt:\n    environment:\n      WLT_TEST_IDENTITY_ORIGIN: "http://identity:3302"\n    ports: []\n';
+  const added = '      WLT_TEST_DSH_ORIGIN: "http://dsh:8080"\n';
+  const after = before.replace('    ports:', added + '    ports:');
+  assert.equal(isAdmittedWltOriginAddition(before, after), true);
+  assert.equal(isAdmittedWltOriginAddition(before.replaceAll("\n","\r\n"), after), true);
+  for (const invalid of [
+    before, after.replace("http://dsh:8080","http://other:8080"),
+    after.replace("ports: []","ports: [3203:8080]"),
+    after.replace("http://identity:3302","http://other:3302"),
+    after.replace(added, added+added),
+    after + "    privileged: true\n",
+  ]) assert.equal(isAdmittedWltOriginAddition(before, invalid), false);
+  assert.equal(isAdmittedWltOriginAddition(after,after),false);
+});
