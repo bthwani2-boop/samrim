@@ -29,7 +29,7 @@ param(
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','reconcile','start','restart','android','open')]
   [string]$DockerAction = 'help',
   [Parameter(Position=2)]
-  [ValidateSet('dsh','identity','postgres','media','mailpit','payment-mock')]
+  [ValidateSet('dsh','identity','wlt','postgres','media','mailpit','payment-mock')]
   [string]$DockerService = 'dsh',
   [ValidateSet('customer','merchant','captain','control-panel')]
   [string]$App = '',
@@ -1141,6 +1141,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker ps             # project containers'
   Write-Output 'pnpm dev docker logs dsh       # last 50 DSH log lines'
   Write-Output 'pnpm dev docker logs identity  # last 50 Identity log lines'
+  Write-Output 'pnpm dev docker logs wlt       # last 50 WLT log lines'
   Write-Output 'pnpm dev docker images         # refoundation image tags'
   Write-Output 'pnpm dev docker volumes        # project-scoped volumes'
   Write-Output 'pnpm dev docker networks       # project-scoped networks'

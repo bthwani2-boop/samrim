@@ -121,6 +121,10 @@ test("Merchant development overlay adds only private TLS and read-side standing"
   assert.deepEqual(Object.keys(overlay.services).sort(), ["dsh", "identity"]);
   const { dsh, identity } = overlay.services;
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_MERCHANT_STANDING, "true");
+  for (const key of ["BTHWANI_ISOLATED_TEST_MODE", "BTHWANI_ISOLATED_CONTAINER_MODE"]) {
+    assert.equal(dsh.environment[key], undefined, "base DSH owns isolation mode");
+    assert.equal(compose("compose.dsh.yaml").services.dsh.environment[key], "true");
+  }
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_STANDING,
     "${REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING:-false}");
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST,

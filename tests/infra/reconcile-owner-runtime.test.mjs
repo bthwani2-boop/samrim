@@ -19,6 +19,21 @@ test("configuration comparison detects differing or absent keys without leaking 
   assert.throws(() => assertSameHashes({ identity: "secret-old" }, { identity: "secret-new" }), e => !e.message.includes("secret-") && /refusing replacement/.test(e.message));
 });
 
+test("reconciler reuses the pinned Go resolver and guards its source", async () => {
+  const { readFileSync } = await import("node:fs");
+  const runner = readFileSync(new URL("../../tools/dev/docker/reconcile-owner-runtime.mjs", import.meta.url), "utf8");
+  const watcher = readFileSync(new URL("../../tools/dev/sync-lenovo-source.mjs", import.meta.url), "utf8");
+  assert.match(runner, /import \{ resolvePinnedGo \} from "\.\.\/check-go\.mjs"/);
+  assert.match(runner, /const goExecutable=resolvePinnedGo\(pin,testEnv\)/);
+  assert.match(runner, /spawnSync\(goExecutable,\["test"/);
+  assert.match(runner.match(/const guardedScope = \[[^\n]+/)[0], /tools\/dev\/check-go\.mjs/);
+  assert.match(watcher.match(/const runtimeScope = \[[\s\S]*?\];/)[0], /tools\/dev\/check-go\.mjs/);
+  assert.match(runner.match(/const baselineProofScope=\[[^\n]+/)[0], /tools\/dev\/check-go\.mjs/);
+  const sqlProof = readFileSync(new URL("./verify-isolated-postgres.ps1", import.meta.url), "utf8");
+  assert.match(sqlProof, /resolvePinnedGo\(readFileSync\("\.go-version","utf8"\)\.trim\(\)\)/);
+  assert.match(sqlProof, /& \$goExecutable test -c/);
+});
+
 test("owner tests cannot inherit live database or synthetic activation configuration", () => {
   assert.deepEqual(isolatedTestEnv({ PATH:"toolchain", BTHWANI_ISOLATED_TEST_MODE:"true", BTHWANI_CAPTAIN_TEST_DATABASE_URL:"private", REF_POSTGRES_PASSWORD:"private", PGHOST:"private", DATABASE_URL:"private", GOTOOLCHAIN:"auto" }), {PATH:"toolchain",GOTOOLCHAIN:"local"});
 });

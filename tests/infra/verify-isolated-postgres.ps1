@@ -19,14 +19,21 @@ $user = 'bthwani_agent01_admin'
 $schema = 'dsh_test_agent01'
 $reader = 'bthwani_agent01_reader'
 $containerId = $null
+# Use the same exact already-installed pin as the owner reconciler and Go checks.
+Push-Location $root
+try {
+  $goExecutable = & node --input-type=module -e 'import { readFileSync } from "node:fs"; import { resolvePinnedGo } from "./tools/dev/check-go.mjs"; process.stdout.write(resolvePinnedGo(readFileSync(".go-version","utf8").trim()));'
+  if ($LASTEXITCODE -ne 0 -or !$goExecutable -or @($goExecutable).Count -ne 1) { throw 'Pinned Go toolchain not available for isolated database proof' }
+} finally { Pop-Location }
 $pullPolicy = if ($NoPull) { @('--pull','never') } else { @() }
 try {
-  $containerId = (& docker --context $DockerContext run -d --rm @pullPolicy --name $name `
+  $created = @(& docker --context $DockerContext run -d --rm @pullPolicy --name $name `
       --network none --mount 'type=tmpfs,dst=/var/lib/postgresql,tmpfs-size=536870912' `
       --label 'com.bthwani.test-scope=session01-disposable-sql' `
       -e 'POSTGRES_HOST_AUTH_METHOD=trust' -e ('POSTGRES_USER=' + $user) `
-      -e ('POSTGRES_DB=' + $db) $image).Trim()
-  if ($LASTEXITCODE -ne 0 -or $containerId -notmatch '^[a-f0-9]{64}$') { throw 'Cannot start disposable PostgreSQL' }
+      -e ('POSTGRES_DB=' + $db) $image)
+  if ($LASTEXITCODE -ne 0 -or $created.Count -ne 1 -or $created[0] -notmatch '^[a-f0-9]{64}$') { throw 'Cannot start disposable PostgreSQL' }
+  $containerId = $created[0]
   $network = (& docker --context $DockerContext inspect $containerId --format '{{.HostConfig.NetworkMode}}').Trim()
   $published = (& docker --context $DockerContext inspect $containerId --format '{{len .HostConfig.PortBindings}}').Trim()
   $mounts = (& docker --context $DockerContext inspect $containerId --format '{{json .Mounts}}').Trim()
@@ -187,7 +194,7 @@ SELECT jsonb_build_object(
     $env:GOOS='linux'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'; $env:GOTOOLCHAIN='local'; $env:GOWORK='off'
     Push-Location (Join-Path $root 'services/dsh/backend')
     try {
-      & go test -c -o $binary ./internal/dbscope
+      & $goExecutable test -c -o $binary ./internal/dbscope
       if ($LASTEXITCODE -ne 0) { throw 'DSH database boundary test build failed' }
     } finally { Pop-Location }
     & docker --context $DockerContext cp $binary "${containerId}:/tmp/dsh-dbproof"
@@ -261,6 +268,13 @@ SELECT CASE WHEN
   (SELECT count(*) FROM wlt.customer_funding_journal) = 0
   AND has_table_privilege('bthwani_wlt_reader','wlt.customer_wallet_balances','SELECT')
   AND has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_history','SELECT')
+  AND has_table_privilege('bthwani_wlt_reader','wlt.customer_wallet_availability','SELECT')
+  AND has_table_privilege('bthwani_wlt_reader','wlt.latest_commercial_agreement_reviews','SELECT')
+  AND has_table_privilege('bthwani_wlt_reader','wlt.customer_order_payment_readback','SELECT')
+  AND NOT has_any_column_privilege('bthwani_wlt_reader','wlt.order_payment_allocations','SELECT,INSERT,UPDATE')
+  AND NOT has_any_column_privilege('bthwani_wlt_reader','wlt.order_payment_releases','SELECT,INSERT,UPDATE')
+  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint)','EXECUTE')
+  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.release_order_payment(text,text,text,text)','EXECUTE')
   AND NOT has_any_column_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT')
   AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE')
   AND NOT has_function_privilege('bthwani_wlt_reader','wlt.reverse_sandbox_customer_funding(text,text)','EXECUTE')
@@ -281,7 +295,7 @@ THEN 'PASS' ELSE 'FAIL' END;
   if ($LASTEXITCODE -ne 0 -or $reversalReplay -cne 'REPLAYED') { throw 'WLT sandbox reversal replay failed' }
   $moneyReadback = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries WHERE actor_id='$testCustomer'" | Out-String).Trim()
   if ($LASTEXITCODE -ne 0 -or $moneyReadback -cne '4:0') { throw 'WLT double-entry balance or idempotency readback failed' }
-  Write-Output 'PG_FRESH_WLT_BASELINE=PASS schema=3 sandbox=2 privilege-isolation=yes posting-replay=yes reversal-replay=yes entries=4 net=0'
+  Write-Output "PG_FRESH_WLT_BASELINE=PASS schema=$($wltSchemaFiles.Count) sandbox=$($wltSandboxFiles.Count) privilege-isolation=yes posting-replay=yes reversal-replay=yes entries=4 net=0"
   # Execute the exact transaction builder consumed by the owner reconciler,
   # against only the disposable container. No live database is involved.
   function Invoke-BaselineTransition([string]$Owner,[string]$Database,[string]$Schema,[string]$Archive,[bool]$ExpectPass=$true) {

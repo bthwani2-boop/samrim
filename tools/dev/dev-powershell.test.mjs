@@ -166,6 +166,8 @@ test("Docker status verifies present WLT without misreporting it as another proj
   const launcher = readFileSync(scriptPath, "utf8");
   assert.match(launcher, /--include-wlt/);
   assert.match(launcher, /bthwani-refoundation-wlt-1/);
+  assert.match(launcher, /\[ValidateSet\('dsh','identity','wlt','postgres','media','mailpit','payment-mock'\)\]/);
+  assert.match(launcher, /pnpm dev docker logs wlt/);
   assert.doesNotMatch(launcher, /WLT.*outside this Docker project/);
 });
 

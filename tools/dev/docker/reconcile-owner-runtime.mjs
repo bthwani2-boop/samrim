@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readFileSync, lstatSync, appendFileSync } from "node:fs";
 import { buildOwnerBaselineTransition, transitionScope } from "./owner-baseline-transition.mjs";
+import { resolvePinnedGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
 import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerReconcilePlan, ownerSourceState, previewChangeKey, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
@@ -132,7 +133,7 @@ export function sourceIdentity(labels, owner) {
   return {revision:a||b,digest:null};
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services","infra/compose.yaml","infra/compose.dsh.yaml","infra/compose.identity.yaml","infra/compose.merchant.yaml","infra/compose.captain.yaml","infra/compose.wlt.yaml","tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1",".go-version"];
+const guardedScope = ["services","infra/compose.yaml","infra/compose.dsh.yaml","infra/compose.identity.yaml","infra/compose.merchant.yaml","infra/compose.captain.yaml","infra/compose.wlt.yaml","tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -170,7 +171,7 @@ export function verifyBaselineProofOutput(output) {
     if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
   }
 }
-const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","tests/infra/verify-isolated-postgres.ps1","tools/dev/docker/owner-baseline-transition.mjs","infra/compose.yaml"];
+const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","services/dsh/backend/internal/dbscope","services/dsh/backend/go.mod","services/dsh/backend/go.sum","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version","tools/dev/docker/owner-baseline-transition.mjs","infra/compose.yaml"];
 // One-time additive preparation: the old owner remains the writer until a
 // separately verified handoff. No retained schema, role, service or volume is
 // modified. Existing target names fail closed rather than being overwritten.
@@ -772,9 +773,9 @@ function main() {
     try {
       const service=staged?.dir || resolve(root,"services",o);
       const pin=readFileSync(resolve(root,".go-version"),"utf8").trim();
-      const version=run("go",["version"],{GOTOOLCHAIN:"local"});
-      if(!version.startsWith("go version go"+pin+" "))throw new Error("Pinned Go toolchain required");
-      const go=spawnSync("go",["test","-json","-count=1","./..."],{cwd:resolve(service,"backend"),encoding:"utf8",windowsHide:true,timeout:120000,maxBuffer:16*1024*1024,env:{...isolatedTestEnv(process.env),GOWORK:"off"}});
+      const testEnv={...isolatedTestEnv(process.env),GOWORK:"off"};
+      const goExecutable=resolvePinnedGo(pin,testEnv);
+      const go=spawnSync(goExecutable,["test","-json","-count=1","./..."],{cwd:resolve(service,"backend"),encoding:"utf8",windowsHide:true,timeout:120000,maxBuffer:16*1024*1024,env:testEnv});
       if(go.status!==0){
         const names=[];
         for(const line of (go.stdout||"").split(/\r?\n/)){

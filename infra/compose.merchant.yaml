@@ -8,8 +8,6 @@ services:
       - merchant-identity-tls:/run/identity-tls:ro
   dsh:
     environment:
-      BTHWANI_ISOLATED_TEST_MODE: "true"
-      BTHWANI_ISOLATED_CONTAINER_MODE: "true"
       DSH_ENABLE_ISOLATED_MERCHANT_STANDING: "true"
       # Separate isolated Store availability / city-policy capability. The
       # serving process verifies the existing owner schema; it never installs it.

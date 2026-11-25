@@ -509,7 +509,7 @@ const runtimeScope = [
   "infra/compose.merchant.yaml", "infra/compose.captain.yaml",
   "infra/compose.wlt.yaml", "tools/dev/docker/build-owner-image.ps1", "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1",
   "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
-  "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
+  "tools/dev/check-go.mjs", "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
 ];
 const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
 const runtimeStateFile = path.join(stateDir, "runtime-reconcile.json");
