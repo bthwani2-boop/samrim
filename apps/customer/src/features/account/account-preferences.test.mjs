@@ -49,15 +49,15 @@ function harness({ ready = true, save = async () => {} } = {}) {
       },
     };
     const filename = source + ".compiled.cjs";
-    const mapped = readFileSync(path.join(temp, "account-preferences.js"), "utf8").replace(
-      /(\/\/# sourceMappingURL=data:application\/json;base64,)([A-Za-z0-9+/=]+)/,
-      (_, prefix, encoded) => {
-        const map = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
-        map.sourceRoot = "";
-        map.sources = [path.basename(source)];
-        return prefix + Buffer.from(JSON.stringify(map)).toString("base64");
-      },
-    );
+    const compiled = readFileSync(path.join(temp, "account-preferences.js"), "utf8");
+    const marker = "//# sourceMappingURL=data:application/json;base64,";
+    const mapOffset = compiled.lastIndexOf(marker);
+    assert.ok(mapOffset >= 0, "compiler must emit an inline source map");
+    const payloadOffset = mapOffset + marker.length;
+    const map = JSON.parse(Buffer.from(compiled.slice(payloadOffset).trim(), "base64").toString("utf8"));
+    map.sourceRoot = "";
+    map.sources = [path.basename(source)];
+    const mapped = compiled.slice(0, payloadOffset) + Buffer.from(JSON.stringify(map)).toString("base64");
     const mod = new Module(filename);
     mod.filename = filename;
     mod.require = name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; };

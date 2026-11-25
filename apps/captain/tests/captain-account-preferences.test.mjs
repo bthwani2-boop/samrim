@@ -53,15 +53,14 @@ function harness({ workspace = { session, standing, signOut() {} }, ready = true
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     };
     const filename = source + ".compiled.cjs";
-    const mapped = code.replace(
-      /(\/\/# sourceMappingURL=data:application\/json;base64,)([A-Za-z0-9+/=]+)/,
-      (_, prefix, encoded) => {
-        const map = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
-        map.sourceRoot = "";
-        map.sources = [path.basename(source)];
-        return prefix + Buffer.from(JSON.stringify(map)).toString("base64");
-      },
-    );
+    const marker = "//# sourceMappingURL=data:application/json;base64,";
+    const mapOffset = code.lastIndexOf(marker);
+    assert.ok(mapOffset >= 0, "compiler must emit an inline source map");
+    const payloadOffset = mapOffset + marker.length;
+    const map = JSON.parse(Buffer.from(code.slice(payloadOffset).trim(), "base64").toString("utf8"));
+    map.sourceRoot = "";
+    map.sources = [path.basename(source)];
+    const mapped = code.slice(0, payloadOffset) + Buffer.from(JSON.stringify(map)).toString("base64");
     const module = new Module(filename);
     module.filename = filename;
     module.require = name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; };
