@@ -3,19 +3,24 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { parsePublishedOfferQuery, publishedOfferHref } from "../src/features/catalog/published-offer-query.ts";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
-const source = readFileSync(fileURLToPath(
-  new URL("../src/features/catalog/published-offers.tsx", import.meta.url),
-), "utf8");
-const compiled = transformSync(source, {
+// Retain uncached modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+const source = fileURLToPath(new URL("../src/features/catalog/published-offers.tsx", import.meta.url));
+const compiled = transformSync(readFileSync(source, "utf8"), {
+  filename: source, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
 }).code;
-const productsRoute = transformSync(readFileSync(new URL("../app/(workspace)/catalog/products/page.tsx", import.meta.url), "utf8"), {
+const productsSource = fileURLToPath(new URL("../app/(workspace)/catalog/products/page.tsx", import.meta.url));
+const productsRoute = transformSync(readFileSync(productsSource, "utf8"), {
+  filename: productsSource, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
@@ -61,19 +66,12 @@ function harness({ permitted = true, origin = "http://127.0.0.1:3202", failStore
     "./published-offer-query": { parsePublishedOfferQuery, publishedOfferHref },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(modules, name), `Unexpected dependency ${name}`);
-      return modules[name];
-    }, mod, mod.exports,
-  );
-  const products = { exports: {} };
-  new Function("require", "module", "exports", productsRoute)(name => {
-    if (name === "react/jsx-runtime") return modules[name];
-    assert.equal(name, "../../../../src/features/catalog/published-offers");
-    return { __esModule: true, default: mod.exports.default };
-  }, products, products.exports);
+  const mod = loadMappedRenderFixture(compiled, source, modules);
+  const products = loadMappedRenderFixture(productsRoute, productsSource, {
+    "react/jsx-runtime": modules["react/jsx-runtime"],
+    "../../../../src/features/catalog/published-offers": { __esModule: true, default: mod.exports.default },
+  });
+  loadedModules.push(mod, products);
   return {
     calls,
     render: (params = { store: "market-sanaa" }) =>

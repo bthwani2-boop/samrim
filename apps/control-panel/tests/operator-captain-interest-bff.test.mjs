@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+
+// Retain uncached modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 
 const root = new URL("../", import.meta.url);
 const source = p => readFileSync(new URL(p, root), "utf8");
@@ -53,11 +58,12 @@ test("Operator returns through the same cursor filters with fresh owner reads", 
   const temporary = mkdtempSync(join(tmpdir(), "bthwani-captain-interest-pages-"));
   t.after(() => rmSync(temporary, { recursive: true, force: true }));
   const workspace = fileURLToPath(new URL("../../../", import.meta.url));
+  const entry = fileURLToPath(new URL("src/features/captains/captain-interest-workspace.tsx", root));
   const result = spawnSync(process.execPath, [
     join(workspace, "node_modules/typescript/bin/tsc"),
-    fileURLToPath(new URL("src/features/captains/captain-interest-workspace.tsx", root)),
+    entry,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-    "--jsx", "react-jsx", "--outDir", temporary,
+    "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,
   ], { cwd: workspace, timeout: 20_000, encoding: "utf8", windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const hooks = [];
@@ -102,10 +108,16 @@ test("Operator returns through the same cursor filters with fresh owner reads", 
     const page = before === null ? { nextCursor: "40" } : before === "40" ? { nextCursor: "20" } : {};
     return Response.json({ ...page, items: [] }, { headers: { "X-BThwani-Operator": "operator-a" } });
   });
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "window", "document", readFileSync(join(temporary, "captain-interest-workspace.js"), "utf8"))(
-    name => mocks[name], mod, mod.exports, browser, browser,
-  );
+  for (const name of ["window", "document"]) {
+    const previous = Object.getOwnPropertyDescriptor(globalThis, name);
+    t.after(() => {
+      if (previous) Object.defineProperty(globalThis, name, previous);
+      else delete globalThis[name];
+    });
+    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value: browser });
+  }
+  const mod = loadMappedRenderFixture(readFileSync(join(temporary, "captain-interest-workspace.js"), "utf8"), entry, mocks);
+  loadedModules.push(mod);
   const render = () => {
     index = 0;
     const view = nodes(mod.exports.default());

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import { readCityPolicyHistory } from "./city-policy-command.ts";
+
+// Retain uncached modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 
 const endpoint = "/api/policies/cities/sanaa";
 const page = { cityId: "sanaa", entries: [{ cityId: "sanaa", version: 4, maxPauseSeconds: 120,
@@ -36,7 +42,9 @@ test("historical limits compare against verified current policy and only prepare
   const {createRequire} = await import("node:module");
   const require = createRequire(import.meta.url);
   const {transformSync} = require("next/dist/build/swc/index.js");
-  const code = transformSync(readFileSync(new URL("./city-policy-history.tsx", import.meta.url), "utf8"), {
+  const source = fileURLToPath(new URL("./city-policy-history.tsx", import.meta.url));
+  const code = transformSync(readFileSync(source, "utf8"), {
+    filename: source, sourceMaps: "inline", inlineSourcesContent: true,
     jsc: {parser: {syntax: "typescript", tsx: true}, target: "es2022", transform: {react: {runtime: "automatic"}}},
     module: {type: "commonjs"},
   }).code;
@@ -56,8 +64,8 @@ test("historical limits compare against verified current policy and only prepare
     antd: {Alert: "Alert", Button: "Button", Card: "Card", Space: "Space", Typography: {Paragraph: "Paragraph"}},
     "./city-policy-command": {readCityPolicyHistory},
   };
-  const module = {exports: {}};
-  new Function("require", "module", "exports", code)(name => mocks[name], module, module.exports);
+  const module = loadMappedRenderFixture(code, source, mocks);
+  loadedModules.push(module);
   function flatten(tree) {return !tree || typeof tree !== "object" ? [] : Array.isArray(tree)
     ? tree.flatMap(flatten) : [tree, ...flatten(tree.props?.children)];}
   const render = (overrides = {}) => {index = 0; return flatten(module.exports.default({

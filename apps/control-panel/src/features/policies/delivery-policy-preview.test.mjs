@@ -2,10 +2,18 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
+
+// Retain uncached modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 
 const require = createRequire(import.meta.url);
 const { transformSync } = require("next/dist/build/swc/index.js");
-const compiled = transformSync(readFileSync(new URL("./delivery-policy-preview.tsx",import.meta.url),"utf8"),{
+const source = fileURLToPath(new URL("./delivery-policy-preview.tsx",import.meta.url));
+const compiled = transformSync(readFileSync(source,"utf8"),{
+  filename: source, sourceMaps: "inline", inlineSourcesContent: true,
   jsc:{parser:{syntax:"typescript",tsx:true},target:"es2022",transform:{react:{runtime:"automatic"}}},module:{type:"commonjs"},
 }).code;
 function harness(actorId = "operator-a", initialPolicy, storage = new Map()) {
@@ -23,8 +31,8 @@ function harness(actorId = "operator-a", initialPolicy, storage = new Map()) {
     "react/jsx-runtime":{jsx,jsxs:jsx},
     antd:{Alert:"Alert",Button:"Button",Input:"Input",InputNumber:"InputNumber",Space:"Space",Typography:{Title:"Title",Paragraph:"Paragraph",Text:"Text"}},
   };
-  const module={exports:{}};
-  new Function("require","module","exports",compiled)(name=>{assert.ok(Object.hasOwn(mocks,name),name);return mocks[name]},module,module.exports);
+  const module = loadMappedRenderFixture(compiled, source, mocks);
+  loadedModules.push(module);
   function flatten(tree){return !tree||typeof tree!=="object"?[]:Array.isArray(tree)?tree.flatMap(flatten):[tree,...flatten(tree.props?.children)]}
   const policy=initialPolicy ?? {cityId:"sanaa",version:3,radiusMetres:18000,updatedAt:"2026-11-24T05:00:00Z",distanceBands:[{upToMeters:2000,ratePerKmMinor:300},{upToMeters:null,ratePerKmMinor:200}]};
   const render=()=>{index=0;return flatten(module.exports.default({policy,actorId,disabled:false,onDenied:()=>denied++,onLockChange:value=>{locked=value},onCommitted:value=>{committed=value}}))};
