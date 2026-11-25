@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -26,10 +27,19 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     const compile = spawnSync(process.execPath, [
       path.join(root, "node_modules/typescript/bin/tsc"), src, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--outDir", tmp,
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
     assert.equal(compile.status, 0, compile.stderr || compile.stdout);
-    const source = readFileSync(path.join(tmp, "catalog-export.js"), "utf8");
+    const source = readFileSync(path.join(tmp, "catalog-export.js"), "utf8").replace(
+      /(\/\/# sourceMappingURL=data:application\/json;base64,)([A-Za-z0-9+/=]+)/,
+      (_, prefix, encoded) => {
+        const map = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+        map.sourceRoot = "";
+        map.sources = [path.basename(src)];
+        map.mappings = ";" + map.mappings;
+        return prefix + Buffer.from(JSON.stringify(map)).toString("base64");
+      },
+    );
     const states = [], refs = [], requests = [], downloads = [], urls = new Map();
     let stateIndex = 0, refIndex = 0, cleanup, mounted = false;
     const platform = { OS: "web" };
@@ -37,6 +47,7 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     const shared = [];
     let sharingAvailable = true;
     let shareFails = false;
+    let deferDelete = false, releaseDelete;
     class NativeFile {
       constructor(_cache, name) {
         this.uri = `file:///synthetic-cache/${name}`;
@@ -45,7 +56,10 @@ test("export button hands off fresh CSV only in its current owner scope", async 
       }
       create() { this.exists = true; }
       write(csv) { assert.equal(this.exists, true); this.csv = csv; }
-      delete() { this.exists = false; }
+      delete() {
+        if (!deferDelete) { this.exists = false; return Promise.resolve(); }
+        return new Promise(resolve => { releaseDelete = () => { this.exists = false; resolve(); }; });
+      }
     }
     const react = {
       useState(initial) {
@@ -94,11 +108,16 @@ test("export button hands off fresh CSV only in its current owner scope", async 
       createObjectURL(blob) { urls.set("blob:synthetic", blob); return "blob:synthetic"; },
       revokeObjectURL(value) { urls.delete(value); },
     };
-    const mod = { exports: {} };
-    new Function("require", "module", "exports", "document", "URL", "setTimeout", "clearTimeout", source)(
-      name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; },
-      mod, mod.exports, doc, url, (fn, delay) => { if (delay === 1000) fn(); return 0; }, () => {},
-    );
+    const filename = src + ".compiled.cjs";
+    const mod = new Module(filename);
+    mod.filename = filename;
+    mod.require = name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; };
+    mod.fixtureGlobals = {
+      document: doc, URL: url,
+      setTimeout: (fn, delay) => { if (delay === 1000) fn(); return 0; },
+      clearTimeout: () => {},
+    };
+    mod._compile("const { document, URL, setTimeout, clearTimeout } = module.fixtureGlobals;\n" + source, filename);
     const scope = { actorId: "merchant-a", storeId: "store-a" };
     function render() {
       stateIndex = 0; refIndex = 0;
@@ -136,11 +155,17 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     states.length = 0;
     refs.length = 0;
     platform.OS = "android";
+    deferDelete = true;
     button().props.onPress();
     requests[3].resolve(result);
     await tick();
     assert.equal(shared.length, 1);
     assert.match(shared[0], /قهوة يمنية/);
+    assert.equal(nativeFiles[0].exists, true, "cleanup deliberately pending");
+    assert.equal(button().props.disabled, true, "delivery remains busy until cleanup completes");
+    releaseDelete();
+    await tick();
+    deferDelete = false;
     assert.equal(nativeFiles[0].exists, false, "temporary file cleaned after share");
     shareFails = true;
     button().props.onPress();

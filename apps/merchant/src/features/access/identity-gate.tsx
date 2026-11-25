@@ -359,7 +359,7 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
     <>
       {standing ? (
         <View key={JSON.stringify([standing.session.actorId, standing.value.stores.map(store =>
-          JSON.stringify([store.id, store.relation, store.published])).sort()])}
+          JSON.stringify([store.id, store.relation, store.published])).sort((a, b) => a < b ? -1 : a > b ? 1 : 0)])}
           testID="merchant-verified-workspace"
           style={workspaceVisible ? { flex: 1 } : { display: "none" }}
           pointerEvents={workspaceVisible ? "auto" : "none"}
