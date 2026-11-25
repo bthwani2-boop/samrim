@@ -5,6 +5,7 @@ process.env.BTHWANI_SURFACE_PREVIEW="1";
 process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN="http://127.0.0.1:3202";
 process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN="http://127.0.0.1:3210";
 const {handleCustomerAddresses}=await import("./address-bff.ts");
+const {GET,PUT}=await import("../../../app/api/customer-auth/addresses+api.ts");
 const bearer=Buffer.alloc(32,14).toString("base64url");
 const actor="customer-a";
 const id="addr-00000000000000000000000000000001";
@@ -31,7 +32,7 @@ test("address BFF rejects cross-site, malformed selectors and foreign commands b
     [request("PUT",base+"?addressId="+id,{Origin:"http://evil.test"}),"PUT",403],
     [request("PUT",base+"?addressId="+id,{}, {...change,actorId:"customer-b"}),"PUT",400],
   ]){
-    const reply=await handleCustomerAddresses(req,method);assert.equal(reply.status,status);assert.equal(reply.headers.get("Cache-Control"),"no-store");
+    const reply=await (method==="PUT"?PUT:GET)(req);assert.equal(reply.status,status);assert.equal(reply.headers.get("Cache-Control"),"no-store");
   }
   assert.equal(calls,0);
 });
@@ -44,9 +45,9 @@ test("address BFF verifies current actor before and after DSH read and write",as
     if(init.method==="PUT"){assert.deepEqual(JSON.parse(init.body),change);return json(result);}
     return json(page);
   });
-  const list=await handleCustomerAddresses(request(),"GET");
+  const list=await GET(request());
   assert.equal(list.status,200);assert.deepEqual(await list.json(),page);
-  const save=await handleCustomerAddresses(request("PUT",base+"?addressId="+id),"PUT");
+  const save=await PUT(request("PUT",base+"?addressId="+id));
   assert.equal(save.status,200);assert.deepEqual(await save.json(),result);
   assert.deepEqual(events.map(e=>e[1]),["GET","GET","GET","GET","PUT","GET"]);
   assert.equal(events[1][0],"http://127.0.0.1:3202/v1/addresses");
@@ -61,10 +62,10 @@ test("address BFF never dispatches for a changed actor and hides a late owner re
     }
     owner++;return json(page);
   });
-  assert.equal((await handleCustomerAddresses(request(),"GET")).status,403);
+  assert.equal((await GET(request())).status,403);
   assert.equal(owner,0);
   switched=false;reads=0;
-  const late=await handleCustomerAddresses(request(),"GET");
+  const late=await GET(request());
   assert.equal(late.status,401);assert.deepEqual(await late.json(),{error:"UNAUTHORIZED"});
   assert.equal(owner,1);
 });
@@ -84,14 +85,14 @@ test("exact address read uses the current actor and withholds a response after a
     assert.equal(init.method,"GET");
     return json(value);
   });
-  assert.equal((await handleCustomerAddresses(request("GET",lookup+"&after="+id),"GET")).status,400);
+  assert.equal((await GET(request("GET",lookup+"&after="+id))).status,400);
   assert.equal(ownerReads,0);
-  const accepted = await handleCustomerAddresses(request("GET",lookup),"GET");
+  const accepted = await GET(request("GET",lookup));
   assert.equal(accepted.status,200);
   assert.deepEqual(await accepted.json(),value);
   switchAfterRead = true;
   identityReads = 0;
-  const late = await handleCustomerAddresses(request("GET",lookup),"GET");
+  const late = await GET(request("GET",lookup));
   assert.equal(late.status,401);
   assert.deepEqual(await late.json(),{error:"UNAUTHORIZED"});
   assert.equal(ownerReads,2);
@@ -102,7 +103,7 @@ test("lost address mutation outcome is not reported as rejected or retried",asyn
     if(input.toString().startsWith("http://127.0.0.1:3210"))return json(session(actor));
     owner++;throw Error("lost reply");
   });
-  const reply=await handleCustomerAddresses(request("PUT",base+"?addressId="+id),"PUT");
+  const reply=await PUT(request("PUT",base+"?addressId="+id));
   assert.equal(reply.status,503);assert.deepEqual(await reply.json(),{error:"OPERATION_RESULT_UNKNOWN"});assert.equal(owner,1);
 });
 

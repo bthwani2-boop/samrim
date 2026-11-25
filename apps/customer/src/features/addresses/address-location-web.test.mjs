@@ -4,14 +4,16 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
+const renderSource = path.join(import.meta.dirname, "address-editor.tsx");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-address-web-"));
 let compiled;
 try {
   const task = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
-    path.join(import.meta.dirname, "address-editor.tsx"), "--ignoreConfig", "--noResolve", "--noCheck",
-    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+    renderSource, "--ignoreConfig", "--noResolve", "--noCheck",
+    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
   assert.equal(task.status, 0, task.stderr || task.stdout);
   compiled = readFileSync(path.join(temp, "address-editor.js"), "utf8");
@@ -23,7 +25,7 @@ function find(node, id) {
   return node.props?.testID === id ? node : find(node.props?.children, id);
 }
 
-function harness(available = true) {
+function harness(t, available = true) {
   let index = 0, mounted = true, afterUnmount = 0;
   const hooks = [], effects = [], requests = [], selected = [];
   const jsx = (type, props) => ({ type, props });
@@ -52,11 +54,8 @@ function harness(available = true) {
   const navigator = available ? { geolocation: {
     getCurrentPosition(success, failure, options) { requests.push({ success, failure, options }); },
   } } : {};
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "navigator", compiled)(name => {
-    assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`);
-    return modules[name];
-  }, mod, mod.exports, navigator);
+  t.mock.getter(globalThis, "navigator", () => navigator);
+  const mod = loadMappedRenderFixture(compiled, renderSource, modules);
   return {
     requests, selected,
     render() {
@@ -76,8 +75,8 @@ const click = (h, id) => {
   node.props.onPress();
 };
 
-test("Web address GPS requires an explicit request and a separate confirmation", () => {
-  const h = harness();
+test("Web address GPS requires an explicit request and a separate confirmation", t => {
+  const h = harness(t);
   h.render();
   assert.equal(h.requests.length, 0);
   click(h, "web-address-location-request");
@@ -88,8 +87,8 @@ test("Web address GPS requires an explicit request and a separate confirmation",
   assert.deepEqual(h.selected, [{ latitude: 15.4, longitude: 44.2 }]);
 });
 
-test("Web address GPS rejects invalid fixes and permission errors and allows retry", () => {
-  const h = harness();
+test("Web address GPS rejects invalid fixes and permission errors and allows retry", t => {
+  const h = harness(t);
   click(h, "web-address-location-request");
   h.requests[0].success({ coords: { latitude: 91, longitude: 44 } });
   assert.ok(find(h.render(), "web-address-location-error"));
@@ -102,8 +101,8 @@ test("Web address GPS rejects invalid fixes and permission errors and allows ret
   assert.ok(find(h.render(), "web-address-location-confirm"));
 });
 
-test("Web address GPS suppresses repeated requests and ignores replies after unmount", () => {
-  const h = harness();
+test("Web address GPS suppresses repeated requests and ignores replies after unmount", t => {
+  const h = harness(t);
   const action = find(h.render(), "web-address-location-request");
   assert.ok(action);
   action.props.onPress();
@@ -115,8 +114,8 @@ test("Web address GPS suppresses repeated requests and ignores replies after unm
   assert.deepEqual(h.selected, []);
 });
 
-test("a browser without geolocation leaves a recoverable manual-entry message", () => {
-  const h = harness(false);
+test("a browser without geolocation leaves a recoverable manual-entry message", t => {
+  const h = harness(t, false);
   click(h, "web-address-location-request");
   assert.ok(find(h.render(), "web-address-location-error"));
   assert.deepEqual(h.selected, []);

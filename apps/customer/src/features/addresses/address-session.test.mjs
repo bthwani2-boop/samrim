@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { DshPublicError, isCustomerAddressId, validCustomerAddressChange } from "@bthwani/dsh";
 import { test } from "node:test";
+import { DshPublicError, isCustomerAddressId, validCustomerAddressChange } from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 const source=file=>readFileSync(new URL(file,import.meta.url),"utf8");
 test("address screens read and save through the verified DSH adapter; map choice is not a write",()=>{
@@ -18,18 +19,19 @@ test("address screens read and save through the verified DSH adapter; map choice
 });
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
+const renderSource = path.join(import.meta.dirname, "addresses-screen.tsx");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-address-draft-"));
 let compiled;
 try {
   const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
-    path.join(import.meta.dirname, "addresses-screen.tsx"), "--ignoreConfig", "--noResolve", "--noCheck",
-    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+    renderSource, "--ignoreConfig", "--noResolve", "--noCheck",
+    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
     { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000 });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(path.join(temp, "addresses-screen.js"), "utf8");
 } finally { rmSync(temp, { recursive: true, force: true }); }
 
-function harness() {
+function harness(t) {
   let index = 0, focus, cleanup, counter = 0;
   const hooks = [], pages = [], writes = [];
   let ownerAddress = null;
@@ -71,9 +73,8 @@ function harness() {
       writeVerifiedAddress(actor, id, change, signal) { return new Promise((resolve, reject) => writes.push({ actor, id, change, signal, resolve, reject })); },
     },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "setTimeout", "clearTimeout", "setInterval", "clearInterval", compiled)(
-    name => { assert.ok(Object.hasOwn(deps, name), name); return deps[name]; }, mod, mod.exports, () => 1, () => {}, () => 2, () => {});
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const mod = loadMappedRenderFixture(compiled, renderSource, deps);
   function render() { index = 0; return mod.exports.default(); }
   return {
     render, writes, pages,
@@ -105,8 +106,8 @@ function enterNew(h) {
   }
 }
 
-test("unsent address draft is hidden on outage, restored only to the same verified actor", async () => {
-  const h = harness();
+test("unsent address draft is hidden on outage, restored only to the same verified actor", async t => {
+  const h = harness(t);
   h.focus(); h.pages.shift().resolve(page("actor-a")); await settle();
   enterNew(h);
   assert.equal(field(h, "اسم العنوان").props.value, "Test home");
@@ -121,8 +122,8 @@ test("unsent address draft is hidden on outage, restored only to the same verifi
   h.close();
 });
 
-test("uncertain address save reads owner state before exposing an exact retry or clearing committed draft", async () => {
-  const h = harness();
+test("uncertain address save reads owner state before exposing an exact retry or clearing committed draft", async t => {
+  const h = harness(t);
   h.focus(); h.pages.shift().resolve(page("actor-a")); await settle();
   enterNew(h);
   button(h, "حفظ لدى DSH").props.onPress();
