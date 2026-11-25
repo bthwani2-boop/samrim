@@ -1070,7 +1070,7 @@ function Invoke-AppAction {
   Check-Ssh
   switch($DockerAction.ToLowerInvariant()){
     'status' {Inspect-AppSourceSync;Inspect-AppOwners}
-    'verify' {Inspect-AppSourceSync -StrictCheck;Inspect-AppOwners -StrictCheck;Verify-AppWeb}
+    'verify' {Assert-AppRuntime}
     'reconcile' {Invoke-AppDependencyReconcile}
     'logs' {Show-AppLogs}
     'start' {Control-SingleApp 'start'}
@@ -1079,6 +1079,39 @@ function Invoke-AppAction {
   }
 }
 
+function Assert-CompleteCompose {
+  Assert-Compose
+  $files=@($baseCompose,$appCompose,(Join-Path $repo 'infra\compose.identity.yaml'),(Join-Path $repo 'infra\compose.merchant.yaml'),(Join-Path $repo 'infra\compose.captain.yaml'),(Join-Path $repo 'infra\compose.wlt.yaml'))
+  $argsList=@('compose','--env-file',$baseEnv)
+  foreach($file in $files){$argsList+=@('-f',$file)}
+  $argsList+=@('--profile','implementation','--profile','identity-verifier','--profile','wlt-reader','config','--quiet')
+  $null=Invoke-DockerCli -argsList $argsList
+  Say 'COMPOSE_CONFIG' 'PASS complete owner and capability configuration; no SQL execution or secret output'
+}
+function Assert-OwnerRuntime {
+  & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--include-wlt'
+  Assert-Ok ($LASTEXITCODE -eq 0) 'Docker owner provenance incomplete; inspect pnpm dev docker status'
+  Say 'DOCKER_PROVENANCE' 'PASS'
+}
+function Assert-AppRuntime {
+  Inspect-AppSourceSync -StrictCheck
+  Inspect-AppOwners -StrictCheck
+  Verify-AppWeb
+}
+function Assert-EnvironmentReady {
+  # Read-only checks; continue independent diagnostics after a failure.
+  # No build, provisioning, capability activation, or session mutation.
+  $failures=@()
+  foreach($check in @('Assert-CompleteCompose','Assert-OwnerRuntime','Assert-AppRuntime')){
+    try { & $check }
+    catch {
+      $failures+=@($check)
+      Say 'READINESS_BLOCKED' ($check+' '+$_.Exception.Message)
+    }
+  }
+  Assert-Ok ($failures.Count -eq 0) ('environment incomplete: '+($failures -join ', '))
+  Say 'ENVIRONMENT_READINESS' 'PASS Compose, committed owner provenance, app source/dependencies/ownership and HTTP; authenticated journeys and visual Fast Refresh remain separate'
+}
 function Show-Docker {
   Banner 'DOCKER CONTAINERS'
   Invoke-DockerCli -argsList @('ps','-a','--filter','label=com.docker.compose.project=bthwani-refoundation','--format','{{.Names}} | {{.Status}} | {{.Image}}') | ForEach-Object { Write-Output $_ }
@@ -1149,15 +1182,7 @@ function Invoke-ScopedDocker {
     'networks' {
       Invoke-DockerCli -argsList @('network','ls','--filter',('label=com.docker.compose.project='+$project),'--format','{{.Name}}') | ForEach-Object { Write-Output $_ }
     }
-    'config' {
-      Assert-Compose
-      $files=@($baseCompose,$appCompose,(Join-Path $repo 'infra\compose.identity.yaml'),(Join-Path $repo 'infra\compose.merchant.yaml'),(Join-Path $repo 'infra\compose.captain.yaml'),(Join-Path $repo 'infra\compose.wlt.yaml'))
-      $argsList=@('compose','--env-file',$baseEnv)
-      foreach($file in $files){$argsList+=@('-f',$file)}
-      $argsList+=@('--profile','implementation','--profile','identity-verifier','--profile','wlt-reader','config','--quiet')
-      $null=Invoke-DockerCli -argsList $argsList
-      Say 'COMPOSE_CONFIG' 'PASS complete owner and capability configuration; no SQL execution or secret output'
-    }
+    'config' { Assert-CompleteCompose }
     'reconcile' {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain overlay requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
@@ -1181,11 +1206,7 @@ function Invoke-ScopedDocker {
         Assert-Ok ($LASTEXITCODE -eq 0) 'owner runtime reconciliation failed; inspect explicit result'
       } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }
-    'verify' {
-      & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--include-wlt'
-      Assert-Ok ($LASTEXITCODE -eq 0) 'Docker owner provenance incomplete; inspect pnpm dev docker status'
-      Say 'DOCKER_PROVENANCE' 'PASS'
-    }
+    'verify' { Assert-OwnerRuntime }
   }
 }
 function Wait-AppStatus {
@@ -1285,9 +1306,9 @@ function Verify-Checks {
     Assert-Ok (Test-Path -LiteralPath $sqlProof -PathType Leaf) 'missing existing synthetic isolated PostgreSQL proof'
     & $sqlProof -DockerContext $dockerContext
     Assert-Ok ($LASTEXITCODE -eq 0) 'disposable SQL migration and privilege/restore proof failed'
-    Say 'SQL_PROOF' 'PASS disposable isolated DSH only; not shared protected database'
+    Say 'SQL_PROOF' 'PASS disposable isolated DSH, Identity and WLT; not shared protected database'
   } else { Say 'SQL_PROOF' 'NOT_RUN (optional: pnpm dev verify -DeepSql)' }
-  Say 'VERIFY' 'PASS static/policy only; live Identity, Android and finance remain separate gates'
+  Say 'STATIC_VERIFY' 'PASS static/policy only; authenticated journeys and finance remain separate gates'
 }
 
 try {
@@ -1316,7 +1337,9 @@ try {
       Start-LenovoTasks
       Open-AppSurfaces
       Show-OperatorAuthReadiness
-      Say 'LAUNCH' 'PASS (existing app tasks and source watcher; screens opened where available)'
+      Say 'SURFACES_LAUNCH' 'PASS (existing tasks and screens opened where available)'
+      Check-DockerContext
+      Assert-EnvironmentReady
       break
     }
     'status' {
@@ -1339,11 +1362,10 @@ try {
       Banner 'POST-START STATUS'
       Show-LocalTasks
       Show-LenovoTasks
-      Show-Docker
-      Wait-AppStatus
       try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
       Show-OperatorAuthReadiness
-      Say 'IDENTITY' 'NOT_AUTOSTARTED (owner-backed runtime security/SQL acceptance required)'
+      Say 'IDENTITY_WLT' 'NOT_AUTOSTARTED (owner-backed runtime security/SQL acceptance required)'
+      Assert-EnvironmentReady
       break
     }
     'warm' {
@@ -1355,10 +1377,9 @@ try {
       Start-DSHIfVerified
       Start-LenovoTasks
       Banner 'POST-WARM STATUS'
-      Show-Docker
-      Wait-AppStatus
       try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
       Show-OperatorAuthReadiness
+      Assert-EnvironmentReady
       Say 'WARM' 'DONE without builds, migrations, and container recreation'
       break
     }
@@ -1375,9 +1396,8 @@ try {
     'verify' {
       Check-Ssh
       Check-DockerContext
-      Assert-Compose
       Verify-Checks
-      Show-Docker
+      Assert-EnvironmentReady
       break
     }
     'migrations' {

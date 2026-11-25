@@ -60,7 +60,9 @@ test("one dev command opens existing app surfaces after the owner tasks are read
   const fastPath = launcher.match(/'launch'\s*\{([\s\S]*?)\n\s*break/);
   assert.ok(fastPath, "default launch action must be present");
   assert.match(fastPath[1], /Check-Ssh[\s\S]*?Start-LocalTasks[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces/);
-  assert.doesNotMatch(fastPath[1], /Docker|Start-Base|Show-Docker|Assert-Compose/);
+  // Open existing surfaces first; do not recreate infrastructure in the fast path.
+  assert.match(fastPath[1], /Open-AppSurfaces[\s\S]*Check-DockerContext[\s\S]*Assert-EnvironmentReady/);
+  assert.doesNotMatch(fastPath[1], /Start-Base|Start-DSHIfVerified|Stop-Docker/);
   assert.match(launcher, /'up'\s*\{[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
   assert.match(launcher, /'warm'\s*\{[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
   assert.match(launcher, /if\s*\(\$DockerAction -eq 'open'\)\s*\{Open-AppSurfaces;Show-OperatorAuthReadiness;return\}/);
@@ -167,19 +169,56 @@ test("Docker status verifies present WLT without misreporting it as another proj
   assert.doesNotMatch(launcher, /WLT.*outside this Docker project/);
 });
 
-test("strict Docker verification always includes WLT and configuration validates every owner", () => {
+test("strict Docker verification and complete environment verification share the owner and Compose checks", () => {
   const launcher = readFileSync(scriptPath, "utf8");
-  const commands = launcher.slice(launcher.indexOf("function Invoke-ScopedDocker {"), launcher.indexOf("function Wait-AppStatus {"));
-  const verify = commands.slice(commands.indexOf("    'verify' {"));
-  assert.match(verify, /verify-runtime-provenance\.mjs'\) '--context' \$dockerContext '--include-wlt'/);
-  assert.match(verify, /Assert-Ok \(\$LASTEXITCODE -eq 0\)/);
-  const config = commands.slice(commands.indexOf("    'config' {"), commands.indexOf("    'reconcile' {"));
+  const owner = launcher.match(/function Assert-OwnerRuntime \{([\s\S]*?)\n\}/);
+  assert.ok(owner);
+  assert.match(owner[1], /verify-runtime-provenance\.mjs'\) '--context' \$dockerContext '--include-wlt'/);
+  assert.match(owner[1], /Assert-Ok \(\$LASTEXITCODE -eq 0\)/);
+  const config = launcher.match(/function Assert-CompleteCompose \{([\s\S]*?)\n\}/);
+  assert.ok(config);
   for (const input of ["$baseCompose", "$appCompose", "compose.identity.yaml", "compose.merchant.yaml", "compose.captain.yaml", "compose.wlt.yaml"]) {
-    assert.ok(config.includes(input), "missing Compose input " + input);
+    assert.ok(config[1].includes(input), "missing Compose input " + input);
   }
-  for (const profile of ["implementation", "identity-verifier", "wlt-reader"]) assert.ok(config.includes("'" + profile + "'"));
-  assert.match(config, /'config','--quiet'/);
-  assert.doesNotMatch(config, /'up'|'run'|'bootstrap'/);
+  for (const profile of ["implementation", "identity-verifier", "wlt-reader"]) assert.ok(config[1].includes("'" + profile + "'"));
+  assert.match(config[1], /'config','--quiet'/);
+  assert.doesNotMatch(config[1], /'up'|'run'|'bootstrap'/);
+  const scoped = launcher.match(/function Invoke-ScopedDocker \{([\s\S]*?)\n\}/);
+  assert.ok(scoped);
+  assert.match(scoped[1], /'config' \{ Assert-CompleteCompose \}/);
+  assert.match(scoped[1], /'verify' \{ Assert-OwnerRuntime \}/);
+  const main = launcher.slice(launcher.indexOf("switch ($Action.ToLowerInvariant())"));
+  for (const action of ["launch", "up", "warm", "verify"]) {
+    const branch = main.match(new RegExp("'" + action + "'\\s*\\{([\\s\\S]*?)\\n\\s*break"));
+    assert.ok(branch);
+    assert.match(branch[1], /Assert-EnvironmentReady/);
+  }
+});
+
+test("environment readiness reports all independent failures and never certifies a partial result", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted=scriptPath.replaceAll("'", "''");
+  const ps=[
+    "$ErrorActionPreference='Stop'",
+    "$tok=$null;$err=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseFile('" + quoted + "',[ref]$tok,[ref]$err)",
+    "foreach($name in @('Assert-Ok','Say','Assert-EnvironmentReady')){$fn=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true);if(!$fn){throw 'MISSING_HELPER'};Invoke-Expression $fn.Extent.Text}",
+    "$script:visited=@();$script:fail=@('Assert-OwnerRuntime','Assert-AppRuntime')",
+    "function Assert-CompleteCompose {$script:visited+='Assert-CompleteCompose';if($script:fail -contains 'Assert-CompleteCompose'){throw 'fixture config failure'}}",
+    "function Assert-OwnerRuntime {$script:visited+='Assert-OwnerRuntime';if($script:fail -contains 'Assert-OwnerRuntime'){throw 'fixture stale WLT'}}",
+    "function Assert-AppRuntime {$script:visited+='Assert-AppRuntime';if($script:fail -contains 'Assert-AppRuntime'){throw 'fixture broken web'}}",
+    "$rejected=$false;try{Assert-EnvironmentReady}catch{$rejected=$_.Exception.Message -match 'environment incomplete'};if(!$rejected){throw 'PARTIAL_ACCEPTED'}",
+    "if(($script:visited -join ',') -ne 'Assert-CompleteCompose,Assert-OwnerRuntime,Assert-AppRuntime'){throw 'INDEPENDENT_CHECKS_SKIPPED'}",
+    "$script:visited=@();$script:fail=@();Assert-EnvironmentReady",
+    "Write-Output 'ENVIRONMENT_READINESS_REGRESSION_PASS'",
+  ].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",windowsHide:true,timeout:15000});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/READINESS_BLOCKED=Assert-OwnerRuntime/);
+  assert.match(result.stdout,/READINESS_BLOCKED=Assert-AppRuntime/);
+  assert.equal((result.stdout.match(/ENVIRONMENT_READINESS=PASS/g)||[]).length,1);
+  assert.match(result.stdout,/ENVIRONMENT_READINESS_REGRESSION_PASS/);
 });
 test("down preflights all Docker peers before stopping any applications or tunnels", {
   skip: process.platform !== "win32",
@@ -313,7 +352,8 @@ test("strict app verification checks the existing watcher and its mirrored sourc
   assert.match(launcher,/Get-ScheduledTaskInfo -TaskName \$spec\.Name/);
   assert.match(launcher,/APP_SOURCE_SYNC/);
   assert.match(launcher,/'--verify-manifest'/);
-  assert.match(launcher,/'verify'\s*\{[^\r\n]*Inspect-AppSourceSync -StrictCheck/);
+  assert.match(launcher,/'verify'\s*\{Assert-AppRuntime\}/);
+  assert.match(launcher,/function Assert-AppRuntime \{\s*Inspect-AppSourceSync -StrictCheck\s*Inspect-AppOwners -StrictCheck\s*Verify-AppWeb\s*\}/);
 });
 test("strict app verification distinguishes copied lockfile from installed dependency graph", () => {
   const launcher=readFileSync(scriptPath,"utf8");
