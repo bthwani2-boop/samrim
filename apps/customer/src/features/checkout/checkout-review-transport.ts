@@ -1,5 +1,6 @@
-import { DshPublicError, type CustomerCheckoutReview, type CustomerCheckoutReviewInput, parseCustomerCheckoutReview, reviewCurrentCustomerCheckout } from "@bthwani/dsh";
+import { type CustomerCheckoutReview, type CustomerCheckoutReviewInput, DshPublicError, parseCustomerCheckoutReview, reviewCurrentCustomerCheckout } from "@bthwani/dsh";
 import { Platform } from "react-native";
+import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import { withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 import { verifyAddressSession } from "../addresses/address-transport";
 
@@ -13,9 +14,18 @@ Promise<{ kind: "ready"; review: CustomerCheckoutReview } | { kind: "signed-out"
         headers: { "Content-Type": "application/json", "X-Customer-Context": actor },
         body: JSON.stringify(input),
       });
-      if (response.status === 401 || response.status === 403) return { kind: "signed-out" };
-      if (response.status !== 200 || response.headers.get("Cache-Control") !== "no-store") return { kind: "unavailable" };
-      const review = parseCustomerCheckoutReview(await response.json(), store, actor, input);
+      if (signal.aborted || response.status !== 200 || response.headers.get("Cache-Control") !== "no-store") {
+        void response.body?.cancel().catch(() => {});
+        signal.throwIfAborted();
+        return { kind: response.status === 401 || response.status === 403 ? "signed-out" : "unavailable" };
+      }
+      const body = await readBoundedCustomerJSON({ headers: response.headers, body: response.body, signal }, 32 * 1024);
+      if (body === null) {
+        void response.body?.cancel().catch(() => {});
+        return { kind: "unavailable" };
+      }
+      signal.throwIfAborted();
+      const review = parseCustomerCheckoutReview(body, store, actor, input);
       await verifyAddressSession(signal, actor);
       signal.throwIfAborted();
       return { kind: "ready", review };
