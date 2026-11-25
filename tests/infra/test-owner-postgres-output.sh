@@ -37,3 +37,21 @@ case_output failed_test fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\
 case_output failing_exit fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestSecond\n--- PASS: TestSecond (0.01s)\nPASS' 1
 case_output duplicate_test fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\nPASS'
 echo 'OWNER_TEST_OUTPUT_GATE_PASS positive=1 negative=6'
+
+# Compare the declared discovery inventory against native Go selection before
+# starting any disposable Docker stage. Retain the explicit reviewed allowlist.
+pattern="$(sed -n "s@^  /agent02/bin/dsh-discovery.test '\([^']*\)' '\([^']*\)'.*@\1@p" "$script")"
+expected="$(sed -n "s@^  /agent02/bin/dsh-discovery.test '\([^']*\)' '\([^']*\)'.*@\2@p" "$script")"
+[[ -n "$pattern" && -n "$expected" && "$pattern" != *$'\n'* && "$expected" != *$'\n'* ]] || {
+  echo "Missing or ambiguous discovery test selection" >&2
+  exit 1
+}
+listed="$(cd services/dsh/backend && GOTOOLCHAIN=local GOWORK=off go test ./internal/discovery -list "$pattern")"
+actual="$(printf '%s\n' "$listed" | awk '/^Test[^[:space:]]+$/ {print}' | LC_ALL=C sort)"
+declared="$(printf '%s\n' "$expected" | tr ',' '\n' | LC_ALL=C sort)"
+if [[ -z "$actual" || "$actual" != "$declared" ]]; then
+  echo "Discovery owner test inventory differs from native Go selection" >&2
+  diff -u <(printf '%s\n' "$declared") <(printf '%s\n' "$actual") >&2 || true
+  exit 1
+fi
+echo 'DISCOVERY_OWNER_TEST_INVENTORY_PASS'
