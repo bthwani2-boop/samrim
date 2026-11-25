@@ -167,23 +167,13 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
   }
   const bearer = await SecureStore.getItemAsync(key, nativeOptions);
   if (!bearer) return { enabled: true, standingReady: true, session: null };
+  let current: Awaited<ReturnType<typeof readDurableCaptain>>;
   try {
-    const current = await readDurableCaptain(bearer, signal);
-    const session = current.session;
-    if (session.role !== "captain") throw new IdentityClientError(401, "UNAUTHORIZED");
-    const standing = await readApprovedCaptainStanding(dshOrigin, current.bearer, "captain", session.actorId, signal);
-    // Both owner replies may finish AFTER a concurrent sign-out or actor
-    // switch. Only the credential still owned by this device can be rendered.
-    const stillCurrent = await mutateNativeStorage(async () =>
-      !signal.aborted &&
-      !await SecureStore.getItemAsync(pendingKey, nativeOptions) &&
-      await SecureStore.getItemAsync(key, nativeOptions) === current.bearer
-    );
-    return { enabled: true, standingReady: true, session: stillCurrent ? session : null, ...(stillCurrent ? { standing } : {}) };
+    current = await readDurableCaptain(bearer, signal);
+    if (current.session.role !== "captain") throw new IdentityClientError(401, "UNAUTHORIZED");
   } catch (error) {
-    // Network uncertainty must not be represented as a signed-out or approved actor.
-    const invalid = (error instanceof IdentityClientError && error.status === 401) ||
-      (error instanceof CaptainStandingError && [401, 403].includes(error.status));
+    // Only Identity can determine that its credential is no longer valid.
+    const invalid = error instanceof IdentityClientError && error.status === 401;
     if (invalid && !signal.aborted) {
       await mutateNativeStorage(async () => {
         // An old actor's 401 must never quarantine a newer bearer installed
@@ -203,6 +193,17 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
     }
     throw error;
   }
+  // DSH can deny operational standing, but cannot revoke the Identity session.
+  // A refusal/outage must block the workspace while preserving the credential.
+  const session = current.session;
+  const standing = await readApprovedCaptainStanding(dshOrigin, current.bearer, "captain", session.actorId, signal);
+  // Both owner replies may finish AFTER a concurrent sign-out or actor switch.
+  const stillCurrent = await mutateNativeStorage(async () =>
+    !signal.aborted &&
+    !await SecureStore.getItemAsync(pendingKey, nativeOptions) &&
+    await SecureStore.getItemAsync(key, nativeOptions) === current.bearer
+  );
+  return { enabled: true, standingReady: true, session: stillCurrent ? session : null, ...(stillCurrent ? { standing } : {}) };
 }
 
 export async function requestCaptainPhoneCode(phone: string, signal: AbortSignal): Promise<string> {

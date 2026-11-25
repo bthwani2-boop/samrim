@@ -353,3 +353,21 @@ test("Captain actor switch during owner approval cannot leak the old standing", 
   assert.deepEqual(admission, { enabled: true, standingReady: true, session: null });
   assert.equal("standing" in admission, false, "old DSH status must not reach the next actor");
 });
+
+
+test("DSH refusal conceals Captain access without destroying the Identity credential", async () => {
+  for (const [status, code] of [[403, "CAPTAIN_NOT_ELIGIBLE"], [401, "UNAUTHORIZED"]]) {
+    const h = harness();
+    h.stored.set("bthwani.captain.synthetic-admission.v1", h.tokens.captain);
+    h.setStandingRead(async () => { throw h.ownerError(status, code); });
+    await assert.rejects(h.reload().readCaptainAdmission(new AbortController().signal), { status, code });
+    assert.equal(h.readToken(), h.tokens.captain, "DSH must not erase Identity credentials");
+    assert.equal(h.pending(), null);
+    assert.equal(h.captainRevocationAttempts, 0);
+    h.setStandingRead(async () => ({ actorId: "captain-owner-one", status: "APPROVED", version: 2 }));
+    const recovered = await h.reload().readCaptainAdmission(new AbortController().signal);
+    assert.equal(recovered.session?.actorId, "captain-owner-one");
+    assert.equal(recovered.standing?.status, "APPROVED");
+    assert.equal(h.customerProofs, 0, "standing recovery must not consume another OTP");
+  }
+});
