@@ -48,6 +48,118 @@ test("import admission binds owner scope, denies foreign origin/actor and rechec
 // Retain uncached fixture modules for original-source coverage.
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
+
+function importTransport(platform, withNativeMerchantSession) {
+  const tmp = mkdtempSync(path.join(tmpdir(), "catalog-import-transport-"));
+  try {
+    const root = path.resolve(import.meta.dirname, "../../..");
+    const source = path.resolve(import.meta.dirname, "../src/features/catalog/catalog-import-transport.ts");
+    const compiled = spawnSync(process.execPath, [
+      path.join(root, "node_modules/typescript/bin/tsc"), source,
+      "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
+      "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
+    ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
+    assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
+    const mod = loadMappedRenderFixture(readFileSync(path.join(tmp, "catalog-import-transport.js"), "utf8"), source, {
+      "@bthwani/dsh": dsh,
+      "react-native": { Platform: { OS: platform } },
+      "../access/admission-transport": { withNativeMerchantSession },
+    });
+    loadedModules.push(mod);
+    return mod.exports.requestCatalogImport;
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+}
+
+test("Web import transport binds the original run and validates every owner acknowledgement", async t => {
+  const request = importTransport("web", () => assert.fail("Web must not use native credentials"));
+  const calls = [];
+  let reply = json({ catalogImport: initial });
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url, options });
+    return reply;
+  });
+  const signal = new AbortController().signal;
+  assert.deepEqual(await request(actorId, storeId, runId, "PUT", signal, manifest), initial);
+  assert.equal(calls[0].url, "/api/admission?catalogImport=store-a&run=run-0001");
+  assert.deepEqual(calls[0].options, {
+    method: "PUT", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: { "X-Merchant-Context": actorId, "Content-Type": "application/json" }, body: JSON.stringify(manifest),
+  });
+  reply = json({ catalogImport: complete });
+  assert.deepEqual(await request(actorId, storeId, runId, "PATCH", signal), complete);
+  assert.equal(calls.at(-1).options.body, undefined);
+  const tail = { ...complete, offset: 1, outcomes: [] };
+  reply = json({ catalogImport: tail });
+  assert.deepEqual(await request(actorId, storeId, runId, "GET", signal, undefined, 2), tail);
+  assert.equal(calls.at(-1).url, "/api/admission?catalogImport=store-a&run=run-0001&offset=2");
+  assert.equal(calls.at(-1).options.headers["X-Merchant-Context"], actorId);
+  for (const bad of [
+    ["", storeId, runId, "GET", undefined, 0],
+    [actorId, "../store", runId, "GET", undefined, 0],
+    [actorId, storeId, "../run", "GET", undefined, 0],
+    [actorId, storeId, runId, "GET", undefined, -1],
+    [actorId, storeId, runId, "GET", undefined, 5001],
+    [actorId, storeId, runId, "GET", undefined, 0.5],
+    [actorId, storeId, runId, "PATCH", undefined, 1],
+    [actorId, storeId, runId, "PUT", {}, 0],
+    [actorId, storeId, runId, "GET", manifest, 0],
+  ]) {
+    const [actor, store, run, method, change, offset] = bad;
+    await assert.rejects(request(actor, store, run, method, signal, change, offset), { code: "INVALID_REQUEST" });
+  }
+  await assert.rejects(request(actorId, storeId, runId, "GET", AbortSignal.abort()), { name: "AbortError" });
+  assert.equal(calls.length, 3, "invalid or aborted requests cannot dispatch");
+  for (const wrong of [
+    { ...initial, actorId: "merchant-b" },
+    { ...initial, storeId: "store-b" },
+    { ...initial, runId: "run-0002" },
+    { ...initial, sourceSha256: "b".repeat(64) },
+    { ...initial, total: 2 },
+  ]) {
+    reply = json({ catalogImport: wrong });
+    await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OWNER_RESPONSE_INVALID" });
+  }
+  reply = json({ catalogImport: complete });
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal, undefined, 1), { code: "OWNER_RESPONSE_INVALID" });
+  reply = Response.json({ catalogImport: initial });
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal), { code: "OWNER_RESPONSE_INVALID" });
+  reply = json({ catalogImport: initial }, 201);
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal), { code: "OWNER_RESPONSE_INVALID" });
+  reply = json({ code: "FORBIDDEN" }, 403);
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal), { status: 403, code: "FORBIDDEN" });
+  reply = json([], 503);
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal), { status: 503, code: "OWNER_UNAVAILABLE" });
+  const aborted = new AbortController();
+  reply = { json: async () => { aborted.abort(); return { catalogImport: initial }; } };
+  await assert.rejects(request(actorId, storeId, runId, "GET", aborted.signal), { name: "AbortError" });
+});
+
+test("Android import uses the verified native session and the canonical DSH client", async t => {
+  const origin = "http://127.0.0.1:13311";
+  const bearer = "synthetic";
+  const calls = [], scopes = [];
+  const request = importTransport("android", async (signal, invoke, actor, write) => {
+    scopes.push({ signal, actor, write });
+    return invoke(bearer, origin);
+  });
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url: new URL(url), options });
+    return json(options.method === "PUT" ? initial : complete);
+  });
+  const signal = new AbortController().signal;
+  assert.deepEqual(await request(actorId, storeId, runId, "PUT", signal, manifest), initial);
+  assert.deepEqual(await request(actorId, storeId, runId, "PATCH", signal), complete);
+  assert.deepEqual(await request(actorId, storeId, runId, "GET", signal), complete);
+  assert.deepEqual(scopes, [true, true, false].map(write => ({ signal, actor: actorId, write })));
+  assert.deepEqual(calls.map(call => call.options.method), ["PUT", "PATCH", "GET"]);
+  assert.ok(calls.every(call => call.url.origin === origin &&
+    call.url.pathname === "/v1/stores/store-a/catalog-imports/run-0001" &&
+    call.options.headers.Authorization === "Bearer synthetic"));
+  assert.deepEqual(JSON.parse(calls[0].options.body), manifest);
+  assert.equal(calls[1].options.body, undefined);
+  assert.equal(calls[2].options.body, undefined);
+});
+
 const nodes=t=>Array.isArray(t)?t.flatMap(nodes):!t||typeof t!=="object"?[]:[t,...nodes(t.props?.children)];
 const tick=()=>new Promise(setImmediate);
 async function until(f){for(let i=0;i<120;i++){if(f())return;await tick();}assert.fail("UI did not settle");}
