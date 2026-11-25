@@ -9,7 +9,7 @@ export async function verifyAddressSession(signal: AbortSignal, actor?: string) 
   const state = await readCustomerAdmission(signal);
   signal.throwIfAborted();
   if (!state.enabled || state.session?.role !== "customer" ||
-    (actor !== undefined && actor !== state.session.actorId) || Date.parse(state.session.sessionExpiresAt) <= Date.now()) {
+    (actor !== undefined && actor !== state.session.actorId) || !(Date.parse(state.session.sessionExpiresAt) > Date.now())) {
     throw new DshPublicError(401,"UNAUTHORIZED");
   }
   return state.session;
