@@ -29,6 +29,13 @@ function harness(disabled = false) {
   let index = 0;
   const hooks = [], effects = [], requests = [], selected = [];
   const jsx = (type, props) => ({ type, props });
+  const queueEffect = (fn, deps) => {
+    const i = index++;
+    if (!deps || !hooks[i] || deps.some((value, j) => !Object.is(value, hooks[i].deps[j]))) effects.push(() => {
+      hooks[i]?.cleanup?.();
+      hooks[i] = { cleanup: fn(), deps };
+    });
+  };
   const modules = {
     "@bthwani/dsh": { DshPublicError, listPublicCities(origin, options) {
       return new Promise((resolve, reject) => requests.push({ origin, ...options, resolve, reject }));
@@ -49,13 +56,8 @@ function harness(disabled = false) {
         if (!hooks[i] || deps.some((value, j) => !Object.is(value, hooks[i].deps[j]))) hooks[i] = { fn, deps };
         return hooks[i].fn;
       },
-      useEffect(fn, deps) {
-        const i = index++;
-        if (!hooks[i] || deps.some((value, j) => !Object.is(value, hooks[i].deps[j]))) effects.push(() => {
-          hooks[i]?.cleanup?.();
-          hooks[i] = { cleanup: fn(), deps };
-        });
-      },
+      useEffect: queueEffect,
+      useLayoutEffect: queueEffect,
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "react-native": { ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", Text: "Text", View: "View" },
@@ -69,10 +71,10 @@ function harness(disabled = false) {
   }, mod, mod.exports);
   return {
     requests, selected,
-    render(origin = "test") {
+    render(origin = "test", isDisabled = disabled) {
       index = 0;
       effects.length = 0;
-      const view = mod.exports.default({ origin, currentCity: "sanaa", disabled, onApply: city => selected.push(city) });
+      const view = mod.exports.default({ origin, currentCity: "sanaa", disabled: isDisabled, onApply: city => selected.push(city) });
       effects.forEach(fn => { fn(); });
       return view;
     },
@@ -163,5 +165,64 @@ test("changing owner origin hides old city options before effects and aborts the
   h.requests[2].resolve({ items: ["aden"], revision: 2 });
   await settle();
   button(h.render("second"), "عدن").props.onPress();
+  assert.deepEqual(h.selected, ["aden"]);
+});
+
+test("superseded city and continuation callbacks cannot change the new origin", async () => {
+  const h = harness();
+  h.render("first");
+  h.requests[0].resolve({ items: ["sanaa"], revision: 1, nextCursor: "old-page" });
+  await settle();
+  const old = h.render("first");
+  h.render("second");
+  h.requests[1].resolve({ items: ["aden"], revision: 2 });
+  await settle();
+  const current = h.render("second");
+  button(old, "صنعاء").props.onPress();
+  button(old, "عرض المزيد من المدن").props.onPress();
+  assert.deepEqual(h.selected, []);
+  assert.equal(h.requests.length, 2);
+  button(current, "عدن").props.onPress();
+  assert.deepEqual(h.selected, ["aden"]);
+});
+
+test("old city callbacks cannot dispatch after the current view becomes disabled or unmounts", async () => {
+  const h = harness();
+  h.render();
+  h.requests[0].resolve({ items: ["sanaa"], revision: 1, nextCursor: "page2" });
+  await settle();
+  const old = h.render();
+  h.render("test", true);
+  button(old, "صنعاء").props.onPress();
+  button(old, "عرض المزيد من المدن").props.onPress();
+  assert.deepEqual(h.selected, []);
+  assert.equal(h.requests.length, 1);
+  const current = h.render();
+  button(current, "صنعاء").props.onPress();
+  assert.deepEqual(h.selected, ["sanaa"]);
+  h.unmount();
+  button(current, "صنعاء").props.onPress();
+  button(current, "عرض المزيد من المدن").props.onPress();
+  assert.deepEqual(h.selected, ["sanaa"]);
+  assert.equal(h.requests.length, 1);
+});
+
+test("a stale directory invalidation revokes prior city callbacks even within the same origin", async () => {
+  const h = harness();
+  h.render();
+  h.requests[0].resolve({ items: ["sanaa"], revision: 1, nextCursor: "page2" });
+  await settle();
+  const old = h.render();
+  button(old, "عرض المزيد من المدن").props.onPress();
+  h.requests[1].reject(new DshPublicError(409, "STALE_CURSOR"));
+  await settle();
+  const recovery = h.render();
+  button(old, "صنعاء").props.onPress();
+  assert.deepEqual(h.selected, []);
+  button(recovery, "إعادة المحاولة").props.onPress();
+  assert.equal(h.requests[2].cursor, undefined);
+  h.requests[2].resolve({ items: ["aden"], revision: 2 });
+  await settle();
+  button(h.render(), "عدن").props.onPress();
   assert.deepEqual(h.selected, ["aden"]);
 });

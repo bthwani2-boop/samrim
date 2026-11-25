@@ -1,6 +1,6 @@
 import { DshPublicError, listPublicCities } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 import { serviceCityLabel } from "./serviceability";
 
@@ -24,6 +24,14 @@ export default function ServiceCityScope({ origin, currentCity, onApply, disable
   const [snapshot, setDirectory] = useState<Directory>({ origin, items: [], loading: true });
   const directory: Directory = snapshot.origin === origin ? snapshot : { origin, items: [], loading: true };
   const pending = useRef<AbortController | null>(null);
+  // Revoke handlers from earlier committed views, including on unmount.
+  const renderedView = { directory, disabled, onApply };
+  const committedView = useRef<typeof renderedView | null>(null);
+  useLayoutEffect(() => {
+    committedView.current = renderedView;
+    return () => { committedView.current = null; };
+  });
+  const canAct = () => committedView.current === renderedView && !disabled;
 
   const load = useCallback(async (previous?: Directory) => {
     if (pending.current) return;
@@ -72,7 +80,7 @@ export default function ServiceCityScope({ origin, currentCity, onApply, disable
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {directory.items.map(id => (
           <Pressable key={id} accessibilityRole="button" accessibilityState={{ selected: id === currentCity, disabled }}
-            disabled={disabled} onPress={() => { if (!disabled) onApply(id); }}
+            disabled={disabled} onPress={() => { if (canAct()) onApply(id); }}
             style={{ ...buttonStyle, backgroundColor: id === currentCity ? theme.actionSoft : "transparent" }}>
             <Text style={{ color: theme.interactiveText }}>{serviceCityLabel(id)}</Text>
           </Pressable>
@@ -86,7 +94,7 @@ export default function ServiceCityScope({ origin, currentCity, onApply, disable
         <Text style={{ color: theme.colorSecondary }}>لا توجد مدن متاحة للتسوّق حاليًا.</Text>
       ) : null}
       {!directory.loading && (directory.error || directory.nextCursor) ? (
-        <Pressable accessibilityRole="button" disabled={disabled} onPress={() => { if (!disabled) void load(directory.nextCursor ? directory : undefined); }}
+        <Pressable accessibilityRole="button" disabled={disabled} onPress={() => { if (canAct()) void load(directory.nextCursor ? directory : undefined); }}
           style={{ ...buttonStyle, alignSelf: "flex-end" }}>
           <Text style={{ color: theme.interactiveText }}>
             {directory.error ? "إعادة المحاولة" : "عرض المزيد من المدن"}
