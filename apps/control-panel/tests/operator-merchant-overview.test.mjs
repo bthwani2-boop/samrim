@@ -85,7 +85,7 @@ function marketHarness({ cityFailure = false, storeFailure = false, nextCursor, 
       async listPublicCities(origin, options) {
         calls.push({ kind: "cities", origin, options });
         if (cityFailure) throw new Error("DSH city owner unavailable");
-        return { items: ["sanaa"], revision: 4 };
+        return { items: ["sanaa", "aden"], revision: 4 };
       },
       async listPublicStores(origin, city, options) {
         calls.push({ kind: "stores", origin, city, options });
@@ -120,8 +120,8 @@ test("Merchant city picker stays within Merchant route and reads cities from DSH
 test("Merchant overview shows DSH-confirmed Stores, without fabricating totals or extra grants", async () => {
   const page = marketHarness();
   const tree = await page.render({ city: "sanaa" });
-  assert.deepEqual(page.calls.map(call => call.kind).sort(), ["stores", "verticals"]);
-  assert.ok(page.calls.every(call => call.origin === "http://127.0.0.1:23202" && call.city === "sanaa"));
+  assert.deepEqual(page.calls.map(call => call.kind).sort(), ["cities", "stores", "verticals"]);
+  assert.ok(page.calls.every(call => call.origin === "http://127.0.0.1:23202" && (call.kind === "cities" || call.city === "sanaa")));
   assert.ok(find(tree, node => node.type === "strong" && node.props.children === "متجر أ"));
   assert.equal(find(tree, node => node.type === "form").props.action, "/merchants");
   assert.equal(find(tree, node => node.type === "a" &&
@@ -157,10 +157,10 @@ test("Catalog-granted Operator can open DSH-confirmed Store offers without typin
 test("the Products Store picker sends bounded owner search and retains pagination on the Products tab", async () => {
   const page = marketHarness({ action: "/catalog/products", nextCursor: "next" });
   const tree = await page.render({ city: "sanaa", storeQ: " market ", storeCursor: "previous" }, false, true);
-  assert.deepEqual(page.calls.map(call => call.kind), ["stores"]);
-  assert.equal(page.calls[0].options.query, "market");
-  assert.equal(page.calls[0].options.cursor, "previous");
-  assert.equal(page.calls[0].options.limit, 20);
+  assert.deepEqual(page.calls.map(call => call.kind), ["cities", "stores"]);
+  assert.equal(page.calls[1].options.query, "market");
+  assert.equal(page.calls[1].options.cursor, "previous");
+  assert.equal(page.calls[1].options.limit, 20);
   assert.ok(find(tree, node => node.props.href === "/catalog/products?store=store-sanaa"));
   assert.ok(find(tree, node => node.props.href === "/catalog/products?city=sanaa&storeQ=market&storeCursor=next"));
   assert.ok(find(tree, node => node.props.href === "/catalog/products?city=sanaa&storeQ=market"));
@@ -176,4 +176,23 @@ test("failed Products Store continuation exposes a first-page recovery link pres
   assert.ok(find(tree, node => node.props.role === "alert"));
   assert.ok(find(tree, node => node.type === "a" && node.props.href === "/catalog/products?city=sanaa&storeQ=market"));
   assert.equal(find(tree, node => node.type === "strong"), undefined);
+});
+
+test("selected city keeps owner city choices on every market surface", async () => {
+  for (const action of ["/workspace", "/merchants", "/marketing", "/catalog/products"]) {
+    const page = marketHarness({ action });
+    const tree = await page.render({ city: "sanaa" }, true, true);
+    assert.ok(find(tree, node => node.type === "option" && node.props.value === "aden"), action);
+    assert.equal(find(tree, node => node.type === "input" && node.props.name === "city").props.defaultValue, "sanaa");
+    assert.equal(find(tree, node => node.type === "form").props.action, action);
+  }
+});
+
+test("city directory outage does not hide confirmed selected-city market data", async () => {
+  const page = marketHarness({ cityFailure: true });
+  const tree = await page.render({ city: "sanaa" });
+  assert.ok(find(tree, node => node.props.role === "alert" && /المدن/.test(node.props.children)));
+  assert.ok(find(tree, node => node.type === "strong" && node.props.children === "متجر أ"));
+  assert.ok(find(tree, node => node.type === "strong" && node.props.children === "grocery"));
+  assert.equal(find(tree, node => node.type === "input" && node.props.name === "city").props.defaultValue, "sanaa");
 });

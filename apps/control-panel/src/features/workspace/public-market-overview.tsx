@@ -54,6 +54,7 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
   } else {
     // Independent public readings: one failed endpoint must not hide the other.
     const results = await Promise.allSettled([
+      listPublicCities(origin, { limit: 50, signal: AbortSignal.timeout(5000) }),
       listPublicStores(origin, city, {
         ...(productStores?.query ? { query: productStores.query } : {}),
         ...(productStores?.cursor ? { cursor: productStores.cursor } : {}),
@@ -62,9 +63,11 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
       }),
       products ? Promise.resolve(null) : listPublicVerticals(origin, city, { limit: 10, signal: AbortSignal.timeout(5000) }),
     ] as const);
-    if (results[0].status === "fulfilled") stores = results[0].value;
+    if (results[0].status === "fulfilled") cities = results[0].value;
+    else citiesError = "تعذّرت قراءة المدن المنشورة من DSH.";
+    if (results[1].status === "fulfilled") stores = results[1].value;
     else storesError = "تعذّر تأكيد المتاجر المنشورة من DSH.";
-    if (results[1].status === "fulfilled") verticals = results[1].value;
+    if (results[2].status === "fulfilled") verticals = results[2].value;
     else verticalsError = "تعذّرت قراءة أنواع النشاط من DSH.";
   }
 
