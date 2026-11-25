@@ -34,6 +34,7 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
   const [standing, setStanding] = useState<{ session: VerifiedIdentitySession; value: MerchantDSHStanding } | null>(null);
   const [standingError, setStandingError] = useState("");
   const [standingLoading, setStandingLoading] = useState(false);
+  const [silentChecking, setSilentChecking] = useState(false);
   const [phone, setPhone] = useState("");
   const phoneNumber = normalizeYemeniMobile(phone);
   const [ticket, setTicket] = useState("");
@@ -41,14 +42,18 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const action = useRef<AbortController | null>(null);
+  const standingRequest = useRef<AbortController | null>(null);
 
-  const run = useCallback(async (operation: (signal: AbortSignal) => Promise<void>) => {
+  const run = useCallback(async (operation: (signal: AbortSignal) => Promise<void>, onTimeout?: () => void) => {
     if (action.current) return;
     const controller = new AbortController();
     action.current = controller;
     setBusy(true);
     setMessage("");
-    const timeout = setTimeout(() => controller.abort(), 20000);
+    const timeout = setTimeout(() => {
+      controller.abort();
+      if (action.current === controller) onTimeout?.();
+    }, 20000);
     try {
       await operation(controller.signal);
     } catch (error) {
@@ -62,17 +67,28 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
     }
   }, []);
 
-  const refresh = useCallback(() => {
-    void run(async signal => {
+  const refresh = useCallback((silent = false) => {
+    if (silent === true && standingRequest.current) return;
+    const conceal = () => {
+      setSilentChecking(false);
       setSession(null);
       // An interrupted or timed-out owner read cannot establish that no session exists.
       setEntryUncertain(true);
+    };
+    void run(async signal => {
+      if (silent === true) setSilentChecking(true);
+      else {
+        standingRequest.current?.abort();
+        standingRequest.current = null;
+        conceal();
+      }
       try {
         const state = await readAdmission(signal);
         if (signal.aborted) return;
         setEntryUncertain(false);
         setEnabled(state.enabled);
         const verified = state.enabled ? state.session : null;
+        if (!verified) setSilentChecking(false);
         setStanding(previous => {
           if (previous?.session.actorId === verified?.actorId &&
               previous?.session.sessionExpiresAt === verified?.sessionExpiresAt) return previous;
@@ -81,10 +97,10 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
         // A fresh Identity decision always requires a fresh DSH scope read.
         setSession(verified ? { ...verified } : null);
       } catch (error) {
-        if (!signal.aborted) setEntryUncertain(true);
+        if (!signal.aborted) conceal();
         throw error;
       }
-    });
+    }, conceal);
   }, [run]);
 
   useEffect(() => {
@@ -95,6 +111,9 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
         // owner response cannot reauthorize a session after this transition.
         action.current?.abort();
         action.current = null;
+        standingRequest.current?.abort();
+        standingRequest.current = null;
+        setSilentChecking(false);
         setBusy(false);
         setSession(null);
         setEntryUncertain(true);
@@ -106,6 +125,8 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
       listener.remove();
       action.current?.abort();
       action.current = null;
+      standingRequest.current?.abort();
+      standingRequest.current = null;
     };
   }, [refresh]);
 
@@ -116,9 +137,24 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
       return;
     }
     const controller = new AbortController();
+    standingRequest.current = controller;
     setStandingLoading(true);
+    const deadline = setTimeout(() => {
+      if (standingRequest.current !== controller) return;
+      controller.abort();
+      standingRequest.current = null;
+      setStanding(null);
+      setSilentChecking(false);
+      setStandingLoading(false);
+      setStandingError("تعذّر تأكيد صلاحيات المتاجر لدى DSH. حاول مرة أخرى.");
+    }, 20000);
     void readMerchantStanding(controller.signal).then(current => {
       if (controller.signal.aborted) return;
+      if (Date.parse(session.sessionExpiresAt) <= Date.now()) {
+        setSession(null);
+        setEntryUncertain(true);
+        return;
+      }
       if (current.actorId !== session.actorId) {
         throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
       }
@@ -134,17 +170,32 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
       setStanding(null);
       setStandingError("تعذّر تأكيد صلاحيات المتاجر لدى DSH. حاول مرة أخرى.");
     }).finally(() => {
-      if (!controller.signal.aborted) setStandingLoading(false);
+      clearTimeout(deadline);
+      if (standingRequest.current === controller) {
+        standingRequest.current = null;
+        setSilentChecking(false);
+        setStandingLoading(false);
+      }
     });
-    return () => controller.abort();
+    return () => {
+      clearTimeout(deadline);
+      controller.abort();
+      if (standingRequest.current === controller) standingRequest.current = null;
+    };
   }, [session]);
 
   useEffect(() => {
     if (!session && enabled !== null && !entryUncertain) return;
-    const timeout = session ? setTimeout(refresh,
-      Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now())) : undefined;
+    const timeout = session ? setTimeout(() => {
+      setSilentChecking(false);
+      setSession(null);
+      setEntryUncertain(true);
+      standingRequest.current?.abort();
+      standingRequest.current = null;
+      refresh();
+    }, Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now())) : undefined;
     const refreshTimer = setInterval(() => {
-      if (AppState.currentState === "active") refresh();
+      if (AppState.currentState === "active") refresh(true);
     }, 30_000);
     return () => {
       clearTimeout(timeout);
@@ -179,7 +230,15 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
   }
 
   function signOut() {
+    // Explicit logout must not be lost behind a non-interactive poll.
+    if (silentChecking) {
+      action.current?.abort();
+      action.current = null;
+    }
     void run(async signal => {
+      standingRequest.current?.abort();
+      standingRequest.current = null;
+      setSilentChecking(false);
       setSession(null);
       setStanding(null);
       setEntryUncertain(true);
@@ -190,7 +249,11 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
     });
   }
 
-  const workspaceVisible = Boolean(enabled && !busy && session && standing?.session === session);
+  const workspaceVisible = Boolean(enabled && session && standing &&
+    Date.parse(session.sessionExpiresAt) > Date.now() &&
+    ((!busy && standing.session === session) ||
+      (silentChecking && standing.session.actorId === session.actorId &&
+        standing.session.sessionExpiresAt === session.sessionExpiresAt)));
 
   const fieldStyle = {
     color: theme.color, borderColor: theme.borderColor, borderWidth: 1,

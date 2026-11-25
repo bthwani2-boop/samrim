@@ -30,6 +30,7 @@ function harness() {
   let index = 0;
   let appChanged;
   let actionTimeout;
+  let periodic;
   const react = {
     useState(initial) {
       const at = index++;
@@ -90,7 +91,7 @@ function harness() {
       return mocks[name];
     },
     mod, mod.exports,
-    callback => { actionTimeout = callback; return 1; }, () => undefined, () => 2, () => undefined,
+    callback => { actionTimeout = callback; return 1; }, () => undefined, callback => { periodic = callback; return 2; }, () => undefined,
   );
   const render = () => {
     index = 0;
@@ -105,6 +106,11 @@ function harness() {
       assert.equal(effects.length, 3);
       effects[0]();
     },
+    startPolling() {
+      render();
+      effects[2]();
+    },
+    poll() { periodic(); },
     startStanding() {
       render();
       effects[1]();
@@ -310,4 +316,58 @@ test("DSH denial conceals Merchant workspace without prompting for a new OTP", a
   h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
   await settle();
   assert.equal(visible(workspace(h.render())), true);
+});
+
+test("healthy Merchant polling retains workspace through Identity and DSH revalidation", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const initial = workspace(h.render());
+  assert.equal(visible(initial), true);
+  h.startPolling();
+  h.poll();
+  assert.equal(visible(workspace(h.render())), true);
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), true);
+  h.startStanding();
+  assert.equal(visible(workspace(h.render())), true);
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  assert.equal(visible(workspace(h.render())), true);
+  assert.equal(workspace(h.render()).key, initial.key);
+  h.poll();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().reject(h.standingDenied());
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+});
+
+test("timed-out Merchant standing poll conceals workspace and rejects a late result", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  h.startPolling();
+  h.poll();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  const delayed = h.nextStanding();
+  assert.equal(visible(workspace(h.render())), true);
+  h.timeoutAction();
+  assert.equal(delayed.signal.aborted, true);
+  assert.equal(visible(workspace(h.render())), false);
+  delayed.resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
 });
