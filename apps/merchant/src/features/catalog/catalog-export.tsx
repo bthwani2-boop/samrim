@@ -45,20 +45,31 @@ function CatalogExportAction({ actorId, storeId, query, status }: Readonly<{
   actorId: string; storeId: string; query?: string | undefined; status?: MerchantCatalogStatus | undefined;
 }>) {
   const { theme } = useMobileAppearance();
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "collecting" | "delivering">("idle");
+  const busy = phase !== "idle";
   const [message, setMessage] = useState("");
-  const active = useRef<AbortController | null>(null);
+  const active = useRef<{ controller: AbortController; collecting: boolean } | null>(null);
 
   useLayoutEffect(() => () => {
-    active.current?.abort();
+    active.current?.controller.abort();
     active.current = null;
   }, []);
+
+  function cancel() {
+    const operation = active.current;
+    if (!operation?.collecting) return;
+    operation.controller.abort();
+    active.current = null;
+    setPhase("idle");
+    setMessage("أُلغي التصدير. يمكنك إعادة المحاولة.");
+  }
 
   async function start(filtered = false) {
     if (active.current) return;
     const controller = new AbortController();
-    active.current = controller;
-    setBusy(true);
+    const operation = { controller, collecting: true };
+    active.current = operation;
+    setPhase("collecting");
     setMessage("");
     const timeout = setTimeout(() => controller.abort(), 120000);
     try {
@@ -66,20 +77,23 @@ function CatalogExportAction({ actorId, storeId, query, status }: Readonly<{
         filtered ? { ...(query ? { query } : {}), ...(status ? { status } : {}) } : {});
       // The last page and each preceding page are checked by DSH. A changed
       // mounted scope cancels the request before the file can be handed off.
+      controller.signal.throwIfAborted();
+      operation.collecting = false;
+      setPhase("delivering");
       await deliverCsv(result.csv, controller.signal);
-      if (active.current === controller && !controller.signal.aborted) {
+      if (active.current === operation && !controller.signal.aborted) {
         setMessage(`تم تجهيز ملف CSV بعدد ${result.count} عرض. تحقّق من التنزيل أو المشاركة.`);
       }
     } catch (error) {
-      if (active.current !== controller) return;
+      if (active.current !== operation) return;
       setMessage(error instanceof Error && error.message === "CATALOG_EXPORT_LIMIT"
         ? "يتجاوز الكتالوج 5000 عرض. لم يُنشأ ملف جزئي."
         : "تعذّر إكمال التصدير. تحقّق من الاتصال والصلاحية ثم أعد المحاولة.");
     } finally {
       clearTimeout(timeout);
-      if (active.current === controller) {
+      if (active.current === operation) {
         active.current = null;
-        setBusy(false);
+        setPhase("idle");
       }
     }
   }
@@ -96,6 +110,10 @@ function CatalogExportAction({ actorId, storeId, query, status }: Readonly<{
       accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void start(true)}
       style={buttonStyle}>
       <Text style={{ color: theme.interactiveText }}>تصدير نتائج التصفية (CSV)</Text>
+    </Pressable> : null}
+    {phase === "collecting" ? <Pressable accessibilityRole="button" accessibilityLabel="إلغاء تجهيز التصدير"
+      onPress={cancel} style={buttonStyle}>
+      <Text style={{ color: theme.interactiveText }}>إلغاء تجهيز التصدير</Text>
     </Pressable> : null}
     <Text style={{ color: theme.colorSecondary }}>
       يمكنك تصدير الكتالوج بالكامل أو جميع نتائج البحث والتصفية الحالية (حتى 5000 عرض).

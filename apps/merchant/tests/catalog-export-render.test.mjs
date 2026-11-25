@@ -188,6 +188,26 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     await tick();
     assert.equal(downloads.length, 3);
     assert.match(await downloads[2].blob.text(), /قهوة يمنية/);
+
+    // User cancellation must abort an in-flight read without creating a file.
+    button().props.onPress();
+    const canceled = requests[9];
+    const cancel = nodes(render()).find(n => n.props?.accessibilityLabel === "إلغاء تجهيز التصدير");
+    assert.ok(cancel, "cancel must be available during collection");
+    cancel.props.onPress();
+    assert.equal(canceled.signal.aborted, true);
+    assert.equal(button().props.disabled, false);
+    assert.ok(nodes(render()).some(n => n.props?.children === "أُلغي التصدير. يمكنك إعادة المحاولة."));
+    button().props.onPress();
+    assert.equal(requests[10].signal.aborted, false);
+    canceled.resolve(result);
+    await tick();
+    assert.equal(downloads.length, 3);
+    assert.equal(button().props.disabled, true, "late canceled read must not clear the new attempt");
+    requests[10].resolve(result);
+    await tick();
+    assert.equal(downloads.length, 4);
+    assert.equal(nodes(render()).some(n => n.props?.accessibilityLabel === "إلغاء تجهيز التصدير"), false);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
