@@ -199,7 +199,11 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
       </Pressable>)}
     </View> : null}
     {catalogVerified ? <InventorySummary key={JSON.stringify([actorId, storeId, retry])}
-      actorId={actorId} storeId={storeId} /> : null}
+      actorId={actorId} storeId={storeId} onShowStockout={() => {
+        setSearch({ scope: storeScope, draft: "", query: "" });
+        setFilter({ scope: storeScope, status: "stockout" });
+        if (status === "stockout" && !searchQuery) setRetry(value => value + 1);
+      }} /> : null}
     {catalogVerified && !priceStockOnly ? <CatalogExport actorId={actorId} storeId={storeId} query={searchQuery} status={status} /> : null}
     {catalogVerified && !priceStockOnly ? <CatalogImport actorId={actorId} storeId={storeId} onChanged={() => setRetry(value => value + 1)} /> : null}
     {catalogVerified && !priceStockOnly ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}

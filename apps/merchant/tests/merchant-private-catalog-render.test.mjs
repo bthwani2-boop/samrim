@@ -271,6 +271,17 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       requests[8].reject(new Error("owner unavailable"));
       await Promise.resolve(); await Promise.resolve();
       assert.ok(!nodes(render("merchant-a", stores.slice(0, 1), "store-b")).some(privateControls));
+      nodes(render("merchant-a", stores.slice(0, 1), "store-b"))
+        .find(n => n.props?.children?.props?.children === "إعادة المحاولة").props.onPress();
+      render("merchant-a", stores.slice(0, 1), "store-b");
+      requests[9].resolve({ actorId: "merchant-a", storeId: "store-a", items: [] });
+      await Promise.resolve(); await Promise.resolve();
+      const summary = nodes(render("merchant-a", stores.slice(0, 1), "store-b")).find(n => n.type === "InventorySummary");
+      summary.props.onShowStockout();
+      render("merchant-a", stores.slice(0, 1), "store-b");
+      assert.equal(requests[10].storeId, "store-a");
+      assert.equal(requests[10].options.status, "stockout");
+      assert.equal(requests[10].options.query, undefined);
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;
@@ -322,19 +333,25 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
       assert.ok(Object.hasOwn(mocks,name),name);
       return mocks[name];
     },mod,mod.exports);
+    let stockoutClicks = 0;
+    const stockoutButton = tree => tree.find(n => n.type === "Pressable" && n.props?.children?.props?.children === "عرض العروض النافدة");
     function render(actorId,storeId) {
       index=0; scheduled=[];
-      const tree=mod.exports.default({actorId,storeId});
+      const tree=mod.exports.default({actorId,storeId,onShowStockout: () => { stockoutClicks++; }});
       for(const effect of scheduled) effect();
       return nodes(tree);
     }
     const counts = (actorId,storeId,totalOffers)=>({actorId,storeId,totalOffers,publishedOffers:0,availableOffers:0,unavailableOffers:0,stockoutOffers:0});
     const hasCount=(tree,n)=>tree.some(node=>node.props?.children===n.toLocaleString("ar-YE"));
     assert.ok(render("merchant-a","store-a").some(n=>n.type==="ActivityIndicator"));
-    requests[0].resolve(counts("merchant-a","store-a",132));
+    requests[0].resolve({ ...counts("merchant-a","store-a",132), stockoutOffers: 3 });
     await Promise.resolve();
     assert.ok(hasCount(render("merchant-a","store-a"),132));
-    assert.ok(!hasCount(render("merchant-a","store-b"),132));
+    stockoutButton(render("merchant-a","store-a")).props.onPress();
+    assert.equal(stockoutClicks, 1);
+    const switchedStore = render("merchant-a","store-b");
+    assert.ok(!hasCount(switchedStore,132));
+    assert.equal(stockoutButton(switchedStore), undefined);
     assert.equal(requests[0].signal.aborted,true);
     render("merchant-b","store-b");
     assert.equal(requests[1].signal.aborted,true);
@@ -348,6 +365,8 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     render("merchant-b","store-b");
     requests[3].resolve(counts("merchant-b","store-b",0));
     await Promise.resolve();
-    assert.ok(hasCount(render("merchant-b","store-b"),0));
+    const empty = render("merchant-b","store-b");
+    assert.ok(hasCount(empty,0));
+    assert.equal(stockoutButton(empty), undefined);
   } finally { rmSync(tmp,{recursive:true,force:true}); }
 });
