@@ -167,8 +167,9 @@ function liveFiles(v) {
   return composeFileNames(v.Config.Labels["com.docker.compose.project.config_files"]);
 }
 function equal(a,b) { return JSON.stringify(a) === JSON.stringify(b); }
-function configHashes(activeFiles, names, env) {
-  const lines = docker([...composeArgs(activeFiles), "config", "--hash", names.join(",")], env).split(/\r?\n/);
+function configHashes(activeFiles, names, env, historical) {
+  const args = composeArgs(activeFiles).map(value => historical && value === historical.file ? "-" : value);
+  const lines = docker([...args, "config", "--hash", names.join(",")], env, 30000, historical ? historical.content + "\n" : undefined).split(/\r?\n/);
   const result = Object.fromEntries(lines.map(l => l.trim().split(/\s+/)));
   if (Object.keys(result).length !== names.length || names.some(o => !/^[0-9a-f]{64}$/.test(result[o] || ""))) throw new Error("Incomplete Compose hash");
   return result;
@@ -193,6 +194,32 @@ function historicalWltHashes(previous, env) {
   const result = /^wlt\s+([a-f0-9]{64})$/.exec(docker([...args, "config", "--hash", "wlt"], env, 30000, previous + "\n"));
   if (!result) throw new Error("Incomplete historical WLT Compose hash");
   return { wlt: result[1] };
+}
+// An explicitly requested default-off employee configuration addition has no
+// permission effect on either the previous or current DSH binary. All other
+// configuration drift still requires exact reconstruction and separate review.
+export function admittedDshConfigTransition({mode, automatic, clean, schemaChanged, oldFlagPresent, disabledHandlerProven, previous, current, live, historical, desired, disabled}) {
+  if (!["--check","--apply"].includes(mode) || automatic !== false || clean !== true ||
+      schemaChanged !== false || oldFlagPresent !== false || disabledHandlerProven !== true ||
+      typeof previous !== "string" || typeof current !== "string") return false;
+  const before=previous.replaceAll("\r\n","\n").trimEnd();
+  const after=current.replaceAll("\r\n","\n").trimEnd();
+  const line=`      DSH_ENABLE_ISOLATED_EMPLOYEES: "\${REF_DSH_ENABLE_ISOLATED_EMPLOYEES:-false}"`;
+  const anchor=`      DSH_ENABLE_ISOLATED_CUSTOMER_CART: "\${REF_DSH_ENABLE_ISOLATED_CUSTOMER_CART:-false}"`;
+  const lines=after.split("\n");
+  if(before.includes("DSH_ENABLE_ISOLATED_EMPLOYEES") || lines.filter(value=>value===line).length!==1 ||
+     !after.includes(anchor+"\n"+line+"\n") || lines.filter(value=>value!==line).join("\n")!==before) return false;
+  const valid=hashes=>hashes && Object.keys(hashes).length===2 &&
+    ["dsh","identity"].every(owner=>Object.hasOwn(hashes,owner)&&typeof hashes[owner]==="string"&&/^[a-f0-9]{64}$/.test(hashes[owner]));
+  return [live,historical,desired,disabled].every(valid) &&
+    !differingKeys(live,historical).length && !differingKeys(desired,disabled).length &&
+    live.identity===desired.identity && live.dsh!==desired.dsh;
+}
+export function isKnownImageConfigPair(image,hash,previous,candidate) {
+  return (image===previous.image && hash===previous.hash) || (image===candidate.image && hash===candidate.hash);
+}
+function historicalDshHashes(files,names,env,previous) {
+  return configHashes(files,names,env,{file:"infra/compose.dsh.yaml",content:previous});
 }
 function imageRecord(image) {
   return JSON.parse(docker(["image", "inspect", image]))[0];
@@ -743,9 +770,33 @@ function main() {
   const appNames = ["dsh","identity"];
   const groups = [{ names: appNames, files: activeAppFiles },{names:["wlt"],files:wltFiles}];
   let wltConfigDrift=false;
+  let dshConfigTransition=null;
   for (const group of groups) {
     const expected=currentHashes(state,group.names);
     const actual=configHashes(group.files,group.names,env);
+    if(group.names===appNames && differingKeys(expected,actual).length &&
+       ["--check","--apply"].includes(mode) && !prepare &&
+       !Object.hasOwn(process.env,"BTHWANI_RUNTIME_ATTEMPT_KEY") && !Object.hasOwn(process.env,"BTHWANI_RUNTIME_ATTEMPT_ID") &&
+       !git(["status","--porcelain","--untracked-files=all"])) {
+      const old=ownerRevision(state,"dsh"), peer=ownerRevision(state,"identity");
+      git(["merge-base","--is-ancestor",old.revision,head]);
+      git(["merge-base","--is-ancestor",peer.revision,head]);
+      const schemaChanged=Boolean(git(["diff","--name-only",old.revision,head,"--","services/dsh/database"]) ||
+                                  git(["diff","--name-only",peer.revision,head,"--","services/identity/database"]));
+      const previous=git(["show",old.revision+":infra/compose.dsh.yaml"]);
+      const current=readFileSync(resolve(root,"infra/compose.dsh.yaml"),"utf8");
+      const disabledHandlerProven=[old.revision,head].every(revision=>/if os\.Getenv\("DSH_ENABLE_ISOLATED_EMPLOYEES"\) != "true" \{\s*return existing, nil\s*\}/.test(git(["show",revision+":services/dsh/backend/cmd/dsh/employees.go"])));
+      if(!old.digest && !peer.digest && admittedDshConfigTransition({
+        mode,automatic:false,clean:true,schemaChanged,disabledHandlerProven,oldFlagPresent:Object.hasOwn(dshEnv,"DSH_ENABLE_ISOLATED_EMPLOYEES"),
+        previous,current,live:expected,historical:historicalDshHashes(group.files,group.names,env,previous),
+        desired:actual,disabled:configHashes(group.files,group.names,{...env,REF_DSH_ENABLE_ISOLATED_EMPLOYEES:"false"})
+      })) {
+        dshConfigTransition={previous,desired:actual};
+        env.REF_DSH_ENABLE_ISOLATED_EMPLOYEES="false";
+        console.log("DSH_CONFIG_TRANSITION_ELIGIBLE exact_prior_hash=yes employee_flag=false manual_only=yes");
+        continue;
+      }
+    }
     if(wltConfigReviewRequired(expected,actual,mode)) wltConfigDrift=true;
   }
   if(mode==="--prepare-dsh-database" || mode==="--resume-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles,mode==="--resume-dsh-database");return;}
@@ -823,11 +874,12 @@ function main() {
     }
     if(dirty && (source.previewChanges.length || source.imageChanges.length || old.digest)) snapshots.set(o,captureOwner(root,o));
     const snapshot=snapshots.get(o);
-    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(source.imageChanges.length || source.requiresCommittedRefresh || old.digest);
+    const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(source.imageChanges.length || source.requiresCommittedRefresh || old.digest || (o==="dsh"&&dshConfigTransition));
     if(stale)candidates.push(o);
     console.log(o+" RUNTIME="+(stale?"STALE":snapshot?"PREVIEW_CURRENT":"CURRENT")+" revision="+old.revision+(old.digest?" preview="+old.digest:"")+(source.clientPending && dirty?" SOURCE=CLIENT_REVIEW_PENDING":""));
   }
   const selected = selectOwners({candidates,activateCaptain:mode==="--apply-captain",currentCaptain:captain});
+  if(dshConfigTransition&&!selected.includes("dsh")) throw new Error("DSH configuration transition requires an eligible DSH candidate");
   console.log("SELECTED="+(selected.join(",")||"NONE")+" HEAD="+head+" CAPTAIN_OVERLAY="+captain);
   if(recovery){
     if(partial||selected.length||change.changed.length)throw new Error("Runtime recovery requires current, clean, fully verified owners");
@@ -844,6 +896,7 @@ function main() {
     return;
   }
   ensureSource();
+  if(dshConfigTransition) verifyRecoveryOwners(state);
   const tags={};
   const targetIds={};
   const nextEnv = {...env};
@@ -915,8 +968,26 @@ function main() {
     const newFiles=activate && group.names.includes("dsh") ? [...group.files,captainFile]:group.files;
     ensureSource();
     for(const o of names) if(imageRecord(owners[o].image+":"+tags[o]).Id!==targetIds[o])throw new Error("Candidate image tag changed: "+o);
-    assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
+    const transition=group.names===appNames ? dshConfigTransition : null;
+    const verifyPriorConfig=()=>{
+      if(transition){
+        assertSameHashes(currentHashes(state,group.names),historicalDshHashes(group.files,group.names,env,transition.previous));
+        assertSameHashes(transition.desired,configHashes(group.files,group.names,env));
+      }else assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
+    };
+    verifyPriorConfig();
+    const verifyUnselectedPeers=()=>{
+      if(!transition)return;
+      for(const o of group.names.filter(name=>!names.includes(name))){
+        const now=inspect(o);
+        if(now.Id!==state[o].Id||now.Image!==state[o].Image||now.Config.Labels["com.docker.compose.config-hash"]!==currentHashes(state,[o])[o])
+          throw new Error("Concurrent unselected peer change: "+o);
+      }
+    };
+    verifyUnselectedPeers();
     const newHashes=configHashes(newFiles,group.names,nextEnv);
+    if(transition && group.names.some(o=>!names.includes(o)&&newHashes[o]!==currentHashes(state,[o])[o]))
+      throw new Error("DSH configuration transition changes an unselected peer");
     try {
       console.log("OWNER_APPLY_STARTED "+names.join(","));
       docker([...composeArgs(newFiles),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",...names],nextEnv,95000);
@@ -924,8 +995,12 @@ function main() {
         const now=inspect(o);
         const source=ownerRevision({[o]:now},o);
         if(now.Image!==targetIds[o] || now.Config.Labels["com.docker.compose.config-hash"]!==newHashes[o] || source.revision!==head || source.digest!==(snapshots.get(o)?.digest||null)) throw new Error("Owner readback mismatch: "+o);
+        if(transition && o==="dsh" && asEnv(now.Config.Env).DSH_ENABLE_ISOLATED_EMPLOYEES!=="false")
+          throw new Error("DSH disabled employee setting not verified");
         console.log("OWNER_RUNTIME_PASS "+o+" "+now.Id);
       }
+      verifyUnselectedPeers();
+      if(dshConfigTransition) verifyRecoveryOwners(Object.fromEntries(Object.keys(owners).map(o=>[o,inspect(o)])));
       console.log("OWNER_APPLY_VERIFIED "+names.join(","));
     } catch (e) {
       // Before rollback, establish the durable state and that no unknown writer
@@ -933,14 +1008,28 @@ function main() {
       for(const o of names){
         const now=inspect(o,false);
         const hash=now.Config.Labels["com.docker.compose.config-hash"];
-        if(![currentHashes(state,[o])[o],newHashes[o]].includes(hash) ||
+        if(transition){
+          if(!isKnownImageConfigPair(now.Image,hash,{image:state[o].Image,hash:currentHashes(state,[o])[o]},
+              {image:targetIds[o],hash:newHashes[o]})) throw new Error("ROLLBACK_BLOCKED unknown owner state: "+o);
+        }else if(![currentHashes(state,[o])[o],newHashes[o]].includes(hash) ||
            ![state[o].Image,targetIds[o]].includes(now.Image)) throw new Error("ROLLBACK_BLOCKED unknown owner state: "+o);
       }
       if(e.code === "ETIMEDOUT") throw new Error("ROLLBACK_BLOCKED ambiguous Docker operation; readback completed, require explicit reconciliation");
-      assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
+      ensureSource();
+      verifyUnselectedPeers();
+      verifyPriorConfig();
       for(const o of names) if(imageRecord(state[o].Config.Image).Id!==state[o].Image) throw new Error("ROLLBACK_BLOCKED previous image tag drift: "+o);
+      // For this explicit configuration transition, rollback restores the old
+      // binary with the already-proven default-off addition. Both binaries
+      // require the value "true" to enable employees; false preserves denial.
+      const rollbackHashes=transition?transition.desired:currentHashes(state,group.names);
       docker([...composeArgs(group.files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",...names],env,95000);
-      for(const o of names) if(inspect(o).Image!==state[o].Image) throw new Error("ROLLBACK_READBACK_FAILED "+o);
+      for(const o of names){
+        const now=inspect(o);
+        if(now.Image!==state[o].Image||now.Config.Labels["com.docker.compose.config-hash"]!==rollbackHashes[o]) throw new Error("ROLLBACK_READBACK_FAILED "+o);
+      }
+      verifyUnselectedPeers();
+      if(dshConfigTransition) verifyRecoveryOwners(Object.fromEntries(Object.keys(owners).map(o=>[o,inspect(o)])));
       throw new Error("ROLLBACK_PASS "+names.join(",")+" after failed replacement: "+e.message);
     }
   }

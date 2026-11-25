@@ -405,3 +405,38 @@ test("private copy archive has actual Unix owner-only directory permissions", { 
   }
   assert.equal(existsSync(archive.directory), false);
 });
+
+test("only a manual, committed, exact default-off DSH employee setting transition is eligible", async () => {
+  const { admittedDshConfigTransition } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const before = 'services:\n  dsh:\n    environment:\n      DSH_ENABLE_ISOLATED_CUSTOMER_CART: "${REF_DSH_ENABLE_ISOLATED_CUSTOMER_CART:-false}"\n    ports: []\n';
+  const line = '      DSH_ENABLE_ISOLATED_EMPLOYEES: "${REF_DSH_ENABLE_ISOLATED_EMPLOYEES:-false}"\n';
+  const after = before.replace('    ports:', line + '    ports:');
+  const live = {dsh:"a".repeat(64), identity:"b".repeat(64)};
+  const desired = {...live, dsh:"c".repeat(64)};
+  const proof = {mode:"--apply",automatic:false,clean:true,schemaChanged:false,oldFlagPresent:false,disabledHandlerProven:true,previous:before,current:after,live,historical:live,desired,disabled:desired};
+  assert.equal(admittedDshConfigTransition(proof),true);
+  assert.equal(admittedDshConfigTransition({...proof,mode:"--check",previous:before.replaceAll("\n","\r\n")}),true);
+  for(const patch of [
+    {automatic:true},{clean:false},{schemaChanged:true},{oldFlagPresent:true},{disabledHandlerProven:false},
+    {mode:"--apply-preview"},{mode:"--apply-captain"},{mode:"--recover-attempt"},
+    {current:before},{current:after.replace(":-false}",":-true}")},
+    {current:after.replace('ports: []','ports: [3202:8080]')},
+    {current:after.replace(line,line+line)},
+    {historical:{...live,dsh:"d".repeat(64)}},
+    {desired:{...desired,identity:"d".repeat(64)}},
+    {disabled:{...desired,dsh:"d".repeat(64)}},
+    {desired:{...desired,extra:"d".repeat(64)}},
+    {live:{...live,dsh:"invalid"}},
+    {desired:live,disabled:live}
+  ]) assert.equal(admittedDshConfigTransition({...proof,...patch}),false);
+});
+
+test("configuration rollback admits only a proven image and its paired config hash", async () => {
+  const { isKnownImageConfigPair } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const prior={image:"old-image",hash:"old-hash"};
+  const candidate={image:"new-image",hash:"new-hash"};
+  assert.equal(isKnownImageConfigPair("old-image","old-hash",prior,candidate),true);
+  assert.equal(isKnownImageConfigPair("new-image","new-hash",prior,candidate),true);
+  for(const [image,hash] of [["old-image","new-hash"],["new-image","old-hash"],["unknown","new-hash"],["new-image","unknown"]])
+    assert.equal(isKnownImageConfigPair(image,hash,prior,candidate),false);
+});
