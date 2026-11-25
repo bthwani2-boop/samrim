@@ -96,6 +96,8 @@ function harness() {
     read(kind){const i=pending.findIndex(p=>p.kind===kind);assert.notEqual(i,-1,"expected "+kind);return pending.splice(i,1)[0];},
     event(name){if(name==="blur")focus=false;else if(name==="focus")focus=true;winEvents.get(name)?.();},
     visibility(value){visibility=value;docEvents.get("visibilitychange")?.();},
+    pendingCount(){return pending.length;},
+    poll(){const next=[...intervals.values()][0];assert.ok(next);next.fn();},
     expire(){const next=[...timers.values()].find(t=>t.delay>0);assert.ok(next);next.fn();},
     unmount(){cleanup?.();cleanup=null;},
   };
@@ -162,6 +164,55 @@ test("Web wallet refuses a continuation that repeats the old cursor and permits 
     const retry=h.read("history");
     assert.equal(retry.cursor,"page-next","cursor must not advance to same cursor");
     retry.resolve(history("actor-a",[funding("funding-b")]));await settle();
+    assert.equal(clickMore(h.render()),null);
+  }finally{h.unmount();}
+});
+
+test("Web wallet foreground poll preserves verified funds until owner confirms both fresh reads",async()=>{
+  const h=harness();try{
+    h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+    h.read("history").resolve(history("actor-a",[funding("funding-a")],"page-next"));await settle();
+    const original=textOf(h.render());
+    h.poll();const fresh=h.read("balance");
+    assert.equal(textOf(h.render()),original);
+    fresh.resolve(ready("actor-a"));await settle();
+    assert.equal(textOf(h.render()),original);
+    h.read("history").resolve(history("actor-a",[funding("funding-b")]));await settle();
+    assert.ok(find(h.render(),"wallet-balance"));
+    assert.equal(clickMore(h.render()),null);
+  }finally{h.unmount();}
+});
+
+test("Web wallet poll conceals private funds on owner denial, changed actor or expiry",async()=>{
+  for(const scenario of ["denied","changed","expired"]){
+    const h=harness();try{
+      h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+      h.read("history").resolve(history("actor-a",[funding("funding-a")]));await settle();
+      h.poll();const fresh=h.read("balance");
+      assert.ok(find(h.render(),"wallet-balance"));
+      if(scenario==="expired"){
+        h.expire();
+        assert.equal(fresh.signal.aborted,true);
+        fresh.resolve(ready("actor-a"));
+      }else fresh.resolve(scenario==="denied"?{kind:"signed-out"}:ready("actor-b"));
+      await settle();
+      assert.equal(find(h.render(),"wallet-balance"),null);
+    }finally{h.unmount();}
+  }
+});
+
+test("Web wallet does not overlap foreground refresh with itself or pagination, and hides on refresh failure",async()=>{
+  const h=harness();try{
+    h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+    h.read("history").resolve(history("actor-a",[funding("funding-a")],"page-next"));await settle();
+    clickMore(h.render()).props.onPress();const page=h.read("history");
+    h.poll();assert.equal(h.pendingCount(),0);
+    page.resolve(history("actor-a",[funding("funding-b")],"page-after"));await settle();
+    h.poll();const fresh=h.read("balance");
+    h.poll();clickMore(h.render()).props.onPress();assert.equal(h.pendingCount(),0);
+    fresh.resolve(ready("actor-a"));await settle();
+    h.read("history").reject(new Error("owner unavailable"));await settle();
+    assert.equal(find(h.render(),"wallet-balance"),null);
     assert.equal(clickMore(h.render()),null);
   }finally{h.unmount();}
 });
