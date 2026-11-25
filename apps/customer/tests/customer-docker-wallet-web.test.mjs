@@ -86,6 +86,6 @@ test("Docker Customer Web launcher opts in only for verified local owners, never
   assert.match(script, /CUSTOMER_SYNTHETIC_WLT_ORIGIN='http:\/\/127\.0\.0\.1:3203'/);
   assert.match(script, /BTHWANI_DOCKER_WALLET_WEB_PREVIEW='1'/);
   assert.match(script, /BTHWANI_ISOLATED_TEST_MODE='true'/);
-  assert.match(script, /EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'/);
+  assert.doesNotMatch(script, /BTHWANI_SURFACE_PREVIEW/);
   assert.match(script, /Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN/);
 });

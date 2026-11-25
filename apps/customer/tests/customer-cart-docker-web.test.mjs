@@ -110,7 +110,7 @@ test("Docker Cart launcher is explicit, validates both isolated owners and never
   assert.match(script, /DSH_ENABLE_ISOLATED_CUSTOMER_CART=true/);
   assert.match(script, /CUSTOMER_SYNTHETIC_DSH_ORIGIN='http:\/\/127\.0\.0\.1:3202'/);
   assert.match(script, /BTHWANI_DOCKER_CART_WEB_PREVIEW='1'/);
-  assert.match(script, /EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'/);
+  assert.doesNotMatch(script, /BTHWANI_SURFACE_PREVIEW/);
   assert.match(script, /Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN/);
 });
 

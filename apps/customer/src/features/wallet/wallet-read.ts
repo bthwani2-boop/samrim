@@ -2,6 +2,7 @@ import {
   type CustomerFundingHistory, type CustomerWalletBalance,
   readCurrentCustomerWallet, readCurrentCustomerWalletTransactions, WltReadError,
 } from "@bthwani/wlt";
+import { isDevice } from "expo-device";
 import { Platform } from "react-native";
 import { withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
@@ -13,14 +14,19 @@ export type NativeWalletHistoryRead =
   | { kind: "ready"; history: CustomerFundingHistory; expiresAt: number }
   | { kind: "signed-out" | "unavailable" };
 
-// Only the opt-in isolated Android emulator may contact the WLT loopback owner.
-// No production URL, physical device LAN address, or automatic host fallback.
+// An explicitly configured isolated emulator fixture may use separate local
+// Identity and WLT owners. The Lenovo daily launcher never supplies this WLT
+// origin. A physical device, missing configuration or non-local origin fails closed.
+function emulatorFixtureOrigin(origin: string | undefined): string | null {
+  const match = /^http:\/\/10\.0\.2\.2:([1-9][0-9]{0,4})$/.exec(origin ?? "");
+  return origin && match && Number(match[1]) <= 65535 ? origin : null;
+}
+
 function nativeWalletOrigin(): string | null {
-  if (Platform.OS !== "android" ||
-    process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW !== "1") return null;
-  const origin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN ?? "";
-  const match = /^http:\/\/10\.0\.2\.2:([1-9][0-9]{0,4})$/.exec(origin);
-  return match && Number(match[1]) <= 65535 ? origin : null;
+  if (Platform.OS !== "android" || isDevice !== false) return null;
+  const identity = emulatorFixtureOrigin(process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN);
+  const wallet = emulatorFixtureOrigin(process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN);
+  return identity && wallet && identity !== wallet ? wallet : null;
 }
 
 async function readNativeFinance<T extends { actorId: string }>(

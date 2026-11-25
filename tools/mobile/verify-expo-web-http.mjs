@@ -60,7 +60,6 @@ async function verifyHost({ name, routes, protectedRoutes = [] }) {
       NODE_ENV: "production",
       EXPO_NO_TELEMETRY: "1",
       EXPO_OFFLINE: "1",
-      BTHWANI_SURFACE_PREVIEW: "0",
     },
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],

@@ -214,8 +214,9 @@ test("Lenovo owner startup waits for readiness and fails closed at its deadline"
 test("daily launcher has one Lenovo execution path and no persistent Surface preview configuration",()=>{
   assert.match(launcher,/^#Requires -Version 7\.0/);
   assert.doesNotMatch(launcher,/\$Surface\b|\$EnableAndroidWalletPreview\b|surface-preview-logs|2310[0-3]|2320[1-3]/);
-  assert.match(launcher,/\$env:BTHWANI_SURFACE_PREVIEW=\x270\x27/);
-  assert.match(launcher,/\$env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW=\x270\x27/);
+  assert.doesNotMatch(launcher,/BTHWANI_SURFACE_PREVIEW/);
+  const scrub=launcher.indexOf('Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN');
+  assert.ok(scrub>=0 && scrub<launcher.indexOf('function Invoke-OwnedAppProcess'), 'daily launcher must clear any emulator fixture WLT origin before owner selection');
   assert.equal((launcher.match(/\$nativeExit=Invoke-OwnedAppProcess/g)||[]).length,1);
   const ports=JSON.parse(readFileSync(new URL("./ports.json",import.meta.url),"utf8"));
   assert.ok(Object.values(ports.apps).every(a=>!Object.hasOwn(a,"preview")));

@@ -24,9 +24,8 @@ if ($EnableDockerCustomerAndroidIdentityPreview -and ($App -ne 'customer')) {
 if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
   throw 'APP_LAUNCH_REQUIRES_VERIFIED_LENOVO_HOST'
 }
-# Never inherit the retired Surface test mode into the shared daily runtime.
-$env:BTHWANI_SURFACE_PREVIEW='0'
-$env:EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'
+# The daily runtime must not inherit isolated emulator fixture finance origins.
+Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
 Remove-Item Env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW -ErrorAction SilentlyContinue
 Remove-Item Env:BTHWANI_DOCKER_CART_WEB_PREVIEW -ErrorAction SilentlyContinue
 Remove-Item Env:OPERATOR_FINANCE_WLT_ORIGIN -ErrorAction SilentlyContinue
@@ -196,7 +195,6 @@ if ($EnableDockerWalletWebPreview) {
   $env:BTHWANI_DOCKER_WALLET_WEB_PREVIEW='1'
   $env:CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
   $env:CUSTOMER_SYNTHETIC_WLT_ORIGIN='http://127.0.0.1:3203'
-  Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN -ErrorAction SilentlyContinue
 }
 if ($EnableDockerCartWebPreview) {
   if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
