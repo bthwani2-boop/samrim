@@ -1,5 +1,6 @@
 import { DshPublicError, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, getStoreOperationalAvailability, isCompanyEmployeeId, listMerchantCatalog, listMerchantEmployees, readMerchantInventorySummary, readMerchantRegistrationOptions, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
+import { readOwnedMerchantCommercialAgreementReview, WltReadError } from "@bthwani/wlt";
 import {
   appendSessionCookies, bearerFrom, configuredOrigin, cookieName, ownerError,
   refreshCookieName, refreshFrom, response, sessionCookie, standingOrigin,
@@ -66,7 +67,9 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
     [...query.keys()].every(key => ["employees","cursor","employeeId"].includes(key) && query.getAll(key).length===1) &&
     (employeeCursor===null || isCompanyEmployeeId(employeeCursor)) &&
     (employeeId===null || (employeeCursor===null && isCompanyEmployeeId(employeeId)));
-  const protectedRead = stores || availability || registration || catalog || inventory || employees;
+  const agreementId = query.size === 1 ? query.get("agreement") : null;
+  const agreement = agreementId !== null && /^[a-z0-9-]{1,64}$/.test(agreementId);
+  const protectedRead = stores || availability || registration || catalog || inventory || employees || agreement;
   if (query.size > 0 && !protectedRead) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
@@ -83,6 +86,23 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
     const session = await readVerifiedIdentitySession(origin, bearer, signal);
     if (session.role === "merchant") {
+      if (agreement) {
+        const actorId = request.headers.get("X-Merchant-Context");
+        if (!actorId || actorId !== session.actorId) return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+        const wltOrigin = process.env.MERCHANT_SYNTHETIC_WLT_ORIGIN ??
+          (process.env.NODE_ENV === "development" && origin === "http://127.0.0.1:3201" ? "http://127.0.0.1:3203" : "");
+        if (!/^http:\/\/127\.0\.0\.1:[0-9]{1,5}$/.test(wltOrigin)) return response({ code: "OWNER_UNAVAILABLE" }, 503);
+        try {
+          const review = await readOwnedMerchantCommercialAgreementReview(wltOrigin, bearer, agreementId, signal);
+          signal.throwIfAborted();
+          return response({ agreement: { actorId: session.actorId, review } });
+        } catch (error) {
+          if (error instanceof WltReadError && [401, 403].includes(error.status)) {
+            return response({ code: "STORE_ACCESS_DENIED" }, error.status);
+          }
+          return response({ code: "OWNER_UNAVAILABLE" }, 503);
+        }
+      }
       if (registration) {
         const actorId = request.headers.get("X-Merchant-Context");
         if (actorId !== null && actorId !== session.actorId) {

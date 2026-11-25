@@ -83,6 +83,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       "../stores/merchant-public-link": { __esModule: true, default: "PublicLink" },
       "../stores/store-availability": { __esModule: true, default: "Availability" },
       "../employees/employees-screen": { __esModule: true, default: "Employees" },
+      "../finance/wallet-screen": { __esModule: true, default: "Wallet" },
       "./merchant-workspace-model": { filterMerchantStores, merchantNavigation, merchantMobileSections, merchantStoreSummary },
     };
     const load = code => {
@@ -126,7 +127,8 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       assert.ok(render().some(n => n.props?.testID === "merchant-section-unavailable"));
       click("الرئيسية");
       click("المحفظة");
-      assert.ok(render().some(n => n.props?.testID === "merchant-section-unavailable"));
+      assert.equal(render().find(n => n.type === "Wallet")?.props.actorId, "merchant-a");
+      assert.deepEqual(render().find(n => n.type === "Wallet")?.props.stores, stores);
       click("الرئيسية");
     }
     desktop = true;
