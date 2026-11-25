@@ -203,3 +203,20 @@ test("a successful dialog does not read device settings while no scope is active
     h.blur();
   }
 });
+
+test("initial non-active states never read device settings before foreground activation", async () => {
+  for (const initial of [null, "unknown", "extension", "inactive", "background"]) {
+    const h = harness({ initial });
+    h.render(); h.focus(); await settle();
+    assert.equal(h.calls.permissions, 0, `unexpected read for ${initial}`);
+    assert.equal(h.calls.services, 0);
+    assert.equal(h.calls.requests, 0);
+    assert.equal(find(h.render(), "captain-location-request"), undefined);
+    h.state("active"); await settle();
+    assert.equal(h.calls.permissions, 1);
+    assert.equal(h.calls.services, 1);
+    assert.equal(h.calls.requests, 0);
+    assert.ok(find(h.render(), "captain-location-request"));
+    h.blur();
+  }
+});

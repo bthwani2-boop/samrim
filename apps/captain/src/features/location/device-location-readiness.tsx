@@ -40,7 +40,7 @@ export default function CaptainDeviceLocationReadiness() {
 
   useFocusEffect(useCallback(() => {
     if (Platform.OS === "web") return;
-    const s: Scope = { active: AppState.currentState !== "background" && AppState.currentState !== "inactive", revision: 0 };
+    const s: Scope = { active: AppState.currentState === "active", revision: 0 };
     scope.current = s;
     publish({ kind: "checking" });
     if (s.active) void read(s);
