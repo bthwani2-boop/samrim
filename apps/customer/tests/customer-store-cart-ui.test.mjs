@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DshCartError } from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { formatExactYer } from "../src/components/format-exact-yer.ts";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../src/features/cart/cart-preview.ts";
 import { pendingCartChange, withPendingCartChange } from "../src/features/cart/cart-session.ts";
@@ -19,9 +20,12 @@ try {
   const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
     path.join(source, "cart/use-store-cart.ts"), ...files.slice(1).map(file => path.join(source, `${file}.tsx`)),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",
-    "--rootDir", source, "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+    "--inlineSourceMap", "--inlineSources", "--rootDir", source, "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  compiled = files.map(file => readFileSync(path.join(temp, `${file}.js`), "utf8"));
+  compiled = files.map((file, index) => ({
+    code: readFileSync(path.join(temp, `${file}.js`), "utf8"),
+    source: path.join(source, `${file}.${index === 0 ? "ts" : "tsx"}`),
+  }));
 } finally { rmSync(temp, { recursive: true, force: true }); }
 
 const jsx = (type, props) => ({ type, props });
@@ -36,13 +40,12 @@ const modules = {
   "../../components/format-exact-yer": { formatExactYer },
   "../cart/cart-preview": { summarizeCartPreview },
 };
-function load(sourceCode, overrides = {}) {
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", sourceCode)(key => {
-    const module = overrides[key] ?? modules[key];
-    assert.ok(module, `unexpected import ${key}`);
-    return module;
-  }, mod, mod.exports);
+// Keep uncached fixture modules alive until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+function load(fixture, overrides = {}) {
+  const mod = loadMappedRenderFixture(fixture.code, fixture.source, { ...modules, ...overrides });
+  loadedModules.push(mod);
   return mod.exports;
 }
 

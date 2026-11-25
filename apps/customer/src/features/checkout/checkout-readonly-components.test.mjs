@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(directory, "../../../../..");
@@ -19,7 +20,7 @@ try {
     ...compiledFiles.map(file => path.join(directory, [file, ".tsx"].join(""))),
     "--ignoreConfig", "--noResolve", "--noCheck",
     "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",
-    "--rootDir", directory, "--outDir", temp,
+    "--inlineSourceMap", "--inlineSources", "--rootDir", directory, "--outDir", temp,
   ];
   const result = spawnSync(process.execPath, args, {
     cwd: root, encoding: "utf8", windowsHide: true, timeout: 20_000,
@@ -31,8 +32,10 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
+// Keep uncached fixture modules alive until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 function component(file, overrides = {}) {
-  const module = { exports: {} };
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const mocks = {
     "@bthwani/tamagui-config/appearance": {
@@ -42,11 +45,9 @@ function component(file, overrides = {}) {
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
   };
   Object.assign(mocks, overrides);
-  new Function("require", "module", "exports", compiled.get(file))(name => {
-    assert.ok(Object.hasOwn(mocks, name), ["Unapproved dependency: ", name].join(""));
-    return mocks[name];
-  }, module, module.exports);
-  return module.exports.default;
+  const mod = loadMappedRenderFixture(compiled.get(file), path.join(directory, `${file}.tsx`), mocks);
+  loadedModules.push(mod);
+  return mod.exports.default;
 }
 
 for (const file of files) {
