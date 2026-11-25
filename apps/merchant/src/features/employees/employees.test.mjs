@@ -125,7 +125,8 @@ test("Employee screen loads current scope and retains the original operation thr
     reads[1].resolve({items:[record],nextCursor:null});await until(()=>!!findInput("اسم الموظف")&&findInput("اسم الموظف").props.editable);
     fill();findButton("إعادة تأكيد التسجيل").props.onPress();await until(()=>writes.length===2);
     assert.deepEqual(writes[1].input,first.input);writes[1].resolve(id);await until(()=>reads.length===3);
-    assert.equal(storage.size,0);
+    assert.equal(storage.size,1);
+    assert.equal(JSON.parse([...storage.values()][0]).settled,true);
     reads[2].resolve({items:[record],nextCursor:null});await until(()=>!!findButton("التفاصيل وسجل التسجيل")&&!findButton("التفاصيل وسجل التسجيل").props.disabled);
     findButton("التفاصيل وسجل التسجيل").props.onPress();await until(()=>details.length===2);
     details[1].reject({status:403});await until(()=>!JSON.stringify(render()).includes(record.displayName));
@@ -173,7 +174,8 @@ test("Employee screen loads current scope and retains the original operation thr
     await until(()=>reads.length===8);
     reads[7].resolve({items:[record],nextCursor:null});
     await until(()=>!!findInput("اسم الموظف")&&findInput("اسم الموظف").props.editable);
-    staleSave.props.onPress();for(let i=0;i<8;i++)await tick();assert.equal(writes.length,4,"a stale registration action must not create a new operation");assert.equal(storage.size,0);
+    staleSave.props.onPress();for(let i=0;i<8;i++)await tick();assert.equal(writes.length,4,"a stale registration action must not create a new operation");assert.equal(storage.size,1);
+    assert.equal(JSON.parse([...storage.values()][0]).settled,true);
     restart();
     assert.equal(nativeListener,undefined);
     platform.OS="web";render();

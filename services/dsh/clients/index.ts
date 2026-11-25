@@ -23,6 +23,10 @@ export type { CustomerCartDirectory, CustomerCartDirectoryEntry } from "./custom
 export { listCurrentCustomerCarts, parseCustomerCartDirectory } from "./customer-cart-directory.ts";
 export type { CheckoutFulfillmentMode, CheckoutRecipientPurpose, CustomerCheckoutBlocker, CustomerCheckoutReview, CustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
 export { parseCustomerCheckoutReview, reviewCurrentCustomerCheckout, validCustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
+export type { PendingRegistration } from "./registration-attempt.ts";
+export { matchingPendingRegistration, parsePendingRegistration } from "./registration-attempt.ts";
+export type { EmployeeRegistrationDraft, EmployeeRegistrationOutcome, EmployeeRegistrationAttempt, EmployeeRegistrationRecovery, EmployeeRegistrationRecoveryPort } from "./employee-registration-recovery.ts";
+export { normalizeEmployeeRegistrationDraft, employeeRegistrationErrorOutcome, openEmployeeRegistrationRecovery, claimEmployeeRegistration, settleEmployeeRegistration } from "./employee-registration-recovery.ts";
 export type { CompanyEmployee, CompanyEmployeeRegistration, CompanyEmployeeRegistrationAudit, EmployeeRecord, EmployeeRegistration } from "./employees.ts";
 export { getCompanyEmployee, getCompanyEmployeeRegistrationAudit, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, isCompanyEmployeeId, listCompanyEmployees, listMerchantEmployees, parseEmployeeDetail, parseEmployeePage, parseEmployeeRegistrationAudit, registerCompanyEmployee, registerMerchantEmployee, validEmployeeRegistration } from "./employees.ts";
 export type { FavoriteStorePage, FavoriteStoreState } from "./favorite-stores.ts";

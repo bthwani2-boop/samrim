@@ -1,31 +1,15 @@
-import { type EmployeeRecord, type EmployeeRegistration, validEmployeeRegistration } from "@bthwani/dsh";
+import { type EmployeeRecord, type EmployeeRegistration, type EmployeeRegistrationRecovery, type EmployeeRegistrationRecoveryPort, claimEmployeeRegistration, employeeRegistrationErrorOutcome, normalizeEmployeeRegistrationDraft, openEmployeeRegistrationRecovery, settleEmployeeRegistration, validEmployeeRegistration } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useLayoutEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import MerchantCapabilityScreen from "../../components/merchant-capability-screen";
-import { type PendingMerchantRegistration, parsePendingMerchantRegistration } from "../onboarding/merchant-registration-attempt";
 import { readEmployeeDetail, readEmployees, saveEmployee } from "./employee-transport";
 
 const secureOptions={keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY};
 const digest=(value:string)=>digestStringAsync(CryptoDigestAlgorithm.SHA256,value);
 const emptyDraft={displayName:"",department:"",jobTitle:"",startDate:""};
-type Recovery={key:string;attempt:PendingMerchantRegistration|null};
-
-async function storedAttempt(key:string) {
-  const raw=Platform.OS==="web"?window.localStorage.getItem(key):await SecureStore.getItemAsync(key,secureOptions);
-  const record=parsePendingMerchantRegistration(raw);
-  if(raw!==null && !record)throw new Error("Invalid recovery metadata");
-  return record;
-}
-async function persistAttempt(key:string,value:PendingMerchantRegistration|null) {
-  if(Platform.OS==="web"){
-    if(value)window.localStorage.setItem(key,JSON.stringify(value));
-    else window.localStorage.removeItem(key);
-  }else if(value)await SecureStore.setItemAsync(key,JSON.stringify(value),secureOptions);
-  else await SecureStore.deleteItemAsync(key,secureOptions);
-}
 let queue=Promise.resolve();
 function withAttemptLock<T>(key:string,action:()=>Promise<T>):Promise<T>{
   if(Platform.OS==="web"){
@@ -36,6 +20,14 @@ function withAttemptLock<T>(key:string,action:()=>Promise<T>):Promise<T>{
   queue=result.then(()=>undefined,()=>undefined);
   return result;
 }
+const recoveryPort: EmployeeRegistrationRecoveryPort = {
+  read: async key => Platform.OS==="web"?window.localStorage.getItem(key):SecureStore.getItemAsync(key,secureOptions),
+  write: async (key,value) => {
+    if(Platform.OS==="web")window.localStorage.setItem(key,value);
+    else await SecureStore.setItemAsync(key,value,secureOptions);
+  },
+  lock: withAttemptLock, digest, randomUUID,
+};
 function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:string}>){
   const {theme}=useMobileAppearance();
   const [items,setItems]=useState<EmployeeRecord[]>([]);
@@ -45,7 +37,7 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState("");
   const [draft,setDraft]=useState(emptyDraft);
-  const [recovery,setRecovery]=useState<Recovery|null>(null);
+  const [recovery,setRecovery]=useState<EmployeeRegistrationRecovery|null>(null);
   const [pending,setPending]=useState<EmployeeRegistration|null>(null);
   const active=useRef<AbortController|null>(null);
   const scope=useRef<AbortController|null>(null);
@@ -90,9 +82,8 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
       : (()=>{const listener=AppState.addEventListener("change",status=>{if(status==="active")reload();});return()=>listener.remove();})();
     void (async()=>{
       try{
-        const key="bthwani.merchant.employee-attempt."+await digest(JSON.stringify([actorId,"employee-registration"]));
-        const attempt=await storedAttempt(key);
-        if(!controller.signal.aborted)setRecovery({key,attempt});
+        const restored=await openEmployeeRegistrationRecovery(recoveryPort,"merchant",actorId);
+        if(!controller.signal.aborted)setRecovery(restored);
       }catch{
         if(!controller.signal.aborted)setMessage("تعذرت قراءة سجل استرداد التسجيل.");
       }
@@ -114,46 +105,44 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
       if(active.current===request){active.current=null;setBusy(false);}
     }
   }
-  const proposed={operationId:"00000000-0000-4000-8000-000000000000",displayName:draft.displayName.trim(),
-    department:draft.department.trim(),jobTitle:draft.jobTitle.trim(),startDate:draft.startDate.trim()};
+  const proposed={operationId:"00000000-0000-4000-8000-000000000000",...normalizeEmployeeRegistrationDraft(draft)};
   async function save(){
     if(renderedEpoch!==actionEpoch.current || !ready || !recovery || active.current || !scope.current || scope.current.signal.aborted || (!pending&&!validEmployeeRegistration(proposed)))return;
     actionEpoch.current++;
     const request=new AbortController();active.current=request;activeWrite.current=request;setBusy(true);setMessage("");setDetail(null);
     const values=pending??proposed;
+    let claimed: Awaited<ReturnType<typeof claimEmployeeRegistration>> | undefined;
     try{
-      const fingerprint=await digest(JSON.stringify([values.displayName,values.department,values.jobTitle,values.startDate]));
-      const claimed=await withAttemptLock(recovery.key,async()=>{
-        request.signal.throwIfAborted();
-        const old=await storedAttempt(recovery.key);
-        if(recovery.attempt && old?.operationId!==recovery.attempt.operationId)return null;
-        if(old){if(old.fingerprint!==fingerprint)return null;return old;}
-        const record={fingerprint,operationId:randomUUID()};
-        await persistAttempt(recovery.key,record);
-        return record;
-      });
+      claimed=await claimEmployeeRegistration(recoveryPort,recovery,values,request.signal);
       request.signal.throwIfAborted();
-      if(!claimed){setMessage("توجد محاولة مختلفة غير مؤكدة. أعد إدخال القيم الأصلية أو راجع السجل لدى DSH.");return;}
-      setRecovery({...recovery,attempt:claimed});
-      const input={...values,operationId:claimed.operationId};
-      setPending(input);
-      await saveEmployee(actorId,storeId,input,request.signal);
+      if(claimed.status!=="claimed"){
+        if(claimed.status==="changed")setRecovery(null);
+        setMessage(claimed.status==="changed"?"تغيرت محاولة التسجيل في نافذة أخرى. أعد فتح السجل قبل المتابعة.":"راجع بيانات التسجيل وأعد إدخال القيم الأصلية للمحاولة السابقة.");
+        return;
+      }
+      setRecovery(claimed.recovery);
+      setPending(claimed.input);
+      await saveEmployee(actorId,storeId,claimed.input,request.signal);
       request.signal.throwIfAborted();
-      await withAttemptLock(recovery.key,async()=>{
-        const old=await storedAttempt(recovery.key);
-        if(old?.operationId===claimed.operationId)await persistAttempt(recovery.key,null);
-      });
+      const settled=await settleEmployeeRegistration(recoveryPort,claimed.recovery,"confirmed",claimed.replay);
       if(request.signal.aborted)return;
-      setRecovery({...recovery,attempt:null});setPending(null);setDraft(emptyDraft);
+      setRecovery(settled);setPending(null);setDraft(emptyDraft);
       setMessage("أكد DSH حفظ سجل الموظف. لم تُمنح أي صلاحيات دخول.");
       setItems([]);setCursor(null);setReady(false);
       active.current=null;
       void load();
     }catch(error){
       if(!request.signal.aborted){
-        const status=error && typeof error==="object" && "status" in error?error.status:undefined;
-        if(status===401||status===403){setItems([]);setCursor(null);setReady(false);setMessage("انتهت الجلسة أو ملكية المتجر. لا يمكن تأكيد التسجيل.");}
-        else setMessage("لم يصل تأكيد موثوق. أعد المحاولة بالقيم نفسها؛ تُحفظ هوية العملية للاسترداد.");
+        const outcome=employeeRegistrationErrorOutcome(error);
+        if(outcome==="invalid" && claimed?.status==="claimed" && !claimed.replay){
+          try{
+            const settled=await settleEmployeeRegistration(recoveryPort,claimed.recovery,outcome,claimed.replay);
+            if(!request.signal.aborted){setRecovery(settled);setPending(null);setMessage("راجع بيانات الموظف قبل إعادة التسجيل.");}
+          }catch{if(!request.signal.aborted)setMessage("تعذر تأكيد الاسترداد. أعد فتح السجل.");}
+        }else if(outcome==="denied"){
+          setItems([]);setCursor(null);setReady(false);setPending(null);setDraft(emptyDraft);
+          setMessage("انتهت الجلسة أو ملكية المتجر. لا يمكن تأكيد التسجيل.");
+        }else setMessage("لم يصل تأكيد موثوق. أعد المحاولة بالقيم نفسها؛ تُحفظ هوية العملية للاسترداد.");
       }
     }finally{
       if(activeWrite.current===request){
@@ -201,7 +190,7 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
         <Text style={{color:theme.interactiveText}}>عرض المزيد</Text>
       </Pressable>:null}
       <Text accessibilityRole="header" style={{color:theme.color,fontWeight:"700"}}>تسجيل موظف</Text>
-      {recovery?.attempt?<Text style={{color:theme.warningText}}>توجد محاولة سابقة. أدخل بياناتها الأصلية لإعادة التأكيد.</Text>:null}
+      {recovery?.attempt&&!recovery.attempt.settled?<Text style={{color:theme.warningText}}>توجد محاولة سابقة. أدخل بياناتها الأصلية لإعادة التأكيد.</Text>:null}
       {labels.map(([name,label,maxLength])=><View key={name} style={{gap:4}}>
         <Text style={{color:theme.color}}>{label}</Text>
         <TextInput accessibilityLabel={label} value={pending?.[name]??draft[name]} maxLength={maxLength}
@@ -209,7 +198,7 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
       </View>)}
       <Pressable accessibilityRole="button" disabled={busy||!recovery||(!pending&&!validEmployeeRegistration(proposed))}
         onPress={()=>void save()} style={{...button,backgroundColor:theme.actionBackground}}>
-        <Text style={{color:theme.onAction,fontWeight:"700",textAlign:"center"}}>{recovery?.attempt?"إعادة تأكيد التسجيل":"حفظ سجل الموظف"}</Text>
+        <Text style={{color:theme.onAction,fontWeight:"700",textAlign:"center"}}>{recovery?.attempt&&!recovery.attempt.settled?"إعادة تأكيد التسجيل":"حفظ سجل الموظف"}</Text>
       </Pressable>
     </View>:null}
   </View>;

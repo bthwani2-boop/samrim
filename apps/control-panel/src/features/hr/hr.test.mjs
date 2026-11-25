@@ -20,6 +20,7 @@ test("hr: unauthenticated or unmapped sessions never expose navigation", () => {
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { DshPublicError, isCompanyEmployeeId } from "@bthwani/dsh";
+import * as dsh from "@bthwani/dsh";
 
 const requirePanel = createRequire(new URL("../../../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
@@ -184,7 +185,14 @@ function findRegistrationNode(node, predicate) {
   return predicate(node) ? node : findRegistrationNode(node.props?.children, predicate);
 }
 
-async function exerciseRegistration(scenario) {
+async function waitForRegistration(predicate) {
+  for (let i = 0; i < 200; i++) {
+    if (predicate()) return;
+    await new Promise(resolve => setTimeout(resolve, 2));
+  }
+  assert.fail("Employee registration did not settle");
+}
+async function exerciseRegistration(scenario, { storage = new Map(), actorId = "operator-a" } = {}) {
   const hooks = [], calls = [], responses = [], destinations = [];
   let index = 0;
   const jsx = (type, props) => ({ type, props });
@@ -203,26 +211,30 @@ async function exerciseRegistration(scenario) {
     },
   };
   const original = globalThis.window;
-  globalThis.window = { crypto: globalThis.crypto, location: { assign: value => destinations.push(value) } };
+  globalThis.window = { crypto: globalThis.crypto, location: { assign: value => destinations.push(value) },
+    localStorage: { getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, value) },
+    navigator: { locks: { request: (_key, action) => action() } },
+  };
   const mod = { exports: {} };
   try {
     new Function("require", "module", "exports", registrationComponent)(name => ({
-      react, "react/jsx-runtime": { jsx, jsxs: jsx }, "./employees.module.css": {},
+      react, "react/jsx-runtime": { jsx, jsxs: jsx }, "./employees.module.css": {}, "@bthwani/dsh": dsh,
     })[name], mod, mod.exports);
     const submit = (id, form) => {
       calls.push({ id, fields: Object.fromEntries(form) });
       return new Promise((resolve, reject) => responses.push({ resolve, reject }));
     };
-    const render = () => { index = 0; return mod.exports.default({ submit }); };
+    const render = () => { index = 0; return mod.exports.default({ actorId, submit }); };
     const input = (name, tree = render()) => findRegistrationNode(tree, node => node.type === "input" && node.props.name === name);
     const edit = (name, value, tree = render()) => input(name, tree).props.onChange({ target: { value } });
+    await waitForRegistration(() => findRegistrationNode(render(), node => node.type === "fieldset")?.props.disabled === false);
     for (const [name, value] of Object.entries(employeeDraft)) edit(name, value);
     const send = (tree = render(), values = employeeDraft) => tree.props.onSubmit
       ? tree.props.onSubmit({ preventDefault() {} })
       : tree.props.action(makeForm(values));
-    const reply = result => responses.shift().resolve(result);
-    const reject = () => responses.shift().reject(new TypeError("synthetic transport loss"));
-    await scenario({ render, input, edit, send, reply, reject, calls, destinations });
+    const reply = async result => { await waitForRegistration(() => responses.length > 0); responses.shift().resolve(result); };
+    const reject = async () => { await waitForRegistration(() => responses.length > 0); responses.shift().reject(new TypeError("synthetic transport loss")); };
+    await scenario({ render, input, edit, send, reply, reject, calls, destinations, storage });
   } finally {
     for (const entry of responses.splice(0)) entry.resolve({ status: "invalid", message: "invalid" });
     if (original === undefined) delete globalThis.window; else globalThis.window = original;
@@ -258,6 +270,7 @@ test("company registration is single-flight and revocation clears the private dr
   await exerciseRegistration(async ({ render, input, send, reply, calls }) => {
     const view = render();
     const first = send(view), duplicate = send(view);
+    await waitForRegistration(() => calls.length === 1);
     assert.equal(calls.length, 1);
     reply({ status: "denied", message: "denied" });
     await first; await duplicate;
@@ -293,7 +306,7 @@ test("company registration navigates only on a confirmed owner ID and never repe
 async function runRegistrationAction({ outcome, owner = { status: "available", actorId: "operator-a", origin: "http://127.0.0.1:3202", bearer: "synthetic" } }) {
   const calls = [], mod = { exports: {} };
   new Function("require", "module", "exports", registrationAction)(name => ({
-    "@bthwani/dsh": { DshPublicError, registerCompanyEmployee: async (_origin, _bearer, input) => {
+    "@bthwani/dsh": { ...dsh, registerCompanyEmployee: async (_origin, _bearer, input) => {
       calls.push(input); if (outcome instanceof Error) throw outcome; return outcome;
     } },
     "next/navigation": { redirect: () => { throw new Error("unexpected redirect"); } },
@@ -336,5 +349,43 @@ test("a conflicted company registration stays locked and cannot issue a new oper
     assert.equal(findRegistrationNode(render(), node => node.type === "fieldset").props.disabled, true);
     await send();
     assert.equal(calls.length, 1);
+  });
+});
+
+
+test("company registration survives session denial and remount without raw employee storage", async () => {
+  const storage = new Map();
+  let original;
+  await exerciseRegistration(async ({ send, reply, calls, input }) => {
+    const first = send();
+    await reply({ status: "unknown", message: "unknown" }); await first;
+    original = calls[0];
+    const retry = send();
+    await reply({ status: "denied", message: "denied" }); await retry;
+    assert.deepEqual(calls[1], original);
+    assert.equal(input("displayName")?.props.value ?? "", "");
+  }, { storage });
+  assert.equal(storage.size, 1);
+  assert.doesNotMatch([...storage.values()][0], /Synthetic Employee|Operations|Coordinator|2026-11-25|operator-a/);
+  await exerciseRegistration(async ({ edit, send, reply, calls, render }) => {
+    edit("displayName", "Different Employee");
+    await send();
+    assert.equal(calls.length, 0, "recovered identity cannot be used with different fields");
+    edit("displayName", employeeDraft.displayName);
+    assert.equal(findRegistrationNode(render(), node => node.type === "p" && node.props.role === "alert"), undefined);
+    const retry = send();
+    await reply({ status: "confirmed", id: employeeId, message: "confirmed" }); await retry;
+    assert.deepEqual(calls[0], original);
+  }, { storage });
+  assert.equal(JSON.parse([...storage.values()][0]).settled, true);
+});
+
+test("company registration clears a definitive validation message when its draft changes", async () => {
+  await exerciseRegistration(async ({ send, reply, edit, render }) => {
+    const first = send();
+    await reply({ status: "invalid", message: "invalid" }); await first;
+    assert.ok(findRegistrationNode(render(), node => node.type === "p" && node.props.role === "alert"));
+    edit("displayName", "Corrected Employee");
+    assert.equal(findRegistrationNode(render(), node => node.type === "p" && node.props.role === "alert"), undefined);
   });
 });

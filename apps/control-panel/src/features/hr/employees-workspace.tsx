@@ -44,7 +44,7 @@ export default async function EmployeesWorkspace({
   return (
     <main className={shellStyles.workspace} aria-labelledby="employees-heading">
       <h1 id="employees-heading">موظفو بثواني</h1>
-      {!cursor ? <EmployeeRegistration key={owner.actorId} submit={submit} /> : null}
+      {!cursor ? <EmployeeRegistration key={owner.actorId} actorId={owner.actorId} submit={submit} /> : null}
       <h2>سجلات الموظفين</h2>
       {page.items.length === 0 ? <p role="status">{cursor ? "لا توجد سجلات أخرى." : "لم يُسجّل أي موظف حتى الآن."}</p> : (
         <div className={styles.tableScroll}>

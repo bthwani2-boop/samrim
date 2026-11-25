@@ -188,3 +188,84 @@ test("Merchant employee API preserves exact Store scope and reuses employee vali
   await rejects(()=>registerMerchantEmployee(owner,token,"store-a",{...input,employerId:"merchant-b"}),400,"EMPLOYEE_REGISTRATION_INVALID");
   assert.deepEqual(paths,["/v1/stores/store-a/employees","/v1/stores/store-a/employees/"+id(1),"/v1/stores/store-a/employees/"+id(1)+"/registration-audit","/v1/stores/store-a/employees"]);
 });
+
+
+// Both renderer hosts use this public DSH recovery protocol. A shared storage
+// generation is retained after settlement to invalidate stale tabs.
+test("employee recovery normalizes payload, preserves legacy pending identity, and isolates actors and employers", async () => {
+  const dsh = await import("./index.ts");
+  assert.equal(typeof dsh.openEmployeeRegistrationRecovery, "function", "shared recovery API is missing");
+  const { createHash, randomUUID } = await import("node:crypto");
+  const records = new Map();
+  const port = {
+    read: async key => records.get(key) ?? null,
+    write: async (key, value) => { records.set(key, value); },
+    lock: async (_key, action) => action(),
+    digest: async text => createHash("sha256").update(text).digest("hex"),
+    randomUUID,
+  };
+  const fields = { displayName: " Employee ", department: "Operations", jobTitle: "Coordinator", startDate: "2026-11-20" };
+  const normalized = { ...fields, displayName: "Employee" };
+  const first = await dsh.openEmployeeRegistrationRecovery(port, "merchant", "actor-a");
+  const legacyKey = "bthwani.merchant.employee-attempt." + await port.digest(JSON.stringify(["actor-a", "employee-registration"]));
+  assert.equal(first.key, legacyKey);
+  const fingerprint = await port.digest(JSON.stringify(Object.values(normalized)));
+  records.set(legacyKey, JSON.stringify({ fingerprint, operationId: id(1) }));
+  const reopened = await dsh.openEmployeeRegistrationRecovery(port, "merchant", "actor-a");
+  const claim = await dsh.claimEmployeeRegistration(port, reopened, fields);
+  assert.equal(claim.status, "claimed");
+  assert.equal(claim.replay, true);
+  assert.deepEqual(claim.input, { ...normalized, operationId: id(1) });
+  assert.equal((await dsh.claimEmployeeRegistration(port, claim.recovery, { ...fields, displayName: "Different" })).status, "mismatch");
+  for (const [surface, actor] of [["company", "actor-a"], ["merchant", "actor-b"]]) {
+    const other = await dsh.openEmployeeRegistrationRecovery(port, surface, actor);
+    assert.notEqual(other.key, legacyKey);
+    assert.equal(other.attempt, null);
+  }
+  assert.doesNotMatch(records.get(legacyKey), /Employee|Operations|Coordinator|2026-11-20|actor-a/);
+});
+
+test("employee recovery serializes claims and rejects stale tabs even after owner confirmation", async () => {
+  const dsh = await import("./index.ts");
+  assert.equal(typeof dsh.claimEmployeeRegistration, "function", "shared claim API is missing");
+  const { createHash, randomUUID } = await import("node:crypto");
+  const records = new Map();
+  let queue = Promise.resolve();
+  const port = {
+    read: async key => records.get(key) ?? null,
+    write: async (key, value) => { records.set(key, value); },
+    lock: (_key, action) => { const result = queue.then(action); queue = result.then(() => {}, () => {}); return result; },
+    digest: async text => createHash("sha256").update(text).digest("hex"),
+    randomUUID,
+  };
+  const draft = { displayName: "Employee", department: "Operations", jobTitle: "Coordinator", startDate: "2026-11-20" };
+  const initial = await dsh.openEmployeeRegistrationRecovery(port, "company", "actor-a");
+  const [one, two] = await Promise.all([dsh.claimEmployeeRegistration(port, initial, draft), dsh.claimEmployeeRegistration(port, initial, draft)]);
+  assert.equal(one.status, "claimed");
+  assert.equal(two.status, "changed");
+  const settled = await dsh.settleEmployeeRegistration(port, one.recovery, "confirmed", one.replay);
+  assert.equal(settled.attempt.settled, true);
+  assert.equal((await dsh.claimEmployeeRegistration(port, initial, draft)).status, "changed");
+  const next = await dsh.claimEmployeeRegistration(port, settled, draft);
+  assert.equal(next.status, "claimed");
+  assert.notEqual(next.input.operationId, one.input.operationId);
+  const uncertain = await dsh.settleEmployeeRegistration(port, next.recovery, "denied", next.replay);
+  assert.deepEqual(uncertain, next.recovery);
+  const resumed = await dsh.openEmployeeRegistrationRecovery(port, "company", "actor-a");
+  const replay = await dsh.claimEmployeeRegistration(port, resumed, draft);
+  assert.equal(replay.input.operationId, next.input.operationId);
+  assert.deepEqual(await dsh.settleEmployeeRegistration(port, replay.recovery, "invalid", true), replay.recovery);
+  records.set(initial.key, JSON.stringify({ fingerprint: "bad", operationId: id(1) }));
+  await assert.rejects(dsh.openEmployeeRegistrationRecovery(port, "company", "actor-a"), /recovery/i);
+});
+
+
+test("registration outcomes retire only a verified validation rejection, not an arbitrary HTTP 400", async () => {
+  const { employeeRegistrationErrorOutcome } = await import("./index.ts");
+  assert.equal(employeeRegistrationErrorOutcome(new DshPublicError(400, "EMPLOYEE_REGISTRATION_INVALID")), "invalid");
+  assert.equal(employeeRegistrationErrorOutcome(new DshPublicError(400, "OWNER_RESPONSE_INVALID")), "unknown");
+  assert.equal(employeeRegistrationErrorOutcome(new DshPublicError(400, "EMPLOYEE_QUERY_INVALID")), "unknown");
+  assert.equal(employeeRegistrationErrorOutcome(new DshPublicError(401, "UNAUTHENTICATED")), "denied");
+  assert.equal(employeeRegistrationErrorOutcome(new DshPublicError(409, "EMPLOYEE_CONFLICT")), "conflict");
+  assert.equal(employeeRegistrationErrorOutcome(new DshPublicError(503, "OPERATION_RESULT_UNKNOWN")), "unknown");
+});
