@@ -1,6 +1,7 @@
 import { type CustomerAddressChange, type CustomerAddressPage, type CustomerAddressResult, type DeliveryServiceability, DshPublicError, evaluateDeliveryServiceability,
   getCustomerAddress, isCustomerAddressId, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "@bthwani/dsh";
 import { Platform } from "react-native";
+import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
 const nativeOwner = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
@@ -22,10 +23,20 @@ async function webRead(path: string,actor: string,signal: AbortSignal,change?: C
       headers:{"X-Customer-Context":actor,...(mutating?{"Content-Type":"application/json"}:{})},
       ...(mutating?{body:JSON.stringify(change)}:{})});
   } catch { throw new DshPublicError(503,mutating?"OPERATION_RESULT_UNKNOWN":"OWNER_UNAVAILABLE"); }
+  if (signal.aborted || res.status !== 200 || res.headers.get("Cache-Control") !== "no-store") {
+    void res.body?.cancel().catch(() => {});
+    signal.throwIfAborted();
+    if (!res.ok) throw new DshPublicError(res.status,mutating && res.status>=500?"OPERATION_RESULT_UNKNOWN":"ADDRESS_REQUEST_REJECTED");
+    throw new DshPublicError(502,"OWNER_RESPONSE_INVALID");
+  }
+  const body = await readBoundedCustomerJSON({ headers: res.headers, body: res.body, signal }, 32 * 1024);
+  if (body === null) {
+    void res.body?.cancel().catch(() => {});
+    signal.throwIfAborted();
+    throw new DshPublicError(502,"OWNER_RESPONSE_INVALID");
+  }
   signal.throwIfAborted();
-  if (!res.ok) throw new DshPublicError(res.status,mutating && res.status>=500?"OPERATION_RESULT_UNKNOWN":"ADDRESS_REQUEST_REJECTED");
-  if (res.headers.get("Cache-Control") !== "no-store") throw new DshPublicError(502,"OWNER_RESPONSE_INVALID");
-  return await res.json();
+  return body;
 }
 export async function readVerifiedAddresses(signal: AbortSignal,actor?: string,after?: string):
 Promise<{page:CustomerAddressPage;expiresAt:number}> {

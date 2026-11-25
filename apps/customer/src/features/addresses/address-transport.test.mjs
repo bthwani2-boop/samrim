@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
+import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
 const source = path.join(import.meta.dirname, "address-transport.ts");
@@ -34,6 +35,7 @@ const readback = { actorId: actor, address };
 const receipt = { ...readback, replay: false };
 const serviceability = { actorId: actor, storeId: store, addressId: id, status: "UNAVAILABLE" };
 const signal = () => new AbortController().signal;
+const retainedModules = [];
 const failure = (status, code) => error => error instanceof dsh.DshPublicError && error.status === status && error.code === code;
 const json = (body, status = 200, cache = "no-store") => Response.json(body, { status, headers: { "Cache-Control": cache } });
 
@@ -56,8 +58,9 @@ function harness(t, os = "web", configured = true) {
   try {
     if (configured) process.env[envKey] = origin;
     else delete process.env[envKey];
-    api = loadMappedRenderFixture(compiled, source, {
+    const fixture = loadMappedRenderFixture(compiled, source, {
       "@bthwani/dsh": dsh,
+      "../access/bounded-customer-json": { readBoundedCustomerJSON },
       "react-native": { Platform: { OS: os } },
       "../access/customer-session-transport": {
         async readCustomerAdmission() { return admissions.length ? admissions.shift() : state(); },
@@ -69,7 +72,9 @@ function harness(t, os = "web", configured = true) {
             { kind: "ready", value, expiresAt: expiresAt - 1000 };
         },
       },
-    }).exports;
+    });
+    retainedModules.push(fixture);
+    api = fixture.exports;
   } finally {
     if (previous === undefined) delete process.env[envKey];
     else process.env[envKey] = previous;
@@ -156,6 +161,67 @@ test("Web mutation preserves definite rejections but never retries or reports un
   h.admissions.push(h.state(), h.state("other-customer"));
   await assert.rejects(h.api.writeVerifiedAddress(actor, id, change, signal()), failure(503, "OPERATION_RESULT_UNKNOWN"));
   assert.equal(h.requests.length, 7, "one dispatch per explicit command");
+});
+
+test("Web reads reject noncanonical responses and release rejected bodies", async t => {
+  const h = harness(t);
+  const response = (body, headers, status = 200) => new Response(body, {
+    status, headers: { "Cache-Control": "no-store", ...headers },
+  });
+  for (const bad of [
+    response(JSON.stringify(page), { "Content-Type": "text/plain" }),
+    response(JSON.stringify(page), { "Content-Type": "application/json", "Content-Length": "32769" }),
+    response(JSON.stringify(page) + " ".repeat(32769), { "Content-Type": "application/json" }),
+    json(page, 201),
+  ]) {
+    h.replies.push(bad);
+    await assert.rejects(h.api.readVerifiedAddresses(signal(), actor), failure(502, "OWNER_RESPONSE_INVALID"));
+  }
+  let cancelled = false;
+  h.replies.push(response(new ReadableStream({ cancel() { cancelled = true; } }), { "Content-Type": "application/json" }, 409));
+  await assert.rejects(h.api.readVerifiedAddresses(signal(), actor), failure(409, "ADDRESS_REQUEST_REJECTED"));
+  assert.equal(cancelled, true);
+});
+
+test("Web address save rejects invalid success evidence without replay", async t => {
+  const h = harness(t);
+  for (const bad of [
+    new Response(JSON.stringify(receipt), { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } }),
+    new Response(JSON.stringify(receipt) + " ".repeat(32769), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
+    json(receipt, 201),
+  ]) {
+    h.replies.push(bad);
+    await assert.rejects(h.api.writeVerifiedAddress(actor, id, change, signal()), failure(503, "OPERATION_RESULT_UNKNOWN"));
+  }
+  assert.equal(h.requests.length, 3);
+  assert.ok(h.requests.every(r => r.method === "PUT"));
+});
+
+test("Web address save abort releases a stalled body and permits independent readback", async t => {
+  const h = harness(t);
+  const controller = new AbortController();
+  let streamController, cancelled = false, timer;
+  h.replies.push(new Response(new ReadableStream({
+    start(c) { streamController = c; },
+    cancel() { cancelled = true; },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }));
+  const pending = h.api.writeVerifiedAddress(actor, id, change, controller.signal)
+    .then(() => "UNEXPECTED_SUCCESS", error => ({ status: error.status, code: error.code }));
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    controller.abort();
+    const watchdog = new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 500); });
+    assert.deepEqual(await Promise.race([pending, watchdog]), { status: 503, code: "OPERATION_RESULT_UNKNOWN" });
+    assert.equal(cancelled, true);
+  } finally {
+    clearTimeout(timer);
+    if (!cancelled) streamController.close();
+    await pending;
+  }
+  assert.equal(h.requests.length, 1);
+  h.replies.push(json(readback));
+  assert.deepEqual(await h.api.readVerifiedAddress(signal(), actor, id), { address, expiresAt: h.expiresAt });
+  assert.deepEqual(h.requests.map(r => r.method), ["PUT", "GET"]);
 });
 
 test("Android uses the real DSH SDK within verified native scope and bounds expiry", async t => {
