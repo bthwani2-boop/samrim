@@ -169,3 +169,11 @@ test("the Products Store picker sends bounded owner search and retains paginatio
   assert.ok(find(invalid, node => node.props.role === "alert"));
   assert.equal(malformed.calls.length, 0);
 });
+
+test("failed Products Store continuation exposes a first-page recovery link preserving city and search", async () => {
+  const page = marketHarness({ action: "/catalog/products", storeFailure: true });
+  const tree = await page.render({ city: "sanaa", storeQ: "market", storeCursor: "stale" }, false, true);
+  assert.ok(find(tree, node => node.props.role === "alert"));
+  assert.ok(find(tree, node => node.type === "a" && node.props.href === "/catalog/products?city=sanaa&storeQ=market"));
+  assert.equal(find(tree, node => node.type === "strong"), undefined);
+});

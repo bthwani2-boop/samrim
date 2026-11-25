@@ -96,6 +96,7 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
         {cities.nextCursor ? " — توجد صفحات أخرى؛ القائمة ليست شاملة." : ""}
       </p>}
       {city && storesError && <p role="alert">{storesError}</p>}
+      {city && storesError && products && productStores?.cursor && <a href={productStoresHref()}>أول صفحة</a>}
       {city && verticalsError && <p role="alert">{verticalsError}</p>}
       {city && stores && (
         <div>

@@ -187,3 +187,11 @@ test("the Products tab opens the catalog-authorized Store directory and keeps pr
   assert.equal(find(forbidden, node => node.type === "MarketOverview"), undefined);
   assert.equal(denied.calls.length, 0);
 });
+
+test("failed Offer continuation exposes a first-page recovery link preserving Store and query", async () => {
+  const view = harness({ failOffers: true });
+  const result = await view.renderProducts({ store: store.id, q: "market", cursor: "stale" });
+  assert.ok(find(result, node => node.props?.role === "alert"));
+  assert.ok(find(result, node => node.type === "a" && node.props.href === "/catalog/products?store=market-sanaa&q=market"));
+  assert.equal(find(result, node => node.type === "strong" && node.props.children === publishedOffer.name), undefined);
+});

@@ -80,6 +80,9 @@ export default async function PublishedOffers({ searchParams, pathname = "/catal
         </div>
       ) : null}
       {error ? <p role="alert" className={catalogStyles.error}>{error}</p> : null}
+      {error && scope?.cursor ? <a href={publishedOfferHref({ storeId: scope.storeId, query: scope.query }, pathname)}>
+        العودة إلى أول صفحة
+      </a> : null}
 
       {store && offers && scope ? (
         <section className={catalogStyles.results} aria-label="العروض المنشورة لدى DSH">
