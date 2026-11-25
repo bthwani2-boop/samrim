@@ -1,5 +1,6 @@
 import { DshPublicError } from "@bthwani/dsh";
 import {
+  establishPersistentIdentitySession,
   IdentityClientError,
   issueCustomerPhoneChallenge,
   readPersistentIdentityRole,
@@ -260,6 +261,7 @@ export async function submitAdmissionCode(
     const { session, bearer } = await verifyMerchantAdmission(origin, ticket, code, signal);
     try {
       if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      const persistent = await establishPersistentIdentitySession(origin, bearer, signal);
       await mutateNativeStorage(async () => {
         if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
         // A concurrent sign-in may already have stored another verified actor.
@@ -271,8 +273,10 @@ export async function submitAdmissionCode(
         await SecureStore.setItemAsync(pendingStorageKey, "in-flight", nativeOptions);
         await SecureStore.setItemAsync(storageKey, bearer, nativeOptions);
         if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-        // Removing this marker is the native-device commit point.
-        // After an acknowledged bearer write, uncertain marker deletion cannot
+        await SecureStore.setItemAsync(refreshStorageKey, persistent.refreshToken, nativeOptions);
+        if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+        // Both credential writes must be acknowledged before accepting admission.
+        // After acknowledged writes, uncertain marker deletion cannot
         // turn a committed token into an undelivered error. If it remains, the
         // next cold-start read will still reject the bearer until cleanup.
         await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => {});

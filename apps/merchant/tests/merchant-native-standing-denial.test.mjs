@@ -13,6 +13,7 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
   "\nmodule.exports = {readAdmission, readMerchantStanding, submitAdmissionCode, signOutOfAdmission};";
 const oldBearer = Buffer.alloc(32, 7).toString("base64url");
 const newBearer = Buffer.alloc(32, 8).toString("base64url");
+const refreshGrant = Buffer.alloc(32, 9).toString("base64url");
 
 class OwnerError extends Error {
   constructor(status, code = "STORE_ACCESS_DENIED") {
@@ -29,6 +30,7 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
   let onStorageWrite = null;
   let ownerRead = async () => { throw new OwnerError(401); };
   let ownerRevoke = async () => {};
+  let enroll = async () => ({ refreshToken: refreshGrant, refreshExpiresAt: new Date(Date.now() + 60000).toISOString() });
   let admissionCalls = 0;
   const cleanupRevocations = [];
   let merchantAdmission = async () => ({ bearer: newBearer, session: { actorId: "new-actor", role: "merchant" } });
@@ -63,15 +65,18 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
     "@bthwani/identity": {
       IdentityClientError: OwnerError,
       async readVerifiedIdentitySession(_origin, bearer) { return identityRead(bearer); },
+      establishPersistentIdentitySession: (_origin, bearer, signal) => {
+        assert.equal(bearer, newBearer);
+        return enroll(signal);
+      },
       async readPersistentIdentityRole(_origin, bearer, token, role) {
-        assert.equal(token, null, "fixture must not invent a refresh grant");
+        assert.equal(token, refresh);
+        assert.ok(token === null || token === refreshGrant);
         const session = await identityRead(bearer);
         if (session.role !== role) throw new OwnerError(403, "FORBIDDEN");
         return { session, bearer };
       },
-      async revokePersistentIdentitySession() {
-        throw new Error("no persistent credential issued in this fixture");
-      },
+      async revokePersistentIdentitySession(_origin, token) { assert.equal(token, refreshGrant); },
       async revokeVerifiedIdentitySession(_origin, bearer) { return ownerRevoke(bearer); },
       async issueCustomerPhoneChallenge() { return "ticket"; },
     },
@@ -109,6 +114,8 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
     setIdentityRead(fn) { identityRead = fn; },
     setOwnerRevoke(fn) { ownerRevoke = fn; },
     setAdmission(fn) { merchantAdmission = fn; },
+    setEnrollment(fn) { enroll = fn; },
+    currentRefresh() { return refresh; },
     admissionCalls() { return admissionCalls; },
     cleanupRevocations,
     onStorageWrite(fn) { onStorageWrite = fn; },
@@ -338,6 +345,7 @@ test("Merchant successful login clears durable pending write marker before retur
   const h = nativeHarness({ initialBearer: null });
   const session = await h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal);
   assert.equal(session.role, "merchant");
+  assert.equal(h.currentRefresh(), refreshGrant);
   assert.equal(h.pending(), null);
   const restarted = h.reload();
   assert.equal((await restarted.readAdmission(new AbortController().signal)).session.role, "merchant");
@@ -371,4 +379,13 @@ test("Merchant marker-delete pre-effect failure keeps bearer quarantined on cold
   assert.ok(h.pending(), "failed marker deletion remains a durable quarantine");
   assert.deepEqual(await h.reload().readAdmission(new AbortController().signal),
     { enabled: true, session: null }, "restarted app cannot promote an uncertain marker");
+});
+
+test("Merchant failed persistent enrollment never accepts an access-only login", async () => {
+  const h = nativeHarness({ initialBearer: null });
+  h.setEnrollment(async () => { throw new OwnerError(503, "OWNER_UNAVAILABLE"); });
+  await assert.rejects(h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal), { status: 503 });
+  assert.equal(h.current(), null);
+  assert.equal(h.currentRefresh(), null);
+  assert.deepEqual(h.cleanupRevocations, [newBearer]);
 });

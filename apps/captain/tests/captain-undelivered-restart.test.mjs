@@ -16,6 +16,7 @@ function harness() {
   const tokens = {
     customer: Buffer.alloc(32, 41).toString("base64url"),
     captain: Buffer.alloc(32, 42).toString("base64url"),
+    refresh: Buffer.alloc(32, 43).toString("base64url"),
   };
   const stored = new Map();
   let writeFailure = null;
@@ -27,6 +28,7 @@ function harness() {
   let ownerAdmissions = 0;
   let customerProofs = 0;
   let captainRevocationAttempts = 0;
+  let enroll = async () => ({ refreshToken: tokens.refresh, refreshExpiresAt: new Date(Date.now() + 60000).toISOString() });
   let readStanding = async () => ({ status: "APPROVED" });
   let readIdentity = async (_origin, bearer) => ({
     actorId: "captain-owner-one",
@@ -67,18 +69,18 @@ function harness() {
         ownerReads++;
         return readIdentity(_origin, bearer);
       },
+      establishPersistentIdentitySession: (_origin, bearer, signal) => {
+        assert.equal(bearer, tokens.captain);
+        return enroll(signal);
+      },
       async readPersistentIdentityRole(origin, bearer, refresh, role) {
-        // This fixture exercises the existing access-token path; persistence
-        // and refresh rotation are owner-client integration responsibilities.
-        assert.equal(refresh, null, "legacy access tests must not invent refresh credentials");
+        assert.ok(refresh === null || refresh === tokens.refresh);
         ownerReads++;
         const session = await readIdentity(origin, bearer);
         if (session.role !== role) throw new OwnerError(403, "FORBIDDEN");
         return { session, bearer };
       },
-      async revokePersistentIdentitySession() {
-        throw new Error("unexpected persistent token in access-only fixture");
-      },
+      async revokePersistentIdentitySession(_origin, token) { assert.equal(token, tokens.refresh); },
       async admitCurrentCustomerAsCaptain() { ownerAdmissions++; return { accessToken: tokens.captain }; },
       async revokeVerifiedIdentitySession(_origin, bearer) {
         if (bearer === tokens.captain) {
@@ -117,13 +119,15 @@ function harness() {
     setRevokeCaptainFails(value) { revokeCaptainFails = value; },
     setCaptainRevocationError(status, code) { captainRevocationError = new OwnerError(status, code); },
     setStandingRead(callback) { readStanding = callback; },
+    setEnrollment(fn) { enroll = fn; },
+    currentRefresh() { return [...stored].find(([key]) => key.endsWith(".refresh.v1"))?.[1] ?? null; },
     setIdentityRead(callback) { readIdentity = callback; },
     ownerError(status, code) { return new OwnerError(status, code); },
     get ownerReads() { return ownerReads; },
     get ownerAdmissions() { return ownerAdmissions; },
     get captainRevocationAttempts() { return captainRevocationAttempts; },
     get customerProofs() { return customerProofs; },
-    readToken() { return [...stored].find(([key]) => !key.endsWith(".pending.v1"))?.[1] ?? null; },
+    readToken() { return [...stored].find(([key]) => !key.endsWith(".pending.v1") && !key.endsWith(".refresh.v1"))?.[1] ?? null; },
     pending() { return [...stored].find(([key]) => key.endsWith(".pending.v1"))?.[1] ?? null; },
   };
 }
@@ -197,6 +201,7 @@ test("Captain normal admission survives process restart and pending recovery blo
   const h = harness();
   const admitted = await h.reload().verifyCaptainCode("ticket", "123456", new AbortController().signal);
   assert.equal(admitted.state, "approved");
+  assert.equal(h.currentRefresh(), h.tokens.refresh);
   assert.equal(h.pending(), null);
   assert.equal((await h.reload().readCaptainAdmission(new AbortController().signal)).session?.role, "captain");
   await assert.rejects(h.reload().verifyCaptainCode("ticket2", "654321", new AbortController().signal),
@@ -370,4 +375,14 @@ test("DSH refusal conceals Captain access without destroying the Identity creden
     assert.equal(recovered.standing?.status, "APPROVED");
     assert.equal(h.customerProofs, 0, "standing recovery must not consume another OTP");
   }
+});
+
+test("Captain failed persistent enrollment cannot accept an access-only login", async () => {
+  const h = harness();
+  h.setEnrollment(async () => { throw h.ownerError(503, "OWNER_UNAVAILABLE"); });
+  await assert.rejects(h.reload().verifyCaptainCode("ticket", "123456", new AbortController().signal),
+    { code: "PHONE_CHALLENGE_CONSUMED" });
+  assert.equal(h.readToken(), null);
+  assert.equal(h.currentRefresh(), null);
+  assert.equal(h.captainRevocationAttempts, 1);
 });

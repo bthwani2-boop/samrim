@@ -1,5 +1,6 @@
 import {
   admitCurrentCustomerAsCaptain,
+  establishPersistentIdentitySession,
   IdentityClientError,
   issueCustomerPhoneChallenge,
   readVerifiedIdentitySession,
@@ -275,6 +276,7 @@ export async function verifyCaptainCode(
     await readApprovedCaptainStanding(dshOrigin, captainBearer, "captain", captain.actorId, signal);
     if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
     const issuedBearer = captainBearer;
+    const persistent = await establishPersistentIdentitySession(identityOrigin, issuedBearer, signal);
     await mutateNativeStorage(async () => {
       if (signal.aborted || await SecureStore.getItemAsync(key, nativeOptions)) {
         throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
@@ -284,7 +286,9 @@ export async function verifyCaptainCode(
       await SecureStore.setItemAsync(pendingKey, "in-flight", nativeOptions);
       await SecureStore.setItemAsync(key, issuedBearer, nativeOptions);
       if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-      // A successful token write is the admission commit point. If marker
+      await SecureStore.setItemAsync(refreshKey, persistent.refreshToken, nativeOptions);
+      if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      // Both successful credential writes are the admission commit point. If marker
       // deletion succeeds on-device but throws, returning failure would leave
       // an undelivered live token with no marker. Treat cleanup as uncertain.
       await SecureStore.deleteItemAsync(pendingKey, nativeOptions).catch(() => undefined);
