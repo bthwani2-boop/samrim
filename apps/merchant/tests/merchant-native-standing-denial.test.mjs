@@ -1,16 +1,45 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
-const source = readFileSync(new URL("../src/features/access/admission-transport.ts", import.meta.url), "utf8");
-const compiled = stripTypeScriptTypes(source, { mode: "transform" })
-  .replace(/import\s+\{([^}]*)\}\s+from\s+["']([^"']+)["'];/gs,
-    (_match, names, moduleName) => `const {${names}} = require("${moduleName}");`)
-  .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
-    (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
-  .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = {readAdmission, readMerchantStanding, submitAdmissionCode, signOutOfAdmission};";
+const source = fileURLToPath(new URL("../src/features/access/admission-transport.ts", import.meta.url));
+const root = path.resolve(import.meta.dirname, "../../..");
+const temporary = mkdtempSync(path.join(tmpdir(), "merchant-native-coverage-"));
+let compiled;
+try {
+  const result = spawnSync(process.execPath, [
+    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
+    "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,
+  ], { cwd: root, timeout: 20_000, encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  compiled = readFileSync(path.join(temporary, "admission-transport.js"), "utf8");
+} finally {
+  rmSync(temporary, { recursive: true, force: true });
+}
+
+const fixtureEnv = {
+  EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:33221",
+  EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:33222",
+  EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: "0",
+};
+function loadNativeFixture(dependencies) {
+  const previous = new Map(Object.keys(fixtureEnv).map(key => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, fixtureEnv);
+    return loadMappedRenderFixture(compiled, source, dependencies).exports;
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 const oldBearer = Buffer.alloc(32, 7).toString("base64url");
 const newBearer = Buffer.alloc(32, 8).toString("base64url");
 const refreshGrant = Buffer.alloc(32, 9).toString("base64url");
@@ -92,20 +121,7 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
       standingFrom(value) { return value; },
     },
   };
-  const mount = () => {
-    const module = { exports: {} };
-    new Function("require", "module", "exports", "process", compiled)(
-      key => {
-        assert.ok(Object.hasOwn(dependencies, key), `unexpected module ${key}`);
-        return dependencies[key];
-      },
-      module, module.exports, { env: {
-        EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:33221",
-        EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:33222",
-      } },
-    );
-    return module.exports;
-  };
+  const mount = () => loadNativeFixture(dependencies);
   return {
     transport: mount(),
     reload: mount,
@@ -122,6 +138,15 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
     current() { return stored; },
   };
 }
+
+test("mapped native fixture restores worker environment after success and failure", () => {
+  const snapshot = () => Object.keys(fixtureEnv).map(key => process.env[key]);
+  const before = snapshot();
+  nativeHarness().reload();
+  assert.deepEqual(snapshot(), before);
+  assert.throws(() => loadNativeFixture({}), /unexpected fixture dependency/);
+  assert.deepEqual(snapshot(), before);
+});
 
 for (const status of [401, 403]) {
   test(`native DSH ${status} denial preserves the Identity credential for recovery`, async () => {
