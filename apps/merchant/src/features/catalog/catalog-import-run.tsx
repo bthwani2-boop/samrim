@@ -55,18 +55,21 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
     return()=>{controller.abort();active.current?.abort();active.current=null;};
   },[actorId,storeId]);
   const [selectionPage,setSelectionPage]=useState(0);
-  const selectionSource=useRef({sourceSha256,rows});
+  const selectionSource=useRef({sourceSha256,rows,selected});
   useLayoutEffect(()=>{
     if(selectionSource.current.sourceSha256!==sourceSha256||selectionSource.current.rows!==rows){
-      selectionSource.current={sourceSha256,rows};setSelected(new Set());setSelectionPage(0);
+      setSelected(new Set());setSelectionPage(0);
     }
-  },[sourceSha256,rows]);
+    selectionSource.current={sourceSha256,rows,selected};
+  },[sourceSha256,rows,selected]);
   const eligible=rows.filter(r=>r.editableDraft);
   const selectedCount=eligible.filter(r=>selected.has(r.row)).length;
   const manifest=buildImportManifest(rows,sourceSha256,selected);
   const canStart=selectionSource.current.sourceSha256===sourceSha256&&selectionSource.current.rows===rows&&selectedCount>0&&validMerchantCatalogImportChange(manifest);
+  const currentStart=()=>canStart&&selectionSource.current.sourceSha256===sourceSha256&&
+    selectionSource.current.rows===rows&&selectionSource.current.selected===selected;
   async function execute(action:"start"|"read"|"advance"|"finish",offset=0){
-    if(!recovery||active.current||!scope.current||scope.current.signal.aborted)return;
+    if(!recovery||active.current||!scope.current||scope.current.signal.aborted||(action==="start"&&!currentStart()))return;
     const controller=new AbortController();active.current=controller;
     const signal=controller.signal;
     setBusy(true);setMessage("");
@@ -74,11 +77,13 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
       let attempt=recovery.attempt;
       const key=recovery.key;
       if(action==="start"){
-        if(!canStart)return;
         const fingerprint=await digest(JSON.stringify(manifest));
+        if(!currentStart())return;
         attempt=await locked(key,async()=>{
           signal.throwIfAborted();
           const previous=await read(key);
+          signal.throwIfAborted();
+          if(!currentStart())throw new Error("SELECTION_CHANGED");
           if(previous){
             if(previous.fingerprint!==fingerprint)throw new Error("MANIFEST_CHANGED");
             return previous;
@@ -126,6 +131,7 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
       setResult(null);
       const code=error instanceof Error?error.message:"";
       setMessage(code==="MANIFEST_CHANGED"?"الملف أو الاختيارات لا تطابق المحاولة المحفوظة. أعد اختيار القيم نفسها أو اقرأ الدفعة الموجودة.":
+        code==="SELECTION_CHANGED"?"تغيرت المعاينة أو الاختيارات. راجعها وأكد الدفعة الحالية.":
         code==="RECOVERY_CHANGED"?"تغيرت متابعة الدفعة في نافذة أخرى. أعد فتح الكتالوج.":
         "تعذر التأكيد لدى DSH. معرّف الدفعة محفوظ؛ اقرأ حالتها قبل إعادة التنفيذ.");
     }finally{if(active.current===controller){active.current=null;setBusy(false);}}

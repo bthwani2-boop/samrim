@@ -47,7 +47,7 @@ test("import admission binds owner scope, denies foreign origin/actor and rechec
 const nodes=t=>Array.isArray(t)?t.flatMap(nodes):!t||typeof t!=="object"?[]:[t,...nodes(t.props?.children)];
 const tick=()=>new Promise(setImmediate);
 async function until(f){for(let i=0;i<120;i++){if(f())return;await tick();}assert.fail("UI did not settle");}
-test("bulk import requires explicit confirmation and recovers one durable run after lost acknowledgments",async()=>{
+for(const os of ["web","android"])test("bulk import requires explicit confirmation and recovers one durable run after lost acknowledgments"+(os==="web"?"":" (Android)"),async()=>{
   const tmp=mkdtempSync(path.join(tmpdir(),"catalog-import-run-"));
   try{
     const root=path.resolve(import.meta.dirname,"../../..");
@@ -56,12 +56,13 @@ test("bulk import requires explicit confirmation and recovers one durable run af
     assert.equal(compiled.status,0,compiled.stderr||compiled.stdout);
     const code=readFileSync(path.join(tmp,"catalog-import-run.js"),"utf8");
     const storage=new Map(),calls=[];let states=[],refs=[],effects=[],si=0,ri=0,ei=0;
-    const platform={OS:"web"};
+    const platform={OS:os};
+    let digestGate=null,storageGate=null,storageWaiting=false;
     let ownerRun=null,ownerProcessed=0,refreshes=0,props={actorId,storeId,sourceSha256,onChanged(){refreshes++;},rows:[{row:2,name:"Milk",priceYer:"100",stockUnits:"2",reason:"existing-store-name",editableDraft:{id:"of-a",draftVersion:1}}]};
     const react={useState(initial){const i=si++;if(!(i in states))states[i]=initial;return [states[i],next=>{states[i]=typeof next==="function"?next(states[i]):next;}];},useRef(initial){const i=ri++;refs[i]??={current:initial};return refs[i];},useLayoutEffect(fn,deps){const i=ei++;const old=effects[i];if(!old||!deps||deps.some((v,j)=>v!==old.deps[j])){old?.cleanup?.();effects[i]={deps,cleanup:fn()};}}};
     const jsx=(type,props,key)=>({type,props:props??{},key});
     const get=k=>storage.get(k)??null,set=(k,v)=>storage.set(k,v),remove=k=>storage.delete(k);
-    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},"expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(alg,v)=>createHash(alg).update(v).digest("hex")},"expo-secure-store":{WHEN_UNLOCKED_THIS_DEVICE_ONLY:1,getItemAsync:async k=>get(k),setItemAsync:async(k,v)=>set(k,v),deleteItemAsync:async k=>remove(k)},react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},"./catalog-import-data":{buildImportManifest},"./catalog-import-transport":{async requestCatalogImport(a,s,r,m,signal,change){
+    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},"expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(alg,v)=>{if(digestGate&&v.startsWith("{"))await digestGate;return createHash(alg).update(v).digest("hex");}},"expo-secure-store":{WHEN_UNLOCKED_THIS_DEVICE_ONLY:1,getItemAsync:async k=>{if(storageGate){storageWaiting=true;await storageGate;}return get(k);},setItemAsync:async(k,v)=>set(k,v),deleteItemAsync:async k=>remove(k)},react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},"./catalog-import-data":{buildImportManifest},"./catalog-import-transport":{async requestCatalogImport(a,s,r,m,signal,change){
       signal.throwIfAborted();assert.equal(a,actorId);assert.equal(s,storeId);calls.push({r,m,change});
       if(m==="PUT"){assert.equal(storage.size,1);assert.deepEqual(change,manifest);ownerRun=r;throw Error("lost start ack");}
       assert.equal(r,ownerRun);
@@ -69,7 +70,7 @@ test("bulk import requires explicit confirmation and recovers one durable run af
       return {...(ownerProcessed?complete:initial),runId:r};
     }}};
     const mod={exports:{}};
-    new Function("require","module","exports","window",code)(n=>{assert.ok(Object.hasOwn(mocks,n),n);return mocks[n];},mod,mod.exports,{localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{}});
+    new Function("require","module","exports","window",code)(n=>{assert.ok(Object.hasOwn(mocks,n),n);return mocks[n];},mod,mod.exports,{localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{locks:{async request(_key,fn){if(storageGate){storageWaiting=true;await storageGate;}return fn();}}}});
     const mixed=buildImportManifest([
       ...props.rows,
       {row:3,name:"x".repeat(6000),priceYer:"100",stockUnits:"2",reason:"invalid"},
@@ -95,9 +96,43 @@ test("bulk import requires explicit confirmation and recovers one durable run af
     assert.equal(button("اعتماد وتسجيل الدفعة المحددة").props.disabled,true);
     click("تحديد جميع المسودات المطابقة");
     assert.equal(button("اعتماد وتسجيل الدفعة المحددة").props.disabled,false);
+    const stalePreviewApproval=button("اعتماد وتسجيل الدفعة المحددة").props.onPress;
     props={...props,rows:[...props.rows]};
     render();
     assert.equal(button("اعتماد وتسجيل الدفعة المحددة").props.disabled,true,"a fresh owner preview of the same file must require fresh selection");
+    stalePreviewApproval();
+    await tick();
+    assert.equal(calls.length,0,"a superseded preview callback must not register an import");
+    assert.equal(storage.size,0,"a superseded preview callback must not persist a run");
+    rowChoice().props.onPress();
+    const staleSelectionApproval=button("اعتماد وتسجيل الدفعة المحددة").props.onPress;
+    rowChoice().props.onPress();
+    assert.equal(button("اعتماد وتسجيل الدفعة المحددة").props.disabled,true);
+    staleSelectionApproval();
+    await tick();
+    assert.equal(calls.length,0,"a superseded selection callback must not register an import");
+    assert.equal(storage.size,0,"a superseded selection callback must not persist a run");
+    rowChoice().props.onPress();
+    let releaseDigest;
+    digestGate=new Promise(resolve=>{releaseDigest=resolve;});
+    click("اعتماد وتسجيل الدفعة المحددة");
+    props={...props,rows:[...props.rows]};
+    render();
+    releaseDigest();digestGate=null;
+    await until(()=>!button("تحديد جميع المسودات المطابقة").props.disabled);
+    assert.equal(calls.length,0,"preview replacement during fingerprinting must not dispatch");
+    assert.equal(storage.size,0,"preview replacement during fingerprinting must not persist a run");
+    rowChoice().props.onPress();
+    let releaseStorage;
+    storageGate=new Promise(resolve=>{releaseStorage=resolve;});
+    click("اعتماد وتسجيل الدفعة المحددة");
+    await until(()=>storageWaiting);
+    props={...props,rows:[...props.rows]};
+    render();
+    releaseStorage();storageGate=null;
+    await until(()=>!button("تحديد جميع المسودات المطابقة").props.disabled);
+    assert.equal(calls.length,0,"preview replacement while acquiring recovery storage must not dispatch");
+    assert.equal(storage.size,0,"preview replacement while acquiring recovery storage must not persist a run");
     rowChoice().props.onPress();click("اعتماد وتسجيل الدفعة المحددة");
     await until(()=>calls.length===1&&button("قراءة حالة الدفعة")&&!button("قراءة حالة الدفعة").props.disabled);
     const original=ownerRun;assert.equal(storage.size,1);
