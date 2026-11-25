@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -15,7 +16,7 @@ function harness({ ready = true, save = async () => {} } = {}) {
     const result = spawnSync(process.execPath, [
       path.join(root, "node_modules/typescript/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-      "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
+      "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
     ], { cwd: root, encoding: "utf8", timeout: 20000 });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const jsx = (type, props) => ({ type, props });
@@ -47,11 +48,20 @@ function harness({ ready = true, save = async () => {} } = {}) {
         }),
       },
     };
-    const mod = { exports: {} };
-    new Function("require", "module", "exports",
-      readFileSync(path.join(temp, "account-preferences.js"), "utf8"))(
-      name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; }, mod, mod.exports,
+    const filename = source + ".compiled.cjs";
+    const mapped = readFileSync(path.join(temp, "account-preferences.js"), "utf8").replace(
+      /(\/\/# sourceMappingURL=data:application\/json;base64,)([A-Za-z0-9+/=]+)/,
+      (_, prefix, encoded) => {
+        const map = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+        map.sourceRoot = "";
+        map.sources = [path.basename(source)];
+        return prefix + Buffer.from(JSON.stringify(map)).toString("base64");
+      },
     );
+    const mod = new Module(filename);
+    mod.filename = filename;
+    mod.require = name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; };
+    mod._compile(mapped, filename);
     const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ?
       tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
     const render = () => { slot = 0; return nodes(mod.exports.default()); };

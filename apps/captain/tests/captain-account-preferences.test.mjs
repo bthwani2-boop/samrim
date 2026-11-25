@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -26,7 +27,7 @@ function harness({ workspace = { session, standing, signOut() {} }, ready = true
     const result = spawnSync(process.execPath, [
       path.join(root, "node_modules/typescript/bin/tsc"), source, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--outDir", tmp,
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const code = readFileSync(path.join(tmp, "account.js"), "utf8");
@@ -51,11 +52,20 @@ function harness({ workspace = { session, standing, signOut() {} }, ready = true
       "../../src/features/access/protected-route": { useCaptainWorkspace: () => workspace },
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     };
-    const module = { exports: {} };
-    new Function("require", "module", "exports", code)(name => {
-      assert.ok(Object.hasOwn(mocks, name), `unexpected dependency ${name}`);
-      return mocks[name];
-    }, module, module.exports);
+    const filename = source + ".compiled.cjs";
+    const mapped = code.replace(
+      /(\/\/# sourceMappingURL=data:application\/json;base64,)([A-Za-z0-9+/=]+)/,
+      (_, prefix, encoded) => {
+        const map = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+        map.sourceRoot = "";
+        map.sources = [path.basename(source)];
+        return prefix + Buffer.from(JSON.stringify(map)).toString("base64");
+      },
+    );
+    const module = new Module(filename);
+    module.filename = filename;
+    module.require = name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; };
+    module._compile(mapped, filename);
     return { writes, render() { slot = 0; refSlot = 0; return module.exports.default(); } };
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }
