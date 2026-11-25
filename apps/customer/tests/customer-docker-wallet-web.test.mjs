@@ -74,7 +74,7 @@ test("isolated Docker Customer Web uses only the existing HttpOnly session and v
 });
 
 test("Docker Customer Web launcher opts in only for verified local owners, never for native or other apps", () => {
-  const script = readFileSync(new URL("../../../tools/dev/Start-RefoundationApp.ps1", import.meta.url), "utf8");
+  const script = readFileSync(new URL("../../../tools/dev/Start-App.ps1", import.meta.url), "utf8");
   assert.match(script, /EnableDockerWalletWebPreview/);
   assert.match(script, /DOCKER_WALLET_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY/);
   assert.match(script, /DOCKER_WALLET_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST/);

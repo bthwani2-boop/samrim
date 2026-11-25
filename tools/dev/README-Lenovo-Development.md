@@ -25,7 +25,7 @@ For a genuinely usable **isolated** Operator login, independently verify that th
 ## Single existing owners
 - SSH tunnels: four Scheduled Tasks invoke `tools/dev/Start-AppTunnel.ps1`. Customer uses Surface 18101 → Lenovo 28111 and Merchant uses 18102 → 28112. Optional local overrides use `SAMRIM_APP_CUSTOMER_METRO_PORT` and `SAMRIM_APP_MERCHANT_METRO_PORT`. Captain uses 18103 → 28113 and Control Panel uses 13000 → 23010. The existing Customer tunnel also carries loopback-only Identity 3201 and DSH 3202 for native synthetic authentication; those owner forwards require that the existing tunnel task actually reload the current script.
 - Source sync: the existing Scheduled Task BThwani Lenovo Source Sync directly runs pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch. Its direct process ownership ensures stopping the task also stops its Node watcher, without orphan duplicates. The scheduled task directly owns the sole watch process; no manual wrapper or second watcher is necessary.
-- The Surface sync target is `C:\Users\bthwa\BThwaniAppRunner\source-runtime`. The Lenovo app tasks invoke `tools\dev\Start-RefoundationApp.ps1` in that mirror with `-App customer`, `-App merchant`, `-App captain`, or `-App control-panel`. Verify the task action, synced source revision, and listener owner when diagnosing a runtime issue.
+- The Surface sync target is `C:\Users\bthwa\BThwaniAppRunner\source-runtime`. The Lenovo app tasks invoke `tools\dev\Start-App.ps1` in that mirror with `-App customer`, `-App merchant`, `-App captain`, or `-App control-panel`. Verify the task action, synced source revision, and listener owner when diagnosing a runtime issue.
 
 ## Guarantees and limits
 - Mirroring is strictly Surface-to-Lenovo for approved tracked and untracked source paths. Service workspaces include the package manifests, TypeScript configs, and clients consumed by the apps. Service backend, migrations, .git, node_modules, .env*, credentials, secrets, DB and cache directories are excluded.
@@ -80,7 +80,7 @@ Keep currently used app tasks, tunnel tasks, active SSH sessions and guarded rol
 
 ## Isolated Surface app preview
 
-`tools/dev/Start-RefoundationApp.ps1 -Surface -App <app>` runs the named app from
+`tools/dev/Start-App.ps1 -Surface -App <app>` runs the named app from
 the current checkout. It uses separate loopback ports for Control Panel
 (`localhost:23100`), Customer (`127.0.0.1:23101`), Merchant
 (`127.0.0.1:23102`) and Captain Metro (`127.0.0.1:23103`).
@@ -97,14 +97,14 @@ owner with the two isolated Passkey and bootstrap opt-ins, the exact
 `http://localhost:23100` origin, and the dedicated disposable WebAuthn
 database described in [Identity](../../services/identity/README.md). Then start
 Control Panel using
-`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -Surface -App control-panel -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap`.
+`pwsh -NoProfile -File tools/dev/Start-App.ps1 -Surface -App control-panel -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap`.
 The launcher requires both bootstrap routes on the local Identity owner.
 
 For a **synthetic Android emulator only**, the Customer can opt into WLT's
 read-only wallet and posted-funding history once **Identity, DSH and WLT** are
 running locally with isolated synthetic data. Start the Surface Customer
 presentation using
-`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -Surface -App customer -EnableAndroidWalletPreview -WltPort 23203`.
+`pwsh -NoProfile -File tools/dev/Start-App.ps1 -Surface -App customer -EnableAndroidWalletPreview -WltPort 23203`.
 The launcher checks the WLT loopback listener and its unauthenticated read
 must return HTTP 401. Android receives the emulator-to-host `10.0.2.2` origins
 for both Identity and WLT; the Web BFF continues using `127.0.0.1`.
@@ -119,7 +119,7 @@ Docker WLT appears. With its existing default launcher environment, its
 `/api/customer-auth/wallet` and `/wallet-transactions` routes remain disabled
 (`503`). Once the isolated `identity` and `wlt` containers are healthy,
 a **separately controlled Customer Web start** on Lenovo can use
-`pwsh -NoProfile -File tools/dev/Start-RefoundationApp.ps1 -App customer -EnableDockerWalletWebPreview`
+`pwsh -NoProfile -File tools/dev/Start-App.ps1 -App customer -EnableDockerWalletWebPreview`
 from the verified runtime source. Only this opt-in sets the Web BFF's private
 `BTHWANI_DOCKER_WALLET_WEB_PREVIEW` flag, explicit isolated-test mode,
 and fixed local Identity `3201`

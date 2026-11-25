@@ -36,9 +36,7 @@ Remove-Item Env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW -ErrorAction
 Remove-Item Env:BTHWANI_DOCKER_CART_WEB_PREVIEW -ErrorAction SilentlyContinue
 Remove-Item Env:OPERATOR_FINANCE_WLT_ORIGIN -ErrorAction SilentlyContinue
 
-# The scheduled launcher owns the native job handle, never the Node children.
-# CreateProcess assigns the child to that job atomically, even under a nested
-# Windows job. Inherit only log/stdin handles, never the job handle itself.
+# The launcher owns a job that terminates its Node process tree on exit.
 function Invoke-OwnedAppProcess {
   param([string]$Executable,[string[]]$Arguments,[string]$WorkingDirectory,[string]$Stdout,[string]$Stderr)
   if (-not ('OwnedAppJob' -as [type])) {
@@ -117,6 +115,51 @@ public static class OwnedAppJob {
   }
   [OwnedAppJob]::Run($Executable,$Arguments,$WorkingDirectory,$Stdout,$Stderr)
 }
+function Wait-LenovoOwnerHealth {
+  param(
+    [Parameter(Mandatory=$true)][string[]]$Owners,
+    [ValidateRange(1,600)][int]$TimeoutSeconds=300,
+    [ValidateRange(10,10000)][int]$PollMilliseconds=2000,
+    [scriptblock]$Probe={
+      param([string[]]$Names)
+      # Bound a stuck Docker client without stopping Docker or any container.
+      $docker=(Get-Command docker.exe -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+      $info=New-Object System.Diagnostics.ProcessStartInfo
+      $info.FileName=$docker
+      $info.Arguments='inspect --format "{{.State.Health.Status}}" '+($Names -join ' ')
+      $info.UseShellExecute=$false
+      $info.RedirectStandardOutput=$true
+      $info.RedirectStandardError=$true
+      $info.CreateNoWindow=$true
+      $child=[System.Diagnostics.Process]::Start($info)
+      try {
+        $out=$child.StandardOutput.ReadToEndAsync()
+        $err=$child.StandardError.ReadToEndAsync()
+        if (!$child.WaitForExit(5000)) {
+          if (!$child.HasExited) { $child.Kill() }
+          $null=$child.WaitForExit(1000)
+          return
+        }
+        if ($child.ExitCode -ne 0) { return }
+        $out.GetAwaiter().GetResult().Trim() -split '\r?\n'
+      } finally { $child.Dispose() }
+    }
+  )
+  if (!$Owners.Count -or @($Owners | Where-Object {$_ -cnotmatch '^[a-z0-9][a-z0-9_.-]*$'}).Count) {
+    throw 'LENOVO_OWNER_READINESS_INVALID_NAMES'
+  }
+  $clock=[System.Diagnostics.Stopwatch]::StartNew()
+  do {
+    $health=@(& $Probe $Owners)
+    if ($health.Count -eq $Owners.Count -and @($health | Where-Object {$_ -cne 'healthy'}).Count -eq 0) {
+      return
+    }
+    $remaining=($TimeoutSeconds*1000)-$clock.ElapsedMilliseconds
+    if ($remaining -le 0) { break }
+    Start-Sleep -Milliseconds ([int][Math]::Min($PollMilliseconds,$remaining))
+  } while ($clock.ElapsedMilliseconds -lt ($TimeoutSeconds*1000))
+  throw ('LENOVO_OWNER_READINESS_TIMEOUT owners='+($Owners -join ','))
+}
 function Assert-SurfaceCapability([string]$Uri, [int]$ExpectedStatus) {
   try {
     $status=[int](Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 3 -MaximumRedirection 0).StatusCode
@@ -147,6 +190,7 @@ if ($Surface) {
     if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
       throw 'DOCKER_WALLET_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
     }
+    Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-wlt-1')
     foreach ($owner in @(
       @{ Name='bthwani-refoundation-identity-1'; Capability='identity-synthetic-session-verifier' },
       @{ Name='bthwani-refoundation-wlt-1'; Capability='customer-wallet-read-only' }
@@ -170,6 +214,7 @@ if ($Surface) {
     if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
       throw 'DOCKER_CART_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
     }
+    Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-dsh-1')
     $identityOwner = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
     if ($LASTEXITCODE -ne 0 -or $identityOwner.Count -ne 1) {
       throw 'DOCKER_CART_WEB_IDENTITY_OWNER_UNAVAILABLE'
@@ -223,6 +268,7 @@ if ($Surface) {
     if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
       throw 'DOCKER_ANDROID_IDENTITY_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST'
     }
+    Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1')
     $identity = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
     if ($LASTEXITCODE -ne 0 -or $identity.Count -ne 1) { throw 'DOCKER_ANDROID_IDENTITY_OWNER_UNAVAILABLE' }
     $owner = $identity[0]
@@ -247,11 +293,11 @@ if ($Surface) {
     $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18101'
   }
   if ($App -in @('merchant','captain')) {
-    # Existing Lenovo development tasks need a real Native owner connection.
-    # Reject unknown, stale or non-isolated targets instead of minting a bypass.
+    # Native admission requires verified isolated owners.
     if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
       throw 'DOCKER_ROLE_ANDROID_IDENTITY_REQUIRES_VERIFIED_LENOVO'
     }
+    Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-identity-1','bthwani-refoundation-dsh-1')
     $identity = @(& docker inspect bthwani-refoundation-identity-1 | ConvertFrom-Json)
     $dsh = @(& docker inspect bthwani-refoundation-dsh-1 | ConvertFrom-Json)
     if ($LASTEXITCODE -ne 0 -or $identity.Count -ne 1 -or $dsh.Count -ne 1) {
@@ -328,8 +374,7 @@ if ($EnableIsolatedOperatorPasskeyPreview -and $App -ne 'control-panel') {
 if ($App -eq 'control-panel') {
   $env:OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF='false'
 }
-# The tunneled preview requires the verified Lenovo Identity owner.
-# Merely starting this application never creates or recovers an Operator.
+# Starting the app never creates or recovers an Operator.
 if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
   if ((hostname).ToUpperInvariant() -ne 'BTHWANI-DOCKER') {
     throw 'OPERATOR_PASSKEY_PREVIEW_REQUIRES_VERIFIED_LENOVO_OPERATOR'
@@ -337,6 +382,7 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
   $identityName = if ($UseDisposableOperatorSandbox) { 'bthwani-operator-webauthn-s02-identity-1' } else { 'bthwani-refoundation-identity-1' }
   $identityPort = if ($UseDisposableOperatorSandbox) { 3241 } else { 3201 }
   $identityOrigin = "http://127.0.0.1:$identityPort"
+  Wait-LenovoOwnerHealth -Owners @($identityName)
   $identityRuntime = @(& docker inspect $identityName | ConvertFrom-Json)
   if ($LASTEXITCODE -ne 0 -or $identityRuntime.Count -ne 1) {
     throw 'OPERATOR_PASSKEY_IDENTITY_RUNTIME_UNAVAILABLE'
@@ -404,6 +450,7 @@ if ($EnableIsolatedOperatorPasskeyPreview -and !$Surface) {
   # disposable Operator sandbox. Keep other workspaces available on WLT failure.
   if (!$UseDisposableOperatorSandbox) {
     try {
+      Wait-LenovoOwnerHealth -Owners @('bthwani-refoundation-wlt-1') -TimeoutSeconds 30
       $wltRuntime = @(& docker inspect bthwani-refoundation-wlt-1 | ConvertFrom-Json)
       if ($LASTEXITCODE -ne 0 -or $wltRuntime.Count -ne 1) { throw 'WLT_OWNER_UNAVAILABLE' }
       $wltOwner = $wltRuntime[0]
@@ -531,32 +578,20 @@ if (!$Surface -and $App -in @('customer','merchant')) {
   $env:NODE_OPTIONS += ' --max-old-space-size=6144'
 }
 $env:EXPO_NO_TELEMETRY='1'
-# Preserve Metro's incremental cache across routine starts. Use an explicitly
-# requested one-off cache reset only when diagnosing a verified stale bundle.
-# Secrets root must be passed explicitly by the authorized launcher/environment.
-# Do not implicitly select the deleted worktree or donor keys.
+# Preserve the Metro cache and use only explicitly supplied credentials.
 $dir=Join-Path $source ('apps\'+$App)
 Set-Location -LiteralPath $dir
 $log=Join-Path $logs ('refoundation-'+$App+'.out.log')
 $err=Join-Path $logs ('refoundation-'+$App+'.err.log')
-switch($App){
-  'customer' {
-    $cli=Join-Path $dir 'node_modules\expo\bin\cli'
-    $args=@('start','--web','--dev-client','--localhost','--port',"$port")
-  }
-  'merchant' {
-    $cli=Join-Path $dir 'node_modules\expo\bin\cli'
-    $args=@('start','--web','--dev-client','--localhost','--port',"$port")
-  }
-  'captain' {
-    $cli=Join-Path $dir 'node_modules\expo\bin\cli'
-    $args=@('start','--dev-client','--localhost','--port',"$port")
-  }
-  'control-panel' {
-    $cli=Join-Path $dir 'node_modules\next\dist\bin\next'
-    $bind=if ($Surface) {'localhost'} else {'127.0.0.1'}
-    $args=@('dev','-H',$bind,'-p',"$port")
-  }
+if ($App -eq 'control-panel') {
+  $cli=Join-Path $dir 'node_modules\next\dist\bin\next'
+  $bind=if ($Surface) {'localhost'} else {'127.0.0.1'}
+  $args=@('dev','-H',$bind,'-p',"$port")
+} else {
+  $cli=Join-Path $dir 'node_modules\expo\bin\cli'
+  $args=@('start')
+  if ($App -in @('customer','merchant')) { $args+=@('--web') }
+  $args+=@('--dev-client','--localhost','--port',"$port")
 }
 if ($Surface -and $App -ne 'control-panel') { $args+=@('--max-workers','2') }
 if(!(Test-Path -LiteralPath $cli)){throw ('REFOUNDATION_APP_CLI_MISSING '+$cli)}

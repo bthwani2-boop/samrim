@@ -26,7 +26,7 @@ for (const [key, slug, packageName, easId] of apps) {
     assert.deepEqual(value.platforms, ["ios", "android", "web"]);
     assert.equal(value.updates.url, `https://u.expo.dev/${easId}`);
     assert.equal(value.runtimeVersion.policy, "appVersion");
-    assert.ok(value.plugins.includes("expo-router"));
+    assert.ok(value.plugins.some(p => p === "expo-router" || (Array.isArray(p) && p[0] === "expo-router")));
     for (const plugin of ["expo-asset", "expo-font", "expo-image", "expo-status-bar", "expo-video"]) {
       assert.ok(value.plugins.includes(plugin), key + " missing SDK58 config plugin " + plugin);
     }
@@ -333,4 +333,14 @@ test("native maps keys are scoped to the EAS platform, not required for another 
     }
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test("Web development loads routes synchronously while production and native defaults remain intact", () => {
+  for (const app of ["customer", "merchant"]) {
+    const config = defineBthwaniExpoApp(app, { web: true });
+    const router = config.plugins.find(plugin => Array.isArray(plugin) && plugin[0] === "expo-router");
+    assert.deepEqual(router, ["expo-router", { asyncRoutes: { web: "production" } }]);
+  }
+  const captain = defineBthwaniExpoApp("app-captain");
+  assert.ok(captain.plugins.includes("expo-router"));
 });

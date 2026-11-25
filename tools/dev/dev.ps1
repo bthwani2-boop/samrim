@@ -204,7 +204,7 @@ $remoteTasksScript = $remoteAppSpecs + [Environment]::NewLine + @'
 foreach($s in $specs){
   $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
   $actions=($task.Actions | ForEach-Object { [string]$_.Execute+' '+[string]$_.Arguments }) -join ' '
-  if($actions -notmatch 'Start-RefoundationApp\.ps1' -or $actions -notmatch [regex]::Escape($s.A)) {throw ('TASK_OWNER_CHANGED '+$s.N)}
+  if($actions -notmatch 'Start-App\.ps1' -or $actions -notmatch [regex]::Escape($s.A)) {throw ('TASK_OWNER_CHANGED '+$s.N)}
   $port=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count -gt 0
   Write-Output ('LENOVO_APP app='+$s.A+' task='+$task.State+' port='+$s.P+' listen='+$port)
 }
@@ -213,7 +213,7 @@ foreach($s in $specs){
 # Snapshot before stopping Task Scheduler: afterward parent links can disappear.
 $remoteAppProcessLifecycle = @'
 function Get-OwnedAppProcessTree([string]$App,[object[]]$Processes,[string]$Root,[string]$PinnedNode) {
-  $launcherPath=Join-Path $Root 'tools\dev\Start-RefoundationApp.ps1'
+  $launcherPath=Join-Path $Root 'tools\dev\Start-App.ps1'
   $pattern='(?i)(?:^|\s)-App\s+"?'+[regex]::Escape($App)+'"?(?:\s|$)'
   $launchers=@($Processes | Where-Object {
     $_.Name -in @('pwsh.exe','powershell.exe') -and $_.CommandLine -and
@@ -437,7 +437,7 @@ foreach($s in $specs){
   $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
   $actions=@($task.Actions)
   $action=($actions | ForEach-Object {[string]$_.Execute+' '+[string]$_.Arguments}) -join ' '
-  if($actions.Count -ne 1 -or $action -notmatch 'Start-RefoundationApp\.ps1' -or
+  if($actions.Count -ne 1 -or $action -notmatch 'Start-App\.ps1' -or
     $action -notmatch ('(?i)-App\s+'+[regex]::Escape($s.A)+'(?:\s|$)')){throw ('TASK_OWNER_CHANGED '+$s.A)}
   $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
   $pidValue=if($listeners.Count -eq 1){[int]$listeners[0].OwningProcess}else{0}
@@ -446,7 +446,7 @@ foreach($s in $specs){
   if($owner -and $owner.Name -eq 'node.exe' -and $owner.CommandLine -match $s.Cli){
     $cursor=$owner
     for($i=0;$i -lt 6 -and $cursor;$i++){
-      if($cursor.Name -in @('powershell.exe','pwsh.exe') -and $cursor.CommandLine -match 'Start-RefoundationApp\.ps1' -and
+      if($cursor.Name -in @('powershell.exe','pwsh.exe') -and $cursor.CommandLine -match 'Start-App\.ps1' -and
         $cursor.CommandLine -match ('(?i)-App\s+'+[regex]::Escape($s.A)+'(?:\s|$)')){$owned=$true;break}
       if(!$cursor.ParentProcessId -or $cursor.ParentProcessId -eq $cursor.ProcessId){break}
       $cursor=Get-CimInstance Win32_Process -Filter ('ProcessId='+$cursor.ParentProcessId)
@@ -609,7 +609,7 @@ if(!$s){throw 'APP_NOT_ALLOWED'}
 $t=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
 $actions=@($t.Actions)
 $action=($actions | ForEach-Object {[string]$_.Execute+' '+[string]$_.Arguments}) -join ' '
-if($actions.Count -ne 1 -or $action -notmatch 'Start-RefoundationApp\.ps1' -or
+if($actions.Count -ne 1 -or $action -notmatch 'Start-App\.ps1' -or
   $action -notmatch ('(?i)-App\s+'+[regex]::Escape($app)+'(?:\s|$)')){throw ('TASK_OWNER_CHANGED '+$app)}
 $source='C:\Users\bthwa\BThwaniAppRunner\source-runtime'
 $node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe'
@@ -627,7 +627,7 @@ if($listeners.Count -eq 1){
   if(!$owner -or $owner.Name -ne 'node.exe' -or $owner.CommandLine -notmatch $s.Cli){throw ('APP_PORT_FOREIGN '+$app)}
   $owned=$false;$cursor=$owner
   for($i=0;$i -lt 6 -and $cursor;$i++){
-    if($cursor.Name -in @('powershell.exe','pwsh.exe') -and $cursor.CommandLine -match 'Start-RefoundationApp\.ps1' -and
+    if($cursor.Name -in @('powershell.exe','pwsh.exe') -and $cursor.CommandLine -match 'Start-App\.ps1' -and
       $cursor.CommandLine -match ('(?i)-App\s+'+[regex]::Escape($app)+'(?:\s|$)')){$owned=$true;break}
     if(!$cursor.ParentProcessId -or $cursor.ParentProcessId -eq $cursor.ProcessId){break}
     $cursor=Get-CimInstance Win32_Process -Filter ('ProcessId='+$cursor.ParentProcessId)
@@ -964,7 +964,7 @@ foreach($s in $specs){
   $task=Get-ScheduledTask -TaskName $s.N
   $actions=@($task.Actions)
   $args=[string]$actions[0].Arguments
-  if($actions.Count -ne 1 -or $args.IndexOf((Join-Path $root 'tools\dev\Start-RefoundationApp.ps1'),[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
+  if($actions.Count -ne 1 -or $args.IndexOf((Join-Path $root 'tools\dev\Start-App.ps1'),[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
      $args -notmatch ('(?i)(?:^|\s)-App\s+"?'+[regex]::Escape($s.A)+'"?(?:\s|$)')){throw ('DEPENDENCY_TASK_OWNER_CHANGED '+$s.A)}
   if($task.State -eq 'Running'){
     $tree=@(Get-OwnedAppProcessTree $s.A $snapshot $root $node)

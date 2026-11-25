@@ -10,7 +10,7 @@ $t=Get-ScheduledTask -TaskName $taskName -ErrorAction Stop
 if (@($t.Actions).Count -ne 1) { throw 'CONTROL_TASK_UNEXPECTED_ACTIONS' }
 $exe=$t.Actions[0].Execute
 $old=$t.Actions[0].Arguments
-$expected='C:\Users\bthwa\BThwaniAppRunner\source-runtime\tools\dev\Start-RefoundationApp.ps1'
+$expected='C:\Users\bthwa\BThwaniAppRunner\source-runtime\tools\dev\Start-App.ps1'
 if ($exe -notmatch 'pwsh\.exe$' -or $old -notlike ('*'+$expected+'*') -or
     $old -notmatch '-App control-panel(\s|$)' -or $old -match '-Surface') { throw 'CONTROL_TASK_ACTION_UNEXPECTED' }
 $flags=' -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap -UseDisposableOperatorSandbox'

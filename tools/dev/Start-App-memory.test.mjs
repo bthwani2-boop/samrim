@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const file = fileURLToPath(new URL("./Start-RefoundationApp.ps1", import.meta.url));
+const file = fileURLToPath(new URL("./Start-App.ps1", import.meta.url));
 const launcher = readFileSync(file, "utf8");
 
 test("the Lenovo launcher assigns the process to a non-inheritable job at creation", (t) => {
@@ -188,4 +188,25 @@ test("Operator finance projection is enabled only for the matching verified isol
   assert.match(boundary, /\$wltBindings\[0\]\.HostIp -cne '127\.0\.0\.1'/);
   assert.match(boundary, /Assert-SurfaceCapability 'http:\/\/127\.0\.0\.1:3203\/v1\/operators\/stores\/capability-probe\/commercial-agreement' 401\s+\$env:OPERATOR_FINANCE_WLT_ORIGIN='http:\/\/127\.0\.0\.1:3203'/);
   assert.match(boundary, /Write-Warning 'OPERATOR_FINANCE_WLT_READBACK_UNAVAILABLE'/);
+});
+
+
+test("Lenovo owner startup waits for readiness and fails closed at its deadline", (t) => {
+  if (process.platform !== "win32") return t.skip("PowerShell startup check");
+  const quote = (value) => "'" + value.replaceAll("'", "''") + "'";
+  const command = [
+    "$ErrorActionPreference='Stop'; Set-StrictMode -Version Latest; $tokens=$null;$errors=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseFile(" + quote(file) + ",[ref]$tokens,[ref]$errors)",
+    "$fn=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Wait-LenovoOwnerHealth'},$true)",
+    "if(!$fn){throw 'OWNER_READINESS_FUNCTION_MISSING'}; . ([scriptblock]::Create($fn.Extent.Text))",
+    "$script:calls=0; Wait-LenovoOwnerHealth -Owners @('identity','dsh') -TimeoutSeconds 2 -PollMilliseconds 10 -Probe {param($owners) if(($owners -join ',') -cne 'identity,dsh'){throw 'OWNER_SCOPE_CHANGED'}; $script:calls++; if($script:calls -lt 3){'starting';'healthy'}else{'healthy';'healthy'}}",
+    "if($script:calls -ne 3){throw 'STARTED_BEFORE_ALL_OWNERS_HEALTHY'}",
+    "$blocked=$false;try{Wait-LenovoOwnerHealth -Owners @('identity','dsh') -TimeoutSeconds 1 -PollMilliseconds 10 -Probe {param($owners) 'healthy'}}catch{if($_.Exception.Message -notmatch '^LENOVO_OWNER_READINESS_TIMEOUT'){throw};$blocked=$true};if(!$blocked){throw 'PARTIAL_OWNER_READINESS_ACCEPTED'}",
+    "Write-Output 'READINESS_FIXTURE_PASS'",
+  ].join("; ");
+  const run = spawnSync("pwsh", ["-NoProfile","-NonInteractive","-EncodedCommand",Buffer.from(command,"utf16le").toString("base64")], {
+    encoding: "utf8", timeout: 15000, windowsHide: true,
+  });
+  assert.equal(run.status, 0, run.stderr || run.stdout || run.error?.message);
+  assert.match(run.stdout, /READINESS_FIXTURE_PASS/);
 });

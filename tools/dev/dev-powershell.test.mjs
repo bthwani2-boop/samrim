@@ -301,7 +301,7 @@ test("Lenovo shutdown owns the complete pinned Node tree and rejects foreign des
     "$root='C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime';$node='C:\\Users\\bthwa\\BThwaniAppRunner\\tools\\node-v24.22.1-refoundation\\node.exe'",
     "$now=[datetime]'2026-11-24T00:00:00Z'",
     "function P($id,$parent,$name,$exe,$cmd,$seconds){[pscustomobject]@{ProcessId=$id;ParentProcessId=$parent;Name=$name;ExecutablePath=$exe;CommandLine=$cmd;CreationDate=$now.AddSeconds($seconds)}}",
-    "$launcher=P 10 1 'pwsh.exe' 'C:\\Windows\\pwsh.exe' ('pwsh -File '+$root+'\\tools\\dev\\Start-RefoundationApp.ps1 -App control-panel') 0",
+    "$launcher=P 10 1 'pwsh.exe' 'C:\\Windows\\pwsh.exe' ('pwsh -File '+$root+'\\tools\\dev\\Start-App.ps1 -App control-panel') 0",
     "$parent=P 20 10 'node.exe' $node 'next dev' 1",
     "$child=P 30 20 'node.exe' $node 'next child' 2",
     "$other=P 40 1 'node.exe' $node 'unrelated' 1",

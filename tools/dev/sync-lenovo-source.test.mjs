@@ -180,7 +180,7 @@ test("canonical source paths accepted without path injection", () => {
     "services/dsh/clients/index.ts",
     "services/wlt/tsconfig.json",
     "tools/dev/Start-AppTunnel.ps1",
-    "tools/dev/Start-RefoundationApp.ps1",
+    "tools/dev/Start-App.ps1",
     "pnpm-lock.yaml", ".node-version"
   ]) assert.equal(allowed(path), true, path);
 });

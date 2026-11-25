@@ -105,7 +105,7 @@ test("Docker Cart refuses flag-only, unisolated, unpinned and non-local owner co
 });
 
 test("Docker Cart launcher is explicit, validates both isolated owners and never configures a Native DSH URL", () => {
-  const script = readFileSync(new URL("../../../tools/dev/Start-RefoundationApp.ps1", import.meta.url), "utf8");
+  const script = readFileSync(new URL("../../../tools/dev/Start-App.ps1", import.meta.url), "utf8");
   assert.match(script, /\[switch\]\$EnableDockerCartWebPreview/);
   assert.match(script, /DOCKER_CART_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY/);
   assert.match(script, /DSH_ENABLE_ISOLATED_CUSTOMER_CART=true/);
@@ -117,7 +117,7 @@ test("Docker Cart launcher is explicit, validates both isolated owners and never
 
 test("Docker Customer Cart opt-in rejects Surface and a different app before launching anything", t => {
   if (process.platform !== "win32") return t.skip("PowerShell launcher checked on Surface");
-  const launcher = new URL("../../../tools/dev/Start-RefoundationApp.ps1", import.meta.url).pathname.slice(1).replaceAll("/", "\\");
+  const launcher = new URL("../../../tools/dev/Start-App.ps1", import.meta.url).pathname.slice(1).replaceAll("/", "\\");
   for (const args of [["-App", "customer", "-Surface"], ["-App", "merchant"]]) {
     const invoked = spawnSync("pwsh", [
       "-NoProfile", "-File", launcher, ...args, "-EnableDockerCartWebPreview",
