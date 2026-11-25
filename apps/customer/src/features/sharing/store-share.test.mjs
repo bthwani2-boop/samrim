@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import * as serviceability from "../location/serviceability.ts";
 import { publicStorefrontPath } from "./store-share.ts";
 
@@ -16,11 +17,11 @@ try {
     path.join(root, "node_modules/typescript/bin/tsc"),
     path.join(app, "store/[id].tsx"), path.join(app, "storefront/[storeId].tsx"),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--rootDir", app, "--outDir", temp,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--rootDir", app, "--outDir", temp,
   ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout || String(result.error));
-  storeRoute = readFileSync(path.join(temp, "store/[id].js"), "utf8");
-  storefrontRoute = readFileSync(path.join(temp, "storefront/[storeId].js"), "utf8");
+  storeRoute = { source: path.join(app, "store/[id].tsx"), code: readFileSync(path.join(temp, "store/[id].js"), "utf8") };
+  storefrontRoute = { source: path.join(app, "storefront/[storeId].tsx"), code: readFileSync(path.join(temp, "storefront/[storeId].js"), "utf8") };
 } finally { rmSync(temp, { recursive: true, force: true }); }
 
 const invalidIds = ["", ".", "..", "../admin", "a/b", "a\\b", "bad\nstore",
@@ -34,8 +35,7 @@ test("public Store share links use the current DSH PublicId contract", () => {
   for (const id of invalidIds) assert.equal(publicStorefrontPath(id), "/stores", JSON.stringify(id));
 });
 
-function render(compiled, params, os) {
-  const mod = { exports: {} };
+function render(route, params, os) {
   const jsx = (type, props) => ({ type, props });
   const modules = {
     "react/jsx-runtime": { jsx, jsxs: jsx },
@@ -45,10 +45,7 @@ function render(compiled, params, os) {
     "../../src/features/stores/store-detail-screen": { __esModule: true, default: "PublicStoreDetail" },
     "../../src/features/location/serviceability": serviceability,
   };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(modules, name), name);
-    return modules[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(route.code, route.source, modules);
   return mod.exports.default();
 }
 

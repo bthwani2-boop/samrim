@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const source = fileURLToPath(new URL("../app/(tabs)/account.tsx", import.meta.url));
@@ -52,19 +52,7 @@ function harness({ workspace = { session, standing, signOut() {} }, ready = true
       "../../src/features/access/protected-route": { useCaptainWorkspace: () => workspace },
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     };
-    const filename = source + ".compiled.cjs";
-    const marker = "//# sourceMappingURL=data:application/json;base64,";
-    const mapOffset = code.lastIndexOf(marker);
-    assert.ok(mapOffset >= 0, "compiler must emit an inline source map");
-    const payloadOffset = mapOffset + marker.length;
-    const map = JSON.parse(Buffer.from(code.slice(payloadOffset).trim(), "base64").toString("utf8"));
-    map.sourceRoot = "";
-    map.sources = [path.basename(source)];
-    const mapped = code.slice(0, payloadOffset) + Buffer.from(JSON.stringify(map)).toString("base64");
-    const module = new Module(filename);
-    module.filename = filename;
-    module.require = name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; };
-    module._compile(mapped, filename);
+    const module = loadMappedRenderFixture(code, source, mocks);
     return { writes, render() { slot = 0; refSlot = 0; return module.exports.default(); } };
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 }

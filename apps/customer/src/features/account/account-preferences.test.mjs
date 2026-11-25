@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = fileURLToPath(new URL("../../../../../", import.meta.url));
 const source = fileURLToPath(new URL("./account-preferences.tsx", import.meta.url));
@@ -48,20 +48,7 @@ function harness({ ready = true, save = async () => {} } = {}) {
         }),
       },
     };
-    const filename = source + ".compiled.cjs";
-    const compiled = readFileSync(path.join(temp, "account-preferences.js"), "utf8");
-    const marker = "//# sourceMappingURL=data:application/json;base64,";
-    const mapOffset = compiled.lastIndexOf(marker);
-    assert.ok(mapOffset >= 0, "compiler must emit an inline source map");
-    const payloadOffset = mapOffset + marker.length;
-    const map = JSON.parse(Buffer.from(compiled.slice(payloadOffset).trim(), "base64").toString("utf8"));
-    map.sourceRoot = "";
-    map.sources = [path.basename(source)];
-    const mapped = compiled.slice(0, payloadOffset) + Buffer.from(JSON.stringify(map)).toString("base64");
-    const mod = new Module(filename);
-    mod.filename = filename;
-    mod.require = name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; };
-    mod._compile(mapped, filename);
+    const mod = loadMappedRenderFixture(readFileSync(path.join(temp, "account-preferences.js"), "utf8"), source, mocks);
     const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ?
       tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
     const render = () => { slot = 0; return nodes(mod.exports.default()); };

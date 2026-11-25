@@ -4,14 +4,16 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
+const source = path.join(import.meta.dirname, "address-editor.native.tsx");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-address-races-"));
 let compiled;
 try {
   const task = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
-    path.join(import.meta.dirname, "address-editor.native.tsx"), "--ignoreConfig", "--noResolve", "--noCheck",
-    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+    source, "--ignoreConfig", "--noResolve", "--noCheck",
+    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
   assert.equal(task.status, 0, task.stderr || task.stdout);
   compiled = readFileSync(path.join(temp, "address-editor.native.js"), "utf8");
@@ -48,11 +50,7 @@ function harness() {
       requestForegroundPermissionsAsync: () => pending("permissions"), getCurrentPositionAsync: () => pending("positions") },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`);
-    return modules[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(compiled, source, modules);
   return {
     calls, movements,
     render() {
