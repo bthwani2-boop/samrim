@@ -54,3 +54,6 @@ export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,
 } from "./store-availability.ts";
 export { getStoreOperationalAvailability, updateStoreOperationalAvailability } from "./store-availability.ts";
+
+export type { FavoriteStoreState, FavoriteStorePage } from "./favorite-stores.ts";
+export { isFavoriteStoreId, parseFavoriteStorePage, parseFavoriteStoreState, listCustomerFavoriteStores, getCustomerFavoriteStore, setCustomerFavoriteStore } from "./favorite-stores.ts";

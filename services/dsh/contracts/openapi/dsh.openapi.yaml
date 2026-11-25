@@ -20,6 +20,10 @@ paths:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers~1{offerId}~1estimate'
   /v1/carts/{storeID}/serviceability:
     $ref: './paths/serviceability.yaml#/paths/~1v1~1carts~1{storeID}~1serviceability'
+  /v1/customers/me/favorite-stores:
+    $ref: './paths/customer-discovery.yaml#/paths/~1v1~1customers~1me~1favorite-stores'
+  /v1/customers/me/favorite-stores/{storeID}:
+    $ref: './paths/customer-discovery.yaml#/paths/~1v1~1customers~1me~1favorite-stores~1{storeID}'
   /v1/addresses:
     $ref: './paths/locations.yaml#/paths/~1v1~1addresses'
   /v1/addresses/{addressID}:

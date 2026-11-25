@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useStoreCart } from "../cart/use-store-cart";
 import StoreProducts, { StoreCartBar } from "../catalog/store-products";
 import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
+import FavoriteStores from "../discovery/favorite-stores";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
@@ -111,6 +112,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتجر" color={theme.actionBackground} /> : null}
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
+          <FavoriteStores key={visible.store.id} storeId={visible.store.id} />
           {!fullPage ? (
             <Link href={(browse.city ? { pathname: publicStorefrontPath(id), params: browse } : publicStorefrontPath(id)) as Href}
               style={{ color: theme.interactiveText }}>

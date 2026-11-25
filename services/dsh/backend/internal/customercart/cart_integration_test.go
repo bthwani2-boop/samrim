@@ -174,6 +174,9 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("CustomerFavoritesOwnerReadback", func(t *testing.T) {
+		verifyFavoritesOnRealPostgres(t, ctx, db, schema, handler, sessions)
+	})
 	t.Run("CustomerAddressesOwnerReadback", func(t *testing.T) {
 		verifyAddressesOnRealPostgres(t, ctx, db, schema, handler, sessions)
 	})

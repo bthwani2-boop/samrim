@@ -2,6 +2,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import FavoriteStores from "../discovery/favorite-stores";
 import AccountPreferences from "./account-preferences";
 import StoreInvitations from "./store-invitations";
 
@@ -42,6 +43,7 @@ export default function AccountScreen() {
             <Text style={{ color: theme.interactiveText }}>تغيير مدينة التسوّق</Text>
           </Pressable>
         </Link>
+        <FavoriteStores />
         <AccountPreferences />
         <StoreInvitations />
       </ScrollView>

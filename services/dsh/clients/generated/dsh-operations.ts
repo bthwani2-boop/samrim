@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: fd1744358bfb903885d238ef7374241e0a86d41a1b2ac96f073e3c49c7f468c9
+// Normalized OpenAPI SHA-256: 88795e337587b110489d7f3c21f1c82f7f4e4ad34774909677f69bb91733d92c
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   advanceMerchantCatalogImport: { method: "PATCH", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
@@ -21,6 +21,7 @@ export const dshOperations = {
   getCurrentCustomerCaptainApplication: { method: "GET", path: "/v1/actors/me/captain-application" },
   getCurrentCustomerCaptainEligibility: { method: "GET", path: "/v1/actors/me/captain-eligibility" },
   getCurrentCustomerCart: { method: "GET", path: "/v1/carts/{storeID}" },
+  getCurrentCustomerFavoriteStore: { method: "GET", path: "/v1/customers/me/favorite-stores/{storeID}" },
   getMerchantEmployee: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}" },
   getMerchantEmployeeRegistrationAudit: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}/registration-audit" },
   getMerchantStoreRegistrationOptions: { method: "GET", path: "/v1/stores/registration-options" },
@@ -31,6 +32,7 @@ export const dshOperations = {
   listCityStoreOperationalPolicyHistory: { method: "GET", path: "/v1/operators/cities/{cityID}/store-availability-policy/history" },
   listCompanyEmployees: { method: "GET", path: "/v1/operators/employees" },
   listCurrentCustomerAddresses: { method: "GET", path: "/v1/addresses" },
+  listCurrentCustomerFavoriteStores: { method: "GET", path: "/v1/customers/me/favorite-stores" },
   listCurrentMerchantStoreCatalog: { method: "GET", path: "/v1/stores/{storeID}/catalog" },
   listCurrentMerchantStores: { method: "GET", path: "/v1/stores/mine" },
   listMerchantEmployees: { method: "GET", path: "/v1/stores/{storeID}/employees" },
@@ -54,6 +56,7 @@ export const dshOperations = {
   replaceCurrentCustomerCart: { method: "PUT", path: "/v1/carts/{storeID}" },
   reviewCurrentCustomerCheckout: { method: "POST", path: "/v1/carts/{storeID}/checkout-review" },
   saveCurrentCustomerAddress: { method: "PUT", path: "/v1/addresses/{addressID}" },
+  setCurrentCustomerFavoriteStore: { method: "PUT", path: "/v1/customers/me/favorite-stores/{storeID}" },
   startMerchantCatalogImport: { method: "PUT", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
   submitPublicCaptainInterest: { method: "POST", path: "/v1/captain-interest" },
   updateCurrentMerchantCatalogDraft: { method: "PATCH", path: "/v1/stores/{storeID}/catalog/{offerID}" },

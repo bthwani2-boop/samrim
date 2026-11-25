@@ -51,6 +51,7 @@ function harness({ params = {}, id = "store-a" } = {}) {
     "../cart/use-store-cart": { useStoreCart: () => ({}) },
     "../catalog/store-products": { __esModule: true, default: "StoreProducts", StoreCartBar: "StoreCartBar" },
     "../location/serviceability": serviceability,
+    "../discovery/favorite-stores": { __esModule: true, default: "FavoriteStores" },
     "../sharing/store-share": { publicStorefrontPath: storeId => `/s/${storeId}` },
     "./orderability": { describeStoreOrderability: () => ({}) },
     "./public-store-origin": { resolvePublicStoreOrigin: () => "" },

@@ -68,3 +68,10 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.stores (
 );
 CREATE INDEX IF NOT EXISTS idx_stores_marketplace ON __SCHEMA__.stores (city_id,lower(name),id)
     WHERE published AND relation='MARKETPLACE';
+
+-- Private Customer preferences, owned by DSH and never a publication grant.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.customer_favorite_stores (
+    actor_id text NOT NULL CHECK (char_length(actor_id) BETWEEN 1 AND 128 AND actor_id = trim(actor_id)),
+    store_id text NOT NULL REFERENCES __SCHEMA__.stores(id) ON DELETE RESTRICT,
+    PRIMARY KEY (actor_id,store_id)
+);
