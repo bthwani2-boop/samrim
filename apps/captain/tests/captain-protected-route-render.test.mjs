@@ -94,7 +94,7 @@ function harness() {
       return mocks[name];
     },
     mod, mod.exports,
-    fn => { const id = ++tick; timeouts.set(id, fn); return id; },
+    (fn, delay) => { const id = ++tick; timeouts.set(id, { fn, delay }); return id; },
     id => timeouts.delete(id),
     fn => { interval = fn; return ++tick; },
     () => undefined,
@@ -113,7 +113,9 @@ function harness() {
     reads: () => pending.length,
     startFocus: () => focus(),
     periodic: () => interval(),
-    expire: () => { const entry = [...timeouts.entries()].at(-1); assert.ok(entry); timeouts.delete(entry[0]); entry[1](); },
+    expire: () => { const entry = [...timeouts.entries()].find(([, timer]) => timer.delay > 20000); assert.ok(entry); timeouts.delete(entry[0]); entry[1].fn(); },
+    deadline: () => { const entry = [...timeouts.entries()].find(([, timer]) => timer.delay === 20000); assert.ok(entry, "protected read must have its own deadline"); timeouts.delete(entry[0]); entry[1].fn(); },
+    pendingDeadlines: () => [...timeouts.values()].filter(timer => timer.delay === 20000).length,
     appChanged: state => appChanged(state),
   };
 }
@@ -202,6 +204,81 @@ test("healthy periodic revalidation keeps Captain tree visible and deduplicates 
   holder = nodes(current).find(x => x.props?.children === h.child);
   assert.equal(holder.props.style.display, "none");
   assert.equal(holder.props.pointerEvents, "none");
+});
+
+test("a stalled initial Captain read times out, allows retry, and ignores late approval", async () => {
+  const h = harness();
+  h.render();
+  const cleanup = h.startFocus();
+  const stale = h.next();
+  h.deadline();
+  assert.equal(stale.signal.aborted, true);
+  assert.ok(!nodes(h.render()).includes(h.child));
+  const retry = nodes(h.render()).find(item => item.type === "Pressable");
+  assert.ok(retry);
+  retry.props.onPress();
+  const fresh = h.next();
+  stale.resolve(approved());
+  await settle();
+  assert.ok(!nodes(h.render()).includes(h.child));
+  assert.equal(h.pendingDeadlines(), 1);
+  fresh.resolve(approved());
+  await settle();
+  assert.equal(h.pendingDeadlines(), 0);
+  assert.equal(nodes(h.render()).find(x => x.props?.children === h.child).props.pointerEvents, "auto");
+  h.periodic();
+  const pending = h.next();
+  cleanup();
+  assert.equal(pending.signal.aborted, true);
+  assert.equal(h.pendingDeadlines(), 0);
+});
+
+test("a stalled Captain polling read conceals private content and releases periodic recovery", async () => {
+  const h = harness();
+  h.render();
+  h.startFocus();
+  h.next().resolve(approved());
+  await settle();
+  h.periodic();
+  const stale = h.next();
+  h.deadline();
+  assert.equal(stale.signal.aborted, true);
+  assert.equal(nodes(h.render()).find(x => x.props?.children === h.child).props.pointerEvents, "none");
+  h.periodic();
+  const fresh = h.next();
+  stale.resolve(approved());
+  await settle();
+  assert.equal(nodes(h.render()).find(x => x.props?.children === h.child).props.pointerEvents, "none");
+  fresh.resolve({ enabled: true, session: null });
+  await settle();
+  assert.equal(h.render().type, "Redirect");
+  assert.equal(h.pendingDeadlines(), 0);
+});
+
+test("Captain background and logout cancel the owned read deadline without reviving private access", async () => {
+  const h = harness();
+  h.render();
+  h.startFocus();
+  const initial = h.next();
+  h.appChanged("background");
+  assert.equal(initial.signal.aborted, true);
+  assert.equal(h.pendingDeadlines(), 0);
+  h.appChanged("active");
+  h.next().resolve(approved());
+  await settle();
+  h.periodic();
+  const pending = h.next();
+  const provider = nodes(h.render()).find(item => item.type === "CaptainWorkspaceProvider");
+  provider.props.value.signOut();
+  assert.equal(pending.signal.aborted, true);
+  assert.equal(h.pendingDeadlines(), 0);
+  assert.equal(h.logouts.length, 1);
+  pending.resolve(approved());
+  await settle();
+  assert.ok(!nodes(h.render()).includes(h.child));
+  h.logouts.shift().resolve();
+  await settle();
+  assert.equal(h.render().type, "Redirect");
 });
 
 test("Captain denial after a previously approved session removes protected UI", async () => {

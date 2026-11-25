@@ -35,15 +35,28 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
 
   useFocusEffect(useCallback(() => {
     let current: AbortController | undefined;
+    let readDeadline: ReturnType<typeof setTimeout> | undefined;
     let closing: AbortController | undefined;
     let active = true;
     let expiry: ReturnType<typeof setTimeout> | undefined;
     let verifiedUntil = 0;
 
+    function releaseRead() {
+      if (readDeadline !== undefined) clearTimeout(readDeadline);
+      readDeadline = undefined;
+      current = undefined;
+    }
+
+    function cancelRead() {
+      const request = current;
+      releaseRead();
+      request?.abort();
+    }
+
     function signOut(actorId: string) {
       if (closing || !active) return;
       signingOutActor.current = actorId;
-      current?.abort();
+      cancelRead();
       if (expiry) clearTimeout(expiry);
       verifiedUntil = 0;
       setVerified(null);
@@ -82,7 +95,7 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
         return;
       }
       if (silent && current) return;
-      current?.abort();
+      cancelRead();
       // Ordinary foreground polling must not blank a still-current workspace.
       // Expiry, background/resume and actual owner failure remain fail closed.
       if (!silent || verifiedUntil <= Date.now()) {
@@ -92,10 +105,19 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
       }
       const request = new AbortController();
       current = request;
+      // Bound the protected read even if the native bridge ignores abort.
+      // Never extend the previously verified grant on a timed-out read.
+      readDeadline = setTimeout(() => {
+        if (!active || current !== request) return;
+        cancelRead();
+        verifiedUntil = 0;
+        if (expiry) clearTimeout(expiry);
+        setAccess("unavailable");
+      }, 20000);
       void readCaptainAdmission(request.signal)
         .then(result => {
           if (!active || request.signal.aborted || current !== request) return;
-          current = undefined;
+          releaseRead();
           if (expiry) clearTimeout(expiry);
           verifiedUntil = 0;
           const session = result.session;
@@ -131,7 +153,7 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
         })
         .catch(() => {
           if (active && current === request && !request.signal.aborted) {
-            current = undefined;
+            releaseRead();
             verifiedUntil = 0;
             if (expiry) clearTimeout(expiry);
             setAccess("unavailable");
@@ -144,8 +166,7 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
     const app = AppState.addEventListener("change", state => {
       if (state === "active") check();
       else if (signingOutActor.current === null) {
-        current?.abort();
-        current = undefined;
+        cancelRead();
         verifiedUntil = 0;
         if (expiry) clearTimeout(expiry);
         setAccess("checking");
@@ -159,7 +180,7 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
     }, 30_000);
     return () => {
       active = false;
-      current?.abort();
+      cancelRead();
       closing?.abort();
       if (expiry) clearTimeout(expiry);
       clearInterval(periodic);
