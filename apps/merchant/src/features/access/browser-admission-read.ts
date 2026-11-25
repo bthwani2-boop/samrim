@@ -141,14 +141,10 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
       return response({ standing });
     }
   } catch (error) {
-    // Owner-denied Merchant access expires its browser cookie. A transient
-    // upstream outage must not discard an otherwise valid session.
-    if (error instanceof DshPublicError) {
-      // Store-scope denial must not sign the Merchant out of other valid Stores.
-      return error.status === 401 ? response({ code: error.code }, 401, sessionCookie(request, "", 0)) : ownerError(error);
-    }
-    if ((error instanceof MerchantStandingError || error instanceof IdentityClientError) &&
-      (error.status === 403 || (error instanceof MerchantStandingError && error.status === 401))) {
+    // DSH owns Store access, not Identity session validity. Its refusals never
+    // clear the browser credential or grant access to protected Store data.
+    if (error instanceof DshPublicError || error instanceof MerchantStandingError) return ownerError(error);
+    if (error instanceof IdentityClientError && error.status === 403) {
       return response({ code: error.code }, error.status, sessionCookie(request, "", 0));
     }
     if (!(error instanceof IdentityClientError && error.status === 401)) return ownerError(error);

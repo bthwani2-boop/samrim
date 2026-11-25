@@ -117,13 +117,16 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
 }
 
 for (const status of [401, 403]) {
-  test(`native DSH ${status} denial removes only the denied bearer before re-entry`, async () => {
+  test(`native DSH ${status} denial preserves the Identity credential for recovery`, async () => {
     const h = nativeHarness();
     h.setOwnerRead(async () => { throw new OwnerError(status); });
     const signal = new AbortController().signal;
     await assert.rejects(h.transport.readMerchantStanding(signal), { status });
-    assert.equal(h.current(), null);
-    assert.deepEqual(await h.transport.readAdmission(signal), { enabled: true, session: null });
+    assert.equal(h.current(), oldBearer);
+    assert.equal((await h.transport.readAdmission(signal)).session?.actorId, "old-actor");
+    h.setOwnerRead(async () => ({ actorId: "old-actor", stores: [] }));
+    assert.deepEqual(await h.reload().readMerchantStanding(signal), { actorId: "old-actor", stores: [] });
+    assert.equal(h.admissionCalls(), 0);
   });
 }
 
@@ -270,13 +273,15 @@ test("late denial from old actor preserves a new concurrent native admission", a
   assert.equal(next.session.actorId, "new-actor");
 });
 
-test("native owner denial stays fail-closed when SecureStore deletion fails", async () => {
+test("native DSH denial blocks standing without requiring SecureStore deletion", async () => {
   const h = nativeHarness({ storageDeletionFails: true });
   h.setOwnerRead(async () => { throw new OwnerError(403); });
   const signal = new AbortController().signal;
   await assert.rejects(h.transport.readMerchantStanding(signal), { status: 403 });
   const entry = await h.transport.readAdmission(signal);
-  assert.equal(entry.session, null);
+  assert.equal(entry.session?.actorId, "old-actor");
+  assert.equal(h.current(), oldBearer);
+  await assert.rejects(h.reload().readMerchantStanding(signal), { status: 403 });
 });
 
 for (const storageDeletionFails of [false, true]) {

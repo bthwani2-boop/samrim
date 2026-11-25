@@ -45,6 +45,9 @@ function harness() {
     useEffect(fn) { index++; effects.push(fn); },
   };
   const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
+  class StandingError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
   const mocks = {
     "@bthwani/identity": { IdentityClientError: class extends Error {}, normalizeYemeniMobile: () => undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {
@@ -77,7 +80,7 @@ function harness() {
         return new Promise((resolve, reject) => standings.push({ signal, resolve, reject }));
       },
     },
-    "./dsh-standing": { MerchantStandingError: class extends Error {} },
+    "./dsh-standing": { MerchantStandingError: StandingError },
   };
   const mod = { exports: {} };
   new Function("require", "module", "exports", "setTimeout", "clearTimeout",
@@ -96,6 +99,7 @@ function harness() {
   };
   return {
     render,
+    standingDenied: () => new StandingError(403, "STORE_ACCESS_DENIED"),
     mount() {
       render();
       assert.equal(effects.length, 3);
@@ -276,4 +280,34 @@ test("Merchant timed-out Identity revalidation requires recovery instead of star
   const recovered = workspace(h.render());
   assert.equal(visible(recovered), true);
   assert.equal(recovered.key, initial.key);
+});
+
+
+test("DSH denial conceals Merchant workspace without prompting for a new OTP", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  workspace(h.render()).props.children.props.onRefresh();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().reject(h.standingDenied());
+  await settle();
+  const denied = h.render();
+  assert.equal(visible(workspace(denied)), false);
+  assert.equal(findNode(denied, node => node.type === "TextInput" && node.props.accessibilityLabel === "رقم هاتف الاختبار"), undefined);
+  const retry = findNode(denied, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق من المتاجر");
+  assert.ok(retry, "a DSH refusal must offer standing recovery");
+  retry.props.onPress();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  assert.equal(visible(workspace(h.render())), true);
 });

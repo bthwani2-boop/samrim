@@ -115,7 +115,12 @@ async function webRequest<T>(method: string, signal: AbortSignal, data?: object,
   });
   if (result.status === 204) return undefined as T;
   const body = await result.json();
-  if (!result.ok) throw new IdentityClientError(result.status, body.code);
+  if (!result.ok) {
+    if (stores && (result.status === 401 || result.status === 403) && body.code === "STORE_ACCESS_DENIED") {
+      throw new MerchantStandingError(result.status, body.code);
+    }
+    throw new IdentityClientError(result.status, body.code);
+  }
   return body as T;
 }
 
@@ -173,20 +178,10 @@ export async function readMerchantStanding(signal: AbortSignal) {
   if (!initialBearer || initialBearer === deniedNativeBearer) {
     throw new MerchantStandingError(401, "UNAUTHENTICATED");
   }
-  return withNativeMerchantSession(signal, async bearer => {
-    try {
-      return await readMerchantDSHStanding(nativeDSHOrigin ?? "", bearer, signal);
-    } catch (error) {
-      if (!signal.aborted && error instanceof MerchantStandingError &&
-          (error.status === 401 || error.status === 403)) {
-        // Deny only the bearer used by this request. A concurrent account
-        // switch must never invalidate the replacement session.
-        deniedNativeBearer = bearer;
-        await clearNativeBearerIfCurrent(bearer, signal).catch(() => {});
-      }
-      throw error;
-    }
-  });
+  // Store standing is not Identity authority. Refusal blocks the Store read,
+  // but a fresh Identity check alone decides whether its credential is valid.
+  return withNativeMerchantSession(signal, bearer =>
+    readMerchantDSHStanding(nativeDSHOrigin ?? "", bearer, signal));
 }
 
 export async function withNativeMerchantSession<T>(signal: AbortSignal, run: (bearer: string, origin: string) => Promise<T>, actorId?: string,

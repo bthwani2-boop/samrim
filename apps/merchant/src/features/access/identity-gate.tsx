@@ -125,13 +125,13 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
       setStanding({ session, value: current });
     }).catch(error => {
       if (controller.signal.aborted) return;
-      if ((error instanceof IdentityClientError || error instanceof MerchantStandingError) &&
-        (error.status === 401 || error.status === 403)) {
+      if (error instanceof IdentityClientError && (error.status === 401 || error.status === 403)) {
         setSession(null);
         setStanding(null);
         setMessage("انتهت صلاحية جلسة التاجر. يرجى تسجيل الدخول مجددًا.");
         return;
       }
+      setStanding(null);
       setStandingError("تعذّر تأكيد صلاحيات المتاجر لدى DSH. حاول مرة أخرى.");
     }).finally(() => {
       if (!controller.signal.aborted) setStandingLoading(false);

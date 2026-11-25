@@ -74,14 +74,16 @@ test("Unauthenticated browser cannot query DSH",async t=>{
 });
 
 for (const deniedStatus of [401, 403]) {
-  test(`DSH ${deniedStatus} owner denial expires the stale Merchant Web cookie`, async t => {
+  test(`DSH ${deniedStatus} owner denial preserves the verified Merchant Web cookie`, async t => {
     mockOwners(t, { dshStatus: deniedStatus });
     process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN = identity;
     process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN = dsh;
     const result = await GET(request());
     assert.equal(result.status, deniedStatus);
     assert.equal(result.headers.get("Cache-Control"), "no-store");
-    assert.match(result.headers.get("Set-Cookie") ?? "", /^bthwani_merchant_admission=; Path=\/api\/admission; HttpOnly; SameSite=Strict; Max-Age=0$/);
+    assert.equal(result.headers.get("Set-Cookie"), null);
+    const restored = await GET(request(""));
+    assert.equal((await restored.json()).session?.actorId, "owner-a");
     assert.deepEqual(await result.json(), { code: "STORE_ACCESS_DENIED" });
   });
 }
