@@ -331,7 +331,10 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       await Promise.resolve(); await Promise.resolve();
       tree = inventory();
       assert.ok(nodes(tree).some(n => n.props?.accessibilityLabel === "تعديل سعر ومخزون مسودة للسعر"));
-      assert.ok(!nodes(tree).some(n => ["CatalogImport", "CatalogExport"].includes(n.type) || (n.type === "DraftForm" && !n.props.draft)));
+      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-a", "Inventory must expose the existing bulk CSV workflow");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.actorId, "merchant-a");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.storeId, "store-a");
+      assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && !n.props.draft));
       assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.storeId, "store-a");
       nodes(tree).find(n => n.props?.accessibilityLabel === "كتالوج متجر ثان").props.onPress();
       tree = inventory();
@@ -346,6 +349,8 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       tree = inventory();
       assert.equal(nodes(tree).find(n => n.type === "DraftForm")?.props.priceStockOnly, true);
       assert.equal(nodes(tree).find(n => n.type === "DraftForm")?.props.storeId, "store-b");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogImport")?.props.storeId, "store-b");
+      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-b");
       assert.ok(!nodes(tree).some(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات"));
       tree = inventory("merchant-a", stores.slice(0, 1));
       assert.ok(!nodes(tree).some(privateControls), "revoked store hides inventory and editor");
@@ -460,6 +465,26 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(requests.length, beforeStockout + 1, "same stockout shortcut must read fresh owner state");
       for (const effect of effects) effect?.cleanup?.();
       assert.equal(nativeRemoved, 1);
+      // Dedicated Android Inventory uses the same owner-scoped import recovery and refresh.
+      hooks.length = 0; effects.length = 0; requests.length = 0;
+      const nativeInventory = () => render("merchant-a", stores, "store-a", false, true);
+      tree = nativeInventory();
+      assert.ok(!nodes(tree).some(privateControls));
+      requests[0].resolve({actorId:"merchant-a",storeId:"store-a",items:[nativeRows[0]]});
+      await flush();
+      tree = nativeInventory();
+      assert.equal(nodes(tree).find(n => n.type === "CatalogExport")?.props.storeId, "store-a");
+      assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && !n.props.draft));
+      const importControl = nodes(tree).find(n => n.type === "CatalogImport");
+      assert.equal(importControl?.props.actorId, "merchant-a");
+      importControl.props.onChanged();
+      nativeInventory();
+      assert.equal(requests.length, 2, "confirmed bulk change refreshes owner catalog");
+      requests[1].reject(new Error("denied"));
+      await flush();
+      assert.ok(!nodes(nativeInventory()).some(privateControls), "failed owner refresh withdraws the bulk workflow");
+      for (const effect of effects) effect?.cleanup?.();
+      assert.equal(nativeRemoved, 2);
     } finally {
       if (previousWindow === undefined) delete globalThis.window;
       else globalThis.window = previousWindow;

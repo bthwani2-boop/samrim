@@ -176,7 +176,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
       </Text>
     </Pressable> : null}
     {priceStockOnly ? <Text style={{ color: theme.colorSecondary }}>
-      عدّل السعر والكمية لمسودة واحدة في كل مرة. تعديل العروض المنشورة والحفظ الجماعي غير متاحين.
+      عدّل سعر ومخزون مسودة واحدة أو استخدم ملف CSV لتعديل المسودات المطابقة جماعيًا بعد مراجعة الصفوف واعتمادها لدى DSH. لا يشمل ذلك إنشاء المنتجات أو تعديل العروض المنشورة.
     </Text> : null}
     {storeId && actorId ? <View style={{ gap: 8 }}>
       <TextInput accessibilityLabel="البحث باسم المنتج" value={draftSearch}
@@ -207,8 +207,8 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
         setFilter({ scope: storeScope, status: "stockout" });
         if (status === "stockout" && !searchQuery) setRetry(value => value + 1);
       }} /> : null}
-    {catalogVerified && !priceStockOnly ? <CatalogExport actorId={actorId} storeId={storeId} query={searchQuery} status={status} /> : null}
-    {catalogVerified && !priceStockOnly ? <CatalogImport actorId={actorId} storeId={storeId} onChanged={() => setRetry(value => value + 1)} /> : null}
+    {catalogVerified ? <CatalogExport actorId={actorId} storeId={storeId} query={searchQuery} status={status} /> : null}
+    {catalogVerified ? <CatalogImport actorId={actorId} storeId={storeId} onChanged={() => setRetry(value => value + 1)} /> : null}
     {catalogVerified && !priceStockOnly ? <MerchantCatalogDraftForm key={storeScope} actorId={actorId} storeId={storeId}
       onCreated={() => setRetry(value => value + 1)} /> : null}
     {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ قراءة كتالوج المتجر" /> : null}
