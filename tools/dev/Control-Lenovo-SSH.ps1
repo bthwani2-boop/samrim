@@ -58,8 +58,8 @@ $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.Window
 Write-Output ('ADMIN=' + $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
 $s=Get-CimInstance Win32_Service -Filter "Name='sshd'"
 Write-Output ('SSHD=' + $s.State + '; START=' + $s.StartMode)
-foreach($n in @('ssh.exe','scp.exe','sftp.exe','docker.exe','node.exe','git.exe','pnpm.cmd','winget.exe')){
- $found=Get-Command $n -ErrorAction SilentlyContinue
+foreach($n in @('ssh.exe','scp.exe','sftp.exe','docker.exe','node.exe','git.exe','pnpm','winget.exe')){
+ $found=Get-Command $n -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
  Write-Output ($n + '=' + $(if($found){$found.Source}else{'NOT_IN_SSH_PATH'}))
 }
 '@

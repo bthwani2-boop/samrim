@@ -14,6 +14,10 @@ test("manual Lenovo control pins the same OpenSSH executables as the tunnel and 
   assert.match(helper, /& \$sshClient -T -o BatchMode=yes -o StrictHostKeyChecking=yes/);
   assert.equal((helper.match(/& \$scpClient @args/g) || []).length, 2);
   assert.doesNotMatch(helper, /& (?:ssh|scp)\.exe\b/);
+  assert.match(helper, /'node\.exe','git\.exe','pnpm','winget\.exe'/);
+  assert.match(helper, /Get-Command \$n -CommandType Application -ErrorAction SilentlyContinue \| Select-Object -First 1/);
+  assert.doesNotMatch(helper, /'pnpm\.cmd'/);
+
 });
 
 
