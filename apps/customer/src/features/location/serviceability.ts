@@ -4,6 +4,11 @@ export function normalizeServiceCityId(value: string): string {
   return /^[a-z0-9][a-z0-9-]{0,63}$/.test(normalized) ? normalized : "";
 }
 
+/** Store route identifiers follow DSH's PublicId contract; never coerce an alias. */
+export function readPublicStoreId(value: unknown): string | null {
+  return typeof value === "string" && /^[a-z0-9-]{1,64}$/.test(value) ? value : null;
+}
+
 export const STORE_SEARCH_LIMIT = 80;
 
 type BrowseParams = { city?: string | string[]; q?: string | string[]; vertical?: string | string[] };
