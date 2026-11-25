@@ -79,8 +79,13 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
     return ()=>{clearInterval(timer);clearTimeout(expires.current);};
   },[view,reload,clear]);
 
+  const renderedScope=scope.current;
+  function isCurrentScope() {
+    return renderedScope!==null && scope.current===renderedScope && !renderedScope.signal.aborted;
+  }
+
   async function toggle() {
-    if(view?.kind!=="detail"||view.storeId!==storeId||action.current||view.expiresAt<=Date.now())return;
+    if(!isCurrentScope()||view?.kind!=="detail"||view.storeId!==storeId||action.current||view.expiresAt<=Date.now())return;
     const controller=new AbortController();action.current=controller;setBusy(true);setMessage("");
     try {
       const result=await writeFavoriteStore(controller.signal,view.actor,view.storeId,!view.favorite);
@@ -92,7 +97,7 @@ export default function FavoriteStores({storeId}:Readonly<{storeId?:string}>) {
     } finally {if(action.current===controller){action.current=null;setBusy(false);}}
   }
   async function more(){
-    if(view?.kind!=="list"||!view.next||action.current)return;
+    if(!isCurrentScope()||view?.kind!=="list"||!view.next||action.current||view.expiresAt<=Date.now())return;
     const controller=new AbortController();action.current=controller;setBusy(true);
     try {
       const result=await readFavoriteStores(controller.signal,view.actor,view.next);

@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { findWorkspaceEntry, workspaceGroupLabels, workspaceRegistry, workspaceSubsections } from "../navigation/workspace-registry";
 import { canEnterOperatorWorkspace, type OperatorPermission, visibleWorkspaceEntries } from "../session/operator-permissions";
+import { notifyOperatorSessionChanged, subscribeOperatorSessionChanged, withOperatorBrowserSession } from "../session/operator-browser-session";
 import { OperatorIcon, type OperatorIconName } from "./operator-icon";
 import OperatorNavigationSearch from "./operator-navigation-search";
 import styles from "./operator-shell.module.css";
@@ -35,16 +36,101 @@ const entryIcons: Record<string, OperatorIconName> = {
   "/policies": "policy",
 };
 
-export default function OperatorShell({ children, verifiedGrants, originalOperator, appearanceControl }: Readonly<{
+export default function OperatorShell({ children, verifiedGrants, originalOperator, verifiedActorId, verifiedExpiresAt, appearanceControl }: Readonly<{
   children: ReactNode;
   // The backend gates data and actions independently; links are only presentation hints.
   verifiedGrants: readonly OperatorPermission[] | null;
   originalOperator: boolean;
+  verifiedActorId: string | null;
+  verifiedExpiresAt: string | null;
   appearanceControl?: ReactNode;
 }>) {
   const pathname = usePathname();
   const [signOutState, setSignOutState] = useState<"idle" | "pending" | "unconfirmed">("idle");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sessionVisible, setSessionVisible] = useState(true);
+  const [sessionInvalidated, setSessionInvalidated] = useState(false);
+  const signingOut = useRef(false);
+  useEffect(() => {
+    if (!verifiedActorId || !verifiedExpiresAt || !verifiedGrants || signOutState !== "idle") return;
+    let active = true;
+    let pending = false;
+    let changedWhilePending = false;
+    let expiry: ReturnType<typeof setTimeout> | undefined;
+    const conceal = () => { if (active) setSessionVisible(false); };
+    const foreground = () => document.visibilityState !== "hidden";
+    const arm = (value: string) => {
+      clearTimeout(expiry);
+      const remaining = Date.parse(value) - Date.now();
+      if (!Number.isFinite(remaining) || remaining <= 0) { conceal(); return false; }
+      expiry = setTimeout(conceal, Math.min(remaining, 2147483647));
+      return true;
+    };
+    async function check() {
+      if (!active || signingOut.current || pending || !foreground()) return;
+      pending = true;
+      try {
+        const decision = await withOperatorBrowserSession(async () => {
+          if (!active || signingOut.current) throw new Error("Obsolete session check");
+          const reply = await fetch("/api/auth/session", {
+            method: "GET", credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(45_000),
+          });
+          if (reply.status === 401) return null;
+          if (!reply.ok) throw new Error("Identity unavailable");
+          return await reply.json() as { authenticated?: boolean; role?: string; actorId?: string; grants?: unknown; originalOperator?: boolean; sessionExpiresAt?: string };
+        });
+        if (!active || signingOut.current) return;
+        const grants = decision?.grants;
+        if (decision?.authenticated !== true || decision.role !== "operator" ||
+            decision.actorId !== verifiedActorId || decision.originalOperator !== originalOperator || !Array.isArray(grants) ||
+            !verifiedGrants || grants.length !== verifiedGrants.length ||
+            !verifiedGrants.every(grant => grants.includes(grant))) {
+          conceal();
+          setSessionInvalidated(true);
+          active = false;
+          window.location.replace("/");
+          return;
+        }
+        if (typeof decision.sessionExpiresAt !== "string" || !arm(decision.sessionExpiresAt)) return;
+        if (!changedWhilePending && foreground()) setSessionVisible(true);
+      } catch { conceal(); }
+      finally {
+        pending = false;
+        if (changedWhilePending) {
+          changedWhilePending = false;
+          if (active) void check();
+        }
+      }
+    }
+    const recheck = () => {
+      conceal();
+      if (pending) changedWhilePending = true;
+      else void check();
+    };
+    const visibility = () => {
+      if (document.visibilityState === "hidden") conceal();
+      else recheck();
+    };
+    arm(verifiedExpiresAt);
+    if (document.visibilityState === "hidden") conceal();
+    else void check();
+    const timer = setInterval(() => void check(), 30_000);
+    const unsubscribe = subscribeOperatorSessionChanged(recheck);
+    window.addEventListener("focus", recheck);
+    window.addEventListener("pageshow", recheck);
+    window.addEventListener("pagehide", conceal);
+    document.addEventListener("visibilitychange", visibility);
+    return () => {
+      active = false;
+      clearTimeout(expiry);
+      clearInterval(timer);
+      unsubscribe();
+      window.removeEventListener("focus", recheck);
+      window.removeEventListener("pageshow", recheck);
+      window.removeEventListener("pagehide", conceal);
+      document.removeEventListener("visibilitychange", visibility);
+    };
+  }, [verifiedActorId, verifiedExpiresAt, verifiedGrants, originalOperator, signOutState]);
   const menuButton = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!sidebarOpen) return;
@@ -69,13 +155,25 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
   const subsectionLinks = workspaceSubsections.filter(item => activeHref === item.parent && canEnterOperatorWorkspace(verifiedGrants ?? [], item.href));
 
   async function signOut() {
-    if (signOutState !== "idle") return;
+    if (signOutState !== "idle" || signingOut.current || !verifiedActorId) return;
+    signingOut.current = true;
     setSignOutState("pending");
     try {
-      const response = await fetch("/api/auth/session", {
-        method: "POST", credentials: "same-origin", cache: "no-store",
+      const response = await withOperatorBrowserSession(async () => {
+        const current = await fetch("/api/auth/session", {
+          method: "GET", credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(45_000),
+        });
+        if (current.status === 401) return null;
+        if (!current.ok) throw new Error("Identity unavailable");
+        const actor = await current.json() as { authenticated?: boolean; role?: string; actorId?: string };
+        // Never let an old tab sign out the newly signed-in different actor.
+        if (actor.authenticated !== true || actor.role !== "operator" || actor.actorId !== verifiedActorId) return null;
+        return fetch("/api/auth/session", {
+          method: "POST", credentials: "same-origin", cache: "no-store", signal: AbortSignal.timeout(45_000),
+        });
       });
-      if (response.status === 204) {
+      if (response === null || response.status === 204) {
+        notifyOperatorSessionChanged();
         window.location.replace("/");
         return;
       }
@@ -93,6 +191,10 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
     </li>
   );
 
+  if (sessionInvalidated) return <main className={styles.signOutStatus} role="status">
+    تغيّرت جلسة المشغّل أو صلاحياته؛ جارٍ إعادة التحقق.
+    <a href="/">العودة إلى صفحة الدخول</a>
+  </main>;
   if (pathname === "/" && verifiedGrants === null && signOutState === "idle") {
     return <div className={styles.loginOnly}>{children}</div>;
   }
@@ -109,9 +211,12 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
           {signOutState === "unconfirmed" && <a href="/">العودة إلى صفحة الدخول</a>}
         </main>
       ) : <>
-        {hasWorkspace && sidebarOpen && <button type="button" aria-label="إغلاق القائمة الجانبية"
+        {!sessionVisible && verifiedActorId && <main role="status" className={styles.signOutStatus} style={{ gridColumn: "1 / -1" }}>
+          جارٍ التحقق من جلسة المشغّل لدى Identity. ستعود مساحة العمل بعد تأكيد الصلاحيات.
+        </main>}
+        {sessionVisible && hasWorkspace && sidebarOpen && <button type="button" aria-label="إغلاق القائمة الجانبية"
           className={styles.mobileScrim} onClick={() => setSidebarOpen(false)} />}
-        <aside id="operator-sidebar" className={hasWorkspace ? `${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}` : styles.publicBar}>
+        <aside id="operator-sidebar" hidden={!sessionVisible} inert={!sessionVisible} style={!sessionVisible ? { display: "none" } : undefined} className={hasWorkspace ? `${styles.sidebar} ${sidebarOpen ? styles.sidebarOpen : ""}` : styles.publicBar}>
           <header className={styles.brand}>
             <span className={styles.brandMark} aria-hidden="true">ب</span>
             <span className={styles.brandWords}><strong>بثواني</strong><small>لوحة التحكم</small></span>
@@ -149,7 +254,7 @@ export default function OperatorShell({ children, verifiedGrants, originalOperat
             </div>
           )}
         </aside>
-        <div className={styles.mainColumn}>
+        <div className={styles.mainColumn} hidden={!sessionVisible} inert={!sessionVisible} style={!sessionVisible ? { display: "none" } : undefined}>
           {hasWorkspace && (
             <section className={styles.topBar} aria-label="شريط أدوات لوحة التحكم">
               <div className={styles.topbarLeading}>

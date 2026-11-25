@@ -46,10 +46,15 @@ export default function MerchantPublicLink({ actorId, storeId, published }: Read
       if (request.signal.aborted || current.id !== storeId ||
           latest.current.actorId !== actorId || latest.current.storeId !== storeId ||
           !latest.current.published) return;
-      await Clipboard.setStringAsync(link);
+      let copied = false;
+      try {
+        copied = await Clipboard.setStringAsync(link);
+      } catch {
+        // A rejected clipboard write is also an unacknowledged copy.
+      }
       if (!request.signal.aborted && latest.current.actorId === actorId &&
           latest.current.storeId === storeId && latest.current.published) {
-        setNotice("تم نسخ رابط المتجر المنشور.");
+        setNotice(copied === true ? "تم نسخ رابط المتجر المنشور." : "تعذّر نسخ الرابط إلى الحافظة. أعد المحاولة.");
       }
     } catch {
       if (!request.signal.aborted) {

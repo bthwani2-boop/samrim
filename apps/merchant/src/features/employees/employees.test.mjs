@@ -82,7 +82,7 @@ test("Employee screen loads current scope and retains the original operation thr
     const code=readFileSync(join(tmp,"employees-screen.js"),"utf8");
     let state=[],refs=[],si=0,ri=0,cleanup,mounted=false;
     const reads=[],writes=[],details=[],storage=new Map();
-    const platform={OS:"web"};
+    const platform={OS:"web"}; let nativeListener, focusListener;
     const get=key=>storage.get(key)??null;
     const set=(key,value)=>storage.set(key,value);
     const remove=key=>storage.delete(key);
@@ -93,13 +93,13 @@ test("Employee screen loads current scope and retains the original operation thr
     const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},
       "expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(algorithm,value)=>createHash(algorithm).update(value).digest("hex")},
       "expo-secure-store":{getItemAsync:async key=>get(key),setItemAsync:async(key,value)=>set(key,value),deleteItemAsync:async key=>remove(key)},
-      react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,View:"View",Text:"Text",TextInput:"TextInput",Pressable:"Pressable"},
+      react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,AppState:{addEventListener(type,listener){assert.equal(type,"change");nativeListener=listener;return {remove(){nativeListener=undefined;}};}},View:"View",Text:"Text",TextInput:"TextInput",Pressable:"Pressable"},
       "../../components/merchant-capability-screen":{__esModule:true,default:"Unavailable"},"../onboarding/merchant-registration-attempt":recovery,
       "./employee-transport":{readEmployeeDetail(actorId,storeId,id,signal){return new Promise((resolve,reject)=>details.push({actorId,storeId,id,signal,resolve,reject}));},readEmployees(actorId,storeId,signal,cursor){return new Promise((resolve,reject)=>reads.push({actorId,storeId,signal,cursor,resolve,reject}));},
         saveEmployee(actorId,storeId,input,signal){return new Promise((resolve,reject)=>writes.push({actorId,storeId,input,signal,resolve,reject}));}}};
     const mod={exports:{}};
     new Function("require","module","exports","window",code)(name=>{assert.ok(Object.hasOwn(mocks,name),name);return mocks[name];},mod,mod.exports,
-      {localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{locks:{request:(_key,fn)=>fn()}}});
+      {localStorage:{getItem:get,setItem:set,removeItem:remove},navigator:{locks:{request:(_key,fn)=>fn()}},addEventListener(type,listener){assert.equal(type,"focus");focusListener=listener;},removeEventListener(){focusListener=undefined;}});
     const scope={actorId:"merchant-a",storeId:"store-a"};
     const render=(p=scope)=>{si=0;ri=0;const c=mod.exports.default(p);return c.type(c.props);};
     const findInput=label=>nodes(render()).find(n=>n.type==="TextInput"&&n.props.accessibilityLabel===label);
@@ -131,6 +131,61 @@ test("Employee screen loads current scope and retains the original operation thr
     details[1].reject({status:403});await until(()=>!JSON.stringify(render()).includes(record.displayName));
     assert.equal(findInput("اسم الموظف"),undefined);
     assert.notEqual(mod.exports.default(scope).key,mod.exports.default({...scope,storeId:"store-b"}).key);
+    assert.ok(nativeListener, "Android foreground must trigger an owner revalidation");
+    nativeListener("background");
+    assert.equal(reads.length,3);
+    nativeListener("active");
+    await until(()=>reads.length===4);
+    reads[3].resolve({items:[record],nextCursor:null});
+    await until(()=>!!findInput("اسم الموظف")&&findInput("اسم الموظف").props.editable);
+    findButton("التفاصيل وسجل التسجيل").props.onPress();
+    await until(()=>details.length===3);
+    nativeListener("active");
+    assert.equal(details[2].signal.aborted,true);
+    assert.ok(!JSON.stringify(render()).includes(record.displayName),"private records hidden while checking");
+    await until(()=>reads.length===5);
+    details[2].resolve({employee:record,audit});
+    reads[4].reject({status:403});
+    await until(()=>!findButton("جارٍ الاتصال بـ DSH…"));
+    assert.ok(!JSON.stringify(render()).includes(record.displayName),"late detail cannot restore denied records");
+
+    nativeListener("active");
+    await until(()=>reads.length===6);
+    reads[5].resolve({items:[record],nextCursor:null});
+    await until(()=>!!findInput("اسم الموظف")&&findInput("اسم الموظف").props.editable);
+    fill();findButton("حفظ سجل الموظف").props.onPress();
+    await until(()=>writes.length===3);
+    nativeListener("active");
+    assert.equal(writes[2].signal.aborted,false,"do not cancel a potentially committed write on resume");
+    assert.equal(reads.length,6,"owner refresh waits for the active write");
+    assert.ok(!JSON.stringify(render()).includes(record.displayName));
+    writes[2].reject(new Error("lost acknowledgment during resume"));
+    await until(()=>reads.length===7);
+    reads[6].resolve({items:[record],nextCursor:null});
+    await until(()=>!!findButton("إعادة تأكيد التسجيل")&&!findButton("إعادة تأكيد التسجيل").props.disabled);
+    findButton("إعادة تأكيد التسجيل").props.onPress();
+    await until(()=>writes.length===4);
+    assert.deepEqual(writes[3].input,writes[2].input,"resume must retain exact operation identity");
+    nativeListener("active");
+    assert.equal(writes[3].signal.aborted,false);
+    assert.equal(reads.length,7,"successful write also owns its handoff");
+    writes[3].resolve(id);
+    await until(()=>reads.length===8);
+    reads[7].resolve({items:[record],nextCursor:null});
+    await until(()=>!!findInput("اسم الموظف")&&findInput("اسم الموظف").props.editable);
+    restart();
+    assert.equal(nativeListener,undefined);
+    platform.OS="web";render();
+    await until(()=>reads.length===9);
+    reads[8].resolve({items:[record],nextCursor:null});
+    await until(()=>!!findInput("اسم الموظف")&&findInput("اسم الموظف").props.editable);
+    assert.ok(focusListener,"browser focus must trigger owner revalidation");
+    focusListener();
+    await until(()=>reads.length===10);
+    assert.ok(!JSON.stringify(render()).includes(record.displayName));
+    reads[9].reject({status:403});
+    await until(()=>!findButton("جارٍ الاتصال بـ DSH…"));
+    assert.ok(!JSON.stringify(render()).includes(record.displayName));
     restart();
   }finally{rmSync(tmp,{recursive:true,force:true});}
 });

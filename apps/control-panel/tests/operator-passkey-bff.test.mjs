@@ -245,7 +245,7 @@ test("Operator workspace grants require fresh Identity session and seven owner p
     return Response.json({ error: "FORBIDDEN" }, { status: 403 });
   });
   assert.deepEqual(await readVerifiedOperatorAccess(config, token), {
-    actorId: "operator-one", grants: ["operations", "merchant"],
+    actorId: "operator-one", sessionExpiresAt: expiry, grants: ["operations", "merchant"],
   });
   assert.equal(queried.length, 8, "session and all seven finite permissions must be read");
 });
@@ -285,7 +285,7 @@ test("Operator workspace owner mismatch, role spoof, revoked session and outage 
   }
   mode = "no-grants";
   assert.deepEqual(await readOperatorAccessState(config, token), {
-    status: "verified", access: { actorId: "operator-one", grants: [] },
+    status: "verified", access: { actorId: "operator-one", sessionExpiresAt: expiry, grants: [] },
   });
   const before = calls;
   assert.equal(await readVerifiedOperatorAccess(config, "forged"), null);

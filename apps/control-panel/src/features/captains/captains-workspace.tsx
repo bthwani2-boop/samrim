@@ -4,7 +4,7 @@ import { Alert, Button, Card, Select, Space, Table, Tag, Typography } from "antd
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
-  captainStatusLabels as labels, type CaptainPage as Page,
+  captainStatusLabels as labels, type CaptainPage as Page, readCaptainPage,
   readCaptainJson as readJson,
   type CaptainStanding as Standing, type CaptainStatus as Status,captainStatuses as statuses, isCaptainStanding as valid,
 } from "./captains-read-client";
@@ -12,7 +12,7 @@ import {
 export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly<{ title?: string }>) {
   const [status, setStatus] = useState<Status>("PENDING");
   const [cursor, setCursor] = useState("");
-  const [page, setPage] = useState<Page | null>(null);
+  const [page, setPage] = useState<(Page & { operatorBinding: string }) | null>(null);
   const [selected, setSelected] = useState<Standing | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -43,8 +43,8 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
     setSelected(null);
     const query = new URLSearchParams({ status, limit: "20" });
     if (cursor) query.set("cursor", cursor);
-    void readJson(`/api/captains?${query.toString()}`, controller.signal)
-      .then((value) => {
+    void readCaptainPage(`/api/captains?${query.toString()}`, controller.signal)
+      .then(({ value, operatorBinding }) => {
         if (controller.signal.aborted) return;
         if (typeof value !== "object" || value === null || !Array.isArray((value as Page).items) ||
           !(value as Page).items.every(valid) ||
@@ -52,7 +52,7 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
             (typeof (value as Page).nextCursor !== "string" || !/^[A-Za-z0-9_-]{1,512}$/.test((value as Page).nextCursor ?? "")))) {
           throw new Error("استجابة غير صالحة من خدمة الكباتن.");
         }
-        setPage(value as Page);
+        setPage({ ...(value as Page), operatorBinding });
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : "تعذّرت القراءة.");
@@ -62,6 +62,8 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
   }, [status, cursor, revision]);
 
   const showDetail = useCallback(async (actorId: string) => {
+    if (!page) return;
+    const { operatorBinding } = page;
     detailAbort.current?.abort();
     const controller = new AbortController();
     detailAbort.current = controller;
@@ -69,7 +71,7 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
     setError("");
     try {
       const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(5000)]);
-      const value = await readJson(`/api/captains/${encodeURIComponent(actorId)}/standing`, signal);
+      const value = await readJson(`/api/captains/${encodeURIComponent(actorId)}/standing`, signal, operatorBinding);
       if (!valid(value) || value.actorId !== actorId) throw new Error("تفاصيل غير صالحة من خدمة الكباتن.");
       if (!controller.signal.aborted) setSelected(value);
     } catch (reason) {
@@ -77,7 +79,7 @@ export default function CaptainsWorkspace({ title = "الكباتن" }: Readonly
     } finally {
       if (detailAbort.current === controller) detailAbort.current = null;
     }
-  }, []);
+  }, [page]);
 
   return (
     <main style={{ padding: 24, maxWidth: 1100, marginInline: "auto" }} aria-labelledby="captains-heading">

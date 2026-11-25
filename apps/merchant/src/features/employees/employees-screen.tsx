@@ -3,7 +3,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useLayoutEffect, useRef, useState } from "react";
-import { Platform, Pressable, Text, TextInput, View } from "react-native";
+import { AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import MerchantCapabilityScreen from "../../components/merchant-capability-screen";
 import { type PendingMerchantRegistration, parsePendingMerchantRegistration } from "../onboarding/merchant-registration-attempt";
 import { readEmployeeDetail, readEmployees, saveEmployee } from "./employee-transport";
@@ -49,6 +49,8 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
   const [pending,setPending]=useState<EmployeeRegistration|null>(null);
   const active=useRef<AbortController|null>(null);
   const scope=useRef<AbortController|null>(null);
+  const activeWrite=useRef<AbortController|null>(null);
+  const refreshAfterWrite=useRef(false);
   async function load(next?:string){
     if(active.current || !scope.current || scope.current.signal.aborted)return;
     const request=new AbortController();
@@ -71,6 +73,17 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
   useLayoutEffect(()=>{
     const controller=new AbortController();scope.current=controller;
     void load();
+    const reload=()=>{
+      if(controller.signal.aborted)return;
+      setReady(false);setItems([]);setCursor(null);setDetail(null);
+      // Never cancel a possibly committed registration just to refresh the directory.
+      if(activeWrite.current){refreshAfterWrite.current=true;return;}
+      active.current?.abort();active.current=null;
+      setMessage("");void load();
+    };
+    const unsubscribe=Platform.OS==="web"
+      ? (()=>{window.addEventListener("focus",reload);return()=>window.removeEventListener("focus",reload);})()
+      : (()=>{const listener=AppState.addEventListener("change",status=>{if(status==="active")reload();});return()=>listener.remove();})();
     void (async()=>{
       try{
         const key="bthwani.merchant.employee-attempt."+await digest(JSON.stringify([actorId,"employee-registration"]));
@@ -80,7 +93,10 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
         if(!controller.signal.aborted)setMessage("تعذرت قراءة سجل استرداد التسجيل.");
       }
     })();
-    return()=>{controller.abort();active.current?.abort();active.current=null;scope.current=null;};
+    return()=>{
+      unsubscribe();controller.abort();active.current?.abort();
+      active.current=null;activeWrite.current=null;refreshAfterWrite.current=false;scope.current=null;
+    };
   },[actorId,storeId]);
   async function openDetail(id:string){
     if(!ready||active.current||!scope.current||scope.current.signal.aborted)return;
@@ -98,7 +114,7 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
     department:draft.department.trim(),jobTitle:draft.jobTitle.trim(),startDate:draft.startDate.trim()};
   async function save(){
     if(!ready || !recovery || active.current || !scope.current || scope.current.signal.aborted || (!pending&&!validEmployeeRegistration(proposed)))return;
-    const request=new AbortController();active.current=request;setBusy(true);setMessage("");setDetail(null);
+    const request=new AbortController();active.current=request;activeWrite.current=request;setBusy(true);setMessage("");setDetail(null);
     const values=pending??proposed;
     try{
       const fingerprint=await digest(JSON.stringify([values.displayName,values.department,values.jobTitle,values.startDate]));
@@ -135,7 +151,16 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
         else setMessage("لم يصل تأكيد موثوق. أعد المحاولة بالقيم نفسها؛ تُحفظ هوية العملية للاسترداد.");
       }
     }finally{
-      if(active.current===request){active.current=null;setBusy(false);}
+      if(activeWrite.current===request){
+        activeWrite.current=null;
+        const reload=refreshAfterWrite.current;
+        refreshAfterWrite.current=false;
+        if(active.current===request){
+          active.current=null;
+          if(reload)void load();
+          else setBusy(false);
+        }
+      }
     }
   }
   const button={minHeight:44,justifyContent:"center" as const,paddingHorizontal:12,borderWidth:1,borderRadius:10,borderColor:theme.borderColor};

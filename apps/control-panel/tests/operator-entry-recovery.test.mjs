@@ -71,9 +71,13 @@ function formHarness(response) {
   const states = [];
   const calls = [];
   const redirects = [];
+  let effect;
+  const locks = [];
   const form = compile("src/features/access/operator-passkey-form.tsx", {
     antd: { Button: "Button" },
+    "../session/operator-browser-session": { withOperatorBrowserSession: async action => { locks.push("lock"); return action(); } },
     react: {
+      useEffect(callback) { effect = callback; },
       useState(initial) {
         const at = index++;
         if (!(at in states)) states[at] = initial;
@@ -90,7 +94,7 @@ function formHarness(response) {
     fetch: async (url, options) => { calls.push({ url, options }); return response; },
     window: { location: { replace: url => redirects.push(url) } },
   });
-  return { calls, redirects, render() { index = 0; return nodes(form({ recoveryOnly: true })); } };
+  return { calls, redirects, locks, mount() { return effect?.(); }, render() { index = 0; return nodes(form({ recoveryOnly: true })); } };
 }
 
 test("Operator recovery invokes only the existing owner-backed session endpoint and reloads after verified response", async () => {
@@ -181,5 +185,137 @@ test("Operator passkey admission requires a persistent family before setting eit
       assert.equal(response.cookies.get("bthwani_operator_refresh")?.value, refresh);
       assert.deepEqual(revoked, []);
     }
+  }
+});
+
+test("retained Operator session restores automatically through the browser session lock", async () => {
+  const h = formHarness(Response.json({ authenticated: true, role: "operator" }));
+  h.render();
+  h.mount();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual(h.locks, ["lock"]);
+  assert.deepEqual(h.redirects, ["/"]);
+});
+
+test("document proxy does not rotate browser credentials outside the serialized session route", () => {
+  const proxy = readFileSync(resolve(root, "proxy.ts"), "utf8");
+  assert.doesNotMatch(proxy, /rotatePersistentIdentitySession/);
+});
+
+test("protected direct entry exposes recovery only for a signed-out session with a retained credential", async () => {
+  for (const status of ["signed-out", "unavailable", "verified"]) {
+    const layout = compile("app/(workspace)/layout.tsx", {
+      "next/headers": { headers: async () => new Headers({ host: "localhost:13000", "x-bthwani-route": "/operations" }),
+        cookies: async () => ({ get: () => ({ value: "R".repeat(43) }) }) },
+      "../../src/features/access/operator-workspace-gate": { __esModule: true, default: "Gate" },
+      "../../src/features/session/operator-permissions": { canEnterOperatorWorkspace: () => false },
+      "../../src/server/current-operator-access": { currentOperatorAccessState: async () => status === "verified"
+        ? { status, access: { actorId: "operator-a", grants: [] } } : { status },
+        currentOriginalOperatorPermissions: async () => null },
+      "../../src/server/operator-passkey-bff": { OPERATOR_REFRESH_COOKIE: "refresh",
+        resolveIsolatedOperatorConfig: () => ({ browserOrigin: "http://localhost:13000" }) },
+      "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+    });
+    const gate = await layout({ children: "private" });
+    assert.equal(Boolean(gate.props.recoverable), status === "signed-out");
+    assert.equal(gate.props.children, undefined);
+  }
+});
+
+test("browser session lock serializes separate callers and refuses uncoordinated fallback", async () => {
+  let tail = Promise.resolve();
+  const names = [];
+  const locks = { request(name, options, action) {
+    names.push([name, options.mode]);
+    const task = tail.then(action);
+    tail = task.catch(() => undefined);
+    return task;
+  }};
+  const bindings = { navigator: { locks } };
+  const one = compile("src/features/session/operator-browser-session.ts", {}, bindings, "withOperatorBrowserSession");
+  const two = compile("src/features/session/operator-browser-session.ts", {}, bindings, "withOperatorBrowserSession");
+  const sequence = [];
+  let release;
+  const first = one(async () => { sequence.push("one"); await new Promise(resolve => { release = resolve; }); sequence.push("done"); });
+  const second = two(async () => sequence.push("two"));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(sequence, ["one"]);
+  release();
+  await Promise.all([first, second]);
+  assert.deepEqual(sequence, ["one", "done", "two"]);
+  assert.equal(names[0][0], names[1][0]);
+  assert.ok(names.every(([,mode]) => mode === "exclusive"));
+  const unsupported = compile("src/features/session/operator-browser-session.ts", {}, { navigator: {} }, "withOperatorBrowserSession");
+  await assert.rejects(() => unsupported(async () => assert.fail("unlocked mutation")));
+});
+
+test("Operator session route renews before expiry with same-actor proof and current grants, never returns foreign credentials", async () => {
+  const token = Buffer.alloc(32, 61).toString("base64url");
+  const refresh = Buffer.alloc(32, 62).toString("base64url");
+  const newAccess = Buffer.alloc(32, 63).toString("base64url");
+  const newRefresh = Buffer.alloc(32, 64).toString("base64url");
+  const expiry = new Date(Date.now() + 300000).toISOString();
+  for (const mode of ["healthy", "renew", "wrong-actor", "outage-after-renew", "denied-after-renew", "original", "original-outage"]) {
+    let rotations = 0;
+    const oldExpiry = new Date(Date.now() + (mode === "healthy" ? 240000 : 45000)).toISOString();
+    const actor = mode === "wrong-actor" ? "operator-b" : "operator-a";
+    class IdentityClientError extends Error { constructor(status, code) { super(code); this.status = status; } }
+    const get = compile("app/api/auth/session/route.ts", {
+      "@bthwani/identity": {
+        identityOperations: {}, IdentityClientError,
+        async rotatePersistentIdentitySession(_origin, supplied) {
+          assert.equal(supplied, refresh); rotations++;
+          return { accessToken: newAccess, refreshToken: newRefresh, sessionExpiresAt: expiry,
+            refreshExpiresAt: new Date(Date.now() + 3600000).toISOString() };
+        },
+        async readVerifiedIdentitySession(_origin, supplied) {
+          assert.equal(supplied, newAccess);
+          return { actorId: actor, role: "operator", sessionExpiresAt: expiry };
+        },
+        async reviewOriginalOperatorPermissions(_origin, bearer, target) {
+          assert.equal(bearer, mode === "healthy" ? token : newAccess); assert.equal(target, "operator-a");
+          if (mode === "original") return [];
+          if (mode === "original-outage") throw new IdentityClientError(503, "OWNER_UNAVAILABLE");
+          throw new IdentityClientError(403, "FORBIDDEN");
+        },
+        revokePersistentIdentitySession: async () => {},
+      },
+      "next/server": requirePanel("next/server"),
+      "../../../../src/server/operator-passkey-bff": {
+        cookieLifetimeSeconds: date => Math.floor((Date.parse(date) - Date.now()) / 1000),
+        isTrustedOperatorLoopbackTarget: () => true,
+        OPERATOR_COOKIE: "bthwani_operator_session", OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
+        resolveIsolatedOperatorConfig: () => ({ identityOrigin: "http://127.0.0.1:3201", browserOrigin: "http://localhost:13000" }),
+        async readOperatorAccessState(_config, bearer) {
+          if (bearer === token) return { status: "verified", access: { actorId: "operator-a", grants: ["operations"], sessionExpiresAt: oldExpiry } };
+          assert.equal(bearer, newAccess);
+          if (mode === "outage-after-renew") return { status: "unavailable" };
+          if (mode === "denied-after-renew") return { status: "signed-out" };
+          return { status: "verified", access: { actorId: actor, grants: ["operations"], sessionExpiresAt: expiry } };
+        },
+      },
+      "../../../../src/server/request-security": { unavailableSessionResponse: () => Response.json({}, { status: 503 }) },
+    }, {}, "GET");
+    const request = { cookies: { get: name => ({ value: name.endsWith("refresh") ? refresh : token }) } };
+    const response = await get(request);
+    assert.equal(rotations, mode === "healthy" ? 0 : 1);
+    const body = await response.json();
+    if (mode === "healthy" || mode === "renew" || mode === "original") {
+      assert.equal(response.status, 200);
+      assert.deepEqual(body.grants, ["operations"]);
+      assert.equal(body.actorId, "operator-a");
+      assert.equal(body.originalOperator, mode === "original");
+      assert.equal(response.cookies.get("bthwani_operator_refresh")?.value, mode === "healthy" ? undefined : newRefresh);
+    } else if (mode === "outage-after-renew" || mode === "original-outage") {
+      assert.equal(response.status, 503);
+      assert.equal(body.actorId, undefined);
+      assert.equal(response.cookies.get("bthwani_operator_refresh")?.value, newRefresh);
+    } else {
+      assert.equal(response.status, 401);
+      assert.equal(body.actorId, undefined);
+      assert.equal(response.cookies.get("bthwani_operator_refresh")?.value, "");
+    }
+    assert.ok(!JSON.stringify(body).includes(newRefresh));
   }
 });

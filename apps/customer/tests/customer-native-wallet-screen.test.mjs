@@ -39,6 +39,9 @@ const history = (actorId, items, nextCursor = null) => ({
 function harness() {
   const hooks = [];
   const requests = [];
+  const intervals = new Map(), timers = new Map();
+  let timerId = 0;
+  const timer = (registry, callback, delay) => { const id = ++timerId; registry.set(id, { callback, delay }); return id; };
   let index = 0, focus = null, focusCleanup = null, activeListener = null;
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const appState = {
@@ -89,11 +92,13 @@ function harness() {
     },
   };
   const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(
+  new Function("require", "module", "exports", "setInterval", "clearInterval", "setTimeout", "clearTimeout", compiled)(
     name => {
       assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`);
       return modules[name];
     }, mod, mod.exports,
+    (fn, delay) => timer(intervals, fn, delay), id => intervals.delete(id),
+    (fn, delay) => timer(timers, fn, delay), id => timers.delete(id),
   );
   const render = () => {
     index = 0;
@@ -116,6 +121,10 @@ function harness() {
       appState.currentState = status;
       activeListener?.(status);
     },
+    poll() { const next = [...intervals.values()][0]; assert.ok(next, "foreground revalidation must be scheduled"); next.callback(); },
+    deadline() { const next = [...timers.values()].find(t => t.delay === 12000); assert.ok(next, "bounded refresh deadline"); next.callback(); },
+    expire() { const next = [...timers.values()].find(t => t.delay > 12000); assert.ok(next, "verified session expiry"); next.callback(); },
+    pendingCount() { return requests.length; },
     unmount() { focusCleanup?.(); focusCleanup = null; },
   };
 }
@@ -220,6 +229,47 @@ test("Native wallet does not append overlapping funding pages and can retry the 
     await settle();
     assert.equal(byId(app.render(), "native-wallet-more"), null);
   } finally { app.unmount(); }
+});
+
+test("Native wallet keeps verified same-actor funds during bounded foreground refresh", async () => {
+  const app = harness();
+  try {
+    app.mount(); app.read("wallet").resolve(wallet("actor-a")); await settle();
+    app.read("history").resolve(history("actor-a", [funding("old")], "next")); await settle();
+    const original = textOf(app.render());
+    app.poll(); const fresh = app.read("wallet");
+    assert.equal(textOf(app.render()), original);
+    app.poll(); byId(app.render(), "native-wallet-more").props.onPress();
+    assert.equal(app.pendingCount(), 0, "refresh cannot overlap polling or continuation");
+    fresh.resolve(wallet("actor-a")); await settle();
+    assert.equal(textOf(app.render()), original);
+    app.read("history").resolve(history("actor-a", [funding("new")])); await settle();
+    assert.ok(byId(app.render(), "native-wallet-balance"));
+    assert.equal(byId(app.render(), "native-wallet-more"), null);
+  } finally { app.unmount(); }
+});
+
+test("Native wallet conceals private funds on periodic denial, actor switch or deadline", async () => {
+  for (const scenario of ["denied", "actor-switch", "timeout", "expiry", "history-unavailable"]) {
+    const app = harness();
+    try {
+      app.mount(); app.read("wallet").resolve(wallet("actor-a")); await settle();
+      app.read("history").resolve(history("actor-a", [funding("old")])); await settle();
+      app.poll(); const fresh = app.read("wallet");
+      if (scenario === "timeout" || scenario === "expiry") {
+        if (scenario === "expiry") app.expire(); else app.deadline();
+        assert.equal(fresh.signal.aborted, true);
+        fresh.resolve(wallet("actor-a"));
+      } else if (scenario === "history-unavailable") {
+        fresh.resolve(wallet("actor-a")); await settle();
+        app.read("history").resolve({ kind: "unavailable" });
+      } else {
+        fresh.resolve(scenario === "denied" ? { kind: "signed-out" } : wallet("actor-b"));
+      }
+      await settle();
+      assert.equal(byId(app.render(), "native-wallet-balance"), null, scenario);
+    } finally { app.unmount(); }
+  }
 });
 
 test("Unfocusing the native wallet aborts pending reads and prevents old account information from reappearing", async () => {

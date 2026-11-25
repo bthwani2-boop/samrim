@@ -26,12 +26,16 @@ export default function WalletScreen() {
   const scheduleExpiryRef = useRef<((expiresAt: number) => void) | null>(null);
 
   useFocusEffect(useCallback(() => {
+    let actor: string | undefined;
+    let refreshTimeout: ReturnType<typeof setTimeout> | undefined;
     function hide() {
       generation.current++;
       pending.current?.abort();
       morePending.current?.abort();
       pending.current = null;
       morePending.current = null;
+      actor = undefined;
+      clearTimeout(refreshTimeout);
       if (expiryTimer.current) clearTimeout(expiryTimer.current);
       expiryTimer.current = null;
       setBalance(null);
@@ -46,39 +50,68 @@ export default function WalletScreen() {
         setBalance({ kind: "signed-out" });
       }, Math.max(0, expiresAt - Date.now()));
     }
-    function refresh() {
-      hide();
-      if (AppState.currentState !== "active") return;
+    function refresh(silent = false) {
+      if (AppState.currentState !== "active") {
+        hide();
+        return;
+      }
+      if (silent && (pending.current || morePending.current)) return;
+      if (!silent) hide();
+      const previousActor = actor;
       const current = generation.current;
       const controller = new AbortController();
       pending.current = controller;
+      const stillCurrent = () => !controller.signal.aborted && generation.current === current && pending.current === controller;
+      function unavailable() {
+        if (!stillCurrent()) return;
+        hide();
+        setBalance({ kind: "unavailable" });
+      }
+      refreshTimeout = setTimeout(unavailable, 12000);
       void (async () => {
         try {
           const result = await readNativeWallet(controller.signal);
-          if (controller.signal.aborted || generation.current !== current) return;
-          setBalance(result);
-          if (result.kind !== "ready") return;
-          scheduleExpiry(result.expiresAt);
-          const transactions = await readNativeWalletTransactions(controller.signal, undefined, result.balance.actorId);
-          if (controller.signal.aborted || generation.current !== current) return;
-          if (transactions.kind === "signed-out") {
+          if (!stillCurrent()) return;
+          if (result.kind !== "ready") {
+            hide();
+            setBalance(result);
+            return;
+          }
+          if ((previousActor && previousActor !== result.balance.actorId) || result.expiresAt <= Date.now()) {
             hide();
             setBalance({ kind: "signed-out" });
             return;
           }
-          if (transactions.kind === "ready") {
-            if (transactions.history.actorId !== result.balance.actorId) {
-              hide();
-              setBalance({ kind: "signed-out" });
-              return;
-            }
-            scheduleExpiry(Math.min(result.expiresAt, transactions.expiresAt));
+          if (!previousActor) {
+            actor = result.balance.actorId;
+            setBalance(result);
+            scheduleExpiry(result.expiresAt);
           }
+          const transactions = await readNativeWalletTransactions(controller.signal, undefined, result.balance.actorId);
+          if (!stillCurrent()) return;
+          if (transactions.kind !== "ready") {
+            hide();
+            setBalance({ kind: transactions.kind });
+            return;
+          }
+          const expiresAt = Math.min(result.expiresAt, transactions.expiresAt);
+          if (transactions.history.actorId !== result.balance.actorId || expiresAt <= Date.now()) {
+            hide();
+            setBalance({ kind: "signed-out" });
+            return;
+          }
+          actor = result.balance.actorId;
+          setBalance(result);
           setHistory(transactions);
+          setMoreError(false);
+          scheduleExpiry(expiresAt);
         } catch {
-          if (controller.signal.aborted || generation.current !== current) return;
-          setBalance(previous => previous?.kind === "ready" ? previous : { kind: "unavailable" });
-          setHistory({ kind: "unavailable" });
+          unavailable();
+        } finally {
+          if (pending.current === controller) {
+            clearTimeout(refreshTimeout);
+            pending.current = null;
+          }
         }
       })();
     }
@@ -89,7 +122,9 @@ export default function WalletScreen() {
       else hide();
     });
     refresh();
+    const interval = setInterval(() => refresh(true), 30000);
     return () => {
+      clearInterval(interval);
       refreshRef.current = null;
       scheduleExpiryRef.current = null;
       subscription.remove();
@@ -99,7 +134,7 @@ export default function WalletScreen() {
 
   async function loadMore() {
     if (balance?.kind !== "ready" || history?.kind !== "ready" ||
-      !history.history.nextCursor || morePending.current) return;
+      !history.history.nextCursor || morePending.current || pending.current) return;
     const cursor = history.history.nextCursor;
     const actorId = history.history.actorId;
     const current = generation.current;
@@ -111,7 +146,6 @@ export default function WalletScreen() {
       const next = await readNativeWalletTransactions(controller.signal, cursor, balance.balance.actorId);
       if (controller.signal.aborted || generation.current !== current) return;
       if (next.kind === "signed-out") {
-        pending.current?.abort();
         setBalance({ kind: "signed-out" });
         setHistory(null);
         return;

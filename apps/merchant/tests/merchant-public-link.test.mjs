@@ -55,6 +55,8 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     const effectState = [];
     const requests = [];
     const copied = [];
+    let clipboardSucceeds = true;
+    let clipboardRejects = false;
     const react = {
       useState(initial) {
         const at = index++;
@@ -88,7 +90,11 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
         surface: "surface", borderColor: "border", color: "color",
         colorSecondary: "muted", interactiveText: "action", warningText: "warning",
       } }) },
-      "expo-clipboard": { setStringAsync: async value => { copied.push(value); } },
+      "expo-clipboard": { setStringAsync: async value => {
+        if (clipboardRejects) throw new Error("clipboard unavailable");
+        if (clipboardSucceeds) copied.push(value);
+        return clipboardSucceeds;
+      } },
       "./public-storefront-link": { publicStorefrontLink },
       react,
       "react/jsx-runtime": { jsx, jsxs: jsx },
@@ -130,6 +136,8 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     await Promise.resolve();
     await Promise.resolve();
     assert.deepEqual(copied, ["https://customer.example/storefront/store-two"]);
+    const notice = view => nodes(view).find(n => n.props?.accessibilityLiveRegion === "polite")?.props.children;
+    assert.equal(notice(render("actor-b", "store-two")), "تم نسخ رابط المتجر المنشور.");
 
     tree = render("actor-b", "draft-store", false);
     assert.equal(action(tree), undefined, "draft Store has no share action");
@@ -141,6 +149,31 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     await Promise.resolve();
     await Promise.resolve();
     assert.equal(copied.length, 1, "denied public Store must not be shared");
+
+    clipboardSucceeds = false;
+    tree = render("actor-b", "store-three");
+    action(tree).props.onPress();
+    requests[3].resolve({ id: "store-three" });
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(copied.length, 1);
+    assert.equal(notice(render("actor-b", "store-three")), "تعذّر نسخ الرابط إلى الحافظة. أعد المحاولة.");
+
+    clipboardRejects = true;
+    tree = render("actor-b", "store-three");
+    action(tree).props.onPress();
+    requests[4].resolve({ id: "store-three" });
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(copied.length, 1);
+    assert.equal(notice(render("actor-b", "store-three")), "تعذّر نسخ الرابط إلى الحافظة. أعد المحاولة.");
+
+    clipboardRejects = false;
+    clipboardSucceeds = true;
+    tree = render("actor-b", "store-three");
+    action(tree).props.onPress();
+    requests[5].resolve({ id: "store-three" });
+    await Promise.resolve(); await Promise.resolve();
+    assert.equal(copied.at(-1), "https://customer.example/storefront/store-three");
+    assert.equal(notice(render("actor-b", "store-three")), "تم نسخ رابط المتجر المنشور.");
   } finally {
     rmSync(tmp, { recursive: true, force: true });
     if (previousOrigin === undefined) delete process.env.EXPO_PUBLIC_BTHWANI_CUSTOMER_WEB_ORIGIN;

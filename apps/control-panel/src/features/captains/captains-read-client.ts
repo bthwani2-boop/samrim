@@ -19,7 +19,7 @@ export function isCaptainStanding(value: unknown): value is CaptainStanding {
     Number.isSafeInteger((value as CaptainStanding).version) && (value as CaptainStanding).version > 0;
 }
 
-export async function readCaptainJson(url: string, signal: AbortSignal, operatorBinding?: string): Promise<unknown> {
+async function readCaptainResponse(url: string, signal: AbortSignal, operatorBinding?: string): Promise<Response> {
   const response = await fetch(url, {
     credentials: "same-origin", cache: "no-store", signal,
     ...(operatorBinding === undefined ? {} : { headers: { "X-BThwani-Operator": operatorBinding } }),
@@ -33,5 +33,16 @@ export async function readCaptainJson(url: string, signal: AbortSignal, operator
   if (operatorBinding !== undefined && response.headers.get("X-BThwani-Operator") !== operatorBinding) {
     throw new Error("تعذّر ربط تفاصيل الكابتن بجلسة المشغّل الحالية.");
   }
-  return response.json();
+  return response;
+}
+
+export async function readCaptainJson(url: string, signal: AbortSignal, operatorBinding?: string): Promise<unknown> {
+  return (await readCaptainResponse(url, signal, operatorBinding)).json();
+}
+
+export async function readCaptainPage(url: string, signal: AbortSignal): Promise<{ value: unknown; operatorBinding: string }> {
+  const response = await readCaptainResponse(url, signal);
+  const operatorBinding = response.headers.get("X-BThwani-Operator");
+  if (!operatorBinding) throw new Error("تعذّر ربط سجل الكباتن بجلسة المشغّل الحالية.");
+  return { value: await response.json(), operatorBinding };
 }

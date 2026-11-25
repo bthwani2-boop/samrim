@@ -1,7 +1,8 @@
 "use client";
 
 import { Button } from "antd";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { notifyOperatorSessionChanged, withOperatorBrowserSession } from "../session/operator-browser-session";
 
 type PasskeyOptions = {
   ceremonyId: string;
@@ -37,9 +38,9 @@ export default function OperatorPasskeyForm({ recoveryOnly = false }: Readonly<{
     setBusy(true);
     setMessage("");
     try {
-      const response = await fetch("/api/auth/session", {
+      const response = await withOperatorBrowserSession(() => fetch("/api/auth/session", {
         method: "GET", credentials: "same-origin", cache: "no-store",
-      });
+      }));
       if (response.status === 401) {
         // The session endpoint has confirmed denial. Re-evaluate the entry on the server.
         window.location.replace("/");
@@ -59,6 +60,16 @@ export default function OperatorPasskeyForm({ recoveryOnly = false }: Readonly<{
       setBusy(false);
     }
   }
+
+  const automaticRecovery = useRef(false);
+  const restore = useRef(restoreSession);
+  restore.current = restoreSession;
+  useEffect(() => {
+    if (recoveryOnly && !automaticRecovery.current) {
+      automaticRecovery.current = true;
+      void restore.current();
+    }
+  }, [recoveryOnly]);
 
   async function signIn() {
     if (busy) return;
@@ -98,29 +109,32 @@ export default function OperatorPasskeyForm({ recoveryOnly = false }: Readonly<{
         throw new TypeError("المصادِق لا يدعم إرسال إثبات WebAuthn المعتمد.");
       }
       const proof = result.toJSON();
-      const resultResponse = await fetch("/api/auth/passkey/authentication", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "same-origin",
-        cache: "no-store",
-        body: JSON.stringify({ ceremonyId: options.ceremonyId, credential: proof }),
+      await withOperatorBrowserSession(async () => {
+        const resultResponse = await fetch("/api/auth/passkey/authentication", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          cache: "no-store",
+          body: JSON.stringify({ ceremonyId: options.ceremonyId, credential: proof }),
+        });
+        if (resultResponse.status === 503) {
+          throw new Error("لم تتمكن Identity من إكمال التحقق الآمن. الجلسة غير مفعّلة.");
+        }
+        if (!resultResponse.ok) throw new Error("فشل إثبات مفتاح المرور المسجّل للمشغّل.");
+        const readback = await fetch("/api/auth/session", {
+          method: "GET",
+          credentials: "same-origin",
+          cache: "no-store",
+        });
+        if (!readback.ok) throw new Error("تعذر التحقق من استمرار الجلسة لدى Identity.");
+        const session = await readback.json() as { authenticated?: boolean; role?: string };
+        if (session.authenticated !== true || session.role !== "operator") {
+          throw new Error("الجلسة غير مخوّلة لدور المشغّل.");
+        }
+        // A new document request resolves the current server-side workspace grants.
+        notifyOperatorSessionChanged();
+        window.location.replace("/");
       });
-      if (resultResponse.status === 503) {
-        throw new Error("لم تتمكن Identity من إكمال التحقق الآمن. الجلسة غير مفعّلة.");
-      }
-      if (!resultResponse.ok) throw new Error("فشل إثبات مفتاح المرور المسجّل للمشغّل.");
-      const readback = await fetch("/api/auth/session", {
-        method: "GET",
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-      if (!readback.ok) throw new Error("تعذر التحقق من استمرار الجلسة لدى Identity.");
-      const session = await readback.json() as { authenticated?: boolean; role?: string };
-      if (session.authenticated !== true || session.role !== "operator") {
-        throw new Error("الجلسة غير مخوّلة لدور المشغّل.");
-      }
-      // A new document request resolves the current server-side workspace grants.
-      window.location.replace("/");
     } catch (error) {
       setMessage(error instanceof DOMException && error.name === "NotAllowedError"
         ? "لم يكتمل التحقق بمفتاح المرور. حاول مرة أخرى باستخدام مفتاحك المسجّل."

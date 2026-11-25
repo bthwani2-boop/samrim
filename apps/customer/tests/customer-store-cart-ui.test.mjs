@@ -70,10 +70,12 @@ test("first tap sends quantity one, shows only the owner-confirmed result, and m
       return hooks[at];
     },
     useCallback(callback) { return callback; },
+    useEffect() {},
   };
   const { useStoreCart } = load(compiled[0], {
     react,
     "expo-crypto": { randomUUID: () => `test-operation-${++generated}` },
+    "react-native": { Platform: { OS: "android" }, AppState: { addEventListener() { return { remove() {} }; } } },
     "expo-router": { useFocusEffect(callback) { start = callback; } },
     "./cart-transport": {
       readVerifiedCart: async () => ({ kind: "ready", cart: emptyCart }),
@@ -292,4 +294,71 @@ test("only a verified draft shows card actions, plus and minus replace add, and 
   const subtotal = bar.props.children[2].props.children.props.children[1].props.children;
   assert.equal(subtotal, `${formatExactYer(175n)} ريال يمني`);
   assert.equal(StoreCartBar({ storeId: store.id, session: { ...session, cart: emptyCart } }), null);
+});
+
+test("Store cart revalidates on native resume and discards superseded owner reads", async () => {
+  const hooks = [], reads = [], writes = [];
+  let index = 0, focus, resume, effectCleanup;
+  const react = {
+    useState(initial) {
+      const at = index++;
+      if (!(at in hooks)) hooks[at] = initial;
+      return [hooks[at], value => { hooks[at] = typeof value === "function" ? value(hooks[at]) : value; }];
+    },
+    useRef(initial) {
+      const at = index++;
+      hooks[at] ??= { current: initial };
+      return hooks[at];
+    },
+    useCallback(callback) { return callback; },
+    useEffect(effect) { if (!effectCleanup) effectCleanup = effect(); },
+  };
+  const { useStoreCart } = load(compiled[0], {
+    react,
+    "expo-crypto": { randomUUID: () => "resume-cart-operation" },
+    "expo-router": { useFocusEffect(callback) { focus = callback; } },
+    "react-native": { Platform: { OS: "android" }, AppState: {
+      addEventListener(_event, callback) { resume = callback; return { remove() {} }; },
+    } },
+    "./cart-transport": {
+      readVerifiedCart: (_storeId, signal) => new Promise(resolve => reads.push({ signal, resolve })),
+      replaceVerifiedCart: (...args) => { writes.push(args); return new Promise(() => {}); },
+    },
+  });
+  function render() {
+    index = 0;
+    // biome-ignore lint/correctness/useHookAtTopLevel: This fixture runs the hook under an ordered mock React renderer.
+    return useStoreCart(store.id);
+  }
+  render();
+  const cleanup = focus();
+  try {
+    reads[0].resolve({ kind: "ready", cart: emptyCart });
+    await settle();
+    assert.equal(render().cart.actorId, "customer-a");
+    assert.equal(typeof resume, "function", "foreground listener is missing");
+    resume("background");
+    assert.equal(reads.length, 1);
+    const stale = render();
+    resume("active");
+    assert.equal(render().cart, null);
+    stale.adjust(offer, 1);
+    assert.equal(writes.length, 0);
+    resume("active");
+    assert.equal(reads[1].signal.aborted, true);
+    reads[1].resolve({ kind: "ready", cart: emptyCart });
+    reads[2].resolve({ kind: "ready", cart: { ...emptyCart, actorId: "customer-b" } });
+    await settle();
+    assert.equal(render().cart.actorId, "customer-b");
+    resume("active");
+    reads[3].resolve({ kind: "signed-out" });
+    await settle();
+    assert.equal(render().cart, null);
+    resume("active");
+    cleanup();
+    assert.equal(reads[4].signal.aborted, true);
+    reads[4].resolve({ kind: "ready", cart: emptyCart });
+    await settle();
+    assert.equal(render().cart, null);
+  } finally { cleanup(); effectCleanup?.(); }
 });
