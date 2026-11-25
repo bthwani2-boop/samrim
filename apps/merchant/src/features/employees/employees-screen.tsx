@@ -1,4 +1,4 @@
-import { type EmployeeRecord, type EmployeeRegistration, type EmployeeRegistrationRecovery, type EmployeeRegistrationRecoveryPort, claimEmployeeRegistration, employeeRegistrationErrorOutcome, normalizeEmployeeRegistrationDraft, openEmployeeRegistrationRecovery, settleEmployeeRegistration, validEmployeeRegistration } from "@bthwani/dsh";
+import { claimEmployeeRegistration, type EmployeeEndState, type EmployeeRecord, type EmployeeRegistration, type EmployeeRegistrationRecovery, type EmployeeRegistrationRecoveryPort, employeeRegistrationErrorOutcome, normalizeEmployeeRegistrationDraft, openEmployeeRegistrationRecovery, settleEmployeeRegistration, validEmployeeRegistration } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
@@ -32,6 +32,8 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
   const {theme}=useMobileAppearance();
   const [items,setItems]=useState<EmployeeRecord[]>([]);
   const [cursor,setCursor]=useState<string|null>(null);
+  const [endState,setEndState]=useState<EmployeeEndState|undefined>(undefined);
+  const currentEndState=useRef<EmployeeEndState|undefined>(undefined);
   const [detail,setDetail]=useState<Awaited<ReturnType<typeof readEmployeeDetail>>|null>(null);
   const [ready,setReady]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -54,7 +56,7 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
     setDetail(null);
     if(!next){setReady(false);setItems([]);setCursor(null);}
     try{
-      const page=await readEmployees(actorId,storeId,request.signal,next);
+      const page=await readEmployees(actorId,storeId,request.signal,next,currentEndState.current);
       request.signal.throwIfAborted();
       setItems(previous=>next?[...previous,...page.items]:page.items);
       setCursor(page.nextCursor);setReady(true);
@@ -93,6 +95,13 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
       active.current=null;activeWrite.current=null;refreshAfterWrite.current=false;scope.current=null;
     };
   },[actorId,storeId]);
+  function chooseEndState(value:EmployeeEndState|undefined){
+    if(renderedEpoch!==actionEpoch.current||!ready||active.current||scope.current?.signal.aborted!==false||value===currentEndState.current)return;
+    currentEndState.current=value;
+    setEndState(value);
+    setMessage("");
+    void load();
+  }
   async function openDetail(id:string){
     if(renderedEpoch!==actionEpoch.current||!ready||active.current||!scope.current||scope.current.signal.aborted)return;
     const request=new AbortController();active.current=request;setBusy(true);setDetail(null);setMessage("");
@@ -168,11 +177,18 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
     </Pressable>
     {message?<Text accessibilityRole="alert" style={{color:theme.warningText}}>{message}</Text>:null}
     {ready?<View style={{gap:10}}>
-      {items.length===0?<Text style={{color:theme.colorSecondary}}>لا توجد سجلات موظفين.</Text>:null}
+      <View accessibilityRole="radiogroup" accessibilityLabel="تصفية سجلات الموظفين" style={{gap:6}}>
+        {([[undefined,"كل السجلات"],["NO_END_DATE","دون تاريخ انتهاء"],["HAS_END_DATE","بتاريخ انتهاء"]] as const).map(([value,label])=>
+          <Pressable key={value??"ALL"} testID={"employee-end-filter-"+(value??"ALL")} accessibilityRole="radio"
+            accessibilityState={{checked:endState===value,disabled:busy}} disabled={busy} onPress={()=>chooseEndState(value)} style={button}>
+            <Text style={{color:theme.interactiveText}}>{label}</Text>
+          </Pressable>)}
+      </View>
+      {items.length===0?<Text style={{color:theme.colorSecondary}}>{endState?"لا توجد سجلات مطابقة للتصفية.":"لا توجد سجلات موظفين."}</Text>:null}
       {items.map(item=><View key={item.id} style={{gap:4,padding:10,borderWidth:1,borderRadius:8,borderColor:theme.borderColor}}>
         <Text style={{color:theme.color,fontWeight:"700"}}>{item.displayName}</Text>
         <Text style={{color:theme.colorSecondary}}>{item.department} · {item.jobTitle}</Text>
-        <Text style={{color:theme.colorSecondary}}>بداية العمل: {item.startDate} · {item.endDate?"منتهي: "+item.endDate:"مستمر"}</Text>
+        <Text style={{color:theme.colorSecondary}}>بداية العمل: {item.startDate} · {item.endDate?"تاريخ انتهاء مسجل: "+item.endDate:"دون تاريخ انتهاء"}</Text>
         <Pressable accessibilityRole="button" accessibilityLabel={`تفاصيل الموظف ${item.displayName}`} disabled={busy} onPress={()=>void openDetail(item.id)} style={button}>
           <Text style={{color:theme.interactiveText}}>التفاصيل وسجل التسجيل</Text>
         </Pressable>
@@ -180,7 +196,7 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
       {detail?<View testID="merchant-employee-detail" style={{gap:4,padding:12,borderWidth:1,borderColor:theme.borderColor}}>
         <Text accessibilityRole="header" style={{color:theme.color,fontWeight:"700"}}>{detail.employee.displayName}</Text>
         <Text style={{color:theme.colorSecondary}}>{detail.employee.department} · {detail.employee.jobTitle}</Text>
-        <Text style={{color:theme.colorSecondary}}>بداية العمل: {detail.employee.startDate} · {detail.employee.endDate??"مستمر"}</Text>
+        <Text style={{color:theme.colorSecondary}}>بداية العمل: {detail.employee.startDate} · {detail.employee.endDate??"دون تاريخ انتهاء"}</Text>
         <Text selectable style={{color:theme.colorSecondary}}>معرّف الموظف: {detail.employee.id}</Text>
         <Text selectable style={{color:theme.colorSecondary}}>المسجل: {detail.audit.registeredByActorId}</Text>
         <Text style={{color:theme.colorSecondary}}>وقت التسجيل (UTC): {detail.audit.recordedAt}</Text>

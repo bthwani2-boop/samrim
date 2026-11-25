@@ -8,6 +8,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -96,13 +97,21 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 	mux := http.NewServeMux()
 	list := func(w http.ResponseWriter, r *http.Request) {
 		owner := r.Context().Value(employeeDirectoryKey{}).(directory)
-		q := r.URL.Query()
-		cursor := q.Get("cursor")
-		if r.URL.RawQuery != "" && (r.URL.RawQuery != "cursor="+cursor || !recordID.MatchString(cursor)) {
+		q, queryErr := url.ParseQuery(r.URL.RawQuery)
+		cursor, endState := q.Get("cursor"), q.Get("endState")
+		valid := queryErr == nil && (r.URL.RawQuery == "" || strings.Count(r.URL.RawQuery, "&")+1 == len(q))
+		for key, values := range q {
+			if len(values) != 1 || (key != "cursor" && key != "endState") ||
+				(key == "cursor" && !recordID.MatchString(cursor)) ||
+				(key == "endState" && endState != "NO_END_DATE" && endState != "HAS_END_DATE") {
+				valid = false
+			}
+		}
+		if !valid {
 			failure(w, http.StatusBadRequest, "EMPLOYEE_QUERY_INVALID")
 			return
 		}
-		result, err := owner.list(r.Context(), cursor)
+		result, err := owner.list(r.Context(), cursor, endState)
 		if err != nil {
 			directoryFailure(w, err, "EMPLOYEE_OWNER_UNAVAILABLE")
 			return

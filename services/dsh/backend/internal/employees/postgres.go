@@ -168,7 +168,7 @@ type page struct {
 	NextCursor *string    `json:"nextCursor"`
 }
 
-func (d directory) list(ctx context.Context, cursor string) (page, error) {
+func (d directory) list(ctx context.Context, cursor, endState string) (page, error) {
 	tx, err := d.begin(ctx, &sql.TxOptions{ReadOnly: true}, "employees")
 	if err != nil {
 		return page{}, err
@@ -176,7 +176,7 @@ func (d directory) list(ctx context.Context, cursor string) (page, error) {
 	defer tx.Rollback()
 	rows, err := tx.QueryContext(ctx, `SELECT id,display_name,department,job_title,start_date,end_date
 		FROM employees WHERE employer_kind=$3 AND employer_id=$4
-		AND ($1='' OR id>NULLIF($1,'')::uuid) ORDER BY id LIMIT $2`, cursor, pageSize+1, d.scope.kind, d.scope.id)
+		AND ($1='' OR id>NULLIF($1,'')::uuid) AND ($5='' OR ($5='NO_END_DATE' AND end_date IS NULL) OR ($5='HAS_END_DATE' AND end_date IS NOT NULL)) ORDER BY id LIMIT $2`, cursor, pageSize+1, d.scope.kind, d.scope.id, endState)
 	if err != nil {
 		return page{}, err
 	}

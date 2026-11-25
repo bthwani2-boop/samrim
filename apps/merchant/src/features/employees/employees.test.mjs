@@ -23,10 +23,10 @@ test("Merchant employees BFF scopes GET and POST to a verified actor and Store",
   process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN=identity;
   process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN=owner;
   t.after(()=>{for(const [key,value] of Object.entries(env)){if(value===undefined)delete process.env[key];else process.env[key]=value;}});
-  const calls=[];
+  const calls=[]; const employeeQueries=[];
   let status=200;
   t.mock.method(globalThis,"fetch",async(url,options)=>{
-    const target=new URL(url);calls.push([target.pathname,options.method]);
+    const target=new URL(url);calls.push([target.pathname,options.method]);employeeQueries.push(target.search);
     assert.equal(options.credentials,"omit");assert.equal(options.headers.Authorization,"Bearer "+bearer);
     if(target.origin===identity)return json({actorId:"merchant-a",role:"merchant",sessionExpiresAt:new Date(Date.now()+120000).toISOString()});
     assert.equal(target.origin,owner);
@@ -46,6 +46,18 @@ test("Merchant employees BFF scopes GET and POST to a verified actor and Store",
   let response=await GET(request());
   assert.equal(response.status,200);
   assert.deepEqual(await response.json(),{employees:{actorId:"merchant-a",storeId:"store-a",page:{items:[record],nextCursor:null}}});
+  response=await GET(request("GET","merchant-a","?employees=store-a&endState=NO_END_DATE"));
+  assert.equal(response.status,200);
+  assert.equal(employeeQueries.at(-1),"?endState=NO_END_DATE");
+  assert.deepEqual((await response.json()).employees.page,{items:[record],nextCursor:null});
+  response=await GET(request("GET","merchant-a","?employees=store-a&endState=HAS_END_DATE"));
+  assert.equal(response.status,503,"owner page inconsistent with the filter");
+  assert.deepEqual(await response.json(),{code:"OWNER_UNAVAILABLE"});
+  const beforeInvalid=calls.length;
+  for(const query of ["?employees=store-a&endState=ACTIVE","?employees=store-a&endState=","?employees=store-a&endState=NO_END_DATE&endState=HAS_END_DATE","?employees=store-a&employeeId="+id+"&endState=NO_END_DATE"]){
+    assert.equal((await GET(request("GET","merchant-a",query))).status,400);
+  }
+  assert.equal(calls.length,beforeInvalid);
   response=await POST(request("POST"));
   assert.equal(response.status,200);
   assert.deepEqual(await response.json(),{employee:{actorId:"merchant-a",storeId:"store-a",id}});
@@ -95,7 +107,7 @@ test("Employee screen loads current scope and retains the original operation thr
       "expo-secure-store":{getItemAsync:async key=>get(key),setItemAsync:async(key,value)=>set(key,value),deleteItemAsync:async key=>remove(key)},
       react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,AppState:{addEventListener(type,listener){assert.equal(type,"change");nativeListener=listener;return {remove(){nativeListener=undefined;}};}},View:"View",Text:"Text",TextInput:"TextInput",Pressable:"Pressable"},
       "../../components/merchant-capability-screen":{__esModule:true,default:"Unavailable"},"../onboarding/merchant-registration-attempt":recovery,
-      "./employee-transport":{readEmployeeDetail(actorId,storeId,id,signal){return new Promise((resolve,reject)=>details.push({actorId,storeId,id,signal,resolve,reject}));},readEmployees(actorId,storeId,signal,cursor){return new Promise((resolve,reject)=>reads.push({actorId,storeId,signal,cursor,resolve,reject}));},
+      "./employee-transport":{readEmployeeDetail(actorId,storeId,id,signal){return new Promise((resolve,reject)=>details.push({actorId,storeId,id,signal,resolve,reject}));},readEmployees(actorId,storeId,signal,cursor,endState){return new Promise((resolve,reject)=>reads.push({actorId,storeId,signal,cursor,endState,resolve,reject}));},
         saveEmployee(actorId,storeId,input,signal){return new Promise((resolve,reject)=>writes.push({actorId,storeId,input,signal,resolve,reject}));}}};
     const mod={exports:{}};
     new Function("require","module","exports","window",code)(name=>{assert.ok(Object.hasOwn(mocks,name),name);return mocks[name];},mod,mod.exports,
@@ -189,6 +201,32 @@ test("Employee screen loads current scope and retains the original operation thr
     reads[9].reject({status:403});
     await until(()=>!findButton("جارٍ الاتصال بـ DSH…"));
     assert.ok(!JSON.stringify(render()).includes(record.displayName));
+    focusListener();
+    await until(()=>reads.length===11);
+    reads[10].resolve({items:[record],nextCursor:null});
+    const filter=id=>nodes(render()).find(n=>n.props?.testID==="employee-end-filter-"+id);
+    await until(()=>!!filter("HAS_END_DATE")&&!filter("HAS_END_DATE").props.disabled);
+    const retained=filter("ALL");
+    filter("HAS_END_DATE").props.onPress();
+    await until(()=>reads.length===12);
+    assert.equal(reads[11].endState,"HAS_END_DATE");
+    assert.equal(reads[11].cursor,undefined);
+    assert.ok(!JSON.stringify(render()).includes(record.displayName));
+    retained.props.onPress();
+    assert.equal(reads.length,12,"superseded filter action cannot switch the active query");
+    const ended={...record,endDate:"2027-01-01"};
+    reads[11].resolve({items:[ended],nextCursor:null});
+    await until(()=>filter("HAS_END_DATE")?.props.accessibilityState.checked===true);
+    focusListener();
+    await until(()=>reads.length===13);
+    assert.equal(reads[12].endState,"HAS_END_DATE","refresh retains the selected filter");
+    reads[12].resolve({items:[ended],nextCursor:null});
+    await until(()=>!!filter("ALL")&&!filter("ALL").props.disabled);
+    filter("ALL").props.onPress();
+    await until(()=>reads.length===14);
+    assert.equal(reads[13].endState,undefined);
+    reads[13].resolve({items:[record],nextCursor:null});
+    await until(()=>filter("ALL")?.props.accessibilityState.checked===true);
     restart();
   }finally{rmSync(tmp,{recursive:true,force:true});}
 });

@@ -328,6 +328,71 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 	expect("GET", a2Root+"/"+created, "merchant-a", "", 200)
 	expect("GET", aRoot+"/"+created, "merchant-b", "", 404)
 
+	t.Run("RecordedEmploymentEndFilter", func(t *testing.T) {
+		// Only disposable owner fixtures. No new employment transition or permission.
+		if _, err := readback.ExecContext(t.Context(), "UPDATE "+schema+".employees SET end_date='2027-01-01' WHERE id IN ($1,$2)", id, merchantID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readback.ExecContext(t.Context(), "INSERT INTO "+schema+".employees(id,employer_kind,employer_id,display_name,department,job_title,start_date) SELECT ('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'COMPANY','bthwani','Synthetic '||n,'Ops','Staff','2026-01-01' FROM generate_series(100,130) n"); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			name, path, token, expectedID string
+			count                         int
+			end                           bool
+		}{
+			{"company recorded end", root + "?endState=HAS_END_DATE", "hr-current", id, 1, true},
+			{"company open page", root + "?endState=NO_END_DATE", "hr-current", "", 30, false},
+			{"merchant recorded end", a2Root + "?endState=HAS_END_DATE", "merchant-a", merchantID, 1, true},
+			{"merchant open", a2Root + "?endState=NO_END_DATE", "merchant-a", created, 1, false},
+			{"other merchant empty", bRoot + "?endState=HAS_END_DATE", "merchant-b", "", 0, true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				w := request("GET", tc.path, tc.token, "")
+				var got page
+				if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || json.Unmarshal(w.Body.Bytes(), &got) != nil || len(got.Items) != tc.count {
+					t.Fatalf("filter status=%d result=%s", w.Code, w.Body)
+				}
+				for _, item := range got.Items {
+					if (item.EndDate != nil) != tc.end || (tc.expectedID != "" && item.ID != tc.expectedID) {
+						t.Fatalf("unexpected item %v", item)
+					}
+				}
+				if tc.count == 30 {
+					if got.NextCursor == nil {
+						t.Fatal("missing continuation")
+					}
+					next := request("GET", root+"?cursor="+*got.NextCursor+"&endState=NO_END_DATE", "hr-current", "")
+					var rest page
+					if next.Code != 200 || json.Unmarshal(next.Body.Bytes(), &rest) != nil || len(rest.Items) != 1 || rest.Items[0].ID <= *got.NextCursor || rest.Items[0].EndDate != nil || rest.NextCursor != nil {
+						t.Fatalf("bad continuation %d %s", next.Code, next.Body)
+					}
+				} else if got.NextCursor != nil {
+					t.Fatal("unexpected continuation")
+				}
+			})
+		}
+		for _, tc := range []struct {
+			path, token string
+			status      int
+		}{
+			{root + "?endState=ACTIVE", "hr-current", 400},
+			{root + "?endState=", "hr-current", 400},
+			{root + "?endState=NO_END_DATE&", "hr-current", 400},
+			{root + "?&", "hr-current", 400},
+			{root + "?endState=HAS_END_DATE&endState=NO_END_DATE", "hr-current", 400},
+			{root + "?endState=HAS_END_DATE&employerId=merchant-a", "hr-current", 400},
+			{root + "?endState=HAS_END_DATE&cursor=bad", "hr-current", 400},
+			{root + "?endState=HAS_END_DATE", "no-hr", 403},
+			{a2Root + "?endState=NO_END_DATE", "merchant-b", 403},
+			{root + "/" + id + "?endState=HAS_END_DATE", "hr-current", 400},
+		} {
+			w := request("GET", tc.path, tc.token, "")
+			if w.Code != tc.status || w.Header().Get("Cache-Control") != "no-store" {
+				t.Errorf("unexpected filter result %s: %d %s", tc.path, w.Code, w.Body)
+			}
+		}
+	})
 	revoked.Store(true)
 	expect("GET", root+"/"+id, "hr-current", "", 401)
 	expect("POST", root, "hr-current", data, 401)

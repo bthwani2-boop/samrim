@@ -1,17 +1,18 @@
-import { DshPublicError, type EmployeeRegistration, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, isCompanyEmployeeId, listMerchantEmployees, parseEmployeeDetail, parseEmployeePage, parseEmployeeRegistrationAudit, registerMerchantEmployee, validEmployeeRegistration } from "@bthwani/dsh";
+import { DshPublicError, type EmployeeEndState, type EmployeeRegistration, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, isCompanyEmployeeId, listMerchantEmployees, parseEmployeeDetail, parseEmployeePage, parseEmployeeRegistrationAudit, registerMerchantEmployee, validEmployeeEndState, validEmployeeRegistration } from "@bthwani/dsh";
 import { Platform } from "react-native";
 import { withNativeMerchantSession } from "../access/admission-transport";
 
 function object(value: unknown): Record<string,unknown> | null {
   return value && typeof value==="object" && !Array.isArray(value) ? value as Record<string,unknown> : null;
 }
-async function request(actorId: string,storeId: string,signal: AbortSignal,cursor?: string,input?: EmployeeRegistration,employeeId?:string) {
+async function request(actorId: string,storeId: string,signal: AbortSignal,cursor?: string,input?: EmployeeRegistration,employeeId?:string,endState?:EmployeeEndState) {
   const writing=!!input;
   if (!actorId || !/^[a-z0-9-]{1,64}$/.test(storeId) || (cursor!==undefined && !isCompanyEmployeeId(cursor)) ||
-    (input && !validEmployeeRegistration(input)) || (employeeId!==undefined && (!isCompanyEmployeeId(employeeId)||writing||cursor!==undefined))) throw new DshPublicError(400,"EMPLOYEE_QUERY_INVALID");
+    (endState!==undefined && (!validEmployeeEndState(endState)||writing||employeeId!==undefined)) || (input && !validEmployeeRegistration(input)) || (employeeId!==undefined && (!isCompanyEmployeeId(employeeId)||writing||cursor!==undefined))) throw new DshPublicError(400,"EMPLOYEE_QUERY_INVALID");
   signal.throwIfAborted();
   const query=new URLSearchParams({employees:storeId});
   if(cursor)query.set("cursor",cursor);
+  if(endState)query.set("endState",endState);
   if(employeeId)query.set("employeeId",employeeId);
   let reply: Response;
   try {
@@ -35,10 +36,10 @@ async function request(actorId: string,storeId: string,signal: AbortSignal,curso
   }
   return result;
 }
-export async function readEmployees(actorId:string,storeId:string,signal:AbortSignal,cursor?:string) {
+export async function readEmployees(actorId:string,storeId:string,signal:AbortSignal,cursor?:string,endState?:EmployeeEndState) {
   if(Platform.OS!=="web")return withNativeMerchantSession(signal,(bearer,origin)=>
-    listMerchantEmployees(origin,bearer,storeId,cursor,signal),actorId);
-  return parseEmployeePage((await request(actorId,storeId,signal,cursor)).page,cursor);
+    listMerchantEmployees(origin,bearer,storeId,cursor,signal,endState),actorId);
+  return parseEmployeePage((await request(actorId,storeId,signal,cursor,undefined,undefined,endState)).page,cursor,endState);
 }
 export async function readEmployeeDetail(actorId:string,storeId:string,id:string,signal:AbortSignal) {
   if(!isCompanyEmployeeId(id))throw new DshPublicError(400,"EMPLOYEE_QUERY_INVALID");

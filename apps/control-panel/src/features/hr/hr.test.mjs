@@ -19,8 +19,8 @@ test("hr: unauthenticated or unmapped sessions never expose navigation", () => {
 // renderer. Only the owner boundary is substituted; no fixture is a live E2E.
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { DshPublicError, isCompanyEmployeeId } from "@bthwani/dsh";
 import * as dsh from "@bthwani/dsh";
+import { DshPublicError, isCompanyEmployeeId } from "@bthwani/dsh";
 
 const requirePanel = createRequire(new URL("../../../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
@@ -47,7 +47,7 @@ async function renderDetail({ event = audit, employee = record, status = "availa
     return value;
   };
   const dependencies = {
-    "@bthwani/dsh": { DshPublicError, isCompanyEmployeeId,
+    "@bthwani/dsh": { DshPublicError, isCompanyEmployeeId, validEmployeeEndState:value=>value==="NO_END_DATE"||value==="HAS_END_DATE",
       getCompanyEmployeeRegistrationAudit: (_origin, _bearer, id) => result("audit", event, id),
       getCompanyEmployee: (_origin, _bearer, id) => result("detail", employee, id) },
     "./employee-owner": { employeeOwner: async () => ({ status, origin: "http://127.0.0.1:3202", bearer: "synthetic" }) },
@@ -103,15 +103,16 @@ const directoryComponent = transformSync(readFileSync(new URL("./employees-works
   module: { type: "commonjs" },
 }).code;
 
-async function renderDirectory({ cursor, failure, status = "available" } = {}) {
+async function renderDirectory({ cursor, endState, nextCursor=null, failure, status = "available" } = {}) {
+  const filters=[];
   const calls = [];
   const mod = { exports: {} };
   const dependencies = {
-    "@bthwani/dsh": { DshPublicError, isCompanyEmployeeId,
-      listCompanyEmployees: async (_origin, _bearer, requestedCursor) => {
-        calls.push(requestedCursor);
+    "@bthwani/dsh": { DshPublicError, isCompanyEmployeeId, validEmployeeEndState:value=>value==="NO_END_DATE"||value==="HAS_END_DATE",
+      listCompanyEmployees: async (_origin, _bearer, requestedCursor, _signal, requestedEndState) => {
+        calls.push(requestedCursor);filters.push(requestedEndState);
         if (failure) throw failure;
-        return { items: [record], nextCursor: null };
+        return { items: [record], nextCursor };
       } },
     "./employee-owner": { employeeOwner: async () => ({ status, origin: "http://127.0.0.1:3202", bearer: "synthetic", actorId: "synthetic-operator" }) },
     "../operator-shell/operator-shell.module.css": { workspace: "workspace" },
@@ -125,8 +126,8 @@ async function renderDirectory({ cursor, failure, status = "available" } = {}) {
     assert.ok(Object.hasOwn(dependencies, name), name);
     return dependencies[name];
   }, mod, mod.exports);
-  const html = renderToStaticMarkup(await mod.exports.default({ searchParams: Promise.resolve(cursor === undefined ? {} : { cursor }) }));
-  return { html, calls };
+  const html = renderToStaticMarkup(await mod.exports.default({ searchParams: Promise.resolve({...(cursor===undefined?{}:{cursor}),...(endState===undefined?{}:{endState})}) }));
+  return { html, calls, filters };
 }
 
 test("failed authorized employee continuation returns to the first page without disclosing records", async () => {
@@ -388,4 +389,18 @@ test("company registration clears a definitive validation message when its draft
     edit("displayName", "Corrected Employee");
     assert.equal(findRegistrationNode(render(), node => node.type === "p" && node.props.role === "alert"), undefined);
   });
+});
+
+test("employee end-date filter is owner backed, retained across continuation and rejects invalid selectors",async()=>{
+ const first=await renderDirectory({endState:"NO_END_DATE",nextCursor:employeeId});
+ assert.deepEqual(first.filters,["NO_END_DATE"]);
+ assert.match(first.html,/cursor=.*&amp;endState=NO_END_DATE/);
+ const second=await renderDirectory({cursor:employeeId,endState:"HAS_END_DATE"});
+ assert.deepEqual(second.filters,["HAS_END_DATE"]);
+ assert.match(second.html,/href="\/hr\/employees\?endState=HAS_END_DATE"/);
+ for(const endState of ["ACTIVE","",["NO_END_DATE","HAS_END_DATE"]]){
+  const invalid=await renderDirectory({endState});
+  assert.deepEqual(invalid.calls,[]);
+  assert.doesNotMatch(invalid.html,/HR-private-employee/);
+ }
 });

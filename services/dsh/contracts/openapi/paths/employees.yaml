@@ -10,6 +10,10 @@ paths:
         - name: cursor
           in: query
           schema: { $ref: '#/components/schemas/EmployeeId' }
+        - name: endState
+          in: query
+          description: Filter by presence of a recorded employment end date, not current employment or access status. Omit for all records; keep the same selector for continuation.
+          schema: { type: string, enum: [NO_END_DATE, HAS_END_DATE] }
       responses:
         '200':
           description: Company employees and the cursor for the next page, if available
@@ -144,6 +148,10 @@ paths:
         - name: cursor
           in: query
           schema: { $ref: '#/components/schemas/EmployeeId' }
+        - name: endState
+          in: query
+          description: Filter by presence of a recorded employment end date, not current employment or access status. Omit for all records; keep the same selector for continuation.
+          schema: { type: string, enum: [NO_END_DATE, HAS_END_DATE] }
       responses:
         '200':
           description: Current proprietor employees and the cursor for the next page, if available

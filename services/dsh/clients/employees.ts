@@ -9,6 +9,11 @@ export function isCompanyEmployeeId(id: unknown): id is string {
   return typeof id === "string" && employeeId.test(id);
 }
 
+export type EmployeeEndState = "NO_END_DATE" | "HAS_END_DATE";
+export function validEmployeeEndState(value: unknown): value is EmployeeEndState {
+  return value === "NO_END_DATE" || value === "HAS_END_DATE";
+}
+
 export interface EmployeeRecord {
   id: string;
   displayName: string;
@@ -45,23 +50,29 @@ function isEmployee(value: unknown): value is CompanyEmployee {
 }
 
 async function listEmployees(
-  owner: string, bearer: string, path: string, cursor?: string, signal?: AbortSignal,
+  owner: string, bearer: string, path: string, cursor?: string, signal?: AbortSignal, endState?: EmployeeEndState,
 ): Promise<{ items: CompanyEmployee[]; nextCursor: string | null }> {
   if (cursor !== undefined && !isCompanyEmployeeId(cursor)) throw new DshPublicError(400, "EMPLOYEE_QUERY_INVALID");
-  const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  if (endState !== undefined && !validEmployeeEndState(endState)) throw new DshPublicError(400, "EMPLOYEE_QUERY_INVALID");
+  const params = new URLSearchParams();
+  if (cursor) params.set("cursor",cursor);
+  if (endState) params.set("endState",endState);
+  const query = params.toString() ? "?" + params.toString() : "";
   const result = await privateOwnerRequest(owner, path + query, bearer, "GET", undefined, signal);
-  return parseEmployeePage(result,cursor);
+  return parseEmployeePage(result,cursor,endState);
 }
 
-export function parseEmployeePage(result: unknown,cursor?: string): {items: CompanyEmployee[]; nextCursor: string | null} {
-  if (!object(result) || !onlyKeys(result, ["items", "nextCursor"]) || !Array.isArray(result.items) ||
+export function parseEmployeePage(result: unknown,cursor?: string,endState?: EmployeeEndState): {items: CompanyEmployee[]; nextCursor: string | null} {
+  if ((endState !== undefined && !validEmployeeEndState(endState)) || !object(result) || !onlyKeys(result, ["items", "nextCursor"]) || !Array.isArray(result.items) ||
     result.items.length > 30 || !result.items.every(isEmployee) ||
     (result.nextCursor !== null && (!isCompanyEmployeeId(result.nextCursor) ||
       result.items.length !== 30 || result.nextCursor !== result.items.at(-1)?.id))) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   const items: CompanyEmployee[] = result.items;
-  if (items.some((item, index) => item.id <= (items[index - 1]?.id ?? cursor ?? ""))) {
+  if (items.some((item, index) => item.id <= (items[index - 1]?.id ?? cursor ?? "") ||
+    (endState === "NO_END_DATE" && item.endDate !== null) ||
+    (endState === "HAS_END_DATE" && item.endDate === null))) {
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   }
   return { items, nextCursor: result.nextCursor };
@@ -130,8 +141,8 @@ async function registerEmployee(
 }
 
 
-export const listCompanyEmployees = (owner: string,bearer: string,cursor?: string,signal?: AbortSignal) =>
-  listEmployees(owner,bearer,dshOperations.listCompanyEmployees.path,cursor,signal);
+export const listCompanyEmployees = (owner: string,bearer: string,cursor?: string,signal?: AbortSignal,endState?: EmployeeEndState) =>
+  listEmployees(owner,bearer,dshOperations.listCompanyEmployees.path,cursor,signal,endState);
 export const getCompanyEmployee = (owner: string,bearer: string,id: string,signal?: AbortSignal) =>
   getEmployee(owner,bearer,dshOperations.getCompanyEmployee.path,id,signal);
 export const getCompanyEmployeeRegistrationAudit = (owner: string,bearer: string,id: string,signal?: AbortSignal) =>
@@ -144,8 +155,8 @@ function merchantEmployeePath(path: string,storeId: string): string {
   return path.replace("{storeID}",storeId);
 }
 
-export async function listMerchantEmployees(owner: string,bearer: string,storeId: string,cursor?: string,signal?: AbortSignal) {
-  return listEmployees(owner,bearer,merchantEmployeePath(dshOperations.listMerchantEmployees.path,storeId),cursor,signal);
+export async function listMerchantEmployees(owner: string,bearer: string,storeId: string,cursor?: string,signal?: AbortSignal,endState?: EmployeeEndState) {
+  return listEmployees(owner,bearer,merchantEmployeePath(dshOperations.listMerchantEmployees.path,storeId),cursor,signal,endState);
 }
 export async function getMerchantEmployee(owner: string,bearer: string,storeId: string,id: string,signal?: AbortSignal) {
   return getEmployee(owner,bearer,merchantEmployeePath(dshOperations.getMerchantEmployee.path,storeId),id,signal);
