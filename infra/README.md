@@ -13,6 +13,7 @@ This environment is synthetic development only, not production deployment. Legac
 | `mailpit` | Local inbound test email capture | 3226 |
 | `payment-mock` | WireMock with fixed synthetic cash-in evidence (no production rails) | 3290 |
 | `wlt` (opt-in overlay) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
+| `identity` (opt-in overlay) | Isolated synthetic Identity authentication and authorization | 3201 |
 | `dsh` (with optional Compose file) | DSH owner; admitted capabilities depend on explicit configuration | 3202 |
 
 The `payment-mock` image is built from `tests/infra/payment-mock/Dockerfile` using the existing
@@ -39,10 +40,10 @@ read-only WLT development owner; it is not activated by the DSH profile. Do not 
 DSH discovery and admitted protected capabilities use the same owner. Verify each journey separately; configuration alone is not integration evidence.
 
 Identity is a separate, synthetic Go session/Operator-permission verifier
-in `compose.identity.yaml`, not a first-factor login issuer.
+in `compose.identity.yaml`, with explicitly admitted synthetic phone authentication and Operator capabilities.
 The two overlays may be combined with the same `compose.yaml` without
 competing service definitions. The [WLT Customer balance reader](../services/wlt/backend/README.md)
-runs only as an isolated loopback process with its read-only database role.
+runs as an isolated container or loopback process with its read-only database role.
 
 The fresh DSH bootstrap command uses its own `bootstrap` Compose profile,
 separate from `implementation`. Normal `implementation` startup cannot start
@@ -88,7 +89,7 @@ and exact permitted browser origins only to the ignored `infra/.env`:
 
 ```dotenv
 REF_DSH_DISCOVERY_SCHEMA=dsh_test_REPLACE_WITH_VERIFIED_SCHEMA
-REF_DSH_PUBLIC_CORS_ORIGINS=http://127.0.0.1:3101,http://localhost:3101
+REF_DSH_PUBLIC_CORS_ORIGINS=http://127.0.0.1:18101,http://localhost:18101
 ```
 
 Run from the checkout root (never start an entire profile). The default
@@ -137,14 +138,13 @@ refoundation Go Identity source**. Pair it with `compose.yaml` and optionally
 `compose.dsh.yaml` for the real DSH service; the existing project name remains
 `bthwani-refoundation`, and its published host port is loopback-only 3201.
 The service is `identity`, profile `identity-verifier`. It has no
-automatic bootstrap, issuer, migrations, donor volumes or other service restarts.
+automatic bootstrap, schema migrations, donor volumes or other service restarts.
 
 `services/identity/backend/Dockerfile` now builds the real Go binary in a
 pinned multi-stage Linux builder. `build-owner-image.ps1` checks
 that the Docker builder matches `.go-version`, rejects uncommitted owner
 source, and records the exact source SHA on the resulting image. The Docker
-context is limited to `services/identity/`; SQL is packaged for review and
-**never executed by the image build**. The container
+context is limited to reviewed Identity Go sources. SQL stays in the owner baseline and is not packaged or executed by the serving image. The container
 uses non-root UID, read-only filesystem, dropped Linux capabilities and
 no-new-privileges.
 
@@ -158,8 +158,7 @@ but an actual networked verifier and its database permissions are separate
 runtime gates. Before starting, verify an independently isolated synthetic
 schema, least-privilege database role, reviewed applied SQL and protected
 Identity session/permission denial and revocation readback. The build script
-continues to reject uncommitted Identity Go/SQL source; no issuer, real user
-or production authentication is enabled by these settings.
+continues to reject uncommitted Identity Go/SQL source; no real-user or production authentication is enabled by these settings.
 
 After those independent prerequisites are **proved**, set the Identity-only
 values `REF_IDENTITY_TEST_SCHEMA`, `REF_IDENTITY_RUNTIME_DATABASE_URL` (pointing
@@ -440,12 +439,13 @@ Do not run `down -v`, `prune`, copy donor volume data or touch donor tasks.
 
 ## Development port map (configured ports are not readiness evidence)
 
-| Optional app preview | Port | Owner service | Port |
-| --- | ---: | --- | ---: |
-| Customer | 3101 | Identity | 3201 |
-| Merchant | 3102 | DSH | 3202 |
-| Captain | 3103 | WLT | 3203 |
-| Operator | 3104 | | |
+| Owner service | Lenovo loopback | Container HTTP |
+| --- | ---: | ---: |
+| Identity | 3201 | 3302 |
+| DSH | 3202 | 8080 |
+| WLT | 3203 | 8080 |
+
+For native application processes and tunnel ports, use [Lenovo development](../tools/dev/README-Lenovo-Development.md).
 
 Mailpit 3226, SeaweedFS 3233, Payment Mock 3290. PostgreSQL is network-internal.
 All published service ports bind to 127.0.0.1 **on Lenovo**. They are not

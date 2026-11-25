@@ -118,6 +118,12 @@ jobs:
             [[ "$user" == "65532:65532" ]] || { echo "Unsafe container user: $service" >&2; exit 1; }
             revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
             [[ "$revision" == "$GITHUB_SHA" ]] || { echo "Missing source provenance: $service" >&2; exit 1; }
+            # DSH alone currently needs SQL for its explicit bootstrap command.
+            if [[ "$service" == "dsh" ]]; then
+              docker run --rm --network none --read-only --entrypoint /bin/sh "$image" -ec 'test -d /app/database/schema'
+            else
+              docker run --rm --network none --read-only --entrypoint /bin/sh "$image" -ec 'test ! -e /app/database/schema'
+            fi
             binary="$(mktemp)"
             container="$(docker create --network none "$image")"
             docker cp "$container:/usr/local/bin/$service" "$binary"

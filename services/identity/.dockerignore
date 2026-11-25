@@ -1,4 +1,4 @@
-# Only reviewed owner Go sources and SQL enter the Docker build context.
+# Only reviewed owner Go sources enter the runtime Docker build context.
 **
 !backend/
 !backend/go.mod
@@ -7,7 +7,4 @@
 !backend/cmd/**
 !backend/internal/
 !backend/internal/**
-!database/
-!database/schema/
-!database/schema/*.sql
 **/*_test.go
