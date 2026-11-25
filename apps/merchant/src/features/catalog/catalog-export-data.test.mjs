@@ -89,3 +89,33 @@ test("zero records produces headers only; more than 5000 is rejected without par
   }), /CATALOG_EXPORT_LIMIT/);
   assert.equal(calls, 100);
 });
+
+test("draft-edit CSV round trips exact values and excludes ambiguous or unsafe offers", async () => {
+  const { previewCatalogCsv, reviewCatalogImportRows, buildImportManifest } = await import("./catalog-import-data.ts");
+  const items = [
+    { ...offer("of-a", 'coffee, "Yemen"'), stockUnits: 0 },
+    offer("of-b", "Café"), { ...offer("of-c", "Cafe\u0301"), published: true },
+    offer("of-d", " =1+2"), offer("of-e", "＋1"), offer("of-f", "invalid\uFFFD"),
+    { ...offer("of-g", "active"), productActive: true },
+    { ...offer("of-h", "invalid amount"), priceYer: "0" },
+    { ...offer("of-i", "stale"), draftVersion: Number.MAX_SAFE_INTEGER },
+    offer("of-j", " leading "), offer("of-k", "tea"),
+  ];
+  const calls = [];
+  const signal = new AbortController().signal;
+  const read = async (_s,_a,_signal,opts) => { calls.push(opts); return page(items); };
+  const result = await collectCatalogExport("merchant-a","store-a",signal,read,{query:"ignored"},"draft-edit");
+  assert.deepEqual(calls,[{limit:50}],"template must examine complete Store");
+  assert.equal(result.count,2);
+  assert.equal(result.excluded,9);
+  const parsed = previewCatalogCsv(result.csv);
+  assert.deepEqual(parsed.map(r=>[r.name,r.priceYer,r.stockUnits]),[
+    ['coffee, "Yemen"',"9223372036854775807","0"],["tea","9223372036854775807","2"],
+  ]);
+  const reviewed = await reviewCatalogImportRows(parsed,"merchant-a","store-a",signal,read);
+  assert.deepEqual(reviewed.map(r=>r.editableDraft?.id),["of-a","of-k"]);
+  const manifest=buildImportManifest(reviewed,"a".repeat(64),new Set(reviewed.map(r=>r.row)));
+  assert.deepEqual(manifest.rows.map(r=>[r.offerId,r.expectedVersion]),[["of-a",3],["of-k",3]]);
+  await assert.rejects(collectCatalogExport("merchant-a","store-a",signal,async()=>page(items.slice(1,10)),{},"draft-edit"),/CATALOG_IMPORT_TEMPLATE_EMPTY/);
+  await assert.rejects(collectCatalogExport("merchant-a","store-a",signal,async()=>{throw Error("403");},{},"draft-edit"),/403/);
+});

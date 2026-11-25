@@ -94,7 +94,7 @@ export function previewCatalogCsv(input: string): PreviewRow[] {
   }
   const names = new Map<string, number>();
   for (const [name = ""] of rows.slice(1)) {
-    const key = name.trim().normalize("NFC").toLowerCase();
+    const key = catalogImportNameKey(name);
     if (key) names.set(key, (names.get(key) ?? 0) + 1);
   }
   return rows.slice(1).map(([rawName = "", rawPrice = "", rawStock = ""], i) => {
@@ -102,10 +102,21 @@ export function previewCatalogCsv(input: string): PreviewRow[] {
     const valid = rows[i+1]?.length === 3 && /^[0-9]{1,10}$/.test(stockUnits) && validMerchantCatalogDraft({
       operationId: "preview-draft-0001", name, priceYer, stockUnits: Number(stockUnits),
     });
-    const duplicate = (names.get(name.normalize("NFC").toLowerCase()) ?? 0) > 1;
+    const duplicate = (names.get(catalogImportNameKey(name)) ?? 0) > 1;
     return { row: i+2, name, priceYer, stockUnits,
       reason: !valid ? "invalid" : duplicate ? "duplicate-name" : "owner-review" };
   });
+}
+
+export function catalogImportNameKey(name: string): string {
+  return name.trim().normalize("NFC").toLowerCase();
+}
+
+export function isCatalogImportDraft(offer: MerchantCatalogOffer): boolean {
+  return offer.published === false && offer.available === false && offer.productActive === false &&
+    offer.variantSellable === false && offer.requiredAttributesValid === false &&
+    Number.isSafeInteger(offer.draftVersion) && offer.draftVersion >= 1 &&
+    offer.draftVersion < Number.MAX_SAFE_INTEGER;
 }
 
 /** Names only are observations, never canonical identity resolution or import admission. */
@@ -114,21 +125,18 @@ export async function reviewCatalogImportRows(
 ): Promise<PreviewRow[]> {
   const offers = await collectMerchantCatalogOffers(actorId, storeId, signal, read);
   signal.throwIfAborted();
-  const key = (name: string) => name.trim().normalize("NFC").toLowerCase();
+
   const existing = new Map<string, StoreNameMatch & { draft?: MerchantCatalogOffer }>();
   for (const offer of offers) {
-    const name = key(offer.name);
+    const name = catalogImportNameKey(offer.name);
     const previous = existing.get(name);
     existing.set(name, previous ? { count: previous.count + 1 } : {
       count: 1, priceYer: offer.priceYer, stockUnits: offer.stockUnits, published: offer.published,
-      ...(offer.published === false && offer.available === false && offer.productActive === false &&
-        offer.variantSellable === false && offer.requiredAttributesValid === false &&
-        Number.isSafeInteger(offer.draftVersion) && offer.draftVersion >= 1 &&
-        offer.draftVersion < Number.MAX_SAFE_INTEGER ? { draft: offer } : {}),
+      ...(isCatalogImportDraft(offer) ? { draft: offer } : {}),
     });
   }
   return rows.map(row => {
-    const match = row.reason === "owner-review" ? existing.get(key(row.name)) : undefined;
+    const match = row.reason === "owner-review" ? existing.get(catalogImportNameKey(row.name)) : undefined;
     if (!match) return row;
     const { draft, ...observation } = match;
     return { ...row, reason: "existing-store-name", match: observation, ...(draft ? { editableDraft: draft } : {}) };

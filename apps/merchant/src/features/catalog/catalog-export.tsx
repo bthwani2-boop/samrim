@@ -64,7 +64,7 @@ function CatalogExportAction({ actorId, storeId, query, status }: Readonly<{
     setMessage("أُلغي التصدير. يمكنك إعادة المحاولة.");
   }
 
-  async function start(filtered = false) {
+  async function start(mode: "full" | "filtered" | "draft-edit" = "full") {
     if (active.current) return;
     const controller = new AbortController();
     const operation = { controller, collecting: true };
@@ -74,7 +74,7 @@ function CatalogExportAction({ actorId, storeId, query, status }: Readonly<{
     const timeout = setTimeout(() => controller.abort(), 120000);
     try {
       const result = await collectCatalogExport(actorId, storeId, controller.signal, readMerchantCatalogPage,
-        filtered ? { ...(query ? { query } : {}), ...(status ? { status } : {}) } : {});
+        mode === "filtered" ? { ...(query ? { query } : {}), ...(status ? { status } : {}) } : {}, mode === "draft-edit" ? "draft-edit" : "report");
       // The last page and each preceding page are checked by DSH. A changed
       // mounted scope cancels the request before the file can be handed off.
       controller.signal.throwIfAborted();
@@ -82,13 +82,16 @@ function CatalogExportAction({ actorId, storeId, query, status }: Readonly<{
       setPhase("delivering");
       await deliverCsv(result.csv, controller.signal);
       if (active.current === operation && !controller.signal.aborted) {
-        setMessage(`تم تجهيز ملف CSV بعدد ${result.count} عرض. تحقّق من التنزيل أو المشاركة.`);
+        if (mode === "draft-edit") setMessage(["تم تجهيز", result.count, "مسودة للمراجعة؛ استُبعد", result.excluded ?? 0, "عرض غير مؤهل. أعد معاينة الملف قبل اعتماد أي تعديل."].join(" "));
+        else setMessage(`تم تجهيز ملف CSV بعدد ${result.count} عرض. تحقّق من التنزيل أو المشاركة.`);
       }
     } catch (error) {
       if (active.current !== operation) return;
       setMessage(error instanceof Error && error.message === "CATALOG_EXPORT_LIMIT"
         ? "يتجاوز الكتالوج 5000 عرض. لم يُنشأ ملف جزئي."
-        : "تعذّر إكمال التصدير. تحقّق من الاتصال والصلاحية ثم أعد المحاولة.");
+        : error instanceof Error && error.message === "CATALOG_IMPORT_TEMPLATE_EMPTY"
+          ? "لا توجد مسودات فريدة وآمنة للتعديل عبر الملف؛ لم يُنشأ ملف."
+          : "تعذّر إكمال التصدير. تحقّق من الاتصال والصلاحية ثم أعد المحاولة.");
     } finally {
       clearTimeout(timeout);
       if (active.current === operation) {
@@ -107,10 +110,16 @@ function CatalogExportAction({ actorId, storeId, query, status }: Readonly<{
       <Text style={{ color: theme.interactiveText }}>{busy ? "جارٍ تجهيز التصدير…" : "تصدير الكتالوج (CSV)"}</Text>
     </Pressable>
     {query || status ? <Pressable accessibilityRole="button" accessibilityLabel="تصدير نتائج التصفية CSV"
-      accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void start(true)}
+      accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void start("filtered")}
       style={buttonStyle}>
       <Text style={{ color: theme.interactiveText }}>تصدير نتائج التصفية (CSV)</Text>
     </Pressable> : null}
+    <Pressable accessibilityRole="button" accessibilityLabel="تصدير ملف تعديل المسودات CSV"
+      accessibilityState={{ busy, disabled: busy }} disabled={busy} onPress={() => void start("draft-edit")}
+      style={buttonStyle}>
+      <Text style={{ color: theme.interactiveText }}>تصدير ملف تعديل أسعار ومخزون المسودات (CSV)</Text>
+    </Pressable>
+    <Text style={{ color: theme.colorSecondary }}>ملف تعديل المسودات يستخدم الأعمدة الثلاثة المقبولة في الاستيراد. افتح الأعمدة كنص للحفاظ على القيم الدقيقة، ولا تغيّر الأسماء؛ أعد فحص الملف واعتمد الصفوف صراحة. لا يشمل العروض المنشورة أو الأسماء الملتبسة.</Text>
     {phase === "collecting" ? <Pressable accessibilityRole="button" accessibilityLabel="إلغاء تجهيز التصدير"
       onPress={cancel} style={buttonStyle}>
       <Text style={{ color: theme.interactiveText }}>إلغاء تجهيز التصدير</Text>

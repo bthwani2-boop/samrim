@@ -190,7 +190,7 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     assert.notEqual(selected.key, replacement.key);
     stateIndex = 0; refIndex = 0;
     const buttons = nodes(selected.type(selected.props)).filter(n => n.type === "Pressable");
-    assert.equal(buttons.length, 2);
+    assert.equal(buttons.length, 3);
     buttons.find(n => n.props.accessibilityLabel === "تصدير نتائج التصفية CSV").props.onPress();
     assert.deepEqual(requests[6].options, { limit: 50, query: "قهوة", status: "unpublished" });
     cleanup();
@@ -233,6 +233,27 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     await tick();
     assert.equal(downloads.length, 4);
     assert.equal(nodes(render()).some(n => n.props?.accessibilityLabel === "إلغاء تجهيز التصدير"), false);
+    const draftResult = { ...result, items: [{ ...offer, productActive: false, variantSellable: false, requiredAttributesValid: false }] };
+    const draftButton = () => nodes(render()).find(n => n.props?.accessibilityLabel === "تصدير ملف تعديل المسودات CSV");
+    assert.ok(draftButton(), "draft template action missing");
+    draftButton().props.onPress();
+    assert.deepEqual(requests.at(-1).options, { limit: 50 });
+    requests.at(-1).resolve(draftResult);
+    await tick();
+    assert.equal(downloads.length, 5);
+    assert.match(await downloads.at(-1).blob.text(), /^\uFEFF?name,price_yer,stock_units\r\n/);
+    draftButton().props.onPress();
+    requests.at(-1).resolve(result);
+    await tick();
+    assert.equal(downloads.length, 5, "no file for ineligible offers");
+    cleanup();
+    mounted = false; states.length = 0; refs.length = 0;
+    platform.OS = "android"; sharingAvailable = true; shareFails = false;
+    draftButton().props.onPress();
+    requests.at(-1).resolve(draftResult);
+    await tick();
+    assert.match(shared.at(-1), /^\uFEFFname,price_yer,stock_units\r\n/);
+    assert.equal(nativeFiles.at(-1).exists, false);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
