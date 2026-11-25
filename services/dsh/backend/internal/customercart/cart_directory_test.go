@@ -85,6 +85,36 @@ func verifyCartDirectoryOnPostgres(t *testing.T, ctx context.Context, db *sql.DB
 	}
 	exec("UPDATE " + schema + ".stores SET published=true WHERE id='store-b'")
 	exec("DELETE FROM " + schema + ".customer_carts WHERE actor_id='customer-b' AND store_id IN ('store-a','store-b')")
+	// Dedicated paging proof: 21 nonempty drafts plus one empty, isolated actor.
+	exec("INSERT INTO " + schema + ".stores(id,owner_actor_id,city_id,vertical_id,relation,name,published) SELECT 'page-'||lpad(n::text,2,'0'),'merchant-a','sanaa','grocery','MARKETPLACE','Paging Store '||n,true FROM generate_series(1,22) n")
+	exec("INSERT INTO " + schema + ".products(id,store_id,name,active) SELECT 'page-product-'||n,'page-'||lpad(n::text,2,'0'),'Paging Product',true FROM generate_series(1,21) n")
+	exec("INSERT INTO " + schema + ".variants(id,product_id,sellable,required_attributes_valid) SELECT 'page-variant-'||n,'page-product-'||n,true,true FROM generate_series(1,21) n")
+	exec("INSERT INTO " + schema + ".offers(id,store_id,product_id,variant_id,published,available,price_yer,stock_units) SELECT 'page-offer-'||n,'page-'||lpad(n::text,2,'0'),'page-product-'||n,'page-variant-'||n,true,true,550,10 FROM generate_series(1,21) n")
+	exec("INSERT INTO " + schema + ".customer_carts(actor_id,store_id,version) SELECT 'customer-b','page-'||lpad(n::text,2,'0'),1 FROM generate_series(1,22) n")
+	exec("INSERT INTO " + schema + ".customer_cart_lines(actor_id,store_id,offer_id,quantity) SELECT 'customer-b','page-'||lpad(n::text,2,'0'),'page-offer-'||n,1 FROM generate_series(1,21) n")
+	p1 := read("customer-b", "")
+	if len(p1.Carts) != 20 || p1.Carts[0].StoreID != "page-01" || p1.Carts[19].StoreID != "page-20" || p1.NextCursor != "page-20" {
+		t.Fatalf("first page wrong: %+v", p1)
+	}
+	p2 := read("customer-b", "?after="+p1.NextCursor)
+	if len(p2.Carts) != 1 || p2.Carts[0].StoreID != "page-21" || p2.NextCursor != "" {
+		t.Fatalf("second page wrong: %+v", p2)
+	}
+	if p3 := read("customer-b", "?after=page-21"); len(p3.Carts) != 0 || p3.NextCursor != "" {
+		t.Fatalf("tail wrong: %+v", p3)
+	}
+	if p := read("customer-a", ""); len(p.Carts) != 1 || p.Carts[0].StoreID != "store-a" || p.NextCursor != "" {
+		t.Fatalf("cross-actor leak: %+v", p)
+	}
+	var pageCount, lineCount, versionSum int
+	if err := db.QueryRowContext(ctx, "SELECT count(*),sum(version) FROM "+schema+".customer_carts WHERE actor_id='customer-b'").Scan(&pageCount, &versionSum); err != nil || pageCount != 22 || versionSum != 22 {
+		t.Fatalf("cart write detected %d/%d %v", pageCount, versionSum, err)
+	}
+	if err := db.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".customer_cart_lines WHERE actor_id='customer-b'").Scan(&lineCount); err != nil || lineCount != 21 {
+		t.Fatalf("line write detected %d %v", lineCount, err)
+	}
+	t.Log("PAGING_OWNER_PROOF_PASS: 20+1+0, empty excluded, actor separated, 22 carts/21 lines unchanged")
+	exec("DELETE FROM " + schema + ".customer_carts WHERE actor_id='customer-b' AND store_id LIKE 'page-%'")
 	// Verify original persisted draft was neither changed nor reserved.
 	var version int64
 	var count int
