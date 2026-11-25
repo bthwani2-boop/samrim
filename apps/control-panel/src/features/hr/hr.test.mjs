@@ -163,3 +163,178 @@ test("first-page owner outage remains unavailable and malformed cursor never rea
   assert.match(success.html, /HR-private-employee/);
   assert.match(success.html, /registration form/);
 });
+
+
+const registrationComponent = transformSync(readFileSync(new URL("./employee-registration.tsx", import.meta.url), "utf8"), {
+  jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022", transform: { react: { runtime: "automatic" } } },
+  module: { type: "commonjs" },
+}).code;
+const registrationAction = transformSync(readFileSync(new URL("./register-employee-action.ts", import.meta.url), "utf8"), {
+  jsc: { parser: { syntax: "typescript" }, target: "es2022" }, module: { type: "commonjs" },
+}).code;
+const employeeDraft = { displayName: "Synthetic Employee", department: "Operations", jobTitle: "Coordinator", startDate: "2026-11-25" };
+const makeForm = values => {
+  const form = new FormData();
+  for (const [name, value] of Object.entries(values)) form.set(name, value);
+  return form;
+};
+function findRegistrationNode(node, predicate) {
+  if (Array.isArray(node)) return node.map(child => findRegistrationNode(child, predicate)).find(Boolean);
+  if (!node || typeof node !== "object") return undefined;
+  return predicate(node) ? node : findRegistrationNode(node.props?.children, predicate);
+}
+
+async function exerciseRegistration(scenario) {
+  const hooks = [], calls = [], responses = [], destinations = [];
+  let index = 0;
+  const jsx = (type, props) => ({ type, props });
+  const react = {
+    useEffect(fn) { const at = index++; if (!(at in hooks)) hooks[at] = fn(); },
+    useRef(value) { const at = index++; hooks[at] ??= { current: value }; return hooks[at]; },
+    useState(initial) {
+      const at = index++;
+      if (!(at in hooks)) hooks[at] = initial;
+      return [hooks[at], value => { hooks[at] = typeof value === "function" ? value(hooks[at]) : value; }];
+    },
+    useActionState(fn, initial) {
+      const at = index++;
+      if (!(at in hooks)) hooks[at] = initial;
+      return [hooks[at], async form => { hooks[at] = await fn(hooks[at], form); }, false];
+    },
+  };
+  const original = globalThis.window;
+  globalThis.window = { crypto: globalThis.crypto, location: { assign: value => destinations.push(value) } };
+  const mod = { exports: {} };
+  try {
+    new Function("require", "module", "exports", registrationComponent)(name => ({
+      react, "react/jsx-runtime": { jsx, jsxs: jsx }, "./employees.module.css": {},
+    })[name], mod, mod.exports);
+    const submit = (id, form) => {
+      calls.push({ id, fields: Object.fromEntries(form) });
+      return new Promise((resolve, reject) => responses.push({ resolve, reject }));
+    };
+    const render = () => { index = 0; return mod.exports.default({ submit }); };
+    const input = (name, tree = render()) => findRegistrationNode(tree, node => node.type === "input" && node.props.name === name);
+    const edit = (name, value, tree = render()) => input(name, tree).props.onChange({ target: { value } });
+    for (const [name, value] of Object.entries(employeeDraft)) edit(name, value);
+    const send = (tree = render(), values = employeeDraft) => tree.props.onSubmit
+      ? tree.props.onSubmit({ preventDefault() {} })
+      : tree.props.action(makeForm(values));
+    const reply = result => responses.shift().resolve(result);
+    const reject = () => responses.shift().reject(new TypeError("synthetic transport loss"));
+    await scenario({ render, input, edit, send, reply, reject, calls, destinations });
+  } finally {
+    for (const entry of responses.splice(0)) entry.resolve({ status: "invalid", message: "invalid" });
+    if (original === undefined) delete globalThis.window; else globalThis.window = original;
+  }
+}
+
+test("company registration retries an unknown result with the immutable original payload and ID", async () => {
+  await exerciseRegistration(async ({ render, input, edit, send, reply, calls }) => {
+    const first = send();
+    reply({ status: "unknown", message: "unknown" }); await first;
+    edit("displayName", "Different Employee");
+    const again = send(render(), { ...employeeDraft, displayName: "Different Employee" });
+    reply({ status: "unknown", message: "unknown" }); await again;
+    assert.deepEqual(calls[1], calls[0]);
+    assert.equal(input("displayName").props.value, employeeDraft.displayName);
+    assert.equal(input("displayName").props.readOnly, true);
+  });
+});
+
+test("company registration permits correction and a new operation only after a definite first rejection", async () => {
+  await exerciseRegistration(async ({ edit, send, reply, calls }) => {
+    const first = send();
+    reply({ status: "invalid", message: "invalid" }); await first;
+    edit("displayName", "Corrected Employee");
+    const next = send(undefined, { ...employeeDraft, displayName: "Corrected Employee" });
+    reply({ status: "invalid", message: "invalid" }); await next;
+    assert.notEqual(calls[0].id, calls[1].id);
+    assert.equal(calls[1].fields.displayName, "Corrected Employee");
+  });
+});
+
+test("company registration is single-flight and revocation clears the private draft and blocks stale submits", async () => {
+  await exerciseRegistration(async ({ render, input, send, reply, calls }) => {
+    const view = render();
+    const first = send(view), duplicate = send(view);
+    assert.equal(calls.length, 1);
+    reply({ status: "denied", message: "denied" });
+    await first; await duplicate;
+    assert.equal(input("displayName")?.props.value ?? "", "");
+    await send(view);
+    assert.equal(calls.length, 1);
+  });
+});
+
+test("company registration keeps an unknown request locked after a subsequent validation response", async () => {
+  await exerciseRegistration(async ({ send, reject, reply, edit, input, calls }) => {
+    const first = send();
+    reject(); await first;
+    const retry = send();
+    reply({ status: "invalid", message: "invalid" }); await retry;
+    edit("displayName", "New Employee");
+    assert.equal(input("displayName").props.readOnly, true);
+    assert.deepEqual(calls[0], calls[1]);
+  });
+});
+
+test("company registration navigates only on a confirmed owner ID and never repeats a confirmed operation", async () => {
+  await exerciseRegistration(async ({ render, send, reply, calls, destinations }) => {
+    const view = render();
+    const first = send(view);
+    reply({ status: "confirmed", id: employeeId, message: "confirmed" }); await first;
+    assert.deepEqual(destinations, [`/hr/employees/${employeeId}`]);
+    await send(view);
+    assert.equal(calls.length, 1);
+  });
+});
+
+async function runRegistrationAction({ outcome, owner = { status: "available", actorId: "operator-a", origin: "http://127.0.0.1:3202", bearer: "synthetic" } }) {
+  const calls = [], mod = { exports: {} };
+  new Function("require", "module", "exports", registrationAction)(name => ({
+    "@bthwani/dsh": { DshPublicError, registerCompanyEmployee: async (_origin, _bearer, input) => {
+      calls.push(input); if (outcome instanceof Error) throw outcome; return outcome;
+    } },
+    "next/navigation": { redirect: () => { throw new Error("unexpected redirect"); } },
+    "./employee-owner": { employeeOwner: async () => owner },
+  })[name], mod, mod.exports);
+  const result = await mod.exports.registerEmployee("operator-a", employeeId, makeForm(employeeDraft));
+  return { result, calls };
+}
+
+test("registration action distinguishes definite rejection, authority denial, conflict and unknown owner outcomes", async () => {
+  for (const [error, status] of [
+    [new DshPublicError(400, "EMPLOYEE_REGISTRATION_INVALID"), "invalid"],
+    [new DshPublicError(401, "UNAUTHENTICATED"), "denied"],
+    [new DshPublicError(403, "EMPLOYEE_SCOPE_FORBIDDEN"), "denied"],
+    [new DshPublicError(409, "EMPLOYEE_CONFLICT"), "conflict"],
+    [new DshPublicError(503, "OPERATION_RESULT_UNKNOWN"), "unknown"],
+    [new TypeError("connection lost"), "unknown"],
+  ]) {
+    const { result, calls } = await runRegistrationAction({ outcome: error });
+    assert.equal(result.status, status);
+    assert.equal(calls.length, 1);
+  }
+  const denied = await runRegistrationAction({ owner: { status: "available", actorId: "operator-b" }, outcome: employeeId });
+  assert.equal(denied.result.status, "denied");
+  assert.deepEqual(denied.calls, []);
+  const confirmed = await runRegistrationAction({ outcome: employeeId });
+  assert.equal(confirmed.result.status, "confirmed");
+  assert.equal(confirmed.result.id, employeeId);
+  assert.deepEqual(confirmed.calls, [{ operationId: employeeId, ...employeeDraft }]);
+});
+
+
+test("a conflicted company registration stays locked and cannot issue a new operation", async () => {
+  await exerciseRegistration(async ({ render, input, edit, send, reply, calls }) => {
+    const first = send();
+    reply({ status: "conflict", message: "conflict" }); await first;
+    edit("displayName", "Another Employee");
+    assert.equal(input("displayName").props.value, employeeDraft.displayName);
+    assert.equal(input("displayName").props.readOnly, true);
+    assert.equal(findRegistrationNode(render(), node => node.type === "fieldset").props.disabled, true);
+    await send();
+    assert.equal(calls.length, 1);
+  });
+});
