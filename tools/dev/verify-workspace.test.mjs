@@ -145,10 +145,14 @@ test('service placement guard rejects wrong owners, unnamed SQL and duplicate co
   }
 });
 
-test('the merged PR 193 coverage waiver cannot silently return to Sonar CI', async () => {
+test('Sonar requires every Go owner and rejects expired quality gate waivers', async () => {
   const { readFileSync } = await import('node:fs');
   const sonar = readFileSync(new URL('../../.github/workflows/sonar-quality.yml', import.meta.url), 'utf8');
   assert.doesNotMatch(sonar, /Temporary PR 193 coverage exception|sonar[.]coverage[.]exclusions/);
+  assert.doesNotMatch(sonar, /continue-on-error:|Verify the approved coverage exception/);
+  assert.match(sonar, /for service in identity dsh wlt; do/);
+  const config = readFileSync(new URL('../../sonar-project.properties', import.meta.url), 'utf8');
+  assert.match(config, /^sonar\.go\.coverage\.reportPaths=coverage\/identity-go\.out,coverage\/dsh-go\.out,coverage\/wlt-go\.out$/m);
   assert.ok(sonar.includes('-Dsonar.qualitygate.wait=true'));
   assert.ok(sonar.includes('SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}'));
 });
