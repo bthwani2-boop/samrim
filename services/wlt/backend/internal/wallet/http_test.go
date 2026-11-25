@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -253,5 +256,85 @@ func TestFundingHistoryCursorIsCanonicalAndCannotSelectAnActor(t *testing.T) {
 		if parsed, err := parseHistoryCursor(raw); err == nil || parsed != nil {
 			t.Errorf("noncanonical actor/page selector admitted: %q: %+v %v", raw, parsed, err)
 		}
+	}
+}
+
+func TestOwnerTransportRejectsAmbientProxy(t *testing.T) {
+	// Start a fresh test process because Go caches the ambient proxy config.
+	const child = "BTHWANI_TEST_OWNER_PROXY_CHILD"
+	if os.Getenv(child) != "1" {
+		cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestOwnerTransportRejectsAmbientProxy$", "-test.v")
+		cmd.Env = append(os.Environ(), child+"=1")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("isolated owner transport failed: %v\n%s", err, output)
+		}
+		return
+	}
+	var proxied atomic.Int32
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		proxied.Add(1)
+		w.WriteHeader(http.StatusBadGateway)
+	}))
+	defer proxy.Close()
+	t.Setenv("HTTP_PROXY", proxy.URL)
+	t.Setenv("http_proxy", proxy.URL)
+	t.Setenv("NO_PROXY", "")
+	t.Setenv("no_proxy", "")
+	t.Setenv("REQUEST_METHOD", "")
+	const session = `{"actorId":"merchant-one","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	const standing = `{"actorId":"merchant-one","stores":[{"id":"store-a","name":"Shop","relation":"DIRECT","published":true}]}`
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{6}, 32))
+	var ownerCalls atomic.Int32
+	owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != token {
+			t.Error("missing synthetic session")
+		}
+		ownerCalls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		switch r.URL.Path {
+		case "/v1/sessions/current":
+			_, _ = w.Write([]byte(session))
+		case "/v1/stores/mine":
+			_, _ = w.Write([]byte(standing))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer owner.Close()
+	reader, err := newIdentityReader("http://identity:3302", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := reader.client.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	tr, ok := transport.(*http.Transport)
+	if !ok {
+		t.Fatal("expected native HTTP transport")
+	}
+	// Map only the admitted container hostnames to a real local socket.
+	// Keep the actual transport's proxy decision, but prevent external DNS/dials.
+	tr = tr.Clone()
+	defer tr.CloseIdleConnections()
+	ownerAddr := strings.TrimPrefix(owner.URL, "http://")
+	proxyAddr := strings.TrimPrefix(proxy.URL, "http://")
+	tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		switch addr {
+		case "identity:3302", "dsh:8080":
+			addr = ownerAddr
+		case proxyAddr:
+		default:
+			return nil, &net.AddrError{Err: "unexpected isolated destination", Addr: addr}
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	reader.client.Transport = tr
+	actor, status := reader.readRole(t.Context(), token, "merchant")
+	relation, standingStatus := ownedStoreRelation(t.Context(), reader, "http://dsh:8080/v1/stores/mine", token, "merchant-one", "store-a")
+	if status != http.StatusOK || actor.ActorID != "merchant-one" ||
+		standingStatus != http.StatusOK || relation != "DIRECT" || ownerCalls.Load() != 2 || proxied.Load() != 0 {
+		t.Fatalf("owner transport escaped direct routing: session=%d standing=%d direct=%d proxied=%d", status, standingStatus, ownerCalls.Load(), proxied.Load())
 	}
 }

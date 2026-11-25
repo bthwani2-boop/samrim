@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,6 +28,17 @@ type identityReader struct {
 	client   *http.Client
 }
 
+// Identity and DSH owner requests must stay on their admitted development
+// origins. The default HTTP transport honors ambient proxy configuration,
+// which could expose an owner bearer to a proxy for container hostnames.
+// Share a bounded direct connection pool across readers, including sandbox CLI.
+var isolatedOwnerTransport = &http.Transport{
+	Proxy:           nil,
+	DialContext:     (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+	MaxIdleConns:    16,
+	IdleConnTimeout: 90 * time.Second,
+}
+
 func newIdentityReader(origin string, containerMode ...bool) (identityReader, error) {
 	allowedContainer := len(containerMode) == 1 && containerMode[0] && origin == "http://identity:3302"
 	root, err := url.Parse(origin)
@@ -38,7 +50,8 @@ func newIdentityReader(origin string, containerMode ...bool) (identityReader, er
 	return identityReader{
 		endpoint: origin + "/v1/sessions/current",
 		client: &http.Client{
-			Timeout: 2 * time.Second,
+			Transport: isolatedOwnerTransport,
+			Timeout:   2 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
