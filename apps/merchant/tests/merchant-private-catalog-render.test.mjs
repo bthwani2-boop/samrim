@@ -513,9 +513,9 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     },mod,mod.exports);
     let stockoutClicks = 0;
     const stockoutButton = tree => tree.find(n => n.type === "Pressable" && n.props?.children?.props?.children === "عرض العروض النافدة");
-    function render(actorId,storeId) {
+    function render(actorId,storeId,showStockout = true) {
       index=0; scheduled=[];
-      const tree=mod.exports.default({actorId,storeId,onShowStockout: () => { stockoutClicks++; }});
+      const tree=mod.exports.default({actorId,storeId,onShowStockout: showStockout ? () => { stockoutClicks++; } : undefined});
       for(const effect of scheduled) effect();
       return nodes(tree);
     }
@@ -527,6 +527,7 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     assert.ok(hasCount(render("merchant-a","store-a"),132));
     stockoutButton(render("merchant-a","store-a")).props.onPress();
     assert.equal(stockoutClicks, 1);
+    assert.equal(stockoutButton(render("merchant-a","store-a",false)), undefined, "embedded summary must not show a stockout action without a handler");
     const switchedStore = render("merchant-a","store-b");
     assert.ok(!hasCount(switchedStore,132));
     assert.equal(stockoutButton(switchedStore), undefined);

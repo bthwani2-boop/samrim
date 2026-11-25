@@ -2,7 +2,9 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantOwnedStore } from "../access/dsh-standing";
+import InventorySummary from "../catalog/inventory-summary";
 import EmployeesScreen from "../employees/employees-screen";
+import CommercialAgreement from "../finance/commercial-agreement";
 import MerchantPublicLink from "../stores/merchant-public-link";
 import StoreAvailability from "../stores/store-availability";
 import { filterMerchantStores, type MerchantPublicationFilter, type MerchantRelationFilter } from "./merchant-workspace-model";
@@ -32,7 +34,7 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
   stores: readonly MerchantOwnedStore[];
   initialPublication?: MerchantPublicationFilter;
   initialStoreId?: string | undefined;
-  onOpenCatalog: (storeId: string) => void;
+  onOpenCatalog: (storeId: string, priceStockOnly?: boolean) => void;
 }>) {
   const { theme } = useMobileAppearance();
   const [query, setQuery] = useState("");
@@ -42,6 +44,8 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
   const selected = stores.find(store => store.id === selectedId);
   const [teamScope,setTeamScope]=useState<string|null>(null);
   const currentTeamScope=JSON.stringify([actorId,selected?.id]);
+  const [preparationScope, setPreparationScope] = useState<string | null>(null);
+  const preparationOpen = Boolean(actorId && selected && preparationScope === currentTeamScope);
 
   const button = {
     minHeight: 44, paddingHorizontal: 12, paddingVertical: 8, justifyContent: "center" as const,
@@ -57,7 +61,7 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
   if (selected) {
     return (
       <View testID="merchant-store-details" style={{ gap: 12 }}>
-        <Pressable accessibilityRole="button" onPress={() => {setSelectedId(null);setTeamScope(null);}}
+        <Pressable accessibilityRole="button" onPress={() => {setSelectedId(null);setTeamScope(null);setPreparationScope(null);}}
           style={{ ...button, alignSelf: "flex-start" }}>
           <Text style={{ color: theme.interactiveText }}>العودة إلى المتاجر</Text>
         </Pressable>
@@ -72,6 +76,22 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
             onPress={() => onOpenCatalog(selected.id)}>
             <Text style={{ color: theme.interactiveText }}>إدارة منتجات هذا المتجر</Text>
           </Pressable>
+        </View>
+        <View style={card}>
+          <Text accessibilityRole="header" style={{ ...text, fontSize: 19, fontWeight: "700" }}>تجهيز المتجر</Text>
+          <Text style={secondary}>بيانات المخزون لدى DSH ومقترح الاتفاقية لدى WLT. لا تُعد هذه البيانات موافقة على النشر أو اتفاقية نافذة.</Text>
+          <Pressable accessibilityRole="button" style={button} onPress={() => onOpenCatalog(selected.id, true)}>
+            <Text style={{ color: theme.interactiveText }}>إدارة مخزون هذا المتجر</Text>
+          </Pressable>
+          <Pressable accessibilityRole="button" accessibilityLabel="عرض بيانات تجهيز المتجر"
+            accessibilityState={{ expanded: preparationOpen }} style={button}
+            onPress={() => setPreparationScope(current => current === currentTeamScope ? null : currentTeamScope)}>
+            <Text style={{ color: theme.interactiveText }}>{preparationOpen ? "إغلاق بيانات تجهيز المتجر" : "عرض بيانات تجهيز المتجر"}</Text>
+          </Pressable>
+          {preparationOpen ? <>
+            <InventorySummary key={currentTeamScope} actorId={actorId} storeId={selected.id} />
+            <CommercialAgreement key={JSON.stringify([actorId, selected.id, "agreement"])} actorId={actorId} storeId={selected.id} />
+          </> : null}
         </View>
         <MerchantPublicLink key={`${actorId}:${selected.id}:public`} actorId={actorId}
           storeId={selected.id} published={selected.published} />
@@ -132,7 +152,7 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
         </View>
       ) : visible.map(store => (
         <Pressable key={store.id} accessibilityRole="button" accessibilityLabel={`عرض ${store.name}`}
-          onPress={() => setSelectedId(store.id)} style={card}>
+          onPress={() => {setSelectedId(store.id);setTeamScope(null);setPreparationScope(null);}} style={card}>
           <Text style={{ ...text, fontSize: 18, fontWeight: "700" }}>{store.name}</Text>
           <Text style={secondary}>{relationLabel(store)} · {publicationLabel(store)}</Text>
         </Pressable>

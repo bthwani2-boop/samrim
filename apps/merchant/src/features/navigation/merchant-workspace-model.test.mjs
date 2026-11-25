@@ -82,6 +82,8 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       "./merchant-store-directory": { __esModule: true, default: "Directory" },
       "../stores/merchant-public-link": { __esModule: true, default: "PublicLink" },
       "../stores/store-availability": { __esModule: true, default: "Availability" },
+      "../catalog/inventory-summary": { __esModule: true, default: "InventorySummary" },
+      "../finance/commercial-agreement": { __esModule: true, default: "CommercialAgreement" },
       "../employees/employees-screen": { __esModule: true, default: "Employees" },
       "../finance/wallet-screen": { __esModule: true, default: "Wallet" },
       "./merchant-workspace-model": { filterMerchantStores, merchantNavigation, merchantMobileSections, merchantStoreSummary },
@@ -202,9 +204,9 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     const Directory = load(readFileSync(path.join(temp, "merchant-store-directory.js"), "utf8"));
     values = [];
     const opened = [];
-    const renderDirectory = (scopedStores = stores) => {
+    const renderDirectory = (scopedStores = stores, actorId = "merchant-a") => {
       index = 0;
-      return nodes(Directory({ actorId: "merchant-a", stores: scopedStores, onOpenCatalog: id => opened.push(id) }));
+      return nodes(Directory({ actorId, stores: scopedStores, onOpenCatalog: (id, inventory) => opened.push([id, inventory]) }));
     };
     const action = label => renderDirectory().find(n => n.type === "Pressable" && n.props.children?.props?.children === label);
     action("مباشر").props.onPress();
@@ -213,7 +215,25 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     assert.deepEqual(renderDirectory().map(n => n.props.accessibilityLabel).filter(label => label?.startsWith("عرض ")), ["عرض أ", "عرض ب"]);
     renderDirectory().find(n => n.props.accessibilityLabel === "عرض ب").props.onPress();
     action("إدارة منتجات هذا المتجر").props.onPress();
-    assert.deepEqual(opened, ["b"]);
+    assert.deepEqual(opened, [["b", undefined]]);
+    assert.ok(!renderDirectory().some(n => n.type === "CommercialAgreement" || n.type === "InventorySummary"));
+    for (const os of ["web", "android"]) {
+      platform.OS = os;
+      const preparation = renderDirectory().find(n => n.props?.accessibilityLabel === "عرض بيانات تجهيز المتجر");
+      assert.ok(preparation, "Store preparation must expose owner-backed summaries");
+      preparation.props.onPress();
+      const detail = renderDirectory();
+      assert.equal(detail.find(n => n.type === "InventorySummary")?.props.actorId, "merchant-a");
+      assert.equal(detail.find(n => n.type === "InventorySummary")?.props.storeId, "b");
+      assert.equal(detail.find(n => n.type === "CommercialAgreement")?.props.actorId, "merchant-a");
+      assert.equal(detail.find(n => n.type === "CommercialAgreement")?.props.storeId, "b");
+      assert.ok(!renderDirectory(stores.slice(0, 1)).some(n => n.type === "CommercialAgreement" || n.type === "InventorySummary"));
+      assert.ok(!renderDirectory(stores, "merchant-b").some(n => n.type === "CommercialAgreement" || n.type === "InventorySummary"));
+      renderDirectory().find(n => n.props?.accessibilityLabel === "عرض بيانات تجهيز المتجر").props.onPress();
+      assert.ok(!renderDirectory().some(n => n.type === "CommercialAgreement" || n.type === "InventorySummary"));
+    }
+    action("إدارة مخزون هذا المتجر").props.onPress();
+    assert.deepEqual(opened, [["b", undefined], ["b", true]]);
     assert.ok(!renderDirectory().some(n => n.type === "Employees"));
     renderDirectory().find(n => n.props?.accessibilityLabel === "إدارة موظفي التاجر").props.onPress();
     const employees = renderDirectory().find(n => n.type === "Employees");

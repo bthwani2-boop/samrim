@@ -7,7 +7,7 @@ import { readMerchantInventorySummary } from "./catalog-transport";
 type SummaryState = { scope: string; summary?: MerchantInventorySummary; error?: boolean };
 
 export default function InventorySummary({ actorId, storeId, onShowStockout }: Readonly<{
-  actorId: string; storeId: string; onShowStockout: () => void;
+  actorId: string; storeId: string; onShowStockout?: () => void;
 }>) {
   const { theme } = useMobileAppearance();
   const [attempt, setAttempt] = useState(0);
@@ -46,7 +46,7 @@ export default function InventorySummary({ actorId, storeId, onShowStockout }: R
         <Text style={{ color: theme.colorSecondary }}>{label}</Text>
         <Text style={{ color: theme.color, fontSize: 20, fontWeight: "700" }}>{value.toLocaleString("ar-YE")}</Text>
       </View>)}
-      {summary.stockoutOffers > 0 ? (
+      {summary.stockoutOffers > 0 && onShowStockout ? (
         <Pressable accessibilityRole="button" onPress={onShowStockout} style={{ minHeight: 44, justifyContent: "center" }}>
           <Text style={{ color: theme.interactiveText }}>عرض العروض النافدة</Text>
         </Pressable>
