@@ -1258,36 +1258,19 @@ function Wait-AppStatus {
   }
   Say 'ANDROID' 'NOT_RUN (requires on-device test)'
 }
-function Start-Base {
-  # No image pulls, migrations, reprovisioning, cleanup, or re-creation.
-  $argsList = @('compose','--env-file',$baseEnv,'-f',$baseCompose,'up','-d','--no-recreate','--no-build','--pull','never','postgres','media','mailpit','payment-mock')
-  Invoke-DockerCli $argsList | ForEach-Object { Write-Output $_ }
-}
-function Start-DSHIfVerified {
-  # DSH can be restarted from its existing exact image only when image source is unchanged.
-  $name = 'bthwani-refoundation-dsh-1'
-  $inspect = @(& docker --context $dockerContext inspect $name '--format' '{{.Config.Image}}|{{.State.Running}}' 2>&1)
-  if ($LASTEXITCODE -ne 0) { Say 'DSH' 'BLOCKED missing container; do not create without owner review'; return }
-  $parts = ($inspect | Select-Object -First 1).ToString().Trim().Split('|')
-  if ($parts.Length -ne 2 -or $parts[0] -notmatch '^bthwani-refoundation-dsh:[a-z0-9._-]+$') {
-    Say 'DSH' 'BLOCKED unexpected image identity'; return
+function Start-VerifiedEnvironment {
+  # Only start existing admitted containers; fresh provisioning is separate.
+  Assert-CompleteCompose
+  & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--include-wlt' '--start-preflight'
+  Assert-Ok ($LASTEXITCODE -eq 0) 'owner startup preflight failed; use the guarded owner lifecycle for stale or missing containers'
+  $composeArgs=@('compose','--env-file',$baseEnv,'-f',$baseCompose,'--profile','implementation','--profile','identity-verifier','--profile','wlt-reader')
+  $services=@('postgres','media','mailpit','payment-mock','identity','dsh','wlt')
+  $existing=@(Invoke-DockerCli -argsList ($composeArgs+@('ps','--all','--services')))
+  foreach($service in $services){
+    Assert-Ok ($existing -contains $service) ('missing existing Compose service: '+$service)
   }
-  $image = ($parts[0])
-  $imageJson = @(& docker --context $dockerContext image inspect $image '--format' '{{json .Config.Labels}}' 2>&1)
-  if ($LASTEXITCODE -ne 0) { Say 'DSH' 'BLOCKED image missing'; return }
-  $labels = ($imageJson -join '') | ConvertFrom-Json
-  $rev = [string]$labels.'com.bthwani.source-sha'
-  $head = (Git -argsList @('rev-parse','HEAD') | Select-Object -First 1).Trim()
-  if($rev -notmatch '^[0-9a-f]{40}$') { Say 'DSH' 'BLOCKED missing valid image source revision'; return }
-  $changedOwner = @(Git -argsList @('diff','--name-only',$rev,$head,'--','services/dsh'))
-  $localChanges = @(Git -argsList @('status','--porcelain','--','services/dsh'))
-  $ancestorCode = @(& $git -C $repo 'merge-base' '--is-ancestor' $rev $head 2>&1)
-  if ($rev -notmatch '^[0-9a-f]{40}$' -or $LASTEXITCODE -ne 0 -or $changedOwner.Count -gt 0 -or $localChanges.Count -gt 0) {
-    Say 'DSH' 'BLOCKED stale or dirty owner image; use official build and independent tests before controlled rollout'; return
-  }
-  if ($parts[1] -eq 'true') { Say 'DSH' 'ALREADY_RUNNING (check provenance and health in status)'; return }
-  Invoke-DockerCli -argsList @('start',$name) | ForEach-Object { Write-Output $_ }
-  Say 'DSH' 'START_EXISTING_IMAGE requested'
+  Invoke-DockerCli -argsList ($composeArgs+@('start','--wait','--wait-timeout','60')+$services) | ForEach-Object { Write-Output $_ }
+  Assert-OwnerRuntime
 }
 function Get-DockerStopPlan {
   # Read only. Fail closed on inventory/ownership errors or live protected peers.
@@ -1396,36 +1379,15 @@ try {
       Wait-AppStatus
       break
     }
-    'up' {
+    {$_ -in @('up','warm')} {
       Check-Ssh
       Check-DockerContext
-      Assert-Compose
+      Start-VerifiedEnvironment
       Start-LocalTasks
-      Start-Base
-      Start-DSHIfVerified
       Start-LenovoTasks
-      Banner 'POST-START STATUS'
-      Show-LocalTasks
-      Show-LenovoTasks
-      try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
-      Show-OperatorAuthReadiness
-      Say 'IDENTITY_WLT' 'NOT_AUTOSTARTED (owner-backed runtime security/SQL acceptance required)'
-      Assert-EnvironmentReady
-      break
-    }
-    'warm' {
-      Check-Ssh
-      Check-DockerContext
-      Assert-Compose
-      Start-LocalTasks
-      Start-Base
-      Start-DSHIfVerified
-      Start-LenovoTasks
-      Banner 'POST-WARM STATUS'
       try { Open-AppSurfaces } catch { Say 'SURFACES' ('BLOCKED '+$_.Exception.Message) }
       Show-OperatorAuthReadiness
       Assert-EnvironmentReady
-      Say 'WARM' 'DONE without builds, migrations, and container recreation'
       break
     }
     'down' {

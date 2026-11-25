@@ -9,7 +9,7 @@ From Surface PowerShell in `D:\samrim` run **`pnpm dev`**. This is the fast defa
 
 - `pnpm dev apps open` — reopen the existing Chrome window and connected Android apps without touching their servers. Use `-Mode Browser` when Samsung is disconnected.
 - `pnpm dev apps status` / `pnpm dev apps verify` — targeted diagnostics, reusable by the launch readiness check. The source check compares the current allowed paths and file digests with the watcher's last published manifest. It detects saved edits at the same Git SHA. The watcher's periodic Lenovo hash audit checks for remote drift.
-- `pnpm dev up` — explicit, slower isolated infrastructure startup when the development Docker containers need starting; it preserves protected Identity/WLT state.
+- `pnpm dev up` / `pnpm dev warm` — the same explicit startup of the seven previously provisioned services, including Identity, DSH and WLT. Verify owner source first; use native Compose start/wait without creating containers, applying migrations or changing credentials. Missing/stale services require the existing guarded lifecycle or explicit first-time provisioning.
 - `pnpm dev down` preflights the isolated Docker inventory before stopping any app or tunnel. It refuses while Identity or WLT is running, or when project container ownership/state is unresolved; it never removes volumes.
 
 When Lenovo is unreachable on TCP port 22, the fast command reports a specific `BLOCKED` error instead of running lengthy Docker checks. The preexisting Scheduled Tasks keep retrying their SSH tunnels. Check Lenovo power/network before repeating a failed start; never launch a duplicate watcher or tunnel.

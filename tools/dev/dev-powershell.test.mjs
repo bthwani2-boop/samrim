@@ -76,9 +76,8 @@ test("one dev command opens existing app surfaces after the owner tasks are read
   assert.match(fastPath[1], /Check-Ssh[\s\S]*?Start-LocalTasks[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces/);
   // Open existing surfaces first; do not recreate infrastructure in the fast path.
   assert.match(fastPath[1], /Open-AppSurfaces[\s\S]*Check-DockerContext[\s\S]*Assert-EnvironmentReady/);
-  assert.doesNotMatch(fastPath[1], /Start-Base|Start-DSHIfVerified|Stop-Docker/);
-  assert.match(launcher, /'up'\s*\{[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
-  assert.match(launcher, /'warm'\s*\{[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
+  assert.doesNotMatch(fastPath[1], /Start-VerifiedEnvironment|Stop-Docker/);
+  assert.match(launcher, /\{\$_ -in @\('up','warm'\)\}\s*\{[\s\S]*?Start-VerifiedEnvironment[\s\S]*?Start-LenovoTasks[\s\S]*?Open-AppSurfaces[\s\S]*?break/);
   assert.match(launcher, /if\s*\(\$DockerAction -eq 'open'\)\s*\{Open-AppSurfaces;Show-OperatorAuthReadiness;return\}/);
   assert.match(launcher, /if\s*\(\$selection -eq 'All'\)/);
   assert.match(launcher, /'SAMSUNG' 'SKIPPED/);
@@ -206,11 +205,12 @@ test("strict Docker verification and complete environment verification share the
   assert.match(scoped[1], /'config' \{ Assert-CompleteCompose \}/);
   assert.match(scoped[1], /'verify' \{ Assert-OwnerRuntime \}/);
   const main = launcher.slice(launcher.indexOf("switch ($Action.ToLowerInvariant())"));
-  for (const action of ["launch", "up", "warm", "verify"]) {
+  for (const action of ["launch", "verify"]) {
     const branch = main.match(new RegExp("'" + action + "'\\s*\\{([\\s\\S]*?)\\n\\s*break"));
     assert.ok(branch);
     assert.match(branch[1], /Assert-EnvironmentReady/);
   }
+  assert.match(main, /\{\$_ -in @\(\x27up\x27,\x27warm\x27\)\}\s*\{[\s\S]*?Assert-EnvironmentReady[\s\S]*?break/);
 });
 
 test("environment readiness reports all independent failures and never certifies a partial result", {
@@ -533,4 +533,13 @@ test("scoped restart reuses the canonical Expo probe and requires consecutive he
   const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",windowsHide:true,timeout:15000});
   assert.equal(result.status,0,result.stderr||result.stdout);
   assert.match(result.stdout,/RESTART_HEALTH_PROOF_PASS/);
+});
+
+test("normal startup starts only seven already provisioned services through native Compose", () => {
+  const launcher=readFileSync(scriptPath,"utf8");
+  const start=launcher.match(/function Start-VerifiedEnvironment \{([\s\S]*?)\n\}/);
+  assert.ok(start);
+  assert.match(start[1],/--start-preflight[\s\S]*?missing existing Compose service[\s\S]*?\x27start\x27,\x27--wait\x27,\x27--wait-timeout\x27,\x2760\x27[\s\S]*?Assert-OwnerRuntime/);
+  assert.match(start[1],/\$services=@\(\x27postgres\x27,\x27media\x27,\x27mailpit\x27,\x27payment-mock\x27,\x27identity\x27,\x27dsh\x27,\x27wlt\x27\)/);
+  assert.doesNotMatch(start[1],/\x27(?:up|run|build|bootstrap)\x27/);
 });

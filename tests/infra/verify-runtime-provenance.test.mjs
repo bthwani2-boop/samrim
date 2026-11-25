@@ -51,14 +51,14 @@ function serviceRecords({
   owner = "dsh", project = "bthwani-refoundation", imageId = "sha256:"+"1".repeat(64),
   environment = "refoundation", capability = owner==="wlt"?"customer-wallet-read-only":"", previewBase = "", previewDigest = "",
   revision = sha, fallback = sha, running = "true", health = "healthy",
-  sourceDiff = "", localStatus = "", malformed = "",
+  sourceDiff = "", localStatus = "", malformed = "", state = running === "true" ? "running" : "exited",
 } = {}) {
   const calls = [];
   const execute = (command, args) => {
     calls.push({ command, args });
     if (command === "docker" && args[2] === "inspect") {
       if (malformed === "container") return "not-a-container-record";
-      return [imageId, project, owner, running, health, environment, capability || "<no value>"].join("|");
+      return [imageId, project, owner, running, health, environment, capability || "<no value>", state].join("|");
     }
     if (command === "docker" && args[2] === "image" && args[3] === "inspect") {
       if (malformed === "image") return "not-an-image-record";
@@ -174,4 +174,22 @@ test("committed attestation rejects absent image IDs, unknown ancestry, and prev
     { previewBase: sha },
     { previewDigest: "b".repeat(64) },
   ]) assert.equal(evaluateService({ ...good, ...changes }).passed, false, JSON.stringify(changes));
+});
+
+test("startup preflight admits only previously exited verified owners, not unproven running health", () => {
+  const stopped={...good,running:false,health:"unhealthy",state:"exited"};
+  assert.equal(evaluateService(stopped).passed,false);
+  assert.equal(evaluateService(stopped,{startPreflight:true}).passed,true);
+  for(const change of [{state:"created"},{state:"dead"},{health:"NOT_CONFIGURED"},{ownerChanges:["infra/compose.yaml"]},{committedAncestor:false},{project:"foreign"},{running:true,state:"running"}]){
+    assert.equal(evaluateService({...stopped,...change},{startPreflight:true}).passed,false);
+  }
+});
+
+test("startup preflight checks shared Compose source without weakening runtime verification", () => {
+  const fixture=serviceRecords({running:"false",health:"unhealthy"});
+  assert.equal(readService("dsh","isolated",sha,fixture.execute,()=>true,{startPreflight:true}).passed,true);
+  assert.ok(fixture.calls.filter(c=>c.command==="git").every(c=>c.args.includes("infra/compose.yaml")));
+  const dirty=serviceRecords({running:"false",health:"unhealthy",localStatus:" M infra/compose.yaml"});
+  assert.equal(readService("dsh","isolated",sha,dirty.execute,()=>true,{startPreflight:true}).passed,false);
+  assert.throws(()=>main(["--start-preflight"]),/Usage/);
 });
