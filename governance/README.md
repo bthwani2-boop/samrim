@@ -32,7 +32,7 @@ Historic `docs/governance/` was removed from this candidate. Read older content 
 | `finance.md` | WLT fees/agreements, collection/custody, balances, ledger, settlements and beneficiary routing |
 | `hr.md` | bounded employee administration for BThwani and Merchant staff inside DSH; no parallel Identity role or fourth HR service |
 | `experience.md` | Tamagui Expo, Ant Design Operator, brand, Arabic RTL, accessibility, recovery |
-| `safety.md` | security, privacy, financial/data integrity, migrations, incident and independent review |
+| `safety.md` | security, privacy, financial/data integrity, migrations, incident and internal technical risk assurance |
 | `engineering.md` | acceptance, staged refoundation, policy admission and measurable engineering proof |
 | `journeys.md` | observable cross-owner handoffs, failure and recovery; not another Product list |
 
