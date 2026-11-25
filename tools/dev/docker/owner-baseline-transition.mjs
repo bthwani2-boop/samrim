@@ -1,17 +1,18 @@
 // Transaction builder used only by the existing owner reconciler and its disposable proof.
-import { readdirSync, readFileSync, lstatSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
 export function transitionScope(owner,schema,archive) {
   const definitions = {
-    dsh: { database:"bthwani_dsh_dev", owner:"bthwani_dsh_owner", runtime:"bthwani_dsh_runtime", schema:/^dsh_test_[a-z0-9_]{1,50}$/ },
-    identity: { database:"bthwani_identity_dev", owner:"bthwani_identity_owner", runtime:"bthwani_identity_runtime", schema:/^identity_test_[a-z0-9_]{1,49}$/ },
-    wlt: { database:"bthwani_wlt_test", owner:"bthwani_wlt_owner", runtime:"bthwani_wlt_reader", schema:/^wlt$/ },
+    dsh: { database:"bthwani_dsh_dev", owner:"bthwani_dsh_owner", runtime:"bthwani_dsh_runtime", schema:/^dsh_test_[a-z0-9_]{1,50}$/, archive:/^bthwani_recovery_dsh_[a-f0-9]{12}$/ },
+    identity: { database:"bthwani_identity_dev", owner:"bthwani_identity_owner", runtime:"bthwani_identity_runtime", schema:/^identity_test_[a-z0-9_]{1,49}$/, archive:/^bthwani_recovery_identity_[a-f0-9]{12}$/ },
+    wlt: { database:"bthwani_wlt_test", owner:"bthwani_wlt_owner", runtime:"bthwani_wlt_reader", schema:/^wlt$/, archive:/^bthwani_recovery_wlt_[a-f0-9]{12}$/ },
   };
-  const d=definitions[owner];
-  if(!d || !d.schema.test(schema) || !new RegExp("^bthwani_recovery_"+owner+"_[a-f0-9]{12}$").test(archive))
+  const d=typeof owner==="string"&&Object.hasOwn(definitions,owner)?definitions[owner]:null;
+  if(!d || typeof schema!=="string" || typeof archive!=="string" || !d.schema.test(schema) || !d.archive.test(archive))
     throw new Error("Invalid owner baseline transition scope");
   return {...d,schema,archive};
 }

@@ -288,3 +288,19 @@ test("only the exact committed isolated WLT DSH origin addition can enter baseli
   ]) assert.equal(isAdmittedWltOriginAddition(before, invalid), false);
   assert.equal(isAdmittedWltOriginAddition(after,after),false);
 });
+
+test("baseline owner and archive scope rejects inherited keys, coercion and wrong owner",async()=>{
+  const {transitionScope}=await import("../../tools/dev/docker/owner-baseline-transition.mjs");
+  const schema="dsh_test_agent01", archive="bthwani_recovery_dsh_abcdef123456";
+  for(const args of [
+    ["constructor",schema,archive],["__proto__",schema,archive],
+    [{toString:()=>"dsh"},schema,archive],
+    ["dsh",{toString:()=>schema},archive],
+    ["dsh",schema,{toString:()=>archive}],
+    ["dsh",schema,"bthwani_recovery_identity_abcdef123456"],
+    ["dsh",schema,archive+";"],
+  ])assert.throws(()=>transitionScope(...args),/Invalid owner baseline transition scope/);
+  assert.equal(transitionScope("dsh",schema,archive).archive,archive);
+  assert.equal(transitionScope("identity","identity_test_agent01","bthwani_recovery_identity_abcdef123456").database,"bthwani_identity_dev");
+  assert.equal(transitionScope("wlt","wlt","bthwani_recovery_wlt_abcdef123456").runtime,"bthwani_wlt_reader");
+});
