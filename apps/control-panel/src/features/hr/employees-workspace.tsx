@@ -30,6 +30,13 @@ export default async function EmployeesWorkspace({
       : error instanceof DshPublicError && error.status === 404 ? "مسار سجلات الموظفين غير مفعّل في خدمة DSH المتصلة."
       : error instanceof DshPublicError && error.status === 502 ? "وصل رد من DSH تعذّر التحقق منه."
       : "تعذّرت قراءة سجلات الموظفين من DSH.";
+    if (cursor && !denied) {
+      return <main className={shellStyles.workspace}>
+        <h1>موظفو بثواني</h1>
+        <p role="alert">{description}</p>
+        <a href="/hr/employees">صفحة الموظفين الأولى</a>
+      </main>;
+    }
     return <WorkspaceUnavailable title="الموظفون" owner={denied ? "Identity" : "DSH"}
       description={description} />;
   }

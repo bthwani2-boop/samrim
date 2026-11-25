@@ -95,3 +95,71 @@ test("an old or unavailable audit operation preserves independently authorized e
     assert.match(html, /role="status"/);
   }
 });
+
+const directoryComponent = transformSync(readFileSync(new URL("./employees-workspace.tsx", import.meta.url), "utf8"), {
+  jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
+    transform: { react: { runtime: "automatic" } } },
+  module: { type: "commonjs" },
+}).code;
+
+async function renderDirectory({ cursor, failure, status = "available" } = {}) {
+  const calls = [];
+  const mod = { exports: {} };
+  const dependencies = {
+    "@bthwani/dsh": { DshPublicError, isCompanyEmployeeId,
+      listCompanyEmployees: async (_origin, _bearer, requestedCursor) => {
+        calls.push(requestedCursor);
+        if (failure) throw failure;
+        return { items: [record], nextCursor: null };
+      } },
+    "./employee-owner": { employeeOwner: async () => ({ status, origin: "http://127.0.0.1:3202", bearer: "synthetic", actorId: "synthetic-operator" }) },
+    "../operator-shell/operator-shell.module.css": { workspace: "workspace" },
+    "../operator-shell/workspace-unavailable": ({ owner }) => jsxRuntime.jsx("p", { children: `unavailable:${owner}` }),
+    "./employee-registration": () => jsxRuntime.jsx("p", { children: "registration form" }),
+    "./register-employee-action": { registerEmployee: () => { throw new Error("unexpected registration"); } },
+    "./employees.module.css": { table: "table", tableScroll: "scroll", pagination: "pagination" },
+    "react/jsx-runtime": jsxRuntime,
+  };
+  new Function("require", "module", "exports", directoryComponent)(name => {
+    assert.ok(Object.hasOwn(dependencies, name), name);
+    return dependencies[name];
+  }, mod, mod.exports);
+  const html = renderToStaticMarkup(await mod.exports.default({ searchParams: Promise.resolve(cursor === undefined ? {} : { cursor }) }));
+  return { html, calls };
+}
+
+test("failed authorized employee continuation returns to the first page without disclosing records", async () => {
+  for (const failure of [new DshPublicError(503, "OWNER_UNAVAILABLE"), new DshPublicError(502, "OWNER_RESPONSE_INVALID")]) {
+    const { html, calls } = await renderDirectory({ cursor: employeeId, failure });
+    assert.deepEqual(calls, [employeeId]);
+    assert.match(html, /role="alert"/);
+    assert.match(html, /href="\/hr\/employees"/);
+    assert.doesNotMatch(html, /HR-private-employee|registration form/);
+  }
+});
+
+test("employee continuation never turns authorization denial into available HR actions", async () => {
+  for (const failure of [new DshPublicError(401, "UNAUTHENTICATED"), new DshPublicError(403, "EMPLOYEE_SCOPE_FORBIDDEN")]) {
+    const { html, calls } = await renderDirectory({ cursor: employeeId, failure });
+    assert.deepEqual(calls, [employeeId]);
+    assert.match(html, /unavailable:Identity/);
+    assert.doesNotMatch(html, /href="\/hr\/employees"|HR-private-employee|registration form/);
+  }
+  const { html, calls } = await renderDirectory({ cursor: employeeId, status: "denied" });
+  assert.deepEqual(calls, []);
+  assert.match(html, /unavailable:Identity/);
+  assert.doesNotMatch(html, /HR-private-employee|registration form/);
+});
+
+test("first-page owner outage remains unavailable and malformed cursor never reaches DSH", async () => {
+  const outage = await renderDirectory({ failure: new DshPublicError(503, "OWNER_UNAVAILABLE") });
+  assert.deepEqual(outage.calls, [undefined]);
+  assert.match(outage.html, /unavailable:DSH/);
+  assert.doesNotMatch(outage.html, /HR-private-employee|registration form/);
+  const malformed = await renderDirectory({ cursor: "invalid" });
+  assert.deepEqual(malformed.calls, []);
+  assert.match(malformed.html, /href="\/hr\/employees"/);
+  const success = await renderDirectory();
+  assert.match(success.html, /HR-private-employee/);
+  assert.match(success.html, /registration form/);
+});
