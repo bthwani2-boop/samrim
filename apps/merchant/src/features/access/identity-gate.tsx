@@ -90,8 +90,9 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
         const verified = state.enabled ? state.session : null;
         if (!verified) setSilentChecking(false);
         setStanding(previous => {
-          if (previous?.session.actorId === verified?.actorId &&
-              previous?.session.sessionExpiresAt === verified?.sessionExpiresAt) return previous;
+          // Keep the same actor's tree mounted but concealed on renewed expiry
+          // until its current DSH standing is confirmed. Never retain another actor.
+          if (verified && previous?.session.actorId === verified.actorId) return previous;
           return null;
         });
         // A fresh Identity decision always requires a fresh DSH scope read.
@@ -357,7 +358,8 @@ export default function MerchantIdentityGate({ mode = "login" }: Readonly<{ mode
   return (
     <>
       {standing ? (
-        <View key={JSON.stringify([standing.session.actorId, standing.session.sessionExpiresAt])}
+        <View key={JSON.stringify([standing.session.actorId, standing.value.stores.map(store =>
+          JSON.stringify([store.id, store.relation, store.published])).sort()])}
           testID="merchant-verified-workspace"
           style={workspaceVisible ? { flex: 1 } : { display: "none" }}
           pointerEvents={workspaceVisible ? "auto" : "none"}

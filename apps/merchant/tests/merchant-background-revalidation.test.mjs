@@ -371,3 +371,36 @@ test("timed-out Merchant standing poll conceals workspace and rejects a late res
   await settle();
   assert.equal(visible(workspace(h.render())), false);
 });
+
+test("Merchant renewal retains the mounted same-actor workspace but requires fresh DSH approval", async () => {
+  const h = harness();
+  const store = { id: "store-a", name: "Store A", relation: "DIRECT", published: true };
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [store] });
+  await settle();
+  const initial = workspace(h.render());
+  h.startPolling();
+  h.poll();
+  const renewed = { ...approvedSession, sessionExpiresAt: new Date(Date.now() + 240000).toISOString() };
+  h.nextAdmission().resolve({ enabled: true, session: renewed });
+  await settle();
+  const concealed = workspace(h.render());
+  assert.ok(concealed, "renewal must not unmount the previous workspace while checking");
+  assert.equal(concealed.key, initial.key);
+  assert.equal(visible(concealed), false, "fresh DSH approval is still required");
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: renewed.actorId, stores: [store] });
+  await settle();
+  assert.equal(workspace(h.render()).key, initial.key);
+  assert.equal(visible(workspace(h.render())), true);
+  h.poll();
+  h.nextAdmission().resolve({ enabled: true, session: renewed });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: renewed.actorId, stores: [] });
+  await settle();
+  assert.notEqual(workspace(h.render()).key, initial.key, "changed Store scope resets protected state");
+});

@@ -100,11 +100,13 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
           verifiedUntil = 0;
           const session = result.session;
           if (!result.enabled || !session || !hasActiveCaptainSession(session)) {
+            setVerified(null);
             setAccess("denied");
             return;
           }
           const remaining = Date.parse(session.sessionExpiresAt) - Date.now();
           if (!Number.isFinite(remaining) || remaining <= 0) {
+            setVerified(null);
             setAccess("denied");
             return;
           }
@@ -118,8 +120,8 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
             setAccess("denied");
             return;
           }
-          // A different actor or renewed session expiry must not inherit the prior
-          // Captain component tree (including private in-memory screen state).
+          // Preserve the component tree for a renewed, still-approved actor.
+          // A different actor or changed DSH standing revision resets private state.
           setVerified({ session, standing });
           setAccess("allowed");
           // Access expiry is not a verdict about the persistent session.
@@ -177,7 +179,7 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
     {verified ? (
       <CaptainWorkspace.Provider value={{ session: verified.session, standing: verified.standing,
           signOut: () => closeSession.current(verified.session.actorId) }}>
-        <View key={JSON.stringify([verified.session.actorId, verified.session.sessionExpiresAt])}
+        <View key={JSON.stringify([verified.session.actorId, verified.standing?.version])}
           style={visible ? { flex: 1 } : { display: "none" }}
           pointerEvents={visible ? "auto" : "none"}
           accessibilityElementsHidden={!visible}

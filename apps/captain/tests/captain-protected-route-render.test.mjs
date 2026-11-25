@@ -219,7 +219,7 @@ test("Captain denial after a previously approved session removes protected UI", 
   assert.ok(!nodes(tree).includes(h.child));
 });
 
-test("revalidation never reuses protected component state across Captain actors or renewed expiries", async () => {
+test("revalidation preserves Captain state on verified renewal, not across actors or standing revisions", async () => {
   const h = harness();
   h.render();
   h.startFocus();
@@ -244,8 +244,15 @@ test("revalidation never reuses protected component state across Captain actors 
   h.next().resolve(rotated);
   await settle();
   const rotatedHolder = nodes(h.render()).find(x => x.props?.children === h.child);
-  assert.notEqual(rotatedHolder.key, secondHolder.key,
-    "a renewed Captain session expiry must not inherit the prior protected UI state");
+  assert.equal(rotatedHolder.key, secondHolder.key,
+    "renewing the same approved Captain must not remount the workspace");
+  h.periodic();
+  const changedStanding = approved("captain-second");
+  changedStanding.standing.version = 3;
+  h.next().resolve(changedStanding);
+  await settle();
+  const changedHolder = nodes(h.render()).find(x => x.props?.children === h.child);
+  assert.notEqual(changedHolder.key, rotatedHolder.key, "a changed DSH revision resets protected screen state");
 });
 
 test("the same approved Captain session preserves component state across owner revalidation", async () => {
