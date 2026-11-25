@@ -161,9 +161,12 @@ run_test() {
 start_stage bthwani-ci-discovery-pg bthwani_ci bthwani_refoundation
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -c "CREATE DATABASE bthwani_dsh_boundary_fixture OWNER bthwani_ci;" \
+  -c "CREATE DATABASE bthwani_dsh_dev OWNER bthwani_ci;" \
   -c "CREATE DATABASE bthwani_refoundation_identity_restore OWNER bthwani_ci;"
-docker exec "$current" sh -c \
-  "set -e; for f in /agent02/services/dsh/database/schema/*.sql; do sed 's/__SCHEMA__/dsh_test_seed_boundary/g' \"\$f\" | psql -X -q -v ON_ERROR_STOP=1 -U bthwani_ci -d bthwani_dsh_boundary_fixture; done"
+for boundary_db in bthwani_dsh_boundary_fixture bthwani_dsh_dev; do
+  docker exec "$current" sh -c \
+    "set -e; for f in /agent02/services/dsh/database/schema/*.sql; do sed 's/__SCHEMA__/dsh_test_seed_boundary/g' \"\$f\" | psql -X -q -v ON_ERROR_STOP=1 -U bthwani_ci -d $boundary_db; done"
+done
 run_test "$current" /agent02/services/identity/backend/internal/session \
   /agent02/bin/identity-session.test '^TestPostgresIdentitySessionReadback$' 'TestPostgresIdentitySessionReadback' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e IDENTITY_RESTORE_CI_TEST=true \

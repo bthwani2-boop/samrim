@@ -28,6 +28,10 @@ func isRefoundationDatabase(name string) bool {
 	return dbscope.IsDevelopmentDatabase(name)
 }
 
+func isRegressionFixtureDatabase(name string) bool {
+	return name == "bthwani_refoundation"
+}
+
 func (o *Owner) isIsolatedTestOwner() bool {
 	return o != nil && o.DB != nil && identifier.MatchString(o.Schema) &&
 		strings.HasPrefix(o.Schema, "dsh_test_") && len(o.Schema) > len("dsh_test_") &&
@@ -99,8 +103,14 @@ func (o *Owner) ImportSynthetic(ctx context.Context) error {
 		return err
 	}
 	defer tx.Rollback()
-	if err = requireRefoundationDatabase(ctx, tx); err != nil {
-		return fmt.Errorf("DSH synthetic import denied: %w", err)
+	// Regression fixtures overwrite their own facts; the dedicated serving
+	// database is persistent development data, not a regression fixture.
+	var database string
+	if err = tx.QueryRowContext(ctx, "SELECT pg_catalog.current_database()").Scan(&database); err != nil {
+		return fmt.Errorf("DSH synthetic import database identity unavailable: %w", err)
+	}
+	if !isRegressionFixtureDatabase(database) {
+		return errors.New("DSH synthetic import denied: outside the isolated refoundation database")
 	}
 	queries := []string{
 		"INSERT INTO service_cities(id,active) VALUES ('sanaa',true),('aden',true) ON CONFLICT (id) DO UPDATE SET active=excluded.active",

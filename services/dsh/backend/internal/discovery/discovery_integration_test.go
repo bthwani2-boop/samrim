@@ -169,43 +169,58 @@ func TestOwnerBackedPublicStoreOperationalStatus(t *testing.T) {
 	}
 }
 
+func TestRegressionFixtureDatabaseAdmission(t *testing.T) {
+	if !isRegressionFixtureDatabase("bthwani_refoundation") {
+		t.Fatal("disposable regression fixture database denied")
+	}
+	for _, database := range []string{"bthwani_dsh_dev", "bthwani_dsh_boundary_fixture", "bthwani_identity_dev", "bthwani_wlt_test", "postgres", ""} {
+		if isRegressionFixtureDatabase(database) {
+			t.Errorf("regression writes admitted to %q", database)
+		}
+	}
+}
+
 func TestOwnerBackedSyntheticImportDeniesAlternateDatabase(t *testing.T) {
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" || os.Getenv("DSH_TEST_SEED_BOUNDARY") != "true" {
-		t.Skip("requires a disposable PostgreSQL runner with a cloned DSH fixture database")
+		t.Skip("requires a disposable PostgreSQL runner with cloned DSH fixture databases")
 	}
-	const database = "bthwani_dsh_boundary_fixture"
-	t.Setenv("REF_POSTGRES_DB", database)
-	db, err := OpenFromEnvironment()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	owner, err := New(db, "dsh_test_seed_boundary")
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx := context.Background()
-	readRevision := func() int64 {
-		t.Helper()
-		tx, err := owner.viewTx(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer tx.Rollback()
-		rev, err := owner.revision(ctx, tx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return rev
-	}
-
-	before := readRevision()
-	importErr := owner.ImportSynthetic(ctx)
-	if after := readRevision(); after != before {
-		t.Errorf("synthetic import modified the alternate database: revision %d -> %d", before, after)
-	}
-	if importErr == nil || !strings.Contains(importErr.Error(), "outside the isolated refoundation database") {
-		t.Fatalf("expected synthetic import to deny the alternate database, got %v", importErr)
+	for _, database := range []string{"bthwani_dsh_boundary_fixture", "bthwani_dsh_dev"} {
+		t.Run(database, func(t *testing.T) {
+			t.Setenv("REF_POSTGRES_DB", database)
+			db, err := OpenFromEnvironment()
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer db.Close()
+			owner, err := New(db, "dsh_test_seed_boundary")
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := t.Context()
+			// The runner creates both databases in its own network-disabled,
+			// disposable PostgreSQL container. Never arrange data in shared development.
+			readback := func() [2]int64 {
+				t.Helper()
+				tx, err := owner.viewTx(ctx)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer tx.Rollback()
+				var counts [2]int64
+				if err = tx.QueryRowContext(ctx, "SELECT revision, (SELECT count(*) FROM stores) FROM public_revision WHERE singleton").Scan(&counts[0], &counts[1]); err != nil {
+					t.Fatal(err)
+				}
+				return counts
+			}
+			before := readback()
+			importErr := owner.ImportSynthetic(ctx)
+			if after := readback(); after != before {
+				t.Errorf("synthetic import modified the protected fixture: %v -> %v", before, after)
+			}
+			if importErr == nil || !strings.Contains(importErr.Error(), "outside the isolated refoundation database") {
+				t.Fatalf("expected synthetic import to deny the protected database, got %v", importErr)
+			}
+		})
 	}
 }
 
