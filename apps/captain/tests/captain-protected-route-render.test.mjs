@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
 // Execute the actual TSX component using the repository-pinned TypeScript CLI
 // with a deterministic hook and native-view harness. No dependency upgrades
@@ -13,11 +14,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../.
 const sourceFile = fileURLToPath(new URL("../src/features/access/protected-route.tsx", import.meta.url));
 const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-captain-route-"));
 let compiled;
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 try {
   const output = spawnSync(process.execPath, [
     path.join(root, "node_modules/typescript/bin/tsc"), sourceFile,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--outDir", tmp,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
   ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(output.status, 0, output.stderr || output.stdout);
   compiled = readFileSync(path.join(tmp, "protected-route.js"), "utf8");
@@ -25,7 +28,7 @@ try {
   rmSync(tmp, { recursive: true, force: true });
 }
 
-function harness() {
+function harness(t) {
   const hooks = [];
   let index = 0;
   let focus;
@@ -86,19 +89,14 @@ function harness() {
     },
     "./captain-session": { hasActiveCaptainSession: session => session.role === "captain" },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "setTimeout", "clearTimeout",
-    "setInterval", "clearInterval", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(mocks, name), "unexpected dependency " + name);
-      return mocks[name];
-    },
-    mod, mod.exports,
-    (fn, delay) => { const id = ++tick; timeouts.set(id, { fn, delay }); return id; },
-    id => timeouts.delete(id),
-    fn => { interval = fn; return ++tick; },
-    () => undefined,
-  );
+  const mod = loadMappedRenderFixture(compiled, sourceFile, mocks);
+  loadedModules.push(mod);
+  const timers = [
+    t.mock.method(globalThis, "setTimeout", (fn, delay) => { const id = ++tick; timeouts.set(id, { fn, delay }); return id; }),
+    t.mock.method(globalThis, "clearTimeout", id => timeouts.delete(id)),
+    t.mock.method(globalThis, "setInterval", fn => { interval = fn; return ++tick; }),
+    t.mock.method(globalThis, "clearInterval", () => undefined),
+  ];
   const Component = mod.exports.default;
   const render = () => {
     index = 0;
@@ -110,6 +108,7 @@ function harness() {
   };
   return {
     render, next, child: protectedChild, logouts,
+    restoreTimers: () => { for (const timer of timers) timer.mock.restore(); },
     reads: () => pending.length,
     startFocus: () => focus(),
     periodic: () => interval(),
@@ -142,8 +141,8 @@ function approved(actorId = "synthetic-captain") {
   };
 }
 
-test("initial pending, unavailable and background-aborted checks do not mount Captain content", async () => {
-  const h = harness();
+test("initial pending, unavailable and background-aborted checks do not mount Captain content", async t => {
+  const h = harness(t);
   assert.ok(!nodes(h.render()).includes(h.child));
   h.startFocus();
   let initial = h.next();
@@ -166,8 +165,8 @@ test("initial pending, unavailable and background-aborted checks do not mount Ca
   assert.ok(nodes(h.render()).includes(h.child), "fresh approved owner checks mount protected tree");
 });
 
-test("healthy periodic revalidation keeps Captain tree visible and deduplicates pending reads", async () => {
-  const h = harness();
+test("healthy periodic revalidation keeps Captain tree visible and deduplicates pending reads", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   h.next().resolve(approved());
@@ -206,8 +205,8 @@ test("healthy periodic revalidation keeps Captain tree visible and deduplicates 
   assert.equal(holder.props.pointerEvents, "none");
 });
 
-test("a stalled initial Captain read times out, allows retry, and ignores late approval", async () => {
-  const h = harness();
+test("a stalled initial Captain read times out, allows retry, and ignores late approval", async t => {
+  const h = harness(t);
   h.render();
   const cleanup = h.startFocus();
   const stale = h.next();
@@ -233,8 +232,8 @@ test("a stalled initial Captain read times out, allows retry, and ignores late a
   assert.equal(h.pendingDeadlines(), 0);
 });
 
-test("a stalled Captain polling read conceals private content and releases periodic recovery", async () => {
-  const h = harness();
+test("a stalled Captain polling read conceals private content and releases periodic recovery", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   h.next().resolve(approved());
@@ -255,8 +254,8 @@ test("a stalled Captain polling read conceals private content and releases perio
   assert.equal(h.pendingDeadlines(), 0);
 });
 
-test("Captain background and logout cancel the owned read deadline without reviving private access", async () => {
-  const h = harness();
+test("Captain background and logout cancel the owned read deadline without reviving private access", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   const initial = h.next();
@@ -281,8 +280,8 @@ test("Captain background and logout cancel the owned read deadline without reviv
   assert.equal(h.render().type, "Redirect");
 });
 
-test("Captain denial after a previously approved session removes protected UI", async () => {
-  const h = harness();
+test("Captain denial after a previously approved session removes protected UI", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   h.next().resolve(approved());
@@ -296,8 +295,8 @@ test("Captain denial after a previously approved session removes protected UI", 
   assert.ok(!nodes(tree).includes(h.child));
 });
 
-test("revalidation preserves Captain state on verified renewal, not across actors or standing revisions", async () => {
-  const h = harness();
+test("revalidation preserves Captain state on verified renewal, not across actors or standing revisions", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   const first = approved("captain-first");
@@ -332,8 +331,8 @@ test("revalidation preserves Captain state on verified renewal, not across actor
   assert.notEqual(changedHolder.key, rotatedHolder.key, "a changed DSH revision resets protected screen state");
 });
 
-test("the same approved Captain session preserves component state across owner revalidation", async () => {
-  const h = harness();
+test("the same approved Captain session preserves component state across owner revalidation", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   const stableSession = approved();
@@ -351,8 +350,8 @@ test("the same approved Captain session preserves component state across owner r
     "re-reading the same verified session must preserve its protected component state");
 });
 
-test("Captain logout conceals private screens immediately and retries the same actor after uncertainty", async () => {
-  const h = harness();
+test("Captain logout conceals private screens immediately and retries the same actor after uncertainty", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   const decision = approved();
@@ -378,7 +377,7 @@ test("Captain logout conceals private screens immediately and retries the same a
   assert.equal(h.render().type, "Redirect");
 });
 
-test("Captain route rejects an Identity-only session or an unrelated, revoked or invalid DSH approval", async () => {
+test("Captain route rejects an Identity-only session or an unrelated, revoked or invalid DSH approval", async t => {
   const reference = approved();
   const rejected = [
     { enabled: true, session: reference.session },
@@ -389,20 +388,57 @@ test("Captain route rejects an Identity-only session or an unrelated, revoked or
     { ...approved(), standing: { ...reference.standing, version: NaN } },
   ];
   for (const [index, result] of rejected.entries()) {
-    const h = harness();
-    h.render();
-    h.startFocus();
-    h.next().resolve(result);
-    await settle();
-    const tree = h.render();
-    assert.equal(tree.type, "Redirect", "unsafe DSH standing at variant " + index);
-    assert.ok(!nodes(tree).includes(h.child), "no protected subtree for unsafe standing " + index);
+    const h = harness(t);
+    try {
+      h.render();
+      h.startFocus();
+      h.next().resolve(result);
+      await settle();
+      const tree = h.render();
+      assert.equal(tree.type, "Redirect", "unsafe DSH standing at variant " + index);
+      assert.ok(!nodes(tree).includes(h.child), "no protected subtree for unsafe standing " + index);
+    } finally { h.restoreTimers(); }
   }
 });
 
 
-test("access expiry rechecks the owner instead of redirecting before refresh", async () => {
-  const h = harness();
+test("invalid or expired Captain session evidence fails closed even with approved standing", async t => {
+  for (const sessionExpiresAt of ["invalid", "", new Date(Date.now() - 1000).toISOString()]) {
+    const h = harness(t);
+    try {
+      h.render();
+      const cleanup = h.startFocus();
+      const result = approved();
+      result.session.sessionExpiresAt = sessionExpiresAt;
+      h.next().resolve(result);
+      await settle();
+      assert.equal(h.render().type, "Redirect");
+      assert.ok(!nodes(h.render()).includes(h.child));
+      cleanup();
+    } finally { h.restoreTimers(); }
+  }
+});
+
+test("Captain logout rejects changed account context and never retries the former actor", async t => {
+  const h = harness(t);
+  h.render();
+  const cleanup = h.startFocus();
+  h.next().resolve(approved());
+  await settle();
+  const provider = nodes(h.render()).find(item => item.type === "CaptainWorkspaceProvider");
+  provider.props.value.signOut();
+  const attempt = h.logouts.shift();
+  assert.equal(attempt.actorId, "synthetic-captain");
+  attempt.reject(Object.assign(new Error("account changed"), { code: "CAPTAIN_CONTEXT_CHANGED" }));
+  await settle();
+  assert.equal(h.render().type, "Redirect");
+  assert.ok(!nodes(h.render()).includes(h.child));
+  assert.equal(h.logouts.length, 0);
+  cleanup();
+});
+
+test("access expiry rechecks the owner instead of redirecting before refresh", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   h.next().resolve(approved());
@@ -416,8 +452,8 @@ test("access expiry rechecks the owner instead of redirecting before refresh", a
   assert.equal(nodes(h.render()).find(x => x.props?.children === h.child).props.pointerEvents, "auto");
 });
 
-test("expiry during a pending periodic check conceals the workspace without starting another request", async () => {
-  const h = harness();
+test("expiry during a pending periodic check conceals the workspace without starting another request", async t => {
+  const h = harness(t);
   h.render();
   h.startFocus();
   h.next().resolve(approved());
