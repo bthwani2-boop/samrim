@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Verify actual tracked working bytes and immutable staged Git objects.
+// Verify immutable Git objects and actual tracked working bytes through one reader.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -13,9 +13,29 @@ const maxBytes = 64 * 1024 * 1024;
 const comparable = name => process.platform === "win32" ? name.toLowerCase() : name;
 export const samePath = (left, right) => comparable(left) === comparable(right);
 
-// Shared source/evidence reader: open once, validate that descriptor, read
-// bounded bytes from it, then verify both descriptor and pathname identities.
-// A deleted working file is permitted only before opening, never mid-read.
+function regularSingleLink(stat) {
+  return stat.isFile() && !stat.isSymbolicLink() && stat.nlink === 1n;
+}
+
+function sameFileVersion(actual, original) {
+  return regularSingleLink(actual) && actual.dev === original.dev && actual.ino === original.ino &&
+    actual.size === original.size && actual.mtimeNs === original.mtimeNs && actual.ctimeNs === original.ctimeNs;
+}
+
+function nameStillIdentifiesFile(file, original) {
+  try {
+    // The standard Node resolver rejects redirected ancestors but preserves a
+    // legitimate Windows 8.3 spelling. The native resolver expands short names;
+    // comparing its spelling to the input would reject the same physical file.
+    return sameFileVersion(lstatSync(file, { bigint: true }), original) &&
+      samePath(realpathSync(file), resolve(file));
+  } catch {
+    return false;
+  }
+}
+
+// Opening precedes admission. All content comes from the same descriptor;
+// check the descriptor and its name before and after the bounded read.
 export function readVerifiedFile(file, limit, { allowMissing = false } = {}) {
   assert.ok(Number.isSafeInteger(limit) && limit >= 0, "Invalid verified read bound");
   let fd;
@@ -26,30 +46,22 @@ export function readVerifiedFile(file, limit, { allowMissing = false } = {}) {
     throw error;
   }
   try {
-    const initial = fstatSync(fd, { bigint: true });
-    const matches = entry => entry.isFile() && !entry.isSymbolicLink() && entry.nlink === 1n &&
-      entry.dev === initial.dev && entry.ino === initial.ino && entry.size === initial.size &&
-      entry.mtimeNs === initial.mtimeNs && entry.ctimeNs === initial.ctimeNs;
-    const pathMatches = () => {
-      try {
-        const entry = lstatSync(file, { bigint: true });
-        return matches(entry) && samePath(realpathSync.native(file), resolve(file));
-      } catch {
-        return false;
-      }
-    };
-    if (!initial.isFile() || initial.nlink !== 1n || initial.size > BigInt(limit) || !pathMatches())
+    const stat = fstatSync(fd, { bigint: true });
+    if (!regularSingleLink(stat) || stat.size > BigInt(limit) || !nameStillIdentifiesFile(file, stat))
       throw new Error("BLOCKED: unsafe file path");
-    const bytes = Buffer.alloc(Number(initial.size) + 1);
+
+    // One additional byte detects growth without relying on a second open.
+    const buffer = Buffer.alloc(Number(stat.size) + 1);
     let offset = 0;
-    while (offset < bytes.length) {
-      const count = readSync(fd, bytes, offset, bytes.length - offset, null);
+    while (offset < buffer.length) {
+      const count = readSync(fd, buffer, offset, buffer.length - offset, null);
       if (!count) break;
       offset += count;
     }
-    if (BigInt(offset) !== initial.size || !matches(fstatSync(fd, { bigint: true })) || !pathMatches())
+    if (BigInt(offset) !== stat.size || !sameFileVersion(fstatSync(fd, { bigint: true }), stat) ||
+        !nameStillIdentifiesFile(file, stat))
       throw new Error("BLOCKED: unsafe or changed file");
-    return { bytes: bytes.subarray(0, offset), stat: initial };
+    return { bytes: buffer.subarray(0, offset), stat };
   } finally {
     closeSync(fd);
   }
@@ -135,8 +147,8 @@ function verifyTrackedSecrets() {
       working++;
       if (hasMarker(actual.bytes)) violations.push(label + ": likely secret marker in working bytes (value redacted)");
     }
-    // Identical Git blob identity proves the working bytes also cover the index.
-    // Otherwise verify the immutable staged object independently, even on deletion.
+    // Exact blob identity allows one read to cover both versions; otherwise
+    // inspect the immutable staged object even if the working file is absent.
     if (!actual || blobIdentity(actual.bytes, format) !== oid) {
       const indexed = git("cat-file", "blob", oid);
       assert.equal(blobIdentity(indexed, format), oid, "Index object identity mismatch");

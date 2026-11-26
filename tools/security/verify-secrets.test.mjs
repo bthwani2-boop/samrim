@@ -134,3 +134,44 @@ test("working secret cannot be hidden by a path substitution at the old read bou
   assert.match(result.stderr, /likely secret marker in working bytes/);
   assert.ok(!(result.stdout + result.stderr).includes(marker), "secret value must not enter logs");
 }));
+
+test("native Windows 8.3 spelling admits the same regular file without relaxing link safety", { skip: process.platform !== "win32" }, async () => {
+  const { readVerifiedFile } = await import("./verify-secrets.mjs");
+  const { lstatSync, realpathSync } = await import("node:fs");
+  fixture(({ file }) => {
+    const command = 'for %I in ("' + file + '") do @echo %~sI';
+    const result = spawnSync("C:\\Windows\\System32\\cmd.exe", ["/d", "/c", command], {
+      encoding: "utf8", windowsHide: true, windowsVerbatimArguments: true, timeout: 10000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const alias = result.stdout.trim();
+    assert.ok(alias, "Windows native file spelling unavailable");
+    const original = lstatSync(file, { bigint: true });
+    const spelling = lstatSync(alias, { bigint: true });
+    assert.equal(spelling.dev, original.dev);
+    assert.equal(spelling.ino, original.ino);
+    assert.equal(realpathSync.native(alias).toLowerCase(), realpathSync.native(file).toLowerCase());
+    assert.deepEqual(readVerifiedFile(alias, 4096).bytes, Buffer.from(safe));
+    assert.deepEqual(readVerifiedFile(file, 4096).bytes, Buffer.from(safe));
+  });
+});
+
+test("verified descriptor rejects hard links and redirected ancestors", async () => {
+  const { readVerifiedFile } = await import("./verify-secrets.mjs");
+  const { linkSync, symlinkSync } = await import("node:fs");
+  fixture(({ dir, file }) => {
+    const hard = join(dir, "hard.txt");
+    linkSync(file, hard);
+    assert.throws(() => readVerifiedFile(file, 4096), /unsafe file path/);
+    assert.throws(() => readVerifiedFile(hard, 4096), /unsafe file path/);
+    rmSync(hard);
+    const alias = join(dir, "redirected");
+    symlinkSync(dir, alias, process.platform === "win32" ? "junction" : "dir");
+    try {
+      assert.throws(() => readVerifiedFile(join(alias, "sample.txt"), 4096), /unsafe file path/);
+      assert.deepEqual(readVerifiedFile(file, 4096).bytes, Buffer.from(safe));
+    } finally {
+      rmSync(alias, { force: true });
+    }
+  });
+});
