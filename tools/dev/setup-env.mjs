@@ -1,36 +1,81 @@
 #!/usr/bin/env node
-// Create random, local-only credentials once. Never display or replace secrets.
-import { randomBytes } from 'node:crypto';
-import { lstatSync, writeFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+// First-use isolated infrastructure credentials; never read or replace a live .env.
+import { randomBytes } from "node:crypto";
+import {
+  linkSync, lstatSync, mkdtempSync, readFileSync, rmSync, writeFileSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const dest=fileURLToPath(new URL('../../infra/.env',import.meta.url));
-const secret=()=>randomBytes(32).toString('hex');
-const lines=[
- '# Randomized local-only refoundation secrets. NEVER commit or reuse old credentials.',
- 'REF_POSTGRES_USER=bthwani_refoundation_admin',
- 'REF_POSTGRES_DB=bthwani_refoundation',
- 'REF_POSTGRES_PASSWORD='+secret(),
- 'REF_MEDIA_ACCESS_KEY='+secret(),
- 'REF_MEDIA_SECRET_KEY='+secret(),
- 'REF_MEDIA_BUCKET=bthwani-refoundation-media',
- 'REF_MAILPIT_PORT=3226',
- 'REF_MEDIA_PORT=3233',
- 'REF_PAYMENT_MOCK_PORT=3290',
- 'REF_IDENTITY_VERIFIER_PORT=3201',
- 'REF_DSH_PORT=3202',
- 'REF_WLT_PORT=3203',
- ''
+const dest = fileURLToPath(new URL("../../infra/.env", import.meta.url));
+const template = fileURLToPath(new URL("../../infra/.env.example", import.meta.url));
+const names = ["REF_POSTGRES_USER", "REF_POSTGRES_DB", "REF_MEDIA_BUCKET"];
+const ports = [
+  "REF_MAILPIT_PORT", "REF_MEDIA_PORT", "REF_PAYMENT_MOCK_PORT",
+  "REF_IDENTITY_VERIFIER_PORT", "REF_DSH_PORT", "REF_WLT_PORT",
 ];
-// O_EXCL ('wx') is the only existence gate. Never check then write: the
-// filesystem entry could be replaced between the check and the create.
-try {
-  writeFileSync(dest,lines.join('\n'),{flag:'wx',encoding:'utf8',mode:0o600});
-  console.log('REFOUNDATION_ENV_CREATED_LOCAL_ONLY');
-} catch (error) {
-  if (error?.code !== 'EEXIST') throw error;
-  // Inspect only after exclusive creation failed. lstat never follows a
-  // symlink; neither existing file contents nor permissions are changed.
-  if (!lstatSync(dest).isFile()) throw Error('infra/.env is not a regular file');
-  console.log('REFOUNDATION_ENV_EXISTS_UNTOUCHED');
+const secrets = ["REF_POSTGRES_PASSWORD", "REF_MEDIA_ACCESS_KEY", "REF_MEDIA_SECRET_KEY"];
+
+function existingFile() {
+  const stat = lstatSync(dest, { throwIfNoEntry: false });
+  if (!stat) return false;
+  if (!stat.isFile()) throw new Error("infra/.env is not a regular file");
+  return true;
 }
+
+function baseConfiguration() {
+  const values = new Map();
+  for (const sourceLine of readFileSync(template, "utf8").split(/\r?\n/)) {
+    const line = sourceLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const match = /^([A-Z][A-Z0-9_]*)=(.*)$/.exec(line);
+    if (!match || values.has(match[1])) throw new Error("Invalid or duplicate infrastructure template entry");
+    values.set(match[1], match[2]);
+  }
+  for (const key of names) {
+    if (!/^[A-Za-z0-9_-]+$/.test(values.get(key) ?? "")) throw new Error(`Invalid template value for ${key}`);
+  }
+  for (const key of ports) {
+    const value = values.get(key) ?? "";
+    if (!/^[1-9][0-9]{0,4}$/.test(value) || Number(value) > 65535) {
+      throw new Error(`Invalid template port for ${key}`);
+    }
+  }
+  if (new Set(ports.map(key => values.get(key))).size !== ports.length) {
+    throw new Error("Duplicate infrastructure port");
+  }
+  for (const key of secrets) {
+    if (values.get(key) !== "") throw new Error(`Template secret slot must be present and empty: ${key}`);
+  }
+  return [
+    "# Randomized local-only refoundation secrets. NEVER commit or reuse old credentials.",
+    ...[...names, ...ports].map(key => `${key}=${values.get(key)}`),
+    ...secrets.map(key => `${key}=${randomBytes(32).toString("hex")}`),
+    "",
+  ].join("\n");
+}
+
+function createOnce() {
+  if (existingFile()) return false;
+  const content = baseConfiguration();
+  // Publish a fully written file with a native, atomic no-replace hard link.
+  // The private, ignored scratch directory is on the same filesystem.
+  const scratch = mkdtempSync(join(dirname(dest), ".env.prepare-"));
+  try {
+    const candidate = join(scratch, ".env");
+    writeFileSync(candidate, content, {
+      flag: "wx", encoding: "utf8", mode: 0o600, flush: true,
+    });
+    try {
+      linkSync(candidate, dest);
+      return true;
+    } catch (error) {
+      if (error?.code !== "EEXIST" || !existingFile()) throw error;
+      return false;
+    }
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
+console.log(createOnce() ? "REFOUNDATION_ENV_CREATED_LOCAL_ONLY" : "REFOUNDATION_ENV_EXISTS_UNTOUCHED");
