@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { captureOwner, dirtyPaths, digestEntries, isPreviewGoPath, materializeOwner, previewChangeKey, verifyMaterializedOwner } from "../../tools/dev/docker/owner-preview-source.mjs";
+import { captureCommittedOwner, captureOwner, dirtyPaths, digestEntries, isPreviewGoPath, materializeOwner, previewChangeKey, verifyMaterializedOwner } from "../../tools/dev/docker/owner-preview-source.mjs";
 
 const exe=process.platform==="win32"?"C:\\Program Files\\Git\\cmd\\git.exe":"/usr/bin/git";
 function fixture(t){
@@ -109,4 +109,26 @@ test("workspace-only owner metadata is not a serving input or a snapshot depende
   assert.notEqual(captureOwner(dir,"dsh").digest,before.digest);
   write(base+"contracts/openapi/unknown.yaml","openapi: 3.1.0");
   assert.throws(()=>captureOwner(dir,"dsh"),/PREVIEW_ONLY_GO_SOURCE_ALLOWED/);
+});
+
+test("committed owner snapshot uses Git objects, never ignored or hidden working-tree inputs",t=>{
+  const {dir,git,write,base}=fixture(t);
+  const head=git("rev-parse","HEAD").toString().trim();
+  const main=base+"backend/cmd/dsh/main.go";
+  git("update-index","--assume-unchanged",main);
+  write(main,"package main\n// uncommitted hidden mutation\n");
+  write(base+"backend/cmd/dsh/.env","synthetic ignored input");
+  write(base+"backend/internal/untracked.go","package internal\n");
+  const snap=captureCommittedOwner(dir,"dsh",head);
+  assert.equal(snap.revision,head);
+  assert.equal(snap.entries.find(([rel])=>rel==="backend/cmd/dsh/main.go")[1].toString(),"package main\n");
+  assert.ok(snap.entries.every(([rel])=>!rel.includes(".env")&&!rel.includes("untracked")));
+  assert.equal(snap.peers.length,1);
+  const staged=materializeOwner(snap);
+  t.after(staged.dispose);
+  assert.equal(fs.readFileSync(path.join(staged.dir,"backend/cmd/dsh/main.go"),"utf8"),"package main\n");
+  assert.doesNotThrow(()=>verifyMaterializedOwner(staged.dir,snap));
+  fs.writeFileSync(path.resolve(staged.dir,"../identity/database/schema/extra.sql"),"SELECT 2;");
+  assert.throws(()=>verifyMaterializedOwner(staged.dir,snap),/SNAPSHOT_MUTATED/);
+  assert.throws(()=>captureCommittedOwner(dir,"dsh","HEAD"),/COMMITTED_REVISION_INVALID/);
 });

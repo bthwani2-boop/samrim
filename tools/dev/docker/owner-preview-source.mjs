@@ -150,56 +150,116 @@ export function previewChangeKey(root,paths) {
   if(paths.some(rel=>!isPreviewGoPath(rel)))throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
   return digestEntries(paths.map(rel=>[rel,safeRead(root,rel,true)]));
 }
-function snapshotInput(owner,file) {
+function snapshotInput(file) {
   return buildFiles.has(file)||goFile.test(file)||schemaFile.test(file);
 }
-function ownerEntries(root,owner,changes) {
+function scopeFor(owner) {
+  if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
   const prefix="services/"+owner+"/";
-  const scope=[prefix+".dockerignore",prefix+"backend",prefix+"database/schema"];
+  return [prefix+".dockerignore",prefix+"backend",prefix+"database/schema"];
+}
+function ownerInput(owner,rel) {
+  const info=classify(rel);
+  if(info.owner!==owner)throw new Error("PREVIEW_PATH_INVALID");
+  if(info.kind==="workspace"||info.file==="backend/project.json")return null;
+  if(!snapshotInput(info.file))throw new Error("PREVIEW_UNREVIEWED_BUILD_INPUT");
+  pathParts(rel);
+  return info.file;
+}
+function checkedEntries(entries) {
+  if(new Set(entries.map(([rel])=>rel.toLowerCase())).size!==entries.length)
+    throw new Error("PREVIEW_PATH_COLLISION");
+  for(const file of buildFiles)if(!entries.some(([rel])=>rel===file))
+    throw new Error("PREVIEW_BUILD_INPUT_MISSING");
+  return entries.sort(([a],[b])=>compare(a,b));
+}
+const peerScope="services/identity/database/schema";
+function checkedPeer(rel) {
+  if(!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))
+    throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
+  pathParts(rel);
+  return rel;
+}
+function assemble(owner,entries,peers,revision=null) {
+  checkedEntries(entries);
+  return {owner,revision,digest:digestEntries(entries),entries,peers};
+}
+export function captureOwner(root,owner) {
+  const scope=scopeFor(owner);
+  const changes=dirtyPaths(root,["services/"+owner]);
+  if(changes.some(rel=>!isPreviewGoPath(rel)&&!isOwnerNonRuntimePath(rel)))
+    throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
   const files=[...new Set(gitList(root,["ls-files","--cached","--others","--exclude-standard","-z","--",...scope]))].sort(compare);
   const entries=[];
   for(const rel of files){
-    const info=classify(rel);
-    if(info.owner!==owner)throw new Error("PREVIEW_PATH_INVALID");
-    if(info.kind==="workspace"||info.file==="backend/project.json")continue;
-    if(!snapshotInput(owner,info.file))throw new Error("PREVIEW_UNREVIEWED_BUILD_INPUT");
+    const file=ownerInput(owner,rel);
+    if(file===null)continue;
     const bytes=safeRead(root,rel,changes.includes(rel));
-    if(bytes!==null)entries.push([info.file,bytes]);
+    if(bytes!==null)entries.push([file,bytes]);
   }
-  if(new Set(entries.map(([rel])=>rel.toLowerCase())).size!==entries.length)throw new Error("PREVIEW_PATH_COLLISION");
-  for(const file of buildFiles)if(!entries.some(([rel])=>rel===file))throw new Error("PREVIEW_BUILD_INPUT_MISSING");
-  return entries;
+  const peers=[];
+  if(owner==="dsh"){
+    if(dirtyPaths(root,[peerScope]).length)throw new Error("PREVIEW_PEER_SCHEMA_CHANGED");
+    for(const rel of gitList(root,["ls-files","--cached","-z","--",peerScope]))
+      peers.push([checkedPeer(rel),safeRead(root,rel)]);
+  }
+  return assemble(owner,entries,peers);
 }
-function peerEntries(root,owner) {
-  if(owner!=="dsh")return [];
-  const scope="services/identity/database/schema";
-  if(dirtyPaths(root,[scope]).length)throw new Error("PREVIEW_PEER_SCHEMA_CHANGED");
-  return gitList(root,["ls-files","--cached","-z","--",scope]).map(rel=>{
-    if(!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
-    return [rel,safeRead(root,rel)];
-  });
+// Committed builds must never read mutable working-tree files, including
+// files hidden by ignore rules or assume-unchanged. Read the exact tree and
+// batch its immutable blob IDs, with strict mode, framing and size checks.
+export function captureCommittedOwner(root,owner,revision) {
+  if(!/^[a-f0-9]{40}$/.test(revision||""))throw new Error("COMMITTED_REVISION_INVALID");
+  const scope=scopeFor(owner);
+  const requested=[];
+  for(const record of gitList(root,["ls-tree","-r","-z",revision,"--",...scope,...(owner==="dsh"?[peerScope]:[])])){
+    const match=/^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(record);
+    if(!match)throw new Error("COMMITTED_TREE_MODE_INVALID");
+    const [, ,oid,rel]=match;
+    const peer=owner==="dsh"&&rel.startsWith(peerScope+"/");
+    const file=peer?checkedPeer(rel):ownerInput(owner,rel);
+    if(file!==null)requested.push({oid,file,peer});
+  }
+  if(!requested.length)throw new Error("COMMITTED_TREE_EMPTY");
+  const raw=execFileSync(gitExe,["cat-file","--batch"],{cwd:root,encoding:null,windowsHide:true,
+    input:requested.map(x=>x.oid+"\n").join(""),timeout:30000,maxBuffer:64*1024*1024});
+  let cursor=0;
+  const entries=[],peers=[];
+  for(const {oid,file,peer} of requested){
+    const end=raw.indexOf(10,cursor);
+    if(end<0)throw new Error("COMMITTED_BLOB_HEADER_INVALID");
+    const header=/^([a-f0-9]{40}) blob ([0-9]+)$/.exec(raw.subarray(cursor,end).toString("ascii"));
+    if(!header||header[1]!==oid)throw new Error("COMMITTED_BLOB_HEADER_INVALID");
+    const size=Number(header[2]);
+    if(!Number.isSafeInteger(size)||size>4194304||end+1+size>=raw.length||raw[end+1+size]!==10)
+      throw new Error("COMMITTED_BLOB_SIZE_INVALID");
+    const bytes=raw.subarray(end+1,end+1+size);
+    if(bytes.includes(0)||containsLikelySecret(bytes.toString("utf8")))throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
+    (peer?peers:entries).push([file,Buffer.from(bytes)]);
+    cursor=end+2+size;
+  }
+  if(cursor!==raw.length)throw new Error("COMMITTED_BLOB_TRAILING_DATA");
+  return assemble(owner,entries,peers,revision);
 }
-export function captureOwner(root,owner) {
-  if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
-  const changes=dirtyPaths(root,["services/"+owner]);
-  if(changes.some(rel=>!isPreviewGoPath(rel)&&!isOwnerNonRuntimePath(rel)))throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
-  const entries=ownerEntries(root,owner,changes);
-  return {owner,digest:digestEntries(entries),entries,peers:peerEntries(root,owner)};
-}
-export function verifyMaterializedOwner(dir,snapshot) {
+function materializedEntries(root) {
   const actual=[];
   function walk(folder,relative=""){
     for(const item of fs.readdirSync(folder,{withFileTypes:true})){
       const rel=relative?relative+"/"+item.name:item.name;
       if(item.isSymbolicLink())throw new Error("PREVIEW_SNAPSHOT_LINK");
       if(item.isDirectory())walk(path.join(folder,item.name),rel);
-      else actual.push([rel,safeRead(dir,rel)]);
+      else actual.push([rel,safeRead(root,rel)]);
     }
   }
-  walk(dir);
-  if(digestEntries(actual)!==snapshot.digest)throw new Error("PREVIEW_SNAPSHOT_MUTATED");
+  walk(root);
+  return actual;
+}
+export function verifyMaterializedOwner(dir,snapshot) {
+  const prefix="services/"+snapshot.owner+"/";
   const root=path.resolve(dir,"../..");
-  for(const [rel,bytes] of snapshot.peers||[])if(!safeRead(root,rel).equals(bytes))throw new Error("PREVIEW_PEER_SNAPSHOT_MUTATED");
+  const expected=[...snapshot.entries.map(([rel,bytes])=>[prefix+rel,bytes]),...(snapshot.peers||[])];
+  if(digestEntries(snapshot.entries)!==snapshot.digest||digestEntries(materializedEntries(root))!==digestEntries(expected))
+    throw new Error("PREVIEW_SNAPSHOT_MUTATED");
 }
 function writeEntry(root,rel,bytes) {
   const file=path.join(root,...pathParts(rel));
@@ -207,15 +267,18 @@ function writeEntry(root,rel,bytes) {
   fs.writeFileSync(file,bytes,{flag:"wx"});
 }
 export function materializeOwner(snapshot) {
-  if(!owners.includes(snapshot.owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
+  scopeFor(snapshot.owner);
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"bthwani-owner-preview-"));
   const dir=path.join(temp,"services",snapshot.owner);
   const dispose=()=>fs.rmSync(temp,{recursive:true,force:true});
   try{
-    for(const [rel,bytes] of snapshot.entries)writeEntry(dir,rel,bytes);
+    for(const [rel,bytes] of snapshot.entries){
+      if(!snapshotInput(rel))throw new Error("PREVIEW_PATH_INVALID");
+      writeEntry(dir,rel,bytes);
+    }
     for(const [rel,bytes] of snapshot.peers||[]){
-      if(snapshot.owner!=="dsh"||!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
-      writeEntry(temp,rel,bytes);
+      if(snapshot.owner!=="dsh")throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
+      writeEntry(temp,checkedPeer(rel),bytes);
     }
     verifyMaterializedOwner(dir,snapshot);
     return {dir,dispose};

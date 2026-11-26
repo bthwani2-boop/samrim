@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
 import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope } from "./owner-baseline-transition.mjs";
-import { captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
+import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const context = "bthwani-docker";
@@ -135,31 +135,34 @@ export function ownerBuildPlan(owner, head, tag, service, digest = null) {
     image: owners[owner].image + ":" + tag,
   };
 }
-function buildOwnerImage(owner, head, tag, service = resolve(root,"services",owner), snapshot = null) {
+function buildOwnerImage(owner, head, tag, service, snapshot) {
   const pin = readFileSync(resolve(root,".go-version"),"utf8").trim();
   const file = resolve(service,"backend","Dockerfile");
   if (!readFileSync(file,"utf8").split(/\r?\n/).some(line =>
     line.startsWith("FROM golang:"+pin+"-alpine@sha256:") && /@sha256:[0-9a-f]{64} AS build$/.test(line)))
     throw new Error("Pinned owner Dockerfile required");
+  const preview=snapshot.revision===null;
+  if(snapshot.owner!==owner||(!preview&&snapshot.revision!==head))throw new Error("Snapshot source identity mismatch");
   const assertSource = () => {
     if (git(["rev-parse","HEAD"]) !== head) throw new Error("Source changed during image build");
-    if (snapshot) {
-      verifyMaterializedOwner(service,snapshot);
-      if (captureOwner(root,owner).digest !== snapshot.digest) throw new Error("Preview input changed during build: "+owner);
-    } else if (dirtyPaths(root, ["services/"+owner, ".go-version", ...ownerComposeInputs,
-      "tools/dev/docker/reconcile-owner-runtime.mjs"]).length) {
+    verifyMaterializedOwner(service,snapshot);
+    if(preview){
+      if(captureOwner(root,owner).digest!==snapshot.digest)throw new Error("Preview input changed during build: "+owner);
+    }else if(dirtyPaths(root, ["services/"+owner, ".go-version", ...ownerComposeInputs,
+      "tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/docker/owner-preview-source.mjs"]).length){
       throw new Error("Owner or shared build input is not committed");
     }
   };
-  const plan = ownerBuildPlan(owner,head,tag,service,snapshot?.digest ?? null);
+  const digest=preview?snapshot.digest:null;
+  const plan = ownerBuildPlan(owner,head,tag,service,digest);
   assertSource();
   docker(plan.args,plan.env,180000);
   assertSource();
   const image = imageRecord(plan.image);
   const source = sourceIdentity(image.Config.Labels,owner);
-  if (source.revision !== head || source.digest !== (snapshot?.digest ?? null) ||
+  if (source.revision !== head || source.digest !== digest ||
       !/^sha256:[0-9a-f]{64}$/.test(image.Id) ||
-      (!snapshot && image.Config.Labels["com.bthwani.source-sha"] !== head) ||
+      (!preview && image.Config.Labels["com.bthwani.source-sha"] !== head) ||
       image.Config.Labels["org.opencontainers.image.revision"] !== plan.env.BTHWANI_BUILD_REVISION)
     throw new Error("New image source mismatch: "+owner);
   return image;
@@ -334,7 +337,11 @@ function main() {
     const [owner]=options,tag="build-"+head;
     const reference=owners[owner].image+":"+tag;
     if(docker(["ps","-a","--format","{{.Image}}"]).split(/\r?\n/).includes(reference))throw new Error("Build-only tag is in use by a container");
-    const image=buildOwnerImage(owner,head,tag);
+    const snapshot=captureCommittedOwner(root,owner,head);
+    const staged=materializeOwner(snapshot);
+    let image;
+    try{image=buildOwnerImage(owner,head,tag,staged.dir,snapshot);}
+    finally{staged.dispose();}
     console.log("OWNER_IMAGE_BUILT "+owner+" tag="+tag+" image="+image.Id);
     return;
   }
@@ -485,9 +492,10 @@ function main() {
     const snap=snapshots.get(o);
     const tag=snap?"preview-"+head.slice(0,9)+"-"+snap.digest:"sha-"+head.slice(0,9);
     tags[o]=tag;
-    const staged=snap?materializeOwner(snap):null;
+    const snapshot=snap||captureCommittedOwner(root,o,head);
+    const staged=materializeOwner(snapshot);
     try {
-      const service=staged?.dir || resolve(root,"services",o);
+      const service=staged.dir;
       const pin=readFileSync(resolve(root,".go-version"),"utf8").trim();
       const testEnv={...isolatedTestEnv(process.env),GOWORK:"off"};
       const goExecutable=resolvePinnedGo(pin,testEnv);
@@ -500,11 +508,11 @@ function main() {
         throw new Error("Owner tests failed: "+o+" "+(go.error?.code||go.status)+" "+names.slice(0,15).join(","));
       }
       console.log("OWNER_TEST_PASS "+o);
-      const image=buildOwnerImage(o,head,tag,service,snap || null);
+      const image=buildOwnerImage(o,head,tag,service,snapshot);
       targetIds[o]=image.Id;
       nextEnv[owners[o].tag]=tag;
       console.log("OWNER_IMAGE_PASS "+o+" "+image.Id+(snap?" preview="+snap.digest:""));
-    } finally { staged?.dispose(); }
+    } finally { staged.dispose(); }
   }
   ensureSource();
   for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("Preview source changed: "+o);
