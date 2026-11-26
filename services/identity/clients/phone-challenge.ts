@@ -12,16 +12,19 @@ export function normalizeYemeniMobile(value: string): string | undefined {
   return /^\+9677[01237][0-9]{7}$/.test(canonical) ? canonical : undefined;
 }
 
-export async function issueCustomerPhoneChallenge(
-  baseUrl: string, phone: string, signal?: AbortSignal,
-): Promise<string> {
-  const result = await ownerRequest(baseUrl, identityOperations.issueCustomerPhoneChallenge.path, null,
-    "POST", 201, signal, { phone });
+export function parseCustomerPhoneChallenge(result: unknown): string {
   if (!result || typeof result !== "object" || !("ticket" in result) ||
     Object.keys(result).length !== 1 || typeof result.ticket !== "string" || !phoneTicket.test(result.ticket)) {
     throw new IdentityClientError(502, "OPERATION_RESULT_UNKNOWN");
   }
   return result.ticket;
+}
+
+export async function issueCustomerPhoneChallenge(
+  baseUrl: string, phone: string, signal?: AbortSignal,
+): Promise<string> {
+  return parseCustomerPhoneChallenge(await ownerRequest(baseUrl, identityOperations.issueCustomerPhoneChallenge.path, null,
+    "POST", 201, signal, { phone }));
 }
 
 export async function verifyCustomerPhoneChallenge(
