@@ -17,7 +17,7 @@ import (
 var reviewedFreshBaseline = map[string]string{
 	"00_marketplace.sql":        "97581dcfc79cee6e152963d8eb7ec1492699c9664b1c089b232113f5cd55b1a7",
 	"10_catalog.sql":            "7755db5222aaf4c510d526c4eaea589bbc5dbd70bff2db47a768aedbabf931a6",
-	"20_store_operations.sql":   "e30e787a91bfb49250738c6912f379898e8e51b048b9a897d31b76e5b60005b5",
+	"20_store_operations.sql":   "495590b5646c825bd0f2739937c98803e26e22f3c342c0787d47096c3b22c227",
 	"30_store_registration.sql": "19f35f438f2ccc3e1b2abb00db6a8c30652130be9cc3956c8e1b47dc052e71d5",
 	"40_customer_cart.sql":      "2ca899bf205e32b92a4bc9b69c7917dce6b71a45c4c1aad8bd8f6f691f2bcaa7",
 	"45_customer_addresses.sql": "8412124b163e0fc611a75b395f8c2da861e2f5c38e4ef2aae8d4569003ec2836",

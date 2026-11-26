@@ -94,6 +94,8 @@ paths:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy~1history'
   /v1/operators/cities/{cityID}/store-availability-policy:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy'
+  /v1/operators/cities/{cityID}/fulfillment-policy/{relation}:
+    $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1fulfillment-policy~1{relation}'
 components:
   securitySchemes:
     OpaqueSession:
@@ -107,6 +109,48 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/PublicId' }
   schemas:
+    CityFulfillmentPolicy:
+      type: object
+      additionalProperties: false
+      required: [cityId, relation, version, allowedModes]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        relation: { type: string, enum: [DIRECT, MARKETPLACE] }
+        version: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        allowedModes:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        changedByActor: { type: string, minLength: 1, maxLength: 128 }
+        reason: { type: string, minLength: 1, maxLength: 300 }
+        updatedAt: { type: string, format: date-time }
+      if:
+        properties:
+          version: { const: 0 }
+      then:
+        properties:
+          allowedModes: { maxItems: 0 }
+        not:
+          anyOf:
+            - required: [changedByActor]
+            - required: [reason]
+            - required: [updatedAt]
+      else:
+        required: [changedByActor, reason, updatedAt]
+    CityFulfillmentPolicyChange:
+      type: object
+      additionalProperties: false
+      required: [operationId, expectedVersion, allowedModes, reason]
+      properties:
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        expectedVersion: { type: integer, minimum: 0, maximum: 9007199254740990 }
+        allowedModes:
+          type: array
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        reason: { type: string, minLength: 1, maxLength: 300 }
     MerchantCatalogImportChange:
       type: object
       additionalProperties: false

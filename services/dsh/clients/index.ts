@@ -62,3 +62,6 @@ export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,
 } from "./store-availability.ts";
 export { getStoreOperationalAvailability, updateStoreOperationalAvailability } from "./store-availability.ts";
+
+export type { CityFulfillmentMode, CityFulfillmentPolicy, CityFulfillmentPolicyChange, CityFulfillmentPolicyResult, CityFulfillmentRelation } from "./city-policies.ts";
+export { getCityFulfillmentPolicy, isCityFulfillmentPolicy, isCityFulfillmentPolicyChange, replaceCityFulfillmentPolicy } from "./city-policies.ts";

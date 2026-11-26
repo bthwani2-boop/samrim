@@ -169,6 +169,7 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 			t.Fatalf("seed error: %v query=%s", err, query)
 		}
 	}
+	t.Run("FulfillmentPolicyOwnerReadback", func(t *testing.T) { verifyFulfillmentPolicyOnPostgres(t, ctx, db, schema) })
 	sessions := &testSession{}
 	handler, err := NewHandler(db, schema, cartSessionAdapter{sessions})
 	if err != nil {

@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: 50de33cba5517049843a17277559fb1e33513ef674b1af9adfbde9af5b6b9c0a
+// Normalized OpenAPI SHA-256: 4d0259900d64067be7675bed59bad8deae2dc2b54850b84db924710f33597cd7
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   advanceMerchantCatalogImport: { method: "PATCH", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
@@ -13,6 +13,7 @@ export const dshOperations = {
   estimatePublicOffer: { method: "GET", path: "/v1/public/stores/{id}/offers/{offerId}/estimate" },
   evaluateCurrentCustomerDeliveryAddress: { method: "GET", path: "/v1/carts/{storeID}/serviceability" },
   getCityDeliveryPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/delivery-policy" },
+  getCityFulfillmentPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/fulfillment-policy/{relation}" },
   getCityStoreOperationalPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/store-availability-policy" },
   getCompanyEmployee: { method: "GET", path: "/v1/operators/employees/{id}" },
   getCompanyEmployeeRegistrationAudit: { method: "GET", path: "/v1/operators/employees/{id}/registration-audit" },
@@ -53,6 +54,7 @@ export const dshOperations = {
   registerMerchantEmployee: { method: "POST", path: "/v1/stores/{storeID}/employees" },
   registerMerchantStore: { method: "POST", path: "/v1/stores" },
   replaceCityDeliveryPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/delivery-policy" },
+  replaceCityFulfillmentPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/fulfillment-policy/{relation}" },
   replaceCityStoreOperationalPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/store-availability-policy" },
   replaceCurrentCustomerCart: { method: "PUT", path: "/v1/carts/{storeID}" },
   reviewCurrentCustomerCheckout: { method: "POST", path: "/v1/carts/{storeID}/checkout-review" },

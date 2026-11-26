@@ -44,3 +44,6 @@ Keep a history of owner cursors in the keyed city history view. Each navigation 
 
 ## BTH-15 delivery policy write
 Reuse service_city_delivery_policies, the existing DSH policy router and tariff validation. Add an immutable command/snapshot log in the fresh baseline, lock city row and compare version in one transaction, reconcile ambiguous commit by same actor/key/payload. Expose PATCH through owner OpenAPI, generated operation, typed client, same-origin BFF and existing policy preview form; require reason and independent owner readback. Prove isolated baseline, concurrent/replayed writes, current checkout estimate and rejection paths before runtime acceptance. No protected schema change.
+
+## Fulfillment policy prerequisite
+Reuse DSH PostgresPolicySource and the existing Operator city policy router; one append-only city/relation version table serves both current policy (latest version) and stable operation readback, no current-state duplicate. Serialize city writes, validate exact subsets, bind expected version/actor/reason/modes and reject mutation of prior versions. Use fresh isolated baseline, generated OpenAPI operation references and typed SDK. Operator UI and per-Store/checkout/WLT integration use this same owner in subsequent coherent increments; do not activate a mode solely from this policy. No retained-database upgrade or production activation.

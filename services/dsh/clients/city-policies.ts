@@ -275,3 +275,68 @@ export async function replaceCityDeliveryPolicy(
   if (!isCityDeliveryPolicyResult(value, cityId, change) || signal?.aborted) throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   return value;
 }
+
+export type CityFulfillmentMode = "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP";
+export type CityFulfillmentRelation = "DIRECT" | "MARKETPLACE";
+export type CityFulfillmentPolicy = Readonly<{
+  cityId: string; relation: CityFulfillmentRelation; version: number; allowedModes: CityFulfillmentMode[];
+  changedByActor?: string; reason?: string; updatedAt?: string;
+}>;
+export type CityFulfillmentPolicyChange = Readonly<{
+  operationId: string; expectedVersion: number; allowedModes: CityFulfillmentMode[]; reason: string;
+}>;
+export type CityFulfillmentPolicyResult = Readonly<{ policy: CityFulfillmentPolicy; replay: boolean }>;
+const fulfillmentModes: CityFulfillmentMode[] = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];
+function canonicalModes(value: unknown): CityFulfillmentMode[] | null {
+  if (!Array.isArray(value) || value.length > 3) return null;
+  const modes = fulfillmentModes.filter(mode => value.includes(mode));
+  return modes.length === value.length ? modes : null;
+}
+function validFulfillmentScope(city: string, relation: string) {
+  return /^[a-z0-9-]{1,64}$/.test(city) && (relation === "DIRECT" || relation === "MARKETPLACE");
+}
+function exactText(value: unknown, max: number): value is string {
+  return typeof value === "string" && value.trim() === value && [...value].length > 0 &&
+    [...value].length <= max && !/[\p{Cc}\uD800-\uDFFF]/u.test(value);
+}
+export function isCityFulfillmentPolicy(value: unknown, city: string, relation: CityFulfillmentRelation): value is CityFulfillmentPolicy {
+  if (!validFulfillmentScope(city, relation) || !value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  const modes = canonicalModes(v.allowedModes);
+  if (!modes || !Array.isArray(v.allowedModes) || !modes.every((mode, i) => mode === (v.allowedModes as unknown[])[i]) ||
+    v.cityId !== city || v.relation !== relation || !Number.isSafeInteger(v.version) || Number(v.version) < 0) return false;
+  if (v.version === 0) return Object.keys(v).length === 4 && modes.length === 0;
+  return Object.keys(v).length === 7 && onlyKeys(v, ["cityId", "relation", "version", "allowedModes", "changedByActor", "reason", "updatedAt"]) &&
+    exactText(v.changedByActor, 128) && exactText(v.reason, 300) && isDateTime(v.updatedAt);
+}
+export function isCityFulfillmentPolicyChange(value: unknown): value is CityFulfillmentPolicyChange {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 4 && onlyKeys(v, ["operationId", "expectedVersion", "allowedModes", "reason"]) &&
+    typeof v.operationId === "string" && /^[A-Za-z0-9._-]{8,128}$/.test(v.operationId) &&
+    Number.isSafeInteger(v.expectedVersion) && Number(v.expectedVersion) >= 0 && Number(v.expectedVersion) < Number.MAX_SAFE_INTEGER &&
+    canonicalModes(v.allowedModes) !== null && typeof v.reason === "string" && exactText(v.reason.trim(), 300);
+}
+export async function getCityFulfillmentPolicy(baseUrl: string, city: string, relation: CityFulfillmentRelation,
+  bearer: string, signal?: AbortSignal): Promise<CityFulfillmentPolicy> {
+  if (!validFulfillmentScope(city, relation)) throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
+  const path = dshOperations.getCityFulfillmentPolicy.path.replace("{cityID}", city).replace("{relation}", relation);
+  const value = await privateOwnerRequest(baseUrl, path, bearer, "GET", undefined, signal);
+  if (!isCityFulfillmentPolicy(value, city, relation) || signal?.aborted) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  return value;
+}
+export async function replaceCityFulfillmentPolicy(baseUrl: string, city: string, relation: CityFulfillmentRelation,
+  bearer: string, change: CityFulfillmentPolicyChange, signal?: AbortSignal): Promise<CityFulfillmentPolicyResult> {
+  if (!validFulfillmentScope(city, relation) || !isCityFulfillmentPolicyChange(change)) throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
+  const path = dshOperations.replaceCityFulfillmentPolicy.path.replace("{cityID}", city).replace("{relation}", relation);
+  const raw = await privateOwnerRequest(baseUrl, path, bearer, "PATCH", change, signal);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || signal?.aborted) throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  const v = raw as Record<string, unknown>;
+  const modes = canonicalModes(change.allowedModes);
+  if (Object.keys(v).length !== 2 || typeof v.replay !== "boolean" || !isCityFulfillmentPolicy(v.policy, city, relation) ||
+    v.policy.version !== change.expectedVersion + 1 || v.policy.reason !== change.reason.trim() ||
+    !modes || modes.length !== v.policy.allowedModes.length || !modes.every((mode, i) => mode === (v.policy as CityFulfillmentPolicy).allowedModes[i])) {
+    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  }
+  return { policy: v.policy, replay: v.replay };
+}
