@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Stage-4 production HTTP/SSR evidence for the two approved Expo Web hosts.
+// Production HTTP/SSR evidence for the two approved Expo Web hosts.
 // This deliberately does NOT test Captain Web, native binaries, UI hydration,
 // authentication, Store policy, or any external service.
 import assert from "node:assert/strict";
@@ -17,7 +17,8 @@ const hosts = [
     routes: [
       ["/", 200, "جميع المتاجر"],
       ["/stores", 200, "متاجر بثواني"],
-      ["/lab", 200, "مختبر مكونات Tamagui"],
+      ["/lab", 404, null],
+      ["/foundation", 404, null],
       ["/wallet", 200, "المحفظة"],
     ],
   },
@@ -96,7 +97,7 @@ async function verifyHost({ name, routes, protectedRoutes = [] }) {
     const checks = [
       ...routes,
       ["/health", 200, "الملاحة التجريبية تعمل"],
-      ["/not-a-real-stage4-route", 404, null],
+      ["/not-a-real-application-route", 404, null],
     ];
 
     for (const [route, status, text] of checks) {
@@ -147,4 +148,4 @@ async function verifyHost({ name, routes, protectedRoutes = [] }) {
 }
 
 for (const host of hosts) await verifyHost(host);
-console.log("EXPO_WEB_STAGE4_SMOKE_PASS hosts=2 native_captain_web=NOT_ADMITTED");
+console.log("EXPO_WEB_SMOKE_PASS hosts=2 native_captain_web=NOT_ADMITTED");

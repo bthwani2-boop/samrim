@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Operator Stage-4 CSP/SSR smoke. Default: production Next build; --dev: isolated Next development host.
+// Operator real-route CSP/SSR smoke. Default: production Next build; --dev: isolated Next development host.
 // No provider credentials, external network, user records, or application services.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
@@ -104,8 +104,8 @@ try {
     ["/", 200, "دخول المشغّل"],
     ["/workspace", 200, "الوصول إلى هذه المساحة غير متاح"],
     ["/health", 200, "واجهة لوحة التحكم متاحة. هذه الصفحة تفحص الواجهة فقط."],
-    ["/lab", 200, "مختبر مكونات Ant Design"],
-    ["/nonexistent-stage4-operator-smoke", 404, "الصفحة غير موجودة"],
+    ["/lab", 404, "الصفحة غير موجودة"],
+    ["/nonexistent-operator-route", 404, "الصفحة غير موجودة"],
   ];
   const seenNonces = new Set();
   for (const [route, expectedStatus, visibleText] of routes) {
@@ -128,7 +128,7 @@ try {
     if (visibleText) {
       assert.match(html, /<html\b[^>]*\blang="ar"[^>]*\bdir="rtl"/i, `${route} lost document RTL`);
       assert.match(html, /<meta\b[^>]*\bname="robots"[^>]*\bcontent="[^"]*noindex/i,
-        `${route} lost noindex on the nonfunctional foundation`);
+        `${route} lost noindex on the Operator surface`);
       assert.ok(html.includes(visibleText), `${route} did not render expected content in SSR`);
       assert.ok(html.includes(`nonce="${nonce}"`), `${route} Next.js SSR scripts lost their CSP nonce`);
       if (expectedStatus === 404) {
