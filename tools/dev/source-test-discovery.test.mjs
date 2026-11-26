@@ -314,3 +314,27 @@ test("native LCOV preserves distinct evaluations of the same authored source", (
   assert.ok(records.some(record => /DA:3,[1-9]/.test(record)), "negative branch must remain measured");
   assert.match(result.stdout, /scanner_owns_aggregation=true/);
 }));
+
+test("project discovery refuses an ancestor junction that escapes the owner root", (t) => fixture(({ root }) => {
+  const external = join(root, "external-owner");
+  mkdirSync(join(external, "customer"), { recursive: true });
+  writeFileSync(join(external, "customer", "external.test.mjs"), "export {};");
+  try {
+    symlinkSync(external, join(root, "apps"), "junction");
+  } catch (error) {
+    if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("source links unavailable");
+    throw error;
+  }
+  assert.throws(() => discoverNodeSourceTests(root, join(root, "apps", "customer")), /UNSCANNED_SOURCE_LINK apps/);
+}));
+
+test("a project path outside the supplied checkout is never admitted", () => fixture(({ root, add }) => {
+  const file = add("real.test.mjs");
+  const actualProject = dirname(file);
+  assert.throws(() => discoverNodeSourceTests(join(root, "different-checkout"), actualProject), /SOURCE_SCOPE_OUTSIDE_CHECKOUT/);
+}));
+
+test("case-variant test names cannot silently bypass admitted runner format", () => fixture(({ root, folder, add }) => {
+  add("nested/candidate.test.MJS");
+  assert.throws(() => discoverNodeSourceTests(root, folder), /UNSUPPORTED_SOURCE_TEST_FORMAT/);
+}));
