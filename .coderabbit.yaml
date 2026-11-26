@@ -1,10 +1,9 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# CodeRabbit is a reviewer, not a replacement for GitHub required checks,
-# Product approval, financial/security review or real runtime evidence.
-# Keep one minimal configuration; global CodeRabbit settings are provider-owned.
+# Automatic review assists engineering; it never replaces owner-backed proof,
+# protected integration checks, financial/security review or production approval.
 inheritance: true
 reviews:
   auto_review:
     enabled: true
     drafts: true
-    auto_incremental_review: false
+    auto_incremental_review: true
