@@ -30,9 +30,16 @@ CAPABILITY_ID: PARTNER_ONBOARDING_STORE_PUBLICATION
 ## STORE_RELATION_MODEL — Two governed channel options, one Store
 CAPABILITY_ID: STORE_RELATION_MODEL
 
-**Outcome:** Each Store has precisely one effective channel relation: `MARKETPLACE` or `DIRECT`. The selected relation determines eligible customer discovery and legal publication/checkout **channels**, not commercial fee model, COD responsibility, identity or product catalog owner.
+**Human decision (2026-11-26):** Each Store has exactly one relation. DIRECT is private-only; MARKETPLACE adds marketplace eligibility to the same Direct commerce foundation. Both relations share Store, catalog, inventory, cart, Order, staff, fulfillment, reporting and financial engines. Neither relation itself activates sales or financial rights.
 
-**Owner:** DSH writes Store relation and history. WLT owns the associated Store financial agreement and fee/collector policy. Operator can set permitted defaults and admission availability by relation in the **one Policies UX**, but cannot grant a capability still blocked in DSH/WLT.
+| Store relation | Direct sales | Marketplace sales |
+| --- | --- | --- |
+| `DIRECT` | Eligible subject to common gates | Forbidden |
+| `MARKETPLACE` | Eligible subject to common gates | Eligible subject to common and marketplace gates |
+
+DSH validates the requested sales channel against the current Store relation, publication and all common eligibility gates; unknown or prohibited combinations fail closed. Store relation and immutable Order sales channel are distinct facts; see [commerce](commerce.md).
+
+**Owner:** DSH writes Store relation and history. WLT owns the associated Store financial agreement and fee/collector policy. Operator can set relation admission availability in the **one Policies UX**, but financial and operational terms remain separately governed and no policy can grant a capability blocked in DSH/WLT.
 
 **Relation change:** A future authorized change retains the same Store ID, Product/Variant/StoreOffer IDs, lawful media links, accepted financial history and Order history. It requires deliberate agreement and publication transitions and a coordinated, tested contract/data migration; it is not currently deemed activated merely by documenting it.
 
@@ -72,7 +79,7 @@ These are **branch-41 source-preservation obligations in the draft target**, not
 
 A DSH relation-admission policy governs **every** creation of that relation, including the first and later Stores and Operator-assisted entry. At the Store-create commit DSH must read the current version **atomically with creation eligibility** and fail closed if disabled or unavailable, while a same-identity idempotent retry returns its already committed Store without creating another. The historical first-Store advisory lock and deterministic replay are implementation evidence to preserve, not a new parallel Store-create engine. Operator-assisted creation binds only an explicitly selected, verified existing Merchant actor; it cannot impersonate that actor or become the owner by default.
 
-A lawful relation conversion is a **prospective** transition on the same Store, not a role change or implicit WLT agreement conversion. Before a switch DSH/WLT must reconcile accepted financial terms, collector responsibility, in-flight Orders/custody, Store publication and existing subscriptions/commission periods. Accepted Orders remain governed by their original frozen terms. The old channel cannot create new Orders after the effective cutover. Store ID, catalog/Offer IDs, active lawful staff grants, media and historical Orders persist; the owner-backed public Store URL is preserved, with narrowly scoped safe GET redirects if needed, never redirects of private records or checkout mutations.
+A lawful relation conversion is a **prospective** transition on the same Store, not a role change or implicit WLT agreement conversion. Before a switch DSH/WLT must reconcile accepted financial terms, collector responsibility, in-flight Orders/custody, Store publication and existing subscriptions/commission periods. Accepted Orders remain governed by their original frozen terms. A newly prohibited marketplace channel cannot create new Orders after the effective cutover; Direct remains eligible subject to the common gates. Store ID, catalog/Offer IDs, active lawful staff grants, media and historical Orders persist; the owner-backed public Store URL is preserved, with narrowly scoped safe GET redirects if needed, never redirects of private records or checkout mutations.
 
 The **same Customer Expo Web public Store URL** shows only approved published information to guests and to the Store owner; the Merchant workspace remains the private editing/preview surface, not a second customer-facing website or publisher. A Store's public Web composition is not itself marketplace discovery. Withdrawing an Offer or Store publication invalidates/revalidates stale public reads, and checkout independently rechecks relation, publication, availability, price, stock and legal terms. Changes converge through one DSH writer across mobile and Web; no client theme/URL/query parameter chooses `DIRECT` settlement or unapproved marketplace eligibility. Direct checkout may remain read-only/unavailable until independently admitted.
 

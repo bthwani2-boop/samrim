@@ -5,11 +5,11 @@ import { Pressable, Text, View } from "react-native";
 const descriptions = {
   DIRECT: {
     title: "متجر مباشر",
-    detail: "يصل العملاء إلى صفحة المتجر عبر رابطه المعتمد بعد النشر. لا يُدرج المتجر تلقائيًا في دليل سوق بثواني.",
+    detail: "البيع الخاص المباشر عبر رابط متجرك بعد النشر؛ لا يظهر في سوق بثواني.",
   },
   MARKETPLACE: {
     title: "داخل سوق بثواني",
-    detail: "يمكن أن يظهر المتجر في دليل السوق بعد مراجعة النشر واستيفاء متطلبات الظهور. اختيار النموذج لا ينشر المتجر تلقائيًا.",
+    detail: "البيع الخاص المباشر عبر رابط متجرك، بالإضافة إلى البيع عبر سوق بثواني بعد النشر واستيفاء أهلية السوق.",
   },
 } as const;
 
@@ -23,10 +23,10 @@ export default function StoreRelationChoice({ choices, selectedKey, disabled, on
   return (
     <View style={{ gap: 10 }} testID="merchant-relation-choices">
       <Text accessibilityRole="header" style={{ color: theme.color, fontWeight: "700", fontSize: 18 }}>
-        اختر طريقة ظهور متجرك
+        اختر قنوات البيع لمتجرك
       </Text>
       <Text style={{ color: theme.colorSecondary }}>
-        الخيارات التالية متاحة حاليًا بحسب سياسة التسجيل لدى DSH. اختيار النموذج مستقل عن العمولة والاشتراك والتحصيل والتوصيل؛ تحدد هذه الالتزامات الاتفاقيات والسياسات المعتمدة لكل متجر.
+        إدارة المتجر والمنتجات مشتركة بين الخيارين. أهلية سوق بثواني هي الفرق الأساسي. تحدد الاتفاقيات والسياسات العمولة والاشتراك والتحصيل والدفع والتوصيل.
       </Text>
       {choices.map(choice => {
         const key = `${choice.cityId}:${choice.relation}`;
@@ -48,6 +48,9 @@ export default function StoreRelationChoice({ choices, selectedKey, disabled, on
               {selected ? "◉ " : "○ "}{details.title}
             </Text>
             <Text style={{ color: theme.colorSecondary }}>{details.detail}</Text>
+            <Text style={{ color: theme.colorSecondary }}>
+              استقبال الطلبات ممكن فقط بعد اعتماد النشر وجاهزية الطلب والدفع وطريقة التنفيذ؛ اختيار النوع لا يفعّلها تلقائيًا.
+            </Text>
             <Text style={{ color: theme.colorSecondary }}>
               المدينة: {choice.cityId} · شروط التسجيل: {choice.termsVersion}
             </Text>

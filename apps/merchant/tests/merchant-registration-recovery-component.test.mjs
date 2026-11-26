@@ -388,3 +388,31 @@ for (const [name, latitude, longitude] of [
     assert.ok(allNodes(instance.render()).some(n => n.props?.accessibilityRole === "alert"));
   });
 }
+
+test("Store relation choices express shared private sales and additional marketplace eligibility", async () => {
+  for (const platform of ["web", "android"]) {
+    const registrationOptions = { ...options, choices: [
+      options.choices[0], { ...options.choices[0], relation: "DIRECT" },
+    ] };
+    const h = createHarness({ storage: new Map(), platform, registrationOptions,
+      onCreate() { assert.fail("viewing choices must not create a Store"); } });
+    try {
+      await h.mount();
+      const nodes = allNodes(h.render());
+      const market = nodes.find(n => n.props?.testID === "merchant-relation-MARKETPLACE-sanaa");
+      const direct = nodes.find(n => n.props?.testID === "merchant-relation-DIRECT-sanaa");
+      assert.ok(market && direct);
+      const content = node => allNodes(node).filter(n => n.type === "Text")
+        .flatMap(n => [n.props.children].flat(Infinity)).filter(x => typeof x === "string").join(" ");
+      assert.match(content(market), /البيع الخاص المباشر/);
+      assert.match(content(market), /البيع عبر سوق بثواني/);
+      assert.match(content(direct), /البيع الخاص المباشر/);
+      assert.match(content(direct), /لا يظهر في سوق بثواني/);
+      for (const choice of [market, direct]) {
+        assert.match(content(choice), /بعد النشر/);
+        assert.match(content(choice), /بعد اعتماد/);
+      }
+      assert.equal(h.createCount, 0);
+    } finally { h.close(); }
+  }
+});

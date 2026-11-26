@@ -95,7 +95,7 @@ ENTRY: Customer selects one eligible StoreOffer cart, recipient/address, fulfill
 EXIT: At most **one** DSH Store Order plus one consistent WLT allocation, or an explicitly failed/unknown outcome.
 READBACK: DSH Store Order and immutable price/policy/collection snapshot; WLT funding/hold/settlement state.
 
-DSH quotes current server prices, legal promotion, quantity, Stock, Store publication, city/serviceability, cancellation policy and chosen mode, then rechecks at confirmation. Recipient `OTHER` is private delivery contact, **not** a new human actor or owner of payment. Client totals, expired quotes and URL parameters cannot authorize price or financial collection. A Direct Store's approved link uses the **same** DSH checkout writer as marketplace, not a direct-orders table.
+DSH quotes current server prices, legal promotion, quantity, Stock, Store publication, city/serviceability, cancellation policy and chosen mode, then rechecks at confirmation. Recipient `OTHER` is private delivery contact, **not** a new human actor or owner of payment. Client totals, expired quotes and URL parameters cannot authorize price or financial collection. An approved Direct link for either Store relation uses the **same** DSH checkout writer as marketplace, not a direct-orders table. DSH rejects DIRECT Stores on MARKETPLACE, binds the admitted sales channel to the quote and immutable Order, and WLT applies accepted terms rather than relation-derived collector defaults.
 
 **Fail/recover:** stale cart, changed unit/price, closed Store, unavailable mode, invalid location, expired promotion, insufficient funds, ambiguous provider timeout or replay → owner-based resolution without duplicate Order, extra wallet debit or silent mode change.
 
