@@ -14,6 +14,8 @@ From Surface PowerShell 7 in `D:\samrim` run **`pnpm dev`**. This is the fast de
 
 When Lenovo is unreachable on TCP port 22, the fast command reports a specific `BLOCKED` error instead of running lengthy Docker checks. The preexisting Scheduled Tasks keep retrying their SSH tunnels. Check Lenovo power/network before repeating a failed start; never launch a duplicate watcher or tunnel.
 
+The existing Surface `BThwani Android USB Recovery` logon task directly invokes `dev.ps1 apps open -Mode Android` after its two-minute logon delay. Windows Task Scheduler owns bounded retries (12 attempts after the initial run, one-minute interval, IgnoreNew); the task contains no duplicate port list, HTTP probes or retry loop. The launcher uses the canonical port inventory and a bounded 45-second Android manifest probe (other generic HTTP probes retain seven seconds). Task success proves intent launch, not rendered screens or authenticated journeys.
+
 ## Operator login is a separate Identity acceptance gate
 
 The canonical **WebAuthn/Passkey browser origin is `http://localhost:13000`**, not `127.0.0.1:13000`; the latter redirects to the canonical entry. The URL is forwarded over the existing Surface SSH tunnel to Lenovo's Next.js port `23010`.
