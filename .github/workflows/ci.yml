@@ -139,11 +139,8 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Audit the installed locked JavaScript dependency graph (high and critical fail)
         run: pnpm audit --audit-level high
-      - name: Validate owner OpenAPI 3.1 contracts and reject broken references
-        run: |
-          pnpm --dir services/identity contract
-          pnpm --dir services/dsh contract
-          pnpm --dir services/wlt contract
+      - name: Validate all owner OpenAPI contracts and generated operation parity
+        run: pnpm check:contracts
       - name: Run discovered Feature tests and collect measured coverage
         run: pnpm check:coverage
       - name: Attest JavaScript coverage to the exact committed candidate

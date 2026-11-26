@@ -202,7 +202,16 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
     assert.ok(discovered.has(file), file);
     assert.ok(!jobs.some(job => commands(job).includes(file)), "Duplicate invocation: " + file);
   }
-  for (const owner of owners) assert.ok(commands(app).includes("pnpm --dir services/" + owner + " contract"));
+  // Local and CI consume the same complete owner contract admission command.
+  mandatory(app, runs(app, /^pnpm check:contracts\s*$/));
+  const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+  assert.equal(manifest.scripts["check:contracts"], "node tools/dev/check-openapi.mjs identity dsh wlt");
+  assert.match(manifest.scripts.check, /pnpm run check:contracts/);
+  assert.match(manifest.scripts.check, /--check-discovery/);
+  assert.doesNotMatch(manifest.scripts.check, /node --test|check:coverage|check:test-inclusion|check:security/);
+  assert.equal(Object.hasOwn(manifest.scripts, "check:apps"), false);
+  assert.equal(Object.hasOwn(manifest.scripts, "check:apps:static"), false);
+  assert.doesNotMatch(commands(app), /pnpm --dir services\/\S+ contract|generate-openapi-operations\.mjs --check/);
   for (const pattern of [/pnpm knip:files/, /pnpm check:design/, /pnpm check:apps:source/,
     /pnpm -r --if-present run typecheck/, /expo export --platform web/,
     /pnpm --dir apps\/control-panel build/, /node tools\/dev\/verify-operator-http.mjs/,

@@ -24,7 +24,7 @@ The executable version pins belong to .node-version, .nvmrc, .go-version, packag
     pnpm check:coverage
     pnpm exec nx show projects
 
-For an exact locked installation already present in the pnpm store, add --offline. If an authorized Windows command runner prepends its own Node, select the actual pinned installed executable for that process only; for example, after verifying C:\Program Files\nodejs contains the pin:
+pnpm check is the fast structural/static admission command; it does not run the source test suite. Run the affected owner tests during development and pnpm check:coverage for the full automatically discovered source suite. Use the focused check:security and check:test-inclusion commands only when investigating those owners, not as a second full test route. The same check:contracts command validates all three owner contracts and deterministic generated operation parity locally and in CI. For an exact locked installation already present in the pnpm store, add --offline. If an authorized Windows command runner prepends its own Node, select the actual pinned installed executable for that process only; for example, after verifying C:\Program Files\nodejs contains the pin:
 
     $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 
