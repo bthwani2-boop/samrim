@@ -31,7 +31,7 @@ try {
   compiled = readFileSync(path.join(temp, "addresses-screen.js"), "utf8");
 } finally { rmSync(temp, { recursive: true, force: true }); }
 
-function harness(t) {
+function harness(t, routeId) {
   let index = 0, focus, cleanup, counter = 0;
   const hooks = [], pages = [], writes = [];
   let ownerAddress = null;
@@ -51,7 +51,7 @@ function harness(t) {
     "@bthwani/dsh": { DshPublicError, isCustomerAddressId, validCustomerAddressChange },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "expo-crypto": { randomUUID: () => (++counter).toString(16).padStart(32, "0") },
-    "expo-router": { Link: "Link", useFocusEffect: cb => { focus = cb; }, useLocalSearchParams: () => ({}) },
+    "expo-router": { Link: "Link", useFocusEffect: cb => { focus = cb; }, useLocalSearchParams: () => ({ id: routeId }) },
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     "react-native": { AppState: { addEventListener: () => ({ remove() {} }) }, Platform: { OS: "android" },
@@ -62,7 +62,7 @@ function harness(t) {
     "../stores/public-store-origin": { resolvePublicStoreOrigin: () => "http://127.0.0.1:3202" },
     "./address-editor": { __esModule: true, default: "AddressEditor" },
     "./address-transport": {
-      readVerifiedAddresses(signal) { return new Promise((resolve, reject) => pages.push({ signal, resolve, reject })); },
+      readVerifiedAddresses(signal, actor, cursor) { return new Promise((resolve, reject) => pages.push({ signal, actor, cursor, resolve, reject })); },
       async readVerifiedAddress(_signal, actor, id) {
         if (ownerAddress?.actor === actor && ownerAddress.address.id === id) {
           return { address: ownerAddress.address, expiresAt: Date.now() + 60000 };
@@ -146,6 +146,66 @@ test("uncertain address save reads owner state before exposing an exact retry or
   h.sessionFailure(undefined);
   h.focus(); h.pages.shift().resolve(page("actor-a", [committed])); await settle();
   assert.equal(button(h, "إعادة نفس الحفظ"), undefined, "owner readback confirms prior write; never issue a second one");
+  assert.equal(h.writes.length, 0);
+  h.close();
+});
+
+const addressFixture = (suffix, version = 1) => ({
+  id: "addr-" + suffix.repeat(32), cityId: "sanaa", label: "Home " + suffix,
+  details: "Synthetic address", latitude: 15.3, longitude: 44.2, version,
+});
+
+test("address pagination retains verified actor, cursor and existing entries; denial hides them", async t => {
+  const h = harness(t);
+  const first = addressFixture("a"), second = addressFixture("b");
+  h.focus();
+  h.pages.shift().resolve({ ...page("actor-a", [first]), page: { actorId: "actor-a", items: [first], nextCursor: "next-page" } });
+  await settle();
+  button(h, "المزيد من العناوين").props.onPress();
+  const request = h.pages.shift();
+  assert.equal(request.actor, "actor-a");
+  assert.equal(request.cursor, "next-page");
+  request.resolve({ ...page("actor-a", [second]), page: { actorId: "actor-a", items: [second], nextCursor: "last-page" } });
+  await settle();
+  assert.match(words(h.render()), /Home a/);
+  assert.match(words(h.render()), /Home b/);
+  button(h, "المزيد من العناوين").props.onPress();
+  h.pages.shift().reject(new DshPublicError(403, "FORBIDDEN"));
+  await settle();
+  assert.doesNotMatch(words(h.render()), /Home [ab]/);
+  h.close();
+});
+
+test("direct address route loads owner detail and rejects a missing or foreign address", async t => {
+  const entry = addressFixture("a");
+  const h = harness(t, entry.id);
+  h.owner("actor-a", entry);
+  h.focus(); h.pages.shift().resolve(page("actor-a")); await settle();
+  assert.equal(field(h, "اسم العنوان").props.value, entry.label);
+  h.focus(); h.pages.shift().resolve(page("actor-b")); await settle();
+  assert.equal(field(h, "اسم العنوان"), undefined);
+  assert.match(words(h.render()), /هذا العنوان غير متاح في حسابك/);
+  h.close();
+});
+
+test("map selection changes only draft coordinates; version conflict discards the stale draft", async t => {
+  const h = harness(t);
+  const entry = addressFixture("a", 3);
+  h.focus(); h.pages.shift().resolve(page("actor-a", [entry])); await settle();
+  nodes(h.render()).find(n => n.type === "Pressable" && words(n).includes(entry.label)).props.onPress();
+  nodes(h.render()).find(n => n.props?.testID === "address-location-open").props.onPress();
+  nodes(h.render()).find(n => n.type === "AddressEditor").props.onSelect({ latitude: 15.4, longitude: 44.3 });
+  assert.equal(h.writes.length, 0);
+  assert.equal(field(h, "خط العرض").props.value, "15.4");
+  button(h, "حفظ لدى DSH").props.onPress();
+  const request = h.writes.shift();
+  assert.equal(request.change.expectedVersion, 3);
+  assert.equal(request.change.latitude, 15.4);
+  request.reject(new DshPublicError(409, "ADDRESS_VERSION_CONFLICT"));
+  await settle();
+  assert.equal(field(h, "اسم العنوان"), undefined);
+  h.focus(); h.pages.shift().resolve(page("actor-a", [{ ...entry, version: 4 }])); await settle();
+  assert.equal(field(h, "اسم العنوان"), undefined);
   assert.equal(h.writes.length, 0);
   h.close();
 });
