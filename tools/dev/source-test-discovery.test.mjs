@@ -161,19 +161,7 @@ function coverageFixture(callback) {
       copyFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), target);
     }
     add("packages/design-system/tools/ts-resolver.mjs", "export {};\n");
-    for (const name of [
-      "tools/governance/review-examples.test.mjs",
-      "tools/security/verify-secrets.test.mjs",
-      "tools/mobile/verify-rtl.test.mjs",
-      "tools/mobile/verify-expo-config.test.mjs",
-      "tools/mobile/verify-application-boundaries.test.mjs",
-      "packages/tamagui-config/tools/appearance.test.mjs",
-      "tools/dev/verify-source-execution.test.mjs",
-      "services/dsh/clients/dsh-public-client.test.mjs",
-      "tools/dev/check-openapi.test.mjs",
-      "tools/dev/source-test-discovery.test.mjs",
-      "tools/mobile/verify-native-config.test.mjs",
-    ]) add(name, 'import test from "node:test"; test("fixture pass", () => {});\n');
+    add("sonar-project.properties", readFileSync(new URL("../../sonar-project.properties", import.meta.url), "utf8"));
     add("tools/mobile/verify-app-foundations.mjs", "export const measured = 1;\n");
     add("tools/mobile/define-bthwani-expo-app.cjs", "module.exports = 1;\n");
     add("packages/design-system/src/semantics/themes.ts", "export const measured: number = 1;\n");
@@ -216,8 +204,9 @@ test("failed real Node tests cannot publish partial or stale coverage", () => co
   assert.deepEqual(readdirSync(join(root, "coverage")), [], "temporary output must be cleaned");
 }));
 
-test("incomplete coverage is not published even when the tests pass", () => coverageFixture(({ root, report, run }) => {
+test("incomplete coverage is not published even when the tests pass", () => coverageFixture(({ root, add, report, run }) => {
   rmSync(join(root, "tools/dev/measure.test.mjs"));
+  add("tools/dev/passing.test.mjs", 'import test from "node:test"; test("passes without owner measurement", () => {});');
   const result = run();
   assert.equal(result.status, 1, result.stdout + result.stderr);
   assert.match(result.stderr, /Real test coverage missing required source/);
@@ -257,4 +246,30 @@ test("external measured modules never enter the owner LCOV report", () => covera
   } finally {
     rmSync(external, { recursive: true, force: true });
   }
+}));
+
+test("Sonar scope is the single report boundary; generated and test files are not published", () => coverageFixture(({ add, report, run }) => {
+  add("services/dsh/clients/generated/operations.mjs", "export const generated = 42;");
+  add("services/dsh/clients/owner.mjs", "export const owner = 42;");
+  add("tools/dev/scope.test.mjs", [
+    'import { generated } from "../../services/dsh/clients/generated/operations.mjs";',
+    'import { owner } from "../../services/dsh/clients/owner.mjs";',
+    'import test from "node:test";',
+    'import assert from "node:assert/strict";',
+    'test("actual owner and generated code execute", () => assert.equal(owner, generated));',
+  ].join("\n"));
+  const result = run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const lcov = readFileSync(report, "utf8");
+  assert.match(lcov, /SF:services\/dsh\/clients\/owner\.mjs/);
+  assert.doesNotMatch(lcov, /SF:[^\r\n]*\/generated\//);
+  assert.doesNotMatch(lcov, /SF:[^\r\n]*\.test\.mjs/);
+}));
+
+test("missing or ambiguous scanner scope cannot publish stale or partial evidence", () => coverageFixture(({ add, report, run }) => {
+  add("sonar-project.properties", "sonar.sources=apps,tools\nsonar.sources=services\nsonar.exclusions=**/*.test.*\n");
+  const result = run();
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stderr, /Expected one Sonar scope property/);
+  assert.equal(existsSync(report), false);
 }));

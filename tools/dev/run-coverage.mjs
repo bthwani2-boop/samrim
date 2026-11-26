@@ -1,107 +1,108 @@
 #!/usr/bin/env node
-// Report coverage actually observed by the pinned Node test runner.
-// Sonar owns the acceptance threshold; missing reports or failed tests fail closed.
+// Node executes every admitted source test. Sonar owns analysis scope and threshold.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const report = resolve(root, "coverage/lcov.info");
-if (process.argv.length > 3 || (process.argv[2] && process.argv[2] !== "--check-discovery")) {
-  throw new Error("Usage: node tools/dev/run-coverage.mjs [--check-discovery]");
-}
-// A failed measurement must not leave a previous report available to consumers.
-if (process.argv[2] !== "--check-discovery") rmSync(report, { force: true });
-
-const baselineTests = [
-  "tools/governance/review-examples.test.mjs",
-  "tools/security/verify-secrets.test.mjs",
-  "tools/mobile/verify-rtl.test.mjs",
-  "tools/mobile/verify-expo-config.test.mjs",
-  "tools/mobile/verify-application-boundaries.test.mjs",
-  "packages/tamagui-config/tools/appearance.test.mjs",
-  "tools/dev/verify-source-execution.test.mjs",
-  "services/dsh/clients/dsh-public-client.test.mjs",
-  "tools/dev/check-openapi.test.mjs",
-  "tools/dev/source-test-discovery.test.mjs",
-  "tools/mobile/verify-native-config.test.mjs",
-];
-
-// Every test candidate in supported feature/journey paths is either run or rejected.
-const testFiles = [...new Set([
-  ...baselineTests,
-  ...discoverWorkspaceNodeTests(root),
-])].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
-for (const file of baselineTests) {
-  assert.ok(existsSync(join(root, file)), `Missing baseline test ${file}`);
-}
-
-if (process.argv[2] === "--check-discovery") {
-  console.log(`SOURCE_TEST_DISCOVERY_PASS count=${testFiles.length}`);
+const report = join(root, "coverage/lcov.info");
+const args = process.argv.slice(2);
+assert.ok(args.length === 0 || (args.length === 1 && args[0] === "--check-discovery"),
+  "Usage: node tools/dev/run-coverage.mjs [--check-discovery]");
+const discoveryOnly = args.length === 1;
+if (!discoveryOnly) rmSync(report, { force: true });
+const files = discoverWorkspaceNodeTests(root);
+assert.ok(files.length > 0, "No admitted source tests");
+if (discoveryOnly) {
+  console.log(`SOURCE_TEST_DISCOVERY_PASS count=${files.length}`);
   process.exit(0);
 }
 
+// Use the same authored source scope as the Sonar scanner. This filters whole
+// records only, never counters, and cannot broaden or waive its Quality Gate.
+const settings = readFileSync(join(root, "sonar-project.properties"), "utf8");
+function list(key) {
+  const lines = settings.split(/\r?\n/).filter(line => line.startsWith(key + "="));
+  assert.equal(lines.length, 1, "Expected one Sonar scope property: " + key);
+  const values = lines[0].slice(key.length + 1).split(",").map(value => value.trim());
+  assert.ok(values.every(value => value && !/[\\{}\[\]!]/.test(value)), "Unsupported Sonar scope: " + key);
+  return values;
+}
+const sources = list("sonar.sources");
+assert.ok(sources.every(source => /^[a-zA-Z0-9_-]+(?:\/[a-zA-Z0-9_-]+)*$/.test(source)), "Invalid Sonar source roots");
+const excluded = list("sonar.exclusions");
+const inScope = source => sources.some(dir => source.startsWith(dir + "/")) &&
+  !excluded.some(pattern => posix.matchesGlob(source, pattern));
+
 mkdirSync(dirname(report), { recursive: true });
-const candidateDirectory = mkdtempSync(join(dirname(report), ".lcov-"));
-const candidateReport = join(candidateDirectory, "lcov.info");
+const scratch = mkdtempSync(join(dirname(report), ".lcov-"));
+const candidate = join(scratch, "lcov.info");
 try {
-  const command = [
+  const result = spawnSync(process.execPath, [
     "--experimental-transform-types",
     "--loader", "./packages/design-system/tools/ts-resolver.mjs",
     "--experimental-test-coverage",
     "--test-concurrency=4",
-    // Keep failures visible in CI while writing machine-readable LCOV.
     "--test-reporter=spec",
     "--test-reporter-destination=stdout",
     "--test-reporter=lcov",
-    `--test-reporter-destination=${candidateReport}`,
-    "--test", ...testFiles,
-  ];
-  const testRun = spawnSync(process.execPath, command, { cwd: root, stdio: "inherit" });
-  if (testRun.error) throw testRun.error;
-  assert.equal(testRun.status, 0, "Actual source test suite must pass before reporting coverage");
-  const raw = readFileSync(candidateReport, "utf8");
-  // Node can measure tooling and imported fixtures outside the checkout.
-  // Drop entire external records, not individual counters or owner sources.
+    `--test-reporter-destination=${candidate}`,
+    "--test", ...files,
+  ], { cwd: root, stdio: "inherit" });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, "Actual source test suite must pass before reporting coverage");
+
   const records = [];
-  let externalRecords = 0;
+  const measured = new Set();
+  let external = 0, outsideScope = 0, hit = 0, found = 0;
+  const raw = readFileSync(candidate, "utf8");
+  assert.ok(raw.trimEnd().endsWith("end_of_record"), "Incomplete LCOV report");
   for (const record of raw.split(/^end_of_record\r?$/m)) {
     const lines = record.split(/\r?\n/).filter(Boolean);
-    if (lines.length === 0) continue;
+    if (!lines.length) continue;
     const sourceLines = lines.filter(line => line.startsWith("SF:"));
     assert.equal(sourceLines.length, 1, "Invalid LCOV source record");
     const source = relative(root, resolve(root, sourceLines[0].slice(3).replaceAll("\\", "/"))).replaceAll("\\", "/");
     if (isAbsolute(source) || source === ".." || source.startsWith("../")) {
-      externalRecords++;
+      external++;
       continue;
     }
     assert.ok(source, "Invalid LCOV source path");
-    records.push(lines.map(line => line.startsWith("SF:") ? `SF:${source}` : line).join("\n"));
-  }
-  const lcov = records.map(record => `${record}\nend_of_record\n`).join("");
-  console.log(`LCOV_EXTERNAL_RECORDS_EXCLUDED count=${externalRecords}`);
-  const sources = new Set();
-  let linesHit = 0;
-  let linesFound = 0;
-  for (const line of lcov.split("\n")) {
-    if (line.startsWith("SF:")) sources.add(line.slice(3));
-    if (line.startsWith("LH:")) linesHit += Number(line.slice(3));
-    if (line.startsWith("LF:")) linesFound += Number(line.slice(3));
+    if (!inScope(source)) {
+      outsideScope++;
+      continue;
+    }
+    assert.ok(!measured.has(source), "Duplicate LCOV source: " + source);
+    measured.add(source);
+    const count = prefix => {
+      const entries = lines.filter(line => line.startsWith(prefix));
+      assert.equal(entries.length, 1, "Missing LCOV counter: " + source + " " + prefix);
+      const value = entries[0].slice(prefix.length);
+      assert.match(value, /^\d+$/, "Invalid LCOV counter: " + source);
+      const number = Number(value);
+      assert.ok(Number.isSafeInteger(number), "Unsafe LCOV counter: " + source);
+      return number;
+    };
+    const covered = count("LH:"), total = count("LF:");
+    assert.ok(covered <= total, "Invalid actual coverage: " + source);
+    hit += covered;
+    found += total;
+    records.push(lines.map(line => line.startsWith("SF:") ? "SF:" + source : line).join("\n"));
   }
   for (const source of [
     "tools/mobile/verify-app-foundations.mjs",
     "tools/mobile/define-bthwani-expo-app.cjs",
     "packages/design-system/src/semantics/themes.ts",
-  ]) {
-    assert.ok(sources.has(source), `Real test coverage missing required source: ${source}`);
-  }
-  assert.ok(linesFound > 0 && linesHit > 0 && linesHit <= linesFound, "Invalid actual coverage");
-  writeFileSync(candidateReport, lcov, "utf8");
-  renameSync(candidateReport, report);
-  console.log(`REAL_SOURCE_LCOV_PASS files=${sources.size} hit=${linesHit} lines=${linesFound} measured_percent=${(100 * linesHit / linesFound).toFixed(1)} other_sources_not_assumed_covered=true`);
+  ]) assert.ok(measured.has(source), "Real test coverage missing required source: " + source);
+  assert.ok(found > 0 && hit > 0 && hit <= found, "Invalid actual coverage");
+  writeFileSync(candidate, records.map(record => record + "\nend_of_record\n").join(""), "utf8");
+  renameSync(candidate, report);
+  console.log(`LCOV_EXTERNAL_RECORDS_EXCLUDED count=${external}`);
+  console.log(`LCOV_SONAR_SCOPE_RECORDS_EXCLUDED count=${outsideScope}`);
+  console.log(`REAL_SOURCE_LCOV_PASS files=${measured.size} hit=${hit} lines=${found} measured_percent=${(100 * hit / found).toFixed(1)} other_sources_not_assumed_covered=true`);
 } finally {
-  rmSync(candidateDirectory, { recursive: true, force: true });
+  rmSync(scratch, { recursive: true, force: true });
 }
