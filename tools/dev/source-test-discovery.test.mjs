@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { discoverNodeSourceTests, discoverWorkspaceNodeTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
+import { discoverNodeSourceTests, discoverWindowsPlatformTests, discoverWorkspaceNodeTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
 
 function fixture(callback) {
   const root = mkdtempSync(join(tmpdir(), "bthwani-test-inclusion-"));
@@ -219,6 +219,10 @@ test("one inventory partitions runtime tests from source and project feedback", 
   assert.match(passedRuntime.stdout, /OPERATOR_RUNTIME_TESTS_PASS files=1/);
   assert.doesNotMatch(passedRuntime.stdout, /source only/);
   assert.equal(readFileSync(report, "utf8"), measured);
+}));
+
+test("Windows platform admission fails closed when any required suite is missing", () => fixture(({ root }) => {
+  assert.throws(() => discoverWindowsPlatformTests(root), /WINDOWS_PLATFORM_TEST_MISSING/);
 }));
 
 test("failed test discovery cannot leave previous coverage available", () => coverageFixture(({ add, report, run }) => {

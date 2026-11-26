@@ -7,7 +7,7 @@ import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, u
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureSourceSnapshot } from "./source-snapshot.mjs";
-import { discoverNodeSourceTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
+import { discoverNodeSourceTests, discoverWindowsPlatformTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const coverage = join(root, "coverage");
@@ -60,6 +60,15 @@ function operatorRuntimeTests() {
   runNode(["--test-concurrency=1", "--test", ...files]);
   assertUnchanged(before, discoverWorkspaceTestSuites(root).operatorRuntime);
   console.log("OPERATOR_RUNTIME_TESTS_PASS files=" + files.length);
+}
+
+function windowsPlatformTests() {
+  assert.equal(process.platform, "win32", "Windows platform tests require Windows");
+  const files = discoverWindowsPlatformTests(root);
+  const before = admittedCandidate(files);
+  runNode(["--test-concurrency=2", "--test", ...files]);
+  assertUnchanged(before, discoverWindowsPlatformTests(root));
+  console.log("WINDOWS_PLATFORM_TESTS_PASS files=" + files.length + " powershell_coverage=NOT_MEASURED graphify_optional_integration=SEPARATE");
 }
 
 // The atomic directory is both the exclusive reservation and the only work
@@ -194,8 +203,8 @@ function publishCoverage() {
 }
 
 const args = process.argv.slice(2);
-assert.ok(args.length === 0 || (args.length === 1 && ["--check-discovery", "--project", "--operator-runtime"].includes(args[0])),
-  "Usage: node tools/dev/run-coverage.mjs [--check-discovery | --project (from project root) | --operator-runtime]");
+assert.ok(args.length === 0 || (args.length === 1 && ["--check-discovery", "--project", "--operator-runtime", "--windows-platform"].includes(args[0])),
+  "Usage: node tools/dev/run-coverage.mjs [--check-discovery | --project (from project root) | --operator-runtime | --windows-platform]");
 switch (args[0]) {
   case "--check-discovery": {
     const suites = discoverWorkspaceTestSuites(root);
@@ -209,6 +218,9 @@ switch (args[0]) {
     break;
   case "--operator-runtime":
     operatorRuntimeTests();
+    break;
+  case "--windows-platform":
+    windowsPlatformTests();
     break;
   default:
     publishCoverage();

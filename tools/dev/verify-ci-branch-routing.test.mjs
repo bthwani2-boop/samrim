@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
 import { admitCoverageEvidence, publishCoverageEvidence } from "./ci-coverage-evidence.mjs";
-import { discoverWorkspaceNodeTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
+import { discoverWindowsPlatformTests, discoverWorkspaceNodeTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
 
 // Workflow job IDs and published check contexts are contracts. Step display
 // names, YAML layout and comments are not. Exercise the actual parsed commands.
@@ -16,7 +16,7 @@ const workflow = name => YAML.parse(readFileSync(path.join(root, ".github", "wor
 const ci = workflow("ci.yml");
 const go = workflow("go-quality.yml");
 const { workspace_validation: workspace, application_quality: app, development_feedback: feedback,
-  dependency_security: audit, backend_quality: backend, required_ci: required, sonar } = ci.jobs;
+  dependency_security: audit, backend_quality: backend, windows_platform: windows, required_ci: required, sonar } = ci.jobs;
 const goQuality = go.jobs["go-quality"];
 const postgres = go.jobs["owner-postgres-integration"];
 const owners = ["identity", "dsh", "wlt"];
@@ -130,6 +130,9 @@ test("canonical event topology retains protected checks and independent periodic
   }
   sameExpression(app.if, full);
   sameExpression(backend.if, full);
+  sameExpression(windows.if, full);
+  assert.equal(windows.needs, "workspace_validation");
+  assert.equal(windows["runs-on"], "windows-2025");
   sameExpression(audit.if, "github.event_name == 'schedule'");
   sameExpression(ci.jobs.route.if, "github.event_name != 'schedule'");
   assert.equal(workspace.needs, "route");
@@ -142,7 +145,7 @@ test("canonical event topology retains protected checks and independent periodic
   sameExpression(required.name, "github.event_name == 'pull_request' && 'fast-guard' || 'full-ci'");
   sameExpression(sonar.name, "github.event_name == 'pull_request' && 'SonarQube Cloud Quality Gate' || 'SonarQube main analysis'");
   assert.equal(backend.uses, "./.github/workflows/go-quality.yml");
-  assert.deepEqual(new Set(required.needs), new Set(["workspace_validation", "application_quality", "backend_quality"]));
+  assert.deepEqual(new Set(required.needs), new Set(["workspace_validation", "application_quality", "backend_quality", "windows_platform"]));
   assert.deepEqual(new Set(sonar.needs), new Set(["application_quality", "backend_quality"]));
   assert.equal(ci.concurrency["cancel-in-progress"], true);
   assert.match(ci.concurrency.group, /github\.ref/);
@@ -162,7 +165,7 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   }
   assert.equal(ci.permissions.contents, "read");
   assert.equal(go.permissions.contents, "read");
-  for (const job of [app, audit, feedback, sonar]) {
+  for (const job of [app, audit, feedback, sonar, windows]) {
     const store = one(job, step => step.id === "pnpm-store", "pinned package store");
     const cache = one(job, step => action(step, "actions/cache"), "package-store cache");
     const install = runs(job, /pnpm install --frozen-lockfile --ignore-scripts/);
@@ -229,6 +232,21 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   mandatory(goQuality, runs(goQuality, /node tools\/dev\/check-go\.mjs --ci --sonar-report/));
   mandatory(postgres, runs(postgres, /tests\/infra\/verify-owner-postgres-ci\.sh/));
   mandatory(postgres, runs(postgres, /tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/));
+});
+
+test("Windows acceptance runs the existing admitted platform suites and cannot be skipped by the required gate", () => {
+  const step = runs(windows, /^node tools\/dev\/run-coverage\.mjs --windows-platform\s*$/);
+  mandatory(windows, step);
+  const store = one(windows, item => item.id === "pnpm-store", "Windows package store");
+  assert.equal(store.shell, "pwsh");
+  assert.match(command(store), /\$PSVersionTable\.PSVersion\.Major -ne 7/);
+  order(windows, store, runs(windows, /pnpm install --frozen-lockfile --ignore-scripts/), step);
+  const platformFiles = discoverWindowsPlatformTests(root);
+  const source = new Set(discoverWorkspaceTestSuites(root).source);
+  assert.equal(platformFiles.length, 5);
+  assert.ok(platformFiles.every(file => source.has(file)));
+  assert.doesNotMatch(commands(app), /--windows-platform/);
+  assert.ok(required.needs.includes("windows_platform"));
 });
 
 test("native Nx selects affected tasks or a full fallback without running merge-only suites", () => {

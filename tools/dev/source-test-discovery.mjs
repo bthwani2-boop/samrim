@@ -105,6 +105,23 @@ export function discoverWorkspaceNodeTests(root) {
   return roots.flatMap(area => scanner.scan(join(scanner.root, area))).sort();
 }
 
+// Linux retains portable source coverage. These same suites also exercise
+// native Windows semantics which cannot be proved by a Linux runner.
+const windowsPlatformOwners = Object.freeze([
+  "apps/customer/tests/customer-cart-docker-web.test.mjs",
+  "tools/dev/Start-App-memory.test.mjs",
+  "tools/dev/dev-powershell.test.mjs",
+  "tools/dev/graphify-local.test.mjs",
+  "tools/dev/sync-lenovo-source.test.mjs",
+]);
+export function discoverWindowsPlatformTests(root) {
+  const source = new Set(discoverWorkspaceTestSuites(root).source);
+  for (const file of windowsPlatformOwners) {
+    if (!source.has(file)) throw new Error("WINDOWS_PLATFORM_TEST_MISSING " + file);
+  }
+  return [...windowsPlatformOwners];
+}
+
 export function discoverWorkspaceTestSuites(root) {
   return partitionTests(discoverWorkspaceNodeTests(root));
 }

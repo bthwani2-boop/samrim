@@ -296,6 +296,46 @@ jobs:
       - name: Audit all JavaScript dependencies (high and critical fail)
         run: pnpm audit --audit-level high
 
+  windows_platform:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    name: Windows platform behavior and PowerShell acceptance
+    needs: workspace_validation
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Use repository-pinned Node 24
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Require PowerShell 7 and resolve locked dependency store
+        id: pnpm-store
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($PSVersionTable.PSVersion.Major -ne 7) { throw 'PowerShell 7 required' }
+          $PSVersionTable.PSVersion.ToString()
+          corepack enable pnpm
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $store = pnpm store path --silent
+          if ($LASTEXITCODE -ne 0 -or !$store) { throw 'Package store unavailable' }
+          "path=$store" >> $env:GITHUB_OUTPUT
+      - name: Cache verified package-store inputs only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run native Windows behavior through the existing Node runner
+        run: node tools/dev/run-coverage.mjs --windows-platform
+
   backend_quality:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     needs: workspace_validation
@@ -304,7 +344,7 @@ jobs:
   required_ci:
     # Keep the protected PR context distinct from feedback and manual runs.
     name: ${{ github.event_name == 'pull_request' && 'fast-guard' || 'full-ci' }}
-    needs: [workspace_validation, application_quality, backend_quality]
+    needs: [workspace_validation, application_quality, backend_quality, windows_platform]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -317,6 +357,7 @@ jobs:
           WORKSPACE_RESULT: ${{ needs.workspace_validation.result }}
           APPLICATION_RESULT: ${{ needs.application_quality.result }}
           BACKEND_RESULT: ${{ needs.backend_quality.result }}
+          WINDOWS_RESULT: ${{ needs.windows_platform.result }}
         shell: bash
         run: |
           set -euo pipefail
@@ -328,7 +369,7 @@ jobs:
             push) test "$CI_REF" = refs/heads/main ;;
             *) exit 1 ;;
           esac
-          for result in "$WORKSPACE_RESULT" "$APPLICATION_RESULT" "$BACKEND_RESULT"; do
+          for result in "$WORKSPACE_RESULT" "$APPLICATION_RESULT" "$BACKEND_RESULT" "$WINDOWS_RESULT"; do
             test "$result" = success
           done
       - name: State verification boundary
