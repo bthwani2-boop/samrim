@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Source-version preservation guard for Stage 4. This is static contract
+// Application identity and compatibility guard. This is static contract
 // verification, not Expo bundling, native development-build or device proof.
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
@@ -34,7 +34,7 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   assert.equal(current.dependencies["@bthwani/tamagui-config"], "workspace:*");
   for (const [kind, original] of Object.entries({dependencies: source.dependencies, devDependencies: source.devDependencies})) {
     for (const [dependency, version] of Object.entries(original ?? {})) {
-      if (dependency.startsWith("@bthwani/")) continue; // Deferred owner clients, not false mocks.
+      if (dependency.startsWith("@bthwani/")) continue; // Workspace-owned clients have their own contract checks.
       if (sdkManaged(dependency)) continue; // Expo SDK validation replaces donor pin check.
       if (kind === "dependencies" && retiredDirectLibraries.has(dependency) && !Object.hasOwn(current[kind], dependency)) continue;
       assert.equal(current[kind][dependency], version, `${name} drift in ${kind} ${dependency}`);
@@ -96,17 +96,17 @@ for (const [name, [slug, packageId, scheme, projectId]] of Object.entries(expect
   // Progressive feature modules are allowed under src/features. Cross-owner imports,
   // private package internals and duplicate route roots remain checked by
   // verify-application-boundaries.mjs; a folder name is not an admission gate.
-  // Real progressive Home screens may replace the Stage-4 preview. The shared
+  // Current Home screens may use their own presentation. The shared
   // theme/runtime boundary remains enforced by the app layout and import scanner.
   const layout = read(`${rel}/app/_layout.tsx`);
-  assert.ok(layout.includes('from "@bthwani/tamagui-config/preview"'), name + " must use the shared Stage-4 appearance host");
+  assert.ok(layout.includes('from "@bthwani/tamagui-config/preview"'), name + " must use the shared appearance host");
   assert.ok(layout.includes(`"bthwani.stage4.${name}.theme"`), name + " appearance persistence must remain app-scoped");
 }
 const oldPanel=donor.apps["control-panel"]?.manifest;
 const newPanel=json("apps/control-panel/package.json");
 for(const kind of ["dependencies","devDependencies"]) {
   for(const [dep,version] of Object.entries(oldPanel?.[kind] ?? {})) {
-    if(dep.startsWith("@bthwani/")||dep==="xlsx"||dep==="next")continue; // features deferred; Next security upgrade is pinned and asserted below
+    if(dep.startsWith("@bthwani/")||dep==="xlsx"||dep==="next")continue; // workspace-owned clients and separately governed dependencies; Next pin is asserted below
     if (kind === "dependencies" && retiredDirectLibraries.has(dep) && !Object.hasOwn(newPanel[kind], dep)) continue;
     assert.equal(newPanel[kind][dep],version,"Operator dependency drift "+dep);
     external++;
@@ -116,7 +116,7 @@ assert.equal(newPanel.dependencies.antd,"6.6.7");
 assert.equal(newPanel.dependencies.next,"16.4.5");
 assert.equal(json("packages/tamagui-config/package.json").dependencies.tamagui,"3.3.1");
 assert.equal(json("packages/tamagui-config/package.json").dependencies["@tamagui/config"],"3.3.1");
-// Stage-4 renderer-boundary evidence: no second numeric token authority.
+// Renderer-boundary evidence: no second numeric token authority.
 const designPackage = json("packages/design-system/package.json");
 const rendererPackage = json("packages/tamagui-config/package.json");
 assert.equal(designPackage.exports["./theme"], "./src/semantics/themes.ts");
@@ -138,4 +138,4 @@ for(const app of ["customer","merchant","captain"]) {
   const cfg=read(`apps/${app}/eas.json`);
   assert.ok(cfg.includes('"version": "24.7.0"'),"Original EAS CLI pin changed");
 }
-console.log(`STAGE4_SOURCE_VERSIONS_AND_IDENTITIES_PASS apps=3 operator=1 dependency_assertions=${external} native_build=NOT_RUN`);
+console.log(`APPLICATION_IDENTITY_AND_COMPATIBILITY_PASS apps=3 operator=1 dependency_assertions=${external} native_build=NOT_RUN`);
