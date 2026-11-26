@@ -8,6 +8,23 @@ STATUS: CURATION_IN_PROGRESS
 
 This is **not** a second Product roadmap, governance directory, design system, CI authority, or record that an external product is safe or suitable. New durable decisions belong only in `governance/`, execution behavior belongs in `AGENTS.md`, and dated historical evidence remains in `docs/reference/`; current implementation truth comes from the owner contracts, tests and runtime.
 
+## Engineering practice references
+
+Use these external sources to improve the existing owner-backed engineering system. Links and scope were checked 2026-11-26; revalidate the applicable edition or guidance before material adoption. They are not parallel governance, dependency approvals, compliance certifications or proof of implementation.
+
+| Source | Applicable practice | Existing owner / enforcement |
+| --- | --- | --- |
+| [OpenAI — Harness engineering](https://openai.com/index/harness-engineering/) | Discoverable agent context, executable constraints and feedback loops | [Engineering](../../governance/engineering.md), [AGENTS](../../AGENTS.md), existing checks and CI |
+| [Martin Fowler — Harness engineering for coding agent users](https://martinfowler.com/articles/harness-engineering.html) | Guidance before changes, sensors after changes, limits of automated detection | Engineering, existing specialist skills and regression tests |
+| [GitHub Spec Kit — Agentic SDLC](https://github.github.com/spec-kit/guides/agentic-sdlc.html) | Risk-proportionate specification, implementation, verification and repair | Existing .specify/ integration and change-scoped specs; AGENTS controls execution |
+| [Anthropic — AI-native SDLC playbook](https://claude.com/resources/articles/the-ai-native-sdlc-playbook) | Traceable stage handoffs, fast feedback, bounded parallel work, agent evaluations and incident follow-up | Existing work records, specs, AGENTS, tests and CI; no separate Claude workflow required |
+| [IEEE SWEBOK v4.0a](https://www.computer.org/education/bodies-of-knowledge/software-engineering) | Requirements, design, construction, quality and maintenance knowledge | Engineering and applicable domain owners |
+| [Building Evolutionary Architectures, 2nd ed.](https://www.oreilly.com/library/view/building-evolutionary-architectures/9781492097532/) | Incremental architectural evolution and executable fitness functions | [Architecture](../../governance/architecture.md), [placement](../../REPOSITORY-STRUCTURE.md), existing boundary guards |
+| [Designing Data-Intensive Applications, 2nd ed.](https://www.oreilly.com/library/view/designing-data-intensive-applications/9781098119058/) | Consistency, transactions, concurrency and distributed failure recovery | Architecture, [finance](../../governance/finance.md), owner contracts, SQL and tests |
+| [OWASP ASVS](https://asvs.owasp.org/), [OWASP MASVS](https://owasp.org/www-project-mobile-app-security/), [NIST SSDF 1.1](https://csrc.nist.gov/pubs/sp/800/218/final) | Application/mobile security requirements and secure development practices | [Safety](../../governance/safety.md), existing security checks and owner authorization tests |
+| [Google SRE books](https://sre.google/books/) | Reliability, operational feedback, incident response and recovery | Existing development/runtime tooling, safety and engineering |
+| [DORA AI Capabilities Model](https://dora.dev/ai/capabilities-model/report/) | Measure delivery outcomes, stability and conditions for effective AI use | Engineering and existing delivery/incident evidence; no new metric store by default |
+
 ## Donor governance section provenance (not approval)
 
 [The pinned 14-owner donor heading census](DONOR-GOVERNANCE-SECTION-CENSUS.md) records 340 original Markdown section headings with source Git blob IDs and line numbers, paired with 138 headings in the new drafts. Only one source heading matches a draft heading literally; this is **not** a missing-feature count or proof of semantic parity. Every substantive source rule and all later approvals still require decision-by-decision review before governance cutover.
