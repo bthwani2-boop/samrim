@@ -6,9 +6,13 @@ import { test } from "node:test";
 import { discoverModules, listGoFiles, parseArgs, parseVersion, resolvePinnedGo } from "./check-go.mjs";
 
 test("Go CLI modes and service allowlist reject unknown arguments", () => {
-  assert.deepEqual(parseArgs([]), { mode: "quick", moduleName: undefined });
-  assert.deepEqual(parseArgs(["--ci", "--module=identity"]), { mode: "ci", moduleName: "identity" });
-  assert.deepEqual(parseArgs(["--coverage", "--module=dsh"]), { mode: "coverage", moduleName: "dsh" });
+  assert.deepEqual(parseArgs([]), { mode: "quick", moduleName: undefined, sonarReport: false });
+  assert.deepEqual(parseArgs(["--ci", "--module=identity"]), { mode: "ci", moduleName: "identity", sonarReport: false });
+  assert.deepEqual(parseArgs(["--coverage", "--module=dsh"]), { mode: "coverage", moduleName: "dsh", sonarReport: false });
+  assert.deepEqual(parseArgs(["--ci", "--sonar-report"]), { mode: "ci", moduleName: undefined, sonarReport: true });
+  assert.deepEqual(parseArgs(["--coverage", "--sonar-report"]), { mode: "coverage", moduleName: undefined, sonarReport: true });
+  assert.throws(() => parseArgs(["--sonar-report"]), /Sonar report requires/);
+  assert.throws(() => parseArgs(["--ci", "--sonar-report", "--module=dsh"]), /Sonar report requires/);
   assert.throws(() => parseArgs(["--install"]), /Unknown Go check argument/);
   assert.throws(() => parseArgs(["--module=payments"]), /Unknown Go service/);
 });

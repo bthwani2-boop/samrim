@@ -13,6 +13,7 @@ on:
   pull_request:
     branches:
       - main
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
@@ -88,6 +89,26 @@ jobs:
         run: pnpm check:test-inclusion
       - name: Run discovered Feature tests and collect measured coverage
         run: pnpm check:coverage
+      - name: Bind JavaScript coverage to the tested source tree
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          git diff --quiet HEAD --
+          test -s coverage/lcov.info
+          git rev-parse 'HEAD^{tree}' > coverage/tree.txt
+      - name: Publish measured JavaScript coverage
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sonar-js
+          path: |
+            coverage/lcov.info
+            coverage/tree.txt
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
       - name: Reject orphaned JavaScript and TypeScript files
         run: pnpm knip:files
       - name: Validate design, native config, source ownership, appearance races and all app types
@@ -130,7 +151,7 @@ jobs:
     uses: ./.github/workflows/dependency-nx-safety.yml
 
   go_pr:
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     uses: ./.github/workflows/go-quality.yml
 
   fast_guard:
@@ -168,22 +189,24 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           CI_EVENT: ${{ github.event_name }}
+          CI_REF: ${{ github.ref }}
           FOUNDATION_RESULT: ${{ needs.foundation.result }}
           PRESENTATION_RESULT: ${{ needs.presentation.result }}
           DEPENDENCY_RESULT: ${{ needs.dependency_pr.result }}
           GO_RESULT: ${{ needs.go_pr.result }}
         run: |
           node --input-type=module <<'CI_GATE'
-          const { CI_EVENT, FOUNDATION_RESULT, PRESENTATION_RESULT, DEPENDENCY_RESULT, GO_RESULT } = process.env;
+          const { CI_EVENT, CI_REF, FOUNDATION_RESULT, PRESENTATION_RESULT, DEPENDENCY_RESULT, GO_RESULT } = process.env;
           if (!["pull_request", "push", "workflow_dispatch"].includes(CI_EVENT)) {
             throw new Error("Unexpected CI event");
           }
           const ownerExpected = CI_EVENT === "pull_request" ? "success" : "skipped";
+          const goExpected = CI_EVENT === "pull_request" || (CI_EVENT === "push" && CI_REF === "refs/heads/main") ? "success" : "skipped";
           const checks = [
             ["foundation", FOUNDATION_RESULT, "success"],
             ["presentation", PRESENTATION_RESULT, "success"],
             ["dependency_pr", DEPENDENCY_RESULT, ownerExpected],
-            ["go_pr", GO_RESULT, ownerExpected],
+            ["go_pr", GO_RESULT, goExpected],
           ];
           for (const [job, result, expected] of checks) {
             if (result !== expected) {
@@ -200,5 +223,113 @@ jobs:
           node tools/security/verify-secrets.mjs
       - name: State the scoped check boundary
         run: |
-          echo 'fast-guard: foundation and presentation; main PR also requires Go, disposable owner PostgreSQL and dependency/Nx'
+          echo 'fast-guard: foundation and presentation; main PR requires Go, disposable owner PostgreSQL and dependency/Nx; main push also requires Go and owner PostgreSQL'
           echo 'NOT_RUN: full business journey, protected SQL upgrade, device, financial and security E2E'
+
+  sonar:
+    # Retain the exact required GitHub Actions check name.
+    name: SonarQube Cloud Quality Gate
+    needs: [presentation, go_pr]
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require trusted source and successful coverage producers
+        env:
+          PRESENTATION_RESULT: ${{ needs.presentation.result }}
+          GO_RESULT: ${{ needs.go_pr.result }}
+          TRUSTED_SOURCE: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TRUSTED_SOURCE" = true
+          test "$PRESENTATION_RESULT" = success
+          test "$GO_RESULT" = success
+      - name: Checkout exact PR source and base history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download JavaScript coverage from this CI run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sonar-js
+          path: ${{ runner.temp }}/sonar-js
+      - name: Download Go coverage from this CI run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sonar-go
+          path: ${{ runner.temp }}/sonar-go
+      - name: Download PostgreSQL coverage from this CI run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sonar-postgres
+          path: ${{ runner.temp }}/sonar-postgres
+      - name: Admit coverage only for the exact analyzed source tree
+        id: coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          js="$RUNNER_TEMP/sonar-js"
+          go="$RUNNER_TEMP/sonar-go"
+          pg="$RUNNER_TEMP/sonar-postgres"
+          for dir in "$js" "$go" "$pg"; do
+            test -s "$dir/tree.txt"
+          done
+          tree="$(cat "$js/tree.txt")"
+          [[ "$tree" =~ ^[a-f0-9]{40}$ ]]
+          test "$(cat "$go/tree.txt")" = "$tree"
+          test "$(cat "$pg/tree.txt")" = "$tree"
+          test -s "$js/lcov.info"
+          for service in identity dsh wlt; do test -s "$go/$service-go.out"; done
+          shopt -s nullglob
+          profiles=("$pg"/*.out)
+          test "${#profiles[@]}" -gt 0
+          for profile in "${profiles[@]}"; do test -s "$profile"; done
+          if [[ "$tree" == "$(git rev-parse 'HEAD^{tree}')" ]]; then
+            mkdir -p coverage/owner-postgres
+            cp "$js/lcov.info" coverage/lcov.info
+            for service in identity dsh wlt; do cp "$go/$service-go.out" coverage/; done
+            cp "${profiles[@]}" coverage/owner-postgres/
+            echo 'reuse=true' >> "$GITHUB_OUTPUT"
+          else
+            # Main may have advanced since the PR branch. Preserve the tested
+            # merge candidate and separately measure the actual PR source.
+            echo 'reuse=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Use repository-pinned Node 24
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install locked dependencies for source analysis
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Use repository-pinned Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          check-latest: false
+          cache: false
+      - name: Measure PR source only when the tested tree differs
+        if: ${{ steps.coverage.outputs.reuse == 'false' }}
+        env:
+          GOTOOLCHAIN: local
+          GOWORK: 'off'
+        run: |
+          set -euo pipefail
+          pnpm check:coverage
+          node tools/dev/check-go.mjs --coverage --sonar-report
+          bash tests/infra/test-owner-postgres-output.sh
+          bash tests/infra/verify-owner-postgres-ci.sh --coverage
+      - name: Analyze using existing Sonar project and enforce its Quality Gate
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        with:
+          args: >-
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+            ${{ github.event_name == 'pull_request' && format('-Dsonar.pullrequest.key={0} -Dsonar.pullrequest.branch={1} -Dsonar.pullrequest.base={2}', github.event.pull_request.number, github.event.pull_request.head.ref, github.event.pull_request.base.ref) || '-Dsonar.branch.name=main' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

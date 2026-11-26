@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import test from "node:test";
 
 const root = new URL("../../", import.meta.url);
@@ -29,6 +31,8 @@ for (const file of workflows) {
   test(file + " handles future branches and excludes historical archives", () => {
     const { content, push, pr } = events(file);
     assert.match(push, /^    branches:\n      - '\*\*'\n      - '!archive\/\*\*'\n      - '!41'$/m);
+    if (file.endsWith("/go-quality.yml")) assert.match(push, /^      - '!main'$/m);
+    else assert.doesNotMatch(push, /^      - '!main'$/m);
     assert.doesNotMatch(push, /^    branches-ignore:/m);
     assert.doesNotMatch(push, /refoundation\/clean-house-20261112/);
     if (file.endsWith("/ci.yml")) {
@@ -184,7 +188,9 @@ test("main PR must invoke all owner and dependency checks through required fast-
     assert.ok(index >= 0, "Missing required reusable job: " + job);
     assert.equal(lines.lastIndexOf(header), index, "Duplicate reusable job: " + job);
     assert.deepEqual(lines.slice(index + 1, index + 3), [
-      "    if: ${{ github.event_name == 'pull_request' }}",
+      job === "go_pr"
+        ? "    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}"
+        : "    if: ${{ github.event_name == 'pull_request' }}",
       "    uses: ./" + file,
     ]);
     const called = readFileSync(new URL(file, root), "utf8").split(/^permissions:/m)[0];
@@ -200,6 +206,7 @@ test("required gate fails closed for missing, skipped, cancelled or failed main 
   assert.ok(script, "required gate must expose executable predecessor decision");
   const pass = {
     CI_EVENT: "pull_request",
+    CI_REF: "refs/pull/195/merge",
     FOUNDATION_RESULT: "success",
     PRESENTATION_RESULT: "success",
     DEPENDENCY_RESULT: "success",
@@ -218,10 +225,75 @@ test("required gate fails closed for missing, skipped, cancelled or failed main 
     }
   }
   for (const event of ["push", "workflow_dispatch"]) {
-    const scoped = { ...pass, CI_EVENT: event, DEPENDENCY_RESULT: "skipped", GO_RESULT: "skipped" };
+    const scoped = { ...pass, CI_EVENT: event, CI_REF: "refs/heads/development", DEPENDENCY_RESULT: "skipped", GO_RESULT: "skipped" };
     assert.equal(run(scoped).status, 0);
     assert.equal(run({ ...scoped, FOUNDATION_RESULT: "failure" }).status, 1);
     assert.equal(run({ ...scoped, GO_RESULT: "failure" }).status, 1);
   }
+  const mainPush = { ...pass, CI_EVENT: "push", CI_REF: "refs/heads/main", DEPENDENCY_RESULT: "skipped" };
+  assert.equal(run(mainPush).status, 0);
+  assert.equal(run({ ...mainPush, GO_RESULT: "skipped" }).status, 1);
   assert.equal(run({ ...pass, CI_EVENT: "unexpected" }).status, 1);
+});
+
+test("Sonar uses one same-run coverage handoff and retains the required check", () => {
+  const { content } = events(workflows[0]);
+  const go = readFileSync(new URL(workflows[2], root), "utf8");
+  assert.equal(existsSync(new URL(".github/workflows/sonar-quality.yml", root)), false);
+  assert.match(content, /^    name: SonarQube Cloud Quality Gate$/m);
+  assert.match(content, /^    needs: \[presentation, go_pr\]$/m);
+  for (const [producer, artifact] of [[content, "sonar-js"], [go, "sonar-go"], [go, "sonar-postgres"]]) {
+    assert.ok(producer.includes("name: " + artifact));
+    assert.ok(content.includes("name: " + artifact));
+    assert.ok(producer.includes("test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\""));
+  }
+  assert.ok(content.includes("test \"$TRUSTED_SOURCE\" = true"));
+  assert.ok(content.includes("test \"$PRESENTATION_RESULT\" = success"));
+  assert.ok(content.includes("test \"$GO_RESULT\" = success"));
+  assert.ok(content.includes("steps.coverage.outputs.reuse == 'false'"));
+  assert.ok(go.includes("node tools/dev/check-go.mjs --ci --sonar-report"));
+});
+
+test("Sonar coverage admission reuses matching trees and rejects incomplete or inconsistent evidence", () => {
+  const { content } = events(workflows[0]);
+  const step = content.match(/- name: Admit coverage only for the exact analyzed source tree\n[\s\S]*?        run: \|\n([\s\S]*?)\n      - name: Use repository-pinned Node 24/);
+  assert.ok(step, "missing executable coverage admission");
+  const script = step[1].split("\n").map(line => line.replace(/^ {10}/, "")).join("\n");
+  const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe") : "bash";
+  const tree = "a".repeat(40), other = "b".repeat(40);
+  const scenarios = [
+    { name: "same", source: tree, expected: "reuse=true" },
+    { name: "different", source: other, expected: "reuse=false" },
+    { name: "mixed", source: tree, pgTree: other },
+    { name: "invalid-tree", source: tree, reportTree: "not-a-tree" },
+    { name: "missing-go", source: tree, missing: "dsh-go.out" },
+    { name: "missing-pg", source: tree, missing: "profile.out" },
+    { name: "empty-js", source: tree, missing: "lcov.info" },
+  ];
+  for (const scenario of scenarios) {
+    const scratch = mkdtempSync(path.join(tmpdir(), "sonar-tree-admission-"));
+    try {
+      const reports = path.join(scratch, "reports");
+      for (const [artifact, files] of [
+        ["sonar-js", ["lcov.info"]],
+        ["sonar-go", ["identity-go.out", "dsh-go.out", "wlt-go.out"]],
+        ["sonar-postgres", ["profile.out"]],
+      ]) {
+        const directory = path.join(reports, artifact);
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(path.join(directory, "tree.txt"), (artifact === "sonar-postgres" && scenario.pgTree) || scenario.reportTree || tree);
+        for (const file of files) if (file !== scenario.missing) writeFileSync(path.join(directory, file), "synthetic admission fixture\n");
+      }
+      const output = path.join(scratch, "output.txt");
+      const result = spawnSync(bash, ["-c", 'git() { test "$*" = "rev-parse HEAD^{tree}" || return 1; printf "%s\\n" "$ANALYZED_TREE"; }\n' + script], {
+        cwd: scratch, encoding: "utf8",
+        env: { ...process.env, RUNNER_TEMP: reports.replaceAll("\\", "/"), GITHUB_OUTPUT: output.replaceAll("\\", "/"), ANALYZED_TREE: scenario.source },
+      });
+      if (result.error) throw result.error;
+      assert.equal(result.status, scenario.expected ? 0 : 1, scenario.name + ": " + result.stderr);
+      if (scenario.expected) assert.equal(readFileSync(output, "utf8").trim(), scenario.expected);
+      assert.equal(existsSync(path.join(scratch, "coverage", "lcov.info")), scenario.expected === "reuse=true", scenario.name);
+      assert.equal(existsSync(path.join(scratch, "coverage", "owner-postgres", "profile.out")), scenario.expected === "reuse=true", scenario.name);
+    } finally { rmSync(scratch, { recursive: true, force: true }); }
+  }
 });

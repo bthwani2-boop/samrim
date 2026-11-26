@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Check only service-owned Go modules. No tool installation or database access.
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,17 +11,22 @@ export const services = ["identity", "dsh", "wlt"];
 export function parseArgs(argv) {
   let mode = "quick";
   let moduleName;
+  let sonarReport = false;
   for (const arg of argv) {
     if (arg === "--quick") mode = "quick";
     else if (arg === "--ci") mode = "ci";
     else if (arg === "--coverage") mode = "coverage";
+    else if (arg === "--sonar-report") sonarReport = true;
     else if (arg.startsWith("--module=")) moduleName = arg.slice("--module=".length);
     else throw new Error("Unknown Go check argument: " + arg);
   }
   if (moduleName !== undefined && !services.includes(moduleName)) {
     throw new Error("Unknown Go service: " + moduleName);
   }
-  return { mode, moduleName };
+  if (sonarReport && (mode === "quick" || moduleName !== undefined)) {
+    throw new Error("Sonar report requires --ci or --coverage for all owners");
+  }
+  return { mode, moduleName, sonarReport };
 }
 
 export function parseVersion(output) {
@@ -84,7 +89,7 @@ function run(executable, args, cwd, env, timeout = 300000) {
 }
 
 export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(new URL("../..", import.meta.url)))) {
-  const { mode, moduleName } = parseArgs(argv);
+  const { mode, moduleName, sonarReport } = parseArgs(argv);
   // Go's exact version is a repository invariant; never auto-download a replacement.
   const env = { ...process.env, GOTOOLCHAIN: "local", GOWORK: "off" };
   // Do not touch existing/protected databases even when the caller's shell is configured.
@@ -99,6 +104,11 @@ export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(
   const actual = parseVersion(run(goExecutable, ["version"], root, env, 20000));
   if (actual !== expected) throw new Error("Go version mismatch: expected " + expected + ", got " + actual);
   const modules = discoverModules(root, moduleName);
+  const reports = [];
+  if (sonarReport && modules.length !== services.length) throw new Error("Missing required Go owner module");
+  if (sonarReport && services.some(name => existsSync(join(root, "coverage", name + "-go.out")))) {
+    throw new Error("Refusing existing Sonar Go coverage output");
+  }
   for (const name of modules) {
     const directory = join(root, "services", name, "backend");
     process.stdout.write("\nGO_SERVICE=" + name + " MODE=" + mode + "\n");
@@ -113,8 +123,9 @@ export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(
       const scratch = mkdtempSync(join(tmpdir(), "bthwani-go-"));
       try {
         const profile = join(scratch, "coverage.out");
-        run(goExecutable, ["test", ...(mode === "ci" ? ["-race"] : []), "-count=1", "-coverprofile=" + profile, "./..."], directory, env, 600000);
+        run(goExecutable, ["test", ...(mode === "ci" ? ["-race"] : []), "-count=1", ...(sonarReport ? ["-covermode=atomic", "-coverpkg=./..."] : []), "-coverprofile=" + profile, "./..."], directory, env, 600000);
         run(goExecutable, ["tool", "cover", "-func=" + profile], directory, env);
+        if (sonarReport) reports.push([name, readFileSync(profile)]);
       } finally {
         rmSync(scratch, { recursive: true, force: true });
       }
@@ -122,6 +133,13 @@ export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(
       run(goExecutable, ["test", "-count=1", "./..."], directory, env, 300000);
     }
     process.stdout.write("GO_CHECK_PASS service=" + name + " mode=" + mode + " database_integration=NOT_RUN\n");
+  }
+  if (sonarReport) {
+    mkdirSync(join(root, "coverage"), { recursive: true });
+    for (const [name, profile] of reports) {
+      writeFileSync(join(root, "coverage", name + "-go.out"), profile, { flag: "wx" });
+    }
+    console.log("SONAR_GO_REPORTS_PASS owners=" + reports.length);
   }
   for (const name of services.filter(name => !modules.includes(name))) {
     if (!moduleName) process.stdout.write("GO_SERVICE_NOT_PRESENT=" + name + "\n");

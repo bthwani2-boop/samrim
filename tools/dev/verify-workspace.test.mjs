@@ -147,7 +147,9 @@ test('service placement guard rejects wrong owners, unnamed SQL and duplicate co
 
 test('Sonar requires every Go owner and rejects expired quality gate waivers', async () => {
   const { readFileSync } = await import('node:fs');
-  const sonar = readFileSync(new URL('../../.github/workflows/sonar-quality.yml', import.meta.url), 'utf8');
+  const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  const sonar = ci.slice(ci.indexOf('\n  sonar:\n'));
+  assert.ok(sonar.includes('name: SonarQube Cloud Quality Gate'));
   assert.doesNotMatch(sonar, /Temporary PR 193 coverage exception|sonar[.]coverage[.]exclusions/);
   assert.doesNotMatch(sonar, /continue-on-error:|Verify the approved coverage exception/);
   assert.match(sonar, /for service in identity dsh wlt; do/);
