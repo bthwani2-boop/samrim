@@ -62,3 +62,25 @@ test("real asset response requires HTTP success, correct MIME and exact exported
   await assert.rejects(() => assertAssetResponse(response("changed"), bytes, asset), /differ/);
   await assert.rejects(() => assertAssetResponse(response(""), Buffer.alloc(0), asset), /empty/);
 });
+
+test("HTML tree, not tag-like text, establishes document and body evidence", () => {
+  const invalid = [
+    document('<div hidden>' + page.body + '</div>'),
+    document('<textarea>' + page.body + '</textarea>'),
+    document('<svg><title>' + page.body + '</title></svg>'),
+    document('<script>const x = "<body>' + page.body + '</body>";</script>'),
+    '<!-- <html lang="ar" dir="rtl"> --><head><title>' + page.title + '</title></head><body>' + page.body + '</body>',
+  ];
+  for (const html of invalid) assert.throws(() => assertHtmlDocument(html, page));
+  assert.doesNotThrow(() => assertHtmlDocument(document('<main data-note="a>b">' + page.body + '</main>'), page));
+});
+test("asset inventory follows parsed HTML and ignores inert markup", () => {
+  const fake = "/_expo/static/js/web/fake.js";
+  const html = document('<template><script src="' + fake + '"></script></template>' +
+    '<textarea><script src="' + fake + '"></script></textarea>' +
+    '<script>const x = "<script src=\'' + fake + '\'>";</script>' +
+    '<!-- <script src="' + fake + '"></script> -->' +
+    '<script data-note="a>b" src="' + script + '"></script>');
+  assert.deepEqual(documentAssets(html, origin), [{ url: script, file: script.slice(1), type: "script" }]);
+  assert.throws(() => documentAssets('<template>' + preload(script) + '</template>', origin), /No executable/);
+});
