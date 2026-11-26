@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeAuditResult, runtimeBaselineProofDue, runtimePollAction, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -642,7 +642,40 @@ function pollOwnerRuntime() {
   if (last && (["running","uncertain"].includes(last.status) || (last.key === key && last.status === "blocked"))) {
     runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation"); return;
   }
-  if (!runtimePollDue({enabled:true,dirty,active:false,key,last,now:Date.now(),nextAudit:nextRuntimeAudit})) return;
+  const action=runtimePollAction({enabled:true,dirty,active:false,key,last,now:Date.now(),nextAudit:nextRuntimeAudit});
+  if(!action)return;
+  if(action==="audit"){
+    // Reuse the native owner's read-only CLI, not the mutation launcher or a
+    // second watcher. No attempt receipt, lifecycle lock or transcript for idle audits.
+    const head=run("git",["rev-parse","HEAD"]);
+    const child=spawn(process.execPath,[path.join(root,"tools","dev","docker","reconcile-owner-runtime.mjs"),"--check"],{
+      cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"],
+      env:{...process.env,Path:path.dirname(exe.ssh)+";"+process.env.Path}
+    });
+    runtimeChild=child;
+    let output="",settled=false;
+    child.stdout.on("data",chunk=>{output=(output+chunk.toString()).slice(-65536);});
+    child.stderr.resume();
+    const finish=(code,signal)=>{
+      if(settled)return;settled=true;runtimeChild=null;sourcePending=true;
+      nextRuntimeAudit=Date.now()+60_000;
+      try{
+        const saved=runtimeState();
+        if(saved?.key!==key||saved?.attempt!==last?.attempt||saved?.status!==last?.status)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+        const outcome=runtimeAuditResult(code,signal,output,head,eligible);
+        if(outcome==="apply"){
+          persistAt(runtimeStateFile,{...saved,status:"retry"});
+          nextRuntimeAudit=0;
+        }else if(outcome==="pass"||outcome==="review"){
+          if(saved.status!==outcome)persistAt(runtimeStateFile,{...saved,status:outcome});
+        }
+        runtimeLogOnce("RUNTIME_AUDIT_"+outcome.toUpperCase()+" key="+key.slice(0,12));
+      }catch{runtimeLogOnce("RUNTIME_AUDIT_BLOCKED state changed");}
+    };
+    child.on("error",()=>finish(1,null));
+    child.on("close",finish);
+    return;
+  }
   const attempt=crypto.randomUUID();
   persistAt(runtimeStateFile, {version:1,key,attempt,status:"running"});
   logger("RUNTIME_RECONCILE_STARTED key="+key.slice(0,12));

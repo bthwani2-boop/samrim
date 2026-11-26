@@ -447,12 +447,12 @@ test("managed deletion refuses an ancestor junction outside the source mirror", 
 
 // The existing watcher owns a single bounded runtime attempt and does not retry ambiguous writes.
 test("runtime reconciliation trigger is immediate for changed committed source and respects retry gates", async () => {
-  const { runtimePollDue } = await import("./sync-lenovo-reconciliation.mjs");
+  const { runtimePollAction } = await import("./sync-lenovo-reconciliation.mjs");
   const base={enabled:true,dirty:false,active:false,key:"new",last:{key:"old",status:"pass"},now:100,nextAudit:200};
-  assert.equal(runtimePollDue(base),true);
-  for(const override of [{enabled:false},{dirty:true},{active:true},{last:{key:"old",status:"running"}},{last:{key:"old",status:"uncertain"}},{last:{key:"new",status:"blocked"}},{last:{key:"new",status:"retry"}}]) assert.equal(runtimePollDue({...base,...override}),false);
-  assert.equal(runtimePollDue({...base,last:{key:"new",status:"retry"},now:201}),true);
-  assert.equal(runtimePollDue({...base,last:{key:"old",status:"blocked"}}),true);
+  assert.equal(runtimePollAction(base),"apply");
+  for(const override of [{enabled:false},{dirty:true},{active:true},{last:{key:"old",status:"running"}},{last:{key:"old",status:"uncertain"}},{last:{key:"new",status:"blocked"}},{last:{key:"new",status:"retry"}}]) assert.equal(runtimePollAction({...base,...override}),null);
+  assert.equal(runtimePollAction({...base,last:{key:"new",status:"retry"},now:201}),"apply");
+  assert.equal(runtimePollAction({...base,last:{key:"old",status:"blocked"}}),"apply");
 });
 
 test("a reconciler can durably acknowledge only its own verified attempt after watcher loss", async()=>{
@@ -685,7 +685,7 @@ test("reconciliation requires an explicit terminal result and never certifies a 
 });
 
 test("stable source admission holds do not repeat an automatic apply until source or authority changes", async()=>{
-  const {runtimeAttemptResult,runtimePollDue}=await import("./sync-lenovo-reconciliation.mjs");
+  const {runtimeAttemptResult,runtimePollAction}=await import("./sync-lenovo-reconciliation.mjs");
   const sha="a".repeat(40);
   const hold=(owner,reason)=>owner+" RUNTIME=BLOCKED revision="+sha+" reason="+reason+"\n";
   const terminal="RECONCILE_PARTIAL HEAD="+sha+"\n";
@@ -693,8 +693,8 @@ test("stable source admission holds do not repeat an automatic apply until sourc
   const status=runtimeAttemptResult(3,null,output,"");
   assert.equal(status,"blocked");
   const input={enabled:true,dirty:false,active:false,key:"same",last:{key:"same",status},now:120000,nextAudit:60000};
-  assert.equal(runtimePollDue(input),false);
-  assert.equal(runtimePollDue({...input,key:"changed"}),true);
+  assert.equal(runtimePollAction(input),null);
+  assert.equal(runtimePollAction({...input,key:"changed"}),"apply");
   assert.equal(runtimeAttemptResult(3,null,hold("dsh","UNCOMMITTED_NON_GO")+terminal,""),"blocked");
   assert.equal(runtimeAttemptResult(3,null,hold("wlt","CONFIG_REVIEW_REQUIRED")+terminal,""),"review");
   assert.equal(runtimeAttemptResult(3,null,hold("dsh","PREVIEW_NOT_AUTHORIZED")+hold("wlt","CONFIG_REVIEW_REQUIRED")+terminal,""),"review");
@@ -865,4 +865,29 @@ test("fixed local PowerShell executable runs without PATH lookup", {
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+test("stable owner source audits without acquiring apply authority; drift requires a fresh guarded apply", async()=>{
+  const {runtimePollAction,runtimeAuditResult}=await import("./sync-lenovo-reconciliation.mjs");
+  const head="a".repeat(40);
+  const state={enabled:true,dirty:false,active:false,key:"same",last:{key:"same",status:"pass"},now:60001,nextAudit:60000};
+  assert.equal(runtimePollAction(state),"audit");
+  assert.equal(runtimePollAction({...state,last:{key:"same",status:"review"}}),"audit");
+  assert.equal(runtimePollAction({...state,last:{key:"same",status:"retry"}}),"apply");
+  assert.equal(runtimePollAction({...state,key:"changed"}),"apply");
+  assert.equal(runtimePollAction({...state,last:{key:"old",status:"uncertain"}}),null);
+  assert.equal(runtimePollAction({...state,last:{key:"same",status:"blocked"}}),null);
+  const result=(selected,terminal="PARTIAL",sha=head)=>"SELECTED="+selected+" HEAD="+sha+" CAPTAIN_ADMISSION=true\nRECONCILE_"+terminal+" HEAD="+sha+"\n";
+  const audit=(code,output,signal=null,eligible=["dsh","identity","wlt"])=>runtimeAuditResult(code,signal,output,head,eligible);
+  assert.equal(audit(0,result("NONE","PASS")),"pass");
+  assert.equal(audit(3,result("dsh")),"apply");
+  assert.equal(audit(3,result("dsh"),null,["wlt"]),"review");
+  assert.equal(audit(3,result("NONE")),"review");
+  assert.equal(audit(0,result("NONE","PASS","b".repeat(40))),"retry");
+  assert.equal(audit(0,result("NONE","PASS"),"SIGTERM"),"retry");
+  assert.equal(audit(0,result("dsh","PASS")),"retry");
+  assert.equal(audit(3,result("dsh,dsh")),"retry");
+  assert.equal(audit(3,result("unknown")),"retry");
+  assert.equal(audit(3,result("dsh")+result("NONE","PASS")),"retry");
+  assert.equal(audit(1,"OWNER_APPLY_STARTED dsh\n"),"retry");
 });
