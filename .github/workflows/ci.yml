@@ -49,15 +49,14 @@ jobs:
               ;;
             push:refs/heads/*)
               mode=feedback
-              # An open PR alone is insufficient: merge conflicts or API lag
-              # may prevent a real Actions run. Suppress only a matching run.
+              # A matching open PR must also have an actual, noncancelled CI run.
               if open="$(gh api --method GET --paginate "repos/$GITHUB_REPOSITORY/pulls" \
                 -f state=open -f base=main -f "head=$GITHUB_REPOSITORY_OWNER:$GITHUB_REF_NAME" \
                 --jq '.[] | select(.state == "open" and .base.ref == "main" and .head.repo.full_name == .base.repo.full_name) | [.head.sha, (.number | tostring)] | join(":")')" &&
                 grep -Eq "^$GITHUB_SHA:[0-9]+$" <<< "$open" &&
                 runs="$(gh api --method GET --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
                 -f event=pull_request -f "head_sha=$GITHUB_SHA" \
-                --jq '.workflow_runs[] | select(.event == "pull_request" and (.status != "completed" or .conclusion == "success" or .conclusion == "failure")) | . as $run | .pull_requests[] | [$run.head_sha, (.number | tostring)] | join(":")')"; then
+                --jq '.workflow_runs[] | select(.event == "pull_request" and (.status != "completed" or .conclusion == "success" or .conclusion == "failure")) | {sha: .head_sha, pr: .pull_requests[]} | [.sha, (.pr.number | tostring)] | join(":")')"; then
                 while IFS= read -r entry; do
                   if [[ "$entry" == "$GITHUB_SHA:"* ]] && grep -Fxq -- "$entry" <<< "$runs"; then
                     mode=duplicate
