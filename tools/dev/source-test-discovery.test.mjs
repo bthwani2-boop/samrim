@@ -338,3 +338,46 @@ test("case-variant test names cannot silently bypass admitted runner format", ()
   add("nested/candidate.test.MJS");
   assert.throws(() => discoverNodeSourceTests(root, folder), /UNSUPPORTED_SOURCE_TEST_FORMAT/);
 }));
+
+test("a competing full coverage invocation cannot invalidate or publish the active writer's report", () => coverageFixture(({ root, add, report, run }) => {
+  add("tools/dev/competing.test.mjs", [
+    'import assert from "node:assert/strict";',
+    'import { spawnSync } from "node:child_process";',
+    'import test from "node:test";',
+    'test("active writer excludes competing full run", () => {',
+    '  if (process.env.NESTED_COVERAGE_ATTEMPT === "1") return;',
+    '  const env = { ...process.env, NESTED_COVERAGE_ATTEMPT: "1" };',
+    '  delete env.NODE_TEST_CONTEXT;',
+    '  delete env.NODE_V8_COVERAGE;',
+    '  const result = spawnSync(process.execPath, ["tools/dev/run-coverage.mjs"], { cwd: process.cwd(), env, encoding: "utf8", timeout: 30000 });',
+    '  assert.equal(result.status, 1, result.stdout + result.stderr);',
+    '  assert.match(result.stderr, /COVERAGE_WRITER_BUSY/);',
+    '});',
+  ].join("\n"));
+  const result = run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(readFileSync(report, "utf8"), /SF:tools\/mobile\/verify-app-identity\.mjs/);
+  assert.deepEqual(readdirSync(join(root, "coverage")), ["lcov.info"]);
+}));
+
+test("a redirected coverage directory is rejected without altering its destination", (t) => coverageFixture(({ root, report, run }) => {
+  const outside = mkdtempSync(join(tmpdir(), "bthwani-coverage-outside-"));
+  try {
+    const sentinel = join(outside, "lcov.info");
+    writeFileSync(sentinel, "PROTECTED_EXTERNAL_REPORT");
+    rmSync(join(root, "coverage"), { recursive: true });
+    try {
+      symlinkSync(outside, join(root, "coverage"), "junction");
+    } catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("source links unavailable");
+      throw error;
+    }
+    const result = run();
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /COVERAGE_DIRECTORY_UNSAFE/);
+    assert.equal(readFileSync(sentinel, "utf8"), "PROTECTED_EXTERNAL_REPORT");
+    assert.equal(readFileSync(report, "utf8"), "PROTECTED_EXTERNAL_REPORT");
+  } finally {
+    rmSync(outside, { recursive: true, force: true });
+  }
+}));
