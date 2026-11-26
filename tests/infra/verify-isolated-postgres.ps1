@@ -3,10 +3,59 @@
 # Creates only an ephemeral, network-disabled PostgreSQL with tmpfs storage.
 # Never attaches to the project's existing database, volumes or service ports.
 [CmdletBinding()]
-param([string]$DockerContext = 'bthwani-docker', [switch]$NoPull)
+param([string]$DockerContext = 'bthwani-docker', [switch]$NoPull, [switch]$CredentialPublicationOnly)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+# The credential proof runs before allocating any PostgreSQL container and can
+# be selected alone on either supported host. It exercises the exact provisioner.
+. (Join-Path $root 'tools/dev/provision-wlt-test-db.ps1') -DockerContext $DockerContext
+function Assert-WltCredentialPublication {
+  $envFixture = Join-Path ([IO.Path]::GetTempPath()) ('bthwani-wlt-env-proof-'+[guid]::NewGuid().ToString('N'))
+  [IO.Directory]::CreateDirectory($envFixture) | Out-Null
+  try {
+    $envFile = Join-Path $envFixture '.env'
+    $fixtureSecret = 'a' * 64
+    # Include BOM and no trailing newline to prove original content survives.
+    $original = [string][char]0xFEFF+(@('REF_POSTGRES_DB=bthwani_refoundation','REF_POSTGRES_USER=synthetic_admin') -join [Environment]::NewLine)
+    $utf8 = [Text.UTF8Encoding]::new($false,$true)
+    [IO.File]::WriteAllBytes($envFile,$utf8.GetBytes($original))
+    if ((Read-WltEnvironment $envFile).Text -cne $original) { throw 'WLT hidden source read failed' }
+
+    $staged = New-WltCandidate $envFile $original $fixtureSecret
+    if (!$IsWindows -and [IO.File]::GetUnixFileMode($staged.Path) -ne ([IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite)) {
+      throw 'WLT private candidate mode not proven'
+    }
+    $competing = $original+[Environment]::NewLine+'REF_MEDIA_BUCKET=other'
+    [IO.File]::WriteAllBytes($envFile,$utf8.GetBytes($competing))
+    $refused = $false
+    try { Publish-WltCandidate $envFile $original $staged }
+    catch { if ($_.Exception.Message -ne 'WLT_ENV_CHANGED') { throw }; $refused = $true }
+    if (!$refused -or (Read-WltRegularText $envFile) -cne $competing -or ![IO.File]::Exists($staged.Path)) {
+      throw 'WLT competing edit not preserved'
+    }
+    [IO.File]::WriteAllBytes($envFile,$utf8.GetBytes($original))
+    [IO.File]::WriteAllBytes($staged.Path,$utf8.GetBytes($staged.Text+'tampered'))
+    $refused = $false
+    try { Publish-WltCandidate $envFile $original $staged }
+    catch { if ($_.Exception.Message -ne 'WLT_CANDIDATE_CHANGED') { throw }; $refused = $true }
+    if (!$refused -or (Read-WltRegularText $envFile) -cne $original) { throw 'WLT candidate tamper not denied' }
+    [IO.File]::WriteAllBytes($staged.Path,$utf8.GetBytes($staged.Text))
+    Publish-WltCandidate $envFile $original $staged
+    if ((Read-WltRegularText $envFile) -cne $staged.Text -or [IO.Directory]::Exists($staged.Directory)) { throw 'WLT atomic publication proof failed' }
+    $refused = $false
+    try { $null = Read-WltEnvironment $envFile } catch { if ($_.Exception.Message -ne 'WLT_EXISTING_CREDENTIAL') { throw }; $refused = $true }
+    if (!$refused) { throw 'WLT existing credential replay admitted' }
+    [IO.File]::WriteAllBytes($envFile,$utf8.GetBytes($original+[Environment]::NewLine+'REF_POSTGRES_USER=duplicate'))
+    $refused = $false
+    try { $null = Read-WltEnvironment $envFile } catch { if ($_.Exception.Message -ne 'WLT_ENV_INVALID_OR_DUPLICATE') { throw }; $refused = $true }
+    if (!$refused) { throw 'WLT duplicate credential source admitted' }
+  } finally { Remove-Item -LiteralPath $envFixture -Recurse -Force }
+  Write-Output 'PG_WLT_CREDENTIAL_PUBLICATION=PASS hidden-file=yes private-candidate=yes competing-edit-denied=yes tamper-denied=yes replay-denied=yes duplicate-denied=yes'
+}
+Assert-WltCredentialPublication
+if ($CredentialPublicationOnly) { return }
+
 $compose = [IO.File]::ReadAllText((Join-Path $root 'infra/compose.yaml'))
 $imageMatch = [regex]::Match($compose, '(?m)^    image: (postgis/postgis:18-3\.6@sha256:[a-f0-9]{64})$')
 if (!$imageMatch.Success) { throw 'Refusing unpinned database image' }
@@ -236,7 +285,6 @@ THEN 'PASS' ELSE 'FAIL' END;
   Write-Output "PG_FRESH_IDENTITY_BASELINE=PASS count=$($identityFiles.Count) tables=15 canonical-merchant-only=yes"
 
   # Exercise the exact provisioner in the existing network-none tmpfs fixture.
-  . (Join-Path $root 'tools/dev/provision-wlt-test-db.ps1') -DockerContext $DockerContext
   $wltDb = 'bthwani_wlt_test'
   $wltSources = Read-WltSources $root
   $fixtureSecret = 'a' * 64
@@ -256,27 +304,6 @@ THEN 'PASS' ELSE 'FAIL' END;
   catch { if ($_.Exception.Message -ne 'WLT_EXISTING_NAMESPACE_OR_ADMIN') { throw }; $refused = $true }
   if (!$refused) { throw 'WLT existing namespace replay admitted' }
 
-  $envFixture = Join-Path ([IO.Path]::GetTempPath()) ('bthwani-wlt-env-proof-'+[guid]::NewGuid().ToString('N'))
-  [IO.Directory]::CreateDirectory($envFixture) | Out-Null
-  try {
-    $envFile = Join-Path $envFixture '.env'
-    $original = @('REF_POSTGRES_DB=bthwani_refoundation','REF_POSTGRES_USER=synthetic_admin','') -join [Environment]::NewLine
-    [IO.File]::WriteAllText($envFile,$original)
-    $configuration = Read-WltEnvironment $envFile
-    $staged = New-WltCandidate $envFile $configuration.Text $fixtureSecret
-    $competing = $original+'REF_MEDIA_BUCKET=other'+[Environment]::NewLine
-    [IO.File]::WriteAllText($envFile,$competing)
-    $refused = $false
-    try { Publish-WltCandidate $envFile $original $staged }
-    catch { if ($_.Exception.Message -ne 'WLT_ENV_CHANGED') { throw }; $refused = $true }
-    if (!$refused -or [IO.File]::ReadAllText($envFile) -cne $competing -or ![IO.File]::Exists($staged.Path)) { throw 'WLT competing edit not preserved' }
-    [IO.File]::WriteAllText($envFile,$original)
-    Publish-WltCandidate $envFile $original $staged
-    if ([IO.File]::ReadAllText($envFile) -cne $staged.Text -or [IO.Directory]::Exists($staged.Directory)) { throw 'WLT atomic publication proof failed' }
-    $refused = $false
-    try { $null = Read-WltEnvironment $envFile } catch { if ($_.Exception.Message -ne 'WLT_EXISTING_CREDENTIAL') { throw }; $refused = $true }
-    if (!$refused) { throw 'WLT existing credential replay admitted' }
-  } finally { Remove-Item -LiteralPath $envFixture -Recurse -Force }
   Write-Output 'PG_WLT_PROVISIONER=PASS transaction-rollback=yes fresh-only=yes credential-publication=yes competing-edit-denied=yes'
   # Sandbox login is only enabled inside this disposable test for posting proof.
   $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'ALTER ROLE bthwani_wlt_sandbox LOGIN; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_sandbox;' 'fixture-sandbox'

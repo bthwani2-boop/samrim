@@ -1,17 +1,37 @@
 #Requires -Version 7.0
-# Explicit first-use WLT bootstrap. Never upgrade or replay retained state.
+# First-use WLT provisioning only. The SQL owner and credential publication are
+# separate phases of one operation; never upgrade or replay retained state.
 [CmdletBinding()]
 param([string]$DockerContext = 'bthwani-docker')
 
+# FileSystemInfo works for hidden files on Unix and Windows, independently of
+# PowerShell provider visibility rules. Decode strictly and keep the original
+# text (including an existing UTF-8 BOM) for comparison and publication.
+function Read-WltRegularText([string]$Path) {
+  $file = [IO.FileInfo]::new([IO.Path]::GetFullPath($Path))
+  $file.Refresh()
+  if (!$file.Exists -or ($file.Attributes -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::ReparsePoint))) {
+    throw 'WLT_ENV_NOT_REGULAR'
+  }
+  $parent = $file.Directory
+  if (!$parent.Exists -or ($parent.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    throw 'WLT_ENV_UNSAFE_DIRECTORY'
+  }
+  $utf8 = [Text.UTF8Encoding]::new($false,$true)
+  return $utf8.GetString([IO.File]::ReadAllBytes($file.FullName))
+}
+
 function Read-WltEnvironment([string]$Path) {
-  $item = Get-Item -LiteralPath $Path -ErrorAction Stop
-  if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'WLT_ENV_NOT_REGULAR' }
-  $text = [IO.File]::ReadAllText($Path,[Text.UTF8Encoding]::new($false,$true))
+  $text = Read-WltRegularText $Path
+  if ($text.Contains([char]0)) { throw 'WLT_ENV_INVALID_OR_DUPLICATE' }
+  $parse = if ($text.StartsWith([string][char]0xFEFF)) { $text.Substring(1) } else { $text }
   $keys = [Collections.Generic.Dictionary[string,string]]::new([StringComparer]::Ordinal)
-  foreach ($line in ($text -split '\r?\n')) {
+  foreach ($line in ($parse -split '\r?\n')) {
     if (!$line.Trim() -or $line.TrimStart().StartsWith('#')) { continue }
     $match = [regex]::Match($line,'^([A-Z][A-Z0-9_]*)=(.*)$')
-    if (!$match.Success -or !$keys.TryAdd($match.Groups[1].Value,$match.Groups[2].Value)) { throw 'WLT_ENV_INVALID_OR_DUPLICATE' }
+    if (!$match.Success -or !$keys.TryAdd($match.Groups[1].Value,$match.Groups[2].Value)) {
+      throw 'WLT_ENV_INVALID_OR_DUPLICATE'
+    }
   }
   if ($keys.ContainsKey('REF_WLT_TEST_DATABASE_URL')) { throw 'WLT_EXISTING_CREDENTIAL' }
   if (!$keys.ContainsKey('REF_POSTGRES_DB') -or $keys['REF_POSTGRES_DB'] -cne 'bthwani_refoundation' -or
@@ -19,6 +39,55 @@ function Read-WltEnvironment([string]$Path) {
     throw 'WLT_ENV_WRONG_DATABASE'
   }
   return @{Text=$text;Admin=$keys['REF_POSTGRES_USER']}
+}
+
+# Prepare the credential privately, on the same filesystem as the destination.
+# The caller holds the existing lifecycle mutex for the entire DB/publication
+# operation. A competing source edit or changed candidate fails closed.
+function New-WltCandidate([string]$Path,[string]$Original,[string]$Secret) {
+  if ($Secret -cnotmatch '^[a-f0-9]{64}$') { throw 'WLT_SECRET_INVALID' }
+  $target = [IO.Path]::GetFullPath($Path)
+  if ((Read-WltEnvironment $target).Text -cne $Original) { throw 'WLT_ENV_CHANGED' }
+  $parent = [IO.Path]::GetDirectoryName($target)
+  $directory = Join-Path $parent ('.env.prepare-wlt-'+[guid]::NewGuid().ToString('N'))
+  $privateMode = [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite
+  if ($IsWindows) { [IO.Directory]::CreateDirectory($directory) | Out-Null }
+  else { [IO.Directory]::CreateDirectory($directory,($privateMode -bor [IO.UnixFileMode]::UserExecute)) | Out-Null }
+  $candidate = Join-Path $directory '.env'
+  $separator = if ($Original.EndsWith([string][char]10)) { '' } else { [Environment]::NewLine }
+  $expected = $Original+$separator+'REF_WLT_TEST_DATABASE_URL=postgres://bthwani_wlt_reader:'+$Secret+'@postgres:5432/bthwani_wlt_test?sslmode=disable'+[Environment]::NewLine
+
+  $options = [IO.FileStreamOptions]::new()
+  $options.Mode = [IO.FileMode]::CreateNew
+  $options.Access = [IO.FileAccess]::Write
+  $options.Share = [IO.FileShare]::None
+  if (!$IsWindows) { $options.UnixCreateMode = $privateMode }
+  # The file is empty until the destination's Windows ACL is applied.
+  $stream = [IO.FileStream]::new($candidate,$options)
+  $stream.Dispose()
+  if ($IsWindows) { Set-Acl -LiteralPath $candidate -AclObject (Get-Acl -LiteralPath $target -ErrorAction Stop) -ErrorAction Stop }
+  $stream = [IO.File]::Open($candidate,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
+  try {
+    $bytes = [Text.UTF8Encoding]::new($false,$true).GetBytes($expected)
+    $stream.Write($bytes,0,$bytes.Length)
+    $stream.Flush($true)
+  } finally { $stream.Dispose() }
+  if ((Read-WltRegularText $candidate) -cne $expected) { throw 'WLT_CANDIDATE_CHANGED' }
+  return @{Path=$candidate;Directory=$directory;Text=$expected}
+}
+
+function Publish-WltCandidate([string]$Path,[string]$Original,[hashtable]$Candidate) {
+  $target = [IO.Path]::GetFullPath($Path)
+  $directory = [IO.Path]::GetFullPath([string]$Candidate.Directory)
+  $candidatePath = [IO.Path]::GetFullPath([string]$Candidate.Path)
+  if ([IO.Path]::GetDirectoryName($directory) -cne [IO.Path]::GetDirectoryName($target) -or
+      [IO.Path]::GetFileName($directory) -cnotmatch '^\.env\.prepare-wlt-[a-f0-9]{32}$' -or
+      $candidatePath -cne (Join-Path $directory '.env')) { throw 'WLT_CANDIDATE_WRONG_PATH' }
+  if ((Read-WltRegularText $candidatePath) -cne $Candidate.Text) { throw 'WLT_CANDIDATE_CHANGED' }
+  if ((Read-WltEnvironment $target).Text -cne $Original) { throw 'WLT_ENV_CHANGED' }
+  [IO.File]::Replace($candidatePath,$target,[NullString]::Value)
+  if ((Read-WltRegularText $target) -cne $Candidate.Text) { throw 'WLT_ENV_READBACK_FAILED' }
+  [IO.Directory]::Delete($directory)
 }
 
 function Read-WltSources([string]$Root) {
@@ -140,34 +209,6 @@ THEN 'PASS' ELSE 'FAIL' END
   $null = Invoke-WltSql $Context $Container $Admin 'bthwani_wlt_test' $sql 'baseline-transaction'
   if ((Invoke-WltSql $Context $Container $Admin 'bthwani_wlt_test' ($proof+';') 'durable-readback') -cne 'PASS') { throw 'WLT_READBACK_FAILED' }
   return @{SchemaCount=$Sources.schema.Count;SandboxCount=$Sources.sandbox.Count}
-}
-
-function New-WltCandidate([string]$Path,[string]$Original,[string]$Secret) {
-  if ($Secret -cnotmatch '^[a-f0-9]{64}$') { throw 'WLT_SECRET_INVALID' }
-  $directory = Join-Path (Split-Path -Parent $Path) ('.env.prepare-wlt-'+[guid]::NewGuid().ToString('N'))
-  [IO.Directory]::CreateDirectory($directory) | Out-Null
-  $candidate = Join-Path $directory '.env'
-  $separator = if ($Original.EndsWith([string][char]10)) { '' } else { [Environment]::NewLine }
-  $expected = $Original+$separator+'REF_WLT_TEST_DATABASE_URL=postgres://bthwani_wlt_reader:'+$Secret+'@postgres:5432/bthwani_wlt_test?sslmode=disable'+[Environment]::NewLine
-  $stream = [IO.File]::Open($candidate,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
-  $stream.Dispose()
-  if ($IsWindows) { Set-Acl -LiteralPath $candidate -AclObject (Get-Acl -LiteralPath $Path) }
-  else { [IO.File]::SetUnixFileMode($candidate,[IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite) }
-  $stream = [IO.File]::Open($candidate,[IO.FileMode]::Open,[IO.FileAccess]::Write,[IO.FileShare]::None)
-  try {
-    $bytes = [Text.UTF8Encoding]::new($false,$true).GetBytes($expected)
-    $stream.Write($bytes,0,$bytes.Length)
-    $stream.Flush($true)
-  } finally { $stream.Dispose() }
-  return @{Path=$candidate;Directory=$directory;Text=$expected}
-}
-
-function Publish-WltCandidate([string]$Path,[string]$Original,[hashtable]$Candidate) {
-  if ((Read-WltEnvironment $Path).Text -cne $Original) { throw 'WLT_ENV_CHANGED' }
-  if ([IO.File]::ReadAllText($Candidate.Path) -cne $Candidate.Text) { throw 'WLT_CANDIDATE_CHANGED' }
-  [IO.File]::Replace($Candidate.Path,$Path,[NullString]::Value)
-  if ([IO.File]::ReadAllText($Path) -cne $Candidate.Text) { throw 'WLT_ENV_READBACK_FAILED' }
-  [IO.Directory]::Delete($Candidate.Directory)
 }
 
 # The existing disposable proof imports these exact functions without running
