@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Real production-export SSR and HTTP route proof. The pinned Expo HTTP
-// adapter owns rendering, middleware and API dispatch. Node binds the test
-// socket atomically to loopback; no persistent app host, proxy or service.
+// Isolated production-export acceptance: Expo owns server rendering and route
+// middleware; its pinned send implementation serves the exported client files.
+// A document alone is not a usable Web export: prove its executable assets too.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -33,8 +33,6 @@ const hosts = [
   },
 ];
 
-// Check the actual rendered body separately from metadata. A title, script,
-// style or inert template containing the expected words is not a rendered UI.
 export function assertHtmlDocument(html, { body, title, route }) {
   const document = html.match(/<html\b[^>]*>/i)?.[0] ?? "";
   assert.match(document, /\blang=["']ar["']/i, route + ": missing Arabic document");
@@ -57,35 +55,91 @@ export function assertHtmlDocument(html, { body, title, route }) {
 
 export function assertPublicRedirect(location, origin, route) {
   assert.ok(location, route + ": redirect location missing");
-  const target = new URL(location, origin);
-  assert.equal(target.href, new URL("/", origin).href, route + ": only same-origin public gate allowed");
+  assert.equal(new URL(location, origin).href, new URL("/", origin).href,
+    route + ": only same-origin public gate allowed");
 }
 
-function requestHandler(app) {
-  const build = path.join(app, "dist", "server");
-  for (const artifact of ["_expo/server/render.js", "_expo/routes.json"]) {
-    assert.ok(existsSync(path.join(build, artifact)), "Build the approved Expo Web SSR output first: " + app);
+// Expo emits JS script preloads in SSR, including bundles imported by inline
+// scripts. The manifest-derived client URLs must be actual same-origin files,
+// not arbitrary endpoints, foreign scripts or a successful HTML fallback.
+function attribute(tag, name) {
+  return tag.match(new RegExp("\\s" + name + "\\s*=\\s*([\"'])(.*?)\\1", "i"))?.[2];
+}
+export function documentAssets(html, origin) {
+  const assets = new Map();
+  const markup = html.replace(/<!--[\s\S]*?-->/g, "");
+  for (const tag of markup.matchAll(/<(script|link)\b[^>]*>/gi)) {
+    const kind = tag[1].toLowerCase();
+    const rel = attribute(tag[0], "rel")?.toLowerCase();
+    const as = attribute(tag[0], "as")?.toLowerCase();
+    const type = kind === "script" || rel === "modulepreload" || (rel === "preload" && as === "script")
+      ? "script" : rel === "stylesheet" || (rel === "preload" && as === "style") ? "style" : null;
+    if (!type) continue;
+    const ref = attribute(tag[0], kind === "script" ? "src" : "href");
+    if (kind === "script" && ref === undefined) continue;
+    assert.ok(ref, "Missing executable asset URL");
+    const url = new URL(ref, origin);
+    assert.equal(url.origin, origin, "External executable asset: " + ref);
+    assert.equal(url.search + url.hash, "", "Unexpected asset query or fragment: " + ref);
+    const pathname = decodeURIComponent(url.pathname);
+    assert.match(pathname, /^\/_expo\/static\/[a-zA-Z0-9_./@()[\]-]+$/, "Unexpected executable asset path: " + ref);
+    assert.ok(pathname.split("/").every(part => part !== "." && part !== ".."), "Invalid asset path");
+    assert.ok(pathname.endsWith(type === "script" ? ".js" : ".css"), "Asset type/path mismatch: " + ref);
+    const previous = assets.get(url.pathname);
+    assert.ok(!previous || previous.type === type, "Conflicting asset types: " + ref);
+    assets.set(url.pathname, { url: url.pathname, file: pathname.slice(1), type });
   }
-  // Resolve through the exact frozen Expo CLI dependency graph, never from
-  // an unrelated global package or a second dependency version.
+  assert.ok([...assets.values()].some(asset => asset.type === "script"), "No executable JavaScript referenced by SSR");
+  return [...assets.values()];
+}
+
+export async function assertAssetResponse(response, expected, asset) {
+  assert.equal(response.status, 200, asset.url + ": asset HTTP status");
+  const mime = response.headers.get("content-type") ?? "";
+  assert.match(mime, asset.type === "script" ? /^(application|text)\/(javascript|ecmascript)\b/i : /^text\/css\b/i,
+    asset.url + ": asset MIME type");
+  assert.ok(expected.length > 0, asset.url + ": empty exported asset");
+  assert.ok(Buffer.from(await response.arrayBuffer()).equals(expected), asset.url + ": served bytes differ from export");
+}
+
+function exportedApplication(app) {
+  const build = path.join(app, "dist", "server");
+  const client = path.join(app, "dist", "client");
+  assert.ok(statSync(client).isDirectory(), "Missing exported client directory");
+  assert.ok(statSync(path.join(build, "_expo/server/render.js")).isFile(), "Missing Expo server renderer");
+  const manifest = JSON.parse(readFileSync(path.join(build, "_expo/routes.json"), "utf8"));
+  assert.notEqual(manifest.mode, "development", "Production export required");
+  assert.ok(manifest.htmlRoutes?.length, "Missing SSR route inventory");
   const appRequire = createRequire(path.join(app, "package.json"));
   const expoRequire = createRequire(appRequire.resolve("expo/package.json"));
   const cliRequire = createRequire(expoRequire.resolve("@expo/cli/package.json"));
+  const send = cliRequire("send");
   const { createRequestHandler } = cliRequire("expo-server/adapter/http");
-  return createRequestHandler({ build, isDevelopment: false });
+  const render = createRequestHandler({ build, isDevelopment: false });
+  const middleware = cliRequire("connect")();
+
+  // Use the very same static-file transport used by the pinned Expo CLI's
+  // serveAsync implementation. Its client root never includes server code.
+  middleware.use((req, res, next) => {
+    const pathname = new URL(req.url ?? "/", "http://127.0.0.1").pathname;
+    if (!["GET", "HEAD"].includes(req.method) ||
+      !["/_expo/static/", "/assets/"].some(prefix => pathname.startsWith(prefix))) return next();
+    let fileFound = false;
+    send(req, pathname, { root: client, index: false, dotfiles: "deny" })
+      .on("file", () => { fileFound = true; })
+      .on("error", error => {
+        if (!fileFound && error.statusCode === 404) return next();
+        return next(error);
+      })
+      .pipe(res);
+  });
+  middleware.use(render);
+  return { client, middleware };
 }
 
 async function withLoopback(app, operation) {
-  const handler = requestHandler(app);
-  const server = createServer((req, res) => {
-    // The official adapter uses the error callback to propagate asynchronous
-    // render failures. Never turn an exception into successful HTML.
-    void handler(req, res, error => {
-      if (res.headersSent) { res.destroy(error); return; }
-      res.writeHead(error ? 500 : 404, { "content-type": "text/plain" });
-      res.end(error ? "EXPO_RENDER_FAILED" : "NOT_FOUND");
-    });
-  });
+  const { client, middleware } = exportedApplication(app);
+  const server = createServer(middleware);
   server.requestTimeout = 15000;
   try {
     await new Promise((resolve, reject) => {
@@ -94,7 +148,7 @@ async function withLoopback(app, operation) {
     });
     const address = server.address();
     assert.ok(address && typeof address !== "string" && address.address === "127.0.0.1");
-    await operation("http://127.0.0.1:" + address.port);
+    await operation("http://127.0.0.1:" + address.port, client);
   } finally {
     if (server.listening) {
       const closed = new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
@@ -105,20 +159,26 @@ async function withLoopback(app, operation) {
 }
 
 async function verifyHost({ name, pages, protectedRoutes = [] }) {
-  await withLoopback(path.join(root, "apps", name), async origin => {
-    function request(route, method = "GET") {
-      return fetch(origin + route, { method, signal: AbortSignal.timeout(15000), redirect: "manual" });
-    }
+  await withLoopback(path.join(root, "apps", name), async (origin, client) => {
+    const assets = new Map();
+    const request = (route, method = "GET") =>
+      fetch(origin + route, { method, signal: AbortSignal.timeout(15000), redirect: "manual" });
     for (const page of pages) {
       const response = await request(page.route);
       assert.equal(response.status, 200, name + page.route + ": HTTP status");
       assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
-      assertHtmlDocument(await response.text(), { ...page, route: name + page.route });
+      const html = await response.text();
+      assertHtmlDocument(html, { ...page, route: name + page.route });
+      for (const asset of documentAssets(html, origin)) assets.set(asset.url, asset);
     }
-    for (const route of retired) {
+    for (const asset of assets.values()) {
+      const expected = readFileSync(path.join(client, ...asset.file.split("/")));
+      await assertAssetResponse(await request(asset.url), expected, asset);
+    }
+    for (const route of [...retired, "/_expo/server/render.js", "/_expo/static/missing-client-chunk.js"]) {
       const response = await request(route);
-      assert.equal(response.status, 404, name + route + ": retired/unknown route must not render");
-      assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
+      assert.equal(response.status, 404, name + route + ": retired/unknown or private export path must not render");
+      if (retired.includes(route)) assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
       await response.arrayBuffer();
     }
     if (name === "customer") {
@@ -139,23 +199,20 @@ async function verifyHost({ name, pages, protectedRoutes = [] }) {
       await denied.arrayBuffer();
     }
     console.log("EXPO_WEB_PRODUCTION_HTTP_PASS app=" + name +
-      " routes=" + (pages.length + retired.length + protectedRoutes.length + 1) +
-      " rtl=true loopback=true browser_hydration=NOT_RUN");
+      " routes=" + (pages.length + retired.length + 2 + protectedRoutes.length + 1) +
+      " exactClientAssets=" + assets.size + " rtl=true loopback=true browser_hydration=NOT_RUN");
   });
 }
 
 async function main() {
   const args = process.argv.slice(2);
-  // Do not connect the production-export proof to a serving owner or inherit
-  // a privileged preview. These checks never send cookies or credentials.
   assert.notEqual(process.env.BTHWANI_ISOLATED_TEST_MODE, "true", "Refusing owner-connected preview");
   assert.notEqual(process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW, "1", "Refusing wallet preview");
   assert.notEqual(process.env.BTHWANI_DOCKER_CART_WEB_PREVIEW, "1", "Refusing cart preview");
   process.env.NODE_ENV = "production";
   if (args.length === 0) {
-    // Expo's generated server modules are process-scoped. Loading two app
-    // exports in one module cache can produce a false Merchant render failure.
-    // Each host has its own bounded process, with only one loopback listener.
+    // Each Expo renderer has a process-local module registry. Do not load
+    // different app exports in one process or launch another persistent host.
     for (const host of hosts) {
       const child = spawnSync(process.execPath, [process.argv[1], "--host", host.name], {
         cwd: root, stdio: "inherit", windowsHide: true, timeout: 120000,
@@ -163,7 +220,7 @@ async function main() {
       if (child.error) throw child.error;
       assert.equal(child.status, 0, "Expo SSR host failed: " + host.name);
     }
-    console.log("EXPO_WEB_SMOKE_PASS hosts=2 native_captain_web=NOT_ADMITTED static_assets_and_browser_hydration=NOT_RUN");
+    console.log("EXPO_WEB_SMOKE_PASS hosts=2 native_captain_web=NOT_ADMITTED browser_hydration=NOT_RUN");
     return;
   }
   const host = hosts.find(entry => entry.name === args[1]);
