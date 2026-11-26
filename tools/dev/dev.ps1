@@ -668,11 +668,11 @@ throw ('APP_LISTENER_NOT_READY '+$app)
   $httpProbe="function Test-AppHttpTarget {`n$((Get-Command Test-AppHttpTarget -CommandType Function).Definition)`n}`nfunction Test-AppRestartHealth {`n$((Get-Command Test-AppRestartHealth -CommandType Function).Definition)`n}"
   Invoke-Lenovo ($remoteAppSpecs + [Environment]::NewLine + $remoteAppProcessLifecycle + [Environment]::NewLine + $httpProbe + [Environment]::NewLine + $body)
 }
-function Probe-App([string]$url,[string]$accept='text/html',[string]$platform='') {
+function Probe-App([string]$url,[string]$accept='text/html',[string]$platform='',[ValidateRange(1,45)][int]$TimeoutSeconds=7) {
   $curl=Join-Path $env:WINDIR 'System32\curl.exe'
   Assert-Ok (Test-Path -LiteralPath $curl -PathType Leaf) 'WINDOWS_CURL_MISSING'
   $platformHeader=if($platform){@('--header',('Expo-Platform: '+$platform))}else{@()}
-  $response=@(& $curl '--silent' '--max-time' '7' '--output' 'NUL' '--write-out' '%{http_code}|%{content_type}' '--header' ('Accept: '+$accept) @platformHeader $url 2>$null)
+  $response=@(& $curl '--silent' '--max-time' ([string]$TimeoutSeconds) '--output' 'NUL' '--write-out' '%{http_code}|%{content_type}' '--header' ('Accept: '+$accept) @platformHeader $url 2>$null)
   $exitCode=$LASTEXITCODE
   $parts=($response -join '').Trim().Split('|')
   return @{ Code=$(if($parts.Count){$parts[0]}else{'000'}); Mime=$(if($parts.Count -gt 1){$parts[1]}else{''}); Exit=$exitCode }
@@ -804,7 +804,7 @@ function Open-Android {
     $name=[string]$entry.Name
     $port=[int]$entry.Port
     # Native development builds need Expo's manifest, not merely web HTML or /status.
-    $manifest=Probe-App ('http://127.0.0.1:'+$port+'/') 'application/expo+json' 'android'
+    $manifest=Probe-App ('http://127.0.0.1:'+$port+'/') 'application/expo+json' 'android' 45
     if($manifest.Exit -ne 0 -or $manifest.Code -ne '200' -or $manifest.Mime -notmatch '^application/expo\+json'){
       $blocked++
       Say 'ANDROID_APP' ($name+' BLOCKED native_manifest status='+$manifest.Code+' content_type='+$manifest.Mime)

@@ -32,6 +32,33 @@ test("the Android Expo manifest check identifies the native platform", () => {
   assert.doesNotMatch(opener, /Start-Sleep -Seconds 3/);
 });
 
+test("native manifest probe tolerates a cold response beyond the generic HTTP timeout", {skip:process.platform!=="win32"}, async () => {
+  const {createServer}=await import("node:http");
+  const {spawn}=await import("node:child_process");
+  const server=createServer((_req,res)=>setTimeout(()=>{
+    res.writeHead(200,{"Content-Type":"application/expo+json"});
+    res.end("{}");
+  },8500));
+  await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve);});
+  try {
+    const quoted=scriptPath.replaceAll("'","''");
+    const ps=[
+      "$ErrorActionPreference='Stop'",
+      "$tokens=$null;$errors=$null",
+      `$ast=[Management.Automation.Language.Parser]::ParseFile('${quoted}',[ref]$tokens,[ref]$errors)`,
+      "foreach($name in @('Assert-Ok','Probe-App')){$n=$ast.Find({param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $name},$true);if(!$n){throw 'FUNCTION_MISSING'};Invoke-Expression $n.Extent.Text}",
+      `$r=Probe-App 'http://127.0.0.1:${server.address().port}/' 'application/expo+json' 'android' 45`,
+      "if($r.Exit -ne 0 -or $r.Code -ne '200' -or $r.Mime -notmatch '^application/expo\\+json'){throw ('NATIVE_MANIFEST_TIMEOUT '+$r.Exit)}",
+    ].join("; ");
+    const result=await new Promise((resolve,reject)=>{
+      const p=spawn("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{windowsHide:true,timeout:20000});
+      let output=""; p.stdout.on("data",v=>output+=v);p.stderr.on("data",v=>output+=v);
+      p.once("error",reject);p.once("close",code=>resolve({code,output}));
+    });
+    assert.equal(result.code,0,result.output);
+  } finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
 test("Chrome reuses the intended customer, merchant and operator tabs when Expo shows a URL title", () => {
   const opener = readFileSync(scriptPath, "utf8");
   const expected = opener.match(/\$expected=@\(([\s\S]*?)\r?\n\s*\)/);
