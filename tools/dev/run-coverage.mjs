@@ -88,7 +88,8 @@ try {
       outsideScope++;
       continue;
     }
-    assert.ok(!measured.has(source), "Duplicate LCOV source: " + source);
+    // LCOV permits repeated SF records (for example distinct ESM query URLs).
+    // Keep the original counters and let the scanner aggregate its own evidence.
     measured.add(source);
     const count = prefix => {
       const entries = lines.filter(line => line.startsWith(prefix));
@@ -115,7 +116,7 @@ try {
   renameSync(candidate, report);
   console.log(`LCOV_EXTERNAL_RECORDS_EXCLUDED count=${external}`);
   console.log(`LCOV_SONAR_SCOPE_RECORDS_EXCLUDED count=${outsideScope}`);
-  console.log(`REAL_SOURCE_LCOV_PASS files=${measured.size} hit=${hit} lines=${found} measured_percent=${(100 * hit / found).toFixed(1)} other_sources_not_assumed_covered=true`);
+  console.log(`REAL_SOURCE_LCOV_PASS files=${measured.size} records=${records.length} record_hits=${hit} record_lines=${found} unique_line_percentage=NOT_COMPUTED scanner_owns_aggregation=true other_sources_not_assumed_covered=true`);
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

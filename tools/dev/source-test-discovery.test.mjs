@@ -290,3 +290,27 @@ test("project feedback executes only the admitted project tests and never replac
   assert.match(rejected.stdout, /unrelated merchant test/);
   assert.equal(run(root).status, 1);
 }));
+
+test("native LCOV preserves distinct evaluations of the same authored source", () => coverageFixture(({ add, report, run }) => {
+  add("tools/dev/repeated-source.mjs", [
+    "export function choose(value) {",
+    "  if (value) return 1;",
+    "  return 2;",
+    "}",
+  ].join("\n"));
+  add("tools/dev/repeated-source.test.mjs", [
+    'import { choose as first } from "./repeated-source.mjs";',
+    'import { choose as second } from "./repeated-source.mjs?separate-evaluation";',
+    'import test from "node:test";',
+    'import assert from "node:assert/strict";',
+    'test("separate native modules cover distinct branches", () => { assert.equal(first(true), 1); assert.equal(second(false), 2); });',
+  ].join("\n"));
+  const result = run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const lcov = readFileSync(report, "utf8");
+  const records = lcov.split("end_of_record").filter(record => record.includes("SF:tools/dev/repeated-source.mjs\n"));
+  assert.ok(records.length >= 1, "original measured source must survive");
+  assert.ok(records.some(record => /DA:2,[1-9]/.test(record)), "positive branch must remain measured");
+  assert.ok(records.some(record => /DA:3,[1-9]/.test(record)), "negative branch must remain measured");
+  assert.match(result.stdout, /scanner_owns_aggregation=true/);
+}));
