@@ -63,12 +63,19 @@ test("all current owner OpenAPI 3.1 documents parse with their admitted operatio
   assert.ok(validate("dsh").operations > 0);
 });
 
-test("Customer contract groups use canonical internal names without duplicate legacy fragments", () => {
-  for (const [owner, group] of [["identity", "auth"], ["dsh", "shares"]]) {
+test("owner contract tree contains only populated modules, not reserved or legacy Customer placeholders", async () => {
+  const { readdirSync } = await import("node:fs");
+  const { default: YAML } = await import("yaml");
+  for (const owner of ["identity", "dsh", "wlt"]) {
     const folder = path.join(root, "services", owner, "contracts/openapi/paths");
-    assert.ok(existsSync(path.join(folder, `customer-${group}.yaml`)), `missing canonical ${owner} group`);
-    assert.equal(existsSync(path.join(folder, `client-${group}.yaml`)), false, `legacy ${owner} group remains`);
+    for (const file of readdirSync(folder)) {
+      if (!file.endsWith(".yaml")) continue;
+      const source = YAML.parse(readFileSync(path.join(folder, file), "utf8"));
+      assert.ok(source?.paths && Object.keys(source.paths).length > 0, `empty owner path module: ${owner}/${file}`);
+      assert.doesNotMatch(file, /^client-(?:auth|shares)\.yaml$/);
+    }
   }
+  assert.ok(existsSync(path.join(root, "services/identity/contracts/openapi/paths/customer-auth.yaml")));
 });
 
 test("reject duplicate YAML mapping keys instead of silently accepting the last value", () => {
