@@ -149,7 +149,7 @@ test('Sonar requires every Go owner and rejects expired quality gate waivers', a
   const { readFileSync } = await import('node:fs');
   const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   const sonar = ci.slice(ci.indexOf('\n  sonar:\n'));
-  assert.ok(sonar.includes('name: SonarQube Cloud Quality Gate'));
+  assert.ok(sonar.includes("name: ${{ github.event_name == 'pull_request' && 'SonarQube Cloud Quality Gate' || 'SonarQube main analysis' }}"));
   assert.doesNotMatch(sonar, /Temporary PR 193 coverage exception|sonar[.]coverage[.]exclusions/);
   assert.doesNotMatch(sonar, /continue-on-error:|Verify the approved coverage exception/);
   assert.match(sonar, /for service in identity dsh wlt; do/);

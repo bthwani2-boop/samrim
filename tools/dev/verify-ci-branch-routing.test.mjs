@@ -32,7 +32,7 @@ function events(file) {
 for (const file of workflows) {
   test(file + " handles future branches and excludes historical archives", () => {
     const { content, push, pr } = events(file);
-    assert.match(push, /^    branches:\n      - '\*\*'\n      - '!archive\/\*\*'\n      - '!41'$/m);
+    assert.match(push, /^    branches:\n      - '\*\*'\n      - '!archive\/\*\*'$/m);
     if (file.endsWith("/go-quality.yml")) assert.match(push, /^      - '!main'$/m);
     else assert.doesNotMatch(push, /^      - '!main'$/m);
     assert.doesNotMatch(push, /^    branches-ignore:/m);
@@ -50,22 +50,22 @@ for (const file of workflows) {
   });
 }
 
-test("fast-guard remains required on every eligible push and main PR", () => {
+test("main PR retains the required gate; development push cannot publish its name", () => {
   const { content, push, pr } = events(workflows[0]);
   assert.doesNotMatch(push, /^    paths(?:-ignore)?:/m);
   assert.match(pr, /^    branches:\n      - main$/m);
-  assert.match(content, /^    name: fast-guard$/m);
-  assert.match(content, /^    needs: \[foundation, presentation, dependency_pr, go_pr\]$/m);
+  assert.ok(content.includes("name: ${{ github.event_name == 'pull_request' && 'fast-guard' || 'development-ci' }}"));
+  assert.match(content, /^    needs: \[workspace_validation, application_quality, dependency_security, backend_quality\]$/m);
   assert.match(content, /^    if: \$\{\{ !cancelled\(\) \}\}$/m);
   assert.match(content, /^      - name: Refuse read-only archive as main PR source$/m);
-  assert.match(content, /^            archive\/\*\|41\)$/m);
+  assert.match(content, /^            archive\/\*\)$/m);
 });
 
 test("every supported development branch executes discovered Feature regression tests before fast-guard", () => {
   const { content } = events(workflows[0]);
   const install = content.indexOf("pnpm install --frozen-lockfile --ignore-scripts");
   const coverage = content.indexOf("Run discovered Feature tests and collect measured coverage");
-  const fastGuard = content.indexOf("  fast_guard:");
+  const fastGuard = content.indexOf("  required_ci:");
   assert.ok(install >= 0 && coverage > install && fastGuard > coverage,
     "Feature test discovery must run after dependency install and before required fast-guard");
   assert.match(content, /^      - name: Run discovered Feature tests and collect measured coverage\n        run: pnpm check:coverage$/m);
@@ -76,7 +76,7 @@ test("Operator HTTP checks run after the production Next build, not as source co
   const build = content.indexOf("name: Build the pinned Next.js Operator presentation host");
   const smoke = content.indexOf("name: Exercise production Operator session and policy routes");
   assert.ok(build >= 0 && smoke > build, "Operator auth/route HTTP checks must execute after the Next build");
-  const step = content.slice(smoke, content.indexOf("\n  fast_guard:", smoke));
+  const step = content.slice(smoke, content.indexOf("\n  required_ci:", smoke));
   assert.match(step, /BTHWANI_OPERATOR_HTTP_TEST: '1'/);
   assert.match(step, /node --test --test-concurrency=1/);
   for (const name of ["protected-routes", "workspace-http", "policy-http"]) {
@@ -89,7 +89,7 @@ test("CI must verify source test discovery before coverage and fast-guard", () =
   const install = content.indexOf("pnpm install --frozen-lockfile --ignore-scripts");
   const admission = content.indexOf("run: node tools/dev/run-coverage.mjs --check-discovery");
   const coverage = content.indexOf("run: pnpm check:coverage");
-  const fastGuard = content.indexOf("  fast_guard:");
+  const fastGuard = content.indexOf("  required_ci:");
   assert.ok(install >= 0 && admission > install && coverage > admission && fastGuard > coverage,
     "CI must prove new test inclusion after install and before coverage/fast-guard");
   assert.match(content, /^        run: node tools\/dev\/run-coverage\.mjs --check-discovery$/m);
@@ -123,7 +123,7 @@ test("full source coverage replaces repeated application and infrastructure test
   const tests = new Set(discoverWorkspaceNodeTests(fileURLToPath(root)));
   const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
   const localAppChecks = pkg.scripts["check:apps"];
-  const staticAppChecks = pkg.scripts["check:apps:static"];
+  const staticAppChecks = pkg.scripts["check:apps:source"];
   assert.ok(staticAppChecks, "missing reusable static checks");
   assert.ok(localAppChecks.includes("pnpm run check:apps:static"));
   for (const file of [
@@ -139,10 +139,13 @@ test("full source coverage replaces repeated application and infrastructure test
     assert.ok(tests.has(file), "not discovered by coverage: " + file);
     assert.ok(!content.includes(file), "duplicate explicit test in CI: " + file);
   }
-  for (const command of ["verify-app-foundations.mjs", "verify-rtl.mjs", "verify-expo-config.mjs", "verify-application-boundaries.mjs", "typecheck"]) {
+  for (const command of ["verify-app-foundations.mjs", "verify-rtl.mjs", "verify-expo-config.mjs", "verify-application-boundaries.mjs"]) {
     assert.ok(staticAppChecks.includes(command), "missing actual check: " + command);
   }
-  assert.match(content, /pnpm check:apps:static/);
+  assert.match(content, /pnpm check:apps:source/);
+  assert.match(pkg.scripts["check:apps:static"], /pnpm run check:apps:source && pnpm -r --if-present run typecheck/);
+  assert.match(content, /pnpm exec nx affected -t typecheck/);
+  assert.match(content, /pnpm -r --if-present run typecheck/);
 });
 
 test("CI retains real security and contract checks without the retired scaffold guard", () => {
@@ -207,8 +210,8 @@ test("main PR must invoke all owner and dependency checks through required fast-
   const { content, pr } = events(workflows[0]);
   assert.doesNotMatch(pr, /^    paths(?:-ignore)?:/m);
   for (const [job, file] of [
-    ["dependency_pr", workflows[1]],
-    ["go_pr", workflows[2]],
+    ["dependency_security", workflows[1]],
+    ["backend_quality", workflows[2]],
   ]) {
     const lines = content.split("\n");
     const header = "  " + job + ":";
@@ -216,7 +219,7 @@ test("main PR must invoke all owner and dependency checks through required fast-
     assert.ok(index >= 0, "Missing required reusable job: " + job);
     assert.equal(lines.lastIndexOf(header), index, "Duplicate reusable job: " + job);
     assert.deepEqual(lines.slice(index + 1, index + 3), [
-      job === "go_pr"
+      job === "backend_quality"
         ? "    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}"
         : "    if: ${{ github.event_name == 'pull_request' }}",
       "    uses: ./" + file,
@@ -225,7 +228,7 @@ test("main PR must invoke all owner and dependency checks through required fast-
     assert.match(called, /^  workflow_call:$/m);
     assert.doesNotMatch(called, /^  pull_request:/m, "PR must run through one owner workflow call");
   }
-  assert.match(content, /^    needs: \[foundation, presentation, dependency_pr, go_pr\]$/m);
+  assert.match(content, /^    needs: \[workspace_validation, application_quality, dependency_security, backend_quality\]$/m);
 });
 
 test("required gate fails closed for missing, skipped, cancelled or failed main PR owner checks", () => {
@@ -235,6 +238,7 @@ test("required gate fails closed for missing, skipped, cancelled or failed main 
   const pass = {
     CI_EVENT: "pull_request",
     CI_REF: "refs/pull/195/merge",
+    FULL_SCOPE: "true",
     FOUNDATION_RESULT: "success",
     PRESENTATION_RESULT: "success",
     DEPENDENCY_RESULT: "success",
@@ -247,6 +251,7 @@ test("required gate fails closed for missing, skipped, cancelled or failed main 
       env: { ...process.env, ...env },
     });
   assert.equal(run(pass).status, 0);
+  for (const full of ['false', '', 'unknown']) assert.equal(run({...pass, FULL_SCOPE: full}).status, 1);
   for (const key of ["FOUNDATION_RESULT", "PRESENTATION_RESULT", "DEPENDENCY_RESULT", "GO_RESULT"]) {
     for (const result of ["failure", "cancelled", "skipped", ""]) {
       assert.equal(run({ ...pass, [key]: result }).status, 1, key + ": " + result);
@@ -260,6 +265,8 @@ test("required gate fails closed for missing, skipped, cancelled or failed main 
   }
   const mainPush = { ...pass, CI_EVENT: "push", CI_REF: "refs/heads/main", DEPENDENCY_RESULT: "skipped" };
   assert.equal(run(mainPush).status, 0);
+  assert.equal(run({...mainPush, FULL_SCOPE: 'false'}).status, 1);
+  assert.equal(run({...pass, CI_EVENT: 'push', CI_REF: 'refs/heads/development', FULL_SCOPE: 'false', DEPENDENCY_RESULT: 'skipped', GO_RESULT: 'skipped'}).status, 0);
   assert.equal(run({ ...mainPush, GO_RESULT: "skipped" }).status, 1);
   assert.equal(run({ ...pass, CI_EVENT: "unexpected" }).status, 1);
 });
@@ -268,8 +275,8 @@ test("Sonar uses one same-run coverage handoff and retains the required check", 
   const { content } = events(workflows[0]);
   const go = readFileSync(new URL(workflows[2], root), "utf8");
   assert.equal(existsSync(new URL(".github/workflows/sonar-quality.yml", root)), false);
-  assert.match(content, /^    name: SonarQube Cloud Quality Gate$/m);
-  assert.match(content, /^    needs: \[presentation, go_pr\]$/m);
+  assert.ok(content.includes("name: ${{ github.event_name == 'pull_request' && 'SonarQube Cloud Quality Gate' || 'SonarQube main analysis' }}"));
+  assert.match(content, /^    needs: \[application_quality, backend_quality\]$/m);
   for (const [producer, artifact] of [[content, "sonar-js"], [go, "sonar-go"], [go, "sonar-postgres"]]) {
     assert.ok(producer.includes("name: " + artifact));
     assert.ok(content.includes("name: " + artifact));
@@ -323,5 +330,51 @@ test("Sonar coverage admission reuses matching trees and rejects incomplete or i
       assert.equal(existsSync(path.join(scratch, "coverage", "lcov.info")), scenario.expected === "reuse=true", scenario.name);
       assert.equal(existsSync(path.join(scratch, "coverage", "owner-postgres", "profile.out")), scenario.expected === "reuse=true", scenario.name);
     } finally { rmSync(scratch, { recursive: true, force: true }); }
+  }
+});
+
+test("development build scope uses Nx for recognized app changes and defaults to full on ambiguity", () => {
+  const { content } = events(workflows[0]);
+  const step = content.match(/- name: Determine affected development build scope\n[\s\S]*?        run: \|\n([\s\S]*?)\n      - name: Validate owner OpenAPI/);
+  assert.ok(step);
+  const script = step[1].split("\n").map(line => line.replace(/^ {10}/, "")).join("\n");
+  const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe") : "bash";
+  const cases = [
+    { expected: false },
+    { event: "pull_request", expected: true },
+    { event: "workflow_dispatch", expected: true },
+    { ref: "refs/heads/main", expected: true },
+    { before: "000", expected: true },
+    { ancestor: "no", expected: true },
+    { files: "package.json", expected: true },
+    { files: "apps/customer/src/App.tsx\npackages/design-system/src/index.ts", expected: true },
+    { nx: "[]", expected: true },
+    { nx: '["@bthwani/merchant"]', expected: true },
+    { nx: "invalid", expected: true },
+    { nx: '["@bthwani/customer","@bthwani/merchant"]', expected: false },
+    { nxFail: "yes", expected: true },
+  ];
+  for (const scenario of cases) {
+    const scratch = mkdtempSync(path.join(tmpdir(), "ci-scope-"));
+    try {
+      const output = path.join(scratch, "output.txt").replaceAll("\\", "/");
+      const stubs = 'git() { case "$1" in merge-base) test "$ANCESTOR" = yes;; diff) printf "%s\\n" "$CHANGED_FILES";; *) return 1;; esac; }\npnpm() { test "$NX_FAIL" != yes || return 1; printf "%s\\n" "$NX_RESULT"; }\n';
+      const result = spawnSync(bash, ["-c", stubs + script], {
+        cwd: scratch,
+        encoding: "utf8",
+        env: {
+          ...process.env, GITHUB_OUTPUT: output, RUNNER_TEMP: scratch.replaceAll("\\", "/"),
+          GITHUB_EVENT_NAME: scenario.event ?? "push", GITHUB_REF: scenario.ref ?? "refs/heads/development",
+          BEFORE_SHA: scenario.before ?? "a".repeat(40), GITHUB_SHA: "b".repeat(40),
+          ANCESTOR: scenario.ancestor ?? "yes", CHANGED_FILES: scenario.files ?? "apps/customer/src/App.tsx",
+          NX_RESULT: scenario.nx ?? '["@bthwani/customer"]', NX_FAIL: scenario.nxFail ?? "no",
+        },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      const actual = readFileSync(output, "utf8");
+      assert.ok(actual.includes("full=" + scenario.expected + "\n"), JSON.stringify(scenario) + actual);
+      if (scenario.expected) assert.ok(actual.includes("projects=[]"));
+      else assert.ok(actual.includes("projects=" + (scenario.nx ?? '["@bthwani/customer"]')));
+    } finally { rmSync(scratch, {recursive:true,force:true}); }
   }
 });
