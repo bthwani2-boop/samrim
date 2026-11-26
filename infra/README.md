@@ -31,6 +31,8 @@ The two base volumes are project-scoped; The owner trust configuration reference
 Existing `samrim-local` containers, historical customers/Root Owner, balances, orders,
 secrets, applied migrations and media are never copied or changed.
 
+The canonical Compose model sets explicit local log rotation (10 MiB, three files per container) and initial development memory/process ceilings: PostgreSQL 2 GiB/512, media 1536 MiB/512, Mailpit 256 MiB/256, payment mock 768 MiB/256, each Go owner and optional DSH bootstrap 512 MiB/256. These are initial ceilings for the observed 8 GiB Docker VM, not production sizing or peak-load guarantees. Running containers retain their previously admitted configuration until controlled replacement is separately authorized and proven. Never bypass configuration-drift refusal to activate these limits.
+
 ## Owner services and explicit capabilities
 
 The single canonical environment definition is [compose.yaml](compose.yaml), implementing the [environment-owned Compose policy](../governance/engineering.md#repository-checks-and-isolated-runtime-acceptance). It defines four foundational dependencies and the three real service owners (Identity, DSH, WLT), with a separately scoped DSH bootstrap role. All three serving owners are default services; `bootstrap` is the only optional one-shot role. Profiles never select applications or business capabilities. Starting/replacing one owner always names its service explicitly. No application-specific Compose files are needed.

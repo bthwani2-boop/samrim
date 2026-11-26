@@ -228,3 +228,20 @@ test("shared infrastructure admits no new application or capability Compose file
   assert.deepEqual([...ownerComposeInputs].sort(), allowed, "runtime input scope must match the single canonical definition");
   assert.deepEqual(files, allowed, "application/capability Compose files are forbidden");
 });
+
+test("canonical Compose roles share explicit log retention and bounded development resources", () => {
+  const model = compose("compose.yaml");
+  const budgets = {postgres:"2g",media:"1536m",mailpit:"256m","payment-mock":"768m",
+    dsh:"512m",identity:"512m",wlt:"512m","dsh-bootstrap":"512m"};
+  let totalMiB = 0;
+  for (const [name, service] of Object.entries(model.services)) {
+    assert.equal(service.mem_limit, budgets[name], name);
+    assert.equal(service.pids_limit, ["postgres","media"].includes(name) ? 512 : 256, name);
+    assert.deepEqual(service.logging, {driver:"local",options:{"max-size":"10m","max-file":"3"}}, name);
+    const [, amount, unit] = /^(\d+)([mg])$/.exec(service.mem_limit);
+    totalMiB += Number(amount) * (unit === "g" ? 1024 : 1);
+  }
+  assert.deepEqual(Object.keys(model.services).sort(), Object.keys(budgets).sort());
+  assert.equal(totalMiB, 6656);
+  assert.ok(totalMiB < 8192, "leave VM headroom including optional bootstrap");
+});
