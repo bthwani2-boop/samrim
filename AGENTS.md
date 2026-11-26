@@ -57,7 +57,7 @@ Production stays BLOCKED; authenticated real users, historic money, session stat
 
 ## 5. Execution and concurrency
 - Prefer a directly capable, connected, authorized tool. Do not require any particular computer channel. Use specialist tools when the affected behavior requires them. Do not run Codex CLI unless explicitly requested and direct execution is inadequate.
-- One writer per shared file, migration, database or Git index. Before retrying interrupted writes, read their actual durable effect. Never overwrite a concurrent edit silently.
+- Default to one responsible executor; parallel execution is optional and justified only by independent work or a measured benefit. One writer per shared file, migration, database or Git index. When other writers are active, reserve only the affected shared resources and a temporary Git delivery turn; release each reservation after verified delivery or explicit handoff. A sole executor still checks ownership and Git state, but needs no additional coordinator, worker, campaign or duplicate review merely to perform a task. Before retrying interrupted writes, read their actual durable effect. Never overwrite a concurrent edit silently.
 - At each bounded slice: define accepted outcome, canonical owner, dependencies, blast radius, risks, tests, mutation rights, rollback boundary and proof. Execute the smallest **coherent** cross-surface slice, not isolated cosmetic patches.
 
 ## 6. Verification and delivery

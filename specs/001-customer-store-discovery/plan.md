@@ -49,7 +49,7 @@ Deliver the smallest genuine Customer marketplace Store discovery backed by DSH-
 4. Write RED tests for public discovery, privacy, DIRECT no-marketplace listing, Store/Offer visibility and pagination; implement smallest owner read until GREEN.
 5. Generate/reference typed contract client from approved DSH contract; integrate Customer Arabic RTL Web/Android screens and failure/context-switch recovery; no local fact writer.
 6. Run genuine owner-backed Web/Android positive and negative journeys, ACL/IDOR/stale-response cases and applicable executor technical review under [AGENTS.md](../../AGENTS.md). Keep unrun iOS and financial workflows explicit.
-7. Review diff, tests and ownership, then local Commit only under the existing exclusive Git turn without staging others' files. Push requires a separate explicit human authorization; if authorized, verify exact remote SHA and applicable CI. Never create a branch/PR or merge/deploy implicitly.
+7. Review diff, tests and ownership, then commit the tested owned batch without staging others' files, under the temporary exclusive Git turn when writers share a checkout. Push under the applicable explicit one-time or standing human delegation in [AGENTS.md](../../AGENTS.md), then verify exact remote SHA and applicable CI. Never create a branch/PR or merge/deploy implicitly.
 
 ## Complexity and dependencies
 
