@@ -12,9 +12,9 @@ This environment is synthetic development only, not production deployment. Legac
 | `media` | Fresh SeaweedFS mini, own media volume/credentials | 3233 |
 | `mailpit` | Local inbound test email capture | 3226 |
 | `payment-mock` | WireMock with fixed synthetic cash-in evidence (no production rails) | 3290 |
-| `wlt` (opt-in overlay) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
-| `identity` (opt-in overlay) | Isolated synthetic Identity authentication and authorization | 3201 |
-| `dsh` (with optional Compose file) | DSH owner; admitted capabilities depend on explicit configuration | 3202 |
+| `wlt` (`wlt-reader` profile) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
+| `identity` (`identity-verifier` profile) | Isolated synthetic Identity authentication and authorization | 3201 |
+| `dsh` (`implementation` profile) | DSH owner; admitted capabilities depend on explicit configuration | 3202 |
 
 The `payment-mock` image is built from `tests/infra/payment-mock/Dockerfile` using the existing
 pinned WireMock base and fixed, synthetic funding-status mappings. Only the
@@ -54,7 +54,7 @@ Never reuse donor images, production data or `samrim-local` volumes.
 ### Opt-in real WLT read-only container
 
 WLT has its own service definition in `compose.yaml` and a pinned service-owned
-Dockerfile. The refoundation database currently used by Identity/DSH is
+Dockerfile. The existing owner databases used by Identity/DSH are
 **not** renamed, erased or migrated. Provision `bthwani_wlt_test` explicitly
 using `pwsh -NoProfile -File tools/dev/provision-wlt-test-db.ps1` only after
 confirming it and its three WLT roles do not already exist. That operation
@@ -94,7 +94,7 @@ Run from the checkout root (never start an entire profile). The default
 rollout. An image build by itself does not recreate an existing container:
 
 ```powershell
-powershell -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner dsh
+pwsh -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner dsh
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation up -d --no-deps dsh
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation ps dsh
@@ -177,7 +177,7 @@ For isolated Merchant standing, explicitly set `REF_DSH_ENABLE_ISOLATED_MERCHANT
 The opt-in deployment sequence is:
 
 ```powershell
-powershell -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner identity
+pwsh -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner identity
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile identity-verifier config --quiet
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile identity-verifier up -d --no-deps identity
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile identity-verifier ps identity

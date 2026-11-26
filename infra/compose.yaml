@@ -104,8 +104,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     labels:
-      com.bthwani.environment: refoundation
-      com.bthwani.worktree: samrim-refoundation-clean-20261112
+      <<: *labels
       com.bthwani.capability: customer-store-catalog
     environment:
       REF_POSTGRES_USER: "${REF_DSH_RUNTIME_USER:-}"
@@ -153,9 +152,7 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     labels:
-      com.bthwani.environment: refoundation
-      # Preserve existing Compose runtime identity across Git branch switches.
-      com.bthwani.worktree: samrim-refoundation-clean-20261112
+      <<: *labels
       com.bthwani.capability: identity-synthetic-session-verifier
     environment:
       BTHWANI_ISOLATED_TEST_MODE: "true"
@@ -209,9 +206,8 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     labels:
-      com.bthwani.environment: refoundation
+      <<: *labels
       com.bthwani.capability: customer-wallet-read-only
-      com.bthwani.worktree: samrim-refoundation-clean-20261112
     environment:
       BTHWANI_ISOLATED_TEST_MODE: "true"
       BTHWANI_ISOLATED_CONTAINER_MODE: "true"

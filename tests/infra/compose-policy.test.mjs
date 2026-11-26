@@ -9,7 +9,7 @@ const infra = fileURLToPath(new URL("../../infra/", import.meta.url));
 const admittedComposeFiles = ["compose.yaml"];
 function compose(name) {
   const document = YAML.parseDocument(readFileSync(path.join(infra, name), "utf8"), {
-    strict: true, uniqueKeys: true,
+    strict: true, uniqueKeys: true, merge: true,
   });
   assert.deepEqual(document.errors, [], `${name} must parse without duplicate keys`);
   return document.toJS();
@@ -29,6 +29,20 @@ test("database and mock integrations stay in one isolated project", () => {
   assert.ok(!base.services["payment-mock"].volumes?.length, "synthetic provider must not mount host/legacy data");
   assert.deepEqual(Object.keys(base.services).sort(), ["dsh","dsh-bootstrap","identity","mailpit","media","payment-mock","postgres","wlt"]);
   assert.deepEqual(Object.keys(base.services).filter(name=>!base.services[name].profiles?.length).sort(), ["mailpit","media","payment-mock","postgres"]);
+});
+
+test("serving containers share one canonical environment-label definition", () => {
+  const model = compose("compose.yaml");
+  const source = readFileSync(path.join(infra, "compose.yaml"), "utf8");
+  for (const name of ["postgres", "mailpit", "media", "payment-mock", "dsh", "identity", "wlt"]) {
+    const labels = model.services[name].labels;
+    assert.equal(labels["com.bthwani.environment"], model["x-labels"]["com.bthwani.environment"], name);
+    assert.equal(labels["com.bthwani.worktree"], model["x-labels"]["com.bthwani.worktree"], name);
+  }
+  assert.equal([...source.matchAll(/^\s+com\.bthwani\.worktree:/gm)].length, 1);
+  assert.equal(model.services.dsh.labels["com.bthwani.capability"], "customer-store-catalog");
+  assert.equal(model.services.identity.labels["com.bthwani.capability"], "identity-synthetic-session-verifier");
+  assert.equal(model.services.wlt.labels["com.bthwani.capability"], "customer-wallet-read-only");
 });
 
 test("WLT is the real isolated read-only owner and never a migration service", () => {

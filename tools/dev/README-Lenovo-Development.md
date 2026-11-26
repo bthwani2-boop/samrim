@@ -39,7 +39,6 @@ For a genuinely usable **isolated** Operator login, independently verify that th
 ## Commands
 - Validate the existing watcher code: `node --check tools/dev/sync-lenovo-source.mjs`.
 - The running Scheduled Task already reconciles changes automatically; do not launch a second `--once`/`--watch` source writer.
-- Normal automatic mode: the existing Surface Scheduled Task invokes pinned node.exe with tools/dev/sync-lenovo-source.mjs --watch directly; do not start duplicate watch processes.
 - Test policy: node --test D:\samrim\tools\dev\sync-lenovo-source.test.mjs
 
 ## Isolated owner runtime reconciliation
@@ -48,11 +47,11 @@ Use the existing unified lifecycle CLI, from Surface, not a second watcher:
 
 - `pnpm dev docker reconcile` checks the running Compose configuration and owner source drift.
 - `pnpm dev docker reconcile -Apply` runs fresh owner tests without live DB test credentials, builds through the existing pinned owner build scripts, verifies image labels, and replaces only changed running owners with `--no-deps --no-build --pull never`. Previous image tags and reconstructed Compose hashes must match before replacement; failed known replacements restore the previous configuration/images, and ambiguous writes stop. Never start SQL/migration roles or change volumes.
-- `pnpm dev docker reconcile -Apply -EnableCaptain` explicitly admits the existing Captain overlay once, only in the isolated development environment, after checking the pre-provisioned read-only TLS volumes. This option is never used by the automatic watcher.
+- `pnpm dev docker reconcile -Apply -EnableCaptain` explicitly admits the Captain owner capability once, only in the isolated development environment, after checking the pre-provisioned read-only TLS volumes. This option is never used by the automatic watcher.
 
 Automatic committed-owner reconciliation is opt-in for the canonical Surface watcher. After explicit owner authorization, set the existing SourceSync state directory's `runtime-reconcile.enabled` file to the exact text `isolated-committed-owner-images-v1` and reload the existing watcher task through its authorized owner; do not create another watcher. The watcher checks the owner/configuration source fingerprint on its normal cycle, runs the unified CLI asynchronously under its existing lifecycle mutex, and audits unchanged source at a bounded interval. Its attempt record is stored beside the existing sync manifest. An ambiguous or interrupted attempt blocks future automatic writes pending owner readback and reconciliation; a known rolled-back attempt is not repeated for the same source. The actual automatic reconciler publishes one atomic terminal receipt in SourceSync, keyed to a unique attempt, so a watcher interruption after a proven successful apply no longer strands the scheduler. The watcher remains the sole scheduling-state writer; a stale or unrelated receipt never releases a hold. For a genuinely unresolved or legacy attempt, inspect the previous operation and its durable effects, then use `pnpm dev docker reconcile -RecoverRuntimeAttempt <exact-reviewed-64-character-key>` only after explicit owner review. The existing lifecycle mutex protects the read-only owner/configuration and database-principal checks; the command refuses stale, unhealthy, dirty, or concurrently changing owners. It acknowledges the exact reviewed state as retry, not historical success; it never replaces a container or runs SQL writes. The existing watcher consumes the receipt and resumes its normal guarded cycle. Transient preflight failures are retried at most once per minute. A partial result containing only explicit source-admission holds and their dependent peer holds stops automatic apply for that source/authority key; a changed key resumes it. Configuration and schema review holds retain bounded periodic review. The original opt-in allows only committed owner source. GitHub Push is not required for local committed image reconciliation. For the separately authorized uncommitted Go preview, use the exact opt-in value `isolated-owner-go-preview-v2` and reload the same existing watcher. The watcher detects changed Go bytes, not just commit IDs, and invokes the same unified CLI with `-Apply -Preview`.
 
-The preview builds and tests an allowlisted, immutable owner snapshot (Go source and unchanged committed build/schema inputs); the image carries a worktree digest and separate base SHA, not a committed source label. Added and removed Go files are included, ignored secrets are excluded, and a changed snapshot before replacement is rejected. `pnpm dev docker reconcile` reports `PREVIEW_CURRENT` when the live preview matches. The strict committed provenance check intentionally rejects a preview until a clean committed image is restored. Uncommitted SQL, contracts, dependencies, Compose or tooling changes, new capabilities/containers and protected configuration changes remain blocked pending explicit review; frontend Fast Refresh remains independent. A change or verified hash mismatch in the separate WLT Compose group holds WLT only during ordinary reconciliation; independently eligible DSH and Identity updates still require their exact running configuration, owner tests and readback. Shared Compose inputs and explicit capability/database transitions retain their existing strict checks. Do not treat image/health proof as full login or financial acceptance.
+The preview builds and tests an allowlisted, immutable owner snapshot (Go source and unchanged committed build/schema inputs); the image carries a worktree digest and separate base SHA, not a committed source label. Added and removed Go files are included, ignored secrets are excluded, and a changed snapshot before replacement is rejected. `pnpm dev docker reconcile` reports `PREVIEW_CURRENT` when the live preview matches. The strict committed provenance check intentionally rejects a preview until a clean committed image is restored. Uncommitted SQL, contracts, dependencies, Compose or tooling changes, new capabilities/containers and protected configuration changes remain blocked pending explicit review; frontend Fast Refresh remains independent. A change or verified hash mismatch in the separate WLT verification group holds WLT only during ordinary reconciliation; independently eligible DSH and Identity updates still require their exact running configuration, owner tests and readback. Shared Compose inputs and explicit capability/database transitions retain their existing strict checks. Do not treat image/health proof as full login or financial acceptance.
 
 ## Scoped app checks and recovery
 
@@ -176,38 +175,6 @@ Set-Location D:\samrim
 
 Available parameters: `-Action Check|Run|Upload|Download|Install`, `-Command`, `-LocalPath`, `-RemotePath`, `-PackageId`, `-Recursive`, `-SshHost`, `-WhatIf`. `Upload -WhatIf` still requires an existing source path, and `Download` requires an existing Surface destination directory. Single-file uploads verify SHA-256; recursive uploads and downloads do not verify each transferred file's checksum.
 
-### Docker CLI directly from Surface (runs on Lenovo)
+### Docker diagnostics
 
-```powershell
-ssh bthwani-docker docker version
-ssh bthwani-docker docker info
-ssh bthwani-docker docker ps
-ssh bthwani-docker docker ps -a
-ssh bthwani-docker docker stats --no-stream
-ssh bthwani-docker docker system df
-ssh bthwani-docker docker images
-ssh bthwani-docker docker network ls
-ssh bthwani-docker docker volume ls
-ssh bthwani-docker docker inspect bthwani-refoundation-dsh-1
-ssh bthwani-docker docker logs --tail 100 bthwani-refoundation-dsh-1
-ssh bthwani-docker docker top bthwani-refoundation-dsh-1
-ssh bthwani-docker docker events --since 1h --until 0s
-ssh bthwani-docker docker compose version
-ssh bthwani-docker docker compose ls
-ssh bthwani-docker docker compose ls -a
-ssh bthwani-docker docker --help
-ssh bthwani-docker docker container --help
-ssh bthwani-docker docker image --help
-ssh bthwani-docker docker compose --help
-Get-Command .\tools\dev\Control-Lenovo-SSH.ps1 -Syntax
-```
-
-**State-changing Docker commands (reference only, do not run on live services without authorization):**
-`ssh bthwani-docker docker start NAME`,
-`ssh bthwani-docker docker stop NAME`,
-`ssh bthwani-docker docker restart NAME`,
-`ssh bthwani-docker docker pause NAME`,
-`ssh bthwani-docker docker unpause NAME`,
-`ssh bthwani-docker docker rm NAME`,
-`ssh bthwani-docker docker rmi IMAGE`.
-`docker build`, `docker compose up` and `docker compose down` additionally require the correct remote project context. Never remove protected volumes or restart shared services as a diagnostic step.
+Use `pnpm dev docker help` for the current, owner-scoped Docker commands and [isolated infrastructure](../../infra/README.md) for provisioning, schema and security boundaries. For a diagnostic that the unified CLI does not provide, use the verified SSH helper above with a read-only command (for example `-Action Run -Command 'docker stats --no-stream'`). Do not start, stop, recreate or remove containers/images through ad hoc SSH commands; use the unified lifecycle and its explicit authorization and verification gates. Never prune protected volumes or restart shared services as a diagnostic step.
