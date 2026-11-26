@@ -186,7 +186,7 @@ test("canonical source paths accepted without path injection", () => {
 });
 test("credentials, generated state, services and unowned paths rejected", () => {
   for (const path of [
-    ".git/config", "infra/local/.env", "tools/dev/.env.tunnels.local", "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/build-owner-image.ps1", "apps/customer/.env",
+    ".git/config", "infra/local/.env", "tools/dev/.env.tunnels.local", "tools/dev/docker/reconcile-owner-runtime.mjs", "apps/customer/.env",
     "apps/customer/.env.production", "apps/customer/google-services.json",
     "apps/customer/credentials.json", "apps/customer/keys.pem",
     "apps/customer/node_modules/expo/package.json",

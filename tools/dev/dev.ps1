@@ -26,7 +26,7 @@ param(
   [string]$PreparedSourceSha,
   [string]$RecoverRuntimeAttempt,
   [Parameter(Position=1)]
-  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','reconcile','start','restart','android','open')]
+  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','build','reconcile','start','restart','android','open')]
   [string]$DockerAction = 'help',
   [Parameter(Position=2)]
   [ValidateSet('dsh','identity','wlt','postgres','media','mailpit','payment-mock')]
@@ -1156,7 +1156,7 @@ function Show-Docker {
   }
 }
 function Show-DockerCommands {
-  Write-Output 'DOCKER_COMMANDS=READ_ONLY except explicitly authorized reconcile -Apply (Surface -> Lenovo)'
+  Write-Output 'DOCKER_COMMANDS=READ_ONLY except explicit build or authorized reconcile -Apply (Surface -> Lenovo)'
   Write-Output 'pnpm dev docker help           # command reference, no Docker changes'
   Write-Output 'pnpm dev docker status         # project containers and provenance summary'
   Write-Output 'pnpm dev docker ps             # project containers'
@@ -1175,7 +1175,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker reconcile -Apply -PrepareDshDatabase # one-time additive DSH candidate; no cutover'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
-  Write-Output 'BUILD=use tools/dev/docker/build-owner-image.ps1 -Owner dsh|identity|wlt explicitly'
+  Write-Output 'BUILD=pnpm dev docker build dsh|identity|wlt (image only, no start)'
   Write-Output 'UNSUPPORTED=prune, down -v, SQL migration execution, bootstrap, protected state operations'
 }
 function Invoke-ScopedDocker {
@@ -1205,6 +1205,15 @@ function Invoke-ScopedDocker {
       Invoke-DockerCli -argsList @('network','ls','--filter',('label=com.docker.compose.project='+$project),'--format','{{.Name}}') | ForEach-Object { Write-Output $_ }
     }
     'config' { Assert-CompleteCompose }
+    'build' {
+      Assert-Ok ($DockerService -in @('dsh','identity','wlt')) 'build requires one owner: dsh|identity|wlt'
+      $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
+      try {
+        $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1'
+        & node (Join-Path $repo 'tools\dev\docker\reconcile-owner-runtime.mjs') '--build-only' $DockerService
+        Assert-Ok ($LASTEXITCODE -eq 0) 'owner image build failed'
+      } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
+    }
     'reconcile' {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain admission requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'

@@ -15,6 +15,19 @@ function compose(name) {
   return document.toJS();
 }
 
+test("one native Compose build definition per owner; no serving start required", () => {
+  const model = compose("compose.yaml");
+  for (const owner of ["identity", "dsh", "wlt"]) {
+    const build = model.services[owner].build;
+    assert.ok(build, owner + " must use native Compose build");
+    assert.equal(build.context, "${BTHWANI_BUILD_CONTEXT:-../services/" + owner + "}");
+    assert.equal(build.dockerfile, "backend/Dockerfile");
+    assert.equal(build.args.SAMRIM_SOURCE_REVISION, "${BTHWANI_BUILD_REVISION:-unverified}");
+    assert.equal(build.labels["com.bthwani.source-sha"], "${BTHWANI_BUILD_SHA:-}");
+    assert.equal(build.labels["com.bthwani.preview-base"], "${BTHWANI_BUILD_PREVIEW_BASE:-}");
+    assert.equal(build.labels["com.bthwani.preview-digest"], "${BTHWANI_BUILD_PREVIEW_DIGEST:-}");
+  }
+});
 test("database and mock integrations stay in one isolated project", () => {
   const base = compose("compose.yaml");
   assert.equal(base.name, "bthwani-refoundation");

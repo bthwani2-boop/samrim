@@ -22,7 +22,7 @@ on:
       - 'services/**/database/schema/**'
       - 'services/wlt/database/sandbox/**'
       - 'services/**/.dockerignore'
-      - 'tools/dev/docker/build-owner-image.ps1'
+      - 'tools/dev/docker/reconcile-owner-runtime.mjs'
       - 'infra/compose*.yaml'
       - 'tests/infra/compose.operator-webauthn-sandbox.yaml'
       - 'tests/infra/payment-mock/**'

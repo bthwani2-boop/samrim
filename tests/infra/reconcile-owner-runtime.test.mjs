@@ -267,19 +267,37 @@ test("baseline transition is owner-local, transactional and never disables trigg
   assert.throws(()=>buildOwnerBaselineTransition("dsh","dsh_test_agent01","bthwani_recovery_dsh_abcdef123456",["SELECT '__SCHEMA__'; $bthwani_baseline$"]),/Reserved/);
 });
 
-test("one owner-image builder replaces the three duplicated scripts", async () => {
+test("native Compose replaces the separate owner-image builder scripts", async () => {
   const fs = await import("node:fs");
   const root = new URL("../../", import.meta.url);
   const base = new URL("tools/dev/docker/", root);
-  assert.equal(fs.existsSync(new URL("build-owner-image.ps1",base)),true);
+  assert.equal(fs.existsSync(new URL("build-owner-image.ps1",base)),false);
   assert.equal(fs.existsSync(new URL("infra/build-owner-image.ps1",root)),false);
-  for (const old of ["build-dsh-image.ps1","build-identity-verifier-image.ps1","build-wlt-image.ps1"]) {
+  for (const old of ["build-owner-image.ps1","build-dsh-image.ps1","build-identity-verifier-image.ps1","build-wlt-image.ps1"]) {
     assert.equal(fs.existsSync(new URL(old,base)),false,old);
     assert.equal(fs.existsSync(new URL("infra/"+old,root)),false,old);
     for(const consumer of ["tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","tools/dev/sync-lenovo-source.mjs","infra/README.md","services/wlt/backend/README.md"]) {
       assert.equal(fs.readFileSync(new URL(consumer,root),"utf8").includes(old),false,consumer);
     }
   }
+});
+
+test("native build plan selects exactly one owner and distinguishes committed and preview provenance", async () => {
+  const { ownerBuildPlan } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const sha="a".repeat(40), digest="b".repeat(64);
+  const committed=ownerBuildPlan("identity",sha,"sha-aaaaaaaaa","owner");
+  assert.deepEqual(committed.args.slice(-2),["build","identity"]);
+  assert.equal(committed.env.BTHWANI_BUILD_SHA,sha);
+  assert.equal(committed.env.BTHWANI_BUILD_PREVIEW_BASE,"");
+  assert.equal(committed.env.BTHWANI_BUILD_CONTEXT,"owner");
+  const preview=ownerBuildPlan("wlt",sha,"preview","snapshot",digest);
+  assert.deepEqual(preview.args.slice(-2),["build","wlt"]);
+  assert.equal(preview.env.BTHWANI_BUILD_SHA,"");
+  assert.equal(preview.env.BTHWANI_BUILD_REVISION,"worktree-"+digest);
+  assert.equal(preview.env.BTHWANI_BUILD_PREVIEW_BASE,sha);
+  assert.equal(preview.env.BTHWANI_BUILD_PREVIEW_DIGEST,digest);
+  assert.throws(()=>ownerBuildPlan("foreign",sha,"dev","owner"),/Invalid/);
+  assert.throws(()=>ownerBuildPlan("dsh",sha,"bad/tag","owner"),/Invalid/);
 });
 
 test("every owner operation uses one canonical Compose input and the same explicit runtime profiles", async () => {

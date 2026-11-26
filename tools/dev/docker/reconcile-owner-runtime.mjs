@@ -33,7 +33,6 @@ const operatorOverrides = {
   IDENTITY_OPERATOR_PASSKEY_ORIGINS: "REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS",
   IDENTITY_OPERATOR_PASSKEY_RPID: "REF_IDENTITY_OPERATOR_PASSKEY_RPID",
 };
-const buildScript = "tools/dev/docker/build-owner-image.ps1";
 const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
 // Keep the original identity and exact bytes, never log configuration values.
 // The existing exclusive owner-operation coordination still owns the writer.
@@ -245,8 +244,55 @@ function historicalDshHashes(names,env,previous) {
 function imageRecord(image) {
   return JSON.parse(docker(["image", "inspect", image]))[0];
 }
+// Compose owns the only image build definition; the caller owns source admission.
+export function ownerBuildPlan(owner, head, tag, service, digest = null) {
+  if (!Object.hasOwn(owners, owner) || !/^[0-9a-f]{40}$/.test(head) ||
+      !/^[a-z0-9._-]+$/.test(tag) || (digest !== null && !/^[0-9a-f]{64}$/.test(digest)))
+    throw new Error("Invalid owner build identity");
+  return {
+    args: [...composeArgs(), "build", owner],
+    env: {
+      [owners[owner].tag]: tag,
+      BTHWANI_BUILD_CONTEXT: service,
+      BTHWANI_BUILD_REVISION: digest ? "worktree-" + digest : head,
+      BTHWANI_BUILD_SHA: digest ? "" : head,
+      BTHWANI_BUILD_PREVIEW_BASE: digest ? head : "",
+      BTHWANI_BUILD_PREVIEW_DIGEST: digest || "",
+    },
+    image: owners[owner].image + ":" + tag,
+  };
+}
+function buildOwnerImage(owner, head, tag, service = resolve(root,"services",owner), snapshot = null) {
+  const pin = readFileSync(resolve(root,".go-version"),"utf8").trim();
+  const file = resolve(service,"backend","Dockerfile");
+  if (!readFileSync(file,"utf8").split(/\r?\n/).some(line =>
+    line.startsWith("FROM golang:"+pin+"-alpine@sha256:") && /@sha256:[0-9a-f]{64} AS build$/.test(line)))
+    throw new Error("Pinned owner Dockerfile required");
+  const assertSource = () => {
+    if (git(["rev-parse","HEAD"]) !== head) throw new Error("Source changed during image build");
+    if (snapshot) {
+      verifyMaterializedOwner(service,snapshot);
+      if (captureOwner(root,owner).digest !== snapshot.digest) throw new Error("Preview input changed during build: "+owner);
+    } else if (dirtyPaths(root, ["services/"+owner, ".go-version", ...ownerComposeInputs,
+      "tools/dev/docker/reconcile-owner-runtime.mjs"]).length) {
+      throw new Error("Owner or shared build input is not committed");
+    }
+  };
+  const plan = ownerBuildPlan(owner,head,tag,service,snapshot?.digest ?? null);
+  assertSource();
+  docker(plan.args,plan.env,180000);
+  assertSource();
+  const image = imageRecord(plan.image);
+  const source = sourceIdentity(image.Config.Labels,owner);
+  if (source.revision !== head || source.digest !== (snapshot?.digest ?? null) ||
+      !/^sha256:[0-9a-f]{64}$/.test(image.Id) ||
+      (!snapshot && image.Config.Labels["com.bthwani.source-sha"] !== head) ||
+      image.Config.Labels["org.opencontainers.image.revision"] !== plan.env.BTHWANI_BUILD_REVISION)
+    throw new Error("New image source mismatch: "+owner);
+  return image;
+}
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services",...ownerComposeInputs,"tools/dev/docker/build-owner-image.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version"];
+const guardedScope = ["services",...ownerComposeInputs,"tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -325,7 +371,7 @@ function prepareDedicatedDsh(state, env, head, resume=false) {
   const before=sql(oldDb,fingerprint);
   if(before.split(/\r?\n/).length!==tables.length+sequences.length)throw new Error("Incomplete source data fingerprint");
   const tag="sha-"+head.slice(0,9);
-  run("pwsh",["-NoProfile","-File",buildScript,"-Owner","dsh","-DockerContext",context,"-Image",owners.dsh.image+":"+tag],{},180000);
+  buildOwnerImage("dsh",head,tag);
   if(sourceIdentity(imageRecord(owners.dsh.image+":"+tag).Config.Labels,"dsh").revision!==head || git(["rev-parse","HEAD"])!==head || git(["status","--porcelain","--untracked-files=all"]))throw new Error("Candidate source advanced");
   const ownerSecret=randomBytes(32).toString("hex"), runtimeSecret=randomBytes(32).toString("hex");
   const candidateEnv={...env,REF_DSH_IMAGE_TAG:tag,REF_DSH_RUNTIME_DATABASE:db,REF_DSH_RUNTIME_USER:runtime,REF_DSH_RUNTIME_PASSWORD:runtimeSecret,REF_DSH_BOOTSTRAP_USER:owner,REF_DSH_BOOTSTRAP_PASSWORD:ownerSecret,REF_DSH_DISCOVERY_SCHEMA:schema};
@@ -543,7 +589,7 @@ function relocateIdentity(state,env,head,resume=false) {
   if(!access)throw new Error("Legacy Identity ACL proof incomplete");
   const tag="sha-"+head.slice(0,9);
   // The new owner image includes a mandatory live-principal check.
-  run("pwsh",["-NoProfile","-File",buildScript,"-Owner","identity","-DockerContext",context,"-Image",owners.identity.image+":"+tag],{},180000);
+  buildOwnerImage("identity",head,tag);
   const image=imageRecord(owners.identity.image+":"+tag);
   if(sourceIdentity(image.Config.Labels,"identity").revision!==head || !clean())throw new Error("Identity candidate source advanced");
   const targetEnv={...env,REF_IDENTITY_IMAGE_TAG:tag,REF_IDENTITY_RUNTIME_DATABASE_URL:newUrl};
@@ -737,6 +783,22 @@ export function assertSourceHost(machineName, reportedName, checkoutRoot) {
 
 function main() {
   const [mode,...options] = process.argv.slice(2);
+  if (mode === "--build-only") {
+    if (process.env.BTHWANI_UNIFIED_DEV_RECONCILE !== "1") throw new Error("Use the unified dev launcher with its lifecycle mutex");
+    const [owner] = options;
+    if (options.length !== 1 || !Object.hasOwn(owners,owner)) throw new Error("Expected one owner for --build-only");
+    assertSourceHost(hostname(), process.env.COMPUTERNAME, root);
+    if (!/^ssh:\/\/[^/]+@bthwani-docker$/.test(docker(["context","inspect",context,"--format","{{.Endpoints.docker.Host}}"]))) throw new Error("Wrong Docker target");
+    const head=git(["rev-parse","HEAD"]), branch=git(["branch","--show-current"]);
+    if (!branch || branch === "main" || branch.startsWith("archive/")) throw new Error("Not an active development branch");
+    const tag="build-"+head;
+    const reference=owners[owner].image+":"+tag;
+    if (docker(["ps","-a","--format","{{.Image}}"]).split(/\r?\n/).includes(reference))
+      throw new Error("Build-only tag is in use by a container");
+    const image=buildOwnerImage(owner,head,tag);
+    console.log("OWNER_IMAGE_BUILT "+owner+" tag="+tag+" image="+image.Id);
+    return;
+  }
   const cutover=mode==="--cutover-dsh-database";
   const recover=mode==="--recover-attempt";
   const prepare=options.length===1 && options[0]==="--prepare-baseline";
@@ -973,18 +1035,7 @@ function main() {
         throw new Error("Owner tests failed: "+o+" "+(go.error?.code||go.status)+" "+names.slice(0,15).join(","));
       }
       console.log("OWNER_TEST_PASS "+o);
-      if(snap){
-        verifyMaterializedOwner(service,snap);
-        const file=resolve(service,"backend","Dockerfile");
-        if(!readFileSync(file,"utf8").split(/\r?\n/).some(line=>line.startsWith("FROM golang:"+pin+"-alpine@sha256:") && /@sha256:[0-9a-f]{64} AS build$/.test(line)))throw new Error("Pinned preview Dockerfile required");
-        // Preview uses the canonical owner Dockerfile but never claims a commit SHA.
-        docker(["build","--pull=false","--file",file,"--build-arg","SAMRIM_SOURCE_REVISION=worktree-"+snap.digest,"--label","com.bthwani.preview-base="+head,"--label","com.bthwani.preview-digest="+snap.digest,"--tag",owners[o].image+":"+tag,service],{},180000);
-        verifyMaterializedOwner(service,snap);
-        if(captureOwner(root,o).digest!==snap.digest)throw new Error("Preview input changed during build: "+o);
-      } else run("pwsh",["-NoProfile","-File",buildScript,"-Owner",o,"-DockerContext",context,"-Image",owners[o].image+":"+tag],{},180000);
-      const image=imageRecord(owners[o].image+":"+tag);
-      const source=sourceIdentity(image.Config.Labels,o);
-      if(source.revision!==head || source.digest!==(snap?.digest||null))throw new Error("New image source mismatch: "+o);
+      const image=buildOwnerImage(o,head,tag,service,snap || null);
       targetIds[o]=image.Id;
       nextEnv[owners[o].tag]=tag;
       console.log("OWNER_IMAGE_PASS "+o+" "+image.Id+(snap?" preview="+snap.digest:""));

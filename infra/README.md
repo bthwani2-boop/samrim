@@ -62,10 +62,9 @@ creates a new isolated database plus its own read-only runtime credentials
 inside ignored `infra/.env`. It must never be run automatically with Compose.
 
 After a source commit, build via
-`pwsh -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner wlt`, and configure with
+`pnpm dev docker build wlt`, and configure with
 `docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation config --quiet`.
-Start only the admitted reader using the matching Compose invocation plus
-`up -d --no-deps wlt`. Port `3203` is bound to Lenovo loopback only;
+For an approved first start, set `REF_WLT_IMAGE_TAG` to the returned `build-<full SHA>` tag and use the matching Compose invocation plus `up -d --no-deps --no-build --pull never wlt`. For existing WLT use guarded reconciliation. Port `3203` is bound to Lenovo loopback only;
 WLT uses the existing synthetic Identity verifier `identity:3302` and the configured DSH peer origin `http://dsh:8080`, with a
 separate read-only WLT database identity. The peer origin does not grant payment-mutation authority. A successful Docker healthcheck
 indicates only local process/SQL readiness; financial delivery, checkout and
@@ -78,7 +77,7 @@ supported independently.
 builder is pinned to the approved root `.go-version` and an immutable digest,
 and the runtime Alpine image is also digest-pinned. The context is only
 `services/dsh/` with an allowlisted `.dockerignore`; no local Go compiler or
-Windows cross-compilation is required. `tools/dev/docker/build-owner-image.ps1` keeps
+Windows cross-compilation is required. The canonical Compose build, guarded by the existing reconciler, keeps
 committed-source SHA checks and creates a tagged image without starting it,
 modifying secrets, or executing SQL migrations. Add the **verified existing isolated** schema
 and exact permitted browser origins only to the ignored `infra/.env`:
@@ -88,15 +87,13 @@ REF_DSH_DISCOVERY_SCHEMA=dsh_test_REPLACE_WITH_VERIFIED_SCHEMA
 REF_DSH_PUBLIC_CORS_ORIGINS=http://127.0.0.1:18101,http://localhost:18101
 ```
 
-Run from the checkout root (never start an entire profile). The default
-`:dev` image tag preserves the existing running service; set
-`REF_DSH_IMAGE_TAG` to an independently tested revision tag for controlled
-rollout. An image build by itself does not recreate an existing container:
+Run from the checkout root (never start an entire profile). The build-only command creates a separate `build-<full SHA>` candidate tag. For an explicitly approved first start, set the matching owner image tag to the returned tag; for existing owners use guarded reconciliation. An image build by itself does not recreate an existing container:
 
 ```powershell
-pwsh -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner dsh
+pnpm dev docker build dsh
+$env:REF_DSH_IMAGE_TAG = "build-$(git rev-parse HEAD)"
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation up -d --no-deps dsh
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation up -d --no-deps --no-build --pull never dsh
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation ps dsh
 ```
 
@@ -134,7 +131,7 @@ The service is `identity`, profile `implementation`. It has no
 automatic bootstrap, schema migrations, donor volumes or other service restarts.
 
 `services/identity/backend/Dockerfile` now builds the real Go binary in a
-pinned multi-stage Linux builder. `build-owner-image.ps1` checks
+pinned multi-stage Linux builder. The same guarded Compose builder checks
 that the Docker builder matches `.go-version`, rejects uncommitted owner
 source, and records the exact source SHA on the resulting image. The Docker
 context is limited to reviewed Identity Go sources. SQL stays in the owner baseline and is not packaged or executed by the serving image. The container
@@ -177,9 +174,10 @@ For isolated Merchant standing, explicitly set `REF_DSH_ENABLE_ISOLATED_MERCHANT
 The opt-in deployment sequence is:
 
 ```powershell
-pwsh -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner identity
+pnpm dev docker build identity
+$env:REF_IDENTITY_IMAGE_TAG = "build-$(git rev-parse HEAD)"
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation up -d --no-deps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation up -d --no-deps --no-build --pull never identity
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation ps identity
 ```
 

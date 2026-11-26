@@ -13,6 +13,16 @@ x-labels: &labels
   # Legacy runtime identifier retained for existing containers, not the active checkout path.
   com.bthwani.worktree: samrim-refoundation-clean-20261112
 
+# Build metadata is supplied only by the guarded launcher, never by a persistent .env.
+x-owner-build: &owner-build
+  dockerfile: backend/Dockerfile
+  args:
+    SAMRIM_SOURCE_REVISION: "${BTHWANI_BUILD_REVISION:-unverified}"
+  labels:
+    com.bthwani.source-sha: "${BTHWANI_BUILD_SHA:-}"
+    com.bthwani.preview-base: "${BTHWANI_BUILD_PREVIEW_BASE:-}"
+    com.bthwani.preview-digest: "${BTHWANI_BUILD_PREVIEW_DIGEST:-}"
+
 services:
   postgres:
     image: postgis/postgis:18-3.6@sha256:e84455a058f60f06dd8c40e66a2c628b8fc113d9fca0896e1f308b25b897207f
@@ -97,6 +107,9 @@ services:
     networks: [isolated]
 
   dsh:
+    build:
+      <<: *owner-build
+      context: "${BTHWANI_BUILD_CONTEXT:-../services/dsh}"
     profiles: [implementation]
     image: "bthwani-refoundation-dsh:${REF_DSH_IMAGE_TAG:-dev}"
     restart: unless-stopped
@@ -144,6 +157,9 @@ services:
       start_period: 20s
 
   identity:
+    build:
+      <<: *owner-build
+      context: "${BTHWANI_BUILD_CONTEXT:-../services/identity}"
     profiles: [implementation]
     image: "bthwani-refoundation-identity-verifier:${REF_IDENTITY_IMAGE_TAG:-dev}"
     # Recover after Docker Desktop/Lenovo restarts; explicit stop stays stopped.
@@ -199,6 +215,9 @@ services:
       start_period: 20s
 
   wlt:
+    build:
+      <<: *owner-build
+      context: "${BTHWANI_BUILD_CONTEXT:-../services/wlt}"
     profiles: [implementation]
     image: "bthwani-refoundation-wlt:${REF_WLT_IMAGE_TAG:-dev}"
     restart: unless-stopped
