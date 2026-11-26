@@ -97,7 +97,7 @@ test("runtime attestation rejects a changed owner, a dirty checkout and non-ance
   assert.equal(ancestorRejected.calls.some((c) => c.command === "git" && c.args[0] === "diff"), false);
 });
 
-test("opt-in WLT attestation verifies the real owner container and WLT-only source changes", () => {
+test("mandatory WLT attestation verifies the real owner container and WLT-only source changes", () => {
   const fixture = serviceRecords({ owner: "wlt" });
   const verified = readService("wlt", "isolated", sha, fixture.execute, () => true);
   assert.deepEqual(verified, { revision: sha, errors: [], passed: true });
@@ -120,11 +120,24 @@ test("opt-in WLT attestation verifies the real owner container and WLT-only sour
   }, () => true), /missing WLT container/);
 });
 
-test("runtime CLI rejects duplicate or malformed WLT opt-in arguments", () => {
-  assert.throws(() => main(["--include-wlt", "--include-wlt"]), /Usage/);
-  assert.throws(() => main(["--context", "isolated", "--include-wlt", "extra"]), /Usage/);
+test("all serving owners are mandatory and the retired opt-in is rejected", () => {
+  assert.throws(() => main(["--include-wlt"]), /Usage/);
+  assert.throws(() => main(["--context", "bthwani-docker", "--include-wlt"]), /Usage/);
+  const seen = [];
+  const fixture = serviceRecords();
+  const execute = (command, args) => {
+    if (command === "docker" && args[0] === "context") return "ssh://user@bthwani-docker";
+    if (command === "git" && args[0] === "rev-parse") return sha;
+    if (command === "docker" && args[2] === "inspect") {
+      const owner = args.at(-1).match(/-(dsh|identity|wlt)-1$/)[1];
+      seen.push(owner);
+      return serviceRecords({owner}).execute(command,args);
+    }
+    return fixture.execute(command,args);
+  };
+  main(["--context","bthwani-docker"], execute, () => true);
+  assert.deepEqual(seen,["dsh","identity","wlt"]);
 });
-
 test("runtime attestation fails closed for missing, conflicting and invalid image revisions", () => {
   for (const revisions of [
     { revision: "", fallback: "" },

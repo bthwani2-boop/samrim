@@ -314,21 +314,18 @@ test("every owner operation uses one canonical Compose input and the same explic
   assert.equal(args.filter(arg => arg === "-f").length, 1);
 });
 
-test("Compose provenance accepts exact old or current names only within the canonical checkout", async () => {
+test("serving owner provenance permits only the canonical Compose file", async () => {
   const { composeFileNames } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const root = "D:/samrim";
   const files = names => names.map(name => root + "/infra/" + name).join(",");
-  const canonical = ["compose.yaml","compose.dsh.yaml","compose.identity.yaml","compose.merchant.yaml","compose.captain.yaml"];
-  assert.deepEqual(composeFileNames(files(canonical),root),canonical);
   assert.deepEqual(composeFileNames(files(["compose.yaml"]),root),["compose.yaml"]);
-  assert.deepEqual(composeFileNames(files(["compose.yaml","compose.apps.yaml","compose.identity-verifier.yaml","compose.merchant-development.yaml","compose.captain-development.yaml"]),root),canonical);
-  assert.throws(()=>composeFileNames(files(["compose.apps.yaml","compose.dsh.yaml"]),root),/Duplicate/);
-  assert.throws(()=>composeFileNames("D:/other/infra/compose.apps.yaml",root),/Unowned/);
-  assert.throws(()=>composeFileNames(files(["../infra/compose.dsh.yaml"]),root),/Unowned/);
-  assert.throws(()=>composeFileNames(files(["compose.unknown.yaml"]),root),/Unowned/);
+  for (const names of [
+    ["compose.yaml","compose.apps.yaml"],["compose.yaml","compose.wlt.yaml"],
+    ["compose.yaml","compose.yaml"],["compose.dsh.yaml"],["../infra/compose.yaml"],
+    ["compose.identity-verifier.yaml"],["compose.captain-development.yaml"]
+  ]) assert.throws(()=>composeFileNames(files(names),root),/Unowned/);
+  assert.throws(()=>composeFileNames("D:/other/infra/compose.yaml",root),/Unowned/);
 });
-
-
 test("only the exact committed isolated WLT DSH origin addition can enter baseline preparation", async () => {
   const { isAdmittedWltOriginAddition } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const before = 'services:\n  wlt:\n    environment:\n      WLT_TEST_IDENTITY_ORIGIN: "http://identity:3302"\n    ports: []\n';

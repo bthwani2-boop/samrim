@@ -1126,7 +1126,7 @@ function Assert-CompleteCompose {
   Say 'COMPOSE_CONFIG' 'PASS complete owner and capability configuration; no SQL execution or secret output'
 }
 function Assert-OwnerRuntime {
-  & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--include-wlt'
+  & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext
   Assert-Ok ($LASTEXITCODE -eq 0) 'Docker owner provenance incomplete; inspect pnpm dev docker status'
   Say 'DOCKER_PROVENANCE' 'PASS'
 }
@@ -1152,24 +1152,7 @@ function Assert-EnvironmentReady {
 function Show-Docker {
   Banner 'DOCKER CONTAINERS'
   Invoke-DockerCli -argsList @('ps','-a','--filter','label=com.docker.compose.project=bthwani-refoundation','--format','{{.Names}} | {{.Status}} | {{.Image}}') | ForEach-Object { Write-Output $_ }
-  # WLT is optional, but may run under the same Compose project. Inspect
-  # its actual labels rather than relying on an obsolete placement assumption.
-  $wltIdentity=@(& docker --context $dockerContext inspect 'bthwani-refoundation-wlt-1' '--format' '{{index .Config.Labels "com.docker.compose.project"}}|{{index .Config.Labels "com.docker.compose.service"}}' 2>$null)
-  $wltFound=$LASTEXITCODE -eq 0
-  $verifyArgs=@('--context',$dockerContext)
-  if($wltFound){
-    Assert-Ok (($wltIdentity -join '').Trim() -eq ($project+'|wlt')) 'unexpected WLT container ownership'
-    $verifyArgs+=@('--include-wlt')
-  } else {
-    Say 'WLT' 'NOT_RUN (optional WLT container not present)'
-  }
-  if (Test-Path -LiteralPath (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs')) {
-    $result = @(& node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') @verifyArgs 2>&1)
-    $code = $LASTEXITCODE
-    foreach ($line in $result) { Write-Output $line.ToString() }
-    Say 'PROVENANCE_EXIT' $code
-    if ($code -ne 0) { Say 'NOTE' 'runtime provenance incomplete; inspect stale or stopped owner images before a scoped rebuild.' }
-  }
+  Assert-OwnerRuntime
 }
 function Show-DockerCommands {
   Write-Output 'DOCKER_COMMANDS=READ_ONLY except explicit build or authorized reconcile -Apply (Surface -> Lenovo)'
@@ -1267,7 +1250,7 @@ function Wait-AppStatus {
 function Start-VerifiedEnvironment {
   # Only start existing admitted containers; fresh provisioning is separate.
   Assert-CompleteCompose
-  & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--include-wlt' '--start-preflight'
+  & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--start-preflight'
   Assert-Ok ($LASTEXITCODE -eq 0) 'owner startup preflight failed; use the guarded owner lifecycle for stale or missing containers'
   $composeArgs=@('compose','--env-file',$baseEnv,'-f',$baseCompose,'--profile','implementation')
   $services=@('postgres','media','mailpit','payment-mock','identity','dsh','wlt')

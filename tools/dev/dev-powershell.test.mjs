@@ -226,10 +226,10 @@ test("Expo readiness rejects an unknown-module error document even with HTTP 200
   assert.match(result.stdout, /EXPO_ERROR_DOCUMENT_REJECTED/);
 });
 
-test("Docker status verifies present WLT without misreporting it as another project", () => {
+test("Docker status requires all three serving owners", () => {
   const launcher = readFileSync(scriptPath, "utf8");
-  assert.match(launcher, /--include-wlt/);
-  assert.match(launcher, /bthwani-refoundation-wlt-1/);
+  assert.doesNotMatch(launcher, /--include-wlt|optional WLT container/);
+  assert.match(launcher, /function Show-Docker \{[\s\S]*?Assert-OwnerRuntime/);
   assert.match(launcher, /\[ValidateSet\('dsh','identity','wlt','postgres','media','mailpit','payment-mock'\)\]/);
   assert.match(launcher, /pnpm dev docker logs wlt/);
   assert.doesNotMatch(launcher, /WLT.*outside this Docker project/);
@@ -239,7 +239,7 @@ test("strict Docker verification and complete environment verification share the
   const launcher = readFileSync(scriptPath, "utf8");
   const owner = launcher.match(/function Assert-OwnerRuntime \{([\s\S]*?)\n\}/);
   assert.ok(owner);
-  assert.match(owner[1], /verify-runtime-provenance\.mjs'\) '--context' \$dockerContext '--include-wlt'/);
+  assert.match(owner[1], /verify-runtime-provenance\.mjs'\) '--context' \$dockerContext/);
   assert.match(owner[1], /Assert-Ok \(\$LASTEXITCODE -eq 0\)/);
   const config = launcher.match(/function Assert-CompleteCompose \{([\s\S]*?)\n\}/);
   assert.ok(config);

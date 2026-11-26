@@ -111,33 +111,34 @@ export function readService(owner, dockerContext, head, execute = checked, isAnc
   }, { startPreflight });
 }
 
-export function main(argv = process.argv.slice(2)) {
-  const withWlt = argv.includes("--include-wlt");
+export function main(argv = process.argv.slice(2), execute = checked, isAncestor = gitAncestor) {
   const startPreflight = argv.includes("--start-preflight");
-  const contextArgs = argv.filter(arg => !["--include-wlt","--start-preflight"].includes(arg));
-  if (argv.filter(arg => arg === "--include-wlt").length > 1 ||
-      argv.filter(arg => arg === "--start-preflight").length > 1 || (startPreflight && !withWlt) ||
-      contextArgs.length > 2 || (contextArgs[0] && contextArgs[0] !== "--context") ||
-      (contextArgs.length === 1 && contextArgs[0] === "--context")) {
-    throw new Error("Usage: node tools/dev/docker/verify-runtime-provenance.mjs [--context CONTEXT] [--include-wlt] [--start-preflight]");
+  const contextArgs = argv.filter(arg => arg !== "--start-preflight");
+  if (argv.filter(arg => arg === "--start-preflight").length > 1 ||
+      contextArgs.length !== 2 || contextArgs[0] !== "--context") {
+    throw new Error("Usage: node tools/dev/docker/verify-runtime-provenance.mjs --context bthwani-docker [--start-preflight]");
   }
-  const context = contextArgs.length === 2 ? contextArgs[1] : checked("docker", ["context", "show"]);
-  if (!/^[a-zA-Z0-9._-]+$/.test(context)) throw new Error("invalid Docker context");
-  const head = checked("git", ["rev-parse", "HEAD"]);
+  const context = contextArgs[1];
+  if (context !== "bthwani-docker") throw new Error("invalid Docker context");
+  if (!/^ssh:\/\/[^/]+@bthwani-docker$/.test(execute("docker", ["context","inspect",context,"--format","{{.Endpoints.docker.Host}}"])))
+    throw new Error("Wrong Docker target");
+  const head = execute("git", ["rev-parse", "HEAD"]);
   let failures = 0;
-  // WLT is an opt-in Docker reader; baseline environments do not require it.
-  const owners = withWlt ? Object.keys(ownerServices) : ["dsh", "identity"];
-  for (const owner of owners) {
-    const state = readService(owner, context, head, checked, gitAncestor, { startPreflight });
-    if (!state.passed) failures++;
-    console.log((startPreflight ? "START_PREFLIGHT_" : "RUNTIME_SOURCE_") + owner.toUpperCase() + "=" +
-      (state.passed ? "PASS" : "FAIL") + " revision=" + (state.revision || "UNLABELED"));
-    for (const reason of state.errors) console.error("  " + owner + ": " + reason);
+  for (const owner of Object.keys(ownerServices)) {
+    try {
+      const state = readService(owner, context, head, execute, isAncestor, { startPreflight });
+      if (!state.passed) failures++;
+      console.log((startPreflight ? "START_PREFLIGHT_" : "RUNTIME_SOURCE_") + owner.toUpperCase() + "=" +
+        (state.passed ? "PASS" : "FAIL") + " revision=" + (state.revision || "UNLABELED"));
+      for (const reason of state.errors) console.error("  " + owner + ": " + reason);
+    } catch (error) {
+      failures++;
+      console.error("RUNTIME_SOURCE_" + owner.toUpperCase() + "=FAIL " + error.message);
+    }
   }
   console.log("RUNTIME_CHECK_HEAD=" + head);
   if (failures) process.exitCode = 1;
 }
-
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     main();

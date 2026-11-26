@@ -19,12 +19,9 @@ const owners = {
   identity: { tag: "REF_IDENTITY_IMAGE_TAG", image: "bthwani-refoundation-identity-verifier" },
   wlt: { tag: "REF_WLT_IMAGE_TAG", image: "bthwani-refoundation-wlt" },
 };
-const canonicalComposeFiles = Object.freeze(["compose.yaml"]);
+
 const canonicalComposePath = resolve(root,"infra/compose.yaml");
-// These names are accepted only as historical container provenance, not configuration inputs.
-const legacyAppFiles = Object.freeze(["compose.yaml","compose.dsh.yaml","compose.identity.yaml","compose.merchant.yaml"]);
-const legacyCaptainFile = "compose.captain.yaml";
-const legacyWltFiles = Object.freeze(["compose.yaml","compose.wlt.yaml"]);
+
 const operatorOverrides = {
   IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP: "REF_IDENTITY_OPERATOR_BOOTSTRAP",
   IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH: "REF_IDENTITY_OPERATOR_PASSKEY_AUTH",
@@ -143,29 +140,10 @@ export function wltConfigReviewRequired(expected, actual, mode) {
   assertSameHashes(expected,actual);
 }
 export function composeFileNames(label, repoRoot = root) {
-  const prefix = repoRoot.replaceAll("/", "\\").toLowerCase() + "\\infra\\";
-  // Existing containers record former file names. Exact aliases only;
-  // effective configuration hashes must still match before replacement.
-  const renamed = new Map([
-    ["compose.apps.yaml", "compose.dsh.yaml"],
-    ["compose.identity-verifier.yaml", "compose.identity.yaml"],
-    ["compose.merchant-development.yaml", "compose.merchant.yaml"],
-    ["compose.captain-development.yaml", "compose.captain.yaml"],
-  ]);
-  const allowed = new Set([...legacyAppFiles, legacyCaptainFile, ...legacyWltFiles]);
-  const names = (label || "").split(",").map(p => {
-    const normalized = p.replaceAll("/", "\\");
-    if (!normalized.toLowerCase().startsWith(prefix)) throw new Error("Unowned Compose file");
-    const name = normalized.slice(prefix.length);
-    const canonical = renamed.get(name) ?? name;
-    if (!allowed.has(canonical)) throw new Error("Unowned Compose file");
-    return canonical;
-  });
-  if (new Set(names).size !== names.length) throw new Error("Duplicate Compose file");
-  return names;
-}
-function liveFiles(v) {
-  return composeFileNames(v.Config.Labels["com.docker.compose.project.config_files"]);
+  const expected = repoRoot.replaceAll("/", "\\").toLowerCase() + "\\infra\\compose.yaml";
+  if (typeof label !== "string" || label.replaceAll("/", "\\").toLowerCase() !== expected)
+    throw new Error("Unowned Compose file: serving owner must use the canonical Compose input");
+  return ["compose.yaml"];
 }
 function equal(a,b) { return JSON.stringify(a) === JSON.stringify(b); }
 function configHashes(names, env, historical) {
@@ -826,14 +804,8 @@ function main() {
   }
   const state = Object.fromEntries(Object.keys(owners).map(o => [o, inspect(o)]));
   const captain=asEnv(state.identity.Config.Env).IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION==="true";
-  const allowedLegacyApp=captain?[...legacyAppFiles,legacyCaptainFile]:legacyAppFiles;
-  for(const owner of ["dsh","identity"]){
-    const files=liveFiles(state[owner]);
-    if(!equal(files,canonicalComposeFiles)&&!equal(files,allowedLegacyApp))throw new Error("Unexpected historical Compose layout: "+owner);
-  }
-  if(!equal(liveFiles(state.wlt),canonicalComposeFiles)&&!equal(liveFiles(state.wlt),legacyWltFiles))throw new Error("Unexpected historical WLT Compose layout");
-  // A legacy disabled layout never gets new trust mounts or routes automatically.
-  // Existing exact hash checks below require a compatible explicit transition.
+  for (const owner of Object.keys(owners))
+    composeFileNames(state[owner].Config.Labels["com.docker.compose.project.config_files"]);
   const env = {};
   for (const [o, v] of Object.entries(state)) {
     const prefix = owners[o].image + ":";
