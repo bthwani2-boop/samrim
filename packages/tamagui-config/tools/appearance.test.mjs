@@ -1,19 +1,30 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { runInNewContext } from "node:vm";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
-// Unit-test the actual controller without introducing a Native renderer or a second test runtime.
-// Node 24 strips types from the controller part; the React provider with JSX remains out of scope.
-const source = readFileSync(fileURLToPath(new URL("../src/appearance.tsx", import.meta.url)), "utf8");
-const providerBoundary = source.indexOf("const AppearanceContext");
-assert.ok(providerBoundary > 0, "Appearance controller boundary missing");
-const controllerSource = source.slice(0, providerBoundary)
-  .replace(/^import .*?;\r?\n/gm, "")
-  .replace(/^export /gm, "");
-const compiled = stripTypeScriptTypes(controllerSource, { mode: "strip" });
+// Execute the original TSX source instead of an anonymous VM excerpt.
+const root = fileURLToPath(new URL("../../..", import.meta.url));
+const sourceFile = fileURLToPath(new URL("../src/appearance.tsx", import.meta.url));
+const scratch = mkdtempSync(join(tmpdir(), "bthwani-appearance-test-"));
+let compiled;
+try {
+  const result = spawnSync(process.execPath, [
+    join(root, "node_modules/typescript/bin/tsc"), sourceFile,
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", scratch,
+  ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  compiled = readFileSync(join(scratch, "appearance.js"), "utf8");
+} finally {
+  rmSync(scratch, { recursive: true, force: true });
+}
+const loaded = [];
+process.once("exit", () => loaded.length);
 
 function deferred() {
   let resolve;
@@ -22,7 +33,7 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function harness(storage = { getItem: async () => null, setItem: async () => {} }) {
+function harness(storage = { getItem: async () => null, setItem: async () => {} }, platform = "android") {
   let onSchemeChanged;
   let disposedSubscription = false;
   const applied = [];
@@ -34,21 +45,26 @@ function harness(storage = { getItem: async () => null, setItem: async () => {} 
       return { remove: () => { disposedSubscription = true; } };
     },
   };
-  const factory = runInNewContext(
-    "(function(Appearance, Platform, isThemePreference, resolveTheme, resolveThemeName) {\n" +
-    compiled + "\nreturn createMobileAppearanceController;\n})", {}
-  );
-  const create = factory(
-    appearance,
-    { OS: "android" },
-    value => ["system", "light", "dark"].includes(value),
-    (value) => ({ value }),
-    (value, system) => value === "system" ? (system === "dark" ? "dark" : "light") : value,
-  );
+  const jsx = (type, props) => ({ type, props });
+  const module = loadMappedRenderFixture(compiled, sourceFile, {
+    "@bthwani/design-system/theme": {
+      isThemePreference: value => ["system", "light", "dark"].includes(value),
+      resolveTheme: value => ({ value }),
+      resolveThemeName: (value, system) => value === "system" ? (system === "dark" ? "dark" : "light") : value,
+    },
+    react: { createContext: initial => ({ initial, Provider: "AppearanceContext" }) },
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "react-native": { Appearance: appearance, Platform: { OS: platform } },
+    tamagui: { TamaguiProvider: "TamaguiProvider", Theme: "Theme" },
+    "./index": { tamaguiConfig: {} },
+  });
+  loaded.push(module);
+  const create = module.exports.createMobileAppearanceController;
   const controller = create({ key: "test.theme", storage });
   return {
     controller,
     applied,
+    subscribed: () => typeof onSchemeChanged === "function",
     setSystemTheme: value => onSchemeChanged({ colorScheme: value }),
     wasSubscriptionRemoved: () => disposedSubscription,
   };
@@ -221,4 +237,39 @@ test("identical pending preference requests share successful persistence without
   assert.deepEqual(writes, ["dark"]);
   assert.equal(controller.getSnapshot().preference, "dark");
   controller.dispose();
+});
+
+test("appearance subscribers observe changes; unsubscribe and invalid choices do not mutate state", async () => {
+  const { controller, applied } = harness();
+  const observed = [];
+  const unsubscribe = controller.subscribe(() => observed.push(controller.getSnapshot().preference));
+  await controller.restore();
+  await controller.setPreference("dark");
+  unsubscribe();
+  await controller.setPreference("light");
+  await assert.rejects(controller.setPreference("invalid"), /Invalid theme preference/);
+  assert.deepEqual(observed, ["system", "dark"]);
+  assert.deepEqual(applied, ["unspecified", "dark", "light"]);
+  assert.equal(controller.getSnapshot().preference, "light");
+  controller.dispose();
+});
+
+test("unavailable or invalid stored preference falls back to system and still renders", async () => {
+  for (const getItem of [async () => { throw new Error("unavailable"); }, async () => "invalid"]) {
+    const { controller, applied } = harness({ getItem, setItem: async () => {} });
+    await controller.restore();
+    assert.equal(controller.getSnapshot().preference, "system");
+    assert.equal(controller.getSnapshot().ready, true);
+    assert.deepEqual(applied, ["unspecified"]);
+    controller.dispose();
+  }
+});
+
+test("server rendering creates no process-wide native appearance subscription", () => {
+  assert.equal(typeof window, "undefined");
+  const { controller, subscribed, wasSubscriptionRemoved } = harness(undefined, "web");
+  assert.equal(subscribed(), false);
+  assert.equal(controller.getSnapshot().ready, false);
+  controller.dispose();
+  assert.equal(wasSubscriptionRemoved(), false);
 });
