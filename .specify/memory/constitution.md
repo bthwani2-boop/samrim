@@ -12,7 +12,7 @@ This Spec Kit adapter routes to the live canonical owners; it is not a second co
 - [Agent execution law](../../AGENTS.md): scope, authorization, mandatory tools, concurrency, proof, review and delivery.
 - [Repository structure](../../REPOSITORY-STRUCTURE.md): placement, ownership and consumer cutover.
 - [Governance index](../../governance/README.md): each decision belongs to its named domain owner.
-- [Engineering law](../../governance/engineering.md#mandatory-removal-and-clean-refoundation): mandatory deletion and clean refoundation, no symptom-chasing, protected-state boundaries and whole-scope proof.
+- [Engineering law](../../governance/engineering.md#mandatory-removal-and-clean-refoundation): mandatory whole-file deletion and reconstruction for authorized remediation, no finding-by-finding or line-by-line repair, no executor-created exceptions, protected-state boundaries and whole-scope proof.
 
 Apply these live owners. Resolve conflicts at the canonical owner rather than copying policy into derived specifications. Preserve historical evidence as history.
 
