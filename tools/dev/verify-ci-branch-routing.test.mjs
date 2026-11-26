@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
 const root = new URL("../../", import.meta.url);
 const workflows = [
@@ -82,15 +84,15 @@ test("Operator HTTP checks run after the production Next build, not as source co
   }
 });
 
-test("CI must reject unadmitted new tests before coverage and fast-guard", () => {
+test("CI must verify source test discovery before coverage and fast-guard", () => {
   const { content } = events(workflows[0]);
   const install = content.indexOf("pnpm install --frozen-lockfile --ignore-scripts");
-  const admission = content.indexOf("run: pnpm check:test-inclusion");
+  const admission = content.indexOf("run: node tools/dev/run-coverage.mjs --check-discovery");
   const coverage = content.indexOf("run: pnpm check:coverage");
   const fastGuard = content.indexOf("  fast_guard:");
   assert.ok(install >= 0 && admission > install && coverage > admission && fastGuard > coverage,
     "CI must prove new test inclusion after install and before coverage/fast-guard");
-  assert.match(content, /^      - name: Reject unadmitted new Feature tests\n        run: pnpm check:test-inclusion$/m);
+  assert.match(content, /^        run: node tools\/dev\/run-coverage\.mjs --check-discovery$/m);
 });
 
 test("SQL baseline, sandbox and retained migration changes trigger Go quality and Nx dependency workflows", () => {
@@ -116,12 +118,38 @@ test("the disposable PostgreSQL job routes and runs the DSH restore rehearsal", 
   assert.match(job, /shell: pwsh\n {8}run: \.\/tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/);
 });
 
+test("full source coverage replaces repeated application and infrastructure test invocations", () => {
+  const { content } = events(workflows[0]);
+  const tests = new Set(discoverWorkspaceNodeTests(fileURLToPath(root)));
+  const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
+  const localAppChecks = pkg.scripts["check:apps"];
+  const staticAppChecks = pkg.scripts["check:apps:static"];
+  assert.ok(staticAppChecks, "missing reusable static checks");
+  assert.ok(localAppChecks.includes("pnpm run check:apps:static"));
+  for (const file of [
+    "tools/dev/verify-workspace.test.mjs",
+    "tools/dev/verify-ci-branch-routing.test.mjs",
+    "tools/dev/check-openapi.test.mjs",
+    "tests/infra/compose-policy.test.mjs",
+    "tests/infra/verify-runtime-provenance.test.mjs",
+    "tools/mobile/verify-rtl.test.mjs",
+    "tools/security/verify-secrets.test.mjs",
+    ...localAppChecks.split(" ").filter(value => value.endsWith(".test.mjs")),
+  ]) {
+    assert.ok(tests.has(file), "not discovered by coverage: " + file);
+    assert.ok(!content.includes(file), "duplicate explicit test in CI: " + file);
+  }
+  for (const command of ["verify-app-foundations.mjs", "verify-rtl.mjs", "verify-expo-config.mjs", "verify-application-boundaries.mjs", "typecheck"]) {
+    assert.ok(staticAppChecks.includes(command), "missing actual check: " + command);
+  }
+  assert.match(content, /pnpm check:apps:static/);
+});
+
 test("CI retains real security and contract checks without the retired scaffold guard", () => {
   const { content } = events(workflows[0]);
   assert.doesNotMatch(content, /tools\/governance\/verify-foundation(?:\.test)?\.mjs/);
-  assert.match(content, /node --test tools\/security\/verify-secrets\.test\.mjs/);
   assert.match(content, /node tools\/security\/verify-secrets\.mjs/);
-  assert.match(content, /node --test tools\/dev\/check-openapi\.test\.mjs/);
+  for (const owner of ["identity", "dsh", "wlt"]) assert.ok(content.includes("pnpm --dir services/" + owner + " contract"));
   assert.match(content, /run: pnpm check:coverage/);
   const coverage = readFileSync(new URL("tools/dev/run-coverage.mjs", root), "utf8");
   assert.doesNotMatch(coverage, /verify-foundation/);

@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   foundation:
-    name: Pinned workspace and source checks (NOT product acceptance)
+    name: Workspace validation (source checks)
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     steps:
@@ -43,23 +43,14 @@ jobs:
           node --version
           node tools/dev/verify-workspace.mjs
           git status --short
-      - name: Test active Node runtime enforcement
-        run: node --test tools/dev/verify-workspace.test.mjs
-      - name: Guard branch-agnostic CI routing
-        run: node --test tools/dev/verify-ci-branch-routing.test.mjs
-      - name: Verify Stage-4 source versions and external app identities (static only)
-        run: node tools/mobile/verify-app-foundations.mjs
-      - name: Reject manual RTL overrides in Expo screens and confirm native config
-        run: |
-          node --test tools/mobile/verify-rtl.test.mjs
-          node tools/mobile/verify-rtl.mjs
+      # All source regression tests run in the coverage suite below.
       - name: Record limits explicitly
         run: |
           echo 'WORKSPACE_ONLY: governance policy cutover is separately assessed'
           echo 'NOT_RUN: SQL, source services, runtime, security, finance, full Product acceptance'
 
   presentation:
-    name: Presentation config, design and TypeScript (NOT runtime)
+    name: Application quality, contracts, tests and builds
     needs: foundation
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -81,12 +72,11 @@ jobs:
           pnpm install --frozen-lockfile --ignore-scripts
       - name: Validate owner OpenAPI 3.1 contracts and reject broken references
         run: |
-          node --test tools/dev/check-openapi.test.mjs tests/infra/compose-policy.test.mjs tests/infra/verify-runtime-provenance.test.mjs
           pnpm --dir services/identity contract
           pnpm --dir services/dsh contract
           pnpm --dir services/wlt contract
-      - name: Reject unadmitted new Feature tests
-        run: pnpm check:test-inclusion
+      - name: Verify source test discovery
+        run: node tools/dev/run-coverage.mjs --check-discovery
       - name: Run discovered Feature tests and collect measured coverage
         run: pnpm check:coverage
       - name: Bind JavaScript coverage to the tested source tree
@@ -111,10 +101,10 @@ jobs:
           overwrite: true
       - name: Reject orphaned JavaScript and TypeScript files
         run: pnpm knip:files
-      - name: Validate design, native config, source ownership, appearance races and all app types
+      - name: Validate design, app identity, native configuration, source boundaries and types
         run: |
           pnpm check:design
-          pnpm check:apps
+          pnpm check:apps:static
       - name: Export Expo Web presentation hosts (SSR artifacts only)
         run: |
           pnpm --dir apps/customer exec expo export --platform web
@@ -215,12 +205,9 @@ jobs:
             }
           }
           CI_GATE
-      - name: Confirm tracked-secret checks after presentation admission
-        # The TypeScript-backed app source guard and negative tests run in
-        # presentation after its frozen pnpm install. GitHub jobs are isolated.
-        run: |
-          node --test tools/security/verify-secrets.test.mjs
-          node tools/security/verify-secrets.mjs
+      - name: Scan tracked files for secrets
+        # Negative regression tests run in the source coverage suite.
+        run: node tools/security/verify-secrets.mjs
       - name: State the scoped check boundary
         run: |
           echo 'fast-guard: foundation and presentation; main PR requires Go, disposable owner PostgreSQL and dependency/Nx; main push also requires Go and owner PostgreSQL'
