@@ -5,6 +5,7 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
+    "test": "node ../../tools/dev/run-coverage.mjs --project",
     "dev": "expo start --dev-client --localhost",
     "web": "expo start --web --localhost",
     "typecheck": "tsc --noEmit -p tsconfig.json",

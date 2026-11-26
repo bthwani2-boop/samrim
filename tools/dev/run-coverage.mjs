@@ -5,14 +5,28 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
+import { discoverNodeSourceTests, discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const report = join(root, "coverage/lcov.info");
 const args = process.argv.slice(2);
-assert.ok(args.length === 0 || (args.length === 1 && args[0] === "--check-discovery"),
-  "Usage: node tools/dev/run-coverage.mjs [--check-discovery]");
-const discoveryOnly = args.length === 1;
+assert.ok(args.length === 0 || (args.length === 1 && ["--check-discovery", "--project"].includes(args[0])),
+  "Usage: node tools/dev/run-coverage.mjs [--check-discovery | --project (from project root)]");
+const discoveryOnly = args[0] === "--check-discovery";
+const projectOnly = args[0] === "--project";
+const nodeOptions = ["--experimental-transform-types", "--loader", "./packages/design-system/tools/ts-resolver.mjs"];
+if (projectOnly) {
+  const projectRoot = resolve(process.cwd());
+  const project = relative(root, projectRoot).replaceAll("\\", "/");
+  assert.match(project, /^(apps|packages|services)\/[a-zA-Z0-9_-]+$/, "Run --project from a workspace project root");
+  const files = discoverNodeSourceTests(root, projectRoot);
+  assert.ok(files.length > 0, "No admitted project source tests: " + project);
+  const result = spawnSync(process.execPath, [...nodeOptions, "--test-concurrency=2", "--test", ...files],
+    { cwd: root, stdio: "inherit" });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, "Project source tests must pass: " + project);
+  process.exit(0);
+}
 if (!discoveryOnly) rmSync(report, { force: true });
 const files = discoverWorkspaceNodeTests(root);
 assert.ok(files.length > 0, "No admitted source tests");
@@ -42,8 +56,7 @@ const scratch = mkdtempSync(join(dirname(report), ".lcov-"));
 const candidate = join(scratch, "lcov.info");
 try {
   const result = spawnSync(process.execPath, [
-    "--experimental-transform-types",
-    "--loader", "./packages/design-system/tools/ts-resolver.mjs",
+    ...nodeOptions,
     "--experimental-test-coverage",
     "--test-concurrency=4",
     "--test-reporter=spec",

@@ -141,3 +141,15 @@ test("canonical dependency audit remains fail-closed and independent of full sou
   assert.ok(workflow.jobs.application_quality.steps.some(step => step.run === "pnpm check:coverage"));
   assert.ok(!steps.some(step => step.run?.includes("node --test")), "source regressions have one execution owner");
 });
+
+test("every typed application and owner client exposes a native Nx test target", () => {
+  const result = runNx(["show", "projects", "--with-target", "test", "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  const names = new Set(JSON.parse(result.stdout));
+  for (const name of ["customer", "merchant", "captain", "control-panel", "identity", "dsh", "wlt", "design-system", "tamagui-config"]) {
+    assert.ok(names.has("@bthwani/" + name), "Missing actual Nx test target: " + name);
+  }
+  const customer = runNx(["show", "project", "@bthwani/customer", "--json"]);
+  assert.equal(customer.status, 0, customer.stderr);
+  assert.ok(JSON.parse(customer.stdout).targets.test);
+});

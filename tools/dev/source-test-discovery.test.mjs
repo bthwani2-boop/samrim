@@ -273,3 +273,20 @@ test("missing or ambiguous scanner scope cannot publish stale or partial evidenc
   assert.match(result.stderr, /Expected one Sonar scope property/);
   assert.equal(existsSync(report), false);
 }));
+
+test("project feedback executes only the admitted project tests and never replaces full coverage", () => coverageFixture(({ root, add, report }) => {
+  add("apps/customer/src/selected.test.mjs", 'import test from "node:test"; test("selected customer test", () => {});');
+  add("apps/merchant/src/rejected.test.mjs", 'import test from "node:test"; test("unrelated merchant test", () => { throw new Error("unrelated"); });');
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  const run = cwd => spawnSync(process.execPath, [join(root, "tools/dev/run-coverage.mjs"), "--project"], { cwd, env, encoding: "utf8", timeout: 30000 });
+  const selected = run(join(root, "apps/customer"));
+  assert.equal(selected.status, 0, selected.stdout + selected.stderr);
+  assert.match(selected.stdout, /selected customer test/);
+  assert.doesNotMatch(selected.stdout, /unrelated merchant test/);
+  assert.equal(readFileSync(report, "utf8"), "STALE_REPORT");
+  const rejected = run(join(root, "apps/merchant"));
+  assert.equal(rejected.status, 1);
+  assert.match(rejected.stdout, /unrelated merchant test/);
+  assert.equal(run(root).status, 1);
+}));

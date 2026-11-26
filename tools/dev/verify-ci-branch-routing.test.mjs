@@ -62,7 +62,10 @@ test("full CI executes discovered source tests once and keeps real owner, build 
   assert.ok(ci.jobs.workspace_validation.steps.some(step => step.run?.includes("node tools/security/verify-secrets.mjs")));
   assert.ok(dependency.steps.some(step => step.run === "pnpm audit --audit-level high" && !step["continue-on-error"]));
   assert.ok(go.jobs["owner-postgres-integration"].steps.some(step => step.run === "./tests/infra/verify-isolated-postgres.ps1 -DockerContext default"));
-  assert.ok(steps.findIndex(step => step.run?.includes("pnpm --dir apps/control-panel build")) < steps.findIndex(step => step.env?.BTHWANI_OPERATOR_HTTP_TEST === "1"));
+  const http = steps.find(step => step.env?.BTHWANI_OPERATOR_HTTP_TEST === "1");
+  assert.ok(steps.findIndex(step => step.run?.includes("pnpm --dir apps/control-panel build")) < steps.indexOf(http));
+  assert.match(http.run, /apps\/control-panel\/tests\/operator-\*-http\.test\.mjs/);
+  assert.match(http.run, /apps\/control-panel\/tests\/operator-protected-routes\.test\.mjs/);
   for (const step of steps.filter(step => /export --platform|control-panel build|verify-operator-http|verify-expo-web-http|BTHWANI_OPERATOR_HTTP_TEST/.test((step.run ?? "") + JSON.stringify(step.env ?? {})))) assert.equal(step.if, undefined, step.name);
 });
 

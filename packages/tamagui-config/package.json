@@ -17,6 +17,7 @@
     "tamagui": "3.3.1"
   },
   "scripts": {
+    "test": "node ../../tools/dev/run-coverage.mjs --project",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
