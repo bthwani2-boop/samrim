@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateIndex, inspectGraphSources } from "./graphify-local.mjs";
+import { evaluateIndex } from "./graphify-local.mjs";
+import { inspectSourceFiles } from "./source-snapshot.mjs";
 
 const current = {
   repository: "d:/samrim",
@@ -83,27 +84,27 @@ test("tracked and untracked source bytes are admitted through one real-file boun
     const file = join(dir,"apps","new.ts");
     writeFileSync(file,"export const n=1;");
     const tracked = [entry("apps/new.ts")];
-    const first = inspectGraphSources(dir, tracked, []);
+    const first = inspectSourceFiles(dir, tracked, []);
     assert.deepEqual(first.unsafeTracked, []);
     assert.deepEqual(first.unsafeUntracked, []);
     writeFileSync(file,"export const n=2;");
-    assert.notEqual(inspectGraphSources(dir,tracked,[]).digest,first.digest);
-    assert.notEqual(inspectGraphSources(dir,[],["apps/new.ts"]).digest,first.digest);
+    assert.notEqual(inspectSourceFiles(dir,tracked,[]).digest,first.digest);
+    assert.notEqual(inspectSourceFiles(dir,[],["apps/new.ts"]).digest,first.digest);
     writeFileSync(join(dir,"apps",".env"),"SYNTHETIC=1");
-    assert.deepEqual(inspectGraphSources(dir,[entry("apps/.env")],[]).unsafeTracked,["apps/.env"]);
-    assert.deepEqual(inspectGraphSources(dir,[],["apps/.env"]).unsafeUntracked,["apps/.env"]);
+    assert.deepEqual(inspectSourceFiles(dir,[entry("apps/.env")],[]).unsafeTracked,["apps/.env"]);
+    assert.deepEqual(inspectSourceFiles(dir,[],["apps/.env"]).unsafeUntracked,["apps/.env"]);
     writeFileSync(file,"const key = 'sk_"+"live_"+"A".repeat(16)+"';");
-    assert.deepEqual(inspectGraphSources(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
+    assert.deepEqual(inspectSourceFiles(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
     writeFileSync(file,"export const n=3;");
     linkSync(file,join(dir,"apps","alias.ts"));
-    assert.deepEqual(inspectGraphSources(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
+    assert.deepEqual(inspectSourceFiles(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
     rmSync(join(dir,"apps","alias.ts"));
     symlinkSync(dir,join(dir,"apps","linked"),process.platform==="win32"?"junction":"dir");
-    assert.deepEqual(inspectGraphSources(dir,[entry("apps/linked/apps/new.ts")],[]).unsafeTracked,["apps/linked/apps/new.ts"]);
-    assert.deepEqual(inspectGraphSources(dir,[],["../outside.ts"]).unsafeUntracked,["../outside.ts"]);
-    assert.deepEqual(inspectGraphSources(dir,["120000 "+"a".repeat(40)+" 0\tapps/new.ts"],[]).unsafeTracked,["apps/new.ts"]);
+    assert.deepEqual(inspectSourceFiles(dir,[entry("apps/linked/apps/new.ts")],[]).unsafeTracked,["apps/linked/apps/new.ts"]);
+    assert.deepEqual(inspectSourceFiles(dir,[],["../outside.ts"]).unsafeUntracked,["../outside.ts"]);
+    assert.deepEqual(inspectSourceFiles(dir,["120000 "+"a".repeat(40)+" 0\tapps/new.ts"],[]).unsafeTracked,["apps/new.ts"]);
     rmSync(file);
-    const removed=inspectGraphSources(dir,tracked,[]);
+    const removed=inspectSourceFiles(dir,tracked,[]);
     assert.deepEqual(removed.unsafeTracked,[]);
     assert.notEqual(removed.digest,first.digest);
   } finally {rmSync(dir,{recursive:true,force:true});}
@@ -257,6 +258,7 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     mkdirSync(join(dir, "tools", "dev"), { recursive: true });
     mkdirSync(join(dir, "graphify-out"));
     writeFileSync(join(dir, script), readFileSync(new URL("./graphify-local.mjs", import.meta.url)));
+    writeFileSync(join(dir,"tools/dev/source-snapshot.mjs"),readFileSync(new URL("./source-snapshot.mjs",import.meta.url)));
     mkdirSync(join(dir, "tools", "security"), { recursive: true });
     writeFileSync(join(dir, "tools", "security", "verify-secrets.mjs"), readFileSync(new URL("../security/verify-secrets.mjs", import.meta.url)));
     writeFileSync(join(dir, ".gitignore"), "graphify-out/\n");

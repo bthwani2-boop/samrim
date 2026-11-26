@@ -156,10 +156,12 @@ function coverageFixture(callback) {
     return file;
   };
   try {
-    for (const name of ["run-coverage.mjs", "source-test-discovery.mjs"]) {
+    for (const name of ["run-coverage.mjs", "source-test-discovery.mjs", "source-snapshot.mjs"]) {
       const target = add(`tools/dev/${name}`, "");
       copyFileSync(fileURLToPath(new URL(`./${name}`, import.meta.url)), target);
     }
+    add("tools/security/verify-secrets.mjs",readFileSync(new URL("../security/verify-secrets.mjs",import.meta.url),"utf8"));
+    add(".gitignore", "coverage/\n.fixture-v8/\ntools/dev/ignored.test.mjs\n");
     add("packages/design-system/tools/ts-resolver.mjs", "export {};\n");
     add("sonar-project.properties", readFileSync(new URL("../../sonar-project.properties", import.meta.url), "utf8"));
     add("tools/mobile/verify-app-identity.mjs", "export const measured = 1;\n");
@@ -172,6 +174,8 @@ function coverageFixture(callback) {
       'import test from "node:test"; test("measured sources", () => {});',
     ].join("\n"));
     const report = add("coverage/lcov.info", "STALE_REPORT");
+    const git = (...args) => { const result=spawnSync("git",args,{cwd:root,encoding:"utf8",timeout:10000}); assert.equal(result.status,0,result.stderr); };
+    git("init","-q","-b","fixture"); git("config","user.name","Source Fixture"); git("config","user.email","source-fixture@example.invalid"); git("config","commit.gpgsign","false"); git("add","--",".gitignore","tools","packages","sonar-project.properties"); git("commit","-qm","fixture baseline");
     const run = (...args) => {
       const env = { ...process.env };
       delete env.NODE_TEST_CONTEXT;
@@ -380,4 +384,25 @@ test("a redirected coverage directory is rejected without altering its destinati
   } finally {
     rmSync(outside, { recursive: true, force: true });
   }
+}));
+
+
+test("source changed by a passing native test invalidates LCOV before publication", () => coverageFixture(({add,report,run})=>{
+  add("tools/dev/change.test.mjs",[
+    'import test from "node:test";',
+    'import {writeFileSync} from "node:fs";',
+    'test("change authored file",()=>writeFileSync("tools/mobile/verify-app-identity.mjs","export const measured = 2;\\n"));',
+  ].join("\n"));
+  const result=run();
+  assert.equal(result.status,1,result.stdout+result.stderr);
+  assert.match(result.stderr,/TEST_SOURCE_CHANGED_DURING_EXECUTION/);
+  assert.equal(existsSync(report),false);
+}));
+test("ignored tests cannot be executed or silently admitted as candidate evidence", () => coverageFixture(({add,report,run})=>{
+  add("tools/dev/ignored.test.mjs",'throw new Error("IGNORED_EXECUTED");');
+  const result=run();
+  assert.equal(result.status,1,result.stdout+result.stderr);
+  assert.match(result.stderr,/TEST_SOURCE_NOT_ADMITTED tools\/dev\/ignored.test.mjs/);
+  assert.doesNotMatch(result.stdout+result.stderr,/IGNORED_EXECUTED/);
+  assert.equal(existsSync(report),false);
 }));

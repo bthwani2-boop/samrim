@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { captureSourceSnapshot } from "./source-snapshot.mjs";
 import { discoverNodeSourceTests, discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -29,13 +30,25 @@ function workspaceTests() {
   assert.ok(files.length > 0, "No admitted source tests");
   return files;
 }
+function admittedCandidate(files) {
+  const snapshot = captureSourceSnapshot(root);
+  assert.ok(!snapshot.unsafeTracked && !snapshot.unsafeUntracked, "TEST_SOURCE_ADMISSION_FAILED");
+  const admitted = new Set(snapshot.files);
+  for (const file of files) assert.ok(admitted.has(file), "TEST_SOURCE_NOT_ADMITTED " + file);
+  return snapshot;
+}
+function assertUnchanged(before, files) {
+  assert.deepEqual(admittedCandidate(files), before, "TEST_SOURCE_CHANGED_DURING_EXECUTION");
+}
 function projectTests() {
   const folder = resolve(process.cwd());
   const project = relative(root, folder).replaceAll("\\", "/");
   assert.match(project, /^(apps|packages|services)\/[a-zA-Z0-9_-]+$/, "Run --project from a workspace project root");
   const files = discoverNodeSourceTests(root, folder);
   assert.ok(files.length > 0, "No admitted project source tests: " + project);
+  const before = admittedCandidate(files);
   runNode(["--test-concurrency=2", "--test", ...files]);
+  assertUnchanged(before, discoverNodeSourceTests(root, folder));
 }
 
 // The atomic directory is both the exclusive reservation and the only work
@@ -80,7 +93,7 @@ function sourceScope() {
     const lines = settings.split(/\r?\n/).filter(line => line.startsWith(key + "="));
     assert.equal(lines.length, 1, "Expected one Sonar scope property: " + key);
     const values = lines[0].slice(key.length + 1).split(",").map(value => value.trim());
-    assert.ok(values.every(value => value && !/[\\{}\[\]!]/.test(value)), "Unsupported Sonar scope: " + key);
+    assert.ok(values.every(value => value && !/[\\{}[\]!]/.test(value)), "Unsupported Sonar scope: " + key);
     return values;
   }
   const sources = list("sonar.sources");
@@ -98,7 +111,7 @@ function counter(lines, source, prefix) {
   assert.ok(Number.isSafeInteger(number), "Unsafe LCOV counter: " + source);
   return number;
 }
-function measuredReport(raw, inScope) {
+function measuredReport(raw, inScope, admitted) {
   assert.ok(raw.trimEnd().endsWith("end_of_record"), "Incomplete LCOV report");
   const records = [];
   const measured = new Set();
@@ -118,6 +131,7 @@ function measuredReport(raw, inScope) {
       outsideScope++;
       continue;
     }
+    assert.ok(admitted.has(source), "LCOV_SOURCE_NOT_ADMITTED " + source);
     const covered = counter(lines, source, "LH:"), total = counter(lines, source, "LF:");
     assert.ok(covered <= total, "Invalid actual coverage: " + source);
     hit += covered;
@@ -139,6 +153,7 @@ function publishCoverage() {
     // never reaches this operation.
     invalidateReport();
     const files = workspaceTests();
+    const before = admittedCandidate(files);
     const inScope = sourceScope();
     const raw = join(reservation, "native.lcov");
     const normalized = join(reservation, "lcov.info");
@@ -151,13 +166,15 @@ function publishCoverage() {
       "--test-reporter-destination=" + raw,
       "--test", ...files,
     ]);
+    assertUnchanged(before, workspaceTests());
     assertDirectory(coverage);
     assertDirectory(reservation);
     const info = lstatSync(raw);
     assert.ok(info.isFile() && !info.isSymbolicLink() && info.nlink === 1, "Unsafe native LCOV report");
-    const { records, measured, external, outsideScope, hit, found } = measuredReport(readFileSync(raw, "utf8"), inScope);
+    const { records, measured, external, outsideScope, hit, found } = measuredReport(readFileSync(raw, "utf8"), inScope, new Set(before.files));
     writeFileSync(normalized, records.map(record => record + "\nend_of_record\n").join(""), { encoding: "utf8", flag: "wx" });
     assert.ok(!lstatSync(report, { throwIfNoEntry: false }), "COVERAGE_REPORT_CONFLICT: unexpected publication");
+    assertUnchanged(before, workspaceTests());
     renameSync(normalized, report);
     console.log("LCOV_EXTERNAL_RECORDS_EXCLUDED count=" + external);
     console.log("LCOV_SONAR_SCOPE_RECORDS_EXCLUDED count=" + outsideScope);

@@ -648,6 +648,7 @@ test("native Graphify refreshes changed tracked source before Commit",{
   mkdirSync(path.join(dir,"graphify-out"));
   mkdirSync(path.join(dir,"empty-hooks"));
   writeFileSync(path.join(dir,script),readFileSync(new URL("./graphify-local.mjs",import.meta.url)));
+  writeFileSync(path.join(dir,"tools/dev/source-snapshot.mjs"),readFileSync(new URL("./source-snapshot.mjs",import.meta.url)));
   mkdirSync(path.join(dir,"tools","security"),{recursive:true});
   writeFileSync(path.join(dir,"tools","security","verify-secrets.mjs"),readFileSync(new URL("../security/verify-secrets.mjs",import.meta.url)));
   writeFileSync(path.join(dir,".gitignore"),"graphify-out/\nempty-hooks/\n");
