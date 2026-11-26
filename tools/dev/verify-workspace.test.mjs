@@ -366,3 +366,39 @@ test('source admission protects the configured separate Nx workspace and rejects
   writeFileSync(config, JSON.stringify({ ...original, nxCloudId: '6aa9eedc45c07f39423ffa9f' }));
   assert.throws(() => verifyWorkspace(dir), /Do not reuse donor Nx Cloud workspace/);
 });
+
+test("service placement cannot hide an unowned service or illegal owner paths behind generic output names", async (t) => {
+  const { serviceSourcePlacementIssues } = await import("./check-service-placement.mjs");
+  const root = mkdtempSync(path.join(tmpdir(), "bthwani-placement-output-scope-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const put = file => {
+    const target = path.join(root, file);
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, "fixture");
+  };
+  put("services/dsh/node_modules/dependency/ignored.go");
+  put("services/identity/backend/internal/build/valid.go");
+  assert.deepEqual(serviceSourcePlacementIssues(root), []);
+  const forbidden = [
+    "services/build",
+    "services/dsh/database/migrations/build/01_bad.sql",
+    "services/wlt/contracts/openapi/paths/dist/shadow.yaml",
+    "services/identity/backend/internal/build/misc/escape.go",
+  ];
+  put("services/build/rogue.go");
+  for (const file of forbidden.slice(1)) put(file);
+  const issues = serviceSourcePlacementIssues(root);
+  for (const file of forbidden) assert.ok(issues.some(issue => issue.startsWith(file + ":")), file);
+});
+
+test("service placement does not silently ignore a nested dependency or repository root", async (t) => {
+  const { serviceSourcePlacementIssues } = await import("./check-service-placement.mjs");
+  const root = mkdtempSync(path.join(tmpdir(), "bthwani-placement-nested-root-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const file of ["services/dsh/backend/node_modules", "services/wlt/backend/.git"]) {
+    mkdirSync(path.join(root, file), { recursive: true });
+  }
+  const issues = serviceSourcePlacementIssues(root);
+  assert.ok(issues.some(issue => issue.startsWith("services/dsh/backend/node_modules:")));
+  assert.ok(issues.some(issue => issue.startsWith("services/wlt/backend/.git:")));
+});
