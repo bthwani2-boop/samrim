@@ -1,178 +1,186 @@
 #!/usr/bin/env node
-// Stage-4 workspace smoke: original source toolchain and minimal working app hosts.
-// Static verification only, not Android/iOS/live device or financial Product proof.
-import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { resolvePinnedGo } from './check-go.mjs';
-import { serviceSourcePlacementIssues } from './check-service-placement.mjs';
+// Dependency-free source admission, before pnpm install. Runtime/contract
+// acceptance belongs to the native owner checks; this never certifies either.
+import assert from "node:assert/strict";
+import { lstatSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { resolvePinnedGo, services } from "./check-go.mjs";
+import { serviceSourcePlacementIssues } from "./check-service-placement.mjs";
 
-const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const strict = process.argv.includes('--require-exact-toolchain');
-if (process.argv.length > 2 && (process.argv.length !== 3 || !strict)) {
-  throw new Error('Usage: node tools/dev/verify-workspace.mjs [--require-exact-toolchain]');
-}
-const read = (file) => readFileSync(path.join(projectRoot, file), 'utf8');
-const fail = (reason) => { throw new Error('STAGE3_WORKSPACE_FAIL: ' + reason); };
+const root = fileURLToPath(new URL("../..", import.meta.url));
+const exact = /^\d+\.\d+\.\d+$/;
+const tools = ["@biomejs/biome", "knip", "nx", "typescript", "yaml"];
+const presentations = ["apps/customer", "apps/merchant", "apps/captain", "apps/control-panel"];
+const shared = ["packages/design-system", "packages/tamagui-config"];
+const pin = (value, label) => {
+  assert.match(value ?? "", exact, "Expected exact stable version: " + label);
+  return value;
+};
 
-const pkg = JSON.parse(read('package.json'));
-const nodePin = read('.node-version').trim();
-const goPin = read('.go-version').trim();
-const nvmPin = read('.nvmrc').trim();
-const runningNode = process.version.replace(/^v/, '');
-if (runningNode !== nodePin) {
-  fail('Active Node runtime mismatch: expected ' + nodePin +
-    ', observed ' + runningNode + ' at ' + process.execPath);
-}
-const pnpmPin = '12.15.0';
-const tsPin = '7.0.2';
-const biomePin = '2.5.12';
-
-assert.equal(nodePin, '24.22.1', 'Node pin changed from original branch 41');
-assert.equal(nvmPin, nodePin, 'nvm and Node pins must agree');
-assert.equal(goPin, '1.27.4', 'Go must use the approved 2026-11-16 security patch');
-assert.equal(pkg.packageManager, 'pnpm@' + pnpmPin);
-assert.equal(pkg.private, true);
-assert.equal(pkg.engines.node, '>=24.17.0 <25');
-assert.equal(pkg.engines.pnpm, pnpmPin);
-assert.deepEqual(pkg.devDependencies, { '@biomejs/biome': biomePin, knip: '6.34.0', nx: '24.0.1', typescript: tsPin, yaml: '2.9.0' },
-  'Workspace tooling must use exact donor-compatible package versions');
-if (pkg.dependencies?.nx) fail('Nx is development tooling, not a production dependency');
-
-const ws = read('pnpm-workspace.yaml');
-for (const glob of ['"apps/*"', '"packages/*"', '"services/*"']) {
-  if (!ws.includes(glob)) fail('Missing future workspace glob ' + glob);
-}
-for (const setting of ['autoInstallPeers: false','engineStrict: true',
-  'nodeLinker: isolated','saveExact: true','strictPeerDependencies: true']) {
-  if (!ws.includes(setting)) fail('Missing original pnpm behavior: ' + setting);
-}
-if (/nxCloudId:/.test(ws)) fail('Nx Cloud is not admitted');
-if (!ws.includes("'@rc-component/util@1.14.0': patches/@rc-component__util@1.14.0.patch")) {
-  fail('Pinned donor Ant Design CSP patch is missing');
+function importer(document, name) {
+  const section = document.match(/^importers:\n([\s\S]*?)(?=^[^\s#][^\n]*:\s*$)/m)?.[1];
+  assert.ok(section, "Missing frozen lock importers");
+  const header = new RegExp("^  " + RegExp.escape(name) + ":\\n", "m");
+  const match = header.exec(section);
+  assert.ok(match, "Missing frozen lock importer: " + name);
+  const remaining = section.slice(match.index + match[0].length);
+  const next = remaining.search(/^  \S[^\n]*:\s*$/m);
+  return next === -1 ? remaining : remaining.slice(0, next);
 }
 
-const nx = JSON.parse(read('nx.json'));
-if (nx.defaultBase !== 'main' || nx.targetDefaults?.typecheck?.cache !== true ||
-    !Array.isArray(nx.namedInputs?.nodeToolchain)) {
-  fail('Nx local project graph and typecheck cache configuration is incomplete');
+function locked(imported, name, version) {
+  const key = name.startsWith("@") ? "'" + name + "'" : name;
+  const expected = new RegExp("^      " + RegExp.escape(key) +
+    ":\\n        specifier: " + RegExp.escape(version) +
+    "\\n        version: " + RegExp.escape(version) + "$", "m");
+  assert.match(imported, expected, "Frozen lock pin differs: " + name);
 }
-if (!/^[a-f0-9]{24}$/.test(nx.nxCloudId ?? '') ||
-    nx.nxCloudId === '6aa9eedc45c07f39423ffa9f' ||
-    nx.nxCloudAccessToken || nx.nxCloudUrl) {
-  fail('Nx Cloud requires a dedicated refoundation ID and no embedded credentials');
-}
-const lock = read('pnpm-lock.yaml');
-for (const entry of ["lockfileVersion: '9.0'",
-  "specifier: 12.15.0", "specifier: " + tsPin, "specifier: " + biomePin,
-  "specifier: 6.34.0", "knip@6.34.0:",
-  'typescript@' + tsPin + ':', "'@biomejs/biome@" + biomePin + "':"]) {
-  if (!lock.includes(entry)) fail('Incomplete exact pnpm frozen lock: ' + entry);
-}
-for (const p of ['knip.jsonc','nx.json','tsconfig.base.json','biome.json','.editorconfig','.gitattributes','.gitignore']) {
-  if (!existsSync(path.join(projectRoot, p))) fail('Missing tooling configuration: ' + p);
-}
-const tsconfig = JSON.parse(read('tsconfig.base.json'));
-if (tsconfig.compilerOptions.strict !== true || tsconfig.compilerOptions.noEmit !== true) {
-  fail('Base TypeScript contract must remain strict and non-emitting');
-}
-const biome = JSON.parse(read('biome.json'));
-if (biome.linter.enabled !== true || biome.formatter.enabled !== false) {
-  fail('Use original Biome lint policy without introducing redundant ESLint toolchain');
-}
-for (const required of ['apps/customer','apps/merchant','apps/captain','apps/control-panel',
-  'packages/design-system','packages/tamagui-config',
-  'tools/mobile/define-bthwani-expo-app.cjs',
-  'tools/mobile/verify-app-identity.mjs','patches/@rc-component__util@1.14.0.patch']) {
-  if (!existsSync(path.join(projectRoot, required))) fail('Stage-4 required source absent: ' + required);
-}
-for (const owner of ['identity','dsh','wlt']) {
-  const placement = path.join(projectRoot, 'services', owner, 'README.md');
-  if (!existsSync(placement)) fail('Missing service placement README for ' + owner);
-  const doc = readFileSync(placement, 'utf8');
-  // A service may progress from a placement-only scaffold to isolated owner code
-  // without a global governance cutover or separate development admission vote.
-  const state = /^STATUS: (SCAFFOLD_ONLY|IMPLEMENTATION_IN_PROGRESS)$/m.exec(doc)?.[1];
-  const execution = /^EXECUTION: (NOT_STARTED|IN_PROGRESS)$/m.exec(doc)?.[1];
-  if (!((state === 'SCAFFOLD_ONLY' && execution === 'NOT_STARTED') ||
-        (state === 'IMPLEMENTATION_IN_PROGRESS' && execution === 'IN_PROGRESS'))) {
-    fail('Service README must declare a consistent scaffold or progressive execution state: ' + owner);
+
+export function verifyWorkspace(checkout = root, { strict = false } = {}) {
+  const locate = rel => path.join(checkout, rel);
+  const read = rel => {
+    assert.ok(lstatSync(locate(rel), { throwIfNoEntry: false })?.isFile(),
+      "Required source must be a real file: " + rel);
+    return readFileSync(locate(rel), "utf8").replaceAll("\r\n", "\n");
+  };
+  const json = rel => JSON.parse(read(rel));
+  const directory = rel => assert.ok(lstatSync(locate(rel), { throwIfNoEntry: false })?.isDirectory(),
+    "Required source directory: " + rel);
+
+  // Check legal owner placement before reading any service paths.
+  const issues = serviceSourcePlacementIssues(checkout);
+  assert.equal(issues.length, 0, "Service source placement violations:\n" + issues.join("\n"));
+
+  const node = pin(read(".node-version").trim(), ".node-version");
+  const go = pin(read(".go-version").trim(), ".go-version");
+  assert.equal(read(".nvmrc").trim(), node, "Node pin aliases differ");
+  assert.equal(process.version, "v" + node, "Active Node runtime mismatch: expected " +
+    node + ", observed " + process.version.slice(1) + " at " + process.execPath);
+
+  // The manifests own approved versions. Compare exact pins across consumers
+  // and the lock rather than maintain another independently editable pin table.
+  const manifest = json("package.json");
+  assert.equal(manifest.private, true);
+  assert.equal(manifest.type, "module");
+  const pnpm = pin(manifest.packageManager?.match(/^pnpm@(.+)$/)?.[1], "packageManager");
+  assert.equal(manifest.engines?.pnpm, pnpm);
+  assert.equal(manifest.engines?.node, ">=24.17.0 <25");
+  assert.deepEqual(Object.keys(manifest.devDependencies ?? {}).sort(), tools);
+  for (const tool of tools) pin(manifest.devDependencies[tool], tool);
+  assert.ok(!manifest.dependencies?.nx, "Nx must remain a development tool");
+
+  const workspace = read("pnpm-workspace.yaml");
+  for (const glob of ["apps/*", "services/*", "packages/*"]) {
+    assert.match(workspace, new RegExp('^  - "' + RegExp.escape(glob) + '"$', "m"),
+      "Missing canonical workspace path: " + glob);
   }
-  const dir = path.join(projectRoot, 'services', owner);
-  const service = JSON.parse(readFileSync(path.join(dir, 'package.json'), 'utf8'));
-  if (service.name !== '@bthwani/' + owner || service.private !== true ||
-      service.type !== 'module' || service.types !== './clients/index.ts' ||
-      service.scripts?.typecheck !== 'tsc --noEmit -p tsconfig.json' ||
-      service.devDependencies?.typescript !== tsPin) {
-    fail('Service client workspace is not ready: ' + owner);
+  for (const [key, value] of Object.entries({
+    autoInstallPeers: "false", engineStrict: "true", frozenLockfile: "true",
+    nodeLinker: "isolated", saveExact: "true", sharedWorkspaceLockfile: "true",
+    strictPeerDependencies: "true",
+  })) assert.match(workspace, new RegExp("^" + key + ": " + value + "$", "m"),
+    "Workspace setting changed: " + key);
+  assert.doesNotMatch(workspace, /^\s*nxCloud(?:Id|AccessToken|Url):/m,
+    "Nx configuration belongs in nx.json, not pnpm");
+  assert.match(workspace, /^  '@rc-component\/util@1\.14\.0': patches\/@rc-component__util@1\.14\.0\.patch$/m);
+
+  const nx = json("nx.json");
+  assert.equal(nx.defaultBase, "main");
+  for (const target of ["typecheck", "theme:check", "theme:verify"]) {
+    assert.equal(nx.targetDefaults?.[target]?.cache, true, "Missing declared cache target: " + target);
+    assert.ok(nx.targetDefaults[target].inputs?.includes("nodeToolchain"), "Toolchain cache input missing: " + target);
   }
-  const config = JSON.parse(readFileSync(path.join(dir, 'tsconfig.json'), 'utf8'));
-  if (config.extends !== '../../tsconfig.base.json' ||
-      !config.include?.includes('clients/**/*.ts') ||
-      !config.include?.includes('clients/**/*.tsx') ||
-      config.compilerOptions?.noEmit !== true) {
-    fail('Service TypeScript configuration is not ready: ' + owner);
+  for (const input of ["{workspaceRoot}/pnpm-lock.yaml", "{workspaceRoot}/pnpm-workspace.yaml",
+    "{workspaceRoot}/tsconfig.base.json", "{workspaceRoot}/.node-version"]) {
+    assert.ok(nx.namedInputs?.nodeToolchain?.includes(input), "Missing Nx source input: " + input);
   }
-  if (!existsSync(path.join(dir, 'clients', 'index.ts')) ||
-      !existsSync(path.join(dir, 'clients', 'README.md')) ||
-      !lock.includes('  services/' + owner + ':')) {
-    fail('Missing client entrypoint, documentation or frozen lock importer: ' + owner);
+  assert.match(nx.nxCloudId ?? "", /^[a-f0-9]{24}$/, "Missing approved dedicated Nx Cloud configuration");
+  assert.notEqual(nx.nxCloudId, "6aa9eedc45c07f39423ffa9f", "Do not reuse donor Nx Cloud workspace");
+  assert.ok(!Object.hasOwn(nx, "nxCloudAccessToken") && !Object.hasOwn(nx, "nxCloudUrl"),
+    "Do not embed Nx Cloud credentials or change its endpoint");
+
+  // pnpm 12's lock contains a package-manager document and a workspace
+  // document. This is a static cross-check of their actual importer pins;
+  // native pnpm frozen install remains the complete lock resolver/verifier.
+  const documents = read("pnpm-lock.yaml").split(/^---$/m).filter(value => value.trim());
+  assert.equal(documents.length, 2, "Expected pnpm package-manager and workspace lock documents");
+  for (const document of documents) assert.match(document, /^lockfileVersion: '9\.0'$/m);
+  const manager = documents.find(document => /^    packageManagerDependencies:$/m.test(document));
+  const dependency = documents.find(document => /^    devDependencies:$/m.test(document));
+  assert.ok(manager && dependency && manager !== dependency, "Missing distinct frozen lock documents");
+  const managerRoot = importer(manager, ".");
+  assert.match(managerRoot, /^    packageManagerDependencies:$/m);
+  locked(managerRoot, "pnpm", pnpm);
+  const workspaceRoot = importer(dependency, ".");
+  assert.match(workspaceRoot, /^    devDependencies:$/m);
+  for (const tool of tools) locked(workspaceRoot, tool, manifest.devDependencies[tool]);
+  for (const project of [...presentations, ...shared]) {
+    directory(project);
+    read(project + "/package.json");
+    importer(dependency, project);
   }
-}
-for (const forbidden of ['contracts','go.work',
-  'apps/app-client','apps/app-partner','apps/app-captain',
-  'tools/mobile/create-bthwani-metro-config.cjs']) {
-  if (existsSync(path.join(projectRoot, forbidden))) fail('Duplicated/deferred legacy source: ' + forbidden);
-}
-for (const entry of ['node_modules/','.env','secrets.local.','apps/control-panel/next-env.d.ts']) {
-  if (!read('.gitignore').includes(entry)) fail('Local dependencies or secret ignores missing: ' + entry);
+
+  for (const rel of ["knip.jsonc", ".editorconfig", ".gitattributes",
+    "tools/mobile/define-bthwani-expo-app.cjs", "tools/mobile/verify-app-identity.mjs",
+    "patches/@rc-component__util@1.14.0.patch"]) read(rel);
+  const typescript = json("tsconfig.base.json");
+  assert.equal(typescript.compilerOptions?.strict, true);
+  assert.equal(typescript.compilerOptions?.noEmit, true);
+  const biome = json("biome.json");
+  assert.equal(biome.linter?.enabled, true);
+  assert.equal(biome.formatter?.enabled, false);
+
+  const ts = manifest.devDependencies.typescript;
+  for (const owner of services) {
+    const project = "services/" + owner;
+    // README documents the owner. Its prose or historical STATUS marker
+    // cannot admit/disable implementation or certify actual behavior.
+    read(project + "/README.md");
+    const client = json(project + "/package.json");
+    assert.equal(client.name, "@bthwani/" + owner);
+    assert.equal(client.private, true);
+    assert.equal(client.type, "module");
+    assert.equal(client.types, "./clients/index.ts");
+    assert.equal(client.scripts?.typecheck, "tsc --noEmit -p tsconfig.json");
+    assert.equal(client.devDependencies?.typescript, ts);
+    const config = json(project + "/tsconfig.json");
+    assert.equal(config.extends, "../../tsconfig.base.json");
+    assert.equal(config.compilerOptions?.noEmit, true);
+    for (const include of ["clients/**/*.ts", "clients/**/*.tsx"]) {
+      assert.ok(config.include?.includes(include), "Owner client source is outside TypeScript check: " + owner);
+    }
+    read(project + "/clients/index.ts");
+    read(project + "/clients/README.md");
+    read(project + "/contracts/openapi/" + owner + ".openapi.yaml");
+    const module = read(project + "/backend/go.mod");
+    assert.match(module, new RegExp("^go " + RegExp.escape(go) + "$", "m"), "Owner Go pin differs: " + owner);
+    locked(importer(dependency, project), "typescript", ts);
+  }
+
+  for (const retired of ["contracts", "go.work", "apps/app-client", "apps/app-partner",
+    "apps/app-captain", "tools/mobile/create-bthwani-metro-config.cjs"]) {
+    assert.ok(!lstatSync(locate(retired), { throwIfNoEntry: false }), "Retired source path returned: " + retired);
+  }
+  const ignores = read(".gitignore");
+  for (const entry of ["node_modules/", ".env", "secrets.local.", "apps/control-panel/next-env.d.ts"]) {
+    assert.ok(ignores.includes(entry), "Missing local dependency or secret ignore: " + entry);
+  }
+
+  // The active Node process is already verified above. The native Go resolver
+  // executes version on the installed pin, offline and without changing PATH.
+  if (strict) resolvePinnedGo(go);
+  return { node, go, pnpm, typescript: ts, biome: manifest.devDependencies["@biomejs/biome"],
+    nxCloudConfigured: true, localGoVerified: strict };
 }
 
-const sourcePlacementIssues = serviceSourcePlacementIssues(projectRoot);
-if (sourcePlacementIssues.length > 0) {
-  fail('Service source placement violations:\n' + sourcePlacementIssues.join('\n'));
-}
-
-console.log('STAGE4_WORKSPACE_STRUCTURE_PASS pnpm=' + pnpmPin +
-  ' typescript=' + tsPin + ' biome=' + biomePin + ' node-pin=' + nodePin +
-  ' go-pin=' + goPin + ' nx=LOCAL_ONLY');
-
-if (strict) {
-  // pnpm launches its own embedded Node runtime on some Windows machines.
-  // Discover the real installed executables rather than trusting pnpm's PATH
-  // first entry. All probes are version-only and do not modify the toolchain.
-  const cmd = process.platform === 'win32' ? 'where.exe' : 'which';
-  const args = process.platform === 'win32' ? ['node'] : ['-a', 'node'];
-  const candidates = spawnSync(cmd, args, { encoding: 'utf8', windowsHide: true });
-  if (candidates.status !== 0) fail('Cannot discover installed Node executables');
-  const nodeVersions = [...new Set(candidates.stdout.split(/\r?\n/).map(s => s.trim()).filter(Boolean))]
-    .map(file => {
-      const probe = spawnSync(file, ['--version'], { encoding: 'utf8', windowsHide: true });
-      return probe.status === 0 ? probe.stdout.trim().replace(/^v/, '') : 'unavailable';
-    });
-  if (!nodeVersions.includes(nodePin)) {
-    fail('Exact .node-version binary not found on PATH: expected ' + nodePin +
-      ', observed ' + nodeVersions.join(', '));
-  }
-  const installedNode = nodePin;
-  // Verify the installed Go binary, not an automatically downloaded toolchain.
-  // GOTOOLCHAIN=local prevents Go's user cache from masking a global mismatch.
-  let goExecutable;
-  try {
-    goExecutable = resolvePinnedGo(goPin);
-  } catch (error) {
-    fail(error.message);
-  }
-  const go = spawnSync(goExecutable, ['version'], {
-    encoding: 'utf8', windowsHide: true,
-    env: { ...process.env, GOTOOLCHAIN: 'local', GOPROXY: 'off' },
-  });
-  if (go.status !== 0) fail('Cannot execute locally installed Go binary: ' + (go.error?.message ?? go.stderr?.trim() ?? 'unknown'));
-  const actual = /^go version go([0-9.]+) /m.exec(go.stdout)?.[1];
-  if (actual !== goPin) fail('Go toolchain mismatch: expected ' + goPin +
-    ', observed ' + (actual ?? 'unknown'));
-  console.log('STAGE3_EXACT_LOCAL_TOOLCHAIN_PASS node=' + installedNode + ' go=' + actual +
-    ' exact_go_installed=true');
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
+  const args = process.argv.slice(2);
+  assert.ok(args.length === 0 || (args.length === 1 && args[0] === "--require-exact-toolchain"),
+    "Usage: node tools/dev/verify-workspace.mjs [--require-exact-toolchain]");
+  const result = verifyWorkspace(root, { strict: args.length === 1 });
+  console.log("WORKSPACE_SOURCE_PASS pnpm=" + result.pnpm + " typescript=" + result.typescript +
+    " biome=" + result.biome + " node-pin=" + result.node + " go-pin=" + result.go +
+    " nx_cloud_configured=true nx_cache_execution=NOT_RUN lock=STATIC_ONLY");
+  if (result.localGoVerified) console.log("EXACT_LOCAL_TOOLCHAIN_PASS node=" + result.node + " go=" + result.go);
 }

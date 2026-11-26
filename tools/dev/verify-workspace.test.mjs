@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -14,7 +14,9 @@ test('workspace verifier accepts the active pinned Node runtime', () => {
     windowsHide: true,
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /STAGE4_WORKSPACE_STRUCTURE_PASS/);
+  assert.match(result.stdout, /WORKSPACE_SOURCE_PASS/);
+  assert.match(result.stdout, /nx_cloud_configured=true nx_cache_execution=NOT_RUN lock=STATIC_ONLY/);
+  assert.doesNotMatch(result.stdout, /STAGE[0-9]|nx=LOCAL_ONLY/);
 });
 
 test('workspace verifier rejects a different active Node even if the pinned binary exists', () => {
@@ -294,4 +296,73 @@ test('baseline-first local development refuses new migration histories for every
     assert.ok(issues.some(issue => issue.includes('services/'+owner+'/database/migrations/001_new_column.sql') &&
       issue.includes('BASELINE_FIRST')), issues.join('\n'));
   }
+});
+
+function sourceFixture(t) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'bthwani-workspace-source-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = fileURLToPath(new URL('../../', import.meta.url));
+  const files = [
+    '.node-version', '.nvmrc', '.go-version', 'package.json', 'pnpm-workspace.yaml',
+    'pnpm-lock.yaml', 'nx.json', 'knip.jsonc', '.editorconfig', '.gitattributes',
+    '.gitignore', 'tsconfig.base.json', 'biome.json',
+    'tools/mobile/define-bthwani-expo-app.cjs', 'tools/mobile/verify-app-identity.mjs',
+    'patches/@rc-component__util@1.14.0.patch',
+    ...['apps/customer','apps/merchant','apps/captain','apps/control-panel',
+      'packages/design-system','packages/tamagui-config'].map(project => project + '/package.json'),
+    ...['identity','dsh','wlt'].flatMap(owner => [
+      'README.md','package.json','tsconfig.json','clients/index.ts','clients/README.md',
+      'backend/go.mod','contracts/openapi/' + owner + '.openapi.yaml',
+    ].map(rel => 'services/' + owner + '/' + rel)),
+  ];
+  for (const rel of files) {
+    const target = path.join(dir, rel);
+    mkdirSync(path.dirname(target), { recursive: true });
+    copyFileSync(path.join(source, rel), target);
+  }
+  return dir;
+}
+
+test('source admission follows actual owners, not README status or imaginary Nx cache execution', async t => {
+  const { verifyWorkspace } = await import('./verify-workspace.mjs');
+  const dir = sourceFixture(t);
+  writeFileSync(path.join(dir, 'services/wlt/README.md'), '# WLT owner documentation\n');
+  const result = verifyWorkspace(dir);
+  assert.equal(result.node, process.version.slice(1));
+  assert.equal(result.nxCloudConfigured, true);
+  assert.equal(result.localGoVerified, false);
+});
+
+test('source admission rejects root lock drift even when the old version still appears in other lock records', async t => {
+  const { verifyWorkspace } = await import('./verify-workspace.mjs');
+  const dir = sourceFixture(t);
+  const lock = path.join(dir, 'pnpm-lock.yaml');
+  const original = readFileSync(lock, 'utf8');
+  const altered = original.replace(/(      nx:\r?\n        specifier: )\d+\.\d+\.\d+/, (match, prefix) => prefix + '99.99.99');
+  assert.notEqual(altered, original);
+  writeFileSync(lock, altered);
+  assert.throws(() => verifyWorkspace(dir), /Frozen lock pin differs: nx/);
+});
+
+test('source admission rejects an owner Go pin mismatch and a restored losing source path', async t => {
+  const { verifyWorkspace } = await import('./verify-workspace.mjs');
+  const dir = sourceFixture(t);
+  const module = path.join(dir, 'services/dsh/backend/go.mod');
+  const original = readFileSync(module, 'utf8');
+  writeFileSync(module, original.replace(/^go \d+\.\d+\.\d+$/m, 'go 1.0.0'));
+  assert.throws(() => verifyWorkspace(dir), /Owner Go pin differs: dsh/);
+  writeFileSync(module, original);
+  mkdirSync(path.join(dir, 'apps/app-client'), { recursive: true });
+  assert.throws(() => verifyWorkspace(dir), /Retired source path returned: apps\/app-client/);
+});
+
+test('source admission protects the configured separate Nx workspace and rejects embedded credentials', async t => {
+  const { verifyWorkspace } = await import('./verify-workspace.mjs');
+  const dir = sourceFixture(t);
+  const config = path.join(dir, 'nx.json');
+  const original = JSON.parse(readFileSync(config, 'utf8'));
+  writeFileSync(config, JSON.stringify({ ...original, nxCloudAccessToken: 'synthetic-test-only' }));
+  assert.throws(() => verifyWorkspace(dir), /Do not embed Nx Cloud credentials/);
+  writeFileSync(config, JSON.stringify({ ...original, nxCloudId: '6aa9eedc45c07f39423ffa9f' }));
+  assert.throws(() => verifyWorkspace(dir), /Do not reuse donor Nx Cloud workspace/);
 });

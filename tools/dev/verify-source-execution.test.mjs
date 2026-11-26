@@ -4,7 +4,8 @@ import test from "node:test";
 // Exercise the real owners, not test-only copies of their validation logic.
 // Each imported command fails if its own repo state violates the guard.
 test("workspace and pinned-source requirements execute", async () => {
-  await import("./verify-workspace.mjs");
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  assert.equal(verifyWorkspace().node, process.version.slice(1));
   assert.equal(process.exitCode ?? 0, 0);
 });
 

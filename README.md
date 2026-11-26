@@ -1,115 +1,74 @@
-# بثواني — Progressive refoundation (in development)
+# بثواني — Development workspace
 
-The canonical checkout is `D:\samrim` on the current authorized development branch. The project includes Expo Customer, Merchant and Captain hosts (Expo Router + Tamagui 3.3.1), Next.js Operator (Next 16.4.5 + Ant Design 6.6.7) and the Identity, DSH and WLT owner services. Verify live runtime provenance and owner-backed acceptance independently of source presence. The pinned Expo/RN/React/Node/pnpm toolchain and app IDs are preserved; unused direct JavaScript libraries are retired after consumer review. Original manifests are recorded in [the donor version snapshot](docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json).
+The current canonical checkout is on Surface at D:\samrim. Read [AGENTS.md](AGENTS.md), [repository ownership](REPOSITORY-STRUCTURE.md) and [the governance index](governance/README.md) before engineering changes. The four presentation hosts are Customer, Merchant, Captain and Operator; Identity, DSH and WLT are the only business-service owners. Source presence is not proof of implementation, security, runtime or production acceptance.
 
-Compiled brand roots and semantic light/dark roles belong only to `packages/design-system/src/brand/colors.ts` and `src/semantics/themes.ts`. `src/web/css-projection.ts` generates browser semantic variables; numeric layout, font sizing, radius, motion and overlay tokens are owned by Tamagui for Expo and Ant Design for Operator, rather than duplicated in the brand package. The minimal React Native SYSTEM/LIGHT/DARK appearance controller now lives at `packages/tamagui-config/src/appearance.tsx` and consumes the same semantic source. No second UI picker or Studio publisher was introduced.
+## Daily development
 
-## Daily app launch (Surface)
+Use PowerShell 7 on Surface from the authorized checkout. Follow [the canonical Surface-to-Lenovo operations guide](tools/dev/README-Lenovo-Development.md) for app processes, sync, SSH, Docker, Android, current ports, provenance and recovery.
 
-From the canonical `D:\samrim` checkout, use `pnpm dev` to reuse the existing app, sync and SSH tunnel tasks and open Customer/Merchant/Operator in Chrome and the connected Customer/Merchant/Captain Android builds. The fast command does **not** mutate Docker or application data. Use `pnpm dev apps open` to reopen the same screens, and `pnpm dev up` only when isolated infrastructure must be started. For ownership, offline recovery and diagnostics, see [the canonical development instructions](tools/dev/README-Lenovo-Development.md).
+    pnpm dev
+    pnpm dev apps open
+    pnpm dev apps status
+    pnpm dev apps verify
 
-## Validations
+The default launch reuses existing servers/tasks and checks their readiness; it does not replace owner containers or mutate data. Use pnpm dev up only within the existing authorized isolated environment, and do not create parallel watchers, tunnels, Metro or Next servers. The operations guide owns the precise lifecycle and protection conditions.
 
-Run these commands from the repository root. Use the Node and Go versions in `.node-version` and `.go-version` and the pnpm version in `package.json`.
+## Pinned toolchain and verification
 
-**Windows / MA Commander runtime isolation:** MA Commander can prepend its own bundled Node to a newly launched command's `PATH`. On the audited Surface this selected `%LOCALAPPDATA%\Programs\MA Commander\runtime\node.exe` (24.19.0), although the repository pin is 24.22.1 and the separately installed `C:\Program Files\nodejs\node.exe` is correct. This is a **command-runner environment difference**, not permission to change the provider's Node binary or system/user `PATH`. For repository commands launched by that runner, use a *process-local* prefix and verify the executable that will actually run:
+The executable version pins belong to .node-version, .nvmrc, .go-version, package.json and the frozen pnpm lock. The [donor toolchain inventory](docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md) is historical provenance, not another pin table. Do not upgrade toolchains, packages or global PATH without authority.
 
-```powershell
-$env:Path = 'C:\Program Files\nodejs;' + $env:Path
-node -p 'process.execPath + " " + process.version'
-node tools/dev/verify-workspace.mjs --require-exact-toolchain
-```
+    node -p 'process.execPath + " " + process.version'
+    node tools/dev/verify-workspace.mjs --require-exact-toolchain
+    pnpm install --frozen-lockfile --ignore-scripts
+    pnpm check
+    pnpm check:coverage
+    pnpm exec nx show projects
 
-The actual invoked Node, not a second installed copy, must match `.node-version`; confirm the same in each IDE terminal, CI runner and app launch session. The temporary prefix is only for that PowerShell process. Do not change global toolchains or provider internals to make an otherwise incorrect process appear compliant.
+For an exact locked installation already present in the pnpm store, add --offline. If an authorized Windows command runner prepends its own Node, select the actual pinned installed executable for that process only; for example, after verifying C:\Program Files\nodejs contains the pin:
 
-```powershell
-node tools/dev/verify-workspace.mjs --require-exact-toolchain
-pnpm install --frozen-lockfile --ignore-scripts
-pnpm run check
-pnpm run check:apps
-pnpm --dir packages/design-system theme:check
-```
+    $env:Path = 'C:\Program Files\nodejs;' + $env:Path
 
-Add `--offline` to the install command when the exact locked packages are already in the pnpm store.
+Do not change the provider executable, global PATH or pin to hide a mismatch. The source-only workspace guard runs without installed dependencies, validates configuration and matching lock importer pins, and does not certify a real frozen install, app, database or cache execution. Its strict mode checks the active Node and installed pinned Go offline. CI's native frozen install and actual owner checks establish separate evidence.
 
-After an Operator production build (`pnpm --dir apps/control-panel build`), run `node tools/dev/verify-operator-http.mjs` for a bounded loopback-only HTTP smoke of `/`, `/health`, `/lab` and 404: Arabic document RTL, non-indexing and the currently configured security headers. The CI presentation job runs the same smoke after building. This does **not** certify browser hydration, CSP nonce enforcement, authentication, service integration, or real operator data.
+## Applications and design
 
-For the two **approved Expo Web SSR hosts only**, export Customer and Merchant with `pnpm --dir apps/customer exec expo export --platform web` and `pnpm --dir apps/merchant exec expo export --platform web`, then run `node tools/mobile/verify-expo-web-http.mjs`. It serves the exact built SSR output on disposable loopback ports and checks Arabic HTML direction, route content and 404 status, closing the server after each host. CI runs it after the Web exports. **Captain is Android/iOS-only at this stage:** a manually forced static Web export does not admit Captain Web or prove native Android/iOS behavior. Browser hydration, native builds, role authorization, CSP and business functionality require independent later evidence.
+The design system owns authored brand/semantic colors and generated CSS; Tamagui renders Expo and owns the minimal React Native appearance runtime. Operator uses Ant Design. Keep platform-specific component primitives with their renderer and never introduce another palette.
 
-App configuration is built locally by `tools/mobile/define-bthwani-expo-app.cjs` and `apps/*/mobile.config.json`. Mobile keys are read from explicitly provided environment variables or from `BTHWANI_SECRETS_ROOT\env\mobile.env` only when that root is explicitly selected and authorized; no deleted worktree or donor secrets path is an implicit default. A shell preview does not require Google Maps credentials. Set `BTHWANI_ENFORCE_NATIVE_KEYS=1` before any separately authorized Native Build; it will **fail closed** without the required keys. No credentials are checked into this repository.
+Customer/Merchant support Expo Web SSR and native Android/iOS; Captain's approved host is native Android/iOS. Operator is the Next.js web host. Native IDs, schemes, EAS project IDs, owner and permission configuration remain protected. Use the actual registered manifests and app identity verifier. The [donor manifest inventory](docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json) is historical provenance. Customer/Merchant deliberately omit type: module because the Expo SSR renderer is CommonJS. Expo localization and the Web document boundary own Arabic RTL; avoid screen-level direction overrides.
 
-**Development transport and Android recovery:** the single existing Surface SSH tunnel task and the canonical launcher own the current port layout in `tools/dev/ports.json`. Use `pnpm dev` or `pnpm dev apps open -Mode Android`; see [the canonical development instructions](tools/dev/README-Lenovo-Development.md) for scoped diagnostics and recovery. Do not start independent Metro servers or manually overwrite ADB reverse mappings for daily development.
+    pnpm check:design
+    pnpm check:apps:source
+    pnpm --dir apps/customer exec expo export --platform web
+    pnpm --dir apps/merchant exec expo export --platform web
+    node tools/mobile/verify-expo-web-http.mjs
+    pnpm --dir apps/control-panel build
+    node tools/dev/verify-operator-http.mjs
 
-Customer and Merchant deliberately omit the donor `package.json` `type: module`: SDK 58's exported SSR renderer is CommonJS and otherwise `expo serve` fails with HTTP 500 (`module is not defined`). The registered native package IDs remain unchanged. Current compatibility is validated against the frozen pnpm graph and Expo's resolved configuration; donor dependency manifests are historical provenance only. `tools/mobile/verify-app-identity.mjs` guards this compatibility decision.
+The export/HTTP commands prove only their actual local build and loopback scope, not browser hydration, native binaries, authorization, payments or complete journeys. Test the actual affected Chrome and Samsung surfaces. Expo config reads mobile keys from explicitly provided variables or authorized BTHWANI_SECRETS_ROOT\env\mobile.env; never infer a donor secrets path. Use BTHWANI_ENFORCE_NATIVE_KEYS=1 for a separately authorized Native Build. Do not start EAS/cloud builds, signing, production deployments or change protected config without the required authorization.
 
-Customer and Merchant Expo Web now use SDK 58 server rendering with `useServerDocumentContext()` (`headNodes` and `bodyNodes`), Arabic `lang`/`dir`, and a rendered appearance fallback before hydration; the actual dev-server HTML was checked for Arabic content, metadata, scripts, and RTL, and browser interaction was checked. The canonical `expo-localization` plugin owns native RTL (`forcesRTL: true` with Arabic supported locales). Expo Router navigation uses the native locale direction without a hand-set `LocaleProvider`; screen-level `direction`, fixed `textAlign=left/right`, or runtime `forceRTL` calls are prohibited. The `tools/mobile/verify-rtl.mjs` guard and its negative tests run in `pnpm check` and the existing source-only CI. The Expo Web document boundary retains `lang="ar" dir="rtl"`. This static guard does not certify native back-swipe/transition direction, iOS, or future visual components; these still need live verification on an actual build. The foundation check also invokes canonical CSS-generation and source-authority guards.
+## Spec Kit and Graphify
 
-Maps remain **NOT_RUN** as functional experiences: `react-native-maps` and optional Google Maps configuration are present, but no map screen, location permission journey, route, or tracking integration has been accepted. Next.js Ant Design uses the official SSR style registry and an enforced per-request CSP/nonce in its Next Proxy. The **production loopback HTTP/SSR smoke** passed on candidate `a0a4c79b` (GitHub CI job `132252778475`, step 10): four routes, Arabic SSR/RTL, actual enforced CSP header, unique script nonces, and rejection of attacker-supplied nonce headers. This proves the tested local HTTP boundary only; its current CSP intentionally still permits inline styles for Ant Design. Real interactive browser hydration under CSP, authenticated Operator flows and production security certification remain **NOT_RUN**. iOS and business integration are **NOT_RUN**.
+AGENTS.md owns the mandatory native CLI and local graph evidence on repository engineering. Spec Kit's .specify integration is agent-neutral none; its constitution is a derived router to current governance, not a second policy owner.
 
-Native identifiers, owner, EAS project IDs, app slugs, schemes and package permissions are preserved. `eas.json` contains **legacy `image: latest`** in preview/iOS profiles; reproducible remote builders are **BLOCKED/NOT_RUN** until images are reviewed without changing original dependencies. Existing Android development builds were used for Stage-4 UI smoke tests on Samsung. This validates rendering of preview shells on those installed binaries only; the current native configuration is **not** certified until a separately authorized native rebuild and device verification.
+    specify version
+    specify check
+    node tools/dev/graphify-local.mjs status
+    node tools/dev/graphify-local.mjs query "task-relevant source and consumers"
+    node tools/dev/graphify-local.mjs coverage <affected-paths>
 
-## Spec Kit CLI — current development workflow
+Reuse applicable existing specs. To inspect the paths of an existing authorized feature directory without changing the branch or active feature:
 
-Spec Kit is installed as the **agent-neutral** `none` integration, with pinned PowerShell scripts and a **derived** constitution router in `.specify/memory/constitution.md`. It is not a second policy root, does not register agent-specific slash commands, and does not authorize implementation. The local CLI version is `1.3.0`; the foundation verifier checks the tracked integration, version alignment and SHA-256 hashes of the official vendor scripts. A newer CLI release is **not** a reason to upgrade project tools or regenerate these vendor-managed files without a separate reviewed version change.
+    $env:SPECIFY_FEATURE_DIRECTORY = 'specs/<actual-feature>'
+    $env:SPECIFY_FEATURE_NO_PERSIST = '1'
+    & .\.specify\scripts\powershell\check-prerequisites.ps1 -PathsOnly -Json
+    Remove-Item Env:\SPECIFY_FEATURE_DIRECTORY, Env:\SPECIFY_FEATURE_NO_PERSIST
 
-From the root of **this worktree** on Windows, the following commands are read-only and were checked on this machine:
+The native setup-plan.ps1 and setup-tasks.ps1 may be used for genuinely necessary authorized spec artifacts; inspect the current workflow first. Do not invoke branch-creating modes, specify init or agent dispatch in the none integration. CLI presence or path resolution alone does not prove a specification or implementation. Graphify uses the existing Surface runner and watcher; a stale index is INVALIDATED, not permission to replace its owner or force refresh. Use the [reference index](docs/reference/README.md) for historical evidence.
 
-```powershell
-specify version
-specify check
-specify artifact list --json
-specify workflow list
-```
+## Nx, dependencies and CI
 
-To resolve a proposed, **already authorized** change's paths without choosing a Git branch, changing the global active feature or creating files:
+Nx reads the actual pnpm projects and targets; do not introduce another task registry. Use actual comparison commits for affected runs and --skip-nx-cache for acceptance evidence. Typecheck and design cache inputs include pinned tools and the lock.
 
-```powershell
-$env:SPECIFY_INIT_DIR = (Get-Location).Path
-$env:SPECIFY_FEATURE_DIRECTORY = 'specs/000-example-change'
-$env:SPECIFY_FEATURE_NO_PERSIST = '1'
-& .\.specify\scripts\powershell\check-prerequisites.ps1 -PathsOnly -Json
-Remove-Item Env:\SPECIFY_FEATURE_DIRECTORY, Env:\SPECIFY_FEATURE_NO_PERSIST, Env:\SPECIFY_INIT_DIR -ErrorAction SilentlyContinue
-```
+The dedicated Nx Cloud configuration in nx.json is distinct from the archived donor workspace. It is not proof that remote cache is available or that an invocation is local-only. Do not embed tokens, change provider configuration, enable paid runners or incur costs without authority. Use process-local NX_NO_CLOUD=true for explicitly local-only runs; development CI uses that setting. Do not cache sensitive output.
 
-`-PathsOnly` checks **path resolution only**; its JSON `BRANCH` field is the logical feature directory name, **not** a Git branch creation or switch. It neither creates a feature directory nor validates `spec.md`, `plan.md` or `tasks.md`. Use a real approved feature ID in place of the example, keep related specifications scoped to that change and derive their business meaning from the single owner in `governance/`. For later feature work, reconcile `spec.md` → `plan.md` → `tasks.md` against `AGENTS.md`, `REPOSITORY-STRUCTURE.md` and the owning API/UX policy before implementation. An installed `speckit` workflow definition is **not executable as an agent-driven feature pipeline** under the present `none` integration. Do not run `create-new-feature.ps1`, `specify init --here --force` or a workflow that may open a feature branch, overwrite managed files or execute an agent without explicit authorization and an inspected diff. The read-only donor branch is `archive/legacy-pre-refoundation-20261114`.
-
-### GPT-6-led Spec Kit execution through remote-control tools
-
-**Execution contract (2026-11-15):** GPT-6 leads the authorized development cycle, BThwani Remote Coordinator selects a connected/authorized computer channel, and that channel runs the original Spec Kit scripts and the affected code/tests. The installed Spec Kit `none` integration is **agent-neutral scaffolding**, not an unattended agent dispatcher. Therefore `specify workflow run speckit` is **not the entry point** for this mode: its command-dispatch steps require an actual agent integration and fail under `none`. This does **not** prevent GPT-6 from completing the spec-to-implementation cycle directly with remote tools.
-
-For an existing approved feature directory (create only in an authorized owner-scoped location; use a unique ignored directory for isolated smoke tests), the controller executes the following native stages. GPT-6 writes/reviews `spec.md`, fills the generated `plan.md`, writes `tasks.md`, executes test-first implementation and verifies actual results between these commands:
-
-```powershell
-$env:SPECIFY_FEATURE_DIRECTORY = '.bthwani-local/spec-kit-direct-cycle-20261115'
-$env:SPECIFY_FEATURE_NO_PERSIST = '1'
-& powershell.exe -NoProfile -NonInteractive -File .specify/scripts/powershell/check-prerequisites.ps1 -PathsOnly -Json
-# GPT-6 uses the authorized remote-control file tools to write and review spec.md.
-& powershell.exe -NoProfile -NonInteractive -File .specify/scripts/powershell/setup-plan.ps1 -Json
-# GPT-6 completes plan.md; the native tasks script resolves the current template.
-& powershell.exe -NoProfile -NonInteractive -File .specify/scripts/powershell/setup-tasks.ps1 -Json
-# GPT-6 writes tasks.md and the tests, proves RED, implements the feature, then proves GREEN.
-& powershell.exe -NoProfile -NonInteractive -File .specify/scripts/powershell/check-prerequisites.ps1 -Json -RequireSpec -RequireTasks -IncludeTasks
-& 'C:\Program Files\nodejs\node.exe' --test .bthwani-local/spec-kit-direct-cycle-20261115/page-size.test.mjs
-```
-
-The shown directory and test are a **synthetic isolated example**, not a production feature, shared standard or new workflow engine. On 2026-11-15 GPT-6 exercised this exact direct-tool approach: created specification/plan/tasks, verified an expected failing import before implementation (RED), added a pure module, and passed **16/16** Node tests (GREEN), including negative and boundary cases. Confirm `SPECIFY_FEATURE_NO_PERSIST=1` leaves the shared `.specify/feature.json` unchanged. Respect Git ownership, feature scope, required human approvals, independent high-risk evidence and final review; no test here permits Push, PR, Merge or deployment. A working coordinator-led feature cycle must not be confused with automatic CLI agent dispatch under `none`.
-
-The **Postman CLI** is also installed globally on Windows (`postman.cmd --version` → `1.83.0`). `postman.cmd status` confirms **no local workspace/resources binding or authenticated CLI session** in this worktree; this is distinct from a connected Postman ChatGPT app. The read-only `postman.cmd init --dry-run --json` would update the root `AGENTS.md` and add empty API folders plus another local copy of 18 Postman skills. Do not initialize a second API owner or overwrite `AGENTS.md`; reuse the current executable owner OpenAPI contracts and only add a provider association when actually required and authorized. Do not run the old loopback DSH readiness collection against an unidentified process as a substitute for target runtime tests.
-
-This validates *developer setup*, not governance cutover or customer/merchant/driver features. Missing API operations, persistence, risk proof, service integration and native/browser E2E tests remain `NOT_RUN`/blocked until their respective stages and owner approvals.
-
-## Services and current acceptance
-
-Identity, DSH and WLT own their bounded source, OpenAPI and data contracts. Identity and DSH now have executable Go and SQL; WLT remains an unproven financial implementation target. Inspect the **live files and owner tests**, not a dated scaffolding description. The retired Foundation scaffold guard is not a development gate. [Service placement](REPOSITORY-STRUCTURE.md) defines legal paths; [governance](governance/README.md) owns accepted meaning; isolated owner integration and exact-SHA CI determine executable acceptance.
-
-## Nx local task orchestration
-
-Nx `24.0.1` (the exact original-repository version) is installed as a development dependency in this Worktree. Its project graph reads the existing pnpm package manifests; no `project.json` files or parallel task registry are needed. Local Nx task caching is enabled for `typecheck`, `theme:check` and `theme:verify`, with the pinned toolchain and pnpm lock contributing to task inputs. Existing `pnpm check` remains the canonical acceptance entrypoint; Nx does not bypass governance, security, runtime, or integration checks.
-
-```powershell
-pnpm run nx:projects
-pnpm exec nx show project @bthwani/customer
-pnpm exec nx affected -t typecheck --base=main --head=HEAD
-```
-
-Nx Cloud is connected to the **separate** `bthwani-refoundation` workspace in the `bthwani` Hobby organization with `nxCloudId` recorded in `nx.json` (not a secret). The original `samrim` Cloud workspace remains separate. No Cloud access token is tracked in Git, and no Nx Agents, paid plan, or billing change was enabled. The separate dependency-safety GitHub Actions workflow uses NX_NO_CLOUD=true and does not consume Nx Cloud credits. Cached outputs and terminal logs must not contain secrets; remote cache applies only to deliberately cacheable tasks such as `typecheck` and design theme checks. The existing `pnpm check` remains authoritative. To run with **local-only** Nx, set `$env:NX_NO_CLOUD = 'true'` for the shell before invoking Nx; this is the fallback when free Hobby credits are exhausted.
+The existing CI workflow and its call-only Go workflow own event routing, native source tests, locked dependency audit, builds, isolated Go/PostgreSQL proof and Sonar. Development Push feedback is not a protected merge gate. See [engineering governance](governance/engineering.md) for acceptance, runtime boundaries and baseline-first SQL. Verify required checks on the exact published SHA; do not infer production readiness or a closed business journey from CI alone.
