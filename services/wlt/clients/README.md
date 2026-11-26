@@ -1,17 +1,38 @@
-# WLT client boundaries
+# WLT client boundary
 
-`@bthwani/wlt` provides the Customer balance and recent posted funding reads to
-the app's Web server adapter and explicitly configured isolated Android emulators. Customer wallet and Merchant commercial-agreement reads use the same native admission in validation.ts: only Android emulators with distinct Identity and WLT host-loopback origins are admitted before session access. Physical devices, iOS, absent or invalid configuration remain closed. It sends the existing opaque session to the WLT loopback owner. The Android preview uses only the emulator-to-host `10.0.2.2` alias. Identity/actor/role, session expiry and the protected device bearer are rechecked before and after each owner read; missing configuration stays closed. The finance SDK has no money writer and Native Cash-In remains unavailable.
-The shared response validator keeps whole YER as decimal text and checks
-the returned actor, currency, amount, transaction identity and timestamp shape.
-The SDK refuses undisclosed extra provider fields; funding history is capped to
-ten entries per page. `hasMore` and `nextCursor` enable validated older-page
-requests without account selection, cross-role data reuse or automatic retries.
+`@bthwani/wlt` is the read-only TypeScript consumer of the
+[WLT OpenAPI contract](../contracts/openapi/README.md). The stable public
+exports live in `index.ts`. No SDK function writes funds, authorizes
+checkout, or activates an agreement.
 
-Generate the method and path index from the owner contract with
-`node tools/dev/generate-openapi-operations.mjs wlt`. The [contract](../contracts/openapi/wlt.openapi.yaml)
-defines the supported statuses and response fields.
+| Module | Responsibility |
+| --- | --- |
+| `wallet-balance.ts` | Customer posted and available exact-YER balance |
+| `funding-history.ts` | Customer funding history, reversals and bounded UTC keyset cursor |
+| `order-payment-readback.ts` | Actor- and checkout-bound allocation/release readback |
+| `commercial-agreement.ts` | Operator and owned Merchant Store proposal/review readback |
+| `types.ts`, `errors.ts`, `validation.ts` | Shared DTOs, bounded errors and field/native-origin validation |
+| `transport.ts` | Bounded read-only HTTP transport, cancellation and response admission |
+| `generated/wlt-operations.ts` | Contract-derived method/path metadata; never hand-edit |
 
-## Source module placement
+The transport sends the existing opaque bearer only to an isolated
+loopback origin (or Android emulator host alias), rejects redirects,
+requires JSON/no-store for success, bounds response size and does not
+return a late response after cancellation. The parsers validate the
+financial projection, scope and exact decimal amounts; missing or invalid
+data fails closed. Funding history returns at most ten entries per page.
+The allocation response distinguishes explicit absence from confirmed
+allocation or release; absence does not authorize retry of an unknown write.
 
-`clients/index.ts` is the stable public export boundary of `@bthwani/wlt`. `types.ts` contains the read DTOs; `errors.ts` and `validation.ts` contain the existing bounded error and field checks. `transport.ts` owns the isolated loopback GET response handling. `wallet-balance.ts` parses and reads Customer balance; `funding-history.ts` parses and reads bounded funding history, including exact UTC keyset cursor validation. The contract-derived operation index stays in `generated/wlt-operations.ts`. This is only a source organization change: WLT remains the sole financial writer and the SDK remains read-only.
+Native financial reads require an explicitly configured Android emulator
+(`isDevice === false`) with distinct Identity and WLT origins on
+`10.0.2.2`, before any session access. Physical Android devices, iOS and
+invalid or absent configuration are not admitted. Web and admitted native
+consumers must preserve the current Identity binding before and after the
+read; the owner independently verifies actor/role and any required DSH
+Store relation. Native cash-in remains unavailable.
+
+Regenerate operation metadata with
+`node tools/dev/generate-openapi-operations.mjs wlt`; verify it with the
+same command using `--check`. Contract parity is not proof of live
+authorization, persistence or journey acceptance.

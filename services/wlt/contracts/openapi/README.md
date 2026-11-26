@@ -1,13 +1,30 @@
-# WLT OpenAPI
+# WLT OpenAPI - isolated development reads
 
-`wlt.openapi.yaml` is the owner entrypoint. It references Customer balance
-and funding-history reads in `paths/wallets.yaml`. These require a current
-Customer bearer verified by Identity and return exact posted YER as decimal
-text. `paths/runtime.yaml` describes the existing isolated `/health` probe:
-PostgreSQL reachability and, in container mode, Identity health. Its empty
-200/503 responses do not establish financial or production readiness.
-Future financial operations require actual owner contracts; historical reserved group names remain in the donor inventory, not empty executable files.
+[wlt.openapi.yaml](wlt.openapi.yaml) is the single owner entrypoint.
+The serving API exposes GET only. Its six operations are split by
+responsibility; common schemas and the opaque-session security scheme
+remain in the entrypoint.
 
-Run `pnpm check:contracts` to validate local references, operation security
-and generated method and path metadata. The PostgreSQL owner suite exercises
-the live Go handler and active Identity verifier on synthetic data.
+| Path fragment | Operation and scope |
+| --- | --- |
+| [runtime.yaml](paths/runtime.yaml) | `GET /health`: development PostgreSQL and container-mode Identity reachability; no finance readiness claim |
+| [wallets.yaml](paths/wallets.yaml) | `GET /v1/wallets/me`: current Customer posted and available balance |
+| [wallets.yaml](paths/wallets.yaml) | `GET /v1/wallets/me/transactions`: current Customer bounded funding history |
+| [payment-intents.yaml](paths/payment-intents.yaml) | `GET /v1/wallets/me/order-payment-allocations/{checkoutID}`: current Customer exact allocation/release or explicit absence |
+| [commercial-agreements.yaml](paths/commercial-agreements.yaml) | `GET /v1/merchants/stores/{storeID}/commercial-agreement`: current Merchant and DSH-owned Store relation |
+| [commercial-agreements.yaml](paths/commercial-agreements.yaml) | `GET /v1/operators/stores/{storeID}/commercial-agreement`: current Operator with explicit Identity finance grant |
+
+Protected operations recheck the required current Identity/DSH scope after
+reading owner data. The contract uses exact whole-YER decimal text;
+the documented states and response schemas distinguish funding, reserved
+availability, allocations/releases and agreement review. No write,
+effective-agreement activation, confirmed Order, captured payment or
+external settlement is authorized by a read. Unknown checkout and
+another actor's checkout produce the same absence result.
+
+Run `pnpm check:contracts` and
+`node tools/dev/generate-openapi-operations.mjs --check wlt`.
+The [Go owner](../../backend/README.md) and disposable PostgreSQL
+owner suite provide implementation and integration evidence separately.
+Do not recreate retired empty contract fragments or introduce an alternate
+contract owner.
