@@ -1,6 +1,6 @@
 import {
   type CustomerFundingHistory, type CustomerWalletBalance,
-  readCurrentCustomerWallet, readCurrentCustomerWalletTransactions, WltReadError,
+  isolatedNativeWltOrigin, readCurrentCustomerWallet, readCurrentCustomerWalletTransactions, WltReadError,
 } from "@bthwani/wlt";
 import { isDevice } from "expo-device";
 import { Platform } from "react-native";
@@ -14,26 +14,13 @@ export type NativeWalletHistoryRead =
   | { kind: "ready"; history: CustomerFundingHistory; expiresAt: number }
   | { kind: "signed-out" | "unavailable" };
 
-// An explicitly configured isolated emulator fixture may use separate local
-// Identity and WLT owners. The Lenovo daily launcher never supplies this WLT
-// origin. A physical device, missing configuration or non-local origin fails closed.
-function emulatorFixtureOrigin(origin: string | undefined): string | null {
-  const match = /^http:\/\/10\.0\.2\.2:([1-9][0-9]{0,4})$/.exec(origin ?? "");
-  return origin && match && Number(match[1]) <= 65535 ? origin : null;
-}
-
-function nativeWalletOrigin(): string | null {
-  if (Platform.OS !== "android" || isDevice !== false) return null;
-  const identity = emulatorFixtureOrigin(process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN);
-  const wallet = emulatorFixtureOrigin(process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN);
-  return identity && wallet && identity !== wallet ? wallet : null;
-}
-
 async function readNativeFinance<T extends { actorId: string }>(
   signal: AbortSignal, readOwner: (origin: string, bearer: string) => Promise<T>,
   expectedActorId?: string,
 ): Promise<{ kind: "ready"; value: T; expiresAt: number } | { kind: "signed-out" | "unavailable" }> {
-  const origin = nativeWalletOrigin();
+  const origin = isolatedNativeWltOrigin(Platform.OS, isDevice,
+    process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN,
+    process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN);
   if (!origin) return { kind: "unavailable" };
   try {
     return await withVerifiedNativeCustomerRead(signal, bearer => readOwner(origin, bearer), expectedActorId);

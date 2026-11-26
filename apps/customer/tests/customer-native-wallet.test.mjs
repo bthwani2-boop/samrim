@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
+import { isolatedNativeWltOrigin } from "@bthwani/wlt";
 
 const source = readFileSync(new URL("../src/features/wallet/wallet-read.ts", import.meta.url), "utf8");
 const compiled = stripTypeScriptTypes(source, { mode: "transform" })
@@ -21,6 +22,7 @@ function harness({ legacySetting, origin = "http://10.0.2.2:33223",
   const bearer = "opaque-test-session";
   const mocks = {
     "@bthwani/wlt": {
+      isolatedNativeWltOrigin,
       WltReadError: ReadError,
       async readCurrentCustomerWallet(source, token, signal) {
         requests.push({ kind: "wallet", source, token, signal });

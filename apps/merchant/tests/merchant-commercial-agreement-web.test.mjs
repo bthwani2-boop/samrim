@@ -99,7 +99,7 @@ test("WLT unavailability fails closed without discarding the Merchant session", 
 
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
-function agreementTransport(platform, withNativeMerchantSession) {
+function agreementTransport(platform, withNativeMerchantSession, isDevice = false) {
   const temp = mkdtempSync(path.join(tmpdir(), "merchant-agreement-transport-"));
   try {
     const root = path.resolve(import.meta.dirname, "../../..");
@@ -113,6 +113,7 @@ function agreementTransport(platform, withNativeMerchantSession) {
     const mod = loadMappedRenderFixture(readFileSync(path.join(temp, "commercial-agreement-transport.js"), "utf8"), source, {
       "@bthwani/wlt": ownerClient,
       "react-native": { Platform: { OS: platform } },
+      "expo-device": { isDevice },
       "../access/admission-transport": { withNativeMerchantSession },
     });
     loadedModules.push(mod);
@@ -161,28 +162,53 @@ test("actual Web agreement transport validates scope, exact terms and late respo
   await assert.rejects(read("owner-a", "store-a", late.signal), { name: "AbortError" });
 });
 
-test("actual Android agreement transport uses the verified actor and canonical WLT read only", async t => {
-  const envName = "EXPO_PUBLIC_MERCHANT_SYNTHETIC_WLT_ORIGIN";
-  const previous = process.env[envName];
-  t.after(() => { if (previous === undefined) delete process.env[envName]; else process.env[envName] = previous; });
-  process.env[envName] = wlt;
+test("actual Android agreement transport requires isolated emulator owners before session access", async t => {
+  const identityKey = "EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN";
+  const wltKey = "EXPO_PUBLIC_MERCHANT_SYNTHETIC_WLT_ORIGIN";
+  for (const key of [identityKey, wltKey]) {
+    const previous = process.env[key];
+    t.after(() => { if (previous === undefined) delete process.env[key]; else process.env[key] = previous; });
+  }
+  const emulatorIdentity = "http://10.0.2.2:13009";
+  const emulatorWlt = "http://10.0.2.2:13011";
+  const signal = new AbortController().signal;
   const scopes = [], calls = [];
-  const read = agreementTransport("android", async (signal, invoke, actor, write = false) => {
+  const session = async (signal, invoke, actor, write = false) => {
     scopes.push({ signal, actor, write });
     return invoke(bearer);
-  });
+  };
   let body = { storeId: "store-a", proposal };
   let status = 200;
   t.mock.method(globalThis, "fetch", async (url, options) => {
     calls.push({ url: String(url), options });
     return noStore(body, status);
   });
-  const signal = new AbortController().signal;
+  const read = agreementTransport("android", session, false);
+  for (const [id, wallet] of [
+    ["", emulatorWlt], [emulatorIdentity, ""], [emulatorIdentity, emulatorIdentity],
+    [identity, emulatorWlt], [emulatorIdentity, wlt],
+    [emulatorIdentity, "http://10.0.2.2:65536"],
+    [emulatorIdentity, "https://10.0.2.2:13011"],
+    [emulatorIdentity, emulatorWlt + "/other"],
+    [emulatorIdentity, "http://example.invalid:13011"],
+  ]) {
+    process.env[identityKey] = id;
+    process.env[wltKey] = wallet;
+    await assert.rejects(read("owner-a", "store-a", signal), { status: 503 });
+  }
+  process.env[identityKey] = emulatorIdentity;
+  process.env[wltKey] = emulatorWlt;
+  for (const [platform, device] of [["android",true],["android",null],["ios",false]]) {
+    const refused = agreementTransport(platform, session, device);
+    await assert.rejects(refused("owner-a", "store-a", signal), { status: 503 });
+  }
+  assert.equal(scopes.length, 0);
+  assert.equal(calls.length, 0);
   assert.deepEqual(await read("owner-a", "store-a", signal), body);
   assert.deepEqual(scopes, [{ signal, actor: "owner-a", write: false }]);
-  assert.equal(calls[0].url, `${wlt}/v1/merchants/stores/store-a/commercial-agreement`);
+  assert.equal(calls[0].url, emulatorWlt + "/v1/merchants/stores/store-a/commercial-agreement");
   assert.equal(calls[0].options.method, "GET");
-  assert.equal(calls[0].options.headers.Authorization, `Bearer ${bearer}`);
+  assert.equal(calls[0].options.headers.Authorization, "Bearer " + bearer);
   assert.equal(calls[0].options.credentials, "omit");
   assert.equal(calls[0].options.redirect, "error");
   assert.equal(calls[0].options.cache, "no-store");
@@ -190,8 +216,9 @@ test("actual Android agreement transport uses the verified actor and canonical W
   await assert.rejects(read("owner-a", "store-a", signal), { status: 502 });
   status = 403;
   await assert.rejects(read("owner-a", "store-a", signal), { status: 403 });
-  delete process.env[envName];
+  delete process.env[wltKey];
   await assert.rejects(read("owner-a", "store-a", signal), { status: 503 });
   assert.equal(calls.length, 3);
+  assert.equal(scopes.length, 3);
   assert.ok(scopes.every(scope => scope.actor === "owner-a" && !scope.write));
 });
