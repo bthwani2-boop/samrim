@@ -175,6 +175,11 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   mandatory(app, runs(app, /^pnpm check:contracts\s*$/));
   const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
   assert.equal(manifest.scripts["check:contracts"], "node tools/dev/check-openapi.mjs identity dsh wlt");
+  for (const owner of owners) {
+    const service = JSON.parse(readFileSync(path.join(root, "services", owner, "package.json"), "utf8"));
+    assert.equal(Object.hasOwn(service.scripts, "contract"), false);
+  }
+  assert.doesNotMatch(readFileSync(path.join(root, "knip.jsonc"), "utf8"), /^\s*"contract",?\s*$/m);
   assert.match(manifest.scripts.check, /pnpm run check:contracts/);
   assert.match(manifest.scripts.check, /--check-discovery/);
   assert.doesNotMatch(manifest.scripts.check, /node --test|check:coverage|check:test-inclusion|check:security/);
