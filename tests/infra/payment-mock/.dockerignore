@@ -1,0 +1,3 @@
+# Only the synthetic provider mappings enter Docker.
+**
+!mappings/cash-in-*.json

@@ -360,3 +360,13 @@ test("all owners classify workspace metadata consistently for committed and dirt
     assert.equal(ownerReconcilePlan({changed:[...files,unknown],committed:{},preview:true,captain:true}).blocked[owner],"UNCOMMITTED_NON_GO");
   }
 });
+
+test("owner Docker build contexts admit only needed Go module, source and owner SQL inputs", async()=>{
+  const {readFileSync}=await import("node:fs");
+  for(const owner of ["dsh","identity","wlt"]){
+    const text=readFileSync(new URL("../../services/"+owner+"/.dockerignore",import.meta.url),"utf8");
+    const rules=text.split(/\r?\n/).filter(line=>line&&!line.startsWith("#"));
+    assert.deepEqual(rules,["**","!backend/go.mod","!backend/go.sum","!backend/cmd/**/*.go",
+      "!backend/internal/**/*.go",...(owner==="dsh"?["!database/schema/*.sql"]:[]),"**/*_test.go"]);
+  }
+});

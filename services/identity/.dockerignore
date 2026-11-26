@@ -1,10 +1,7 @@
-# Only reviewed owner Go sources enter the runtime Docker build context.
+# Only authored Go build inputs and required owner SQL enter Docker.
 **
-!backend/
 !backend/go.mod
 !backend/go.sum
-!backend/cmd/
-!backend/cmd/**
-!backend/internal/
-!backend/internal/**
+!backend/cmd/**/*.go
+!backend/internal/**/*.go
 **/*_test.go

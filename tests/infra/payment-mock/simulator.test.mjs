@@ -60,3 +60,8 @@ test("only the explicitly confirmed fixture can credit the authorized synthetic 
   });
   assert.deepEqual(valid.map(({ response }) => response.jsonBody.reference), ["cash-in-accepted-01"]);
 });
+
+test("provider build context excludes test harnesses and nonfixture files",()=>{
+  const rules=readFileSync(path.join(root,".dockerignore"),"utf8").split(/\r?\n/).filter(line=>line&&!line.startsWith("#"));
+  assert.deepEqual(rules,["**","!mappings/cash-in-*.json"]);
+});
