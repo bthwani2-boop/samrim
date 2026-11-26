@@ -673,6 +673,24 @@ test("reconciliation requires an explicit terminal result and never certifies a 
   assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PARTIAL HEAD="+sha+"\n",""),"uncertain");
 });
 
+test("stable source admission holds do not repeat an automatic apply until source or authority changes", async()=>{
+  const {runtimeAttemptResult,runtimePollDue}=await import("./sync-lenovo-reconciliation.mjs");
+  const sha="a".repeat(40);
+  const hold=(owner,reason)=>owner+" RUNTIME=BLOCKED revision="+sha+" reason="+reason+"\n";
+  const terminal="RECONCILE_PARTIAL HEAD="+sha+"\n";
+  const output=hold("dsh","PREVIEW_NOT_AUTHORIZED")+hold("identity","PEER_REVIEW_REQUIRED:dsh")+hold("wlt","PEER_REVIEW_REQUIRED:dsh")+terminal;
+  const status=runtimeAttemptResult(3,null,output,"");
+  assert.equal(status,"blocked");
+  const input={enabled:true,dirty:false,active:false,key:"same",last:{key:"same",status},now:120000,nextAudit:60000};
+  assert.equal(runtimePollDue(input),false);
+  assert.equal(runtimePollDue({...input,key:"changed"}),true);
+  assert.equal(runtimeAttemptResult(3,null,hold("dsh","UNCOMMITTED_NON_GO")+terminal,""),"blocked");
+  assert.equal(runtimeAttemptResult(3,null,hold("wlt","CONFIG_REVIEW_REQUIRED")+terminal,""),"review");
+  assert.equal(runtimeAttemptResult(3,null,hold("dsh","PREVIEW_NOT_AUTHORIZED")+hold("wlt","CONFIG_REVIEW_REQUIRED")+terminal,""),"review");
+  assert.equal(runtimeAttemptResult(3,null,output,"BASELINE_PROOF_FAIL transient"),"retry");
+  assert.equal(runtimeAttemptResult(3,null,"OWNER_APPLY_STARTED dsh\n"+output,""),"uncertain");
+});
+
 test("fresh baseline rehearsal is scheduled on a new runtime key, not every review audit", async()=>{
   const {runtimeBaselineProofDue}=await import("./sync-lenovo-reconciliation.mjs");
   assert.equal(runtimeBaselineProofDue("new",null),true);

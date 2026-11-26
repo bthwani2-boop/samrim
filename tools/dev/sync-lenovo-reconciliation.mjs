@@ -146,7 +146,16 @@ function runtimeAttemptResult(code, signal, stdout, stderr) {
   if(/ROLLBACK_PASS/.test(stderr))return "blocked";
   if(starts.length!==verified.length || !starts.every((v,i)=>v===verified[i]))return "uncertain";
   const terminal=[...stdout.matchAll(/^RECONCILE_(PASS|PARTIAL) HEAD=[a-f0-9]{40}\r?$/gm)];
-  if(terminal.length===1 && terminal[0][1]==="PARTIAL")return /BASELINE_PROOF_FAIL/.test(stderr)?"retry":"review";
+  if(terminal.length===1 && terminal[0][1]==="PARTIAL"){
+    if(/BASELINE_PROOF_FAIL/.test(stderr))return "retry";
+    // Source admission cannot change on a timer. Preserve periodic review for
+    // configuration/schema holds that may clear independently of source.
+    const holds=stdout.split(/\r?\n/).filter(line=>line.includes(" RUNTIME=BLOCKED "));
+    const sourceHold=/^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=(?:PREVIEW_NOT_AUTHORIZED|UNCOMMITTED_NON_GO|SHARED_INPUT_REVIEW_REQUIRED)$/;
+    const peerHold=/^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=PEER_REVIEW_REQUIRED:(?:dsh|identity|wlt)$/;
+    if(holds.some(line=>sourceHold.test(line)) && holds.every(line=>sourceHold.test(line)||peerHold.test(line)))return "blocked";
+    return "review";
+  }
   if(code===0 && terminal.length===1 && terminal[0][1]==="PASS")return "pass";
   return "retry";
 }
