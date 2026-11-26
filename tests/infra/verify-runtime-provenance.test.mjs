@@ -5,6 +5,10 @@ import { main, verifyCandidate } from "../../tools/dev/docker/verify-runtime-pro
 const head = "a".repeat(40);
 const successor = "b".repeat(40);
 const ownerNames = ["dsh", "identity", "wlt"];
+const foundations = ["postgres", "media", "mailpit", "payment-mock"];
+const allServices = [...ownerNames, ...foundations];
+const hashFor = (service, historic = false) => String(foundations.indexOf(service) + (historic ? 5 : 1)).repeat(64);
+const imageRef = service => service === "payment-mock" ? "bthwani/payment-mock:local" : service + "@sha256:" + hashFor(service);
 const args = ["--context", "bthwani-docker"];
 const label = value => value || "<no value>";
 const name = owner => "bthwani-refoundation-" + owner + "-1";
@@ -12,26 +16,28 @@ const name = owner => "bthwani-refoundation-" + owner + "-1";
 function fixture(options = {}) {
   const calls = [];
   let sourceReads = 0, containerReads = 0;
-  const imageFor = owner => "sha256:" + String(ownerNames.indexOf(owner) + 1).repeat(64);
+  const imageFor = owner => "sha256:" + String(allServices.indexOf(owner) + 1).repeat(64);
   const containerFor = (owner, pass) => {
     const o = {
-      id: String(ownerNames.indexOf(owner) + 4).repeat(64),
+      id: String(allServices.indexOf(owner) + 1).repeat(64),
       name: "/" + name(owner), image: imageFor(owner), project: "bthwani-refoundation",
       service: owner, environment: "refoundation",
       capability: owner === "wlt" ? "customer-wallet-read-only" : "",
       running: "true", state: "running", health: "healthy",
       startedAt: "2026-11-26T02:00:00.123456789Z", restartCount: "0",
+      configHash: foundations.includes(owner) ? hashFor(owner) : "a".repeat(64),
+      worktree: "samrim-refoundation-clean-20261112", configFiles: "D:/samrim/infra/compose.yaml", privileged: "false",
       ...options.containers?.[owner], ...(pass === 2 ? options.finalContainers?.[owner] : {}),
     };
     return [o.id, o.name, o.image, o.project, o.service, o.environment, label(o.capability),
-      o.running, o.state, o.health, o.startedAt, o.restartCount].join("|");
+      o.running, o.state, o.health, o.startedAt, o.restartCount, o.configHash, label(o.worktree), o.configFiles, o.privileged].join("|");
   };
   const imageForOwner = owner => {
     const o = { id: imageFor(owner), revision: head, source: head, previewBase: "", previewDigest: "",
       ...options.images?.[owner] };
     return [o.id, label(o.revision), label(o.source), label(o.previewBase), label(o.previewDigest)].join("|");
   };
-  const execute = (command, a) => {
+  const execute = (command, a, input) => {
     calls.push([command, ...a]);
     if (command === "docker" && a[0] === "context") return options.context ?? "ssh://user@bthwani-docker";
     if (command === "git") {
@@ -44,14 +50,20 @@ function fixture(options = {}) {
       }
     }
     if (command === "docker" && a[0] === "--context" && a[1] === "bthwani-docker") {
+      if (a[2] === "ps") return (options.inventory ?? allServices).map(name).join("\n");
+      if (a[2] === "compose") {
+        if (a.includes("--hash")) return foundations.map(service => service + " " + hashFor(service, !input.includes("  com.bthwani.worktree: samrim-refoundation-clean-20261112"))).join("\n");
+        if (a.includes("--format")) return JSON.stringify({ name: "bthwani-refoundation", services: Object.fromEntries(foundations.map(service => [service, { image: imageRef(service) }])) });
+      }
       if (a[2] === "inspect") {
         containerReads++;
         if (options.badContainer === "malformed") return "bad";
-        const list = options.badContainer === "missing" ? ownerNames.slice(0, 2) :
-          options.badContainer === "duplicate" ? ["dsh", "identity", "dsh"] : ownerNames;
+        const list = options.badContainer === "missing" ? allServices.slice(0, -1) :
+          options.badContainer === "duplicate" ? [...allServices.slice(0, -1), "dsh"] : allServices;
         return list.map(owner => containerFor(owner, containerReads)).join("\r\n");
       }
       if (a[2] === "image" && a[3] === "inspect") {
+        if (a[5] === "{{.Id}}") return foundations.map(imageFor).join("\n");
         if (options.badImage === "malformed") return "bad";
         const list = options.badImage === "missing" ? ownerNames.slice(0, 2) :
           options.badImage === "duplicate" ? ["dsh", "identity", "dsh"] : ownerNames;
@@ -92,11 +104,11 @@ test("one committed candidate checks all three actual owner names and rechecks t
   const snapshots = calls.filter(c => c[0] === "docker" && c[3] === "inspect");
   assert.equal(snapshots.length, 2);
   for (const snapshot of snapshots) {
-    assert.deepEqual(snapshot.slice(-3), ownerNames.map(name));
+    assert.deepEqual(snapshot.slice(-7), allServices.map(name));
     assert.ok(snapshot.includes("--format"));
     assert.ok(!snapshot.join(" ").includes(".Config.Env"));
   }
-  const images = calls.filter(c => c[0] === "docker" && c[3] === "image");
+  const images = calls.filter(c => c[0] === "docker" && c[3] === "image" && c[6] !== "{{.Id}}");
   assert.equal(images.length, 1);
   assert.equal(images[0].slice(-3).length, 3);
   const statuses = calls.filter(c => c[0] === "git" && c[1] === "status");
@@ -105,7 +117,7 @@ test("one committed candidate checks all three actual owner names and rechecks t
     assert.ok(status.includes("--untracked-files=all"));
     assert.ok(status.includes("-z"));
     assert.ok(status.includes("--no-renames"));
-    assert.deepEqual(status.slice(-3), ownerNames.map(o => "services/" + o));
+    assert.deepEqual(status.slice(-4), [...ownerNames.map(o => "services/" + o), "infra/compose.yaml"]);
   }
   const diffs = calls.filter(c => c[0] === "git" && c[1] === "diff");
   assert.equal(diffs.length, 3);
@@ -228,4 +240,27 @@ test("invalid command arguments or non-approved Docker endpoints are rejected be
     assert.throws(() => run({ context }), /Wrong Docker target/);
   }
   assert.throws(() => run({ head: "invalid" }), /source candidate not verified/);
+});
+
+test("all four foundation services must match native configuration and image identity", () => {
+  assert.equal(run().result.foundationResults.length, 4);
+  for (const service of foundations) {
+    for (const change of [{ configHash: "f".repeat(64) }, { image: "sha256:" + "f".repeat(64) }, { privileged: "true" }, { health: "unhealthy" }]) {
+      const result = run({ containers: { [service]: change } }).result;
+      assert.equal(result.passed, false);
+      assert.equal(result.foundationResults.find(row => row.service === service).passed, false);
+    }
+  }
+  assert.throws(() => run({ inventory: [...allServices, "foreign"] }), /unexpected project container inventory/);
+  assert.equal(run({ status: " M infra/compose.yaml\0" }).result.passed, false);
+});
+
+test("only the exact native label-only historical hashes are accepted", () => {
+  for (const service of foundations) {
+    const result = run({ containers: { [service]: { configHash: hashFor(service, true), worktree: "" } } }).result;
+    assert.equal(result.passed, service !== "payment-mock");
+  }
+  assert.equal(run({ containers: { postgres: { configHash: hashFor("postgres", true) } } }).result.passed, false);
+  const f = fixture({ finalContainers: { postgres: { configHash: "f".repeat(64) } } });
+  assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
 });
