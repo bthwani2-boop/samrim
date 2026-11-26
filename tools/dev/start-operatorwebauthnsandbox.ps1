@@ -15,10 +15,13 @@ $context = (& docker context inspect bthwani-docker --format '{{.Endpoints.docke
 if ($LASTEXITCODE -ne 0 -or $context -cne 'ssh://bthwa@bthwani-docker') {
   throw 'OPERATOR_SANDBOX_SSH_CONTEXT_MISMATCH'
 }
-# This existing project helper performs strict SSH identity and host verification.
-& (Join-Path $root 'tools/dev/Control-Lenovo-SSH.ps1') -Action Check | Out-Null
-if ($LASTEXITCODE -ne 0) { throw 'OPERATOR_SANDBOX_LENOVO_NOT_VERIFIED' }
-
+# Verify the actual host using the pinned native SSH client before any mutation.
+$ssh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
+if (!(Test-Path -LiteralPath $ssh -PathType Leaf)) { throw 'OPERATOR_SANDBOX_SSH_MISSING' }
+$remoteHost = @(& $ssh -T -o BatchMode=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=8 -o ConnectionAttempts=1 bthwani-docker hostname.exe)
+if ($LASTEXITCODE -ne 0 -or $remoteHost.Count -ne 1 -or $remoteHost[0].Trim() -ine 'BTHWANI-DOCKER') {
+  throw 'OPERATOR_SANDBOX_LENOVO_NOT_VERIFIED'
+}
 $compose = Join-Path $root 'tests/infra/compose.operator-webauthn-sandbox.yaml'
 $secretDir = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\OperatorSandbox'
 $envFile = Join-Path $secretDir 'compose.env'

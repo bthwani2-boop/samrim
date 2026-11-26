@@ -7,20 +7,14 @@ import { fileURLToPath } from "node:url";
 
 const scriptPath = path.join(path.dirname(fileURLToPath(import.meta.url)), "dev.ps1");
 
-test("manual Lenovo control pins the same OpenSSH executables as the tunnel and source watcher", () => {
-  const helper = readFileSync(new URL("./Control-Lenovo-SSH.ps1", import.meta.url), "utf8");
-  assert.match(helper, /\$sshClient = Join-Path \$env:WINDIR 'System32\\OpenSSH\\ssh\.exe'/);
-  assert.match(helper, /\$scpClient = Join-Path \$env:WINDIR 'System32\\OpenSSH\\scp\.exe'/);
-  assert.match(helper, /& \$sshClient -T -o BatchMode=yes -o StrictHostKeyChecking=yes/);
-  assert.equal((helper.match(/& \$scpClient @args/g) || []).length, 2);
-  assert.doesNotMatch(helper, /& (?:ssh|scp)\.exe\b/);
-  assert.match(helper, /'node\.exe','git\.exe','pnpm','winget\.exe'/);
-  assert.match(helper, /Get-Command \$n -CommandType Application -ErrorAction SilentlyContinue \| Select-Object -First 1/);
-  assert.doesNotMatch(helper, /'pnpm\.cmd'/);
-
+test("manual remote control uses native SSH and the sandbox verifies its exact target", () => {
+  assert.equal(existsSync(new URL("./Control-Lenovo-SSH.ps1", import.meta.url)), false);
+  const sandbox = readFileSync(new URL("./start-operatorwebauthnsandbox.ps1", import.meta.url), "utf8");
+  assert.match(sandbox, /System32\\OpenSSH\\ssh\.exe/);
+  assert.match(sandbox, /BatchMode=yes.*StrictHostKeyChecking=yes/);
+  assert.match(sandbox, /BTHWANI-DOCKER/);
+  assert.match(sandbox, /OPERATOR_SANDBOX_LENOVO_NOT_VERIFIED/);
 });
-
-
 test("opening Chrome and Android is owned by the single dev launcher", () => {
   assert.equal(existsSync(new URL("./open-dev-apps.ps1", import.meta.url)), false);
 });

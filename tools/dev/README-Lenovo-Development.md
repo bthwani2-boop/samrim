@@ -146,37 +146,20 @@ The shared in-process source event subscription wakes mirroring independently of
 
 The local sync log records `GRAPHIFY_RECONCILE_STARTED`, `GRAPHIFY_RECONCILE_PASS elapsedMs=...`, or the applicable `DEFERRED`, `RETRY` or `BLOCKED` reason. `PASS` here means the runner's verified index freshness, not full-source graph coverage or engineering acceptance. Read `node tools/dev/graphify-local.mjs status` for the exact current provenance. No SSH or Docker changes are needed for Graphify itself.
 
-## Lenovo SSH CLI control (manual, not a new watcher)
+## Manual Lenovo diagnostics — native OpenSSH
 
-Use `tools/dev/Control-Lenovo-SSH.ps1` from PowerShell on **Surface**. This is a manually invoked SSH/SCP helper; it does not replace the existing tunnel or source-sync task, expose the Docker daemon to TCP, or change Lenovo configuration by itself. SSH host alias defaults to `bthwani-docker`. The helper requires strict host-key checking and checks the remote host identity.
+Use the verified Windows OpenSSH client on Surface directly, with strict host-key checking and noninteractive authentication. Verify the Lenovo identity before additional authorized operations. Use the unified development CLI for application and Docker lifecycle; manual SSH is not another runtime owner.
 
-```powershell
-Set-Location D:\samrim
-# Check both hosts, SSH command availability, sync task, and local forward listeners:
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Check
-# Execute a read-only PowerShell/Docker command on Lenovo:
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'docker ps'
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'hostname'
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'whoami'
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'Get-Service'
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'Get-Process'
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'Get-ChildItem C:\Users\bthwa\BThwaniAppRunner'
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'node --version'
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Run -Command 'Get-PSDrive -PSProvider FileSystem'
-# Preview installation (does not install):
-.\tools\dev\Control-Lenovo-SSH.ps1 -Action Install -PackageId Git.Git -WhatIf
-# Installation only when explicitly authorized:
-# .\tools\dev\Control-Lenovo-SSH.ps1 -Action Install -PackageId Git.Git
-# Transfer an EXISTING local file into an EXISTING remote directory:
-# .\tools\dev\Control-Lenovo-SSH.ps1 -Action Upload -LocalPath 'D:\samrim\artifact.zip' -RemotePath 'C:\Users\bthwa\BThwaniAppRunner\incoming'
-# Transfer a folder; -Recursive is required:
-# .\tools\dev\Control-Lenovo-SSH.ps1 -Action Upload -LocalPath 'D:\samrim\dist' -RemotePath 'C:\Users\bthwa\BThwaniAppRunner\incoming' -Recursive
-# Download into an EXISTING local directory:
-# .\tools\dev\Control-Lenovo-SSH.ps1 -Action Download -RemotePath 'C:\Users\bthwa\BThwaniAppRunner\logs\app.log' -LocalPath 'C:\Users\bassa\Downloads'
-```
+~~~powershell
+$ssh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
+$opts = @('-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ConnectTimeout=8','-o','ConnectionAttempts=1')
+$hostName = @(& $ssh @opts bthwani-docker hostname.exe)
+if ($LASTEXITCODE -ne 0 -or $hostName.Count -ne 1 -or $hostName[0].Trim() -ine 'BTHWANI-DOCKER') { throw 'Unexpected SSH target' }
+& $ssh @opts bthwani-docker docker ps
+~~~
 
-Available parameters: `-Action Check|Run|Upload|Download|Install`, `-Command`, `-LocalPath`, `-RemotePath`, `-PackageId`, `-Recursive`, `-SshHost`, `-WhatIf`. `Upload -WhatIf` still requires an existing source path, and `Download` requires an existing Surface destination directory. Single-file uploads verify SHA-256; recursive uploads and downloads do not verify each transferred file's checksum.
+For explicitly authorized manual file transfer, use native System32 OpenSSH SCP, strict host verification and an exact existing destination. Compare SHA-256 at both endpoints before relying on the transferred file; recursive transfer needs an inventory and per-file verification. Never use manual transfer as a second source-sync writer. Installation, permissions, credentials and protected data retain separate authorization.
 
 ### Docker diagnostics
 
-Use `pnpm dev docker help` for the current, owner-scoped Docker commands and [isolated infrastructure](../../infra/README.md) for provisioning, schema and security boundaries. For a diagnostic that the unified CLI does not provide, use the verified SSH helper above with a read-only command (for example `-Action Run -Command 'docker stats --no-stream'`). Do not start, stop, recreate or remove containers/images through ad hoc SSH commands; use the unified lifecycle and its explicit authorization and verification gates. Never prune protected volumes or restart shared services as a diagnostic step.
+Use `pnpm dev docker help` for the current, owner-scoped Docker commands and [isolated infrastructure](../../infra/README.md) for provisioning, schema and security boundaries. For a diagnostic that the unified CLI does not provide, use native SSH above with a read-only command (for example docker stats --no-stream). Do not start, stop, recreate or remove containers/images through ad hoc SSH commands; use the unified lifecycle and its explicit authorization and verification gates. Never prune protected volumes or restart shared services as a diagnostic step.
