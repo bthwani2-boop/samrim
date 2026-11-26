@@ -450,3 +450,15 @@ test("ignored tests cannot be executed or silently admitted as candidate evidenc
   assert.doesNotMatch(result.stdout+result.stderr,/IGNORED_EXECUTED/);
   assert.equal(existsSync(report),false);
 }));
+
+test("native LCOV does not expose an intermediate pathname to executing tests", () => coverageFixture(({ add, report, run }) => {
+  add("tools/dev/no-native-path.test.mjs", [
+    'import assert from "node:assert/strict";',
+    'import { existsSync } from "node:fs";',
+    'import test from "node:test";',
+    'test("native report stays on inherited pipe", () => assert.equal(existsSync("coverage/.lcov-running/native.lcov"), false, "unsafe native reporter path exposed"));',
+  ].join("\n"));
+  const result = run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(readFileSync(report, "utf8"), /SF:tools\/mobile\/verify-app-identity\.mjs/);
+}));

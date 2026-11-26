@@ -2,42 +2,15 @@
 // This binds evidence to actual bytes and Git inventory, not Git's stat cache.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
-import { containsLikelySecret, forbiddenName } from "../security/verify-secrets.mjs";
+import { containsLikelySecret, forbiddenName, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
+
+export { readVerifiedFile, samePath };
 
 export function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
-export function samePath(left, right) {
-  return process.platform === "win32" ? left.toLowerCase() === right.toLowerCase() : left === right;
-}
-export function readVerifiedFile(path, limit) {
-  const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-  try {
-    const stat = fstatSync(fd, { bigint: true });
-    const matches = entry => entry.isFile() && !entry.isSymbolicLink() &&
-      entry.nlink === 1n && entry.dev === stat.dev && entry.ino === stat.ino &&
-      entry.size === stat.size && entry.mtimeNs === stat.mtimeNs && entry.ctimeNs === stat.ctimeNs;
-    if (!stat.isFile() || stat.nlink !== 1n || stat.size > BigInt(limit) ||
-        !matches(lstatSync(path, { bigint: true })) || !samePath(realpathSync(path), resolve(path))) {
-      throw new Error("BLOCKED: unsafe file path");
-    }
-    const buffer = Buffer.alloc(Number(stat.size) + 1);
-    let count = 0;
-    while (count < buffer.length) {
-      const n = readSync(fd, buffer, count, buffer.length - count, null);
-      if (!n) break;
-      count += n;
-    }
-    if (BigInt(count) !== stat.size || !matches(fstatSync(fd, { bigint: true })) ||
-        !matches(lstatSync(path, { bigint: true })) || !samePath(realpathSync(path), resolve(path))) {
-      throw new Error("BLOCKED: unsafe or changed file");
-    }
-    return { bytes: buffer.subarray(0, count), stat };
-  } finally { closeSync(fd); }
-}
-
 // Source evidence binds the actual regular-file bytes, not Git stat-cache
 // assertions. Tracked deletions are part of the fingerprint. Unknown new files
 // are not admitted, and neither tracked nor untracked credentials/links enter

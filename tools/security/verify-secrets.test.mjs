@@ -104,3 +104,33 @@ test("credential filename and non-regular staged entries fail closed", () => fix
   git(dir, "update-index", "--add", "--cacheinfo", "120000," + oid + ",redirect");
   assert.notEqual(run().status, 0);
 }));
+
+test("working secret cannot be hidden by a path substitution at the old read boundary", () => fixture(({ dir, file }) => {
+  const actual = marker;
+  const ordinary = "x".repeat(actual.length);
+  writeFileSync(file, actual);
+  const preload = join(dir, "race.cjs");
+  writeFileSync(preload, [
+    'const fs = require("node:fs");',
+    'const { syncBuiltinESMExports } = require("node:module");',
+    'const target = ' + JSON.stringify(file) + ';',
+    'const ordinary = ' + JSON.stringify(ordinary) + ';',
+    'const original = fs.readFileSync;',
+    'fs.readFileSync = function (path, ...args) {',
+    '  if (path === target) {',
+    '    const displaced = target + ".displaced";',
+    '    fs.renameSync(target, displaced);',
+    '    try { fs.writeFileSync(target, ordinary); return original.call(this, path, ...args); }',
+    '    finally { fs.unlinkSync(target); fs.renameSync(displaced, target); }',
+    '  }',
+    '  return original.call(this, path, ...args);',
+    '}; syncBuiltinESMExports();',
+  ].join("\n"));
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith("GIT_")));
+  const result = spawnSync(process.execPath, ["--require", preload, join(dir, "tools", "security", "verify-secrets.mjs")], {
+    cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 10000,
+  });
+  assert.notEqual(result.status, 0, "substitution must not conceal actual tracked working secret");
+  assert.match(result.stderr, /likely secret marker in working bytes/);
+  assert.ok(!(result.stdout + result.stderr).includes(marker), "secret value must not enter logs");
+}));
