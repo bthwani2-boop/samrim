@@ -1,151 +1,174 @@
 #!/usr/bin/env node
-// Production HTTP/SSR evidence for the two approved Expo Web hosts.
-// This deliberately does NOT test Captain Web, native binaries, UI hydration,
-// authentication, Store policy, or any external service.
+// Real production-export SSR and HTTP route proof. The pinned Expo HTTP
+// adapter owns rendering, middleware and API dispatch. Node binds the test
+// socket atomically to loopback; no persistent app host, proxy or service.
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { createServer } from "node:net";
+import { createServer } from "node:http";
+import { createRequire } from "node:module";
 import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { pathToFileURL } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const root = path.resolve(import.meta.dirname, "../..");
+const retired = ["/lab", "/foundation", "/health", "/not-a-real-application-route"];
 const hosts = [
   {
     name: "customer",
-    routes: [
-      ["/", 200, "جميع المتاجر"],
-      ["/stores", 200, "متاجر بثواني"],
-      ["/lab", 404, null],
-      ["/foundation", 404, null],
-      ["/wallet", 200, "المحفظة"],
+    pages: [
+      { route: "/", body: "جميع المتاجر", title: "بثواني — الرئيسية" },
+      { route: "/stores", body: "متاجر بثواني" },
+      { route: "/wallet", body: "جارٍ التحقق من الرصيد…" },
     ],
   },
   {
     name: "merchant",
-    routes: [
-      ["/", 200, "بثواني — التاجر"],
+    pages: [{ route: "/", body: "تسجيل الدخول أو الانضمام", title: "بثواني — التاجر" }],
+    protectedRoutes: [
+      "/orders", "/orders/example", "/products", "/products/import", "/products/export",
+      "/products/quick-prices", "/wallet", "/more", "/onboarding", "/promotions", "/store",
+      "/store/profile", "/store/availability", "/store/captains", "/store/agreements",
+      "/store/public-link", "/store/team", "/account", "/activity", "/employees", "/insights", "/notifications",
     ],
-    protectedRoutes: ["/orders", "/orders/example", "/products", "/wallet", "/more", "/store/profile", "/notifications"],
   },
 ];
 
-async function unusedPort() {
-  const socket = createServer();
-  await new Promise((resolve, reject) => {
-    socket.once("error", reject);
-    socket.listen(0, "127.0.0.1", resolve);
-  });
-  const address = socket.address();
-  assert.ok(address && typeof address !== "string", "Unable to allocate loopback port");
-  await new Promise(resolve => socket.close(resolve));
-  return address.port;
+// Check the actual rendered body separately from metadata. A title, script,
+// style or inert template containing the expected words is not a rendered UI.
+export function assertHtmlDocument(html, { body, title, route }) {
+  const document = html.match(/<html\b[^>]*>/i)?.[0] ?? "";
+  assert.match(document, /\blang=["']ar["']/i, route + ": missing Arabic document");
+  assert.match(document, /\bdir=["']rtl["']/i, route + ": missing RTL document");
+  const head = html.match(/<head\b[^>]*>([\s\S]*?)<\/head>/i)?.[1] ?? "";
+  const rendered = html.match(/<body\b[^>]*>([\s\S]*?)<\/body>/i)?.[1] ?? "";
+  assert.ok(rendered, route + ": missing rendered body");
+  const visibleMarkup = rendered
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, "")
+    .replace(/<[^>]*>/g, " ");
+  assert.ok(visibleMarkup.includes(body), route + ": required product body text missing");
+  if (title) {
+    assert.equal(head.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1], title,
+      route + ": wrong document title");
+  }
+  assert.doesNotMatch(rendered, /Requiring unknown module|EXPO_UNKNOWN_MODULE/i,
+    route + ": Metro module error in document");
 }
 
-async function verifyHost({ name, routes, protectedRoutes = [] }) {
-  const app = path.join(root, "apps", name);
-  const expoCli = path.join(app, "node_modules", "expo", "bin", "cli");
-  assert.ok(existsSync(expoCli), "Install the exact frozen Expo dependencies: " + name);
-  assert.ok(existsSync(path.join(app, "dist", "server", "_expo", "server", "render.js")),
-    "Build the approved Expo Web SSR output first: " + name);
-  assert.ok(existsSync(path.join(app, "dist", "server", "_expo", "routes.json")),
-    "Missing Expo Web SSR route manifest: " + name);
+export function assertPublicRedirect(location, origin, route) {
+  assert.ok(location, route + ": redirect location missing");
+  const target = new URL(location, origin);
+  assert.equal(target.href, new URL("/", origin).href, route + ": only same-origin public gate allowed");
+}
 
-  const port = await unusedPort();
-  const origin = "http://127.0.0.1:" + port;
-  const proc = spawn(process.execPath, [expoCli, "serve", "--port", String(port)], {
-    cwd: app,
-    env: {
-      ...process.env,
-      NODE_ENV: "production",
-      EXPO_NO_TELEMETRY: "1",
-      EXPO_OFFLINE: "1",
-    },
-    windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let launchError;
-  let log = "";
-  proc.on("error", error => { launchError = error; });
-  for (const stream of [proc.stdout, proc.stderr]) {
-    stream.on("data", chunk => { log = (log + chunk.toString()).slice(-2200); });
+function requestHandler(app) {
+  const build = path.join(app, "dist", "server");
+  for (const artifact of ["_expo/server/render.js", "_expo/routes.json"]) {
+    assert.ok(existsSync(path.join(build, artifact)), "Build the approved Expo Web SSR output first: " + app);
   }
+  // Resolve through the exact frozen Expo CLI dependency graph, never from
+  // an unrelated global package or a second dependency version.
+  const appRequire = createRequire(path.join(app, "package.json"));
+  const expoRequire = createRequire(appRequire.resolve("expo/package.json"));
+  const cliRequire = createRequire(expoRequire.resolve("@expo/cli/package.json"));
+  const { createRequestHandler } = cliRequire("expo-server/adapter/http");
+  return createRequestHandler({ build, isDevelopment: false });
+}
 
+async function withLoopback(app, operation) {
+  const handler = requestHandler(app);
+  const server = createServer((req, res) => {
+    // The official adapter uses the error callback to propagate asynchronous
+    // render failures. Never turn an exception into successful HTML.
+    void handler(req, res, error => {
+      if (res.headersSent) { res.destroy(error); return; }
+      res.writeHead(error ? 500 : 404, { "content-type": "text/plain" });
+      res.end(error ? "EXPO_RENDER_FAILED" : "NOT_FOUND");
+    });
+  });
+  server.requestTimeout = 15000;
   try {
-    let ready = false;
-    const deadline = Date.now() + 30_000;
-    while (Date.now() < deadline) {
-      if (launchError || proc.exitCode !== null) {
-        throw new Error("Expo Web host exited before readiness (" + name + "): " +
-          (launchError?.message ?? log));
-      }
-      try {
-        const response = await fetch(origin + "/", { signal: AbortSignal.timeout(2000) });
-        if (response.status === 200) {
-          await response.arrayBuffer();
-          ready = true;
-          break;
-        }
-      } catch {
-        // The local listener may not be ready yet.
-      }
-      await delay(250);
+    await new Promise((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    assert.ok(address && typeof address !== "string" && address.address === "127.0.0.1");
+    await operation("http://127.0.0.1:" + address.port);
+  } finally {
+    if (server.listening) {
+      const closed = new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+      server.closeAllConnections();
+      await closed;
     }
-    assert.ok(ready, name + " did not become ready: " + log);
+  }
+}
 
-    const checks = [
-      ...routes,
-      ["/health", 404, null],
-      ["/not-a-real-application-route", 404, null],
-    ];
-
-    for (const [route, status, text] of checks) {
-      const response = await fetch(origin + route, {
-        signal: AbortSignal.timeout(7000),
-        redirect: "manual",
-      });
-      assert.equal(response.status, status, name + route + ": HTTP status");
-      assert.match(response.headers.get("content-type") ?? "", /text\/html/i,
-        name + route + ": HTML content type");
-      const html = await response.text();
-      if (text) {
-        assert.match(html, /<html\b/i, name + route + ": missing HTML root");
-        assert.match(html, /\blang="ar"/i, name + route + ": missing Arabic language");
-        assert.match(html, /\bdir="rtl"/i, name + route + ": missing document RTL");
-        assert.ok(html.includes(text), name + route + ": expected SSR text missing");
-      }
+async function verifyHost({ name, pages, protectedRoutes = [] }) {
+  await withLoopback(path.join(root, "apps", name), async origin => {
+    function request(route, method = "GET") {
+      return fetch(origin + route, { method, signal: AbortSignal.timeout(15000), redirect: "manual" });
+    }
+    for (const page of pages) {
+      const response = await request(page.route);
+      assert.equal(response.status, 200, name + page.route + ": HTTP status");
+      assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
+      assertHtmlDocument(await response.text(), { ...page, route: name + page.route });
+    }
+    for (const route of retired) {
+      const response = await request(route);
+      assert.equal(response.status, 404, name + route + ": retired/unknown route must not render");
+      assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
+      await response.arrayBuffer();
     }
     if (name === "customer") {
-      const wallet = await fetch(origin + "/api/customer-auth/wallet", { signal: AbortSignal.timeout(7000) });
+      const wallet = await request("/api/customer-auth/wallet");
       assert.equal(wallet.status, 503, "wallet read requires the isolated preview");
       assert.equal(wallet.headers.get("cache-control"), "no-store");
       assert.deepEqual(await wallet.json(), { error: "OWNER_UNAVAILABLE" });
     }
-    // On a direct HTTP entry, owner-unverified Merchant routes must redirect
-    // before Expo's server renderer can return blank but successful HTML.
     for (const route of protectedRoutes) {
-      const response = await fetch(origin + route, {
-        signal: AbortSignal.timeout(7000),
-        redirect: "manual",
-      });
+      const response = await request(route);
       assert.equal(response.status, 302, name + route + ": protected route must redirect");
-      const location = response.headers.get("location");
-      assert.ok(location, name + route + ": redirect location missing");
-      assert.equal(new URL(location, origin).pathname, "/", name + route + ": only the public gate is allowed");
+      assertPublicRedirect(response.headers.get("location"), origin, name + route);
+      await response.arrayBuffer();
+    }
+    if (protectedRoutes.length) {
+      const denied = await request("/orders", "POST");
+      assert.equal(denied.status, 403, "unauthenticated Merchant mutation must be denied");
+      await denied.arrayBuffer();
     }
     console.log("EXPO_WEB_PRODUCTION_HTTP_PASS app=" + name +
-      " routes=" + (checks.length + protectedRoutes.length) + " rtl=true browser_hydration=NOT_RUN");
-  } finally {
-    if (proc.exitCode === null && !proc.killed) proc.kill("SIGTERM");
-    if (proc.exitCode === null) {
-      await Promise.race([
-        new Promise(resolve => proc.once("exit", resolve)),
-        delay(3000),
-      ]);
-    }
-  }
+      " routes=" + (pages.length + retired.length + protectedRoutes.length + 1) +
+      " rtl=true loopback=true browser_hydration=NOT_RUN");
+  });
 }
 
-for (const host of hosts) await verifyHost(host);
-console.log("EXPO_WEB_SMOKE_PASS hosts=2 native_captain_web=NOT_ADMITTED");
+async function main() {
+  const args = process.argv.slice(2);
+  // Do not connect the production-export proof to a serving owner or inherit
+  // a privileged preview. These checks never send cookies or credentials.
+  assert.notEqual(process.env.BTHWANI_ISOLATED_TEST_MODE, "true", "Refusing owner-connected preview");
+  assert.notEqual(process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW, "1", "Refusing wallet preview");
+  assert.notEqual(process.env.BTHWANI_DOCKER_CART_WEB_PREVIEW, "1", "Refusing cart preview");
+  process.env.NODE_ENV = "production";
+  if (args.length === 0) {
+    // Expo's generated server modules are process-scoped. Loading two app
+    // exports in one module cache can produce a false Merchant render failure.
+    // Each host has its own bounded process, with only one loopback listener.
+    for (const host of hosts) {
+      const child = spawnSync(process.execPath, [process.argv[1], "--host", host.name], {
+        cwd: root, stdio: "inherit", windowsHide: true, timeout: 120000,
+      });
+      if (child.error) throw child.error;
+      assert.equal(child.status, 0, "Expo SSR host failed: " + host.name);
+    }
+    console.log("EXPO_WEB_SMOKE_PASS hosts=2 native_captain_web=NOT_ADMITTED static_assets_and_browser_hydration=NOT_RUN");
+    return;
+  }
+  const host = hosts.find(entry => entry.name === args[1]);
+  assert.ok(args.length === 2 && args[0] === "--host" && host, "Unknown isolated Expo host");
+  await verifyHost(host);
+}
+
+if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) await main();
