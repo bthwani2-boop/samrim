@@ -18,12 +18,6 @@ param(
   [switch]$EnableCaptain,
   [switch]$Preview,
   [switch]$PrepareBaseline,
-  [switch]$PrepareDshDatabase,
-  [switch]$ResumeDshDatabase,
-  [switch]$CutoverDshDatabase,
-  [switch]$RelocateIdentityDatabase,
-  [switch]$ResumeIdentityDatabase,
-  [string]$PreparedSourceSha,
   [string]$RecoverRuntimeAttempt,
   [Parameter(Position=1)]
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','build','reconcile','start','restart','android','open','recover')]
@@ -1171,7 +1165,6 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
   Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit owner admission activation'
   Write-Output 'pnpm dev docker reconcile -Apply -Preview # isolated uncommitted Go snapshot'
-  Write-Output 'pnpm dev docker reconcile -Apply -PrepareDshDatabase # one-time additive DSH candidate; no cutover'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=pnpm dev docker build dsh|identity|wlt (image only, no start)'
@@ -1214,25 +1207,16 @@ function Invoke-ScopedDocker {
       } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }
     'reconcile' {
-      Assert-Ok (!$EnableCaptain -or $Apply) 'Captain admission requires explicit -Apply'
+      Assert-Ok (!$EnableCaptain -or $Apply) 'Captain activation requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
-      Assert-Ok (!$ResumeIdentityDatabase -or $RelocateIdentityDatabase) 'Resume requires Identity relocation'
-      Assert-Ok (!$RelocateIdentityDatabase -or ($Apply -and !$CutoverDshDatabase -and !$PrepareDshDatabase -and !$ResumeDshDatabase -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline)) 'Identity relocation requires explicit isolated Apply'
-      Assert-Ok (!$CutoverDshDatabase -or ($Apply -and !$PrepareDshDatabase -and !$ResumeDshDatabase -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $PreparedSourceSha -cmatch '^[0-9a-f]{40}$')) 'DSH cutover requires explicit Apply and exact prepared source SHA'
-      Assert-Ok (!$ResumeDshDatabase -or $PrepareDshDatabase) 'Resume requires -PrepareDshDatabase'
-      Assert-Ok (!$PrepareDshDatabase -or ($Apply -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline)) 'Dedicated DSH database preparation requires explicit isolated -Apply without another operation'
-      Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and !$PrepareDshDatabase -and !$ResumeDshDatabase -and !$CutoverDshDatabase -and !$RelocateIdentityDatabase -and !$ResumeIdentityDatabase -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
-      $mode = if ($RecoverRuntimeAttempt) { '--recover-attempt' } elseif ($RelocateIdentityDatabase -and $ResumeIdentityDatabase) { '--resume-identity-database' } elseif ($RelocateIdentityDatabase) { '--relocate-identity-database' } elseif ($CutoverDshDatabase) { '--cutover-dsh-database' } elseif ($PrepareDshDatabase -and $ResumeDshDatabase) { '--resume-dsh-database' } elseif ($PrepareDshDatabase) { '--prepare-dsh-database' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
-      Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply, without capability activation'
-      $reconcileOptions = @(if ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($CutoverDshDatabase) { $PreparedSourceSha } elseif ($PrepareBaseline) { '--prepare-baseline' })
+      Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply without capability activation'
+      Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
+      $mode = if ($RecoverRuntimeAttempt) { '--recover-attempt' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
+      $reconcileOptions = @(if ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($PrepareBaseline) { '--prepare-baseline' })
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {
         if ($Apply -or $RecoverRuntimeAttempt) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
-        if ($CutoverDshDatabase) {
-          & node (Join-Path $repo 'tools\dev\docker\reconcile-owner-runtime.mjs') $mode $PreparedSourceSha
-        } else {
-          & node (Join-Path $repo 'tools\dev\docker\reconcile-owner-runtime.mjs') $mode @reconcileOptions
-        }
+        & node (Join-Path $repo 'tools\dev\docker\reconcile-owner-runtime.mjs') $mode @reconcileOptions
         Assert-Ok ($LASTEXITCODE -eq 0) 'owner runtime reconciliation failed; inspect explicit result'
       } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }

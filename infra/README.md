@@ -215,32 +215,13 @@ production suitability. Building a
 new `sha-<commit>` image is a separate operation and does **not** update the
 container already running. Readiness always attaches to the *running* image ID.
 
-The approved DSH target is `bthwani_dsh_dev` on the existing PostgreSQL
-server, with `bthwani_dsh_runtime` (no DDL/cluster administration) and separate
-offline bootstrap authority. Normal serving Compose reads only
-`REF_DSH_RUNTIME_DATABASE`, `REF_DSH_RUNTIME_USER`, and
-`REF_DSH_RUNTIME_PASSWORD` from ignored local configuration; bootstrap uses
-separate credentials. The existing unified launcher supports the one-time,
-explicit `pnpm dev docker reconcile -Apply -PrepareDshDatabase` preparation
-of an absent target using the reviewed owner bootstrap and constraint-preserving
-native data-only restore. It compares old/new owner data and sequence hashes,
-verifies the real limited login, and retains the old runtime as sole writer.
-An existing target or incomplete outcome requires readback before any retry.
-This command does not switch the serving container. The explicit unified
-`pnpm dev docker reconcile -Apply -CutoverDshDatabase -PreparedSourceSha <sha>`
-operation verifies the exact prepared image, data and role, pauses the old
-writer, rechecks parity and promotes only DSH. It refuses rollback to stale
-data after a new writer may have accepted a change.
-
-Identity's one-time `pnpm dev docker reconcile -Apply -RelocateIdentityDatabase`
-moves its unchanged owner schema into `bthwani_identity_dev`, using
-`bthwani_identity_runtime`, a separate non-login schema owner, the exact
-existing table/column privilege set and the native PostgreSQL backup/restore.
-It retains the old schema, original session/permission facts and historical
-audit, proves full data and ACL parity, and switches only Identity. This is
-a relocation of an unchanged schema, not an experimental schema upgrade.
-A future schema change must use a separately verified fresh-baseline
-transition; neither command overlays a baseline on retained data.
+The active environment uses three dedicated owner databases on the existing PostgreSQL instance:
+DSH (bthwani_dsh_dev, bthwani_dsh_runtime), Identity (bthwani_identity_dev, bthwani_identity_runtime),
+and WLT (bthwani_wlt_test, bthwani_wlt_reader). Each has its own non-login owner role.
+The completed legacy relocations remain in Git history, not executable lifecycle commands.
+The reconciler refuses shared, foreign or privileged database scope and never creates databases,
+relocates retained rows or appends credentials. Unknown configuration changes require separately
+verified compatible transitions; there are no historical one-field exceptions.
 
 For a committed owner schema change, the existing source watcher requests one
 isolated baseline rehearsal per new runtime input key through the unified

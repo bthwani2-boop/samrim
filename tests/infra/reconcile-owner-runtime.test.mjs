@@ -185,64 +185,25 @@ test("fresh baseline preparation is confined to explicit isolated apply with com
   assert.throws(()=>verifyBaselineProofOutput(proof.replace("PG_RESTORE_READBACK=PASS","PG_RESTORE_READBACK=FAIL")),/BASELINE_PROOF_INCOMPLETE/);
 });
 
-test("dedicated DSH transfer fingerprints only validated owner tables and sequences",async()=>{
-  const {ownerDataFingerprintSql}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const sql=ownerDataFingerprintSql("dsh_test_agent01",["stores","public_revision"],["employee_id_seq"]);
-  assert.match(sql,/REPEATABLE READ READ ONLY/);
-  assert.match(sql,/sha256/);
-  assert.match(sql,/dsh_test_agent01\.stores/);
-  assert.match(sql,/last_value,is_called/);
-  assert.throws(()=>ownerDataFingerprintSql("identity_test_actor",["actors"],[]),/Invalid owner snapshot scope/);
-  assert.throws(()=>ownerDataFingerprintSql("dsh_test_agent01",["stores;drop"],[]),/Invalid owner snapshot scope/);
-  assert.throws(()=>ownerDataFingerprintSql("dsh_test_agent01",["stores","stores"],[]),/Invalid owner snapshot scope/);
+test("canonical database scope rejects shared, foreign or privileged principals",async()=>{
+  const {assertOwnerDatabase,parseReconcileArgs}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const dsh={DSH_DB_SCHEMA:"dsh_test_fixture",DSH_DB_HOST:"postgres",REF_POSTGRES_DB:"bthwani_dsh_dev",REF_POSTGRES_USER:"bthwani_dsh_runtime",REF_POSTGRES_PASSWORD:"fixture"};
+  assert.equal(assertOwnerDatabase("dsh",dsh).database,"bthwani_dsh_dev");
+  for(const change of [{REF_POSTGRES_DB:"postgres"},{DSH_DB_HOST:"foreign"},{REF_POSTGRES_USER:"postgres"},{REF_POSTGRES_PASSWORD:""}])
+    assert.throws(()=>assertOwnerDatabase("dsh",{...dsh,...change}),/Dedicated owner database not verified/);
+  for(const [owner,key,db,role] of [["identity","IDENTITY_TEST_DATABASE_URL","bthwani_identity_dev","bthwani_identity_runtime"],["wlt","WLT_TEST_DATABASE_URL","bthwani_wlt_test","bthwani_wlt_reader"]]){
+    const env={IDENTITY_DB_SCHEMA:"identity_test_fixture",[key]:"postgres://"+role+":fixture@postgres:5432/"+db+"?sslmode=disable"};
+    assert.equal(assertOwnerDatabase(owner,env).database,db);
+    for(const url of [env[key].replace("@postgres:","@foreign:"),env[key].replace(":5432/",":5433/"),env[key].replace(role,"postgres"),env[key].replace(db,"postgres"),"malformed"])
+      assert.throws(()=>assertOwnerDatabase(owner,{...env,[key]:url}),/Dedicated owner database not verified/);
+  }
+  for(const mode of ["--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database","--relocate-identity-database","--resume-identity-database"])
+    assert.throws(()=>parseReconcileArgs([mode]),/Usage/);
+  assert.equal(parseReconcileArgs(["--apply-preview","--prepare-baseline"]).prepare,true);
+  assert.equal(parseReconcileArgs(["--recover-attempt","a".repeat(64)]).recover,true);
+  assert.equal(parseReconcileArgs(["--build-only","dsh"]).build,true);
+  assert.throws(()=>parseReconcileArgs(["--check","--prepare-baseline"]),/explicit isolated apply/);
 });
-
-// Public extension reference reads are distinct from owner tables and never allow writes.
-test("legacy DSH access excludes only named extension reference reads", async () => {
-  const { legacyOwnerAccessSql } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const sql = legacyOwnerAccessSql();
-  assert.match(sql, /BEGIN READ ONLY/);
-  assert.match(sql, /INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER/);
-  assert.match(sql, /d\.deptype=\x27e\x27/);
-  assert.match(sql, /e\.extname=\x27postgis\x27 AND n\.nspname=\x27public\x27 AND c\.relname IN/);
-});
-
-test("database handoff rejects a changed or incomplete owner snapshot", async()=>{
-  const {assertHandoffParity}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  assert.doesNotThrow(()=>assertHandoffParity("a|1\nb|2","a|1\nb|2",2));
-  assert.throws(()=>assertHandoffParity("a|1\nb|2","a|1\nb|3",2),/DATA_PARITY_FAILED/);
-  assert.throws(()=>assertHandoffParity("a|1","a|1",2),/DATA_PARITY_FAILED/);
-  assert.throws(()=>assertHandoffParity("","",0),/DATA_PARITY_FAILED/);
-});
-
-test("Identity relocation admits only the verified owner URL and changes only owner credentials and database",async()=>{
-  const {identityDestinationUrl,identityAclSql,ownerDataFingerprintSql,legacyOwnerAccessSql}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const source="postgres://identity_runtime_docker_abcdef123456:fixture@postgres:5432/bthwani_refoundation?sslmode=disable";
-  const result=new URL(identityDestinationUrl(source,"a".repeat(64)));
-  assert.equal(result.username,"bthwani_identity_runtime");
-  assert.equal(result.pathname,"/bthwani_identity_dev");
-  assert.equal(result.hostname,"postgres");
-  assert.throws(()=>identityDestinationUrl(source.replace("@postgres:","@other:"),"a".repeat(64)),/Unverified/);
-  assert.throws(()=>identityDestinationUrl(source.replace("bthwani_refoundation","bthwani_wlt_test"),"a".repeat(64)),/Unverified/);
-  assert.throws(()=>identityAclSql("identity_test_docker_abcdef123456","identity_runtime_docker_abcdef123457"),/Unverified/);
-  const acl=identityAclSql("identity_test_docker_abcdef123456","identity_runtime_docker_abcdef123456");
-  assert.match(acl,/aclexplode\(t.attacl\)/);
-  assert.match(acl,/is_grantable/);
-  assert.match(acl,/TO bthwani_identity_runtime/);
-  assert.match(ownerDataFingerprintSql("identity_test_docker_abcdef123456",["actors","auth_sessions"],[],"identity"),/auth_sessions/);
-  assert.match(legacyOwnerAccessSql("bthwani_identity_runtime"),/bthwani_identity_runtime/);
-  assert.throws(()=>legacyOwnerAccessSql("bthwani_refoundation_admin"),/Invalid/);
-});
-
-test("Identity schema normalization tolerates only known redundant CHECK grouping",async()=>{
-  const {normalizeIdentitySchemaDump}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const original="    CONSTRAINT operator_permission_commands_reason_check CHECK ((((char_length(reason) >= 10) AND (char_length(reason) <= 500)) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
-  const restored="    CONSTRAINT operator_permission_commands_reason_check CHECK (((char_length(reason) >= 10) AND (char_length(reason) <= 500) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
-  assert.equal(normalizeIdentitySchemaDump(original),normalizeIdentitySchemaDump(restored));
-  assert.notEqual(normalizeIdentitySchemaDump(original.replace(">= 10",">= 9")),normalizeIdentitySchemaDump(restored));
-  assert.notEqual(normalizeIdentitySchemaDump(original.replace("AND (reason", "OR (reason")),normalizeIdentitySchemaDump(restored));
-});
-
 test("only a current successful committed baseline proof admits canonical schema changes", async()=>{
   const {ownerReconcilePlan}=await import("../../tools/dev/docker/owner-preview-source.mjs");
   const base={changed:[],committed:{dsh:["services/dsh/database/schema/45_customer_addresses.sql"]},preview:true,captain:true};
@@ -325,23 +286,6 @@ test("serving owner provenance permits only the canonical Compose file", async (
   ]) assert.throws(()=>composeFileNames(files(names),root),/Unowned/);
   assert.throws(()=>composeFileNames("D:/other/infra/compose.yaml",root),/Unowned/);
 });
-test("only the exact committed isolated WLT DSH origin addition can enter baseline preparation", async () => {
-  const { isAdmittedWltOriginAddition } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const before = 'services:\n  wlt:\n    environment:\n      WLT_TEST_IDENTITY_ORIGIN: "http://identity:3302"\n    ports: []\n';
-  const added = '      WLT_TEST_DSH_ORIGIN: "http://dsh:8080"\n';
-  const after = before.replace('    ports:', added + '    ports:');
-  assert.equal(isAdmittedWltOriginAddition(before, after), true);
-  assert.equal(isAdmittedWltOriginAddition(before.replaceAll("\n","\r\n"), after), true);
-  for (const invalid of [
-    before, after.replace("http://dsh:8080","http://other:8080"),
-    after.replace("ports: []","ports: [3203:8080]"),
-    after.replace("http://identity:3302","http://other:3302"),
-    after.replace(added, added+added),
-    after + "    privileged: true\n",
-  ]) assert.equal(isAdmittedWltOriginAddition(before, invalid), false);
-  assert.equal(isAdmittedWltOriginAddition(after,after),false);
-});
-
 test("baseline owner and archive scope rejects inherited keys, coercion and wrong owner",async()=>{
   const {transitionScope}=await import("../../tools/dev/docker/owner-baseline-transition.mjs");
   const schema="dsh_test_agent01", archive="bthwani_recovery_dsh_abcdef123456";
@@ -377,34 +321,6 @@ test("baseline SQL read is bounded, regular and rejects hard links", async()=>{
   } finally {rmSync(dir,{recursive:true,force:true});}
 });
 
-test("owner config publication is bound to the original file and exact bytes", async()=>{
-  const {readOwnerEnv,appendOwnerEnv}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const {mkdtempSync,writeFileSync,readFileSync,renameSync,linkSync,rmSync}=await import("node:fs");
-  const {tmpdir}=await import("node:os");
-  const {join}=await import("node:path");
-  const dir=mkdtempSync(join(tmpdir(),"bthwani-owner-config-"));
-  try {
-    const file=join(dir,"fixture.env"), prior=join(dir,"prior.env"), alias=join(dir,"alias.env");
-    writeFileSync(file,"FIXTURE=1\n");
-    const original=readOwnerEnv(file);
-    appendOwnerEnv(file,original,"FIXTURE_SECOND=2\n");
-    assert.equal(readFileSync(file,"utf8"),"FIXTURE=1\nFIXTURE_SECOND=2\n");
-    assert.throws(()=>appendOwnerEnv(file,original,"MUST_NOT_WRITE=1\n"),/configuration changed/);
-    const current=readOwnerEnv(file);
-    renameSync(file,prior);
-    writeFileSync(file,current.text);
-    assert.throws(()=>appendOwnerEnv(file,current,"MUST_NOT_WRITE=1\n"),/configuration changed/);
-    assert.equal(readFileSync(file,"utf8"),current.text);
-    linkSync(file,alias);
-    assert.throws(()=>readOwnerEnv(alias),/Unsafe local configuration/);
-    rmSync(alias);
-    const latest=readOwnerEnv(file);
-    writeFileSync(file,"FIXTURE=3\n");
-    assert.throws(()=>appendOwnerEnv(file,latest,"MUST_NOT_WRITE=1\n"),/configuration changed/);
-    assert.equal(readFileSync(file,"utf8"),"FIXTURE=3\n");
-  } finally {rmSync(dir,{recursive:true,force:true});}
-});
-
 test("source host guard accepts only the actual Surface and canonical checkout", async () => {
   const { assertSourceHost } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const checkout = "D:\\samrim";
@@ -417,99 +333,6 @@ test("source host guard accepts only the actual Surface and canonical checkout",
   assert.throws(() => assertSourceHost("BTHWANI", undefined, "D:\\other"), /Wrong source host/);
 });
 
-test("database copy archives use a root-controlled private directory and exact cleanup", async () => {
-  const { createPrivateCopyArchive, removePrivateCopyArchive } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  for (const owner of ["dsh", "identity"]) {
-    const calls = [];
-    const directory = "/run/bthwani-" + owner + "-copy-aB12Cd34Ef";
-    const run = args => { calls.push(args); return args[2] === "stat" ? "41ed:0:0" : args[2] === "mktemp" ? directory : ""; };
-    const archive = createPrivateCopyArchive("verified-pg", owner, run);
-    assert.deepEqual(archive, { directory, file: directory + "/archive.dump" });
-    assert.deepEqual(calls, [
-      ["exec", "verified-pg", "stat", "-c", "%f:%u:%g", "/run"],
-      ["exec", "verified-pg", "mktemp", "-d", "/run/bthwani-" + owner + "-copy-XXXXXXXXXX"],
-    ]);
-    removePrivateCopyArchive("verified-pg", archive, run);
-    assert.deepEqual(calls.slice(2), [
-      ["exec", "verified-pg", "rm", "-f", "--", archive.file],
-      ["exec", "verified-pg", "rmdir", "--", directory],
-    ]);
-  }
-  assert.throws(() => createPrivateCopyArchive("verified-pg", "unknown", () => { throw new Error("must not execute"); }), /owner/);
-  for (const parent of ["43ff:0:0", "41ed:999:0", "a1ff:0:0", "41ed:0:999"]) {
-    const calls = [];
-    assert.throws(() => createPrivateCopyArchive("verified-pg", "dsh", args => { calls.push(args); return parent; }), /archive parent/);
-    assert.deepEqual(calls, [["exec", "verified-pg", "stat", "-c", "%f:%u:%g", "/run"]]);
-  }
-  assert.throws(() => createPrivateCopyArchive("verified-pg", "dsh", args => args[2] === "stat" ? "41ed:0:0" : "/run/other"), /archive directory/);
-  for (const directory of ["/run/other", "/tmp/bthwani-dsh-copy-aB12Cd34Ef", "/run/bthwani-dsh-copy-../otherxx"]) {
-    assert.throws(() => removePrivateCopyArchive("verified-pg", { directory, file: directory + "/archive.dump" }, () => { throw new Error("must not execute"); }), /archive directory/);
-  }
-  assert.throws(() => removePrivateCopyArchive("verified-pg", { directory: "/run/bthwani-dsh-copy-aB12Cd34Ef", file: "/run/other" }, () => { throw new Error("must not execute"); }), /archive directory/);
-});
-
-test("private copy archive has actual Unix owner-only directory permissions", { skip: process.platform === "win32" }, async () => {
-  const { createPrivateCopyArchive, removePrivateCopyArchive } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const { spawnSync } = await import("node:child_process");
-  const { existsSync, mkdtempSync, rmdirSync, statSync, writeFileSync } = await import("node:fs");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  // Map the container's verified root-controlled /run into an owned fixture,
-  // so the native permission check also runs on unprivileged CI workers.
-  const parent = mkdtempSync(join(tmpdir(), "bthwani-archive-proof-"));
-  const localPath = value => value.startsWith("/run/") ? join(parent, value.slice(5)) : value;
-  const run = args => {
-    assert.deepEqual(args.slice(0, 2), ["exec", "fixture"]);
-    if (args[2] === "stat") {
-      assert.deepEqual(args.slice(3), ["-c", "%f:%u:%g", "/run"]);
-      assert.equal(statSync(parent).mode & 0o777, 0o700);
-      return "41ed:0:0";
-    }
-    const result = spawnSync(args[2], args.slice(3).map(localPath), { encoding: "utf8", timeout: 5000 });
-    assert.equal(result.status, 0, result.error?.message || result.stderr);
-    const output = result.stdout.trim();
-    return args[2] === "mktemp" ? "/run/" + output.slice(parent.length + 1) : output;
-  };
-  try {
-    const archive = createPrivateCopyArchive("fixture", "identity", run);
-    try {
-      assert.equal(statSync(localPath(archive.directory)).mode & 0o777, 0o700);
-      writeFileSync(localPath(archive.file), "synthetic archive", { mode: 0o600 });
-      assert.equal(statSync(localPath(archive.file)).mode & 0o777, 0o600);
-    } finally {
-      removePrivateCopyArchive("fixture", archive, run);
-    }
-    assert.equal(existsSync(localPath(archive.directory)), false);
-  } finally {
-    rmdirSync(parent);
-  }
-});
-
-test("only a manual, committed, exact default-off DSH employee setting transition is eligible", async () => {
-  const { admittedDshConfigTransition } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const before = 'services:\n  dsh:\n    environment:\n      DSH_ENABLE_ISOLATED_CUSTOMER_CART: "${REF_DSH_ENABLE_ISOLATED_CUSTOMER_CART:-false}"\n    ports: []\n';
-  const line = '      DSH_ENABLE_ISOLATED_EMPLOYEES: "${REF_DSH_ENABLE_ISOLATED_EMPLOYEES:-false}"\n';
-  const after = before.replace('    ports:', line + '    ports:');
-  const live = {dsh:"a".repeat(64), identity:"b".repeat(64)};
-  const desired = {...live, dsh:"c".repeat(64)};
-  const proof = {mode:"--apply",automatic:false,clean:true,schemaChanged:false,oldFlagPresent:false,disabledHandlerProven:true,previous:before,current:after,live,historical:live,desired,disabled:desired};
-  assert.equal(admittedDshConfigTransition(proof),true);
-  assert.equal(admittedDshConfigTransition({...proof,mode:"--check",previous:before.replaceAll("\n","\r\n")}),true);
-  for(const patch of [
-    {automatic:true},{clean:false},{schemaChanged:true},{oldFlagPresent:true},{disabledHandlerProven:false},
-    {mode:"--apply-preview"},{mode:"--apply-captain"},{mode:"--recover-attempt"},
-    {current:before},{current:after.replace(":-false}",":-true}")},
-    {current:after.replace('ports: []','ports: [3202:8080]')},
-    {current:after.replace(line,line+line)},
-    {historical:{...live,dsh:"d".repeat(64)}},
-    {desired:{...desired,identity:"d".repeat(64)}},
-    {disabled:{...desired,dsh:"d".repeat(64)}},
-    {desired:{...desired,extra:"d".repeat(64)}},
-    {live:{...live,dsh:"invalid"}},
-    {desired:live,disabled:live}
-  ]) assert.equal(admittedDshConfigTransition({...proof,...patch}),false);
-});
-
 test("configuration rollback admits only a proven image and its paired config hash", async () => {
   const { isKnownImageConfigPair } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const prior={image:"old-image",hash:"old-hash"};
@@ -518,15 +341,4 @@ test("configuration rollback admits only a proven image and its paired config ha
   assert.equal(isKnownImageConfigPair("new-image","new-hash",prior,candidate),true);
   for(const [image,hash] of [["old-image","new-hash"],["new-image","old-hash"],["unknown","new-hash"],["new-image","unknown"]])
     assert.equal(isKnownImageConfigPair(image,hash,prior,candidate),false);
-});
-
-test("historical single-field reconstruction requires absence in old owner source and a unique current field", async () => {
-  const {priorCanonicalWithoutField}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
-  const before="services:\n  dsh:\n    environment:\n      A: x\n";
-  const field="DSH_ENABLE_ISOLATED_EMPLOYEES";
-  const current=before+"      "+field+": false\n";
-  assert.equal(priorCanonicalWithoutField(current,field,before),before);
-  assert.equal(priorCanonicalWithoutField(current,field,current),null);
-  assert.equal(priorCanonicalWithoutField(current+current,field,before),null);
-  assert.equal(priorCanonicalWithoutField(before,field,before),null);
 });

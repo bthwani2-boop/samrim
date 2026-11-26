@@ -5,16 +5,23 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 
-export function transitionScope(owner,schema,archive) {
+export function ownerDatabaseScope(owner,schema) {
   const definitions = {
     dsh: { database:"bthwani_dsh_dev", owner:"bthwani_dsh_owner", runtime:"bthwani_dsh_runtime", schema:/^dsh_test_[a-z0-9_]{1,50}$/, archive:/^bthwani_recovery_dsh_[a-f0-9]{12}$/ },
     identity: { database:"bthwani_identity_dev", owner:"bthwani_identity_owner", runtime:"bthwani_identity_runtime", schema:/^identity_test_[a-z0-9_]{1,49}$/, archive:/^bthwani_recovery_identity_[a-f0-9]{12}$/ },
     wlt: { database:"bthwani_wlt_test", owner:"bthwani_wlt_owner", runtime:"bthwani_wlt_reader", schema:/^wlt$/, archive:/^bthwani_recovery_wlt_[a-f0-9]{12}$/ },
   };
   const d=typeof owner==="string"&&Object.hasOwn(definitions,owner)?definitions[owner]:null;
-  if(!d || typeof schema!=="string" || typeof archive!=="string" || !d.schema.test(schema) || !d.archive.test(archive))
+  if(!d || typeof schema!=="string" || !d.schema.test(schema))
     throw new Error("Invalid owner baseline transition scope");
-  return {...d,schema,archive};
+  return {...d,schema};
+}
+
+export function transitionScope(owner,schema,archive) {
+  const d=ownerDatabaseScope(owner,schema);
+  if(typeof archive!=="string" || !d.archive.test(archive))
+    throw new Error("Invalid owner baseline transition scope");
+  return {...d,archive};
 }
 
 export function readBaselineFile(file) {

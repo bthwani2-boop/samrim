@@ -440,7 +440,7 @@ test("owner baseline reconciliation forwards one intact native option", {
     `$ast=[Management.Automation.Language.Parser]::ParseFile('${quoted}',[ref]$tok,[ref]$errors)`,
     "$assignment=$ast.Find({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$reconcileOptions'},$true)",
     "if(!$assignment){throw 'MISSING_RECONCILE_OPTIONS'}",
-    "$CutoverDshDatabase=$false;$PrepareBaseline=$true;$mode='--apply-preview'",
+    "$RecoverRuntimeAttempt=$null;$PrepareBaseline=$true;$mode='--apply-preview'",
     "Invoke-Expression $assignment.Extent.Text",
     "$actual=& node -e 'console.log(JSON.stringify(process.argv.slice(1)))' -- $mode @reconcileOptions",
     "if($LASTEXITCODE -ne 0){throw 'NATIVE_ARGUMENT_PROBE_FAILED'}",
