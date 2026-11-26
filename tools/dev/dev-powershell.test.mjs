@@ -123,23 +123,29 @@ test("native owner traffic reuses the verified SSH tunnel and cannot take over a
   assert.match(launcher, /\+ \$nativeOwnerPorts/);
 });
 
-test("tunnel recovery rejects SSH commands with extra forwards, a foreign host or a live foreign parent", {skip:process.platform!=="win32"},()=>{
+test("tunnel listener state and recovery fail closed on foreign ownership", {skip:process.platform!=="win32"},()=>{
   const tunnelPath=path.join(path.dirname(scriptPath),"Start-AppTunnel.ps1").replaceAll("'","''");
   const ps=[
     "$ErrorActionPreference='Stop'",
     `$s=Get-Content -LiteralPath '${tunnelPath}' -Raw`,
-    "$start=$s.IndexOf('# Recover only an orphan');$end=$s.IndexOf(\"Write-TunnelLog ('START forwards=\",$start);if($start -lt 0 -or $end -le $start){throw 'RECOVERY_BLOCK_MISSING'}",
-    "$recover=[scriptblock]::Create($s.Substring($start,$end-$start))",
+    "$tokens=$null;$errors=$null;$ast=[Management.Automation.Language.Parser]::ParseInput($s,[ref]$tokens,[ref]$errors);if($errors.Count){throw 'TUNNEL_PARSE'}",
+    "foreach($name in @('Get-TunnelListenerState','Assert-TunnelAvailable')){$n=$ast.Find({param($x)$x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $name},$true);if(!$n){throw 'FUNCTION_MISSING'};Invoke-Expression $n.Extent.Text}",
     "$ssh='C:\\Windows\\System32\\OpenSSH\\ssh.exe';$target='bthwani-docker';$expectedForwards=@('127.0.0.1:18101:127.0.0.1:28111','127.0.0.1:3201:127.0.0.1:3201');$forwards=@(@{Local=18101},@{Local=3201});$VerifyOnly=$false;$argsList=@('-N','-T','-L',$expectedForwards[0],'-L',$expectedForwards[1],$target)",
-    "$canonical='\"'+$ssh+'\" '+($argsList -join ' ');$created=[datetime]'2026-01-01T01:00:00'",
-    "function Get-NetTCPConnection {foreach($f in $forwards){[pscustomobject]@{OwningProcess=100;LocalAddress='127.0.0.1';LocalPort=$f.Local}}}",
+    "$plan=@{Ssh=$ssh;Ports=@($forwards.Local);Arguments=$argsList};$canonical='\"'+$ssh+'\" '+($argsList -join ' ');$created=[datetime]'2026-01-01T01:00:00'",
+    "function Get-NetTCPConnection {if($script:enumerationFailed){throw 'LISTENER_ENUMERATION_FAILED'};foreach($f in $script:fixturePorts){[pscustomobject]@{OwningProcess=100;LocalAddress='127.0.0.1';LocalPort=$f.Local}}}",
     "function Get-CimInstance {param($ClassName,$Filter);if($Filter -eq 'ProcessId=100'){[pscustomobject]@{ProcessId=100;ParentProcessId=200;ExecutablePath=$ssh;CommandLine=$script:command;CreationDate=$created}}elseif($Filter -eq 'ProcessId=200'){$script:parent}}",
     "function Stop-Process {param($Id);$script:stops++};function Write-TunnelLog {}",
+    "$script:enumerationFailed=$false;$script:fixturePorts=$forwards;$script:command=$canonical;$script:parent=$null;if((Get-TunnelListenerState $plan).State -ne 'COMPLETE'){throw 'COMPLETE_FAILED'};$script:fixturePorts=@($forwards[0]);if((Get-TunnelListenerState $plan).State -ne 'PARTIAL'){throw 'PARTIAL_FAILED'};$script:fixturePorts=@();if((Get-TunnelListenerState $plan).State -ne 'EMPTY' -or (Assert-TunnelAvailable $plan)){throw 'EMPTY_FAILED'};$script:enumerationFailed=$true;$blocked=$false;try{Get-TunnelListenerState $plan}catch{$blocked=$true};if(!$blocked){throw 'ENUMERATION_FAILURE_ACCEPTED'};$script:enumerationFailed=$false;$script:fixturePorts=$forwards",
     "$cases=@(@{name='canonical orphan';command=$canonical;parent=$null;expected='STOP'},@{name='extra reverse';command=$canonical.Replace($target,'-R 127.0.0.1:29999:127.0.0.1:29999 '+$target);parent=$null;expected='BLOCK'},@{name='foreign destination';command=$canonical.Replace($target,'other-host '+$target);parent=$null;expected='BLOCK'},@{name='live foreign parent';command=$canonical;parent=[pscustomobject]@{Name='cmd.exe';CommandLine='cmd';CreationDate=$created.AddMinutes(-1)};expected='BLOCK'},@{name='active tunnel parent';command=$canonical;parent=[pscustomobject]@{Name='pwsh.exe';CommandLine='pwsh -File Start-AppTunnel.ps1';CreationDate=$created.AddMinutes(-1)};expected='BLOCK'})",
-    "foreach($case in $cases){$script:stops=0;$script:command=$case.command;$script:parent=$case.parent;$blocked=$false;try{& $recover}catch{if($_.Exception.Message -notmatch '^APP_TUNNEL_'){throw};$blocked=$true};if($case.expected -eq 'STOP'){if($blocked -or $script:stops -ne 1){throw ('ORPHAN_NOT_RECOVERED '+$case.name)}}elseif(!$blocked -or $script:stops -ne 0){throw ('UNSAFE_STOP_ATTEMPT '+$case.name)}}",
+    "foreach($case in $cases){$script:stops=0;$script:command=$case.command;$script:parent=$case.parent;$blocked=$false;try{$null=Assert-TunnelAvailable $plan}catch{if($_.Exception.Message -notmatch '^APP_TUNNEL_'){throw};$blocked=$true};if($case.expected -eq 'STOP'){if($blocked -or $script:stops -ne 1){throw ('ORPHAN_NOT_RECOVERED '+$case.name)}}elseif(!$blocked -or $script:stops -ne 0){throw ('UNSAFE_STOP_ATTEMPT '+$case.name)}}",
   ].join("; ");
   const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",timeout:15000,windowsHide:true});
   assert.equal(result.status,0,result.stderr||result.stdout);
+  const tunnel=readFileSync(new URL("./Start-AppTunnel.ps1",import.meta.url),"utf8");
+  assert.match(tunnel,/while \(\$true\) \{\s*if \(Assert-TunnelAvailable \$plan\)/);
+  assert.match(tunnel,/Mutex.*BThwani\.Lenovo\.AppTunnel/);
+  assert.match(tunnel,/WaitOne\(0\)/);
+  assert.doesNotMatch(tunnel,/2>>\s*\$logPath/);
 });
 
 test("Web and Metro readiness share endpoints and report bounded cold-start retries", () => {
