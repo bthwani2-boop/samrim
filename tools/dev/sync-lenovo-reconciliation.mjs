@@ -189,9 +189,14 @@ function graphifySourceEvent(name) {
   if (parts.some(p=>!p || p===".." || /^(?:\.git|node_modules|graphify-out|\.next|\.expo|\.nx|dist|build|coverage|\.cache|\.pnpm-store|\.env(?:\..*)?|\.ssh|\.secrets)$/i.test(p))) return false;
   return /^(?:apps|services|packages|infra|tools|governance|specs|docs|tests|\.specify|\.agents|\.github)(?:\/|$)/.test(rel) || !rel.includes("/");
 }
+// Native filesystem events wake the existing source cycle; the bounded
+// full audit also recovers missed events, transient errors and remote drift.
+function sourceCycleDue({pending,now,nextAudit}) {
+  return pending || now >= nextAudit;
+}
 function graphifyPollDue({now,dirtySince,lastEvent,nextAudit,busy,debounce=3000,maxWait=15000}) {
   if (busy) return false;
   return now>=nextAudit || (dirtySince!==null && (now-lastEvent>=debounce || now-dirtySince>=maxWait));
 }
 
-export { assertCompatibleBranchTransition, branchTransitionPins, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, watcherReloadAction };
+export { assertCompatibleBranchTransition, branchTransitionPins, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, sourceCycleDue, watcherReloadAction };

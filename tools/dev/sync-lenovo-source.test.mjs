@@ -519,6 +519,16 @@ test("Graphify scheduling responds to saved code and ignores its own generated o
   for(const rel of ["graphify-out/graph.json","apps/customer/node_modules/pkg/index.js","apps/customer/.expo/a.json","infra/.env.local",".git/index",".git/objects/aa/bb","apps/customer/coverage/data.json"])assert.equal(graphifySourceEvent(rel),false,rel);
   assert.equal(graphifySourceEvent(null),true);
 });
+test("source cycle does not scan an idle checkout each second and preserves event/audit recovery",async()=>{
+  const {sourceCycleDue}=await import("./sync-lenovo-reconciliation.mjs");
+  for(let now=1000;now<30000;now+=1000)
+    assert.equal(sourceCycleDue({pending:false,now,nextAudit:30000}),false);
+  assert.equal(sourceCycleDue({pending:true,now:1000,nextAudit:30000}),true);
+  assert.equal(sourceCycleDue({pending:false,now:30000,nextAudit:30000}),true);
+  assert.equal(sourceCycleDue({pending:false,now:4999,nextAudit:5000}),false);
+  assert.equal(sourceCycleDue({pending:false,now:5000,nextAudit:5000}),true);
+  assert.match(readFileSync(new URL("./sync-lenovo-source.mjs",import.meta.url),"utf8"), /nextSourceCycle=Math\.min\(nextRemoteAudit,/);
+});
 test("Graphify debounce, bounded audit and single active attempt",async()=>{
   const {graphifyPollDue}=await import("./sync-lenovo-reconciliation.mjs");
   const base={now:10000,dirtySince:8000,lastEvent:9500,nextAudit:30000,busy:false};
@@ -636,7 +646,7 @@ test("native Graphify refreshes changed tracked source before Commit",{
 
 test("native recursive file event reaches Graphify scheduling without a Git commit",{timeout:10000},async t=>{
   const {watch}=await import("node:fs");
-  const {graphifySourceEvent,graphifyPollDue}=await import("./sync-lenovo-reconciliation.mjs");
+  const {graphifySourceEvent,graphifyPollDue,sourceCycleDue}=await import("./sync-lenovo-reconciliation.mjs");
   const dir=mkdtempSync(path.join(tmpdir(),"bthwani-graphify-event-"));
   const app=path.join(dir,"apps","customer","src");
   mkdirSync(app,{recursive:true});
@@ -657,6 +667,7 @@ test("native recursive file event reaches Graphify scheduling without a Git comm
       const name=await Promise.race([observed,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error("source event not delivered")),4000);})]);
       assert.equal(name.replaceAll("\\","/"),"apps/customer/src/example.ts");
       assert.equal(graphifyPollDue({now:3000,dirtySince:0,lastEvent:0,nextAudit:30000,busy:false}),true);
+      assert.equal(sourceCycleDue({pending:graphifySourceEvent(name),now:1000,nextAudit:30000}),true);
     }finally{clearTimeout(timer);clearTimeout(deadline);}
   }finally{watcher?.close();rmSync(dir,{recursive:true,force:true});}
 });

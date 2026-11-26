@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, runtimeReceiptStatus, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeBaselineProofDue, runtimePollDue, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -487,6 +487,7 @@ function baseline(current, observed) {
 const remoteAuditMs = 30_000;
 let nextRemoteAudit = 0;
 let dependencySyncDeferred = false;
+let sourcePending = true;
 function reconcile() {
   const currentBranch = branch();
   const currentHead = head();
@@ -600,7 +601,7 @@ function pollAppDependencies() {
   child.stdout.on("data",chunk=>{output=(output+chunk.toString()).slice(-65536);});
   child.stderr.on("data",chunk=>{errors=(errors+chunk.toString()).slice(-65536);});
   const finish=(code)=>{
-    if(settled)return;settled=true;runtimeChild=null;dependencyChild=false;
+    if(settled)return;settled=true;runtimeChild=null;dependencyChild=false;sourcePending=true;
     const result=code===0&&output.includes("APP_DEPENDENCY_RECONCILE_PASS")?"DEPENDENCY_RECONCILE_PASS":
       code===0&&output.includes("APP_DEPENDENCY_CURRENT")?"DEPENDENCY_CURRENT":
       "DEPENDENCY_RECONCILE_BLOCKED "+(errors.match(/DEPENDENCY_[A-Z_]+|APP_SOURCE_SYNC_NOT_CURRENT|another unified dev operation/i)?.[0]||"inspect unified dev log");
@@ -659,6 +660,7 @@ function pollOwnerRuntime() {
     if(settled)return;
     settled=true;
     runtimeChild=null;
+    sourcePending=true;
     nextRuntimeAudit=Date.now()+60_000;
     try {
       const saved=runtimeState();
@@ -684,32 +686,44 @@ let nextGraphAudit = 0;
 let graphDirtySince = null;
 let graphLastEvent = 0;
 let graphNotice = "";
-let graphEvents = null;
-let nextGraphEventRetry = 0;
+let sourceEvents = null;
+let nextSourceEventRetry = 0;
+let sourceEventNotice = '';
 function graphLogOnce(message) {
   if(message!==graphNotice){logger(message);graphNotice=message;}
 }
-function signalGraphChange(name,now=Date.now()) {
-  if(!graphifySourceEvent(name)) return;
-  graphDirtySince ??= now;
-  graphLastEvent=now;
+function signalSourceChange(name,now=Date.now()) {
+  const rel=name ? String(name).replaceAll("\\","/") : null;
+  // Ignore generated artifacts and internal Git writes. Git ref events and
+  // unknown filenames wake the source cycle conservatively.
+  const relevant=graphifySourceEvent(rel) || rel===".git/packed-refs";
+  if(!relevant)return;
+  sourcePending=true;
+  if(graphifySourceEvent(rel)){
+    graphDirtySince ??= now;
+    graphLastEvent=now;
+  }
 }
-function startGraphEvents() {
-  if(graphEvents || Date.now()<nextGraphEventRetry || !fs.existsSync(graphOptIn))return;
-  nextGraphEventRetry=Date.now()+30_000;
+function sourceEventLog(message) {
+  if(message!==sourceEventNotice){logger(message);sourceEventNotice=message;}
+}
+function startSourceEvents() {
+  if(sourceEvents || Date.now()<nextSourceEventRetry)return;
+  nextSourceEventRetry=Date.now()+30_000;
+  const degraded=()=>{
+    sourceEvents?.close();sourceEvents=null;
+    sourcePending=true;
+    sourceEventLog("SOURCE_EVENTS_DEGRADED periodic audit remains active");
+  };
   try{
-    graphEvents=fs.watch(root,{recursive:true},(_event,name)=>signalGraphChange(name));
-    graphEvents.on("error",()=>{
-      graphEvents?.close();graphEvents=null;
-      graphLogOnce("GRAPHIFY_EVENTS_DEGRADED periodic audit remains active");
-    });
-  }catch{graphLogOnce("GRAPHIFY_EVENTS_DEGRADED periodic audit remains active");}
+    sourceEvents=fs.watch(root,{recursive:true},(_event,name)=>signalSourceChange(name));
+    sourceEvents.on("error",degraded);
+    sourcePending=true;
+    sourceEventLog("SOURCE_EVENTS_ACTIVE");
+  }catch{degraded();}
 }
 function pollGraphify() {
-  if(!fs.existsSync(graphOptIn)){
-    graphEvents?.close();graphEvents=null;return;
-  }
-  startGraphEvents();
+  if(!fs.existsSync(graphOptIn))return;
   if(!graphifyPollDue({now:Date.now(),dirtySince:graphDirtySince,lastEvent:graphLastEvent,nextAudit:nextGraphAudit,busy:Boolean(graphChild)}))return;
   nextGraphAudit=Date.now()+30_000;
   graphDirtySince=null;
@@ -812,6 +826,7 @@ function main() {
     let reloadNotice = "";
     let nextReloadAudit = 0;
     let reloadAction = "current";
+    let nextSourceCycle = 0;
     const attempt = () => {
       if (active) return;
       // Drain both children before returning a reload request to the same
@@ -834,23 +849,28 @@ function main() {
       if(reloadAction==="drain")return;
       if(reloadAction==="reload"){
         clearInterval(timer);
-        graphEvents?.close();graphEvents=null;
+        sourceEvents?.close();sourceEvents=null;
         process.exitCode=75; // Only this worker exits; its parent reloads the committed code.
         return;
       }
-      active = true;
+      startSourceEvents();
       try { pollGraphify(); } catch { graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED preflight"); }
+      if(!sourceCycleDue({pending:sourcePending,now:Date.now(),nextAudit:nextSourceCycle}))return;
+      active = true;
+      sourcePending=false;
       try {
         cycle();
         try { pollAppDependencies(); } catch (e) { logger("DEPENDENCY_RECONCILE_BLOCKED "+e.message); }
         try { pollOwnerRuntime(); } catch (e) { runtimeLogOnce("RUNTIME_UPDATE_BLOCKED "+e.message); }
         if (lastError) { logger("SYNC_RECOVERED after=" + lastError); lastError = ""; }
+        nextSourceCycle=Math.min(nextRemoteAudit,Date.now()+(dependencySyncDeferred?1000:remoteAuditMs));
       } catch (e) {
+        nextSourceCycle=Date.now()+5000;
         if (e.message !== lastError) { logger("SYNC_ERROR " + e.message); lastError = e.message; }
       } finally { active = false; }
     };
     const timer=setInterval(attempt, 1000);
-    logger("SOURCE_SYNC_WATCH_ACTIVE interval=1 remoteAuditSeconds=30 watcherDigest="+loaded.slice(0,12));
+    logger("SOURCE_SYNC_WATCH_ACTIVE trigger=events timerSeconds=1 remoteAuditSeconds=30 watcherDigest="+loaded.slice(0,12));
     attempt();
   } else {
     cycle();
