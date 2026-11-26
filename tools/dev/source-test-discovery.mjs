@@ -82,13 +82,29 @@ function sourceScanner(checkout) {
   return { root, scan };
 }
 
+// Runtime suites are owned by the presentation host that supplies their built
+// artifact. All authored tests enter the same inventory before partitioning.
+const operatorRuntimeRoot = "apps/control-panel/tests/runtime/";
+function partitionTests(files) {
+  const source = [];
+  const operatorRuntime = [];
+  for (const file of files) {
+    (file.startsWith(operatorRuntimeRoot) ? operatorRuntime : source).push(file);
+  }
+  return { source, operatorRuntime };
+}
+
 export function discoverNodeSourceTests(root, folder) {
   // Reject a lexical escape before looking up either filesystem location.
   relativeSource(resolve(root), resolve(folder));
-  return sourceScanner(root).scan(folder);
+  return partitionTests(sourceScanner(root).scan(folder)).source;
 }
 
 export function discoverWorkspaceNodeTests(root) {
   const scanner = sourceScanner(root);
   return roots.flatMap(area => scanner.scan(join(scanner.root, area))).sort();
+}
+
+export function discoverWorkspaceTestSuites(root) {
+  return partitionTests(discoverWorkspaceNodeTests(root));
 }

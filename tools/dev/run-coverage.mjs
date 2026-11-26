@@ -7,7 +7,7 @@ import { lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, u
 import { isAbsolute, join, posix, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { captureSourceSnapshot } from "./source-snapshot.mjs";
-import { discoverNodeSourceTests, discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
+import { discoverNodeSourceTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const coverage = join(root, "coverage");
@@ -26,7 +26,7 @@ function runNode(args) {
   assert.equal(result.status, 0, "Actual source test suite must pass");
 }
 function workspaceTests() {
-  const files = discoverWorkspaceNodeTests(root);
+  const files = discoverWorkspaceTestSuites(root).source;
   assert.ok(files.length > 0, "No admitted source tests");
   return files;
 }
@@ -49,6 +49,17 @@ function projectTests() {
   const before = admittedCandidate(files);
   runNode(["--test-concurrency=2", "--test", ...files]);
   assertUnchanged(before, discoverNodeSourceTests(root, folder));
+}
+
+function operatorRuntimeTests() {
+  const files = discoverWorkspaceTestSuites(root).operatorRuntime;
+  assert.ok(files.length > 0, "No admitted Operator runtime tests");
+  const before = admittedCandidate(files);
+  // Tests own their build prerequisites and isolated servers. No environment
+  // flag can silently convert this required suite into skipped source tests.
+  runNode(["--test-concurrency=1", "--test", ...files]);
+  assertUnchanged(before, discoverWorkspaceTestSuites(root).operatorRuntime);
+  console.log("OPERATOR_RUNTIME_TESTS_PASS files=" + files.length);
 }
 
 // The atomic directory is both the exclusive reservation and the only work
@@ -183,14 +194,21 @@ function publishCoverage() {
 }
 
 const args = process.argv.slice(2);
-assert.ok(args.length === 0 || (args.length === 1 && ["--check-discovery", "--project"].includes(args[0])),
-  "Usage: node tools/dev/run-coverage.mjs [--check-discovery | --project (from project root)]");
+assert.ok(args.length === 0 || (args.length === 1 && ["--check-discovery", "--project", "--operator-runtime"].includes(args[0])),
+  "Usage: node tools/dev/run-coverage.mjs [--check-discovery | --project (from project root) | --operator-runtime]");
 switch (args[0]) {
-  case "--check-discovery":
-    console.log("SOURCE_TEST_DISCOVERY_PASS count=" + workspaceTests().length);
+  case "--check-discovery": {
+    const suites = discoverWorkspaceTestSuites(root);
+    assert.ok(suites.source.length > 0, "No admitted source tests");
+    console.log("SOURCE_TEST_DISCOVERY_PASS count=" + (suites.source.length + suites.operatorRuntime.length) +
+      " source=" + suites.source.length + " operator_runtime=" + suites.operatorRuntime.length);
     break;
+  }
   case "--project":
     projectTests();
+    break;
+  case "--operator-runtime":
+    operatorRuntimeTests();
     break;
   default:
     publishCoverage();

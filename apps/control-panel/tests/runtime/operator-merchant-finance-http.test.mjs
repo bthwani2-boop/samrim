@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const cli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
 const token = Buffer.alloc(32, 19).toString("base64url");
 const cases = [
@@ -29,7 +29,6 @@ async function unusedPort() {
 
 test("merchant finance routes keep protected real-HTTP backward compatibility", {
   timeout: 60000,
-  skip: process.env.BTHWANI_OPERATOR_HTTP_TEST === "1" ? false : "Requires production Next build",
 }, async () => {
   assert.ok(existsSync(path.join(panel, ".next", "BUILD_ID")), "Run Next build before HTTP testing");
   const permissions = new Set(["finance"]);

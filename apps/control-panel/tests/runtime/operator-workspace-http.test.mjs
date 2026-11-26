@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const cli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
 const token = Buffer.alloc(32, 7).toString("base64url");
 
@@ -25,7 +25,6 @@ async function unusedPort() {
 
 test("production Operator UI rechecks isolated Identity grants on every document request", {
   timeout: 60000,
-  skip: process.env.BTHWANI_OPERATOR_HTTP_TEST === "1" ? false : "Run after production Next build",
 }, async () => {
   assert.ok(existsSync(path.join(panel, ".next", "BUILD_ID")), "Build Operator host before HTTP test");
   const allowed = new Set(["operations"]);

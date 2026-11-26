@@ -7,7 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
-const panel = path.resolve(import.meta.dirname, "..");
+const panel = path.resolve(import.meta.dirname, "..", "..");
 const nextCli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
 const token = Buffer.alloc(32, 7).toString("base64url");
 const replacementToken = Buffer.alloc(32, 8).toString("base64url");
@@ -31,7 +31,6 @@ async function freePort() {
 
 test("real Operator Next Captain review BFF enforces live scope, origin and owner versioned write", {
   timeout: 70000,
-  skip: process.env.BTHWANI_OPERATOR_HTTP_TEST !== "1" && "Run after production Next build",
 }, async () => {
   assert.ok(existsSync(path.join(panel, ".next", "BUILD_ID")), "Build control-panel before HTTP test");
   const expiry = new Date(Date.now() + 15 * 60000).toISOString();

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { discoverNodeSourceTests, discoverWorkspaceNodeTests } from "./source-test-discovery.mjs";
+import { discoverNodeSourceTests, discoverWorkspaceNodeTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
 
 function fixture(callback) {
   const root = mkdtempSync(join(tmpdir(), "bthwani-test-inclusion-"));
@@ -190,6 +190,36 @@ function coverageFixture(callback) {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+test("one inventory partitions runtime tests from source and project feedback", () => coverageFixture(({ root, add, report, run }) => {
+  const runtime = "apps/control-panel/tests/runtime/real-http.test.mjs";
+  const source = "apps/control-panel/tests/source.test.mjs";
+  add(runtime, 'import test from "node:test"; test("runtime must actually execute", () => { throw new Error("runtime failure"); });');
+  add(source, 'import test from "node:test"; test("source only", () => {});');
+  const suites = discoverWorkspaceTestSuites(root);
+  assert.deepEqual(suites.operatorRuntime, [runtime]);
+  assert.ok(suites.source.includes(source));
+  assert.ok(!suites.source.includes(runtime));
+  assert.deepEqual([...suites.source, ...suites.operatorRuntime].sort(), discoverWorkspaceNodeTests(root));
+  assert.deepEqual(discoverNodeSourceTests(root, join(root, "apps/control-panel")), [source]);
+  const check = run("--check-discovery");
+  assert.equal(check.status, 0, check.stdout + check.stderr);
+  assert.match(check.stdout, /operator_runtime=1/);
+  const coverage = run();
+  assert.equal(coverage.status, 0, coverage.stdout + coverage.stderr);
+  assert.doesNotMatch(coverage.stdout, /runtime must actually execute/);
+  const measured = readFileSync(report, "utf8");
+  const failedRuntime = run("--operator-runtime");
+  assert.equal(failedRuntime.status, 1, failedRuntime.stdout + failedRuntime.stderr);
+  assert.match(failedRuntime.stdout + failedRuntime.stderr, /runtime failure/);
+  assert.equal(readFileSync(report, "utf8"), measured);
+  add(runtime, 'import test from "node:test"; test("runtime acceptance", () => {});');
+  const passedRuntime = run("--operator-runtime");
+  assert.equal(passedRuntime.status, 0, passedRuntime.stdout + passedRuntime.stderr);
+  assert.match(passedRuntime.stdout, /OPERATOR_RUNTIME_TESTS_PASS files=1/);
+  assert.doesNotMatch(passedRuntime.stdout, /source only/);
+  assert.equal(readFileSync(report, "utf8"), measured);
+}));
 
 test("failed test discovery cannot leave previous coverage available", () => coverageFixture(({ add, report, run }) => {
   add("tools/dev/unsupported.test.ts", "export {};");

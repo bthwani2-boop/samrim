@@ -8,7 +8,7 @@ import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
-const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const panel = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 const cli = path.join(panel, "node_modules", "next", "dist", "bin", "next");
 const token = Buffer.alloc(32, 9).toString("base64url");
 const otherToken = Buffer.alloc(32, 10).toString("base64url");
@@ -35,7 +35,6 @@ async function listen(server) {
 
 test("Operator city policy flows through real Next BFF, Identity grant and DSH versioned owner", {
   timeout: 70000,
-  skip: process.env.BTHWANI_OPERATOR_HTTP_TEST === "1" ? false : "Run after production Next build",
 }, async () => {
   assert.ok(existsSync(path.join(panel, ".next", "BUILD_ID")), "Build Operator host before HTTP test");
   const expiry = new Date(Date.now() + 15 * 60000).toISOString();

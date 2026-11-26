@@ -24,8 +24,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  workspace_validation:
+  route:
+    # Only feedback may be suppressed. Full PR/main verification is mandatory.
     if: ${{ github.event_name != 'schedule' }}
+    name: Select verification mode
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    permissions:
+      pull-requests: read
+      actions: read
+    outputs:
+      mode: ${{ steps.mode.outputs.mode }}
+    steps:
+      - name: Select full verification or nonduplicated development feedback
+        id: mode
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
+            pull_request:*|workflow_dispatch:*|push:refs/heads/main)
+              mode=full
+              ;;
+            push:refs/heads/*)
+              mode=feedback
+              # An open PR alone is insufficient: merge conflicts or API lag
+              # may prevent a real Actions run. Suppress only a matching run.
+              if open="$(gh api --method GET --paginate "repos/$GITHUB_REPOSITORY/pulls" \
+                -f state=open -f base=main -f "head=$GITHUB_REPOSITORY_OWNER:$GITHUB_REF_NAME" \
+                --jq '.[] | select(.state == "open" and .base.ref == "main" and .head.repo.full_name == .base.repo.full_name) | [.head.sha, (.number | tostring)] | join(":")')" &&
+                grep -Eq "^$GITHUB_SHA:[0-9]+$" <<< "$open" &&
+                runs="$(gh api --method GET --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
+                -f event=pull_request -f "head_sha=$GITHUB_SHA" \
+                --jq '.workflow_runs[] | select(.event == "pull_request" and (.status != "completed" or .conclusion == "success" or .conclusion == "failure")) | . as $run | .pull_requests[] | [$run.head_sha, (.number | tostring)] | join(":")')"; then
+                while IFS= read -r entry; do
+                  if [[ "$entry" == "$GITHUB_SHA:"* ]] && grep -Fxq -- "$entry" <<< "$runs"; then
+                    mode=duplicate
+                    echo 'Exact commit and open main PR already have a CI run; do not repeat development feedback.'
+                    break
+                  fi
+                done <<< "$open"
+              fi
+              ;;
+            *) exit 1 ;;
+          esac
+          printf 'mode=%s\n' "$mode" >> "$GITHUB_OUTPUT"
+
+  workspace_validation:
+    needs: route
+    if: ${{ needs.route.outputs.mode == 'full' || needs.route.outputs.mode == 'feedback' }}
     name: Workspace validation (source checks)
     runs-on: ubuntu-24.04
     timeout-minutes: 6
@@ -46,6 +94,20 @@ jobs:
           node tools/dev/verify-workspace.mjs
           node tools/security/verify-secrets.mjs
           git status --short
+      - name: Validate GitHub Actions definitions with checksum-pinned Actionlint
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$(mktemp -d "$RUNNER_TEMP/actionlint.XXXXXX")"
+          trap 'rm -rf -- "$dir"' EXIT
+          curl --fail --silent --show-error --location --retry 2 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$dir/actionlint.tar.gz"
+          printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' \
+            "$dir/actionlint.tar.gz" | sha256sum --check --strict
+          tar -xzf "$dir/actionlint.tar.gz" -C "$dir" actionlint
+          "$dir/actionlint" -version
+          "$dir/actionlint" -color=false
       # All source regression tests run in the coverage suite below.
       - name: Record limits explicitly
         run: |
@@ -69,11 +131,21 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Install exact locked dependencies (no lifecycle scripts)
+      - name: Resolve the locked pnpm package store
+        id: pnpm-store
+        shell: bash
         run: |
+          set -euo pipefail
           corepack enable pnpm
           pnpm --version
-          pnpm install --frozen-lockfile --ignore-scripts
+          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Cache verified package-store inputs only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Audit the installed locked JavaScript dependency graph (high and critical fail)
         run: pnpm audit --audit-level high
       - name: Validate owner OpenAPI 3.1 contracts and reject broken references
@@ -83,20 +155,9 @@ jobs:
           pnpm --dir services/wlt contract
       - name: Run discovered Feature tests and collect measured coverage
         run: pnpm check:coverage
-      - name: Bind JavaScript coverage to the tested source tree
+      - name: Attest JavaScript coverage to the exact committed candidate
         if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          candidate_status="$(git status --porcelain=v1 --untracked-files=all)"
-          if [[ -n "$candidate_status" ]]; then
-            echo 'Coverage producer source differs from its committed candidate' >&2
-            printf '%s\n' "$candidate_status" >&2
-            exit 1
-          fi
-          test -s coverage/lcov.info
-          git rev-parse 'HEAD^{tree}' > coverage/tree.txt
+        run: node tools/dev/ci-coverage-evidence.mjs publish js
       - name: Publish measured JavaScript coverage
         if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -105,6 +166,7 @@ jobs:
           path: |
             coverage/lcov.info
             coverage/tree.txt
+            coverage/reports.sha256
           if-no-files-found: error
           retention-days: 7
           overwrite: true
@@ -133,13 +195,8 @@ jobs:
       - name: Smoke-test production Operator SSR, RTL and headers on loopback
         run: |
           node tools/dev/verify-operator-http.mjs
-      - name: Exercise production Operator session and policy routes
-        env:
-          BTHWANI_OPERATOR_HTTP_TEST: '1'
-        run: |
-          node --test --test-concurrency=1 \
-            apps/control-panel/tests/operator-protected-routes.test.mjs \
-            apps/control-panel/tests/operator-*-http.test.mjs
+      - name: Execute discovered production Operator runtime suite
+        run: node tools/dev/run-coverage.mjs --operator-runtime
       - name: Record missing live platform proof
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
@@ -147,9 +204,9 @@ jobs:
   # Development feedback is not a merge gate. Native Nx owns affected tasks.
 
   development_feedback:
-    if: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
+    if: ${{ needs.route.outputs.mode == 'feedback' }}
     name: Development feedback (Nx)
-    needs: workspace_validation
+    needs: [route, workspace_validation]
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
@@ -168,10 +225,21 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Install exact locked dependencies (no lifecycle scripts)
+      - name: Resolve the locked pnpm package store
+        id: pnpm-store
+        shell: bash
         run: |
+          set -euo pipefail
           corepack enable pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --version
+          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Cache verified package-store inputs only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Use repository-pinned Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
@@ -186,9 +254,11 @@ jobs:
           set -euo pipefail
           if [[ "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] &&
              git merge-base --is-ancestor "$BEFORE_SHA" "$GITHUB_SHA"; then
-            pnpm exec nx affected -t typecheck,test --base="$BEFORE_SHA" --head="$GITHUB_SHA" --skip-nx-cache
+            pnpm exec nx affected -t typecheck --base="$BEFORE_SHA" --head="$GITHUB_SHA"
+            pnpm exec nx affected -t test --base="$BEFORE_SHA" --head="$GITHUB_SHA" --skip-nx-cache
           else
-            pnpm exec nx run-many -t typecheck,test --skip-nx-cache
+            pnpm exec nx run-many -t typecheck
+            pnpm exec nx run-many -t test --skip-nx-cache
           fi
       - name: Record development feedback boundary
         run: echo 'Development feedback only; full source tests, builds, isolated SQL and Sonar belong to PR/main verification or explicit full verification.'
@@ -209,15 +279,27 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Install exact locked dependencies (no lifecycle scripts)
+      - name: Resolve the locked pnpm package store
+        id: pnpm-store
+        shell: bash
         run: |
+          set -euo pipefail
           corepack enable pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm --version
+          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Cache verified package-store inputs only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Audit all JavaScript dependencies (high and critical fail)
         run: pnpm audit --audit-level high
 
   backend_quality:
     if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    needs: workspace_validation
     uses: ./.github/workflows/go-quality.yml
 
   required_ci:
@@ -293,53 +375,33 @@ jobs:
         with:
           name: sonar-postgres
           path: ${{ runner.temp }}/sonar-postgres
-      - name: Admit complete coverage for the exact analyzed source tree
-        id: coverage
-        shell: bash
-        run: |
-          set -euo pipefail
-          export LC_ALL=C
-          js="$RUNNER_TEMP/sonar-js"
-          go="$RUNNER_TEMP/sonar-go"
-          pg="$RUNNER_TEMP/sonar-postgres"
-          for dir in "$js" "$go" "$pg"; do
-            test -s "$dir/tree.txt"
-          done
-          tree="$(cat "$js/tree.txt")"
-          [[ "$tree" =~ ^[a-f0-9]{40}$ ]]
-          test "$(cat "$go/tree.txt")" = "$tree"
-          test "$(cat "$pg/tree.txt")" = "$tree"
-          test -s "$js/lcov.info"
-          for service in identity dsh wlt; do test -s "$go/$service-go.out"; done
-          # The producer owns the complete dynamic profile set. Compare names
-          # and bytes without trusting downloaded filenames as shell input.
-          test -s "$pg/profiles.sha256"
-          shopt -s nullglob
-          profiles=("$pg"/*.out)
-          test "${#profiles[@]}" -gt 0
-          for profile in "${profiles[@]}"; do test -f "$profile" && test ! -L "$profile" && test -s "$profile" || exit 1; done
-          (cd "$pg" && sha256sum -- *.out | cmp - profiles.sha256)
-          if [[ "$tree" == "$(git rev-parse 'HEAD^{tree}')" ]]; then
-            mkdir -p coverage/owner-postgres
-            cp "$js/lcov.info" coverage/lcov.info
-            for service in identity dsh wlt; do cp "$go/$service-go.out" coverage/; done
-            cp "${profiles[@]}" coverage/owner-postgres/
-            echo 'reuse=true' >> "$GITHUB_OUTPUT"
-          else
-            # Main may have advanced since the PR branch. Preserve the tested
-            # merge candidate and separately measure the actual PR source.
-            echo 'reuse=false' >> "$GITHUB_OUTPUT"
-          fi
-      - name: Use repository-pinned Node 24
+      - name: Use repository-pinned Node 24 for evidence admission and analysis
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Install locked dependencies for source analysis
+      - name: Admit complete coverage for the exact analyzed source tree
+        id: coverage
+        env:
+          CI_ANALYSIS_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node tools/dev/ci-coverage-evidence.mjs admit
+      - name: Resolve the locked pnpm package store
+        id: pnpm-store
+        shell: bash
         run: |
+          set -euo pipefail
           corepack enable pnpm
-          pnpm install --frozen-lockfile --ignore-scripts
-      - name: Use repository-pinned Go
+          pnpm --version
+          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Cache verified package-store inputs only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Use repository-pinned Go for fresh coverage only
+        if: ${{ steps.coverage.outputs.reuse == 'false' }}
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version-file: .go-version
