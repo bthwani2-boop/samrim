@@ -288,11 +288,12 @@ jobs:
         with:
           name: sonar-postgres
           path: ${{ runner.temp }}/sonar-postgres
-      - name: Admit coverage only for the exact analyzed source tree
+      - name: Admit complete coverage for the exact analyzed source tree
         id: coverage
         shell: bash
         run: |
           set -euo pipefail
+          export LC_ALL=C
           js="$RUNNER_TEMP/sonar-js"
           go="$RUNNER_TEMP/sonar-go"
           pg="$RUNNER_TEMP/sonar-postgres"
@@ -305,10 +306,14 @@ jobs:
           test "$(cat "$pg/tree.txt")" = "$tree"
           test -s "$js/lcov.info"
           for service in identity dsh wlt; do test -s "$go/$service-go.out"; done
+          # The producer owns the complete dynamic profile set. Compare names
+          # and bytes without trusting downloaded filenames as shell input.
+          test -s "$pg/profiles.sha256"
           shopt -s nullglob
           profiles=("$pg"/*.out)
           test "${#profiles[@]}" -gt 0
-          for profile in "${profiles[@]}"; do test -s "$profile"; done
+          for profile in "${profiles[@]}"; do test -f "$profile" && test ! -L "$profile" && test -s "$profile" || exit 1; done
+          (cd "$pg" && sha256sum -- *.out | cmp - profiles.sha256)
           if [[ "$tree" == "$(git rev-parse 'HEAD^{tree}')" ]]; then
             mkdir -p coverage/owner-postgres
             cp "$js/lcov.info" coverage/lcov.info

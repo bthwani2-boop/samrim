@@ -220,8 +220,14 @@ test("Sonar rejects untrusted source or failed producers before accessing the sc
 const evidence = [
   { job: app, artifact: "sonar-js", paths: ["coverage/lcov.info"], stamp: "coverage/tree.txt" },
   { job: goQuality, artifact: "sonar-go", paths: owners.map(owner => "coverage/" + owner + "-go.out"), stamp: "coverage/tree.txt" },
-  { job: postgres, artifact: "sonar-postgres", paths: ["coverage/owner-postgres/profile.out"], stamp: "coverage/owner-postgres/tree.txt" },
+  { job: postgres, artifact: "sonar-postgres", paths: ["coverage/owner-postgres/identity-session.test-1.out", "coverage/owner-postgres/wlt-wallet.test-2.out"], stamp: "coverage/owner-postgres/tree.txt", manifest: "coverage/owner-postgres/profiles.sha256" },
 ];
+const pgEvidence = evidence.find(entry => entry.manifest);
+function profileManifest(directory) {
+  const result = shell("LC_ALL=C sha256sum -- *.out", {}, directory);
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.replaceAll("\r\n", "\n");
+}
 for (const entry of evidence) {
   test(entry.artifact + " producer binds evidence to real clean Git tree and uploads it without masking errors", () => fixture("ci-coverage-producer-", directory => {
     const bind = runs(entry.job, /git rev-parse 'HEAD\^\{tree\}'/);
@@ -239,6 +245,10 @@ for (const entry of evidence) {
     const valid = shell(command(bind), { GITHUB_SHA: sha }, directory);
     assert.equal(valid.status, 0, valid.stderr);
     assert.equal(readFileSync(path.join(directory, entry.stamp), "utf8").trim(), tree);
+    if (entry.manifest) {
+      assert.ok(upload.with.path.split(/\s+/).includes(entry.manifest));
+      assert.equal(readFileSync(path.join(directory, entry.manifest), "utf8"), profileManifest(path.join(directory, "coverage/owner-postgres")));
+    }
     assert.notEqual(shell(command(bind), { GITHUB_SHA: "0".repeat(40) }, directory).status, 0);
     put(directory, "source.txt", "dirty\n");
     assert.notEqual(shell(command(bind), { GITHUB_SHA: sha }, directory).status, 0);
@@ -254,7 +264,9 @@ test("Sonar reuses only complete matching real Git trees and remeasures legitima
   assert.match(command(fallback), /tests\/infra\/test-owner-postgres-output\.sh/);
   assert.match(command(fallback), /tests\/infra\/verify-owner-postgres-ci\.sh --coverage/);
   order(sonar, admit, fallback, one(sonar, step => action(step, "SonarSource/sonarqube-scan-action"), "scanner"));
-  const profiles = [["sonar-js", "lcov.info"], ...owners.map(owner => ["sonar-go", owner + "-go.out"]), ["sonar-postgres", "profile.out"]];
+  const pgFiles = pgEvidence.paths.map(file => path.basename(file));
+  const profiles = [["sonar-js", "lcov.info"], ...owners.map(owner => ["sonar-go", owner + "-go.out"]), ...pgFiles.map(file => ["sonar-postgres", file])];
+  const firstProfile = "sonar-postgres/" + pgFiles[0];
   const scenarios = [
     { name: "matching", expected: "reuse=true" },
     { name: "different valid tree", alternate: true, expected: "reuse=false" },
@@ -262,9 +274,12 @@ test("Sonar reuses only complete matching real Git trees and remeasures legitima
     { name: "invalid tree", invalid: true },
     { name: "missing stamp", omit: "sonar-go/tree.txt" },
     { name: "missing Go report", omit: "sonar-go/dsh-go.out" },
-    { name: "missing PostgreSQL profile", omit: "sonar-postgres/profile.out" },
+    { name: "missing one PostgreSQL profile", omit: firstProfile },
+    { name: "missing PostgreSQL manifest", omit: "sonar-postgres/profiles.sha256" },
+    { name: "altered nonempty PostgreSQL profile", alter: firstProfile },
+    { name: "unexpected extra PostgreSQL profile", extra: true },
     { name: "empty JS report", empty: "sonar-js/lcov.info" },
-    { name: "empty PostgreSQL profile", empty: "sonar-postgres/profile.out" },
+    { name: "empty PostgreSQL profile", empty: firstProfile },
   ];
   for (const scenario of scenarios) fixture("ci-sonar-admission-", directory => {
     const { tree } = candidate(directory);
@@ -277,12 +292,14 @@ test("Sonar reuses only complete matching real Git trees and remeasures legitima
     for (const { artifact } of evidence) {
       const relative = artifact + "/tree.txt";
       const value = scenario.invalid ? "invalid-tree" : scenario.alternate || (scenario.mixed && artifact === "sonar-postgres") ? different : tree;
-      if (relative !== scenario.omit) put(reports, relative, value + "\n");
+      put(reports, relative, value + "\n");
     }
-    for (const [artifact, file] of profiles) {
-      const relative = artifact + "/" + file;
-      if (relative !== scenario.omit) put(reports, relative, relative === scenario.empty ? "" : "synthetic report\n");
-    }
+    for (const [artifact, file] of profiles) put(reports, artifact + "/" + file, "synthetic report\n");
+    put(reports, "sonar-postgres/profiles.sha256", profileManifest(path.join(reports, "sonar-postgres")));
+    if (scenario.omit) rmSync(path.join(reports, scenario.omit));
+    if (scenario.empty) put(reports, scenario.empty, "");
+    if (scenario.alter) put(reports, scenario.alter, "changed report\n");
+    if (scenario.extra) put(reports, "sonar-postgres/unexpected.out", "extra report\n");
     const output = path.join(directory, "output.txt");
     const result = shell(command(admit), { RUNNER_TEMP: portable(reports), GITHUB_OUTPUT: portable(output) }, directory);
     assert.equal(result.status, scenario.expected ? 0 : 1, scenario.name + ": " + result.stderr);
