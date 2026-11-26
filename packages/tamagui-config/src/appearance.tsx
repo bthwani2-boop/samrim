@@ -5,9 +5,8 @@ import { Appearance, Platform } from "react-native";
 import { TamaguiProvider, Theme } from "tamagui";
 import { tamaguiConfig } from "./index";
 
-// Stage-4 appearance foundation: React Native system preference and the
-// canonical BThwani semantic token source. No native Expo UI picker and no
-// second design runtime. Identity-scoped persistence joins later with Identity.
+// App-owned appearance preference, backed by the canonical semantic theme.
+// Existing persistence keys remain stable for installed apps.
 export type AppearanceStorage = {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
@@ -111,7 +110,7 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
   };
 }
 
-export function useStage4AppearanceController(
+function useAppearanceController(
   key: string,
   nativeGetItem: AppearanceStorage["getItem"],
   nativeSetItem: AppearanceStorage["setItem"],
@@ -161,4 +160,22 @@ export function MobileThemeProvider({ children }: { children: React.ReactNode })
       <Theme name={themeName}>{children}</Theme>
     </TamaguiProvider>
   );
+}
+
+// The renderer owns appearance and theme only; each application supplies its
+// route tree and existing app-scoped storage key.
+export function createMobileAppearanceRoot(
+  key: string,
+  nativeGetItem: AppearanceStorage["getItem"],
+  nativeSetItem: AppearanceStorage["setItem"],
+  renderRoutes: (background: string) => React.ReactNode,
+) {
+  function Routes() {
+    const { theme } = useMobileAppearance();
+    return <MobileThemeProvider>{renderRoutes(theme.background)}</MobileThemeProvider>;
+  }
+  return function RootLayout() {
+    const controller = useAppearanceController(key, nativeGetItem, nativeSetItem);
+    return <AppearanceProvider controller={controller}><Routes /></AppearanceProvider>;
+  };
 }

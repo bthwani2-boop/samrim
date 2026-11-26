@@ -85,7 +85,7 @@ if (biome.linter.enabled !== true || biome.formatter.enabled !== false) {
 for (const required of ['apps/customer','apps/merchant','apps/captain','apps/control-panel',
   'packages/design-system','packages/tamagui-config',
   'tools/mobile/define-bthwani-expo-app.cjs',
-  'tools/mobile/verify-app-foundations.mjs','patches/@rc-component__util@1.14.0.patch']) {
+  'tools/mobile/verify-app-identity.mjs','patches/@rc-component__util@1.14.0.patch']) {
   if (!existsSync(path.join(projectRoot, required))) fail('Stage-4 required source absent: ' + required);
 }
 for (const owner of ['identity','dsh','wlt']) {

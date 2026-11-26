@@ -162,11 +162,11 @@ function coverageFixture(callback) {
     }
     add("packages/design-system/tools/ts-resolver.mjs", "export {};\n");
     add("sonar-project.properties", readFileSync(new URL("../../sonar-project.properties", import.meta.url), "utf8"));
-    add("tools/mobile/verify-app-foundations.mjs", "export const measured = 1;\n");
+    add("tools/mobile/verify-app-identity.mjs", "export const measured = 1;\n");
     add("tools/mobile/define-bthwani-expo-app.cjs", "module.exports = 1;\n");
     add("packages/design-system/src/semantics/themes.ts", "export const measured: number = 1;\n");
     add("tools/dev/measure.test.mjs", [
-      'import "../mobile/verify-app-foundations.mjs";',
+      'import "../mobile/verify-app-identity.mjs";',
       'import "../mobile/define-bthwani-expo-app.cjs";',
       'import "../../packages/design-system/src/semantics/themes.ts";',
       'import test from "node:test"; test("measured sources", () => {});',
@@ -222,7 +222,7 @@ test("discovery-only leaves prior evidence untouched and real success publishes 
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /REAL_SOURCE_LCOV_PASS/);
   const lcov = readFileSync(report, "utf8");
-  assert.match(lcov, /SF:tools\/mobile\/verify-app-foundations\.mjs/);
+  assert.match(lcov, /SF:tools\/mobile\/verify-app-identity\.mjs/);
   assert.doesNotMatch(lcov, /STALE_REPORT/);
   assert.deepEqual(readdirSync(join(root, "coverage")), ["lcov.info"]);
 }));
@@ -241,7 +241,7 @@ test("external measured modules never enter the owner LCOV report", () => covera
     const result = run();
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const lcov = readFileSync(report, "utf8");
-    assert.match(lcov, /SF:tools\/mobile\/verify-app-foundations\.mjs/);
+    assert.match(lcov, /SF:tools\/mobile\/verify-app-identity\.mjs/);
     assert.doesNotMatch(lcov, /SF:[^\r\n]*external-measured\.mjs/);
   } finally {
     rmSync(external, { recursive: true, force: true });

@@ -8,7 +8,7 @@
     "dev": "expo start --dev-client --localhost",
     "web": "expo start --web --localhost",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "check:config": "node ../../tools/mobile/verify-app-foundations.mjs --app merchant"
+    "check:config": "node ../../tools/mobile/verify-app-identity.mjs --app merchant"
   },
   "devDependencies": {
     "@react-native/metro-config": "0.88.1",

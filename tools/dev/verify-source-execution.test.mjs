@@ -9,7 +9,8 @@ test("workspace and pinned-source requirements execute", async () => {
 });
 
 test("the three real Expo identity and package manifests validate", async () => {
-  await import("../mobile/verify-app-foundations.mjs");
+  const { verifyApplicationIdentities } = await import("../mobile/verify-app-identity.mjs");
+  assert.equal(verifyApplicationIdentities(), 3);
   assert.equal(process.exitCode ?? 0, 0);
 });
 

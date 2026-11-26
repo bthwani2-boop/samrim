@@ -344,3 +344,16 @@ test("Web development loads routes synchronously while production and native def
   const captain = defineBthwaniExpoApp("app-captain");
   assert.ok(captain.plugins.includes("expo-router"));
 });
+
+test("registered native IDs are protected independently of historical dependency manifests", async () => {
+  const { assertRegisteredIdentity } = await import("./verify-app-identity.mjs");
+  const manifest = JSON.parse(fs.readFileSync(new URL("../../apps/customer/mobile.config.json", import.meta.url), "utf8"));
+  assert.doesNotThrow(() => assertRegisteredIdentity("customer", manifest));
+  for (const [key, invalid] of Object.entries({
+    androidPackage: "com.other.app", iosBundleIdentifier: "com.other.app",
+    owner: "other", projectId: "other", scheme: "other", slug: "other",
+  })) {
+    assert.throws(() => assertRegisteredIdentity("customer", { ...manifest, [key]: invalid }), /registered identity changed/);
+  }
+  assert.throws(() => assertRegisteredIdentity("unknown", manifest), /Unknown mobile surface/);
+});

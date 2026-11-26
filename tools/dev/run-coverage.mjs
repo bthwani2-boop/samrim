@@ -107,7 +107,7 @@ try {
     records.push(lines.map(line => line.startsWith("SF:") ? "SF:" + source : line).join("\n"));
   }
   for (const source of [
-    "tools/mobile/verify-app-foundations.mjs",
+    "tools/mobile/verify-app-identity.mjs",
     "tools/mobile/define-bthwani-expo-app.cjs",
     "packages/design-system/src/semantics/themes.ts",
   ]) assert.ok(measured.has(source), "Real test coverage missing required source: " + source);
