@@ -290,9 +290,11 @@ finish_stage
 
 start_stage bthwani-ci-wlt-pg bthwani_wlt_owner bthwani_wlt_test
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_wlt_test \
-  -c "CREATE ROLE bthwani_wlt_reader LOGIN PASSWORD '$ci_password';" \
+  -c "CREATE ROLE bthwani_wlt_reader LOGIN NOINHERIT PASSWORD '$ci_password';" \
   -c "CREATE ROLE bthwani_wlt_sandbox LOGIN PASSWORD '$ci_password';" \
   -c "CREATE ROLE bthwani_identity_fixture LOGIN PASSWORD '$ci_password';" \
+  -c "REVOKE ALL ON DATABASE bthwani_wlt_test FROM PUBLIC;" \
+  -c "GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_identity_fixture;" \
   -c "GRANT CREATE ON DATABASE bthwani_wlt_test TO bthwani_identity_fixture;"
 docker exec "$current" mkdir -p /agent02/services/wlt/database
 docker cp services/wlt/database/schema "$current:/agent02/services/wlt/database/schema"

@@ -3,7 +3,7 @@
 `cmd/wlt` serves the Customer's posted balance and successive bounded pages of
 posted funding transactions (up to ten entries per page) in isolated development. No funding write endpoint is exposed.
 Use the pinned Go toolchain and a fresh `bthwani_wlt_test` PostgreSQL database.
-The runtime requires all of these settings.
+Runtime startup verifies the complete required owner baseline and the effective reader privileges across all WLT relations, functions and sequences, including previously unknown objects. The reader must not inherit roles, create schemas or temporary objects, or receive private-table/command access. Fresh provisioning also separately proves empty-state and non-login owner roles; startup does not require an empty retained ledger. The runtime requires all of these settings.
 
 - `BTHWANI_ISOLATED_TEST_MODE=true`
 - `WLT_DEV_LISTEN_ADDR` as an explicit `127.0.0.1` address with a port

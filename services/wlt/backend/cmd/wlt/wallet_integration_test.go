@@ -154,6 +154,61 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A named-object allowlist must not silently admit a new view, command or
+	// sequence. Use real PostgreSQL grants in this disposable test only.
+	t.Run("complete reader catalog admission", func(t *testing.T) {
+		for _, object := range []struct {
+			name, create, grant, revoke, drop string
+		}{
+			{"unexpected projection", "CREATE VIEW wlt.admission_test_projection AS SELECT 1 AS value",
+				"GRANT SELECT ON wlt.admission_test_projection TO bthwani_wlt_reader",
+				"REVOKE SELECT ON wlt.admission_test_projection FROM bthwani_wlt_reader",
+				"DROP VIEW wlt.admission_test_projection"},
+			{"unexpected column projection", "CREATE TABLE wlt.admission_test_private(value integer)",
+				"GRANT SELECT (value) ON wlt.admission_test_private TO bthwani_wlt_reader",
+				"REVOKE SELECT (value) ON wlt.admission_test_private FROM bthwani_wlt_reader",
+				"DROP TABLE wlt.admission_test_private"},
+			{"unexpected command", "CREATE FUNCTION wlt.admission_test_command() RETURNS integer LANGUAGE SQL AS 'SELECT 1'; REVOKE ALL ON FUNCTION wlt.admission_test_command() FROM PUBLIC",
+				"GRANT EXECUTE ON FUNCTION wlt.admission_test_command() TO bthwani_wlt_reader",
+				"REVOKE EXECUTE ON FUNCTION wlt.admission_test_command() FROM bthwani_wlt_reader",
+				"DROP FUNCTION wlt.admission_test_command()"},
+			{"unexpected sequence", "CREATE SEQUENCE wlt.admission_test_sequence",
+				"GRANT USAGE ON SEQUENCE wlt.admission_test_sequence TO bthwani_wlt_reader",
+				"REVOKE USAGE ON SEQUENCE wlt.admission_test_sequence FROM bthwani_wlt_reader",
+				"DROP SEQUENCE wlt.admission_test_sequence"},
+		} {
+			t.Run(object.name, func(t *testing.T) {
+				executeFixture(t, ctx, owner, object.create)
+				defer executeFixture(t, ctx, owner, object.drop)
+				if err := checkDatabase(ctx, reader); err != nil {
+					t.Fatal("ungranted owner object incorrectly refused", err)
+				}
+				executeFixture(t, ctx, owner, object.grant)
+				if err := checkDatabase(ctx, reader); err == nil {
+					t.Error("unexpected catalog object admitted")
+				}
+				executeFixture(t, ctx, owner, object.revoke)
+				if err := checkDatabase(ctx, reader); err != nil {
+					t.Fatal("revoked grant did not restore admission", err)
+				}
+			})
+		}
+		executeFixture(t, ctx, owner, "GRANT TEMP ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader")
+		if err := checkDatabase(ctx, reader); err == nil {
+			t.Error("temporary-object creation admitted")
+		}
+		executeFixture(t, ctx, owner, "REVOKE TEMP ON DATABASE bthwani_wlt_test FROM bthwani_wlt_reader")
+		executeFixture(t, ctx, owner, "ALTER VIEW wlt.commercial_agreement_review_states RENAME TO admission_test_missing_state")
+		if err := checkDatabase(ctx, reader); err == nil {
+			t.Error("missing required owner projection admitted")
+		}
+		executeFixture(t, ctx, owner, "ALTER VIEW wlt.admission_test_missing_state RENAME TO commercial_agreement_review_states")
+		if err := checkDatabase(ctx, reader); err != nil {
+			t.Fatal("restored owner baseline refused", err)
+		}
+		t.Log("WLT_READER_CATALOG_ADMISSION_PASS")
+	})
+
 	const identitySchema = "identity_test_wlt"
 	for _, name := range []string{"00_identity.sql", "10_verification.sql", "20_sessions.sql", "30_operator_permissions.sql", "40_operator_passkeys.sql"} {
 		source, err := os.ReadFile(filepath.Join(fixtureRoot, "services", "identity", "database", "schema", name))
