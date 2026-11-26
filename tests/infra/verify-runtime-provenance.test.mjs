@@ -304,3 +304,13 @@ test("effective policy changes during observation invalidate the candidate", () 
   assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
   assert.throws(() => run({ containers: { dsh: { logging: null } } }), /invalid effective container policy metadata/);
 });
+
+test("equivalent native log-option ordering is not a runtime state change", () => {
+  const { result } = run({ finalContainers: { wlt: { logging: { Type: "local", Config: { "max-size": "10m", "max-file": "3" } } } } });
+  assert.equal(result.passed, true);
+});
+test("native inventory is an exact unordered set, not a sorted sequence", () => {
+  assert.equal(run({ inventory: [...allServices].reverse() }).result.passed, true);
+  assert.throws(() => run({ inventory: [...allServices.slice(0, -1), "dsh"] }), /unexpected project container inventory/);
+  assert.throws(() => run({ inventory: [...allServices, "dsh"] }), /unexpected project container inventory/);
+});
