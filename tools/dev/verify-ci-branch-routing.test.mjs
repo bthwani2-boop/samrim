@@ -15,8 +15,10 @@ const root = fileURLToPath(new URL("../../", import.meta.url));
 const workflow = name => YAML.parse(readFileSync(path.join(root, ".github", "workflows", name), "utf8"));
 const ci = workflow("ci.yml");
 const go = workflow("go-quality.yml");
-const { workspace_validation: workspace, application_quality: app, development_feedback: feedback,
-  dependency_security: audit, backend_quality: backend, windows_platform: windows, required_ci: required, sonar } = ci.jobs;
+const scheduled = workflow("dependency-audit.yml");
+const { workspace_validation: workspace, application_quality: app,
+  backend_quality: backend, windows_platform: windows, required_ci: required, sonar } = ci.jobs;
+const audit = scheduled.jobs.dependency_security;
 const goQuality = go.jobs["go-quality"];
 const postgres = go.jobs["owner-postgres-integration"];
 const owners = ["identity", "dsh", "wlt"];
@@ -63,7 +65,7 @@ function put(directory, relative, text = "synthetic coverage fixture\n") {
   writeFileSync(file, text, "utf8");
   return file;
 }
-const portable = file => file.replaceAll("\\", "/");
+
 function git(cwd, ...args) {
   const result = invoke("git", ["-c", "commit.gpgsign=false", "-c", "user.name=CI fixture",
     "-c", "user.email=ci@example.invalid", "-c", "core.hooksPath=" + path.join(cwd, "no-hooks"), ...args], cwd);
@@ -80,80 +82,46 @@ function candidate(directory) {
   git(directory, "commit", "--quiet", "-m", "synthetic CI candidate");
   return { sha: git(directory, "rev-parse", "HEAD"), tree: git(directory, "rev-parse", "HEAD^{tree}") };
 }
-const full = "github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')";
-const publish = "github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')";
-
-test("an exact open main PR owns verification before its workflow run exists", () => fixture("ci-routing-", directory => {
-  const route = ci.jobs.route;
-  const step = runs(route, /gh api/);
-  mandatory(route, step);
-  assert.deepEqual(route.permissions, { "pull-requests": "read" });
-  assert.doesNotMatch(command(step), /actions\/workflows|workflow_runs/);
-  const output = portable(path.join(directory, "output.txt"));
-  const sha = "a".repeat(40);
-  const stub = 'gh() { [[ "$*" == *"/pulls"* && "$*" != *"/actions/"* ]] || return 98; [[ "$API_OK" == yes ]] || return 1; printf "%s\\n" "$API_HEADS"; }\n';
-  const scenarios = [
-    { event: "pull_request", ref: "refs/pull/195/merge", mode: "full" },
-    { event: "workflow_dispatch", ref: "refs/heads/dev", mode: "full" },
-    { event: "push", ref: "refs/heads/main", mode: "full" },
-    { event: "push", ref: "refs/heads/dev", heads: sha, mode: "pr_owned" },
-    { event: "push", ref: "refs/heads/dev", heads: "b".repeat(40), mode: "feedback" },
-    { event: "push", ref: "refs/heads/dev", heads: sha + "extra", mode: "feedback" },
-    { event: "push", ref: "refs/heads/dev", heads: "b".repeat(40) + "\n" + sha, mode: "pr_owned" },
-    { event: "push", ref: "refs/heads/dev", heads: "", mode: "feedback" },
-    { event: "push", ref: "refs/heads/dev", heads: sha, api: "no", mode: "feedback" },
-  ];
-  for (const scenario of scenarios) {
-    rmSync(output, { force: true });
-    const result = shell(stub + command(step), {
-      GITHUB_OUTPUT: output, GITHUB_EVENT_NAME: scenario.event, GITHUB_REF: scenario.ref,
-      GITHUB_REF_NAME: "dev", GITHUB_REPOSITORY: "owner/repo", GITHUB_REPOSITORY_OWNER: "owner",
-      GITHUB_SHA: sha, API_OK: scenario.api ?? "yes", API_HEADS: scenario.heads ?? "",
-    }, directory);
-    assert.equal(result.status, 0, result.stderr);
-    assert.equal(readFileSync(output, "utf8").trim(), "mode=" + scenario.mode);
-    assert.equal(result.stdout.trim(), "VERIFICATION_OWNER=" + scenario.mode);
-  }
-}));
-
-test("canonical event topology retains protected checks and independent periodic audit", () => {
-  assert.deepEqual(ci.on.push.branches, ["**", "!archive/**"]);
+test("native events admit only PR updates and integrated main pushes; periodic audit owns its own event", () => {
+  assert.deepEqual(Object.keys(ci.on).sort(), ["pull_request", "push"]);
+  assert.deepEqual(ci.on.push, { branches: ["main"] });
   assert.deepEqual(ci.on.pull_request.branches, ["main"]);
-  assert.equal(ci.on.push.paths, undefined);
+  assert.deepEqual(ci.on.pull_request.types, ["opened", "reopened", "synchronize", "ready_for_review", "converted_to_draft"]);
   assert.equal(ci.on.pull_request.paths, undefined);
-  assert.ok(Object.hasOwn(ci.on, "workflow_dispatch"));
-  assert.deepEqual(ci.on.schedule, [{ cron: "17 3 * * 1" }]);
+  assert.deepEqual(Object.keys(scheduled.on), ["schedule"]);
+  assert.deepEqual(scheduled.on.schedule, [{ cron: "17 3 * * 1" }]);
+  assert.deepEqual(Object.keys(scheduled.jobs), ["dependency_security"]);
   assert.deepEqual(Object.keys(go.on), ["workflow_call"]);
+  assert.deepEqual(Object.keys(ci.jobs).sort(), [
+    "application_quality", "backend_quality", "required_ci", "sonar", "windows_platform", "workspace_validation",
+  ]);
   for (const obsolete of ["dependency-nx-safety.yml", "sonar-quality.yml"]) {
     assert.ok(!existsSync(path.join(root, ".github/workflows", obsolete)));
   }
-  sameExpression(app.if, full);
-  sameExpression(backend.if, full);
-  sameExpression(windows.if, full);
+  for (const job of [workspace, app, backend, windows, audit]) assert.equal(job.if, undefined);
+  assert.equal(workspace.needs, undefined);
+  assert.equal(app.needs, "workspace_validation");
   assert.equal(windows.needs, "workspace_validation");
   assert.equal(windows["runs-on"], "windows-2025");
-  sameExpression(audit.if, "github.event_name == 'schedule'");
-  sameExpression(ci.jobs.route.if, "github.event_name != 'schedule'");
-  assert.equal(workspace.needs, "route");
-  sameExpression(workspace.if, "needs.route.outputs.mode == 'full' || needs.route.outputs.mode == 'feedback'");
-  sameExpression(feedback.if, "needs.route.outputs.mode == 'feedback'");
-  assert.deepEqual(feedback.needs, ["route", "workspace_validation"]);
   assert.equal(backend.needs, "workspace_validation");
-  sameExpression(required.if, "!cancelled() && (" + full + ")");
-  sameExpression(sonar.if, "!cancelled() && (" + publish + ")");
-  sameExpression(required.name, "github.event_name == 'pull_request' && 'fast-guard' || 'full-ci'");
-  sameExpression(sonar.name, "github.event_name == 'pull_request' && 'SonarQube Cloud Quality Gate' || 'SonarQube main analysis'");
+  sameExpression(required.if, "!cancelled()");
+  sameExpression(sonar.if, "!cancelled()");
+  assert.equal(required.name, "fast-guard");
+  assert.equal(sonar.name, "SonarQube Cloud Quality Gate");
   assert.equal(backend.uses, "./.github/workflows/go-quality.yml");
   assert.deepEqual(new Set(required.needs), new Set(["workspace_validation", "application_quality", "backend_quality", "windows_platform"]));
   assert.deepEqual(new Set(sonar.needs), new Set(["application_quality", "backend_quality"]));
   assert.equal(ci.concurrency["cancel-in-progress"], true);
-  assert.match(ci.concurrency.group, /github\.ref/);
-  assert.match(ci.concurrency.group, /github\.event_name/);
-  assert.match(ci.concurrency.group, /github\.sha/);
+  assert.equal(ci.concurrency.group, "ci-" + expr("github.ref"));
+  for (const parsed of [ci, go, scheduled]) {
+    for (const job of Object.values(parsed.jobs)) {
+      assert.doesNotMatch(commands(job), /gh api|nx affected|nx run-many|VERIFICATION_OWNER/);
+    }
+  }
 });
 
 test("required jobs retain the read-only pinned dependency, source, contract, build and owner checks", () => {
-  const jobs = [...Object.values(ci.jobs), ...Object.values(go.jobs)];
+  const jobs = [...Object.values(ci.jobs), ...Object.values(go.jobs), audit];
   for (const job of jobs) {
     assert.notEqual(job["continue-on-error"], true);
     for (const step of steps(job)) {
@@ -164,7 +132,8 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   }
   assert.equal(ci.permissions.contents, "read");
   assert.equal(go.permissions.contents, "read");
-  for (const job of [app, audit, feedback, sonar, windows]) {
+  assert.equal(scheduled.permissions.contents, "read");
+  for (const job of [app, audit, sonar, windows]) {
     const store = one(job, step => step.id === "pnpm-store", "pinned package store");
     const cache = one(job, step => action(step, "actions/cache"), "package-store cache");
     const install = runs(job, /pnpm install --frozen-lockfile --ignore-scripts/);
@@ -258,25 +227,6 @@ test("Windows acceptance runs the existing admitted platform suites and cannot b
   assert.ok(required.needs.includes("windows_platform"));
 });
 
-test("native Nx selects affected tasks or a full fallback without running merge-only suites", () => {
-  const step = runs(feedback, /pnpm exec nx affected/);
-  mandatory(feedback, step);
-  const renamed = { ...feedback, steps: steps(feedback).map(item => ({ ...item, name: "arbitrary display label" })) };
-  assert.equal(command(runs(renamed, /pnpm exec nx affected/)), command(step));
-  const stub = 'git() { test "$ANCESTOR" = yes; }\npnpm() { printf "%s\\n" "$*"; }\n';
-  for (const [before, ancestor, expected] of [["a".repeat(40), "yes", "affected"], ["000", "yes", "run-many"], ["a".repeat(40), "no", "run-many"]]) {
-    const result = shell(stub + command(step), { BEFORE_SHA: before, GITHUB_SHA: "b".repeat(40), ANCESTOR: ancestor });
-    assert.equal(result.status, 0, result.stderr);
-    const lines = result.stdout.trim().split(/\r?\n/);
-    assert.equal(lines.length, 2);
-    assert.match(lines[0], new RegExp("nx " + expected + " -t typecheck"));
-    assert.doesNotMatch(lines[0], /--skip-nx-cache/);
-    assert.match(lines[1], new RegExp("nx " + expected + " -t test"));
-    assert.match(lines[1], /--skip-nx-cache/);
-  }
-  assert.doesNotMatch(commands(feedback), /check:coverage|expo export|verify-owner-postgres-ci/);
-});
-
 test("merge gate executes fail closed for every predecessor, incorrect event and archive ref", () => {
   const gate = one(required, step => Object.values(step.env ?? {}).some(value => value === expr("needs.application_quality.result")), "required predecessor gate");
   mandatory(required, gate);
@@ -291,7 +241,7 @@ test("merge gate executes fail closed for every predecessor, incorrect event and
   check(0);
   for (const key of predecessorVariables) for (const value of ["failure", "cancelled", "skipped", ""]) check(1, { [key]: value });
   check(0, { CI_EVENT: "push", CI_REF: "refs/heads/main" });
-  check(0, { CI_EVENT: "workflow_dispatch", CI_REF: "refs/heads/feature" });
+  check(1, { CI_EVENT: "workflow_dispatch", CI_REF: "refs/heads/feature" });
   check(1, { CI_EVENT: "push", CI_REF: "refs/heads/feature" });
   check(1, { CI_EVENT: "schedule" });
   check(1, { HEAD_REF: "archive/old" });
@@ -333,8 +283,8 @@ for (const entry of evidence) {
     const bind = runs(entry.job, new RegExp("^node tools/dev/ci-coverage-evidence\\.mjs publish " + entry.kind + "\\s*$"));
     const upload = one(entry.job, step => action(step, "actions/upload-artifact") && step.with.name === entry.artifact, entry.artifact);
     const download = one(sonar, step => action(step, "actions/download-artifact") && step.with.name === entry.artifact, entry.artifact);
-    sameExpression(bind.if, publish);
-    sameExpression(upload.if, publish);
+    mandatory(entry.job, bind);
+    mandatory(entry.job, upload);
     order(entry.job, bind, upload);
     assert.equal(upload.with["if-no-files-found"], "error");
     for (const metadata of ["tree.txt", "reports.sha256"]) {

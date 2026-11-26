@@ -1,70 +1,22 @@
 name: CI
 
 on:
-  workflow_dispatch:
-  schedule:
-    - cron: '17 3 * * 1'
-  # Every current and future development branch is eligible.
-  # Archived donor refs stay read-only, outside development CI.
   push:
-    branches:
-      - '**'
-      - '!archive/**'
-  # Main is the protected integration target; branch names are never pinned.
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && format('manual-{0}', github.sha) || github.event_name }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  route:
-    # An open same-repository PR to main owns full verification of its head.
-    # Do not race the creation of its workflow run. A failed API lookup retains
-    # development feedback; it never suppresses the independent PR gate.
-    if: ${{ github.event_name != 'schedule' }}
-    name: Select verification owner
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    permissions:
-      pull-requests: read
-    outputs:
-      mode: ${{ steps.mode.outputs.mode }}
-    steps:
-      - name: Route to full verification, PR ownership or development feedback
-        id: mode
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          case "$GITHUB_EVENT_NAME:$GITHUB_REF" in
-            pull_request:*|workflow_dispatch:*|push:refs/heads/main)
-              mode=full
-              ;;
-            push:refs/heads/*)
-              mode=feedback
-              if heads="$(gh api --method GET --paginate "repos/$GITHUB_REPOSITORY/pulls" \
-                -f state=open -f base=main -f "head=$GITHUB_REPOSITORY_OWNER:$GITHUB_REF_NAME" \
-                --jq '.[] | select(.state == "open" and .base.ref == "main" and .head.repo.full_name == .base.repo.full_name) | .head.sha')" &&
-                grep -Fxq -- "$GITHUB_SHA" <<< "$heads"; then
-                mode=pr_owned
-              fi
-              ;;
-            *) exit 1 ;;
-          esac
-          printf 'mode=%s\n' "$mode" >> "$GITHUB_OUTPUT"
-          printf 'VERIFICATION_OWNER=%s\n' "$mode"
-
   workspace_validation:
-    needs: route
-    if: ${{ needs.route.outputs.mode == 'full' || needs.route.outputs.mode == 'feedback' }}
+
     name: Workspace validation (source checks)
     runs-on: ubuntu-24.04
     timeout-minutes: 6
@@ -106,7 +58,6 @@ jobs:
           echo 'NOT_RUN: SQL, source services, runtime, security, finance, full Product acceptance'
 
   application_quality:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     name: Application quality, contracts, tests and builds
     needs: workspace_validation
     runs-on: ubuntu-24.04
@@ -144,10 +95,8 @@ jobs:
       - name: Run discovered Feature tests and collect measured coverage
         run: pnpm check:coverage
       - name: Attest JavaScript coverage to the exact committed candidate
-        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: node tools/dev/ci-coverage-evidence.mjs publish js
       - name: Publish measured JavaScript coverage
-        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sonar-js
@@ -189,104 +138,7 @@ jobs:
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
 
-  # Development feedback is not a merge gate. Native Nx owns affected tasks.
-
-  development_feedback:
-    if: ${{ needs.route.outputs.mode == 'feedback' }}
-    name: Development feedback (Nx)
-    needs: [route, workspace_validation]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    env:
-      NX_DAEMON: 'false'
-      NX_NO_CLOUD: 'true'
-      GOTOOLCHAIN: local
-      GOWORK: 'off'
-    steps:
-      - name: Checkout exact candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Use repository-pinned Node 24
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Resolve the locked pnpm package store
-        id: pnpm-store
-        shell: bash
-        run: |
-          set -euo pipefail
-          corepack enable pnpm
-          pnpm --version
-          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - name: Cache verified package-store inputs only
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
-      - name: Install exact locked dependencies (no lifecycle scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Use repository-pinned Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
-        with:
-          go-version-file: .go-version
-          check-latest: false
-          cache: false
-      - name: Run affected native Nx targets (full fallback for unknown comparison)
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] &&
-             git merge-base --is-ancestor "$BEFORE_SHA" "$GITHUB_SHA"; then
-            pnpm exec nx affected -t typecheck --base="$BEFORE_SHA" --head="$GITHUB_SHA"
-            pnpm exec nx affected -t test --base="$BEFORE_SHA" --head="$GITHUB_SHA" --skip-nx-cache
-          else
-            pnpm exec nx run-many -t typecheck
-            pnpm exec nx run-many -t test --skip-nx-cache
-          fi
-      - name: Record development feedback boundary
-        run: echo 'Development feedback only; full source tests, builds, isolated SQL and Sonar belong to PR/main verification or explicit full verification.'
-
-  dependency_security:
-    if: ${{ github.event_name == 'schedule' }}
-    name: Scheduled dependency audit (high+)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 12
-    steps:
-      - name: Checkout exact candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Use repository-pinned Node 24
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
-        with:
-          node-version-file: .node-version
-          package-manager-cache: false
-      - name: Resolve the locked pnpm package store
-        id: pnpm-store
-        shell: bash
-        run: |
-          set -euo pipefail
-          corepack enable pnpm
-          pnpm --version
-          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - name: Cache verified package-store inputs only
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
-      - name: Install exact locked dependencies (no lifecycle scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Audit all JavaScript dependencies (high and critical fail)
-        run: pnpm audit --audit-level high
-
   windows_platform:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     name: Windows platform behavior and PowerShell acceptance
     needs: workspace_validation
     runs-on: windows-2025
@@ -326,15 +178,13 @@ jobs:
         run: node tools/dev/run-coverage.mjs --windows-platform
 
   backend_quality:
-    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     needs: workspace_validation
     uses: ./.github/workflows/go-quality.yml
 
   required_ci:
-    # Keep the protected PR context distinct from feedback and manual runs.
-    name: ${{ github.event_name == 'pull_request' && 'fast-guard' || 'full-ci' }}
+    name: fast-guard
     needs: [workspace_validation, application_quality, backend_quality, windows_platform]
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -354,7 +204,7 @@ jobs:
             archive/*:*|*:refs/heads/archive/*) exit 1 ;;
           esac
           case "$CI_EVENT" in
-            pull_request|workflow_dispatch) ;;
+            pull_request) ;;
             push) test "$CI_REF" = refs/heads/main ;;
             *) exit 1 ;;
           esac
@@ -366,9 +216,9 @@ jobs:
 
   sonar:
     # Retain the exact required GitHub Actions check name.
-    name: ${{ github.event_name == 'pull_request' && 'SonarQube Cloud Quality Gate' || 'SonarQube main analysis' }}
+    name: SonarQube Cloud Quality Gate
     needs: [application_quality, backend_quality]
-    if: ${{ !cancelled() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
