@@ -114,7 +114,7 @@ jobs:
           set -euo pipefail
           scanner_dir="$(mktemp -d "$RUNNER_TEMP/govulncheck.XXXXXX")"
           trap 'rm -rf -- "$scanner_dir"' EXIT
-          GOBIN="$scanner_dir" GOSUMDB=sum.golang.org go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          GOBIN="$scanner_dir" GOSUMDB=sum.golang.org go install golang.org/x/vuln/cmd/govulncheck@709015412431dd2b5b28a53c06c70bc02d49074c
           scanner="$scanner_dir/govulncheck"
           go version -m "$scanner"
           for service in identity dsh wlt; do

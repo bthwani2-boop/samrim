@@ -166,7 +166,7 @@ test("Go quality runs a pinned fail-closed vulnerability scan for every deployed
   const step = content.slice(start, end);
   assert.match(step, /CGO_ENABLED: '0'/);
   assert.match(step, /set -euo pipefail/);
-  assert.match(step, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@v1\.8\.0/);
+  assert.match(step, /GOBIN="\$scanner_dir" GOSUMDB=sum\.golang\.org go install golang\.org\/x\/vuln\/cmd\/govulncheck@709015412431dd2b5b28a53c06c70bc02d49074c(?:\r?\n|$)/);
   assert.match(step, /for service in identity dsh wlt; do/);
   assert.match(step, /cd "services\/\$service\/backend"/);
   assert.match(step, /"\$scanner" \.\/\.\.\./);
