@@ -21,6 +21,7 @@ const admitted = [
 
 test("all Customer URLs remain under the single Expo Router app root", () => {
   for (const route of admitted) assert.ok(existsSync(resolve(app, route)), route);
+  assert.equal(existsSync(resolve(app, "health.tsx")), false, "retired synthetic health route");
   assert.equal(existsSync(resolve(app, "(app)")), false);
   assert.equal(existsSync(resolve(customer, "src/app")), false);
 });

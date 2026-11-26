@@ -96,7 +96,7 @@ async function verifyHost({ name, routes, protectedRoutes = [] }) {
 
     const checks = [
       ...routes,
-      ["/health", 200, "الملاحة التجريبية تعمل"],
+      ["/health", 404, null],
       ["/not-a-real-application-route", 404, null],
     ];
 

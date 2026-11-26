@@ -118,10 +118,15 @@ for (const app of ["customer", "merchant", "captain"]) {
     app + " must not depend directly on the semantic owner");
   // Expo route groups do not alter URLs. Customer / is now a tab's index route.
   const entry = app === "customer" ? "(tabs)/index.tsx" : "index.tsx";
-  for (const f of ["_layout.tsx", entry, "health.tsx"]) {
-    const s = read("apps/" + app + "/app/" + f);
-    requireTrue(!s.includes("@bthwani/design-system/native/appearance"),
-      app + " references retired native appearance owner: " + f);
+  const routeRoot = path.join(root, "apps", app, "app");
+  for (const f of ["_layout.tsx", entry]) {
+    requireTrue(exists("apps/" + app + "/app/" + f), app + " missing canonical route: " + f);
+  }
+  for (const route of fs.readdirSync(routeRoot, { recursive: true, withFileTypes: true })) {
+    if (!route.isFile() || !/\.[jt]sx?$/.test(route.name)) continue;
+    const f = path.join(route.parentPath, route.name);
+    requireTrue(!fs.readFileSync(f, "utf8").includes("@bthwani/design-system/native/appearance"),
+      app + " references retired native appearance owner: " + path.relative(routeRoot, f));
   }
 }
 if (violations.length) {
