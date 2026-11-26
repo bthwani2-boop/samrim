@@ -60,7 +60,7 @@ export function evaluateIndex(stored, current, graphHash) {
   if (stored.repository !== current.repository) return blocked("indexed repository differs");
   if (stored.branch !== current.branch) return blocked("indexed branch differs");
   const gaps = [];
-  if (current.unsafeUntracked) gaps.push("untracked paths require safe admission");
+  if (current.unsafeTracked || current.unsafeUntracked) gaps.push("source paths require safe admission");
   if (stored.graphSha256 !== graphHash) gaps.push("graph changed since last verified local stamp; revision is unverified");
   if (stored.head !== current.head) gaps.push("indexed HEAD differs from current HEAD");
   if (stored.worktree !== current.worktree) gaps.push("local tracked, staged or untracked changes are not proven indexed");
@@ -71,53 +71,75 @@ export function evaluateIndex(stored, current, graphHash) {
   };
 }
 
-// Admit ordinary repository source only, never credentials, binary dumps,
-// external links or arbitrary untracked data. Hash file bytes, not just names.
-export function inspectUntracked(checkout, names) {
-  const hash = createHash("sha256");
-  const unsafe = [];
-  for (const name of [...new Set(names)].sort((a, b) => a < b ? -1 : a > b ? 1 : 0)) {
-    hash.update(name).update("\0");
-    const parts = name.split("/");
-    const supported = /^(?:\.[cm]?[jt]sx?|\.go|\.sql|\.mdx?|\.ya?ml|\.json|\.css|\.ps1|\.sh|\.py|\.toml)$/i.test(extname(name));
-    const sourceRoot = parts.length === 1 || /^(?:apps|services|packages|tools|infra|docs|governance|specs|tests|\.github|\.specify|\.agents)$/.test(parts[0]);
+// A graph stamp binds the actual regular-file bytes, not Git stat-cache
+// assertions. Tracked deletions are part of the fingerprint. Unknown new files
+// are not admitted, and neither tracked nor untracked credentials/links enter
+// the proof. This inventory is not a substitute for native extraction coverage.
+const graphSourceExtension = /^(?:\.[cm]?[jt]sx?|\.go|\.sql|\.mdx?|\.ya?ml|\.json|\.css|\.ps1|\.sh|\.py|\.toml)$/i;
+function admittedPath(checkout, name, untracked) {
+  const parts = name.split("/");
+  if (forbiddenName(name) || parts.some(part =>
+    !part || part === "." || part === ".." || /[\\:]/.test(part) ||
+    /^(?:\.git|\.ssh|\.secrets|secrets|credentials|node_modules|graphify-out|\.next|\.expo|\.nx|dist|build|coverage)$/i.test(part) ||
+    [...part].some(char => char.charCodeAt(0) < 32))) throw new Error("unsafe source path");
+  if (untracked && (!graphSourceExtension.test(extname(name)) ||
+    !(parts.length === 1 || /^(?:apps|services|packages|tools|infra|docs|governance|specs|tests|\.github|\.specify|\.agents)$/.test(parts[0])))) {
+    throw new Error("unsupported untracked source");
+  }
+  let path = checkout;
+  for (const [index, part] of parts.entries()) {
+    path = join(path, part);
+    const entry = lstatSync(path);
+    if (entry.isSymbolicLink() ||
+        (index < parts.length - 1 ? !entry.isDirectory() : !entry.isFile() || entry.nlink !== 1) ||
+        !samePath(realpathSync(path), resolve(path))) throw new Error("redirected source");
+  }
+  const { bytes } = readVerifiedFile(path, 4 * 1024 * 1024);
+  if ((untracked && bytes.includes(0)) ||
+      (!bytes.includes(0) && containsLikelySecret(bytes.toString("utf8")))) throw new Error("sensitive source");
+  return bytes;
+}
+
+export function inspectGraphSources(checkout, tracked, untracked) {
+  const digest = createHash("sha256");
+  const unsafeTracked = [], unsafeUntracked = [];
+  const candidates = new Map();
+  for (const entry of tracked) {
+    const match = /^(100644|100755) [0-9a-f]{40,64} 0\t(.+)$/.exec(entry);
+    if (!match) { unsafeTracked.push(entry.split("\t").at(-1)); continue; }
+    candidates.set(match[2], false);
+  }
+  for (const name of untracked) if (!candidates.has(name)) candidates.set(name, true);
+  for (const [name, isNew] of [...candidates].sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0)) {
+    digest.update(name).update("\0").update(isNew ? "untracked\0" : "tracked\0");
     try {
-      if (!supported || !sourceRoot || forbiddenName(name) || parts.some(part =>
-        !part || part === "." || part === ".." || /[\\:]/.test(part) ||
-        /^(?:\.git|\.env.*|\.ssh|\.secrets|secrets|credentials|node_modules|graphify-out|\.next|\.expo|\.nx|dist|build|coverage)$/i.test(part))) {
-        throw new Error("unsafe source path");
+      digest.update(sha256(admittedPath(checkout, name, isNew))).update("\0");
+    } catch (error) {
+      // A removed tracked path is an authored deletion, not an external file.
+      // Missing directory/file entries are allowed only when the whole lexical
+      // path was admitted up to the first genuinely absent entry.
+      if (!isNew && error.code === "ENOENT") digest.update("deleted\0");
+      else {
+        (isNew ? unsafeUntracked : unsafeTracked).push(name);
+        digest.update("unsafe\0");
       }
-      let path = checkout;
-      for (const [i, part] of parts.entries()) {
-        path = join(path, part);
-        const st = lstatSync(path);
-        if (st.isSymbolicLink() || (i < parts.length - 1 ? !st.isDirectory() : !st.isFile() || st.size > 4 * 1024 * 1024)) {
-          throw new Error("unsafe source file");
-        }
-        if (!samePath(realpathSync(path), resolve(path))) throw new Error("redirected source path");
-      }
-      const bytes = readFileSync(path);
-      if (bytes.length > 4 * 1024 * 1024 || bytes.includes(0) || containsLikelySecret(bytes.toString("utf8"))) {
-        throw new Error("sensitive or unsupported source");
-      }
-      hash.update(sha256(bytes)).update("\0");
-    } catch {
-      unsafe.push(name);
-      hash.update("unsafe\0");
     }
   }
-  return { digest: hash.digest("hex"), unsafe };
+  return { digest: digest.digest("hex"), unsafeTracked, unsafeUntracked };
 }
 
 function currentState() {
   const beginning = branchAndHead();
   const status = git("status", "--porcelain=v1", "-z", "--untracked-files=all");
-  const diff = git("diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD", "--");
+  const index = git("ls-files", "--stage", "-z");
+  const tracked = index.toString("utf8").split("\0").filter(Boolean);
   const untracked = git("ls-files", "--others", "--exclude-standard", "-z").toString("utf8").split("\0").filter(Boolean);
-  const admission = inspectUntracked(root, untracked);
-  const hash = createHash("sha256").update(status).update(diff).update(admission.digest);
+  const admission = inspectGraphSources(root, tracked, untracked);
+  const hash = createHash("sha256").update("graph-source-v2\0").update(index).update(status).update(admission.digest);
   const ending = branchAndHead();
-  if (beginning.branch !== ending.branch || beginning.head !== ending.head) {
+  if (beginning.branch !== ending.branch || beginning.head !== ending.head ||
+      !index.equals(git("ls-files", "--stage", "-z")) ||
+      !status.equals(git("status", "--porcelain=v1", "-z", "--untracked-files=all"))) {
     throw new Error("INVALIDATED: checkout changed during fingerprinting");
   }
   return {
@@ -126,7 +148,8 @@ function currentState() {
     head: beginning.head,
     worktree: hash.digest("hex"),
     dirty: status.length !== 0,
-    unsafeUntracked: admission.unsafe.length,
+    unsafeTracked: admission.unsafeTracked.length,
+    unsafeUntracked: admission.unsafeUntracked.length,
   };
 }
 
@@ -156,7 +179,7 @@ export function planSync(indexed, current, graphDigest) {
   // authorizes a rebuild of this checkout, never a query against the old branch.
   if (indexed?.version !== 1) throw new Error("BLOCKED: unverified local Graphify index; explicit refresh required");
   if (indexed.repository !== current.repository) throw new Error("BLOCKED: indexed repository differs");
-  if (current.unsafeUntracked) return "deferred";
+  if (current.unsafeTracked || current.unsafeUntracked) return "deferred";
   return evaluateIndex(indexed, current, graphDigest).status === "PASS" ? "current" : "refresh";
 }
 
@@ -270,7 +293,7 @@ function refresh(automatic = false) {
     if (automatic) {
       const action = planSync(stored, initial, existsSync(graph) ? graphHash() : null);
       if (action === "deferred") {
-        throw new Error("BLOCKED: untracked paths require safe admission");
+        throw new Error("BLOCKED: source paths require safe admission");
       }
       if (action === "current") {
         process.stdout.write("PASS: local Graphify index already matches current checkout\n");
@@ -279,7 +302,7 @@ function refresh(automatic = false) {
     }
     // Build against the actual checkout with the native incremental AST cache,
     // but never let an interrupted extraction replace the published graph.
-    if (initial.unsafeUntracked) throw new Error("BLOCKED: untracked paths require safe admission");
+    if (initial.unsafeTracked || initial.unsafeUntracked) throw new Error("BLOCKED: source paths require safe admission");
     const before = currentState();
     if (JSON.stringify(initial) !== JSON.stringify(before)) {
       throw new Error("INVALIDATED: checkout changed before refresh");
@@ -312,7 +335,7 @@ function refresh(automatic = false) {
     delete env.GRAPHIFY_FORCE;
     const output = execute(graphifyExe, ["update", ".", "--no-cluster"], 180000, env);
     const after = currentState();
-    if (after.unsafeUntracked || JSON.stringify(before) !== JSON.stringify(after)) {
+    if (after.unsafeTracked || after.unsafeUntracked || JSON.stringify(before) !== JSON.stringify(after)) {
       throw new Error("INVALIDATED: checkout changed during local Graphify indexing");
     }
     const graphBytes = readVerifiedFile(candidateGraph, 64 * 1024 * 1024).bytes;
@@ -511,7 +534,8 @@ function coverage(paths) {
     if (!authored.has(name)) return false;
     const path = resolve(root, name);
     try {
-      return lstatSync(path).isFile() && samePath(realpathSync(path), path);
+      admittedPath(root, name, false);
+      return true;
     } catch { return false; }
   }));
   const result = measureFileCoverage(paths, admitted, JSON.parse(bytes.toString("utf8")).nodes, root);
@@ -542,7 +566,7 @@ function main() {
       status: assessment.status, queryable: assessment.queryable,
       reason: assessment.reason, branch: current.branch, head: current.head,
       indexedHead: indexed?.head ?? null, dirty: current.dirty,
-      refreshing: existsSync(lock), unsafeUntracked: current.unsafeUntracked,
+      refreshing: existsSync(lock), unsafeTracked: current.unsafeTracked, unsafeUntracked: current.unsafeUntracked,
       lockReview: existsSync(lock) ? (() => {
         try {
           const { digest, owner } = inspectRefreshLock(lock);

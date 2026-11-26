@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateIndex, inspectUntracked } from "./graphify-local.mjs";
+import { evaluateIndex, inspectGraphSources } from "./graphify-local.mjs";
 
 const current = {
   repository: "d:/samrim",
@@ -72,27 +72,41 @@ test("combined source and graph changes preserve all coverage warnings", () => {
   assert.match(result.reason, /local tracked/);
 });
 
-test("new source is fingerprinted by contents; links and credential paths are refused", async () => {
-  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } = await import("node:fs");
+test("tracked and untracked source bytes are admitted through one real-file boundary", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, linkSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "graphify-admission-"));
+  const entry = name => "100644 "+"a".repeat(40)+" 0\t"+name;
   try {
-    mkdirSync(join(dir, "apps"));
-    const file = join(dir, "apps", "new.ts");
-    writeFileSync(file, "export const n=1;");
-    const first = inspectUntracked(dir, ["apps/new.ts"]);
-    assert.deepEqual(first.unsafe, []);
-    writeFileSync(file, "export const n=2;");
-    assert.notEqual(inspectUntracked(dir, ["apps/new.ts"]).digest, first.digest);
-    writeFileSync(join(dir, "apps", ".env"), "SYNTHETIC=1");
-    assert.equal(inspectUntracked(dir, ["apps/.env"]).unsafe.length, 1);
-    writeFileSync(file, "const key = 'sk_" + "live_" + "A".repeat(16) + "';");
-    assert.equal(inspectUntracked(dir, ["apps/new.ts"]).unsafe.length, 1);
-    symlinkSync(dir, join(dir, "apps", "linked"), "junction");
-    assert.equal(inspectUntracked(dir, ["apps/linked/apps/new.ts"]).unsafe.length, 1);
-    assert.equal(inspectUntracked(dir, ["../outside.ts"]).unsafe.length, 1);
-  } finally { rmSync(dir, { recursive: true, force: true }); }
+    mkdirSync(join(dir,"apps"));
+    const file = join(dir,"apps","new.ts");
+    writeFileSync(file,"export const n=1;");
+    const tracked = [entry("apps/new.ts")];
+    const first = inspectGraphSources(dir, tracked, []);
+    assert.deepEqual(first.unsafeTracked, []);
+    assert.deepEqual(first.unsafeUntracked, []);
+    writeFileSync(file,"export const n=2;");
+    assert.notEqual(inspectGraphSources(dir,tracked,[]).digest,first.digest);
+    assert.notEqual(inspectGraphSources(dir,[],["apps/new.ts"]).digest,first.digest);
+    writeFileSync(join(dir,"apps",".env"),"SYNTHETIC=1");
+    assert.deepEqual(inspectGraphSources(dir,[entry("apps/.env")],[]).unsafeTracked,["apps/.env"]);
+    assert.deepEqual(inspectGraphSources(dir,[],["apps/.env"]).unsafeUntracked,["apps/.env"]);
+    writeFileSync(file,"const key = 'sk_"+"live_"+"A".repeat(16)+"';");
+    assert.deepEqual(inspectGraphSources(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
+    writeFileSync(file,"export const n=3;");
+    linkSync(file,join(dir,"apps","alias.ts"));
+    assert.deepEqual(inspectGraphSources(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
+    rmSync(join(dir,"apps","alias.ts"));
+    symlinkSync(dir,join(dir,"apps","linked"),process.platform==="win32"?"junction":"dir");
+    assert.deepEqual(inspectGraphSources(dir,[entry("apps/linked/apps/new.ts")],[]).unsafeTracked,["apps/linked/apps/new.ts"]);
+    assert.deepEqual(inspectGraphSources(dir,[],["../outside.ts"]).unsafeUntracked,["../outside.ts"]);
+    assert.deepEqual(inspectGraphSources(dir,["120000 "+"a".repeat(40)+" 0\tapps/new.ts"],[]).unsafeTracked,["apps/new.ts"]);
+    rmSync(file);
+    const removed=inspectGraphSources(dir,tracked,[]);
+    assert.deepEqual(removed.unsafeTracked,[]);
+    assert.notEqual(removed.digest,first.digest);
+  } finally {rmSync(dir,{recursive:true,force:true});}
 });
 
 test("automatic sync refreshes safe dirty and clean known checkouts and handles same-HEAD branch changes", async () => {
@@ -289,6 +303,16 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     rmSync(seedPath);
     cli(["sync"]);
     assert.equal(proof().dirty, true);
+    git("update-index", "--assume-unchanged", "example.ts");
+    cli(["sync"]);
+    proof();
+    const assumed=JSON.parse(cli(["coverage","example.ts"]));
+    writeFileSync(join(dir,"example.ts"),"export function example() { return 3; }\n");
+    assert.equal(git("status","--porcelain","--","example.ts"),"");
+    assert.equal(JSON.parse(cli(["status"])).status,"INVALIDATED");
+    assert.notEqual(JSON.parse(cli(["coverage","example.ts"],2)).sourceFingerprint,assumed.sourceFingerprint);
+    git("update-index","--no-assume-unchanged","example.ts");
+    cli(["sync"]);
     mkdirSync(join(dir, "apps"));
     const added = join(dir, "apps", "new.ts");
     writeFileSync(added, "export function newGraphFixture() { return 1; }\n");

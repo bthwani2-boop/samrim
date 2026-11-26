@@ -202,7 +202,7 @@ export function runtimeAttemptResult(code,signal,stdout,stderr) {
 
 export function graphifyRefreshAction(assessment) {
   if(assessment?.refreshing===true)return "busy";
-  if(assessment?.unsafeUntracked>0)return "deferred";
+  if(assessment?.unsafeTracked>0 || assessment?.unsafeUntracked>0)return "deferred";
   if(assessment?.status==="PASS"&&assessment.queryable===true)return "current";
   if(assessment?.status==="INVALIDATED"&&assessment.queryable===true)return "refresh";
   if(assessment?.status==="BLOCKED"&&assessment.queryable===false&&assessment.reason==="indexed branch differs")return "refresh";
