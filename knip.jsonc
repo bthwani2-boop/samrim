@@ -5,6 +5,14 @@
       "entry": [
         "tools/dev/setup-env.mjs"
       ]
+    },
+    // Expo evaluates these native config plugins only when a Maps key is supplied.
+    // Both app manifests and key-enabled config are covered by verify-native-config.test.mjs.
+    "apps/captain": {
+      "ignoreDependencies": ["react-native-maps"]
+    },
+    "apps/merchant": {
+      "ignoreDependencies": ["react-native-maps"]
     }
   },
   "ignore": [

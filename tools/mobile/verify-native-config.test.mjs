@@ -357,3 +357,27 @@ test("registered native IDs are protected independently of historical dependency
   }
   assert.throws(() => assertRegisteredIdentity("unknown", manifest), /Unknown mobile surface/);
 });
+
+test("conditional Maps config plugins retain their real native dependency without live credentials", () => {
+  const names = ["EAS_BUILD", "BTHWANI_ENFORCE_NATIVE_KEYS", "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", "GOOGLE_MAPS_ANDROID_API_KEY_MERCHANT"];
+  const originals = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  try {
+    delete process.env.EAS_BUILD;
+    delete process.env.BTHWANI_ENFORCE_NATIVE_KEYS;
+    for (const [app, key, env] of [
+      ["captain", "app-captain", "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN"],
+      ["merchant", "merchant", "GOOGLE_MAPS_ANDROID_API_KEY_MERCHANT"],
+    ]) {
+      process.env[env] = "synthetic-config-only";
+      const manifest = require("../../apps/" + app + "/package.json");
+      assert.equal(typeof manifest.dependencies["react-native-maps"], "string");
+      const config = defineBthwaniExpoApp(key, { maps: true });
+      assert.ok(config.plugins.some(plugin => Array.isArray(plugin) && plugin[0] === "react-native-maps"));
+    }
+  } finally {
+    for (const name of names) {
+      if (originals[name] === undefined) delete process.env[name];
+      else process.env[name] = originals[name];
+    }
+  }
+});
