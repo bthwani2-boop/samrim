@@ -1113,7 +1113,7 @@ function Invoke-AppAction {
 
 function Assert-CompleteCompose {
   Assert-Compose
-  $argsList=@('compose','--env-file',$baseEnv,'-f',$baseCompose,'--profile','implementation','config','--format','json')
+  $argsList=@('compose','--env-file',$baseEnv,'-f',$baseCompose,'config','--format','json')
   # Keep the resolved configuration private and report only a bounded failure.
   $raw=@(& docker --context $dockerContext @argsList 2>$null)
   Assert-Ok ($LASTEXITCODE -eq 0) 'native owner Compose configuration could not be resolved'
@@ -1252,7 +1252,7 @@ function Start-VerifiedEnvironment {
   Assert-CompleteCompose
   & node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--start-preflight'
   Assert-Ok ($LASTEXITCODE -eq 0) 'owner startup preflight failed; use the guarded owner lifecycle for stale or missing containers'
-  $composeArgs=@('compose','--env-file',$baseEnv,'-f',$baseCompose,'--profile','implementation')
+  $composeArgs=@('compose','--env-file',$baseEnv,'-f',$baseCompose)
   $services=@('postgres','media','mailpit','payment-mock','identity','dsh','wlt')
   $existing=@(Invoke-DockerCli -argsList ($composeArgs+@('ps','--all','--services')))
   foreach($service in $services){

@@ -246,8 +246,7 @@ test("strict Docker verification and complete environment verification share the
   for (const input of ["$baseCompose"]) {
     assert.ok(config[1].includes(input), "missing Compose input " + input);
   }
-  assert.equal((config[1].match(/'--profile'/g) || []).length, 1);
-  assert.ok(config[1].includes("'implementation'"));
+  assert.doesNotMatch(config[1], /'--profile'/);
   assert.match(config[1], /'config','--format','json'/);
   assert.match(config[1], /unprovisioned owner Compose input/);
   assert.doesNotMatch(config[1], /compose\.(?:dsh|identity|wlt|merchant|captain)\.yaml/);

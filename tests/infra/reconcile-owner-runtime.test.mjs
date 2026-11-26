@@ -300,7 +300,7 @@ test("native build plan selects exactly one owner and distinguishes committed an
   assert.throws(()=>ownerBuildPlan("dsh",sha,"bad/tag","owner"),/Invalid/);
 });
 
-test("every owner operation uses one canonical Compose input and the same explicit runtime profiles", async () => {
+test("every owner operation uses one canonical Compose input without serving profiles", async () => {
   const { composeArgs } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const { fileURLToPath } = await import("node:url");
   const args = composeArgs();
@@ -308,7 +308,6 @@ test("every owner operation uses one canonical Compose input and the same explic
   assert.deepEqual(args, [
     "compose", "--project-directory", fileURLToPath(new URL("../../infra", import.meta.url)),
     "--env-file", "infra/.env", "-f", composeFile,
-    "--profile", "implementation",
   ]);
   assert.deepEqual(composeArgs(), args);
   assert.equal(args.filter(arg => arg === "-f").length, 1);

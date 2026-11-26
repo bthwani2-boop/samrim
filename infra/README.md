@@ -12,9 +12,9 @@ This environment is synthetic development only, not production deployment. Legac
 | `media` | Fresh SeaweedFS mini, own media volume/credentials | 3233 |
 | `mailpit` | Local inbound test email capture | 3226 |
 | `payment-mock` | WireMock with fixed synthetic cash-in evidence (no production rails) | 3290 |
-| `wlt` (`implementation` profile) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
-| `identity` (`implementation` profile) | Isolated synthetic Identity authentication and authorization | 3201 |
-| `dsh` (`implementation` profile) | DSH owner; admitted capabilities depend on explicit configuration | 3202 |
+| `wlt` | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
+| `identity` | Isolated synthetic Identity authentication and authorization | 3201 |
+| `dsh` | DSH owner; admitted capabilities depend on explicit configuration | 3202 |
 
 The `payment-mock` image is built from `tests/infra/payment-mock/Dockerfile` using the existing
 pinned WireMock base and fixed, synthetic funding-status mappings. Only the
@@ -33,25 +33,25 @@ secrets, applied migrations and media are never copied or changed.
 
 ## Owner services and explicit capabilities
 
-The single canonical environment definition is [compose.yaml](compose.yaml), implementing the [environment-owned Compose policy](../governance/engineering.md#repository-checks-and-isolated-runtime-acceptance). It defines four foundational dependencies and the three real service owners (Identity, DSH, WLT), with a separately scoped DSH bootstrap role. The single `implementation` profile admits the three serving owners; `bootstrap` is a separate one-shot role. Profiles never select applications or business capabilities. Starting/replacing one owner always names its service explicitly. No application-specific Compose files are needed.
+The single canonical environment definition is [compose.yaml](compose.yaml), implementing the [environment-owned Compose policy](../governance/engineering.md#repository-checks-and-isolated-runtime-acceptance). It defines four foundational dependencies and the three real service owners (Identity, DSH, WLT), with a separately scoped DSH bootstrap role. All three serving owners are default services; `bootstrap` is the only optional one-shot role. Profiles never select applications or business capabilities. Starting/replacing one owner always names its service explicitly. No application-specific Compose files are needed.
 
-For an already running environment, use the existing pnpm dev docker status, verify and guarded reconciliation commands. Existing containers may retain historical Compose-file labels until their next verified owner replacement; exact prior native configuration hashes remain mandatory. Never recreate a healthy container solely to change its historical labels. A replacement must preserve effective configuration, source provenance, data and peer ownership.
+For an already running environment, use the existing pnpm dev docker status, verify and guarded reconciliation commands. The three serving owners must use the canonical Compose file. Foundational containers may retain historical metadata until an authorized replacement; exact prior native configuration hashes remain mandatory. Never recreate a healthy container solely to change its historical labels. A replacement must preserve effective configuration, source provenance, data and peer ownership.
 
 Private TLS material belongs to the Identity/DSH service trust boundary. The physical external volume names remain unchanged so existing trust material is not lost. Owner admission and certificate inputs are explicit in the single ignored .env; the public example does not grant credentials or enable admission. Provision the private volumes before starting their owners.
 
 DSH discovery and admitted protected capabilities use the same owner. Identity is the independent synthetic Go session/Operator-permission verifier. The [WLT Customer balance reader](../services/wlt/backend/README.md) runs as an isolated container or loopback process with its own read-only database role.
 
 The fresh DSH bootstrap command uses its own `bootstrap` Compose profile,
-separate from `implementation`. Normal `implementation` startup cannot start
+separate from the default services. Normal startup cannot start
 `dsh-bootstrap`; bootstrap remains an explicit, separately verified operation on a new empty schema.
 Validate this invariant with `node --test tests/infra/compose-policy.test.mjs` and
-`docker compose ... --profile implementation config --services`. Never use
+`docker compose ... config --services`. Never use
 `--profile '*'`, `--profile bootstrap up` or automatic schema changes in the normal
 service-start path. Existing running containers and persisted volumes are not
 recreated by this file change.
 Never reuse donor images, production data or `samrim-local` volumes.
 
-### Opt-in real WLT read-only container
+### WLT serving owner (current read-only contract)
 
 WLT has its own service definition in `compose.yaml` and a pinned service-owned
 Dockerfile. The existing owner databases used by Identity/DSH are
@@ -63,7 +63,7 @@ inside ignored `infra/.env`. It must never be run automatically with Compose.
 
 After a source commit, build via
 `pnpm dev docker build wlt`, and configure with
-`docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation config --quiet`.
+`docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet`.
 For an approved first start, set `REF_WLT_IMAGE_TAG` to the returned `build-<full SHA>` tag and use the matching Compose invocation plus `up -d --no-deps --no-build --pull never wlt`. For existing WLT use guarded reconciliation. Port `3203` is bound to Lenovo loopback only;
 WLT uses the existing synthetic Identity verifier `identity:3302` and the configured DSH peer origin `http://dsh:8080`, with a
 separate read-only WLT database identity. The peer origin does not grant payment-mutation authority. A successful Docker healthcheck
@@ -87,14 +87,14 @@ REF_DSH_DISCOVERY_SCHEMA=dsh_test_REPLACE_WITH_VERIFIED_SCHEMA
 REF_DSH_PUBLIC_CORS_ORIGINS=http://127.0.0.1:18101,http://localhost:18101
 ```
 
-Run from the checkout root (never start an entire profile). The build-only command creates a separate `build-<full SHA>` candidate tag. For an explicitly approved first start, set the matching owner image tag to the returned tag; for existing owners use guarded reconciliation. An image build by itself does not recreate an existing container:
+Run from the checkout root (never use unscoped Compose up). The build-only command creates a separate `build-<full SHA>` candidate tag. For an explicitly approved first start, set the matching owner image tag to the returned tag; for existing owners use guarded reconciliation. An image build by itself does not recreate an existing container:
 
 ```powershell
 pnpm dev docker build dsh
 $env:REF_DSH_IMAGE_TAG = "build-$(git rev-parse HEAD)"
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation up -d --no-deps --no-build --pull never dsh
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation ps dsh
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d --no-deps --no-build --pull never dsh
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps dsh
 ```
 
 The public DSH image serves `/health` and the public Store discovery routes.
@@ -118,7 +118,7 @@ No Stores, publication, orders, financial agreements or money are seeded.
 Do not set this flag on serving or retained-data reconciliation commands.
 A repeated bootstrap refuses the existing schema; changes made by Operators
 remain untouched. Never run it against
-retained state or as part of normal `implementation` startup. A retained
+retained state or as part of normal startup. A retained
 schema must keep its existing applied history and any separately authorized
 upgrade path until its compatibility obligations are resolved. Do not treat HTTP health as evidence of checkout,
 merchant permissions, identity authentication or finance correctness.
@@ -127,7 +127,7 @@ merchant permissions, identity authentication or finance correctness.
 ### Isolated Identity verifier in the SAME Compose project
 
 Identity is defined in the single `compose.yaml` alongside the other service owners. The project name remains `bthwani-refoundation`, and its published host port is loopback-only 3201.
-The service is `identity`, profile `implementation`. It has no
+The service is `identity`. It has no
 automatic bootstrap, schema migrations, donor volumes or other service restarts.
 
 `services/identity/backend/Dockerfile` now builds the real Go binary in a
@@ -176,9 +176,9 @@ The opt-in deployment sequence is:
 ```powershell
 pnpm dev docker build identity
 $env:REF_IDENTITY_IMAGE_TAG = "build-$(git rev-parse HEAD)"
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation up -d --no-deps --no-build --pull never identity
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation ps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d --no-deps --no-build --pull never identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps identity
 ```
 
 The committed Identity verifier now exposes `GET /health` for isolated
@@ -326,11 +326,11 @@ Once authorized private credentials exist, run from the checkout root:
 ```powershell
 node tools/dev/setup-env.mjs
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d postgres media mailpit payment-mock
 docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps
 ```
 
-Do not start an entire Compose profile. Launch only services with proven
+Do not use unscoped Compose up. Launch only services with proven
 source, isolated database permissions and authorization acceptance. WLT is a real owner; verify its actual running revision and configuration before use.
 Do not run `down -v`, `prune`, copy donor volume data or touch donor tasks.
 

@@ -56,7 +56,7 @@ durable database state before any attempted recovery; do not delete, reset or
 rerun the provisioner blindly.
 
 Build the committed WLT source image using `pnpm dev docker build wlt`,
-then use guarded reconciliation for an existing WLT. For an explicitly approved first start, set `REF_WLT_IMAGE_TAG` to the returned `build-<full SHA>` tag and use the canonical `infra/compose.yaml` with `--profile implementation`, `--no-deps --no-build --pull never` for `wlt` only after Identity and PostgreSQL are confirmed healthy. Verify `/health`, unauthenticated `401` and
+then use guarded reconciliation for an existing WLT. For an explicitly approved first start, set `REF_WLT_IMAGE_TAG` to the returned `build-<full SHA>` tag and use the canonical `infra/compose.yaml` with `--no-deps --no-build --pull never` for `wlt` only after Identity and PostgreSQL are confirmed healthy. Verify `/health`, unauthenticated `401` and
 read-only `405`, then real Identity session authorization/denial on
 `/v1/wallets/me`; health alone is not journey acceptance.
 

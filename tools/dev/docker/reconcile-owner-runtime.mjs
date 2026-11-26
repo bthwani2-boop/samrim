@@ -103,7 +103,7 @@ export function removePrivateCopyArchive(pg, archive, execute = docker) {
   execute(["exec", pg, "rmdir", "--", archive.directory]);
 }
 export function composeArgs() {
-  return ["compose","--project-directory",resolve(root,"infra"),"--env-file","infra/.env","-f",canonicalComposePath, "--profile","implementation"];
+  return ["compose","--project-directory",resolve(root,"infra"),"--env-file","infra/.env","-f",canonicalComposePath];
 }
 function asEnv(values) {
   return Object.fromEntries(values.map(v => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
@@ -148,7 +148,7 @@ export function composeFileNames(label, repoRoot = root) {
 function equal(a,b) { return JSON.stringify(a) === JSON.stringify(b); }
 function configHashes(names, env, historical) {
   // Historical reconstruction is config-only: include retired profiles without starting any service.
-  const args = composeArgs().map(value => historical ? (value === historical.file ? "-" : value === "implementation" ? "*" : value) : value);
+  const args = historical ? [...composeArgs().map(value => value === historical.file ? "-" : value), "--profile","*"] : composeArgs();
   const lines = docker([...args, "config", "--hash", names.join(",")], env, 30000, historical ? historical.content + "\n" : undefined).split(/\r?\n/);
   const result = Object.fromEntries(lines.map(l => l.trim().split(/\s+/)));
   if (Object.keys(result).length !== names.length || names.some(o => !/^[0-9a-f]{64}$/.test(result[o] || ""))) throw new Error("Incomplete Compose hash");

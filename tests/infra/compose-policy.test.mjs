@@ -41,7 +41,7 @@ test("database and mock integrations stay in one isolated project", () => {
   assert.equal(base.services["payment-mock"].image, "bthwani/payment-mock:local");
   assert.ok(!base.services["payment-mock"].volumes?.length, "synthetic provider must not mount host/legacy data");
   assert.deepEqual(Object.keys(base.services).sort(), ["dsh","dsh-bootstrap","identity","mailpit","media","payment-mock","postgres","wlt"]);
-  assert.deepEqual(Object.keys(base.services).filter(name=>!base.services[name].profiles?.length).sort(), ["mailpit","media","payment-mock","postgres"]);
+  assert.deepEqual(Object.keys(base.services).filter(name=>!base.services[name].profiles?.length).sort(), ["dsh","identity","mailpit","media","payment-mock","postgres","wlt"]);
 });
 
 test("serving containers share one canonical environment-label definition", () => {
@@ -60,7 +60,7 @@ test("serving containers share one canonical environment-label definition", () =
 
 test("WLT is the real isolated read-only owner and never a migration service", () => {
   const wlt = compose("compose.yaml").services.wlt;
-  assert.deepEqual(wlt.profiles, ["implementation"]);
+  assert.equal(wlt.profiles, undefined);
   assert.equal(wlt.restart, "unless-stopped");
   assert.equal(wlt.read_only, true);
   assert.ok(wlt.cap_drop.includes("ALL"));
@@ -84,14 +84,14 @@ test("WLT is the real isolated read-only owner and never a migration service", (
   assert.doesNotMatch(dockerfile, /post-sandbox-funding|migrate|ENTRYPOINT \["\/bin\/sh"/);
 });
 
-test("a normal implementation profile can never implicitly bootstrap SQL", () => {
+test("default owner runtime never implicitly bootstraps SQL", () => {
   const apps = compose("compose.yaml");
   const service = apps.services.dsh;
   const bootstrap = apps.services["dsh-bootstrap"];
   assert.equal(apps.services["dsh-migrate"], undefined);
-  assert.deepEqual(service.profiles, ["implementation"]);
+  assert.equal(service.profiles, undefined);
   assert.deepEqual(bootstrap.profiles, ["bootstrap"]);
-  assert.ok(!bootstrap.profiles.some((p) => service.profiles.includes(p)));
+  assert.ok(!service.profiles);
   assert.deepEqual(bootstrap.entrypoint, ["/usr/local/bin/dsh", "-mode=bootstrap"]);
   assert.equal(bootstrap.restart, "no");
   assert.equal(bootstrap.environment.BTHWANI_ISOLATED_TEST_MODE, "true",
@@ -116,7 +116,7 @@ test("a normal implementation profile can never implicitly bootstrap SQL", () =>
 
 test("Identity verifier is synthetic only and has no privileged host exposure", () => {
   const id = compose("compose.yaml").services.identity;
-  assert.deepEqual(id.profiles, ["implementation"]);
+  assert.equal(id.profiles, undefined);
   assert.equal(id.restart, "unless-stopped", "Identity must recover after Docker engine restart");
   assert.equal(id.read_only, true);
   assert.ok(id.cap_drop.includes("ALL"));

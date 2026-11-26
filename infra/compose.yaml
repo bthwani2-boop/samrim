@@ -110,7 +110,6 @@ services:
     build:
       <<: *owner-build
       context: "${BTHWANI_BUILD_CONTEXT:-../services/dsh}"
-    profiles: [implementation]
     image: "bthwani-refoundation-dsh:${REF_DSH_IMAGE_TAG:-dev}"
     restart: unless-stopped
     read_only: true
@@ -160,7 +159,6 @@ services:
     build:
       <<: *owner-build
       context: "${BTHWANI_BUILD_CONTEXT:-../services/identity}"
-    profiles: [implementation]
     image: "bthwani-refoundation-identity-verifier:${REF_IDENTITY_IMAGE_TAG:-dev}"
     # Recover after Docker Desktop/Lenovo restarts; explicit stop stays stopped.
     restart: unless-stopped
@@ -218,7 +216,6 @@ services:
     build:
       <<: *owner-build
       context: "${BTHWANI_BUILD_CONTEXT:-../services/wlt}"
-    profiles: [implementation]
     image: "bthwani-refoundation-wlt:${REF_WLT_IMAGE_TAG:-dev}"
     restart: unless-stopped
     read_only: true
