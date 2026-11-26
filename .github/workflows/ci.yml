@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, 'codex/**']
   pull_request:
     branches: [main]
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
@@ -18,6 +18,7 @@ jobs:
   workspace_validation:
 
     name: Workspace validation (source checks)
+    if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'archive/') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     steps:
@@ -58,7 +59,7 @@ jobs:
           echo 'NOT_RUN: SQL, source services, runtime, security, finance, full Product acceptance'
 
   application_quality:
-    name: Application quality, contracts, tests and builds
+    name: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'Application quality, contracts, tests and builds' || 'Development feedback (affected source checks)' }}
     needs: workspace_validation
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -93,10 +94,13 @@ jobs:
       - name: Validate all owner OpenAPI contracts and generated operation parity
         run: pnpm check:contracts
       - name: Run discovered Feature tests and collect measured coverage
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: pnpm check:coverage
       - name: Attest JavaScript coverage to the exact committed candidate
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: node tools/dev/ci-coverage-evidence.mjs publish js
       - name: Publish measured JavaScript coverage
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: sonar-js
@@ -113,33 +117,92 @@ jobs:
         run: |
           pnpm check:design
           pnpm check:apps:source
+      - name: Use repository-pinned Go for development feedback
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/') }}
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          check-latest: false
+          cache: false
+      - name: Verify development changes through native Nx and owner checks
+        if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/') }}
+        shell: bash
+        env:
+          NX_DAEMON: 'false'
+          NX_NO_CLOUD: 'true'
+          NX_SKIP_NX_CACHE: 'true'
+          GOTOOLCHAIN: local
+          GOWORK: 'off'
+        run: |
+          set -euo pipefail
+          # Compare the complete unintegrated tree, not just the last push:
+          # a cancelled predecessor must not hide earlier unverified changes.
+          scope=all
+          if base="$(git merge-base --all HEAD refs/remotes/origin/main)" && [[ "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            paths="$(mktemp)"
+            trap 'rm -f -- "$paths"' EXIT
+            git diff --name-only -z --no-renames "$base" HEAD -- > "$paths"
+            if [[ -s "$paths" ]]; then
+              scope=affected
+              while IFS= read -r -d '' file; do
+                case "$file" in
+                  */package.json|*/project.json|*/tsconfig*.json|*/go.mod|*/go.sum) scope=all; break ;;
+                  apps/*/*|services/*/*) ;;
+                  *) scope=all; break ;;
+                esac
+              done < "$paths"
+              # A deletion or rename can remove a project from the current graph.
+              deleted="$(git diff --name-only --no-renames --diff-filter=D "$base" HEAD --)"
+              if [[ -n "$deleted" ]]; then scope=all; fi
+            fi
+          fi
+          if [[ "$scope" == affected ]]; then
+            echo "DEVELOPMENT_AFFECTED base=$base"
+            pnpm exec nx affected -t typecheck test --base="$base" --head=HEAD --skip-nx-cache
+          else
+            echo 'DEVELOPMENT_GLOBAL_SOURCE_CHECKS'
+            pnpm check:coverage
+            pnpm exec nx run-many -t typecheck --skip-nx-cache
+            node tools/dev/check-go.mjs --quick
+          fi
+          echo 'DEVELOPMENT_FEEDBACK_ONLY: full builds, isolated PostgreSQL, Windows acceptance, Sonar and protected integration gates remain separate.'
       - name: Typecheck all workspace projects
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: pnpm -r --if-present run typecheck
       - name: Export Expo Web presentation hosts (SSR artifacts only)
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           pnpm --dir apps/customer exec expo export --platform web
           pnpm --dir apps/merchant exec expo export --platform web
       - name: Smoke-test approved Customer/Merchant Expo Web SSR on loopback
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: node tools/mobile/verify-expo-web-http.mjs
       - name: Export Customer/Merchant Android JavaScript (NOT a native binary)
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           pnpm --dir apps/customer exec expo export --platform android
           pnpm --dir apps/merchant exec expo export --platform android
       - name: Export Captain Android JavaScript (NOT a native binary)
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: pnpm --dir apps/captain exec expo export --platform android
       - name: Build the pinned Next.js Operator presentation host
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: pnpm --dir apps/control-panel build
       - name: Smoke-test production Operator SSR, RTL and headers on loopback
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           node tools/dev/verify-operator-http.mjs
       - name: Execute discovered production Operator runtime suite
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: node tools/dev/run-coverage.mjs --operator-runtime
       - name: Record missing live platform proof
+        if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
 
   windows_platform:
     name: Windows platform behavior and PowerShell acceptance
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     needs: workspace_validation
     runs-on: windows-2025
     timeout-minutes: 15
@@ -178,13 +241,14 @@ jobs:
         run: node tools/dev/run-coverage.mjs --windows-platform
 
   backend_quality:
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     needs: workspace_validation
     uses: ./.github/workflows/go-quality.yml
 
   required_ci:
-    name: fast-guard
+    name: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'fast-guard' || 'Full integration gate (not run on development)' }}
     needs: [workspace_validation, application_quality, backend_quality, windows_platform]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -216,9 +280,9 @@ jobs:
 
   sonar:
     # Retain the exact required GitHub Actions check name.
-    name: SonarQube Cloud Quality Gate
+    name: ${{ (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'SonarQube Cloud Quality Gate' || 'Sonar integration gate (not run on development)' }}
     needs: [application_quality, backend_quality]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
