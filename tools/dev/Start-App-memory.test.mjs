@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { setTimeout as delay } from "node:timers/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 
 const file = fileURLToPath(new URL("./Start-App.ps1", import.meta.url));

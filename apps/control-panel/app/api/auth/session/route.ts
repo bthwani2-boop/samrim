@@ -1,5 +1,5 @@
-import { identityOperations, IdentityClientError, readVerifiedIdentitySession,
-  reviewOriginalOperatorPermissions, rotatePersistentIdentitySession, revokePersistentIdentitySession } from "@bthwani/identity";
+import { IdentityClientError, identityOperations, readVerifiedIdentitySession,
+  reviewOriginalOperatorPermissions, revokePersistentIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
 import { type NextRequest, NextResponse } from "next/server";
 import {
   cookieLifetimeSeconds,

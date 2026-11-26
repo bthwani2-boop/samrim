@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { readMerchantInventorySummary, parseMerchantInventorySummary, createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
+import { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, parseMerchantInventorySummary, readMerchantInventorySummary, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
 
 const offer = {
   id: "of-a", storeId: "store-a", productId: "p-a", name: "مادة تجريبية",

@@ -1,7 +1,7 @@
 import WorkspaceUnavailable from "../../../../src/features/operator-shell/workspace-unavailable";
+import { loadPolicyCities } from "../../../../src/features/policies/policy-city-directory";
 import StoreRegistrationPolicyEditor from "../../../../src/features/policies/store-registration-policy-editor";
 import { currentOperatorAccess } from "../../../../src/server/current-operator-access";
-import { loadPolicyCities } from "../../../../src/features/policies/policy-city-directory";
 
 export const dynamic = "force-dynamic";
 

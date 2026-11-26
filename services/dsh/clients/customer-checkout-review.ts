@@ -1,6 +1,6 @@
 import { DshPublicError } from "./client-core.ts";
-import { isCustomerAddressId, parseDeliveryServiceability, type DeliveryServiceability } from "./customer-addresses.ts";
-import { parseCustomerCartMerchandiseEstimate, type CustomerCartMerchandiseEstimate } from "./customer-cart.ts";
+import { type DeliveryServiceability, isCustomerAddressId, parseDeliveryServiceability } from "./customer-addresses.ts";
+import { type CustomerCartMerchandiseEstimate, parseCustomerCartMerchandiseEstimate } from "./customer-cart.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 

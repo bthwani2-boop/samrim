@@ -3,8 +3,8 @@
 import { usePathname } from "next/navigation";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { findWorkspaceEntry, workspaceGroupLabels, workspaceRegistry, workspaceSubsections } from "../navigation/workspace-registry";
-import { canEnterOperatorWorkspace, type OperatorPermission, visibleWorkspaceEntries } from "../session/operator-permissions";
 import { notifyOperatorSessionChanged, subscribeOperatorSessionChanged, withOperatorBrowserSession } from "../session/operator-browser-session";
+import { canEnterOperatorWorkspace, type OperatorPermission, visibleWorkspaceEntries } from "../session/operator-permissions";
 import { OperatorIcon, type OperatorIconName } from "./operator-icon";
 import OperatorNavigationSearch from "./operator-navigation-search";
 import styles from "./operator-shell.module.css";

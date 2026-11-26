@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { verifyMerchantAdmission } from "../src/features/access/admission.ts";
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
-import { IdentityClientError } from "@bthwani/identity";
 import { DshPublicError, MerchantStandingError } from "@bthwani/dsh";
+import { IdentityClientError } from "@bthwani/identity";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import { verifyMerchantAdmission } from "../src/features/access/admission.ts";
 
 const origin = "https://identity.bthwani.test";
 const customerBearer = Buffer.alloc(32, 1).toString("base64url");

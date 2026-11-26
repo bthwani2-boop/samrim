@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { getCustomerFavoriteStore, listCustomerFavoriteStores, setCustomerFavoriteStore, parseFavoriteStorePage, parseFavoriteStoreState } from "./index.ts";
+import { getCustomerFavoriteStore, listCustomerFavoriteStores, parseFavoriteStorePage, parseFavoriteStoreState, setCustomerFavoriteStore } from "./index.ts";
 
 const actor = "customer-a";
 const bearer = Buffer.alloc(32, 13).toString("base64url");

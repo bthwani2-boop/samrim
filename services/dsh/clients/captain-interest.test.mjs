@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  submitCaptainInterest, listOperatorCaptainInterest,
-  markOperatorCaptainInterestContacted, validCaptainInterest,
+import {listOperatorCaptainInterest,
+  markOperatorCaptainInterestContacted,
+  submitCaptainInterest, validCaptainInterest,
 } from "./captain-interest.ts";
 
 const origin = "http://127.0.0.1:33113";
