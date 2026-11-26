@@ -69,10 +69,63 @@ export function remoteConflict(actual,desired,previous) {
 export function remoteAuditDue(previous,deadline,now=Date.now()) {
   return !previous||now>=deadline;
 }
+
+// Canonical app-mirror path projection. The workspace convention admits
+// purpose-named shared packages, without a second registry of package names.
+// Lexical admission also applies to old manifest entries so a deleted package
+// can be removed from the mirror; live inventory separately proves its manifest.
+const surfaces = ["customer","merchant","captain","control-panel"];
+const owners = ["identity","dsh","wlt"];
+const rootInputs = ["package.json","pnpm-workspace.yaml","pnpm-lock.yaml",".node-version","tsconfig.base.json","nx.json","biome.json"];
+const sharedName = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+const privatePath = /^(?:\.env(?:\..*)?|\.npmrc|\.git-credentials|google-services\.json|GoogleService-Info\.plist|credentials(?:\..*)?|secrets\.local\..*|.*local.*\.secret\.json|id_rsa|id_ed25519|.*\.(?:pem|key|p12|p8|pfx|jks|keystore))$/i;
+const generatedPath = new Set([".git","node_modules",".expo",".next",".next-dev","dist","build","coverage",".cache",".turbo","test-results","private",".ssh",".secrets","logs",".pnpm-store","tmp",".tmp",".nx",".local",".artifacts",".diagnostics",".bthwani-local","graphify-out"]);
+const windowsDevice = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+export const mirrorSourceRoots = Object.freeze([
+  ...surfaces.map(name=>"apps/"+name),
+  "packages",
+  ...owners.flatMap(owner=>["package.json","tsconfig.json","clients"].map(entry=>"services/"+owner+"/"+entry)),
+  "tools/mobile","tools/dev","patches",...rootInputs,
+]);
+export function mirrorPathAllowed(rel) {
+  if(typeof rel!=="string"||!rel||rel.includes("\\")||rel.startsWith("/")||rel.includes("//")||rel.includes("\0"))return false;
+  const parts=rel.split("/");
+  if(parts.some(part=>!part||part==="."||part===".."||/[<>:"|?*]/.test(part)||
+    /[ .]$/.test(part)||windowsDevice.test(part)||[...part].some(char=>char.codePointAt(0)<32)||
+    generatedPath.has(part.toLowerCase())||privatePath.test(part)||/\.tsbuildinfo$|\.log$/i.test(part)))return false;
+  if(parts.length===1)return rootInputs.includes(rel);
+  const [group,name,entry]=parts;
+  if(group==="apps")return parts.length>=3&&surfaces.includes(name)&&rel!=="apps/control-panel/next-env.d.ts";
+  if(group==="packages")return parts.length>=3&&sharedName.test(name)&&!surfaces.includes(name)&&!owners.includes(name);
+  if(group==="services")return owners.includes(name)&&((parts.length===3&&["package.json","tsconfig.json"].includes(entry))||(entry==="clients"&&parts.length>=4));
+  if(group==="tools")return parts.length>=3&&["mobile","dev"].includes(name)&&!(name==="dev"&&entry==="docker");
+  return group==="patches"&&parts.length===2&&name.endsWith(".patch");
+}
+export function mirrorPackageName(rel) {
+  return /^packages\/([^/]+)\//.exec(rel)?.[1]??null;
+}
+export function assertMirrorPackageManifest(name,bytes) {
+  let value;
+  try{value=JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes));}
+  catch{throw new Error("MIRROR_PACKAGE_MANIFEST_INVALID "+name);}
+  if(value?.name!=="@bthwani/"+name||value.private!==true)
+    throw new Error("MIRROR_PACKAGE_MANIFEST_INVALID "+name);
+}
+export function mirrorCandidatePaths(paths) {
+  const seen=new Map();
+  for(const rel of paths){
+    if(!mirrorPathAllowed(rel))continue;
+    const folded=rel.toLowerCase(),previous=seen.get(folded);
+    if(previous&&previous!==rel)throw new Error("MIRROR_CASE_COLLISION "+previous+" "+rel);
+    seen.set(folded,rel);
+  }
+  return [...seen.values()].sort((a,b)=>a<b?-1:a>b?1:0);
+}
+
 export const branchTransitionPins=Object.freeze([
   ".node-version","pnpm-lock.yaml","package.json",
-  ...["customer","merchant","captain","control-panel"].map(name=>"apps/"+name+"/package.json"),
-  ...["identity","dsh","wlt"].map(name=>"services/"+name+"/package.json")
+  ...surfaces.map(name=>"apps/"+name+"/package.json"),
+  ...owners.map(name=>"services/"+name+"/package.json")
 ]);
 export function isDependencyInput(rel) {
   return branchTransitionPins.includes(rel)||rel==="pnpm-workspace.yaml"||

@@ -5,6 +5,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFile
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { assertMirrorPackageManifest, mirrorCandidatePaths } from "./sync-lenovo-reconciliation.mjs";
 import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict, remoteInvocation } from "./sync-lenovo-source.mjs";
 
 test("manifest verification rejects an edit before HEAD changes and recovers after sync", {
@@ -66,6 +67,32 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
     assert.equal(verify().current, true);
     writeFileSync(path.join(root, "apps/customer/added.ts"), "export const added = true;\n");
     assert.equal(verify().current, false);
+    rmSync(path.join(root, "apps/customer/added.ts"));
+    const packageRoot = path.join(root, "packages/new-purpose");
+    mkdirSync(path.join(packageRoot, "src"), {recursive:true});
+    const manifestPath = "packages/new-purpose/package.json";
+    const sourcePath = "packages/new-purpose/src/index.ts";
+    writeFileSync(path.join(root, manifestPath), JSON.stringify({name:"@bthwani/new-purpose",private:true}));
+    writeFileSync(path.join(root, sourcePath), "export const formatting = String;");
+    assert.equal(verify().current, false, "new package must invalidate the previous mirror");
+    mirrored.push(manifestPath, sourcePath);
+    markSynced();
+    assert.equal(verify().current, true, "new package participates in the actual Git inventory");
+    assert.ok(Object.hasOwn(verify("--verify-dependency-inputs").files, manifestPath));
+    const unsafe = path.join(packageRoot, "src", "unsafe.ts");
+    writeFileSync(unsafe, "export const token = "+JSON.stringify("gh"+"p_"+"x".repeat(24)));
+    const reject = () => spawnSync(process.execPath,[entry,"--verify-manifest"],{
+      cwd:root,env:{...process.env,LOCALAPPDATA:localAppData},encoding:"utf8",timeout:10000,
+    });
+    let rejected = reject();
+    assert.notEqual(rejected.status,0);
+    assert.match(rejected.stderr,/MIRROR_SECRET_MARKER packages\/new-purpose\/src\/unsafe.ts/);
+    assert.doesNotMatch(rejected.stderr,/x{24}/);
+    rmSync(unsafe);
+    rmSync(path.join(root,manifestPath));
+    rejected=reject();
+    assert.notEqual(rejected.status,0);
+    assert.match(rejected.stderr,/MIRROR_PACKAGE_MANIFEST_REQUIRED new-purpose/);
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
@@ -175,6 +202,7 @@ test("canonical source paths accepted without path injection", () => {
     "apps/captain/mobile.config.json",
     "apps/control-panel/app/page.tsx",
     "packages/design-system/package.json",
+    "packages/new-purpose/src/index.ts",
     "services/identity/package.json",
     "services/identity/clients/index.ts",
     "services/dsh/clients/index.ts",
@@ -198,7 +226,12 @@ test("credentials, generated state, services and unowned paths rejected", () => 
     "../apps/customer/app/index.tsx", "apps/customer/../merchant/app/a.tsx",
     "apps/customer\\app\\index.tsx", "apps//customer/index.tsx",
     "apps/customer/id_ed25519", "tools/dev/temp.key",
-    "apps/customer/.ssh/config", "apps/customer/.cache/file"
+    "apps/customer/.ssh/config", "apps/customer/.cache/file",
+    "packages/customer/src/index.ts", "packages/wlt/src/index.ts", "packages/BadName/src/index.ts",
+    "packages/neutral/.next-dev/file.js", "packages/neutral/secrets.local.json",
+    "packages/neutral/local-test.secret.json", "packages/neutral/src/CON.ts",
+    "apps/customer/file.ts.", "apps/customer/file.ts ", "apps/control-panel/next-env.d.ts",
+    "pnpm-lock.yaml/extra", "services/identity/package.json/extra"
   ]) assert.equal(allowed(path), false, path);
 });
 
@@ -890,4 +923,15 @@ test("stable owner source audits without acquiring apply authority; drift requir
   assert.equal(audit(3,result("unknown")),"retry");
   assert.equal(audit(3,result("dsh")+result("NONE","PASS")),"retry");
   assert.equal(audit(1,"OWNER_APPLY_STARTED dsh\n"),"retry");
+});
+
+
+test("mirror projection handles a future shared package without a second package-name registry", () => {
+  const paths=mirrorCandidatePaths(["packages/new-purpose/package.json","packages/new-purpose/src/index.ts","packages/new-purpose/src/index.ts","packages/new-purpose/.env","packages/new-purpose/.next-dev/build.js"]);
+  assert.deepEqual(paths,["packages/new-purpose/package.json","packages/new-purpose/src/index.ts"]);
+  assert.doesNotThrow(()=>assertMirrorPackageManifest("new-purpose",Buffer.from(JSON.stringify({name:"@bthwani/new-purpose",private:true}))));
+  for(const value of [{name:"other",private:true},{name:"@bthwani/new-purpose",private:false}]){
+    assert.throws(()=>assertMirrorPackageManifest("new-purpose",Buffer.from(JSON.stringify(value))),/MIRROR_PACKAGE_MANIFEST_INVALID/);
+  }
+  assert.throws(()=>mirrorCandidatePaths(["packages/new-purpose/src/A.ts","packages/new-purpose/src/a.ts"]),/MIRROR_CASE_COLLISION/);
 });

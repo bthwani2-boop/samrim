@@ -8,28 +8,14 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
+import { containsLikelySecret } from "../security/verify-secrets.mjs";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
-import { assertCompatibleBranchTransition, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeAuditResult, runtimeBaselineProofDue, runtimePollAction, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeAuditResult, runtimeBaselineProofDue, runtimePollAction, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
 const targetIdentity = "BTHWANI-DOCKER";
 const targetRoot = "C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime";
-const include = [
-  "apps/customer", "apps/merchant", "apps/captain", "apps/control-panel",
-  "packages/design-system", "packages/push-device", "packages/tamagui-config",
-  ...["identity", "dsh", "wlt"].flatMap(owner =>
-    ["package.json", "tsconfig.json", "clients"].map(entry => `services/${owner}/${entry}`)),
-  "tools/mobile", "tools/dev", "patches",
-  "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", ".node-version",
-  "tsconfig.base.json", "nx.json", "biome.json"
-];
-const blockedDirs = new Set([
-  ".git", "node_modules", ".expo", ".next", "dist", "build", "coverage",
-  ".cache", ".turbo", "test-results", "private", ".ssh", ".secrets",
-  "logs", ".pnpm-store", "tmp"
-]);
-const secret = /^(?:\.env(?:\..*)?|\.npmrc|\.git-credentials|google-services\.json|GoogleService-Info\.plist|credentials(?:\..*)?|id_rsa|id_ed25519|.*\.(?:pem|key|p12|pfx|jks|keystore))$/i;
 const exe = {
   pwsh: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
   git: "C:\\Program Files\\Git\\cmd\\git.exe",
@@ -42,39 +28,39 @@ const logFile = path.join(stateDir, "sync.log");
 const sshOptions = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=6"];
 const quote = v => "'" + v.replaceAll("'", "''") + "'";
 const destination = rel => path.win32.join(targetRoot, ...rel.split("/"));
-function hash(file) {
-  // Open before validation and read through that descriptor: a path swap
-  // cannot redirect the bytes we hash to a different file.
-  const fd = fs.openSync(file, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-  try {
-    const opened = fs.fstatSync(fd, { bigint: true });
-    let pathEntry;
-    try {
-      pathEntry = fs.lstatSync(file, { bigint: true });
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        throw new Error("UNSAFE_SOURCE_FILE " + path.relative(root, file));
-      }
+function readVerifiedFile(file) {
+  // One descriptor, with identity readback; do not follow a substituted leaf.
+  const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW??0));
+  try{
+    const opened=fs.fstatSync(fd,{bigint:true});
+    let entry;
+    try{entry=fs.lstatSync(file,{bigint:true});}
+    catch(error){
+      if(error.code==="ENOENT")throw new Error("UNSAFE_SOURCE_FILE "+path.relative(root,file));
       throw error;
     }
-    if (!opened.isFile() || !pathEntry.isFile() || pathEntry.isSymbolicLink() ||
-        opened.dev !== pathEntry.dev || opened.ino !== pathEntry.ino) {
-      throw new Error("UNSAFE_SOURCE_FILE " + path.relative(root, file));
-    }
-    return crypto.createHash("sha256").update(fs.readFileSync(fd)).digest("hex").toUpperCase();
-  } finally {
-    fs.closeSync(fd);
-  }
+    if(!opened.isFile()||!entry.isFile()||entry.isSymbolicLink()||
+      opened.dev!==entry.dev||opened.ino!==entry.ino)throw new Error("UNSAFE_SOURCE_FILE "+path.relative(root,file));
+    return fs.readFileSync(fd);
+  }finally{fs.closeSync(fd);}
 }
-function allowed(rel) {
-  if (typeof rel !== "string" || !rel || rel.includes("\\") ||
-      rel.startsWith("/") || rel.includes("//") || rel.includes("\0")) return false;
-  const parts = rel.split("/");
-  if (parts.some(x => !x || x === "." || x === ".." || /[<>:"|?*]/.test(x) ||
-      [...x].some(char => char.codePointAt(0) < 32) ||
-      blockedDirs.has(x.toLowerCase()) || secret.test(x))) return false;
-  if (rel === "tools/dev/docker" || rel.startsWith("tools/dev/docker/")) return false;
-  return include.some(x => x === rel || rel.startsWith(x + "/"));
+function digestBytes(bytes){return crypto.createHash("sha256").update(bytes).digest("hex").toUpperCase();}
+function hash(file){return digestBytes(readVerifiedFile(file));}
+function mirrorFile(rel) {
+  if(!allowed(rel))throw new Error("MIRROR_PATH_INVALID");
+  const parts=rel.split("/");
+  const full=path.join(root,...parts);
+  // A tracked file can have an untracked junction as its ancestor on Windows.
+  // Check the source directory chain before reading any bytes.
+  let parent=root;
+  for(const part of parts.slice(0,-1)){
+    parent=path.join(parent,part);
+    const info=fs.lstatSync(parent);
+    if(!info.isDirectory()||info.isSymbolicLink())throw new Error("UNSAFE_SOURCE_DIRECTORY "+path.relative(root,parent));
+  }
+  const bytes=readVerifiedFile(full);
+  if(!bytes.includes(0)&&containsLikelySecret(bytes.toString("utf8")))throw new Error("MIRROR_SECRET_MARKER "+rel);
+  return {bytes,digest:digestBytes(bytes)};
 }
 function failureDetail(result) {
   return String(result.error?.message || result.stderr || result.status).slice(0, 250);
@@ -207,18 +193,30 @@ function logger(line) {
 }
 function head() { return run("git", ["rev-parse", "HEAD"]); }
 function branch() { return run("git", ["branch", "--show-current"]); }
-function inventory(filter = () => true) {
-  const raw = run("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", ...include]);
-  const files = [...new Set(raw.split("\0").filter(rel => allowed(rel) && filter(rel)))]
-    .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
-  const found = new Map();
-  for (const rel of files) {
-    const full = path.join(root, ...rel.split("/"));
-    try {
-      found.set(rel, hash(full));
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
+function inventory(filter=()=>true) {
+  const raw=run("git",["ls-files","--cached","--others","--exclude-standard","-z","--",...mirrorSourceRoots]);
+  const paths=mirrorCandidatePaths(raw.split("\0"));
+  const found=new Map(),admittedPackages=new Set();
+  // Read actual package declarations first. A deleted package is absent;
+  // a surviving package with no admitted manifest must not be partly mirrored.
+  for(const rel of paths){
+    const name=mirrorPackageName(rel);
+    if(!name||rel!=="packages/"+name+"/package.json")continue;
+    try{
+      const file=mirrorFile(rel);
+      assertMirrorPackageManifest(name,file.bytes);
+      admittedPackages.add(name);
+      if(filter(rel))found.set(rel,file.digest);
+    }catch(error){if(error.code!=="ENOENT")throw error;}
+  }
+  for(const rel of paths){
+    if(found.has(rel)||!filter(rel))continue;
+    try{
+      const file=mirrorFile(rel);
+      const name=mirrorPackageName(rel);
+      if(name&&!admittedPackages.has(name))throw new Error("MIRROR_PACKAGE_MANIFEST_REQUIRED "+name);
+      found.set(rel,file.digest);
+    }catch(error){if(error.code!=="ENOENT")throw error;}
   }
   return found;
 }
@@ -381,7 +379,7 @@ function buildPublishCode({dest, stage, backup, archive, actual, expected, confl
 }
 function publish(rel, expected, previous, observed) {
   const full = path.join(root, ...rel.split("/"));
-  if (hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
+  if (mirrorFile(rel).digest !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
   const actual = observed ?? remoteHash(rel);
   if (actual === expected) return true;
   // The Windows SSH stdin pipe can stall on binary payloads. SFTP-backed scp
@@ -395,7 +393,7 @@ function publish(rel, expected, previous, observed) {
   let committed = false;
   try {
     copyToRemote(full, stage);
-    if (hash(full) !== expected) throw new Error("SOURCE_CHANGED_WHILE_COPYING " + rel);
+    if (mirrorFile(rel).digest !== expected) throw new Error("SOURCE_CHANGED_WHILE_COPYING " + rel);
     const result = remote(code);
     if (["DEPENDENCY_INPUT_BUSY", "DEPENDENCY_INPUT_RECOVERY_REQUIRED"].includes(result)) return false;
     if (result !== "PUBLISHED" && result !== "PUBLISHED_PRESERVED") {
