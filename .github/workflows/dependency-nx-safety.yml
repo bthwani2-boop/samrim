@@ -3,6 +3,7 @@ name: Dependency and Nx Safety
 # Free standard runner: no Nx Cloud credits, agents, or paid services.
 # Scheduled checks begin only when this workflow exists on the default branch.
 on:
+  workflow_call:
   workflow_dispatch:
   # Every current and future development branch is eligible.
   # Archived donor refs stay read-only, outside development CI.
@@ -33,30 +34,7 @@ on:
       - '.github/workflows/dependency-nx-safety.yml'
   schedule:
     - cron: '17 3 * * 1'
-  # Main is the protected integration target; branch names are never pinned.
-  pull_request:
-    branches:
-      - main
-    paths:
-      - '**/package.json'
-      - 'pnpm-lock.yaml'
-      - 'pnpm-workspace.yaml'
-      - '.npmrc'
-      - '.node-version'
-      - 'tsconfig.base.json'
-      - '**/tsconfig.json'
-      - 'patches/**'
-      - 'tools/security/picomatch-redos.test.mjs'
-      - 'nx.json'
-      - '**/project.json'
-      - 'services/**/contracts/**'
-      - 'services/**/database/migrations/**'
-      - 'services/**/database/schema/**'
-      - 'services/wlt/database/sandbox/**'
-      - 'tools/dev/verify-nx-project-graph.test.mjs'
-      - 'tools/mobile/verify-application-boundaries.mjs'
-      - 'tools/mobile/verify-application-boundaries.test.mjs'
-      - '.github/workflows/dependency-nx-safety.yml'
+  # Main pull requests invoke this workflow from CI's required gate.
 
 permissions:
   contents: read

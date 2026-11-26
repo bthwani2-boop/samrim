@@ -1,6 +1,7 @@
 name: Go Quality and Isolated Owner PostgreSQL
 
 on:
+  workflow_call:
   workflow_dispatch:
   # Every current and future development branch is eligible.
   # Archived donor refs stay read-only, outside development CI.
@@ -30,31 +31,7 @@ on:
       - 'tools/dev/docker/owner-baseline-transition.mjs'
       - 'tests/infra/test-owner-postgres-output.sh'
       - 'nx.json'
-  # Main is the protected integration target; branch names are never pinned.
-  pull_request:
-    branches:
-      - main
-    paths:
-      - '.go-version'
-      - '.node-version'
-      - '.github/workflows/go-quality.yml'
-      - 'tools/dev/check-go.mjs'
-      - 'tools/dev/check-go.test.mjs'
-      - 'services/**/backend/**'
-      - 'services/**/contracts/openapi/**'
-      - 'services/**/database/migrations/**'
-      - 'services/**/database/schema/**'
-      - 'services/wlt/database/sandbox/**'
-      - 'services/**/.dockerignore'
-      - 'tools/dev/docker/build-owner-image.ps1'
-      - 'infra/compose*.yaml'
-      - 'tests/infra/compose.operator-webauthn-sandbox.yaml'
-      - 'tests/infra/payment-mock/**'
-      - 'tests/infra/verify-owner-postgres-ci.sh'
-      - 'tests/infra/verify-isolated-postgres.ps1'
-      - 'tools/dev/docker/owner-baseline-transition.mjs'
-      - 'tests/infra/test-owner-postgres-output.sh'
-      - 'nx.json'
+  # Main pull requests invoke this workflow from CI's required gate.
 
 permissions:
   contents: read

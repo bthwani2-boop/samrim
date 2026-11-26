@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
@@ -21,23 +22,24 @@ function events(file) {
     while (end < lines.length && !/^  [a-z_]+:$/.test(lines[end])) end++;
     return lines.slice(start + 1, end).join("\n");
   }
-  return { content, push: block("push"), pr: block("pull_request") };
+  return { content, push: block("push"), pr: lines.includes("  pull_request:") ? block("pull_request") : null };
 }
 
 for (const file of workflows) {
   test(file + " handles future branches and excludes historical archives", () => {
-    const { push, pr } = events(file);
+    const { content, push, pr } = events(file);
     assert.match(push, /^    branches:\n      - '\*\*'\n      - '!archive\/\*\*'\n      - '!41'$/m);
     assert.doesNotMatch(push, /^    branches-ignore:/m);
     assert.doesNotMatch(push, /refoundation\/clean-house-20261112/);
-    assert.match(pr, /^    branches:\n      - main$/m);
-    assert.doesNotMatch(pr, /refoundation\/clean-house-20261112/);
     if (file.endsWith("/ci.yml")) {
+      assert.match(pr, /^    branches:\n      - main$/m);
+      assert.doesNotMatch(pr, /refoundation\/clean-house-20261112/);
       assert.doesNotMatch(push, /^    paths(?:-ignore)?:/m);
       assert.doesNotMatch(pr, /^    paths(?:-ignore)?:/m);
     } else {
       assert.match(push, /^    paths:/m);
-      assert.match(pr, /^    paths:/m);
+      assert.equal(pr, null, "main PRs use the required CI caller, never path-filtered PR events");
+      assert.match(content, /^  workflow_call:$/m);
     }
   });
 }
@@ -47,7 +49,7 @@ test("fast-guard remains required on every eligible push and main PR", () => {
   assert.doesNotMatch(push, /^    paths(?:-ignore)?:/m);
   assert.match(pr, /^    branches:\n      - main$/m);
   assert.match(content, /^    name: fast-guard$/m);
-  assert.match(content, /^    needs: \[foundation, presentation\]$/m);
+  assert.match(content, /^    needs: \[foundation, presentation, dependency_pr, go_pr\]$/m);
   assert.match(content, /^    if: \$\{\{ !cancelled\(\) \}\}$/m);
   assert.match(content, /^      - name: Refuse read-only archive as main PR source$/m);
   assert.match(content, /^            archive\/\*\|41\)$/m);
@@ -90,13 +92,13 @@ test("CI must reject unadmitted new tests before coverage and fast-guard", () =>
 test("SQL baseline, sandbox and retained migration changes trigger Go quality and Nx dependency workflows", () => {
   for (const file of [workflows[1], workflows[2]]) {
     const { push, pr } = events(file);
+    assert.equal(pr, null, file + ": PR calls must be unconditional");
     for (const pattern of [
       "services/**/database/migrations/**",
       "services/**/database/schema/**",
       "services/wlt/database/sandbox/**",
     ]) {
       assert.ok(push.includes("      - '" + pattern + "'"), file + ": missing push " + pattern);
-      assert.ok(pr.includes("      - '" + pattern + "'"), file + ": missing PR " + pattern);
     }
   }
 });
@@ -105,7 +107,7 @@ test("the disposable PostgreSQL job routes and runs the DSH restore rehearsal", 
   const { content, push, pr } = events(workflows[2]);
   const restoreScript = /^ {6}- 'tests\/infra\/verify-isolated-postgres\.ps1'$/m;
   assert.match(push, restoreScript);
-  assert.match(pr, restoreScript);
+  assert.equal(pr, null);
   const job = content.slice(content.indexOf("\n  owner-postgres-integration:\n"));
   assert.match(job, /shell: pwsh\n {8}run: \.\/tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/);
 });
@@ -129,21 +131,17 @@ test("the relocated disposable WebAuthn stack still triggers owner CI", () => {
   const { push, pr } = events(workflows[2]);
   const pattern = "      - 'tests/infra/compose.operator-webauthn-sandbox.yaml'";
   assert.ok(push.includes(pattern));
-  assert.ok(pr.includes(pattern));
+  assert.equal(pr, null);
 });
 
 test("CI reruns the relevant checks when shared toolchain or dependency inputs change", () => {
   for (const file of [workflows[1], workflows[2]]) {
-    const { push, pr } = events(file);
-    for (const block of [push, pr]) {
-      assert.ok(block.includes("      - '.node-version'"), file + ": missing pinned Node trigger");
-    }
+    const { push } = events(file);
+    assert.ok(push.includes("      - '.node-version'"), file + ": missing pinned Node trigger");
   }
-  const { push, pr } = events(workflows[1]);
-  for (const block of [push, pr]) {
-    for (const pattern of [".npmrc", "tsconfig.base.json", "**/tsconfig.json", "patches/**"]) {
-      assert.ok(block.includes("      - '" + pattern + "'"), "Dependency/Nx missing " + pattern);
-    }
+  const { push } = events(workflows[1]);
+  for (const pattern of [".npmrc", "tsconfig.base.json", "**/tsconfig.json", "patches/**"]) {
+    assert.ok(push.includes("      - '" + pattern + "'"), "Dependency/Nx missing " + pattern);
   }
 });
 
@@ -171,4 +169,54 @@ test("Go quality runs a pinned fail-closed vulnerability scan for every deployed
   assert.match(step, /cd "services\/\$service\/backend"/);
   assert.match(step, /"\$scanner" \.\/\.\.\./);
   assert.doesNotMatch(step, /continue-on-error|\|\| true/);
+});
+
+test("main PR must invoke all owner and dependency checks through required fast-guard", () => {
+  const { content, pr } = events(workflows[0]);
+  assert.doesNotMatch(pr, /^    paths(?:-ignore)?:/m);
+  for (const [job, file] of [
+    ["dependency_pr", workflows[1]],
+    ["go_pr", workflows[2]],
+  ]) {
+    const jobPattern = new RegExp(
+      "  " + job + ":\\n    if: \\$\\{\\{ github\\.event_name == 'pull_request' \\}\\}\\n    uses: \\./" + file.replace(/\./g, "\\."),
+    );
+    assert.match(content, jobPattern);
+    const called = readFileSync(new URL(file, root), "utf8").split(/^permissions:/m)[0];
+    assert.match(called, /^  workflow_call:$/m);
+    assert.doesNotMatch(called, /^  pull_request:/m, "PR must run through one owner workflow call");
+  }
+  assert.match(content, /^    needs: \[foundation, presentation, dependency_pr, go_pr\]$/m);
+});
+
+test("required gate fails closed for missing, skipped, cancelled or failed main PR owner checks", () => {
+  const { content } = events(workflows[0]);
+  const script = content.match(/node --input-type=module <<'CI_GATE'\n([\s\S]*?)\n          CI_GATE/);
+  assert.ok(script, "required gate must expose executable predecessor decision");
+  const pass = {
+    CI_EVENT: "pull_request",
+    FOUNDATION_RESULT: "success",
+    PRESENTATION_RESULT: "success",
+    DEPENDENCY_RESULT: "success",
+    GO_RESULT: "success",
+  };
+  const run = (env) =>
+    spawnSync(process.execPath, ["--input-type=module"], {
+      input: script[1],
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+    });
+  assert.equal(run(pass).status, 0);
+  for (const key of ["FOUNDATION_RESULT", "PRESENTATION_RESULT", "DEPENDENCY_RESULT", "GO_RESULT"]) {
+    for (const result of ["failure", "cancelled", "skipped", ""]) {
+      assert.equal(run({ ...pass, [key]: result }).status, 1, key + ": " + result);
+    }
+  }
+  for (const event of ["push", "workflow_dispatch"]) {
+    const scoped = { ...pass, CI_EVENT: event, DEPENDENCY_RESULT: "skipped", GO_RESULT: "skipped" };
+    assert.equal(run(scoped).status, 0);
+    assert.equal(run({ ...scoped, FOUNDATION_RESULT: "failure" }).status, 1);
+    assert.equal(run({ ...scoped, GO_RESULT: "failure" }).status, 1);
+  }
+  assert.equal(run({ ...pass, CI_EVENT: "unexpected" }).status, 1);
 });
