@@ -1,11 +1,10 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Link, useLocalSearchParams } from "expo-router";
+import { Link } from "expo-router";
 import * as React from "react";
 import { Keyboard, SafeAreaView, ScrollView } from "react-native";
 import { Button, Card, Dialog, H2, Input, Paragraph, Select, Sheet, Switch, Text, XStack, YStack } from "tamagui";
-import UniversalRendererLab from "../renderer-lab";
 
-// Stage-4 renderer-only acceptance fixture. No API, identity, commercial data, or product workflow.
+// Tamagui component acceptance fixture. No API, identity, commercial data, or product workflow.
 export default function ComponentLab() {
   const { theme } = useMobileAppearance();
   const [name, setName] = React.useState("");
@@ -13,8 +12,6 @@ export default function ComponentLab() {
   const [enabled, setEnabled] = React.useState(false);
   const [dialog, setDialog] = React.useState(false);
   const [sheet, setSheet] = React.useState(false);
-  const { renderer } = useLocalSearchParams<{ renderer?: string }>();
-  if (renderer === "universal") return <UniversalRendererLab />;
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView contentContainerStyle={{ flexGrow: 1, padding: 20 }} keyboardShouldPersistTaps="handled">
