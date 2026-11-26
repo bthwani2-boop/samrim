@@ -33,6 +33,16 @@ test("new nested .test.mjs is discovered without Git tracking", () => fixture(({
   ]);
 }));
 
+test("project and workspace discovery share deterministic ordinal ordering", () => fixture(({ root, folder, add }) => {
+  const names = ["z.test.mjs", "a.test.mjs", "Z-test.test.mjs", "_test.test.mjs", "é.test.mjs"];
+  for (const name of names) add(name);
+  const expected = ["Z-test.test.mjs", "_test.test.mjs", "a.test.mjs", "z.test.mjs", "é.test.mjs"]
+    .map(name => "apps/customer/src/features/" + name);
+  assert.deepEqual(discoverNodeSourceTests(root, folder), expected);
+  assert.deepEqual(discoverWorkspaceNodeTests(root), expected);
+  assert.deepEqual(discoverWorkspaceTestSuites(root).source, expected);
+}));
+
 test("test.tsx, test.ts and spec.tsx cannot silently escape CI coverage", () => {
   for (const name of ["cart/cart.test.tsx", "cart/cart.test.ts", "cart/cart.spec.tsx", "cart/cart.test.js"]) {
     fixture(({ root, folder, add }) => {
