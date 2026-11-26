@@ -147,26 +147,6 @@ test('service placement guard rejects wrong owners, unnamed SQL and duplicate co
   }
 });
 
-test('Sonar requires every Go owner and rejects expired quality gate waivers', async () => {
-  const { readFileSync } = await import('node:fs');
-  const ci = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
-  const sonar = ci.slice(ci.indexOf('\n  sonar:\n'));
-  assert.ok(sonar.includes("name: ${{ github.event_name == 'pull_request' && 'SonarQube Cloud Quality Gate' || 'SonarQube main analysis' }}"));
-  assert.doesNotMatch(sonar, /Temporary PR 193 coverage exception|sonar[.]coverage[.]exclusions/);
-  assert.doesNotMatch(sonar, /continue-on-error:|Verify the approved coverage exception/);
-  assert.match(sonar, /for service in identity dsh wlt; do/);
-  const config = readFileSync(new URL('../../sonar-project.properties', import.meta.url), 'utf8');
-  assert.match(config, /^sonar\.go\.coverage\.reportPaths=coverage\/identity-go\.out,coverage\/dsh-go\.out,coverage\/wlt-go\.out,coverage\/owner-postgres\/\*\.out$/m);
-  assert.ok(sonar.includes('bash tests/infra/verify-owner-postgres-ci.sh --coverage'));
-  const ownerRunner = readFileSync(new URL('../../tests/infra/verify-owner-postgres-ci.sh', import.meta.url), 'utf8');
-  assert.match(ownerRunner, /^  cover_flags=\(-covermode=atomic -coverpkg=\.\/\.\.\.\)$/m,
-    'Measure service packages invoked by owner integration tests, not just the test entry package');
-  assert.ok(sonar.indexOf('bash tests/infra/verify-owner-postgres-ci.sh --coverage') <
-    sonar.indexOf('-Dsonar.qualitygate.wait=true'));
-  assert.ok(sonar.includes('-Dsonar.qualitygate.wait=true'));
-  assert.ok(sonar.includes('SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}'));
-});
-
 test('an untracked fourth business service cannot bypass the owner-placement guard', async () => {
   const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
   const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-rogue-owner-'));

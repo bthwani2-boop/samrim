@@ -408,6 +408,26 @@ test("Sonar uses the single artifact admission boundary and remeasures only a va
   });
 });
 
+test("Sonar scanner consumes every measured owner report with no quality gate waiver", () => {
+  const scanner = one(sonar, step => action(step, "SonarSource/sonarqube-scan-action"), "scanner");
+  mandatory(sonar, scanner);
+  assert.match(scanner.with.args, /-Dsonar\.qualitygate\.wait=true(?:\s|$)/);
+  assert.equal(scanner.env.SONAR_TOKEN, expr("secrets.SONAR_TOKEN"));
+  assert.doesNotMatch(JSON.stringify(sonar), /sonar[.]coverage[.]exclusions|Temporary PR 193 coverage exception|Verify the approved coverage exception/);
+  const config = readFileSync(path.join(root, "sonar-project.properties"), "utf8");
+  const settings = Object.fromEntries(config.split(/\r?\n/).filter(line => line && !line.startsWith("#")).map(line => {
+    const separator = line.indexOf("=");
+    return [line.slice(0, separator), line.slice(separator + 1)];
+  }));
+  assert.equal(settings["sonar.javascript.lcov.reportPaths"], "coverage/lcov.info");
+  assert.deepEqual(settings["sonar.go.coverage.reportPaths"].split(",").sort(),
+    ["coverage/dsh-go.out", "coverage/identity-go.out", "coverage/owner-postgres/*.out", "coverage/wlt-go.out"]);
+  assert.equal(settings["sonar.coverage.exclusions"], undefined);
+  const ownerRunner = readFileSync(path.join(root, "tests/infra/verify-owner-postgres-ci.sh"), "utf8");
+  assert.match(ownerRunner, /^  cover_flags=\(-covermode=atomic -coverpkg=\.\/\.\.\.\)$/m,
+    "Measure all service packages exercised by isolated PostgreSQL tests");
+});
+
 test("Go vulnerability gate is pinned, scans all deployed owners and precedes image creation", () => {
   const scan = runs(goQuality, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@/);
   const image = runs(goQuality, /docker build --file/);
