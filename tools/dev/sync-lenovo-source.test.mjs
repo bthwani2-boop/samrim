@@ -8,9 +8,7 @@ import test from "node:test";
 import { assertMirrorPackageManifest, mirrorCandidatePaths } from "./sync-lenovo-reconciliation.mjs";
 import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict, remoteInvocation } from "./sync-lenovo-source.mjs";
 
-test("manifest verification rejects an edit before HEAD changes and recovers after sync", {
-  skip: process.platform !== "win32",
-}, () => {
+test("manifest verification rejects an edit before HEAD changes and recovers after sync", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-verify-mirror-"));
   const root = path.join(folder, "source");
   const localAppData = path.join(folder, "state");
@@ -18,7 +16,7 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
   const entry = "tools/dev/sync-lenovo-source.mjs";
   const mirrored = [entry, "tools/dev/sync-lenovo-reconciliation.mjs", "apps/customer/example.ts", "apps/customer/package.json"];
   const git = (...args) => {
-    const result = spawnSync("C:\\Program Files\\Git\\cmd\\git.exe", args, { cwd: root, encoding: "utf8" });
+    const result = spawnSync(process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git", args, { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
     return result.stdout.trim();
   };
@@ -322,16 +320,17 @@ test("compatible new branch at the same HEAD still must reconcile manifest branc
 });
 
 
+const fixturePowerShell = process.platform === "win32" ? "C:\\Program Files\\PowerShell\\7\\pwsh.exe" : "pwsh";
 function isolatedPowerShell(code) {
   // Run only command builders against disposable local files. Never invoke SSH,
   // the Lenovo watcher, or source reconciliation during this regression.
-  return spawnSync("pwsh.exe", [
+  return spawnSync(fixturePowerShell, [
     "-NoProfile", "-NonInteractive", "-EncodedCommand",
     Buffer.from(code, "utf16le").toString("base64"),
   ], { encoding: "utf8", windowsHide: true, timeout: 15000 });
 }
 
-test("replacement archives bytes written after the initial digest check", { skip: process.platform !== "win32" }, () => {
+test("replacement archives bytes written after the initial digest check", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-atomic-replace-"));
   try {
     const dest = path.join(folder, "destination.txt");
@@ -365,7 +364,7 @@ test("replacement archives bytes written after the initial digest check", { skip
   }
 });
 
-test("managed deletion archives a concurrent edit before removing its quarantine", { skip: process.platform !== "win32" }, () => {
+test("managed deletion archives a concurrent edit before removing its quarantine", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-atomic-delete-"));
   try {
     const dest = path.join(folder, "managed.txt");
@@ -391,7 +390,7 @@ test("managed deletion archives a concurrent edit before removing its quarantine
   }
 });
 
-test("failed archive restores a quarantined file without losing bytes", { skip: process.platform !== "win32" }, () => {
+test("failed archive restores a quarantined file without losing bytes", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-restore-"));
   try {
     const dest = path.join(folder, "managed.txt");
@@ -413,7 +412,7 @@ test("failed archive restores a quarantined file without losing bytes", { skip: 
   }
 });
 
-test("a replacement created during deletion is never overwritten or removed", { skip: process.platform !== "win32" }, () => {
+test("a replacement created during deletion is never overwritten or removed", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-replacement-"));
   try {
     const dest = path.join(folder, "managed.txt");
@@ -444,7 +443,7 @@ test("full remote audit deadline is not postponed by continuing source edits", (
   assert.equal(remoteAuditDue(state, 30000, 30500), true);
 });
 
-test("managed deletion refuses an ancestor junction outside the source mirror", { skip: process.platform !== "win32" }, (t) => {
+test("managed deletion refuses a redirected ancestor outside the source mirror", (t) => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-junction-"));
   try {
     const root = path.join(folder, "mirror");
@@ -453,7 +452,7 @@ test("managed deletion refuses an ancestor junction outside the source mirror", 
     mkdirSync(external);
     const junction = path.join(root, "app");
     try {
-      symlinkSync(external, junction, "junction");
+      symlinkSync(external, junction, process.platform === "win32" ? "junction" : "dir");
     } catch (error) {
       if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) {
         t.skip("junction creation unavailable on this test host");
@@ -856,7 +855,7 @@ test("dependency inputs fail closed across interrupted installs and resume only 
   }finally{rmSync(folder,{recursive:true,force:true});}
 });
 
-test("long SSH commands use the existing bounded text-line transport", {skip:process.platform !== "win32"}, () => {
+test("long SSH commands use the existing bounded text-line transport", () => {
   const short="Write-Output 'short'";
   const small=remoteInvocation(short);
   assert.equal(small.input,undefined);
@@ -868,7 +867,7 @@ test("long SSH commands use the existing bounded text-line transport", {skip:pro
   assert.equal(Buffer.from(large.input.trim(),"base64").toString("utf8"),long);
   const decoded=Buffer.from(large.args.at(-1),"base64").toString("utf16le");
   assert.match(decoded,/ReadLine\(\)/);
-  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-EncodedCommand",large.args.at(-1)],{
+  const result=spawnSync(fixturePowerShell,["-NoProfile","-NonInteractive","-EncodedCommand",large.args.at(-1)],{
     input:large.input,encoding:"utf8",windowsHide:true,timeout:15000
   });
   assert.equal(result.status,0,result.stderr);
@@ -934,4 +933,18 @@ test("mirror projection handles a future shared package without a second package
     assert.throws(()=>assertMirrorPackageManifest("new-purpose",Buffer.from(JSON.stringify(value))),/MIRROR_PACKAGE_MANIFEST_INVALID/);
   }
   assert.throws(()=>mirrorCandidatePaths(["packages/new-purpose/src/A.ts","packages/new-purpose/src/a.ts"]),/MIRROR_CASE_COLLISION/);
+});
+
+test("source mirror CLI accepts one exact role and rejects the retired manual writer", async () => {
+  const { parseMirrorCommand } = await import("./sync-lenovo-source.mjs");
+  assert.deepEqual(parseMirrorCommand(["--watch"]), {action:"--watch"});
+  assert.deepEqual(parseMirrorCommand(["--verify-manifest"]), {action:"--verify-manifest"});
+  assert.deepEqual(parseMirrorCommand(["--verify-dependency-inputs"]), {action:"--verify-dependency-inputs"});
+  assert.deepEqual(parseMirrorCommand(["--check-path","apps/customer/app/index.tsx"]), {action:"--check-path",name:"apps/customer/app/index.tsx"});
+  for (const argv of [[],["--once"],["--watch","--verify-manifest"],["--verify-dependency-inputs","--watch"],["--check-path"],["--watch","extra"]]) {
+    assert.throws(()=>parseMirrorCommand(argv),/USAGE/);
+    const result=spawnSync(process.execPath,[new URL("./sync-lenovo-source.mjs",import.meta.url).pathname.replace(/^\/(?=[A-Za-z]:)/,""),...argv],{encoding:"utf8",timeout:10000});
+    assert.notEqual(result.status,0);
+    assert.match(result.stderr,/USAGE/);
+  }
 });

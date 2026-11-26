@@ -40,8 +40,8 @@ For a genuinely usable **isolated** Operator login, independently verify that th
 
 ## Commands
 - Validate the existing watcher code: `node --check tools/dev/sync-lenovo-source.mjs`.
-- The running Scheduled Task already reconciles changes automatically; do not launch a second `--once`/`--watch` source writer.
-- Test policy: node --test D:\samrim\tools\dev\sync-lenovo-source.test.mjs
+- The running Scheduled Task already reconciles changes automatically; the task owns the sole `--watch` writer. The manual `--once` entry has been removed. Read-only manifest and dependency verification is portable to CI; it never admits a remote write.
+- Test policy: run `node --test tools/dev/sync-lenovo-source.test.mjs` from the checkout, on Windows or Linux with PowerShell 7. Windows-only process/mutex proofs retain their actual platform requirements.
 
 ## Isolated owner runtime reconciliation
 

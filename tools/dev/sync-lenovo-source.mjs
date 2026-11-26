@@ -18,7 +18,7 @@ const targetIdentity = "BTHWANI-DOCKER";
 const targetRoot = "C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime";
 const exe = {
   pwsh: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
-  git: "C:\\Program Files\\Git\\cmd\\git.exe",
+  git: process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git",
   ssh: "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
   scp: "C:\\Windows\\System32\\OpenSSH\\scp.exe"
 };
@@ -823,28 +823,37 @@ function pollGraphify() {
     });
   });
 }
-function main() {
-  if (process.argv.includes("--verify-dependency-inputs")) {
-    console.log(JSON.stringify(verifyDependencyInputs()));
-    return;
+// Verification is a read-only Git operation and runs on both CI and Surface.
+// Only the canonical Surface process may enter the write-capable watch loop.
+export function parseMirrorCommand(args) {
+  if (args.length === 1 && ["--watch", "--verify-manifest", "--verify-dependency-inputs"].includes(args[0])) {
+    return { action: args[0] };
   }
-  if (process.argv.includes("--verify-manifest")) {
-    console.log(JSON.stringify(verifyManifest()));
-    return;
+  if (args.length === 2 && args[0] === "--check-path" && args[1]) {
+    return { action: args[0], name: args[1] };
   }
-  const idx = process.argv.indexOf("--check-path");
-  if (idx >= 0) {
-    const name = process.argv[idx + 1] || "";
-    console.log(allowed(name) ? "ACCEPT " + name : "REJECT " + name);
-    process.exitCode = allowed(name) ? 0 : 2;
-    return;
+  throw new Error("USAGE --watch | --verify-manifest | --verify-dependency-inputs | --check-path <path>");
+}
+function main(command) {
+  switch (command.action) {
+    case "--verify-dependency-inputs":
+      console.log(JSON.stringify(verifyDependencyInputs()));
+      return;
+    case "--verify-manifest":
+      console.log(JSON.stringify(verifyManifest()));
+      return;
+    case "--check-path":
+      console.log((allowed(command.name) ? "ACCEPT " : "REJECT ") + command.name);
+      process.exitCode = allowed(command.name) ? 0 : 2;
+      return;
+    case "--watch":
+      remoteReady();
+      if (!fs.existsSync(path.join(root, "AGENTS.md"))) throw new Error("CANONICAL_SOURCE_MISSING");
+      break;
+    default:
+      throw new Error("SOURCE_SYNC_COMMAND_INVALID");
   }
-  if (!process.argv.includes("--once") && !process.argv.includes("--watch")) {
-    throw new Error("USAGE --once | --watch | --verify-manifest | --verify-dependency-inputs | --check-path <path>");
-  }
-  if (!fs.existsSync(path.join(root, "AGENTS.md"))) throw new Error("CANONICAL_SOURCE_MISSING");
   const cycle = () => reconcile();
-  if (process.argv.includes("--watch")) {
     let active = false;
     let lastError = "";
     const watcherInputs = [
@@ -903,9 +912,6 @@ function main() {
     const timer=setInterval(attempt, 1000);
     logger("SOURCE_SYNC_WATCH_ACTIVE trigger=events timerSeconds=1 remoteAuditSeconds=30 watcherDigest="+loaded.slice(0,12));
     attempt();
-  } else {
-    cycle();
-  }
 }
 // Task Scheduler continues to own exactly one Node process. A fresh worker
 // loads the entire module graph; no stale ESM imports survive a planned reload.
@@ -930,11 +936,15 @@ export function watchInProcess(entry = new URL(import.meta.url)) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const reportFailure = e => { console.error("SOURCE_SYNC_ERROR " + e.message); process.exitCode = 1; };
-  if (isMainThread && process.argv.includes("--watch") && !process.argv.includes("--check-path") && !process.argv.includes("--verify-manifest")) {
-    watchInProcess().then(code => { process.exitCode = code; }, reportFailure);
-  } else {
-    try { main(); } catch (e) { reportFailure(e); }
-  }
+  try {
+    const command = parseMirrorCommand(process.argv.slice(2));
+    if (isMainThread && command.action === "--watch") {
+      remoteReady();
+      watchInProcess().then(code => { process.exitCode = code; }, reportFailure);
+    } else {
+      main(command);
+    }
+  } catch (e) { reportFailure(e); }
 }
 
 export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict } from "./sync-lenovo-reconciliation.mjs";
