@@ -440,3 +440,37 @@ test("workspace admission refuses a required manifest reached through an ancesto
   symlinkSync(target, project, "junction");
   assert.throws(() => verifyWorkspace(dir), /Required source directory/);
 });
+
+test('Biome honors Git artifact boundaries without excluding authored tests or application code', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-biome-boundary-'));
+  try {
+    const init = spawnSync('git', ['init', '--quiet'], { cwd: directory, encoding: 'utf8' });
+    assert.equal(init.status, 0, init.stderr);
+    copyFileSync(path.join(root, 'biome.json'), path.join(directory, 'biome.json'));
+    copyFileSync(path.join(root, '.gitignore'), path.join(directory, '.gitignore'));
+    const write = (relative, content) => {
+      const target = path.join(directory, relative);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, content);
+    };
+    const invalid = 'export function compare(a, b) { return a == b; }\n';
+    write('apps/merchant/.tmp/export/bundle.js', invalid);
+    write('apps/merchant/src/valid.js', 'export const valid = true;\n');
+    const lint = () => spawnSync(process.execPath, [
+      path.join(root, 'node_modules/@biomejs/biome/bin/biome'),
+      'lint', '--diagnostic-level=error',
+    ], { cwd: directory, encoding: 'utf8', windowsHide: true });
+    const clean = lint();
+    assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+    for (const relative of ['infra/owned.test.js', 'apps/merchant/src/owned.js']) {
+      write(relative, invalid);
+      const rejected = lint();
+      assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+      assert.match(rejected.stdout + rejected.stderr, /noDoubleEquals/);
+      rmSync(path.join(directory, relative));
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
