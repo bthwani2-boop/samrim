@@ -118,10 +118,17 @@ test("Lenovo Android Customer Identity rejects a different app before startup", 
   }
 });
 
-test("Lenovo Android Customer manifest advertises the tunnel instead of the server's listen port", () => {
-  const preview = launcher.split("if ($EnableDockerCustomerAndroidIdentityPreview) {")[1];
-  assert.ok(preview);
-  assert.match(preview, /\$env:EXPO_PACKAGER_PROXY_URL='http:\/\/127\.0\.0\.1:18101'/);
+test("native Expo proxy follows the canonical Surface port map, not duplicate literals", () => {
+  assert.equal((launcher.match(/\$env:EXPO_PACKAGER_PROXY_URL\s*=/g)||[]).length, 1);
+  assert.doesNotMatch(launcher, /\$env:EXPO_PACKAGER_PROXY_URL\s*=\s*'http:\/\/127\.0\.0\.1:\d+'/);
+  const block = launcher.match(/if \(\$EnableDockerCustomerAndroidIdentityPreview -or \$App -in @\('merchant','captain'\)\) \{[\s\S]*?\r?\n\}/)?.[0];
+  assert.ok(block, "one admitted native manifest proxy assignment");
+  if (process.platform !== "win32") return;
+  const ps = "$ErrorActionPreference='Stop';$developmentPorts=@{apps=@{customer=@{surface=19101};merchant=@{surface=19102};captain=@{surface=19103};'control-panel'=@{surface=14000}}};" +
+    "foreach($App in @('customer','merchant','captain','control-panel')){foreach($EnableDockerCustomerAndroidIdentityPreview in @(($App -eq 'customer'),$false)){Remove-Item Env:EXPO_PACKAGER_PROXY_URL -ErrorAction SilentlyContinue;" + block +
+    ";$expected=if($EnableDockerCustomerAndroidIdentityPreview -or $App -in @('merchant','captain')){'http://127.0.0.1:'+$developmentPorts.apps[$App].surface}else{$null};if($env:EXPO_PACKAGER_PROXY_URL -ne $expected){throw ('PROXY_MISMATCH '+$App)}}}";
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",timeout:15000,windowsHide:true});
+  assert.equal(result.status,0,result.stderr||result.stdout);
 });
 
 test("Lenovo Merchant and Captain Native sign-in requires isolated Identity and DSH owners", () => {

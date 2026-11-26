@@ -273,8 +273,6 @@ if ($EnableDockerCustomerAndroidIdentityPreview) {
   Assert-OwnerEndpoint 'http://127.0.0.1:3201/v1/sessions/current' 401
   $env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
   $env:EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW='1'
-  # Android reaches this Metro server through the standard Surface USB tunnel.
-  $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18101'
 }
 if ($App -in @('merchant','captain')) {
   # Native admission requires verified isolated owners.
@@ -318,7 +316,6 @@ if ($App -in @('merchant','captain')) {
     Assert-OwnerEndpoint 'http://127.0.0.1:3202/v1/stores/mine' 401
     $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN='http://127.0.0.1:3201'
     $env:EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN='http://127.0.0.1:3202'
-    $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18102'
   } else {
     # An isolated DSH may be running without the opt-in Captain routes.
     # Keep the public Expo shell available, but never present a Native
@@ -342,8 +339,11 @@ if ($App -in @('merchant','captain')) {
     } else {
       Remove-Item Env:EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN -ErrorAction SilentlyContinue
     }
-    $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:18103'
   }
+}
+if ($EnableDockerCustomerAndroidIdentityPreview -or $App -in @('merchant','captain')) {
+  # Native clients reach Lenovo Metro through the canonical Surface USB tunnel.
+  $env:EXPO_PACKAGER_PROXY_URL='http://127.0.0.1:'+[int]$developmentPorts.apps.$App.surface
 }
 if ($UseDisposableOperatorSandbox -and (!$EnableIsolatedOperatorPasskeyPreview -or $App -ne 'control-panel')) {
   throw 'OPERATOR_SANDBOX_REQUIRES_LENOVO_CONTROL_PASSKEY_PREVIEW'
