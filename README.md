@@ -15,7 +15,7 @@ The default launch reuses existing servers/tasks and checks their readiness; it 
 
 ## Pinned toolchain and verification
 
-The executable version pins belong to .node-version, .nvmrc, .go-version, package.json and the frozen pnpm lock. The [donor toolchain inventory](docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md) is historical provenance, not another pin table. Do not upgrade toolchains, packages or global PATH without authority.
+The executable version pins belong to .node-version, .nvmrc, .go-version, package.json and the frozen pnpm lock. The [donor toolchain inventory](https://github.com/bthwani2-boop/samrim/blob/1a50fce55cc0eacca61152ac86b5621f344c92db/docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md) is historical provenance, not another pin table. Do not upgrade toolchains, packages or global PATH without authority.
 
     node -p 'process.execPath + " " + process.version'
     node tools/dev/verify-workspace.mjs --require-exact-toolchain
@@ -34,7 +34,7 @@ Do not change the provider executable, global PATH or pin to hide a mismatch. Th
 
 The design system owns authored brand/semantic colors and generated CSS; Tamagui renders Expo and owns the minimal React Native appearance runtime. Operator uses Ant Design. Keep platform-specific component primitives with their renderer and never introduce another palette.
 
-Customer/Merchant support Expo Web SSR and native Android/iOS; Captain's approved host is native Android/iOS. Operator is the Next.js web host. Native IDs, schemes, EAS project IDs, owner and permission configuration remain protected. Use the actual registered manifests and app identity verifier. The [donor manifest inventory](docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json) is historical provenance. Customer/Merchant deliberately omit type: module because the Expo SSR renderer is CommonJS. Expo localization and the Web document boundary own Arabic RTL; avoid screen-level direction overrides.
+Customer/Merchant support Expo Web SSR and native Android/iOS; Captain's approved host is native Android/iOS. Operator is the Next.js web host. Native IDs, schemes, EAS project IDs, owner and permission configuration remain protected. Use the actual registered manifests and app identity verifier. The [donor manifest inventory](https://github.com/bthwani2-boop/samrim/blob/1a50fce55cc0eacca61152ac86b5621f344c92db/docs/reference/MOBILE-FOUNDATION-SOURCE-MANIFESTS.json) is historical provenance. Customer/Merchant deliberately omit type: module because the Expo SSR renderer is CommonJS. Expo localization and the Web document boundary own Arabic RTL; avoid screen-level direction overrides.
 
     pnpm check:design
     pnpm check:apps:source
@@ -63,7 +63,7 @@ Reuse applicable existing specs. To inspect the paths of an existing authorized 
     & .\.specify\scripts\powershell\check-prerequisites.ps1 -PathsOnly -Json
     Remove-Item Env:\SPECIFY_FEATURE_DIRECTORY, Env:\SPECIFY_FEATURE_NO_PERSIST
 
-The native setup-plan.ps1 and setup-tasks.ps1 may be used for genuinely necessary authorized spec artifacts; inspect the current workflow first. Do not invoke branch-creating modes, specify init or agent dispatch in the none integration. CLI presence or path resolution alone does not prove a specification or implementation. Graphify uses the existing Surface runner and watcher; a stale index is INVALIDATED, not permission to replace its owner or force refresh. Use the [reference index](docs/reference/README.md) for historical evidence.
+The native setup-plan.ps1 and setup-tasks.ps1 may be used for genuinely necessary authorized spec artifacts; inspect the current workflow first. Do not invoke branch-creating modes, specify init or agent dispatch in the none integration. CLI presence or path resolution alone does not prove a specification or implementation. Graphify uses the existing Surface runner and watcher; a stale index is INVALIDATED, not permission to replace its owner or force refresh. Use the [reference index](docs/README.md) for historical evidence.
 
 ## Nx, dependencies and CI
 

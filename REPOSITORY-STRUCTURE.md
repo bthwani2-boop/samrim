@@ -12,7 +12,8 @@ This document owns repository placement. [AGENTS.md](AGENTS.md) owns execution a
 | AGENTS.md | Execution, authorization, evidence and Git delivery |
 | REPOSITORY-STRUCTURE.md | Placement and source dependency boundaries |
 | governance/ | Only active durable semantic governance; historical cutover status belongs to its index |
-| docs/reference/ | Nonbinding research, donor provenance, benchmarks and retained historical evidence |
+| docs/README.md | Single documentation navigation index; no policy or status registry |
+| docs/reference/ | Useful nonbinding references and unique historical evidence; do not duplicate plans, live configuration or journey acceptance dossiers |
 | README.md | Current development onboarding and links to canonical operations |
 | .github/ | Branch-independent CI, protected integration checks and PR configuration |
 | .specify/ | Existing pinned Spec Kit scripts, templates and derived governance router |

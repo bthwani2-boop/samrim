@@ -287,7 +287,7 @@ function sourceFixture(t) {
     'pnpm-lock.yaml', 'nx.json', 'knip.jsonc', '.editorconfig', '.gitattributes',
     '.gitignore', 'tsconfig.base.json', 'biome.json',
     'tools/mobile/define-bthwani-expo-app.cjs', 'tools/mobile/verify-app-identity.mjs',
-    'patches/@rc-component__util@1.14.0.patch',
+    'patches/@rc-component__util@1.14.0.patch', 'docs/README.md',
     ...['apps/customer','apps/merchant','apps/captain','apps/control-panel',
       'packages/design-system','packages/tamagui-config'].map(project => project + '/package.json'),
     ...['identity','dsh','wlt'].flatMap(owner => [
@@ -381,4 +381,23 @@ test("service placement does not silently ignore a nested dependency or reposito
   const issues = serviceSourcePlacementIssues(root);
   assert.ok(issues.some(issue => issue.startsWith("services/dsh/backend/node_modules:")));
   assert.ok(issues.some(issue => issue.startsWith("services/wlt/backend/.git:")));
+});
+
+test("documentation placement rejects retired parallel index and journey dossier paths", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  const dossier = path.join(dir, "docs", "journeys");
+  mkdirSync(dossier, { recursive: true });
+  assert.throws(() => verifyWorkspace(dir), /Retired source path returned: docs\/journeys/);
+  rmSync(dossier, { recursive: true, force: true });
+  const reference = path.join(dir, "docs", "reference");
+  mkdirSync(reference, { recursive: true });
+  writeFileSync(path.join(reference, "README.md"), "# Redundant index\n");
+  assert.throws(() => verifyWorkspace(dir), /Retired source path returned: docs\/reference\/README.md/);
+  rmSync(path.join(reference, "README.md"));
+  writeFileSync(path.join(reference, "useful-reference.md"), "# Useful nonbinding reference\n");
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  rmSync(path.join(dir, "docs", "README.md"));
+  assert.throws(() => verifyWorkspace(dir), /Required source must be a real file: docs\/README.md/);
 });

@@ -158,7 +158,8 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
     locked(importer(dependency, project), "typescript", ts);
   }
 
-  for (const retired of ["contracts", "go.work", "apps/app-client", "apps/app-partner",
+  read("docs/README.md");
+  for (const retired of ["docs/journeys", "docs/reference/README.md", "contracts", "go.work", "apps/app-client", "apps/app-partner",
     "apps/app-captain", "tools/mobile/create-bthwani-metro-config.cjs"]) {
     assert.ok(!lstatSync(locate(retired), { throwIfNoEntry: false }), "Retired source path returned: " + retired);
   }
