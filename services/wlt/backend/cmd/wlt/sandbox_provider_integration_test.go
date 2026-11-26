@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -23,6 +24,7 @@ func testVerifiedSandboxProviderFunding(t *testing.T, ctx context.Context, owner
 	}
 	providerCases := map[string]providerState{
 		"cash-in-accepted-01":    {"wallet-two", "17", "YER", "SUCCEEDED", 200},
+		"cash-in-actor-change":   {"wallet-two", "17", "YER", "SUCCEEDED", 200},
 		"cash-in-pending-01":     {"wallet-two", "11", "YER", "PENDING", 200},
 		"cash-in-failed-01":      {"wallet-two", "11", "YER", "FAILED", 200},
 		"cash-in-wrong-actor":    {"wallet-one", "11", "YER", "SUCCEEDED", 200},
@@ -73,6 +75,32 @@ func testVerifiedSandboxProviderFunding(t *testing.T, ctx context.Context, owner
 		if err := run(tc.token, tc.ref, tc.amount, io.Discard); err == nil {
 			t.Errorf("unverified or unauthorized sandbox funding succeeded: %s", tc.ref)
 		}
+	}
+	// Fault-inject an inconsistent Identity response while keeping the real
+	// sandbox database and provider evidence. A different actor must never
+	// receive an otherwise valid provider credit.
+	var identityReads atomic.Int32
+	changedIdentity := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		actor := "wallet-two"
+		if identityReads.Add(1) > 1 {
+			actor = "wallet-one"
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"actorId": actor, "role": "customer", "sessionExpiresAt": "2099-01-01T00:00:00Z",
+		})
+	}))
+	defer changedIdentity.Close()
+	err := runSandboxFunding(ctx, "verify-sandbox-provider-funding", []string{"cash-in-actor-change", "17"},
+		strings.NewReader(customerToken+"\n"), io.Discard, func(key string) string {
+			if key == "WLT_TEST_IDENTITY_ORIGIN" {
+				return changedIdentity.URL
+			}
+			return env[key]
+		})
+	if err == nil || !strings.Contains(err.Error(), "provider actor changed") || identityReads.Load() != 2 {
+		t.Fatalf("provider funding accepted inconsistent Identity actor or failed for another reason: %v", err)
 	}
 	var before int
 	if err := owner.QueryRowContext(ctx, "SELECT count(*) FROM wlt.customer_funding_journal WHERE provider_reference LIKE 'cash-in-%'").Scan(&before); err != nil || before != 0 {

@@ -1,34 +1,35 @@
 "use server";
 
-import { DshPublicError, registerCompanyEmployee } from "@bthwani/dsh";
-import { redirect } from "next/navigation";
+import { type EmployeeRegistrationOutcome, employeeRegistrationErrorOutcome, normalizeEmployeeRegistrationDraft, registerCompanyEmployee } from "@bthwani/dsh";
 import { employeeOwner } from "./employee-owner";
+
+export type EmployeeRegistrationResult =
+  | { status: "confirmed"; id: string; message: string }
+  | { status: Exclude<EmployeeRegistrationOutcome, "confirmed">; message: string };
 
 export async function registerEmployee(
   expectedActor: string, operationId: string, form: FormData,
-): Promise<string> {
+): Promise<EmployeeRegistrationResult> {
   const connection = await employeeOwner();
   if (connection.status === "denied" || (connection.status === "available" && connection.actorId !== expectedActor)) {
-    return "تغيرت الجلسة أو انتهت صلاحية الموظفين. افتح الصفحة من جديد قبل المتابعة.";
+    return { status: "denied", message: "تغيرت الجلسة أو انتهت صلاحية الموظفين. افتح الصفحة من جديد قبل المتابعة." };
   }
-  if (connection.status === "unavailable") return "الاتصال بخدمة سجلات الموظفين غير متاح.";
+  if (connection.status === "unavailable") return { status: "unknown", message: "الاتصال بخدمة سجلات الموظفين غير متاح. أعد إرسال الطلب الأصلي دون تعديل البيانات." };
   const text = (name: string) => {
     const value = form.get(name);
-    return typeof value === "string" ? value.trim() : "";
+    return typeof value === "string" ? value : "";
   };
-  let id: string;
   try {
-    id = await registerCompanyEmployee(connection.origin, connection.bearer, {
-      operationId, displayName: text("displayName"), department: text("department"),
-      jobTitle: text("jobTitle"), startDate: text("startDate"),
+    const id = await registerCompanyEmployee(connection.origin, connection.bearer, {
+      operationId, ...normalizeEmployeeRegistrationDraft({ displayName: text("displayName"), department: text("department"),
+        jobTitle: text("jobTitle"), startDate: text("startDate") }),
     }, AbortSignal.timeout(8000));
+    return { status: "confirmed", id, message: "تم تأكيد حفظ سجل الموظف لدى DSH." };
   } catch (error) {
-    if (error instanceof DshPublicError) {
-      if (error.status === 400) return "راجع الاسم والقسم والمسمى الوظيفي وتاريخ بداية العمل.";
-      if (error.status === 401 || error.status === 403) return "لم تعد الجلسة أو صلاحية الموظفين سارية.";
-      if (error.status === 409) return "استُخدم هذا الطلب ببيانات مختلفة. راجع قائمة الموظفين قبل إنشاء طلب جديد.";
-    }
-    return "لم يصل تأكيد الحفظ من DSH. أعد الإرسال بالبيانات نفسها من هذه الصفحة.";
+    const status = employeeRegistrationErrorOutcome(error);
+    if (status === "invalid") return { status, message: "راجع الاسم والقسم والمسمى الوظيفي وتاريخ بداية العمل." };
+    if (status === "denied") return { status, message: "لم تعد الجلسة أو صلاحية الموظفين سارية." };
+    if (status === "conflict") return { status, message: "استُخدم هذا الطلب ببيانات مختلفة. راجع قائمة الموظفين قبل إنشاء طلب جديد." };
+    return { status: "unknown", message: "لم يصل تأكيد الحفظ من DSH. أعد إرسال الطلب الأصلي دون تعديل البيانات أو مغادرة الصفحة." };
   }
-  redirect(`/hr/employees/${id}`);
 }

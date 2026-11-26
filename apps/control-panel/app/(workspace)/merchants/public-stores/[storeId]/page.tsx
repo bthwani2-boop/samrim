@@ -53,6 +53,7 @@ export default async function PublicStoreOffers({
     if (store) {
       try {
         offers = await listPublicOffers(owner, store.id, {
+          ...(scope.offerQuery ? { query: scope.offerQuery } : {}),
           ...(scope.cursor ? { cursor: scope.cursor } : {}),
           limit: 20,
           signal: AbortSignal.timeout(5000),
@@ -63,16 +64,17 @@ export default async function PublicStoreOffers({
     }
   }
 
-  const firstPage = scope ? publicStoreDetailHref(scope.storeId, { city: scope.city, query: scope.query, vertical: scope.vertical }) : "";
+  const directory = scope ? { city: scope.city, query: scope.query, vertical: scope.vertical } : null;
+  const firstPage = scope && directory ? publicStoreDetailHref(scope.storeId, { ...directory, offerQuery: scope.offerQuery }) : "";
   return (
     <main className={styles.workspace} aria-labelledby="public-offers-heading">
       <h1 id="public-offers-heading">تفاصيل المتجر وعروضه العامة</h1>
       <p>بيانات منشورة مصدرها DSH مباشرة، للقراءة فقط؛ لا تمثل صلاحية إدارة المتجر أو تأكيد إنشاء طلب.</p>
-      <a href={scope ? publicStorePageHref({ city: scope.city, query: scope.query, vertical: scope.vertical }) : "/merchants/public-stores"}>
+      <a href={directory ? publicStorePageHref(directory) : "/merchants/public-stores"}>
         العودة إلى دليل المتاجر
       </a>
       {error ? <p role="alert">{error}</p> : null}
-      {store ? (
+      {store && scope && directory ? (
         <section aria-labelledby="store-overview-title">
           <h2 id="store-overview-title">{store.name}</h2>
           <p>معرّف المتجر: <code dir="ltr">{store.id}</code></p>
@@ -80,13 +82,25 @@ export default async function PublicStoreOffers({
           <p>الحالة: {statusLabels[store.orderabilityStatus]}</p>
           <p>إتمام الطلب غير متاح من لوحة التحكم. لا تستنتج أهلية الدفع أو التوصيل من هذه البيانات.</p>
           <h2>العروض المنشورة والمتاحة</h2>
+          <form method="get" style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "end" }}>
+            <input type="hidden" name="city" value={scope.city} />
+            {scope.query ? <input type="hidden" name="q" value={scope.query} /> : null}
+            {scope.vertical ? <input type="hidden" name="vertical" value={scope.vertical} /> : null}
+            <label style={{ display: "grid", gap: "0.25rem", flex: "1 1 12rem" }}>
+              اسم العرض
+              <input name="offerQ" type="search" defaultValue={scope.offerQuery ?? ""} maxLength={160}
+                style={{ minHeight: 44 }} />
+            </label>
+            <button type="submit" style={{ minHeight: 44, paddingInline: "1rem" }}>البحث في عروض المتجر</button>
+            {scope.offerQuery ? <a href={publicStoreDetailHref(store.id, directory)}>مسح بحث العروض</a> : null}
+          </form>
           {offersError ? (
             <p role="alert">{offersError} <a href={firstPage}>إعادة تحميل أول صفحة</a></p>
           ) : null}
           {offers && (
             <>
               <p role="status">العروض في هذه الصفحة: {offers.items.length} — مراجعة DSH: {offers.revision}</p>
-              {offers.items.length === 0 ? <p>لا توجد عروض منشورة صالحة للعرض حاليًا.</p> : (
+              {offers.items.length === 0 ? <p>{scope.offerQuery ? "لا توجد عروض مطابقة لهذا البحث." : "لا توجد عروض منشورة صالحة للعرض حاليًا."}</p> : (
                 <ul className={styles.sectionGrid}>
                   {offers.items.map(offer => (
                     <li key={offer.id} className={styles.sectionCard}>
@@ -100,9 +114,9 @@ export default async function PublicStoreOffers({
               <nav aria-label="صفحات عروض المتجر" style={{
                 display: "flex", gap: "1rem", marginBlock: "1rem",
               }}>
-                {scope?.cursor ? <a href={firstPage}>أول صفحة عروض</a> : null}
-                {offers.nextCursor && scope ? <a href={publicStoreDetailHref(scope.storeId, {
-                  city: scope.city, query: scope.query, vertical: scope.vertical, cursor: offers.nextCursor,
+                {scope.cursor ? <a href={firstPage}>أول صفحة عروض</a> : null}
+                {offers.nextCursor ? <a href={publicStoreDetailHref(scope.storeId, {
+                  ...directory, offerQuery: scope.offerQuery, cursor: offers.nextCursor,
                 })}>عرض المزيد من العروض</a> : null}
               </nav>
             </>

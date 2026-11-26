@@ -1,11 +1,13 @@
 import styles from "../operator-shell/operator-shell.module.css";
+import OperatorPasskeyForm from "./operator-passkey-form";
 
 export const operatorIdentityUnavailableMessage =
   "تعذّر التحقق من الجلسة والصلاحيات لدى Identity. أعد تحميل الصفحة للمحاولة مجددًا.";
 
-export default function OperatorWorkspaceGate({ hasWorkspace, identityUnavailable }: Readonly<{
+export default function OperatorWorkspaceGate({ hasWorkspace, identityUnavailable, recoverable }: Readonly<{
   hasWorkspace: boolean;
   identityUnavailable?: boolean;
+  recoverable?: boolean;
 }>) {
   return (
     <main className={styles.landing} aria-labelledby="workspace-denied-title">
@@ -14,6 +16,7 @@ export default function OperatorWorkspaceGate({ hasWorkspace, identityUnavailabl
       <p>{identityUnavailable ? operatorIdentityUnavailableMessage : hasWorkspace
         ? "حسابك لا يملك الصلاحية الحالية لهذا القسم."
         : "تتطلب مساحة العمل جلسة مشغّل وصلاحية سارية."}</p>
+      {recoverable && <OperatorPasskeyForm recoveryOnly />}
       <a className={styles.primaryLink} href={hasWorkspace ? "/workspace" : "/"}>
         {hasWorkspace ? "العودة إلى مساحة العمل" : "فتح صفحة دخول المشغّل"}
       </a>

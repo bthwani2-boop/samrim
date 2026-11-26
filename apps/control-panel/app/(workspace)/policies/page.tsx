@@ -1,11 +1,15 @@
-import PoliciesWorkspace from "../../../src/features/policies/policies-workspace";
 import WorkspaceUnavailable from "../../../src/features/operator-shell/workspace-unavailable";
+import PoliciesWorkspace from "../../../src/features/policies/policies-workspace";
+import { loadPolicyCities } from "../../../src/features/policies/policy-city-directory";
 import { currentOperatorAccess } from "../../../src/server/current-operator-access";
+
+export const dynamic = "force-dynamic";
 
 export default async function Page() {
   const access = await currentOperatorAccess();
   if (!access?.grants.includes("platform_policies")) {
     return <WorkspaceUnavailable title="السياسات" description="يتطلب تحرير السياسات صلاحية مؤكدة من Identity." owner="Identity" />;
   }
-  return <PoliciesWorkspace key={access.actorId} actorId={access.actorId} />;
+  const directory = await loadPolicyCities();
+  return <PoliciesWorkspace key={access.actorId} actorId={access.actorId} directory={directory} />;
 }

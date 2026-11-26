@@ -67,9 +67,18 @@ func NewHandler(db *sql.DB, schema string, identity Identity) (http.Handler, err
 	}
 	h := &Handler{db: db, schema: schema, identity: identity}
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /v1/carts", h.listCarts)
 	mux.HandleFunc("GET /v1/carts/{storeID}", h.get)
 	mux.HandleFunc("GET /v1/carts/{storeID}/merchandise-estimate", h.merchandiseEstimate)
+	mux.HandleFunc("GET /v1/carts/{storeID}/serviceability", h.deliveryServiceability)
+	mux.HandleFunc("POST /v1/carts/{storeID}/checkout-review", h.checkoutReview)
 	mux.HandleFunc("PUT /v1/carts/{storeID}", h.put)
+	mux.HandleFunc("GET /v1/customers/me/favorite-stores", h.favorites)
+	mux.HandleFunc("GET /v1/customers/me/favorite-stores/{storeID}", h.favorites)
+	mux.HandleFunc("PUT /v1/customers/me/favorite-stores/{storeID}", h.favorites)
+	mux.HandleFunc("GET /v1/addresses", h.listAddresses)
+	mux.HandleFunc("GET /v1/addresses/{addressID}", h.getAddress)
+	mux.HandleFunc("PUT /v1/addresses/{addressID}", h.saveAddress)
 	return mux, nil
 }
 func fail(w http.ResponseWriter, status int, code string) {
@@ -124,7 +133,10 @@ func (h *Handler) stillCurrent(ctx context.Context, token, actor string) int {
 	}
 	return http.StatusOK
 }
-func (h *Handler) begin(ctx context.Context, write bool) (*sql.Tx, error) {
+func (h *Handler) begin(ctx context.Context, write bool, requiredRelations ...string) (*sql.Tx, error) {
+	if len(requiredRelations) == 0 {
+		return nil, errors.New("Customer transaction requires owner relations")
+	}
 	level := sql.LevelReadCommitted
 	if !write {
 		level = sql.LevelRepeatableRead
@@ -137,16 +149,19 @@ func (h *Handler) begin(ctx context.Context, write bool) (*sql.Tx, error) {
 	// Never run Customer draft reads/writes against a protected or donor DB.
 	var databaseName, currentRole string
 	if err = tx.QueryRowContext(ctx, "SELECT pg_catalog.current_database(), current_user").Scan(&databaseName, &currentRole); err != nil ||
-		databaseName != "bthwani_refoundation" ||
-		(currentRole != "bthwani_ci" && currentRole != "bthwani_agent02") {
+		!dbscope.IsCartPrincipal(databaseName, currentRole) {
 		_ = tx.Rollback()
 		return nil, errors.New("Customer Cart requires an isolated DSH database and role")
 	}
-	if err = dbscope.Bind(ctx, tx, h.schema); err != nil {
+	if err = dbscope.Bind(ctx, tx, h.schema, requiredRelations...); err != nil {
 		_ = tx.Rollback()
 		return nil, err
 	}
 	return tx, nil
+}
+
+func snapshotRelations() []string {
+	return []string{"customer_carts", "customer_cart_lines", "offers", "products", "variants", "stores", "service_cities", "verticals"}
 }
 
 const getLinesSQL = `SELECT l.offer_id,o.variant_id,p.name,l.quantity,o.price_yer::text,
@@ -199,7 +214,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
 		return
 	}
-	tx, err := h.begin(ctx, false)
+	tx, err := h.begin(ctx, false, snapshotRelations()...)
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -281,7 +296,7 @@ func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 	reply(w, result)
 }
 func (h *Handler) change(ctx context.Context, actor, store, token string, change Change, digest []byte) (ChangeResult, int) {
-	tx, err := h.begin(ctx, true)
+	tx, err := h.begin(ctx, true, append(snapshotRelations(), "customer_cart_commands")...)
 	if err != nil {
 		return ChangeResult{}, 503
 	}

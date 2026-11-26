@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
-import { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
+import { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogPage, parseMerchantInventorySummary, readMerchantInventorySummary, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
 
 const offer = {
   id: "of-a", storeId: "store-a", productId: "p-a", name: "مادة تجريبية",
@@ -41,6 +41,37 @@ test("owner GET carries bearer and keyset only to local DSH without browser cook
   assert.deepEqual(await listMerchantCatalog("http://127.0.0.1:3202",
     "store-a", "merchant-a", "synthetic-bearer", { limit: 20 }), page);
   assert.equal(calls, 1);
+});
+test("private catalog forwards literal search with keyset and rejects unsafe terms", async () => {
+  let calls = 0;
+  globalThis.fetch = async (url) => {
+    calls++;
+    const params = new URL(url).searchParams;
+    assert.equal(params.get("q"), "مادة%_");
+    assert.equal(params.get("cursor"), "of-a");
+    return Response.json(page, { headers: { "Cache-Control": "no-store" } });
+  };
+  await listMerchantCatalog("http://127.0.0.1:3202", "store-a", "merchant-a", "synthetic-bearer",
+    { query: "مادة%_", cursor: "of-a" });
+  for (const query of ["a".repeat(81), "\u0000", "\uD800"]) {
+    await assert.rejects(() => listMerchantCatalog("http://127.0.0.1:3202",
+      "store-a", "merchant-a", "synthetic-bearer", { query }), { message: "INVALID_REQUEST" });
+  }
+  assert.equal(calls, 1);
+});
+test("owner status filter is forwarded and incompatible owner rows fail closed", async () => {
+  let calls = 0;
+  globalThis.fetch = async url => {
+    calls++;
+    assert.equal(new URL(url).searchParams.get("status"), "unpublished");
+    return Response.json(page, { headers: { "Cache-Control": "no-store" } });
+  };
+  const read = status => listMerchantCatalog("http://127.0.0.1:3202", "store-a", "merchant-a", "synthetic-bearer", { status });
+  assert.deepEqual(await read("unpublished"), page);
+  await assert.rejects(() => read("invalid"), { message: "INVALID_REQUEST" });
+  assert.equal(calls, 1);
+  globalThis.fetch = async () => Response.json(page, { headers: { "Cache-Control": "no-store" } });
+  await assert.rejects(() => read("published"), { message: "OWNER_RESPONSE_INVALID" });
 });
 test("owner failure, cacheable response and account switches fail closed", async () => {
   globalThis.fetch = async () => new Response(JSON.stringify(page), {
@@ -188,4 +219,23 @@ test("owner version conflict is explicit and a lost edit acknowledgement remains
   await assert.rejects(() => updateMerchantCatalogDraft(
     "http://127.0.0.1:3202", "store-a", "of-new", "synthetic-bearer", edited),
     { message: "OPERATION_RESULT_UNKNOWN" });
+});
+
+test("complete inventory summary verifies owner scope and counter invariants", async () => {
+  const summary = { actorId: "merchant-a", storeId: "store-a", totalOffers: 132,
+    publishedOffers: 120, availableOffers: 115, unavailableOffers: 5, stockoutOffers: 2 };
+  assert.deepEqual(parseMerchantInventorySummary(summary, "merchant-a", "store-a"), summary);
+  for (const bad of [{...summary, actorId:"merchant-b"}, {...summary, storeId:"store-b"},
+    {...summary, stockoutOffers:6}, {...summary, unavailableOffers:4},
+    {...summary, publishedOffers:133}, {...summary, totalOffers:-1},
+    {...summary, totalOffers:Number.MAX_SAFE_INTEGER+1}, {...summary, extra:0}]) {
+    assert.throws(() => parseMerchantInventorySummary(bad,"merchant-a","store-a"), {code:"OWNER_RESPONSE_INVALID"});
+  }
+  globalThis.fetch = async (url, init) => {
+    assert.equal(url,"http://127.0.0.1:3202/v1/stores/store-a/inventory-summary");
+    assert.equal(init.method,"GET");
+    assert.equal(init.headers.Authorization,"Bearer synthetic-bearer");
+    return Response.json(summary,{headers:{"Cache-Control":"no-store"}});
+  };
+  assert.deepEqual(await readMerchantInventorySummary("http://127.0.0.1:3202","store-a","merchant-a","synthetic-bearer"),summary);
 });

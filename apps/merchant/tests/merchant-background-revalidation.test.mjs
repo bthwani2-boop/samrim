@@ -29,6 +29,8 @@ function harness() {
   const standings = [];
   let index = 0;
   let appChanged;
+  let actionTimeout;
+  let periodic;
   const react = {
     useState(initial) {
       const at = index++;
@@ -44,6 +46,9 @@ function harness() {
     useEffect(fn) { index++; effects.push(fn); },
   };
   const jsx = (type, props, key) => ({ type, props: props ?? {}, key });
+  class StandingError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
   const mocks = {
     "@bthwani/identity": { IdentityClientError: class extends Error {}, normalizeYemeniMobile: () => undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {
@@ -76,7 +81,7 @@ function harness() {
         return new Promise((resolve, reject) => standings.push({ signal, resolve, reject }));
       },
     },
-    "./dsh-standing": { MerchantStandingError: class extends Error {} },
+    "./dsh-standing": { MerchantStandingError: StandingError },
   };
   const mod = { exports: {} };
   new Function("require", "module", "exports", "setTimeout", "clearTimeout",
@@ -86,7 +91,7 @@ function harness() {
       return mocks[name];
     },
     mod, mod.exports,
-    () => 1, () => undefined, () => 2, () => undefined,
+    callback => { actionTimeout = callback; return 1; }, () => undefined, callback => { periodic = callback; return 2; }, () => undefined,
   );
   const render = () => {
     index = 0;
@@ -95,11 +100,17 @@ function harness() {
   };
   return {
     render,
+    standingDenied: () => new StandingError(403, "STORE_ACCESS_DENIED"),
     mount() {
       render();
       assert.equal(effects.length, 3);
       effects[0]();
     },
+    startPolling() {
+      render();
+      effects[2]();
+    },
+    poll() { periodic(); },
     startStanding() {
       render();
       effects[1]();
@@ -107,6 +118,10 @@ function harness() {
     emit(state) {
       assert.equal(typeof appChanged, "function");
       appChanged(state);
+    },
+    timeoutAction() {
+      assert.equal(typeof actionTimeout, "function");
+      actionTimeout();
     },
     nextAdmission() {
       assert.ok(admissions.length, "a new Identity owner check must have started");
@@ -235,4 +250,194 @@ test("a different actor invalidates the old workspace before DSH grants arrive",
   assert.equal(visible(current), true);
   assert.notEqual(current.key, initial.key);
   assert.equal(current.props.children.props.actorId, other.actorId);
+});
+
+
+test("Merchant timed-out Identity revalidation requires recovery instead of starting a second login", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const initial = workspace(h.render());
+  assert.equal(visible(initial), true);
+  initial.props.children.props.onRefresh();
+  const pending = h.nextAdmission();
+  h.timeoutAction();
+  assert.equal(pending.signal.aborted, true);
+  pending.reject(new Error("aborted"));
+  await settle();
+  const tree = h.render();
+  assert.equal(visible(workspace(tree)), false);
+  const retry = findNode(tree, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق من الجلسة");
+  assert.ok(retry);
+  assert.equal(findNode(tree, node => node.type === "TextInput" &&
+    node.props.accessibilityLabel === "رقم هاتف الاختبار"), undefined);
+  retry.props.onPress();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const recovered = workspace(h.render());
+  assert.equal(visible(recovered), true);
+  assert.equal(recovered.key, initial.key);
+});
+
+
+test("a noncooperative Merchant Identity read releases retry at its deadline and cannot disturb its successor", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  workspace(h.render()).props.children.props.onRefresh();
+  const stale = h.nextAdmission();
+  h.timeoutAction();
+  assert.equal(stale.signal.aborted, true);
+  const tree = h.render();
+  assert.equal(visible(workspace(tree)), false);
+  assert.equal(findNode(tree, node => node.type === "TextInput" &&
+    node.props.accessibilityLabel === "رقم هاتف الاختبار"), undefined);
+  const retry = findNode(tree, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق من الجلسة");
+  assert.ok(retry);
+  assert.equal(retry.props.disabled, false, "deadline must release retry without waiting for stale read");
+  retry.props.onPress();
+  const fresh = h.nextAdmission();
+  stale.resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+  const pendingRetry = findNode(h.render(), node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق من الجلسة");
+  assert.equal(pendingRetry.props.disabled, true, "late completion must not clear successor busy state");
+  fresh.resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  assert.equal(visible(workspace(h.render())), true);
+});
+
+test("DSH denial conceals Merchant workspace without prompting for a new OTP", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  workspace(h.render()).props.children.props.onRefresh();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().reject(h.standingDenied());
+  await settle();
+  const denied = h.render();
+  assert.equal(visible(workspace(denied)), false);
+  assert.equal(findNode(denied, node => node.type === "TextInput" && node.props.accessibilityLabel === "رقم هاتف الاختبار"), undefined);
+  const retry = findNode(denied, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق من المتاجر");
+  assert.ok(retry, "a DSH refusal must offer standing recovery");
+  retry.props.onPress();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  assert.equal(visible(workspace(h.render())), true);
+});
+
+test("healthy Merchant polling retains workspace through Identity and DSH revalidation", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  const initial = workspace(h.render());
+  assert.equal(visible(initial), true);
+  h.startPolling();
+  h.poll();
+  assert.equal(visible(workspace(h.render())), true);
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  assert.equal(visible(workspace(h.render())), true);
+  h.startStanding();
+  assert.equal(visible(workspace(h.render())), true);
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  assert.equal(visible(workspace(h.render())), true);
+  assert.equal(workspace(h.render()).key, initial.key);
+  h.poll();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().reject(h.standingDenied());
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+});
+
+test("timed-out Merchant standing poll conceals workspace and rejects a late result", async () => {
+  const h = harness();
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  h.startPolling();
+  h.poll();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  const delayed = h.nextStanding();
+  assert.equal(visible(workspace(h.render())), true);
+  h.timeoutAction();
+  assert.equal(delayed.signal.aborted, true);
+  assert.equal(visible(workspace(h.render())), false);
+  delayed.resolve({ actorId: approvedSession.actorId, stores: [] });
+  await settle();
+  assert.equal(visible(workspace(h.render())), false);
+});
+
+test("Merchant renewal retains the mounted same-actor workspace but requires fresh DSH approval", async () => {
+  const h = harness();
+  const store = { id: "store-a", name: "Store A", relation: "DIRECT", published: true };
+  h.mount();
+  h.nextAdmission().resolve({ enabled: true, session: approvedSession });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: approvedSession.actorId, stores: [store] });
+  await settle();
+  const initial = workspace(h.render());
+  h.startPolling();
+  h.poll();
+  const renewed = { ...approvedSession, sessionExpiresAt: new Date(Date.now() + 240000).toISOString() };
+  h.nextAdmission().resolve({ enabled: true, session: renewed });
+  await settle();
+  const concealed = workspace(h.render());
+  assert.ok(concealed, "renewal must not unmount the previous workspace while checking");
+  assert.equal(concealed.key, initial.key);
+  assert.equal(visible(concealed), false, "fresh DSH approval is still required");
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: renewed.actorId, stores: [store] });
+  await settle();
+  assert.equal(workspace(h.render()).key, initial.key);
+  assert.equal(visible(workspace(h.render())), true);
+  h.poll();
+  h.nextAdmission().resolve({ enabled: true, session: renewed });
+  await settle();
+  h.startStanding();
+  h.nextStanding().resolve({ actorId: renewed.actorId, stores: [] });
+  await settle();
+  assert.notEqual(workspace(h.render()).key, initial.key, "changed Store scope resets protected state");
 });

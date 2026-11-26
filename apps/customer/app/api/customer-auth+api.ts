@@ -187,15 +187,14 @@ export async function POST(request: Request) {
       if (verified.role !== "customer" || signal.aborted) {
         throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
       }
+      const persistent = await establishPersistentIdentitySession(origin, issued.accessToken, signal);
+      const remaining = Math.max(0, Math.floor((Date.parse(verified.sessionExpiresAt) - Date.now()) / 1000));
+      if (signal.aborted || remaining <= 0) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      return Response.json({ session: verified }, { headers: bothCookies(request, issued.accessToken, remaining, persistent) });
     } catch (error) {
       await revokeFailedProof(origin, issued.accessToken);
       throw error;
     }
-    const remaining = Math.max(0, Math.floor((Date.parse(verified.sessionExpiresAt) - Date.now()) / 1000));
-    // Persistence is an Identity-owned opt-in, not a change to proof issuance.
-    const persistent = await establishPersistentIdentitySession(origin, issued.accessToken, signal)
-      .catch(() => null);
-    return Response.json({ session: verified }, { headers: bothCookies(request, issued.accessToken, remaining, persistent) });
   } catch (error) {
     return ownerFailure(error);
   }

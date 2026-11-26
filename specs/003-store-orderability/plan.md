@@ -12,7 +12,7 @@
 4. Integrate a single DSH API and OpenAPI/client contract with actual Identity verified sessions and store-scope checks, typed stable error responses, idempotent updates and reconciliation reads. No parallel owner or UI-side mutation authority.
 5. Add Merchant/Operator editing and Customer safe readback using existing Expo/Tamagui and Next/Ant Design source; verify RTL and delayed response invalidation.
 6. Verify synthetic isolated owner-backed PostgreSQL and networked multi-actor Web/Android journeys, fail, retry and race; only then commit with exclusive `tools/dev/git-turn.mjs` and authorized Push.
-7. Close independent technical/business and engineering/security reviews only with checks tied to the exact final SHA; production remains BLOCKED.
+7. Complete applicable executor technical and engineering/security assessment under [AGENTS.md](../../AGENTS.md), preserving required human business approvals and checks tied to the exact final SHA; production remains BLOCKED.
 
 ## Owner-backed city limits slice (2026-11-15)
 
@@ -34,3 +34,13 @@
 
 
 The target candidate is at scaffold stage. The concurrent public Store schema is not stable yet, and Identity current-session verifier / DSH checkout are not implemented. Develop independently testable code first; mark unrun cross-owner and final tests NOT_RUN, never infer PASS from pure code or mock.
+
+
+## Historical operational-policy comparison and draft reuse increment
+
+The active checkout, not the historical branch label above, supplies the candidate. Reuse CityPolicyHistory, PoliciesWorkspace and city-policy-command; no new HTTP operations, SQL, client cache or policy engine. Pass the verified current city policy into the history component; display historical/current values only when the current version is strictly newer and same-city. Offer a draft action only when the parent is ready, and recheck scope/version and command state in the parent before copying the two limits and clearing the reason. Preserve the existing command path and failure behavior. Test the parent and history rendering with the existing Node/SWC harness before implementation; run typecheck, Biome and applicable browser/owner tests; verify no PATCH on copying and deny stale/mismatched history.
+
+Keep a history of owner cursors in the keyed city history view. Each navigation reads the owner again. Reuse the requested cursor for retry and remove old rows during pending or failed reads.
+
+## BTH-15 delivery policy write
+Reuse service_city_delivery_policies, the existing DSH policy router and tariff validation. Add an immutable command/snapshot log in the fresh baseline, lock city row and compare version in one transaction, reconcile ambiguous commit by same actor/key/payload. Expose PATCH through owner OpenAPI, generated operation, typed client, same-origin BFF and existing policy preview form; require reason and independent owner readback. Prove isolated baseline, concurrent/replayed writes, current checkout estimate and rejection paths before runtime acceptance. No protected schema change.

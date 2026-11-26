@@ -11,7 +11,7 @@ Use the installed Spec Kit tooling as the workflow for a **bounded, executable r
 
 - **Pinned host:** Windows 11; Node 24.22.1, pnpm 12.15.0, Go 1.27.3, Spec Kit 1.3.0, TypeScript 7.0.2, Biome 2.5.12.
 - **Existing workspace:** Next.js Operator and Expo Customer/Merchant/Captain presentation hosts; shared semantic colors and Tamagui adapter; three private service-client placeholders.
-- **Sources of authority:** `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, `governance/README.md`, the 14 owner docs. The canonical domain owners govern meaning; `docs/journeys/` holds bounded integration evidence, and `docs/reference/` is historical provenance only.
+- **Sources of authority:** `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, `governance/README.md`, the 14 owner docs. The canonical domain owners govern meaning; existing owner/integration tests and delivery evidence establish cross-owner acceptance, and `docs/reference/` is historical provenance only.
 - **No database changes:** the currently running `samrim-local` Docker containers belong to another runtime; do not reuse, restart, drop or migrate. First new SQL tests require separately scoped isolated PostgreSQL with roles, schema ownership and restore.
 - **No web/business operations:** identity/auth, finance, Order/COD and data migration remain gated until approved contracts and internal adverse tests.
 - **Test entrypoints:** `specify --version`, `specify check`, `specify workflow list`, bundled PowerShell prerequisite scripts; `pnpm check` and targeted owner tests after corresponding changes.
@@ -66,3 +66,11 @@ apps/control-panel/
 - Each owner uses a separate exclusive file scope. Shared index controlled with one `GIT-TURN` claim, check foreign staged changes, exact diff and UTF-8, test the slice and local Commit. Push is a distinct operation requiring explicit human authorization and subsequent SHA readback. Do not combine other agents' changes.
 - Mark `PASS` only for executed checks on exact revision and environment, `REVIEW_BLOCKED` for missing material policy/assurance, `NOT_RUN` for unbuilt backend/native/SQL. Never update cutover or promote Stage5 silently.
 - No project-wide “100%” conclusion from the existence of this plan or a structural `pnpm check`.
+
+## Captain public interest receipt recovery (BTH-10)
+
+Keep a single client-side receipt state in the public Captain form. Existing DSH acknowledgment validation distinguishes definite rejections from an unknown result. Preserve the DSH one-way contract and write path. Extend the existing registration test to exercise the mounted screen and verify success, uncertain outcome and retry after a definite rejection.
+
+Use a history of owner cursors in the Operator list. Reuse the existing GET and filters for forward and backward navigation, reset history when the result set changes, and verify that denial removes the displayed list.
+
+Normalize the two Arabic decimal digit ranges at the Captain form boundary before applying the existing DSH input validator. Use component assertions for the transmitted contact and retained input. Keep the guest registration endpoint, DSH validation and receipt handling in place.

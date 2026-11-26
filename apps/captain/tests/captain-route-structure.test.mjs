@@ -10,10 +10,11 @@ const source = (path) => readFileSync(resolve(captain, path), "utf8");
 
 const routes = ["_layout.tsx", "index.tsx", "(tabs)/_layout.tsx", "(tabs)/home.tsx", "(tabs)/deliveries.tsx",
   "(tabs)/wallet.tsx", "(tabs)/account.tsx", "offers.tsx", "notifications.tsx",
-  "delivery/[id].tsx", "health.tsx"];
+  "delivery/[id].tsx"];
 
 test("approved Captain routes use one Expo Router root", () => {
   for (const file of routes) assert.ok(existsSync(resolve(app, file)), file);
+  assert.equal(existsSync(resolve(app, "health.tsx")), false, "retired synthetic health route");
   assert.equal(existsSync(resolve(app, "(app)")), false);
   assert.equal(existsSync(resolve(captain, "src/app")), false);
 });

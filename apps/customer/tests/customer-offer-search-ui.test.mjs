@@ -5,21 +5,31 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import * as serviceability from "../src/features/location/serviceability.ts";
 import * as loader from "../src/features/stores/store-detail-loader.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const entry = fileURLToPath(new URL("../src/features/stores/store-detail-screen.tsx", import.meta.url));
+const routeEntry = fileURLToPath(new URL("../app/storefront/[storeId].tsx", import.meta.url));
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-offer-search-"));
-let compiled;
+let compiled, compiledStorefrontRoute;
 try {
   const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), entry,
-    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(path.join(temp, "store-detail-screen.js"), "utf8");
+  const routeResult = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), routeEntry,
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
+  { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
+  assert.equal(routeResult.status, 0, routeResult.stderr || routeResult.stdout);
+  compiledStorefrontRoute = readFileSync(path.join(temp, "[storeId].js"), "utf8");
 } finally { rmSync(temp, { recursive: true, force: true }); }
 
+// Retain uncached modules until Node collects original-source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 function harness({ params = {}, id = "store-a" } = {}) {
   const hooks = [], requests = [], effects = new Map(), deps = new Map(), cleanups = new Map();
   let index = 0;
@@ -45,15 +55,14 @@ function harness({ params = {}, id = "store-a" } = {}) {
     "../cart/use-store-cart": { useStoreCart: () => ({}) },
     "../catalog/store-products": { __esModule: true, default: "StoreProducts", StoreCartBar: "StoreCartBar" },
     "../location/serviceability": serviceability,
+    "../discovery/favorite-stores": { __esModule: true, default: "FavoriteStores" },
     "../sharing/store-share": { publicStorefrontPath: storeId => `/s/${storeId}` },
     "./orderability": { describeStoreOrderability: () => ({}) },
     "./public-store-origin": { resolvePublicStoreOrigin: () => "" },
     "./store-detail-loader": loader,
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`); return modules[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(compiled, entry, modules);
+  loadedModules.push(mod);
   return {
     render() { index = 0; const view = mod.exports.default({ storeID: id });
       for (const [at, effect] of effects) { cleanups.get(at)?.(); cleanups.set(at, effect()); }
@@ -93,6 +102,60 @@ test("Store browse q stays a return-link context and does not filter the Store's
   assert.equal(byId(view, "offers-search").props.value, "");
   assert.deepEqual(find(view, node => node.type === "Link" && node.props.href?.pathname === "/stores").props.href.params,
     { city: "sanaa", q: "متجر" });
+});
+
+test("full storefront navigation preserves bounded directory context without filtering offers", async () => {
+  const app = harness({ params: { city: " ADEN ", q: " متجر ", vertical: "GROCERY" } });
+  const initial = await open(app);
+  assert.equal(initial.query, "");
+  const link = find(app.render(), node => node.type === "Link" && node.props.children === "عرض موقع المتجر الكامل");
+  assert.deepEqual(link.props.href, { pathname: "/s/store-a", params: { city: "aden", vertical: "grocery", q: "متجر" } });
+});
+
+test("unscoped public storefront link remains canonical", async () => {
+  const app = harness(); await open(app);
+  const link = find(app.render(), node => node.type === "Link" && node.props.children === "عرض موقع المتجر الكامل");
+  assert.equal(link.props.href, "/s/store-a");
+});
+
+function loadStorefrontRoute(params, platform = "android") {
+  const jsx = (type, props) => ({ type, props });
+  const modules = {
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+    "expo-router": { Redirect: "Redirect", useLocalSearchParams: () => params },
+    "react-native": { Platform: { OS: platform } },
+    "../../src/features/stores/storefront-screen": { __esModule: true, default: "StorefrontScreen" },
+    "../../src/features/location/serviceability": serviceability,
+  };
+  const mod = loadMappedRenderFixture(compiledStorefrontRoute, routeEntry, modules);
+  loadedModules.push(mod);
+  return mod.exports;
+}
+
+function renderNativeStorefrontRoute(params) {
+  return loadStorefrontRoute(params).default();
+}
+
+test("Web storefront renders only a validated public Store ID and remains excluded from search indexing", () => {
+  const route = loadStorefrontRoute({ storeId: "store-a", actorId: "ignored", city: "aden" }, "web");
+  assert.deepEqual(route.default(), { type: "StorefrontScreen", props: { storeId: "store-a" } });
+  assert.deepEqual(route.generateMetadata().robots, { index: false, follow: false });
+});
+
+test("invalid storefront IDs redirect without exposing a Store on Web or Android", () => {
+  for (const platform of ["web", "android"]) {
+    const scoped = loadStorefrontRoute({ storeId: ["store-a"], city: " ADEN ", q: " متجر " }, platform).default();
+    assert.deepEqual(scoped, { type: "Redirect", props: { href: { pathname: "/stores", params: { city: "aden", q: "متجر" } } } });
+    const invalid = loadStorefrontRoute({ storeId: "../private", city: "../private" }, platform).default();
+    assert.deepEqual(invalid, { type: "Redirect", props: { href: "/stores" } });
+  }
+});
+
+test("native storefront redirect preserves only validated directory context", () => {
+  const route = renderNativeStorefrontRoute({ storeId: "store-a", city: " ADEN ", q: " متجر ", vertical: "GROCERY", actorId: "ignored" });
+  assert.equal(route.type, "Redirect");
+  assert.deepEqual(route.props.href, { pathname: "/store/store-a", params: { city: "aden", vertical: "grocery", q: "متجر" } });
+  assert.equal(renderNativeStorefrontRoute({ storeId: "store-a", city: "../private", q: "ignored" }).props.href, "/store/store-a");
 });
 
 test("the offer list receives current Store orderability so browsing cannot expose an unverified cart action", async () => {
@@ -237,4 +300,46 @@ test("Customer Offer detail invalidates reused IDs or revision-changed pages ins
     await settle();
     assert.deepEqual(products(app.render()).map(item => item.id), ["fresh"], scenario);
   }
+});
+
+test("leaving Store detail aborts an in-flight Offer continuation", async () => {
+  const app = harness();
+  await open(app, { nextCursor: "next-page" });
+  const more = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress();
+  const continuation = app.read();
+  assert.equal(continuation.cursor, "next-page");
+  app.unmount();
+  assert.equal(continuation.signal.aborted, true);
+  continuation.resolve({ items: [offer("late")], revision: 1 });
+  await more;
+});
+
+test("obsolete Offer continuation cannot cancel a newly selected Store read", async () => {
+  const app = harness();
+  await open(app, { nextCursor: "old-page" });
+  const oldMore = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress;
+  app.store("store-b"); app.render(); app.render();
+  const currentStore = app.read("store"), currentOffers = app.read();
+  const stale = oldMore();
+  assert.equal(currentStore.signal.aborted, false);
+  assert.equal(currentOffers.signal.aborted, false);
+  await stale;
+  currentStore.resolve(store("store-b"));
+  currentOffers.resolve({ items: [offer("b", "store-b")], revision: 2 }); await settle();
+  assert.deepEqual(products(app.render()).map(item => item.id), ["b"]);
+});
+
+test("duplicate Offer continuation cannot cancel the current page or reuse its cursor", async () => {
+  const app = harness(); await open(app, { nextCursor: "next-page" });
+  const more = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress;
+  const active = more(); const next = app.read();
+  const duplicate = more();
+  assert.equal(next.signal.aborted, false);
+  next.resolve({ items: [offer("second")], revision: 1, nextCursor: "third-page" });
+  await Promise.all([active, duplicate]);
+  await more();
+  const current = button(app.render(), "عرض المزيد من عروض المتجر").props.onPress();
+  const third = app.read(); assert.equal(third.cursor, "third-page");
+  third.resolve({ items: [offer("third")], revision: 1 }); await current;
+  assert.deepEqual(products(app.render()).map(item => item.id), ["first", "second", "third"]);
 });

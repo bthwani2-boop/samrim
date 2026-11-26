@@ -35,15 +35,30 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
 
   useFocusEffect(useCallback(() => {
     let current: AbortController | undefined;
+    let readDeadline: ReturnType<typeof setTimeout> | undefined;
     let closing: AbortController | undefined;
     let active = true;
     let expiry: ReturnType<typeof setTimeout> | undefined;
+    let verifiedUntil = 0;
+
+    function releaseRead() {
+      if (readDeadline !== undefined) clearTimeout(readDeadline);
+      readDeadline = undefined;
+      current = undefined;
+    }
+
+    function cancelRead() {
+      const request = current;
+      releaseRead();
+      request?.abort();
+    }
 
     function signOut(actorId: string) {
       if (closing || !active) return;
       signingOutActor.current = actorId;
-      current?.abort();
+      cancelRead();
       if (expiry) clearTimeout(expiry);
+      verifiedUntil = 0;
       setVerified(null);
       setAccess("signing-out");
       const request = new AbortController();
@@ -67,26 +82,53 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
       });
     }
 
-    function check() {
+    function expire() {
+      // An in-flight revalidation is not authorization past the previous expiry.
+      verifiedUntil = 0;
+      setAccess("checking");
+      if (!current) check();
+    }
+
+    function check(silent = false) {
       if (signingOutActor.current !== null) {
         signOut(signingOutActor.current);
         return;
       }
-      current?.abort();
-      if (expiry) clearTimeout(expiry);
-      setAccess("checking");
+      if (silent && current) return;
+      cancelRead();
+      // Ordinary foreground polling must not blank a still-current workspace.
+      // Expiry, background/resume and actual owner failure remain fail closed.
+      if (!silent || verifiedUntil <= Date.now()) {
+        verifiedUntil = 0;
+        if (expiry) clearTimeout(expiry);
+        setAccess("checking");
+      }
       const request = new AbortController();
       current = request;
+      // Bound the protected read even if the native bridge ignores abort.
+      // Never extend the previously verified grant on a timed-out read.
+      readDeadline = setTimeout(() => {
+        if (!active || current !== request) return;
+        cancelRead();
+        verifiedUntil = 0;
+        if (expiry) clearTimeout(expiry);
+        setAccess("unavailable");
+      }, 20000);
       void readCaptainAdmission(request.signal)
         .then(result => {
           if (!active || request.signal.aborted || current !== request) return;
+          releaseRead();
+          if (expiry) clearTimeout(expiry);
+          verifiedUntil = 0;
           const session = result.session;
           if (!result.enabled || !session || !hasActiveCaptainSession(session)) {
+            setVerified(null);
             setAccess("denied");
             return;
           }
           const remaining = Date.parse(session.sessionExpiresAt) - Date.now();
           if (!Number.isFinite(remaining) || remaining <= 0) {
+            setVerified(null);
             setAccess("denied");
             return;
           }
@@ -100,17 +142,20 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
             setAccess("denied");
             return;
           }
-          // A different actor or renewed session expiry must not inherit the prior
-          // Captain component tree (including private in-memory screen state).
+          // Preserve the component tree for a renewed, still-approved actor.
+          // A different actor or changed DSH standing revision resets private state.
           setVerified({ session, standing });
           setAccess("allowed");
-          expiry = setTimeout(() => {
-            current?.abort();
-            setAccess("denied");
-          }, remaining);
+          // Access expiry is not a verdict about the persistent session.
+          // Hide protected content while Identity and DSH confirm renewal.
+          verifiedUntil = Date.parse(session.sessionExpiresAt);
+          expiry = setTimeout(expire, remaining);
         })
         .catch(() => {
           if (active && current === request && !request.signal.aborted) {
+            releaseRead();
+            verifiedUntil = 0;
+            if (expiry) clearTimeout(expiry);
             setAccess("unavailable");
           }
         });
@@ -121,7 +166,9 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
     const app = AppState.addEventListener("change", state => {
       if (state === "active") check();
       else if (signingOutActor.current === null) {
-        current?.abort();
+        cancelRead();
+        verifiedUntil = 0;
+        if (expiry) clearTimeout(expiry);
         setAccess("checking");
       }
     });
@@ -129,11 +176,11 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
     // While the route stays foregrounded, re-read the owner instead of
     // trusting a previously granted role for the lifetime of the component.
     const periodic = setInterval(() => {
-      if (AppState.currentState === "active") check();
+      if (AppState.currentState === "active") check(true);
     }, 30_000);
     return () => {
       active = false;
-      current?.abort();
+      cancelRead();
       closing?.abort();
       if (expiry) clearTimeout(expiry);
       clearInterval(periodic);
@@ -146,15 +193,14 @@ export default function CaptainProtectedRoute({ children }: PropsWithChildren) {
   if (access === "denied") return <Redirect href="/" />;
 
   const visible = access === "allowed";
-  // After the first successful owner check, keep the navigator and its
-  // component state mounted across periodic checks. While the owner result
-  // is unknown, hide it from display, touch and accessibility. A new route
-  // still mounts no protected content until Identity and DSH both approve.
+  // Keep the navigator visible during healthy polling of a still-valid grant.
+  // An initial check, expiry, backgrounding or owner failure conceals private
+  // content from display, touch and accessibility until fresh approval.
   return <View style={{ flex: 1, backgroundColor: theme.background }}>
     {verified ? (
       <CaptainWorkspace.Provider value={{ session: verified.session, standing: verified.standing,
           signOut: () => closeSession.current(verified.session.actorId) }}>
-        <View key={JSON.stringify([verified.session.actorId, verified.session.sessionExpiresAt])}
+        <View key={JSON.stringify([verified.session.actorId, verified.standing?.version])}
           style={visible ? { flex: 1 } : { display: "none" }}
           pointerEvents={visible ? "auto" : "none"}
           accessibilityElementsHidden={!visible}

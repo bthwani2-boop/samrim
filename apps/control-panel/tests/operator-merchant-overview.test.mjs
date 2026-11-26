@@ -3,6 +3,8 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import { parsePublicStoreBrowse } from "../src/features/stores/public-store-query.ts";
 import { parseOperatorHomeCity } from "../src/features/workspace/operator-home-city.ts";
 
 const root = resolve(import.meta.dirname, "..");
@@ -10,19 +12,19 @@ const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
 const jsx = (type, props) => ({ type, props: props ?? {} });
 
+// Retain uncached fixture modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 function compile(relativePath, dependencies) {
-  const compiled = transformSync(readFileSync(resolve(root, relativePath), "utf8"), {
+  const source = resolve(root, relativePath);
+  const compiled = transformSync(readFileSync(source, "utf8"), {
+    filename: source, sourceMaps: "inline", inlineSourcesContent: true,
     jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
       transform: { react: { runtime: "automatic" } } },
     module: { type: "commonjs" },
   }).code;
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(dependencies, name), `unexpected import: ${name}`);
-      return dependencies[name];
-    }, mod, mod.exports,
-  );
+  const mod = loadMappedRenderFixture(compiled, source, dependencies);
+  loadedModules.push(mod);
   return mod.exports.default;
 }
 
@@ -77,20 +79,20 @@ test("authorized Merchant workspace includes real DSH overview with no finance o
   assert.equal(overview.props.canVisitCatalog, false);
 });
 
-function marketHarness({ cityFailure = false, storeFailure = false } = {}) {
+function marketHarness({ cityFailure = false, storeFailure = false, nextCursor, action = "/merchants" } = {}) {
   const calls = [];
   const render = compile("src/features/workspace/public-market-overview.tsx", {
     "@bthwani/dsh": {
       async listPublicCities(origin, options) {
         calls.push({ kind: "cities", origin, options });
         if (cityFailure) throw new Error("DSH city owner unavailable");
-        return { items: ["sanaa"], revision: 4 };
+        return { items: ["sanaa", "aden"], revision: 4 };
       },
       async listPublicStores(origin, city, options) {
         calls.push({ kind: "stores", origin, city, options });
         if (storeFailure) throw new Error("DSH stores unavailable");
         return { items: [{ id: "store-sanaa", cityId: "sanaa", verticalId: "grocery",
-          name: "متجر أ", orderabilityStatus: "OPEN_FOR_ORDERS" }], revision: 5 };
+          name: "متجر أ", orderabilityStatus: "OPEN_FOR_ORDERS" }], revision: 5, nextCursor };
       },
       async listPublicVerticals(origin, city, options) {
         calls.push({ kind: "verticals", origin, city, options });
@@ -98,12 +100,12 @@ function marketHarness({ cityFailure = false, storeFailure = false } = {}) {
       },
     },
     "../operator-shell/operator-shell.module.css": { sectionGrid: "grid", sectionCard: "card" },
-    "../stores/public-store-query": { resolvePublicDshOrigin: () => "http://127.0.0.1:23202" },
+    "../stores/public-store-query": { parsePublicStoreBrowse, resolvePublicDshOrigin: () => "http://127.0.0.1:23202" },
     "./operator-home-city": { parseOperatorHomeCity },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   });
   return { calls, render: (city = {}, canVisitStores = true, canVisitCatalog = false) => render({
-    searchParams: Promise.resolve(city), canVisitStores, canVisitCatalog, action: "/merchants",
+    searchParams: Promise.resolve(city), canVisitStores, canVisitCatalog, action,
   }) };
 }
 
@@ -119,8 +121,8 @@ test("Merchant city picker stays within Merchant route and reads cities from DSH
 test("Merchant overview shows DSH-confirmed Stores, without fabricating totals or extra grants", async () => {
   const page = marketHarness();
   const tree = await page.render({ city: "sanaa" });
-  assert.deepEqual(page.calls.map(call => call.kind).sort(), ["stores", "verticals"]);
-  assert.ok(page.calls.every(call => call.origin === "http://127.0.0.1:23202" && call.city === "sanaa"));
+  assert.deepEqual(page.calls.map(call => call.kind).sort(), ["cities", "stores", "verticals"]);
+  assert.ok(page.calls.every(call => call.origin === "http://127.0.0.1:23202" && (call.kind === "cities" || call.city === "sanaa")));
   assert.ok(find(tree, node => node.type === "strong" && node.props.children === "متجر أ"));
   assert.equal(find(tree, node => node.type === "form").props.action, "/merchants");
   assert.equal(find(tree, node => node.type === "a" &&
@@ -151,4 +153,47 @@ test("Catalog-granted Operator can open DSH-confirmed Store offers without typin
   const merchantOnly = marketHarness();
   const noCatalog = await merchantOnly.render({ city: "sanaa" });
   assert.equal(find(noCatalog, node => node.type === "a" && node.props.href?.startsWith("/catalog?")), undefined);
+});
+
+test("the Products Store picker sends bounded owner search and retains pagination on the Products tab", async () => {
+  const page = marketHarness({ action: "/catalog/products", nextCursor: "next" });
+  const tree = await page.render({ city: "sanaa", storeQ: " market ", storeCursor: "previous" }, false, true);
+  assert.deepEqual(page.calls.map(call => call.kind), ["cities", "stores"]);
+  assert.equal(page.calls[1].options.query, "market");
+  assert.equal(page.calls[1].options.cursor, "previous");
+  assert.equal(page.calls[1].options.limit, 20);
+  assert.ok(find(tree, node => node.props.href === "/catalog/products?store=store-sanaa"));
+  assert.ok(find(tree, node => node.props.href === "/catalog/products?city=sanaa&storeQ=market&storeCursor=next"));
+  assert.ok(find(tree, node => node.props.href === "/catalog/products?city=sanaa&storeQ=market"));
+  const malformed = marketHarness({ action: "/catalog/products" });
+  const invalid = await malformed.render({ city: "sanaa", storeCursor: ["a", "b"] }, false, true);
+  assert.ok(find(invalid, node => node.props.role === "alert"));
+  assert.equal(malformed.calls.length, 0);
+});
+
+test("failed Products Store continuation exposes a first-page recovery link preserving city and search", async () => {
+  const page = marketHarness({ action: "/catalog/products", storeFailure: true });
+  const tree = await page.render({ city: "sanaa", storeQ: "market", storeCursor: "stale" }, false, true);
+  assert.ok(find(tree, node => node.props.role === "alert"));
+  assert.ok(find(tree, node => node.type === "a" && node.props.href === "/catalog/products?city=sanaa&storeQ=market"));
+  assert.equal(find(tree, node => node.type === "strong"), undefined);
+});
+
+test("selected city keeps owner city choices on every market surface", async () => {
+  for (const action of ["/workspace", "/merchants", "/marketing", "/catalog/products"]) {
+    const page = marketHarness({ action });
+    const tree = await page.render({ city: "sanaa" }, true, true);
+    assert.ok(find(tree, node => node.type === "option" && node.props.value === "aden"), action);
+    assert.equal(find(tree, node => node.type === "input" && node.props.name === "city").props.defaultValue, "sanaa");
+    assert.equal(find(tree, node => node.type === "form").props.action, action);
+  }
+});
+
+test("city directory outage does not hide confirmed selected-city market data", async () => {
+  const page = marketHarness({ cityFailure: true });
+  const tree = await page.render({ city: "sanaa" });
+  assert.ok(find(tree, node => node.props.role === "alert" && /المدن/.test(node.props.children)));
+  assert.ok(find(tree, node => node.type === "strong" && node.props.children === "متجر أ"));
+  assert.ok(find(tree, node => node.type === "strong" && node.props.children === "grocery"));
+  assert.equal(find(tree, node => node.type === "input" && node.props.name === "city").props.defaultValue, "sanaa");
 });

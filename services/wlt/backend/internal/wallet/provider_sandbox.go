@@ -35,7 +35,7 @@ func VerifySandboxProviderFunding(ctx context.Context, db *sql.DB, identityOrigi
 	}
 	// Revalidate Identity at the write boundary and immediately before commit.
 	// The sandbox SQL function, not this provider response, owns persistence.
-	return PostSandboxFunding(ctx, db, identityOrigin, token, reference, amount)
+	return writeSandboxFunding(ctx, db, identityOrigin, token, reference, actor.ActorID, sandboxPosting, amount)
 }
 
 type sandboxProviderEvidence struct {

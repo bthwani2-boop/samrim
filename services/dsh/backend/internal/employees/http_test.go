@@ -73,3 +73,30 @@ func TestEmployeeReadRequiresCurrentSameActorAndHRGrant(t *testing.T) {
 		}
 	})
 }
+
+func TestMerchantEmployeeReadAuthorization(t *testing.T) {
+	const merchantRoot = "/v1/stores/store-a/employees"
+	for _, tc := range []struct {
+		name  string
+		actor identityaccess.VerifiedActor
+		err   error
+		want  int
+	}{
+		{"same merchant", identityaccess.VerifiedActor{Subject: "merchant-a", Role: identityaccess.MerchantRole}, nil, 200},
+		{"other actor", identityaccess.VerifiedActor{Subject: "merchant-b", Role: identityaccess.MerchantRole}, nil, 401},
+		{"operator cannot use merchant route", identityaccess.VerifiedActor{Subject: "merchant-a", Role: identityaccess.OperatorRole}, nil, 403},
+		{"revoked", identityaccess.VerifiedActor{}, identityaccess.ErrUnauthorized, 401},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, merchantRoot, nil)
+			request.SetPathValue("storeID", "store-a")
+			request.Header.Set("Authorization", "Bearer source-token")
+			request = request.WithContext(context.WithValue(request.Context(), employeeReadActorKey{}, "merchant-a"))
+			response := httptest.NewRecorder()
+			permitted := verifyEmployeeReadAuthorization(response, request, employeeRecheckIdentity{actor: tc.actor, readErr: tc.err})
+			if response.Code != tc.want || permitted != (tc.want == 200) {
+				t.Fatalf("merchant authorization permitted=%t status=%d want=%d", permitted, response.Code, tc.want)
+			}
+		})
+	}
+}

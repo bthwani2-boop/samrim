@@ -1,7 +1,7 @@
+import { themes as brandThemes } from "@bthwani/design-system/theme";
 import { defaultConfig } from "@tamagui/config/v6";
 import { createTamagui } from "tamagui";
 import { animations } from "./animations";
-import { themes as brandThemes } from "@bthwani/design-system/theme";
 
 // Tamagui is the sole UI primitive renderer for Customer/Merchant/Captain.
 // Every application theme role comes from the one BThwani semantic token owner.

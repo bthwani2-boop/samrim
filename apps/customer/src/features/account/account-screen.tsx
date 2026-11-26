@@ -2,6 +2,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import FavoriteStores from "../discovery/favorite-stores";
 import AccountPreferences from "./account-preferences";
 import StoreInvitations from "./store-invitations";
 
@@ -27,6 +28,27 @@ export default function AccountScreen() {
             </Pressable>
           </Link>
         </View>
+        <Link href="/wallet" asChild>
+          <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center", padding: 12,
+            backgroundColor: theme.actionSoft, borderRadius: 10 }}>
+            <Text style={{ color: theme.interactiveText }}>محفظتي</Text>
+          </Pressable>
+        </Link>
+        <Link href="/multi-store-checkout" asChild>
+          <Pressable accessibilityRole="link" style={{minHeight:44,justifyContent:"center",padding:12,backgroundColor:theme.actionSoft,borderRadius:10}}>
+            <Text style={{color:theme.interactiveText}}>سلال التسوق المحفوظة</Text>
+          </Pressable>
+        </Link>
+        <Link href="/addresses" asChild><Pressable accessibilityRole="link" style={{ minHeight:44, justifyContent:"center", padding:12, backgroundColor:theme.actionSoft, borderRadius:10 }}>
+          <Text style={{ color:theme.interactiveText }}>عناويني</Text>
+        </Pressable></Link>
+        <Link href={{ pathname: "/stores", params: { chooseCity: "1" } }} asChild>
+          <Pressable accessibilityRole="link" style={{ minHeight: 44, justifyContent: "center", padding: 12,
+            backgroundColor: theme.actionSoft, borderRadius: 10 }}>
+            <Text style={{ color: theme.interactiveText }}>تغيير مدينة التسوّق</Text>
+          </Pressable>
+        </Link>
+        <FavoriteStores />
         <AccountPreferences />
         <StoreInvitations />
       </ScrollView>

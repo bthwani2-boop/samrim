@@ -82,3 +82,22 @@ test("A stale DSH readback after confirmed PATCH remains uncertain", async t => 
     { status: "unknown" });
   assert.equal(writes, 1);
 });
+
+test("initial registration policy command survives reload, scoped to its operator", async () => {
+  const { savePendingRegistrationPolicy, readPendingRegistrationPolicy, clearPendingRegistrationPolicy } =
+    await import("../src/features/policies/store-registration-command.ts");
+  const data = new Map();
+  const storage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+  const pending = { cityId: city, relation, change };
+  savePendingRegistrationPolicy(storage, actor, pending);
+  assert.deepEqual(readPendingRegistrationPolicy(storage, actor), pending);
+  assert.equal(readPendingRegistrationPolicy(storage, "operator-b"), null);
+  assert.throws(() => savePendingRegistrationPolicy(storage, actor, { ...pending, change: { ...change, operationId: "different-op-001" } }));
+  clearPendingRegistrationPolicy(storage, actor, pending);
+  assert.equal(readPendingRegistrationPolicy(storage, actor), null);
+  savePendingRegistrationPolicy(storage, actor, pending);
+  const key = [...data.keys()][0];
+  data.set(key, "{broken");
+  assert.throws(() => readPendingRegistrationPolicy(storage, actor));
+  assert.throws(() => savePendingRegistrationPolicy(storage, actor, pending));
+});

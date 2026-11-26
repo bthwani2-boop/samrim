@@ -6,21 +6,25 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const src = fileURLToPath(new URL("../src/features/catalog/merchant-catalog-draft-form.tsx", import.meta.url));
+// Retain uncached modules until Node collects source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 function nodes(tree) {
   if (!tree || typeof tree !== "object") return [];
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
-test("Merchant draft form retries the identical operation after unknown outcome and clears state on Store switch", async () => {
+test("Merchant draft form retries the identical operation after unknown outcome and clears state on Store switch", async t => {
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-draft-render-"));
   try {
     const run = spawnSync(process.execPath, [
       path.join(root, "node_modules/typescript/bin/tsc"), src, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--outDir", tmp,
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
     assert.equal(run.status, 0, run.stderr || run.stdout);
     const srcCode = readFileSync(path.join(tmp, "merchant-catalog-draft-form.js"), "utf8");
@@ -105,16 +109,21 @@ test("Merchant draft form retries the identical operation after unknown outcome 
         Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View", Platform: platform,
       },
     };
-    const mod = { exports: {} };
-    new Function("require", "module", "exports", "window", srcCode)(name => {
-      assert.ok(Object.hasOwn(mocks, name), `unexpected module: ${name}`);
-      return mocks[name];
-    }, mod, mod.exports, { localStorage });
+    const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    t.after(() => {
+      if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+      else delete globalThis.window;
+    });
+    Object.defineProperty(globalThis, "window", {
+      configurable: true, writable: true, value: { localStorage },
+    });
+    const mod = loadMappedRenderFixture(srcCode, src, mocks);
+    loadedModules.push(mod);
     let created = 0;
-    function render(actorId = "merchant-a", storeId = "store-a", draft) {
+    function render(actorId = "merchant-a", storeId = "store-a", draft, priceStockOnly = false, initialPriceStock) {
       hooksCursor = 0;
       scheduled = [];
-      const tree = mod.exports.default({ actorId, storeId, draft, onCreated: () => { created++; } });
+      const tree = mod.exports.default({ actorId, storeId, draft, priceStockOnly, initialPriceStock, onCreated: () => { created++; } });
       for (const effect of scheduled) effect();
       return tree;
     }
@@ -190,6 +199,15 @@ test("Merchant draft form retries the identical operation after unknown outcome 
       variantSellable: false, requiredAttributesValid: false,
     };
     restart();
+    const csvValues = { priceYer: "9223372036854775807", stockUnits: 0 };
+    render("merchant-a", "store-a", existingDraft, true, csvValues);
+    await settle();
+    tree = render("merchant-a", "store-a", existingDraft, true, csvValues);
+    assert.equal(namedInput(tree, "السعر بالريال اليمني").props.value, csvValues.priceYer);
+    assert.equal(namedInput(tree, "عدد الوحدات").props.value, "0");
+    assert.equal(namedInput(tree, "اسم المنتج"), undefined);
+    assert.equal(pending.length, 2, "import selection must not dispatch without explicit save");
+    restart();
     platform.OS = "android";
     render("merchant-a", "store-a", existingDraft);
     await settle();
@@ -246,6 +264,63 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     assert.equal(storage.size, 0, "DSH confirmed this version conflict did not apply the edit");
     assert.ok(nodes(render("merchant-a", "store-a", updatedDraft))
       .some(n => n.props?.accessibilityLabel === "تحديث مسودة الكتالوج"));
+
+    restart();
+    render("merchant-a", "store-a", updatedDraft, true);
+    await settle();
+    tree = render("merchant-a", "store-a", updatedDraft, true);
+    assert.equal(namedInput(tree, "اسم المنتج"), undefined, "focused pricing cannot rename a product");
+    assert.ok(nodes(tree).some(n => n.props?.children === updatedDraft.name));
+    namedInput(tree, "السعر بالريال اليمني").props.onChangeText("٦٥٠٠");
+    tree = render("merchant-a", "store-a", updatedDraft, true);
+    namedInput(tree, "عدد الوحدات").props.onChangeText("7");
+    tree = render("merchant-a", "store-a", updatedDraft, true);
+    const quickSave = nodes(tree).find(n => n.props?.accessibilityLabel === "حفظ تعديل المسودة");
+    assert.ok(quickSave && !quickSave.props.disabled);
+    quickSave.props.onPress();
+    await settle();
+    assert.equal(pending[5].change.name, updatedDraft.name);
+    assert.equal(pending[5].change.priceYer, "6500");
+    assert.equal(pending[5].change.stockUnits, 7);
+    assert.equal(pending[5].change.expectedVersion, 2);
+    pending[5].reject(new Error("unknown outcome"));
+    await settle();
+    tree = render("merchant-a", "store-a", updatedDraft, true);
+    nodes(tree).find(n => n.props?.accessibilityLabel === "إعادة تأكيد المسودة").props.onPress();
+    await settle();
+    assert.deepEqual(pending[6].change, pending[5].change);
+    pending[6].resolve({ replay: true });
+    await settle();
+    assert.equal(storage.size, 0);
+    assert.equal(created, 3);
+
+    restart();
+    const latestDraft = { ...updatedDraft, draftVersion: 3 };
+    render("merchant-a", "store-a", latestDraft, true, csvValues);
+    await settle();
+    const importedSave = nodes(render("merchant-a", "store-a", latestDraft, true, csvValues))
+      .find(n => n.props?.accessibilityLabel === "حفظ تعديل المسودة");
+    assert.ok(importedSave && !importedSave.props.disabled);
+    importedSave.props.onPress();
+    await settle();
+    assert.equal(pending[7].offerId, latestDraft.id);
+    assert.equal(pending[7].change.expectedVersion, 3);
+    assert.equal(pending[7].change.name, latestDraft.name);
+    assert.equal(pending[7].change.priceYer, csvValues.priceYer);
+    assert.equal(pending[7].change.stockUnits, 0);
+    pending[7].reject(new Error("unknown CSV edit outcome"));
+    await settle();
+    restart();
+    render("merchant-a", "store-a", {...latestDraft,draftVersion:4}, true, csvValues);
+    await settle();
+    nodes(render("merchant-a", "store-a", {...latestDraft,draftVersion:4}, true, csvValues))
+      .find(n => n.props?.accessibilityLabel === "إعادة تأكيد المسودة").props.onPress();
+    await settle();
+    assert.deepEqual(pending[8].change,pending[7].change);
+    pending[8].resolve({ replay: true });
+    await settle();
+    assert.equal(storage.size,0);
+    assert.equal(created,4);
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

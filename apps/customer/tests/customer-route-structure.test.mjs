@@ -21,6 +21,7 @@ const admitted = [
 
 test("all Customer URLs remain under the single Expo Router app root", () => {
   for (const route of admitted) assert.ok(existsSync(resolve(app, route)), route);
+  assert.equal(existsSync(resolve(app, "health.tsx")), false, "retired synthetic health route");
   assert.equal(existsSync(resolve(app, "(app)")), false);
   assert.equal(existsSync(resolve(customer, "src/app")), false);
 });
@@ -51,9 +52,6 @@ test("web storefront keeps its no-index policy and reuses the DSH reader", () =>
 
 test("protected feature routes delegate to feature-owned screens and fail closed", () => {
   const routes = {
-    "addresses/index.tsx": "addresses/addresses-screen.tsx",
-    "addresses/[id].tsx": "addresses/address-editor.tsx",
-    "multi-store-checkout.tsx": "multi-store-checkout/multi-store-checkout-screen.tsx",
     "(tabs)/orders/index.tsx": "orders/orders-screen.tsx",
     "orders/[id].tsx": "orders/order-detail-screen.tsx",
     "notifications/index.tsx": "notifications/notifications-inbox.tsx",
@@ -66,6 +64,18 @@ test("protected feature routes delegate to feature-owned screens and fail closed
     assert.match(source, /CapabilityUnavailableScreen/, screen);
     assert.doesNotMatch(source, /fetch\(|checkout\(|confirm\(|credit\(/, screen);
   }
+  assert.match(read("multi-store-checkout.tsx"), /export \{ default \} from/);
+  const multiStore = readFeature("multi-store-checkout/multi-store-checkout-screen.tsx");
+  assert.match(multiStore, /readVerifiedCartDirectory\(/);
+  assert.match(multiStore, /checkout-confirmation-unavailable/);
+  assert.doesNotMatch(multiStore, /fetch\(|createOrder\(|confirmOrder\(|credit\(|debit\(/);
+  for (const route of ["addresses/index.tsx","addresses/[id].tsx"]) {
+    assert.match(read(route), /addresses\/addresses-screen/);
+  }
+  const addresses = readFeature("addresses/addresses-screen.tsx");
+  assert.match(addresses, /readVerifiedAddresses\(/);
+  assert.match(addresses, /writeVerifiedAddress\(/);
+  assert.doesNotMatch(addresses, /fetch\(|AsyncStorage|SecureStore/);
   assert.match(read("checkout/index.tsx"), /export \{ default \} from/);
   const checkoutScreen = readFeature("checkout/checkout-screen.tsx");
   assert.match(checkoutScreen, /readVerifiedCart\(storeId,/);
@@ -107,4 +117,22 @@ test("tabs keep their URLs and no route duplicates their roots", () => {
   for (const duplicate of ["index.tsx", "orders/index.tsx", "account/index.tsx"]) {
     assert.equal(existsSync(resolve(app, duplicate)), false);
   }
+});
+
+test("Customer account exposes the existing protected wallet and signed-out wallets return through login", () => {
+  const account = readFeature("account/account-screen.tsx");
+  assert.match(account, /href="\/wallet"/);
+  for (const screen of ["wallet-screen.tsx", "wallet-screen.web.tsx"]) {
+    assert.match(readFeature(`wallet/${screen}`), /pathname: "\/login", params: \{ returnTo: "\/wallet" \}/);
+  }
+  const identity = readFeature("access/identity-gate.tsx");
+  assert.match(identity, /customerAuthDestination\(returnTo\)/);
+  assert.match(identity, /enabled && session \? \(/);
+  assert.match(identity, /href=\{destination\}/);
+});
+
+test("Account city shortcut and address login continuation reuse admitted routes", () => {
+  const account = readFeature("account/account-screen.tsx");
+  assert.match(account, /pathname: "\/stores", params: \{ chooseCity: "1" \}/);
+  assert.match(readFeature("addresses/addresses-screen.tsx"), /pathname: "\/login", params: \{ returnTo: "\/addresses" \}/);
 });

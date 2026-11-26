@@ -1,29 +1,23 @@
 name: CI
 
 on:
-  workflow_dispatch:
-  # Every current and future development branch is eligible.
-  # Archived donor refs stay read-only, outside development CI.
   push:
-    branches:
-      - '**'
-      - '!archive/**'
-      - '!41'
-  # Main is the protected integration target; branch names are never pinned.
+    branches: [main]
   pull_request:
-    branches:
-      - main
+    branches: [main]
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft]
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  foundation:
-    name: Pinned workspace and source checks (NOT product acceptance)
+  workspace_validation:
+
+    name: Workspace validation (source checks)
     runs-on: ubuntu-24.04
     timeout-minutes: 6
     steps:
@@ -41,137 +35,274 @@ jobs:
         run: |
           node --version
           node tools/dev/verify-workspace.mjs
+          node tools/security/verify-secrets.mjs
           git status --short
-      - name: Test active Node runtime enforcement
-        run: node --test tools/dev/verify-workspace.test.mjs
-      - name: Guard branch-agnostic CI routing
-        run: node --test tools/dev/verify-ci-branch-routing.test.mjs
-      - name: Verify Stage-4 source versions and external app identities (static only)
-        run: node tools/mobile/verify-app-foundations.mjs
-      - name: Reject manual RTL overrides in Expo screens and confirm native config
+      - name: Validate GitHub Actions definitions with checksum-pinned Actionlint
+        shell: bash
         run: |
-          node --test tools/mobile/verify-rtl.test.mjs
-          node tools/mobile/verify-rtl.mjs
+          set -euo pipefail
+          dir="$(mktemp -d "$RUNNER_TEMP/actionlint.XXXXXX")"
+          trap 'rm -rf -- "$dir"' EXIT
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 2 \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
+            --output "$dir/actionlint.tar.gz"
+          printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' \
+            "$dir/actionlint.tar.gz" | sha256sum --check --strict
+          tar -xzf "$dir/actionlint.tar.gz" -C "$dir" actionlint
+          "$dir/actionlint" -version
+          "$dir/actionlint" -color=false
+      # All source regression tests run in the coverage suite below.
       - name: Record limits explicitly
         run: |
           echo 'WORKSPACE_ONLY: governance policy cutover is separately assessed'
           echo 'NOT_RUN: SQL, source services, runtime, security, finance, full Product acceptance'
 
-  presentation:
-    name: Presentation config, design and TypeScript (NOT runtime)
-    needs: foundation
+  application_quality:
+    name: Application quality, contracts, tests and builds
+    needs: workspace_validation
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - name: Checkout exact candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
       - name: Use repository-pinned Node 24
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Install exact locked dependencies (no lifecycle scripts)
+      - name: Resolve the locked pnpm package store
+        id: pnpm-store
+        shell: bash
         run: |
+          set -euo pipefail
           corepack enable pnpm
           pnpm --version
-          pnpm install --frozen-lockfile --ignore-scripts
-      - name: Validate owner OpenAPI 3.1 contracts and reject broken references
-        run: |
-          node --test tools/dev/check-openapi.test.mjs infra/compose-policy.test.mjs infra/verify-runtime-provenance.test.mjs
-          pnpm --dir services/identity contract
-          pnpm --dir services/dsh contract
-          pnpm --dir services/wlt contract
-      - name: Reject unadmitted new Feature tests
-        run: pnpm check:test-inclusion
+          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Cache verified package-store inputs only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Audit the installed locked JavaScript dependency graph (high and critical fail)
+        run: pnpm audit --audit-level high
+      - name: Validate all owner OpenAPI contracts and generated operation parity
+        run: pnpm check:contracts
       - name: Run discovered Feature tests and collect measured coverage
         run: pnpm check:coverage
+      - name: Attest JavaScript coverage to the exact committed candidate
+        run: node tools/dev/ci-coverage-evidence.mjs publish js
+      - name: Publish measured JavaScript coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sonar-js
+          path: |
+            coverage/lcov.info
+            coverage/tree.txt
+            coverage/reports.sha256
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
       - name: Reject orphaned JavaScript and TypeScript files
         run: pnpm knip:files
-      - name: Validate design, native config, source ownership, appearance races and all app types
+      - name: Validate design, app identity, native configuration, source boundaries and types
         run: |
           pnpm check:design
-          pnpm check:apps
+          pnpm check:apps:source
+      - name: Typecheck all workspace projects
+        run: pnpm -r --if-present run typecheck
       - name: Export Expo Web presentation hosts (SSR artifacts only)
         run: |
           pnpm --dir apps/customer exec expo export --platform web
           pnpm --dir apps/merchant exec expo export --platform web
       - name: Smoke-test approved Customer/Merchant Expo Web SSR on loopback
         run: node tools/mobile/verify-expo-web-http.mjs
-      - name: Export Expo Android JavaScript (NOT a native binary)
+      - name: Export Customer/Merchant Android JavaScript (NOT a native binary)
         run: |
           pnpm --dir apps/customer exec expo export --platform android
           pnpm --dir apps/merchant exec expo export --platform android
-          pnpm --dir apps/captain exec expo export --platform android
+      - name: Export Captain Android JavaScript (NOT a native binary)
+        run: pnpm --dir apps/captain exec expo export --platform android
       - name: Build the pinned Next.js Operator presentation host
         run: pnpm --dir apps/control-panel build
       - name: Smoke-test production Operator SSR, RTL and headers on loopback
         run: |
           node tools/dev/verify-operator-http.mjs
-      - name: Exercise production Operator session and policy routes
-        env:
-          BTHWANI_OPERATOR_HTTP_TEST: '1'
-        run: |
-          node --test --test-concurrency=1 \
-            apps/control-panel/tests/operator-protected-routes.test.mjs \
-            apps/control-panel/tests/operator-workspace-http.test.mjs \
-            apps/control-panel/tests/operator-policy-http.test.mjs \
-            apps/control-panel/tests/operator-captain-review-http.test.mjs
+      - name: Execute discovered production Operator runtime suite
+        run: node tools/dev/run-coverage.mjs --operator-runtime
       - name: Record missing live platform proof
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
 
-  fast_guard:
-    # Existing main protection requires this exact check context. It depends on
-    # the actual source/build jobs; it never substitutes for old Go/SQL E2E.
-    name: fast-guard
-    needs: [foundation, presentation]
-    # A skipped required check may be treated as successful by branch protection.
-    # Evaluate failed prerequisites and explicitly fail this required context.
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-24.04
-    timeout-minutes: 5
+  windows_platform:
+    name: Windows platform behavior and PowerShell acceptance
+    needs: workspace_validation
+    runs-on: windows-2025
+    timeout-minutes: 15
     steps:
-      - name: Refuse read-only archive as main PR source
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          case "$HEAD_REF" in
-            archive/*|41)
-              echo 'Archived donor source must remain read-only; refuse merging to main'
-              exit 1
-              ;;
-          esac
-      - name: Reject failed required predecessors
-        if: ${{ always() }}
-        env:
-          FOUNDATION_RESULT: ${{ needs.foundation.result }}
-          PRESENTATION_RESULT: ${{ needs.presentation.result }}
-        run: |
-          if [ "$FOUNDATION_RESULT" != "success" ] || [ "$PRESENTATION_RESULT" != "success" ]; then
-            echo 'A required predecessor job did not succeed'
-            exit 1
-          fi
       - name: Checkout exact candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          fetch-depth: 1
           persist-credentials: false
       - name: Use repository-pinned Node 24
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Confirm tracked-secret checks after presentation admission
-        # The TypeScript-backed app source guard and negative tests run in
-        # presentation after its frozen pnpm install. GitHub jobs are isolated.
+      - name: Require PowerShell 7 and resolve locked dependency store
+        id: pnpm-store
+        shell: pwsh
         run: |
-          node --test tools/security/verify-secrets.test.mjs
-          node tools/security/verify-secrets.mjs
-      - name: State the scoped check boundary
+          $ErrorActionPreference = 'Stop'
+          if ($PSVersionTable.PSVersion.Major -ne 7) { throw 'PowerShell 7 required' }
+          $PSVersionTable.PSVersion.ToString()
+          corepack enable pnpm
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          pnpm --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $store = pnpm store path --silent
+          if ($LASTEXITCODE -ne 0 -or !$store) { throw 'Package store unavailable' }
+          "path=$store" >> $env:GITHUB_OUTPUT
+      - name: Cache verified package-store inputs only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Run native Windows behavior through the existing Node runner
+        run: node tools/dev/run-coverage.mjs --windows-platform
+
+  backend_quality:
+    needs: workspace_validation
+    uses: ./.github/workflows/go-quality.yml
+
+  required_ci:
+    name: fast-guard
+    needs: [workspace_validation, application_quality, backend_quality, windows_platform]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Reject archive source and failed required predecessors
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+          CI_REF: ${{ github.ref }}
+          CI_EVENT: ${{ github.event_name }}
+          WORKSPACE_RESULT: ${{ needs.workspace_validation.result }}
+          APPLICATION_RESULT: ${{ needs.application_quality.result }}
+          BACKEND_RESULT: ${{ needs.backend_quality.result }}
+          WINDOWS_RESULT: ${{ needs.windows_platform.result }}
+        shell: bash
         run: |
-          echo 'fast-guard: only currently implemented foundation/presentation sources'
-          echo 'NOT_RUN: missing Go backends, SQL upgrade, financial and security E2E'
+          set -euo pipefail
+          case "$HEAD_REF:$CI_REF" in
+            archive/*:*|*:refs/heads/archive/*) exit 1 ;;
+          esac
+          case "$CI_EVENT" in
+            pull_request) ;;
+            push) test "$CI_REF" = refs/heads/main ;;
+            *) exit 1 ;;
+          esac
+          for result in "$WORKSPACE_RESULT" "$APPLICATION_RESULT" "$BACKEND_RESULT" "$WINDOWS_RESULT"; do
+            test "$result" = success
+          done
+      - name: State verification boundary
+        run: echo 'Full CI source, build and isolated owner checks; production and complete business journeys remain separate.'
+
+  sonar:
+    # Retain the exact required GitHub Actions check name.
+    name: SonarQube Cloud Quality Gate
+    needs: [application_quality, backend_quality]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Require trusted source and successful coverage producers
+        env:
+          PRESENTATION_RESULT: ${{ needs.application_quality.result }}
+          GO_RESULT: ${{ needs.backend_quality.result }}
+          TRUSTED_SOURCE: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TRUSTED_SOURCE" = true
+          test "$PRESENTATION_RESULT" = success
+          test "$GO_RESULT" = success
+      - name: Checkout exact PR source and base history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download JavaScript coverage from this CI run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sonar-js
+          path: ${{ runner.temp }}/sonar-js
+      - name: Download Go coverage from this CI run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sonar-go
+          path: ${{ runner.temp }}/sonar-go
+      - name: Download PostgreSQL coverage from this CI run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: sonar-postgres
+          path: ${{ runner.temp }}/sonar-postgres
+      - name: Use repository-pinned Node 24 for evidence admission and analysis
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Admit complete coverage for the exact analyzed source tree
+        id: coverage
+        env:
+          CI_ANALYSIS_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node tools/dev/ci-coverage-evidence.mjs admit
+      - name: Resolve the locked pnpm package store
+        id: pnpm-store
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable pnpm
+          pnpm --version
+          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Cache verified package-store inputs only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Use repository-pinned Go for fresh coverage only
+        if: ${{ steps.coverage.outputs.reuse == 'false' }}
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          check-latest: false
+          cache: false
+      - name: Measure PR source only when the tested tree differs
+        if: ${{ steps.coverage.outputs.reuse == 'false' }}
+        env:
+          GOTOOLCHAIN: local
+          GOWORK: 'off'
+        run: |
+          set -euo pipefail
+          pnpm check:coverage
+          node tools/dev/check-go.mjs --coverage --sonar-report
+          bash tests/infra/test-owner-postgres-output.sh
+          bash tests/infra/verify-owner-postgres-ci.sh --coverage
+      - name: Analyze using existing Sonar project and enforce its Quality Gate
+        uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        with:
+          args: >-
+            -Dsonar.qualitygate.wait=true
+            -Dsonar.qualitygate.timeout=300
+            ${{ github.event_name == 'pull_request' && format('-Dsonar.pullrequest.key={0} -Dsonar.pullrequest.branch={1} -Dsonar.pullrequest.base={2}', github.event.pull_request.number, github.event.pull_request.head.ref, github.event.pull_request.base.ref) || '-Dsonar.branch.name=main' }}
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

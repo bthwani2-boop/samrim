@@ -1,4 +1,34 @@
 paths:
+  /v1/carts:
+    get:
+      operationId: listCurrentCustomerCarts
+      summary: List the current Customer's nonempty single-Store cart drafts
+      description: Read-only bounded directory of existing DSH drafts. Actor comes only from verified Identity. Unpublished or inactive Store names are withheld. Neither combined checkout nor Order, stock or payment authorization.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: after
+          in: query
+          required: false
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Current Customer draft page, sorted by Store ID
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCartDirectory' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+
   /v1/carts/{storeID}:
     get:
       operationId: getCurrentCustomerCart
@@ -91,6 +121,52 @@ paths:
           content:
             application/json:
               schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCartMerchandiseEstimate' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+
+  /v1/carts/{storeID}/checkout-review:
+    post:
+      operationId: reviewCurrentCustomerCheckout
+      summary: Review current cart, recipient and selected fulfillment in one DSH snapshot
+      description: >-
+        Authenticated non-mutating review. Rechecks Identity and the exact Cart version,
+        current Offer quantities, stock and merchandise price. Delivery requires a current
+        owned Address version and evaluates canonical geographic serviceability in the same
+        snapshot. A valid versioned DSH distance-band tariff yields an optional
+        non-payable distance fee estimate using the same geographic evidence. Missing or
+        invalid tariffs and out-of-scope addresses produce no estimate.
+        Recipient contact syntax is validated without storing or echoing PII.
+        The selected mode is not admitted merely by this review. This is not a payable quote,
+        reservation, WLT allocation, or Order confirmation.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCheckoutReviewInput' }
+      responses:
+        '200':
+          description: Current non-payable DSH review with explicit remaining blockers
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerCheckoutReview' }
         '400':
           $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
         '401':

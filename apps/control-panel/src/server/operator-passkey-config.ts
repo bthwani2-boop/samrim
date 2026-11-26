@@ -1,9 +1,7 @@
 // Only the explicitly isolated Operator test BFF uses these helpers.
 // A bearer issued by Identity is never delivered to browser JavaScript.
-export const OPERATOR_REFRESH_COOKIE = process.env.BTHWANI_SURFACE_PREVIEW === "1"
-  ? "bthwani_surface_operator_refresh" : "bthwani_operator_refresh";
-export const OPERATOR_COOKIE = process.env.BTHWANI_SURFACE_PREVIEW === "1"
-  ? "bthwani_surface_operator_session" : "bthwani_operator_session";
+export const OPERATOR_REFRESH_COOKIE = "bthwani_operator_refresh";
+export const OPERATOR_COOKIE = "bthwani_operator_session";
 
 export type OperatorPasskeyConfig = {
   browserOrigin: string;
@@ -52,7 +50,8 @@ export function resolveIsolatedOperatorConfig(env: Settings): OperatorPasskeyCon
     env.OPERATOR_PASSKEY_IDENTITY_ORIGIN,
     localHostnames,
   );
-  return browserOrigin && identityOrigin ? { browserOrigin, identityOrigin } : null;
+  return browserOrigin && browserOrigin !== "http://localhost:23100" && identityOrigin
+    ? { browserOrigin, identityOrigin } : null;
 }
 
 // Existing-account recovery is independently disabled until the canonical
@@ -98,8 +97,6 @@ export function isTrustedOperatorRequest(
 /** Additional explicit opt-in: an isolated WebAuthn login flag NEVER enables Root creation. */
 export function resolveInitialOperatorBootstrapConfig(env: Settings): OperatorPasskeyConfig | null {
   const config = resolveIsolatedOperatorConfig(env);
-  const browserOrigin = env.BTHWANI_SURFACE_PREVIEW === "1"
-    ? "http://localhost:23100" : "http://localhost:13000";
   return config && env.OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF === "true" &&
-    config.browserOrigin === browserOrigin ? config : null;
+    config.browserOrigin === "http://localhost:13000" ? config : null;
 }

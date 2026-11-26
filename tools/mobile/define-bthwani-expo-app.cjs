@@ -84,7 +84,11 @@ const designSystemSurfaceColors = readDesignSystemSurfaceColors();
 
 function buildPlugins(appKey, { cameraMode, locationMode }) {
   const plugins = [
-    "expo-router", "expo-updates", "expo-system-ui",
+    // SDK 58 Web route splitting stays enabled in production; use synchronous routes in dev.
+    appKey === "customer" || appKey === "merchant"
+      ? ["expo-router", { asyncRoutes: { web: "production" } }]
+      : "expo-router",
+    "expo-updates", "expo-system-ui",
     "expo-asset", "expo-font", "expo-image", "expo-status-bar", "expo-video",
   ];
   if (appKey === "customer" || appKey === "merchant") plugins.push("expo-sharing");

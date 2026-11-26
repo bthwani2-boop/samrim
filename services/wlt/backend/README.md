@@ -3,7 +3,7 @@
 `cmd/wlt` serves the Customer's posted balance and successive bounded pages of
 posted funding transactions (up to ten entries per page) in isolated development. No funding write endpoint is exposed.
 Use the pinned Go toolchain and a fresh `bthwani_wlt_test` PostgreSQL database.
-The runtime requires all of these settings.
+Runtime startup verifies the complete required owner baseline and the effective reader privileges across all WLT relations, functions and sequences, including previously unknown objects. The reader must not inherit roles, create schemas or temporary objects, or receive private-table/command access. Fresh provisioning also separately proves empty-state and non-login owner roles; startup does not require an empty retained ledger. The runtime requires all of these settings.
 
 - `BTHWANI_ISOLATED_TEST_MODE=true`
 - `WLT_DEV_LISTEN_ADDR` as an explicit `127.0.0.1` address with a port
@@ -31,7 +31,7 @@ The five experimental migrations remain available in Git at
 
 ### Isolated Docker development reader
 
-`infra/compose.wlt.yaml` defines the opt-in `wlt` service in the
+`infra/compose.yaml` defines the opt-in `wlt` service in the
 existing `bthwani-refoundation` Compose project. Its pinned `Dockerfile`
 runs the actual Go reader as UID 65532 with no writable filesystem or container
 capabilities and loopback-only host port `3203`. It uses an explicit
@@ -41,13 +41,13 @@ existing strict local/Android loopback mode. The only permitted endpoints are
 synthetic `http://identity:3302` verifier. No ledger writes, funding command,
 automatic migrations, provider credentials or production services are enabled.
 
-The new `infra/provision-wlt-test-db.ps1` is an additive, explicit, one-time
+The new `tools/dev/provision-wlt-test-db.ps1` is an additive, explicit, one-time
 development-only provisioner. It refuses an existing WLT database, roles or
 credential entry, requires the verified refoundation PostgreSQL container, and
 creates `bthwani_wlt_test` plus no-login owner/sandbox roles and a unique
-read-only reader credential in the Git-ignored `infra/.env`. It applies the current three domain baseline files from `database/schema/` and
+read-only reader credential in the Git-ignored `infra/.env`. It applies the ordered current domain baseline files from `database/schema/` and
 synthetic funding commands from `database/sandbox/` only to a NEW empty
-isolated database; it verifies journal emptiness, SELECT grants and write-denial.
+isolated database in one transaction; it verifies journal emptiness, SELECT grants and write-denial before atomic credential publication. The existing disposable proof exercises the same provisioner, including rollback, replay refusal and competing environment edits.
 The five historical files were retired after isolated catalog equivalence,
 owner-backed HTTP, immutable journal, concurrency, privilege and restore tests.
 Never replay the baseline over an existing database. It never runs as
@@ -55,11 +55,8 @@ part of Compose or on another database. If a step fails, inspect the actual
 durable database state before any attempted recovery; do not delete, reset or
 rerun the provisioner blindly.
 
-Build the committed WLT source image using `infra/build-wlt-image.ps1`,
-then use Compose with both `infra/compose.yaml` and
-`infra/compose.wlt.yaml`, selecting `--profile wlt-reader` and
-`--no-deps` for `wlt` only after Identity and PostgreSQL are confirmed
-healthy. Verify `/health`, unauthenticated `401` and
+Build the committed WLT source image using `pnpm dev docker build wlt`,
+then use guarded reconciliation for an existing WLT. For an explicitly approved first start, set `REF_WLT_IMAGE_TAG` to the returned `build-<full SHA>` tag and use the canonical `infra/compose.yaml` with `--no-deps --no-build --pull never` for `wlt` only after Identity and PostgreSQL are confirmed healthy. Verify `/health`, unauthenticated `401` and
 read-only `405`, then real Identity session authorization/denial on
 `/v1/wallets/me`; health alone is not journey acceptance.
 

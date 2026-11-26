@@ -6,10 +6,68 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestCustomerPhoneHandlerRestrictsSyntheticSMTPDestination(t *testing.T) {
+	cases := []struct {
+		name          string
+		address       string
+		containerMode bool
+		allowed       bool
+	}{
+		{"loopback", "127.0.0.1:1025", false, true},
+		{"container mailpit", "mailpit:1025", true, true},
+		{"mailpit outside container", "mailpit:1025", false, false},
+		{"mailpit wrong port", "mailpit:25", true, false},
+		{"external host", "smtp.example.test:25", true, false},
+		{"external address", "192.0.2.1:25", false, false},
+		{"nonliteral loopback", "localhost:1025", false, false},
+		{"mailpit lookalike", "mailpit.example.test:1025", true, false},
+		{"missing port", "127.0.0.1", false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, err := NewCustomerPhoneHandler(&PostgresReader{}, strings.Repeat("01", 32), tc.address, tc.containerMode, "+967770000003")
+			if tc.allowed && (err != nil || h == nil) {
+				t.Fatalf("isolated destination rejected: %v", err)
+			}
+			if !tc.allowed && (err == nil || h != nil) {
+				t.Fatal("unsafe SMTP destination admitted")
+			}
+		})
+	}
+}
+
+func TestCustomerPhoneHandlerRejectsInvalidAllowlist(t *testing.T) {
+	for _, phones := range []string{"", "+12025559999", "+967770000003\r\nBcc: attacker@example.test"} {
+		h, err := NewCustomerPhoneHandler(&PostgresReader{}, strings.Repeat("01", 32), "127.0.0.1:1025", false, phones)
+		if err == nil || h != nil {
+			t.Fatal("invalid synthetic allowlist admitted")
+		}
+	}
+}
+
+func TestCustomerPhoneHandlerRejectsUnapprovedPhoneBeforeStorage(t *testing.T) {
+	// The reader deliberately has no database. Reaching storage would fail
+	// instead of returning the expected pre-storage input rejection.
+	h, err := NewCustomerPhoneHandler(&PostgresReader{}, strings.Repeat("01", 32), "127.0.0.1:1", false, "+967770000003")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, PhoneChallengePath, strings.NewReader("{\"phone\":\"+967770000004\"}"))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "INVALID_REQUEST") ||
+		!strings.Contains(w.Header().Get("Cache-Control"), "no-store") {
+		t.Fatalf("unapproved phone was not rejected safely: status=%d", w.Code)
+	}
+}
 
 func TestDeliverPhoneCodeRejectsUnsafePayloadBeforeDial(t *testing.T) {
 	cases := []struct {
@@ -62,6 +120,7 @@ func TestDeliverPhoneCodePreservesCanonicalSyntheticEmail(t *testing.T) {
 			finished <- result{err: greetErr}
 			return
 		}
+		var senderSeen, recipientSeen bool
 		for {
 			line, readErr := reader.ReadString('\n')
 			if readErr != nil {
@@ -71,9 +130,13 @@ func TestDeliverPhoneCodePreservesCanonicalSyntheticEmail(t *testing.T) {
 			switch {
 			case strings.HasPrefix(line, "EHLO "), strings.HasPrefix(line, "HELO "):
 				readErr = send("250 synthetic-smtp\r\n")
-			case strings.HasPrefix(line, "MAIL FROM:"), strings.HasPrefix(line, "RCPT TO:"):
+			case line == "MAIL FROM:<identity@identity.test>\r\n" && !senderSeen:
+				senderSeen = true
 				readErr = send("250 accepted\r\n")
-			case strings.HasPrefix(line, "DATA"):
+			case line == "RCPT TO:<verification@identity.test>\r\n" && senderSeen && !recipientSeen:
+				recipientSeen = true
+				readErr = send("250 accepted\r\n")
+			case line == "DATA\r\n" && senderSeen && recipientSeen:
 				if readErr = send("354 continue\r\n"); readErr != nil {
 					finished <- result{err: readErr}
 					return

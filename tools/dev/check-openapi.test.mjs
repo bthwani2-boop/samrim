@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -58,9 +58,24 @@ test("all current owner OpenAPI 3.1 documents parse with their admitted operatio
     const result = validate(owner);
     assert.deepEqual(result.errors, [], `${owner} has invalid OpenAPI`);
   }
-  assert.equal(validate("wlt").operations, 2);
+  assert.equal(validate("wlt").operations, 6);
   assert.ok(validate("identity").operations > 0);
   assert.ok(validate("dsh").operations > 0);
+});
+
+test("owner contract tree contains only populated modules, not reserved or legacy Customer placeholders", async () => {
+  const { readdirSync } = await import("node:fs");
+  const { default: YAML } = await import("yaml");
+  for (const owner of ["identity", "dsh", "wlt"]) {
+    const folder = path.join(root, "services", owner, "contracts/openapi/paths");
+    for (const file of readdirSync(folder)) {
+      if (!file.endsWith(".yaml")) continue;
+      const source = YAML.parse(readFileSync(path.join(folder, file), "utf8"));
+      assert.ok(source?.paths && Object.keys(source.paths).length > 0, `empty owner path module: ${owner}/${file}`);
+      assert.doesNotMatch(file, /^client-(?:auth|shares)\.yaml$/);
+    }
+  }
+  assert.ok(existsSync(path.join(root, "services/identity/contracts/openapi/paths/customer-auth.yaml")));
 });
 
 test("reject duplicate YAML mapping keys instead of silently accepting the last value", () => {
@@ -614,6 +629,20 @@ test("a repurposed public health operation cannot inherit anonymous access", () 
   hasError(result, "Protected operation must require OpaqueSession");
 });
 
+test("WLT health cannot grant anonymous access to another operation", () => {
+  const result = mutate("wlt", "paths/runtime.yaml", source =>
+    source.replace("operationId: getWltDevelopmentHealth", "operationId: readPrivateOwnerState"));
+  hasError(result, "Protected operation must require OpaqueSession");
+  hasError(result, "Missing successful JSON response schema");
+  hasError(result, "Missing JSON error response schema");
+});
+
+test("WLT wallet operations cannot inherit the health response exception", () => {
+  const result = mutate("wlt", "paths/wallets.yaml", source =>
+    source.replace(/('200':[\s\S]*?)\n          content:[\s\S]*?(?=\n        '\d{3}':)/, "$1"));
+  hasError(result, "Missing successful JSON response schema");
+});
+
 test("repurposing an existing public DSH path requires explicit operation identity admission", () => {
   const result = mutate("dsh", "paths/stores.yaml", source =>
     source.replace("operationId: listPublicStores", "operationId: listPrivateAccountBalances"));
@@ -621,7 +650,7 @@ test("repurposing an existing public DSH path requires explicit operation identi
 });
 
 test("repurposing an existing public Identity path cannot inherit anonymous permission", () => {
-  const result = mutate("identity", "paths/client-auth.yaml", source =>
+  const result = mutate("identity", "paths/customer-auth.yaml", source =>
     source.replace("operationId: issueCustomerPhoneChallenge", "operationId: issueOperatorRootSession"));
   hasError(result, "Protected operation must require OpaqueSession");
 });
@@ -642,10 +671,10 @@ test("new DSH public-prefixed endpoint is protected until explicitly admitted", 
 test("new Identity customer-auth-prefixed endpoint is protected until explicitly admitted", () => {
   const result = mutateOwnerFiles("identity", {
     "identity.openapi.yaml": source => source.replace(
-      "/v1/customer-auth/phone-challenges:\n    $ref: './paths/client-auth.yaml#/paths/~1v1~1customer-auth~1phone-challenges'",
-      "/v1/customer-auth/admin-reset:\n    $ref: './paths/client-auth.yaml#/paths/~1v1~1customer-auth~1admin-reset'",
+      "/v1/customer-auth/phone-challenges:\n    $ref: './paths/customer-auth.yaml#/paths/~1v1~1customer-auth~1phone-challenges'",
+      "/v1/customer-auth/admin-reset:\n    $ref: './paths/customer-auth.yaml#/paths/~1v1~1customer-auth~1admin-reset'",
     ),
-    "paths/client-auth.yaml": source => source.replace(
+    "paths/customer-auth.yaml": source => source.replace(
       "  /v1/customer-auth/phone-challenges:\n", "  /v1/customer-auth/admin-reset:\n",
     ),
   });

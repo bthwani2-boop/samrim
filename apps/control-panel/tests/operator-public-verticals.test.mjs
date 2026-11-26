@@ -3,15 +3,18 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import * as query from "../src/features/stores/public-store-query.ts";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
 
-const source = readFileSync(fileURLToPath(
-  new URL("../app/(workspace)/merchants/public-stores/page.tsx", import.meta.url),
-), "utf8");
-const compiled = transformSync(source, {
+// Retain uncached fixture modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+const source = fileURLToPath(new URL("../app/(workspace)/merchants/public-stores/page.tsx", import.meta.url));
+const compiled = transformSync(readFileSync(source, "utf8"), {
+  filename: source, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
@@ -53,13 +56,8 @@ function harness({ permitted = true, failVertical = false, failStores = false } 
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(imports, name), `unapproved import: ${name}`);
-      return imports[name];
-    }, mod, mod.exports,
-  );
+  const mod = loadMappedRenderFixture(compiled, source, imports);
+  loadedModules.push(mod);
   return {
     calls,
     render: (params = { city: "sanaa", vertical: "grocery" }) =>
@@ -117,4 +115,18 @@ test("Store owner outage never displays invented Stores despite valid vertical c
   assert.equal(find(view, node => node.type === "strong"), undefined);
   assert.ok(find(view, node => node.type === "datalist"));
   assert.ok(find(view, node => node.props?.role === "alert"));
+});
+
+test("failed Store continuation recovers the first page with the same city, query and vertical", async () => {
+  const h = harness({ failStores: true });
+  const view = await h.render({ city: "sanaa", q: "market", vertical: "grocery", cursor: "previouscursor" });
+  assert.ok(find(view, node => node.props?.role === "alert"));
+  const link = find(view, node => node.type === "a" && node.props.href?.startsWith("/merchants/public-stores?"));
+  assert.ok(link);
+  assert.deepEqual(Object.fromEntries(new URL(link.props.href, "https://example.test").searchParams), {
+    city: "sanaa", q: "market", vertical: "grocery",
+  });
+  assert.equal(find(view, node => node.type === "strong"), undefined);
+  const firstPage = await h.render({ city: "sanaa", q: "market", vertical: "grocery" });
+  assert.equal(find(firstPage, node => node.type === "a"), undefined);
 });

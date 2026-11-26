@@ -1,1 +1,108 @@
-paths: {}
+paths:
+  /v1/addresses:
+    get:
+      operationId: listCurrentCustomerAddresses
+      summary: List addresses belonging to the current verified Customer
+      description: Bounded live keyset read. No serviceability or delivery authorization is implied.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: after
+          in: query
+          schema: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+      responses:
+        '200':
+          description: Current Customer address page
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerAddressPage' }
+        '400':
+          description: Invalid address or selector
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+  /v1/addresses/{addressID}:
+    get:
+      operationId: getCurrentCustomerAddress
+      summary: Read one address belonging to the current verified Customer
+      description: A missing address and an address outside the current Customer scope return the same response.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: addressID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+      responses:
+        '200':
+          description: Current private address and verified Customer identity
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, address]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  address: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerAddress' }
+        '400':
+          description: Invalid address selector
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '404':
+          description: Address not found in the current Customer scope
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+    put:
+      operationId: saveCurrentCustomerAddress
+      summary: Create or replace a single private address with exact-version protection
+      description: >-
+        Address ID is a stable opaque resource key scoped to the verified purchasing
+        Customer. expectedVersion 0 creates; a current positive version replaces.
+        An exact retry of the resulting version is readback, not a new mutation;
+        a subsequent edit or changed payload conflicts. The city must be active
+        for new writes. Coordinates do not establish delivery eligibility.
+        Unknown outcomes are reconciled by retrying the identical resource/version or reading the owner.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: addressID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerAddressChange' }
+      responses:
+        '200':
+          description: Committed address or exact retry readback
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerAddressResult' }
+        '400':
+          description: Invalid address or selector
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '404':
+          description: Selected service city unavailable
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'

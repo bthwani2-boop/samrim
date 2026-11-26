@@ -8,11 +8,14 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 )
 
@@ -22,30 +25,58 @@ type identitySessions interface {
 }
 
 type employeeReadActorKey struct{}
+type employeeDirectoryKey struct{}
+
+var storeIDRule = regexp.MustCompile("^[a-z0-9-]{1,64}$")
+
+func directoryFailure(w http.ResponseWriter, err error, code string) {
+	if errors.Is(err, errScope) {
+		failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
+		return
+	}
+	failure(w, http.StatusServiceUnavailable, code)
+}
+
+func verifyReadScope(w http.ResponseWriter, r *http.Request, identity identitySessions, owner directory) bool {
+	if !verifyEmployeeReadAuthorization(w, r, identity) {
+		return false
+	}
+	if err := owner.verifyScope(r.Context()); err != nil {
+		directoryFailure(w, err, "EMPLOYEE_OWNER_UNAVAILABLE")
+		return false
+	}
+	return true
+}
 
 // A successful database read is not authority to disclose the result after
 // Identity revokes the session or its HR grant while the query is in flight.
-func verifyEmployeeReadAuthorization(w http.ResponseWriter, r *http.Request, identity identitySessions) bool {
+func confirmEmployeeActor(ctx context.Context, r *http.Request, identity identitySessions) error {
 	originalActor, ok := r.Context().Value(employeeReadActorKey{}).(string)
 	if !ok || originalActor == "" {
-		failure(w, http.StatusServiceUnavailable, "IDENTITY_OWNER_UNAVAILABLE")
-		return false
+		return identityaccess.ErrIdentityUnavailable
 	}
 	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-	current, err := identity.ResolveCurrentSession(r.Context(), token)
+	current, err := identity.ResolveCurrentSession(ctx, token)
 	if err != nil {
-		identityFailure(w, err)
-		return false
+		return err
 	}
 	if current.Subject != originalActor {
-		failure(w, http.StatusUnauthorized, "UNAUTHENTICATED")
-		return false
+		return identityaccess.ErrUnauthorized
+	}
+	if r.PathValue("storeID") != "" {
+		if current.Role != identityaccess.MerchantRole {
+			return identityaccess.ErrForbidden
+		}
+		return nil
 	}
 	if current.Role != identityaccess.OperatorRole {
-		failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
-		return false
+		return identityaccess.ErrForbidden
 	}
-	if err := identity.RequireOperatorPermission(r.Context(), token, originalActor, "hr"); err != nil {
+	return identity.RequireOperatorPermission(ctx, token, originalActor, "hr")
+}
+
+func verifyEmployeeReadAuthorization(w http.ResponseWriter, r *http.Request, identity identitySessions) bool {
+	if err := confirmEmployeeActor(r.Context(), r, identity); err != nil {
 		identityFailure(w, err)
 		return false
 	}
@@ -57,32 +88,41 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 		return nil, errors.New("employee directory requires an isolated DSH schema and Identity")
 	}
 	var ready bool
-	err := db.QueryRowContext(ctx, `SELECT pg_catalog.current_database()='bthwani_refoundation'
+	err := db.QueryRowContext(ctx, `SELECT pg_catalog.current_database() IN ('bthwani_refoundation',$3)
 		AND pg_catalog.to_regclass($1) IS NOT NULL AND pg_catalog.to_regclass($2) IS NOT NULL`,
-		schema+".employees", schema+".employee_registration_audit").Scan(&ready)
+		schema+".employees", schema+".employee_registration_audit", dbscope.DevelopmentDatabase).Scan(&ready)
 	if err != nil || !ready {
 		return nil, errors.New("isolated employee directory migration unavailable")
 	}
-	owner := directory{db: db, schema: schema}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /v1/operators/employees", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query()
-		cursor := q.Get("cursor")
-		if r.URL.RawQuery != "" && (r.URL.RawQuery != "cursor="+cursor || !recordID.MatchString(cursor)) {
+	list := func(w http.ResponseWriter, r *http.Request) {
+		owner := r.Context().Value(employeeDirectoryKey{}).(directory)
+		q, queryErr := url.ParseQuery(r.URL.RawQuery)
+		cursor, endState := q.Get("cursor"), q.Get("endState")
+		valid := queryErr == nil && (r.URL.RawQuery == "" || strings.Count(r.URL.RawQuery, "&")+1 == len(q))
+		for key, values := range q {
+			if len(values) != 1 || (key != "cursor" && key != "endState") ||
+				(key == "cursor" && !recordID.MatchString(cursor)) ||
+				(key == "endState" && endState != "NO_END_DATE" && endState != "HAS_END_DATE") {
+				valid = false
+			}
+		}
+		if !valid {
 			failure(w, http.StatusBadRequest, "EMPLOYEE_QUERY_INVALID")
 			return
 		}
-		result, err := owner.list(r.Context(), cursor)
+		result, err := owner.list(r.Context(), cursor, endState)
 		if err != nil {
-			failure(w, http.StatusServiceUnavailable, "EMPLOYEE_OWNER_UNAVAILABLE")
+			directoryFailure(w, err, "EMPLOYEE_OWNER_UNAVAILABLE")
 			return
 		}
-		if !verifyEmployeeReadAuthorization(w, r, identity) {
+		if !verifyReadScope(w, r, identity, owner) {
 			return
 		}
 		reply(w, http.StatusOK, result)
-	})
-	mux.HandleFunc("GET /v1/operators/employees/{id}", func(w http.ResponseWriter, r *http.Request) {
+	}
+	detail := func(w http.ResponseWriter, r *http.Request) {
+		owner := r.Context().Value(employeeDirectoryKey{}).(directory)
 		id := r.PathValue("id")
 		if !recordID.MatchString(id) || r.URL.RawQuery != "" {
 			failure(w, http.StatusBadRequest, "EMPLOYEE_QUERY_INVALID")
@@ -90,10 +130,10 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 		}
 		record, err := owner.get(r.Context(), id)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			failure(w, http.StatusServiceUnavailable, "EMPLOYEE_OWNER_UNAVAILABLE")
+			directoryFailure(w, err, "EMPLOYEE_OWNER_UNAVAILABLE")
 			return
 		}
-		if !verifyEmployeeReadAuthorization(w, r, identity) {
+		if !verifyReadScope(w, r, identity, owner) {
 			return
 		}
 		if errors.Is(err, sql.ErrNoRows) {
@@ -101,39 +141,100 @@ func NewHandler(ctx context.Context, db *sql.DB, schema string, identity identit
 			return
 		}
 		reply(w, http.StatusOK, record)
-	})
+	}
+	audit := func(w http.ResponseWriter, r *http.Request) {
+		owner := r.Context().Value(employeeDirectoryKey{}).(directory)
+		id := r.PathValue("id")
+		if !recordID.MatchString(id) || r.URL.RawQuery != "" || r.URL.ForceQuery ||
+			r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+			failure(w, http.StatusBadRequest, "EMPLOYEE_QUERY_INVALID")
+			return
+		}
+		event, err := owner.registrationAudit(r.Context(), id)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			directoryFailure(w, err, "EMPLOYEE_OWNER_UNAVAILABLE")
+			return
+		}
+		if !verifyReadScope(w, r, identity, owner) {
+			return
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			failure(w, http.StatusNotFound, "EMPLOYEE_NOT_FOUND")
+			return
+		}
+		reply(w, http.StatusOK, event)
+	}
+	// Route matching establishes the Store identifier before authentication.
+	// Company and merchant paths share the same directory implementation.
+	authorize := func(merchant bool, next http.HandlerFunc) http.HandlerFunc {
+		return func(w http.ResponseWriter, r *http.Request) {
+			header := r.Header.Values("Authorization")
+			if len(header) != 1 || !strings.HasPrefix(header[0], "Bearer ") {
+				failure(w, http.StatusUnauthorized, "UNAUTHENTICATED")
+				return
+			}
+			token := strings.TrimPrefix(header[0], "Bearer ")
+			actor, err := identity.ResolveCurrentSession(r.Context(), token)
+			if err != nil {
+				identityFailure(w, err)
+				return
+			}
+			if strings.TrimSpace(actor.Subject) == "" || len(actor.Subject) > 128 {
+				failure(w, http.StatusUnauthorized, "UNAUTHENTICATED")
+				return
+			}
+			scope := employerScope{kind: "COMPANY", id: "bthwani"}
+			if merchant {
+				storeID := r.PathValue("storeID")
+				if actor.Role != identityaccess.MerchantRole {
+					failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
+					return
+				}
+				if !storeIDRule.MatchString(storeID) {
+					failure(w, http.StatusBadRequest, "EMPLOYEE_QUERY_INVALID")
+					return
+				}
+				scope = employerScope{kind: "MERCHANT", id: actor.Subject, storeID: storeID}
+			} else {
+				if actor.Role != identityaccess.OperatorRole {
+					failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
+					return
+				}
+				if err = identity.RequireOperatorPermission(r.Context(), token, actor.Subject, "hr"); err != nil {
+					identityFailure(w, err)
+					return
+				}
+			}
+			owner := directory{db: db, schema: schema, scope: scope}
+			ctx := context.WithValue(r.Context(), employeeReadActorKey{}, actor.Subject)
+			ctx = context.WithValue(ctx, employeeDirectoryKey{}, owner)
+			next(w, r.WithContext(ctx))
+		}
+	}
+	for _, route := range []struct {
+		root     string
+		merchant bool
+	}{
+		{"/v1/operators/employees", false},
+		{"/v1/stores/{storeID}/employees", true},
+	} {
+		mux.HandleFunc("GET "+route.root, authorize(route.merchant, list))
+		mux.HandleFunc("GET "+route.root+"/{id}", authorize(route.merchant, detail))
+		mux.HandleFunc("GET "+route.root+"/{id}/registration-audit", authorize(route.merchant, audit))
+		mux.HandleFunc("POST "+route.root, authorize(route.merchant, func(w http.ResponseWriter, r *http.Request) {
+			owner := r.Context().Value(employeeDirectoryKey{}).(directory)
+			actor := r.Context().Value(employeeReadActorKey{}).(string)
+			register(w, r, owner, actor, identity)
+		}))
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		header := r.Header.Values("Authorization")
-		if len(header) != 1 || !strings.HasPrefix(header[0], "Bearer ") {
-			failure(w, http.StatusUnauthorized, "UNAUTHENTICATED")
-			return
-		}
-		token := strings.TrimPrefix(header[0], "Bearer ")
-		actor, err := identity.ResolveCurrentSession(r.Context(), token)
-		if err != nil {
-			identityFailure(w, err)
-			return
-		}
-		if actor.Role != identityaccess.OperatorRole {
-			failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
-			return
-		}
-		if err = identity.RequireOperatorPermission(r.Context(), token, actor.Subject, "hr"); err != nil {
-			identityFailure(w, err)
-			return
-		}
-		r = r.WithContext(context.WithValue(r.Context(), employeeReadActorKey{}, actor.Subject))
-		if r.Method == http.MethodPost && r.URL.Path == "/v1/operators/employees" {
-			register(w, r, owner, actor.Subject)
-			return
-		}
 		mux.ServeHTTP(w, r)
 	}), nil
 }
 
-func register(w http.ResponseWriter, r *http.Request, owner directory, actorID string) {
+func register(w http.ResponseWriter, r *http.Request, owner directory, actorID string, identity identitySessions) {
 	var input registration
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "application/json" || r.URL.RawQuery != "" {
@@ -151,8 +252,17 @@ func register(w http.ResponseWriter, r *http.Request, owner directory, actorID s
 		failure(w, http.StatusBadRequest, "EMPLOYEE_REGISTRATION_INVALID")
 		return
 	}
-	id, err := owner.register(r.Context(), actorID, input)
+	if !verifyEmployeeReadAuthorization(w, r, identity) {
+		return
+	}
+	id, err := owner.register(r.Context(), actorID, input, func(ctx context.Context) error {
+		return confirmEmployeeActor(ctx, r, identity)
+	})
 	switch {
+	case errors.Is(err, identityaccess.ErrUnauthorized), errors.Is(err, identityaccess.ErrForbidden), errors.Is(err, identityaccess.ErrIdentityUnavailable):
+		identityFailure(w, err)
+	case errors.Is(err, errScope):
+		failure(w, http.StatusForbidden, "EMPLOYEE_SCOPE_FORBIDDEN")
 	case errors.Is(err, errConflict):
 		failure(w, http.StatusConflict, "EMPLOYEE_OPERATION_REUSED")
 	case err != nil:

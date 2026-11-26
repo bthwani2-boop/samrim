@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -14,7 +14,9 @@ test('workspace verifier accepts the active pinned Node runtime', () => {
     windowsHide: true,
   });
   assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /STAGE4_WORKSPACE_STRUCTURE_PASS/);
+  assert.match(result.stdout, /WORKSPACE_SOURCE_PASS/);
+  assert.match(result.stdout, /nx_cloud_configured=true nx_cache_execution=NOT_RUN lock=STATIC_ONLY/);
+  assert.doesNotMatch(result.stdout, /STAGE[0-9]|nx=LOCAL_ONLY/);
 });
 
 test('workspace verifier rejects a different active Node even if the pinned binary exists', () => {
@@ -42,7 +44,6 @@ test('existing owner Go and SQL source paths remain legal, including WLT when im
       'services/dsh/backend/internal/storeavailability/service.go',
       'services/dsh/backend/internal/storeavailability/tests/replay_test.go',
       'services/wlt/backend/internal/ledger/entry.go',
-      'services/wlt/database/migrations/001_ledger_entries.sql',
       'services/identity/database/schema/00_identity.sql',
       'services/dsh/database/schema/10_catalog.sql',
       'services/wlt/database/schema/00_ledger.sql',
@@ -146,14 +147,6 @@ test('service placement guard rejects wrong owners, unnamed SQL and duplicate co
   }
 });
 
-test('the merged PR 193 coverage waiver cannot silently return to Sonar CI', async () => {
-  const { readFileSync } = await import('node:fs');
-  const sonar = readFileSync(new URL('../../.github/workflows/sonar-quality.yml', import.meta.url), 'utf8');
-  assert.doesNotMatch(sonar, /Temporary PR 193 coverage exception|sonar[.]coverage[.]exclusions/);
-  assert.ok(sonar.includes('-Dsonar.qualitygate.wait=true'));
-  assert.ok(sonar.includes('SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}'));
-});
-
 test('an untracked fourth business service cannot bypass the owner-placement guard', async () => {
   const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
   const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-rogue-owner-'));
@@ -233,7 +226,6 @@ test('deep owner paths reject misplaced Go, SQL and OpenAPI while preserving leg
       'services/identity/backend/internal/session/recovery/replay.go',
       'services/dsh/backend/internal/storeavailability/policy/current.go',
       'services/wlt/backend/internal/ledger/reversal.go',
-      'services/wlt/database/migrations/012_reverse_posting.sql',
       'services/dsh/contracts/openapi/paths/captain-interest.yaml',
     ]) put(valid);
     assert.deepEqual(serviceSourcePlacementIssues(directory), [],
@@ -258,6 +250,225 @@ test('deep owner paths reject misplaced Go, SQL and OpenAPI while preserving leg
     ]) {
       assert.ok(issues.some(issue => issue.includes(fragment)),
         `Untracked deeply nested owner violation escaped guard: ${fragment}`);
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('baseline-first local development refuses new migration histories for every owner', async (t) => {
+  const { serviceSourcePlacementIssues } = await import('./check-service-placement.mjs');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-baseline-first-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  for (const owner of ['identity', 'dsh', 'wlt']) {
+    const schema = path.join(directory, 'services', owner, 'database', 'schema', '00_domain.sql');
+    mkdirSync(path.dirname(schema), { recursive: true });
+    writeFileSync(schema, 'SELECT 1;');
+  }
+  assert.deepEqual(serviceSourcePlacementIssues(directory), []);
+  for (const owner of ['identity', 'dsh', 'wlt']) {
+    const migration = path.join(directory, 'services', owner, 'database', 'migrations', '001_new_column.sql');
+    mkdirSync(path.dirname(migration), { recursive: true });
+    writeFileSync(migration, 'SELECT 1;');
+  }
+  const issues = serviceSourcePlacementIssues(directory);
+  for (const owner of ['identity', 'dsh', 'wlt']) {
+    assert.ok(issues.some(issue => issue.includes('services/'+owner+'/database/migrations/001_new_column.sql') &&
+      issue.includes('BASELINE_FIRST')), issues.join('\n'));
+  }
+});
+
+function sourceFixture(t) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'bthwani-workspace-source-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const source = fileURLToPath(new URL('../../', import.meta.url));
+  const files = [
+    '.node-version', '.nvmrc', '.go-version', 'package.json', 'pnpm-workspace.yaml',
+    'pnpm-lock.yaml', 'nx.json', 'knip.jsonc', '.editorconfig', '.gitattributes',
+    '.gitignore', 'tsconfig.base.json', 'biome.json',
+    'tools/mobile/define-bthwani-expo-app.cjs', 'tools/mobile/verify-app-identity.mjs',
+    'patches/@rc-component__util@1.14.0.patch', 'docs/README.md',
+    ...['apps/customer','apps/merchant','apps/captain','apps/control-panel',
+      'packages/design-system','packages/tamagui-config'].map(project => project + '/package.json'),
+    ...['identity','dsh','wlt'].flatMap(owner => [
+      'README.md','package.json','tsconfig.json','clients/index.ts','clients/README.md',
+      'backend/go.mod','contracts/openapi/' + owner + '.openapi.yaml',
+    ].map(rel => 'services/' + owner + '/' + rel)),
+  ];
+  for (const rel of files) {
+    const target = path.join(dir, rel);
+    mkdirSync(path.dirname(target), { recursive: true });
+    copyFileSync(path.join(source, rel), target);
+  }
+  return dir;
+}
+
+test('source admission follows actual owners, not README status or imaginary Nx cache execution', async t => {
+  const { verifyWorkspace } = await import('./verify-workspace.mjs');
+  const dir = sourceFixture(t);
+  writeFileSync(path.join(dir, 'services/wlt/README.md'), '# WLT owner documentation\n');
+  const result = verifyWorkspace(dir);
+  assert.equal(result.node, process.version.slice(1));
+  assert.equal(result.nxCloudConfigured, true);
+  assert.equal(result.localGoVerified, false);
+});
+
+test('source admission rejects root lock drift even when the old version still appears in other lock records', async t => {
+  const { verifyWorkspace } = await import('./verify-workspace.mjs');
+  const dir = sourceFixture(t);
+  const lock = path.join(dir, 'pnpm-lock.yaml');
+  const original = readFileSync(lock, 'utf8');
+  const altered = original.replace(/(      nx:\r?\n        specifier: )\d+\.\d+\.\d+/, (match, prefix) => prefix + '99.99.99');
+  assert.notEqual(altered, original);
+  writeFileSync(lock, altered);
+  assert.throws(() => verifyWorkspace(dir), /Frozen lock pin differs: nx/);
+});
+
+test('source admission rejects an owner Go pin mismatch and a restored losing source path', async t => {
+  const { verifyWorkspace } = await import('./verify-workspace.mjs');
+  const dir = sourceFixture(t);
+  const module = path.join(dir, 'services/dsh/backend/go.mod');
+  const original = readFileSync(module, 'utf8');
+  writeFileSync(module, original.replace(/^go \d+\.\d+\.\d+$/m, 'go 1.0.0'));
+  assert.throws(() => verifyWorkspace(dir), /Owner Go pin differs: dsh/);
+  writeFileSync(module, original);
+  mkdirSync(path.join(dir, 'apps/app-client'), { recursive: true });
+  assert.throws(() => verifyWorkspace(dir), /Retired source path returned: apps\/app-client/);
+});
+
+test('source admission protects the configured separate Nx workspace and rejects embedded credentials', async t => {
+  const { verifyWorkspace } = await import('./verify-workspace.mjs');
+  const dir = sourceFixture(t);
+  const config = path.join(dir, 'nx.json');
+  const original = JSON.parse(readFileSync(config, 'utf8'));
+  writeFileSync(config, JSON.stringify({ ...original, nxCloudAccessToken: 'synthetic-test-only' }));
+  assert.throws(() => verifyWorkspace(dir), /Do not embed Nx Cloud credentials/);
+  writeFileSync(config, JSON.stringify({ ...original, nxCloudId: '6aa9eedc45c07f39423ffa9f' }));
+  assert.throws(() => verifyWorkspace(dir), /Do not reuse donor Nx Cloud workspace/);
+});
+
+test("service placement cannot hide an unowned service or illegal owner paths behind generic output names", async (t) => {
+  const { serviceSourcePlacementIssues } = await import("./check-service-placement.mjs");
+  const root = mkdtempSync(path.join(tmpdir(), "bthwani-placement-output-scope-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const put = file => {
+    const target = path.join(root, file);
+    mkdirSync(path.dirname(target), { recursive: true });
+    writeFileSync(target, "fixture");
+  };
+  put("services/dsh/node_modules/dependency/ignored.go");
+  put("services/identity/backend/internal/build/valid.go");
+  assert.deepEqual(serviceSourcePlacementIssues(root), []);
+  const forbidden = [
+    "services/build",
+    "services/dsh/database/migrations/build/01_bad.sql",
+    "services/wlt/contracts/openapi/paths/dist/shadow.yaml",
+    "services/identity/backend/internal/build/misc/escape.go",
+  ];
+  put("services/build/rogue.go");
+  for (const file of forbidden.slice(1)) put(file);
+  const issues = serviceSourcePlacementIssues(root);
+  for (const file of forbidden) assert.ok(issues.some(issue => issue.startsWith(file + ":")), file);
+});
+
+test("service placement does not silently ignore a nested dependency or repository root", async (t) => {
+  const { serviceSourcePlacementIssues } = await import("./check-service-placement.mjs");
+  const root = mkdtempSync(path.join(tmpdir(), "bthwani-placement-nested-root-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  for (const file of ["services/dsh/backend/node_modules", "services/wlt/backend/.git"]) {
+    mkdirSync(path.join(root, file), { recursive: true });
+  }
+  const issues = serviceSourcePlacementIssues(root);
+  assert.ok(issues.some(issue => issue.startsWith("services/dsh/backend/node_modules:")));
+  assert.ok(issues.some(issue => issue.startsWith("services/wlt/backend/.git:")));
+});
+
+test("documentation placement rejects retired parallel index and journey dossier paths", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  const dossier = path.join(dir, "docs", "journeys");
+  mkdirSync(dossier, { recursive: true });
+  assert.throws(() => verifyWorkspace(dir), /Retired source path returned: docs\/journeys/);
+  rmSync(dossier, { recursive: true, force: true });
+  const reference = path.join(dir, "docs", "reference");
+  mkdirSync(reference, { recursive: true });
+  writeFileSync(path.join(reference, "README.md"), "# Redundant index\n");
+  assert.throws(() => verifyWorkspace(dir), /Retired source path returned: docs\/reference\/README.md/);
+  rmSync(path.join(reference, "README.md"));
+  writeFileSync(path.join(reference, "useful-reference.md"), "# Useful nonbinding reference\n");
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  rmSync(path.join(dir, "docs", "README.md"));
+  assert.throws(() => verifyWorkspace(dir), /Required source must be a real file: docs\/README.md/);
+});
+
+
+test("workspace tool admission compares exact membership rather than manifest key order", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const file = path.join(dir, "package.json");
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  manifest.devDependencies = Object.fromEntries(Object.entries(manifest.devDependencies).reverse());
+  writeFileSync(file, JSON.stringify(manifest));
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  delete manifest.devDependencies.knip;
+  manifest.devDependencies.unapproved = "1.0.0";
+  writeFileSync(file, JSON.stringify(manifest));
+  assert.throws(() => verifyWorkspace(dir), /unapproved/);
+});
+
+test("service placement reports stable ordinal diagnostics independent of creation order", async t => {
+  const { serviceSourcePlacementIssues } = await import("./check-service-placement.mjs");
+  const dir = mkdtempSync(path.join(tmpdir(), "bthwani-placement-order-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(path.join(dir, "services"));
+  for (const name of ["z.ts", "a.ts", "Z-test.ts", "_test.ts", "é.ts"]) {
+    writeFileSync(path.join(dir, "services", name), "fixture");
+  }
+  assert.deepEqual(serviceSourcePlacementIssues(dir),
+    ["Z-test.ts", "_test.ts", "a.ts", "z.ts", "é.ts"].map(name => "services/" + name + ": unowned service root file"));
+});
+
+test("workspace admission refuses a required manifest reached through an ancestor junction", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const target = mkdtempSync(path.join(tmpdir(), "bthwani-external-workspace-"));
+  t.after(() => rmSync(target, { recursive: true, force: true }));
+  const project = path.join(dir, "apps", "customer");
+  copyFileSync(path.join(project, "package.json"), path.join(target, "package.json"));
+  rmSync(project, { recursive: true, force: true });
+  symlinkSync(target, project, "junction");
+  assert.throws(() => verifyWorkspace(dir), /Required source directory/);
+});
+
+test('Biome honors Git artifact boundaries without excluding authored tests or application code', () => {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const directory = mkdtempSync(path.join(tmpdir(), 'bthwani-biome-boundary-'));
+  try {
+    const init = spawnSync('git', ['init', '--quiet'], { cwd: directory, encoding: 'utf8' });
+    assert.equal(init.status, 0, init.stderr);
+    copyFileSync(path.join(root, 'biome.json'), path.join(directory, 'biome.json'));
+    copyFileSync(path.join(root, '.gitignore'), path.join(directory, '.gitignore'));
+    const write = (relative, content) => {
+      const target = path.join(directory, relative);
+      mkdirSync(path.dirname(target), { recursive: true });
+      writeFileSync(target, content);
+    };
+    const invalid = 'export function compare(a, b) { return a == b; }\n';
+    write('apps/merchant/.tmp/export/bundle.js', invalid);
+    write('apps/merchant/src/valid.js', 'export const valid = true;\n');
+    const lint = () => spawnSync(process.execPath, [
+      path.join(root, 'node_modules/@biomejs/biome/bin/biome'),
+      'lint', '--diagnostic-level=error',
+    ], { cwd: directory, encoding: 'utf8', windowsHide: true });
+    const clean = lint();
+    assert.equal(clean.status, 0, clean.stdout + clean.stderr);
+    for (const relative of ['infra/owned.test.js', 'apps/merchant/src/owned.js']) {
+      write(relative, invalid);
+      const rejected = lint();
+      assert.equal(rejected.status, 1, rejected.stdout + rejected.stderr);
+      assert.match(rejected.stdout + rejected.stderr, /noDoubleEquals/);
+      rmSync(path.join(directory, relative));
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });

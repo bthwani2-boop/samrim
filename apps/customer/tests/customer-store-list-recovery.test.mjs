@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DshPublicError } from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import * as serviceability from "../src/features/location/serviceability.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -16,7 +17,7 @@ try {
   const result = spawnSync(process.execPath, [
     path.join(root, "node_modules/typescript/bin/tsc"), entry,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
   ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(path.join(temp, "stores-screen.js"), "utf8");
@@ -24,6 +25,9 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
+// Retain uncached fixture modules until Node collects their original-source coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 function harness({ variant = "directory", params = {} } = {}) {
   const hooks = [];
   const requests = [];
@@ -76,13 +80,16 @@ function harness({ variant = "directory", params = {} } = {}) {
     "./orderability": { describeStoreOrderability: () => ({}) },
     "./public-store-origin": { resolvePublicStoreOrigin: () => "" },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "process", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(imports, name), `unexpected import ${name}`);
-      return imports[name];
-    }, mod, mod.exports, { env: { EXPO_PUBLIC_DSH_CITY_ID: "sanaa" } },
-  );
+  const previousCity = process.env.EXPO_PUBLIC_DSH_CITY_ID;
+  let mod;
+  try {
+    process.env.EXPO_PUBLIC_DSH_CITY_ID = "sanaa";
+    mod = loadMappedRenderFixture(compiled, entry, imports);
+    loadedModules.push(mod);
+  } finally {
+    if (previousCity === undefined) delete process.env.EXPO_PUBLIC_DSH_CITY_ID;
+    else process.env.EXPO_PUBLIC_DSH_CITY_ID = previousCity;
+  }
   return {
     render() {
       index = 0;
@@ -95,6 +102,7 @@ function harness({ variant = "directory", params = {} } = {}) {
       return view;
     },
     setParams(next) { Object.assign(params, next); },
+    unmount() { for (const cleanup of cleanups.values()) cleanup?.(); },
     read() {
       assert.ok(requests.length, "expected a Store list request");
       return requests.shift();
@@ -249,14 +257,15 @@ test("changing the Store vertical requests a fresh DSH page and never shows old 
   assert.equal(initial.cityId, "sanaa");
   assert.equal(initial.verticalId, "grocery");
   initial.resolve({ items: [store("grocery-store")], nextCursor: "grocery-cursor", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 1 }, { id: "pharmacy", storeCount: 1 }], revision: 1 });
   await settle();
   const prior = app.render();
   assert.ok(byId(prior, "store-grocery-store"));
   const detailLink = find(prior, node => node.type === "Link" && node.props.href?.pathname === "/store/[id]");
   assert.equal(detailLink.props.href.params.vertical, "grocery");
 
-  byId(prior, "vertical-filter-input").props.onChangeText("pharmacy");
-  byId(app.render(), "vertical-filter-apply").props.onPress();
+  assert.equal(byId(prior, "vertical-option-grocery").props.accessibilityState.selected, true);
+  byId(prior, "vertical-option-pharmacy").props.onPress();
   const changing = app.render();
   assert.equal(byId(changing, "store-grocery-store"), undefined);
   assert.equal(initial.signal.aborted, true);
@@ -268,21 +277,30 @@ test("changing the Store vertical requests a fresh DSH page and never shows old 
   const filtered = app.render();
   assert.ok(byId(filtered, "store-pharmacy-store"));
   assert.equal(byId(filtered, "store-grocery-store"), undefined);
+  assert.equal(byId(filtered, "vertical-option-pharmacy").props.accessibilityState.selected, true);
 
   byId(filtered, "vertical-filter-clear").props.onPress();
   app.render();
   assert.equal(app.read().verticalId, undefined);
 });
 
-test("an invalid Store vertical is not submitted to DSH", () => {
+test("category navigation never requires customers to enter internal identifiers", async () => {
   const app = harness();
   app.render();
-  app.read();
-  byId(app.render(), "vertical-filter-input").props.onChangeText("../private");
-  byId(app.render(), "vertical-filter-apply").props.onPress();
-  const invalid = app.render();
-  assert.ok(find(invalid, node => node.props.accessibilityRole === "alert"));
-  assert.equal(byId(invalid, "vertical-filter-clear"), undefined);
+  app.read().resolve({ items: [], revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1 });
+  await settle();
+  const view = app.render();
+  assert.equal(byId(view, "vertical-filter-input"), undefined);
+  assert.equal(byId(view, "vertical-filter-apply"), undefined);
+  assert.equal(byId(view, "vertical-filter-clear").props.accessibilityState.selected, true);
+  assert.ok(byId(view, "vertical-option-grocery"));
+});
+
+test("an invalid deep-linked Store vertical is not submitted to DSH", () => {
+  const app = harness({ params: { vertical: "../private" } });
+  app.render();
+  assert.equal(app.read().verticalId, undefined);
 });
 
 test("route navigation changes the DSH Store query without exposing old-city results", async () => {
@@ -366,4 +384,176 @@ test("Customer vertical continuation invalidates a cross-page duplicate or chang
     const fresh = app.readCategory();
     assert.equal(fresh.cursor, undefined, scenario);
   }
+});
+
+test("account city shortcut opens the existing city selector and rejects a multi-value shortcut", () => {
+  const app = harness({ params: { chooseCity: "1" } });
+  assert.ok(find(app.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string"));
+  const invalid = harness({ params: { chooseCity: ["1", "1"] } });
+  assert.equal(find(invalid.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string"), undefined);
+});
+
+test("explicit city change drops old category and preserves submitted search", async () => {
+  const app = harness({ params: { city: "sanaa", q: "مخبز", vertical: "grocery" } });
+  app.render();
+  const old = app.read();
+  assert.equal(old.verticalId, "grocery");
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1 });
+  await settle();
+  const changeCity = find(app.render(), node => node.props?.accessibilityLabel?.startsWith("تغيير مدينة التسوّق"));
+  changeCity.props.onPress();
+  find(app.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string").props.onApply("aden");
+  const loading = app.render();
+  const next = app.read();
+  assert.equal(old.signal.aborted, true);
+  assert.equal(next.cityId, "aden");
+  assert.equal(next.query, "مخبز");
+  assert.equal(next.verticalId, undefined);
+  assert.equal(byId(loading, "vertical-filter-clear").props.accessibilityState.selected, true);
+  old.resolve({ items: [store("old-city")], revision: 1 });
+  next.resolve({ items: [{ ...store("new-city"), cityId: "aden" }], revision: 2 });
+  await settle();
+  const current = app.render();
+  assert.equal(byId(current, "store-old-city"), undefined);
+  assert.ok(byId(current, "store-new-city"));
+  const home = find(current, node => node.type === "Link" && node.props.href?.pathname === "/");
+  assert.deepEqual(home.props.href.params, { city: "aden", q: "مخبز" });
+});
+
+test("reopening the selector and choosing the same city does not lose its filter", async () => {
+  const app = harness({ params: { city: "sanaa", vertical: "grocery" } });
+  app.render();
+  const old = app.read();
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], revision: 1 });
+  await settle();
+  find(app.render(), node => node.props?.accessibilityLabel?.startsWith("تغيير مدينة التسوّق")).props.onPress();
+  find(app.render(), node => typeof node.props?.onApply === "function" && typeof node.props?.currentCity === "string").props.onApply("sanaa");
+  assert.equal(byId(app.render(), "vertical-option-grocery").props.accessibilityState.selected, true);
+  assert.equal(old.signal.aborted, false);
+});
+
+test("leaving the Store directory aborts active Store and vertical continuations", async () => {
+  const app = harness();
+  app.render();
+  app.read().resolve({ items: [store("first")], nextCursor: "stores-next", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], nextCursor: "vertical-next", revision: 1 });
+  await settle();
+  const view = app.render();
+  const storeMore = button(view, "عرض المزيد").props.onPress();
+  const verticalMore = byId(view, "vertical-options-more").props.onPress();
+  const stores = app.read();
+  const verticals = app.readCategory();
+  app.unmount();
+  assert.equal(stores.signal.aborted, true, "active Store continuation must be aborted on unmount");
+  assert.equal(verticals.signal.aborted, true, "active vertical continuation must be aborted on unmount");
+  stores.resolve({ items: [store("late")], revision: 1 });
+  verticals.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
+  await Promise.all([storeMore, verticalMore]);
+});
+
+test("superseded Store and vertical continuation callbacks cannot cancel a new city read", async () => {
+  const app = harness();
+  app.render();
+  app.read().resolve({ items: [store("old")], nextCursor: "old-store-cursor", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], nextCursor: "old-vertical-cursor", revision: 1 });
+  await settle();
+  const old = app.render();
+  const staleStore = button(old, "عرض المزيد").props.onPress;
+  const staleVertical = byId(old, "vertical-options-more").props.onPress;
+  app.setParams({ city: "aden" });
+  app.render();
+  app.render();
+  const currentStore = app.read();
+  const currentVertical = app.readCategory();
+  const stale = staleStore();
+  const staleV = staleVertical();
+  assert.equal(currentStore.signal.aborted, false, "old Store callback cancelled the current city");
+  assert.equal(currentVertical.signal.aborted, false, "old vertical callback cancelled the current city");
+  await Promise.all([stale, staleV]);
+  currentStore.resolve({ items: [{ ...store("current"), cityId: "aden" }], revision: 2 });
+  currentVertical.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 2 });
+  await settle();
+  assert.ok(byId(app.render(), "store-current"));
+  assert.ok(byId(app.render(), "vertical-option-pharmacy"));
+});
+
+test("a duplicate Store or vertical continuation callback must not cancel the active continuation", async () => {
+  const app = harness();
+  app.render();
+  app.read().resolve({ items: [store("first")], nextCursor: "stores-next", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 2 }], nextCursor: "vertical-next", revision: 1 });
+  await settle();
+  const ready = app.render();
+  const loadStore = button(ready, "عرض المزيد").props.onPress;
+  const loadVertical = byId(ready, "vertical-options-more").props.onPress;
+  const storePending = loadStore();
+  const verticalPending = loadVertical();
+  const stores = app.read();
+  const verticals = app.readCategory();
+  const duplicateStore = loadStore();
+  const duplicateVertical = loadVertical();
+  assert.equal(stores.signal.aborted, false, "duplicate callback cancelled the Store read");
+  assert.equal(verticals.signal.aborted, false, "duplicate callback cancelled the vertical read");
+  stores.resolve({ items: [store("second")], revision: 1 });
+  verticals.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
+  await Promise.all([storePending, verticalPending, duplicateStore, duplicateVertical]);
+  assert.ok(byId(app.render(), "store-second"));
+  assert.ok(byId(app.render(), "vertical-option-pharmacy"));
+});
+
+for (const variant of ["home", "directory"]) {
+  test(`${variant}: explicit refresh reloads empty Store and vertical lists with the active scope`, async () => {
+    const app = harness({ variant, params: { city: "aden", q: "مخبز", vertical: "grocery" } });
+    app.render();
+    app.read().resolve({ items: [], revision: 1 });
+    app.readCategory().resolve({ items: [], revision: 1 });
+    await settle();
+    const empty = app.render();
+    assert.ok(byId(empty, "stores-empty"));
+    byId(empty, "stores-refresh").props.onPress();
+    app.render();
+    const stores = app.read();
+    const verticals = app.readCategory();
+    assert.equal(stores.cityId, "aden");
+    assert.equal(stores.query, "مخبز");
+    assert.equal(stores.verticalId, "grocery");
+    assert.equal(stores.cursor, undefined);
+    assert.equal(verticals.cityId, "aden");
+    assert.equal(verticals.cursor, undefined);
+    stores.resolve({ items: [{ ...store("new"), cityId: "aden" }], revision: 2 });
+    verticals.resolve({ items: [{ id: "grocery", storeCount: 1 }], revision: 2 });
+    await settle();
+    assert.ok(byId(app.render(), "store-new"));
+    assert.ok(byId(app.render(), "vertical-option-grocery"));
+  });
+}
+
+test("refresh supersedes both active continuations and ignores their late responses", async () => {
+  const app = harness();
+  app.render();
+  app.read().resolve({ items: [store("first")], nextCursor: "stores-next", revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 1 }], nextCursor: "vertical-next", revision: 1 });
+  await settle();
+  const ready = app.render();
+  const more = button(ready, "عرض المزيد").props.onPress();
+  const moreCategories = byId(ready, "vertical-options-more").props.onPress();
+  const previous = app.read();
+  const previousCategories = app.readCategory();
+  byId(app.render(), "stores-refresh").props.onPress();
+  app.render();
+  assert.equal(previous.signal.aborted, true);
+  assert.equal(previousCategories.signal.aborted, true);
+  const current = app.read();
+  const currentCategories = app.readCategory();
+  previous.resolve({ items: [store("late")], revision: 1 });
+  previousCategories.resolve({ items: [{ id: "pharmacy", storeCount: 1 }], revision: 1 });
+  await Promise.all([more, moreCategories]);
+  current.resolve({ items: [store("current")], revision: 2 });
+  currentCategories.resolve({ items: [{ id: "restaurant", storeCount: 1 }], revision: 2 });
+  await settle();
+  const view = app.render();
+  assert.ok(byId(view, "store-current"));
+  assert.ok(byId(view, "vertical-option-restaurant"));
+  assert.equal(byId(view, "store-late"), undefined);
+  assert.equal(byId(view, "vertical-option-pharmacy"), undefined);
 });

@@ -245,7 +245,7 @@ test("Operator workspace grants require fresh Identity session and seven owner p
     return Response.json({ error: "FORBIDDEN" }, { status: 403 });
   });
   assert.deepEqual(await readVerifiedOperatorAccess(config, token), {
-    actorId: "operator-one", grants: ["operations", "merchant"],
+    actorId: "operator-one", sessionExpiresAt: expiry, grants: ["operations", "merchant"],
   });
   assert.equal(queried.length, 8, "session and all seven finite permissions must be read");
 });
@@ -285,29 +285,39 @@ test("Operator workspace owner mismatch, role spoof, revoked session and outage 
   }
   mode = "no-grants";
   assert.deepEqual(await readOperatorAccessState(config, token), {
-    status: "verified", access: { actorId: "operator-one", grants: [] },
+    status: "verified", access: { actorId: "operator-one", sessionExpiresAt: expiry, grants: [] },
   });
   const before = calls;
   assert.equal(await readVerifiedOperatorAccess(config, "forged"), null);
   assert.equal(calls, before, "malformed cookie cannot trigger Identity calls");
 });
-test("Root bootstrap requires a distinct opt-in and the exact origin for the selected isolated preview", () => {
+test("Root bootstrap requires a distinct opt-in and the canonical localhost origin", () => {
   const enabled = { ...goodEnv, OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF: "true" };
-  const surface = {
-    ...enabled,
-    BTHWANI_SURFACE_PREVIEW: "1",
-    OPERATOR_PASSKEY_BROWSER_ORIGIN: "http://localhost:23100",
-  };
+  const surface = { ...enabled, BTHWANI_SURFACE_PREVIEW: "1",
+    OPERATOR_PASSKEY_BROWSER_ORIGIN: "http://localhost:23100" };
   assert.equal(resolveInitialOperatorBootstrapConfig(goodEnv), null);
   assert.equal(resolveInitialOperatorBootstrapConfig(enabled)?.browserOrigin, "http://localhost:13000");
-  assert.equal(resolveInitialOperatorBootstrapConfig(surface)?.browserOrigin, "http://localhost:23100");
+  assert.equal(resolveInitialOperatorBootstrapConfig(surface), null);
   assert.equal(resolveInitialOperatorBootstrapConfig({ ...surface, BTHWANI_SURFACE_PREVIEW: "0" }), null);
   assert.equal(resolveInitialOperatorBootstrapConfig({
     ...surface, OPERATOR_PASSKEY_BROWSER_ORIGIN: "http://localhost:13000",
-  }), null);
+  })?.browserOrigin, "http://localhost:13000");
   assert.equal(resolveInitialOperatorBootstrapConfig({
     ...surface, BTHWANI_ISOLATED_TEST_MODE: "false",
   }), null);
+  assert.equal(resolveIsolatedOperatorConfig(surface), null);
+});
+
+test("retired Surface setting cannot rename Operator session or refresh cookies", async t => {
+  const previous = process.env.BTHWANI_SURFACE_PREVIEW;
+  t.after(() => {
+    if (previous === undefined) delete process.env.BTHWANI_SURFACE_PREVIEW;
+    else process.env.BTHWANI_SURFACE_PREVIEW = previous;
+  });
+  process.env.BTHWANI_SURFACE_PREVIEW = "1";
+  const config = await import("../src/server/operator-passkey-config.ts?retired-surface");
+  assert.equal(config.OPERATOR_COOKIE, "bthwani_operator_session");
+  assert.equal(config.OPERATOR_REFRESH_COOKIE, "bthwani_operator_refresh");
 });
 
 test("Root registration payloads can never supply an actor, role or permission", () => {

@@ -1,18 +1,27 @@
 "use client";
 
-import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Space, Typography } from "antd";
+import { type CityDeliveryPolicyState, isCityDeliveryPolicyState } from "@bthwani/dsh";
+import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Select, Space, Typography } from "antd";
 import Link from "next/link";
 import { useState } from "react";
 import {
   type CityPolicy, type CityPolicyChange, parseCityPolicy, reconcileCityPolicy,
 } from "./city-policy-command";
 import CityPolicyHistory from "./city-policy-history";
+import DeliveryPolicyPreview from "./delivery-policy-preview";
+import type { PolicyCityDirectory } from "./policy-city-directory";
+import { type RegistrationOverview, readRegistrationOverview } from "./store-registration-command";
 
 const validCity = /^[a-z0-9-]{1,64}$/;
 
-export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: string }>) {
+export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
+  actorId: string;
+  directory: PolicyCityDirectory;
+}>) {
   const [city, setCity] = useState("");
   const [policy, setPolicy] = useState<CityPolicy | null>(null);
+  const [admission, setAdmission] = useState<RegistrationOverview | null>(null);
+  const [delivery, setDelivery] = useState<CityDeliveryPolicyState | "unavailable" | null>(null);
   const [maxPause, setMaxPause] = useState<number | null>(null);
   const [maxPreparation, setMaxPreparation] = useState<number | null>(null);
   const [reason, setReason] = useState("");
@@ -21,6 +30,7 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
   const [uncertain, setUncertain] = useState(false);
   const [requiresRead, setRequiresRead] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [deliveryLocked, setDeliveryLocked] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -38,22 +48,59 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
     setErrorMessage("");
   }
 
+  function selectCity(value: string) {
+    if (busy || uncertain || pending || deliveryLocked) return;
+    setCity(value);
+    setPolicy(null);
+    setAdmission(null);
+    setDelivery(null);
+    setRequiresRead(false);
+    setMaxPause(null);
+    setMaxPreparation(null);
+    setReason("");
+    setProvision(false);
+    resetCommand();
+  }
+
   async function readCurrent() {
-    if (!endpoint || busy) return;
+    if (!endpoint || busy || deliveryLocked) return;
     setBusy(true);
     setMessage("");
     setErrorMessage("");
+    setAdmission(null);
+    setDelivery(null);
     try {
-      const response = await fetch(endpoint, {
-        method: "GET", credentials: "same-origin", cache: "no-store",
-        headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
-      });
-      if (!response.ok) {
-        throw new Error(response.status === 403 || response.status === 401
-          ? "Identity لا يثبت صلاحية إدارة السياسات الحالية."
-          : "تعذر قراءة سياسة المدينة من DSH. لا توجد قيم افتراضية مفترضة؛ لا تعتبر 503 دليلًا على غياب السياسة.");
+      // Independent owner reads: a failed relation or availability policy must
+      // never become an implicit admission, closure or default configuration.
+      const [response, overview, radius] = await Promise.allSettled([
+        fetch(endpoint, {
+          method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
+        }),
+        readRegistrationOverview(city, actorId),
+        fetch(endpoint + "?delivery=1", {
+          method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
+          headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
+        }).then(async result => {
+          if (result.status === 401 || result.status === 403) return "denied" as const;
+          if (!result.ok) return "unavailable" as const;
+          const value: unknown = await result.json();
+          return isCityDeliveryPolicyState(value, city) ? value : "unavailable" as const;
+        }),
+      ]);
+      if ((response.status === "fulfilled" && (response.value.status === 401 || response.value.status === 403)) ||
+          (radius.status === "fulfilled" && radius.value === "denied")) {
+        setRequiresRead(true);
+        throw new Error("Identity لا يثبت صلاحية إدارة السياسات الحالية.");
       }
-      const current = parseCityPolicy(await response.json(), city);
+      if (overview.status === "fulfilled") setAdmission(overview.value);
+      setDelivery(radius.status === "fulfilled" && radius.value !== "denied" ? radius.value : "unavailable");
+      if (response.status === "rejected") throw response.reason;
+      const responseValue = response.value;
+      if (!responseValue.ok) {
+        throw new Error("تعذر قراءة سياسة إتاحة المتاجر من DSH. لا توجد قيم افتراضية مفترضة؛ لا تعتبر 503 دليلًا على غياب السياسة.");
+      }
+      const current = parseCityPolicy(await responseValue.json(), city);
       if (!current) throw new Error("أعاد DSH بيانات سياسة غير معتمدة.");
       setPolicy(current);
       setRequiresRead(false);
@@ -72,8 +119,18 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
     }
   }
 
+  function draftHistoricalLimits(entry: CityPolicy) {
+    if (!policy || busy || uncertain || pending || requiresRead ||
+        entry.cityId !== city || policy.cityId !== city || entry.version >= policy.version) return;
+    setMaxPause(entry.maxPauseSeconds);
+    setMaxPreparation(entry.maxPreparationMinutes);
+    setReason("");
+    resetCommand();
+    setMessage("تم نقل القيم التاريخية إلى مسودة فقط. أدخل سببًا جديدًا واعتمدها إذا أردت تغيير السياسة.");
+  }
+
   async function apply() {
-    if (!endpoint || busy) return;
+    if (!endpoint || busy || deliveryLocked) return;
     let change = pending;
     if (!change) {
       if (!readyForChange || maxPause === null || maxPreparation === null) return;
@@ -117,6 +174,11 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
       return;
     }
     if (result.status === "unknown" || uncertain) {
+      if (result.status === "denied") {
+        setDelivery(null);
+        setAdmission(null);
+        setPolicy(null);
+      }
       setUncertain(true);
       setErrorMessage(result.status === "denied"
         ? "تعذّر التحقق من الصلاحية لاسترداد العملية. احتفظ بمعرّفها حتى استعادة الصلاحية."
@@ -125,6 +187,8 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
     }
     setPending(null);
     if (result.status === "denied") {
+      setDelivery(null);
+      setAdmission(null);
       setPolicy(null);
       setProvision(false);
       setRequiresRead(true);
@@ -138,14 +202,14 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
     <main style={{ maxWidth: 900, marginInline: "auto", paddingBlock: 24 }}>
       <Typography.Title level={1}>السياسات</Typography.Title>
       <Typography.Paragraph>
-        إدارة حدود إتاحة المتاجر لكل مدينة عبر DSH. تتطلب جلسة Operator وصلاحية
-        <code> platform_policies </code> مؤكَّدتين من Identity؛ ولا تغيّر الطلبات أو الاتفاقيات المالية.
+        مركز إدارة السياسات التشغيلية والتجارية. تعرض هذه الصفحة نطاقات السياسات المتاحة للتحرير
+        والنطاقات التي لم تكتمل بعد؛ ولا يغيّر مجرد عرضها أي طلب أو اتفاقية مالية.
       </Typography.Paragraph>
-      <section aria-label="خريطة السياسات المعتمدة" style={{
+      <section aria-label="مجالات السياسات وحالة توفرها" style={{
         display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
         gap: 12, marginBlockEnd: 22,
       }}>
-        <Card title="الانضمام والمتاجر — DSH">
+        <Card title="الانضمام والمتاجر" extra={<Typography.Text type="success">محرّر متاح</Typography.Text>}>
           <Typography.Paragraph>
             قبول المتاجر المباشرة ومتاجر السوق مستقل لكل مدينة ونموذج، مع شروط وإصدار
             وتسجيل من غيّر السياسة. الإتاحة لا تعني النشر أو إبرام اتفاق مالي.
@@ -155,24 +219,29 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
             <Link href="/merchants/joining">مراجعة حقائق المتاجر غير المنشورة (صلاحية إدارة التجار)</Link>
           </Typography.Paragraph>
         </Card>
-        <Card title="التشغيل والأهلية — DSH">
+        <Card title="التشغيل والأهلية" extra={<Typography.Text type="success">محرّر متاح</Typography.Text>}>
           <Typography.Paragraph>
             سياسة توقف المتاجر ووقت التحضير حسب المدينة، دون منح المتجر صلاحية نشر جديدة.
           </Typography.Paragraph>
           <Link href="#city-availability-policy">إدارة سياسة إتاحة المتاجر أدناه</Link>
         </Card>
-        <Card title="الطلبات والتوصيل — DSH">
+        <Card title="الطلبات والتوصيل" extra={<Typography.Text type="warning">غير مكتمل</Typography.Text>}>
           <Typography.Paragraph>
             أزمنة مراحل الطلبات لم تُوصل بعد إلى مالك تنفيذي. رسوم التوصيل
             وطريقة الإسناد ليستا جزءًا من سياسة تسجيل المتجر.
           </Typography.Paragraph>
           <Link href="/policies/stage-sla">حالة توفر سياسات أزمنة مراحل الطلبات</Link>
         </Card>
-        <Card title="المالية والاتفاقيات — WLT">
+        <Card title="المالية والاتفاقيات" extra={<Typography.Text type="warning">غير متاح للتحرير</Typography.Text>}>
           <Typography.Paragraph>
             العمولة والاشتراك والتحصيل والتسويات يملكها WLT، ولا يحددها
             اختيار DIRECT أو MARKETPLACE. لم تُوصل هنا واجهة تحرير مالية معتمدة؛
             لا يمكن إنشاء اتفاق أو تغيير مستحقات من إعداد قبول المتاجر.
+          </Typography.Paragraph>
+        </Card>
+        <Card title="نطاق التغطية والخدمة" extra={<Typography.Text type="warning">تحرير تطويري</Typography.Text>}>
+          <Typography.Paragraph>
+            نطاق المدينة والتعرفة التقديرية يملكهما DSH؛ اقرأ السياسة الحالية لتعديلهما في بيئة التطوير. أهلية طرق التوصيل والدفع تبقى مستقلة.
           </Typography.Paragraph>
         </Card>
         <Card title="السريان وسجل التغييرات">
@@ -185,22 +254,56 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
       <section id="city-availability-policy" aria-label="سياسة إتاحة المتاجر حسب المدينة">
       <Card title="قراءة سياسة المدينة" style={{ marginBlockEnd: 16 }}>
         <Form layout="vertical" onFinish={() => void readCurrent()}>
-          <Form.Item label="معرّف المدينة المعتمد في DSH">
-            <Input aria-label="معرّف المدينة" value={city} maxLength={64}
-              disabled={busy || uncertain} placeholder="مثال لمعرّف مدينة فعلي في DSH"
-              onChange={event => {
-                setCity(event.target.value);
-                setPolicy(null);
-                setRequiresRead(false);
-                setMaxPause(null);
-                setMaxPreparation(null);
-                setReason("");
-                setProvision(false);
-                resetCommand();
-              }} />
+          <Form.Item label="المدينة">
+            <Select aria-label="اختيار المدينة" showSearch optionFilterProp="label"
+              value={city || null} options={[...directory.cities]}
+              disabled={busy || uncertain || !!pending || deliveryLocked || directory.cities.length === 0}
+              placeholder="اختر مدينة الخدمة" onChange={value => selectCity(value ?? "")} />
           </Form.Item>
-          <Button htmlType="submit" disabled={!endpoint || busy} loading={busy}>قراءة السياسة الحالية</Button>
+          {directory.status === "unavailable" && <Alert type="warning" showIcon
+            message="تعذر تحميل المدن من الخدمة المالكة. أعد تحميل الصفحة أو اقرأ مدينة معروفة." />}
+          {directory.status === "current" && directory.cities.length === 0 && <Alert type="info"
+            message="لا توجد مدن خدمة نشطة حاليًا." />}
+          <details style={{ marginBlockEnd: 12 }}>
+            <summary>قراءة مدينة معروفة أو مراجعة سجل تاريخي</summary>
+            <Input aria-label="معرّف المدينة" value={city} maxLength={64}
+              disabled={busy || uncertain || !!pending || deliveryLocked} onChange={event => selectCity(event.target.value)} />
+          </details>
+          <Button htmlType="submit" disabled={!endpoint || busy || deliveryLocked} loading={busy}>قراءة سياسات المدينة الحالية</Button>
         </Form>
+        {delivery && (
+          <section aria-label="نطاق التوصيل الحالي" style={{ marginBlockStart: 16 }}>
+            <Typography.Title level={4}>نطاق التوصيل — DSH</Typography.Title>
+            {delivery === "unavailable" ? <Alert type="warning" message="تعذر التحقق من نطاق التوصيل الفعلي. لا توجد قيمة افتراضية." /> : (
+              <>
+                {delivery.version === 0 ? <Alert type="info" message="لم تُنشأ سياسة توصيل لهذه المدينة بعد. أدخل النطاق والتعرفة صراحةً." /> : <>
+                  <Typography.Paragraph>المسافة الجغرافية القصوى: <strong>{delivery.radiusMetres}</strong> متر — الإصدار {delivery.version}</Typography.Paragraph>
+                  <Typography.Paragraph>آخر تحديث: {delivery.updatedAt}</Typography.Paragraph>
+                </>}
+                <DeliveryPolicyPreview key={actorId + ":" + city + ":" + delivery.version}
+                  policy={delivery} actorId={actorId} disabled={busy || uncertain || !!pending}
+                  onLockChange={setDeliveryLocked} onCommitted={current => { setDelivery(current); setMessage("تم حفظ سياسة التوصيل وقراءة الإصدار من DSH."); }}
+                  onDenied={() => { setDelivery(null); setAdmission(null); setPolicy(null); setRequiresRead(true); }} />
+              </>
+            )}
+            <Typography.Paragraph type="secondary">تعديل النطاق والتعرفة التقديرية لدى DSH في بيئة التطوير. تفعيل التسعيرة القابلة للدفع يتطلب إثبات توافق WLT.</Typography.Paragraph>
+          </section>
+        )}
+        {admission && (
+          <section aria-label="قبول المتاجر حسب النموذج" style={{ marginBlockStart: 16 }}>
+            <Typography.Title level={4}>قبول المتاجر الجديدة — DSH</Typography.Title>
+            {(["MARKETPLACE", "DIRECT"] as const).map(relation => {
+              const entry = admission[relation];
+              return <Typography.Paragraph key={relation}>
+                <strong>{relation === "MARKETPLACE" ? "متاجر السوق" : "المتاجر المباشرة"}:</strong>{" "}
+                {entry.status === "unavailable" ? "تعذر التحقق من المالك" :
+                  entry.policy.version === 0 ? "غير مهيأة — القبول غير متاح" :
+                  (entry.policy.enabled ? "القبول متاح" : "القبول مغلق") + " — الإصدار " + entry.policy.version}
+              </Typography.Paragraph>;
+            })}
+            <Link href="/policies/store-registration">إدارة سياسة القبول وسجلها</Link>
+          </section>
+        )}
         {policy && (
           <section aria-label="السياسة الحالية" style={{ marginBlockStart: 16 }}>
             <Typography.Paragraph>الإصدار: <strong>{policy.version}</strong> — المدينة: {policy.cityId}</Typography.Paragraph>
@@ -211,8 +314,15 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
         )}
       </Card>
       {endpoint && !busy && !uncertain && <CityPolicyHistory key={actorId + ":" + city + ":" + (policy?.version ?? 0)}
-        actorId={actorId} city={city} endpoint={endpoint} />}
+        actorId={actorId} city={city} endpoint={endpoint} current={requiresRead ? null : policy}
+        onDraft={policy && !pending && !requiresRead ? draftHistoricalLimits : undefined} />}
       <Card title="تغيير سياسة إتاحة المتاجر" style={{ marginBlockEnd: 16 }}>
+        <Alert type="info" showIcon message="أثر القرار" style={{ marginBlockEnd: 12 }}
+          description="يحدد القرار حدود التشغيل للمدينة المحددة؛ لا يغير العقود أو الطلبات السابقة ولا ينشر المتاجر." />
+        {policy && maxPause !== null && maxPreparation !== null && <section aria-label="مقارنة القيم الحالية والمقترحة">
+          <Typography.Paragraph>الإيقاف: {policy.maxPauseSeconds} ← {maxPause} ثانية</Typography.Paragraph>
+          <Typography.Paragraph>التحضير: {policy.maxPreparationMinutes} ← {maxPreparation} دقيقة</Typography.Paragraph>
+        </section>}
         {!policy && (
           <Checkbox checked={provision} disabled={busy || uncertain || requiresRead} onChange={event => {
             setProvision(event.target.checked);
@@ -241,7 +351,7 @@ export default function PoliciesWorkspace({ actorId }: Readonly<{ actorId: strin
           </Form.Item>
           <Space wrap>
             <Button type="primary" htmlType="submit" loading={busy}
-              disabled={busy || (!pending && !readyForChange)}>
+              disabled={busy || deliveryLocked || (!pending && !readyForChange)}>
               {uncertain ? "إعادة إرسال نفس العملية" : "اعتماد سياسة المدينة في DSH"}
             </Button>
             {uncertain && <Button type="default" disabled={busy} onClick={() => void readCurrent()}>

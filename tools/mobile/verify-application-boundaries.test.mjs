@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { importSpecifiers, scanPresentationBoundaries, sourceBoundaryIssues, stage4WorkspaceIssues } from "./verify-application-boundaries.mjs";
+import { importSpecifiers, scanPresentationBoundaries, sourceBoundaryIssues, workspaceOwnerIssues } from "./verify-application-boundaries.mjs";
 
 const root = resolve("C:/safe/bthwani");
 const customer = resolve(root, "apps/customer/app/index.tsx");
@@ -182,7 +182,7 @@ test("a workspace owner junction cannot bypass the boundary scanner", t => {
       if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) return t.skip("junction creation not permitted");
       throw error;
     }
-    assert.match(stage4WorkspaceIssues(fixture).join("\n"), /apps\/captain: workspace owner symlink/);
+    assert.match(workspaceOwnerIssues(fixture).join("\n"), /apps\/captain: workspace owner symlink/);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -233,24 +233,24 @@ test("a dangling route-root junction cannot conceal an invalid app tree", t => {
   }
 });
 
-test("Stage 4 rejects unapproved owner directories and any duplicate src/app route tree", () => {
+test("workspace rejects unapproved owner directories and duplicate src/app route trees", () => {
   const fixture = mkdtempSync(join(tmpdir(), "bthwani-boundary-"));
   try {
     for (const group of ["apps", "packages", "services"]) {
       mkdirSync(join(fixture, group), { recursive: true });
     }
-    assert.deepEqual(stage4WorkspaceIssues(fixture), []);
+    assert.deepEqual(workspaceOwnerIssues(fixture), []);
     const leftBehind = join(fixture, "packages", "retired-package");
     mkdirSync(join(leftBehind, "node_modules"), { recursive: true });
-    assert.deepEqual(stage4WorkspaceIssues(fixture), [], "generated-only package directory is not source");
+    assert.deepEqual(workspaceOwnerIssues(fixture), [], "generated-only package directory is not source");
     mkdirSync(join(leftBehind, "src"), { recursive: true });
-    assert.match(stage4WorkspaceIssues(fixture).join(" "), /retired-package: unapproved/);
+    assert.match(workspaceOwnerIssues(fixture).join(" "), /retired-package: unapproved/);
     rmSync(join(leftBehind, "src"), { recursive: true });
     mkdirSync(join(fixture, "apps", "customer", "src", "app"), { recursive: true });
     mkdirSync(join(fixture, "apps", "storefront"), { recursive: true });
     mkdirSync(join(fixture, "packages", "new-theme-engine"), { recursive: true });
     mkdirSync(join(fixture, "services", "shadow-wallet"), { recursive: true });
-    assert.equal(stage4WorkspaceIssues(fixture).length, 4);
+    assert.equal(workspaceOwnerIssues(fixture).length, 4);
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
@@ -357,7 +357,11 @@ test("retained Merchant placeholder exemptions are explicit and cannot hide impl
   assert.ok(start >= 0 && end > start, "missing explicit preserved-placeholder Knip boundary");
   const block = config.slice(start, end);
   const retained = [...block.matchAll(/"([^"]+\.tsx)"/g)].map((match) => match[1]);
-  assert.equal(retained.length, 17, "preserve the remaining unconnected Merchant placeholders");
+  assert.equal(retained.length, 15, "preserve the remaining unconnected Merchant placeholders");
+  assert.ok(!retained.includes("apps/merchant/src/features/finance/wallet-screen.tsx"),
+    "the owner-backed Merchant finance workspace must be checked as live source");
+  assert.ok(!retained.includes("apps/merchant/src/features/catalog/inventory-summary.tsx"),
+    "the owner-backed inventory summary must be checked as live source");
   assert.equal(new Set(retained).size, retained.length, "duplicate Knip exclusion");
   assert.ok(!retained.includes("apps/merchant/src/features/navigation/merchant-workspace.tsx"),
     "the owner-backed Merchant workspace must be checked as live source");
@@ -369,5 +373,43 @@ test("retained Merchant placeholder exemptions are explicit and cannot hide impl
     assert.match(source, /MerchantCapabilityScreen/, "only explicit presentation-only placeholder may be excluded: " + path);
     assert.match(source, /Presentation only|Protected workspace presentation/, "remove exemption when a real feature is implemented: " + path);
     assert.doesNotMatch(source, /\bfetch\s*\(|\buseMutation\s*\(|\bcreateOrder\s*\(|\bdeleteStore\s*\(/, "no owner mutation in an exempt file: " + path);
+  }
+});
+
+test("a genuine multi-owner neutral package is discovered, scanned and subject to its actual exports", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "bthwani-shared-package-admission-"));
+  const write = (path, contents) => {
+    const target = join(fixture, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, contents);
+  };
+  try {
+    for (const group of ["apps", "packages", "services"]) mkdirSync(join(fixture, group), { recursive: true });
+    write("packages/formatting/package.json", JSON.stringify({
+      name: "@bthwani/formatting", private: true, exports: { ".": "./src/index.ts" },
+    }));
+    write("packages/formatting/src/index.ts", "export const format = (x: number) => String(x);");
+    write("apps/customer/app/index.tsx", 'import { format } from "@bthwani/formatting";');
+    let result = scanPresentationBoundaries(fixture);
+    assert.match(result.issues.join(" "), /actual multi-owner consumers/);
+    write("apps/merchant/app/index.tsx", 'import { format } from "@bthwani/formatting";');
+    result = scanPresentationBoundaries(fixture);
+    assert.deepEqual(result.issues, []);
+    assert.equal(result.scanned, 3);
+    assert.equal(result.packages, 1);
+    write("apps/merchant/app/index.tsx", 'import { format } from "@bthwani/formatting/unpublished";');
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /not a declared public export/);
+    write("apps/merchant/app/index.tsx", 'import { format } from "@bthwani/formatting";');
+    write("packages/formatting/src/index.ts", 'import { wallet } from "@bthwani/wlt";');
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /cannot depend on a business owner/);
+    write("packages/formatting/src/index.ts", 'import { Button } from "tamagui";');
+    assert.match(scanPresentationBoundaries(fixture).issues.join(" "), /cannot depend on a renderer/);
+    write("packages/formatting/src/index.ts", "export const format = String;");
+    write("packages/formatting/package.json", JSON.stringify({
+      name: "@bthwani/formatting", private: true, exports: { ".": "../other/src/index.ts" },
+    }));
+    assert.match(workspaceOwnerIssues(fixture).join(" "), /invalid public package contract/);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
   }
 });

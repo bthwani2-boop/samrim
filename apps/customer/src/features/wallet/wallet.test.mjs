@@ -23,7 +23,7 @@ test("wallet projection preserves exact YER and binds the response to the curren
   t.mock.method(globalThis, "fetch", async (path, options) => {
     assert.equal(path, "/api/customer-auth/wallet");
     assert.equal(options.credentials, "same-origin");
-    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } });
   });
   let reads = 0;
@@ -37,9 +37,19 @@ test("wallet projection preserves exact YER and binds the response to the curren
   assert.equal(result.balance.balanceYer, amount);
 });
 
+test("checkout balance rejects a different current Customer before fetching WLT", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => {
+    assert.fail("a stale cart must not fetch another Customer balance");
+  });
+  const signal = new AbortController().signal;
+  assert.deepEqual(await readVerifiedWallet(async () => live("actor-b"), signal, "actor-a"),
+    { kind: "signed-out" });
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
 test("a changed account after the wallet response cannot display the previous balance", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
-    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } }));
   const sessions = [live("actor-a"), live("actor-b")];
   const result = await readVerifiedWallet(async () => sessions.shift(), new AbortController().signal);
@@ -62,7 +72,7 @@ test("a different role or expired Customer session cannot initiate a wallet read
 
 test("a role switch for the same Identity actor discards the pending wallet balance", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
-    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } }));
   const customer = live("actor-a");
   const merchant = { ...customer, session: { ...customer.session, role: "merchant" } };
@@ -76,7 +86,7 @@ test("a wallet response after cancellation is discarded", async (t) => {
   const controller = new AbortController();
   t.mock.method(globalThis, "fetch", async () => {
     controller.abort();
-    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } });
   });
   await assert.rejects(() => readVerifiedWallet(async () => live("actor-a"), controller.signal),
@@ -85,33 +95,34 @@ test("a wallet response after cancellation is discarded", async (t) => {
 
 test("the Web wallet route uses only the isolated loopback owner and the existing HttpOnly session", async (t) => {
   t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url.href, "http://127.0.0.1:23203/v1/wallets/me");
+    assert.equal(url.href, "http://127.0.0.1:3203/v1/wallets/me");
     assert.equal(options.method, "GET");
     assert.equal(options.redirect, "error");
     assert.equal(options.headers.Authorization, "Bearer " + Buffer.alloc(32, 17).toString("base64url"));
-    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount },
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
       { headers: { "Cache-Control": "no-store" } });
   });
-  const saved = [process.env.BTHWANI_SURFACE_PREVIEW, process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN];
+  const saved = [process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW, process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN, process.env.BTHWANI_ISOLATED_TEST_MODE];
   t.after(() => {
-    const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN"];
+    const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
     names.forEach((name, index) => {
       if (saved[index] === undefined) delete process.env[name];
       else process.env[name] = saved[index];
     });
   });
-  process.env.BTHWANI_SURFACE_PREVIEW = "1";
-  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
   const { GET } = await import("../../../app/api/customer-auth/wallet+api.ts");
-  const path = "http://127.0.0.1:23101/api/customer-auth/wallet";
-  const headers = { Cookie: "bthwani_surface_customer_auth=" + Buffer.alloc(32, 17).toString("base64url") };
+  const path = "http://127.0.0.1:18101/api/customer-auth/wallet";
+  const headers = { Cookie: "bthwani_customer_auth=" + Buffer.alloc(32, 17).toString("base64url") };
   assert.equal((await GET(new Request(path))).status, 401);
   assert.equal((await GET(new Request(path + "?actorId=other", { headers }))).status, 400);
   assert.equal((await GET(new Request(path, { headers: { ...headers, "Sec-Fetch-Site": "cross-site" } }))).status, 403);
   const shown = await GET(new Request(path, { headers }));
   assert.equal(shown.headers.get("Cache-Control"), "no-store");
   assert.equal((await shown.json()).balanceYer, amount);
-  delete process.env.BTHWANI_SURFACE_PREVIEW;
+  delete process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW;
   assert.equal((await GET(new Request(path, { headers }))).status, 503);
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
@@ -120,6 +131,71 @@ const history = {
   actorId: "actor-a", currency: "YER", hasMore: false, nextCursor: null,
   items: [{ fundingId: "funding-0001", amountYer: amount, postedAt: "2026-11-20T00:00:00Z" }],
 };
+
+test("Web wallet rejects invalid session expiry without requesting financial data", async t => {
+  const invalid = live("actor-a");
+  invalid.session.sessionExpiresAt = "invalid";
+  t.mock.method(globalThis, "fetch", async () => Response.json({ actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount },
+    { headers: { "Cache-Control": "no-store" } }));
+  assert.deepEqual(await readVerifiedWallet(async () => invalid, new AbortController().signal), { kind: "signed-out" });
+  assert.deepEqual(await readVerifiedWalletTransactions(async () => invalid, new AbortController().signal), { kind: "signed-out" });
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test("Web balance and history reject non-JSON and oversized owner evidence using the existing owner limits", async t => {
+  const balance = { actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount };
+  const replies = [];
+  t.mock.method(globalThis, "fetch", async () => replies.shift());
+  for (const [value, limit, read] of [[balance, 4096, readVerifiedWallet], [history, 8192, readVerifiedWalletTransactions]]) {
+    for (const response of [
+      new Response(JSON.stringify(value), { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } }),
+      new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json", "Content-Length": String(limit + 1), "Cache-Control": "no-store" } }),
+      new Response(JSON.stringify(value) + " ".repeat(limit + 1), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
+    ]) {
+      replies.push(response);
+      await assert.rejects(read(async () => live("actor-a"), new AbortController().signal), { name: "WltReadError", status: 502 });
+    }
+    replies.push(Response.json(value, { headers: { "Cache-Control": "no-store" } }));
+    assert.equal((await read(async () => live("actor-a"), new AbortController().signal)).kind, "ready");
+  }
+});
+
+test("Web wallet releases rejected and cancelled response bodies without revealing financial values", async t => {
+  const replies = [];
+  t.mock.method(globalThis, "fetch", async () => replies.shift());
+  for (const [status, cache, kind] of [[401, "no-store", "signed-out"], [403, "no-store", "signed-out"], [503, "no-store", "unavailable"], [200, "public", "unavailable"]]) {
+    let cancelled = false;
+    replies.push(new Response(new ReadableStream({ cancel() { cancelled = true; } }), { status, headers: { "Cache-Control": cache } }));
+    assert.deepEqual(await readVerifiedWallet(async () => live("actor-a"), new AbortController().signal), { kind });
+    assert.equal(cancelled, true);
+  }
+});
+
+test("Web history abort interrupts a stalled response and a fresh read can recover", async t => {
+  const ctl = new AbortController();
+  let stream, cancelled = false, timer;
+  const replies = [new Response(new ReadableStream({
+    start(c) { stream = c; },
+    cancel() { cancelled = true; },
+  }), { headers: { "Cache-Control": "no-store", "Content-Type": "application/json" } })];
+  t.mock.method(globalThis, "fetch", async () => replies.shift());
+  const pending = readVerifiedWalletTransactions(async () => live("actor-a"), ctl.signal)
+    .then(() => "UNEXPECTED", error => error.name);
+  try {
+    await new Promise(resolve => setImmediate(resolve));
+    ctl.abort();
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 500); })]), "AbortError");
+    assert.equal(cancelled, true);
+  } finally {
+    clearTimeout(timer);
+    if (!cancelled) stream.close();
+    await pending;
+  }
+  replies.push(Response.json(history, { headers: { "Cache-Control": "no-store" } }));
+  const fresh = await readVerifiedWalletTransactions(async () => live("actor-a"), new AbortController().signal);
+  assert.equal(fresh.kind, "ready");
+  assert.deepEqual(fresh.history, history);
+});
 
 test("funding history rejects provider details, other actors, non-integer money and invalid time", () => {
   assert.deepEqual(parseCustomerFundingHistory(history), history);
@@ -214,7 +290,7 @@ test("funding history cannot survive a role or actor switch after the HTTP read"
 test("WLT funding history SDK uses only the isolated owner operation", async (t) => {
   const bearer = Buffer.alloc(32, 17).toString("base64url");
   t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url.href, "http://127.0.0.1:23203/v1/wallets/me/transactions");
+    assert.equal(url.href, "http://127.0.0.1:3203/v1/wallets/me/transactions");
     assert.equal(options.method, "GET");
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     assert.equal(options.redirect, "error");
@@ -222,7 +298,7 @@ test("WLT funding history SDK uses only the isolated owner operation", async (t)
     return Response.json(history, { headers: { "Cache-Control": "no-store" } });
   });
   assert.deepEqual(await readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", bearer, new AbortController().signal,
+    "http://127.0.0.1:3203", bearer, new AbortController().signal,
   ), history);
   await assert.rejects(() => readCurrentCustomerWalletTransactions(
     "http://attacker.invalid", bearer, new AbortController().signal,
@@ -231,19 +307,20 @@ test("WLT funding history SDK uses only the isolated owner operation", async (t)
 });
 
 test("Customer wallet history BFF denies cross-site and arbitrary actor queries", async (t) => {
-  const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN"];
+  const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
   const saved = names.map(name => process.env[name]);
   t.after(() => names.forEach((name, i) => {
     if (saved[i] === undefined) delete process.env[name];
     else process.env[name] = saved[i];
   }));
-  process.env.BTHWANI_SURFACE_PREVIEW = "1";
-  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
   const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
   t.mock.method(globalThis, "fetch", async () => Response.json(history,
     { headers: { "Cache-Control": "no-store" } }));
-  const path = "http://127.0.0.1:23101/api/customer-auth/wallet-transactions";
-  const headers = { Cookie: `bthwani_surface_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}` };
+  const path = "http://127.0.0.1:18101/api/customer-auth/wallet-transactions";
+  const headers = { Cookie: `bthwani_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}` };
   assert.equal((await GET(new Request(path))).status, 401);
   assert.equal((await GET(new Request(`${path}?actorId=other`, { headers }))).status, 400);
   assert.equal((await GET(new Request(path, { headers: { ...headers, "Sec-Fetch-Site": "cross-site" } }))).status, 403);
@@ -322,33 +399,68 @@ test("wallet history stays bound to the Customer whose balance is already displa
 test("WLT SDK forwards only a canonical cursor to its isolated owner", async (t) => {
   const bearer = Buffer.alloc(32, 17).toString("base64url");
   t.mock.method(globalThis, "fetch", async (url, options) => {
-    assert.equal(url.href, `http://127.0.0.1:23203/v1/wallets/me/transactions?cursor=${nextCursor}`);
+    assert.equal(url.href, `http://127.0.0.1:3203/v1/wallets/me/transactions?cursor=${nextCursor}`);
     assert.equal(options.method, "GET");
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     return Response.json(pageOne, { headers: { "Cache-Control": "no-store" } });
   });
   assert.deepEqual(await readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", bearer, new AbortController().signal, nextCursor,
+    "http://127.0.0.1:3203", bearer, new AbortController().signal, nextCursor,
   ), pageOne);
   await assert.rejects(() => readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", bearer, new AbortController().signal, "invalid",
+    "http://127.0.0.1:3203", bearer, new AbortController().signal, "invalid",
   ), { status: 400 });
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
 
+test("WLT SDK and Customer BFF preserve owner rejection of an invalid history cursor", async (t) => {
+  const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
+  const saved = names.map(name => process.env[name]);
+  t.after(() => names.forEach((name, i) => {
+    if (saved[i] === undefined) delete process.env[name];
+    else process.env[name] = saved[i];
+  }));
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
+  const bearer = Buffer.alloc(32, 17).toString("base64url");
+  const cursor = "A".repeat(20); // Bounded syntax, but not an owner-issued keyset.
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    assert.equal(url.pathname, "/v1/wallets/me/transactions");
+    assert.equal(url.searchParams.get("cursor"), cursor);
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    return Response.json({ error: "INVALID_REQUEST" }, {
+      status: 400, headers: { "Cache-Control": "no-store" },
+    });
+  });
+  await assert.rejects(() => readCurrentCustomerWalletTransactions(
+    "http://127.0.0.1:3203", bearer, new AbortController().signal, cursor,
+  ), { status: 400 });
+  const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
+  const response = await GET(new Request(
+    "http://127.0.0.1:18101/api/customer-auth/wallet-transactions?cursor=" + cursor,
+    { headers: { Cookie: "bthwani_customer_auth=" + bearer } },
+  ));
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "INVALID_REQUEST" });
+  assert.equal(response.headers.get("Cache-Control"), "no-store");
+  assert.equal(globalThis.fetch.mock.callCount(), 2);
+});
+
 test("Customer history BFF forwards a valid cursor only and refuses all other selectors", async (t) => {
-  const names = ["BTHWANI_SURFACE_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN"];
+  const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
   const old = names.map(name => process.env[name]);
   t.after(() => names.forEach((name, index) => {
     if (old[index] === undefined) delete process.env[name];
     else process.env[name] = old[index];
   }));
-  process.env.BTHWANI_SURFACE_PREVIEW = "1";
-  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
   const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
-  const base = "http://127.0.0.1:23101/api/customer-auth/wallet-transactions";
+  const base = "http://127.0.0.1:18101/api/customer-auth/wallet-transactions";
   const headers = {
-    Cookie: `bthwani_surface_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}`,
+    Cookie: `bthwani_customer_auth=${Buffer.alloc(32, 17).toString("base64url")}`,
   };
   t.mock.method(globalThis, "fetch", async (url) => {
     assert.equal(url.search, `?cursor=${nextCursor}`);
@@ -373,7 +485,7 @@ test("WLT read-only SDK admits only the Android emulator's isolated host bridge"
     assert.equal(options.headers.Authorization, "Bearer " + token);
     assert.equal(options.redirect, "error");
     assert.equal(options.credentials, "omit");
-    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: "2500" },
+    return Response.json({ actorId: "actor-a", currency: "YER", balanceYer: "2500", availableYer: "2500" },
       { headers: { "Cache-Control": "no-store" } });
   });
   assert.equal((await readCurrentCustomerWallet("http://10.0.2.2:23203", token,
@@ -407,7 +519,7 @@ test("WLT history accepts ten maximum-size postings without dropping a valid own
   let reply = Response.json(page, { headers: { "Cache-Control": "no-store" } });
   t.mock.method(globalThis, "fetch", async () => reply);
   const read = () => readCurrentCustomerWalletTransactions(
-    "http://127.0.0.1:23203", token, new AbortController().signal,
+    "http://127.0.0.1:3203", token, new AbortController().signal,
   );
   assert.deepEqual(await read(), page);
 
@@ -443,7 +555,7 @@ test("WLT SDK rejects malformed or oversized streamed owner replies", async (t) 
   const headers = { "Cache-Control": "no-store", "Content-Type": "application/json" };
   let reply = new Response(Uint8Array.of(0xff), { headers });
   t.mock.method(globalThis, "fetch", async () => reply);
-  const read = () => readCurrentCustomerWallet("http://127.0.0.1:23203",
+  const read = () => readCurrentCustomerWallet("http://127.0.0.1:3203",
     token, new AbortController().signal);
 
   await assert.rejects(read, { status: 502 }, "invalid UTF-8 must fail closed");
@@ -469,7 +581,7 @@ test("WLT SDK reads bounded text-only Native replies without depending on TextDe
   try {
     globalThis.TextDecoder = undefined;
     t.mock.method(globalThis, "fetch", async () =>
-      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500"}'));
+      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500","availableYer":"2500"}'));
     const balance = await readCurrentCustomerWallet("http://10.0.2.2:23203",
       token, new AbortController().signal);
     assert.equal(balance.balanceYer, "2500");
@@ -479,7 +591,7 @@ test("WLT SDK reads bounded text-only Native replies without depending on TextDe
     await assert.rejects(() => readCurrentCustomerWallet("http://10.0.2.2:23203",
       token, new AbortController().signal), { status: 502 });
     globalThis.fetch.mock.mockImplementation(async () =>
-      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500"}',
+      response('{"actorId":"actor-a","currency":"YER","balanceYer":"2500","availableYer":"2500"}',
         new Headers({ "Cache-Control": "no-store", "Content-Type": "application/json",
           "Content-Length": "900000" })));
     await assert.rejects(() => readCurrentCustomerWallet("http://10.0.2.2:23203",
@@ -487,4 +599,15 @@ test("WLT SDK reads bounded text-only Native replies without depending on TextDe
   } finally {
     globalThis.TextDecoder = saved;
   }
+});
+
+test("WLT wallet projection distinguishes posted from available funding without precision loss", async () => {
+  const { parseCustomerWalletBalance } = await import("@bthwani/wlt");
+  const balance = { actorId: "actor-a", currency: "YER", balanceYer: "9007199254740993", availableYer: "9007199254740992" };
+  assert.deepEqual(parseCustomerWalletBalance(balance), balance);
+  for (const availableYer of ["9007199254740994", "-1", "01", "1.5", 0, null]) {
+    assert.throws(() => parseCustomerWalletBalance({ ...balance, availableYer }), WltReadError);
+  }
+  const { availableYer, ...old } = balance;
+  assert.throws(() => parseCustomerWalletBalance(old), WltReadError);
 });

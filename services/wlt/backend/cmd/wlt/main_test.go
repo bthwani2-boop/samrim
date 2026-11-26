@@ -1,10 +1,42 @@
 package main
 
 import (
+	"database/sql"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestDevelopmentHealthRejectsClosedDatabaseAndWrongMethod(t *testing.T) {
+	db, err := sql.Open("postgres", "postgres://127.0.0.1:1/bthwani_wlt_test?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// sql.Open is lazy. Close before serving; the real database/sql ping fails
+	// deterministically without touching any running PostgreSQL service.
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	handler := developmentHealth(db, "", false)
+	for _, tc := range []struct {
+		method string
+		want   int
+	}{
+		{http.MethodGet, http.StatusServiceUnavailable},
+		{http.MethodPost, http.StatusMethodNotAllowed},
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(tc.method, "/health", nil))
+		if response.Code != tc.want || response.Body.Len() != 0 {
+			t.Fatalf("%s: status=%d body=%q", tc.method, response.Code, response.Body.String())
+		}
+		if tc.method == http.MethodPost && response.Header().Get("Allow") != "GET" {
+			t.Fatal("method rejection did not advertise GET")
+		}
+	}
+}
 
 func TestSandboxCommandRejectsNonIsolatedDatabaseBeforeReadingSession(t *testing.T) {
 	const dsn = "postgres://bthwani_wlt_sandbox:fixture@127.0.0.1:5432/bthwani_wlt_test?sslmode=disable"

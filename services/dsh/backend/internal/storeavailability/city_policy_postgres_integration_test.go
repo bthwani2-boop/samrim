@@ -64,6 +64,125 @@ func TestRealPostgresVersionedCityPolicyWriterAndConcurrency(t *testing.T) {
 	if _, err = owner.ReadCityPolicy(ctx, city); !errors.Is(err, ErrPolicyUnavailable) {
 		t.Fatalf("missing initial policy was not unavailable: %v", err)
 	}
+	if empty, e := owner.ReadCityDeliveryPolicy(ctx, city); e != nil || empty.CityID != city || empty.Version != 0 || empty.RadiusMetres != 0 || !empty.UpdatedAt.IsZero() {
+		t.Fatalf("missing radius not explicitly unconfigured: %+v %v", empty, e)
+	}
+	firstCity := "policy-initial-a02"
+	if _, err = db.ExecContext(ctx, "INSERT INTO "+schema+".service_cities(id,active,timezone_name) VALUES ($1,true,'Asia/Aden')", firstCity); err != nil {
+		t.Fatal(err)
+	}
+	initialBands, validInitial := DecodeDistanceBands([]byte(`[{"upToMeters":null,"ratePerKmMinor":100}]`))
+	if !validInitial {
+		t.Fatal("invalid fixture")
+	}
+	initial, initialReplay, e := owner.ApplyCityDeliveryPolicy(ctx, "operator-a", firstCity, "initial-command-001", 0, 30000, initialBands, "Synthetic initial policy")
+	if e != nil || initialReplay || initial.Version != 1 {
+		t.Fatalf("initial write %+v %v %v", initial, initialReplay, e)
+	}
+	if _, _, e = owner.ApplyCityDeliveryPolicy(ctx, "operator-a", firstCity, "initial-command-002", 0, 30000, initialBands, "Synthetic initial policy"); !errors.Is(e, ErrPolicyVersionConflict) {
+		t.Fatalf("second initialization %v", e)
+	}
+	if _, replayed, e := owner.ApplyCityDeliveryPolicy(ctx, "operator-a", firstCity, "initial-command-001", 0, 30000, initialBands, "Synthetic initial policy"); e != nil || !replayed {
+		t.Fatalf("initial replay %v %v", replayed, e)
+	}
+	if latest, e := owner.ReadCityDeliveryPolicy(ctx, firstCity); e != nil || latest.Version != 1 || latest.RadiusMetres != 30000 {
+		t.Fatalf("initial readback %+v %v", latest, e)
+	}
+	t.Log("REAL_INITIAL_DELIVERY_POLICY_PASS version=1")
+	// Only this freshly bootstrapped synthetic schema receives fixture facts.
+	if _, err = db.ExecContext(ctx, fmt.Sprintf("INSERT INTO %s.service_city_delivery_policies(city_id,version,radius_metres) VALUES ($1,1,30000)", schema), city); err != nil {
+		t.Fatal(err)
+	}
+	radius, err := owner.ReadCityDeliveryPolicy(ctx, city)
+	if err != nil || radius.CityID != city || radius.Version != 1 || radius.RadiusMetres != 30000 {
+		t.Fatalf("unexpected effective radius: %+v %v", radius, err)
+	}
+	if _, err = owner.ReadCityDeliveryPolicy(ctx, "unknown-city"); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("foreign city radius was exposed: %v", err)
+	}
+	if _, err = db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_city_delivery_policies SET radius_metres=18000,version=2 WHERE city_id=$1", schema), city); err != nil {
+		t.Fatal(err)
+	}
+	radius, err = owner.ReadCityDeliveryPolicy(ctx, city)
+	if err != nil || radius.Version != 2 || radius.RadiusMetres != 18000 || radius.DistanceBands != nil {
+		t.Fatalf("stale radius or invented bands: %+v %v", radius, err)
+	}
+	if _, err = db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_city_delivery_policies SET version=3,distance_bands=$1::jsonb WHERE city_id=$2", schema), `[{"upToMeters":2000,"ratePerKmMinor":300},{"upToMeters":null,"ratePerKmMinor":200}]`, city); err != nil {
+		t.Fatal(err)
+	}
+	radius, err = owner.ReadCityDeliveryPolicy(ctx, city)
+	if err != nil || radius.Version != 3 || len(radius.DistanceBands) != 2 || radius.DistanceBands[1].RatePerKmMinor != 200 || radius.DistanceBands[1].UpToMeters != nil {
+		t.Fatalf("owner tariff readback: %+v %v", radius, err)
+	}
+	if _, err = db.ExecContext(ctx, fmt.Sprintf("UPDATE %s.service_city_delivery_policies SET version=4,distance_bands=$1::jsonb WHERE city_id=$2", schema), `[{"upToMeters":null,"ratePerKmMinor":0}]`, city); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.ReadCityDeliveryPolicy(ctx, city); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Fatalf("malformed stored tariff was accepted: %v", err)
+	}
+	// Use the actual new writer in the already-isolated fixture, including replay
+	// after later versions, conflicting key/actor, competing writes and durability.
+	bands, valid := DecodeDistanceBands([]byte(`[{"upToMeters":null,"ratePerKmMinor":100}]`))
+	if !valid {
+		t.Fatal("invalid test bands")
+	}
+	deliveryWrite := func(actor, key string, version, radius int64) (CityDeliveryPolicy, bool, error) {
+		return owner.ApplyCityDeliveryPolicy(ctx, actor, city, key, version, radius, bands, "Reviewed synthetic delivery")
+	}
+	delivery, replay, err := deliveryWrite("operator-a", "delivery-policy-005", 4, 18000)
+	if err != nil || replay || delivery.Version != 5 {
+		t.Fatalf("delivery write %+v %v %v", delivery, replay, err)
+	}
+	if _, _, err = deliveryWrite("operator-b", "delivery-policy-005", 4, 18000); !errors.Is(err, ErrOperationConflict) {
+		t.Fatalf("cross actor replay: %v", err)
+	}
+	if _, _, err = deliveryWrite("operator-a", "delivery-policy-005", 4, 18001); !errors.Is(err, ErrOperationConflict) {
+		t.Fatalf("changed replay: %v", err)
+	}
+	if _, _, err = deliveryWrite("operator-a", "delivery-policy-stale", 4, 19000); !errors.Is(err, ErrPolicyVersionConflict) {
+		t.Fatalf("stale write: %v", err)
+	}
+	var deliveryWG sync.WaitGroup
+	deliveryResults := make(chan error, 2)
+	for _, key := range []string{"delivery-policy-race-a", "delivery-policy-race-b"} {
+		deliveryWG.Add(1)
+		go func(key string) {
+			defer deliveryWG.Done()
+			_, _, e := deliveryWrite("operator-a", key, 5, 19000)
+			deliveryResults <- e
+		}(key)
+	}
+	deliveryWG.Wait()
+	close(deliveryResults)
+	deliverySuccess, deliveryConflict := 0, 0
+	for e := range deliveryResults {
+		if e == nil {
+			deliverySuccess++
+		} else if errors.Is(e, ErrPolicyVersionConflict) {
+			deliveryConflict++
+		} else {
+			t.Fatal(e)
+		}
+	}
+	if deliverySuccess != 1 || deliveryConflict != 1 {
+		t.Fatalf("delivery race: %d %d", deliverySuccess, deliveryConflict)
+	}
+	delivery, replay, err = deliveryWrite("operator-a", "delivery-policy-005", 4, 18000)
+	if err != nil || !replay || delivery.Version != 5 || delivery.RadiusMetres != 18000 {
+		t.Fatalf("historical delivery replay %+v %v %v", delivery, replay, err)
+	}
+	liveDelivery, err := owner.ReadCityDeliveryPolicy(ctx, city)
+	if err != nil || liveDelivery.Version != 6 || liveDelivery.RadiusMetres != 19000 {
+		t.Fatalf("delivery readback %+v %v", liveDelivery, err)
+	}
+	var deliveryCommands int
+	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".service_city_delivery_policy_commands WHERE city_id=$1", city).Scan(&deliveryCommands); err != nil || deliveryCommands != 2 {
+		t.Fatalf("delivery commands %d %v", deliveryCommands, err)
+	}
+	if _, err = db.ExecContext(ctx, "DELETE FROM "+schema+".service_city_delivery_policy_commands WHERE city_id=$1", city); err == nil {
+		t.Fatal("mutable delivery history")
+	}
+	t.Log("REAL_DSH_DELIVERY_POLICY_WRITER_PASS version=6 immutable_commands=2 concurrent_conflict=true")
 	base := CityPolicyChange{CityID: city, OperationID: "policy-create-a02", ExpectedVersion: 0, MaxPauseSeconds: 1800, MaxPreparationMinutes: 80, Reason: "Explicit initial city limits"}
 	created, replay, err := owner.ApplyCityPolicy(ctx, "operator-a", base)
 	if err != nil || replay || created.Version != 1 || created.MaxPauseSeconds != 1800 {

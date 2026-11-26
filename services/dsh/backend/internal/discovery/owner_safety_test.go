@@ -115,7 +115,7 @@ func TestDatabaseNameRequiresExactIsolatedRefoundation(t *testing.T) {
 			t.Errorf("unsafe development write database %q accepted", name)
 		}
 	}
-	if !isRefoundationDatabase("bthwani_refoundation") {
+	if !isRefoundationDatabase("bthwani_refoundation") || !isRefoundationDatabase("bthwani_dsh_dev") {
 		t.Fatal("dedicated isolated refoundation database should be accepted")
 	}
 }

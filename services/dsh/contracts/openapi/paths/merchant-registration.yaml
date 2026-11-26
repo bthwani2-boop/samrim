@@ -3,7 +3,7 @@ paths:
     get:
       operationId: getMerchantStoreRegistrationOptions
       summary: Read currently admitted Store city/channel choices and active verticals
-      description: Only a current Identity Merchant may read DSH registration choices. DSH owns city, vertical, admission and terms version. An empty list means registration is closed; no application fallback or auto-created Store.
+      description: Only a current Identity Merchant may read DSH registration choices. DSH owns city, vertical, admission and terms version. An empty choices list means registration is closed. If no active vertical exists, choices and verticals are both empty; clients must not offer an unusable registration form. No application fallback or auto-created Store.
       security:
         - OpaqueSession: []
       responses:

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -27,6 +28,17 @@ type identityReader struct {
 	client   *http.Client
 }
 
+// Identity and DSH owner requests must stay on their admitted development
+// origins. The default HTTP transport honors ambient proxy configuration,
+// which could expose an owner bearer to a proxy for container hostnames.
+// Share a bounded direct connection pool across readers, including sandbox CLI.
+var isolatedOwnerTransport = &http.Transport{
+	Proxy:           nil,
+	DialContext:     (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+	MaxIdleConns:    16,
+	IdleConnTimeout: 90 * time.Second,
+}
+
 func newIdentityReader(origin string, containerMode ...bool) (identityReader, error) {
 	allowedContainer := len(containerMode) == 1 && containerMode[0] && origin == "http://identity:3302"
 	root, err := url.Parse(origin)
@@ -38,7 +50,8 @@ func newIdentityReader(origin string, containerMode ...bool) (identityReader, er
 	return identityReader{
 		endpoint: origin + "/v1/sessions/current",
 		client: &http.Client{
-			Timeout: 2 * time.Second,
+			Transport: isolatedOwnerTransport,
+			Timeout:   2 * time.Second,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
@@ -56,42 +69,79 @@ func validBearer(header string) bool {
 }
 
 func (identity identityReader) read(ctx context.Context, auth string) (principal, int) {
+	return identity.readRole(ctx, auth, "customer")
+}
+
+func (identity identityReader) readRole(ctx context.Context, auth, role string) (principal, int) {
 	var actor principal
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, identity.endpoint, nil)
-	if err != nil {
+	status := identity.readOwner(ctx, auth, identity.endpoint, &actor)
+	if status != http.StatusOK {
+		return actor, status
+	}
+	if actor.ActorID == "" || utf8.RuneCountInString(actor.ActorID) > 128 ||
+		strings.TrimSpace(actor.ActorID) != actor.ActorID || strings.ContainsFunc(actor.ActorID, unicode.IsControl) ||
+		!actor.Expires.After(time.Now()) {
 		return actor, http.StatusServiceUnavailable
+	}
+	if actor.Role != role {
+		return actor, http.StatusForbidden
+	}
+	return actor, http.StatusOK
+}
+
+// Finance reads require both current Operator standing and the explicit
+// Identity-owned finance grant bound to the very same actor.
+func (identity identityReader) finance(ctx context.Context, auth string) (principal, int) {
+	actor, status := identity.readRole(ctx, auth, "operator")
+	if status != http.StatusOK {
+		return actor, status
+	}
+	var grant struct {
+		ActorID    string `json:"actorId"`
+		Permission string `json:"permission"`
+	}
+	endpoint := strings.TrimSuffix(identity.endpoint, "/v1/sessions/current") + "/v1/operators/me/permissions/finance"
+	status = identity.readOwner(ctx, auth, endpoint, &grant)
+	if status == http.StatusOK && (grant.ActorID != actor.ActorID || grant.Permission != "finance") {
+		status = http.StatusForbidden
+	}
+	return actor, status
+}
+
+func (identity identityReader) readOwner(ctx context.Context, auth, endpoint string, destination any) int {
+	return identity.readBoundedOwner(ctx, auth, endpoint, destination, 4096)
+}
+
+func (identity identityReader) readBoundedOwner(ctx context.Context, auth, endpoint string, destination any, limit int64) int {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return http.StatusServiceUnavailable
 	}
 	request.Header.Set("Authorization", auth)
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set("Cache-Control", "no-store")
 	response, err := identity.client.Do(request)
 	if err != nil {
-		return actor, http.StatusServiceUnavailable
+		return http.StatusServiceUnavailable
 	}
 	defer response.Body.Close()
-	if response.StatusCode == http.StatusUnauthorized {
-		return actor, http.StatusUnauthorized
+	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+		return response.StatusCode
 	}
 	media, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	cache := response.Header.Values("Cache-Control")
 	if response.StatusCode != http.StatusOK || err != nil || media != "application/json" ||
 		len(cache) != 1 || !strings.EqualFold(cache[0], "no-store") {
-		return actor, http.StatusServiceUnavailable
+		return http.StatusServiceUnavailable
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-	if err != nil || len(body) > 4096 || !utf8.Valid(body) {
-		return actor, http.StatusServiceUnavailable
+	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil || int64(len(body)) > limit || !utf8.Valid(body) {
+		return http.StatusServiceUnavailable
 	}
 	decoder := json.NewDecoder(bytes.NewReader(body))
 	decoder.DisallowUnknownFields()
-	if decoder.Decode(&actor) != nil || decoder.Decode(new(any)) != io.EOF ||
-		actor.ActorID == "" || utf8.RuneCountInString(actor.ActorID) > 128 ||
-		strings.TrimSpace(actor.ActorID) != actor.ActorID || strings.ContainsFunc(actor.ActorID, unicode.IsControl) ||
-		!actor.Expires.After(time.Now()) {
-		return actor, http.StatusServiceUnavailable
+	if decoder.Decode(destination) != nil || decoder.Decode(new(any)) != io.EOF {
+		return http.StatusServiceUnavailable
 	}
-	if actor.Role != "customer" {
-		return actor, http.StatusForbidden
-	}
-	return actor, http.StatusOK
+	return http.StatusOK
 }

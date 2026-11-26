@@ -3,8 +3,7 @@ import { DshPublicError } from "@bthwani/dsh";
 import { IdentityClientError } from "@bthwani/identity";
 import { MerchantStandingError } from "./dsh-standing.ts";
 
-export const cookieName = process.env.BTHWANI_SURFACE_PREVIEW === "1"
-  ? "bthwani_surface_merchant_admission" : "bthwani_merchant_admission";
+export const cookieName = "bthwani_merchant_admission";
 const localIdentity = "http://127.0.0.1:3201";
 const localDSH = "http://127.0.0.1:3202";
 export const noStoreHeaders = {

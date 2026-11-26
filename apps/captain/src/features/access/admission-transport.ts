@@ -1,11 +1,12 @@
 import {
   admitCurrentCustomerAsCaptain,
+  establishPersistentIdentitySession,
   IdentityClientError,
   issueCustomerPhoneChallenge,
-  readVerifiedIdentitySession,
   readPersistentIdentityRole,
-  revokePersistentIdentitySession,
+  readVerifiedIdentitySession,
   resumeCurrentCustomerCaptainSession,
+  revokePersistentIdentitySession,
   revokeVerifiedIdentitySession,
   type VerifiedIdentitySession,
   verifyCustomerPhoneChallenge,
@@ -15,8 +16,7 @@ import { Platform } from "react-native";
 import { type CaptainStanding, CaptainStandingError, readApprovedCaptainStanding, readCaptainApplication, requestCaptainApplication } from "./captain-standing";
 
 const nativeOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
-const key = process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1"
-  ? "bthwani.captain.synthetic-admission.surface.v1" : "bthwani.captain.synthetic-admission.v1";
+const key = "bthwani.captain.synthetic-admission.v1";
 // A persisted bearer with uncertain delivery must stay quarantined after a
 // JavaScript process restart, even when owner revocation and deletion fail.
 const pendingKey = `${key}.pending.v1`;
@@ -130,7 +130,7 @@ async function readDurableCaptain(bearer: string, signal: AbortSignal) {
     }),
     (issued, before, rotated) => mutateNativeStorage(async () => {
       const pending = await SecureStore.getItemAsync(pendingKey, nativeOptions);
-      if (signal.aborted || await SecureStore.getItemAsync(key, nativeOptions) !== before ||
+      if ((!rotated && signal.aborted) || await SecureStore.getItemAsync(key, nativeOptions) !== before ||
           (pending && (!rotated || pending !== "refreshing"))) return false;
       await SecureStore.setItemAsync(refreshKey, issued.refreshToken, nativeOptions);
       if (rotated) {
@@ -167,23 +167,13 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
   }
   const bearer = await SecureStore.getItemAsync(key, nativeOptions);
   if (!bearer) return { enabled: true, standingReady: true, session: null };
+  let current: Awaited<ReturnType<typeof readDurableCaptain>>;
   try {
-    const current = await readDurableCaptain(bearer, signal);
-    const session = current.session;
-    if (session.role !== "captain") throw new IdentityClientError(401, "UNAUTHORIZED");
-    const standing = await readApprovedCaptainStanding(dshOrigin, current.bearer, "captain", session.actorId, signal);
-    // Both owner replies may finish AFTER a concurrent sign-out or actor
-    // switch. Only the credential still owned by this device can be rendered.
-    const stillCurrent = await mutateNativeStorage(async () =>
-      !signal.aborted &&
-      !await SecureStore.getItemAsync(pendingKey, nativeOptions) &&
-      await SecureStore.getItemAsync(key, nativeOptions) === current.bearer
-    );
-    return { enabled: true, standingReady: true, session: stillCurrent ? session : null, ...(stillCurrent ? { standing } : {}) };
+    current = await readDurableCaptain(bearer, signal);
+    if (current.session.role !== "captain") throw new IdentityClientError(401, "UNAUTHORIZED");
   } catch (error) {
-    // Network uncertainty must not be represented as a signed-out or approved actor.
-    const invalid = (error instanceof IdentityClientError && error.status === 401) ||
-      (error instanceof CaptainStandingError && [401, 403].includes(error.status));
+    // Only Identity can determine that its credential is no longer valid.
+    const invalid = error instanceof IdentityClientError && error.status === 401;
     if (invalid && !signal.aborted) {
       await mutateNativeStorage(async () => {
         // An old actor's 401 must never quarantine a newer bearer installed
@@ -203,6 +193,17 @@ export async function readCaptainAdmission(signal: AbortSignal): Promise<Captain
     }
     throw error;
   }
+  // DSH can deny operational standing, but cannot revoke the Identity session.
+  // A refusal/outage must block the workspace while preserving the credential.
+  const session = current.session;
+  const standing = await readApprovedCaptainStanding(dshOrigin, current.bearer, "captain", session.actorId, signal);
+  // Both owner replies may finish AFTER a concurrent sign-out or actor switch.
+  const stillCurrent = await mutateNativeStorage(async () =>
+    !signal.aborted &&
+    !await SecureStore.getItemAsync(pendingKey, nativeOptions) &&
+    await SecureStore.getItemAsync(key, nativeOptions) === current.bearer
+  );
+  return { enabled: true, standingReady: true, session: stillCurrent ? session : null, ...(stillCurrent ? { standing } : {}) };
 }
 
 export async function requestCaptainPhoneCode(phone: string, signal: AbortSignal): Promise<string> {
@@ -274,6 +275,7 @@ export async function verifyCaptainCode(
     await readApprovedCaptainStanding(dshOrigin, captainBearer, "captain", captain.actorId, signal);
     if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
     const issuedBearer = captainBearer;
+    const persistent = await establishPersistentIdentitySession(identityOrigin, issuedBearer, signal);
     await mutateNativeStorage(async () => {
       if (signal.aborted || await SecureStore.getItemAsync(key, nativeOptions)) {
         throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
@@ -283,7 +285,9 @@ export async function verifyCaptainCode(
       await SecureStore.setItemAsync(pendingKey, "in-flight", nativeOptions);
       await SecureStore.setItemAsync(key, issuedBearer, nativeOptions);
       if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-      // A successful token write is the admission commit point. If marker
+      await SecureStore.setItemAsync(refreshKey, persistent.refreshToken, nativeOptions);
+      if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+      // Both successful credential writes are the admission commit point. If marker
       // deletion succeeds on-device but throws, returning failure would leave
       // an undelivered live token with no marker. Treat cleanup as uncertain.
       await SecureStore.deleteItemAsync(pendingKey, nativeOptions).catch(() => undefined);

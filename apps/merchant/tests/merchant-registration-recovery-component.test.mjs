@@ -45,7 +45,7 @@ function allNodes(node) {
   return [node, ...allNodes(node.props?.children)];
 }
 
-function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = false, platform = "web" }) {
+function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = false, platform = "web", registrationOptions = options }) {
   const hooks = [];
   let hookIndex = 0;
   const effects = [];
@@ -110,7 +110,7 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
       Pressable: "Pressable", Text: "Text", TextInput: "TextInput", View: "View",
     },
     "./store-registration-transport": {
-      async readMerchantStoreRegistrationOptions() { return options; },
+      async readMerchantStoreRegistrationOptions() { return registrationOptions; },
       async createMerchantStore(actor, input, signal) {
         createCount++;
         assert.equal(actor, actorId);
@@ -165,14 +165,14 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
     assert.equal(input.props.editable, true, `field ${label} should be editable`);
     input.props.onChangeText(value);
   }
-  function fill(name = "متجر اختبار") {
+  function fill(name = "متجر اختبار", latitude = "15.3694", longitude = "44.191") {
     const radios = allNodes(render()).filter(x => x.props?.accessibilityRole === "radio");
     assert.equal(radios.length, 2, "one city/relation choice and one activity");
     radios[0].props.onPress();
     radios[1].props.onPress();
     enter("الاسم التجاري للمتجر", name);
-    enter("خط عرض موقع المتجر", "15.3694");
-    enter("خط طول موقع المتجر", "44.191");
+    enter("خط عرض موقع المتجر", latitude);
+    enter("خط طول موقع المتجر", longitude);
     find("checkbox").props.onPress();
   }
   async function submit() {
@@ -190,6 +190,22 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
     close() { globalThis.window = previousWindow; },
   };
 }
+
+test("registration distinguishes missing commercial activities from closed city policy, on Web and Android", async () => {
+  for (const platform of ["web", "android"]) {
+    for (const registrationOptions of [{ choices: [], verticals: [] }, { choices: options.choices, verticals: [] }]) {
+      const h = createHarness({ storage: new Map(), platform, registrationOptions, onCreate() { assert.fail("must not submit"); } });
+      try {
+        await h.mount();
+        const tree = allNodes(h.render());
+        assert.ok(tree.some(n => n.props?.testID === "merchant-registration-no-activities"));
+        assert.ok(tree.some(n => n.props?.accessibilityLabel === "إعادة التحقق من إتاحة التسجيل" && !n.props.disabled));
+        assert.ok(!tree.some(n => n.type === "TextInput" || n.props?.accessibilityRole === "checkbox"));
+        assert.equal(h.createCount, 0);
+      } finally { h.close(); }
+    }
+  }
+});
 
 test("real Web component recovers the same DSH operation ID after a failed request and remount", async t => {
   const storage = new Map();
@@ -287,3 +303,88 @@ test("changed Store details cannot replay an ambiguous prior write under its ID"
   assert.equal(calls, 1, "mismatched retry must not contact DSH");
   assert.equal([...storage.values()][0], original, "uncertain command must remain recoverable");
 });
+
+for (const platform of ["web", "android"]) {
+  test(`Published Store replay recovers the original registration on ${platform}`, async t => {
+    const storage = new Map();
+    const submitted = [];
+    const create = (input, Err) => {
+      submitted.push(input);
+      if (submitted.length === 1) throw new Err(503, "OPERATION_RESULT_UNKNOWN");
+      return { store: { id: "store-a", published: true }, replay: true };
+    };
+    const first = createHarness({ storage, onCreate: create, platform });
+    t.after(() => first.close());
+    await first.mount();
+    first.fill();
+    await first.submit();
+    assert.equal(storage.size, 1);
+    const restarted = createHarness({ storage, onCreate: create, platform });
+    t.after(() => restarted.close());
+    await restarted.mount();
+    restarted.fill();
+    await restarted.submit();
+    assert.equal(submitted.length, 2);
+    assert.deepEqual(submitted[1], submitted[0]);
+    assert.equal(restarted.created, 1);
+    assert.equal(storage.size, 0);
+  });
+}
+
+test("Arabic coordinates use the same owner payload and retry fingerprint as ASCII", async t => {
+  const storage = new Map();
+  const submitted = [];
+  const create = (input, Err) => {
+    submitted.push(input);
+    if (submitted.length === 1) throw new Err(503, "OPERATION_RESULT_UNKNOWN");
+    return { store: { id: "store-a", published: false }, replay: true };
+  };
+  const first = createHarness({ storage, onCreate: create });
+  t.after(() => first.close());
+  await first.mount();
+  first.fill("متجر اختبار", "١٥٫٣٦٩٤", "۴۴٫۱۹۱");
+  await first.submit();
+  assert.equal(submitted.length, 1);
+  assert.equal(submitted[0].latitude, 15.3694);
+  assert.equal(submitted[0].longitude, 44.191);
+  const restarted = createHarness({ storage, onCreate: create });
+  t.after(() => restarted.close());
+  await restarted.mount();
+  restarted.fill();
+  await restarted.submit();
+  assert.deepEqual(submitted[1], submitted[0]);
+  assert.equal(restarted.created, 1);
+  assert.equal(storage.size, 0);
+});
+
+test("fresh published registration remains uncertain", async t => {
+  const storage = new Map();
+  const instance = createHarness({ storage, onCreate: () => ({ store: { id: "store-a", published: true }, replay: false }) });
+  t.after(() => instance.close());
+  await instance.mount();
+  instance.fill();
+  await instance.submit();
+  assert.equal(instance.created, 0);
+  assert.equal(storage.size, 1);
+});
+
+for (const [name, latitude, longitude] of [
+  ["a".repeat(121), "15.3694", "44.191"],
+  ["متجر\nاختبار", "15.3694", "44.191"],
+  ["متجر", "0xF", "44.191"],
+  ["متجر", "1.5e1", "44.191"],
+  ["متجر", "91", "44.191"],
+  ["متجر", "15.3694", "181"],
+]) {
+  test(`Malformed registration does not persist or reach the owner: ${JSON.stringify([name, latitude, longitude])}`, async t => {
+    const storage = new Map();
+    const instance = createHarness({ storage, onCreate: () => assert.fail("invalid owner write") });
+    t.after(() => instance.close());
+    await instance.mount();
+    instance.fill(name, latitude, longitude);
+    await instance.submit();
+    assert.equal(instance.createCount, 0);
+    assert.equal(storage.size, 0);
+    assert.ok(allNodes(instance.render()).some(n => n.props?.accessibilityRole === "alert"));
+  });
+}

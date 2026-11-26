@@ -16,23 +16,17 @@ export default function WalletScreen() {
   const loadMoreController = useRef<AbortController | null>(null);
   const scheduleExpiry = useRef<((at: number) => void) | null>(null);
   const refreshBalance = useRef<(() => void) | null>(null);
+  const refreshing = useRef(false);
 
   useFocusEffect(useCallback(() => {
     let pending: AbortController | undefined;
     let expiry: ReturnType<typeof setTimeout> | undefined;
-    function expire() {
-      pending?.abort();
-      loadMoreController.current?.abort();
-      setState({ kind: "signed-out" });
-      setHistory(null);
-    }
-    function schedule(at: number) {
-      clearTimeout(expiry);
-      expiry = setTimeout(expire, Math.max(0, at - Date.now()));
-    }
-    scheduleExpiry.current = schedule;
+    let actor: string | undefined;
     function hide() {
       pending?.abort();
+      pending = undefined;
+      refreshing.current = false;
+      actor = undefined;
       loadMoreController.current?.abort();
       loadMoreController.current = null;
       clearTimeout(expiry);
@@ -41,61 +35,99 @@ export default function WalletScreen() {
       setState(null);
       setHistory(null);
     }
-    function refresh() {
+    function expire() {
       hide();
-      if (document.visibilityState === "hidden" || !document.hasFocus()) return;
+      setState({ kind: "signed-out" });
+    }
+    function schedule(at: number) {
+      clearTimeout(expiry);
+      expiry = setTimeout(expire, Math.max(0, at - Date.now()));
+    }
+    scheduleExpiry.current = schedule;
+    function refresh(silent = false) {
+      if (document.visibilityState === "hidden" || !document.hasFocus()) {
+        hide();
+        return;
+      }
+      if (silent && (pending || loadMoreController.current)) return;
+      if (!silent) hide();
+      const previousActor = actor;
       const controller = new AbortController();
       pending = controller;
+      refreshing.current = true;
       const deadline = AbortSignal.any([controller.signal, AbortSignal.timeout(12000)]);
-      void readVerifiedWallet(readCustomerAdmission, deadline).then(result => {
-        if (controller.signal.aborted) return;
-        if (deadline.aborted) {
-          setState({ kind: "unavailable" });
-          return;
+      function unavailable() {
+        if (pending !== controller || controller.signal.aborted) return;
+        hide();
+        setState({ kind: "unavailable" });
+      }
+      deadline.addEventListener("abort", unavailable, { once: true });
+      void (async () => {
+        try {
+          const result = await readVerifiedWallet(readCustomerAdmission, deadline);
+          if (deadline.aborted || pending !== controller) return;
+          if (result.kind !== "ready") {
+            hide();
+            setState(result);
+            return;
+          }
+          if ((previousActor && previousActor !== result.balance.actorId) || result.expiresAt <= Date.now()) {
+            expire();
+            return;
+          }
+          // Do not extend a previously verified display until the new history
+          // and balance both belong to the same current Customer.
+          if (!previousActor) {
+            actor = result.balance.actorId;
+            setState(result);
+            schedule(result.expiresAt);
+          }
+          const historyResult = await readVerifiedWalletTransactions(readCustomerAdmission, deadline, undefined, result.balance.actorId);
+          if (deadline.aborted || pending !== controller) return;
+          if (historyResult.kind === "signed-out" ||
+              (historyResult.kind === "ready" && historyResult.history.actorId !== result.balance.actorId)) {
+            expire();
+            return;
+          }
+          const expiresAt = historyResult.kind === "ready"
+            ? Math.min(result.expiresAt, historyResult.expiresAt) : result.expiresAt;
+          if (expiresAt <= Date.now()) { expire(); return; }
+          actor = result.balance.actorId;
+          setState(result);
+          setHistory(historyResult);
+          schedule(expiresAt);
+        } catch {
+          unavailable();
+        } finally {
+          deadline.removeEventListener("abort", unavailable);
+          if (pending === controller) {
+            pending = undefined;
+            refreshing.current = false;
+          }
         }
-        setState(result);
-        if (result.kind === "ready") {
-          schedule(result.expiresAt);
-          void readVerifiedWalletTransactions(readCustomerAdmission, deadline, undefined, result.balance.actorId).then(historyResult => {
-            if (controller.signal.aborted || deadline.aborted) return;
-            if (historyResult.kind === "signed-out") {
-              expire();
-              return;
-            }
-            setHistory(historyResult);
-            if (historyResult.kind === "ready") {
-              schedule(Math.min(result.expiresAt, historyResult.expiresAt));
-            }
-          }).catch(() => {
-            if (!controller.signal.aborted) setHistory({ kind: "unavailable" });
-          });
-        }
-      }).catch(() => {
-        if (!controller.signal.aborted) setState({ kind: "unavailable" });
-      });
+      })();
     }
-    refreshBalance.current = refresh;
+    const refreshVisible = () => refresh();
+    refreshBalance.current = refreshVisible;
     refresh();
-    const interval = setInterval(refresh, 30_000);
-    document.addEventListener("visibilitychange", refresh);
-    window.addEventListener("focus", refresh);
+    const interval = setInterval(() => refresh(true), 30_000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    window.addEventListener("focus", refreshVisible);
     window.addEventListener("blur", hide);
     return () => {
       refreshBalance.current = null;
       scheduleExpiry.current = null;
-      loadMoreController.current?.abort();
-      pending?.abort();
-      clearTimeout(expiry);
+      hide();
       clearInterval(interval);
-      document.removeEventListener("visibilitychange", refresh);
-      window.removeEventListener("focus", refresh);
+      document.removeEventListener("visibilitychange", refreshVisible);
+      window.removeEventListener("focus", refreshVisible);
       window.removeEventListener("blur", hide);
     };
   }, []));
 
   async function loadMore() {
     if (state?.kind !== "ready" || history?.kind !== "ready" ||
-      loadMoreController.current) return;
+      loadMoreController.current || refreshing.current) return;
     const cursor = history.history.nextCursor;
     if (!cursor) return;
     const previous = history.history;
@@ -134,7 +166,7 @@ export default function WalletScreen() {
           expiresAt: Math.min(current.expiresAt, next.expiresAt),
         };
       });
-      scheduleExpiry.current?.(Math.min(history.expiresAt, next.expiresAt));
+      scheduleExpiry.current?.(Math.min(state.expiresAt, history.expiresAt, next.expiresAt));
     } catch {
       if (!controller.signal.aborted) setMoreError(true);
     } finally {
@@ -155,6 +187,9 @@ export default function WalletScreen() {
               <Text style={{ color: theme.colorSecondary }}>الرصيد المسجّل في البيئة التجريبية</Text>
               <Text testID="wallet-balance" style={{ color: theme.color, fontSize: 30, fontWeight: "700" }}>
                 {formatExactYer(BigInt(state.balance.balanceYer))} ريال يمني
+              </Text>
+              <Text testID="wallet-available" style={{ color: theme.colorSecondary }}>
+                المتاح بعد الحجوزات: {formatExactYer(BigInt(state.balance.availableYer))} ريال يمني
               </Text>
             </>
           ) : (
@@ -205,7 +240,7 @@ export default function WalletScreen() {
           </View>
         ) : null}
         {state?.kind === "signed-out" ? (
-          <Link href="/account" style={{ color: theme.interactiveText }}>انتقال إلى الحساب</Link>
+          <Link href={{ pathname: "/login", params: { returnTo: "/wallet" } }} style={{ color: theme.interactiveText }}>تسجيل الدخول إلى المحفظة</Link>
         ) : state?.kind === "unavailable" || history?.kind === "unavailable" ? (
           <Pressable accessibilityRole="button" onPress={() => refreshBalance.current?.()}>
             <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>

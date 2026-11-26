@@ -31,19 +31,22 @@ export default function CaptainInterestScreen() {
   const [experienced, setExperienced] = useState(false);
   const [experienceDetails, setExperienceDetails] = useState("");
   const [busy, setBusy] = useState(false);
-  const [received, setReceived] = useState(false);
+  const [receipt, setReceipt] = useState<"received" | "unknown" | null>(null);
   const [message, setMessage] = useState("");
   const controller = useRef<AbortController | null>(null);
+  const terminal = useRef(false);
   useEffect(() => () => { controller.current?.abort(); }, []);
 
   const vehicleNeedsPlate = vehicleType === "MOTORCYCLE" || vehicleType === "ELECTRIC";
+  const contactPhone = phone.trim().replace(/[٠-٩۰-۹]/g, digit =>
+    String(digit.charCodeAt(0) - (digit <= "٩" ? 0x660 : 0x6f0)));
   const input: CaptainInterestInput = {
-    name: name.trim(), phone: phone.trim(), city: city.trim(), district: district.trim(),
+    name: name.trim(), phone: contactPhone, city: city.trim(), district: district.trim(),
     vehicleType, ...(vehicleNeedsPlate && plateRegistered !== null ? { plateRegistered } : {}),
     phoneType, experienced,
     ...(experienced && experienceDetails.trim() ? { experienceDetails: experienceDetails.trim() } : {}),
   };
-  const canSubmit = validCaptainInterest(input) && !busy && !received && !!dshOrigin;
+  const canSubmit = validCaptainInterest(input) && !busy && receipt === null && !!dshOrigin;
   const fieldStyle = {
     borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
     color: theme.color, padding: 12, fontSize: 16, minHeight: 48,
@@ -54,8 +57,9 @@ export default function CaptainInterestScreen() {
     <View style={{ gap: 8 }}>
       {values.map(item => (
         <Pressable key={item.value} accessibilityRole="radio"
-          accessibilityState={{ selected: item.value === selected }}
-          onPress={() => choose(item.value)}
+          accessibilityState={{ selected: item.value === selected, disabled: busy }}
+          disabled={busy}
+          onPress={() => { if (!controller.current && item.value !== selected) choose(item.value); }}
           style={{ borderWidth: 1, borderColor: item.value === selected ? theme.actionBackground : theme.borderColor,
             borderRadius: 10, padding: 12, minHeight: 44 }}>
           <Text style={{ color: theme.color }}>{item.value === selected ? "◉  " : "○  "}{item.label}</Text>
@@ -64,18 +68,22 @@ export default function CaptainInterestScreen() {
     </View>
   );
   async function submit() {
-    if (!canSubmit || controller.current) return;
+    if (!canSubmit || controller.current || terminal.current) return;
     const next = new AbortController();
     controller.current = next;
     setBusy(true);
     setMessage("");
     try {
       await submitCaptainInterest(dshOrigin, input, next.signal);
-      if (!next.signal.aborted) setReceived(true);
+      if (!next.signal.aborted) {
+        terminal.current = true;
+        setReceipt("received");
+      }
     } catch (reason) {
       if (next.signal.aborted) return;
       if (reason instanceof DshPublicError && reason.code === "OPERATION_RESULT_UNKNOWN") {
-        setMessage("تعذّر تأكيد استلام البيانات. ربما وصلت بالفعل، لذلك لا حاجة لإعادة إرسالها الآن.");
+        terminal.current = true;
+        setReceipt("unknown");
       } else if (reason instanceof DshPublicError && reason.status === 429) {
         setMessage("تم تجاوز عدد المحاولات المسموح. حاول لاحقًا.");
       } else {
@@ -98,11 +106,14 @@ export default function CaptainInterestScreen() {
         <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 26, fontWeight: "700" }}>
           انضم إلى كباتن بثواني
         </Text>
-        {received ? (
+        {receipt ? (
           <View style={{ backgroundColor: theme.surface, padding: 18, borderRadius: 12 }}>
-            <Text accessibilityRole="alert" testID="captain-interest-received"
-              style={{ color: theme.successText, fontSize: 17 }}>
-              تم استلام بياناتك بنجاح. سيتم التواصل هاتفيًا مع الأشخاص المناسبين عند توفر الفرص.
+            <Text accessibilityRole="alert"
+              testID={receipt === "received" ? "captain-interest-received" : "captain-interest-uncertain"}
+              style={{ color: receipt === "received" ? theme.successText : theme.warningText, fontSize: 17 }}>
+              {receipt === "received"
+                ? "تم استلام بياناتك بنجاح. سيتم التواصل هاتفيًا مع الأشخاص المناسبين عند توفر الفرص."
+                : "تعذّر تأكيد استلام البيانات. ربما وصلت بالفعل، ويمكنك العودة إلى تسجيل الدخول."}
             </Text>
           </View>
         ) : (
@@ -144,8 +155,9 @@ export default function CaptainInterestScreen() {
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   {([{label:"نعم",value:true},{label:"لا",value:false}] as const).map(item =>
                     <Pressable key={item.label} accessibilityRole="radio"
-                      accessibilityState={{ selected: plateRegistered === item.value }}
-                      onPress={() => setPlateRegistered(item.value)}
+                      accessibilityState={{ selected: plateRegistered === item.value, disabled: busy }}
+                      disabled={busy}
+                      onPress={() => { if (!controller.current) setPlateRegistered(item.value); }}
                       style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10,
                         borderColor: plateRegistered === item.value ? theme.actionBackground : theme.borderColor,
                         justifyContent: "center", padding: 8 }}>
@@ -164,8 +176,9 @@ export default function CaptainInterestScreen() {
               <View style={{ flexDirection: "row", gap: 8 }}>
                 {([{label:"نعم",value:true},{label:"لا",value:false}] as const).map(item =>
                   <Pressable key={item.label} accessibilityRole="radio"
-                    accessibilityState={{ selected: experienced === item.value }}
-                    onPress={() => { setExperienced(item.value); setExperienceDetails(""); }}
+                    accessibilityState={{ selected: experienced === item.value, disabled: busy }}
+                    disabled={busy}
+                    onPress={() => { if (!controller.current && item.value !== experienced) { setExperienced(item.value); setExperienceDetails(""); } }}
                     style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10,
                       borderColor: experienced === item.value ? theme.actionBackground : theme.borderColor,
                       justifyContent: "center", padding: 8 }}>

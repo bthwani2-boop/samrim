@@ -5,7 +5,7 @@ import * as React from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ServiceCityScope from "../location/service-city-scope";
-import { normalizeServiceCityId, readStoreBrowseScope, STORE_SEARCH_LIMIT, serviceCityLabel } from "../location/serviceability";
+import { readStoreBrowseScope, STORE_SEARCH_LIMIT, serviceCityLabel } from "../location/serviceability";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
 
@@ -29,16 +29,15 @@ type Props = Readonly<{ variant?: "home" | "directory" }>;
 export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const { theme } = useMobileAppearance();
   const api = resolvePublicStoreOrigin();
-  const params = useLocalSearchParams<{ city?: string | string[]; q?: string | string[]; vertical?: string | string[] }>();
+  const params = useLocalSearchParams<{ city?: string | string[]; q?: string | string[]; vertical?: string | string[]; chooseCity?: string | string[] }>();
   const initial = readStoreBrowseScope(params, INITIAL_CITY);
   const [cityId, setCityId] = React.useState(initial.city);
-  const [showCityPicker, setShowCityPicker] = React.useState(false);
-  const [showSearch, setShowSearch] = React.useState(variant === "directory" || Boolean(initial.q));
+  const chooseCity = params.chooseCity === "1";
+  const [showCityPicker, setShowCityPicker] = React.useState(chooseCity);
+  const [showSearch, setShowSearch] = React.useState(!chooseCity && (variant === "directory" || Boolean(initial.q)));
   const [draftQuery, setDraftQuery] = React.useState(initial.q);
   const [query, setQuery] = React.useState(initial.q);
-  const [draftVertical, setDraftVertical] = React.useState(initial.vertical ?? "");
   const [vertical, setVertical] = React.useState(initial.vertical ?? "");
-  const [invalidVertical, setInvalidVertical] = React.useState(false);
   const routeScope = JSON.stringify([initial.city, initial.q, initial.vertical ?? ""]);
   const [appliedRouteScope, setAppliedRouteScope] = React.useState(routeScope);
   React.useEffect(() => {
@@ -46,11 +45,12 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     setCityId(initial.city);
     setDraftQuery(initial.q);
     setQuery(initial.q);
-    setDraftVertical(initial.vertical ?? "");
     setVertical(initial.vertical ?? "");
-    setInvalidVertical(false);
     setAppliedRouteScope(routeScope);
   }, [appliedRouteScope, routeScope, initial.city, initial.q, initial.vertical]);
+  React.useEffect(() => {
+    if (chooseCity) { setShowCityPicker(true); setShowSearch(false); }
+  }, [chooseCity]);
   const [verticalRetry, setVerticalRetry] = React.useState(0);
   const [verticalState, setVerticalState] = React.useState<VerticalState>({
     city: "", loading: true, loadingMore: false, items: [],
@@ -76,14 +76,17 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
             items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
         }
       });
-    return () => { abort.abort(); verticalGeneration.current++; };
+    return () => { verticalGeneration.current++; verticalAbort.current?.abort(); };
   }, [api, cityId, verticalRetry]);
   const visibleVerticals: VerticalState = verticalState.city === cityId ? verticalState :
     { city: cityId, loading: true, loadingMore: false, items: [] };
+  const renderedVerticalGeneration = verticalGeneration.current;
   const loadMoreVerticals = async () => {
-    if (!visibleVerticals.cursor || visibleVerticals.loading || visibleVerticals.loadingMore) return;
+    if (!visibleVerticals.cursor || visibleVerticals.loading || visibleVerticals.loadingMore ||
+      renderedVerticalGeneration !== verticalGeneration.current) return;
     const cursor = visibleVerticals.cursor;
-    const current = verticalGeneration.current;
+    // Consume this rendered continuation before it can cancel a newer owner read.
+    const current = ++verticalGeneration.current;
     const abort = new AbortController();
     verticalAbort.current?.abort();
     verticalAbort.current = abort;
@@ -133,14 +136,16 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
         if (!abort.signal.aborted && generation.current === current)
           setState({ scope, loading: false, loadingMore: false, items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
-    return () => { abort.abort(); generation.current++; };
+    return () => { generation.current++; pageAbort.current?.abort(); };
   }, [api, cityId, query, vertical, scope, retry]);
   const visible: PageState = appliedRouteScope === routeScope && state.scope === scope
     ? state : { scope, loading: true, loadingMore: false, items: [] };
+  const renderedGeneration = generation.current;
   const loadMore = async () => {
-    if (!visible.cursor || visible.loadingMore || visible.loading) return;
+    if (!visible.cursor || visible.loadingMore || visible.loading ||
+      renderedGeneration !== generation.current) return;
     const scopedCity = cityId;
-    const current = generation.current;
+    const current = ++generation.current;
     const abort = new AbortController();
     pageAbort.current?.abort();
     pageAbort.current = abort;
@@ -179,14 +184,16 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     alignItems: "center", backgroundColor: theme.surface } as const;
   const browseParams = { city: cityId, ...(query ? { q: query } : {}), ...(vertical ? { vertical } : {}) };
   const submitSearch = () => setQuery(draftQuery.trim());
-  const applyVertical = () => {
-    const normalized = normalizeServiceCityId(draftVertical);
-    if (draftVertical.trim() && !normalized) {
-      setInvalidVertical(true);
-      return;
-    }
-    setInvalidVertical(false);
-    setVertical(normalized);
+  const refresh = () => {
+    if (renderedGeneration !== generation.current || renderedVerticalGeneration !== verticalGeneration.current) return;
+    generation.current++;
+    verticalGeneration.current++;
+    pageAbort.current?.abort();
+    verticalAbort.current?.abort();
+    setState({ scope, loading: true, loadingMore: false, items: [] });
+    setVerticalState({ city: cityId, loading: true, loadingMore: false, items: [] });
+    setRetry(value => value + 1);
+    setVerticalRetry(value => value + 1);
   };
   return (
     <SafeAreaView
@@ -204,6 +211,10 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
                 accessibilityState={{ expanded: showSearch }} style={headerAction}
                 onPress={() => { setShowSearch(value => !value); setShowCityPicker(false); }}>
                 <Text style={{ color: theme.interactiveText, fontWeight: "700" }}>بحث</Text>
+              </Pressable>
+              <Pressable testID="stores-refresh" accessibilityRole="button"
+                accessibilityLabel="تحديث المتاجر والتصنيفات" style={headerAction} onPress={refresh}>
+                <Text style={{ color: theme.interactiveText, fontWeight: "700" }}>تحديث</Text>
               </Pressable>
               <Link href="/notifications" asChild>
                 <Pressable accessibilityRole="link" style={headerAction}>
@@ -230,7 +241,10 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
             </Pressable> : null}
           </View>
           {showCityPicker ? <ServiceCityScope key={api} origin={api} currentCity={cityId}
-            onApply={nextCity => { setCityId(nextCity); setShowCityPicker(false); }} /> : null}
+            onApply={nextCity => {
+              if (nextCity !== cityId) { setCityId(nextCity); setVertical(""); }
+              setShowCityPicker(false);
+            }} /> : null}
           {showSearch ? (
             <View style={{ flexDirection: "row", gap: 8 }}>
               <TextInput testID="stores-search" accessibilityLabel="البحث باسم المتجر" placeholder="ابحث باسم المتجر"
@@ -246,14 +260,20 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
             </View>
           ) : null}
           <View style={{ gap: 6 }}>
-            <Text style={{ color: theme.colorSecondary }}>تصفية المتاجر حسب نوع النشاط</Text>
+            <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 16, fontWeight: "700" }}>ماذا تريد أن تطلب؟</Text>
             {visibleVerticals.loading ? <ActivityIndicator accessibilityLabel="جاري تحميل أنواع المتاجر" color={theme.actionBackground} /> : null}
             <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              <Pressable testID="vertical-filter-clear" accessibilityRole="button"
+                accessibilityState={{ selected: !vertical }} accessibilityLabel="كل أنواع المتاجر"
+                onPress={() => setVertical("")}
+                style={{ ...buttonStyle, backgroundColor: !vertical ? theme.actionSoft : theme.surface }}>
+                <Text style={{ color: !vertical ? theme.interactiveText : theme.color }}>الكل</Text>
+              </Pressable>
               {visibleVerticals.items.map(item => (
                 <Pressable key={item.id} testID={`vertical-option-${item.id}`}
                   accessibilityRole="button" accessibilityState={{ selected: vertical === item.id }}
                   accessibilityLabel={`عرض متاجر ${verticalLabel(item.id)}`}
-                  onPress={() => { setDraftVertical(item.id); setVertical(item.id); setInvalidVertical(false); }}
+                  onPress={() => setVertical(item.id)}
                   style={{ ...buttonStyle, backgroundColor: vertical === item.id ? theme.actionSoft : theme.surface }}>
                   <Text style={{ color: vertical === item.id ? theme.interactiveText : theme.color }}>
                     {verticalLabel(item.id)} ({item.storeCount})
@@ -275,26 +295,8 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
                 </Pressable>
               ) : null}
             </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <TextInput testID="vertical-filter-input" accessibilityLabel="رمز تصنيف المتجر"
-                placeholder="مثل grocery" placeholderTextColor={theme.colorSecondary}
-                value={draftVertical} autoCapitalize="none" autoCorrect={false}
-                onChangeText={value => { setDraftVertical(value); setInvalidVertical(false); }}
-                returnKeyType="search" onSubmitEditing={applyVertical} maxLength={64}
-                style={{ ...buttonStyle, ...textStyle, flexGrow: 1, minWidth: 140, backgroundColor: theme.surface }} />
-              <Pressable testID="vertical-filter-apply" accessibilityRole="button"
-                onPress={applyVertical} style={{ ...headerAction, backgroundColor: theme.actionBackground }}>
-                <Text style={{ color: theme.onAction }}>تطبيق التصنيف</Text>
-              </Pressable>
-              {vertical ? <Pressable testID="vertical-filter-clear" accessibilityRole="button"
-                onPress={() => { setDraftVertical(""); setVertical(""); setInvalidVertical(false); }}
-                style={headerAction}>
-                <Text style={{ color: theme.interactiveText }}>كل الأنواع</Text>
-              </Pressable> : null}
-            </View>
-            {invalidVertical ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>
-              رمز التصنيف غير صالح. استخدم حروفًا لاتينية صغيرة وأرقامًا وشرطة فقط.
-            </Text> : null}
+            {!visibleVerticals.loading && !visibleVerticals.error && visibleVerticals.items.length === 0
+              ? <Text style={{ color: theme.colorSecondary }}>لا توجد أنواع متاجر متاحة لهذه المدينة حاليًا.</Text> : null}
           </View>
         </View>
       </View>
@@ -310,7 +312,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
         ) : null}
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتاجر" color={theme.actionBackground} /> : null}
         {!visible.loading && visible.items.length === 0 && !visible.error
-          ? <Text testID="stores-empty" style={textStyle}>{query ? "لا توجد متاجر مطابقة للبحث في هذه المدينة." : "لا توجد متاجر منشورة لهذه المدينة حاليًا."}</Text> : null}
+          ? <Text testID="stores-empty" style={textStyle}>{query || vertical ? "لا توجد متاجر مطابقة لاختيارك. جرّب تغيير البحث أو اختيار الكل." : "لا توجد متاجر منشورة لهذه المدينة حاليًا."}</Text> : null}
         {visible.items.map((store) => {
           const availability = describeStoreOrderability(store);
           return (

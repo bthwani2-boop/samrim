@@ -47,6 +47,11 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 		return nil, err
 	}
 	routes.Handle("GET /v1/stores/{storeID}/catalog", catalog)
+	inventory, err := storeavailability.NewMerchantInventorySummaryHandler(identity, db, schema)
+	if err != nil {
+		return nil, err
+	}
+	routes.Handle("GET /v1/stores/{storeID}/inventory-summary", inventory)
 	draft, err := storeavailability.NewMerchantCatalogDraftHandler(registrar)
 	if err != nil {
 		return nil, err
@@ -57,6 +62,11 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 		return nil, err
 	}
 	routes.Handle("PATCH /v1/stores/{storeID}/catalog/{offerID}", edit)
+	importer, err := storeavailability.NewMerchantCatalogImportHandler(registrar)
+	if err != nil {
+		return nil, err
+	}
+	routes.Handle("/v1/stores/{storeID}/catalog-imports/{runID}", importer)
 	registration := storeavailability.NewMerchantRegistrationHandler(registrar)
 	routes.Handle("GET /v1/stores/registration-options", registration)
 	routes.Handle("POST /v1/stores", registration)

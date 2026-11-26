@@ -3,11 +3,16 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
-const source = readFileSync(resolve(import.meta.dirname, "../app/providers.tsx"), "utf8");
-const compiled = transformSync(source, {
+// Retain uncached fixture modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+const source = resolve(import.meta.dirname, "../app/providers.tsx");
+const compiled = transformSync(readFileSync(source, "utf8"), {
+  filename: source, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
@@ -36,11 +41,8 @@ function harness() {
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(modules, name), `Unexpected dependency ${name}`);
-    return modules[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(compiled, source, modules);
+  loadedModules.push(mod);
   const previousWindow = globalThis.window;
   const previousDocument = globalThis.document;
   globalThis.window = {

@@ -1,21 +1,27 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
+import { createRequire } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { isCityDeliveryPolicyChange, isCityDeliveryPolicyPreviewInput } from "../../../services/dsh/clients/city-policies.ts";
 import { validOperatorStoreRegistrationChange as validateDSHPolicyChange } from "../../../services/dsh/clients/operator-store-registration-policy.ts";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { isTrustedOperatorLoopbackTarget } from "../src/server/operator-passkey-config.ts";
 
 const file = fileURLToPath(new URL("../app/api/policies/cities/[cityid]/store-registration/[relation]/route.ts", import.meta.url));
-const source = readFileSync(file, "utf8");
-function compileRoute(source) { return stripTypeScriptTypes(source, { mode: "transform" })
-  .replace(/import\s+\{([^}]*)\}\s+from\s+["\x27]([^"\x27]+)["\x27];/gs,
-    (_match, names, moduleName) => `const {${names}} = require("${moduleName}");`)
-  .replace(/export const (runtime|dynamic) =/g, "const $1 =")
-  .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = { GET, PATCH };"; }
-const compiled = compileRoute(source);
-const cityCompiled = compileRoute(readFileSync(new URL("../app/api/policies/cities/[cityid]/route.ts", import.meta.url), "utf8"));
+const cityFile = fileURLToPath(new URL("../app/api/policies/cities/[cityid]/route.ts", import.meta.url));
+const { transformSync } = createRequire(import.meta.url)("next/dist/build/swc/index.js");
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+function compileRoute(source) {
+  return transformSync(readFileSync(source, "utf8"), {
+    filename: source, sourceMaps: "inline", inlineSourcesContent: true,
+    jsc: { parser: { syntax: "typescript" }, target: "es2022" },
+    module: { type: "commonjs" },
+  }).code;
+}
+const compiled = compileRoute(file);
+const cityCompiled = compileRoute(cityFile);
 const browser = "http://localhost:13000";
 const bearer = Buffer.alloc(32, 8).toString("base64url");
 const url = `${browser}/api/policies/cities/sanaa/store-registration/MARKETPLACE`;
@@ -91,6 +97,8 @@ function harness(t, cityRoute = false) {
     },
   };
   if (cityRoute) {
+    owner.isCityDeliveryPolicyChange = isCityDeliveryPolicyChange;
+    owner.isCityDeliveryPolicyPreviewInput = isCityDeliveryPolicyPreviewInput;
     owner.getCityStoreOperationalPolicy = owner.getOperatorStoreRegistrationPolicy;
     owner.listCityStoreOperationalPolicyHistory = owner.listOperatorStoreRegistrationPolicyHistory;
     owner.replaceCityStoreOperationalPolicy = async (...args) => {
@@ -103,14 +111,9 @@ function harness(t, cityRoute = false) {
       }
     }
   }
-  const module = { exports: {} };
-  new Function("require", "module", "exports", "process", cityRoute ? cityCompiled : compiled)(
-    key => {
-      assert.ok(Object.hasOwn(mocks, key), `unexpected BFF import ${key}`);
-      return mocks[key];
-    },
-    module, module.exports, process,
-  );
+  const module = loadMappedRenderFixture(cityRoute ? cityCompiled : compiled, cityRoute ? cityFile : file, mocks);
+  assert.ok(!module.filename.includes("[") && !module.filename.includes("]"), "V8 virtual path must not contain dynamic route brackets");
+  loadedModules.push(module);
   function request(method = "GET", headers = {}, body, target = url) {
     return new Request(target, {
       method,

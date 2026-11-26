@@ -1,7 +1,8 @@
 import {
   type CustomerFundingHistory, type CustomerWalletBalance,
-  readCurrentCustomerWallet, readCurrentCustomerWalletTransactions, WltReadError,
+  isolatedNativeWltOrigin, readCurrentCustomerWallet, readCurrentCustomerWalletTransactions, WltReadError,
 } from "@bthwani/wlt";
+import { isDevice } from "expo-device";
 import { Platform } from "react-native";
 import { withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
@@ -13,21 +14,13 @@ export type NativeWalletHistoryRead =
   | { kind: "ready"; history: CustomerFundingHistory; expiresAt: number }
   | { kind: "signed-out" | "unavailable" };
 
-// Only the opt-in isolated Android emulator may contact the WLT loopback owner.
-// No production URL, physical device LAN address, or automatic host fallback.
-function nativeWalletOrigin(): string | null {
-  if (Platform.OS !== "android" ||
-    process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW !== "1") return null;
-  const origin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN ?? "";
-  const match = /^http:\/\/10\.0\.2\.2:([1-9][0-9]{0,4})$/.exec(origin);
-  return match && Number(match[1]) <= 65535 ? origin : null;
-}
-
 async function readNativeFinance<T extends { actorId: string }>(
   signal: AbortSignal, readOwner: (origin: string, bearer: string) => Promise<T>,
   expectedActorId?: string,
 ): Promise<{ kind: "ready"; value: T; expiresAt: number } | { kind: "signed-out" | "unavailable" }> {
-  const origin = nativeWalletOrigin();
+  const origin = isolatedNativeWltOrigin(Platform.OS, isDevice,
+    process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN,
+    process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN);
   if (!origin) return { kind: "unavailable" };
   try {
     return await withVerifiedNativeCustomerRead(signal, bearer => readOwner(origin, bearer), expectedActorId);
@@ -40,9 +33,9 @@ async function readNativeFinance<T extends { actorId: string }>(
   }
 }
 
-export async function readNativeWallet(signal: AbortSignal): Promise<NativeWalletRead> {
+export async function readNativeWallet(signal: AbortSignal, expectedActorId?: string): Promise<NativeWalletRead> {
   const result = await readNativeFinance(signal, (origin, bearer) =>
-    readCurrentCustomerWallet(origin, bearer, signal));
+    readCurrentCustomerWallet(origin, bearer, signal), expectedActorId);
   return result.kind === "ready"
     ? { kind: "ready", balance: result.value, expiresAt: result.expiresAt } : result;
 }

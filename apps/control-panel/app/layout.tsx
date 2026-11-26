@@ -21,6 +21,7 @@ export default async function RootLayout({ children }: Readonly<{ children: Reac
         <AntdRegistry>
           <Providers cspNonce={nonce} operatorActorId={verifiedOperator?.actorId ?? null}>
             <OperatorShell verifiedGrants={verifiedOperator?.grants ?? null} originalOperator={originalOperator !== null}
+              verifiedActorId={verifiedOperator?.actorId ?? null} verifiedExpiresAt={verifiedOperator?.sessionExpiresAt ?? null}
               appearanceControl={<OperatorAppearanceControl />}>
               {children}
             </OperatorShell>

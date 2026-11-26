@@ -28,7 +28,8 @@ export default function CaptainInterestWorkspace() {
   const [chosenCity, setChosenCity] = useState("");
   const [vehicle, setVehicle] = useState("");
   const [contacted, setContacted] = useState("");
-  const [cursor, setCursor] = useState("");
+  const [cursors, setCursors] = useState<string[]>([]);
+  const cursor = cursors.at(-1) ?? "";
   const [page, setPage] = useState<CandidatePage | null>(null);
   const [binding, setBinding] = useState("");
   const [revision, setRevision] = useState(0);
@@ -37,7 +38,7 @@ export default function CaptainInterestWorkspace() {
   const [error, setError] = useState("");
   const mutationController = useRef<AbortController | null>(null);
   const refresh = useCallback(() => {
-    setCursor("");
+    setCursors([]);
     setPage(null);
     setBinding("");
     setRevision(value => value + 1);
@@ -131,16 +132,16 @@ export default function CaptainInterestWorkspace() {
       <Space wrap style={{ marginBottom: 16 }}>
         <Input aria-label="المدينة" placeholder="ابحث بالمدينة" value={city}
           onChange={event => setCity(event.target.value)} maxLength={80} style={{ width: 175 }}
-          onPressEnter={() => { setChosenCity(city.trim()); setCursor(""); }} />
+          onPressEnter={() => { setChosenCity(city.trim()); setCursors([]); }} />
         <Select aria-label="نوع الدراجة" style={{ minWidth: 170 }} value={vehicle}
           options={[{ value: "", label: "كل الدراجات" }, ...vehicleOptions]}
-          onChange={value => { setVehicle(value); setCursor(""); }} />
+          onChange={value => { setVehicle(value); setCursors([]); }} />
         <Select aria-label="حالة الاتصال" style={{ minWidth: 160 }} value={contacted}
           options={[{ value: "", label: "كل التسجيلات" },
             { value: "false", label: "لم يتم الاتصال" },
             { value: "true", label: "تم الاتصال" }]}
-          onChange={value => { setContacted(value); setCursor(""); }} />
-        <Button onClick={() => { setChosenCity(city.trim()); setCursor(""); }}>بحث</Button>
+          onChange={value => { setContacted(value); setCursors([]); }} />
+        <Button onClick={() => { setChosenCity(city.trim()); setCursors([]); }}>بحث</Button>
         <a href="/captains">الكباتن المعتمدون</a>
       </Space>
       {error && <Alert type="error" showIcon message={error} style={{ marginBottom: 16 }}
@@ -172,8 +173,14 @@ export default function CaptainInterestWorkspace() {
                   loading={updating === row.id}
                   onClick={() => { void contactCandidate(row.id); }}>تم الاتصال</Button> },
           ]} />
-        {page?.nextCursor && <Button style={{ marginTop: 16 }} disabled={loading}
-          onClick={() => setCursor(page.nextCursor ?? "")}>الصفحة التالية</Button>}
+        {(cursor || page?.nextCursor) && <Space wrap style={{ marginTop: 16 }}>
+          {cursor && <Button disabled={loading || updating !== null}
+            onClick={() => setCursors(previous => previous.slice(0, -1))}>الصفحة السابقة</Button>}
+          {page?.nextCursor && <Button disabled={loading || updating !== null} onClick={() => {
+            const nextCursor = page.nextCursor;
+            if (nextCursor) setCursors(previous => [...previous, nextCursor]);
+          }}>الصفحة التالية</Button>}
+        </Space>}
       </Card>}
     </main>
   );

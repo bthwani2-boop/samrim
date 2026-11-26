@@ -11,8 +11,8 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json",
-    "contract": "node ../../tools/dev/check-openapi.mjs dsh"
+    "test": "node ../../tools/dev/run-coverage.mjs --project",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "typescript": "7.0.2"

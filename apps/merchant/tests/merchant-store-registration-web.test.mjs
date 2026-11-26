@@ -31,7 +31,7 @@ function ownerEnvironment(t, { role = "merchant", dshStatus = 200, replay = fals
     calls.push({ pathname: target.pathname, method: req.method, body: req.body });
     assert.equal(req.redirect, "error");
     assert.equal(req.credentials, "omit");
-    assert.equal(req.headers.Authorization, "Bearer " + bearer);
+    assert.equal(req.headers.Authorization, `Bearer ${bearer}`);
     if (target.origin === identity) {
       assert.equal(target.pathname, "/v1/sessions/current");
       assert.equal(req.method, "GET");
@@ -89,7 +89,7 @@ test("Merchant BFF supports owner-backed idempotency replay, not a second Store"
   assert.deepEqual(await reply.json(), { registration: { store, replay: true } });
 });
 test("Merchant registration requires a live Merchant session before contacting DSH", async t => {
-  let calls = ownerEnvironment(t, { role: "customer" });
+  const calls = ownerEnvironment(t, { role: "customer" });
   assert.equal((await GET(get())).status, 401);
   assert.equal((await POST(post())).status, 403);
   assert.deepEqual(calls.map(x => x.pathname), ["/v1/sessions/current", "/v1/sessions/current"]);
@@ -122,4 +122,11 @@ test("Unknown DSH write outcome requires same operation id retry, not a false su
   assert.equal(reply.status, 503);
   assert.deepEqual(await reply.json(), { code: "OPERATION_RESULT_UNKNOWN" });
   assert.equal(reply.headers.get("Set-Cookie"), null);
+});
+
+test("Merchant BFF accepts a published Store only on confirmed owner replay", async t => {
+  ownerEnvironment(t, { replay: true, invalid: true });
+  const reply = await POST(post());
+  assert.equal(reply.status, 200);
+  assert.deepEqual(await reply.json(), { registration: { store: { ...store, published: true }, replay: true } });
 });

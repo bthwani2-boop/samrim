@@ -42,13 +42,16 @@ test("every picomatch snapshot and dependency reference uses the checked-in patc
 for (const [consumer, version] of consumers) {
   test(`${consumer} resolves hardened picomatch ${version} and retains ordinary glob behavior`, () => {
     const parent = realpathSync(join(consumer === "knip" ? modules : hoisted, consumer));
-    const require = createRequire(join(parent, "package.json"));
-    const picomatch = require("picomatch");
-    const source = readFileSync(require.resolve("picomatch/lib/parse.js"), "utf8");
+    // Resolve from the actual installed consumer, not from the repository's
+    // dependency graph. A direct test dependency would prove the wrong copy.
+    const requireFromConsumer = createRequire(join(parent, "package.json"));
+    const entry = requireFromConsumer.resolve("picomatch");
+    const picomatch = requireFromConsumer(entry);
+    const source = readFileSync(requireFromConsumer.resolve("picomatch/lib/parse.js"), "utf8");
     assert.match(source, /CVE-2026-112366/);
     assert.match(source, /maxExtglobRecursion === undefined/,
       "installed patched parser must preserve an explicit recursion setting");
-    assert.equal(require("picomatch/package.json").version, version);
+    assert.equal(requireFromConsumer(requireFromConsumer.resolve("picomatch/package.json")).version, version);
 
     assert.equal(picomatch("**/*.tsx")("app/routes/index.tsx"), true);
     assert.equal(picomatch("**/*.tsx")("app/routes/index.js"), false);

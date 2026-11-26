@@ -3,14 +3,24 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { parsePublishedOfferQuery, publishedOfferHref } from "../src/features/catalog/published-offer-query.ts";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
-const source = readFileSync(fileURLToPath(
-  new URL("../src/features/catalog/published-offers.tsx", import.meta.url),
-), "utf8");
-const compiled = transformSync(source, {
+// Retain uncached modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+const source = fileURLToPath(new URL("../src/features/catalog/published-offers.tsx", import.meta.url));
+const compiled = transformSync(readFileSync(source, "utf8"), {
+  filename: source, sourceMaps: "inline", inlineSourcesContent: true,
+  jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
+    transform: { react: { runtime: "automatic" } } },
+  module: { type: "commonjs" },
+}).code;
+const productsSource = fileURLToPath(new URL("../app/(workspace)/catalog/products/page.tsx", import.meta.url));
+const productsRoute = transformSync(readFileSync(productsSource, "utf8"), {
+  filename: productsSource, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
@@ -49,23 +59,27 @@ function harness({ permitted = true, origin = "http://127.0.0.1:3202", failStore
     "./published-offers.module.css": { intro: "intro", eyebrow: "eyebrow", filters: "filters", results: "results", table: "table" },
     "../operator-shell/workspace-unavailable": () => null,
     "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
+    "../workspace/public-market-overview": { __esModule: true, default: "MarketOverview" },
     "../../server/current-operator-access": {
       currentOperatorAccess: async () => permitted ? { grants: ["catalog"] } : { grants: ["merchant"] },
     },
     "./published-offer-query": { parsePublishedOfferQuery, publishedOfferHref },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(modules, name), `Unexpected dependency ${name}`);
-      return modules[name];
-    }, mod, mod.exports,
-  );
+  const mod = loadMappedRenderFixture(compiled, source, modules);
+  const products = loadMappedRenderFixture(productsRoute, productsSource, {
+    "react/jsx-runtime": modules["react/jsx-runtime"],
+    "../../../../src/features/catalog/published-offers": { __esModule: true, default: mod.exports.default },
+  });
+  loadedModules.push(mod, products);
   return {
     calls,
     render: (params = { store: "market-sanaa" }) =>
       mod.exports.default({ searchParams: Promise.resolve(params) }),
+    async renderProducts(params) {
+      const route = products.exports.default({ searchParams: Promise.resolve(params) });
+      return route.type(route.props);
+    },
   };
 }
 
@@ -150,4 +164,32 @@ test("catalog offers a permitted Store discovery route when no Store ID is known
   const link = find(tree, node => node.type === "a" && node.props.href === "/workspace");
   assert.ok(link, "catalog should link to the existing Identity-gated DSH market directory");
   assert.match(link.props.children, /المتجر/);
+});
+
+test("the Products tab opens the catalog-authorized Store directory and keeps product searches on its own route", async () => {
+  const view = harness();
+  const initial = await view.renderProducts({ city: "sanaa" });
+  const directory = find(initial, node => node.type === "MarketOverview");
+  assert.equal(directory.props.action, "/catalog/products");
+  assert.equal(directory.props.canVisitCatalog, true);
+  assert.deepEqual(await directory.props.searchParams, { city: "sanaa" });
+  assert.equal(view.calls.length, 0);
+
+  const products = await view.renderProducts({ store: store.id, q: "منتج", cursor: "old" });
+  assert.ok(find(products, node => node.type === "form" && node.props.action === "/catalog/products"));
+  assert.ok(find(products, node => node.type === "strong" && node.props.children === publishedOffer.name));
+  assert.ok(find(products, node => node.props.href === "/catalog/products?store=market-sanaa&q=%D9%85%D9%86%D8%AA%D8%AC&cursor=nextcursor"));
+
+  const denied = harness({ permitted: false });
+  const forbidden = await denied.renderProducts({ city: "sanaa" });
+  assert.equal(find(forbidden, node => node.type === "MarketOverview"), undefined);
+  assert.equal(denied.calls.length, 0);
+});
+
+test("failed Offer continuation exposes a first-page recovery link preserving Store and query", async () => {
+  const view = harness({ failOffers: true });
+  const result = await view.renderProducts({ store: store.id, q: "market", cursor: "stale" });
+  assert.ok(find(result, node => node.props?.role === "alert"));
+  assert.ok(find(result, node => node.type === "a" && node.props.href === "/catalog/products?store=market-sanaa&q=market"));
+  assert.equal(find(result, node => node.type === "strong" && node.props.children === publishedOffer.name), undefined);
 });

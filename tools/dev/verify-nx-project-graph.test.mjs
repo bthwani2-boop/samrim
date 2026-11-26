@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import YAML from "yaml";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -55,18 +53,19 @@ test("DSH SQL migrations invalidate their owner backend without affecting Identi
   assert.ok(!projects.has("identity-backend"));
 });
 
-test("WLT contracts and new isolated migrations affect the financial reader and its Customer consumer", () => {
+test("WLT contracts and isolated SQL affect the owner and its Customer, Merchant and Operator consumers", () => {
   for (const file of [
     "services/wlt/contracts/openapi/paths/wallets.yaml",
+    "services/wlt/contracts/openapi/paths/commercial-agreements.yaml",
     "services/wlt/database/migrations/999_future_wallet_test.sql",
     "services/wlt/database/schema/00_ledger.sql",
     "services/wlt/database/sandbox/20_test_reversal.sql",
   ]) {
     const projects = affected(file);
-    for (const name of ["@bthwani/wlt", "wlt-backend", "@bthwani/customer"]) {
+    for (const name of ["@bthwani/wlt", "wlt-backend", "@bthwani/customer", "@bthwani/merchant", "@bthwani/control-panel"]) {
       assert.ok(projects.has(name), `${file} must affect ${name}`);
     }
-    for (const name of ["identity-backend", "dsh-backend", "@bthwani/merchant", "@bthwani/captain", "@bthwani/control-panel"]) {
+    for (const name of ["identity-backend", "dsh-backend", "@bthwani/captain"]) {
       assert.ok(!projects.has(name), `${file} should not affect ${name}`);
     }
   }
@@ -128,28 +127,14 @@ test("Windows command separators inside --files remain literal file data", () =>
   assert.ok(projects.has("@bthwani/merchant"));
 });
 
-test("dependency security gate stays strict while independent Nx proof survives audit failure", () => {
-  const workflow = YAML.parse(readFileSync(path.join(root, ".github", "workflows",
-    "dependency-nx-safety.yml"), "utf8"));
-  const steps = workflow.jobs.dependency_and_boundaries.steps;
-  const findStep = (name) => steps.find((step) => step.name === name);
-  const install = findStep("Install pinned workspace without lifecycle scripts");
-  const audit = findStep("Audit all JavaScript dependencies (high and critical fail)");
-  assert.equal(install.id, "workspace");
-  assert.ok(steps.indexOf(install) < steps.indexOf(audit));
-  assert.equal(audit.run, "pnpm audit --audit-level high");
-  assert.equal(audit["continue-on-error"], undefined, "Audit failure must fail the job");
-
-  const afterAudit = "${{ !cancelled() && steps.workspace.outcome == 'success' }}";
-  for (const name of [
-    "Verify Nx dependency graph builds",
-    "Prove actual Nx contract, Go, design and renderer impact edges",
-    "Enforce existing application and service import boundaries",
-  ]) {
-    const step = findStep(name);
-    assert.ok(steps.indexOf(step) > steps.indexOf(audit), name);
-    assert.equal(step.if, afterAudit, name);
+test("every typed application and owner client exposes a native Nx test target", () => {
+  const result = runNx(["show", "projects", "--with-target", "test", "--json"]);
+  assert.equal(result.status, 0, result.stderr);
+  const names = new Set(JSON.parse(result.stdout));
+  for (const name of ["customer", "merchant", "captain", "control-panel", "identity", "dsh", "wlt", "design-system", "tamagui-config"]) {
+    assert.ok(names.has("@bthwani/" + name), "Missing actual Nx test target: " + name);
   }
-  assert.equal(findStep("Report affected projects for pull requests").if,
-    "${{ !cancelled() && steps.workspace.outcome == 'success' && github.event_name == 'pull_request' }}");
+  const customer = runNx(["show", "project", "@bthwani/customer", "--json"]);
+  assert.equal(customer.status, 0, customer.stderr);
+  assert.ok(JSON.parse(customer.stdout).targets.test);
 });

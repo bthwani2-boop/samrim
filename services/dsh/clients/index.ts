@@ -9,17 +9,29 @@ export {
   CaptainStandingError, captainStandingFrom, readApprovedCaptainStanding,
   readCaptainApplication, requestCaptainApplication,
 } from "./captain-standing.ts";
+export type { MerchantCatalogImportChange, MerchantCatalogImportOutcome, MerchantCatalogImportResult, MerchantCatalogImportRow } from "./catalog-import.ts";
+export { merchantCatalogImport, parseMerchantCatalogImportResult, validMerchantCatalogImportChange } from "./catalog-import.ts";
 export type {
-  CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult,
+  CityDeliveryDistanceBand, CityDeliveryPolicy, CityDeliveryPolicyChange, CityDeliveryPolicyPreview, CityDeliveryPolicyPreviewInput, CityDeliveryPolicyResult, CityDeliveryPolicyState, CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult,
 } from "./city-policies.ts";
-export { getCityStoreOperationalPolicy, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
+export { getCityDeliveryPolicy, getCityStoreOperationalPolicy, isCityDeliveryDistanceBands, isCityDeliveryPolicy, isCityDeliveryPolicyChange, isCityDeliveryPolicyPreview, isCityDeliveryPolicyPreviewInput, isCityDeliveryPolicyResult, isCityDeliveryPolicyState, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, matchesCityDeliveryPolicy, previewCityDeliveryPolicy, replaceCityDeliveryPolicy, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
+export type { CustomerAddress, CustomerAddressChange, CustomerAddressPage, CustomerAddressRead, CustomerAddressResult, DeliveryServiceability } from "./customer-addresses.ts";
+export { evaluateDeliveryServiceability, getCustomerAddress, isCustomerAddressId, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress, validCustomerAddressChange } from "./customer-addresses.ts";
 export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";
 export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
-export type { CompanyEmployee, CompanyEmployeeRegistration } from "./employees.ts";
-export { getCompanyEmployee, isCompanyEmployeeId, listCompanyEmployees, registerCompanyEmployee } from "./employees.ts";
+export type { CustomerCartDirectory, CustomerCartDirectoryEntry } from "./customer-cart-directory.ts";
+export { listCurrentCustomerCarts, parseCustomerCartDirectory } from "./customer-cart-directory.ts";
+export type { CheckoutFulfillmentMode, CheckoutRecipientPurpose, CustomerCheckoutBlocker, CustomerCheckoutReview, CustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
+export { parseCustomerCheckoutReview, reviewCurrentCustomerCheckout, validCustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
+export type { EmployeeRegistrationAttempt, EmployeeRegistrationDraft, EmployeeRegistrationOutcome, EmployeeRegistrationRecovery, EmployeeRegistrationRecoveryPort } from "./employee-registration-recovery.ts";
+export { claimEmployeeRegistration, employeeRegistrationErrorOutcome, normalizeEmployeeRegistrationDraft, openEmployeeRegistrationRecovery, settleEmployeeRegistration } from "./employee-registration-recovery.ts";
+export type { CompanyEmployee, CompanyEmployeeRegistration, CompanyEmployeeRegistrationAudit, EmployeeEndState, EmployeeRecord, EmployeeRegistration } from "./employees.ts";
+export { getCompanyEmployee, getCompanyEmployeeRegistrationAudit, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, isCompanyEmployeeId, listCompanyEmployees, listMerchantEmployees, parseEmployeeDetail, parseEmployeePage, parseEmployeeRegistrationAudit, registerCompanyEmployee, registerMerchantEmployee, validEmployeeEndState, validEmployeeRegistration } from "./employees.ts";
+export type { FavoriteStorePage, FavoriteStoreState } from "./favorite-stores.ts";
+export { getCustomerFavoriteStore, isFavoriteStoreId, listCustomerFavoriteStores, parseFavoriteStorePage, parseFavoriteStoreState, setCustomerFavoriteStore } from "./favorite-stores.ts";
 export { dshOperations } from "./generated/dsh-operations.ts";
-export type { MerchantCatalogDraftChange, MerchantCatalogDraftEditChange, MerchantCatalogDraftEditResult, MerchantCatalogDraftResult, MerchantCatalogOffer, MerchantCatalogPage } from "./merchant-catalog.ts";
-export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "./merchant-catalog.ts";
+export type { MerchantCatalogDraftChange, MerchantCatalogDraftEditChange, MerchantCatalogDraftEditResult, MerchantCatalogDraftResult, MerchantCatalogOffer, MerchantCatalogPage, MerchantCatalogStatus, MerchantInventorySummary } from "./merchant-catalog.ts";
+export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, parseMerchantInventorySummary, readMerchantInventorySummary, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit, validMerchantCatalogSearch, validMerchantCatalogStatus } from "./merchant-catalog.ts";
 export type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantRegistrationResult, MerchantStoreRegistration } from "./merchant-registration.ts";
 export { parseMerchantRegistrationOptions, parseMerchantRegistrationResult, readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration } from "./merchant-registration.ts";
 // DSH-owned Merchant standing contract and transport.
@@ -44,6 +56,8 @@ export {
   DshPublicError, estimatePublicOffer, getPublicStore, isPublicOfferPriceYer, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
   parseOfferEstimateQuantity,
 } from "./public-discovery.ts";
+export type { PendingRegistration } from "./registration-attempt.ts";
+export { matchingPendingRegistration, parsePendingRegistration } from "./registration-attempt.ts";
 export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,
 } from "./store-availability.ts";

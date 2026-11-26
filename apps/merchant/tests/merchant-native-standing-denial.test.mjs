@@ -1,18 +1,47 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
-const source = readFileSync(new URL("../src/features/access/admission-transport.ts", import.meta.url), "utf8");
-const compiled = stripTypeScriptTypes(source, { mode: "transform" })
-  .replace(/import\s+\{([^}]*)\}\s+from\s+["']([^"']+)["'];/gs,
-    (_match, names, moduleName) => `const {${names}} = require("${moduleName}");`)
-  .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
-    (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
-  .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = {readAdmission, readMerchantStanding, submitAdmissionCode, signOutOfAdmission};";
+const source = fileURLToPath(new URL("../src/features/access/admission-transport.ts", import.meta.url));
+const root = path.resolve(import.meta.dirname, "../../..");
+const temporary = mkdtempSync(path.join(tmpdir(), "merchant-native-coverage-"));
+let compiled;
+try {
+  const result = spawnSync(process.execPath, [
+    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
+    "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,
+  ], { cwd: root, timeout: 20_000, encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  compiled = readFileSync(path.join(temporary, "admission-transport.js"), "utf8");
+} finally {
+  rmSync(temporary, { recursive: true, force: true });
+}
+
+const fixtureEnv = {
+  EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:33221",
+  EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:33222",
+};
+function loadNativeFixture(dependencies) {
+  const previous = new Map(Object.keys(fixtureEnv).map(key => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, fixtureEnv);
+    return loadMappedRenderFixture(compiled, source, dependencies).exports;
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
 const oldBearer = Buffer.alloc(32, 7).toString("base64url");
 const newBearer = Buffer.alloc(32, 8).toString("base64url");
+const refreshGrant = Buffer.alloc(32, 9).toString("base64url");
 
 class OwnerError extends Error {
   constructor(status, code = "STORE_ACCESS_DENIED") {
@@ -29,6 +58,7 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
   let onStorageWrite = null;
   let ownerRead = async () => { throw new OwnerError(401); };
   let ownerRevoke = async () => {};
+  let enroll = async () => ({ refreshToken: refreshGrant, refreshExpiresAt: new Date(Date.now() + 60000).toISOString() });
   let admissionCalls = 0;
   const cleanupRevocations = [];
   let merchantAdmission = async () => ({ bearer: newBearer, session: { actorId: "new-actor", role: "merchant" } });
@@ -63,15 +93,18 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
     "@bthwani/identity": {
       IdentityClientError: OwnerError,
       async readVerifiedIdentitySession(_origin, bearer) { return identityRead(bearer); },
+      establishPersistentIdentitySession: (_origin, bearer, signal) => {
+        assert.equal(bearer, newBearer);
+        return enroll(signal);
+      },
       async readPersistentIdentityRole(_origin, bearer, token, role) {
-        assert.equal(token, null, "fixture must not invent a refresh grant");
+        assert.equal(token, refresh);
+        assert.ok(token === null || token === refreshGrant);
         const session = await identityRead(bearer);
         if (session.role !== role) throw new OwnerError(403, "FORBIDDEN");
         return { session, bearer };
       },
-      async revokePersistentIdentitySession() {
-        throw new Error("no persistent credential issued in this fixture");
-      },
+      async revokePersistentIdentitySession(_origin, token) { assert.equal(token, refreshGrant); },
       async revokeVerifiedIdentitySession(_origin, bearer) { return ownerRevoke(bearer); },
       async issueCustomerPhoneChallenge() { return "ticket"; },
     },
@@ -87,20 +120,7 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
       standingFrom(value) { return value; },
     },
   };
-  const mount = () => {
-    const module = { exports: {} };
-    new Function("require", "module", "exports", "process", compiled)(
-      key => {
-        assert.ok(Object.hasOwn(dependencies, key), `unexpected module ${key}`);
-        return dependencies[key];
-      },
-      module, module.exports, { env: {
-        EXPO_PUBLIC_MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:33221",
-        EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:33222",
-      } },
-    );
-    return module.exports;
-  };
+  const mount = () => loadNativeFixture(dependencies);
   return {
     transport: mount(),
     reload: mount,
@@ -109,6 +129,8 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
     setIdentityRead(fn) { identityRead = fn; },
     setOwnerRevoke(fn) { ownerRevoke = fn; },
     setAdmission(fn) { merchantAdmission = fn; },
+    setEnrollment(fn) { enroll = fn; },
+    currentRefresh() { return refresh; },
     admissionCalls() { return admissionCalls; },
     cleanupRevocations,
     onStorageWrite(fn) { onStorageWrite = fn; },
@@ -116,14 +138,26 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
   };
 }
 
+test("mapped native fixture restores worker environment after success and failure", () => {
+  const snapshot = () => Object.keys(fixtureEnv).map(key => process.env[key]);
+  const before = snapshot();
+  nativeHarness().reload();
+  assert.deepEqual(snapshot(), before);
+  assert.throws(() => loadNativeFixture({}), /unexpected fixture dependency/);
+  assert.deepEqual(snapshot(), before);
+});
+
 for (const status of [401, 403]) {
-  test(`native DSH ${status} denial removes only the denied bearer before re-entry`, async () => {
+  test(`native DSH ${status} denial preserves the Identity credential for recovery`, async () => {
     const h = nativeHarness();
     h.setOwnerRead(async () => { throw new OwnerError(status); });
     const signal = new AbortController().signal;
     await assert.rejects(h.transport.readMerchantStanding(signal), { status });
-    assert.equal(h.current(), null);
-    assert.deepEqual(await h.transport.readAdmission(signal), { enabled: true, session: null });
+    assert.equal(h.current(), oldBearer);
+    assert.equal((await h.transport.readAdmission(signal)).session?.actorId, "old-actor");
+    h.setOwnerRead(async () => ({ actorId: "old-actor", stores: [] }));
+    assert.deepEqual(await h.reload().readMerchantStanding(signal), { actorId: "old-actor", stores: [] });
+    assert.equal(h.admissionCalls(), 0);
   });
 }
 
@@ -270,13 +304,15 @@ test("late denial from old actor preserves a new concurrent native admission", a
   assert.equal(next.session.actorId, "new-actor");
 });
 
-test("native owner denial stays fail-closed when SecureStore deletion fails", async () => {
+test("native DSH denial blocks standing without requiring SecureStore deletion", async () => {
   const h = nativeHarness({ storageDeletionFails: true });
   h.setOwnerRead(async () => { throw new OwnerError(403); });
   const signal = new AbortController().signal;
   await assert.rejects(h.transport.readMerchantStanding(signal), { status: 403 });
   const entry = await h.transport.readAdmission(signal);
-  assert.equal(entry.session, null);
+  assert.equal(entry.session?.actorId, "old-actor");
+  assert.equal(h.current(), oldBearer);
+  await assert.rejects(h.reload().readMerchantStanding(signal), { status: 403 });
 });
 
 for (const storageDeletionFails of [false, true]) {
@@ -333,6 +369,7 @@ test("Merchant successful login clears durable pending write marker before retur
   const h = nativeHarness({ initialBearer: null });
   const session = await h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal);
   assert.equal(session.role, "merchant");
+  assert.equal(h.currentRefresh(), refreshGrant);
   assert.equal(h.pending(), null);
   const restarted = h.reload();
   assert.equal((await restarted.readAdmission(new AbortController().signal)).session.role, "merchant");
@@ -366,4 +403,13 @@ test("Merchant marker-delete pre-effect failure keeps bearer quarantined on cold
   assert.ok(h.pending(), "failed marker deletion remains a durable quarantine");
   assert.deepEqual(await h.reload().readAdmission(new AbortController().signal),
     { enabled: true, session: null }, "restarted app cannot promote an uncertain marker");
+});
+
+test("Merchant failed persistent enrollment never accepts an access-only login", async () => {
+  const h = nativeHarness({ initialBearer: null });
+  h.setEnrollment(async () => { throw new OwnerError(503, "OWNER_UNAVAILABLE"); });
+  await assert.rejects(h.transport.submitAdmissionCode("ticket", "123456", new AbortController().signal), { status: 503 });
+  assert.equal(h.current(), null);
+  assert.equal(h.currentRefresh(), null);
+  assert.deepEqual(h.cleanupRevocations, [newBearer]);
 });

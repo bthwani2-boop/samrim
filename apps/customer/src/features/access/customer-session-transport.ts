@@ -1,8 +1,11 @@
 import {
+  establishPersistentIdentitySession,
   IdentityClientError,
   issueCustomerPhoneChallenge,
-  readVerifiedIdentitySession,
+  parseCustomerPhoneChallenge,
+  parseVerifiedIdentitySession,
   readPersistentIdentityRole,
+  readVerifiedIdentitySession,
   revokePersistentIdentitySession,
   revokeVerifiedIdentitySession,
   type VerifiedIdentitySession,
@@ -10,14 +13,14 @@ import {
 } from "@bthwani/identity";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
+import { readBoundedCustomerJSON } from "./bounded-customer-json";
 
 const lenovoAndroidPreview = process.env.EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW === "1";
 const configuredNativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN;
 const nativeOrigin = !lenovoAndroidPreview ||
   (Platform.OS === "android" && configuredNativeOrigin === "http://127.0.0.1:3201")
   ? configuredNativeOrigin : undefined;
-const storageScope = lenovoAndroidPreview ? ".lenovo-android"
-  : process.env.EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW === "1" ? ".surface" : "";
+const storageScope = lenovoAndroidPreview ? ".lenovo-android" : "";
 const storageKey = `bthwani.customer.synthetic-identity${storageScope}.v1`;
 // Survives a process restart when a device write cannot be confirmed or undone.
 const pendingStorageKey = `${storageKey}.pending.v1`;
@@ -86,7 +89,7 @@ async function readDurableCustomer(bearer: string, signal: AbortSignal) {
     }),
     (issued, before, rotated) => mutateNativeStorage(async () => {
       const pending = await SecureStore.getItemAsync(pendingStorageKey, nativeOptions);
-      if (signal.aborted || await SecureStore.getItemAsync(storageKey, nativeOptions) !== before ||
+      if ((!rotated && signal.aborted) || await SecureStore.getItemAsync(storageKey, nativeOptions) !== before ||
           (pending && (!rotated || pending !== "refreshing"))) return false;
       await SecureStore.setItemAsync(refreshStorageKey, issued.refreshToken, nativeOptions);
       if (rotated) {
@@ -101,15 +104,42 @@ async function readDurableCustomer(bearer: string, signal: AbortSignal) {
   finally { if (durableCustomerInFlight === pending) durableCustomerInFlight = null; }
 }
 
-async function webRequest<T>(method: "GET" | "POST" | "DELETE", signal: AbortSignal, data?: object): Promise<T> {
-  const response = await fetch("/api/customer-auth", {
-    method, signal, credentials: "same-origin", cache: "no-store",
-    ...(data === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
-  });
-  if (response.status === 204) return undefined as T;
-  const body = await response.json();
-  if (!response.ok) throw new IdentityClientError(response.status, body.code);
-  return body as T;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+async function webRequest(method: "GET" | "POST" | "DELETE", expectedStatus: number, signal: AbortSignal, data?: object): Promise<unknown> {
+  const mutation = method !== "GET";
+  const invalid = () => new IdentityClientError(502, mutation ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+  const cancelled = () => new IdentityClientError(0, mutation ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+  if (signal.aborted) throw cancelled();
+  let response: Response;
+  try {
+    response = await fetch("/api/customer-auth", {
+      method, signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+      ...(data === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }),
+    });
+  } catch {
+    throw new IdentityClientError(0, mutation ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_NETWORK_UNAVAILABLE");
+  }
+  const discard = () => { void response.body?.cancel().catch(() => {}); };
+  if (signal.aborted) { discard(); throw cancelled(); }
+  if (response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
+      (response.ok && response.status !== expectedStatus)) {
+    discard();
+    throw invalid();
+  }
+  if (response.status === 204) return undefined;
+  if (mutation && response.status >= 500) { discard(); throw invalid(); }
+  const body = await readBoundedCustomerJSON({ headers: response.headers, body: response.body, signal }, 16384);
+  if (signal.aborted) { discard(); throw cancelled(); }
+  if (body === null) { discard(); throw invalid(); }
+  if (!response.ok) {
+    if (!isRecord(body) || Object.keys(body).length !== 1 ||
+        typeof body.code !== "string" || !/^[A-Z0-9_]{1,64}$/.test(body.code)) throw invalid();
+    throw new IdentityClientError(response.status, body.code);
+  }
+  return body;
 }
 
 function requiredNativeOrigin(): string {
@@ -120,7 +150,13 @@ function requiredNativeOrigin(): string {
 export async function readCustomerAdmission(signal: AbortSignal): Promise<State> {
   if (Platform.OS === "web") {
     try {
-      return await webRequest<State>("GET", signal);
+      const value = await webRequest("GET", 200, signal);
+      if (!isRecord(value) || Object.keys(value).length !== 2 ||
+          typeof value.enabled !== "boolean" || !Object.hasOwn(value, "session") ||
+          (!value.enabled && value.session !== null)) throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+      const session = value.session === null ? null : parseVerifiedIdentitySession(value.session);
+      if (session && session.role !== "customer") throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+      return { enabled: value.enabled, session };
     } catch (error) {
       if (error instanceof IdentityClientError && (error.status === 401 || error.status === 403)) {
         return { enabled: true, session: null };
@@ -208,7 +244,7 @@ export async function withVerifiedNativeCustomerRead<T extends { actorId: string
 }
 
 export async function requestCustomerCode(phone: string, signal: AbortSignal) {
-  if (Platform.OS === "web") return (await webRequest<{ticket: string}>("POST", signal, { phone })).ticket;
+  if (Platform.OS === "web") return parseCustomerPhoneChallenge(await webRequest("POST", 201, signal, { phone }));
   return issueCustomerPhoneChallenge(requiredNativeOrigin(), phone, signal);
 }
 
@@ -218,7 +254,16 @@ async function revokeUnusableCustomerBearer(origin: string, bearer: string) {
 
 export async function verifyCustomerCode(ticket: string, code: string, signal: AbortSignal) {
   if (Platform.OS === "web") {
-    return (await webRequest<{session: VerifiedIdentitySession}>("POST", signal, { ticket, code })).session;
+    const value = await webRequest("POST", 200, signal, { ticket, code });
+    try {
+      if (!isRecord(value) || Object.keys(value).length !== 1 || !Object.hasOwn(value, "session")) throw new Error();
+      const session = parseVerifiedIdentitySession(value.session);
+      if (session.role !== "customer") throw new Error();
+      return session;
+    } catch {
+      // A missing or invalid receipt cannot prove the OTP was not consumed.
+      throw new IdentityClientError(502, "OPERATION_RESULT_UNKNOWN");
+    }
   }
   if (nativeVerificationInFlight) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
   nativeVerificationInFlight = true;
@@ -249,6 +294,7 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
     try {
       const session = await readVerifiedIdentitySession(origin, issued.accessToken, signal);
       if (signal.aborted || session.role !== "customer") throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
+      const persistent = await establishPersistentIdentitySession(origin, issued.accessToken, signal);
       await mutateNativeStorage(async () => {
         if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
         const current = await SecureStore.getItemAsync(storageKey, nativeOptions);
@@ -256,8 +302,10 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
         await SecureStore.setItemAsync(pendingStorageKey, "in-flight", nativeOptions);
         await SecureStore.setItemAsync(storageKey, issued.accessToken, nativeOptions);
         if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
-        // Native commit point: the issued credential write was acknowledged.
-        // After an acknowledged bearer write, uncertain marker deletion cannot
+        await SecureStore.setItemAsync(refreshStorageKey, persistent.refreshToken, nativeOptions);
+        if (signal.aborted) throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+        // Native commit point: both issued credential writes were acknowledged.
+        // After acknowledged writes, uncertain marker deletion cannot
         // turn a committed token into an undelivered error. If it remains, the
         // next cold-start read will still reject the bearer until cleanup.
         await SecureStore.deleteItemAsync(pendingStorageKey, nativeOptions).catch(() => {});
@@ -282,7 +330,10 @@ export async function verifyCustomerCode(ticket: string, code: string, signal: A
 }
 
 export async function signOutCustomer(signal: AbortSignal): Promise<void> {
-  if (Platform.OS === "web") return webRequest<void>("DELETE", signal);
+  if (Platform.OS === "web") {
+    await webRequest("DELETE", 204, signal);
+    return;
+  }
   if (lenovoAndroidPreview && !nativeOrigin) return;
   let bearer: string | null = null;
   let previouslyInvalid = false;

@@ -13,6 +13,42 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.service_cities (
         timezone_name IS NULL OR (char_length(timezone_name) BETWEEN 3 AND 64 AND timezone_name ~ '^[A-Za-z0-9_+/-]+$')
     )
 );
+-- A missing effective policy is deliberately unavailable; no implicit radius.
+-- Versioned policy admission is separate from an address or Store registration.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.service_city_delivery_policies (
+    city_id text PRIMARY KEY REFERENCES __SCHEMA__.service_cities(id) ON DELETE RESTRICT,
+    version bigint NOT NULL CHECK (version BETWEEN 1 AND 9007199254740991),
+    radius_metres integer NOT NULL CHECK (radius_metres > 0),
+    -- Nullable until a city tariff is approved. Same version as the geographic policy.
+    distance_bands jsonb CHECK (distance_bands IS NULL OR (jsonb_typeof(distance_bands) = 'array' AND jsonb_array_length(distance_bands) BETWEEN 1 AND 30)),
+    updated_at timestamptz NOT NULL DEFAULT transaction_timestamp()
+);
+
+-- Versioned command snapshots for the existing city delivery policy. No initial
+-- business values are seeded; the command and current row commit together.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.service_city_delivery_policy_commands (
+    city_id text NOT NULL REFERENCES __SCHEMA__.service_cities(id) ON DELETE RESTRICT,
+    operation_id text NOT NULL CHECK (operation_id ~ '^[A-Za-z0-9._-]{8,128}$'),
+    request_hash text NOT NULL CHECK (request_hash ~ '^[0-9a-f]{64}$'),
+    acting_actor_id text NOT NULL CHECK (char_length(acting_actor_id) BETWEEN 1 AND 128 AND acting_actor_id = trim(acting_actor_id)),
+    reason text NOT NULL CHECK (char_length(trim(reason)) BETWEEN 1 AND 300),
+    resulting_version bigint NOT NULL CHECK (resulting_version BETWEEN 1 AND 9007199254740991),
+    radius_metres integer NOT NULL CHECK (radius_metres > 0),
+    distance_bands jsonb NOT NULL CHECK (jsonb_typeof(distance_bands) = 'array' AND jsonb_array_length(distance_bands) BETWEEN 1 AND 30),
+    changed_at timestamptz NOT NULL,
+    PRIMARY KEY(city_id, operation_id),
+    UNIQUE(city_id, resulting_version)
+);
+CREATE OR REPLACE FUNCTION __SCHEMA__.reject_delivery_policy_command_change()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'delivery policy command records are immutable';
+END;
+$$;
+DROP TRIGGER IF EXISTS trg_delivery_policy_commands_immutable ON __SCHEMA__.service_city_delivery_policy_commands;
+CREATE TRIGGER trg_delivery_policy_commands_immutable
+BEFORE UPDATE OR DELETE ON __SCHEMA__.service_city_delivery_policy_commands
+FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.reject_delivery_policy_command_change();
 CREATE TABLE IF NOT EXISTS __SCHEMA__.verticals (
     id text PRIMARY KEY CHECK (id ~ '^[a-z0-9-]{1,64}$'),
     active boolean NOT NULL
@@ -32,3 +68,10 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.stores (
 );
 CREATE INDEX IF NOT EXISTS idx_stores_marketplace ON __SCHEMA__.stores (city_id,lower(name),id)
     WHERE published AND relation='MARKETPLACE';
+
+-- Private Customer preferences, owned by DSH and never a publication grant.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.customer_favorite_stores (
+    actor_id text NOT NULL CHECK (char_length(actor_id) BETWEEN 1 AND 128 AND actor_id = trim(actor_id)),
+    store_id text NOT NULL REFERENCES __SCHEMA__.stores(id) ON DELETE RESTRICT,
+    PRIMARY KEY (actor_id,store_id)
+);

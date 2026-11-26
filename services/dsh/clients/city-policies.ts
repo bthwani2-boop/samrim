@@ -137,3 +137,141 @@ export async function listCityStoreOperationalPolicyHistory(
   }
   return page;
 }
+
+export interface CityDeliveryDistanceBand {
+  upToMeters: number | null;
+  ratePerKmMinor: number;
+}
+export interface CityDeliveryPolicy {
+  cityId: string;
+  version: number;
+  radiusMetres: number;
+  updatedAt: string;
+  distanceBands?: CityDeliveryDistanceBand[];
+}
+export type CityDeliveryPolicyState = CityDeliveryPolicy | { cityId: string; version: 0; radiusMetres?: never; updatedAt?: never; distanceBands?: never };
+export function isCityDeliveryPolicyState(value: unknown,cityId: string): value is CityDeliveryPolicyState {
+  if (isCityDeliveryPolicy(value,cityId)) return true;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v=value as Record<string,unknown>;
+  return Object.keys(v).length===2 && onlyKeys(v,["cityId","version"]) && v.cityId===cityId && v.version===0;
+}
+export interface CityDeliveryPolicyPreviewInput {
+  expectedVersion: number;
+  radiusMetres: number;
+  distanceMetres: number;
+  distanceBands: CityDeliveryDistanceBand[];
+}
+export interface CityDeliveryPolicyPreview {
+  cityId: string;
+  version: number;
+  radiusMetres: number;
+  distanceMetres: number;
+  feeYer: string;
+  payable: false;
+}
+export function isCityDeliveryDistanceBands(value: unknown): value is CityDeliveryDistanceBand[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 30) return false;
+  let previous = 0;
+  return value.every((band, index) => {
+    if (!band || typeof band !== "object" || Array.isArray(band) ||
+        Object.keys(band).length !== 2 || !onlyKeys(band, ["upToMeters", "ratePerKmMinor"]) ||
+        !Number.isSafeInteger(band.ratePerKmMinor) || band.ratePerKmMinor < 1 || band.ratePerKmMinor > 100000000) return false;
+    if (index === value.length - 1) return band.upToMeters === null;
+    if (!Number.isSafeInteger(band.upToMeters) || band.upToMeters <= previous || band.upToMeters > 500000) return false;
+    previous = band.upToMeters;
+    return true;
+  });
+}
+export function isCityDeliveryPolicyPreviewInput(value: unknown): value is CityDeliveryPolicyPreviewInput {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 4 && onlyKeys(v, ["expectedVersion", "radiusMetres", "distanceMetres", "distanceBands"]) &&
+    Number.isSafeInteger(v.expectedVersion) && Number(v.expectedVersion) >= 0 &&
+    Number.isSafeInteger(v.radiusMetres) && Number(v.radiusMetres) >= 1 && Number(v.radiusMetres) <= 2147483647 &&
+    Number.isSafeInteger(v.distanceMetres) && Number(v.distanceMetres) >= 0 && Number(v.distanceMetres) <= Number(v.radiusMetres) &&
+    isCityDeliveryDistanceBands(v.distanceBands);
+}
+export function isCityDeliveryPolicyPreview(value: unknown, cityId: string, input: CityDeliveryPolicyPreviewInput): value is CityDeliveryPolicyPreview {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 6 && onlyKeys(v, ["cityId", "version", "radiusMetres", "distanceMetres", "feeYer", "payable"]) &&
+    v.cityId === cityId && v.version === input.expectedVersion && v.radiusMetres === input.radiusMetres &&
+    v.distanceMetres === input.distanceMetres && v.payable === false &&
+    typeof v.feeYer === "string" && /^(0|[1-9][0-9]{0,18})$/.test(v.feeYer) &&
+    BigInt(v.feeYer) <= BigInt(input.distanceMetres) * 100000n &&
+    (input.distanceMetres === 0 || v.feeYer !== "0");
+}
+export function isCityDeliveryPolicy(value: unknown, cityId: string): value is CityDeliveryPolicy {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === (Object.hasOwn(v, "distanceBands") ? 5 : 4) &&
+    onlyKeys(v, ["cityId", "version", "radiusMetres", "updatedAt", "distanceBands"]) &&
+    (!Object.hasOwn(v, "distanceBands") || isCityDeliveryDistanceBands(v.distanceBands)) &&
+    v.cityId === cityId && Number.isSafeInteger(v.version) && Number(v.version) >= 1 &&
+    Number.isSafeInteger(v.radiusMetres) && Number(v.radiusMetres) >= 1 &&
+    Number(v.radiusMetres) <= 2147483647 && isDateTime(v.updatedAt);
+}
+export async function getCityDeliveryPolicy(
+  baseUrl: string, cityId: string, bearer: string, signal?: AbortSignal,
+): Promise<CityDeliveryPolicyState> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityId)) throw new DshPublicError(400, "CITY_ID_INVALID");
+  const body = await privateOwnerRequest(baseUrl,
+    dshOperations.getCityDeliveryPolicy.path.replace("{cityID}", cityId), bearer, "GET", undefined, signal);
+  if (!isCityDeliveryPolicyState(body, cityId)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  return body;
+}
+
+export async function previewCityDeliveryPolicy(
+  baseUrl: string, cityId: string, bearer: string, input: CityDeliveryPolicyPreviewInput, signal?: AbortSignal,
+): Promise<CityDeliveryPolicyPreview> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityId) || !isCityDeliveryPolicyPreviewInput(input)) throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
+  const path = dshOperations.previewCityDeliveryPolicy.path.replace("{cityID}", cityId);
+  const body = await privateOwnerRequest(baseUrl, path, bearer, "POST", input, signal);
+  if (!isCityDeliveryPolicyPreview(body, cityId, input)) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  return body;
+}
+
+export interface CityDeliveryPolicyChange {
+  operationId: string;
+  expectedVersion: number;
+  radiusMetres: number;
+  distanceBands: CityDeliveryDistanceBand[];
+  reason: string;
+}
+export interface CityDeliveryPolicyResult {
+  policy: CityDeliveryPolicy;
+  replay: boolean;
+}
+export function isCityDeliveryPolicyChange(value: unknown): value is CityDeliveryPolicyChange {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 5 &&
+    onlyKeys(v, ["operationId", "expectedVersion", "radiusMetres", "distanceBands", "reason"]) &&
+    typeof v.operationId === "string" && /^[A-Za-z0-9._-]{8,128}$/.test(v.operationId) &&
+    Number.isSafeInteger(v.expectedVersion) && Number(v.expectedVersion) >= 0 && Number(v.expectedVersion) < Number.MAX_SAFE_INTEGER &&
+    Number.isSafeInteger(v.radiusMetres) && Number(v.radiusMetres) >= 1 && Number(v.radiusMetres) <= 2147483647 &&
+    isCityDeliveryDistanceBands(v.distanceBands) && typeof v.reason === "string" &&
+    v.reason.trim().length > 0 && Array.from(v.reason).length <= 300;
+}
+export function matchesCityDeliveryPolicy(policy: CityDeliveryPolicy, change: CityDeliveryPolicyChange) {
+  return policy.version === change.expectedVersion + 1 && policy.radiusMetres === change.radiusMetres &&
+    !!policy.distanceBands && policy.distanceBands.length === change.distanceBands.length &&
+    policy.distanceBands.every((band, index) => band.upToMeters === change.distanceBands[index]?.upToMeters &&
+      band.ratePerKmMinor === change.distanceBands[index]?.ratePerKmMinor);
+}
+export function isCityDeliveryPolicyResult(value: unknown, cityId: string, change: CityDeliveryPolicyChange): value is CityDeliveryPolicyResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const v = value as Record<string, unknown>;
+  return Object.keys(v).length === 2 && onlyKeys(v, ["policy", "replay"]) &&
+    typeof v.replay === "boolean" && isCityDeliveryPolicy(v.policy, cityId) && matchesCityDeliveryPolicy(v.policy, change);
+}
+export async function replaceCityDeliveryPolicy(
+  baseUrl: string, cityId: string, bearer: string, change: CityDeliveryPolicyChange, signal?: AbortSignal,
+): Promise<CityDeliveryPolicyResult> {
+  if (!/^[a-z0-9-]{1,64}$/.test(cityId) || !isCityDeliveryPolicyChange(change)) throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE");
+  const path = dshOperations.replaceCityDeliveryPolicy.path.replace("{cityID}", cityId);
+  const value = await privateOwnerRequest(baseUrl, path, bearer, "PATCH", change, signal);
+  if (!isCityDeliveryPolicyResult(value, cityId, change) || signal?.aborted) throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  return value;
+}

@@ -32,11 +32,11 @@ Historic `docs/governance/` was removed from this candidate. Read older content 
 | `finance.md` | WLT fees/agreements, collection/custody, balances, ledger, settlements and beneficiary routing |
 | `hr.md` | bounded employee administration for BThwani and Merchant staff inside DSH; no parallel Identity role or fourth HR service |
 | `experience.md` | Tamagui Expo, Ant Design Operator, brand, Arabic RTL, accessibility, recovery |
-| `safety.md` | security, privacy, financial/data integrity, migrations, incident and independent review |
+| `safety.md` | security, privacy, financial/data integrity, migrations, incident and internal technical risk assurance |
 | `engineering.md` | acceptance, staged refoundation, policy admission and measurable engineering proof |
 | `journeys.md` | observable cross-owner handoffs, failure and recovery; not another Product list |
 
-Root `AGENTS.md` governs **execution/authority**, `REPOSITORY-STRUCTURE.md` governs **file placement**, and `docs/journeys/` holds dated end-to-end acceptance evidence when required. Historical material stays in `docs/reference/` and never becomes a current gate. GitHub CI verifies source and tests; it cannot independently certify commercial or legal policy.
+Root `AGENTS.md` governs **execution/authority**, `REPOSITORY-STRUCTURE.md` governs **file placement**, and journey acceptance is established by existing owner tests, contracts, runtime readback and delivery evidence; no separate journey documentation directory. Historical material stays in `docs/reference/` and never becomes a current gate. GitHub CI verifies source and tests; it cannot independently certify commercial or legal policy.
 
 ## Authority and conflict protocol
 1. A **latest explicit human approval** for the same subject supersedes an incompatible earlier decision; retain all compatible requirements. Don't infer values, permissions or legal statuses from a historic archive.

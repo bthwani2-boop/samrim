@@ -5,7 +5,10 @@ export const merchantNavigation = [
   { id: "stores", label: "المتاجر", description: "ابحث عن متجرك وراجع حالة نشره" },
   { id: "orders", label: "الطلبات", description: "إدارة الطلبات غير متاحة حاليًا" },
   { id: "products", label: "المنتجات", description: "الكتالوج الخاص بمتاجرك من DSH؛ الإدارة والتعديل قيد التطوير" },
-  { id: "wallet", label: "المحفظة", description: "الأرصدة والحركات غير متاحة حاليًا" },
+  { id: "inventory", label: "المخزون", description: "ملخص المخزون وأسعار وكميات المسودات لدى DSH" },
+  { id: "staff", label: "الموظفون", description: "إدارة سجل موظفي متجرك وفق صلاحياتك الحالية" },
+  { id: "wallet", label: "المحفظة", description: "مقترحات الاتفاقيات المالية حسب المتجر" },
+  { id: "account", label: "الحساب والإعدادات", description: "إعدادات حساب التاجر ومظهر التطبيق" },
   { id: "more", label: "المزيد", description: "اختصارات مساحة التاجر" },
 ] as const;
 
@@ -21,15 +24,18 @@ export function merchantStoreSummary(stores: readonly MerchantOwnedStore[]) {
 }
 
 export type MerchantPublicationFilter = "all" | "published" | "unpublished";
+export type MerchantRelationFilter = "all" | MerchantOwnedStore["relation"];
 
 export function filterMerchantStores(
   stores: readonly MerchantOwnedStore[],
   query: string,
   publication: MerchantPublicationFilter,
+  relation: MerchantRelationFilter = "all",
 ) {
   const term = query.trim().normalize("NFKC").toLowerCase();
   return stores.filter(store =>
     (publication === "all" || store.published === (publication === "published")) &&
+    (relation === "all" || store.relation === relation) &&
     (store.name.normalize("NFKC").toLowerCase().includes(term) || store.id.includes(term)),
   );
 }

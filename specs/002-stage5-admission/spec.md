@@ -72,3 +72,9 @@ Without waiting for whole-platform governance cutover, a thin real owner-backed 
 ## Current known blockers (evidence, not permanent normative rules)
 
 At initial creation on 2026-11-14, `governance/README.md` still reports `NOT_READY`; the source census identifies 340 donor headings, 113 documentary dispositions and 227 `REVIEW_PENDING` without full semantic parity; service OpenAPI remains reserved empty, with no new owner-backed Go/SQL implementation or current native finance E2E. These facts are rechecked from HEAD before each gate, never used as a stale hard-coded decision.
+
+## Captain public interest receipt recovery (BTH-10)
+
+- CAP-INT-01: Show a receipt only after DSH confirms submission. When the outcome is unknown, retain an explicit uncertain-result notice for the current form visit and remove the submit action. Allow returning to sign-in. A definite validation rejection or rate limit leaves the form available to retry, with the entered facts still present. Do not persist form entries, expose a receipt lookup, or claim Identity admission.
+- CAP-INT-02: Operators can move to a previous page of candidate registrations while retaining their selected filters. Each navigation reads DSH again with current authorization. Changing a filter or rechecking the session resets pagination. Denied reads withdraw the list.
+- CAP-INT-03: The interest form accepts Yemeni numbers typed with Arabic-Indic or Eastern Arabic-Indic digits. Convert digits in the submission to the existing DSH wire form and preserve the typed value during recovery. The existing prefix and length constraints continue to apply.

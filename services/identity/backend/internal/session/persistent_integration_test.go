@@ -136,6 +136,33 @@ func TestPersistentIdentityPostgres(t *testing.T) {
 	if !errors.Is(oldLookupErr(rotatedAccess), ErrUnauthorized) {
 		t.Fatal("old replay failed to revoke new access")
 	}
+	// Near the absolute family deadline a new access credential must not
+	// outlive the family, even when its normal TTL is much longer.
+	_, boundaryDigest := issue("persistent-boundary", "customer")
+	boundaryGrant, e := owner.StartPersistent(ctx, boundaryDigest)
+	if e != nil {
+		t.Fatal(e)
+	}
+	boundaryRefresh, e := bearerDigest("Bearer " + boundaryGrant.RefreshToken)
+	if e != nil {
+		t.Fatal(e)
+	}
+	exec("UPDATE "+schema+".auth_session_families SET absolute_expires_at=clock_timestamp()+interval '2 minutes' WHERE first_access_digest=$1", boundaryDigest[:])
+	boundary, e := owner.RotatePersistent(ctx, boundaryRefresh)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if boundary.SessionExpiresAt.After(boundary.RefreshExpiresAt) {
+		t.Fatal("rotated access outlives its absolute session-family deadline")
+	}
+	boundaryAccess, e := bearerDigest("Bearer " + boundary.AccessToken)
+	if e != nil {
+		t.Fatal(e)
+	}
+	var persistedExpiry, familyExpiry time.Time
+	if e = db.QueryRowContext(ctx, "SELECT s.expires_at,f.absolute_expires_at FROM "+schema+".auth_sessions s JOIN "+schema+".auth_session_families f ON f.current_access_digest=s.token_digest WHERE s.token_digest=$1", boundaryAccess[:]).Scan(&persistedExpiry, &familyExpiry); e != nil || persistedExpiry.After(familyExpiry) || !persistedExpiry.Equal(boundary.SessionExpiresAt) {
+		t.Fatalf("durable access expiry exceeds family boundary or differs from response: %v", e)
+	}
 	// Revoke a family through its refresh secret and independently read back access.
 	_, operatorDigest := issue("persistent-operator", "operator")
 	opGrant, e := owner.StartPersistent(ctx, operatorDigest)

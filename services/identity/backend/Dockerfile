@@ -14,7 +14,6 @@ ARG SAMRIM_SOURCE_REVISION=unverified
 LABEL org.opencontainers.image.revision="${SAMRIM_SOURCE_REVISION}"
 WORKDIR /app
 COPY --from=build /out/identity /usr/local/bin/identity
-COPY database/schema/ /app/database/schema/
 USER 65532:65532
 EXPOSE 3302
 ENTRYPOINT ["/usr/local/bin/identity"]

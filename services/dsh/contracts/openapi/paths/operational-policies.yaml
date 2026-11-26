@@ -85,3 +85,104 @@ paths:
         '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
         '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
         '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+  /v1/operators/cities/{cityID}/delivery-policy:
+    get:
+      operationId: getCityDeliveryPolicy
+      summary: Read the active DSH city delivery radius, optional distance bands and version used by checkout
+      description: Requires current Identity Operator platform_policies permission before and after read. Missing or inactive policy is unavailable. Geographic radius is not a fee or fulfillment admission. Replacements use the separate versioned PATCH command.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cityID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Current owner delivery radius
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryPolicyState' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+    patch:
+      operationId: replaceCityDeliveryPolicy
+      summary: Replace the active city radius and advisory distance tariff atomically
+      description: Requires current Operator platform_policies permission and an expected version (zero explicitly provisions an active city without a policy). Records the actor, reason and immutable command snapshot. Retry the identical operationId and payload on an unknown result. Does not grant fulfillment admission or payable WLT authorization.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cityID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operationId, expectedVersion, radiusMetres, distanceBands, reason]
+              properties:
+                operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+                expectedVersion: { type: integer, minimum: 0, maximum: 9007199254740990 }
+                radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
+                distanceBands: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryDistanceBands' }
+                reason: { type: string, minLength: 1, maxLength: 300 }
+      responses:
+        '200':
+          description: Committed or replayed snapshot of the DSH policy
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [policy, replay]
+                properties:
+                  policy: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryPolicy' }
+                  replay: { type: boolean }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
+        '409': { $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+  /v1/operators/cities/{cityID}/delivery-policy/preview:
+    post:
+      operationId: previewCityDeliveryPolicy
+      summary: Preview proposed delivery radius and tariff for an existing policy version
+      description: Requires current Operator platform_policies permission before and after owner read. The proposed distance must not exceed the proposed radius. Uses the same exact tariff engine as checkout. Does not write or activate a policy, create a payable quote or authorize WLT.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cityID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryPolicyPreviewInput' }
+      responses:
+        '200':
+          description: Non-payable preview, bound to current city policy version
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityDeliveryPolicyPreview' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
+        '409': { $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }

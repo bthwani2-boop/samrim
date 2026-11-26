@@ -1,98 +1,103 @@
-// Enforce the existing service-source placement law, including newly authored files.
-// This is a structural guard; it does not validate runtime API/SQL behavior.
-import { lstatSync, readdirSync } from 'node:fs';
-import { extname, join, relative } from 'node:path';
+// Dependency-free admission of the three authored service trees.
+// Only generated output at a service package root may be omitted.
+import { lstatSync, readdirSync } from "node:fs";
+import { extname, join } from "node:path";
+import { services } from "./check-go.mjs";
 
-const owners = ['identity', 'dsh', 'wlt'];
-const ignored = new Set(['node_modules', 'dist', 'build', 'coverage', '.git']);
-const goPackageName = /^[a-z][a-z0-9]*$/;
-const migrationName = /^\d{3}_[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.sql$/;
-const baselineName = /^\d{2}_[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.sql$/;
+const owners = new Set(services);
+const domain = /^[a-z][a-z0-9]*$/;
+const retiredDomains = new Set(["misc", "legacy", "partners"]);
+const baseline = /^\d{2}_[a-z][a-z0-9]*(?:_[a-z0-9]+)*\.sql$/;
+const fragment = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\.yaml$/;
+const generated = new Set(["node_modules", "dist", "build", "coverage"]);
+const namedDomain = name => domain.test(name) && !retiredDomains.has(name);
+const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 
-function walk(folder, visit, issues, base) {
-  for (const entry of readdirSync(folder, { withFileTypes: true })) {
-    if (ignored.has(entry.name)) continue;
-    const full = join(folder, entry.name);
-    const path = relative(base, full).replaceAll('\\', '/');
-    if (entry.isSymbolicLink()) {
-      issues.push(path + ': service source symlink is not an authorized owner path');
-    } else if (entry.isDirectory()) {
-      visit(path, true);
-      walk(full, visit, issues, base);
-    } else if (entry.isFile()) {
-      visit(path, false);
+function validateDirectory(parts, report) {
+  const [area, section, group] = parts;
+  if (area === "backend" && section === "internal" && parts.length >= 3 && !namedDomain(group)) {
+    report("Go internal package must be a named owner domain");
+  }
+  if (area === "contracts" && section === "openapi" && group === "path") {
+    report("OpenAPI fragments belong in paths/, not path/");
+  }
+}
+
+function validateFile(owner, parts, report) {
+  const [area, section, group, name] = parts;
+  const extension = extname(parts.at(-1)).toLowerCase();
+  if (extension === ".yaml" || extension === ".yml") {
+    const openapi = area === "contracts" && section === "openapi";
+    const valid = openapi && (
+      (parts.length === 3 && group === owner + ".openapi.yaml") ||
+      (parts.length === 4 && group === "paths" && fragment.test(name))
+    );
+    // The retired path/ directory is itself reported by directory admission.
+    if (!valid && !(openapi && group === "path")) {
+      report("owner OpenAPI YAML belongs to its entrypoint or flat paths/ modules");
     }
+  }
+  if (extension === ".go") {
+    const command = area === "backend" && section === "cmd" && group === owner && parts.length === 4;
+    const internal = area === "backend" && section === "internal" && parts.length >= 4 &&
+      parts.slice(2, -1).every(namedDomain);
+    if (!command && !internal) {
+      report("Go source belongs in backend/cmd/" + owner + "/ or backend/internal/<domain>/");
+    }
+  }
+  if (area === "database" && section === "migrations") {
+    report("BASELINE_FIRST: edit owner database/schema/; retained migrations require a separately approved epoch");
+  } else if (extension === ".sql") {
+    const valid = area === "database" && parts.length === 3 &&
+      (section === "schema" || (owner === "wlt" && section === "sandbox")) && baseline.test(group);
+    if (!valid) report("SQL belongs in numbered owner schema/ or WLT sandbox/");
   }
 }
 
 export function serviceSourcePlacementIssues(base) {
+  const root = join(base, "services");
+  const rootStat = lstatSync(root, { throwIfNoEntry: false });
+  if (!rootStat) return [];
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+    return ["services: service source root must be an actual directory"];
+  }
+
   const issues = [];
-  const servicesRoot = join(base, 'services');
-  const rootInfo = lstatSync(servicesRoot, { throwIfNoEntry: false });
-  if (!rootInfo) return issues;
-  if (!rootInfo.isDirectory()) return ['services: service source root must be an actual directory'];
-  const localOwners = [];
-  for (const entry of readdirSync(servicesRoot, { withFileTypes: true })) {
-    if (ignored.has(entry.name)) continue;
-    if (entry.isDirectory() && owners.includes(entry.name)) {
-      localOwners.push(entry.name);
-    } else if (entry.isFile()) {
-      issues.push('services/' + entry.name + ': unowned service root file');
-    } else {
-      issues.push('services/' + entry.name + ': unapproved service owner or source link');
+  // Read the actual entry once; never follow a link or traverse a rejected
+  // repository/dependency root. One walk serves all three owners.
+  function walk(folder, owner = null, parent = []) {
+    for (const entry of readdirSync(folder)) {
+      const absolute = join(folder, entry);
+      const stat = lstatSync(absolute);
+      if (owner === null) {
+        if (owners.has(entry) && stat.isDirectory() && !stat.isSymbolicLink()) {
+          walk(absolute, entry);
+        } else {
+          const reason = stat.isFile() ? "unowned service root file" : "unapproved service owner or source link";
+          issues.push("services/" + entry + ": " + reason);
+        }
+        continue;
+      }
+
+      const parts = [...parent, entry];
+      const rel = ["services", owner, ...parts].join("/");
+      const report = reason => issues.push(rel + ": " + reason);
+      if (parts.length === 1 && generated.has(entry) &&
+          (stat.isDirectory() || (entry === "node_modules" && stat.isSymbolicLink()))) continue;
+      if (stat.isSymbolicLink()) {
+        report("service source symlink is not an authorized owner path");
+      } else if (entry === ".git" || entry === "node_modules") {
+        report("nested repository or dependency root is not an authorized owner path");
+      } else if (stat.isDirectory()) {
+        validateDirectory(parts, report);
+        walk(absolute, owner, parts);
+      } else if (stat.isFile()) {
+        validateFile(owner, parts, report);
+      } else {
+        report("service source entry must be a regular file or directory");
+      }
     }
   }
-  for (const owner of localOwners) {
-    walk(join(servicesRoot, owner), (path, isDirectory) => {
-      const prefix = 'services/' + owner + '/';
-      const relativePath = path.slice(prefix.length);
-      const parts = relativePath.split('/');
-      if (isDirectory) {
-        if (parts[0] === 'backend' && parts[1] === 'internal' && parts.length >= 3 &&
-            (!goPackageName.test(parts[2]) || ['misc', 'legacy', 'partners'].includes(parts[2]))) {
-          issues.push(path + ': Go internal package must be a named owner domain');
-        }
-        if (parts[0] === 'contracts' && parts[1] === 'openapi' && parts[2] === 'path') {
-          issues.push(path + ': OpenAPI fragments belong in paths/, not path/');
-        }
-        return;
-      }
-      if (/\.ya?ml$/.test(path)) {
-        const ownerEntrypoint = parts.length === 3 && parts[0] === 'contracts' &&
-          parts[1] === 'openapi' && parts[2] === owner + '.openapi.yaml';
-        const flatPathModule = parts.length === 4 && parts[0] === 'contracts' &&
-          parts[1] === 'openapi' && parts[2] === 'paths' &&
-          /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*\.yaml$/.test(parts[3]);
-        // The deprecated path/ folder is already rejected at directory level.
-        const bannedLegacyTree = parts[0] === 'contracts' && parts[1] === 'openapi' &&
-          parts[2] === 'path';
-        if (!ownerEntrypoint && !flatPathModule && !bannedLegacyTree) {
-          issues.push(path + ': owner OpenAPI YAML belongs to its entrypoint or flat paths/ modules');
-        }
-      }
-      if (extname(path) === '.go') {
-        const inCommand = parts.length === 4 && parts[0] === 'backend' &&
-          parts[1] === 'cmd' && parts[2] === owner;
-        const inDomain = parts.length >= 4 && parts[0] === 'backend' &&
-          parts[1] === 'internal' &&
-          parts.slice(2, -1).every(name => goPackageName.test(name) &&
-            !['misc', 'legacy', 'partners'].includes(name));
-        if (!inCommand && !inDomain) {
-          issues.push(path + ': Go source belongs in backend/cmd/' + owner +
-            '/ or backend/internal/<domain>/');
-        }
-      }
-      if (extname(path) === '.sql') {
-        const validSqlPath = parts.length === 3 && parts[0] === 'database' && (
-          (parts[1] === 'migrations' && migrationName.test(parts[2])) ||
-          (parts[1] === 'schema' && baselineName.test(parts[2])) ||
-          (owner === 'wlt' && parts[1] === 'sandbox' && baselineName.test(parts[2]))
-        );
-        if (!validSqlPath) {
-          issues.push(path + ': SQL belongs in numbered owner schema/, migrations/, or WLT sandbox/');
-        }
-      }
-    }, issues, base);
-  }
-  return issues;
+  walk(root);
+  return issues.sort(compare);
 }

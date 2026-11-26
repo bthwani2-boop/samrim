@@ -1,6 +1,55 @@
-import MerchantCapabilityScreen from "../../components/merchant-capability-screen";
+import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { useRef, useState } from "react";
+import { Pressable, Text, View } from "react-native";
 
-// Presentation only. Owner contracts are not yet connected; no local business mutation.
+const preferences = [
+  ["system", "حسب النظام"], ["light", "فاتح"], ["dark", "داكن"],
+] as const;
+
 export default function AccountScreen() {
-  return <MerchantCapabilityScreen title="حساب التاجر" message="البيانات الشخصية والجلسة والصلاحيات مصدرها Identity فقط." />;
+  const { preference, setPreference, theme, ready } = useMobileAppearance();
+  const [pending, setPending] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const saving = useRef(false);
+  async function change(next: typeof preference) {
+    if (saving.current || !ready) return;
+    saving.current = true;
+    setPending(true);
+    setFailed(false);
+    try {
+      await setPreference(next);
+    } catch {
+      setFailed(true);
+    } finally {
+      saving.current = false;
+      setPending(false);
+    }
+  }
+  const disabled = pending || !ready;
+  return (
+    <View style={{ backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderColor,
+      borderRadius: 12, padding: 16, gap: 10 }}>
+      <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 18, fontWeight: "700" }}>مظهر التطبيق</Text>
+      <View accessibilityRole="radiogroup" accessibilityLabel="مظهر التطبيق"
+        style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {preferences.map(([value, label]) => {
+          const selected = value === preference;
+          return (
+            <Pressable key={value} accessibilityRole="radio" accessibilityLabel={label}
+              aria-checked={selected} accessibilityState={{ checked: selected, disabled }}
+              disabled={disabled} onPress={() => change(value)} style={{
+                backgroundColor: selected ? theme.actionSoft : theme.surface,
+                borderWidth: 1, borderColor: selected ? theme.interactiveText : theme.borderColor,
+                borderRadius: 10, minHeight: 44, paddingHorizontal: 14, justifyContent: "center",
+                opacity: disabled ? 0.55 : 1,
+              }}>
+              <Text style={{ color: selected ? theme.interactiveText : theme.color, fontWeight: "600" }}>{label}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {pending ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>جارٍ حفظ المظهر…</Text> : null}
+      {failed ? <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>تعذّر حفظ المظهر. حاول مجددًا.</Text> : null}
+    </View>
+  );
 }

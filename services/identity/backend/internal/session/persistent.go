@@ -218,8 +218,8 @@ func (r *PostgresReader) RotatePersistent(ctx context.Context, digest [32]byte) 
 	var accessExpiry, refreshExpiry time.Time
 	err = tx.QueryRowContext(ctx, `INSERT INTO auth_sessions
       (token_digest,actor_id,role,actor_version,role_version,issued_at,expires_at)
-      VALUES($1,$2,$3,$4,$5,clock_timestamp(),clock_timestamp()+CASE WHEN $3='operator' THEN interval '5 minutes' ELSE interval '15 minutes' END)
-      RETURNING expires_at`, accessDigest[:], actor, role, actorVersion, roleVersion).Scan(&accessExpiry)
+      VALUES($1,$2,$3,$4,$5,clock_timestamp(),LEAST($6,clock_timestamp()+CASE WHEN $3='operator' THEN interval '5 minutes' ELSE interval '15 minutes' END))
+      RETURNING expires_at`, accessDigest[:], actor, role, actorVersion, roleVersion, absoluteExpiry).Scan(&accessExpiry)
 	if err != nil {
 		return PersistentRotation{}, err
 	}

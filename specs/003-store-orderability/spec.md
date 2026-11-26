@@ -32,6 +32,16 @@
 - **SC-05** Checkout confirmation uses fresh DSH decision; stale client offer/quote fails and does not create an Order or WLT effect.
 - **SC-06** Merchant, Operator and Customer UI show authoritative data, Arabic RTL with light/dark, accessible inputs, loading/empty/denied/error/retry, and safe account/Store context switching on Web and affected Android.
 - **SC-07** Isolated PostgreSQL fresh baseline, appropriate upgrade/restore proof and owner-scoped permissions, errors and contract/client compatibility pass.
-- **SC-08** Positive, negative, interruption/recovery, security and independent engineering/business reviews plus final Git revision/Push SHA evidence are complete.
+- **SC-08** Positive, negative, interruption/recovery, security and applicable executor engineering/business evidence review under [AGENTS.md](../../AGENTS.md), required human approvals, plus final Git revision/Push SHA evidence are complete.
 
 **No closure claim** until every applicable SC has actual owner-backed proof on the final revision, including Android when claimed. iOS and production are separately not authorized/tested.
+
+
+## Increment: review and reuse historical city operational limits (2026-11-24)
+
+Trace: BTH-11; STORE_OPERATIONAL_AVAILABILITY; SC-04/SC-06; governance/stores.md and governance/engineering.md. On the active development checkout, an authorized operator can compare an immutable DSH historical version against the currently verified city policy and copy its pause/preparation limits into the existing edit form as an unsubmitted draft. No new policy writer, new scope, historical mutation, implicit reason, automatic save or bypass of current version/identity verification. The draft action is unavailable for another city, the current or a newer version, missing current evidence, a pending/uncertain command or a required reread. The operator must enter a new reason and use the existing versioned DSH command for any actual change. Historical data is not an active policy. Acceptance: correct current/history values, scope isolation, no write on draft, reason cleared and existing expected-version/reconciliation semantics retained; owner/API and browser proof remain separate.
+
+## BTH-15 increment — city delivery policy replacement
+An authorized Operator can replace the current DSH city radius and cumulative distance tariff together using the existing policy owner, an expected current version, a stable operation ID and a reason. Immutable commands attribute actor and retain the resulting snapshot; conflicts, inactive cities, missing evidence and malformed tariffs fail closed. Independent readback must agree or be newer; future geographic/advisory checkout reads use the same version, not a payable WLT quote. No production activation or changed tariff formula.
+
+**SC-HISTORY-PAGING (BTH-11).** An Operator can revisit a newer history page or retry the same page after a failed read. Each action reads the same city through the existing scoped DSH contract. A failed read clears displayed audit rows and draft actions until fresh readback confirms the page.

@@ -66,14 +66,20 @@ function clearAttempt(key: string, editing: boolean, operationId: string) {
   });
 }
 
-export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, draft }: Readonly<{
+export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, draft, priceStockOnly = false, initialPriceStock, onSaved }: Readonly<{
   actorId: string; storeId: string; onCreated: () => void;
   draft?: MerchantCatalogOffer;
+  priceStockOnly?: boolean;
+  initialPriceStock?: Readonly<{ priceYer: string; stockUnits: number }>;
+  onSaved?: () => void;
 }>) {
   const { theme } = useMobileAppearance();
+  const focused = priceStockOnly && !!draft;
   const [name, setName] = useState(draft?.name ?? "");
-  const [price, setPrice] = useState(draft?.priceYer ?? "");
-  const [quantity, setQuantity] = useState(draft ? String(draft.stockUnits) : "0");
+  const initialPrice = focused && initialPriceStock ? initialPriceStock.priceYer : draft?.priceYer ?? "";
+  const initialStock = focused && initialPriceStock ? String(initialPriceStock.stockUnits) : draft ? String(draft.stockUnits) : "0";
+  const [price, setPrice] = useState(initialPrice);
+  const [quantity, setQuantity] = useState(initialStock);
   const [pending, setPending] = useState<MerchantCatalogDraftChange | MerchantCatalogDraftEditChange | null>(null);
   const [recovery, setRecovery] = useState<{ key: string; attempt: DraftAttempt | null } | null>(null);
   const [saving, setSaving] = useState(false);
@@ -86,8 +92,8 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
     session.current?.abort();
     inFlight.current = false;
     setName(draft?.name ?? "");
-    setPrice(draft?.priceYer ?? "");
-    setQuantity(draft ? String(draft.stockUnits) : "0");
+    setPrice(initialPrice);
+    setQuantity(initialStock);
     setPending(null);
     setRecovery(null);
     setSaving(false);
@@ -102,23 +108,26 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
         const attempt = await readAttempt(key, Boolean(draft));
         if (controller.signal.aborted) return;
         setRecovery({ key, attempt });
-        if (attempt) setMessage("توجد محاولة سابقة غير مؤكدة. أدخل القيم نفسها لإعادة التأكيد لدى DSH.");
+        if (attempt) setMessage(focused
+          ? "توجد محاولة سابقة غير مؤكدة. أدخل السعر والكمية نفسيهما، أو عد إلى تعديل المسودة الكامل إذا تغيّر الاسم."
+          : "توجد محاولة سابقة غير مؤكدة. أدخل القيم نفسها لإعادة التأكيد لدى DSH.");
       } catch {
         if (!controller.signal.aborted) setMessage("تعذّر قراءة سجل الاسترداد. أعد فتح النموذج للمحاولة.");
       }
     })();
     return () => { controller.abort(); };
-  }, [actorId, storeId, draft?.id, draft?.draftVersion]);
+  }, [actorId, storeId, draft?.id, draft?.draftVersion, focused, initialPriceStock?.priceYer, initialPriceStock?.stockUnits]);
   const rawStock = digits(quantity).trim();
   const normalizedPrice = digits(price).trim();
   const parsedStock = /^[0-9]{1,10}$/.test(rawStock) ? Number(rawStock) : -1;
   const proposed: MerchantCatalogDraftChange = {
-    operationId: "preview-draft-0001", name: name.trim(),
+    operationId: "preview-draft-0001", name: focused && draft ? draft.name : name.trim(),
     priceYer: normalizedPrice, stockUnits: parsedStock,
   };
   const proposedEdit = draft ? { ...proposed, expectedVersion: draft.draftVersion } : null;
   const valid = proposedEdit ? validMerchantCatalogDraftEdit(proposedEdit) : validMerchantCatalogDraft(proposed);
   async function submit() {
+    if (priceStockOnly && !draft) return;
     if (!actorId || !storeId || !recovery || needsRefresh || inFlight.current || session.current?.signal.aborted ||
       (!pending && !valid)) return;
     if (draft && (draft.storeId !== storeId || draft.published || draft.available ||
@@ -154,7 +163,7 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
       if (!attempt || !matches) {
         setPending(null);
         setMessage(attempt
-          ? "تختلف القيم عن المحاولة السابقة. أدخل القيم نفسها لإعادة التأكيد لدى DSH."
+          ? focused ? "تختلف القيم عن المحاولة السابقة. أدخل القيم نفسها أو عد إلى تعديل المسودة الكامل." : "تختلف القيم عن المحاولة السابقة. أدخل القيم نفسها لإعادة التأكيد لدى DSH."
           : "تغيّرت محاولة الاسترداد. حدّث الكتالوج قبل المتابعة.");
         if (!attempt) onCreated();
         return;
@@ -179,6 +188,7 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
       setPrice("");
       setQuantity("0");
       setMessage(draft ? "حُفظ تعديل المسودة لدى DSH، وبقيت غير منشورة." : "حُفظت مسودة غير منشورة لدى DSH. يلزم استكمال الأهلية قبل البيع.");
+      onSaved?.();
       onCreated();
     } catch (error) {
       if (controller.signal.aborted) return;
@@ -224,15 +234,16 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
   return <View testID={draft ? "merchant-edit-catalog-draft" : "merchant-create-catalog-draft"} style={{ gap: 10,
     padding: 15, borderWidth: 1, borderRadius: 12, borderColor: theme.borderColor }}>
     <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 19, fontWeight: "700" }}>
-      {draft ? "تعديل مسودة المنتج" : "إضافة منتج كمسودة"}
+      {focused ? "تعديل سعر ومخزون المسودة" : draft ? "تعديل مسودة المنتج" : "إضافة منتج كمسودة"}
     </Text>
     <Text style={{ color: theme.colorSecondary }}>
       المسودة محفوظة في DSH فقط؛ لا تظهر للعميل ولا تقبل الطلبات حتى تُستكمل شروط النشر.
     </Text>
     <Text style={{ color: theme.color }}>اسم المنتج</Text>
-    <TextInput accessibilityLabel="اسم المنتج" style={input} value={pending?.name ?? name}
-      maxLength={160} onChangeText={setName} editable={editable}
-      placeholder="مثال: قهوة يمنية" placeholderTextColor={theme.colorSecondary} />
+    {focused ? <Text style={{ color: theme.color, fontWeight: "600" }}>{draft?.name}</Text> :
+      <TextInput accessibilityLabel="اسم المنتج" style={input} value={pending?.name ?? name}
+        maxLength={160} onChangeText={setName} editable={editable}
+        placeholder="مثال: قهوة يمنية" placeholderTextColor={theme.colorSecondary} />}
     <Text style={{ color: theme.color }}>السعر بالريال اليمني</Text>
     <TextInput accessibilityLabel="السعر بالريال اليمني" style={input} value={pending?.priceYer ?? price}
       keyboardType="numeric" onChangeText={setPrice} editable={editable}

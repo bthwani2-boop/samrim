@@ -174,6 +174,15 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("CustomerFavoritesOwnerReadback", func(t *testing.T) {
+		verifyFavoritesOnRealPostgres(t, ctx, db, schema, handler, sessions)
+	})
+	t.Run("CustomerAddressesOwnerReadback", func(t *testing.T) {
+		verifyAddressesOnRealPostgres(t, ctx, db, schema, handler, sessions)
+	})
+	t.Run("DeliveryServiceabilityOwnerReadback", func(t *testing.T) {
+		verifyServiceabilityOnRealPostgres(t, ctx, db, schema, handler, sessions)
+	})
 	// The CI runner creates this separate disposable boundary fixture.
 	// A DSH-looking schema name must not authorize Cart access there.
 	boundaryDSN := "postgres://bthwani_ci:synthetic-only@127.0.0.1:5432/bthwani_dsh_boundary_fixture?sslmode=disable"
@@ -217,6 +226,13 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 		first.Cart.Lines[0].Quantity != 2 || !first.Cart.Lines[0].PreviewAvailable {
 		t.Fatalf("invalid Cart owner result: %s", body)
 	}
+	// Review the exact same owner cart, recipient purpose and owned address.
+	t.Run("CartDirectoryOwnerReadback", func(t *testing.T) {
+		verifyCartDirectoryOnPostgres(t, ctx, db, schema, handler)
+	})
+	t.Run("CheckoutReviewOwnerReadback", func(t *testing.T) {
+		verifyCheckoutReviewOnPostgres(t, ctx, db, schema, handler)
+	})
 	// A new DSH read endpoint derives exact merchandise value from one real
 	// PostgreSQL snapshot. It cannot claim delivery fees, a confirmed Order,
 	// a WLT allocation or a checkout-ready state.
@@ -358,12 +374,79 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 		"lines": []map[string]any{{"offerId": "offer-a", "quantity": 4}}}
 	status, body = runCart(t, handler, "PUT", "store-a", "customer-a", newOperation)
 	assertCartStatus(t, status, 404, body)
+	t.Run("BulkUnavailableCleanup", func(t *testing.T) {
+		for _, q := range []string{
+			"INSERT INTO " + schema + ".products(id,store_id,name,active) VALUES ('cleanup-p1','store-b','Unavailable one',true),('cleanup-p2','store-b','Unavailable two',true)",
+			"INSERT INTO " + schema + ".variants(id,product_id,sellable,required_attributes_valid) VALUES ('cleanup-v1','cleanup-p1',true,true),('cleanup-v2','cleanup-p2',true,true)",
+			"INSERT INTO " + schema + ".offers(id,store_id,product_id,variant_id,published,available,price_yer,stock_units) VALUES ('cleanup-o1','store-b','cleanup-p1','cleanup-v1',true,true,100,10),('cleanup-o2','store-b','cleanup-p2','cleanup-v2',true,true,200,10)",
+		} {
+			if _, e := db.ExecContext(ctx, q); e != nil {
+				t.Fatal(e)
+			}
+		}
+		change := func(id string, version int, offers ...string) map[string]any {
+			items := make([]map[string]any, 0, len(offers))
+			for _, offer := range offers {
+				items = append(items, map[string]any{"offerId": offer, "quantity": 3})
+			}
+			return map[string]any{"operationId": id, "expectedVersion": version, "lines": items}
+		}
+		status, b := runCart(t, handler, "PUT", "store-b", "customer-a", change("cleanup-create-01", 0, "offer-b", "cleanup-o1", "cleanup-o2"))
+		assertCartStatus(t, status, 200, b)
+		if _, e := db.ExecContext(ctx, "UPDATE "+schema+".offers SET stock_units=0 WHERE id IN ('cleanup-o1','cleanup-o2')"); e != nil {
+			t.Fatal(e)
+		}
+		status, b = runCart(t, handler, "GET", "store-b", "customer-a", nil)
+		assertCartStatus(t, status, 200, b)
+		var snapshot Snapshot
+		if e := json.Unmarshal(b, &snapshot); e != nil || snapshot.Version != 1 || len(snapshot.Lines) != 3 {
+			t.Fatalf("cleanup source invalid %s %v", b, e)
+		}
+		invalid := 0
+		for _, l := range snapshot.Lines {
+			if !l.PreviewAvailable {
+				invalid++
+			}
+		}
+		if invalid != 2 {
+			t.Fatalf("expected two unavailable lines: %+v", snapshot)
+		}
+		status, b = runCart(t, handler, "PUT", "store-b", "customer-a", change("cleanup-single-01", 1, "offer-b", "cleanup-o2"))
+		assertCartStatus(t, status, 404, b)
+		operation := change("cleanup-bulk-01", 1, "offer-b")
+		status, b = runCart(t, handler, "PUT", "store-b", "customer-a", operation)
+		assertCartStatus(t, status, 200, b)
+		var applied ChangeResult
+		if e := json.Unmarshal(b, &applied); e != nil || applied.Replay || applied.Cart.Version != 2 || len(applied.Cart.Lines) != 1 || applied.Cart.Lines[0].OfferID != "offer-b" || applied.Cart.Lines[0].Quantity != 3 {
+			t.Fatalf("cleanup failed %s %v", b, e)
+		}
+		status, b = runCart(t, handler, "PUT", "store-b", "customer-a", operation)
+		assertCartStatus(t, status, 200, b)
+		if e := json.Unmarshal(b, &applied); e != nil || !applied.Replay || applied.Cart.Version != 2 {
+			t.Fatalf("cleanup replay failed %s %v", b, e)
+		}
+		status, b = runCart(t, handler, "PUT", "store-b", "customer-a", change("cleanup-stale-01", 1))
+		assertCartStatus(t, status, 409, b)
+		var v, c, n int
+		var offer string
+		var qty int
+		if e := db.QueryRowContext(ctx, "SELECT version,(SELECT count(*) FROM "+schema+".customer_cart_commands WHERE actor_id='customer-a' AND store_id='store-b'),(SELECT count(*) FROM "+schema+".customer_cart_lines WHERE actor_id='customer-a' AND store_id='store-b') FROM "+schema+".customer_carts WHERE actor_id='customer-a' AND store_id='store-b'").Scan(&v, &c, &n); e != nil || v != 2 || c != 2 || n != 1 {
+			t.Fatalf("durable cleanup mismatch %d/%d/%d %v", v, c, n, e)
+		}
+		if e := db.QueryRowContext(ctx, "SELECT offer_id,quantity FROM "+schema+".customer_cart_lines WHERE actor_id='customer-a' AND store_id='store-b'").Scan(&offer, &qty); e != nil || offer != "offer-b" || qty != 3 {
+			t.Fatalf("eligible line changed %s/%d %v", offer, qty, e)
+		}
+		t.Log("BULK_CLEANUP_OWNER_PASS retained=offer-b quantity=3 version=2 commands=2 single_rejected=true stale_rejected=true replay=true")
+	})
 	sessions.mu.Lock()
 	sessions.revoked = true
 	sessions.mu.Unlock()
 	status, body = runCart(t, handler, "GET", "store-a", "customer-a", nil)
 	assertCartStatus(t, status, 401, body)
 	t.Logf("DSH_CART_OWNER_POSTGRES_PASS version=%d commands=%d lines=%d replay_and_actor_isolation=true", version, commands, lines)
+	t.Run("RejectTemporaryOwnerRelations", func(t *testing.T) {
+		verifyMissingOwnerRelations(t, dsn, schema)
+	})
 }
 
 // The public contract requires an explicit optimistic version. Without it,
@@ -418,6 +501,79 @@ func TestCustomerCartRequiresCurrentVerifiedCustomer(t *testing.T) {
 	for _, c := range changes {
 		if validChange(c) {
 			t.Fatal("invalid Cart payload passed")
+		}
+	}
+}
+
+// A synthetic namespace without its real tables must not silently resolve a
+// relation to a temporary table on the pooled connection, even for empty reads.
+// The fixture role may create temporary tables; the dedicated runtime role cannot.
+func verifyMissingOwnerRelations(t *testing.T, dsn, sourceSchema string) {
+	t.Helper()
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+	var database, role string
+	if err = db.QueryRow("SELECT current_database(),current_user").Scan(&database, &role); err != nil || database != "bthwani_refoundation" || role != "bthwani_ci" {
+		t.Fatalf("wrong disposable owner: %v", err)
+	}
+	const schema = "dsh_test_cart_scope_fixture"
+	if _, err = db.Exec("CREATE SCHEMA " + schema); err != nil {
+		t.Fatal(err)
+	}
+	for _, relation := range []string{"customer_carts", "customer_cart_lines", "customer_cart_commands", "customer_addresses", "customer_favorite_stores", "stores", "service_cities", "verticals", "products", "variants", "offers", "service_city_delivery_policies", "store_operational_availability", "store_operational_weekly_hours"} {
+		if _, err = db.Exec("CREATE TEMP TABLE " + relation + " (LIKE " + sourceSchema + "." + relation + " INCLUDING ALL)"); err != nil {
+			t.Fatalf("temporary fixture %s: %v", relation, err)
+		}
+	}
+	if _, err = db.Exec("INSERT INTO pg_temp.service_cities(id,active) VALUES ('sanaa',true)"); err != nil {
+		t.Fatal(err)
+	}
+	h, err := NewHandler(db, schema, cartSessionAdapter{&testSession{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const cart = "/v1/carts/store-a"
+	const address = "/v1/addresses/" + addressID
+	const favorites = "/v1/customers/me/favorite-stores"
+	addr, err := json.Marshal(addressInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct{ method, path, body string }{
+		{"GET", "/v1/carts", ""},
+		{"GET", cart, ""},
+		{"GET", cart + "/merchandise-estimate?expectedVersion=0", ""},
+		{"GET", cart + "/serviceability?addressId=" + addressID, ""},
+		{"POST", cart + "/checkout-review", "{\"expectedCartVersion\":1,\"recipientPurpose\":\"SELF\",\"fulfillmentMode\":\"CUSTOMER_PICKUP\"}"},
+		{"PUT", cart, "{\"operationId\":\"scope-fixture-cart-01\",\"expectedVersion\":0,\"lines\":[]}"},
+		{"GET", "/v1/addresses", ""},
+		{"GET", address, ""},
+		{"PUT", address, string(addr)},
+		{"GET", favorites, ""},
+		{"GET", favorites + "/store-a", ""},
+		{"PUT", favorites + "/store-a", "{\"favorite\":true}"},
+	} {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			var body []byte
+			if tc.body != "" {
+				body = []byte(tc.body)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, addressRequest(tc.method, tc.path, "customer-a", body))
+			if w.Code != 503 || w.Header().Get("Cache-Control") != "no-store" {
+				t.Fatalf("absent owner relation must return unavailable, not temporary data: status=%d body=%s", w.Code, w.Body.String())
+			}
+		})
+	}
+	for _, relation := range []string{"customer_carts", "customer_cart_lines", "customer_cart_commands", "customer_addresses", "customer_favorite_stores"} {
+		var count int
+		if err = db.QueryRow("SELECT count(*) FROM pg_temp." + relation).Scan(&count); err != nil || count != 0 {
+			t.Errorf("unexpected temporary %s write: rows=%d error=%v", relation, count, err)
 		}
 	}
 }

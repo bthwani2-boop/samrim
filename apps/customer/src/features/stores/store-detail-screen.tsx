@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useStoreCart } from "../cart/use-store-cart";
 import StoreProducts, { StoreCartBar } from "../catalog/store-products";
+import FavoriteStores from "../discovery/favorite-stores";
 import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
@@ -47,15 +48,17 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         if (!abort.signal.aborted && revision.current === current)
           setState({ scope, loading: false, offers: [], error: error instanceof Error ? error.message : "UNKNOWN" });
       });
-    return () => { abort.abort(); revision.current++; };
+    return () => { revision.current++; pending.current?.abort(); };
   }, [api, id, query, scope, retry]);
   const visible: PublicStoreDetailState = state.scope === scope ? state : { scope, loading: true, offers: [] };
   const cartSession = useStoreCart(visible.store?.id);
   const textStyle = { color: theme.color };
   const availability = visible.store ? describeStoreOrderability(visible.store) : undefined;
+  const renderedRevision = revision.current;
   const more = async () => {
-    if (!visible.cursor || visible.more) return;
-    const current = revision.current;
+    if (!visible.cursor || visible.loading || visible.more || renderedRevision !== revision.current) return;
+    // A continuation belongs to one rendered owner snapshot and can be consumed only once.
+    const current = ++revision.current;
     const abort = new AbortController();
     pending.current?.abort();
     pending.current = abort;
@@ -111,8 +114,10 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتجر" color={theme.actionBackground} /> : null}
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
+          <FavoriteStores key={visible.store.id} storeId={visible.store.id} />
           {!fullPage ? (
-            <Link href={publicStorefrontPath(id) as Href} style={{ color: theme.interactiveText }}>
+            <Link href={(browse.city ? { pathname: publicStorefrontPath(id), params: browse } : publicStorefrontPath(id)) as Href}
+              style={{ color: theme.interactiveText }}>
               عرض موقع المتجر الكامل
             </Link>
           ) : null}

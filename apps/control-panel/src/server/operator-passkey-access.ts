@@ -6,6 +6,7 @@ import { cookieLifetimeSeconds, exactKeys, object, parseVerifiedOperatorPrincipa
 
 export type VerifiedOperatorWorkspaceAccess = Readonly<{
   actorId: string;
+  sessionExpiresAt: string;
   grants: readonly OperatorPermission[];
 }>;
 
@@ -71,6 +72,7 @@ export async function readOperatorAccessState(
       status: "verified",
       access: {
         actorId: principal.actorId,
+        sessionExpiresAt: principal.sessionExpiresAt,
         grants: operatorPermissions.filter((_, index) => results[index] === "granted"),
       },
     };

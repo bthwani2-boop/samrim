@@ -1,6 +1,6 @@
-import { createMerchantCatalogDraft, DshPublicError, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantStoreRegistration, registerMerchantStore, type StoreOperationalChange, updateMerchantCatalogDraft, updateStoreOperationalAvailability, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "@bthwani/dsh";
+import { createMerchantCatalogDraft, DshPublicError, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantStoreRegistration, registerMerchantEmployee, registerMerchantStore, type StoreOperationalChange, updateMerchantCatalogDraft, updateStoreOperationalAvailability, validEmployeeRegistration, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "@bthwani/dsh";
 import { establishPersistentIdentitySession, IdentityClientError, issueCustomerPhoneChallenge, readVerifiedIdentitySession, revokePersistentIdentitySession, revokeVerifiedIdentitySession } from "@bthwani/identity";
-import { verifyMerchantAdmission } from "./admission.ts";
+import { revokeUndeliveredAdmissionSession, verifyMerchantAdmission } from "./admission.ts";
 import {
   appendSessionCookies, bearerFrom, configuredOrigin, isLocalMutation, noStoreHeaders,
   ownerError, readMutationBody, refreshFrom, response, standingOrigin,
@@ -65,14 +65,26 @@ export async function POST(request: Request) {
   const registration = query.size === 1 && query.get("registration") === "create";
   const catalogStore = query.size === 1 ? query.get("catalog") : null;
   const catalogDraft = catalogStore !== null && /^[a-z0-9-]{1,64}$/.test(catalogStore);
-  if (query.size > 0 && !registration && !catalogDraft) return response({ code: "INVALID_REQUEST" }, 400);
-  const input = await readMutationBody(request, registration ? 4096 : catalogDraft ? 8192 : 512);
+  const employeeStore = query.size===1 ? query.get("employees") : null;
+  const employeeRegistration = employeeStore!==null && /^[a-z0-9-]{1,64}$/.test(employeeStore);
+  if (query.size > 0 && !registration && !catalogDraft && !employeeRegistration) return response({ code: "INVALID_REQUEST" }, 400);
+  const input = await readMutationBody(request, registration || employeeRegistration ? 4096 : catalogDraft ? 8192 : 512);
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
   const data = input as Record<string, unknown>;
   try {
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(15000)]);
+    if (employeeRegistration) {
+      if (!validEmployeeRegistration(data)) return response({code:"EMPLOYEE_REGISTRATION_INVALID"},400);
+      const bearer=bearerFrom(request);
+      if (!bearer) return response({code:"UNAUTHENTICATED"},401);
+      const session=await readVerifiedIdentitySession(origin,bearer,signal);
+      const actorId=request.headers.get("X-Merchant-Context");
+      if (session.role!=="merchant" || !actorId || actorId!==session.actorId) return response({code:"MERCHANT_CONTEXT_CHANGED"},403);
+      const id=await registerMerchantEmployee(standingOrigin(origin),bearer,employeeStore,data,signal);
+      return response({employee:{actorId,storeId:employeeStore,id}});
+    }
     if (catalogDraft) {
       if (!Object.keys(data).every(key => ["operationId", "name", "priceYer", "stockUnits"].includes(key)) ||
         Object.keys(data).length !== 4 || !validMerchantCatalogDraft(data as MerchantCatalogDraftChange)) {
@@ -122,9 +134,16 @@ export async function POST(request: Request) {
         }
       }
       const { bearer, session } = await verifyMerchantAdmission(origin, data.ticket, data.code, signal);
-      const result = response({ session }, 200);
-      const persistent = await establishPersistentIdentitySession(origin, bearer, signal).catch(() => null);
-      return appendSessionCookies(result,request,bearer,session.sessionExpiresAt,persistent);
+      try {
+        const persistent = await establishPersistentIdentitySession(origin, bearer, signal);
+        if (signal.aborted || Date.parse(session.sessionExpiresAt) <= Date.now()) {
+          throw new IdentityClientError(0, "OPERATION_RESULT_UNKNOWN");
+        }
+        return appendSessionCookies(response({ session }, 200),request,bearer,session.sessionExpiresAt,persistent);
+      } catch (error) {
+        await revokeUndeliveredAdmissionSession(origin, bearer);
+        throw error;
+      }
     }
     return response({ code: "INVALID_REQUEST" }, 400);
   } catch (error) {

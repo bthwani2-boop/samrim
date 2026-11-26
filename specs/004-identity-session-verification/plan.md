@@ -23,7 +23,7 @@ Identity `services/identity/backend/internal/session` has one SHA-256 bearer par
 1. Go unit/negative/owner failures, no actor-header impersonation, no token leaks or cross-origin CORS.
 2. Native Linux Go integration inside isolated Docker network against PostgreSQL, synthetic distinct Operators and active/revoked grants; separate readback connection proves durable session and permission revocation, plus 12 simultaneous session logouts and stale principal denial. No protected account/data changes.
 3. Strict OpenAPI parser and structural security guard, Go vet, formatting, exact toolchain and security checks, affected regression only.
-4. Independent critical security risk review, full real identity-issued session, DSH Merchant/Operator permission path and real Web/Android acceptance are required **before** full journey CLOSED. CI/Sonar gates classified independently.
+4. Documented executor critical security risk assessment under [AGENTS.md](../../AGENTS.md), full real identity-issued session, DSH Merchant/Operator permission path and real Web/Android acceptance are required **before** full journey CLOSED. CI/Sonar gates classified independently.
 
 Spec Kit 1.3.0 official CLI + existing project workflow/codex integration are inspected; full remote Codex SDD remains reserved to the shared-worktree Spec Kit coordinator while it holds Git turn. Never start a duplicate workflow, falsely claim Fast delivery, or bypass human review gates.
 
@@ -33,7 +33,7 @@ The existing Customer bearer and canonical verified_at actor proof are necessary
 ### Open technical gates
 1. Real Identity verification factor/phone/passkey initial issuer, guest-to-verified admission, secure refresh/role re-entry after unknown response and recovery; avoid treating seeded synthetic verified_at as a real identity proof.
 2. Independent DSH protected Store grant and Merchant/Operator/Customer app integration with exact final code, persistent readbacks, IDOR, revocation and account isolation.
-3. Exact final CI/Sonar and independent critical security/architecture review before full journey CLOSED.
+3. Exact final CI/Sonar and documented executor critical security/architecture assessment under [AGENTS.md](../../AGENTS.md) before full journey CLOSED.
 
 ## Session-03 logout handoff (delivered)
 Identity canonical owner now writes the current session revoked_at atomically and proves 204→401 from a separate PostgreSQL connection in a local isolated native Linux container. The 12-way race commits once, and stale/suspended/forged requests do not revoke another actor. This is not a credential issuer, WebAuthn flow, session-family replay/recovery engine, or complete participation journey. Delivered Commit c9a8b4fb1406cabb28eafd40edb9a5f9801c5898. Sonar Vortex request was 403 and CodeRabbit local review authentication failed; full independent critical review remains blocked. Runtime apps are not updated by the Git push.

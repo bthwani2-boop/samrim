@@ -4,7 +4,7 @@ import { DshPublicError, endpoint, readBoundedOwnerJSON } from "./client-core.ts
 const maxOwnerTextLength = 32 * 1024;
 
 export async function privateOwnerRequest(
-  baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH" | "POST", change?: unknown, signal?: AbortSignal,
+  baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH" | "POST" | "PUT", change?: unknown, signal?: AbortSignal,
   acceptedStatuses: readonly number[] = [200],
 ): Promise<unknown> {
   // Only fixed owner-authored paths assembled by the public functions below

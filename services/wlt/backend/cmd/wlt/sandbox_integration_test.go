@@ -37,6 +37,33 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 	_, err = sandbox.ExecContext(ctx, "UPDATE wlt.customer_funding_journal SET amount_yer = 9")
 	assertSQLState(t, err, "42501")
 
+	// The command must refuse excess authority even when the synthetic
+	// session and DSN are valid. Only the disposable fixture owner changes ACLs.
+	for _, tc := range []struct{ name, grant, revoke string }{
+		{"private journal read",
+			"GRANT SELECT (provider_reference) ON wlt.customer_funding_journal TO bthwani_wlt_sandbox",
+			"REVOKE SELECT (provider_reference) ON wlt.customer_funding_journal FROM bthwani_wlt_sandbox"},
+		{"unrelated allocation command",
+			"GRANT EXECUTE ON FUNCTION wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint) TO bthwani_wlt_sandbox",
+			"REVOKE EXECUTE ON FUNCTION wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint) FROM bthwani_wlt_sandbox"},
+		{"schema creation",
+			"GRANT CREATE ON SCHEMA wlt TO bthwani_wlt_sandbox",
+			"REVOKE CREATE ON SCHEMA wlt FROM bthwani_wlt_sandbox"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			executeFixture(t, ctx, owner, tc.grant)
+			defer executeFixture(t, ctx, owner, tc.revoke)
+			if err := run(customer, "excess-authority-credit", "9", io.Discard); err == nil ||
+				!strings.Contains(err.Error(), "database role is not admitted") {
+				t.Fatalf("command accepted excess sandbox privilege or failed for another reason: %v", err)
+			}
+			var count int
+			if err := owner.QueryRowContext(ctx, "SELECT count(*) FROM wlt.customer_funding_journal WHERE provider_reference='excess-authority-credit'").Scan(&count); err != nil || count != 0 {
+				t.Fatalf("denied sandbox command changed the journal: count=%d err=%v", count, err)
+			}
+		})
+	}
+
 	for _, input := range []struct{ token, reference, amount string }{
 		{revoked, "revoked-session", "9"}, {merchant, "wrong-role", "9"},
 		{"invalid", "invalid-session", "9"}, {customer, "invalid-reference!", "9"},
@@ -121,6 +148,48 @@ func testSandboxFunding(t *testing.T, ctx context.Context, reader, owner, identi
 		VALUES ('reversal-invalid', 'wallet-two', 'sandbox-reversal', 'interrupted-credit', 8, 'sandbox-interrupted-credit')`)
 	assertSQLState(t, err, "23514")
 
+	// A real existing sandbox credit must not be reversed while its balance is held.
+	var reservation string
+	if err = owner.QueryRowContext(ctx, "SELECT wlt.allocate_order_payment($1,$2,$3,$4,$5,$6,$7)", "checkout-reversal-guard", "wallet-two", "store-a", strings.Repeat("b", 64), "WALLET", int64(57), int64(57)).Scan(&reservation); err != nil || reservation != "ALLOCATED" {
+		t.Fatalf("reserve before reversal %s %v", reservation, err)
+	}
+	const allocationPath = "/v1/wallets/me/order-payment-allocations/checkout-reversal-guard"
+	body = readWallet(t, ctx, wallet, customer, allocationPath, 200)
+	if !strings.Contains(string(body), `"state":"ALLOCATED"`) || !strings.Contains(string(body), `"walletYer":"57"`) {
+		t.Fatalf("held allocation readback: %s", body)
+	}
+	body = readWallet(t, ctx, wallet, other, allocationPath, 200)
+	if !strings.Contains(string(body), `"allocation":null`) {
+		t.Fatalf("another actor read held allocation: %s", body)
+	}
+	// A held amount remains in posted funding but must disappear from available funding.
+	body = readWallet(t, ctx, wallet, customer, "/v1/wallets/me", 200)
+	if err := json.Unmarshal(body, &balance); err != nil || balance["balanceYer"] != "57" || balance["availableYer"] != "0" {
+		t.Fatalf("held funds must not be available: %s", body)
+	}
+	var otherBalance map[string]string
+	body = readWallet(t, ctx, wallet, other, "/v1/wallets/me", 200)
+	if err := json.Unmarshal(body, &otherBalance); err != nil || otherBalance["availableYer"] != "0" || otherBalance["actorId"] != "wallet-empty" {
+		t.Fatalf("other customer's funding changed or leaked: %s", body)
+	}
+	if err = reverse(customer, "interrupted-credit", io.Discard); err == nil {
+		t.Fatal("reversed reserved funding")
+	}
+	var heldBalance string
+	if err = owner.QueryRowContext(ctx, "SELECT balance_yer::text FROM wlt.customer_wallet_balances WHERE actor_id='wallet-two'").Scan(&heldBalance); err != nil || heldBalance != "57" {
+		t.Fatalf("guard changed posted balance %s %v", heldBalance, err)
+	}
+	if err = owner.QueryRowContext(ctx, "SELECT wlt.release_order_payment($1,$2,$3,$4)", "checkout-reversal-guard", "wallet-two", "release-reversal-guard", "synthetic cancellation").Scan(&reservation); err != nil || reservation != "RELEASED" {
+		t.Fatalf("release before reversal %s %v", reservation, err)
+	}
+	body = readWallet(t, ctx, wallet, customer, allocationPath, 200)
+	if !strings.Contains(string(body), `"state":"RELEASED"`) {
+		t.Fatalf("released allocation readback: %s", body)
+	}
+	body = readWallet(t, ctx, wallet, customer, "/v1/wallets/me", 200)
+	if err := json.Unmarshal(body, &balance); err != nil || balance["balanceYer"] != "57" || balance["availableYer"] != "57" {
+		t.Fatalf("released funds must be available again: %s", body)
+	}
 	if err := reverse(customer, "interrupted-credit", lostConfirmation{}); !errors.Is(err, io.ErrClosedPipe) {
 		t.Fatalf("expected lost reversal confirmation, got %v", err)
 	}

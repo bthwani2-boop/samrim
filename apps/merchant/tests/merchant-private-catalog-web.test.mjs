@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
+import * as ownerClient from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { GET, PATCH, POST } from "../app/api/admission+api.ts";
 
 const origin = "http://127.0.0.1:13310";
@@ -22,7 +28,7 @@ function request(search = "?catalog=store-a&limit=20", actor = "merchant-a", tok
     },
   });
 }
-function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false } = {}) {
+function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false, expectedSearch = "?limit=20", inventory = false } = {}) {
   const env = {
     MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN,
     MERCHANT_SYNTHETIC_DSH_ORIGIN: process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN,
@@ -60,6 +66,12 @@ function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catal
         status: ownerStatus, headers: { "Cache-Control": "no-store" },
       });
     }
+    if (inventory) {
+      assert.equal(target.pathname, "/v1/stores/store-a/inventory-summary");
+      assert.equal(target.search, "");
+      return Response.json(ownerStatus === 200 ? ownerPage : {code:"STORE_OPERATION_FORBIDDEN"},
+        {status:ownerStatus,headers:{"Cache-Control":"no-store"}});
+    }
     assert.equal(target.pathname, "/v1/stores/store-a/catalog");
     if (draft) {
       assert.equal(config.method, "POST");
@@ -70,7 +82,7 @@ function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catal
         replay: ownerStatus === 200,
       }, { status: ownerStatus, headers: { "Cache-Control": "no-store" } });
     }
-    assert.equal(target.search, "?limit=20");
+    assert.equal(target.search, expectedSearch);
     return Response.json(ownerStatus === 200 ? ownerPage : { code: "STORE_OPERATION_FORBIDDEN" },
       { status: ownerStatus, headers: { "Cache-Control": "no-store" } });
   });
@@ -84,6 +96,29 @@ test("private Merchant Catalog BFF uses current actor and Store-bound owner GET"
   assert.equal(response.headers.get("Cache-Control"), "no-store");
   assert.deepEqual(await response.json(), { catalog });
   assert.deepEqual(calls, ["/v1/sessions/current", "/v1/stores/store-a/catalog"]);
+});
+test("private Merchant Catalog forwards search and rejects ambiguous search before owner calls", async t => {
+  const params = new URLSearchParams({ limit: "20", q: "مسودة%_" });
+  const calls = ownerMocks(t, { expectedSearch: "?" + params.toString() });
+  const response = await GET(request("?catalog=store-a&" + params.toString()));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { catalog });
+  assert.equal(calls.length, 2);
+  for (const search of ["q=a&q=b", "q=%00", "q=%FF", "q=%ZZ", "q=" + "a".repeat(81)]) {
+    const invalid = await GET(request("?catalog=store-a&" + search));
+    assert.equal(invalid.status, 400);
+  }
+  assert.equal(calls.length, 2);
+});
+test("private catalog status is forwarded before paging and rejects invalid selectors", async t => {
+  const calls = ownerMocks(t, { expectedSearch: "?limit=1&status=unpublished" });
+  const response = await GET(request("?catalog=store-a&limit=1&status=unpublished"));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { catalog });
+  for (const selector of ["status=", "status=invalid", "status=published&status=stockout"]) {
+    assert.equal((await GET(request("?catalog=store-a&" + selector))).status, 400);
+  }
+  assert.equal(calls.length, 2);
 });
 test("private Merchant Catalog never reads Identity without a bearer", async t => {
   const calls = ownerMocks(t);
@@ -234,4 +269,180 @@ test("DSH draft conflict stays 409 instead of inventing the next version", async
   assert.equal(reply.status, 409);
   assert.deepEqual(await reply.json(), { code: "CATALOG_DRAFT_VERSION_CONFLICT" });
   assert.equal(calls.length, 2);
+});
+
+test("inventory summary BFF delegates to the complete owner summary and denies foreign context", async t => {
+  const inventory = {actorId:"merchant-a",storeId:"store-a",totalOffers:130,
+    publishedOffers:120,availableOffers:110,unavailableOffers:10,stockoutOffers:3};
+  const calls = ownerMocks(t,{inventory:true,ownerPage:inventory});
+  const reply = await GET(request("?inventory=store-a"));
+  assert.equal(reply.status,200);
+  assert.equal(reply.headers.get("Cache-Control"),"no-store");
+  assert.deepEqual(await reply.json(),{inventory});
+  assert.deepEqual(calls,["/v1/sessions/current","/v1/stores/store-a/inventory-summary"]);
+  assert.equal((await GET(request("?inventory=store-a","merchant-b"))).status,403);
+  assert.equal((await GET(request("?inventory=store-a","merchant-a",""))).status,401);
+  assert.equal((await GET(request("?inventory=store-a&limit=1"))).status,400);
+  assert.equal(calls.length,3);
+});
+
+// Exercise the actual app transport, not only the BFF and its owner SDK.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+function catalogTransport(platform, withNativeMerchantSession) {
+  const temp = mkdtempSync(path.join(tmpdir(), "merchant-catalog-transport-"));
+  try {
+    const root = path.resolve(import.meta.dirname, "../../..");
+    const source = path.resolve(import.meta.dirname, "../src/features/catalog/catalog-transport.ts");
+    const result = spawnSync(process.execPath, [
+      path.join(root, "node_modules/typescript/bin/tsc"), source,
+      "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
+      "--inlineSourceMap", "--inlineSources", "--outDir", temp,
+    ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const mod = loadMappedRenderFixture(readFileSync(path.join(temp, "catalog-transport.js"), "utf8"), source, {
+      "@bthwani/dsh": ownerClient,
+      "react-native": { Platform: { OS: platform } },
+      "../access/admission-transport": { withNativeMerchantSession },
+    });
+    loadedModules.push(mod);
+    return mod.exports;
+  } finally { rmSync(temp, { recursive: true, force: true }); }
+}
+const testActor = "merchant-a", testStore = "store-a";
+const newDraft = { offer: { ...offer, id: "of-new", name: create.name, priceYer: create.priceYer, stockUnits: create.stockUnits }, replay: false };
+const editedDraft = { offer: { ...offer, name: editChange.name, priceYer: editChange.priceYer, stockUnits: editChange.stockUnits, draftVersion: 2 }, replay: false };
+const stockSummary = { actorId: testActor, storeId: testStore, totalOffers: 130, publishedOffers: 120, availableOffers: 110, unavailableOffers: 10, stockoutOffers: 3 };
+const noStore = (body, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+
+test("Web catalog transport binds selectors and validates owner pages and inventory", async t => {
+  const transport = catalogTransport("web", () => assert.fail("Web must not use native credentials"));
+  const signal = new AbortController().signal;
+  const calls = [];
+  let respond = () => noStore({ catalog });
+  t.mock.method(globalThis, "fetch", async (url, options) => { calls.push({ url, options }); return respond(); });
+  const read = options => transport.readMerchantCatalogPage(testStore, testActor, signal, options);
+  const inventory = () => transport.readMerchantInventorySummary(testStore, testActor, signal);
+  assert.deepEqual(await read({ limit: 20, cursor: "of-a", query: "مسودة%_", status: "unpublished" }), catalog);
+  assert.deepEqual(Object.fromEntries(new URL(calls[0].url, "http://localhost").searchParams), {
+    catalog: testStore, limit: "20", cursor: "of-a", q: "مسودة%_", status: "unpublished",
+  });
+  assert.deepEqual(calls[0].options, { method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "X-Merchant-Context": testActor } });
+  respond = () => noStore({ inventory: stockSummary });
+  assert.deepEqual(await inventory(), stockSummary);
+  assert.equal(calls[1].url, "/api/admission?inventory=store-a");
+  for (const args of [
+    ["../store", testActor, signal], [testStore, "", signal], [testStore, testActor, AbortSignal.abort()],
+    [testStore, testActor, signal, { query: "x".repeat(81) }], [testStore, testActor, signal, { status: "invalid" }],
+  ]) await assert.rejects(transport.readMerchantCatalogPage(...args), { code: "INVALID_REQUEST" });
+  await assert.rejects(transport.readMerchantInventorySummary("../store", testActor, signal), { code: "INVALID_REQUEST" });
+  assert.equal(calls.length, 2);
+  for (const body of [{ ...catalog, actorId: "merchant-b" }, { ...catalog, storeId: "store-b" }]) {
+    respond = () => noStore({ catalog: body });
+    await assert.rejects(read(), { code: "OWNER_RESPONSE_INVALID" });
+  }
+  respond = () => noStore({ catalog });
+  await assert.rejects(read({ status: "published" }), { code: "OWNER_RESPONSE_INVALID" });
+  respond = () => noStore({ inventory: { ...stockSummary, storeId: "store-b" } });
+  await assert.rejects(inventory(), { code: "OWNER_RESPONSE_INVALID" });
+  for (const operation of [read, inventory]) {
+    respond = () => new Response("invalid JSON", { status: 200 });
+    await assert.rejects(operation(), { code: "OWNER_RESPONSE_INVALID" });
+    respond = () => Response.json({});
+    await assert.rejects(operation(), { code: "OWNER_RESPONSE_INVALID" });
+    respond = () => noStore({}, 201);
+    await assert.rejects(operation(), { code: "OWNER_RESPONSE_INVALID" });
+    respond = () => noStore({ code: "STORE_OPERATION_FORBIDDEN" }, 403);
+    await assert.rejects(operation(), { status: 403, code: "STORE_OPERATION_FORBIDDEN" });
+    respond = () => noStore([], 503);
+    await assert.rejects(operation(), { status: 503, code: "OWNER_UNAVAILABLE" });
+  }
+  const before = new AbortController();
+  respond = () => { before.abort(); return noStore({ catalog }); };
+  await assert.rejects(transport.readMerchantCatalogPage(testStore, testActor, before.signal), { code: "OWNER_RESPONSE_STALE" });
+  for (const [method, body] of [
+    [transport.readMerchantCatalogPage, { catalog }],
+    [transport.readMerchantInventorySummary, { inventory: stockSummary }],
+  ]) {
+    const late = new AbortController();
+    respond = () => ({ ok: true, json: async () => { late.abort(); return body; } });
+    await assert.rejects(method(testStore, testActor, late.signal), { code: "OWNER_RESPONSE_STALE" });
+  }
+});
+
+test("Web draft writes preserve operation identity and reject unknown or conflicting acknowledgements", async t => {
+  const transport = catalogTransport("web", () => assert.fail("Web must not use native credentials"));
+  const signal = new AbortController().signal;
+  const calls = [];
+  let respond = () => noStore({ draft: newDraft }, 201);
+  t.mock.method(globalThis, "fetch", async (url, options) => { calls.push({ url, options }); return respond(); });
+  const post = (s = signal) => transport.submitMerchantCatalogDraft(testStore, testActor, create, s);
+  const patch = (s = signal) => transport.submitMerchantCatalogDraftEdit(testStore, offer.id, testActor, editChange, s);
+  assert.deepEqual(await post(), newDraft);
+  assert.equal(calls[0].url, "/api/admission?catalog=store-a");
+  assert.deepEqual(calls[0].options, { method: "POST", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: { "Content-Type": "application/json", "X-Merchant-Context": testActor }, body: JSON.stringify(create) });
+  respond = () => noStore({ draft: { ...newDraft, replay: true } });
+  assert.deepEqual(await post(), { ...newDraft, replay: true });
+  respond = () => noStore({ edit: editedDraft });
+  assert.deepEqual(await patch(), editedDraft);
+  assert.equal(calls[2].url, "/api/admission?catalog=store-a&offer=of-draft");
+  assert.equal(calls[2].options.method, "PATCH");
+  assert.deepEqual(JSON.parse(calls[2].options.body), editChange);
+  await assert.rejects(transport.submitMerchantCatalogDraft("../store", testActor, create, signal), { code: "INVALID_STORE_DRAFT" });
+  await assert.rejects(transport.submitMerchantCatalogDraftEdit(testStore, "../offer", testActor, editChange, signal), { code: "INVALID_STORE_DRAFT" });
+  assert.equal(calls.length, 3);
+  respond = () => noStore({ draft: { ...newDraft, replay: false } }, 200);
+  await assert.rejects(post(), { code: "OPERATION_RESULT_UNKNOWN" });
+  respond = () => noStore({ draft: { ...newDraft, offer: { ...newDraft.offer, published: true } } }, 201);
+  await assert.rejects(post(), { code: "OPERATION_RESULT_UNKNOWN" });
+  respond = () => noStore({ edit: { ...editedDraft, offer: { ...editedDraft.offer, storeId: "store-b" } } });
+  await assert.rejects(patch(), { code: "OPERATION_RESULT_UNKNOWN" });
+  for (const operation of [post, patch]) {
+    respond = () => { throw new Error("lost acknowledgement"); };
+    await assert.rejects(operation(), { code: "OPERATION_RESULT_UNKNOWN" });
+    respond = () => new Response("invalid JSON", { status: 200 });
+    await assert.rejects(operation(), { code: "OPERATION_RESULT_UNKNOWN" });
+    respond = () => noStore({ code: "OWNER_UNAVAILABLE" }, 503);
+    await assert.rejects(operation(), { code: "OPERATION_RESULT_UNKNOWN" });
+    respond = () => noStore({ code: "CATALOG_DRAFT_VERSION_CONFLICT" }, 409);
+    await assert.rejects(operation(), { code: "CATALOG_DRAFT_VERSION_CONFLICT" });
+    respond = () => noStore([], 400);
+    await assert.rejects(operation(), { code: "INVALID_STORE_DRAFT" });
+    respond = () => Response.json({});
+    await assert.rejects(operation(), { code: "OPERATION_RESULT_UNKNOWN" });
+    respond = () => noStore({}, 202);
+    await assert.rejects(operation(), { code: "OPERATION_RESULT_UNKNOWN" });
+    const late = new AbortController();
+    respond = () => ({ json: async () => { late.abort(); return {}; } });
+    await assert.rejects(operation(late.signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  }
+});
+
+test("Android catalog transport invokes the canonical DSH client under the same verified actor", async t => {
+  const scopes = [], calls = [];
+  const transport = catalogTransport("android", async (signal, invoke, actor, write = false) => {
+    scopes.push({ signal, actor, write });
+    return invoke("synthetic", dsh);
+  });
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const target = new URL(url);
+    calls.push({ target, options });
+    if (options.method === "POST") return noStore(newDraft, 201);
+    if (options.method === "PATCH") return noStore(editedDraft);
+    return noStore(target.pathname.endsWith("inventory-summary") ? stockSummary : catalog);
+  });
+  const signal = new AbortController().signal;
+  assert.deepEqual(await transport.readMerchantCatalogPage(testStore, testActor, signal), catalog);
+  assert.deepEqual(await transport.readMerchantInventorySummary(testStore, testActor, signal), stockSummary);
+  assert.deepEqual(await transport.submitMerchantCatalogDraft(testStore, testActor, create, signal), newDraft);
+  assert.deepEqual(await transport.submitMerchantCatalogDraftEdit(testStore, offer.id, testActor, editChange, signal), editedDraft);
+  assert.deepEqual(scopes, [false, false, true, true].map(write => ({ signal, actor: testActor, write })));
+  assert.deepEqual(calls.map(call => [call.options.method, call.target.pathname]), [
+    ["GET", "/v1/stores/store-a/catalog"], ["GET", "/v1/stores/store-a/inventory-summary"],
+    ["POST", "/v1/stores/store-a/catalog"], ["PATCH", "/v1/stores/store-a/catalog/of-draft"],
+  ]);
+  assert.ok(calls.every(call => call.target.origin === dsh && call.options.headers.Authorization === "Bearer synthetic"));
+  assert.deepEqual(JSON.parse(calls[2].options.body), create);
+  assert.deepEqual(JSON.parse(calls[3].options.body), editChange);
 });

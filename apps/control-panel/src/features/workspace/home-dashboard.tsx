@@ -7,11 +7,12 @@ import dashboardStyles from "./home-dashboard.module.css";
 
 const ownerLabels = { Identity: "الهوية", DSH: "الخدمات والتجارة", WLT: "المالية", multiple: "أنظمة متعددة" } as const;
 
-export default function HomeDashboard({ grants, marketOverview }: Readonly<{
+export default function HomeDashboard({ grants, originalOperator = false, marketOverview }: Readonly<{
   grants: readonly OperatorPermission[];
+  originalOperator?: boolean;
   marketOverview?: ReactNode;
 }>) {
-  const entries = visibleWorkspaceEntries(grants).filter(entry => entry.href !== "/workspace");
+  const entries = visibleWorkspaceEntries(grants, originalOperator).filter(entry => entry.href !== "/workspace");
   const sections = (Object.keys(workspaceGroupLabels) as WorkspaceGroup[])
     .filter(group => group !== "home")
     .map(group => ({
@@ -20,18 +21,18 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
       entries: entries.filter(entry => entry.group === group),
     }))
     .filter(section => section.entries.length > 0);
-  const quickActions = [
-    "/operations", "/merchants", "/catalog", "/finance", "/captains", "/policies",
-  ].flatMap(href => entries.filter(entry => entry.href === href)).slice(0, 4);
+  const hasVerifiedAccess = grants.length > 0 || originalOperator;
+  const actionIcons: Record<WorkspaceGroup, OperatorIconName> = {
+    home: "home", operations: "operations", stores: "store", catalog: "catalog",
+    marketing: "marketing", finance: "finance", administration: "people", policies: "policy",
+  };
   const date = new Intl.DateTimeFormat("ar-YE", {
     timeZone: "Asia/Aden", weekday: "long", day: "numeric", month: "long", year: "numeric",
   }).format(new Date());
 
   const facts: { label: string; value: string; note: string; icon: OperatorIconName; available: boolean }[] = [
-    { label: "مجموعات العمل", value: String(sections.length), note: "مصرّح بها من Identity", icon: "layers", available: true },
-    { label: "الوظائف المتاحة", value: String(entries.length), note: "يمكن الانتقال إليها", icon: "check", available: true },
-    { label: "الطلبات اليوم", value: "—", note: "لا توجد إحصائية مؤكدة من DSH", icon: "operations", available: false },
-    { label: "المتاجر النشطة", value: "—", note: "لا يوجد إجمالي مؤكد من DSH", icon: "store", available: false },
+    { label: "مجموعات العمل", value: String(sections.length), note: hasVerifiedAccess ? "مصرّح بها من Identity" : "لا توجد صلاحيات مؤكدة", icon: "layers", available: hasVerifiedAccess },
+    { label: "الوظائف المتاحة", value: String(entries.length), note: "يمكن الانتقال إليها", icon: "check", available: hasVerifiedAccess },
   ];
 
   return (
@@ -40,7 +41,7 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
         <div>
           <span className={dashboardStyles.eyebrow}>الرئيسية / لوحة التحكم</span>
           <h1 id="operator-home-title">مرحبًا بك في لوحة تحكم بثواني</h1>
-          <p>إدارة العمل من مساحة واحدة، وفق صلاحياتك المؤكدة من Identity.</p>
+          <p>{hasVerifiedAccess ? "إدارة العمل من مساحة واحدة، وفق صلاحياتك المؤكدة من Identity." : "لا توجد صلاحيات مؤكدة لعرض مساحات العمل."}</p>
         </div>
         <div className={dashboardStyles.dateStamp}>
           <OperatorIcon name="clock" />
@@ -63,50 +64,40 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
         ))}
       </section>
 
-      <div className={dashboardStyles.overviewGrid}>
-        <section className={dashboardStyles.panel} aria-labelledby="operational-status-heading">
-          <header className={dashboardStyles.panelHeading}>
-            <h2 id="operational-status-heading"><OperatorIcon name="bell" /> حالة الأنظمة والبيانات</h2>
-          </header>
-          <ul className={dashboardStyles.statusList}>
-            <li><span className={dashboardStyles.statusDotGood} /><span>صلاحيات المشغّل</span><strong>مؤكدة</strong></li>
-            <li><span className={dashboardStyles.statusDotNeutral} /><span>بيانات DSH العامة</span><strong>تُقرأ عند الطلب</strong></li>
-            <li><span className={dashboardStyles.statusDotNeutral} /><span>الأرصدة والتسويات</span><strong>ليست معروضة</strong></li>
+      <section className={dashboardStyles.panel} aria-labelledby="quick-actions-heading">
+        <header className={dashboardStyles.panelHeading}>
+          <h2 id="quick-actions-heading"><OperatorIcon name="activity" /> إجراءات سريعة</h2>
+        </header>
+        {entries.length > 0 ? (
+          <ul className={[dashboardStyles.actionList, styles.sectionGrid].join(" ")}>
+            {entries.map(entry => <li key={entry.href}>
+              <a href={entry.href}>
+                <OperatorIcon name={entry.href === "/captains" ? "captain" : entry.href === "/studio" ? "studio" :
+                  entry.href === "/access" ? "shield" : actionIcons[entry.group]} />
+                <span>{entry.label}</span>
+                <OperatorIcon name="arrow" />
+              </a>
+            </li>)}
           </ul>
-          <p className={dashboardStyles.panelHint}>حالة الواجهة لا تثبت اتصال جميع الأنظمة أو سلامة البيانات المالية.</p>
-          {entries.length > 0 && <a className={dashboardStyles.panelLink} href="/health">عرض حالة الواجهة <OperatorIcon name="arrow" /></a>}
-        </section>
+        ) : <p className={dashboardStyles.panelHint}>لا توجد إجراءات سريعة مصرح بها حاليًا.</p>}
+      </section>
 
-        <section className={dashboardStyles.panel} aria-labelledby="order-trends-heading">
-          <header className={dashboardStyles.panelHeading}>
-            <h2 id="order-trends-heading"><OperatorIcon name="chart" /> حركة الطلبات</h2>
-            <span className={dashboardStyles.readonlyLabel}>تحتاج بيانات DSH</span>
-          </header>
-          <div className={dashboardStyles.emptyChart} role="status">
-            <span className={dashboardStyles.chartGlyph}><OperatorIcon name="chart" /></span>
-            <strong>لا تتوفر سلسلة زمنية مؤكدة</strong>
-            <p>لن نعرض رسمًا أو أرقامًا تخمينية. تظهر حركة الطلبات بعد إتاحة قراءة زمنية موثوقة من خدمتها المالكة.</p>
-          </div>
-        </section>
+      {marketOverview && (
+        <div className={dashboardStyles.marketPanel}>{marketOverview}</div>
+      )}
 
-        <section className={dashboardStyles.panel} aria-labelledby="quick-actions-heading">
-          <header className={dashboardStyles.panelHeading}>
-            <h2 id="quick-actions-heading"><OperatorIcon name="activity" /> إجراءات سريعة</h2>
-          </header>
-          {quickActions.length > 0 ? (
-            <ul className={dashboardStyles.actionList}>
-              {quickActions.map(entry => <li key={entry.href}>
-                <a href={entry.href}>
-                  <OperatorIcon name={entry.group === "finance" ? "finance" :
-                    entry.group === "stores" ? "store" : entry.group === "catalog" ? "catalog" : "operations"} />
-                  <span>{entry.label}</span>
-                  <OperatorIcon name="arrow" />
-                </a>
-              </li>)}
-            </ul>
-          ) : <p className={dashboardStyles.panelHint}>لا توجد إجراءات سريعة مصرح بها حاليًا.</p>}
-        </section>
-      </div>
+      <section className={dashboardStyles.panel} aria-labelledby="operational-status-heading">
+        <header className={dashboardStyles.panelHeading}>
+          <h2 id="operational-status-heading"><OperatorIcon name="bell" /> حالة الأنظمة والبيانات</h2>
+        </header>
+        <ul className={dashboardStyles.statusList}>
+          <li><span className={hasVerifiedAccess ? dashboardStyles.statusDotGood : dashboardStyles.statusDotNeutral} /><span>صلاحيات المشغّل</span><strong>{hasVerifiedAccess ? "مؤكدة" : "غير مؤكدة"}</strong></li>
+          <li><span className={dashboardStyles.statusDotNeutral} /><span>بيانات DSH العامة</span><strong>تُقرأ عند الطلب</strong></li>
+          <li><span className={dashboardStyles.statusDotNeutral} /><span>الأرصدة والتسويات</span><strong>ليست معروضة</strong></li>
+        </ul>
+        <p className={dashboardStyles.panelHint}>إحصاءات الطلبات وإجمالي المتاجر والأرصدة غير متاحة في هذه الصفحة حاليًا.</p>
+        {entries.length > 0 && <a className={dashboardStyles.panelLink} href="/health">عرض حالة الواجهة <OperatorIcon name="arrow" /></a>}
+      </section>
 
       <section className={dashboardStyles.tablePanel} aria-labelledby="enabled-destinations-heading">
         <header className={dashboardStyles.panelHeading}>
@@ -117,7 +108,7 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
           <table className={dashboardStyles.table}>
             <thead><tr><th scope="col">الوظيفة</th><th scope="col">الخدمة المالكة</th><th scope="col">الوصول</th></tr></thead>
             <tbody>
-              {entries.slice(0, 6).map(entry => (
+              {entries.map(entry => (
                 <tr key={entry.href}>
                   <td><a href={entry.href}>{entry.label}</a></td>
                   <td>{ownerLabels[entry.owner]}</td>
@@ -129,13 +120,6 @@ export default function HomeDashboard({ grants, marketOverview }: Readonly<{
           {entries.length === 0 && <p role="status" className={dashboardStyles.noAccess}>لا توجد وظائف مصرح بها.</p>}
         </div>
       </section>
-
-      {marketOverview && (
-        <details className={dashboardStyles.marketDisclosure}>
-          <summary className={dashboardStyles.disclosureSummary}>بيانات السوق المنشور من DSH <span>عرض التفاصيل</span></summary>
-          <div className={dashboardStyles.marketPanel}>{marketOverview}</div>
-        </details>
-      )}
 
       <details aria-label="الأقسام المصرح بها" className={dashboardStyles.sections}>
         <summary className={dashboardStyles.disclosureSummary}>جميع الأقسام المتاحة <span>{sections.length} مجموعات</span></summary>

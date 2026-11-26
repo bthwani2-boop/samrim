@@ -1,1 +1,37 @@
-paths: {}
+paths:
+  /v1/carts/{storeID}/serviceability:
+    get:
+      operationId: evaluateCurrentCustomerDeliveryAddress
+      summary: Evaluate geographic delivery eligibility for a Store and owned address
+      description: >-
+        Read-only DSH evaluation of current published Store, active cities,
+        stored coordinates and effective city policy. Missing or foreign
+        address, missing policy, invalid coordinates or unavailable Store
+        yield UNAVAILABLE without evidence. This is not a fee, reservation,
+        fulfillment authorization or checkout quote. Re-evaluate at confirmation.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: addressId
+          in: query
+          required: true
+          schema: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+      responses:
+        '200':
+          description: Owner evaluation
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CustomerDeliveryServiceability' }
+        '400':
+          description: Invalid selector
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'

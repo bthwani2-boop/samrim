@@ -1,9 +1,9 @@
-import { createStage4Root } from "@bthwani/tamagui-config/preview";
+import { createMobileAppearanceRoot } from "@bthwani/tamagui-config/appearance";
 import { Stack } from "expo-router";
 import * as SecureStore from "expo-secure-store";
 
 // Original native identity and app-scoped preference key stay app-owned.
-export default createStage4Root(
+export default createMobileAppearanceRoot(
   "bthwani.stage4.merchant.theme",
   SecureStore.getItemAsync,
   SecureStore.setItemAsync,

@@ -3,14 +3,17 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { parsePublicStoreBrowse } from "../src/features/stores/public-store-query.ts";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
-const source = readFileSync(fileURLToPath(
-  new URL("../app/(workspace)/catalog/categories/page.tsx", import.meta.url),
-), "utf8");
-const compiled = transformSync(source, {
+// Retain uncached modules until Node collects coverage.
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+const source = fileURLToPath(new URL("../app/(workspace)/catalog/categories/page.tsx", import.meta.url));
+const compiled = transformSync(readFileSync(source, "utf8"), {
+  filename: source, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
@@ -52,13 +55,8 @@ function harness({ permitted = true, failCity = false, failVertical = false,
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(imports, name), `unexpected import: ${name}`);
-      return imports[name];
-    }, mod, mod.exports,
-  );
+  const mod = loadMappedRenderFixture(compiled, source, imports);
+  loadedModules.push(mod);
   return {
     calls,
     render: (params = { city: "sanaa" }) =>
@@ -122,4 +120,14 @@ test("independent city outage preserves valid taxonomy, vertical outage fails cl
   const empty = harness({ empty: true });
   const emptyView = await empty.render();
   assert.ok(find(emptyView, node => node.props?.role === "status"));
+});
+
+test("failed vertical continuation offers a first-page recovery link for the same city", async () => {
+  const h = harness({ failVertical: true });
+  const view = await h.render({ city: "sanaa", cursor: "previouscursor" });
+  assert.ok(find(view, node => node.props?.role === "alert"));
+  assert.ok(find(view, node => node.type === "a" && node.props.href === "/catalog/categories?city=sanaa"));
+  assert.equal(find(view, node => node.type === "strong"), undefined);
+  const firstPage = await h.render({ city: "sanaa" });
+  assert.equal(find(firstPage, node => node.type === "a" && node.props.href === "/catalog/categories?city=sanaa"), undefined);
 });

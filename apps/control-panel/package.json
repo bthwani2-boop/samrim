@@ -7,6 +7,7 @@
     "node": ">=24.17.0 <25"
   },
   "scripts": {
+    "test": "node ../../tools/dev/run-coverage.mjs --project",
     "dev": "next dev -H 127.0.0.1 -p 3300",
     "build": "next build",
     "typecheck": "next typegen && tsc --noEmit -p tsconfig.json"
@@ -17,14 +18,12 @@
     "@bthwani/design-system": "workspace:*",
     "@bthwani/dsh": "workspace:*",
     "@bthwani/identity": "workspace:*",
-    "@date-fns/tz": "catalog:",
+    "@bthwani/wlt": "workspace:*",
     "antd": "6.6.7",
-    "date-fns": "catalog:",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "0.0.1",
-    "zod": "catalog:"
+    "server-only": "0.0.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

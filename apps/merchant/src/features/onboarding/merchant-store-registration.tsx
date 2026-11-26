@@ -5,15 +5,27 @@ import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, TextInput, View } from "react-native";
-import { createMerchantStore, readMerchantStoreRegistrationOptions } from "./store-registration-transport";
 import {
   matchingPendingMerchantRegistration,
   type PendingMerchantRegistration,
   parsePendingMerchantRegistration,
 } from "./merchant-registration-attempt";
+import { createMerchantStore, readMerchantStoreRegistrationOptions } from "./store-registration-transport";
 import StoreRelationChoice from "./store-relation-choice";
 
 const optionKey = (choice: MerchantRegistrationChoice) => `${choice.cityId}:${choice.relation}`;
+
+// Normalize localized decimal input before computing the stable registration fingerprint.
+// Do not accept hexadecimal, exponent or grouping syntax as geographic coordinates.
+function coordinateNumber(value: string, limit: number): number | null {
+  const normalized = value.trim()
+    .replace(/[٠-٩۰-۹]/g, digit => String(digit.charCodeAt(0) & 15))
+    .replace(/٫/g, ".")
+    .replace(/−/g, "-");
+  if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) return null;
+  const number = Number(normalized);
+  return Number.isFinite(number) && Math.abs(number) <= limit ? number : null;
+}
 
 const attemptStoragePrefix = "bthwani.merchant.store-registration.pending.v1.";
 const secureOptions = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
@@ -96,7 +108,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
     void readMerchantStoreRegistrationOptions(actorId, controller.signal).then(value => {
       if (!controller.signal.aborted) setOptions(value);
     }).catch(() => {
-      if (!controller.signal.aborted) setMessage("تعذّر قراءة خيارات تسجيل المتجر من DSH.");
+      if (!controller.signal.aborted) setMessage("تعذّر تحميل خيارات تسجيل المتجر. حاول مرة أخرى.");
     }).finally(() => {
       if (!controller.signal.aborted) setLoading(false);
     });
@@ -136,10 +148,13 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
   function submit() {
     if (active.current || !attemptReady || busy || done || !choice || !verticalId ||
       !options?.verticals.includes(verticalId) || !name.trim() || !latitude.trim() || !longitude.trim() || !accepted) return;
-    const lat = Number(latitude.trim());
-    const lon = Number(longitude.trim());
-    if (!Number.isFinite(lat) || !Number.isFinite(lon) ||
-      lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+    if ([...name.trim()].length > 120 || /\p{Cc}/u.test(name)) {
+      setMessage("أدخل اسمًا تجاريًا صالحًا لا يتجاوز 120 حرفًا.");
+      return;
+    }
+    const lat = coordinateNumber(latitude, 90);
+    const lon = coordinateNumber(longitude, 180);
+    if (lat === null || lon === null) {
       setMessage("أدخل إحداثيات موقع المتجر الصحيحة قبل التسجيل.");
       return;
     }
@@ -175,7 +190,9 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         dispatched = true;
         const result = await createMerchantStore(actorId, input, controller.signal);
         if (controller.signal.aborted) return;
-        if (result.store.published) {
+        // A replay reads the current Store state. Publication may have occurred
+        // after the original committed create; only a fresh create must be unpublished.
+        if (!result.replay && result.store.published) {
           setUnknown(true);
           setRestored(false);
           setMessage("الاستجابة تخالف شرط إنشاء متجر غير منشور. تحقق من DSH قبل المتابعة.");
@@ -188,7 +205,9 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         });
         attempt.current = null;
         if (controller.signal.aborted) return;
-        setMessage("حُفظ المتجر غير المنشور في DSH. جارٍ تحديث متاجرك.");
+        setMessage(result.replay
+          ? "تم تأكيد تسجيل المتجر السابق لدى DSH. جارٍ تحديث متاجرك."
+          : "حُفظ المتجر غير المنشور في DSH. جارٍ تحديث متاجرك.");
         onCreated();
       } catch (error) {
         if (controller.signal.aborted) return;
@@ -243,16 +262,21 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         إنشاء متجر في بثواني
       </Text>
       <Text style={{ color: theme.colorSecondary }}>
-        الحساب موثّق عبر Identity. يُنشئ DSH المتجر مستقلًا عن الحساب، غير منشور ولا يقبل طلبات قبل الاعتماد.
+        تم التحقق من حسابك. يمكنك إنشاء متجر مستقل، واستكمال بياناته قبل اعتماده ونشره واستقبال الطلبات.
       </Text>
       {loading ? <Text style={{ color: theme.colorSecondary }}>جارٍ قراءة سياسة التسجيل…</Text> : null}
-      {!loading && (!options || options.choices.length === 0) ? button("إعادة التحقق من إتاحة التسجيل", () => setReload(n => n + 1), busy || unknown) : null}
-      {!loading && options?.choices.length === 0 ? (
-        <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
-          تسجيل المتاجر مغلق حاليًا لدى DSH؛ يجب اعتماد سياسة المدينة وطريقة عمل المتجر أولًا.
+      {!loading && (!options || options.choices.length === 0 || options.verticals.length === 0) ? button("إعادة التحقق من إتاحة التسجيل", () => setReload(n => n + 1), busy || unknown) : null}
+      {!loading && options?.verticals.length === 0 ? (
+        <Text testID="merchant-registration-no-activities" accessibilityRole="alert" style={{ color: theme.warningText }}>
+          لا توجد أنشطة تجارية متاحة للتسجيل حاليًا. أعد التحقق عند تحديث خيارات التسجيل.
         </Text>
       ) : null}
-      {options && options.choices.length > 0 ? (
+      {!loading && options?.choices.length === 0 && options.verticals.length > 0 ? (
+        <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
+          تسجيل المتاجر غير متاح حاليًا. يجب اعتماد خيارات التسجيل للمدينة وطريقة عمل المتجر أولًا. يمكنك إعادة التحقق من الإتاحة.
+        </Text>
+      ) : null}
+      {options && options.choices.length > 0 && options.verticals.length > 0 ? (
         <>
           <StoreRelationChoice choices={options.choices} selectedKey={choiceKey}
             disabled={locked} onSelect={key => {

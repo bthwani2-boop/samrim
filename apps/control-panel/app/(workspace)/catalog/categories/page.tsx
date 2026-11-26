@@ -64,7 +64,7 @@ export default async function Page({ searchParams }: Readonly<{
         <label style={{ display: "grid", gap: "0.25rem" }}>
           معرف المدينة المعتمدة
           <input name="city" aria-label="معرف المدينة" required
-            list="operator-catalog-city-options" pattern="[a-z0-9-]{1,64}"
+            list="operator-catalog-city-options" pattern="[a-z0-9\-]{1,64}"
             maxLength={64} defaultValue={scope?.city ?? ""} placeholder="sanaa"
             style={{ minHeight: 44 }} />
           {cities ? <datalist id="operator-catalog-city-options">
@@ -77,6 +77,7 @@ export default async function Page({ searchParams }: Readonly<{
       </form>
       {citiesWarning ? <p role="status">{citiesWarning}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
+      {error && scope?.city && scope.cursor ? <a href={categoryPageHref(scope.city)}>العودة إلى أول صفحة</a> : null}
       {scope && !scope.city && !error ? <p role="status">اختر مدينة لقراءة أنواع النشاط من DSH.</p> : null}
       {verticals && scope?.city ? (
         <section aria-label="أنواع النشاط المنشورة">

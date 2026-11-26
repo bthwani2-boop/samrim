@@ -2,6 +2,7 @@ export interface CustomerWalletBalance {
   actorId: string;
   currency: "YER";
   balanceYer: string;
+  availableYer: string;
 }
 export interface CustomerFundingTransaction {
   fundingId: string;

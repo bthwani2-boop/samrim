@@ -17,12 +17,11 @@ export async function handleWalletOwnerRead<T>(
   const site = request.headers.get("Sec-Fetch-Site");
   const origin = process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN;
   const dockerRequested = process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW === "1";
-  const surfacePreview = !dockerRequested && process.env.BTHWANI_SURFACE_PREVIEW === "1";
   // Docker-mode Web preview is server-only and can reach precisely the
   // verified Lenovo loopback WLT reader, never an arbitrary local service.
   const dockerPreview = dockerRequested && process.env.BTHWANI_ISOLATED_TEST_MODE === "true" &&
     origin === "http://127.0.0.1:3203";
-  if ((!surfacePreview && !dockerPreview) || !origin ||
+  if (!dockerPreview || !origin ||
     !["localhost", "127.0.0.1"].includes(url.hostname)) {
     return Response.json({ error: "OWNER_UNAVAILABLE" }, { status: 503, headers });
   }
@@ -42,8 +41,9 @@ export async function handleWalletOwnerRead<T>(
     const value = await read(origin, bearer, signal, allowCursor ? cursors[0] : undefined);
     return Response.json(value, { headers });
   } catch (error) {
-    const status = error instanceof WltReadError && [401, 403].includes(error.status) ? error.status : 503;
-    const code = status === 401 ? "UNAUTHORIZED" : status === 403 ? "FORBIDDEN" : "OWNER_UNAVAILABLE";
+    const status = error instanceof WltReadError && [400, 401, 403].includes(error.status) ? error.status : 503;
+    const code = status === 400 ? "INVALID_REQUEST" : status === 401 ? "UNAUTHORIZED" :
+      status === 403 ? "FORBIDDEN" : "OWNER_UNAVAILABLE";
     return Response.json({ error: code }, { status, headers });
   }
 }

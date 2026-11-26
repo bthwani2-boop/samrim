@@ -1,0 +1,413 @@
+#requires -Version 7.0
+# Fresh DSH, Identity and WLT baselines, DSH restore, and owner permissions.
+# Creates only an ephemeral, network-disabled PostgreSQL with tmpfs storage.
+# Never attaches to the project's existing database, volumes or service ports.
+[CmdletBinding()]
+param([string]$DockerContext = 'bthwani-docker', [switch]$NoPull, [switch]$CredentialPublicationOnly)
+$ErrorActionPreference = 'Stop'
+$PSNativeCommandUseErrorActionPreference = $false
+$root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+# The credential proof runs before allocating any PostgreSQL container and can
+# be selected alone on either supported host. It exercises the exact provisioner.
+. (Join-Path $root 'tools/dev/provision-wlt-test-db.ps1') -DockerContext $DockerContext
+function Assert-WltCredentialPublication {
+  $envFixture = Join-Path ([IO.Path]::GetTempPath()) ('bthwani-wlt-env-proof-'+[guid]::NewGuid().ToString('N'))
+  [IO.Directory]::CreateDirectory($envFixture) | Out-Null
+  try {
+    $envFile = Join-Path $envFixture '.env'
+    $fixtureSecret = 'a' * 64
+    # Include BOM and no trailing newline to prove original content survives.
+    $original = [string][char]0xFEFF+(@('REF_POSTGRES_DB=bthwani_refoundation','REF_POSTGRES_USER=synthetic_admin') -join [Environment]::NewLine)
+    $utf8 = [Text.UTF8Encoding]::new($false,$true)
+    [IO.File]::WriteAllBytes($envFile,$utf8.GetBytes($original))
+    if ((Read-WltEnvironment $envFile).Text -cne $original) { throw 'WLT hidden source read failed' }
+
+    $staged = New-WltCandidate $envFile $original $fixtureSecret
+    if (!$IsWindows -and [IO.File]::GetUnixFileMode($staged.Path) -ne ([IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite)) {
+      throw 'WLT private candidate mode not proven'
+    }
+    $competing = $original+[Environment]::NewLine+'REF_MEDIA_BUCKET=other'
+    [IO.File]::WriteAllBytes($envFile,$utf8.GetBytes($competing))
+    $refused = $false
+    try { Publish-WltCandidate $envFile $original $staged }
+    catch { if ($_.Exception.Message -ne 'WLT_ENV_CHANGED') { throw }; $refused = $true }
+    if (!$refused -or (Read-WltRegularText $envFile) -cne $competing -or ![IO.File]::Exists($staged.Path)) {
+      throw 'WLT competing edit not preserved'
+    }
+    [IO.File]::WriteAllBytes($envFile,$utf8.GetBytes($original))
+    [IO.File]::WriteAllBytes($staged.Path,$utf8.GetBytes($staged.Text+'tampered'))
+    $refused = $false
+    try { Publish-WltCandidate $envFile $original $staged }
+    catch { if ($_.Exception.Message -ne 'WLT_CANDIDATE_CHANGED') { throw }; $refused = $true }
+    if (!$refused -or (Read-WltRegularText $envFile) -cne $original) { throw 'WLT candidate tamper not denied' }
+    [IO.File]::WriteAllBytes($staged.Path,$utf8.GetBytes($staged.Text))
+    Publish-WltCandidate $envFile $original $staged
+    if ((Read-WltRegularText $envFile) -cne $staged.Text -or [IO.Directory]::Exists($staged.Directory)) { throw 'WLT atomic publication proof failed' }
+    $refused = $false
+    try { $null = Read-WltEnvironment $envFile } catch { if ($_.Exception.Message -ne 'WLT_EXISTING_CREDENTIAL') { throw }; $refused = $true }
+    if (!$refused) { throw 'WLT existing credential replay admitted' }
+    [IO.File]::WriteAllBytes($envFile,$utf8.GetBytes($original+[Environment]::NewLine+'REF_POSTGRES_USER=duplicate'))
+    $refused = $false
+    try { $null = Read-WltEnvironment $envFile } catch { if ($_.Exception.Message -ne 'WLT_ENV_INVALID_OR_DUPLICATE') { throw }; $refused = $true }
+    if (!$refused) { throw 'WLT duplicate credential source admitted' }
+  } finally { Remove-Item -LiteralPath $envFixture -Recurse -Force }
+  Write-Output 'PG_WLT_CREDENTIAL_PUBLICATION=PASS hidden-file=yes private-candidate=yes competing-edit-denied=yes tamper-denied=yes replay-denied=yes duplicate-denied=yes'
+}
+Assert-WltCredentialPublication
+if ($CredentialPublicationOnly) { return }
+
+$compose = [IO.File]::ReadAllText((Join-Path $root 'infra/compose.yaml'))
+$imageMatch = [regex]::Match($compose, '(?m)^    image: (postgis/postgis:18-3\.6@sha256:[a-f0-9]{64})$')
+if (!$imageMatch.Success) { throw 'Refusing unpinned database image' }
+if ($DockerContext -notmatch '^[A-Za-z0-9._-]+$') { throw 'Invalid Docker context' }
+$image = $imageMatch.Groups[1].Value
+$name = 'bthwani-agent01-pgproof-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+$db = 'bthwani_agent01_synthetic'
+$restoreDb = 'bthwani_agent01_restore'
+$user = 'bthwani_agent01_admin'
+$schema = 'dsh_test_agent01'
+$reader = 'bthwani_agent01_reader'
+$containerId = $null
+# Use the same exact already-installed pin as the owner reconciler and Go checks.
+Push-Location $root
+try {
+  $goExecutable = & node --input-type=module -e 'import { readFileSync } from "node:fs"; import { resolvePinnedGo } from "./tools/dev/check-go.mjs"; process.stdout.write(resolvePinnedGo(readFileSync(".go-version","utf8").trim()));'
+  if ($LASTEXITCODE -ne 0 -or !$goExecutable -or @($goExecutable).Count -ne 1) { throw 'Pinned Go toolchain not available for isolated database proof' }
+} finally { Pop-Location }
+$pullPolicy = if ($NoPull) { @('--pull','never') } else { @() }
+try {
+  $created = @(& docker --context $DockerContext run -d --rm @pullPolicy --name $name `
+      --network none --mount 'type=tmpfs,dst=/var/lib/postgresql,tmpfs-size=536870912' `
+      --label 'com.bthwani.test-scope=session01-disposable-sql' `
+      -e 'POSTGRES_HOST_AUTH_METHOD=trust' -e ('POSTGRES_USER=' + $user) `
+      -e ('POSTGRES_DB=' + $db) $image)
+  if ($LASTEXITCODE -ne 0 -or $created.Count -ne 1 -or $created[0] -notmatch '^[a-f0-9]{64}$') { throw 'Cannot start disposable PostgreSQL' }
+  $containerId = $created[0]
+  $network = (& docker --context $DockerContext inspect $containerId --format '{{.HostConfig.NetworkMode}}').Trim()
+  $published = (& docker --context $DockerContext inspect $containerId --format '{{len .HostConfig.PortBindings}}').Trim()
+  $mounts = (& docker --context $DockerContext inspect $containerId --format '{{json .Mounts}}').Trim()
+  if ($network -ne 'none' -or $published -ne '0' -or $mounts -match '"Type":"volume"') {
+    throw 'Disposable PostgreSQL is not isolated from networks and persistent volumes'
+  }
+  $ready = $false
+  for ($attempt = 0; $attempt -lt 30; $attempt++) {
+    # The image's bootstrap server can accept Unix socket connections before
+    # it stops and the final PostgreSQL TCP listener starts.
+    $identity = & docker --context $DockerContext exec $containerId psql -X -At -h 127.0.0.1 -v ON_ERROR_STOP=1 -U $user -d $db -c 'SELECT current_database()' 2>$null
+    if ($LASTEXITCODE -eq 0 -and $identity -ceq $db) { $ready = $true; break }
+    Start-Sleep -Milliseconds 600
+  }
+  if (!$ready) { throw 'Disposable PostgreSQL did not become ready' }
+  $baseline = @(Get-ChildItem (Join-Path $root 'services/dsh/database/schema') -Filter '*.sql' -File | Sort-Object Name)
+  if ($baseline.Count -lt 7) { throw 'Missing essential DSH baseline domain files' }
+  foreach ($file in $baseline) {
+    $sql = [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__', $schema)
+    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $db -f - 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ('Fresh DSH baseline failed: ' + $file.Name + ' ' + ($output | Out-String)) }
+  }
+  Write-Output "PG_FRESH_DSH_BASELINE=PASS count=$($baseline.Count) ephemeral=yes"
+
+  # The database owner retains migration rights; a new isolated reader must not.
+  $grants = @(
+    "CREATE ROLE $reader NOLOGIN",
+    "GRANT USAGE ON SCHEMA $schema TO $reader",
+    "GRANT SELECT ON ALL TABLES IN SCHEMA $schema TO $reader"
+  )
+  foreach ($sql in $grants) {
+    $grantResult = & docker --context $DockerContext exec $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $db -c $sql 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ('Cannot provision disposable least-privilege reader: ' + $sql + ' result=' + ($grantResult | Out-String)) }
+  }
+  function Assert-ReaderAccess([string]$Database) {
+    $readSql = "BEGIN; SET LOCAL ROLE $reader; SELECT revision FROM $schema.public_revision WHERE singleton; ROLLBACK;"
+    $readOutput = & docker --context $DockerContext exec $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -c $readSql 2>&1
+    if ($LASTEXITCODE -ne 0 -or ($readOutput | Out-String).Trim() -cne '0') {
+      throw "Reader cannot read the intended synthetic revision in $Database"
+    }
+    $writeSql = "BEGIN; SET LOCAL ROLE $reader; UPDATE $schema.public_revision SET revision=revision+1 WHERE singleton; ROLLBACK;"
+    $denyOutput = & docker --context $DockerContext exec $containerId psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U $user -d $Database -Atc $writeSql 2>&1
+    if ($LASTEXITCODE -eq 0 -or ($denyOutput | Out-String) -notmatch '42501') {
+      throw "Reader write-denial was not proven in $Database"
+    }
+  }
+  Assert-ReaderAccess $db
+  Write-Output 'PG_READER_ACCESS=PASS select=allowed update=denied(sqlstate42501)'
+
+  function Assert-CityConstraint([string]$Database) {
+    $writeCity = "INSERT INTO $schema.service_cities(id,active,timezone_name) VALUES ('restore-check',true,"
+    $null = & docker --context $DockerContext exec $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $Database -c "BEGIN; $writeCity 'Asia/Aden'); ROLLBACK;" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Valid synthetic timezone was refused in $Database" }
+    $invalid = & docker --context $DockerContext exec $containerId psql -X -q -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U $user -d $Database -c "BEGIN; $writeCity '@invalid@'); ROLLBACK;" 2>&1
+    $details = $invalid | Out-String
+    if ($LASTEXITCODE -eq 0 -or $details -notmatch '23514' -or $details -notmatch 'service_cities_timezone_name_valid') {
+      throw "Named timezone constraint did not reject invalid input in $Database"
+    }
+  }
+  Assert-CityConstraint $db
+
+  $dump = '/tmp/agent01-dsh.dump'
+  $null = & docker --context $DockerContext exec $containerId pg_dump -Fc --no-owner --schema=$schema -U $user -d $db -f $dump 2>&1
+  if ($LASTEXITCODE -ne 0) { throw 'Synthetic backup failed' }
+  $null = & docker --context $DockerContext exec $containerId createdb -U $user $restoreDb 2>&1
+  if ($LASTEXITCODE -ne 0) { throw 'Cannot create disposable restore target' }
+  # A fresh database in the same disposable cluster can restore the original
+  # schema and table grants to the synthetic reader.
+  $null = & docker --context $DockerContext exec $containerId pg_restore --no-owner --exit-on-error --single-transaction -U $user -d $restoreDb $dump 2>&1
+  if ($LASTEXITCODE -ne 0) { throw 'Synthetic restore failed' }
+  Assert-ReaderAccess $restoreDb
+  Assert-CityConstraint $restoreDb
+
+  # Both snapshots run on the same PostgreSQL version. Its precedence-aware
+  # deparser removes redundant grouping introduced by dump/restore.
+  $fingerprintSql = @"
+SELECT jsonb_build_object(
+  'columns', (SELECT jsonb_agg(jsonb_build_array(table_name, column_name, ordinal_position, column_default,
+                  is_nullable, udt_schema, udt_name, character_maximum_length, numeric_precision, numeric_scale,
+                  datetime_precision, is_identity, identity_generation, generation_expression)
+                  ORDER BY table_name, ordinal_position)
+              FROM information_schema.columns c WHERE table_schema = '$schema'),
+  'constraints', (SELECT jsonb_agg(jsonb_build_array(cl.relname, c.conname, c.convalidated, pg_get_constraintdef(c.oid, true))
+                                  ORDER BY cl.relname, c.conname)
+                  FROM pg_constraint c JOIN pg_class cl ON cl.oid = c.conrelid
+                  WHERE c.connamespace = '$schema'::regnamespace AND c.contype <> 'n'),
+  'indexes', (SELECT jsonb_agg(indexdef ORDER BY tablename, indexname)
+              FROM pg_indexes WHERE schemaname = '$schema'),
+  'triggers', (SELECT jsonb_agg(pg_get_triggerdef(t.oid) ORDER BY cl.relname, t.tgname)
+               FROM pg_trigger t JOIN pg_class cl ON cl.oid = t.tgrelid
+               WHERE cl.relnamespace = '$schema'::regnamespace AND NOT t.tgisinternal),
+  'functions', (SELECT jsonb_agg(jsonb_build_array(p.proname, pg_get_function_identity_arguments(p.oid),
+                      pg_get_functiondef(p.oid)) ORDER BY p.proname, pg_get_function_identity_arguments(p.oid))
+                 FROM pg_proc p WHERE p.pronamespace = '$schema'::regnamespace),
+  'revision', (SELECT revision FROM $schema.public_revision WHERE singleton)
+);
+"@
+  function Read-Fingerprint([string]$Database) {
+    $snapshot = & docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $Database -c $fingerprintSql
+    if ($LASTEXITCODE -ne 0 -or !$snapshot) { throw "Cannot inspect synthetic schema in $Database" }
+    return ConvertFrom-Json -AsHashtable -InputObject $snapshot
+  }
+  $before = Read-Fingerprint $db
+  $after = Read-Fingerprint $restoreDb
+  # Column nullability is compared directly. PostgreSQL 18 can generate new
+  # internal constraint names for inline NOT NULL while recreating a table.
+  foreach ($property in @('columns', 'constraints', 'indexes', 'triggers', 'functions', 'revision')) {
+    $original = ConvertTo-Json -Depth 12 -Compress -InputObject $before[$property]
+    $restored = ConvertTo-Json -Depth 12 -Compress -InputObject $after[$property]
+    if ($original -cne $restored) {
+      if ($property -eq 'constraints') {
+        $beforeRows = @($before[$property] | ForEach-Object { ConvertTo-Json -Compress -InputObject $_ })
+        $afterRows = @($after[$property] | ForEach-Object { ConvertTo-Json -Compress -InputObject $_ })
+        Compare-Object -ReferenceObject $beforeRows -DifferenceObject $afterRows -CaseSensitive |
+          ForEach-Object { Write-Host "Synthetic constraint $($_.SideIndicator) $($_.InputObject)" }
+      }
+      throw "Synthetic backup/restore mismatch in $property"
+    }
+  }
+  Write-Output 'PG_RESTORE_READBACK=PASS columns,keys,indexes,triggers,functions,revision,reader-grants,city-timezone-constraint'
+
+  # Exercise a nonempty data-only transfer into the dedicated DSH database.
+  # The original fixture remains intact. New baseline tables are not seeded
+  # from a historical source; all FKs and triggers remain enabled.
+  function Invoke-ProofSql([string]$Database, [string]$Sql) {
+    $result = $Sql | & docker --context $DockerContext exec -i $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -f - 2>&1
+    if ($LASTEXITCODE -ne 0) { throw 'Dedicated owner database proof SQL failed' }
+    return ($result | Out-String).Trim()
+  }
+  $null = Invoke-ProofSql $db "INSERT INTO $schema.service_cities(id,active,timezone_name) VALUES ('preserved-city',true,'Asia/Aden'); UPDATE $schema.public_revision SET revision=7 WHERE singleton;"
+  $dshDb = 'bthwani_dsh_dev'
+  $null = Invoke-ProofSql 'postgres' 'CREATE ROLE bthwani_dsh_owner NOLOGIN NOINHERIT; CREATE ROLE bthwani_dsh_runtime LOGIN NOINHERIT;'
+  $null = & docker --context $DockerContext exec $containerId createdb -U $user -O bthwani_dsh_owner $dshDb
+  if ($LASTEXITCODE -ne 0) { throw 'Dedicated DSH fixture database failed' }
+  $null = Invoke-ProofSql 'postgres' "REVOKE ALL ON DATABASE $dshDb FROM PUBLIC; GRANT CONNECT ON DATABASE $dshDb TO bthwani_dsh_runtime;"
+  $null = Invoke-ProofSql $dshDb "REVOKE ALL ON SCHEMA public FROM PUBLIC;"
+  foreach ($file in $baseline) {
+    $sql = "SET ROLE bthwani_dsh_owner;`n" + [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__', $schema)
+    $null = Invoke-ProofSql $dshDb $sql
+  }
+  $dshDataDump = '/tmp/agent01-dsh-data.dump'
+  $null = & docker --context $DockerContext exec $containerId pg_dump -Fc --data-only --no-owner --no-acl "--schema=$schema" "--exclude-table=$schema.customer_addresses" "--exclude-table=$schema.service_city_delivery_policies" -U $user -d $db -f $dshDataDump
+  if ($LASTEXITCODE -ne 0) { throw 'DSH synthetic compatible data export failed' }
+  # Only the just-created fixture singleton is replaced; no old database is written.
+  $null = Invoke-ProofSql $dshDb "DELETE FROM $schema.public_revision WHERE singleton;"
+  $null = & docker --context $DockerContext exec $containerId pg_restore --data-only --no-owner --no-acl --exit-on-error --single-transaction -U $user -d $dshDb $dshDataDump
+  if ($LASTEXITCODE -ne 0) { throw 'DSH synthetic compatible data restore failed' }
+  $null = Invoke-ProofSql $dshDb "GRANT USAGE ON SCHEMA $schema TO bthwani_dsh_runtime; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA $schema TO bthwani_dsh_runtime; GRANT USAGE ON ALL SEQUENCES IN SCHEMA $schema TO bthwani_dsh_runtime;"
+  $proof = Invoke-ProofSql $dshDb "SELECT CASE WHEN (SELECT count(*) FROM $schema.service_cities WHERE id='preserved-city' AND active AND timezone_name='Asia/Aden')=1 AND (SELECT revision FROM $schema.public_revision WHERE singleton)=7 AND (SELECT count(*) FROM $schema.customer_addresses)=0 AND (SELECT count(*) FROM $schema.service_city_delivery_policies)=0 THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'Dedicated DSH fixture data transfer readback failed' }
+  $sourceProof = Invoke-ProofSql $db "SELECT count(*) FROM $schema.service_cities WHERE id='preserved-city';"
+  if ($sourceProof -cne '1') { throw 'DSH original fixture data no longer present' }
+  # Execute the actual Go database boundary, not a second copy of its predicate.
+  $binary = Join-Path ([IO.Path]::GetTempPath()) ('bthwani-dsh-dbproof-' + [guid]::NewGuid().ToString('N'))
+  $priorGo = @{}
+  foreach ($key in @('GOOS','GOARCH','CGO_ENABLED','GOTOOLCHAIN','GOWORK')) { $priorGo[$key] = [Environment]::GetEnvironmentVariable($key,'Process') }
+  try {
+    $env:GOOS='linux'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'; $env:GOTOOLCHAIN='local'; $env:GOWORK='off'
+    Push-Location (Join-Path $root 'services/dsh/backend')
+    try {
+      & $goExecutable test -c -o $binary ./internal/dbscope
+      if ($LASTEXITCODE -ne 0) { throw 'DSH database boundary test build failed' }
+    } finally { Pop-Location }
+    & docker --context $DockerContext cp $binary "${containerId}:/tmp/dsh-dbproof"
+    if ($LASTEXITCODE -ne 0) { throw 'DSH database boundary test copy failed' }
+    & docker --context $DockerContext exec $containerId chmod 755 /tmp/dsh-dbproof
+    if ($LASTEXITCODE -ne 0) { throw 'DSH database boundary test permission failed' }
+    $result = & docker --context $DockerContext exec -e BTHWANI_DSH_DEV_DB_PROOF=network-none-disposable $containerId /tmp/dsh-dbproof '-test.v' '-test.run' '^TestDedicatedDevelopmentRuntimePostgres$' '-test.count=1'
+    if ($LASTEXITCODE -ne 0 -or ($result | Out-String) -notmatch '(?m)^--- PASS: TestDedicatedDevelopmentRuntimePostgres ' -or ($result | Out-String) -match '(?m)^--- SKIP:') { throw ('DSH real database runtime boundary failed: ' + ($result | Out-String)) }
+  } finally {
+    foreach ($key in $priorGo.Keys) { [Environment]::SetEnvironmentVariable($key,$priorGo[$key],'Process') }
+    if ([IO.File]::Exists($binary)) { [IO.File]::Delete($binary) }
+  }
+  Write-Output 'PG_DSH_DEDICATED_RUNTIME=PASS data-preserved owner-ddl-denied admin-denied shared-db-denied'
+
+  # Reuse the SAME network-disabled/tmpfs container to prove fresh Identity and
+  # WLT baselines. Never connect these tests to retained or shared databases.
+  $identitySchema = 'identity_test_fresh_baseline'
+  $identityFiles = @(Get-ChildItem (Join-Path $root 'services/identity/database/schema') -Filter '*.sql' -File | Sort-Object Name)
+  if ($identityFiles.Count -lt 5) { throw 'Missing essential Identity baseline domain files' }
+  foreach ($file in $identityFiles) {
+    $sql = [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__', $identitySchema)
+    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $db -f - 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ('Fresh Identity baseline failed: ' + $file.Name + ' ' + ($output | Out-String)) }
+  }
+  $identityCheck = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $db -c @"
+SELECT CASE WHEN
+  (SELECT count(*) FROM information_schema.tables WHERE table_schema='$identitySchema' AND table_type='BASE TABLE') = 15
+  AND EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='$identitySchema' AND table_name='auth_refresh_tokens')
+  AND NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='$identitySchema' AND table_name='operator_merchant_scope_cutover_audit')
+  AND EXISTS (SELECT 1 FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+    JOIN pg_namespace n ON n.oid=t.relnamespace
+    WHERE n.nspname='$identitySchema' AND t.relname='operator_permissions'
+      AND c.conname='operator_permissions_permission_check'
+      AND pg_get_constraintdef(c.oid) LIKE '%merchant%'
+      AND pg_get_constraintdef(c.oid) NOT LIKE '%partners%')
+THEN 'PASS' ELSE 'FAIL' END;
+"@ | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $identityCheck -cne 'PASS') { throw 'Identity baseline object or canonical permission readback failed' }
+  Write-Output "PG_FRESH_IDENTITY_BASELINE=PASS count=$($identityFiles.Count) tables=15 canonical-merchant-only=yes"
+
+  # Exercise the exact provisioner in the existing network-none tmpfs fixture.
+  $wltDb = 'bthwani_wlt_test'
+  $wltSources = Read-WltSources $root
+  $fixtureSecret = 'a' * 64
+  $broken = @{schema=$wltSources.schema; sandbox=@($wltSources.sandbox)+@('SELECT 1/0;')}
+  $refused = $false
+  try { $null = Initialize-WltDatabase $DockerContext $containerId $user $broken $fixtureSecret }
+  catch { if ($_.Exception.Message -ne 'WLT_SQL_FAILED stage=baseline-transaction') { throw }; $refused = $true }
+  if (!$refused) { throw 'WLT failing baseline unexpectedly committed' }
+  $rollback = Invoke-WltSql $DockerContext $containerId $user $wltDb "SELECT CASE WHEN to_regnamespace('wlt') IS NULL AND NOT has_database_privilege('bthwani_wlt_reader',current_database(),'CONNECT') THEN 'PASS' ELSE 'FAIL' END;" 'rollback-proof'
+  if ($rollback -cne 'PASS') { throw 'WLT failed baseline retained schema or reader access' }
+  # Reset only the namespace created above within this exact disposable fixture.
+  $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'DROP DATABASE bthwani_wlt_test;' 'fixture-cleanup'
+  $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'DROP ROLE bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_wlt_owner;' 'fixture-cleanup'
+  $wltProvision = Initialize-WltDatabase $DockerContext $containerId $user $wltSources $fixtureSecret
+  $refused = $false
+  try { $null = Initialize-WltDatabase $DockerContext $containerId $user $wltSources $fixtureSecret }
+  catch { if ($_.Exception.Message -ne 'WLT_EXISTING_NAMESPACE_OR_ADMIN') { throw }; $refused = $true }
+  if (!$refused) { throw 'WLT existing namespace replay admitted' }
+
+  Write-Output 'PG_WLT_PROVISIONER=PASS transaction-rollback=yes fresh-only=yes credential-publication=yes competing-edit-denied=yes'
+  # Sandbox login is only enabled inside this disposable test for posting proof.
+  $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'ALTER ROLE bthwani_wlt_sandbox LOGIN; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_sandbox;' 'fixture-sandbox'
+  $denied = & docker --context $DockerContext exec $containerId psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U bthwani_wlt_reader -d $wltDb -c 'SELECT provider_reference FROM wlt.customer_funding_journal' 2>&1
+  if ($LASTEXITCODE -eq 0 -or ($denied | Out-String) -notmatch '42501') { throw 'WLT private ledger reader denial not proven' }
+  $reference = 'fresh-baseline-001'
+  $testCustomer = 'synthetic-baseline-actor'
+  $funding = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_sandbox -d $wltDb -c "SELECT wlt.post_sandbox_customer_funding('$reference','$testCustomer',53)" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $funding -cne 'POSTED') { throw 'WLT sandbox new posting failed' }
+  $fundingReplay = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_sandbox -d $wltDb -c "SELECT wlt.post_sandbox_customer_funding('$reference','$testCustomer',53)" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $fundingReplay -cne 'REPLAYED') { throw 'WLT sandbox posting replay failed' }
+  $reversal = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_sandbox -d $wltDb -c "SELECT wlt.reverse_sandbox_customer_funding('$reference','$testCustomer')" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $reversal -cne 'REVERSED') { throw 'WLT sandbox reversal failed' }
+  $reversalReplay = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_sandbox -d $wltDb -c "SELECT wlt.reverse_sandbox_customer_funding('$reference','$testCustomer')" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $reversalReplay -cne 'REPLAYED') { throw 'WLT sandbox reversal replay failed' }
+  $moneyReadback = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries WHERE actor_id='$testCustomer'" | Out-String).Trim()
+  if ($LASTEXITCODE -ne 0 -or $moneyReadback -cne '4:0') { throw 'WLT double-entry balance or idempotency readback failed' }
+  Write-Output "PG_FRESH_WLT_BASELINE=PASS schema=$($wltProvision.SchemaCount) sandbox=$($wltProvision.SandboxCount) privilege-isolation=yes posting-replay=yes reversal-replay=yes entries=4 net=0"
+  # Execute the exact transaction builder consumed by the owner reconciler,
+  # against only the disposable container. No live database is involved.
+  function Invoke-BaselineTransition([string]$Owner,[string]$Database,[string]$Schema,[string]$Archive,[bool]$ExpectPass=$true,[string]$ExpectedError='') {
+    $transition = & node (Join-Path $root 'tools/dev/docker/owner-baseline-transition.mjs') '--fixture-sql' $Owner $Schema $Archive
+    if ($LASTEXITCODE -ne 0 -or !$transition) { throw 'Cannot generate reviewed owner transition' }
+    $result = ($transition -join [Environment]::NewLine) | & docker --context $DockerContext exec -i $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -f - 2>&1
+    $ok = $LASTEXITCODE -eq 0
+    if ($ExpectPass) {
+      if (!$ok -or ($result | Out-String).Trim() -cne 'OWNER_BASELINE_TRANSITION_PASS') { throw ('Disposable owner transition failed: '+($result | Out-String)) }
+    } elseif ($ok) { throw 'Incompatible or wrong-database transition unexpectedly committed' }
+    elseif ($ExpectedError -and ($result | Out-String) -notmatch [regex]::Escape($ExpectedError)) { throw ('Wrong transition refusal: '+($result | Out-String)) }
+  }
+  # Wrong database and incompatible retained columns must leave the source
+  # exactly as it was. The temporary change is exclusively in our fixture.
+  Invoke-BaselineTransition 'dsh' $db $schema 'bthwani_recovery_dsh_000000000001' $false
+  $null = Invoke-ProofSql $dshDb "ALTER TABLE $schema.service_cities ADD COLUMN fixture_incompatible text;"
+  Invoke-BaselineTransition 'dsh' $dshDb $schema 'bthwani_recovery_dsh_000000000002' $false
+  $rollback = Invoke-ProofSql $dshDb "SELECT CASE WHEN to_regnamespace('bthwani_recovery_dsh_000000000002') IS NULL AND EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema='$schema' AND table_name='service_cities' AND column_name='fixture_incompatible') AND (SELECT count(*) FROM $schema.service_cities WHERE id='preserved-city')=1 AND has_schema_privilege('bthwani_dsh_runtime','$schema','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($rollback -cne 'PASS') { throw 'DSH incompatible transition did not roll back' }
+  $null = Invoke-ProofSql $dshDb "ALTER TABLE $schema.service_cities DROP COLUMN fixture_incompatible; DROP TABLE $schema.customer_addresses;"
+  Invoke-BaselineTransition 'dsh' $dshDb $schema 'bthwani_recovery_dsh_000000000003'
+  $proof = Invoke-ProofSql $dshDb "SELECT CASE WHEN (SELECT count(*) FROM $schema.service_cities WHERE id='preserved-city')=1 AND (SELECT revision FROM $schema.public_revision WHERE singleton)=7 AND to_regclass('$schema.customer_addresses') IS NOT NULL AND (SELECT count(*) FROM $schema.customer_addresses)=0 AND has_table_privilege('bthwani_dsh_runtime','$schema.customer_addresses','INSERT') AND NOT has_schema_privilege('bthwani_dsh_runtime','bthwani_recovery_dsh_000000000003','USAGE') AND (SELECT count(*) FROM bthwani_recovery_dsh_000000000003.service_cities WHERE id='preserved-city')=1 THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'DSH additive baseline transition readback failed' }
+  Write-Output 'PG_BASELINE_TRANSITION_DSH=PASS additive-table data-parity role-isolation incompatible-rollback wrong-database-denied'
+
+  $identityDb='bthwani_identity_dev'
+  $null = Invoke-ProofSql 'postgres' 'CREATE ROLE bthwani_identity_owner NOLOGIN NOINHERIT; CREATE ROLE bthwani_identity_runtime LOGIN NOINHERIT;'
+  $null = & docker --context $DockerContext exec $containerId createdb -U $user -O bthwani_identity_owner $identityDb
+  if ($LASTEXITCODE -ne 0) { throw 'Identity transition fixture database failed' }
+  $null = Invoke-ProofSql 'postgres' "REVOKE ALL ON DATABASE $identityDb FROM PUBLIC; GRANT CONNECT ON DATABASE $identityDb TO bthwani_identity_runtime;"
+  $null = Invoke-ProofSql $identityDb 'REVOKE ALL ON SCHEMA public FROM PUBLIC;'
+  foreach ($file in $identityFiles) {
+    $null = Invoke-ProofSql $identityDb ("SET ROLE bthwani_identity_owner; " + [IO.File]::ReadAllText($file.FullName).Replace('__SCHEMA__',$identitySchema))
+  }
+  $null = Invoke-ProofSql $identityDb @"
+INSERT INTO $identitySchema.actors(id,status) VALUES ('fixture-session-actor','ACTIVE');
+INSERT INTO $identitySchema.actor_roles(actor_id,role,status) VALUES ('fixture-session-actor','customer','ACTIVE');
+INSERT INTO $identitySchema.auth_sessions(token_digest,actor_id,role,actor_version,role_version,issued_at,expires_at)
+VALUES (decode(repeat('ab',32),'hex'),'fixture-session-actor','customer',1,1,now(),now()+interval '1 hour');
+INSERT INTO $identitySchema.auth_session_families(id,first_access_digest,current_access_digest,actor_id,role,actor_version,role_version,idle_expires_at,absolute_expires_at)
+VALUES ('00000000-0000-4000-8000-000000000001',decode(repeat('ab',32),'hex'),decode(repeat('ab',32),'hex'),'fixture-session-actor','customer',1,1,now()+interval '1 hour',now()+interval '2 hours');
+INSERT INTO $identitySchema.auth_refresh_tokens(token_digest,family_id) VALUES (decode(repeat('cd',32),'hex'),'00000000-0000-4000-8000-000000000001');
+GRANT USAGE ON SCHEMA $identitySchema TO bthwani_identity_runtime;
+GRANT SELECT ON $identitySchema.actors,$identitySchema.actor_roles,$identitySchema.auth_sessions,$identitySchema.auth_session_families,$identitySchema.auth_refresh_tokens TO bthwani_identity_runtime;
+GRANT UPDATE(revoked_at) ON $identitySchema.auth_sessions TO bthwani_identity_runtime;
+"@
+  Invoke-BaselineTransition 'identity' $identityDb $identitySchema 'bthwani_recovery_identity_000000000001'
+  $proof = Invoke-ProofSql $identityDb "SELECT CASE WHEN (SELECT count(*) FROM $identitySchema.auth_sessions WHERE token_digest=decode(repeat('ab',32),'hex'))=1 AND (SELECT count(*) FROM $identitySchema.auth_refresh_tokens WHERE token_digest=decode(repeat('cd',32),'hex'))=1 AND (SELECT count(*) FROM $identitySchema.auth_session_families)=1 AND has_column_privilege('bthwani_identity_runtime','$identitySchema.auth_sessions','revoked_at','UPDATE') AND NOT has_table_privilege('bthwani_identity_runtime','$identitySchema.auth_sessions','UPDATE') AND NOT has_table_privilege('bthwani_identity_runtime','$identitySchema.auth_sessions','DELETE') AND NOT has_schema_privilege('bthwani_identity_runtime','bthwani_recovery_identity_000000000001','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'Identity baseline transition session/ACL readback failed' }
+  Write-Output 'PG_BASELINE_TRANSITION_IDENTITY=PASS sessions refresh-families column-acl archived-scope-denied'
+
+  # The live WLT sandbox role is intentionally NOLOGIN. Match that boundary
+  # after the preceding fixture-only posting/reversal tests have completed.
+  $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_sandbox NOLOGIN; REVOKE CONNECT ON DATABASE bthwani_wlt_test FROM bthwani_wlt_sandbox; REVOKE ALL ON DATABASE bthwani_wlt_test FROM PUBLIC; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader;'
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000001'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND (SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id='$testCustomer')=0 AND NOT has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT') AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE') AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000001','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT baseline transition ledger or reader boundary failed' }
+  # Reproduce retired reservation names in a disposable fixture, without
+  # relying on historical Git objects in shallow CI checkouts.
+  $legacyRename = 'ALTER TABLE wlt.order_payment_allocations RENAME TO order_wallet_reservations; ALTER TABLE wlt.order_payment_releases RENAME TO order_wallet_releases;'
+  $null = Invoke-ProofSql $wltDb $legacyRename
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000002'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN to_regclass('wlt.order_wallet_reservations') IS NULL AND to_regclass('wlt.order_wallet_releases') IS NULL AND (SELECT count(*) FROM bthwani_recovery_wlt_000000000002.order_wallet_reservations)=0 AND (SELECT count(*) FROM bthwani_recovery_wlt_000000000002.order_wallet_releases)=0 AND (SELECT count(*) FROM wlt.order_payment_allocations)=0 AND (SELECT count(*) FROM wlt.order_payment_releases)=0 AND (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000002','USAGE') AND NOT has_schema_privilege('bthwani_wlt_sandbox','bthwani_recovery_wlt_000000000002','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT empty historical table retirement readback failed' }
+  # A populated historical table must prevent transition, even if its
+  # replacement exists. This is an isolated fixture, not a real checkout.
+  $null = Invoke-ProofSql $wltDb "SET ROLE bthwani_wlt_owner; INSERT INTO wlt.order_payment_allocations(checkout_id,actor_id,store_id,quote_digest,method,total_yer,wallet_yer) VALUES('fixture-old-checkout','synthetic-retained','store-a',repeat('a',64),'MIXED',20,10); RESET ROLE; $legacyRename"
+  $legacyOid = Invoke-ProofSql $wltDb "SELECT oid::text FROM pg_namespace WHERE nspname='wlt';"
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000003' $false 'retired relation has retained data: order_wallet_reservations'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT oid::text FROM pg_namespace WHERE nspname='wlt')='$legacyOid' AND to_regnamespace('bthwani_recovery_wlt_000000000003') IS NULL AND (SELECT count(*) FROM wlt.order_wallet_reservations WHERE checkout_id='fixture-old-checkout' AND wallet_yer=10)=1 AND has_schema_privilege('bthwani_wlt_reader','wlt','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT retained legacy reservation did not roll back' }
+  $null = Invoke-ProofSql $wltDb "SET ROLE bthwani_wlt_owner; INSERT INTO wlt.order_wallet_releases(checkout_id,operation_id,reason) VALUES('fixture-old-checkout','fixture-old-release','synthetic cancellation');"
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000004' $false 'retired relation has retained data: order_wallet_releases'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT oid::text FROM pg_namespace WHERE nspname='wlt')='$legacyOid' AND to_regnamespace('bthwani_recovery_wlt_000000000004') IS NULL AND (SELECT count(*) FROM wlt.order_wallet_releases WHERE checkout_id='fixture-old-checkout' AND operation_id='fixture-old-release')=1 AND (SELECT count(*) FROM wlt.order_wallet_reservations WHERE checkout_id='fixture-old-checkout')=1 THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT retained legacy release did not roll back' }
+  Write-Output 'PG_BASELINE_TRANSITION_WLT=PASS immutable-ledger reversal-parity reader-denied net=0 empty-legacy-archive=yes nonempty-legacy-rollback=yes'
+
+  Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'
+} finally {
+  if ($containerId -match '^[a-f0-9]{64}$') {
+    # Stop only the exact ephemeral container started by this invocation.
+    $label = (& docker --context $DockerContext inspect $containerId --format '{{index .Config.Labels "com.bthwani.test-scope"}}' 2>$null | Out-String).Trim()
+    if ($label -eq 'session01-disposable-sql') {
+      & docker --context $DockerContext stop $containerId | Out-Null
+    } else {
+      Write-Warning 'Disposable container ownership could not be verified; no cleanup performed'
+    }
+  }
+}

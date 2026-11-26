@@ -13,6 +13,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
@@ -47,7 +48,7 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
 		token := r.Header.Get("Authorization")
-		roles := map[string]string{"Bearer hr-current": "operator", "Bearer no-hr": "operator", "Bearer merchant": "merchant"}
+		roles := map[string]string{"Bearer hr-current": "operator", "Bearer no-hr": "operator", "Bearer merchant": "merchant", "Bearer merchant-a": "merchant", "Bearer merchant-b": "merchant"}
 		role := roles[token]
 		if role == "" || (token == "Bearer hr-current" && revoked.Load()) {
 			w.WriteHeader(401)
@@ -150,6 +151,31 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Prove the audit scope against an actual other-employer event, not just an absent event.
+	if _, err = readback.ExecContext(t.Context(), `INSERT INTO `+schema+`.employee_registration_audit
+		(employer_kind,employer_id,employee_id,acting_actor_id,operation_id,request_hash)
+		VALUES ('MERCHANT','merchant-a',$1,'merchant-author','00000000-0000-0000-0000-000000000002',decode(repeat('00',32),'hex'))`, merchantID); err != nil {
+		t.Fatal(err)
+	}
+	auditPath := root + "/" + id + "/registration-audit"
+	audit := expect("GET", auditPath, "hr-current", "", 200)
+	var event registrationEvent
+	var recorded time.Time
+	if err = readback.QueryRowContext(t.Context(), `SELECT recorded_at FROM `+schema+`.employee_registration_audit WHERE employee_id=$1`, id).Scan(&recorded); err != nil {
+		t.Fatal(err)
+	}
+	if json.Unmarshal(audit.Body.Bytes(), &event) != nil || event.EmployeeID != id || event.RegisteredByActorID != "hr-current" ||
+		event.RecordedAt != recorded.UTC().Format(time.RFC3339Nano) || strings.Contains(audit.Body.String(), "requestHash") ||
+		strings.Contains(audit.Body.String(), "operationId") {
+		t.Fatalf("invalid registration audit readback: %s", audit.Body)
+	}
+	expect("GET", auditPath+"?employerId=merchant-a", "hr-current", "", 400)
+	expect("GET", auditPath, "hr-current", "unexpected body", 400)
+	expect("GET", auditPath, "", "", 401)
+	expect("GET", auditPath, "no-hr", "", 403)
+	expect("GET", auditPath, "merchant", "", 403)
+	expect("GET", root+"/"+merchantID+"/registration-audit", "hr-current", "", 404)
+	expect("GET", root+"/00000000-0000-0000-0000-000000000003/registration-audit", "hr-current", "", 404)
 	expect("GET", root+"/"+merchantID, "hr-current", "", 404)
 	expect("GET", root+"/00000000-0000-0000-0000-000000000003", "hr-current", "", 404)
 	detail := expect("GET", root+"/"+id, "hr-current", "", 200)
@@ -174,6 +200,8 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 		{"detail session revoked", root + "/" + id, false, 401},
 		{"list HR grant revoked", root, true, 403},
 		{"detail HR grant revoked", root + "/" + id, true, 403},
+		{"audit session revoked", auditPath, false, 401},
+		{"audit HR grant revoked", auditPath, true, 403},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			transition := &employeeReadTransition{grantRevoked: tc.grantRevoked}
@@ -186,12 +214,185 @@ func TestCompanyEmployeeDirectoryPostgres(t *testing.T) {
 			response := httptest.NewRecorder()
 			protected.ServeHTTP(response, request)
 			if response.Code != tc.want || transition.calls.Load() != 2 ||
-				strings.Contains(response.Body.String(), "موظف تجريبي") {
+				strings.Contains(response.Body.String(), "موظف تجريبي") ||
+				strings.Contains(response.Body.String(), "registeredByActorId") {
 				t.Fatalf("revoked read leaked owner data: status=%d calls=%d body=%s",
 					response.Code, transition.calls.Load(), response.Body.String())
 			}
 		})
 	}
+	// The same canonical employee engine now admits the individual merchant
+	// proprietor, but never a delegated staff account or another owner.
+	for _, query := range []string{
+		"INSERT INTO " + schema + ".service_cities(id,active) VALUES ('sanaa',true)",
+		"INSERT INTO " + schema + ".verticals(id,active) VALUES ('grocery',true)",
+		"INSERT INTO " + schema + ".stores(id,owner_actor_id,city_id,vertical_id,relation,name,published) VALUES " +
+			"('staff-store-a','merchant-a','sanaa','grocery','MARKETPLACE','A',false)," +
+			"('staff-store-a2','merchant-a','sanaa','grocery','DIRECT','A2',false)," +
+			"('staff-store-b','merchant-b','sanaa','grocery','DIRECT','B',false)",
+	} {
+		if _, err = readback.ExecContext(t.Context(), query); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const aRoot = "/v1/stores/staff-store-a/employees"
+	const a2Root = "/v1/stores/staff-store-a2/employees"
+	const bRoot = "/v1/stores/staff-store-b/employees"
+	expect("GET", aRoot, "", "", 401)
+	expect("GET", aRoot, "hr-current", "", 403)
+	expect("GET", aRoot, "merchant", "", 403)
+	expect("GET", aRoot, "merchant-b", "", 403)
+	expect("GET", aRoot+"?employerId=merchant-b", "merchant-a", "", 400)
+	expect("GET", aRoot+"/"+id, "merchant-a", "", 404)
+	expect("GET", bRoot+"/"+merchantID, "merchant-b", "", 404)
+	expect("GET", aRoot+"/"+merchantID, "merchant-a", "", 200)
+	expect("GET", aRoot+"/"+merchantID+"/registration-audit", "merchant-a", "", 200)
+	expect("GET", bRoot+"/"+merchantID+"/registration-audit", "merchant-b", "", 404)
+	expect("POST", bRoot, "merchant-a", data, 403)
+	expect("POST", aRoot, "merchant-a", strings.Replace(data, "{", `{"employerId":"merchant-b",`, 1), 400)
+
+	// The same operation ID remains scoped by employer and actor, even when
+	// the proprietor reopens the directory using a second owned Store.
+	merchantPost := strings.Replace(data, "موظف تجريبي", "موظف المتجر", 1)
+	var firstID map[string]string
+	if err = json.Unmarshal(expect("POST", aRoot, "merchant-a", merchantPost, 200).Body.Bytes(), &firstID); err != nil {
+		t.Fatal(err)
+	}
+	created := firstID["id"]
+	if !recordID.MatchString(created) || created == id || created == merchantID {
+		t.Fatal("invalid merchant registration ID")
+	}
+	if err = json.Unmarshal(expect("POST", a2Root, "merchant-a", merchantPost, 200).Body.Bytes(), &firstID); err != nil || firstID["id"] != created {
+		t.Fatal("replay across owned stores created another employee")
+	}
+	expect("POST", aRoot, "merchant-a", strings.Replace(merchantPost, "منسق", "مشرف", 1), 409)
+	expect("GET", a2Root+"/"+created, "merchant-a", "", 200)
+	expect("GET", bRoot+"/"+created, "merchant-b", "", 404)
+	expect("GET", root+"/"+created, "hr-current", "", 404)
+	var count, auditCount int
+	if err = readback.QueryRowContext(t.Context(), "SELECT count(*) FROM "+schema+".employees WHERE employer_kind='MERCHANT' AND employer_id='merchant-a' AND id=$1", created).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("merchant record readback %d: %v", count, err)
+	}
+	if err = readback.QueryRowContext(t.Context(), "SELECT count(*) FROM "+schema+".employee_registration_audit WHERE employer_kind='MERCHANT' AND employer_id='merchant-a' AND acting_actor_id='merchant-a' AND employee_id=$1", created).Scan(&auditCount); err != nil || auditCount != 1 {
+		t.Fatalf("merchant audit readback %d: %v", auditCount, err)
+	}
+	var bCreated map[string]string
+	if err = json.Unmarshal(expect("POST", bRoot, "merchant-b", merchantPost, 200).Body.Bytes(), &bCreated); err != nil || bCreated["id"] == created {
+		t.Fatal("different employer did not receive independent ID")
+	}
+	expect("GET", aRoot+"/"+bCreated["id"], "merchant-a", "", 404)
+	expect("GET", bRoot+"/"+bCreated["id"], "merchant-b", "", 200)
+
+	// A revocation before the owner commit must roll back both the
+	// employment record and immutable registration audit.
+	revokedData := strings.Replace(merchantPost, "00000000-0000-0000-0000-000000000001", "00000000-0000-0000-0000-000000000099", 1)
+	revokedWrite := &merchantEmployeeWriteTransition{}
+	revokedHandler, e := NewHandler(t.Context(), db, schema, revokedWrite)
+	if e != nil {
+		t.Fatal(e)
+	}
+	writeReq := httptest.NewRequest(http.MethodPost, aRoot, strings.NewReader(revokedData))
+	writeReq.Header.Set("Authorization", "Bearer synthetic")
+	writeReq.Header.Set("Content-Type", "application/json")
+	writeResp := httptest.NewRecorder()
+	revokedHandler.ServeHTTP(writeResp, writeReq)
+	if writeResp.Code != 401 || revokedWrite.calls.Load() != 3 {
+		t.Fatalf("revoked write: %d %s", writeResp.Code, writeResp.Body)
+	}
+	if err = readback.QueryRowContext(t.Context(), "SELECT count(*) FROM "+schema+".employee_registration_audit WHERE employer_kind='MERCHANT' AND employer_id='merchant-a' AND operation_id='00000000-0000-0000-0000-000000000099'").Scan(&auditCount); err != nil || auditCount != 0 {
+		t.Fatalf("revoked write audit persisted: %d %v", auditCount, err)
+	}
+	if err = readback.QueryRowContext(t.Context(), "SELECT count(*) FROM "+schema+".employees WHERE employer_kind='MERCHANT' AND employer_id='merchant-a'").Scan(&count); err != nil || count != 2 {
+		t.Fatalf("revoked write employee persisted: %d %v", count, err)
+	}
+
+	// An ownership change during a read must suppress the earlier result.
+	transition := &merchantEmployeeReadTransition{
+		afterRead: func() error {
+			_, e := readback.ExecContext(t.Context(), "UPDATE "+schema+".stores SET owner_actor_id='merchant-b' WHERE id='staff-store-a'")
+			return e
+		},
+	}
+	transitionHandler, e := NewHandler(t.Context(), db, schema, transition)
+	if e != nil {
+		t.Fatal(e)
+	}
+	req := httptest.NewRequest(http.MethodGet, aRoot+"/"+created, nil)
+	req.Header.Set("Authorization", "Bearer synthetic")
+	response := httptest.NewRecorder()
+	transitionHandler.ServeHTTP(response, req)
+	if response.Code != 403 || strings.Contains(response.Body.String(), "موظف المتجر") {
+		t.Fatalf("ownership change disclosed prior data: %d %s", response.Code, response.Body)
+	}
+	expect("GET", aRoot, "merchant-a", "", 403)
+	expect("GET", a2Root+"/"+created, "merchant-a", "", 200)
+	expect("GET", aRoot+"/"+created, "merchant-b", "", 404)
+
+	t.Run("RecordedEmploymentEndFilter", func(t *testing.T) {
+		// Only disposable owner fixtures. No new employment transition or permission.
+		if _, err := readback.ExecContext(t.Context(), "UPDATE "+schema+".employees SET end_date='2027-01-01' WHERE id IN ($1,$2)", id, merchantID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := readback.ExecContext(t.Context(), "INSERT INTO "+schema+".employees(id,employer_kind,employer_id,display_name,department,job_title,start_date) SELECT ('00000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid,'COMPANY','bthwani','Synthetic '||n,'Ops','Staff','2026-01-01' FROM generate_series(100,130) n"); err != nil {
+			t.Fatal(err)
+		}
+		for _, tc := range []struct {
+			name, path, token, expectedID string
+			count                         int
+			end                           bool
+		}{
+			{"company recorded end", root + "?endState=HAS_END_DATE", "hr-current", id, 1, true},
+			{"company open page", root + "?endState=NO_END_DATE", "hr-current", "", 30, false},
+			{"merchant recorded end", a2Root + "?endState=HAS_END_DATE", "merchant-a", merchantID, 1, true},
+			{"merchant open", a2Root + "?endState=NO_END_DATE", "merchant-a", created, 1, false},
+			{"other merchant empty", bRoot + "?endState=HAS_END_DATE", "merchant-b", "", 0, true},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				w := request("GET", tc.path, tc.token, "")
+				var got page
+				if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || json.Unmarshal(w.Body.Bytes(), &got) != nil || len(got.Items) != tc.count {
+					t.Fatalf("filter status=%d result=%s", w.Code, w.Body)
+				}
+				for _, item := range got.Items {
+					if (item.EndDate != nil) != tc.end || (tc.expectedID != "" && item.ID != tc.expectedID) {
+						t.Fatalf("unexpected item %v", item)
+					}
+				}
+				if tc.count == 30 {
+					if got.NextCursor == nil {
+						t.Fatal("missing continuation")
+					}
+					next := request("GET", root+"?cursor="+*got.NextCursor+"&endState=NO_END_DATE", "hr-current", "")
+					var rest page
+					if next.Code != 200 || json.Unmarshal(next.Body.Bytes(), &rest) != nil || len(rest.Items) != 1 || rest.Items[0].ID <= *got.NextCursor || rest.Items[0].EndDate != nil || rest.NextCursor != nil {
+						t.Fatalf("bad continuation %d %s", next.Code, next.Body)
+					}
+				} else if got.NextCursor != nil {
+					t.Fatal("unexpected continuation")
+				}
+			})
+		}
+		for _, tc := range []struct {
+			path, token string
+			status      int
+		}{
+			{root + "?endState=ACTIVE", "hr-current", 400},
+			{root + "?endState=", "hr-current", 400},
+			{root + "?endState=NO_END_DATE&", "hr-current", 400},
+			{root + "?&", "hr-current", 400},
+			{root + "?endState=HAS_END_DATE&endState=NO_END_DATE", "hr-current", 400},
+			{root + "?endState=HAS_END_DATE&employerId=merchant-a", "hr-current", 400},
+			{root + "?endState=HAS_END_DATE&cursor=bad", "hr-current", 400},
+			{root + "?endState=HAS_END_DATE", "no-hr", 403},
+			{a2Root + "?endState=NO_END_DATE", "merchant-b", 403},
+			{root + "/" + id + "?endState=HAS_END_DATE", "hr-current", 400},
+		} {
+			w := request("GET", tc.path, tc.token, "")
+			if w.Code != tc.status || w.Header().Get("Cache-Control") != "no-store" {
+				t.Errorf("unexpected filter result %s: %d %s", tc.path, w.Code, w.Body)
+			}
+		}
+	})
 	revoked.Store(true)
 	expect("GET", root+"/"+id, "hr-current", "", 401)
 	expect("POST", root, "hr-current", data, 401)
@@ -216,4 +417,34 @@ func (identity *employeeReadTransition) RequireOperatorPermission(_ context.Cont
 		return identityaccess.ErrForbidden
 	}
 	return nil
+}
+
+type merchantEmployeeReadTransition struct {
+	calls     atomic.Int32
+	afterRead func() error
+}
+
+func (i *merchantEmployeeReadTransition) ResolveCurrentSession(context.Context, string) (identityaccess.VerifiedActor, error) {
+	if i.calls.Add(1) == 2 {
+		if err := i.afterRead(); err != nil {
+			return identityaccess.VerifiedActor{}, err
+		}
+	}
+	return identityaccess.VerifiedActor{Subject: "merchant-a", Role: identityaccess.MerchantRole}, nil
+}
+
+func (*merchantEmployeeReadTransition) RequireOperatorPermission(context.Context, string, string, string) error {
+	return identityaccess.ErrForbidden
+}
+
+type merchantEmployeeWriteTransition struct{ calls atomic.Int32 }
+
+func (i *merchantEmployeeWriteTransition) ResolveCurrentSession(context.Context, string) (identityaccess.VerifiedActor, error) {
+	if i.calls.Add(1) >= 3 {
+		return identityaccess.VerifiedActor{}, identityaccess.ErrUnauthorized
+	}
+	return identityaccess.VerifiedActor{Subject: "merchant-a", Role: identityaccess.MerchantRole}, nil
+}
+func (*merchantEmployeeWriteTransition) RequireOperatorPermission(context.Context, string, string, string) error {
+	return identityaccess.ErrForbidden
 }

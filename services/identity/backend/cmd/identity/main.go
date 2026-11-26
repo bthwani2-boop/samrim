@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -45,9 +46,10 @@ func isolatedVerifierTLS(isolated, container, schema, certPath, keyPath string) 
 }
 
 func main() {
+	verifyOnly := len(os.Args) == 2 && os.Args[1] == "verify-development-db"
 	// Offline first-Operator registration is an explicit separate command,
 	// never part of normal Identity server startup or an HTTP route.
-	if len(os.Args) != 1 {
+	if len(os.Args) != 1 && !verifyOnly {
 		if len(os.Args) == 2 && (os.Args[1] == "issue-synthetic-root-ticket" ||
 			os.Args[1] == "issue-local-dev-root-ticket") {
 			runIsolatedInitialOperatorTicket()
@@ -95,6 +97,15 @@ func main() {
 	if err = db.PingContext(ctx); err != nil {
 		log.Fatal("Identity isolated database unreachable")
 	}
+	if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" || verifyOnly {
+		if err = session.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
+			log.Fatal(err)
+		}
+	}
+	if verifyOnly {
+		fmt.Println("IDENTITY_DEVELOPMENT_DATABASE_PASS")
+		return
+	}
 	reader, err := session.NewPostgresReader(db, schema)
 	if err != nil {
 		log.Fatal("Identity scope invalid")
@@ -112,7 +123,13 @@ func main() {
 		routes.Handle(session.PhoneVerifyPath, phone)
 	}
 	if os.Getenv("IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION") == "true" {
-		standing, err := session.NewCaptainStandingHTTP(os.Getenv("IDENTITY_DSH_CAPTAIN_STANDING_URL"))
+		var standing *session.CaptainStandingHTTP
+		var err error
+		if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" {
+			standing, err = session.NewContainerCaptainStandingHTTP(os.Getenv("IDENTITY_DSH_CAPTAIN_STANDING_URL"), os.Getenv("IDENTITY_DSH_CAPTAIN_STANDING_CA"))
+		} else {
+			standing, err = session.NewCaptainStandingHTTP(os.Getenv("IDENTITY_DSH_CAPTAIN_STANDING_URL"))
+		}
 		if err != nil {
 			log.Fatal("Captain role admission requires a verified DSH standing owner: ", err)
 		}

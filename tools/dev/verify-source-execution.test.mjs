@@ -4,12 +4,14 @@ import test from "node:test";
 // Exercise the real owners, not test-only copies of their validation logic.
 // Each imported command fails if its own repo state violates the guard.
 test("workspace and pinned-source requirements execute", async () => {
-  await import("./verify-workspace.mjs");
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  assert.equal(verifyWorkspace().node, process.version.slice(1));
   assert.equal(process.exitCode ?? 0, 0);
 });
 
 test("the three real Expo identity and package manifests validate", async () => {
-  await import("../mobile/verify-app-foundations.mjs");
+  const { verifyApplicationIdentities } = await import("../mobile/verify-app-identity.mjs");
+  assert.equal(verifyApplicationIdentities(), 3);
   assert.equal(process.exitCode ?? 0, 0);
 });
 

@@ -3,19 +3,22 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { formatExactYer } from "../src/components/format-exact-yer.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const source = fileURLToPath(new URL("../src/features/wallet/wallet-screen.web.tsx", import.meta.url));
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-web-wallet-"));
 let compiled;
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 try {
   const tsc = spawnSync(process.execPath, [
     path.join(root, "node_modules/typescript/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
   ], {cwd:root, encoding:"utf8", timeout:20000, windowsHide:true});
   assert.equal(tsc.status, 0, tsc.stderr || tsc.stdout);
   compiled = readFileSync(path.join(temp, "wallet-screen.web.js"), "utf8");
@@ -26,7 +29,7 @@ try {
 const settle = async () => { await new Promise(resolve => setImmediate(resolve)); };
 const ready = actorId => ({
   kind:"ready",
-  balance:{actorId, currency:"YER", balanceYer:"9007199254740993"},
+  balance:{actorId, currency:"YER", balanceYer:"9007199254740993", availableYer:"9007199254740992"},
   expiresAt:Date.now()+60000,
 });
 const funding = fundingId => ({fundingId, amountYer:"17", postedAt:"2026-11-21T00:00:00Z"});
@@ -81,14 +84,19 @@ function harness() {
       },
     },
   };
-  const mod={exports:{}};
-  new Function("require","module","exports","document","window",
-    "setTimeout","clearTimeout","setInterval","clearInterval",compiled)(
-    name=>{assert.ok(Object.hasOwn(mocks,name),"unknown import "+name);return mocks[name];},
-    mod,mod.exports,document,window,
-    (fn,delay)=>mockTimer(timers,fn,delay),id=>timers.delete(id),
-    (fn,delay)=>mockTimer(intervals,fn,delay),id=>intervals.delete(id),
-  );
+  const mod = loadMappedRenderFixture(compiled, source, mocks);
+  loadedModules.push(mod);
+  const originals = new Map();
+  for (const [key, value] of [["document", document], ["window", window]]) {
+    originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  }
+  const timerMocks = [
+    mock.method(globalThis, "setTimeout", (fn, delay) => mockTimer(timers, fn, delay)),
+    mock.method(globalThis, "clearTimeout", id => timers.delete(id)),
+    mock.method(globalThis, "setInterval", (fn, delay) => mockTimer(intervals, fn, delay)),
+    mock.method(globalThis, "clearInterval", id => intervals.delete(id)),
+  ];
   function render(){index=0;return mod.exports.default();}
   return {
     mount(){const view=render();assert.equal(typeof focusEffect,"function");cleanup=focusEffect();return view;},
@@ -96,8 +104,19 @@ function harness() {
     read(kind){const i=pending.findIndex(p=>p.kind===kind);assert.notEqual(i,-1,"expected "+kind);return pending.splice(i,1)[0];},
     event(name){if(name==="blur")focus=false;else if(name==="focus")focus=true;winEvents.get(name)?.();},
     visibility(value){visibility=value;docEvents.get("visibilitychange")?.();},
+    pendingCount(){return pending.length;},
+    poll(){const next=[...intervals.values()][0];assert.ok(next);next.fn();},
     expire(){const next=[...timers.values()].find(t=>t.delay>0);assert.ok(next);next.fn();},
-    unmount(){cleanup?.();cleanup=null;},
+    unmount() {
+      try { cleanup?.(); cleanup = null; }
+      finally {
+        for (const timerMock of timerMocks) timerMock.mock.restore();
+        for (const [key, descriptor] of originals) {
+          if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+          else Reflect.deleteProperty(globalThis, key);
+        }
+      }
+    },
   };
 }
 function walk(node,needle) {
@@ -142,6 +161,8 @@ test("Web wallet hides funds on blur and rejects late history and revoked sessio
     h.event("focus");
     h.read("balance").resolve({kind:"signed-out"});await settle();
     assert.equal(find(h.render(),"wallet-balance"),null);
+    const login=walk(h.render(),n=>n.type==="Link"&&n.props.href?.pathname==="/login");
+    assert.deepEqual(login?.props.href,{pathname:"/login",params:{returnTo:"/wallet"}});
   }finally{h.unmount();}
 });
 
@@ -160,6 +181,55 @@ test("Web wallet refuses a continuation that repeats the old cursor and permits 
     const retry=h.read("history");
     assert.equal(retry.cursor,"page-next","cursor must not advance to same cursor");
     retry.resolve(history("actor-a",[funding("funding-b")]));await settle();
+    assert.equal(clickMore(h.render()),null);
+  }finally{h.unmount();}
+});
+
+test("Web wallet foreground poll preserves verified funds until owner confirms both fresh reads",async()=>{
+  const h=harness();try{
+    h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+    h.read("history").resolve(history("actor-a",[funding("funding-a")],"page-next"));await settle();
+    const original=textOf(h.render());
+    h.poll();const fresh=h.read("balance");
+    assert.equal(textOf(h.render()),original);
+    fresh.resolve(ready("actor-a"));await settle();
+    assert.equal(textOf(h.render()),original);
+    h.read("history").resolve(history("actor-a",[funding("funding-b")]));await settle();
+    assert.ok(find(h.render(),"wallet-balance"));
+    assert.equal(clickMore(h.render()),null);
+  }finally{h.unmount();}
+});
+
+test("Web wallet poll conceals private funds on owner denial, changed actor or expiry",async()=>{
+  for(const scenario of ["denied","changed","expired"]){
+    const h=harness();try{
+      h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+      h.read("history").resolve(history("actor-a",[funding("funding-a")]));await settle();
+      h.poll();const fresh=h.read("balance");
+      assert.ok(find(h.render(),"wallet-balance"));
+      if(scenario==="expired"){
+        h.expire();
+        assert.equal(fresh.signal.aborted,true);
+        fresh.resolve(ready("actor-a"));
+      }else fresh.resolve(scenario==="denied"?{kind:"signed-out"}:ready("actor-b"));
+      await settle();
+      assert.equal(find(h.render(),"wallet-balance"),null);
+    }finally{h.unmount();}
+  }
+});
+
+test("Web wallet does not overlap foreground refresh with itself or pagination, and hides on refresh failure",async()=>{
+  const h=harness();try{
+    h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+    h.read("history").resolve(history("actor-a",[funding("funding-a")],"page-next"));await settle();
+    clickMore(h.render()).props.onPress();const page=h.read("history");
+    h.poll();assert.equal(h.pendingCount(),0);
+    page.resolve(history("actor-a",[funding("funding-b")],"page-after"));await settle();
+    h.poll();const fresh=h.read("balance");
+    h.poll();clickMore(h.render()).props.onPress();assert.equal(h.pendingCount(),0);
+    fresh.resolve(ready("actor-a"));await settle();
+    h.read("history").reject(new Error("owner unavailable"));await settle();
+    assert.equal(find(h.render(),"wallet-balance"),null);
     assert.equal(clickMore(h.render()),null);
   }finally{h.unmount();}
 });

@@ -1,4 +1,4 @@
-import { type CustomerCartChange, type CustomerCartMerchandiseEstimate, DshCartError } from "@bthwani/dsh";
+import { type CustomerCart, type CustomerCartChange, type CustomerCartMerchandiseEstimate, DshCartError } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import * as Crypto from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -15,10 +15,20 @@ export default function CartScreen() {
   const { storeId: storeParam } = useLocalSearchParams<{ storeId?: string }>();
   const storeId = typeof storeParam === "string" ? storeParam : "";
   const [snapshot, setView] = useState<CartReadState | null>(null);
+  const currentView = useRef<CartReadState | null>(null);
   const [error, setError] = useState("");
   const [ownerMerchandise, setOwnerMerchandise] = useState<CustomerCartMerchandiseEstimate | null>(null);
   const [busy, setBusy] = useState(false);
+  type CleanupSelection = Readonly<{ cart: CustomerCart; kind: "all" | "unavailable" }>;
+  const [clearSelection, setClearSelection] = useState<CleanupSelection | null>(null);
+  const activeSelection = useRef<CleanupSelection | null>(null);
+  const selectCleanup = useCallback((selection: CleanupSelection | null) => {
+    activeSelection.current = selection;
+    setClearSelection(selection);
+  }, []);
   const refresh = useRef<(() => void) | null>(null);
+  const cartRead = useRef<AbortController | null>(null);
+  const estimateRead = useRef<AbortController | null>(null);
   const mutation = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const view = snapshot?.kind === "ready" && snapshot.cart.storeId !== storeId ? null : snapshot;
@@ -38,31 +48,50 @@ export default function CartScreen() {
 
   useFocusEffect(useCallback(() => {
     const epoch = ++generation.current;
-    const controller = new AbortController();
+    currentView.current = null;
     setView(null);
     setError("");
     setBusy(false);
     function load() {
-      if (controller.signal.aborted || mutation.current) return;
+      if (generation.current !== epoch || mutation.current) return;
+      cartRead.current?.abort();
+      estimateRead.current?.abort();
+      const controller = new AbortController();
+      cartRead.current = controller;
+      currentView.current = null;
       setView(null);
+      selectCleanup(null);
+      setOwnerMerchandise(null);
       setError("");
       void readVerifiedCart(storeId, controller.signal).then(next => {
-        if (!controller.signal.aborted && generation.current === epoch) setView(next);
+        if (!controller.signal.aborted && generation.current === epoch) {
+          currentView.current = next;
+          setView(next);
+        }
       }).catch(() => {
-        if (!controller.signal.aborted && generation.current === epoch) setView({ kind: "unavailable" });
+        if (!controller.signal.aborted && generation.current === epoch) {
+          currentView.current = { kind: "unavailable" };
+          setView(currentView.current);
+        }
+      }).finally(() => {
+        if (cartRead.current === controller) cartRead.current = null;
       });
     }
     refresh.current = load;
     load();
     return () => {
-      controller.abort();
+      cartRead.current?.abort();
+      cartRead.current = null;
+      estimateRead.current?.abort();
+      estimateRead.current = null;
       mutation.current?.abort();
       mutation.current = null;
       refresh.current = null;
       generation.current++;
+      currentView.current = null;
       setView(null);
     };
-  }, [storeId]));
+  }, [storeId, selectCleanup]));
 
   useEffect(() => {
     if (view?.kind !== "ready" || view.cart.lines.length === 0) {
@@ -70,40 +99,56 @@ export default function CartScreen() {
       return;
     }
     const controller = new AbortController();
+    estimateRead.current = controller;
     const actor = view.cart.actorId;
     const version = view.cart.version;
     setOwnerMerchandise(null);
     void readVerifiedCartMerchandiseEstimate(storeId, version, actor, controller.signal)
       .then(result => {
-        if (!controller.signal.aborted && result.kind === "ready") {
+        if (controller.signal.aborted) return;
+        if (result.kind === "signed-out") {
+          setOwnerMerchandise(null);
+          currentView.current = { kind: "signed-out" };
+          setView(currentView.current);
+        } else if (result.kind === "ready" && result.estimate.storeId === storeId &&
+          result.estimate.actorId === actor && result.estimate.cartVersion === version) {
           setOwnerMerchandise(result.estimate);
         }
       })
       .catch(() => {
         if (!controller.signal.aborted) setOwnerMerchandise(null);
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      if (estimateRead.current === controller) estimateRead.current = null;
+    };
   }, [storeId, view]);
 
   async function apply(change: CustomerCartChange, actorId: string) {
-    if (mutation.current) return;
+    if (currentView.current !== view || view?.kind !== "ready" || view.cart.actorId !== actorId || mutation.current || cartRead.current) return;
+    estimateRead.current?.abort();
     const controller = new AbortController();
     const epoch = generation.current;
     mutation.current = controller;
     setBusy(true);
+    selectCleanup(null);
     setOwnerMerchandise(null);
     setError("");
     try {
       const result = await replaceVerifiedCart(storeId, change, actorId, controller.signal);
       if (controller.signal.aborted || generation.current !== epoch) return;
-      setView({ kind: "ready", cart: result.cart });
+      currentView.current = { kind: "ready", cart: result.cart };
+      setView(currentView.current);
     } catch (reason) {
       if (controller.signal.aborted || generation.current !== epoch) return;
       const code = reason instanceof DshCartError ? reason.code : "OPERATION_RESULT_UNKNOWN";
       if (code === "OPERATION_RESULT_UNKNOWN" || code === "CART_PENDING_RECONCILIATION") {
         setError("لم تتأكد نتيجة التعديل. أعد تأكيد نفس العملية قبل إجراء تعديل جديد.");
       } else {
-        if (code === "UNAUTHORIZED") setView({ kind: "signed-out" });
+        if (code === "UNAUTHORIZED") {
+          currentView.current = { kind: "signed-out" };
+          setView(currentView.current);
+        }
         setError(code === "CART_VERSION_OR_OPERATION_CONFLICT"
           ? "تغيّرت السلة. حدّث البيانات قبل إعادة التعديل."
           : code === "STORE_OR_OFFER_NOT_AVAILABLE"
@@ -125,12 +170,25 @@ export default function CartScreen() {
     const lines = cart.lines.filter(item => item.offerId !== offerId)
       .map(item => ({ offerId: item.offerId, quantity: item.quantity }));
     if (quantity > 0) lines.push({ offerId, quantity });
-    const change: CustomerCartChange = {
+    replaceLines(cart, lines);
+  }
+
+  function replaceLines(cart: CustomerCart, lines: CustomerCartChange["lines"]) {
+    void apply({
       operationId: `cart-${Crypto.randomUUID()}`,
       expectedVersion: cart.version,
       lines,
-    };
-    void apply(change, cart.actorId);
+    }, cart.actorId);
+  }
+
+  function confirmCleanup(selection: CleanupSelection) {
+    if (activeSelection.current !== selection || view?.kind !== "ready" ||
+      currentView.current !== view || selection.cart !== view.cart || busy || pendingCartChange(view.cart.actorId, storeId)) return;
+    const lines = selection.kind === "all" ? [] : selection.cart.lines
+      .filter(line => line.previewAvailable)
+      .map(line => ({ offerId: line.offerId, quantity: line.quantity }));
+    selectCleanup(null);
+    replaceLines(selection.cart, lines);
   }
 
   const preview = view?.kind === "ready" ? summarizeCartPreview(view.cart.lines) : null;
@@ -184,6 +242,34 @@ export default function CartScreen() {
                 </View>
               </View>
             ))}
+            {view.cart.lines.length > 0 && !busy && !pending && !error ? (
+              clearSelection?.cart === view.cart ? (
+                <View style={{ gap: 8 }}>
+                  <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>
+                    {clearSelection.kind === "all" ? "هل تريد إزالة جميع المنتجات من سلة هذا المتجر؟" : "هل تريد إزالة المنتجات غير المتاحة فقط مع الإبقاء على المنتجات الأخرى؟"}
+                  </Text>
+                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                    <Pressable accessibilityRole="button" onPress={() => confirmCleanup(clearSelection)} style={buttonStyle}>
+                      <Text style={{ color: theme.dangerText }}>{clearSelection.kind === "all" ? "تأكيد التفريغ" : "تأكيد إزالة غير المتاح"}</Text>
+                    </Pressable>
+                    <Pressable accessibilityRole="button" onPress={() => selectCleanup(null)} style={buttonStyle}>
+                      <Text style={{ color: theme.interactiveText }}>إلغاء</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : (
+                <View style={{ gap: 8 }}>
+                  {preview && preview.unavailableLines > 0 && preview.unavailableLines < view.cart.lines.length ? (
+                    <Pressable accessibilityRole="button" onPress={() => selectCleanup({ cart: view.cart, kind: "unavailable" })} style={buttonStyle}>
+                      <Text style={{ color: theme.dangerText }}>إزالة المنتجات غير المتاحة</Text>
+                    </Pressable>
+                  ) : null}
+                  <Pressable accessibilityRole="button" onPress={() => selectCleanup({ cart: view.cart, kind: "all" })} style={buttonStyle}>
+                    <Text style={{ color: theme.dangerText }}>تفريغ السلة</Text>
+                  </Pressable>
+                </View>
+              )
+            ) : null}
             {preview ? (
               <View testID="cart-preview-summary" style={{
                 padding: 14, borderWidth: 1, borderColor: theme.borderColor,
@@ -198,7 +284,7 @@ export default function CartScreen() {
                   </Text>
                 ) : null}
                 {ownerMerchandise && ownerMerchandise.cartVersion === view.cart.version &&
-                  ownerMerchandise.actorId === view.cart.actorId && !busy && !pending ? (
+                  ownerMerchandise.storeId === storeId && ownerMerchandise.actorId === view.cart.actorId && !busy && !pending ? (
                     <Text testID="cart-dsh-merchandise-estimate" style={{ color: theme.color }}>
                       مجموع البضائع المحسوب لدى DSH لهذه النسخة: {formatExactYer(BigInt(ownerMerchandise.merchandiseSubtotalYer))} ريال يمني.
                     </Text>

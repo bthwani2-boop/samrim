@@ -8,8 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./appearance": "./src/appearance.tsx",
-    "./navigation": "./src/navigation.tsx",
-    "./preview": "./src/preview.tsx"
+    "./navigation": "./src/navigation.tsx"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",
@@ -17,6 +16,7 @@
     "tamagui": "3.3.1"
   },
   "scripts": {
+    "test": "node ../../tools/dev/run-coverage.mjs --project",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {

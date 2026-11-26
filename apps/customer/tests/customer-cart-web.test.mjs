@@ -1,14 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-process.env.BTHWANI_SURFACE_PREVIEW = "1";
-process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN = "http://127.0.0.1:33222";
-process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN = "http://127.0.0.1:33221";
+process.env.BTHWANI_DOCKER_CART_WEB_PREVIEW = "1";
+process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+process.env.CUSTOMER_SYNTHETIC_DSH_ORIGIN = "http://127.0.0.1:3202";
+process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN = "http://127.0.0.1:3201";
 const { GET, PUT } = await import("../app/api/customer-auth/cart+api.ts");
 const { GET: ESTIMATE } = await import("../app/api/customer-auth/cart-estimate+api.ts");
 const bearer = Buffer.alloc(32, 14).toString("base64url");
 const base = "http://localhost:18101/api/customer-auth/cart?storeId=store-a";
-const cookie = `bthwani_surface_customer_auth=${bearer}`;
+const cookie = `bthwani_customer_auth=${bearer}`;
 const cart = { actorId: "customer-a", storeId: "store-a", version: 2, lines: [{
   offerId: "offer-a", variantId: "variant-a", name: "مقاضي",
   quantity: 2, previewUnitYer: "9007199254740993", previewAvailable: true,

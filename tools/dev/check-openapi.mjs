@@ -189,7 +189,8 @@ export function validate(owner, base = root) {
     // pathname prefix or a recycled public route with a different handler.
     if (urlPath === "/health" && method === "get") {
       return (owner === "identity" && operationId === "getIdentityDevelopmentHealth") ||
-        (owner === "dsh" && operationId === "dshHealth");
+        (owner === "dsh" && operationId === "dshHealth") ||
+        (owner === "wlt" && operationId === "getWltDevelopmentHealth");
     }
     if (owner === "dsh" && method === "get") {
       const admitted = {
@@ -319,7 +320,12 @@ export function validate(owner, base = root) {
           errors.push("Invalid HTTP response status " + status + " on " + method + " " + urlPath);
         }
         const resolved = validateResponse(response, sourceFile, method + " " + urlPath + " responses." + status);
-        if (/^2(?:[0-9]{2}|XX)$/.test(status) && status !== "204") {
+        // The existing WLT development probe deliberately sends empty 200/503 bodies.
+        // No other operation inherits this response exception.
+        const bodylessWltHealth = owner === "wlt" && id === "getWltDevelopmentHealth" &&
+          urlPath === "/health" && method === "get" &&
+          (status === "200" || status === "503") && resolved?.content === undefined;
+        if (/^2(?:[0-9]{2}|XX)$/.test(status) && status !== "204" && !bodylessWltHealth) {
           const schema = resolved?.content?.["application/json"]?.schema;
           if (!isObject(schema) && typeof schema !== "boolean") {
             errors.push("Missing successful JSON response schema: " + method + " " + urlPath + " " + status);
@@ -327,7 +333,7 @@ export function validate(owner, base = root) {
         }
         const bodylessHealthValidation = owner === "identity" && id === "getIdentityDevelopmentHealth" &&
           urlPath === "/health" && method === "get" && status === "400" && resolved?.content === undefined;
-        if (/^[45](?:[0-9]{2}|XX)$/.test(status) && !bodylessHealthValidation &&
+        if (/^[45](?:[0-9]{2}|XX)$/.test(status) && !bodylessHealthValidation && !bodylessWltHealth &&
             !isObject(resolved?.content?.["application/json"]?.schema)) {
           errors.push("Missing JSON error response schema: " + method + " " + urlPath + " " + status);
         }

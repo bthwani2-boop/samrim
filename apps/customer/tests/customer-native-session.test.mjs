@@ -1,20 +1,30 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { stripTypeScriptTypes } from "node:module";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { test } from "node:test";
+import * as identity from "@bthwani/identity";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import { readBoundedCustomerJSON } from "../src/features/access/bounded-customer-json.ts";
 
-const source = readFileSync(new URL("../src/features/access/customer-session-transport.ts", import.meta.url), "utf8");
-const compiled = stripTypeScriptTypes(source, { mode: "transform" })
-  .replace(/import\s+\{([^}]*)\}\s+from\s+["']([^"']+)["'];/gs,
-    (_match, names, moduleName) => `const {${names}} = require("${moduleName}");`)
-  .replace(/import\s+\*\s+as\s+(\w+)\s+from\s+["']([^"']+)["'];/g,
-    (_match, name, moduleName) => `const ${name} = require("${moduleName}");`)
-  .replace(/export async function (\w+)\(/g, "async function $1(") +
-  "\nmodule.exports = {readCustomerAdmission, requestCustomerCode, verifyCustomerCode, signOutCustomer, withVerifiedNativeCustomerRead};";
+const root = path.resolve(import.meta.dirname, "../../..");
+const source = path.resolve(import.meta.dirname, "../src/features/access/customer-session-transport.ts");
+const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-session-"));
+let compiled;
+try {
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
+    "--inlineSourceMap", "--inlineSources", "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  compiled = readFileSync(path.join(temp, "customer-session-transport.js"), "utf8");
+} finally { rmSync(temp, { recursive: true, force: true }); }
+const retainedModules = [];
 
 const original = Buffer.alloc(32, 1).toString("base64url");
 const next = Buffer.alloc(32, 2).toString("base64url");
 const expiry = new Date(Date.now() + 240000).toISOString();
+const refreshGrant = Buffer.alloc(32, 3).toString("base64url");
 class IdentityError extends Error {
   constructor(status, code = "UNAUTHORIZED") {
     super(code);
@@ -25,14 +35,16 @@ class IdentityError extends Error {
 const customer = bearer => ({ actorId: bearer === original ? "actor-old" : "actor-new",
   role: "customer", sessionExpiresAt: expiry });
 
-function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false, lenovoPreview, platform = "android" } = {}) {
+function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", ownerRole = "customer", storageDeletionFails = false, postDeleteMarkerThrows = false, lenovoPreview, legacySetting, platform = "android" } = {}) {
   let bearer = stored;
   let refresh = null;
   let pendingMarker = null;
   let read = async value => ({ ...customer(value), role: ownerRole });
   let codeVerification = async () => ({ accessToken: next, sessionExpiresAt: expiry });
+  let enroll = async () => ({ refreshToken: refreshGrant, refreshExpiresAt: expiry });
   let revoke = async value => { revoked.push(value); };
   let onStorageWrite = () => {};
+  let onRefreshWrite = () => {};
   const revoked = [];
   const storageReads = [];
   const secure = {
@@ -45,7 +57,7 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
     },
     async setItemAsync(key, value) {
       if (key.endsWith(".pending.v1")) { pendingMarker = value; return; }
-      if (key.endsWith(".refresh.v1")) { refresh = value; return; }
+      if (key.endsWith(".refresh.v1")) { refresh = value; onRefreshWrite(); return; }
       bearer = value;
       onStorageWrite();
     },
@@ -63,46 +75,169 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
   const fake = {
     "@bthwani/identity": {
       IdentityClientError: IdentityError,
+      parseVerifiedIdentitySession: identity.parseVerifiedIdentitySession,
+      parseCustomerPhoneChallenge: identity.parseCustomerPhoneChallenge,
       issueCustomerPhoneChallenge: async () => "ticket",
       readVerifiedIdentitySession: (_origin, value, signal) => read(value, signal),
+      establishPersistentIdentitySession: (_origin, value, signal) => {
+        assert.equal(value, next);
+        return enroll(signal);
+      },
       async readPersistentIdentityRole(_origin, value, token, role, signal) {
-        // Legacy access tests exercise current role verification. The refresh
-        // client and rotation are tested separately against their owner contract.
-        assert.equal(token, null, "fixture must not mistake a bearer for a refresh credential");
+        assert.equal(token, refresh, "fixture must supply the persisted refresh credential");
+        assert.ok(token === null || token === refreshGrant);
         const session = await read(value, signal);
         if (session.role !== role) throw new IdentityError(403, "FORBIDDEN");
         return { session, bearer: value };
       },
-      async revokePersistentIdentitySession() {
-        throw new Error("no refresh credential was issued in this fixture");
+      async revokePersistentIdentitySession(_origin, value) {
+        assert.equal(value, refreshGrant);
       },
       revokeVerifiedIdentitySession: (_origin, value, signal) => revoke(value, signal),
       verifyCustomerPhoneChallenge: (_origin, ticket, code, signal) => codeVerification(ticket, code, signal),
     },
+    "../access/bounded-customer-json": { readBoundedCustomerJSON },
+    "./bounded-customer-json": { readBoundedCustomerJSON },
     "expo-secure-store": secure,
     "react-native": { Platform: { OS: platform } },
   };
   const mount = () => {
-    const module = { exports: {} };
-    new Function("require", "module", "exports", "process", compiled)(
-      key => { assert.ok(Object.hasOwn(fake, key)); return fake[key]; },
-      module, module.exports, { env: {
-        EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin,
-        EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW: lenovoPreview,
-      } },
-    );
-    return module.exports;
+    const env = {
+      EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: nativeOrigin,
+      EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW: lenovoPreview,
+      EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: legacySetting,
+    };
+    const saved = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+    try {
+      for (const [key, value] of Object.entries(env)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+      const fixture = loadMappedRenderFixture(compiled, source, fake);
+      retainedModules.push(fixture);
+      return fixture.exports;
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]; else process.env[key] = value;
+      }
+    }
   };
   return {
     transport: mount(), reload: mount, revoked, storageReads, pending: () => pendingMarker,
     current: () => bearer,
+    currentRefresh: () => refresh,
+    setEnrollment(fn) { enroll = fn; },
     setCurrent(value) { bearer = value; },
     setRead(fn) { read = fn; },
     setVerification(fn) { codeVerification = fn; },
     setRevoke(fn) { revoke = fn; },
     setOnStorageWrite(fn) { onStorageWrite = fn; },
+    setRefreshWrite(fn) { onRefreshWrite = fn; },
   };
 }
+
+const webJSON = (value, status = 200, cache = "no-store") => Response.json(value, { status, headers: { "Cache-Control": cache } });
+const webSignal = () => new AbortController().signal;
+const webSession = { actorId: "synthetic-web-actor", role: "customer", sessionExpiresAt: "2030-01-01T00:00:00Z" };
+const webState = { enabled: true, session: webSession };
+const webFailure = (status, code) => e => e.status === status && e.code === code;
+
+function webHarness(t) {
+  const h = harness({ platform: "web" });
+  const replies = [], calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    calls.push({ url, ...options });
+    assert.ok(replies.length, "unexpected auth request");
+    const next = replies.shift();
+    if (next instanceof Error) throw next;
+    return next;
+  });
+  return { api: h.transport, replies, calls };
+}
+
+test("Web auth accepts only current owner session, exact challenge, verify and logout responses", async t => {
+  const h = webHarness(t);
+  const ticket = "f".repeat(48);
+  h.replies.push(webJSON(webState), webJSON({ ticket }, 201), webJSON({ session: webSession }),
+    new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } }));
+  assert.deepEqual(await h.api.readCustomerAdmission(webSignal()), webState);
+  assert.equal(await h.api.requestCustomerCode("+967770000077", webSignal()), ticket);
+  assert.deepEqual(await h.api.verifyCustomerCode(ticket, "123456", webSignal()), webSession);
+  assert.equal(await h.api.signOutCustomer(webSignal()), undefined);
+  assert.deepEqual(h.calls.map(r => r.method), ["GET", "POST", "POST", "DELETE"]);
+  assert.ok(h.calls.every(r => r.url === "/api/customer-auth" && r.credentials === "same-origin" && r.cache === "no-store" && r.redirect === "error"));
+  assert.deepEqual(JSON.parse(h.calls[1].body), { phone: "+967770000077" });
+  assert.deepEqual(JSON.parse(h.calls[2].body), { ticket, code: "123456" });
+});
+
+test("Web admission rejects invalid status, cache, MIME, size, and owner-session envelopes", async t => {
+  const h = webHarness(t);
+  const body = JSON.stringify(webState);
+  for (const invalid of [
+    new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } }),
+    webJSON(webState, 200, "public"),
+    new Response(body, { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } }),
+    new Response(body, { headers: { "Content-Type": "application/json", "Content-Length": "16385", "Cache-Control": "no-store" } }),
+    new Response(body + " ".repeat(16385), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }),
+    webJSON({ enabled: "true", session: webSession }),
+    webJSON({ enabled: false, session: webSession }),
+    webJSON({ enabled: true, session: { ...webSession, role: "merchant" } }),
+    webJSON({ enabled: true, session: { ...webSession, sessionExpiresAt: "invalid" } }),
+    webJSON({ enabled: true, session: { ...webSession, accessToken: "synthetic-unexpected" } }),
+  ]) {
+    h.replies.push(invalid);
+    await assert.rejects(h.api.readCustomerAdmission(webSignal()), webFailure(502, "OWNER_RESPONSE_INVALID"));
+  }
+  for (const status of [401, 403]) {
+    h.replies.push(webJSON({ code: "UNAUTHORIZED" }, status));
+    assert.deepEqual(await h.api.readCustomerAdmission(webSignal()), { enabled: true, session: null });
+  }
+  h.replies.push(webJSON({ enabled: false, session: null }), webJSON({ enabled: true, session: null }));
+  assert.deepEqual(await h.api.readCustomerAdmission(webSignal()), { enabled: false, session: null });
+  assert.deepEqual(await h.api.readCustomerAdmission(webSignal()), { enabled: true, session: null });
+});
+
+test("Web auth mutation refuses invalid receipts and preserves unknown result without replay", async t => {
+  const h = webHarness(t);
+  const ticket = "f".repeat(48);
+  for (const response of [webJSON({ ticket }, 200), webJSON({ ticket: "invalid" }, 201),
+    webJSON({ ticket }, 201, "public"), webJSON({ ticket, accessToken: "unexpected" }, 201)]) {
+    h.replies.push(response);
+    await assert.rejects(h.api.requestCustomerCode("+967770000077", webSignal()), webFailure(502, "OPERATION_RESULT_UNKNOWN"));
+  }
+  for (const response of [webJSON({ session: { ...webSession, role: "captain" } }),
+    webJSON({ session: webSession, accessToken: "unexpected" }), webJSON({ session: { ...webSession, sessionExpiresAt: "invalid" } })]) {
+    h.replies.push(response);
+    await assert.rejects(h.api.verifyCustomerCode(ticket, "123456", webSignal()), webFailure(502, "OPERATION_RESULT_UNKNOWN"));
+  }
+  h.replies.push(new Response(null, { status: 204, headers: { "Cache-Control": "public" } }));
+  await assert.rejects(h.api.signOutCustomer(webSignal()), webFailure(502, "OPERATION_RESULT_UNKNOWN"));
+  h.replies.push(webJSON({ code: "SIGN_OUT_REQUIRED" }, 409));
+  await assert.rejects(h.api.verifyCustomerCode(ticket, "123456", webSignal()), webFailure(409, "SIGN_OUT_REQUIRED"));
+  assert.equal(h.calls.length, 9, "one dispatch per explicit action");
+});
+
+test("Web session read and OTP mutation release stalled bodies on abort", async t => {
+  const h = webHarness(t);
+  for (const method of ["GET", "POST"]) {
+    const ctl = new AbortController();
+    let stream, cancelled = false, timer;
+    h.replies.push(new Response(new ReadableStream({ start(c) { stream = c; }, cancel() { cancelled = true; } }),
+      { status: method === "GET" ? 200 : 201, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } }));
+    const pending = (method === "GET" ? h.api.readCustomerAdmission(ctl.signal) : h.api.requestCustomerCode("+967770000077", ctl.signal))
+      .then(() => "UNEXPECTED", e => e.code);
+    try {
+      await new Promise(resolve => setImmediate(resolve));
+      ctl.abort();
+      assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 500); })]),
+        method === "GET" ? "OWNER_RESPONSE_STALE" : "OPERATION_RESULT_UNKNOWN");
+      assert.equal(cancelled, true);
+    } finally {
+      clearTimeout(timer);
+      if (!cancelled) stream.close();
+      await pending;
+    }
+  }
+});
 
 test("Lenovo Android admission uses its own storage and accepts only the opted-in USB loopback origin", async () => {
   const signal = new AbortController().signal;
@@ -155,11 +290,13 @@ test("native owner outage retains bearer for retry instead of authorizing user",
   assert.equal(h.current(), original);
 });
 
-test("native verified phone proof stores only Customer bearer after owner read", async () => {
+test("native verified phone proof stores both Customer credentials before success", async () => {
   const h = harness({ stored: null });
   const entry = await h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal);
   assert.deepEqual(entry, customer(next));
   assert.equal(h.current(), next);
+  assert.equal(h.currentRefresh(), refreshGrant);
+  assert.equal(h.pending(), null);
 });
 
 test("wrong-role result after proof never stores token and revokes issued credential", async () => {
@@ -457,5 +594,40 @@ test("native financial reader suppresses a revoked or expired Customer without c
       new AbortController().signal, async () => { calls++; return { actorId: "actor-old" }; });
     assert.equal(result.kind, "signed-out");
     assert.equal(calls, 0);
+  }
+});
+
+test("native Customer enrollment failure cannot report successful short-lived login", async () => {
+  const h = harness({ stored: null });
+  h.setEnrollment(async () => { throw new IdentityError(503, "OWNER_UNAVAILABLE"); });
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", new AbortController().signal),
+    { status: 503 });
+  assert.equal(h.current(), null);
+  assert.equal(h.currentRefresh(), null);
+  assert.deepEqual(h.revoked, [next]);
+});
+
+test("Customer refresh write uncertainty cannot expose an incomplete durable login after restart", async () => {
+  const h = harness({ stored: null });
+  h.setRefreshWrite(() => { throw new Error("refresh write acknowledgment lost"); });
+  const signal = new AbortController().signal;
+  await assert.rejects(h.transport.verifyCustomerCode("ticket", "123456", signal), /refresh write acknowledgment lost/);
+  assert.equal(h.current(), null);
+  assert.equal(h.currentRefresh(), refreshGrant);
+  assert.ok(h.pending());
+  assert.deepEqual(await h.reload().readCustomerAdmission(signal), { enabled: true, session: null });
+  assert.equal(h.currentRefresh(), null);
+  assert.equal(h.pending(), null);
+});
+
+test("retired Surface flag cannot select another native Customer storage namespace", async () => {
+  const signal = new AbortController().signal;
+  for (const lenovoPreview of [undefined, "1"]) {
+    const nativeOrigin = lenovoPreview ? "http://127.0.0.1:3201" : "http://127.0.0.1:33221";
+    const h = harness({ legacySetting: "1", lenovoPreview, nativeOrigin });
+    assert.deepEqual(await h.transport.readCustomerAdmission(signal), { enabled: true, session: customer(original) });
+    const key = lenovoPreview ? "bthwani.customer.synthetic-identity.lenovo-android.v1" : "bthwani.customer.synthetic-identity.v1";
+    assert.ok(h.storageReads.length > 0);
+    assert.ok(h.storageReads.every(name => [key, key + ".refresh.v1", key + ".pending.v1"].includes(name)));
   }
 });

@@ -1,10 +1,11 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import type { ReactNode } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useCaptainWorkspace } from "../access/protected-route";
 
 /** Current owner facts only. A DSH standing is not a dispatch assignment. */
-export default function CaptainHomeScreen() {
+export default function CaptainHomeScreen({ children }: Readonly<{ children?: ReactNode }> = {}) {
   const { theme } = useMobileAppearance();
   const workspace = useCaptainWorkspace();
   if (!workspace) return null;
@@ -45,6 +46,7 @@ export default function CaptainHomeScreen() {
             {["تنتهي جلسة Identity في: ", expires].join("")}
           </Text>
         </View>
+        {standing ? children : null}
         <View style={{
           borderWidth: 1, borderColor: theme.borderColor, borderRadius: 14,
           padding: 18, gap: 10, backgroundColor: theme.surface,

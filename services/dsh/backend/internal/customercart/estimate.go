@@ -107,7 +107,7 @@ func (h *Handler) merchandiseEstimate(w http.ResponseWriter, r *http.Request) {
 		fail(w, status, "UNAUTHORIZED_OR_OWNER_UNAVAILABLE")
 		return
 	}
-	tx, err := h.begin(ctx, false)
+	tx, err := h.begin(ctx, false, snapshotRelations()...)
 	if err != nil {
 		fail(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
 		return

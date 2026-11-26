@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 
 const body = {
-  actorId: "synthetic-customer-owner", currency: "YER", balanceYer: "0",
+  actorId: "synthetic-customer-owner", currency: "YER", balanceYer: "0", availableYer: "0",
 };
 const history = {
   actorId: body.actorId, currency: "YER", items: [], hasMore: false, nextCursor: null,
@@ -70,11 +70,14 @@ test("isolated Docker Customer Web uses only the existing HttpOnly session and v
   process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
   process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "0";
   assert.equal((await wallet(new Request(url + "wallet", { headers }))).status, 503);
+  process.env.BTHWANI_SURFACE_PREVIEW = "1";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:23203";
+  assert.equal((await wallet(new Request(url + "wallet", { headers }))).status, 503);
   assert.equal(calls.length, 2);
 });
 
 test("Docker Customer Web launcher opts in only for verified local owners, never for native or other apps", () => {
-  const script = readFileSync(new URL("../../../infra/Start-RefoundationApp.ps1", import.meta.url), "utf8");
+  const script = readFileSync(new URL("../../../tools/dev/Start-App.ps1", import.meta.url), "utf8");
   assert.match(script, /EnableDockerWalletWebPreview/);
   assert.match(script, /DOCKER_WALLET_WEB_PREVIEW_REQUIRES_LENOVO_CUSTOMER_ONLY/);
   assert.match(script, /DOCKER_WALLET_WEB_PREVIEW_REQUIRES_VERIFIED_LENOVO_HOST/);
@@ -83,6 +86,6 @@ test("Docker Customer Web launcher opts in only for verified local owners, never
   assert.match(script, /CUSTOMER_SYNTHETIC_WLT_ORIGIN='http:\/\/127\.0\.0\.1:3203'/);
   assert.match(script, /BTHWANI_DOCKER_WALLET_WEB_PREVIEW='1'/);
   assert.match(script, /BTHWANI_ISOLATED_TEST_MODE='true'/);
-  assert.match(script, /EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW='0'/);
+  assert.doesNotMatch(script, /BTHWANI_SURFACE_PREVIEW/);
   assert.match(script, /Remove-Item Env:EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN/);
 });

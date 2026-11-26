@@ -3,8 +3,16 @@
   "workspaces": {
     ".": {
       "entry": [
-        "infra/setup-env.mjs"
+        "tools/dev/setup-env.mjs"
       ]
+    },
+    // Expo evaluates these native config plugins only when a Maps key is supplied.
+    // Both app manifests and key-enabled config are covered by verify-native-config.test.mjs.
+    "apps/captain": {
+      "ignoreDependencies": ["react-native-maps"]
+    },
+    "apps/merchant": {
+      "ignoreDependencies": ["react-native-maps"]
     }
   },
   "ignore": [
@@ -19,13 +27,11 @@
     // Scoped exceptions, NOT runtime routes or implemented capabilities.
     // Checked by verify-application-boundaries.test.mjs. Remove each exemption
     // when its module gains a real consumer or owner-backed implementation.
-    "apps/merchant/src/features/catalog/inventory-summary.tsx",
     "apps/merchant/src/features/catalog/product-media.tsx",
     "apps/merchant/src/features/catalog/products-screen.tsx",
     "apps/merchant/src/features/employees/employee-access.tsx",
     "apps/merchant/src/features/finance/earnings-summary.tsx",
     "apps/merchant/src/features/finance/payout-recipients.tsx",
-    "apps/merchant/src/features/finance/wallet-screen.tsx",
     "apps/merchant/src/features/marketing/store-banners.tsx",
     "apps/merchant/src/features/marketing/store-design.tsx",
     "apps/merchant/src/features/marketing/store-reels.tsx",
@@ -41,6 +47,8 @@
   "ignoreBinaries": [
     // Expo and the npm "build" script are invoked by GitHub Actions.
     "expo",
-    "build"
+    "build",
+    // PowerShell is an installed OS toolchain, not an npm package.
+    "^pwsh(?:\\.exe)?$"
   ]
 }

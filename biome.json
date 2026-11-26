@@ -1,35 +1,70 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
   "files": {
     "includes": [
       "apps/**/*.js",
       "apps/**/*.jsx",
       "apps/**/*.mjs",
+      "apps/**/*.cjs",
       "apps/**/*.ts",
       "apps/**/*.tsx",
+      "apps/**/*.mts",
+      "apps/**/*.cts",
       "packages/**/*.js",
       "packages/**/*.jsx",
       "packages/**/*.mjs",
+      "packages/**/*.cjs",
       "packages/**/*.ts",
       "packages/**/*.tsx",
+      "packages/**/*.mts",
+      "packages/**/*.cts",
       "services/**/*.js",
       "services/**/*.jsx",
       "services/**/*.mjs",
+      "services/**/*.cjs",
       "services/**/*.ts",
       "services/**/*.tsx",
-      "tools/dev/**/*.js",
-      "tools/dev/**/*.mjs",
-      "tools/dev/**/*.ts",
-      "tools/mobile/verify-application-boundaries.mjs",
-      "tools/mobile/verify-application-boundaries.test.mjs",
-      "tools/mobile/verify-expo-web-http.mjs",
-      "tools/security/**/*.mjs",
+      "services/**/*.mts",
+      "services/**/*.cts",
+      "tools/**/*.js",
+      "tools/**/*.jsx",
+      "tools/**/*.mjs",
+      "tools/**/*.cjs",
+      "tools/**/*.ts",
+      "tools/**/*.tsx",
+      "tools/**/*.mts",
+      "tools/**/*.cts",
+      "tests/**/*.js",
+      "tests/**/*.jsx",
+      "tests/**/*.mjs",
+      "tests/**/*.cjs",
+      "tests/**/*.ts",
+      "tests/**/*.tsx",
+      "tests/**/*.mts",
+      "tests/**/*.cts",
+      "infra/**/*.js",
+      "infra/**/*.jsx",
+      "infra/**/*.mjs",
+      "infra/**/*.cjs",
+      "infra/**/*.ts",
+      "infra/**/*.tsx",
+      "infra/**/*.mts",
+      "infra/**/*.cts",
       "!!**/node_modules/**",
       "!!**/.expo/**",
       "!!**/.next/**",
+      "!!**/.next-dev/**",
       "!!**/dist/**",
       "!!**/build/**",
-      "!!**/generated/**"
+      "!!services/identity/clients/generated/**",
+      "!!services/dsh/clients/generated/**",
+      "!!services/wlt/clients/generated/**",
+      "!!apps/control-panel/next-env.d.ts"
     ]
   },
   "formatter": {
@@ -38,7 +73,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   }
 }

@@ -159,6 +159,11 @@ func (s *MerchantStoreRegistrar) Options(ctx context.Context, token string) (Mer
 	if err != nil {
 		return result, ErrStoreOwnerUnavailable
 	}
+	// A city/relation policy is not actionable without an active vertical.
+	// Keep the empty vertical list so clients can distinguish the cause.
+	if len(result.Verticals) == 0 {
+		result.Choices = []MerchantRegistrationChoice{}
+	}
 	if err = tx.Commit(); err != nil {
 		return result, ErrStoreOwnerUnavailable
 	}

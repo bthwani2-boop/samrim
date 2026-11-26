@@ -41,24 +41,7 @@ type publicStoreSelection struct {
 func (s *Server) queryPublicStores(ctx context.Context, tx *sql.Tx, selection publicStoreSelection) (*sql.Rows, error) {
 	args := []any{selection.id, selection.city, selection.after, selection.search, selection.vertical, selection.limit}
 	if s.StoreAvailabilityEnabled {
-		return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,(SELECT CASE
-			WHEN a.paused_until > transaction_timestamp() THEN jsonb_build_object('paused', true)
-			WHEN a.preparation_minutes IS NOT NULL AND a.store_timezone=c.timezone_name THEN
-				jsonb_build_object('timezone', a.store_timezone, 'weekly', COALESCE(
-					(SELECT jsonb_agg(jsonb_build_object('weekday', h.weekday,
-						'opens', h.opens_minute, 'closes', h.closes_minute))
-					 FROM store_operational_weekly_hours h WHERE h.store_id=a.store_id),
-					'[]'::jsonb))
-			END FROM store_operational_availability a WHERE a.store_id=s.id),
-			transaction_timestamp()
-			FROM stores s
-			JOIN service_cities c ON c.id=s.city_id
-			JOIN verticals v ON v.id=s.vertical_id
-			WHERE s.published AND c.active AND v.active
-			  AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
-				AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
-				AND ($5='' OR s.vertical_id=$5)))
-			ORDER BY s.id LIMIT $6`, args...)
+		return tx.QueryContext(ctx, storeavailability.PublicStoresWithScheduleSQL, args...)
 	}
 	return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,
 		NULL::jsonb, transaction_timestamp()
@@ -82,20 +65,10 @@ func scanPublicStore(scan func(...any) error) (publicStore, error) {
 	// An active pause and a closed schedule are public browse information. A checkout decision
 	// still requires the currently unavailable fulfillment and WLT flow.
 	st.OrderabilityStatus = string(storeavailability.OperationallyUnavail)
-	if len(hoursJSON) == 0 {
-		return st, nil
-	}
-	var hours struct {
-		Paused   bool                             `json:"paused"`
-		Timezone string                           `json:"timezone"`
-		Weekly   []storeavailability.WeeklyWindow `json:"weekly"`
-	}
-	if err := json.Unmarshal(hoursJSON, &hours); err != nil {
-		return st, nil
-	}
-	if hours.Paused {
+	switch storeavailability.EvaluateCustomerSchedule(now, hoursJSON).Status {
+	case "PAUSED":
 		st.OrderabilityStatus = string(storeavailability.Paused)
-	} else if open, err := storeavailability.WithinWeeklyHours(now, hours.Timezone, hours.Weekly); err == nil && !open {
+	case "CLOSED_BY_SCHEDULE":
 		st.OrderabilityStatus = string(storeavailability.ClosedBySchedule)
 	}
 	return st, nil

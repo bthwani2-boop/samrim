@@ -13,29 +13,30 @@ const historySQL = `SELECT funding_id, amount_yer::text, posted_at, reverses_fun
         (posted_at, funding_id COLLATE "C") < ($2::timestamptz, $3::text COLLATE "C"))
     ORDER BY posted_at DESC, funding_id COLLATE "C" DESC LIMIT 11`
 
-const balanceSQL = `SELECT COALESCE(
-	(SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id = $1), 0)::text`
+const balanceSQL = `SELECT COALESCE(b.balance_yer,0)::text,COALESCE(b.available_yer,0)::text
+	FROM (SELECT $1::text AS actor_id) a
+	LEFT JOIN wlt.customer_wallet_availability b ON b.actor_id=a.actor_id`
 
-func NewHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
-	return newWalletHandler(db, identityOrigin, false)
+func NewHandler(db *sql.DB, identityOrigin string, dshOrigin ...string) (http.Handler, error) {
+	return newWalletHandler(db, identityOrigin, false, dshOrigin...)
 }
 
 // NewContainerHandler permits only the named, internal synthetic Identity service.
 // It does not expand the local CLI or preview origin trust boundary.
-func NewContainerHandler(db *sql.DB, identityOrigin string) (http.Handler, error) {
+func NewContainerHandler(db *sql.DB, identityOrigin string, dshOrigin ...string) (http.Handler, error) {
 	if identityOrigin != "http://identity:3302" {
 		return nil, errors.New("WLT requires the isolated container Identity origin")
 	}
-	return newWalletHandler(db, identityOrigin, true)
+	return newWalletHandler(db, identityOrigin, true, dshOrigin...)
 }
 
-func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool) (http.Handler, error) {
+func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool, dshOrigin ...string) (http.Handler, error) {
 	if db == nil {
 		return nil, errors.New("WLT balance reader unavailable")
 	}
-	return newHandlerWithHistoryMode(identityOrigin, func(ctx context.Context, actorID string) (string, error) {
-		var balance string
-		err := db.QueryRowContext(ctx, balanceSQL, actorID).Scan(&balance)
+	return newHandlerWithHistoryMode(identityOrigin, func(ctx context.Context, actorID string) (walletAmounts, error) {
+		var balance walletAmounts
+		err := db.QueryRowContext(ctx, balanceSQL, actorID).Scan(&balance.Posted, &balance.Available)
 		return balance, err
 	}, func(ctx context.Context, actorID string, cursor *historyCursor) (fundingHistory, error) {
 		result := fundingHistory{ActorID: actorID, Currency: "YER", Items: []fundingTransaction{}}
@@ -71,5 +72,9 @@ func newWalletHandler(db *sql.DB, identityOrigin string, containerMode bool) (ht
 			return result, err
 		}
 		return result, nil
-	}, containerMode)
+	}, func(ctx context.Context, storeID string) (agreementResult, error) {
+		return readAgreement(ctx, db, storeID)
+	}, func(ctx context.Context, actor, checkout string) (allocationReadback, error) {
+		return readOrderPaymentAllocation(ctx, db, actor, checkout)
+	}, containerMode, dshOrigin...)
 }

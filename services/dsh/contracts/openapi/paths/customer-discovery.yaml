@@ -1,1 +1,124 @@
-paths: {}
+paths:
+  /v1/customers/me/favorite-stores:
+    get:
+      operationId: listCurrentCustomerFavoriteStores
+      summary: List the current Customer's published favorite Stores
+      description: Bounded live keyset traversal. Withdrawn Stores are excluded; no actor selector or checkout entitlement.
+      security: [{ OpaqueSession: [] }]
+      parameters:
+        - name: after
+          in: query
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Private page of visible Store identifiers
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, storeIds]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  storeIds:
+                    type: array
+                    maxItems: 20
+                    uniqueItems: true
+                    items: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+                  nextCursor: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        '400':
+          description: Invalid request or selector
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+  /v1/customers/me/favorite-stores/{storeID}:
+    get:
+      operationId: getCurrentCustomerFavoriteStore
+      summary: Read one Store favorite for the current Customer
+      description: Returns false for a missing, withdrawn or unsaved Store without revealing private Store facts.
+      security: [{ OpaqueSession: [] }]
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Current verified Customer favorite state
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, storeId, favorite]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  storeId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+                  favorite: { type: boolean }
+        '400':
+          description: Invalid request or selector
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+    put:
+      operationId: setCurrentCustomerFavoriteStore
+      summary: Set one Store favorite to the requested boolean state
+      description: Adding requires current public eligibility; removing is always scoped to the current Customer. Repeated identical requests converge. After an unknown result read the owner before another write.
+      security: [{ OpaqueSession: [] }]
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [favorite]
+              properties:
+                favorite: { type: boolean }
+      responses:
+        '200':
+          description: Current verified Customer favorite state
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, storeId, favorite]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  storeId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+                  favorite: { type: boolean }
+        '400':
+          description: Invalid request or selector
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+        '404':
+          description: Store not publicly eligible for addition
+          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }

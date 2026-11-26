@@ -1,1 +1,1 @@
-export { default } from "../../src/features/addresses/address-editor";
+export { default } from "../../src/features/addresses/addresses-screen";

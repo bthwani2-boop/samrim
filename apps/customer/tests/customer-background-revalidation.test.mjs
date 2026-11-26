@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { customerAuthDestination } from "../src/features/access/auth-return-path.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const entry = fileURLToPath(new URL("../src/features/access/identity-gate.tsx", import.meta.url));
@@ -22,7 +23,7 @@ try {
   rmSync(temp, { recursive: true, force: true });
 }
 
-function harness() {
+function harness(returnTo) {
   const hooks = [];
   const effects = [];
   const requests = [];
@@ -66,7 +67,8 @@ function harness() {
   const fake = {
     "@bthwani/identity": { IdentityClientError: class extends Error {}, normalizeYemeniMobile: () => undefined },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme }) },
-    "expo-router": { Link: "Link" },
+    "expo-router": { Link: "Link", useLocalSearchParams: () => ({ returnTo }) },
+    "./auth-return-path": { customerAuthDestination },
     react,
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     "react-native": {
@@ -196,7 +198,7 @@ test("Customer verified status expires while continuously in the foreground", as
   assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
 });
 
-test("Customer foreground polling hides stale status and fails closed on owner outage", async () => {
+test("Customer foreground polling retains valid status and fails closed on owner outage", async () => {
   const h = harness();
   h.mount();
   h.read().resolve({ enabled: true, session: h.session() });
@@ -204,7 +206,7 @@ test("Customer foreground polling hides stale status and fails closed on owner o
   h.render();
   h.poll();
   const fresh = h.read();
-  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
   fresh.reject(new Error("Identity unavailable"));
   await settle();
   assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
@@ -237,4 +239,113 @@ test("Customer refresh replaces old expiry timers and unmount releases all timer
     "the earlier session's deadline must not expire a freshly owner-verified session");
   h.unmount();
   assert.equal(h.timerCount(), 0);
+});
+
+function findNode(node, predicate) {
+  if (Array.isArray(node)) return node.map(child => findNode(child, predicate)).find(Boolean);
+  if (!node || typeof node !== "object") return undefined;
+  return predicate(node) ? node : findNode(node.props?.children, predicate);
+}
+
+test("Customer revalidation timeout blocks new login until the owner confirms session state", async () => {
+  const h = harness();
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.poll();
+  const pending = h.read();
+  h.advance(20000);
+  assert.equal(pending.signal.aborted, true);
+  pending.reject(new Error("aborted"));
+  await settle();
+  const uncertain = h.render();
+  assert.equal(containsTestId(uncertain, "customer-identity-verified"), false);
+  const retry = findNode(uncertain, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق");
+  assert.ok(retry);
+  assert.equal(findNode(uncertain, node => node.type === "TextInput"), undefined);
+  retry.props.onPress();
+  h.read().resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+});
+
+
+test("Customer read deadline releases retry even when the owner ignores cancellation", async () => {
+  const h = harness("/wallet");
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session() });
+  await settle();
+  h.render();
+  h.poll();
+  const stale = h.read();
+  h.advance(20000);
+  assert.equal(stale.signal.aborted, true);
+  const tree = h.render();
+  assert.equal(containsTestId(tree, "customer-identity-verified"), false);
+  assert.equal(findNode(tree, node => node.type === "TextInput"), undefined);
+  const retry = findNode(tree, node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق");
+  assert.ok(retry, "retry must not wait for the aborted owner promise");
+  retry.props.onPress();
+  const fresh = h.read();
+  stale.resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+  assert.equal(findNode(h.render(), node => node.type === "Pressable" &&
+    node.props.children?.props.children === "إعادة التحقق"), undefined);
+  fresh.resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.unmount();
+});
+
+test("wallet continuation is exposed only while Identity confirms a current Customer session", async () => {
+  const h = harness("/wallet");
+  const continuation = () => findNode(h.render(), node => node.type === "Link" && node.props.href === "/wallet");
+  try {
+    h.mount();
+    assert.equal(continuation(), undefined);
+    h.read().resolve({ enabled: true, session: h.session() });
+    await settle();
+    assert.equal(continuation()?.props.replace, true);
+    h.poll();
+    assert.equal(continuation()?.props.replace, true);
+    h.read().resolve({ enabled: true, session: null });
+    await settle();
+    assert.equal(continuation(), undefined);
+  } finally { h.unmount(); }
+});
+
+test("an arbitrary internal API or external URL never becomes an authenticated continuation", async () => {
+  for (const target of ["/api/customer-auth", "//external.example", ["/wallet"]]) {
+    const h = harness(target);
+    try {
+      h.mount();
+      h.read().resolve({ enabled: true, session: h.session() });
+      await settle();
+      assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+      assert.equal(findNode(h.render(), node => node.type === "Link" && node.props.replace), undefined);
+    } finally { h.unmount(); }
+  }
+});
+
+
+test("Customer expiry conceals status even when a periodic read is already pending", async () => {
+  const h = harness("/wallet");
+  h.mount();
+  h.read().resolve({ enabled: true, session: h.session(1000) });
+  await settle();
+  h.render();
+  h.poll();
+  const pending = h.read();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.advance(1000);
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), false);
+  assert.equal(pending.signal.aborted, false);
+  pending.resolve({ enabled: true, session: h.session() });
+  await settle();
+  assert.equal(containsTestId(h.render(), "customer-identity-verified"), true);
+  h.unmount();
 });

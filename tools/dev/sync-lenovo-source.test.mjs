@@ -1,11 +1,100 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict } from "./sync-lenovo-source.mjs";
+import { assertMirrorPackageManifest, mirrorCandidatePaths } from "./sync-lenovo-reconciliation.mjs";
+import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict, remoteInvocation } from "./sync-lenovo-source.mjs";
+
+test("manifest verification rejects an edit before HEAD changes and recovers after sync", () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-verify-mirror-"));
+  const root = path.join(folder, "source");
+  const localAppData = path.join(folder, "state");
+  const manifestDir = path.join(localAppData, "BThwani", "Operations", "SourceSync");
+  const entry = "tools/dev/sync-lenovo-source.mjs";
+  const mirrored = [entry, "tools/dev/sync-lenovo-reconciliation.mjs", "tools/dev/check-go.mjs", "apps/customer/example.ts", "apps/customer/package.json"];
+  const git = (...args) => {
+    const result = spawnSync(process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git", args, { cwd: root, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    for (const rel of [...mirrored, "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs"]) {
+      const target = path.join(root, rel);
+      mkdirSync(path.dirname(target), { recursive: true });
+      if (rel.endsWith("example.ts")) writeFileSync(target, "export const value = 1;\n");
+      else if (rel.endsWith("package.json")) writeFileSync(target, JSON.stringify({name:"@fixture/customer",version:"1.0.0"}));
+      else copyFileSync(new URL(`../../${rel}`, import.meta.url), target);
+    }
+    git("init", "-q");
+    git("add", "apps/customer/example.ts");
+    git("-c", "user.name=Mirror Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "-c", "core.hooksPath=" + folder, "commit", "-qm", "fixture");
+    const head = git("rev-parse", "HEAD");
+    mkdirSync(manifestDir, { recursive: true });
+    const markSynced = () => writeFileSync(path.join(manifestDir, "manifest.json"), JSON.stringify({
+      version: 1,
+      host: "BTHWANI-DOCKER",
+      target: "C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime",
+      head,
+      branch: git("branch", "--show-current"),
+      files: Object.fromEntries(mirrored.map(rel => [rel,
+        createHash("sha256").update(readFileSync(path.join(root, rel))).digest("hex").toUpperCase()])),
+    }));
+    const verify = (flag="--verify-manifest") => {
+      const result = spawnSync(process.execPath, [entry, flag], {
+        cwd: root, env: { ...process.env, LOCALAPPDATA: localAppData }, encoding: "utf8", timeout: 10000,
+      });
+      assert.equal(result.status, 0, result.stderr);
+      return JSON.parse(result.stdout);
+    };
+    markSynced();
+    assert.equal(verify().current, true);
+    writeFileSync(path.join(root, "apps/customer/example.ts"), "export const value = 2;\n");
+    assert.deepEqual(verify(), { head, mirrorHead: head, current: false });
+    const dependencyProof=verify("--verify-dependency-inputs");
+    assert.equal(dependencyProof.current,true,"ordinary source edits do not block dependencies");
+    assert.deepEqual(Object.keys(dependencyProof.files),["apps/customer/package.json"]);
+    const pkg=path.join(root,"apps/customer/package.json");
+    writeFileSync(pkg,JSON.stringify({name:"@fixture/customer",version:"1.0.1"}));
+    assert.equal(verify("--verify-dependency-inputs").current,false,"unsynced dependency edit must block");
+    markSynced();
+    assert.equal(verify("--verify-dependency-inputs").current,true);
+    markSynced();
+    assert.equal(verify().current, true);
+    writeFileSync(path.join(root, "apps/customer/added.ts"), "export const added = true;\n");
+    assert.equal(verify().current, false);
+    rmSync(path.join(root, "apps/customer/added.ts"));
+    const packageRoot = path.join(root, "packages/new-purpose");
+    mkdirSync(path.join(packageRoot, "src"), {recursive:true});
+    const manifestPath = "packages/new-purpose/package.json";
+    const sourcePath = "packages/new-purpose/src/index.ts";
+    writeFileSync(path.join(root, manifestPath), JSON.stringify({name:"@bthwani/new-purpose",private:true}));
+    writeFileSync(path.join(root, sourcePath), "export const formatting = String;");
+    assert.equal(verify().current, false, "new package must invalidate the previous mirror");
+    mirrored.push(manifestPath, sourcePath);
+    markSynced();
+    assert.equal(verify().current, true, "new package participates in the actual Git inventory");
+    assert.ok(Object.hasOwn(verify("--verify-dependency-inputs").files, manifestPath));
+    const unsafe = path.join(packageRoot, "src", "unsafe.ts");
+    writeFileSync(unsafe, "export const token = "+JSON.stringify("gh"+"p_"+"x".repeat(24)));
+    const reject = () => spawnSync(process.execPath,[entry,"--verify-manifest"],{
+      cwd:root,env:{...process.env,LOCALAPPDATA:localAppData},encoding:"utf8",timeout:10000,
+    });
+    let rejected = reject();
+    assert.notEqual(rejected.status,0);
+    assert.match(rejected.stderr,/MIRROR_SECRET_MARKER packages\/new-purpose\/src\/unsafe.ts/);
+    assert.doesNotMatch(rejected.stderr,/x{24}/);
+    rmSync(unsafe);
+    rmSync(path.join(root,manifestPath));
+    rejected=reject();
+    assert.notEqual(rejected.status,0);
+    assert.match(rejected.stderr,/MIRROR_PACKAGE_MANIFEST_REQUIRED new-purpose/);
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
 
 test("manifest persistence replaces atomically and never deletes another pending file", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-source-manifest-"));
@@ -111,18 +200,19 @@ test("canonical source paths accepted without path injection", () => {
     "apps/captain/mobile.config.json",
     "apps/control-panel/app/page.tsx",
     "packages/design-system/package.json",
+    "packages/new-purpose/src/index.ts",
     "services/identity/package.json",
     "services/identity/clients/index.ts",
     "services/dsh/clients/index.ts",
     "services/wlt/tsconfig.json",
     "tools/dev/Start-AppTunnel.ps1",
-    "infra/Start-RefoundationApp.ps1",
+    "tools/dev/Start-App.ps1",
     "pnpm-lock.yaml", ".node-version"
   ]) assert.equal(allowed(path), true, path);
 });
 test("credentials, generated state, services and unowned paths rejected", () => {
   for (const path of [
-    ".git/config", "infra/local/.env", "apps/customer/.env",
+    ".git/config", "infra/local/.env", "tools/dev/.env.tunnels.local", "tools/dev/docker/reconcile-owner-runtime.mjs", "apps/customer/.env",
     "apps/customer/.env.production", "apps/customer/google-services.json",
     "apps/customer/credentials.json", "apps/customer/keys.pem",
     "apps/customer/node_modules/expo/package.json",
@@ -134,7 +224,12 @@ test("credentials, generated state, services and unowned paths rejected", () => 
     "../apps/customer/app/index.tsx", "apps/customer/../merchant/app/a.tsx",
     "apps/customer\\app\\index.tsx", "apps//customer/index.tsx",
     "apps/customer/id_ed25519", "tools/dev/temp.key",
-    "apps/customer/.ssh/config", "apps/customer/.cache/file"
+    "apps/customer/.ssh/config", "apps/customer/.cache/file",
+    "packages/customer/src/index.ts", "packages/wlt/src/index.ts", "packages/BadName/src/index.ts",
+    "packages/neutral/.next-dev/file.js", "packages/neutral/secrets.local.json",
+    "packages/neutral/local-test.secret.json", "packages/neutral/src/CON.ts",
+    "apps/customer/file.ts.", "apps/customer/file.ts ", "apps/control-panel/next-env.d.ts",
+    "pnpm-lock.yaml/extra", "services/identity/package.json/extra"
   ]) assert.equal(allowed(path), false, path);
 });
 
@@ -225,16 +320,17 @@ test("compatible new branch at the same HEAD still must reconcile manifest branc
 });
 
 
+const fixturePowerShell = process.platform === "win32" ? "C:\\Program Files\\PowerShell\\7\\pwsh.exe" : "pwsh";
 function isolatedPowerShell(code) {
   // Run only command builders against disposable local files. Never invoke SSH,
   // the Lenovo watcher, or source reconciliation during this regression.
-  return spawnSync("pwsh.exe", [
+  return spawnSync(fixturePowerShell, [
     "-NoProfile", "-NonInteractive", "-EncodedCommand",
     Buffer.from(code, "utf16le").toString("base64"),
   ], { encoding: "utf8", windowsHide: true, timeout: 15000 });
 }
 
-test("replacement archives bytes written after the initial digest check", { skip: process.platform !== "win32" }, () => {
+test("replacement archives bytes written after the initial digest check", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-atomic-replace-"));
   try {
     const dest = path.join(folder, "destination.txt");
@@ -268,7 +364,7 @@ test("replacement archives bytes written after the initial digest check", { skip
   }
 });
 
-test("managed deletion archives a concurrent edit before removing its quarantine", { skip: process.platform !== "win32" }, () => {
+test("managed deletion archives a concurrent edit before removing its quarantine", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-atomic-delete-"));
   try {
     const dest = path.join(folder, "managed.txt");
@@ -294,7 +390,7 @@ test("managed deletion archives a concurrent edit before removing its quarantine
   }
 });
 
-test("failed archive restores a quarantined file without losing bytes", { skip: process.platform !== "win32" }, () => {
+test("failed archive restores a quarantined file without losing bytes", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-restore-"));
   try {
     const dest = path.join(folder, "managed.txt");
@@ -316,7 +412,7 @@ test("failed archive restores a quarantined file without losing bytes", { skip: 
   }
 });
 
-test("a replacement created during deletion is never overwritten or removed", { skip: process.platform !== "win32" }, () => {
+test("a replacement created during deletion is never overwritten or removed", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-replacement-"));
   try {
     const dest = path.join(folder, "managed.txt");
@@ -347,7 +443,7 @@ test("full remote audit deadline is not postponed by continuing source edits", (
   assert.equal(remoteAuditDue(state, 30000, 30500), true);
 });
 
-test("managed deletion refuses an ancestor junction outside the source mirror", { skip: process.platform !== "win32" }, (t) => {
+test("managed deletion refuses a redirected ancestor outside the source mirror", (t) => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-delete-junction-"));
   try {
     const root = path.join(folder, "mirror");
@@ -356,7 +452,7 @@ test("managed deletion refuses an ancestor junction outside the source mirror", 
     mkdirSync(external);
     const junction = path.join(root, "app");
     try {
-      symlinkSync(external, junction, "junction");
+      symlinkSync(external, junction, process.platform === "win32" ? "junction" : "dir");
     } catch (error) {
       if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) {
         t.skip("junction creation unavailable on this test host");
@@ -379,4 +475,487 @@ test("managed deletion refuses an ancestor junction outside the source mirror", 
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }
+});
+
+// The existing watcher owns a single bounded runtime attempt and does not retry ambiguous writes.
+test("runtime reconciliation trigger is immediate for changed committed source and respects retry gates", async () => {
+  const { runtimePollAction } = await import("./sync-lenovo-reconciliation.mjs");
+  const base={enabled:true,dirty:false,active:false,key:"new",last:{key:"old",status:"pass"},now:100,nextAudit:200};
+  assert.equal(runtimePollAction(base),"apply");
+  for(const override of [{enabled:false},{dirty:true},{active:true},{last:{key:"old",status:"running"}},{last:{key:"old",status:"uncertain"}},{last:{key:"new",status:"blocked"}},{last:{key:"new",status:"retry"}}]) assert.equal(runtimePollAction({...base,...override}),null);
+  assert.equal(runtimePollAction({...base,last:{key:"new",status:"retry"},now:201}),"apply");
+  assert.equal(runtimePollAction({...base,last:{key:"old",status:"blocked"}}),"apply");
+});
+
+test("a reconciler can durably acknowledge only its own verified attempt after watcher loss", async()=>{
+  const { acknowledgeRuntimeAttempt, runtimeReceiptStatus } = await import("./sync-lenovo-reconciliation.mjs");
+  const folder=mkdtempSync(path.join(tmpdir(),"bthwani-runtime-receipt-"));
+  const file=path.join(folder,"runtime-reconcile.json");
+  const receipt=path.join(folder,"runtime-reconcile.receipt.json");
+  const key="a".repeat(64), attempt="11111111-1111-4111-8111-111111111111";
+  const next="22222222-2222-4222-8222-222222222222";
+  const running={version:1,key,attempt,status:"running"};
+  try {
+    writeFileSync(file,JSON.stringify(running));
+    assert.equal(runtimeReceiptStatus(file,receipt),null);
+    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,next),/RUNTIME_ATTEMPT_MISMATCH/);
+    assert.equal(existsSync(receipt),false);
+    acknowledgeRuntimeAttempt(file,receipt,key,attempt);
+    assert.deepEqual(JSON.parse(readFileSync(file,"utf8")),running);
+    assert.equal(runtimeReceiptStatus(file,receipt),"pass");
+    writeFileSync(file,JSON.stringify({...running,status:"uncertain"}));
+    assert.equal(runtimeReceiptStatus(file,receipt),"pass");
+    writeFileSync(file,JSON.stringify({...running,attempt:next}));
+    assert.equal(runtimeReceiptStatus(file,receipt),null);
+    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt),/RUNTIME_ATTEMPT_MISMATCH/);
+    assert.equal(runtimeReceiptStatus(file,receipt),null);
+    const corruptReceipt=path.join(folder,"corrupt.receipt.json");
+    writeFileSync(corruptReceipt,"{broken",{flag:"wx"});
+    assert.equal(runtimeReceiptStatus(file,corruptReceipt),null);
+  } finally { rmSync(folder,{recursive:true,force:true}); }
+});
+
+test("explicit recovery receipt releases only the exact previously reviewed hold, never a changed attempt",async()=>{
+  const { acknowledgeRuntimeRecovery, runtimeReceiptStatus }=await import("./sync-lenovo-reconciliation.mjs");
+  const folder=mkdtempSync(path.join(tmpdir(),"bthwani-runtime-recovery-"));
+  const state=path.join(folder,"runtime-reconcile.json"), receipt=path.join(folder,"runtime-reconcile.receipt.json");
+  const key="b".repeat(64), original=JSON.stringify({version:1,key,status:"running"});
+  try {
+    writeFileSync(state,original);
+    assert.throws(()=>acknowledgeRuntimeRecovery(state,receipt,"c".repeat(64),original),/RUNTIME_ATTEMPT_MISMATCH/);
+    assert.equal(existsSync(receipt),false);
+    acknowledgeRuntimeRecovery(state,receipt,key,original);
+    assert.equal(runtimeReceiptStatus(state,receipt),"retry");
+    assert.equal(readFileSync(state,"utf8"),original);
+    const changed=JSON.stringify({version:1,key,status:"uncertain"});
+    writeFileSync(state,changed);
+    assert.equal(runtimeReceiptStatus(state,receipt),null);
+    assert.throws(()=>acknowledgeRuntimeRecovery(state,receipt,key,original),/RUNTIME_ATTEMPT_MISMATCH/);
+    writeFileSync(state,JSON.stringify({version:1,key,status:"blocked"}));
+    assert.throws(()=>acknowledgeRuntimeRecovery(state,receipt,key,readFileSync(state,"utf8")),/RUNTIME_ATTEMPT_MISMATCH/);
+  } finally {rmSync(folder,{recursive:true,force:true});}
+});
+
+test("runtime attempt outcome distinguishes known readback from ambiguous writes",async()=>{
+  const {runtimeAttemptResult}=await import("./sync-lenovo-reconciliation.mjs");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nOWNER_APPLY_VERIFIED dsh\n","Source changed"),"retry");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n",""),"uncertain");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_PASS dsh"),"blocked");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_BLOCKED"),"uncertain");
+  assert.equal(runtimeAttemptResult(1,"SIGTERM","",""),"uncertain");
+});
+
+test("Graphify scheduling responds to saved code and ignores its own generated output",async()=>{
+  const {graphifySourceEvent}=await import("./sync-lenovo-reconciliation.mjs");
+  for(const rel of ["services\\dsh\\backend\\cmd\\dsh\\main.go","apps/customer/src/new.tsx","AGENTS.md","docs/reference/a.md",".agents/skills/speckit-plan/SKILL.md",".git/HEAD",".git/refs/heads/codex/test"])assert.equal(graphifySourceEvent(rel),true,rel);
+  for(const rel of ["graphify-out/graph.json","apps/customer/node_modules/pkg/index.js","apps/customer/.expo/a.json","infra/.env.local",".git/index",".git/objects/aa/bb","apps/customer/coverage/data.json"])assert.equal(graphifySourceEvent(rel),false,rel);
+  assert.equal(graphifySourceEvent(null),true);
+});
+test("source cycle does not scan an idle checkout each second and preserves event/audit recovery",async()=>{
+  const {sourceCycleDue}=await import("./sync-lenovo-reconciliation.mjs");
+  for(let now=1000;now<30000;now+=1000)
+    assert.equal(sourceCycleDue({pending:false,now,nextAudit:30000}),false);
+  assert.equal(sourceCycleDue({pending:true,now:1000,nextAudit:30000}),true);
+  assert.equal(sourceCycleDue({pending:false,now:30000,nextAudit:30000}),true);
+  assert.equal(sourceCycleDue({pending:false,now:4999,nextAudit:5000}),false);
+  assert.equal(sourceCycleDue({pending:false,now:5000,nextAudit:5000}),true);
+  assert.match(readFileSync(new URL("./sync-lenovo-source.mjs",import.meta.url),"utf8"), /nextSourceCycle=Math\.min\(nextRemoteAudit,/);
+});
+test("Graphify debounce, bounded audit and single active attempt",async()=>{
+  const {graphifyPollDue}=await import("./sync-lenovo-reconciliation.mjs");
+  const base={now:10000,dirtySince:8000,lastEvent:9500,nextAudit:30000,busy:false};
+  assert.equal(graphifyPollDue(base),false);
+  assert.equal(graphifyPollDue({...base,now:12500}),true);
+  assert.equal(graphifyPollDue({...base,now:23000,lastEvent:22999}),true);
+  assert.equal(graphifyPollDue({...base,now:30000,dirtySince:null}),true);
+  assert.equal(graphifyPollDue({...base,now:30000,busy:true}),false);
+  assert.equal(graphifyPollDue({...base,dirtySince:null}),false);
+});
+test("watcher reload waits for committed code and drains existing children",async()=>{
+  const {watcherReloadAction}=await import("./sync-lenovo-reconciliation.mjs");
+  const base={loaded:"old",current:"new",dirty:false,busy:false};
+  assert.equal(watcherReloadAction({...base,current:"old"}),"current");
+  assert.equal(watcherReloadAction({...base,dirty:true}),"defer");
+  assert.equal(watcherReloadAction({...base,busy:true}),"drain");
+  assert.equal(watcherReloadAction(base),"reload");
+});
+
+test("a drained watcher reload replaces its thread inside the same process", { timeout: 10000 }, async (t) => {
+  const { watchInProcess } = await import("./sync-lenovo-source.mjs");
+  const dir = mkdtempSync(path.join(tmpdir(), "bthwani-watch-reload-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const entry = path.join(dir, "watch.mjs");
+  const revision = path.join(dir, "revision.mjs");
+  const evidence = path.join(dir, "evidence.jsonl");
+  writeFileSync(revision, 'export const revision = "old";');
+  writeFileSync(entry, [
+    'import { appendFileSync, writeFileSync } from "node:fs";',
+    'import { threadId } from "node:worker_threads";',
+    'import { revision } from "./revision.mjs";',
+    'appendFileSync(new URL("./evidence.jsonl", import.meta.url), JSON.stringify({pid:process.pid, threadId, revision, args:process.argv.slice(2)}) + "\\n");',
+    'if (revision === "old") {',
+    '  writeFileSync(new URL("./revision.mjs", import.meta.url), \'export const revision = "new";\');',
+    '  process.exitCode = 75;',
+    '}',
+  ].join("\n"));
+  assert.equal(typeof watchInProcess, "function");
+  assert.equal(await watchInProcess(entry), 0);
+  const rows = readFileSync(evidence, "utf8").trim().split("\n").map(JSON.parse);
+  assert.deepEqual(rows.map(r => r.revision), ["old", "new"]);
+  assert.ok(rows.every(r => r.pid === process.pid && r.threadId > 0));
+  assert.notEqual(rows[0].threadId, rows[1].threadId);
+  assert.deepEqual(rows.map(r => r.args), [["--watch"], ["--watch"]]);
+});
+
+test("a watcher failure is not mistaken for a reload request", { timeout: 10000 }, async (t) => {
+  const { watchInProcess } = await import("./sync-lenovo-source.mjs");
+  const dir = mkdtempSync(path.join(tmpdir(), "bthwani-watch-failure-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const entry = path.join(dir, "watch.mjs");
+  writeFileSync(entry, 'process.exitCode = 1;');
+  assert.equal(await watchInProcess(entry), 1);
+  writeFileSync(entry, 'throw new Error("fixture worker failed");');
+  await assert.rejects(watchInProcess(entry), /fixture worker failed/);
+});
+
+test("Graphify automation refreshes stale trusted graphs but never adopts unknown provenance",async()=>{
+  const {graphifyRefreshAction}=await import("./sync-lenovo-reconciliation.mjs");
+  assert.equal(graphifyRefreshAction({status:"PASS",queryable:true}),"current");
+  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true}),"refresh");
+  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,dirty:true,unsafeUntracked:0}),"refresh");
+  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,unsafeUntracked:1}),"deferred");
+  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,refreshing:true}),"busy");
+  assert.equal(graphifyRefreshAction({status:"BLOCKED",queryable:false,reason:"indexed branch differs"}),"refresh");
+  for(const reason of ["indexed repository differs","unverified local Graphify index","index locked"])assert.equal(graphifyRefreshAction({status:"BLOCKED",queryable:false,reason}),"blocked");
+  assert.equal(graphifyRefreshAction(null),"blocked");
+});
+
+test("native Graphify refreshes changed tracked source before Commit",{
+  skip:process.env.BTHWANI_GRAPHIFY_INTEGRATION!=="1",timeout:240000,
+},t=>{
+  const dir=mkdtempSync(path.join(tmpdir(),"bthwani-graphify-preview-test-"));
+  t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const script="tools/dev/graphify-local.mjs";
+  const exe=process.platform==="win32"?"git.exe":"git";
+  const call=(program,args)=>{
+    const result=spawnSync(program,args,{cwd:dir,encoding:"utf8",windowsHide:true,timeout:180000});
+    assert.equal(result.status,0,result.stderr||result.error?.message);
+    return result.stdout;
+  };
+  const git=(...args)=>call(exe,args);
+  const cli=(action)=>call(process.execPath,[script,action]);
+  mkdirSync(path.join(dir,"tools","dev"),{recursive:true});
+  mkdirSync(path.join(dir,"graphify-out"));
+  mkdirSync(path.join(dir,"empty-hooks"));
+  writeFileSync(path.join(dir,script),readFileSync(new URL("./graphify-local.mjs",import.meta.url)));
+  writeFileSync(path.join(dir,"tools/dev/source-snapshot.mjs"),readFileSync(new URL("./source-snapshot.mjs",import.meta.url)));
+  mkdirSync(path.join(dir,"tools","security"),{recursive:true});
+  writeFileSync(path.join(dir,"tools","security","verify-secrets.mjs"),readFileSync(new URL("../security/verify-secrets.mjs",import.meta.url)));
+  writeFileSync(path.join(dir,".gitignore"),"graphify-out/\nempty-hooks/\n");
+  const source=path.join(dir,"example.ts");
+  writeFileSync(source,"export function originalFixture() { return 1; }\n");
+  writeFileSync(path.join(dir,"other.ts"),"export function stableFixture() { return 2; }\n");
+  git("init","-q","-b","fixture");
+  git("config","core.hooksPath",path.join(dir,"empty-hooks"));
+  git("config","user.name","Graphify fixture");
+  git("config","user.email","graphify-fixture@example.invalid");
+  git("config","commit.gpgsign","false");
+  git("add",".");git("commit","-qm","fixture");
+  const initial=Date.now();cli("refresh");const firstMs=Date.now()-initial;
+  const head=git("rev-parse","HEAD").trim();
+  writeFileSync(source,"export function originalFixture() { return 3; }\nexport function addedBeforeCommitFixture() { return originalFixture(); }\n");
+  assert.equal(JSON.parse(cli("status")).status,"INVALIDATED");
+  const started=Date.now();const output=cli("refresh");const updateMs=Date.now()-started;
+  const state=JSON.parse(cli("status"));
+  assert.equal(state.status,"PASS");assert.equal(state.dirty,true);
+  assert.equal(state.indexedHead,head);assert.equal(git("rev-parse","HEAD").trim(),head);
+  const graph=JSON.parse(readFileSync(path.join(dir,"graphify-out","graph.json"),"utf8"));
+  assert.ok(graph.nodes.some(n=>String(n.label).includes("addedBeforeCommitFixture")));
+  assert.ok(graph.nodes.some(n=>String(n.label).includes("stableFixture")));
+  t.diagnostic("native initialMs="+firstMs+" changedSourceMs="+updateMs);
+  const cacheLines=output.split(/\r?\n/).filter(line=>/uncached|cached/i.test(line)).slice(0,3);
+  if(cacheLines.length)t.diagnostic(cacheLines.join(" | "));
+});
+
+test("native recursive file event reaches Graphify scheduling without a Git commit",{timeout:10000},async t=>{
+  const {watch}=await import("node:fs");
+  const {graphifySourceEvent,graphifyPollDue,sourceCycleDue}=await import("./sync-lenovo-reconciliation.mjs");
+  const dir=mkdtempSync(path.join(tmpdir(),"bthwani-graphify-event-"));
+  const app=path.join(dir,"apps","customer","src");
+  mkdirSync(app,{recursive:true});
+  const source=path.join(app,"example.ts");
+  writeFileSync(source,"export const example=1;\n");
+  let watcher;
+  try{
+    const observed=new Promise((resolve,reject)=>{
+      watcher=watch(dir,{recursive:true},(_event,name)=>{
+        if(name && graphifySourceEvent(name) && String(name).endsWith("example.ts"))resolve(String(name));
+      });
+      watcher.once("error",reject);
+    });
+    t.after(()=>watcher?.close());
+    const timer=setTimeout(()=>writeFileSync(source,"export const example=2;\n"),50);
+    let deadline;
+    try{
+      const name=await Promise.race([observed,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error("source event not delivered")),4000);})]);
+      assert.equal(name.replaceAll("\\","/"),"apps/customer/src/example.ts");
+      assert.equal(graphifyPollDue({now:3000,dirtySince:0,lastEvent:0,nextAudit:30000,busy:false}),true);
+      assert.equal(sourceCycleDue({pending:graphifySourceEvent(name),now:1000,nextAudit:30000}),true);
+    }finally{clearTimeout(timer);clearTimeout(deadline);}
+  }finally{watcher?.close();rmSync(dir,{recursive:true,force:true});}
+});
+
+test("reconciliation requires an explicit terminal result and never certifies a partial result",async()=>{
+  const {runtimeAttemptResult}=await import("./sync-lenovo-reconciliation.mjs");
+  const sha="a".repeat(40);
+  assert.equal(runtimeAttemptResult(0,null,"",""),"retry");
+  assert.equal(runtimeAttemptResult(0,null,"RECONCILE_PASS HEAD="+sha+"\n",""),"pass");
+  assert.equal(runtimeAttemptResult(1,null,"RECONCILE_PARTIAL HEAD="+sha+"\n",""),"review");
+  assert.equal(runtimeAttemptResult(3,null,"RECONCILE_PARTIAL HEAD="+sha+"\n","BASELINE_PROOF_FAIL rehearsal unavailable"),"retry");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_BLOCKED owner schema or runtime transition requires durable readback"),"uncertain");
+  assert.equal(runtimeAttemptResult(0,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PASS HEAD="+sha+"\n",""),"uncertain");
+  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PARTIAL HEAD="+sha+"\n",""),"uncertain");
+});
+
+test("stable source admission holds do not repeat an automatic apply until source or authority changes", async()=>{
+  const {runtimeAttemptResult,runtimePollAction}=await import("./sync-lenovo-reconciliation.mjs");
+  const sha="a".repeat(40);
+  const hold=(owner,reason)=>owner+" RUNTIME=BLOCKED revision="+sha+" reason="+reason+"\n";
+  const terminal="RECONCILE_PARTIAL HEAD="+sha+"\n";
+  const output=hold("dsh","PREVIEW_NOT_AUTHORIZED")+hold("identity","PEER_REVIEW_REQUIRED:dsh")+hold("wlt","PEER_REVIEW_REQUIRED:dsh")+terminal;
+  const status=runtimeAttemptResult(3,null,output,"");
+  assert.equal(status,"blocked");
+  const input={enabled:true,dirty:false,active:false,key:"same",last:{key:"same",status},now:120000,nextAudit:60000};
+  assert.equal(runtimePollAction(input),null);
+  assert.equal(runtimePollAction({...input,key:"changed"}),"apply");
+  assert.equal(runtimeAttemptResult(3,null,hold("dsh","UNCOMMITTED_NON_GO")+terminal,""),"blocked");
+  assert.equal(runtimeAttemptResult(3,null,hold("wlt","CONFIG_REVIEW_REQUIRED")+terminal,""),"review");
+  assert.equal(runtimeAttemptResult(3,null,hold("dsh","PREVIEW_NOT_AUTHORIZED")+hold("wlt","CONFIG_REVIEW_REQUIRED")+terminal,""),"review");
+  assert.equal(runtimeAttemptResult(3,null,output,"BASELINE_PROOF_FAIL transient"),"retry");
+  assert.equal(runtimeAttemptResult(3,null,"OWNER_APPLY_STARTED dsh\n"+output,""),"uncertain");
+});
+
+test("fresh baseline rehearsal is scheduled on a new runtime key, not every review audit", async()=>{
+  const {runtimeBaselineProofDue}=await import("./sync-lenovo-reconciliation.mjs");
+  assert.equal(runtimeBaselineProofDue("new",null),true);
+  assert.equal(runtimeBaselineProofDue("new",{key:"old",status:"review"}),true);
+  assert.equal(runtimeBaselineProofDue("new",{key:"new",status:"review"}),false);
+  assert.equal(runtimeBaselineProofDue("new",{key:"new",status:"retry"}),true);
+  assert.equal(runtimeBaselineProofDue("new",{key:"new",status:"uncertain"}),false);
+});
+
+test("dependency changes include workspace manifests, patches and removed inputs without reporting ordinary source edits",async()=>{
+  const {dependencyInputChanges}=await import("./sync-lenovo-reconciliation.mjs");
+  const before={files:{"pnpm-workspace.yaml":"a","packages/design-system/package.json":"a","patches/example.patch":"a","apps/customer/app/index.tsx":"a"}};
+  const current=new Map([["pnpm-workspace.yaml","b"],["packages/design-system/package.json","b"],["patches/other.patch","a"],["apps/customer/app/index.tsx","b"]]);
+  assert.deepEqual(dependencyInputChanges(before,current),["packages/design-system/package.json","patches/example.patch","patches/other.patch","pnpm-workspace.yaml"]);
+  assert.deepEqual(dependencyInputChanges({files:Object.fromEntries(current)},current),[]);
+});
+
+
+test("dependency publish and deletion defer across processes while the install owns the input mutex", { skip: process.platform !== "win32" }, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-dependency-input-lock-"));
+  try {
+    const dependencyMutex = "Global\\BThwaniDependencyFixture-" + path.basename(folder);
+    const dependencyReceipt=path.join(folder,"dependency-reconcile.json");
+    const dependencyProcessName="BThwaniDep"+path.basename(folder).slice(-6);
+    const dest = path.join(folder, "pnpm-workspace.yaml");
+    const stage = path.join(folder, "stage");
+    const backup = path.join(folder, "backup");
+    const archive = path.join(folder, "archive");
+    const quarantine = path.join(folder, "quarantine");
+    const digest = text => createHash("sha256").update(text).digest("hex").toUpperCase();
+    writeFileSync(dest, "previous");
+    writeFileSync(stage, "next");
+    const args = {dest, stage, backup, archive, actual:digest("previous"), expected:digest("next"), conflict:false, root:folder, dependencyMutex, dependencyReceipt, dependencyProcessName};
+    const deletion = {dest, quarantine, archive, actual:digest("previous"), conflict:false, root:folder, dependencyMutex, dependencyReceipt, dependencyProcessName};
+    const runWhileHeld = code => {
+      const encoded = Buffer.from(code, "utf16le").toString("base64");
+      return isolatedPowerShell("$lock=[Threading.Mutex]::new($false,'" + dependencyMutex + "');$null=$lock.WaitOne();try{& pwsh.exe -NoProfile -NonInteractive -EncodedCommand '" + encoded + "';if($LASTEXITCODE){exit $LASTEXITCODE}}finally{$lock.ReleaseMutex();$lock.Dispose()}");
+    };
+    for (const code of [buildPublishCode(args), buildManagedDeleteCode(deletion)]) {
+      const held = runWhileHeld(code);
+      assert.equal(held.status, 0, held.stderr);
+      assert.equal(held.stdout.trim(), "DEPENDENCY_INPUT_BUSY");
+      assert.equal(readFileSync(dest, "utf8"), "previous");
+      assert.equal(existsSync(stage), true);
+    }
+    const ordinary = path.join(folder, "screen.ts");
+    const ordinaryStage = path.join(folder, "ordinary-stage");
+    writeFileSync(ordinaryStage, "ordinary");
+    const normal = runWhileHeld(buildPublishCode({dest:ordinary,stage:ordinaryStage,backup:ordinary+".bak",archive:ordinary+".archive",actual:"MISSING",expected:digest("ordinary"),conflict:false,root:folder}));
+    assert.equal(normal.status, 0, normal.stderr);
+    assert.equal(readFileSync(ordinary,"utf8"), "ordinary");
+    const published = isolatedPowerShell(buildPublishCode(args));
+    assert.equal(published.status, 0, published.stderr);
+    assert.equal(published.stdout.trim(), "PUBLISHED");
+    assert.equal(readFileSync(dest, "utf8"), "next");
+    const deleted = isolatedPowerShell(buildManagedDeleteCode({...deletion,actual:digest("next")}));
+    assert.equal(deleted.status, 0, deleted.stderr);
+    assert.equal(deleted.stdout.trim(), "DELETED");
+    assert.equal(existsSync(dest), false);
+  } finally {
+    rmSync(folder, {recursive:true,force:true});
+  }
+});
+
+test("dependency inputs fail closed across interrupted installs and resume only after durable readback", {skip:process.platform !== "win32"}, () => {
+  const folder=mkdtempSync(path.join(tmpdir(),"bthwani-dependency-recovery-"));
+  try {
+    const dependencyMutex="Global\\BThwaniDependencyRecovery-"+path.basename(folder);
+    const dependencyReceipt=path.join(folder,"dependency-reconcile.json");
+    const dependencyProcessName="BThwaniDep"+path.basename(folder).slice(-6);
+    const guard={dependencyMutex,dependencyReceipt,dependencyProcessName};
+    const dest=path.join(folder,"pnpm-lock.yaml"),stage=path.join(folder,"stage");
+    const digest=text=>createHash("sha256").update(text).digest("hex").toUpperCase();
+    const q=text=>"'"+text.replaceAll("'","''")+"'";
+    const enc=code=>Buffer.from(code,"utf16le").toString("base64");
+    const args={dest,stage,backup:path.join(folder,"backup"),archive:path.join(folder,"archive"),actual:digest("previous"),expected:digest("next"),conflict:false,root:folder,...guard};
+    const del={dest,quarantine:path.join(folder,"quarantine"),archive:args.archive,actual:args.actual,conflict:false,root:folder,...guard};
+    writeFileSync(dest,"previous");writeFileSync(stage,"next");
+    const publish=buildPublishCode(args),remove=buildManagedDeleteCode(del);
+    const check=(result,expected)=>{
+      assert.equal(result.status,0,result.stderr);
+      assert.equal(result.stdout.trim(),expected);
+      assert.equal(readFileSync(dest,"utf8"),"previous");
+      assert.equal(readFileSync(stage,"utf8"),"next");
+    };
+    for(const receipt of [
+      JSON.stringify({version:1,key:"A".repeat(64),status:"running"}),
+      JSON.stringify({version:1,key:"A".repeat(64),status:"blocked"}),
+      JSON.stringify({version:1,key:"invalid",status:"pass"}),
+      "null","{","{}"
+    ]){
+      writeFileSync(dependencyReceipt,receipt);
+      for(const code of [publish,remove]) check(isolatedPowerShell(code),"DEPENDENCY_INPUT_RECOVERY_REQUIRED");
+    }
+    writeFileSync(dependencyReceipt,JSON.stringify({version:1,key:"A".repeat(64),status:"pass"}));
+    const abandonedHolder="$m=[Threading.Mutex]::new($false,"+q(dependencyMutex)+");$null=$m.WaitOne();[Environment]::Exit(0)";
+    const abandonedRun=code=>isolatedPowerShell("$keeper=[Threading.Mutex]::new($false,"+q(dependencyMutex)+");try{& pwsh.exe -NoProfile -NonInteractive -EncodedCommand "+q(enc(abandonedHolder))+";if($LASTEXITCODE){exit $LASTEXITCODE};& pwsh.exe -NoProfile -NonInteractive -EncodedCommand "+q(enc(code))+";if($LASTEXITCODE){exit $LASTEXITCODE}}finally{$keeper.Dispose()}");
+    check(abandonedRun(publish),"DEPENDENCY_INPUT_RECOVERY_REQUIRED");
+    check(abandonedRun(remove),"DEPENDENCY_INPUT_RECOVERY_REQUIRED");
+    const launcher=readFileSync(new URL("./dev.ps1",import.meta.url),"utf8");
+    const wrapper=launcher.match(/\$lockWrapper=@'\r?\n([\s\S]*?)\r?\n'@/)[1].replace("Global\\BThwaniDependencyInputsV1",dependencyMutex);
+    const abandonedInstall=abandonedRun(wrapper.replace("__DEPENDENCY_SCRIPT__","Write-Output 'INSTALL_BODY_RAN'"));
+    assert.notEqual(abandonedInstall.status,0);
+    assert.match(abandonedInstall.stdout+abandonedInstall.stderr,/DEPENDENCY_INPUT_RECOVERY_REQUIRED/);
+    assert.doesNotMatch(abandonedInstall.stdout,/INSTALL_BODY_RAN/);
+    // A real disposable process with the fixture executable name stands in for
+    // a surviving native package-manager process; never run a package install.
+    const exe=path.join(folder,dependencyProcessName+".exe");
+    copyFileSync(path.join(process.env.SystemRoot,"System32","ping.exe"),exe);
+    const withOrphan=code=>isolatedPowerShell("$p=Start-Process -FilePath "+q(exe)+" -ArgumentList @('-n','12','127.0.0.1') -WindowStyle Hidden -PassThru;try{if($p.HasExited){throw 'FIXTURE_PROCESS_EXITED'};& pwsh.exe -NoProfile -NonInteractive -EncodedCommand "+q(enc(code))+";if($LASTEXITCODE){exit $LASTEXITCODE}}finally{if(!$p.HasExited){$p.Kill();$p.WaitForExit()};$p.Dispose()}");
+    check(withOrphan(publish),"DEPENDENCY_INPUT_BUSY");
+    check(withOrphan(remove),"DEPENDENCY_INPUT_BUSY");
+    const resumed=isolatedPowerShell(publish);
+    assert.equal(resumed.status,0,resumed.stderr);assert.equal(resumed.stdout.trim(),"PUBLISHED");
+    assert.equal(readFileSync(dest,"utf8"),"next");
+    const removed=isolatedPowerShell(buildManagedDeleteCode({...del,actual:digest("next")}));
+    assert.equal(removed.status,0,removed.stderr);assert.equal(removed.stdout.trim(),"DELETED");
+    assert.equal(existsSync(dest),false);
+  }finally{rmSync(folder,{recursive:true,force:true});}
+});
+
+test("long SSH commands use the existing bounded text-line transport", () => {
+  const short="Write-Output 'short'";
+  const small=remoteInvocation(short);
+  assert.equal(small.input,undefined);
+  assert.equal(Buffer.from(small.args.at(-1),"base64").toString("utf16le"),short);
+  const long="$ErrorActionPreference='Stop';$value='"+("x".repeat(10000))+"';Write-Output $value.Length";
+  const large=remoteInvocation(long);
+  assert.ok(large.args.at(-1).length<4500);
+  assert.equal(large.input.split("\n").length,2);
+  assert.equal(Buffer.from(large.input.trim(),"base64").toString("utf8"),long);
+  const decoded=Buffer.from(large.args.at(-1),"base64").toString("utf16le");
+  assert.match(decoded,/ReadLine\(\)/);
+  const result=spawnSync(fixturePowerShell,["-NoProfile","-NonInteractive","-EncodedCommand",large.args.at(-1)],{
+    input:large.input,encoding:"utf8",windowsHide:true,timeout:15000
+  });
+  assert.equal(result.status,0,result.stderr);
+  assert.equal(result.stdout.trim(),"10000");
+});
+
+test("local reconciliation uses a protected absolute PowerShell executable", () => {
+  const source = readFileSync(new URL("./sync-lenovo-source.mjs", import.meta.url), "utf8");
+  const executable = path.win32.normalize("C:/Program Files/PowerShell/7/pwsh.exe");
+  assert.ok(source.includes("pwsh: " + JSON.stringify(executable)));
+  assert.equal(source.split("spawn(exe.pwsh,").length - 1, 2);
+  assert.equal(source.includes('spawn("pwsh.exe"'), false);
+});
+
+test("fixed local PowerShell executable runs without PATH lookup", {
+  skip: process.platform !== "win32",
+}, () => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-fixed-pwsh-"));
+  try {
+    const executable = path.win32.normalize("C:/Program Files/PowerShell/7/pwsh.exe");
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== "path"));
+    const result = spawnSync(executable, ["-NoProfile", "-NonInteractive", "-Command", "$PSHOME"], {
+      cwd: folder, env: { ...env, PATH: folder }, encoding: "utf8", timeout: 15000, windowsHide: true,
+    });
+    assert.equal(result.status, 0, result.error?.message || result.stderr);
+    assert.equal(result.stdout.trim().toLowerCase(), path.dirname(executable).toLowerCase());
+  } finally {
+    rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("stable owner source audits without acquiring apply authority; drift requires a fresh guarded apply", async()=>{
+  const {runtimePollAction,runtimeAuditResult}=await import("./sync-lenovo-reconciliation.mjs");
+  const head="a".repeat(40);
+  const state={enabled:true,dirty:false,active:false,key:"same",last:{key:"same",status:"pass"},now:60001,nextAudit:60000};
+  assert.equal(runtimePollAction(state),"audit");
+  assert.equal(runtimePollAction({...state,last:{key:"same",status:"review"}}),"audit");
+  assert.equal(runtimePollAction({...state,last:{key:"same",status:"retry"}}),"apply");
+  assert.equal(runtimePollAction({...state,key:"changed"}),"apply");
+  assert.equal(runtimePollAction({...state,last:{key:"old",status:"uncertain"}}),null);
+  assert.equal(runtimePollAction({...state,last:{key:"same",status:"blocked"}}),null);
+  const result=(selected,terminal="PARTIAL",sha=head)=>"SELECTED="+selected+" HEAD="+sha+" CAPTAIN_ADMISSION=true\nRECONCILE_"+terminal+" HEAD="+sha+"\n";
+  const audit=(code,output,signal=null,eligible=["dsh","identity","wlt"])=>runtimeAuditResult(code,signal,output,head,eligible);
+  assert.equal(audit(0,result("NONE","PASS")),"pass");
+  assert.equal(audit(3,result("dsh")),"apply");
+  assert.equal(audit(3,result("dsh"),null,["wlt"]),"review");
+  assert.equal(audit(3,result("NONE")),"review");
+  assert.equal(audit(0,result("NONE","PASS","b".repeat(40))),"retry");
+  assert.equal(audit(0,result("NONE","PASS"),"SIGTERM"),"retry");
+  assert.equal(audit(0,result("dsh","PASS")),"retry");
+  assert.equal(audit(3,result("dsh,dsh")),"retry");
+  assert.equal(audit(3,result("unknown")),"retry");
+  assert.equal(audit(3,result("dsh")+result("NONE","PASS")),"retry");
+  assert.equal(audit(1,"OWNER_APPLY_STARTED dsh\n"),"retry");
+});
+
+
+test("mirror projection handles a future shared package without a second package-name registry", () => {
+  const paths=mirrorCandidatePaths(["packages/new-purpose/package.json","packages/new-purpose/src/index.ts","packages/new-purpose/src/index.ts","packages/new-purpose/.env","packages/new-purpose/.next-dev/build.js"]);
+  assert.deepEqual(paths,["packages/new-purpose/package.json","packages/new-purpose/src/index.ts"]);
+  assert.doesNotThrow(()=>assertMirrorPackageManifest("new-purpose",Buffer.from(JSON.stringify({name:"@bthwani/new-purpose",private:true}))));
+  for(const value of [{name:"other",private:true},{name:"@bthwani/new-purpose",private:false}]){
+    assert.throws(()=>assertMirrorPackageManifest("new-purpose",Buffer.from(JSON.stringify(value))),/MIRROR_PACKAGE_MANIFEST_INVALID/);
+  }
+  assert.throws(()=>mirrorCandidatePaths(["packages/new-purpose/src/A.ts","packages/new-purpose/src/a.ts"]),/MIRROR_CASE_COLLISION/);
+});
+
+test("source mirror CLI accepts one exact role and rejects the retired manual writer", async () => {
+  const { parseMirrorCommand } = await import("./sync-lenovo-source.mjs");
+  assert.deepEqual(parseMirrorCommand(["--watch"]), {action:"--watch"});
+  assert.deepEqual(parseMirrorCommand(["--verify-manifest"]), {action:"--verify-manifest"});
+  assert.deepEqual(parseMirrorCommand(["--verify-dependency-inputs"]), {action:"--verify-dependency-inputs"});
+  assert.deepEqual(parseMirrorCommand(["--check-path","apps/customer/app/index.tsx"]), {action:"--check-path",name:"apps/customer/app/index.tsx"});
+  for (const argv of [[],["--once"],["--watch","--verify-manifest"],["--verify-dependency-inputs","--watch"],["--check-path"],["--watch","extra"]]) {
+    assert.throws(()=>parseMirrorCommand(argv),/USAGE/);
+    const result=spawnSync(process.execPath,[new URL("./sync-lenovo-source.mjs",import.meta.url).pathname.replace(/^\/(?=[A-Za-z]:)/,""),...argv],{encoding:"utf8",timeout:10000});
+    assert.notEqual(result.status,0);
+    assert.match(result.stderr,/USAGE/);
+  }
+});
+
+test("mirror and dependency change inventories share ordinal path ordering", async () => {
+  const { dependencyInputChanges } = await import("./sync-lenovo-reconciliation.mjs");
+  const expected = ["patches/Z-top.patch", "patches/_patch.patch", "patches/a.patch", "patches/z.patch", "patches/é.patch"];
+  const previous = { files: Object.fromEntries([...expected].reverse().map(rel => [rel, "before"])) };
+  const current = new Map(expected.filter(rel => rel !== "patches/Z-top.patch").map(rel => [rel, "after"]));
+  assert.deepEqual(dependencyInputChanges(previous, current), expected);
+  assert.deepEqual(mirrorCandidatePaths([...expected].reverse()), expected);
+  assert.deepEqual(dependencyInputChanges({ files: Object.fromEntries(current) }, current), []);
 });

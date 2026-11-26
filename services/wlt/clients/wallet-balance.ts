@@ -7,9 +7,10 @@ import { actorValid, amountValid } from "./validation.ts";
 export function parseCustomerWalletBalance(value: unknown): CustomerWalletBalance {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new WltReadError(502);
   const fields = value as Record<string, unknown>;
-  if (Object.keys(fields).length !== 3 || !actorValid(fields.actorId) ||
-    fields.currency !== "YER" || !amountValid(fields.balanceYer, false)) throw new WltReadError(502);
-  return { actorId: fields.actorId, currency: "YER", balanceYer: fields.balanceYer };
+  if (Object.keys(fields).length !== 4 || !actorValid(fields.actorId) ||
+    fields.currency !== "YER" || !amountValid(fields.balanceYer, false) ||
+    !amountValid(fields.availableYer, false) || BigInt(fields.availableYer) > BigInt(fields.balanceYer)) throw new WltReadError(502);
+  return { actorId: fields.actorId, currency: "YER", balanceYer: fields.balanceYer, availableYer: fields.availableYer };
 }
 
 export async function readCurrentCustomerWallet(

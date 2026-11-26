@@ -1,5 +1,5 @@
-import type { ReactNode } from "react";
 import { ScrollViewStyleReset, useServerDocumentContext } from "expo-router/html";
+import type { ReactNode } from "react";
 
 // Expo SDK 58 requires the generated head/body nodes for metadata and hydration.
 export default function HtmlDocument({ children }: Readonly<{ children: ReactNode }>) {

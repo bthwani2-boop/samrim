@@ -1,1 +1,93 @@
-paths: {}
+paths:
+  /v1/operators/stores/{storeID}/commercial-agreement:
+    get:
+      operationId: getOperatorCommercialAgreementReview
+      summary: Read the latest Store agreement proposal and its review state
+      description: Requires a current Operator session and explicit Identity finance grant, rechecked after the WLT owner read. Missing proposal is null. No actor/reason history, effective agreement, checkout authority or money mutation is returned or inferred.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+      responses:
+        '200':
+          description: Latest recorded proposal or explicit absence
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/CommercialAgreementReview' }
+        '400':
+          description: Invalid path identity, query or body
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Current Identity session required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: Explicit current Finance permission required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: Read-only resource permits GET only
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Owner unavailable or cannot verify current authorization
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+  /v1/merchants/stores/{storeID}/commercial-agreement:
+    get:
+      operationId: getOwnedMerchantCommercialAgreementReview
+      summary: Read the latest proposal for a Store owned by the current Merchant
+      description: Read-only isolated development. Requires a current Merchant session and canonical DSH Store ownership and relation before and after the WLT read. Missing proposal is null only for an owned Store. No acceptance, activation, delegated permission or financial mutation is implied.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+      responses:
+        '200':
+          description: Latest owned Store proposal or explicit absence
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/CommercialAgreementReview' }
+        '400':
+          description: Invalid path identity, query or body
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '401':
+          description: Current Identity session required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '403':
+          description: Current Merchant Store ownership required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '405':
+          description: Read-only resource permits GET only
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }
+        '503':
+          description: Owner unavailable or cannot verify current scope or relation
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/Error' }

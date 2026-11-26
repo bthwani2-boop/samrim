@@ -1,114 +1,139 @@
-#Requires -Version 5.1
-<#
-Canonical Surface -> Lenovo development SSH tunnels.
-Source of local ports: infra/local/.env; remote ports: the Lenovo native
-development launch ports. Run under one Windows Scheduled Task per App.
-No shell window is required, and no port is exposed beyond loopback.
-#>
+#Requires -Version 7.0
+<# Canonical loopback-only Surface -> Lenovo development tunnel. #>
 [CmdletBinding()]
-param(
-  [Parameter(Mandatory = $true)]
-  [ValidateSet('customer', 'merchant', 'app-captain', 'control-panel')]
-  [string]$App,
-  [switch]$ValidateOnly
-)
+param([switch]$ValidateOnly, [switch]$VerifyOnly)
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$root = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
-if ($env:COMPUTERNAME -ne 'BTHWANI') { throw 'APP_TUNNEL_SOURCE_HOST_REQUIRED' }
-
-$ports = @{
-  'customer' = @{ EnvKey = 'SAMRIM_APP_CUSTOMER_METRO_PORT'; Local = 18101; Remote = 28111 }
-  'merchant' = @{ EnvKey = 'SAMRIM_APP_MERCHANT_METRO_PORT'; Local = 18102; Remote = 28112 }
-  'app-captain' = @{ EnvKey = 'SAMRIM_APP_CAPTAIN_METRO_PORT'; Local = $null; Remote = 28113 }
-  'control-panel' = @{ EnvKey = 'SAMRIM_CONTROL_PORT'; Local = $null; Remote = 23010 }
-}
-$spec = $ports[$App]
-$envPath = Join-Path $root 'infra\local\.env'
-if (-not (Test-Path -LiteralPath $envPath)) { throw 'APP_TUNNEL_LOCAL_ENV_MISSING' }
-
-$localPort = $spec.Local
-foreach ($line in [System.IO.File]::ReadLines($envPath)) {
-  if ($line -match ('^' + [regex]::Escape($spec.EnvKey) + '=(\d+)\s*$')) {
-    $localPort = [int]$Matches[1]
-    break
+function Get-TunnelPlan {
+  param([string]$LayoutPath, [string]$SshPath)
+  $layout = Get-Content -LiteralPath $LayoutPath -Raw | ConvertFrom-Json
+  $forwards = @(
+    foreach ($app in $layout.apps.PSObject.Properties) {
+      @{ Name = $app.Name; Local = $app.Value.surface; Remote = $app.Value.lenovo }
+    }
+    foreach ($owner in $layout.ownerForwards.PSObject.Properties) {
+      @{ Name = $owner.Name; Local = $owner.Value; Remote = $owner.Value }
+    }
+  )
+  if (!$forwards.Count -or @($forwards.Local | Sort-Object -Unique).Count -ne $forwards.Count) {
+    throw 'APP_TUNNEL_PORT_COLLISION'
   }
-}
-$remotePort = [int]$spec.Remote
-if ($null -eq $localPort -or $localPort -lt 1024 -or $localPort -gt 65535 -or
-    $remotePort -lt 1024 -or $remotePort -gt 65535 -or $localPort -eq $remotePort) {
-  throw 'APP_TUNNEL_INVALID_PORT_CONFIG'
+  foreach ($f in $forwards) {
+    foreach ($port in @($f.Local, $f.Remote)) {
+      if (($port -isnot [int] -and $port -isnot [long]) -or $port -lt 1024 -or $port -gt 65535) {
+        throw 'APP_TUNNEL_INVALID_PORT_CONFIG'
+      }
+    }
+  }
+  if (!(Test-Path -LiteralPath $SshPath -PathType Leaf)) { throw 'APP_TUNNEL_SSH_MISSING' }
+  $target = 'bthwani-docker'
+  $argsList = @('-N','-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ExitOnForwardFailure=yes','-o','ConnectTimeout=8','-o','ConnectionAttempts=1','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=3')
+  $expectedForwards = @(foreach ($f in $forwards) { '127.0.0.1:' + $f.Local + ':127.0.0.1:' + $f.Remote })
+  foreach($forward in $expectedForwards) { $argsList += @('-L', $forward) }
+  $argsList += $target
+  return @{ Ssh = $SshPath; Arguments = $argsList; Ports = @($forwards.Local); Forwards = $expectedForwards }
 }
 
-$ssh = Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe'
-if (-not (Test-Path -LiteralPath $ssh)) { throw 'APP_TUNNEL_SSH_MISSING' }
-$target = 'bthwani-docker'
-$argsList = @(
-  '-N', '-T',
-  '-o', 'BatchMode=yes',
-  '-o', 'StrictHostKeyChecking=yes',
-  '-o', 'ExitOnForwardFailure=yes',
-  '-o', 'ConnectTimeout=8',
-  '-o', 'ConnectionAttempts=1',
-  '-o', 'ServerAliveInterval=15',
-  '-o', 'ServerAliveCountMax=3',
-  '-L', ('127.0.0.1:' + $localPort + ':127.0.0.1:' + $remotePort)
-)
-# Reuse the existing Customer SSH task for the two isolated owner ports.
-# No extra SSH process or network-facing listener is created.
-if ($App -eq 'customer') {
-  if ($localPort -in @(3201,3202)) { throw 'APP_TUNNEL_OWNER_PORT_COLLISION' }
-  foreach ($ownerPort in @(3201,3202)) {
-    $argsList += @('-L', ('127.0.0.1:' + $ownerPort + ':127.0.0.1:' + $ownerPort))
+function Get-TunnelListenerState {
+  param($Plan)
+  # Enumerate the actual listener table; an enumeration error is not an empty port.
+  $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction Stop |
+    Where-Object { $_.LocalPort -in $Plan.Ports })
+  if (!$listeners.Count) { return @{ State = 'EMPTY'; Process = $null } }
+  $owners = @($listeners.OwningProcess | Sort-Object -Unique)
+  if ($owners.Count -ne 1 -or @($listeners | Where-Object LocalAddress -ne '127.0.0.1').Count) {
+    throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'
   }
+  $process = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $owners[0])
+  if (!$process -or $process.ExecutablePath -ine $Plan.Ssh -or !$process.CreationDate) {
+    throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'
+  }
+  $command = [regex]::Match([string]$process.CommandLine, '^(?:"([^"]+)"|(\S+)) (.+)$')
+  $exe = if ($command.Groups[1].Success) { $command.Groups[1].Value } else { $command.Groups[2].Value }
+  if (!$command.Success -or $exe -ine $Plan.Ssh -or $command.Groups[3].Value -cne ($Plan.Arguments -join ' ')) {
+    throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'
+  }
+  $complete = $listeners.Count -eq $Plan.Ports.Count -and
+    !(Compare-Object @($Plan.Ports | Sort-Object) @($listeners.LocalPort | Sort-Object))
+  return @{ State = $(if ($complete) { 'COMPLETE' } else { 'PARTIAL' }); Process = $process }
 }
-$argsList += $target
+
+function Assert-TunnelAvailable {
+  param($Plan)
+  $state = Get-TunnelListenerState $Plan
+  if ($state.State -eq 'EMPTY') { return $false }
+  $process = $state.Process
+  $parent = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $process.ParentProcessId)
+  if ($parent -and (!$parent.CreationDate -or $parent.CreationDate -le $process.CreationDate)) {
+    if ($parent.Name -eq 'pwsh.exe' -and $parent.CommandLine -match 'Start-AppTunnel\.ps1') {
+      throw 'APP_TUNNEL_DUPLICATE_OWNER'
+    }
+    throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'
+  }
+  # Recover only the same proven orphan; a changed process is never stopped.
+  $latest = Get-TunnelListenerState $Plan
+  if ($latest.State -eq 'EMPTY' -or $latest.Process.ProcessId -ne $process.ProcessId -or
+      $latest.Process.CreationDate -ne $process.CreationDate -or
+      $latest.Process.CommandLine -cne $process.CommandLine) {
+    throw 'APP_TUNNEL_OWNER_CHANGED'
+  }
+  Stop-Process -Id $process.ProcessId -ErrorAction Stop
+  return $true
+}
+
+function Write-TunnelLog {
+  param([string]$Path, [string]$Message)
+  if ((Test-Path -LiteralPath $Path) -and (Get-Item -LiteralPath $Path).Length -ge 1048576) {
+    Move-Item -LiteralPath $Path -Destination ($Path + '.previous') -Force
+  }
+  Add-Content -LiteralPath $Path -Value ((Get-Date -Format o) + ' ' + $Message) -Encoding utf8
+}
+
+if ([Environment]::MachineName -ne 'BTHWANI') { throw 'APP_TUNNEL_SOURCE_HOST_REQUIRED' }
+if ($ValidateOnly -and $VerifyOnly) { throw 'APP_TUNNEL_MODE_CONFLICT' }
+$plan = Get-TunnelPlan (Join-Path $PSScriptRoot 'ports.json') (Join-Path $env:WINDIR 'System32\OpenSSH\ssh.exe')
 if ($ValidateOnly) {
-  Write-Output ('TUNNEL_CONFIG_PASS app=' + $App + ' localPort=' + $localPort + ' remotePort=' + $remotePort)
+  Write-Output ('TUNNEL_CONFIG_PASS forwards=' + $plan.Ports.Count + ' ' + ($plan.Forwards -join ' '))
+  return
+}
+if ($VerifyOnly) {
+  if ((Get-TunnelListenerState $plan).State -ne 'COMPLETE') { throw 'APP_TUNNEL_INCOMPLETE' }
+  Write-Output ('TUNNEL_LIVE_PASS forwards=' + $plan.Ports.Count)
   return
 }
 
-$logDir = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\Tunnels\logs'
-New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-$logPath = Join-Path $logDir ($App + '.log')
-function Write-TunnelLog([string]$message) {
-  # Keep a bounded diagnostic log without logging secrets or SSH output.
-  if ((Test-Path -LiteralPath $logPath) -and (Get-Item -LiteralPath $logPath).Length -gt 1048576) {
-    Move-Item -LiteralPath $logPath -Destination ($logPath + '.previous') -Force
+# Task Scheduler already uses IgnoreNew. The mutex additionally covers direct
+# invocation and the gap between two SSH processes, without a second watcher.
+$mutex = [Threading.Mutex]::new($false, 'Global\BThwani.Lenovo.AppTunnel')
+$held = $false
+try {
+  try { $held = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true }
+  if (!$held) { throw 'APP_TUNNEL_DUPLICATE_OWNER' }
+  $logDir = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\Tunnels\logs'
+  New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+  $logPath = Join-Path $logDir 'lenovo.log'
+  Write-TunnelLog $logPath ('START forwards=' + $plan.Ports.Count)
+  $lastExit = $null
+  while ($true) {
+    if (Assert-TunnelAvailable $plan) {
+      Write-TunnelLog $logPath 'CLEARED_STALE_UNIFIED_SSH'
+    }
+    $sshArgs = $plan.Arguments
+    # Native stderr may contain connection details; retain only bounded state
+    # transitions and exit codes. SSH host-key and forwarding errors remain fatal
+    # to each attempt, and no unrelated process is ever taken over.
+    $PSNativeCommandUseErrorActionPreference = $false
+    & $plan.Ssh @sshArgs 2>$null
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne $lastExit) {
+      Write-TunnelLog $logPath ('SSH_EXIT code=' + $exitCode + ' retry_seconds=6')
+      $lastExit = $exitCode
+    }
+    Start-Sleep -Seconds 6
   }
-  Add-Content -LiteralPath $logPath -Value ((Get-Date -Format o) + ' ' + $message) -Encoding UTF8
-}
-# Task Scheduler can stop the PowerShell parent while its SSH child stays
-# alive. Reclaim only a matching loopback SSH listener with no live owner.
-$existing = Get-NetTCPConnection -State Listen -LocalPort $localPort -ErrorAction SilentlyContinue |
-  Where-Object { $_.LocalAddress -eq '127.0.0.1' } |
-  Select-Object -First 1
-if ($existing) {
-  $ownerProcess = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $existing.OwningProcess)
-  $expectedForward = '127.0.0.1:' + $localPort + ':127.0.0.1:' + $remotePort
-  if (-not $ownerProcess -or $ownerProcess.Name -ne 'ssh.exe' -or
-      -not $ownerProcess.CommandLine.Contains($expectedForward) -or
-      -not $ownerProcess.CommandLine.Contains($target)) {
-    throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'
-  }
-  $parentProcess = Get-CimInstance Win32_Process -Filter ('ProcessId=' + $ownerProcess.ParentProcessId)
-  if ($parentProcess -and $parentProcess.Name -in @('powershell.exe','pwsh.exe') -and
-      $parentProcess.CommandLine -match 'Start-AppTunnel\.ps1') {
-    throw 'APP_TUNNEL_DUPLICATE_OWNER'
-  }
-  Stop-Process -Id $ownerProcess.ProcessId -ErrorAction Stop
-  Write-TunnelLog ('CLEARED_STALE_SSH app=' + $App + ' port=' + $localPort)
-}
-Write-TunnelLog ('START app=' + $App + ' local=' + $localPort + ' remote=' + $remotePort)
-while ($true) {
-  # Windows PowerShell 5.1 reports native SSH stderr as NativeCommandError.
-  # A dropped network connection must not terminate the reconnect loop.
-  $ErrorActionPreference = 'Continue'
-  & $ssh @argsList 2>> $logPath
-  $exitCode = $LASTEXITCODE
-  $ErrorActionPreference = 'Stop'
-  Write-TunnelLog ('SSH_EXIT app=' + $App + ' code=' + $exitCode + ' retry_seconds=6')
-  Start-Sleep -Seconds 6
+} finally {
+  if ($held) { $mutex.ReleaseMutex() }
+  $mutex.Dispose()
 }

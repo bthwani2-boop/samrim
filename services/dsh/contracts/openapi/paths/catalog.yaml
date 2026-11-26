@@ -20,7 +20,16 @@ paths:
           schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
         - name: cursor
           in: query
+          description: Use the same search term and status on subsequent pages; start without a cursor when either changes.
           schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: q
+          in: query
+          description: Case-insensitive literal Product name substring within the owned Store, including drafts. Outer whitespace is ignored; NUL and invalid UTF-8 are rejected.
+          schema: { type: string, maxLength: 80 }
+        - name: status
+          in: query
+          description: Optional Store-scoped filter applied before keyset pagination. Available and unavailable partition published Offers using catalog eligibility, not checkout or Store orderability. Stockout counts published Offers with zero stock. Omit for all Offers.
+          schema: { type: string, enum: [published, unpublished, available, unavailable, stockout] }
       responses:
         '200':
           description: One DSH Store-owner private catalog page
@@ -119,6 +128,151 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
         '403':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+
+  /v1/stores/{storeID}/inventory-summary:
+    get:
+      operationId: readCurrentMerchantInventorySummary
+      summary: Read complete Store-owned inventory counts independent of catalog pagination
+      description: >
+        Requires a current Merchant session and DSH Store ownership. Counts all
+        Store Offers, including unpublished drafts in totalOffers; available and
+        unavailable partition published Offers. Stockout counts published Offers
+        with zero stock. Availability is catalog eligibility only, not Store
+        orderability, checkout, or inventory reservation. No query selectors.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: One complete Store-scoped inventory summary
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantInventorySummary' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+
+  /v1/stores/{storeID}/catalog-imports/{runID}:
+    parameters:
+      - name: storeID
+        in: path
+        required: true
+        schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      - name: runID
+        in: path
+        required: true
+        schema: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+    get:
+      operationId: readMerchantCatalogImport
+      summary: Read durable scoped import results up to 25 rows
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 5000, default: 0 }
+      responses:
+        '200':
+          description: Manifest identity and bounded durable outcomes
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogImportResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties:
+                  code: { type: string }
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+    put:
+      operationId: startMerchantCatalogImport
+      summary: Record the confirmed immutable draft-edit manifest
+      security:
+        - OpaqueSession: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogImportChange' }
+      responses:
+        '200':
+          description: Manifest identity and bounded durable outcomes
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogImportResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties:
+                  code: { type: string }
+        '409':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+    patch:
+      operationId: advanceMerchantCatalogImport
+      summary: Process the next bounded group with the existing draft writer
+      security:
+        - OpaqueSession: []
+      responses:
+        '200':
+          description: Manifest identity and bounded durable outcomes
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantCatalogImportResult' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          description: Run not found
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [code]
+                properties:
+                  code: { type: string }
         '409':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
         '503':

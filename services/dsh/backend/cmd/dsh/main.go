@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/customercart"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/discovery"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/identityaccess"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
@@ -86,16 +87,8 @@ func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http
 	if os.Getenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART") != "true" {
 		return public, nil
 	}
-	host, _, err := net.SplitHostPort(address)
-	// Inside the isolated Docker network, the listener must bind 0.0.0.0:8080
-	// to be reachable through Compose's host-loopback-only published port.
-	// Outside that explicit container contract, only loopback is admitted.
-	dockerLoopback := address == "0.0.0.0:8080" &&
-		os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" &&
-		os.Getenv("DSH_IDENTITY_VERIFIER_URL") == isolatedDSHVerifierURL
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
-		!strings.HasPrefix(schema, "dsh_test_") || len(schema) <= len("dsh_test_") ||
-		err != nil || (!dockerLoopback && host != "127.0.0.1" && host != "::1") {
+		!isolatedDSHSchema.MatchString(schema) || !isolatedAvailabilityTransport(address, os.Getenv) {
 		return nil, fmt.Errorf("Customer Cart requires isolated DSH schema and loopback-only transport")
 	}
 	identity, err := identityaccess.NewIdentitySessionHTTP(os.Getenv("DSH_IDENTITY_VERIFIER_URL"))
@@ -107,7 +100,12 @@ func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http
 		return nil, err
 	}
 	mux := http.NewServeMux()
+	mux.Handle("/v1/carts", cart)
 	mux.Handle("/v1/carts/", cart)
+	mux.Handle("/v1/customers/me/favorite-stores", cart)
+	mux.Handle("/v1/customers/me/favorite-stores/", cart)
+	mux.Handle("/v1/addresses", cart)
+	mux.Handle("/v1/addresses/", cart)
 	mux.Handle("/", public)
 	return mux, nil
 }
@@ -164,8 +162,12 @@ func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch
 }
 
 func main() {
-	mode := flag.String("mode", "serve", "serve, bootstrap, or isolated-seed")
+	mode := flag.String("mode", "serve", "serve, bootstrap, isolated-seed, or verify-development-db")
+	seedProfile := flag.String("seed-profile", "regression", "isolated-seed profile: regression, discovery-demo, or development-registration")
 	flag.Parse()
+	if *seedProfile != "regression" && (*mode != "isolated-seed" || (*seedProfile != "discovery-demo" && *seedProfile != "development-registration")) {
+		log.Fatal("invalid seed profile for mode")
+	}
 	schema := os.Getenv("DSH_DB_SCHEMA")
 	if schema == "" {
 		schema = "dsh"
@@ -187,17 +189,41 @@ func main() {
 		log.Fatal("DSH owner DB unavailable")
 	}
 	switch *mode {
+	case "verify-development-db":
+		if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
+			log.Fatal("DSH development database verification requires isolated mode")
+		}
+		if err := dbscope.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("DSH_DEVELOPMENT_DATABASE_PASS")
 	case "bootstrap":
 		if err := owner.BootstrapFresh(ctx, "database/schema"); err != nil {
 			log.Fatal("fresh DSH baseline denied: ", err)
 		}
 		fmt.Println("DSH_FRESH_BASELINE_PASS schema=" + schema)
 	case "isolated-seed":
-		if err := owner.ImportSynthetic(ctx); err != nil {
+		switch *seedProfile {
+		case "discovery-demo":
+			err = owner.ImportSyntheticDemo(ctx)
+		case "development-registration":
+			err = storeavailability.SeedDevelopmentRegistration(ctx, db, schema)
+		default:
+			err = owner.ImportSynthetic(ctx)
+		}
+		if err != nil {
 			log.Fatal(err)
 		}
 		fmt.Println("DSH_ISOLATED_OWNER_IMPORT_PASS schema=" + schema)
 	case "serve":
+		if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" || os.Getenv("REF_POSTGRES_DB") == dbscope.DevelopmentDatabase {
+			if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
+				log.Fatal("DSH development runtime requires isolated mode")
+			}
+			if err := dbscope.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
+				log.Fatal(err)
+			}
+		}
 		origins := map[string]bool{}
 		for _, origin := range strings.Split(os.Getenv("DSH_PUBLIC_CORS_ORIGINS"), ",") {
 			if v := strings.TrimSpace(origin); v != "" {
@@ -232,6 +258,17 @@ func main() {
 		handler, err = isolatedEmployeeHandler(ctx, db, schema, addr, handler)
 		if err != nil {
 			log.Fatal("DSH employee directory cannot start: ", err)
+		}
+		secureCaptain, err := isolatedCaptainTLS(schema, os.Getenv, handler)
+		if err != nil {
+			log.Fatal("DSH private Captain standing TLS cannot start: ", err)
+		}
+		if secureCaptain != nil {
+			listener, err := net.Listen("tcp", secureCaptain.Addr)
+			if err != nil {
+				log.Fatal("DSH private Captain standing TLS listener unavailable")
+			}
+			go func() { log.Fatal(secureCaptain.ServeTLS(listener, "", "")) }()
 		}
 		server := &http.Server{
 			Addr:              addr,

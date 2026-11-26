@@ -44,13 +44,21 @@ export default function CaptainIdentityGate() {
   const [message, setMessage] = useState("");
   const controller = useRef<AbortController | null>(null);
 
-  const run = useCallback(async (task: (signal: AbortSignal) => Promise<void>) => {
+  const run = useCallback(async (task: (signal: AbortSignal) => Promise<void>, ownerRead = false) => {
     if (controller.current) return;
     const next = new AbortController();
     controller.current = next;
     setBusy(true);
     setMessage("");
-    const deadline = setTimeout(() => next.abort(), 20000);
+    const deadline = setTimeout(() => {
+      next.abort();
+      // A stalled owner read may release the UI without allowing a second
+      // admission mutation or trusting an unknown session.
+      if (ownerRead && controller.current === next) {
+        controller.current = null;
+        setBusy(false);
+      }
+    }, 20000);
     try {
       await task(next.signal);
     } catch (error) {
@@ -68,13 +76,15 @@ export default function CaptainIdentityGate() {
     void run(async signal => {
       // No prior actor may be displayed while new Identity/DSH owner reads run.
       setSession(null);
+      // An unresolved Identity/DSH read must not start a new admission flow.
+      setEnabled(null);
       const state = await readCaptainAdmission(signal);
       if (!signal.aborted) {
         setEnabled(state.enabled);
         setStandingReady(state.standingReady !== false);
         setSession(state.session);
       }
-    });
+    }, true);
   }, [run]);
 
   useEffect(() => {
@@ -100,9 +110,9 @@ export default function CaptainIdentityGate() {
   }, [refresh]);
 
   useEffect(() => {
-    if (!session) return;
-    const ms = Date.parse(session.sessionExpiresAt) - Date.now();
-    const expiry = setTimeout(() => setSession(null), Math.max(0, ms));
+    if (!session && enabled !== null) return;
+    const expiry = session ? setTimeout(refresh,
+      Math.max(0, Date.parse(session.sessionExpiresAt) - Date.now())) : undefined;
     // Renew through Identity before the short-lived access token expires.
     // The actual Captain standing remains a fresh, mandatory DSH check.
     const revalidate = setInterval(() => {
@@ -112,7 +122,7 @@ export default function CaptainIdentityGate() {
       clearTimeout(expiry);
       clearInterval(revalidate);
     };
-  }, [session]);
+  }, [session, refresh, enabled]);
 
   const verified = hasActiveCaptainSession(session);
   const input = {

@@ -1,5 +1,6 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
+import type { ReactNode } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -7,10 +8,11 @@ type Props = Readonly<{
   title: string;
   message: string;
   status?: string;
+  children?: ReactNode;
   returnTo?: "/" | "/home";
 }>;
 
-export default function CaptainCapabilityScreen({ title, message, status, returnTo }: Props) {
+export default function CaptainCapabilityScreen({ title, message, status, returnTo, children }: Props) {
   const { theme } = useMobileAppearance();
   const textStyle = { color: theme.color };
   return (
@@ -30,6 +32,7 @@ export default function CaptainCapabilityScreen({ title, message, status, return
           </Text>
           <Text style={{ ...textStyle, fontSize: 16, lineHeight: 26 }}>{message}</Text>
         </View>
+        {children}
         {returnTo ? (
           <Link href={returnTo} asChild>
             <Pressable accessibilityRole="link" style={{ minHeight: 48, justifyContent: "center", alignSelf: "flex-start", paddingHorizontal: 14,

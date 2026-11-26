@@ -1,7 +1,7 @@
 # WLT client boundaries
 
 `@bthwani/wlt` provides the Customer balance and recent posted funding reads to
-the app's Web server adapter and the explicitly opted-in isolated Customer Android emulator. It sends the existing opaque session to the WLT loopback owner. The Android preview uses only the emulator-to-host `10.0.2.2` alias. Identity/actor/role, session expiry and the protected device bearer are rechecked before and after each owner read; missing configuration stays closed. The finance SDK has no money writer and Native Cash-In remains unavailable.
+the app's Web server adapter and explicitly configured isolated Android emulators. Customer wallet and Merchant commercial-agreement reads use the same native admission in validation.ts: only Android emulators with distinct Identity and WLT host-loopback origins are admitted before session access. Physical devices, iOS, absent or invalid configuration remain closed. It sends the existing opaque session to the WLT loopback owner. The Android preview uses only the emulator-to-host `10.0.2.2` alias. Identity/actor/role, session expiry and the protected device bearer are rechecked before and after each owner read; missing configuration stays closed. The finance SDK has no money writer and Native Cash-In remains unavailable.
 The shared response validator keeps whole YER as decimal text and checks
 the returned actor, currency, amount, transaction identity and timestamp shape.
 The SDK refuses undisclosed extra provider fields; funding history is capped to

@@ -12,7 +12,7 @@ Deliver the smallest genuine Customer marketplace Store discovery backed by DSH-
 - **Language/Version**: Existing source-pinned Go 1.27.3 (future DSH backend); installed TypeScript 7.0.2 and pinned Node 24.22.1/pnpm 12.15.0 in the current worktree.
 - **Primary Dependencies**: Existing Expo Customer, Expo Router, Tamagui, @bthwani/tamagui-config and @bthwani/design-system. Do not upgrade or install new dependencies as a planning side effect.
 - **Storage**: DSH-owned PostgreSQL target (exact physical isolation, schemas and upgrade plan require a separate reviewed decision); Customer may not persist canonical Store/Offer truth.
-- **Contract**: existing services/dsh/contracts/openapi/dsh.openapi.yaml and reserved paths/customer-discovery.yaml, paths/stores.yaml, paths/catalog.yaml and paths/offers.yaml are zero-operation placeholders. Do not hand-invent paths, auth schemas, DTOs or prices.
+- **Contract (original plan context)**: the DSH entrypoint and reserved discovery fragments were initially zero-operation placeholders. Use the current owner entrypoint and populated fragments for executable paths; retired empty group names remain in the historical donor census. Do not hand-invent paths, auth schemas, DTOs or prices.
 - **Tests**: contract parser/ref validations once admitted, DSH Go owner tests, negative visibility/ACL and real query tests, cross-store isolation, genuine Customer Web/Android smoke; Postman read of old local-readiness collection is not a new service test.
 - **Platform**: Customer Expo Web SSR and Android. Actual iOS acceptance remains unproven until tested.
 
@@ -48,9 +48,12 @@ Deliver the smallest genuine Customer marketplace Store discovery backed by DSH-
 3. Define isolated DSH persistence and authorized read model, with Store/publication and positive exact price checks; preserve historical migration evidence, fresh/upgrade/restore gates.
 4. Write RED tests for public discovery, privacy, DIRECT no-marketplace listing, Store/Offer visibility and pagination; implement smallest owner read until GREEN.
 5. Generate/reference typed contract client from approved DSH contract; integrate Customer Arabic RTL Web/Android screens and failure/context-switch recovery; no local fact writer.
-6. Run genuine owner-backed Web/Android positive and negative journeys, ACL/IDOR/stale-response cases and independent review where required. Keep unrun iOS and financial workflows explicit.
-7. Review diff, tests and ownership, then local Commit only under the existing exclusive Git turn without staging others' files. Push requires a separate explicit human authorization; if authorized, verify exact remote SHA and applicable CI. Never create a branch/PR or merge/deploy implicitly.
+6. Run genuine owner-backed Web/Android positive and negative journeys, ACL/IDOR/stale-response cases and applicable executor technical review under [AGENTS.md](../../AGENTS.md). Keep unrun iOS and financial workflows explicit.
+7. Review diff, tests and ownership, then commit the tested owned batch without staging others' files, using the direct native Git delivery and nonconflicting writer rules in AGENTS.md. Push under the applicable explicit one-time or standing human delegation in [AGENTS.md](../../AGENTS.md), then verify exact remote SHA and applicable CI. Never create a branch/PR or merge/deploy implicitly.
 
 ## Complexity and dependencies
 
 No new packages, caches, parallel Store writers, fake transport endpoints or environment/process supervisors are justified now. Adapt the existing guard for tested progressive service source within this admitted journey, protecting unauthorized operations and unsafe data/permission changes. Do not confuse structural PASS with functional closure.
+## Cart clear
+
+Bind a two-step confirmation in the shared Customer cart screen to the verified snapshot. Reuse the versioned DSH replacement and existing pending-operation recovery. Exercise cancellation, refresh, lost response and owner confirmation on the component path. The cart schema and API already allow an empty line list.

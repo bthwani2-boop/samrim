@@ -31,9 +31,10 @@
 ## Phase 4 — Independent acceptance and delivery
 
 - [ ] **T014** Exercise two Store owners/two cities, published and unpublished/direct-only Store, changed Offer price/availability, invalid cursor, offline/error and IDOR; read canonical DSH state for all positive/negative cases and record the resulting evidence.
-- [ ] **T015** Run affected check/test commands, full diff/UTF-8/source compatibility review, independent critical-risk review when required; record explicit iOS NOT_RUN if untested.
+- [ ] **T015** Run affected check/test commands, full diff/UTF-8/source compatibility review, documented executor critical-risk assessment under [AGENTS.md](../../AGENTS.md); record explicit iOS NOT_RUN if untested.
 - [ ] **T016** After EACH tested coherent tranche: acquire existing exclusive GIT-TURN, verify branch/index/foreign work, stage own files only and make a local Commit. Only an independently authorized Push may update origin; verify its SHA and applicable CI. Never open PR, merge, deploy or force push from this checklist.
 
 ## Stop conditions
 
 Continue analysis and isolated development while reporting unmet evidence accurately; never invent Product approval, mock owner-backed readback, signed consent, real-money tests or an unlocked Git turn. GOVERNANCE_CUTOVER: NOT_READY does not bar this existing-capability development; an unreviewed material security, financial or data risk still blocks the affected activation and prevents false closure. This checklist does not attest that any commercial service or screen currently exists.
+- [x] T017-CART-CLEAR (BTH-15), local behavior: RED/GREEN for confirmation, cancellation, stale-snapshot invalidation and same-key recovery. Thirty-one affected Customer cart tests passed. Authenticated Web and Android journey evidence stays open.

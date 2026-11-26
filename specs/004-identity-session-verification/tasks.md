@@ -13,7 +13,7 @@ GOVERNANCE: PROGRESSIVE development; production and entire admission journey blo
 - [x] T006 Unit and adversarial tests plus real isolated PostgreSQL readback with two actors, invalid input, revocation/expiry/version, role/actor suspension, cross-header forgery and owner errors.
 - [x] T007a Go tests/vet, synthetic Linux PostgreSQL integration, staged secret marker scan, targeted governance server-declaration rejection and git diff check PASS.
 - [ ] T007b Full local Foundation after peer-managed Codex Spec Kit integration changes; GitHub SHA Foundation CI PASS but shared local working tree gate currently FAIL until its owner reconciles state.
-- [ ] T008 Independent critical security review and full source coverage quality gate; Sonar LCOV source-suite FAIL also occurred on previous parent SHA. CI presentation last seen IN_PROGRESS.
+- [ ] T008 Documented executor critical security assessment under [AGENTS.md](../../AGENTS.md) and full source coverage quality gate; Sonar LCOV source-suite FAIL also occurred on previous parent SHA. CI presentation last seen IN_PROGRESS.
 - [x] T009 Acquired exclusive Git turn, staged only 14 agent03 files, created local Commit, ordinary Push and independently verified exact remote SHA, then released Git turn.
 
 BOUNDED_SLICE_DELIVERED: PASS for implemented Identity verifier and isolated persistent PostgreSQL tests on the exact submitted SHA.
@@ -74,7 +74,7 @@ The scoped implementation is not CLOSED. Local and remote files remain distinct;
 - [ ] T046 Core initial Customer phone/identity verification, WebAuthn/Passkey, real Operator bootstrap/authorization audit, reliable Merchant session re-entry after unknown submission and full DSH/Web/Android integration NOT_RUN, no production activation.
 - [ ] T047 Shared Foundation must pass exact candidate; latest failure originates in peer-owned services/dsh/clients/readme.md lowercase; notified session02, do not overwrite peer.
 - [ ] T048 Sonar/CodeRabbit final security and engineering independent reviews remain REVIEW_BLOCKED. Existing Sonar gate FAIL; no external sign-off fabricated.
-- [ ] T049 Git: foreign unpublished local commits 6e706c4a root README Spec Kit and eed5d60a session01 prevent ordinary owner-only Push. Stage/Commit only session03 files with exclusive Git turn after testing; Push is BLOCKED until foreign owners have delivered/authorized their commits.
+- [ ] T049 Git: foreign unpublished local commits 6e706c4a root README Spec Kit and eed5d60a session01 prevent ordinary owner-only Push. Stage/Commit only session03 files after testing using current AGENTS.md direct native Git and nonconflicting writer rules; Push is BLOCKED until foreign owners have delivered/authorized their commits.
 FULL MANAGED_PARTICIPANT_ADMISSION: NOT_CLOSED. Direct Merchant conversion is a bounded tested owner slice, not the original first-factor Identity enrollment.
 
 

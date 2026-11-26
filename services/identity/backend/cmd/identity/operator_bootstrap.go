@@ -14,7 +14,7 @@ import (
 )
 
 const initialOperatorDatabase = "refoundation_webauthn_s02"
-const localDevelopmentOperatorDatabase = "bthwani_refoundation"
+const localDevelopmentOperatorDatabase = session.DevelopmentDatabase
 const localDevelopmentOperatorSchema = "identity_test_docker_2e1e6ae0ba6b"
 
 func isLocalDevelopmentFirstOperatorDatabase(ctx context.Context, db *sql.DB, schema string) bool {
@@ -23,7 +23,7 @@ func isLocalDevelopmentFirstOperatorDatabase(ctx context.Context, db *sql.DB, sc
 	}
 	var actualDB string
 	err := db.QueryRowContext(ctx, "SELECT current_database()").Scan(&actualDB)
-	return err == nil && actualDB == localDevelopmentOperatorDatabase
+	return err == nil && actualDB == localDevelopmentOperatorDatabase && session.VerifyDevelopmentRuntime(ctx, db, schema) == nil
 }
 
 func operatorPasskeyOriginPolicy() session.OperatorPasskeyOriginPolicy {

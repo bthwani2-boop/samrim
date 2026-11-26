@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { test } from "node:test";
 
 const app = resolve(import.meta.dirname, "../app");
-const publicRoutes = new Set(["index", "apply", "activate", "setup", "health"]);
+const publicRoutes = new Set(["index", "apply", "activate", "setup"]);
 
 function privateRouteNames(directory = app, prefix = "") {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -24,6 +24,7 @@ test("every Merchant private route is explicitly registered in the fail-closed r
   assert.ok(protectedBlock, "private Merchant navigation must remain denied until Identity/DSH verification");
   const screens = Array.from(protectedBlock[1].matchAll(/<Stack\.Screen name="([^"]+)"\s*\/>/g), match => match[1]);
   assert.deepEqual(screens.sort(), privateRouteNames().sort(), "each private route must be protected exactly once");
+  assert.equal(existsSync(join(app, "health.tsx")), false, "retired synthetic health route");
   assert.equal(existsSync(join(app, "(workspace)")), false);
   assert.equal(existsSync(join(app, "(app)")), false);
 });

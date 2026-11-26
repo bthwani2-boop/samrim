@@ -5,9 +5,8 @@ import { Appearance, Platform } from "react-native";
 import { TamaguiProvider, Theme } from "tamagui";
 import { tamaguiConfig } from "./index";
 
-// Stage-4 appearance foundation: React Native system preference and the
-// canonical BThwani semantic token source. No native Expo UI picker and no
-// second design runtime. Identity-scoped persistence joins later with Identity.
+// App-owned appearance preference, backed by the canonical semantic theme.
+// Existing persistence keys remain stable for installed apps.
 export type AppearanceStorage = {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
@@ -34,6 +33,7 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
   let disposed = false;
   // Serialize storage writes: the last user choice must also win on disk.
   let writeQueue: Promise<void> = Promise.resolve();
+  let pendingWrite: Promise<void> | undefined;
   const notify = () => listeners.forEach(listener => { listener(); });
   const update = (preference: ThemePreference, ready = snapshot.ready) => {
     snapshot = snapshotFor(preference, ready);
@@ -76,23 +76,28 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
       if (disposed) throw new Error("Appearance controller disposed");
       if (!isThemePreference(preference)) throw new Error("Invalid theme preference");
       // An explicit tap during initial restore still supersedes the stored value.
-      if (snapshot.preference === preference && snapshot.ready) return;
+      // An optimistic same-choice snapshot is not proof of a completed save.
+      if (snapshot.preference === preference && snapshot.ready) return pendingWrite;
       const revision = ++intentRevision;
-      applyNative(preference);
-      update(preference, true);
       // Do not allow an earlier slow write to overwrite a later preference.
       const write = writeQueue.then(() => storage.setItem(key, preference));
       writeQueue = write.then(() => undefined, () => undefined);
+      pendingWrite = write;
+      applyNative(preference);
+      update(preference, true);
       try {
         await write;
         confirmedPreference = preference;
       } catch (error) {
+        if (pendingWrite === write) pendingWrite = undefined;
         // Failure of an older request must never roll back a newer choice.
         if (!disposed && revision === intentRevision) {
           applyNative(confirmedPreference);
           update(confirmedPreference, true);
         }
         throw error;
+      } finally {
+        if (pendingWrite === write) pendingWrite = undefined;
       }
     },
     dispose() {
@@ -105,7 +110,7 @@ export function createMobileAppearanceController({ storage, key }: { storage: Ap
   };
 }
 
-export function useStage4AppearanceController(
+function useAppearanceController(
   key: string,
   nativeGetItem: AppearanceStorage["getItem"],
   nativeSetItem: AppearanceStorage["setItem"],
@@ -155,4 +160,22 @@ export function MobileThemeProvider({ children }: { children: React.ReactNode })
       <Theme name={themeName}>{children}</Theme>
     </TamaguiProvider>
   );
+}
+
+// The renderer owns appearance and theme only; each application supplies its
+// route tree and existing app-scoped storage key.
+export function createMobileAppearanceRoot(
+  key: string,
+  nativeGetItem: AppearanceStorage["getItem"],
+  nativeSetItem: AppearanceStorage["setItem"],
+  renderRoutes: (background: string) => React.ReactNode,
+) {
+  function Routes() {
+    const { theme } = useMobileAppearance();
+    return <MobileThemeProvider>{renderRoutes(theme.background)}</MobileThemeProvider>;
+  }
+  return function RootLayout() {
+    const controller = useAppearanceController(key, nativeGetItem, nativeSetItem);
+    return <AppearanceProvider controller={controller}><Routes /></AppearanceProvider>;
+  };
 }

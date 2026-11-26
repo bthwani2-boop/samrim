@@ -1,8 +1,9 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentOperatorAccessState } from "../../server/current-operator-access";
 import {
   canonicalOperatorEntryRedirect,
+  OPERATOR_REFRESH_COOKIE,
   resolveInitialOperatorBootstrapConfig,
   resolveIsolatedOperatorConfig,
   resolveOperatorRecoveryConfig,
@@ -24,6 +25,10 @@ export default async function OperatorEntryScreen() {
   const recovery = resolveOperatorRecoveryConfig(process.env);
   const signInOnThisAddress = isolated &&
     requestHeaders.get("host") === new URL(isolated.browserOrigin).host;
+  // A retained refresh credential is not authority to enter the workspace.
+  // It only enables the existing Identity recovery action on the canonical origin.
+  const recoverable = signInOnThisAddress &&
+    /^[A-Za-z0-9_-]{43}$/.test((await cookies()).get(OPERATOR_REFRESH_COOKIE)?.value ?? "");
   return (
     <main className={styles.entryLayout} aria-labelledby="operator-entry-title">
       <section className={styles.entryPanel} aria-labelledby="operator-entry-title">
@@ -37,6 +42,8 @@ export default async function OperatorEntryScreen() {
           <p className={styles.entryStatus} role="status">
             تم التحقق من حسابك. اطلب من مسؤول الوصول منحك صلاحية لمساحة العمل المطلوبة.
           </p>
+        ) : recoverable ? (
+          <OperatorPasskeyForm recoveryOnly />
         ) : signInOnThisAddress ? (
           <>
             <OperatorPasskeyForm />

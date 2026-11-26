@@ -1,61 +1,10 @@
 name: Go Quality and Isolated Owner PostgreSQL
 
 on:
-  workflow_dispatch:
-  # Every current and future development branch is eligible.
-  # Archived donor refs stay read-only, outside development CI.
-  push:
-    branches:
-      - '**'
-      - '!archive/**'
-      - '!41'
-    paths:
-      - '.go-version'
-      - '.github/workflows/go-quality.yml'
-      - 'tools/dev/check-go.mjs'
-      - 'tools/dev/check-go.test.mjs'
-      - 'services/**/backend/**'
-      - 'services/**/contracts/openapi/**'
-      - 'services/**/database/migrations/**'
-      - 'services/**/database/schema/**'
-      - 'services/wlt/database/sandbox/**'
-      - 'services/**/.dockerignore'
-      - 'infra/build-*image.ps1'
-      - 'infra/compose*.yaml'
-      - 'infra/payment-mock/**'
-      - 'infra/verify-owner-postgres-ci.sh'
-      - 'infra/verify-isolated-postgres.ps1'
-      - 'infra/test-owner-postgres-output.sh'
-      - 'nx.json'
-  # Main is the protected integration target; branch names are never pinned.
-  pull_request:
-    branches:
-      - main
-    paths:
-      - '.go-version'
-      - '.github/workflows/go-quality.yml'
-      - 'tools/dev/check-go.mjs'
-      - 'tools/dev/check-go.test.mjs'
-      - 'services/**/backend/**'
-      - 'services/**/contracts/openapi/**'
-      - 'services/**/database/migrations/**'
-      - 'services/**/database/schema/**'
-      - 'services/wlt/database/sandbox/**'
-      - 'services/**/.dockerignore'
-      - 'infra/build-*image.ps1'
-      - 'infra/compose*.yaml'
-      - 'infra/payment-mock/**'
-      - 'infra/verify-owner-postgres-ci.sh'
-      - 'infra/verify-isolated-postgres.ps1'
-      - 'infra/test-owner-postgres-output.sh'
-      - 'nx.json'
+  workflow_call:
 
 permissions:
   contents: read
-
-concurrency:
-  group: go-quality-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   go-quality:
@@ -96,10 +45,38 @@ jobs:
             exit 1
           fi
           "$CC" --version
-      - name: Test Go runner argument, pin and module safety
-        run: node --test tools/dev/check-go.test.mjs
       - name: Verify real Go modules with race detector and measured coverage
-        run: node tools/dev/check-go.mjs --ci
+        run: node tools/dev/check-go.mjs --ci --sonar-report
+      - name: Attest Go coverage to the exact committed candidate
+        run: node tools/dev/ci-coverage-evidence.mjs publish go
+      - name: Publish measured Go coverage
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sonar-go
+          path: |
+            coverage/identity-go.out
+            coverage/dsh-go.out
+            coverage/wlt-go.out
+            coverage/tree.txt
+            coverage/reports.sha256
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
+      - name: Scan deployed Go owner source for reachable vulnerabilities
+        shell: bash
+        env:
+          CGO_ENABLED: '0'
+        run: |
+          set -euo pipefail
+          scanner_dir="$(mktemp -d "$RUNNER_TEMP/govulncheck.XXXXXX")"
+          trap 'rm -rf -- "$scanner_dir"' EXIT
+          GOBIN="$scanner_dir" GOSUMDB=sum.golang.org go install golang.org/x/vuln/cmd/govulncheck@709015412431dd2b5b28a53c06c70bc02d49074c
+          scanner="$scanner_dir/govulncheck"
+          go version -m "$scanner"
+          for service in identity dsh wlt; do
+            echo "Scanning Go owner: $service (CGO_ENABLED=0)"
+            (cd "services/$service/backend" && "$scanner" ./...)
+          done
       - name: Build and inspect isolated service images
         shell: bash
         run: |
@@ -114,6 +91,12 @@ jobs:
             [[ "$user" == "65532:65532" ]] || { echo "Unsafe container user: $service" >&2; exit 1; }
             revision="$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image")"
             [[ "$revision" == "$GITHUB_SHA" ]] || { echo "Missing source provenance: $service" >&2; exit 1; }
+            # DSH alone currently needs SQL for its explicit bootstrap command.
+            if [[ "$service" == "dsh" ]]; then
+              docker run --rm --network none --read-only --entrypoint /bin/sh "$image" -ec 'test -d /app/database/schema'
+            else
+              docker run --rm --network none --read-only --entrypoint /bin/sh "$image" -ec 'test ! -e /app/database/schema'
+            fi
             binary="$(mktemp)"
             container="$(docker create --network none "$image")"
             docker cp "$container:/usr/local/bin/$service" "$binary"
@@ -123,9 +106,9 @@ jobs:
           done
       - name: Exercise synthetic payment provider in disposable Docker
         shell: bash
-        run: bash infra/payment-mock/smoke.sh
+        run: bash tests/infra/payment-mock/smoke.sh
       - name: State validation limits
-        run: echo 'This Go source job does not prove PostgreSQL integration; see the separate disposable owner-postgres-integration job. NOT_RUN - govulncheck, golangci-lint, gosec and fuzz campaigns'
+        run: echo 'This Go source job does not prove PostgreSQL integration; see the separate disposable owner-postgres-integration job. NOT_RUN - golangci-lint, gosec and fuzz campaigns'
 
 
   owner-postgres-integration:
@@ -142,6 +125,11 @@ jobs:
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - name: Use pinned Node
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
       - name: Use pinned Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
@@ -150,10 +138,23 @@ jobs:
           cache: false
       - name: Validate expected owner test names and reject incomplete passing output
         shell: bash
-        run: bash infra/test-owner-postgres-output.sh
+        run: bash tests/infra/test-owner-postgres-output.sh
       - name: Run isolated, network-disabled owner PostgreSQL tests
         shell: bash
-        run: bash infra/verify-owner-postgres-ci.sh
+        run: bash tests/infra/verify-owner-postgres-ci.sh --coverage
+      - name: Attest complete PostgreSQL coverage to the exact committed candidate
+        run: node tools/dev/ci-coverage-evidence.mjs publish postgres
+      - name: Publish measured PostgreSQL coverage and complete profile inventory
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sonar-postgres
+          path: |
+            coverage/owner-postgres/*.out
+            coverage/owner-postgres/tree.txt
+            coverage/owner-postgres/reports.sha256
+          if-no-files-found: error
+          retention-days: 7
+          overwrite: true
       - name: Verify fresh Identity, DSH and WLT baselines, restore and least-privilege access
         shell: pwsh
-        run: ./infra/verify-isolated-postgres.ps1 -DockerContext default
+        run: ./tests/infra/verify-isolated-postgres.ps1 -DockerContext default

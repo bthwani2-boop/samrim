@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -26,7 +26,7 @@ for (const [key, slug, packageName, easId] of apps) {
     assert.deepEqual(value.platforms, ["ios", "android", "web"]);
     assert.equal(value.updates.url, `https://u.expo.dev/${easId}`);
     assert.equal(value.runtimeVersion.policy, "appVersion");
-    assert.ok(value.plugins.includes("expo-router"));
+    assert.ok(value.plugins.some(p => p === "expo-router" || (Array.isArray(p) && p[0] === "expo-router")));
     for (const plugin of ["expo-asset", "expo-font", "expo-image", "expo-status-bar", "expo-video"]) {
       assert.ok(value.plugins.includes(plugin), key + " missing SDK58 config plugin " + plugin);
     }
@@ -332,5 +332,52 @@ test("native maps keys are scoped to the EAS platform, not required for another 
       else process.env[name] = saved[name];
     }
     rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test("Web development loads routes synchronously while production and native defaults remain intact", () => {
+  for (const app of ["customer", "merchant"]) {
+    const config = defineBthwaniExpoApp(app, { web: true });
+    const router = config.plugins.find(plugin => Array.isArray(plugin) && plugin[0] === "expo-router");
+    assert.deepEqual(router, ["expo-router", { asyncRoutes: { web: "production" } }]);
+  }
+  const captain = defineBthwaniExpoApp("app-captain");
+  assert.ok(captain.plugins.includes("expo-router"));
+});
+
+test("registered native IDs are protected independently of historical dependency manifests", async () => {
+  const { assertRegisteredIdentity } = await import("./verify-app-identity.mjs");
+  const manifest = JSON.parse(fs.readFileSync(new URL("../../apps/customer/mobile.config.json", import.meta.url), "utf8"));
+  assert.doesNotThrow(() => assertRegisteredIdentity("customer", manifest));
+  for (const [key, invalid] of Object.entries({
+    androidPackage: "com.other.app", iosBundleIdentifier: "com.other.app",
+    owner: "other", projectId: "other", scheme: "other", slug: "other",
+  })) {
+    assert.throws(() => assertRegisteredIdentity("customer", { ...manifest, [key]: invalid }), /registered identity changed/);
+  }
+  assert.throws(() => assertRegisteredIdentity("unknown", manifest), /Unknown mobile surface/);
+});
+
+test("conditional Maps config plugins retain their real native dependency without live credentials", () => {
+  const names = ["EAS_BUILD", "BTHWANI_ENFORCE_NATIVE_KEYS", "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN", "GOOGLE_MAPS_ANDROID_API_KEY_MERCHANT"];
+  const originals = Object.fromEntries(names.map(name => [name, process.env[name]]));
+  try {
+    delete process.env.EAS_BUILD;
+    delete process.env.BTHWANI_ENFORCE_NATIVE_KEYS;
+    for (const [app, key, env] of [
+      ["captain", "app-captain", "GOOGLE_MAPS_ANDROID_API_KEY_APP_CAPTAIN"],
+      ["merchant", "merchant", "GOOGLE_MAPS_ANDROID_API_KEY_MERCHANT"],
+    ]) {
+      process.env[env] = "synthetic-config-only";
+      const manifest = require("../../apps/" + app + "/package.json");
+      assert.equal(typeof manifest.dependencies["react-native-maps"], "string");
+      const config = defineBthwaniExpoApp(key, { maps: true });
+      assert.ok(config.plugins.some(plugin => Array.isArray(plugin) && plugin[0] === "react-native-maps"));
+    }
+  } finally {
+    for (const name of names) {
+      if (originals[name] === undefined) delete process.env[name];
+      else process.env[name] = originals[name];
+    }
   }
 });

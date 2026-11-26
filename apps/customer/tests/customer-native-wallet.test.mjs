@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
+import { isolatedNativeWltOrigin } from "@bthwani/wlt";
 
 const source = readFileSync(new URL("../src/features/wallet/wallet-read.ts", import.meta.url), "utf8");
 const compiled = stripTypeScriptTypes(source, { mode: "transform" })
@@ -13,18 +14,20 @@ const compiled = stripTypeScriptTypes(source, { mode: "transform" })
 class ReadError extends Error {
   constructor(status) { super("read failed"); this.status = status; }
 }
-function harness({ preview = "1", origin = "http://10.0.2.2:23203", platform = "android",
+function harness({ legacySetting, origin = "http://10.0.2.2:33223",
+  identityOrigin = "http://10.0.2.2:33221", platform = "android", isDevice = false,
   proofKind = "ready", error } = {}) {
   const requests = [];
   let proofs = 0;
   const bearer = "opaque-test-session";
   const mocks = {
     "@bthwani/wlt": {
+      isolatedNativeWltOrigin,
       WltReadError: ReadError,
       async readCurrentCustomerWallet(source, token, signal) {
         requests.push({ kind: "wallet", source, token, signal });
         if (error) throw new ReadError(error);
-        return { actorId: "actor-a", currency: "YER", balanceYer: "9007199254740993" };
+        return { actorId: "actor-a", currency: "YER", balanceYer: "9007199254740993", availableYer: "9007199254740992" };
       },
       async readCurrentCustomerWalletTransactions(source, token, signal, cursor) {
         requests.push({ kind: "history", source, token, signal, cursor });
@@ -33,10 +36,12 @@ function harness({ preview = "1", origin = "http://10.0.2.2:23203", platform = "
       },
     },
     "react-native": { Platform: { OS: platform } },
+    "expo-device": { isDevice },
     "../access/customer-session-transport": {
-      async withVerifiedNativeCustomerRead(signal, readOwner) {
+      async withVerifiedNativeCustomerRead(signal, readOwner, expectedActorId) {
         proofs++;
         if (proofKind !== "ready") return { kind: proofKind };
+        if (expectedActorId !== undefined && expectedActorId !== "actor-a") return { kind: "signed-out" };
         const value = await readOwner(bearer);
         return { kind: "ready", value, expiresAt: Date.now() + 60000 };
       },
@@ -48,7 +53,8 @@ function harness({ preview = "1", origin = "http://10.0.2.2:23203", platform = "
       assert.ok(Object.hasOwn(mocks, name), `unexpected import ${name}`);
       return mocks[name];
     }, mod, mod.exports,
-    { env: { EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: preview,
+    { env: { EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: legacySetting,
+      EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN: identityOrigin,
       EXPO_PUBLIC_CUSTOMER_SYNTHETIC_WLT_ORIGIN: origin } },
   );
   return { ...mod.exports, requests, proofs: () => proofs };
@@ -56,10 +62,13 @@ function harness({ preview = "1", origin = "http://10.0.2.2:23203", platform = "
 
 test("Android wallet stays closed before Identity when isolated WLT host proof is missing", async () => {
   for (const config of [
-    { preview: "0" }, { platform: "ios" }, { origin: "" },
-    { origin: "http://127.0.0.1:23203" }, { origin: "http://attacker.invalid:23203" },
-    { origin: "https://10.0.2.2:23203" }, { origin: "http://10.0.2.2:23203/path" },
+    { platform: "ios" }, { isDevice: true }, { isDevice: null }, { origin: "" },
+    { identityOrigin: "" }, { identityOrigin: "http://127.0.0.1:3201" },
+    { identityOrigin: "http://10.0.2.2:33223" }, { identityOrigin: "http://10.0.2.2:70000" },
+    { origin: "http://127.0.0.1:3203" }, { origin: "http://attacker.invalid:33223" },
+    { origin: "https://10.0.2.2:33223" }, { origin: "http://10.0.2.2:33223/path" },
     { origin: "http://10.0.2.2:70000" },
+    { legacySetting: "1", identityOrigin: "", origin: "http://10.0.2.2:23203" },
   ]) {
     const h = harness(config);
     assert.deepEqual(await h.readNativeWallet(new AbortController().signal),
@@ -77,10 +86,20 @@ test("Native read-only owner transport reads exact YER from the validated Custom
   assert.equal(result.balance.balanceYer, "9007199254740993");
   assert.ok(result.expiresAt > Date.now());
   assert.deepEqual(h.requests, [{
-    kind: "wallet", source: "http://10.0.2.2:23203",
+    kind: "wallet", source: "http://10.0.2.2:33223",
     token: "opaque-test-session", signal,
   }]);
   assert.equal(h.proofs(), 1);
+});
+
+test("Native checkout balance refuses a different verified actor before WLT dispatch", async () => {
+  const h = harness();
+  const signal = new AbortController().signal;
+  assert.deepEqual(await h.readNativeWallet(signal, "actor-b"), { kind: "signed-out" });
+  assert.deepEqual(h.requests, []);
+  assert.equal(h.proofs(), 1);
+  assert.equal((await h.readNativeWallet(signal, "actor-a")).kind, "ready");
+  assert.equal(h.requests.length, 1);
 });
 
 test("Native funding history forwards only the continuation to WLT, never caller actor ID", async () => {
@@ -91,7 +110,7 @@ test("Native funding history forwards only the continuation to WLT, never caller
   assert.equal(result.kind, "ready");
   assert.equal(result.history.actorId, "actor-a");
   assert.deepEqual(h.requests, [{
-    kind: "history", source: "http://10.0.2.2:23203",
+    kind: "history", source: "http://10.0.2.2:33223",
     token: "opaque-test-session", signal, cursor,
   }]);
 });
@@ -114,4 +133,20 @@ test("Native wallet hides transport failures and does not reinterpret an aborted
   const h = harness({ error: 502 });
   assert.deepEqual(await h.readNativeWallet(new AbortController().signal),
     { kind: "unavailable" });
+});
+
+test("retired Surface flag alone cannot select a Native WLT owner; explicit emulator fixture remains usable", async () => {
+  const signal = new AbortController().signal;
+  const retired = harness({ legacySetting: "1", identityOrigin: "http://127.0.0.1:3201", origin: "http://10.0.2.2:23203" });
+  assert.deepEqual(await retired.readNativeWallet(signal), { kind: "unavailable" });
+  assert.equal(retired.proofs(), 0);
+  assert.deepEqual(retired.requests, []);
+  const physical = harness({ legacySetting: "1", isDevice: true });
+  assert.deepEqual(await physical.readNativeWalletTransactions(signal), { kind: "unavailable" });
+  assert.equal(physical.proofs(), 0);
+  for (const legacySetting of [undefined, "0", "1"]) {
+    const emulator = harness({ legacySetting });
+    assert.equal((await emulator.readNativeWallet(signal)).kind, "ready");
+    assert.equal(emulator.requests.length, 1);
+  }
 });

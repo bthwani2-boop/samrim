@@ -18,16 +18,34 @@ paths:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers'
   /v1/public/stores/{id}/offers/{offerId}/estimate:
     $ref: './paths/offers.yaml#/paths/~1v1~1public~1stores~1{id}~1offers~1{offerId}~1estimate'
+  /v1/carts/{storeID}/serviceability:
+    $ref: './paths/serviceability.yaml#/paths/~1v1~1carts~1{storeID}~1serviceability'
+  /v1/customers/me/favorite-stores:
+    $ref: './paths/customer-discovery.yaml#/paths/~1v1~1customers~1me~1favorite-stores'
+  /v1/customers/me/favorite-stores/{storeID}:
+    $ref: './paths/customer-discovery.yaml#/paths/~1v1~1customers~1me~1favorite-stores~1{storeID}'
+  /v1/addresses:
+    $ref: './paths/locations.yaml#/paths/~1v1~1addresses'
+  /v1/addresses/{addressID}:
+    $ref: './paths/locations.yaml#/paths/~1v1~1addresses~1{addressID}'
+  /v1/carts:
+    $ref: './paths/cart.yaml#/paths/~1v1~1carts'
   /v1/carts/{storeID}:
     $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}'
   /v1/carts/{storeID}/merchandise-estimate:
     $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}~1merchandise-estimate'
+  /v1/carts/{storeID}/checkout-review:
+    $ref: './paths/cart.yaml#/paths/~1v1~1carts~1{storeID}~1checkout-review'
   /v1/stores/mine:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1mine'
   /v1/stores/{storeID}/catalog:
     $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog'
   /v1/stores/{storeID}/catalog/{offerID}:
     $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog~1{offerID}'
+  /v1/stores/{storeID}/catalog-imports/{runID}:
+    $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog-imports~1{runID}'
+  /v1/stores/{storeID}/inventory-summary:
+    $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1inventory-summary'
   /v1/stores/registration-options:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores~1registration-options'
   /v1/stores:
@@ -54,12 +72,24 @@ paths:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees'
   /v1/operators/employees/{id}:
     $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}'
+  /v1/operators/employees/{id}/registration-audit:
+    $ref: './paths/employees.yaml#/paths/~1v1~1operators~1employees~1{id}~1registration-audit'
+  /v1/stores/{storeID}/employees:
+    $ref: './paths/employees.yaml#/paths/~1v1~1stores~1{storeID}~1employees'
+  /v1/stores/{storeID}/employees/{id}:
+    $ref: './paths/employees.yaml#/paths/~1v1~1stores~1{storeID}~1employees~1{id}'
+  /v1/stores/{storeID}/employees/{id}/registration-audit:
+    $ref: './paths/employees.yaml#/paths/~1v1~1stores~1{storeID}~1employees~1{id}~1registration-audit'
   /v1/operators/cities/{cityID}/store-publication-review/{relation}:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-publication-review~1{relation}'
   /v1/operators/cities/{cityID}/store-registration-policy/{relation}:
     $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}'
   /v1/operators/cities/{cityID}/store-registration-policy/{relation}/history:
     $ref: './paths/merchant-registration-policy.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-registration-policy~1{relation}~1history'
+  /v1/operators/cities/{cityID}/delivery-policy:
+    $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1delivery-policy'
+  /v1/operators/cities/{cityID}/delivery-policy/preview:
+    $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1delivery-policy~1preview'
   /v1/operators/cities/{cityID}/store-availability-policy/history:
     $ref: './paths/operational-policies.yaml#/paths/~1v1~1operators~1cities~1{cityID}~1store-availability-policy~1history'
   /v1/operators/cities/{cityID}/store-availability-policy:
@@ -77,6 +107,53 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/PublicId' }
   schemas:
+    MerchantCatalogImportChange:
+      type: object
+      additionalProperties: false
+      required: [sourceSha256, rows]
+      properties:
+        sourceSha256: { type: string, pattern: '^[a-f0-9]{64}$', description: SHA-256 of the original CSV bytes as supplied by the importing client. }
+        rows:
+          type: array
+          minItems: 1
+          maxItems: 5000
+          items:
+            type: object
+            additionalProperties: false
+            required: [row, name, priceYer, stockUnits]
+            properties:
+              row: { type: integer, minimum: 2, maximum: 5001 }
+              name: { type: string, maxLength: 4096 }
+              priceYer: { type: string, maxLength: 128 }
+              stockUnits: { type: string, maxLength: 128 }
+              sourceIssue: { type: string, enum: [INVALID_ROW], description: Malformed source record retained for diagnosis only. Cannot be selected or carry an offer version. }
+              offerId: { $ref: '#/components/schemas/PublicId' }
+              expectedVersion: { type: integer, minimum: 1, maximum: 9007199254740990 }
+    MerchantCatalogImportResult:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, runId, sourceSha256, total, processed, offset, outcomes]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        runId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        sourceSha256: { type: string, pattern: '^[a-f0-9]{64}$', description: SHA-256 of the original CSV bytes as supplied by the importing client. }
+        total: { type: integer, minimum: 1, maximum: 5000 }
+        processed: { type: integer, minimum: 0, maximum: 5000 }
+        offset: { type: integer, minimum: 0, maximum: 5000 }
+        outcomes:
+          type: array
+          maxItems: 25
+          items:
+            type: object
+            additionalProperties: false
+            required: [row, status, reason]
+            properties:
+              row: { type: integer, minimum: 2, maximum: 5001 }
+              status: { type: string, enum: [ACCEPTED, HELD, FAILED] }
+              reason: { type: string, enum: [UPDATED, UNSELECTED, DUPLICATE, INVALID_VALUES, AMBIGUOUS_OR_CHANGED, INELIGIBLE, STALE_VERSION_OR_NAME, OPERATION_CONFLICT] }
+              offerId: { $ref: '#/components/schemas/PublicId' }
+              resultVersion: { type: integer, minimum: 2, maximum: 9007199254740991 }
     MerchantCatalogDraftEditChange:
       type: object
       additionalProperties: false
@@ -128,6 +205,18 @@ components:
         requiredAttributesValid: { type: boolean }
         published: { type: boolean }
         available: { type: boolean }
+    MerchantInventorySummary:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, totalOffers, publishedOffers, availableOffers, unavailableOffers, stockoutOffers]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        totalOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        publishedOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        availableOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        unavailableOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        stockoutOffers: { type: integer, minimum: 0, maximum: 9007199254740991 }
     MerchantCatalogPage:
       type: object
       additionalProperties: false
@@ -140,6 +229,68 @@ components:
           maxItems: 50
           items: { $ref: '#/components/schemas/MerchantCatalogOffer' }
         nextCursor: { $ref: '#/components/schemas/PublicId' }
+    CustomerDeliveryServiceability:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, addressId, status]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        addressId: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+        status: { type: string, enum: [SERVICEABLE, UNSERVICEABLE, UNAVAILABLE] }
+        evidence:
+          type: object
+          additionalProperties: false
+          required: [storeCityId, addressCityId, addressVersion, policyVersion, radiusMetres, distanceMetres]
+          properties:
+            storeCityId: { $ref: '#/components/schemas/PublicId' }
+            addressCityId: { $ref: '#/components/schemas/PublicId' }
+            addressVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            policyVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
+            distanceMetres: { type: number, minimum: 0 }
+    CustomerAddress:
+      type: object
+      additionalProperties: false
+      required: [id, cityId, label, details, latitude, longitude, version]
+      properties:
+        id: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        label: { type: string, minLength: 1, maxLength: 80 }
+        details: { type: string, minLength: 1, maxLength: 300 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+    CustomerAddressChange:
+      type: object
+      additionalProperties: false
+      required: [cityId, label, details, latitude, longitude, expectedVersion]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        label: { type: string, minLength: 1, maxLength: 80 }
+        details: { type: string, minLength: 1, maxLength: 300 }
+        latitude: { type: number, minimum: -90, maximum: 90 }
+        longitude: { type: number, minimum: -180, maximum: 180 }
+        expectedVersion: { type: integer, minimum: 0, maximum: 9007199254740990 }
+    CustomerAddressPage:
+      type: object
+      additionalProperties: false
+      required: [actorId, items]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        items:
+          type: array
+          maxItems: 20
+          items: { $ref: '#/components/schemas/CustomerAddress' }
+        nextCursor: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+    CustomerAddressResult:
+      type: object
+      additionalProperties: false
+      required: [actorId, address, replay]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        address: { $ref: '#/components/schemas/CustomerAddress' }
+        replay: { type: boolean }
     CustomerCartLine:
       type: object
       additionalProperties: false
@@ -151,6 +302,25 @@ components:
         quantity: { type: integer, minimum: 1, maximum: 2147483647 }
         previewUnitYer: { type: string, pattern: '^[0-9]{1,19}$' }
         previewAvailable: { type: boolean }
+    CustomerCartDirectory:
+      type: object
+      additionalProperties: false
+      required: [actorId, carts]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        carts:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [storeId, storeName, version, lineCount]
+            properties:
+              storeId: { $ref: '#/components/schemas/PublicId' }
+              storeName: { type: string, maxLength: 120 }
+              version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+              lineCount: { type: integer, minimum: 1, maximum: 20 }
+        nextCursor: { $ref: '#/components/schemas/PublicId' }
     CustomerCart:
       type: object
       additionalProperties: false
@@ -206,6 +376,86 @@ components:
           items: { $ref: '#/components/schemas/CustomerCartMerchandiseEstimateLine' }
         merchandiseSubtotalYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
         checkoutReady: { type: boolean, const: false }
+    CustomerCheckoutReviewInput:
+      type: object
+      additionalProperties: false
+      required: [expectedCartVersion, recipientPurpose, fulfillmentMode]
+      properties:
+        expectedCartVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        recipientPurpose: { type: string, enum: [SELF, OTHER] }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        addressId: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
+        expectedAddressVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        recipientName: { type: string, minLength: 1, maxLength: 100 }
+        recipientPhone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
+        deliveryInstructions: { type: string, minLength: 1, maxLength: 300 }
+      allOf:
+        - if:
+            properties:
+              recipientPurpose: { const: SELF }
+          then:
+            not:
+              anyOf:
+                - required: [recipientName]
+                - required: [recipientPhone]
+                - required: [deliveryInstructions]
+          else:
+            required: [recipientName, recipientPhone]
+        - if:
+            properties:
+              fulfillmentMode: { const: CUSTOMER_PICKUP }
+          then:
+            not:
+              anyOf:
+                - required: [addressId]
+                - required: [expectedAddressVersion]
+                - required: [deliveryInstructions]
+          else:
+            required: [addressId, expectedAddressVersion]
+    CustomerCheckoutReview:
+      type: object
+      additionalProperties: false
+      required: [actorId, storeId, cartVersion, recipientPurpose, fulfillmentMode, merchandise, checkoutReady, blockers, storeSchedule]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        cartVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        recipientPurpose: { type: string, enum: [SELF, OTHER] }
+        fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        merchandise: { $ref: '#/components/schemas/CustomerCartMerchandiseEstimate' }
+        delivery: { $ref: '#/components/schemas/CustomerDeliveryServiceability' }
+        distanceFeeEstimate:
+          description: Non-payable DSH cumulative distance-band estimate from the same serviceability policy version; absent for pickup, unavailable tariff or ineligible address. No WLT allocation or payable quote.
+          type: object
+          additionalProperties: false
+          required: [policyVersion, distanceMetres, feeYer]
+          properties:
+            policyVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            distanceMetres: { type: integer, minimum: 0, maximum: 2147483647 }
+            feeYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
+        storeSchedule:
+          type: object
+          additionalProperties: false
+          required: [status]
+          properties:
+            status: { type: string, enum: [UNAVAILABLE, OPEN_BY_SCHEDULE, CLOSED_BY_SCHEDULE, PAUSED] }
+            version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+          if:
+            properties:
+              status: { const: UNAVAILABLE }
+          then:
+            not: { required: [version] }
+          else:
+            required: [version]
+        checkoutReady: { type: boolean, const: false }
+        blockers:
+          type: array
+          minItems: 3
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [FULFILLMENT_MODE_NOT_ADMITTED, PAYABLE_QUOTE_NOT_AVAILABLE, PAYMENT_ALLOCATION_NOT_AVAILABLE, ADDRESS_UNSERVICEABLE]
     CustomerCartResult:
       type: object
       additionalProperties: false
@@ -220,7 +470,7 @@ components:
       properties:
         error:
           type: string
-          enum: [INVALID_REQUEST, UNAUTHORIZED_OR_OWNER_UNAVAILABLE, STORE_OR_OFFER_NOT_AVAILABLE, CART_VERSION_OR_OPERATION_CONFLICT, OPERATION_RESULT_UNKNOWN, OWNER_UNAVAILABLE, CART_VERSION_CONFLICT, CART_EMPTY_OR_TOO_LARGE, CART_LINE_UNAVAILABLE, MERCHANDISE_AMOUNT_OUT_OF_RANGE]
+          enum: [INVALID_REQUEST, UNAUTHORIZED_OR_OWNER_UNAVAILABLE, STORE_OR_OFFER_NOT_AVAILABLE, CART_VERSION_OR_OPERATION_CONFLICT, OPERATION_RESULT_UNKNOWN, OWNER_UNAVAILABLE, CART_VERSION_CONFLICT, CART_EMPTY_OR_TOO_LARGE, CART_LINE_UNAVAILABLE, MERCHANDISE_AMOUNT_OUT_OF_RANGE, ADDRESS_OR_SERVICEABILITY_UNAVAILABLE, ADDRESS_VERSION_CONFLICT]
     PublicOfferEstimate:
       type: object
       additionalProperties: false
@@ -417,6 +667,61 @@ components:
             - { type: integer, minimum: 1, maximum: 9007199254740991 }
             - { type: string, pattern: '^[1-9][0-9]{15,18}$' }
         available: { type: boolean, const: true }
+    CityDeliveryDistanceBands:
+      type: array
+      minItems: 1
+      maxItems: 30
+      description: Strictly increasing finite bounds followed by exactly one open tier. Positive whole-YER marginal rates per kilometre.
+      items:
+        type: object
+        additionalProperties: false
+        required: [upToMeters, ratePerKmMinor]
+        properties:
+          upToMeters:
+            oneOf:
+              - { type: integer, minimum: 1, maximum: 500000 }
+              - { type: 'null' }
+          ratePerKmMinor: { type: integer, minimum: 1, maximum: 100000000 }
+    CityDeliveryPolicy:
+      type: object
+      additionalProperties: false
+      required: [cityId, version, radiusMetres, updatedAt]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
+        updatedAt: { type: string, format: date-time }
+        distanceBands: { $ref: '#/components/schemas/CityDeliveryDistanceBands' }
+    CityDeliveryPolicyState:
+      oneOf:
+        - $ref: '#/components/schemas/CityDeliveryPolicy'
+        - type: object
+          additionalProperties: false
+          required: [cityId, version]
+          properties:
+            cityId: { $ref: '#/components/schemas/PublicId' }
+            version: { type: integer, const: 0 }
+          description: Verified active city with no configured delivery policy; no default tariff or radius.
+    CityDeliveryPolicyPreviewInput:
+      type: object
+      additionalProperties: false
+      required: [expectedVersion, radiusMetres, distanceMetres, distanceBands]
+      properties:
+        expectedVersion: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
+        distanceMetres: { type: integer, minimum: 0, maximum: 2147483647 }
+        distanceBands: { $ref: '#/components/schemas/CityDeliveryDistanceBands' }
+    CityDeliveryPolicyPreview:
+      type: object
+      additionalProperties: false
+      required: [cityId, version, radiusMetres, distanceMetres, feeYer, payable]
+      properties:
+        cityId: { $ref: '#/components/schemas/PublicId' }
+        version: { type: integer, minimum: 0, maximum: 9007199254740991 }
+        radiusMetres: { type: integer, minimum: 1, maximum: 2147483647 }
+        distanceMetres: { type: integer, minimum: 0, maximum: 2147483647 }
+        feeYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
+        payable: { type: boolean, const: false }
     CityStoreOperationalPolicy:
       type: object
       additionalProperties: false

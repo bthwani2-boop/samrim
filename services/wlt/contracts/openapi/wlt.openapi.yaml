@@ -4,10 +4,18 @@ info:
   version: 0.1.0
   description: Isolated development projection of posted Customer wallet funding.
 paths:
+  /health:
+    $ref: './paths/runtime.yaml#/paths/~1health'
   /v1/wallets/me:
     $ref: './paths/wallets.yaml#/paths/~1v1~1wallets~1me'
   /v1/wallets/me/transactions:
     $ref: './paths/wallets.yaml#/paths/~1v1~1wallets~1me~1transactions'
+  /v1/wallets/me/order-payment-allocations/{checkoutID}:
+    $ref: './paths/payment-intents.yaml#/paths/~1v1~1wallets~1me~1order-payment-allocations~1{checkoutID}'
+  /v1/merchants/stores/{storeID}/commercial-agreement:
+    $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1merchants~1stores~1{storeID}~1commercial-agreement'
+  /v1/operators/stores/{storeID}/commercial-agreement:
+    $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1operators~1stores~1{storeID}~1commercial-agreement'
 components:
   securitySchemes:
     OpaqueSession:
@@ -17,14 +25,18 @@ components:
     CustomerWalletBalance:
       type: object
       additionalProperties: false
-      required: [actorId, currency, balanceYer]
+      required: [actorId, currency, balanceYer, availableYer]
       properties:
         actorId: { type: string, minLength: 1, maxLength: 128 }
         currency: { type: string, const: YER }
         balanceYer:
           type: string
           pattern: '^(0|[1-9][0-9]{0,37})$'
-          description: Exact whole YER in canonical decimal notation. Zero is returned only after a successful owner read of an empty wallet.
+          description: Exact whole YER posted in the journal, including reserved funds.
+        availableYer:
+          type: string
+          pattern: '^(0|[1-9][0-9]{0,37})$'
+          description: Posted funding minus outstanding wallet reservations in the same owner snapshot. Never exceeds balanceYer. Not payment authorization.
     CustomerFundingTransaction:
       type: object
       additionalProperties: false
@@ -59,6 +71,78 @@ components:
           type: [string, 'null']
           minLength: 20
           maxLength: 240
+    CustomerOrderPaymentReadback:
+      type: object
+      additionalProperties: false
+      required: [actorId, checkoutId, allocation]
+      properties:
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        checkoutId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        allocation:
+          oneOf:
+            - { type: 'null' }
+            - { $ref: '#/components/schemas/OrderPaymentAllocation' }
+    OrderPaymentAllocation:
+      type: object
+      additionalProperties: false
+      required: [storeId, method, totalYer, walletYer, cashYer, currency, state]
+      description: Exact whole-YER owner allocation and release evidence, not a charge, a captured payment, an admitted order or an authorization to retry a write. Total equals wallet plus cash; COD is cash-only, WALLET wallet-only, MIXED requires both positive.
+      properties:
+        storeId: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+        method: { type: string, enum: [COD, WALLET, MIXED] }
+        totalYer: { type: string, pattern: '^[1-9][0-9]{0,18}$' }
+        walletYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
+        cashYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$' }
+        currency: { type: string, const: YER }
+        state: { type: string, enum: [ALLOCATED, RELEASED] }
+    CommercialAgreementReview:
+      type: object
+      additionalProperties: false
+      required: [storeId, proposal]
+      properties:
+        storeId: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+        proposal:
+          oneOf:
+            - { type: 'null' }
+            - { $ref: '#/components/schemas/CommercialAgreementProposalReview' }
+    CommercialAgreementProposalReview:
+      type: object
+      additionalProperties: false
+      required: [version, operationId, storeRelation, feeModel, collector, currency, commissionBasisPoints, subscriptionAmountYer, subscriptionPeriodDays, fulfillmentModes, proposedEffectiveAt, reviewState]
+      properties:
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        storeRelation: { type: string, enum: [MARKETPLACE, DIRECT] }
+        feeModel: { type: string, enum: [COMMISSION, SUBSCRIPTION] }
+        collector: { type: string, enum: [PLATFORM_MANAGED, STORE_MANAGED] }
+        currency: { type: string, const: YER }
+        commissionBasisPoints: { type: [integer, 'null'], minimum: 0, maximum: 10000 }
+        subscriptionAmountYer: { type: [string, 'null'], pattern: '^[1-9][0-9]{0,18}$' }
+        subscriptionPeriodDays: { type: [integer, 'null'], minimum: 1, maximum: 2147483647 }
+        fulfillmentModes:
+          type: array
+          minItems: 1
+          maxItems: 3
+          uniqueItems: true
+          items: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
+        proposedEffectiveAt: { type: string, format: date-time }
+        reviewState:
+          type: string
+          enum: [AWAITING_MERCHANT_CONSENT, AWAITING_FINANCE_REVIEW, DECLINED, FINANCE_REJECTED, REVIEW_APPROVED_PENDING_ACTIVATION]
+      allOf:
+        - if:
+            properties:
+              feeModel: { const: COMMISSION }
+          then:
+            properties:
+              commissionBasisPoints: { type: integer }
+              subscriptionAmountYer: { type: 'null' }
+              subscriptionPeriodDays: { type: 'null' }
+          else:
+            properties:
+              commissionBasisPoints: { type: 'null' }
+              subscriptionAmountYer: { type: string }
+              subscriptionPeriodDays: { type: integer }
     Error:
       type: object
       additionalProperties: false
