@@ -19,6 +19,7 @@ const sha = /^[a-f0-9]{40}$/;
 const digest = /^[a-f0-9]{64}$/;
 const imageId = /^sha256:[a-f0-9]{64}$/;
 const historicalLabel = "samrim-refoundation-clean-20261112";
+// Use a bounded metadata projection, never Config.Env or full inspect output.
 const containerFormat = [
   "{{.Id}}", "{{.Name}}", "{{.Image}}",
   '{{index .Config.Labels "com.docker.compose.project"}}',
@@ -32,7 +33,17 @@ const containerFormat = [
   '{{index .Config.Labels "com.bthwani.worktree"}}',
   '{{index .Config.Labels "com.docker.compose.project.config_files"}}',
   "{{.HostConfig.Privileged}}",
+  "{{.HostConfig.Memory}}",
+  "{{if .HostConfig.PidsLimit}}{{.HostConfig.PidsLimit}}{{else}}0{{end}}",
+  "{{json .HostConfig.LogConfig}}",
+  "{{.HostConfig.RestartPolicy.Name}}",
+  "{{.HostConfig.ReadonlyRootfs}}",
+  "{{json .HostConfig.CapDrop}}",
+  "{{json .HostConfig.SecurityOpt}}",
+  "{{json .HostConfig.CapAdd}}",
+  "{{.Config.User}}",
 ].join("|");
+
 const imageFormat = [
   "{{.Id}}", '{{index .Config.Labels "org.opencontainers.image.revision"}}',
   '{{index .Config.Labels "com.bthwani.source-sha"}}',
@@ -69,14 +80,46 @@ function rows(raw, width, expected, keyOf, kind) {
   return result;
 }
 
+function stringList(value) {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value) || value.some(item => typeof item !== "string")) throw new Error("invalid runtime policy metadata");
+  return [...value].sort();
+}
+
+function stringMap(value) {
+  if (value === null || value === undefined) return {};
+  if (typeof value !== "object" || Array.isArray(value) || Object.values(value).some(v => typeof v !== "string")) throw new Error("invalid runtime logging metadata");
+  return Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+function integer(value, allowZero = false) {
+  if (!/^(?:0|[1-9]\d*)$/.test(String(value)) || !Number.isSafeInteger(Number(value)) || Number(value) < (allowZero ? 0 : 1)) throw new Error("invalid runtime resource metadata");
+  return Number(value);
+}
+
+function observedPolicy(f) {
+  try {
+    const log = JSON.parse(f[18]);
+    if (!log || typeof log.Type !== "string" || !["true", "false"].includes(f[20])) throw new Error();
+    return {
+      memory: integer(f[16], true), pids: integer(f[17], true),
+      logDriver: log.Type, logOptions: stringMap(log.Config), restart: f[19],
+      readOnly: f[20] === "true", capDrop: stringList(JSON.parse(f[21])),
+      security: stringList(JSON.parse(f[22])), capAdd: stringList(JSON.parse(f[23])),
+      user: f[24],
+    };
+  } catch { throw new Error("invalid effective container policy metadata"); }
+}
+
 function readContainers(docker) {
   const inventory = docker(["ps", "-a", "--filter", "label=com.docker.compose.project=" + project, "--format", "{{.Names}}"]).trim().split(/\r?\n/).sort();
   if (JSON.stringify(inventory) !== JSON.stringify([...names].sort())) throw new Error("unexpected project container inventory");
-  const result = rows(docker(["inspect", "--type", "container", "--format", containerFormat, ...names]), 16, names, f => f[1]?.slice(1), "container");
+  const result = rows(docker(["inspect", "--type", "container", "--format", containerFormat, ...names]), 25, names, f => f[1]?.slice(1), "container");
   for (const [name, f] of result) {
     if (!digest.test(f[0]) || f[1] !== "/" + name || !imageId.test(f[2]) ||
         !["true", "false"].includes(f[7]) || !Number.isFinite(Date.parse(f[10])) || !/^\d+$/.test(f[11]) ||
         !digest.test(f[12]) || !["true", "false"].includes(f[15])) throw new Error("invalid container identity or lifecycle metadata");
+    observedPolicy(f);
   }
   return result;
 }
@@ -97,24 +140,36 @@ function readHashes(docker, args, input) {
   return Object.fromEntries(foundations.map(name => [name, result[name]]));
 }
 
-function readFoundationModel(docker, composeSource) {
+function resolvedPolicy(service, definition) {
+  if (!definition || typeof definition.logging?.driver !== "string" || typeof definition.restart !== "string") throw new Error("missing canonical runtime policy: " + service);
+  return {
+    memory: integer(definition.mem_limit), pids: integer(definition.pids_limit),
+    logDriver: definition.logging.driver, logOptions: stringMap(definition.logging.options),
+    restart: definition.restart, readOnly: definition.read_only === true,
+    capDrop: stringList(definition.cap_drop), security: stringList(definition.security_opt),
+    capAdd: stringList(definition.cap_add),
+    capability: definition.labels?.["com.bthwani.capability"] || "<no value>",
+  };
+}
+
+function readRuntimeModel(docker, composeSource) {
   const args = ["compose", "--project-directory", infra, "--env-file", resolve(infra, ".env"), "-f", "-"];
   const canonical = readHashes(docker, args, composeSource);
-  // The only admitted historical difference is the exact shared worktree label.
-  // Recompute via native Compose, not a handwritten approximation or saved hash.
+  // Reconstruct only the explicitly admitted label-only historical model.
+  // Resource policy changes must never be treated as historical label drift.
   const marker = /^  com\.bthwani\.worktree: samrim-refoundation-clean-20261112\r?\n/gm;
-  const matches = [...composeSource.matchAll(marker)];
-  if (matches.length !== 1) throw new Error("canonical historical-label definition not established");
+  if ([...composeSource.matchAll(marker)].length !== 1) throw new Error("canonical historical-label definition not established");
   const historical = readHashes(docker, args, composeSource.replace(marker, ""));
   let model;
   try { model = JSON.parse(docker([...args, "config", "--format", "json"], composeSource)); }
   catch { throw new Error("invalid resolved foundation model"); }
   if (model.name !== project) throw new Error("unexpected resolved Compose project");
+  const policy = Object.fromEntries(services.map(service => [service, resolvedPolicy(service, model.services?.[service])]));
   const refs = foundations.map(service => model.services?.[service]?.image);
   if (refs.some((ref, i) => typeof ref !== "string" || (i < 3 ? !/@sha256:[a-f0-9]{64}$/.test(ref) : ref !== "bthwani/payment-mock:local"))) throw new Error("invalid foundation image reference");
   const ids = docker(["image", "inspect", "--format", "{{.Id}}", ...refs]).trim().split(/\r?\n/);
   if (ids.length !== refs.length || ids.some(id => !imageId.test(id))) throw new Error("invalid foundation image identity");
-  return { canonical, historical, images: Object.fromEntries(foundations.map((service, i) => [service, ids[i]])) };
+  return { canonical, historical, policy, images: Object.fromEntries(foundations.map((service, i) => [service, ids[i]])) };
 }
 
 function ownerScope(owner, preflight) {
@@ -136,18 +191,25 @@ function sourceWindow(execute, preflight) {
   return { head, branch, dirty };
 }
 
-function evaluateContainer(service, f, preflight) {
+function evaluateContainer(service, f, expected, preflight) {
   const errors = [];
   if (f[3] !== project || f[4] !== service || f[5] !== "refoundation" || f[15] !== "false" ||
-      (service === "wlt" && f[6] !== "customer-wallet-read-only")) errors.push("not the expected isolated Compose project and owner");
+      f[6] !== expected.capability || (service === "wlt" && f[6] !== "customer-wallet-read-only")) errors.push("not the expected isolated Compose project and owner");
   const active = f[7] === "true" && f[8] === "running" && f[9] === "healthy";
   const stopped = preflight && f[7] === "false" && f[8] === "exited" && ["healthy", "unhealthy", "starting"].includes(f[9]);
   if (!active && !stopped) errors.push("container state or health not proven");
+  // Inspect effective HostConfig as well as the immutable creation hash:
+  // docker update and daemon defaults can otherwise leave a matching hash.
+  const actual = observedPolicy(f);
+  for (const key of ["memory", "pids", "logDriver", "logOptions", "restart", "readOnly", "capDrop", "security", "capAdd"]) {
+    if (JSON.stringify(actual[key]) !== JSON.stringify(expected[key])) errors.push("effective container policy mismatch: " + key);
+  }
+  if (owners.includes(service) && !/^[1-9]\d*(?::[1-9]\d*)?$/.test(actual.user)) errors.push("non-root owner user not proven");
   return errors;
 }
 
-function evaluateOwner(owner, f, image, source, execute, isAncestor, preflight) {
-  const errors = evaluateContainer(owner, f, preflight);
+function evaluateOwner(owner, f, image, model, source, execute, isAncestor, preflight) {
+  const errors = evaluateContainer(owner, f, model.policy[owner], preflight);
   if (image[0] !== f[2]) errors.push("runtime image ID absent, invalid or mismatched");
   const value = field => field === "<no value>" ? "" : field;
   let revision = "";
@@ -171,7 +233,7 @@ function evaluateOwner(owner, f, image, source, execute, isAncestor, preflight) 
 }
 
 function evaluateFoundation(service, f, model, source, preflight) {
-  const errors = evaluateContainer(service, f, preflight);
+  const errors = evaluateContainer(service, f, model.policy[service], preflight);
   const canonical = f[12] === model.canonical[service] && f[13] === historicalLabel;
   const historical = service !== "payment-mock" && f[12] === model.historical[service] && f[13] === "<no value>";
   if (!canonical && !historical) errors.push("foundation native Compose configuration mismatch");
@@ -190,14 +252,14 @@ export function verifyCandidate(argv, execute = checked, isAncestor = gitAncesto
   const source = sourceWindow(execute, preflight);
   const compose = readCompose();
   const first = readContainers(docker);
-  const model = readFoundationModel(docker, compose);
+  const model = readRuntimeModel(docker, compose);
   const images = readOwnerImages(docker, first);
   const results = owners.map(owner => {
     const container = first.get(nameOf(owner));
-    return evaluateOwner(owner, container, images.get(container[2]), source, execute, isAncestor, preflight);
+    return evaluateOwner(owner, container, images.get(container[2]), model, source, execute, isAncestor, preflight);
   });
   const foundationResults = foundations.map(service => evaluateFoundation(service, first.get(nameOf(service)), model, source, preflight));
-  const lastModel = readFoundationModel(docker, compose);
+  const lastModel = readRuntimeModel(docker, compose);
   const last = readContainers(docker), finalSource = sourceWindow(execute, preflight);
   if (compose !== readCompose() || JSON.stringify(model) !== JSON.stringify(lastModel) ||
       JSON.stringify(source) !== JSON.stringify(finalSource) ||

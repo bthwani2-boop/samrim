@@ -7,6 +7,17 @@ const successor = "b".repeat(40);
 const ownerNames = ["dsh", "identity", "wlt"];
 const foundations = ["postgres", "media", "mailpit", "payment-mock"];
 const allServices = [...ownerNames, ...foundations];
+const memory = { postgres: 2147483648, media: 1610612736, mailpit: 268435456, "payment-mock": 805306368, dsh: 536870912, identity: 536870912, wlt: 536870912 };
+const pids = service => ["postgres", "media"].includes(service) ? 512 : 256;
+const capability = service => ({ dsh: "customer-store-catalog", identity: "identity-synthetic-session-verifier", wlt: "customer-wallet-read-only" }[service] ?? "");
+const logOptions = { "max-file": "3", "max-size": "10m" };
+const policy = service => ({
+  mem_limit: String(memory[service]), pids_limit: pids(service),
+  logging: { driver: "local", options: logOptions }, restart: "unless-stopped",
+  read_only: ownerNames.includes(service), cap_drop: ownerNames.includes(service) ? ["ALL"] : [],
+  security_opt: ownerNames.includes(service) ? ["no-new-privileges:true"] : [],
+  labels: { "com.bthwani.capability": capability(service) },
+});
 const hashFor = (service, historic = false) => String(foundations.indexOf(service) + (historic ? 5 : 1)).repeat(64);
 const imageRef = service => service === "payment-mock" ? "bthwani/payment-mock:local" : service + "@sha256:" + hashFor(service);
 const args = ["--context", "bthwani-docker"];
@@ -22,15 +33,18 @@ function fixture(options = {}) {
       id: String(allServices.indexOf(owner) + 1).repeat(64),
       name: "/" + name(owner), image: imageFor(owner), project: "bthwani-refoundation",
       service: owner, environment: "refoundation",
-      capability: owner === "wlt" ? "customer-wallet-read-only" : "",
+      capability: capability(owner),
       running: "true", state: "running", health: "healthy",
       startedAt: "2026-11-26T02:00:00.123456789Z", restartCount: "0",
       configHash: foundations.includes(owner) ? hashFor(owner) : "a".repeat(64),
       worktree: "samrim-refoundation-clean-20261112", configFiles: "D:/samrim/infra/compose.yaml", privileged: "false",
+      memory: memory[owner], pids: pids(owner), logging: { Type: "local", Config: logOptions }, restart: "unless-stopped",
+      readOnly: ownerNames.includes(owner), capDrop: ownerNames.includes(owner) ? ["ALL"] : null,
+      security: ownerNames.includes(owner) ? ["no-new-privileges:true"] : null, capAdd: null, user: ownerNames.includes(owner) ? "65532:65532" : "",
       ...options.containers?.[owner], ...(pass === 2 ? options.finalContainers?.[owner] : {}),
     };
     return [o.id, o.name, o.image, o.project, o.service, o.environment, label(o.capability),
-      o.running, o.state, o.health, o.startedAt, o.restartCount, o.configHash, label(o.worktree), o.configFiles, o.privileged].join("|");
+      o.running, o.state, o.health, o.startedAt, o.restartCount, o.configHash, label(o.worktree), o.configFiles, o.privileged, o.memory, o.pids, JSON.stringify(o.logging), o.restart, String(o.readOnly), JSON.stringify(o.capDrop), JSON.stringify(o.security), JSON.stringify(o.capAdd), o.user].join("|");
   };
   const imageForOwner = owner => {
     const o = { id: imageFor(owner), revision: head, source: head, previewBase: "", previewDigest: "",
@@ -53,7 +67,7 @@ function fixture(options = {}) {
       if (a[2] === "ps") return (options.inventory ?? allServices).map(name).join("\n");
       if (a[2] === "compose") {
         if (a.includes("--hash")) return foundations.map(service => service + " " + hashFor(service, !input.includes("  com.bthwani.worktree: samrim-refoundation-clean-20261112"))).join("\n");
-        if (a.includes("--format")) return JSON.stringify({ name: "bthwani-refoundation", services: Object.fromEntries(foundations.map(service => [service, { image: imageRef(service) }])) });
+        if (a.includes("--format")) return JSON.stringify({ name: "bthwani-refoundation", services: Object.fromEntries(allServices.map(service => [service, { ...policy(service), image: imageRef(service) }])) });
       }
       if (a[2] === "inspect") {
         containerReads++;
@@ -263,4 +277,30 @@ test("only the exact native label-only historical hashes are accepted", () => {
   assert.equal(run({ containers: { postgres: { configHash: hashFor("postgres", true) } } }).result.passed, false);
   const f = fixture({ finalContainers: { postgres: { configHash: "f".repeat(64) } } });
   assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
+});
+
+test("effective policy drift is rejected on all seven services even with matching creation hash", () => {
+  for (const service of allServices) {
+    for (const change of [
+      { memory: 0 }, { pids: 0 }, { logging: { Type: "local", Config: {} } },
+      { logging: { Type: "json-file", Config: logOptions } }, { restart: "no" },
+      { readOnly: !ownerNames.includes(service) }, { capAdd: ["SYS_ADMIN"] },
+    ]) {
+      const result = run({ containers: { [service]: change } }).result;
+      assert.equal(result.passed, false, service + JSON.stringify(change));
+      const row = [...result.results, ...result.foundationResults].find(r => (r.owner ?? r.service) === service);
+      assert.ok(row.errors.some(e => e.includes("effective container policy mismatch")));
+    }
+  }
+  for (const owner of ownerNames) {
+    rejectOwner({ containers: { [owner]: { user: "0:0" } } }, owner, "non-root owner user");
+    rejectOwner({ containers: { [owner]: { capDrop: [] } } }, owner, "effective container policy mismatch: capDrop");
+    rejectOwner({ containers: { [owner]: { security: [] } } }, owner, "effective container policy mismatch: security");
+  }
+});
+
+test("effective policy changes during observation invalidate the candidate", () => {
+  const f = fixture({ finalContainers: { postgres: { memory: 0 } } });
+  assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
+  assert.throws(() => run({ containers: { dsh: { logging: null } } }), /invalid effective container policy metadata/);
 });
