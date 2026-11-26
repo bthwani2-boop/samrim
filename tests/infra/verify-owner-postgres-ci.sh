@@ -21,7 +21,7 @@ cover_flags=()
 coverage_sequence=0
 if [[ $# -eq 1 && "$1" == --coverage ]]; then
   coverage_enabled=yes
-  cover_flags=(-covermode=atomic)
+  cover_flags=(-covermode=atomic -coverpkg=./...)
   [[ ! -e coverage/owner-postgres && ! -L coverage/owner-postgres ]] || {
     echo 'Refusing existing owner PostgreSQL coverage output' >&2; exit 2;
   }
