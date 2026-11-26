@@ -11,7 +11,7 @@ export async function verifyFavoriteSession(signal: AbortSignal, actor?: string)
   const value=await readCustomerAdmission(signal);
   signal.throwIfAborted();
   if (!value.enabled || value.session?.role!=="customer" || (actor!==undefined && actor!==value.session.actorId) ||
-    Date.parse(value.session.sessionExpiresAt)<=Date.now()) throw new DshPublicError(401,"UNAUTHORIZED");
+    !(Date.parse(value.session.sessionExpiresAt)>Date.now())) throw new DshPublicError(401,"UNAUTHORIZED");
   return value.session;
 }
 async function webRequest(actor: string, query: string, signal: AbortSignal, write: boolean): Promise<unknown> {
