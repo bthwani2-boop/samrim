@@ -14,7 +14,7 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
   const localAppData = path.join(folder, "state");
   const manifestDir = path.join(localAppData, "BThwani", "Operations", "SourceSync");
   const entry = "tools/dev/sync-lenovo-source.mjs";
-  const mirrored = [entry, "tools/dev/sync-lenovo-reconciliation.mjs", "apps/customer/example.ts", "apps/customer/package.json"];
+  const mirrored = [entry, "tools/dev/sync-lenovo-reconciliation.mjs", "tools/dev/check-go.mjs", "apps/customer/example.ts", "apps/customer/package.json"];
   const git = (...args) => {
     const result = spawnSync(process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git", args, { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr);
@@ -948,4 +948,14 @@ test("source mirror CLI accepts one exact role and rejects the retired manual wr
     assert.notEqual(result.status,0);
     assert.match(result.stderr,/USAGE/);
   }
+});
+
+test("mirror and dependency change inventories share ordinal path ordering", async () => {
+  const { dependencyInputChanges } = await import("./sync-lenovo-reconciliation.mjs");
+  const expected = ["patches/Z-top.patch", "patches/_patch.patch", "patches/a.patch", "patches/z.patch", "patches/é.patch"];
+  const previous = { files: Object.fromEntries([...expected].reverse().map(rel => [rel, "before"])) };
+  const current = new Map(expected.filter(rel => rel !== "patches/Z-top.patch").map(rel => [rel, "after"]));
+  assert.deepEqual(dependencyInputChanges(previous, current), expected);
+  assert.deepEqual(mirrorCandidatePaths([...expected].reverse()), expected);
+  assert.deepEqual(dependencyInputChanges({ files: Object.fromEntries(current) }, current), []);
 });
