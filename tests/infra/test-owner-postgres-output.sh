@@ -87,3 +87,34 @@ if [[ -z "$actual" || "$actual" != "$declared" ]]; then
   exit 1
 fi
 echo 'DISCOVERY_OWNER_TEST_INVENTORY_PASS'
+
+
+# Exact snapshot admission is separate from actual PostgreSQL proof.
+source <(sed -n '/^assert_wlt_snapshot_equal() {/,/^}/p' "$script")
+declare -f assert_wlt_snapshot_equal >/dev/null
+original="$scratch/wlt-source.jsonl"
+restored="$scratch/wlt-restored.jsonl"
+printf '%s\n' '{"relation":"proposal","rows":[{"version":1,"amount":9007199254740993}]}' \
+  '{"relation":"matrix","rows":[{"version":1}]}' > "$original"
+cp -- "$original" "$restored"
+assert_wlt_snapshot_equal "$original" "$restored" exact
+reject_snapshot() {
+  if assert_wlt_snapshot_equal "$original" "$restored" "$1" >/dev/null 2>&1; then
+    echo "WLT_SNAPSHOT_GATE admitted $1" >&2
+    return 1
+  fi
+}
+head -n 1 "$original" > "$restored"
+reject_snapshot missing_relation
+cp -- "$original" "$restored"
+printf '%s\n' '{"relation":"extra","rows":[]}' >> "$restored"
+reject_snapshot extra_relation
+sed 's/9007199254740993/9007199254740992/' "$original" > "$restored"
+reject_snapshot changed_exact_amount
+sed 's/"version":1/"version":2/' "$original" > "$restored"
+reject_snapshot changed_version
+: > "$restored"
+reject_snapshot empty_snapshot
+rm -- "$restored"
+reject_snapshot missing_snapshot
+echo 'WLT_COMPLETE_SNAPSHOT_GATE_PASS positive=1 negative=6'
