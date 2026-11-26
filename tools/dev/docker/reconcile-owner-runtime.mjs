@@ -19,8 +19,7 @@ const owners = {
   identity: { tag: "REF_IDENTITY_IMAGE_TAG", image: "bthwani-refoundation-identity-verifier", profile: "identity-verifier" },
   wlt: { tag: "REF_WLT_IMAGE_TAG", image: "bthwani-refoundation-wlt", profile: "wlt-reader" },
 };
-const appFiles = Object.freeze(["compose.yaml"]);
-const wltFiles = appFiles;
+const canonicalComposeFiles = Object.freeze(["compose.yaml"]);
 const canonicalComposePath = resolve(root,"infra/compose.yaml");
 // These names are accepted only as historical container provenance, not configuration inputs.
 const legacyAppFiles = Object.freeze(["compose.yaml","compose.dsh.yaml","compose.identity.yaml","compose.merchant.yaml"]);
@@ -107,8 +106,7 @@ export function removePrivateCopyArchive(pg, archive, execute = docker) {
   execute(["exec", pg, "rm", "-f", "--", archive.file]);
   execute(["exec", pg, "rmdir", "--", archive.directory]);
 }
-function composeArgs(activeFiles) {
-  if (!equal(activeFiles,appFiles)) throw new Error("Only the canonical Compose source is executable");
+export function composeArgs() {
   return ["compose","--project-directory",resolve(root,"infra"),"--env-file","infra/.env","-f",canonicalComposePath, ...Object.values(owners).flatMap(o=>["--profile",o.profile])];
 }
 function asEnv(values) {
@@ -136,7 +134,7 @@ export function selectOwners({ candidates, activateCaptain, currentCaptain }) {
 export function assertSameHashes(expected, actual) {
   if (differingKeys(expected, actual).length) throw new Error("Existing Compose configuration cannot be reconstructed exactly; refusing replacement");
 }
-// The WLT overlay is used only by the WLT Compose group. Never replace a
+// WLT has its own configuration-verification group. Never replace a
 // mismatched owner; ordinary reconciliation may still inspect the other group.
 export function wltConfigReviewRequired(expected, actual, mode) {
   if (!differingKeys(expected,actual).length) return false;
@@ -171,8 +169,8 @@ function liveFiles(v) {
   return composeFileNames(v.Config.Labels["com.docker.compose.project.config_files"]);
 }
 function equal(a,b) { return JSON.stringify(a) === JSON.stringify(b); }
-function configHashes(activeFiles, names, env, historical) {
-  const args = composeArgs(activeFiles).map(value => historical && value === historical.file ? "-" : value);
+function configHashes(names, env, historical) {
+  const args = composeArgs().map(value => historical && value === historical.file ? "-" : value);
   const lines = docker([...args, "config", "--hash", names.join(",")], env, 30000, historical ? historical.content + "\n" : undefined).split(/\r?\n/);
   const result = Object.fromEntries(lines.map(l => l.trim().split(/\s+/)));
   if (Object.keys(result).length !== names.length || names.some(o => !/^[0-9a-f]{64}$/.test(result[o] || ""))) throw new Error("Incomplete Compose hash");
@@ -194,7 +192,7 @@ export function isAdmittedWltOriginAddition(previous, current) {
     lines.filter(value => value !== line).join("\n") === before;
 }
 function historicalWltHashes(previous, env) {
-  return configHashes(wltFiles,["wlt"],env,{file:canonicalComposePath,content:previous});
+  return configHashes(["wlt"],env,{file:canonicalComposePath,content:previous});
 }
 
 // Reconstruct only an already-admitted historical one-field transition.
@@ -240,8 +238,8 @@ export function admittedDshConfigTransition({mode, automatic, clean, schemaChang
 export function isKnownImageConfigPair(image,hash,previous,candidate) {
   return (image===previous.image && hash===previous.hash) || (image===candidate.image && hash===candidate.hash);
 }
-function historicalDshHashes(files,names,env,previous) {
-  return configHashes(files,names,env,{file:canonicalComposePath,content:previous});
+function historicalDshHashes(names,env,previous) {
+  return configHashes(names,env,{file:canonicalComposePath,content:previous});
 }
 function imageRecord(image) {
   return JSON.parse(docker(["image", "inspect", image]))[0];
@@ -302,7 +300,7 @@ export function legacyOwnerAccessSql(runtime="bthwani_dsh_runtime") {
   if(!["bthwani_dsh_runtime","bthwani_identity_runtime"].includes(runtime))throw new Error("Invalid dedicated owner principal");
   return "BEGIN READ ONLY; SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE c.relkind IN ('r','p','v','m','f') AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%' AND (has_table_privilege('bthwani_dsh_runtime',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER') OR has_any_column_privilege('bthwani_dsh_runtime',c.oid,'INSERT,UPDATE,REFERENCES') OR ((has_table_privilege('bthwani_dsh_runtime',c.oid,'SELECT') OR has_any_column_privilege('bthwani_dsh_runtime',c.oid,'SELECT')) AND NOT EXISTS (SELECT 1 FROM pg_depend d JOIN pg_extension e ON e.oid=d.refobjid WHERE d.classid='pg_class'::regclass AND d.objid=c.oid AND d.refclassid='pg_extension'::regclass AND d.deptype='e' AND ((e.extname='postgis' AND n.nspname='public' AND c.relname IN ('geography_columns','geometry_columns','spatial_ref_sys')) OR (e.extname='postgis_tiger_geocoder' AND n.nspname='tiger' AND c.relname IN ('geocode_settings','geocode_settings_default','loader_lookuptables','loader_platform','loader_variables','pagc_gaz','pagc_lex','pagc_rules')) OR (e.extname='postgis_topology' AND n.nspname='topology' AND c.relname IN ('layer','topology')))))); COMMIT;".replaceAll("bthwani_dsh_runtime",runtime);
 }
-function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
+function prepareDedicatedDsh(state, env, head, resume=false) {
   if(git(["status","--porcelain","--untracked-files=all"]))throw new Error("Dedicated database preparation requires a clean committed checkout");
   const live=asEnv(state.dsh.Config.Env);
   const schema=live.DSH_DB_SCHEMA;
@@ -335,7 +333,7 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
   sql("postgres","CREATE DATABASE "+db+" OWNER "+owner+" TEMPLATE template0;");
   sql("postgres","REVOKE ALL ON DATABASE "+db+" FROM PUBLIC; GRANT CONNECT ON DATABASE "+db+" TO "+runtime+";");
   sql(db,"REVOKE ALL ON SCHEMA public FROM PUBLIC;");
-  const proof=docker([...composeArgs(activeFiles),"--profile","bootstrap","run","--rm","--no-deps","--pull","never","dsh-bootstrap"],candidateEnv,90000);
+  const proof=docker([...composeArgs(),"--profile","bootstrap","run","--rm","--no-deps","--pull","never","dsh-bootstrap"],candidateEnv,90000);
   if(!proof.includes("DSH_FRESH_BASELINE_PASS schema="+schema))throw new Error("Canonical DSH bootstrap did not confirm");
   sql("postgres","ALTER ROLE "+owner+" NOLOGIN PASSWORD NULL;");
   }
@@ -360,7 +358,7 @@ function prepareDedicatedDsh(state, env, head, activeFiles, resume=false) {
 
     if(resume)sql("postgres","ALTER ROLE "+runtime+" PASSWORD '"+runtimeSecret+"';");
     sql(db,"GRANT USAGE ON SCHEMA "+schema+" TO "+runtime+"; GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA "+schema+" TO "+runtime+"; GRANT USAGE ON ALL SEQUENCES IN SCHEMA "+schema+" TO "+runtime+";");
-    const verified=docker([...composeArgs(activeFiles),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
+    const verified=docker([...composeArgs(),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
     if(!verified.includes("DSH_DEVELOPMENT_DATABASE_PASS"))throw new Error("Dedicated runtime login not verified");
     if(sql(oldDb,fingerprint)!==before || git(["rev-parse","HEAD"])!==head || git(["status","--porcelain","--untracked-files=all"]))throw new Error("Source, data or local configuration changed; do not publish candidate credentials");
     appendOwnerEnv(envPath,original,"\nREF_DSH_RUNTIME_DATABASE="+db+"\nREF_DSH_RUNTIME_USER="+runtime+"\nREF_DSH_RUNTIME_PASSWORD="+runtimeSecret+"\n");
@@ -380,7 +378,7 @@ export function assertHandoffParity(source, candidate, expectedLines) {
     throw new Error("OWNER_HANDOFF_DATA_PARITY_FAILED");
   }
 }
-function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
+function cutoverPreparedDsh(state, env, head, preparedRevision) {
   const transitionScope=[...guardedScope,"tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
   const dirty=()=>dirtyPaths(root,transitionScope).length>0;
   if (!/^[0-9a-f]{40}$/.test(preparedRevision || "") || dirty()) throw new Error("Cutover requires a clean committed checkout and exact prepared source SHA");
@@ -400,7 +398,7 @@ function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
   if(sourceIdentity(image.Config.Labels,"dsh").revision!==preparedRevision)throw new Error("Prepared image provenance mismatch");
   const candidateEnv={...env,REF_DSH_IMAGE_TAG:tag};
   for(const k of ["REF_DSH_RUNTIME_DATABASE","REF_DSH_RUNTIME_USER","REF_DSH_RUNTIME_PASSWORD"])delete candidateEnv[k];
-  const config=JSON.parse(docker([...composeArgs(files),"config","--format","json"],candidateEnv));
+  const config=JSON.parse(docker([...composeArgs(),"config","--format","json"],candidateEnv));
   const target=config.services.dsh.environment;
   if(target.REF_POSTGRES_DB!==db || target.REF_POSTGRES_USER!==runtime ||
     !/^[a-f0-9]{64}$/.test(target.REF_POSTGRES_PASSWORD||"") || target.DSH_DB_SCHEMA!==schema)
@@ -421,12 +419,12 @@ function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
   checkParity(); verifyEmptyNewTables();
   if(sql(oldDb,legacyOwnerAccessSql())!=="0" || sql("postgres","BEGIN READ ONLY; SELECT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="f")
     throw new Error("DSH cross-owner access not excluded");
-  const proof=docker([...composeArgs(files),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
+  const proof=docker([...composeArgs(),"run","--rm","--no-deps","--pull","never","dsh","-mode=verify-development-db"],candidateEnv,45000);
   if(!proof.includes("DSH_DEVELOPMENT_DATABASE_PASS"))throw new Error("Prepared DSH runtime login proof failed");
   const beforeFull=sql(db,full);
   const oldHashes=currentHashes(state,["dsh","identity"]);
-  assertSameHashes(oldHashes,configHashes(files,["dsh","identity"],env));
-  const newHashes=configHashes(files,["dsh","identity"],candidateEnv);
+  assertSameHashes(oldHashes,configHashes(["dsh","identity"],env));
+  const newHashes=configHashes(["dsh","identity"],candidateEnv);
   if(newHashes.identity!==oldHashes.identity || newHashes.dsh===oldHashes.dsh)throw new Error("Unexpected peer configuration change");
   const unchanged=()=>{
     if(git(["rev-parse","HEAD"])!==head || dirty() ||
@@ -445,7 +443,7 @@ function cutoverPreparedDsh(state, env, head, files, preparedRevision) {
     noWriters(); checkParity(); verifyEmptyNewTables(); unchanged();
     if(sql(db,full)!==beforeFull)throw new Error("Prepared DSH candidate changed before handoff");
     applyStarted=true;
-    docker([...composeArgs(files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60","dsh"],candidateEnv,95000);
+    docker([...composeArgs(),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60","dsh"],candidateEnv,95000);
     const now=inspect("dsh");
     const nowEnv=asEnv(now.Config.Env);
     if(now.Image!==image.Id || now.Config.Labels["com.docker.compose.config-hash"]!==newHashes.dsh ||
@@ -509,7 +507,7 @@ export function normalizeIdentitySchemaDump(dump) {
   const restored="    CONSTRAINT operator_permission_commands_reason_check CHECK (((char_length(reason) >= 10) AND (char_length(reason) <= 500) AND (reason = btrim(reason)) AND (POSITION((chr(10)) IN (reason)) = 0) AND (POSITION((chr(13)) IN (reason)) = 0))),";
   return dump.split(/\r?\n/).filter(line=>!/^\\(?:un)?restrict /.test(line)).map(line=>line===original?restored:line).join("\n").trim();
 }
-function relocateIdentity(state,env,head,files,resume=false) {
+function relocateIdentity(state,env,head,resume=false) {
   const scope=[...guardedScope,"tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/dev.ps1","AGENTS.md","REPOSITORY-STRUCTURE.md","governance/engineering.md"];
   const clean=()=>git(["rev-parse","HEAD"])===head && !dirtyPaths(root,scope).length;
   if(!clean())throw new Error("Identity relocation requires a committed stable source");
@@ -549,8 +547,8 @@ function relocateIdentity(state,env,head,files,resume=false) {
   if(sourceIdentity(image.Config.Labels,"identity").revision!==head || !clean())throw new Error("Identity candidate source advanced");
   const targetEnv={...env,REF_IDENTITY_IMAGE_TAG:tag,REF_IDENTITY_RUNTIME_DATABASE_URL:newUrl};
   const oldHashes=currentHashes(state,["dsh","identity"]);
-  assertSameHashes(oldHashes,configHashes(files,["dsh","identity"],env));
-  const targetHashes=configHashes(files,["dsh","identity"],targetEnv);
+  assertSameHashes(oldHashes,configHashes(["dsh","identity"],env));
+  const targetHashes=configHashes(["dsh","identity"],targetEnv);
   if(targetHashes.dsh!==oldHashes.dsh || targetHashes.identity===oldHashes.identity)throw new Error("Unexpected Identity peer configuration change");
   // This is an additive, empty DB only. Preserve the legacy database and grants.
   if(!resume){
@@ -593,7 +591,7 @@ function relocateIdentity(state,env,head,files,resume=false) {
     if(sql(db,identityEffectiveAclSql(schema,runtime))!==access || sql(oldDb,legacyOwnerAccessSql(runtime))!=="0" ||
        sql("postgres","BEGIN READ ONLY; SELECT NOT has_database_privilege('"+runtime+"','bthwani_dsh_dev','CONNECT') AND NOT has_database_privilege('"+runtime+"','bthwani_wlt_test','CONNECT'); COMMIT;")!=="t")
       throw new Error("Identity least-privilege parity or cross-owner isolation failed");
-    if(!docker([...composeArgs(files),"run","--rm","--no-deps","--pull","never","identity","verify-development-db"],targetEnv,45000).includes("IDENTITY_DEVELOPMENT_DATABASE_PASS"))throw new Error("Identity runtime login proof failed");
+    if(!docker([...composeArgs(),"run","--rm","--no-deps","--pull","never","identity","verify-development-db"],targetEnv,45000).includes("IDENTITY_DEVELOPMENT_DATABASE_PASS"))throw new Error("Identity runtime login proof failed");
     noWriters();
     assertHandoffParity(before,sql(oldDb,fp),tables.length+sequences.length);
     assertHandoffParity(before,sql(db,fp),tables.length+sequences.length);
@@ -602,7 +600,7 @@ function relocateIdentity(state,env,head,files,resume=false) {
       throw new Error("Identity source, peers or local configuration advanced");
     appendOwnerEnv(envPath,original,"\nREF_IDENTITY_RUNTIME_DATABASE_URL="+newUrl+"\n");
     applyStarted=true;
-    docker([...composeArgs(files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60","identity"],targetEnv,95000);
+    docker([...composeArgs(),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60","identity"],targetEnv,95000);
     const now=inspect("identity");
     if(now.Image!==image.Id || now.Config.Labels["com.docker.compose.config-hash"]!==targetHashes.identity ||
        asEnv(now.Config.Env).IDENTITY_TEST_DATABASE_URL!==newUrl || inspect("dsh").Id!==state.dsh.Id || inspect("wlt").Id!==state.wlt.Id ||
@@ -622,7 +620,7 @@ function relocateIdentity(state,env,head,files,resume=false) {
   }
 }
 
-function rebaseAndApply(owner,state,env,head,files,tag,targetId,ensureSource,wltConfigTransition=null) {
+function rebaseAndApply(owner,state,env,head,tag,targetId,ensureSource,wltConfigTransition=null) {
   const old=state[owner], live=asEnv(old.Config.Env);
   const schema=owner==="dsh"?live.DSH_DB_SCHEMA:owner==="identity"?live.IDENTITY_DB_SCHEMA:"wlt";
   const archive="bthwani_recovery_"+owner+"_"+randomBytes(6).toString("hex");
@@ -643,11 +641,11 @@ function rebaseAndApply(owner,state,env,head,files,tag,targetId,ensureSource,wlt
   const groupNames=owner==="wlt"?["wlt"]:["dsh","identity"];
   if (owner === "wlt" && wltConfigTransition) {
     assertSameHashes(currentHashes(state,groupNames),historicalWltHashes(wltConfigTransition.previous,env));
-    assertSameHashes(wltConfigTransition.desired,configHashes(files,groupNames,env));
+    assertSameHashes(wltConfigTransition.desired,configHashes(groupNames,env));
   } else {
-    assertSameHashes(currentHashes(state,groupNames),configHashes(files,groupNames,env));
+    assertSameHashes(currentHashes(state,groupNames),configHashes(groupNames,env));
   }
-  const hashes=configHashes(files,groupNames,candidateEnv);
+  const hashes=configHashes(groupNames,candidateEnv);
   if(groupNames.some(o=>o!==owner&&hashes[o]!==currentHashes(state,[o])[o]))throw new Error("Schema transition changes peer configuration");
   ensureSource();
   if(Object.keys(owners).some(o=>inspect(o).Id!==state[o].Id)||imageRecord(owners[owner].image+":"+tag).Id!==targetId||imageRecord(old.Config.Image).Id!==old.Image)
@@ -669,7 +667,7 @@ function rebaseAndApply(owner,state,env,head,files,tag,targetId,ensureSource,wlt
     // source check will schedule its successor. Never roll back image-only.
     if(imageRecord(owners[owner].image+":"+tag).Id!==targetId)throw new Error("Candidate image tag changed");
     applyStarted=true;
-    docker([...composeArgs(files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",owner],candidateEnv,95000);
+    docker([...composeArgs(),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",owner],candidateEnv,95000);
     const now=inspect(owner);
     if(now.Image!==targetId||ownerRevision({[owner]:now},owner).revision!==head||now.Config.Labels["com.docker.compose.config-hash"]!==hashes[owner]||Object.keys(owners).some(o=>o!==owner&&inspect(o).Id!==state[o].Id))
       throw new Error("Owner schema/image readback mismatch");
@@ -764,14 +762,13 @@ function main() {
     recovery={stateFile,receiptFile,reviewed,key:options[0]};
   }
   const state = Object.fromEntries(Object.keys(owners).map(o => [o, inspect(o)]));
-  const activeAppFiles=appFiles;
   const captain=asEnv(state.identity.Config.Env).IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION==="true";
   const allowedLegacyApp=captain?[...legacyAppFiles,legacyCaptainFile]:legacyAppFiles;
   for(const owner of ["dsh","identity"]){
     const files=liveFiles(state[owner]);
-    if(!equal(files,appFiles)&&!equal(files,allowedLegacyApp))throw new Error("Unexpected historical Compose layout: "+owner);
+    if(!equal(files,canonicalComposeFiles)&&!equal(files,allowedLegacyApp))throw new Error("Unexpected historical Compose layout: "+owner);
   }
-  if(!equal(liveFiles(state.wlt),appFiles)&&!equal(liveFiles(state.wlt),legacyWltFiles))throw new Error("Unexpected historical WLT Compose layout");
+  if(!equal(liveFiles(state.wlt),canonicalComposeFiles)&&!equal(liveFiles(state.wlt),legacyWltFiles))throw new Error("Unexpected historical WLT Compose layout");
   // A legacy disabled layout never gets new trust mounts or routes automatically.
   // Existing exact hash checks below require a compatible explicit transition.
   const env = {};
@@ -815,12 +812,12 @@ function main() {
     env[key] = identityEnv[name];
   }
   const appNames = ["dsh","identity"];
-  const groups = [{ names: appNames, files: activeAppFiles },{names:["wlt"],files:wltFiles}];
+  const groups = [{ names: appNames },{names:["wlt"]}];
   let wltConfigDrift=false;
   let dshConfigTransition=null;
   for (const group of groups) {
     const expected=currentHashes(state,group.names);
-    const actual=configHashes(group.files,group.names,env);
+    const actual=configHashes(group.names,env);
     if(group.names===appNames && differingKeys(expected,actual).length &&
        ["--check","--apply"].includes(mode) && !prepare &&
        !Object.hasOwn(process.env,"BTHWANI_RUNTIME_ATTEMPT_KEY") && !Object.hasOwn(process.env,"BTHWANI_RUNTIME_ATTEMPT_ID") &&
@@ -835,8 +832,8 @@ function main() {
       const disabledHandlerProven=[old.revision,head].every(revision=>/if os\.Getenv\("DSH_ENABLE_ISOLATED_EMPLOYEES"\) != "true" \{\s*return existing, nil\s*\}/.test(git(["show",revision+":services/dsh/backend/cmd/dsh/employees.go"])));
       if(previous && !old.digest && !peer.digest && admittedDshConfigTransition({
         mode,automatic:false,clean:true,schemaChanged,disabledHandlerProven,oldFlagPresent:Object.hasOwn(dshEnv,"DSH_ENABLE_ISOLATED_EMPLOYEES"),
-        previous,current,live:expected,historical:historicalDshHashes(group.files,group.names,env,previous),
-        desired:actual,disabled:configHashes(group.files,group.names,{...env,REF_DSH_ENABLE_ISOLATED_EMPLOYEES:"false"})
+        previous,current,live:expected,historical:historicalDshHashes(group.names,env,previous),
+        desired:actual,disabled:configHashes(group.names,{...env,REF_DSH_ENABLE_ISOLATED_EMPLOYEES:"false"})
       })) {
         dshConfigTransition={previous,desired:actual};
         env.REF_DSH_ENABLE_ISOLATED_EMPLOYEES="false";
@@ -846,9 +843,9 @@ function main() {
     }
     if(wltConfigReviewRequired(expected,actual,mode)) wltConfigDrift=true;
   }
-  if(mode==="--prepare-dsh-database" || mode==="--resume-dsh-database"){prepareDedicatedDsh(state,env,head,activeAppFiles,mode==="--resume-dsh-database");return;}
-  if(cutover){if(options.length!==1)throw new Error("Expected prepared source SHA");cutoverPreparedDsh(state,env,head,activeAppFiles,options[0]);return;}
-  if(mode==="--relocate-identity-database" || mode==="--resume-identity-database"){relocateIdentity(state,env,head,activeAppFiles,mode==="--resume-identity-database");return;}
+  if(mode==="--prepare-dsh-database" || mode==="--resume-dsh-database"){prepareDedicatedDsh(state,env,head,mode==="--resume-dsh-database");return;}
+  if(cutover){if(options.length!==1)throw new Error("Expected prepared source SHA");cutoverPreparedDsh(state,env,head,options[0]);return;}
+  if(mode==="--relocate-identity-database" || mode==="--resume-identity-database"){relocateIdentity(state,env,head,mode==="--resume-identity-database");return;}
   const revisions=Object.fromEntries(Object.keys(owners).map(o=>[o,ownerRevision(state,o)]));
   const committed={};
   for(const o of Object.keys(owners)){
@@ -867,7 +864,7 @@ function main() {
     const previous=previousOwnerCompose(revisions.wlt.revision,"wlt","WLT_TEST_DSH_ORIGIN",desired);
     if (previous && isAdmittedWltOriginAddition(previous,desired) &&
         !differingKeys(currentHashes(state,["wlt"]),historicalWltHashes(previous,env)).length) {
-      wltConfigTransition={previous,desired:configHashes(wltFiles,["wlt"],env)};
+      wltConfigTransition={previous,desired:configHashes(["wlt"],env)};
       wltConfigDrift=false;
       console.log("WLT_CONFIG_TRANSITION_ELIGIBLE exact_prior_hash=yes baseline_proof=required");
     }
@@ -1009,21 +1006,20 @@ function main() {
   const schemaSelected=selected.filter(o=>schemaReady.includes(o));
   for(const o of ["identity","dsh","wlt"].filter(o=>schemaSelected.includes(o))){
     ensureSource();
-    rebaseAndApply(o,state,env,head,o==="wlt"?wltFiles:activeAppFiles,tags[o],targetIds[o],ensureSource,o==="wlt"?wltConfigTransition:null);
+    rebaseAndApply(o,state,env,head,tags[o],targetIds[o],ensureSource,o==="wlt"?wltConfigTransition:null);
   }
   for (const group of groups) {
     const names=group.names.filter(o=>selected.includes(o)&&!schemaSelected.includes(o));
     if(!names.length) continue;
     if(wltConfigTransition && names.includes("wlt")) throw new Error("WLT configuration transition requires successful baseline proof");
-    const newFiles=group.files;
     ensureSource();
     for(const o of names) if(imageRecord(owners[o].image+":"+tags[o]).Id!==targetIds[o])throw new Error("Candidate image tag changed: "+o);
     const transition=group.names===appNames ? dshConfigTransition : null;
     const verifyPriorConfig=()=>{
       if(transition){
-        assertSameHashes(currentHashes(state,group.names),historicalDshHashes(group.files,group.names,env,transition.previous));
-        assertSameHashes(transition.desired,configHashes(group.files,group.names,env));
-      }else assertSameHashes(currentHashes(state,group.names),configHashes(group.files,group.names,env));
+        assertSameHashes(currentHashes(state,group.names),historicalDshHashes(group.names,env,transition.previous));
+        assertSameHashes(transition.desired,configHashes(group.names,env));
+      }else assertSameHashes(currentHashes(state,group.names),configHashes(group.names,env));
     };
     verifyPriorConfig();
     const verifyUnselectedPeers=()=>{
@@ -1035,12 +1031,12 @@ function main() {
       }
     };
     verifyUnselectedPeers();
-    const newHashes=configHashes(newFiles,group.names,nextEnv);
+    const newHashes=configHashes(group.names,nextEnv);
     if(transition && group.names.some(o=>!names.includes(o)&&newHashes[o]!==currentHashes(state,[o])[o]))
       throw new Error("DSH configuration transition changes an unselected peer");
     try {
       console.log("OWNER_APPLY_STARTED "+names.join(","));
-      docker([...composeArgs(newFiles),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",...names],nextEnv,95000);
+      docker([...composeArgs(),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",...names],nextEnv,95000);
       for (const o of names) {
         const now=inspect(o);
         const source=ownerRevision({[o]:now},o);
@@ -1073,7 +1069,7 @@ function main() {
       // binary with the already-proven default-off addition. Both binaries
       // require the value "true" to enable employees; false preserves denial.
       const rollbackHashes=transition?transition.desired:currentHashes(state,group.names);
-      docker([...composeArgs(group.files),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",...names],env,95000);
+      docker([...composeArgs(),"up","-d","--no-deps","--no-build","--pull","never","--wait","--wait-timeout","60",...names],env,95000);
       for(const o of names){
         const now=inspect(o);
         if(now.Image!==state[o].Image||now.Config.Labels["com.docker.compose.config-hash"]!==rollbackHashes[o]) throw new Error("ROLLBACK_READBACK_FAILED "+o);

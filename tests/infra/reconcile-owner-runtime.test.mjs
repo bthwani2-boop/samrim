@@ -282,6 +282,20 @@ test("one owner-image builder replaces the three duplicated scripts", async () =
   }
 });
 
+test("every owner operation uses one canonical Compose input and the same explicit runtime profiles", async () => {
+  const { composeArgs } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const { fileURLToPath } = await import("node:url");
+  const args = composeArgs();
+  const composeFile = fileURLToPath(new URL("../../infra/compose.yaml", import.meta.url));
+  assert.deepEqual(args, [
+    "compose", "--project-directory", fileURLToPath(new URL("../../infra", import.meta.url)),
+    "--env-file", "infra/.env", "-f", composeFile,
+    "--profile", "implementation", "--profile", "identity-verifier", "--profile", "wlt-reader",
+  ]);
+  assert.deepEqual(composeArgs(), args);
+  assert.equal(args.filter(arg => arg === "-f").length, 1);
+});
+
 test("Compose provenance accepts exact old or current names only within the canonical checkout", async () => {
   const { composeFileNames } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
   const root = "D:/samrim";
