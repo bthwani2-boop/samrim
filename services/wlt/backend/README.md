@@ -45,9 +45,9 @@ The new `tools/dev/provision-wlt-test-db.ps1` is an additive, explicit, one-time
 development-only provisioner. It refuses an existing WLT database, roles or
 credential entry, requires the verified refoundation PostgreSQL container, and
 creates `bthwani_wlt_test` plus no-login owner/sandbox roles and a unique
-read-only reader credential in the Git-ignored `infra/.env`. It applies the current three domain baseline files from `database/schema/` and
+read-only reader credential in the Git-ignored `infra/.env`. It applies the ordered current domain baseline files from `database/schema/` and
 synthetic funding commands from `database/sandbox/` only to a NEW empty
-isolated database; it verifies journal emptiness, SELECT grants and write-denial.
+isolated database in one transaction; it verifies journal emptiness, SELECT grants and write-denial before atomic credential publication. The existing disposable proof exercises the same provisioner, including rollback, replay refusal and competing environment edits.
 The five historical files were retired after isolated catalog equivalence,
 owner-backed HTTP, immutable journal, concurrency, privilege and restore tests.
 Never replay the baseline over an existing database. It never runs as

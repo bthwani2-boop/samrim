@@ -59,7 +59,7 @@ Dockerfile. The existing owner databases used by Identity/DSH are
 using `pwsh -NoProfile -File tools/dev/provision-wlt-test-db.ps1` only after
 confirming it and its three WLT roles do not already exist. That operation
 creates a new isolated database plus its own read-only runtime credentials
-inside ignored `infra/.env`. It must never be run automatically with Compose.
+inside ignored `infra/.env`. The complete baseline and reader admission commit together. The private credential candidate is published atomically only after durable SQL readback; an interrupted operation retains the candidate for explicit owner review, never blind replay. It must never be run automatically with Compose.
 
 After a source commit, build via
 `pnpm dev docker build wlt`, and configure with

@@ -165,7 +165,7 @@ function buildOwnerImage(owner, head, tag, service = resolve(root,"services",own
   return image;
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services",...ownerComposeInputs,"tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version"];
+const guardedScope = ["services",...ownerComposeInputs,"tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -203,7 +203,7 @@ export function verifyBaselineProofOutput(output) {
     if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
   }
 }
-const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","services/dsh/backend/internal/dbscope","services/dsh/backend/go.mod","services/dsh/backend/go.sum","tests/infra/verify-isolated-postgres.ps1","tools/dev/check-go.mjs",".go-version","tools/dev/docker/owner-baseline-transition.mjs","infra/compose.yaml"];
+const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","services/dsh/backend/internal/dbscope","services/dsh/backend/go.mod","services/dsh/backend/go.sum","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",".go-version","tools/dev/docker/owner-baseline-transition.mjs","infra/compose.yaml"];
 function rebaseAndApply(owner,state,env,head,tag,targetId,ensureSource) {
   const old=state[owner], live=asEnv(old.Config.Env);
   const schema=assertOwnerDatabase(owner,live).schema;

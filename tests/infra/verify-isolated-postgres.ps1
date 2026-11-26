@@ -235,52 +235,51 @@ THEN 'PASS' ELSE 'FAIL' END;
   if ($LASTEXITCODE -ne 0 -or $identityCheck -cne 'PASS') { throw 'Identity baseline object or canonical permission readback failed' }
   Write-Output "PG_FRESH_IDENTITY_BASELINE=PASS count=$($identityFiles.Count) tables=15 canonical-merchant-only=yes"
 
-  foreach ($role in @('bthwani_wlt_owner NOLOGIN', 'bthwani_wlt_reader LOGIN', 'bthwani_wlt_sandbox LOGIN')) {
-    $null = & docker --context $DockerContext exec $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d postgres -c "CREATE ROLE $role"
-    if ($LASTEXITCODE -ne 0) { throw 'WLT disposable role bootstrap failed' }
-  }
+  # Exercise the exact provisioner in the existing network-none tmpfs fixture.
+  . (Join-Path $root 'tools/dev/provision-wlt-test-db.ps1') -DockerContext $DockerContext
   $wltDb = 'bthwani_wlt_test'
-  $null = & docker --context $DockerContext exec $containerId createdb -U $user -O bthwani_wlt_owner $wltDb
-  if ($LASTEXITCODE -ne 0) { throw 'WLT disposable database bootstrap failed' }
-  $wltSchemaFiles = @(Get-ChildItem (Join-Path $root 'services/wlt/database/schema') -Filter '*.sql' -File | Sort-Object Name)
-  $wltSandboxFiles = @(Get-ChildItem (Join-Path $root 'services/wlt/database/sandbox') -Filter '*.sql' -File | Sort-Object Name)
-  if ($wltSchemaFiles.Count -lt 3 -or $wltSandboxFiles.Count -lt 2) { throw 'WLT baseline or sandbox source incomplete' }
-  foreach ($file in $wltSchemaFiles) {
-    $sql = "SET ROLE bthwani_wlt_owner;`n" + [IO.File]::ReadAllText($file.FullName)
-    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $wltDb -f - 2>&1
-    if ($LASTEXITCODE -ne 0) { throw ('Fresh WLT core schema failed: ' + $file.Name + ' ' + ($output | Out-String)) }
-  }
-  $sandboxAbsent = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c @"
-SELECT CASE WHEN
-  to_regprocedure('wlt.post_sandbox_customer_funding(text,text,bigint)') IS NULL
-  AND to_regprocedure('wlt.reverse_sandbox_customer_funding(text,text)') IS NULL
-  AND NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='customer_funding_reversal_provider')
-THEN 'PASS' ELSE 'FAIL' END;
-"@ | Out-String).Trim()
-  if ($LASTEXITCODE -ne 0 -or $sandboxAbsent -cne 'PASS') { throw 'WLT core schema unexpectedly exposes synthetic financial commands' }
-  foreach ($file in $wltSandboxFiles) {
-    $sql = "SET ROLE bthwani_wlt_owner;`n" + [IO.File]::ReadAllText($file.FullName)
-    $output = $sql | & docker --context $DockerContext exec -i $containerId psql -X -q -v ON_ERROR_STOP=1 -U $user -d $wltDb -f - 2>&1
-    if ($LASTEXITCODE -ne 0) { throw ('Fresh WLT sandbox schema failed: ' + $file.Name + ' ' + ($output | Out-String)) }
-  }
-  $wltPrivileges = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c @"
-SELECT CASE WHEN
-  (SELECT count(*) FROM wlt.customer_funding_journal) = 0
-  AND has_table_privilege('bthwani_wlt_reader','wlt.customer_wallet_balances','SELECT')
-  AND has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_history','SELECT')
-  AND has_table_privilege('bthwani_wlt_reader','wlt.customer_wallet_availability','SELECT')
-  AND has_table_privilege('bthwani_wlt_reader','wlt.latest_commercial_agreement_reviews','SELECT')
-  AND has_table_privilege('bthwani_wlt_reader','wlt.customer_order_payment_readback','SELECT')
-  AND NOT has_any_column_privilege('bthwani_wlt_reader','wlt.order_payment_allocations','SELECT,INSERT,UPDATE')
-  AND NOT has_any_column_privilege('bthwani_wlt_reader','wlt.order_payment_releases','SELECT,INSERT,UPDATE')
-  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint)','EXECUTE')
-  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.release_order_payment(text,text,text,text)','EXECUTE')
-  AND NOT has_any_column_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT')
-  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE')
-  AND NOT has_function_privilege('bthwani_wlt_reader','wlt.reverse_sandbox_customer_funding(text,text)','EXECUTE')
-THEN 'PASS' ELSE 'FAIL' END;
-"@ | Out-String).Trim()
-  if ($LASTEXITCODE -ne 0 -or $wltPrivileges -cne 'PASS') { throw 'WLT baseline grants, owner or empty journal readback failed' }
+  $wltSources = Read-WltSources $root
+  $fixtureSecret = 'a' * 64
+  $broken = @{schema=$wltSources.schema; sandbox=@($wltSources.sandbox)+@('SELECT 1/0;')}
+  $refused = $false
+  try { $null = Initialize-WltDatabase $DockerContext $containerId $user $broken $fixtureSecret }
+  catch { if ($_.Exception.Message -ne 'WLT_SQL_FAILED stage=baseline-transaction') { throw }; $refused = $true }
+  if (!$refused) { throw 'WLT failing baseline unexpectedly committed' }
+  $rollback = Invoke-WltSql $DockerContext $containerId $user $wltDb "SELECT CASE WHEN to_regnamespace('wlt') IS NULL AND NOT has_database_privilege('bthwani_wlt_reader',current_database(),'CONNECT') THEN 'PASS' ELSE 'FAIL' END;" 'rollback-proof'
+  if ($rollback -cne 'PASS') { throw 'WLT failed baseline retained schema or reader access' }
+  # Reset only the namespace created above within this exact disposable fixture.
+  $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'DROP DATABASE bthwani_wlt_test;' 'fixture-cleanup'
+  $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'DROP ROLE bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_wlt_owner;' 'fixture-cleanup'
+  $wltProvision = Initialize-WltDatabase $DockerContext $containerId $user $wltSources $fixtureSecret
+  $refused = $false
+  try { $null = Initialize-WltDatabase $DockerContext $containerId $user $wltSources $fixtureSecret }
+  catch { if ($_.Exception.Message -ne 'WLT_EXISTING_NAMESPACE_OR_ADMIN') { throw }; $refused = $true }
+  if (!$refused) { throw 'WLT existing namespace replay admitted' }
+
+  $envFixture = Join-Path ([IO.Path]::GetTempPath()) ('bthwani-wlt-env-proof-'+[guid]::NewGuid().ToString('N'))
+  [IO.Directory]::CreateDirectory($envFixture) | Out-Null
+  try {
+    $envFile = Join-Path $envFixture '.env'
+    $original = @('REF_POSTGRES_DB=bthwani_refoundation','REF_POSTGRES_USER=synthetic_admin','') -join [Environment]::NewLine
+    [IO.File]::WriteAllText($envFile,$original)
+    $configuration = Read-WltEnvironment $envFile
+    $staged = New-WltCandidate $envFile $configuration.Text $fixtureSecret
+    $competing = $original+'REF_MEDIA_BUCKET=other'+[Environment]::NewLine
+    [IO.File]::WriteAllText($envFile,$competing)
+    $refused = $false
+    try { Publish-WltCandidate $envFile $original $staged }
+    catch { if ($_.Exception.Message -ne 'WLT_ENV_CHANGED') { throw }; $refused = $true }
+    if (!$refused -or [IO.File]::ReadAllText($envFile) -cne $competing -or ![IO.File]::Exists($staged.Path)) { throw 'WLT competing edit not preserved' }
+    [IO.File]::WriteAllText($envFile,$original)
+    Publish-WltCandidate $envFile $original $staged
+    if ([IO.File]::ReadAllText($envFile) -cne $staged.Text -or [IO.Directory]::Exists($staged.Directory)) { throw 'WLT atomic publication proof failed' }
+    $refused = $false
+    try { $null = Read-WltEnvironment $envFile } catch { if ($_.Exception.Message -ne 'WLT_EXISTING_CREDENTIAL') { throw }; $refused = $true }
+    if (!$refused) { throw 'WLT existing credential replay admitted' }
+  } finally { Remove-Item -LiteralPath $envFixture -Recurse -Force }
+  Write-Output 'PG_WLT_PROVISIONER=PASS transaction-rollback=yes fresh-only=yes credential-publication=yes competing-edit-denied=yes'
+  # Sandbox login is only enabled inside this disposable test for posting proof.
+  $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'ALTER ROLE bthwani_wlt_sandbox LOGIN; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_sandbox;' 'fixture-sandbox'
   $denied = & docker --context $DockerContext exec $containerId psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U bthwani_wlt_reader -d $wltDb -c 'SELECT provider_reference FROM wlt.customer_funding_journal' 2>&1
   if ($LASTEXITCODE -eq 0 -or ($denied | Out-String) -notmatch '42501') { throw 'WLT private ledger reader denial not proven' }
   $reference = 'fresh-baseline-001'
@@ -295,7 +294,7 @@ THEN 'PASS' ELSE 'FAIL' END;
   if ($LASTEXITCODE -ne 0 -or $reversalReplay -cne 'REPLAYED') { throw 'WLT sandbox reversal replay failed' }
   $moneyReadback = (& docker --context $DockerContext exec $containerId psql -X -At -v ON_ERROR_STOP=1 -U $user -d $wltDb -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries WHERE actor_id='$testCustomer'" | Out-String).Trim()
   if ($LASTEXITCODE -ne 0 -or $moneyReadback -cne '4:0') { throw 'WLT double-entry balance or idempotency readback failed' }
-  Write-Output "PG_FRESH_WLT_BASELINE=PASS schema=$($wltSchemaFiles.Count) sandbox=$($wltSandboxFiles.Count) privilege-isolation=yes posting-replay=yes reversal-replay=yes entries=4 net=0"
+  Write-Output "PG_FRESH_WLT_BASELINE=PASS schema=$($wltProvision.SchemaCount) sandbox=$($wltProvision.SandboxCount) privilege-isolation=yes posting-replay=yes reversal-replay=yes entries=4 net=0"
   # Execute the exact transaction builder consumed by the owner reconciler,
   # against only the disposable container. No live database is involved.
   function Invoke-BaselineTransition([string]$Owner,[string]$Database,[string]$Schema,[string]$Archive,[bool]$ExpectPass=$true,[string]$ExpectedError='') {
@@ -349,7 +348,7 @@ GRANT UPDATE(revoked_at) ON $identitySchema.auth_sessions TO bthwani_identity_ru
 
   # The live WLT sandbox role is intentionally NOLOGIN. Match that boundary
   # after the preceding fixture-only posting/reversal tests have completed.
-  $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_sandbox NOLOGIN; REVOKE ALL ON DATABASE bthwani_wlt_test FROM PUBLIC; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader;'
+  $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_sandbox NOLOGIN; REVOKE CONNECT ON DATABASE bthwani_wlt_test FROM bthwani_wlt_sandbox; REVOKE ALL ON DATABASE bthwani_wlt_test FROM PUBLIC; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader;'
   Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000001'
   $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND (SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id='$testCustomer')=0 AND NOT has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT') AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE') AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000001','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
   if ($proof -cne 'PASS') { throw 'WLT baseline transition ledger or reader boundary failed' }
