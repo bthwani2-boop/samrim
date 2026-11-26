@@ -1,20 +1,46 @@
 package storeavailability
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"time"
 )
 
-// PublicScheduleSQL is a shared projection over the canonical Store schedule.
-// The enclosing query binds s=stores and c=service_cities and verifies visibility.
-// A schedule that is open does not authorize fulfillment or payment.
-const PublicScheduleSQL = `(SELECT CASE
+// PublicStoresWithScheduleSQL is the single static owner projection used by
+// Store discovery and checkout. Selectors are bound; no SQL is composed at
+// runtime. A schedule that is open does not authorize fulfillment or payment.
+const PublicStoresWithScheduleSQL = `SELECT s.id,s.name,s.city_id,s.vertical_id,
+ (SELECT CASE
  WHEN a.paused_until > transaction_timestamp() THEN jsonb_build_object('version',a.version,'paused',true)
  WHEN a.preparation_minutes IS NOT NULL AND a.store_timezone=c.timezone_name THEN
  jsonb_build_object('version',a.version,'timezone',a.store_timezone,'weekly',COALESCE(
  (SELECT jsonb_agg(jsonb_build_object('weekday',h.weekday,'opens',h.opens_minute,'closes',h.closes_minute))
  FROM store_operational_weekly_hours h WHERE h.store_id=a.store_id),'[]'::jsonb))
- END FROM store_operational_availability a WHERE a.store_id=s.id)`
+ END FROM store_operational_availability a WHERE a.store_id=s.id),
+ transaction_timestamp()
+ FROM stores s
+ JOIN service_cities c ON c.id=s.city_id
+ JOIN verticals v ON v.id=s.vertical_id
+ WHERE s.published AND c.active AND v.active
+   AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
+     AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
+     AND ($5='' OR s.vertical_id=$5)))
+ ORDER BY s.id LIMIT $6`
+
+// ReadCustomerSchedule selects one visible Store in the caller's existing
+// repeatable-read owner transaction; it never opens a second snapshot.
+func ReadCustomerSchedule(ctx context.Context, tx *sql.Tx, storeID string) (CustomerScheduleEvidence, error) {
+	var id, name, cityID, verticalID string
+	var raw []byte
+	var now time.Time
+	err := tx.QueryRowContext(ctx, PublicStoresWithScheduleSQL, storeID, "", "", "", "", 1).
+		Scan(&id, &name, &cityID, &verticalID, &raw, &now)
+	if err != nil {
+		return CustomerScheduleEvidence{}, err
+	}
+	return EvaluateCustomerSchedule(now, raw), nil
+}
 
 type CustomerScheduleEvidence struct {
 	Status  string `json:"status"`

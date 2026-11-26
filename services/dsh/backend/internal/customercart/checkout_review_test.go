@@ -121,6 +121,19 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if err := json.Unmarshal(body, &review); err != nil || review.StoreSchedule.Status != "PAUSED" || review.StoreSchedule.Version != 1 || review.CheckoutReady {
 		t.Fatalf("pause must be read from owner: %s %v", body, err)
 	}
+	// A Store cannot remain orderable after its vertical is disabled. The
+	// shared schedule query must preserve the cart's fail-closed boundary.
+	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".verticals SET active=false WHERE id='grocery'"); err != nil {
+		t.Fatal(err)
+	}
+	status, body = checkoutReviewRequest(t, h, "customer-a", pickup)
+	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".verticals SET active=true WHERE id='grocery'"); err != nil {
+		t.Fatal(err)
+	}
+	assertCartStatus(t, status, 409, body)
+	if !strings.Contains(string(body), "CART_LINE_UNAVAILABLE") {
+		t.Fatalf("disabled vertical did not fail closed: %s", body)
+	}
 	delivery := map[string]any{"expectedCartVersion": 1, "recipientPurpose": "OTHER", "fulfillmentMode": "BTHWANI_CAPTAIN", "addressId": addressID, "expectedAddressVersion": 2, "recipientName": "Synthetic recipient", "recipientPhone": "+967700000001"}
 	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
 	assertCartStatus(t, status, 200, body)

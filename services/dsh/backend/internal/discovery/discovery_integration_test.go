@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -152,6 +153,28 @@ func TestOwnerBackedPublicStoreOperationalStatus(t *testing.T) {
 	if len(items) != 1 || items[0].(map[string]any)["orderabilityStatus"] != "PAUSED" ||
 		items[0].(map[string]any)["orderingAvailable"] != false {
 		t.Fatalf("listing lost active pause: %s", w.Body.String())
+	}
+	cursor, ok := page["nextCursor"].(string)
+	if !ok || cursor == "" {
+		t.Fatal("schedule-enabled listing lost pagination cursor")
+	}
+	w, page = request(server, "/v1/public/stores?city_id=sanaa&limit=1&cursor="+url.QueryEscape(cursor))
+	if w.Code != 200 {
+		t.Fatalf("schedule-enabled continuation failed: %d %s", w.Code, w.Body.String())
+	}
+	items = results(t, page)
+	if len(items) != 1 || items[0].(map[string]any)["id"] != "market-sanaa-paused" ||
+		items[0].(map[string]any)["orderingAvailable"] != false {
+		t.Fatalf("schedule-enabled continuation crossed Store scope: %s", w.Body.String())
+	}
+	for _, query := range []string{"q=" + url.QueryEscape("' OR true --"), "vertical_id=disabled-vertical"} {
+		w, page = request(server, "/v1/public/stores?city_id=sanaa&"+query)
+		if w.Code != 200 || len(results(t, page)) != 0 {
+			t.Fatalf("schedule-enabled selector crossed publication boundary: %d %s", w.Code, w.Body.String())
+		}
+	}
+	if w, _ = request(server, "/v1/public/stores/disabled-vertical-store"); w.Code != 404 {
+		t.Fatalf("schedule-enabled direct link leaked disabled vertical: %d %s", w.Code, w.Body.String())
 	}
 	for _, example := range []struct{ store, status string }{
 		{"direct-sanaa", "CLOSED_BY_SCHEDULE"},

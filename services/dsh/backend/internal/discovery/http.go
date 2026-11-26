@@ -41,16 +41,7 @@ type publicStoreSelection struct {
 func (s *Server) queryPublicStores(ctx context.Context, tx *sql.Tx, selection publicStoreSelection) (*sql.Rows, error) {
 	args := []any{selection.id, selection.city, selection.after, selection.search, selection.vertical, selection.limit}
 	if s.StoreAvailabilityEnabled {
-		return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,`+storeavailability.PublicScheduleSQL+`,
-			transaction_timestamp()
-			FROM stores s
-			JOIN service_cities c ON c.id=s.city_id
-			JOIN verticals v ON v.id=s.vertical_id
-			WHERE s.published AND c.active AND v.active
-			  AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
-				AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
-				AND ($5='' OR s.vertical_id=$5)))
-			ORDER BY s.id LIMIT $6`, args...)
+		return tx.QueryContext(ctx, storeavailability.PublicStoresWithScheduleSQL, args...)
 	}
 	return tx.QueryContext(ctx, `SELECT s.id,s.name,s.city_id,s.vertical_id,
 		NULL::jsonb, transaction_timestamp()

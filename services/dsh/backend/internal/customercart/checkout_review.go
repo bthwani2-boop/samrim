@@ -177,18 +177,11 @@ func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 	result := checkoutReviewResult{ActorID: actor, StoreID: store, CartVersion: cart.Version,
 		RecipientPurpose: input.RecipientPurpose, FulfillmentMode: input.FulfillmentMode, Merchandise: amount,
 		CheckoutReady: false, Blockers: []string{"FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"}}
-	// Compose the shared owner projection at compile time; the Store selector is a bound parameter.
-	const scheduleSQL = `SELECT ` + storeavailability.PublicScheduleSQL + `,transaction_timestamp()
-	FROM stores s JOIN service_cities c ON c.id=s.city_id
-	WHERE s.id=$1 AND s.published AND c.active`
-	var scheduleJSON []byte
-	var evaluatedAt time.Time
-	err = tx.QueryRowContext(ctx, scheduleSQL, store).Scan(&scheduleJSON, &evaluatedAt)
+	result.StoreSchedule, err = storeavailability.ReadCustomerSchedule(ctx, tx, store)
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
 	}
-	result.StoreSchedule = storeavailability.EvaluateCustomerSchedule(evaluatedAt, scheduleJSON)
 	if input.AddressID != "" {
 		delivery, err := readDeliveryServiceability(ctx, tx, actor, store, input.AddressID)
 		if err != nil {

@@ -5,11 +5,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import { formatExactYer } from "../../components/format-exact-yer.ts";
 import { previewLineSubtotalYer, summarizeCartPreview } from "../cart/cart-preview.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../..");
 const sourceFile = fileURLToPath(new URL("./checkout-screen.tsx", import.meta.url));
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-checkout-review-"));
 
 let compiled;
@@ -17,7 +20,7 @@ try {
   const result = spawnSync(process.execPath, [
     path.join(root, "node_modules/typescript/bin/tsc"), sourceFile,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
   ], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20_000 });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(path.join(temp, "checkout-screen.js"), "utf8");
@@ -50,7 +53,7 @@ function fixture(storeId, actorId = "customer-one") {
   };
 }
 
-function harness(startStore = "store-one") {
+function harness(startStore = "store-one", deferFunding = false) {
   let storeId = startStore;
   let focus;
   let cleanup;
@@ -58,6 +61,7 @@ function harness(startStore = "store-one") {
   let index = 0;
   const calls = [];
   const estimates = [];
+  const fundingReads = [];
   const react = {
     useState(initial) {
       const at = index++;
@@ -118,20 +122,22 @@ function harness(startStore = "store-one") {
       // This isolated UI harness deliberately supplies no WLT balance. The
       // real WLT adapter is tested independently; unavailable must not hide
       // an otherwise current DSH Cart or suggest payment authorization.
-      readCheckoutFunding() { return Promise.resolve({ kind: "unavailable" }); },
+      readCheckoutFunding(actor, signal) {
+        if (!deferFunding) return Promise.resolve({ kind: "unavailable" });
+        const call = { actor, signal };
+        fundingReads.push(call);
+        return new Promise((resolve, reject) => { call.resolve = resolve; call.reject = reject; });
+      },
     },
   };
-  const module = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(mocks, name), ["Unexpected dependency ", name].join(""));
-    return mocks[name];
-  }, module, module.exports);
+  const module = loadMappedRenderFixture(compiled, sourceFile, mocks);
+  loadedModules.push(module);
   function render() {
     index = 0;
     return module.exports.default();
   }
   return {
-    render, get calls() { return calls; }, get estimates() { return estimates; },
+    render, get calls() { return calls; }, get estimates() { return estimates; }, get fundingReads() { return fundingReads; },
     focus() { cleanup = focus(); },
     blur() { cleanup?.(); },
     store(next) { storeId = next; },
@@ -363,4 +369,71 @@ test("checkout retains only same actor/store/cart draft through transient owner 
   await reload({ kind: "ready", cart: { ...cart, version: 9 } });
   assert.equal(form().props.initialDraft, undefined);
   h.blur();
+});
+
+test("verified WLT preview stays read-only, rejection allows retry, and denial conceals the cart", async () => {
+  const h = harness("store-one", true);
+  const cart = fixture("store-one");
+  const review = () => nodes(h.render()).find(n => n.props?.testID === "checkout-wlt-balance-review");
+  const reload = async () => {
+    h.blur(); h.render(); h.focus();
+    h.calls.at(-1).resolve({ kind: "ready", cart }); await settle();
+  };
+  try {
+    h.render(); h.focus(); h.calls[0].resolve({ kind: "ready", cart }); await settle();
+    const first = h.fundingReads[0];
+    assert.equal(first.actor, cart.actorId);
+    first.resolve({ kind: "ready", balance: { actorId: cart.actorId, currency: "YER",
+      balanceYer: "9007199254740993", availableYer: "9007199254740992" }, expiresAt: Date.now() + 60_000 });
+    await settle();
+    assert.ok(flatten(review()).includes(formatExactYer(9007199254740992n)));
+    assert.ok(nodes(h.render()).some(n => n.props?.testID === "checkout-confirmation-unavailable"));
+    await reload();
+    assert.equal(first.signal.aborted, true);
+    h.fundingReads.at(-1).reject(new Error("synthetic WLT outage")); await settle();
+    assert.ok(flatten(review()).includes("تعذّر التحقق من رصيد المحفظة"));
+    assert.ok(nodes(h.render()).some(n => n.type === "Pressable" && flatten(n).includes("إعادة المحاولة")));
+    await reload();
+    const stale = h.fundingReads.at(-1);
+    await reload();
+    assert.equal(stale.signal.aborted, true);
+    stale.resolve({ kind: "ready", balance: { availableYer: "999" }, expiresAt: Date.now() + 60_000 });
+    await settle();
+    assert.ok(!flatten(review()).includes(formatExactYer(999n)));
+    h.fundingReads.at(-1).resolve({ kind: "signed-out" }); await settle();
+    assert.equal(review(), undefined);
+    assert.ok(flatten(h.render()).includes("سجل الدخول"));
+  } finally { h.blur(); }
+});
+
+test("empty cart has no private review inputs and no order confirmation", async () => {
+  const h = harness("store-one");
+  try {
+    h.render(); h.focus();
+    h.calls[0].resolve({ kind: "ready", cart: { ...fixture("store-one"), lines: [] } });
+    await settle();
+    const tree = h.render();
+    assert.ok(flatten(tree).includes("السلة فارغة"));
+    assert.ok(!nodes(tree).some(n => n.type === "CheckoutReviewForm" || n.props?.testID === "checkout-cart-review"));
+    assert.ok(nodes(tree).some(n => n.props?.testID === "checkout-confirmation-unavailable"));
+  } finally { h.blur(); }
+});
+
+test("expired WLT evidence immediately conceals the previous cart and wallet preview", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: 1_000 });
+  const h = harness("store-one", true);
+  try {
+    h.render(); h.focus();
+    const cart = fixture("store-one");
+    h.calls[0].resolve({ kind: "ready", cart }); await settle();
+    h.fundingReads[0].resolve({ kind: "ready", balance: { actorId: cart.actorId,
+      availableYer: "9007199254740992" }, expiresAt: 2_000 });
+    await settle();
+    assert.ok(nodes(h.render()).some(n => n.props?.testID === "checkout-wlt-balance-review"));
+    t.mock.timers.tick(1_000);
+    const view = h.render();
+    assert.ok(!nodes(view).some(n => n.props?.testID === "checkout-wlt-balance-review" ||
+      n.props?.testID === "checkout-cart-review" || n.type === "CheckoutReviewForm"));
+    assert.ok(nodes(view).some(n => n.props?.testID === "checkout-confirmation-unavailable"));
+  } finally { h.blur(); t.mock.timers.reset(); }
 });

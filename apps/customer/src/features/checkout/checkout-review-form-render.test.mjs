@@ -3,18 +3,23 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DshPublicError, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import { formatExactYer } from "../../components/format-exact-yer.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../..");
+const source = fileURLToPath(new URL("./checkout-review-form.tsx", import.meta.url));
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-checkout-fee-"));
 let compiled;
 try {
   const r = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
-    fileURLToPath(new URL("./checkout-review-form.tsx", import.meta.url)), "--ignoreConfig", "--noResolve",
-    "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+    source, "--ignoreConfig", "--noResolve",
+    "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",
+    "--inlineSourceMap", "--inlineSources", "--outDir", temp],
     { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20_000 });
   assert.equal(r.status, 0, r.stderr || r.stdout);
   compiled = readFileSync(path.join(temp, "checkout-review-form.js"), "utf8");
@@ -78,15 +83,20 @@ function harness({ platform = "android", initialState = "active", initiallyVisib
     "./checkout-review-transport": {
       readCheckoutReview(actor, store, input, signal) {
         const call = { actor, store, input, signal }; reads.push(call);
-        return new Promise(resolve => { call.resolve = resolve; });
+        return new Promise((resolve, reject) => { call.resolve = resolve; call.reject = reject; });
       },
     },
   };
-  const module = { exports: {} };
-  new Function("require", "module", "exports", "setInterval", "clearInterval", "window", "document", compiled)(name => {
-    assert.ok(Object.hasOwn(mocks, name), "Unexpected dependency " + name);
-    return mocks[name];
-  }, module, module.exports, callback => { poll = callback; return 1; }, () => undefined, browserWindow, browserDocument);
+  const module = loadMappedRenderFixture(compiled, source, mocks);
+  loadedModules.push(module);
+  // The harness is synchronous to install and each test restores its own globals.
+  const original = new Map();
+  for (const [key, value] of [["window", browserWindow], ["document", browserDocument]]) {
+    original.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  }
+  const interval = mock.method(globalThis, "setInterval", callback => { poll = callback; return 1; });
+  const clearInterval = mock.method(globalThis, "clearInterval", () => undefined);
   const remember = (scope, draft) => drafts.push({ scope, draft });
   return {
     reads, drafts, verifications, render() { index = 0; return module.exports.default({ actorId: "customer-a", storeId: "store-a", cartVersion: 4, onDraftChange: remember }); },
@@ -97,7 +107,16 @@ function harness({ platform = "android", initialState = "active", initiallyVisib
     browserFocus() { focused = true; windowEvents.get("focus")?.(); },
     browserVisible() { visible = true; documentEvents.get("visibilitychange")?.(); },
     browserBlur() { focused = false; windowEvents.get("blur")?.(); },
-    cleanup() { cleanup?.(); },
+    cleanup() {
+      try { cleanup?.(); } finally {
+        interval.mock.restore();
+        clearInterval.mock.restore();
+        for (const [key, descriptor] of original) {
+          if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+          else Reflect.deleteProperty(globalThis, key);
+        }
+      }
+    },
   };
 }
 const settle = () => new Promise(resolve => setImmediate(resolve));
@@ -189,5 +208,68 @@ test("hidden browser checkout stays concealed even after a focus event until vis
     h.browserBlur(); await settle(); h.poll(); await settle();
     assert.equal(h.verifications.length, 1);
     assert.equal(find("RecipientForm"), undefined);
+  } finally { h.cleanup(); }
+});
+
+test("invalid inputs and overlapping requests never start another owner review; failures permit retry", async () => {
+  const h = harness();
+  const find = type => nodes(h.render()).find(n => n.type === type);
+  const alert = () => nodes(h.render()).find(n => n.props?.accessibilityRole === "alert");
+  try {
+    h.render(); await settle();
+    assert.equal(find("Pressable").props.disabled, true);
+    find("Pressable").props.onPress();
+    assert.equal(h.reads.length, 0);
+    find("FulfillmentChoice").props.onChange("BTHWANI_CAPTAIN");
+    assert.equal(find("Pressable").props.disabled, true);
+    find("DeliveryAddressReview").props.onSelectionChange({ id: "addr-00000000000000000000000000000001", version: 2 });
+    find("RecipientForm").props.onChange({ purpose: "OTHER", name: "Recipient", phone: "invalid", instructions: "" });
+    assert.equal(find("Pressable").props.disabled, true);
+    find("RecipientForm").props.onChange({ purpose: "OTHER", name: " Recipient ", phone: "+967770000099", instructions: " Leave at door " });
+    const press = find("Pressable").props.onPress;
+    press(); press();
+    assert.equal(h.reads.length, 1);
+    assert.equal(find("Pressable").props.disabled, true);
+    assert.equal(h.reads[0].input.recipientName, "Recipient");
+    assert.equal(h.reads[0].input.deliveryInstructions, "Leave at door");
+    h.reads[0].reject(new Error("synthetic transport failure")); await settle();
+    assert.ok(alert());
+    assert.equal(find("Pressable").props.disabled, false);
+    find("Pressable").props.onPress();
+    h.reads[1].resolve({ kind: "unavailable" }); await settle();
+    assert.ok(alert());
+    find("Pressable").props.onPress();
+    h.reads[2].resolve({ kind: "signed-out" }); await settle();
+    assert.equal(find("RecipientForm"), undefined);
+    assert.equal(h.drafts.at(-1)?.draft, null);
+  } finally { h.cleanup(); }
+});
+
+test("unavailable distance fee and schedule remain read-only; stale review cannot reappear after input change", async () => {
+  const h = harness();
+  const find = type => nodes(h.render()).find(n => n.type === type);
+  const result = () => nodes(h.render()).find(n => n.props?.testID === "checkout-owner-input-review");
+  try {
+    h.render(); await settle();
+    find("FulfillmentChoice").props.onChange("PARTNER_CAPTAIN");
+    find("DeliveryAddressReview").props.onSelectionChange({ id: "addr-00000000000000000000000000000001", version: 2 });
+    for (const status of ["PAUSED", "CLOSED_BY_SCHEDULE", "UNAVAILABLE"]) {
+      find("Pressable").props.onPress();
+      h.reads.at(-1).resolve({ kind: "ready", review: {
+        actorId: "customer-a", storeId: "store-a", cartVersion: 4,
+        fulfillmentMode: "PARTNER_CAPTAIN", merchandise: { merchandiseSubtotalYer: "1100" },
+        delivery: { status: "UNSERVICEABLE" }, storeSchedule: { status }, checkoutReady: false,
+      } });
+      await settle();
+      assert.ok(result());
+      assert.ok(nodes(result()).some(n => n.props?.testID === "checkout-distance-fee-unavailable"));
+      assert.ok(flatten(result()).includes("لا يمكن تأكيد الطلب"));
+    }
+    find("Pressable").props.onPress();
+    const previous = h.reads.at(-1);
+    find("FulfillmentChoice").props.onChange("CUSTOMER_PICKUP");
+    assert.equal(previous.signal.aborted, true);
+    previous.resolve({ kind: "ready", review: {} }); await settle();
+    assert.equal(result(), undefined);
   } finally { h.cleanup(); }
 });
