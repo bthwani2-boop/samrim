@@ -178,10 +178,15 @@ test("main PR must invoke all owner and dependency checks through required fast-
     ["dependency_pr", workflows[1]],
     ["go_pr", workflows[2]],
   ]) {
-    const jobPattern = new RegExp(
-      "  " + job + ":\\n    if: \\$\\{\\{ github\\.event_name == 'pull_request' \\}\\}\\n    uses: \\./" + file.replace(/\./g, "\\."),
-    );
-    assert.match(content, jobPattern);
+    const lines = content.split("\n");
+    const header = "  " + job + ":";
+    const index = lines.indexOf(header);
+    assert.ok(index >= 0, "Missing required reusable job: " + job);
+    assert.equal(lines.lastIndexOf(header), index, "Duplicate reusable job: " + job);
+    assert.deepEqual(lines.slice(index + 1, index + 3), [
+      "    if: ${{ github.event_name == 'pull_request' }}",
+      "    uses: ./" + file,
+    ]);
     const called = readFileSync(new URL(file, root), "utf8").split(/^permissions:/m)[0];
     assert.match(called, /^  workflow_call:$/m);
     assert.doesNotMatch(called, /^  pull_request:/m, "PR must run through one owner workflow call");
