@@ -44,9 +44,10 @@ $project = 'bthwani-refoundation'
 $baseEnv = Join-Path $repo 'infra\.env'
 $baseCompose = Join-Path $repo 'infra\compose.yaml'
 $developmentPorts = Get-Content -LiteralPath (Join-Path $repo 'tools\dev\ports.json') -Raw | ConvertFrom-Json
+. (Join-Path $PSScriptRoot 'task-ownership.ps1')
 $ownerTasks = @(
-  @{Name='BThwani Lenovo Source Sync'; Pattern='sync-lenovo-source\.mjs'},
-  @{Name='BThwani Lenovo SSH Tunnel'; Pattern='Start-AppTunnel\.ps1'}
+  @{Name='BThwani Lenovo Source Sync'},
+  @{Name='BThwani Lenovo SSH Tunnel'}
 )
 $nativeOwnerPorts = @($developmentPorts.ownerForwards.PSObject.Properties | ForEach-Object {[int]$_.Value})
 $localPorts = @($developmentPorts.apps.PSObject.Properties | ForEach-Object {[int]$_.Value.surface}) + $nativeOwnerPorts
@@ -146,27 +147,33 @@ function Assert-Compose {
   Assert-Ok ($nameLine -match '^name:\s*bthwani-refoundation\s*$') 'Compose project name mismatch'
   $null = Invoke-DockerCli -argsList @('compose','--env-file',$baseEnv,'-f',$baseCompose,'config','--quiet')
 }
-function Task-Action([string]$name,[string]$pattern) {
-  $task = Get-ScheduledTask -TaskName $name -ErrorAction Stop
-  $actions = @($task.Actions | ForEach-Object { [string]$_.Execute + ' ' + [string]$_.Arguments }) -join ' '
-  Assert-Ok ($actions -match $pattern) ("task action changed, refusing to manage $name")
-  return $task
+function Task-Action([string]$name) {
+  $task=Get-ScheduledTask -TaskPath '\' -TaskName $name -ErrorAction Stop
+  switch -CaseSensitive ($name) {
+    'BThwani Lenovo Source Sync' {
+      return Assert-CanonicalTask $task $name 'C:\Program Files\nodejs\node.exe' ('^'+[regex]::Escape('"'+(Join-Path $repo 'tools\dev\sync-lenovo-source.mjs')+'" --watch')+'$') $repo
+    }
+    'BThwani Lenovo SSH Tunnel' {
+      return Assert-CanonicalTask $task $name 'C:\Program Files\PowerShell\7\pwsh.exe' ('^'+[regex]::Escape('-NoProfile -NonInteractive -WindowStyle Hidden -File "'+(Join-Path $repo 'tools\dev\Start-AppTunnel.ps1')+'"')+'$') $repo
+    }
+    default {throw ('TASK_NOT_ALLOWED '+$name)}
+  }
 }
 function Start-LocalTasks {
   foreach ($spec in $ownerTasks) {
-    $task = Task-Action $spec.Name $spec.Pattern
+    $task = Task-Action $spec.Name
     if ([string]$task.State -eq 'Running') { Say 'SURFACE_TASK' ($spec.Name+' already_running'); continue }
     if ($spec.Name -match 'SSH Tunnel') {
       $busy = @(Get-NetTCPConnection -State Listen -LocalPort $localPorts -ErrorAction SilentlyContinue)
       Assert-Ok ($busy.Count -eq 0) 'forward port occupied while tunnel task stopped; inspect owner'
     }
-    Start-ScheduledTask -TaskName $spec.Name -ErrorAction Stop
+    Start-ScheduledTask -TaskPath '\' -TaskName $spec.Name -ErrorAction Stop
     Say 'SURFACE_TASK' ($spec.Name+' start_requested')
   }
 }
 function Show-LocalTasks {
   foreach ($spec in $ownerTasks) {
-    $task = Task-Action $spec.Name $spec.Pattern
+    $task = Task-Action $spec.Name
     Say 'SURFACE_TASK' ($spec.Name+' '+$task.State)
   }
   foreach ($port in $localPorts) {
@@ -176,9 +183,9 @@ function Show-LocalTasks {
 }
 function Stop-LocalTasks {
   foreach ($spec in $ownerTasks) {
-    $task = Task-Action $spec.Name $spec.Pattern
+    $task = Task-Action $spec.Name
     if ([string]$task.State -eq 'Running') {
-      Stop-ScheduledTask -TaskName $spec.Name -ErrorAction Stop
+      Stop-ScheduledTask -TaskPath '\' -TaskName $spec.Name -ErrorAction Stop
       Say 'SURFACE_STOP' ($spec.Name+' requested')
     }
   }
@@ -190,11 +197,10 @@ $remoteSpecs = @(foreach($entry in $developmentPorts.apps.PSObject.Properties){
   @{A=$entry.Name;N=$entry.Value.task;P=[int]$entry.Value.lenovo;Cli=$entry.Value.cli}
 })
 $remoteAppSpecs = '$specs=@((ConvertFrom-Json ''' + (ConvertTo-Json -InputObject $remoteSpecs -Compress).Replace("'","''") + ''') | ForEach-Object { $_ })'
+$remoteAppSpecs += [Environment]::NewLine + (Get-Content -LiteralPath (Join-Path $PSScriptRoot 'task-ownership.ps1') -Raw)
 $remoteTasksScript = $remoteAppSpecs + [Environment]::NewLine + @'
 foreach($s in $specs){
-  $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
-  $actions=($task.Actions | ForEach-Object { [string]$_.Execute+' '+[string]$_.Arguments }) -join ' '
-  if($actions -notmatch 'Start-App\.ps1' -or $actions -notmatch [regex]::Escape($s.A)) {throw ('TASK_OWNER_CHANGED '+$s.N)}
+  $task=Get-VerifiedAppTask $s
   $port=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count -gt 0
   Write-Output ('LENOVO_APP app='+$s.A+' task='+$task.State+' port='+$s.P+' listen='+$port)
 }
@@ -203,12 +209,8 @@ foreach($s in $specs){
 # Snapshot before stopping Task Scheduler: afterward parent links can disappear.
 $remoteAppProcessLifecycle = @'
 function Get-OwnedAppProcessTree([string]$App,[object[]]$Processes,[string]$Root,[string]$PinnedNode) {
-  $launcherPath=Join-Path $Root 'tools\dev\Start-App.ps1'
-  $pattern='(?i)(?:^|\s)-App\s+"?'+[regex]::Escape($App)+'"?(?:\s|$)'
-  $launchers=@($Processes | Where-Object {
-    $_.Name -in @('pwsh.exe','powershell.exe') -and $_.CommandLine -and
-    $_.CommandLine.IndexOf($launcherPath,[StringComparison]::OrdinalIgnoreCase) -ge 0 -and $_.CommandLine -match $pattern
-  })
+  $task=Get-VerifiedAppTask (Get-VerifiedAppSpec $App)
+  $launchers=@($Processes | Where-Object {Test-AppLauncherProcess $_ $task})
   if($launchers.Count -ne 1){throw ('APP_TREE_LAUNCHER_UNPROVEN '+$App)}
   $tree=[Collections.Generic.List[object]]::new()
   $tree.Add($launchers[0])
@@ -218,7 +220,6 @@ function Get-OwnedAppProcessTree([string]$App,[object[]]$Processes,[string]$Root
       $_.ParentProcessId -eq $parent.ProcessId -and $_.ProcessId -ne $parent.ProcessId -and
       $_.CreationDate -ge $parent.CreationDate
     })){
-      # The OS-owned console host is not an application worker; never terminate it.
       if($child.Name -eq 'conhost.exe' -and $child.ExecutablePath -eq (Join-Path $env:WINDIR 'System32\conhost.exe')){continue}
       if($child.Name -ne 'node.exe' -or $child.ExecutablePath -ne $PinnedNode -or
         $tree.ProcessId -contains $child.ProcessId){throw ('APP_TREE_FOREIGN '+$App+' pid='+$child.ProcessId)}
@@ -239,9 +240,11 @@ function Assert-OwnedAppPort([string]$App,[int]$Port,[object[]]$Tree) {
   }
 }
 function Stop-OwnedAppTree([string]$TaskName,[string]$App,[int]$Port,[object[]]$Tree) {
-  if($Tree.Count -lt 1 -or (Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop).State -ne 'Running'){
+  if($Tree.Count -lt 1 -or (Get-VerifiedAppTask (Get-VerifiedAppSpec $App)).State -ne 'Running'){
     throw ('APP_TASK_STATE_CHANGED '+$App)
   }
+  $verifiedTask=Get-VerifiedAppTask (Get-VerifiedAppSpec $App)
+  if(!(Test-AppLauncherProcess $Tree[0] $verifiedTask)){throw 'APP_TASK_ACTION_CHANGED'}
   $liveLauncher=Get-CimInstance Win32_Process -Filter ('ProcessId='+$Tree[0].ProcessId)
   if(!$liveLauncher -or !(Test-SameOwnedAppProcess $Tree[0] $liveLauncher)){throw ('APP_TREE_CHANGED '+$App)}
   Assert-OwnedAppPort $App $Port $Tree
@@ -263,9 +266,9 @@ function Stop-OwnedAppTree([string]$TaskName,[string]$App,[int]$Port,[object[]]$
         $handles.Add(@{Saved=$saved;Process=$process})
       }catch{$process.Dispose();throw}
     }
-    Stop-ScheduledTask -TaskName $TaskName -ErrorAction Stop
+    Stop-ScheduledTask -TaskPath '\' -TaskName $TaskName -ErrorAction Stop
     $deadline=[DateTime]::UtcNow.AddSeconds(15)
-    while((Get-ScheduledTask -TaskName $TaskName -ErrorAction Stop).State -eq 'Running'){
+    while((Get-VerifiedAppTask (Get-VerifiedAppSpec $App)).State -eq 'Running'){
       if([DateTime]::UtcNow -ge $deadline){throw ('APP_TASK_STILL_RUNNING '+$App)}
       Start-Sleep -Milliseconds 250
     }
@@ -299,11 +302,11 @@ function Show-LenovoTasks { Invoke-Lenovo $remoteTasksScript }
 function Start-LenovoTasks {
   $start = $remoteTasksScript + @'
 foreach($s in $specs){
-  $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
+  $task=Get-VerifiedAppTask $s
   $port=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count -gt 0
   if([string]$task.State -eq 'Running') {continue}
   if($port){throw ('APP_PORT_OCCUPIED '+$s.N+' '+$s.P)}
-  Start-ScheduledTask -TaskName $s.N -ErrorAction Stop
+  Start-ScheduledTask -TaskPath '\' -TaskName $s.N -ErrorAction Stop
   Write-Output ('LENOVO_APP_START_REQUESTED '+$s.A)
 }
 '@
@@ -316,7 +319,7 @@ $node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe
 $snapshot=@(Get-CimInstance Win32_Process)
 $plans=@()
 foreach($s in $specs){
-  $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
+  $task=Get-VerifiedAppTask $s
   if([string]$task.State -eq 'Running') {
     $tree=@(Get-OwnedAppProcessTree $s.A $snapshot $root $node)
     Assert-OwnedAppPort $s.A $s.P $tree
@@ -352,7 +355,7 @@ function Show-AppsHelp {
 # A responding dev server is not proof the task-owned source mirror is current.
 function Inspect-AppSourceSync([switch]$StrictCheck) {
   $spec=$ownerTasks[0]
-  $task=Task-Action $spec.Name $spec.Pattern
+  $task=Task-Action $spec.Name
   $info=Get-ScheduledTaskInfo -TaskName $spec.Name -ErrorAction Stop
   $proof=@{}
   $node=Get-Command node.exe -ErrorAction SilentlyContinue
@@ -384,7 +387,7 @@ function Get-WorkspaceLockDocument([string]$Raw) {
 function Inspect-AppOwners([switch]$StrictCheck) {
   $lock=(Get-FileHash -LiteralPath (Join-Path $repo 'pnpm-lock.yaml') -Algorithm SHA256).Hash
   $mode=if($StrictCheck){'$true'}else{'$false'}
-  $script=$remoteAppSpecs + [Environment]::NewLine + $remoteDependencyLock + [Environment]::NewLine + @'
+  $script=$remoteAppSpecs + [Environment]::NewLine + $remoteAppProcessLifecycle + [Environment]::NewLine + $remoteDependencyLock + [Environment]::NewLine + @'
 $root='C:\Users\bthwa\BThwaniAppRunner\source-runtime'
 $node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe'
 $strict=__STRICT__
@@ -419,23 +422,15 @@ foreach($s in $specs){
       if($strict){throw ('APP_WORKSPACE_DEPENDENCY_MISSING '+$s.A+' '+$dep.Name)}
     }
   }
-  $task=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
-  $actions=@($task.Actions)
-  $action=($actions | ForEach-Object {[string]$_.Execute+' '+[string]$_.Arguments}) -join ' '
-  if($actions.Count -ne 1 -or $action -notmatch 'Start-App\.ps1' -or
-    $action -notmatch ('(?i)-App\s+'+[regex]::Escape($s.A)+'(?:\s|$)')){throw ('TASK_OWNER_CHANGED '+$s.A)}
+  $task=Get-VerifiedAppTask $s
   $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
   $pidValue=if($listeners.Count -eq 1){[int]$listeners[0].OwningProcess}else{0}
-  $owner=if($pidValue){Get-CimInstance Win32_Process -Filter ('ProcessId='+$pidValue)}else{$null}
   $owned=$false
-  if($owner -and $owner.Name -eq 'node.exe' -and $owner.CommandLine -match $s.Cli){
-    $cursor=$owner
-    for($i=0;$i -lt 6 -and $cursor;$i++){
-      if($cursor.Name -in @('powershell.exe','pwsh.exe') -and $cursor.CommandLine -match 'Start-App\.ps1' -and
-        $cursor.CommandLine -match ('(?i)-App\s+'+[regex]::Escape($s.A)+'(?:\s|$)')){$owned=$true;break}
-      if(!$cursor.ParentProcessId -or $cursor.ParentProcessId -eq $cursor.ProcessId){break}
-      $cursor=Get-CimInstance Win32_Process -Filter ('ProcessId='+$cursor.ParentProcessId)
-    }
+  if($pidValue -and $listeners[0].LocalAddress -eq '127.0.0.1'){
+    try{
+      $tree=@(Get-OwnedAppProcessTree $s.A @(Get-CimInstance Win32_Process) $root $node)
+      $owned=@($tree|Where-Object {$_.ProcessId -eq $pidValue -and $_.Name -eq 'node.exe'}).Count -eq 1
+    }catch{}
   }
   $cli=if($s.Cli -eq 'expo'){Join-Path $root ('apps\'+$s.A+'\node_modules\expo\bin\cli')}else{Join-Path $root 'apps\control-panel\node_modules\next\dist\bin\next'}
   $present=Test-Path -LiteralPath $cli -PathType Leaf
@@ -636,11 +631,7 @@ $mode='__MODE__'
 $s=@($specs|Where-Object A -eq $app)
 if($s.Count -ne 1){throw 'APP_NOT_ALLOWED'}
 $s=$s[0]
-$t=Get-ScheduledTask -TaskName $s.N -ErrorAction Stop
-$actions=@($t.Actions)
-$action=($actions | ForEach-Object {[string]$_.Execute+' '+[string]$_.Arguments}) -join ' '
-if($actions.Count -ne 1 -or $action -notmatch 'Start-App\.ps1' -or
-  $action -notmatch ('(?i)-App\s+'+[regex]::Escape($app)+'(?:\s|$)')){throw ('TASK_OWNER_CHANGED '+$app)}
+$t=Get-VerifiedAppTask $s
 $source='C:\Users\bthwa\BThwaniAppRunner\source-runtime'
 $node='C:\Users\bthwa\BThwaniAppRunner\tools\node-v24.22.1-refoundation\node.exe'
 if((Get-FileHash -LiteralPath (Join-Path $source 'pnpm-lock.yaml') -Algorithm SHA256).Hash -ne '__LOCK__') {throw ('APP_LOCK_MIRROR_MISMATCH '+$app)}
@@ -652,17 +643,8 @@ if(!(Test-Path -LiteralPath $cli -PathType Leaf)){throw ('APP_CLI_MISSING '+$app
 $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
 if($listeners.Count -gt 1){throw ('APP_PORT_AMBIGUOUS '+$app)}
 if($listeners.Count -eq 1){
-  $pidValue=[int]$listeners[0].OwningProcess
-  $owner=Get-CimInstance Win32_Process -Filter ('ProcessId='+$pidValue)
-  if(!$owner -or $owner.Name -ne 'node.exe' -or $owner.CommandLine -notmatch $s.Cli){throw ('APP_PORT_FOREIGN '+$app)}
-  $owned=$false;$cursor=$owner
-  for($i=0;$i -lt 6 -and $cursor;$i++){
-    if($cursor.Name -in @('powershell.exe','pwsh.exe') -and $cursor.CommandLine -match 'Start-App\.ps1' -and
-      $cursor.CommandLine -match ('(?i)-App\s+'+[regex]::Escape($app)+'(?:\s|$)')){$owned=$true;break}
-    if(!$cursor.ParentProcessId -or $cursor.ParentProcessId -eq $cursor.ProcessId){break}
-    $cursor=Get-CimInstance Win32_Process -Filter ('ProcessId='+$cursor.ParentProcessId)
-  }
-  if(!$owned){throw ('APP_PROCESS_OWNER_UNPROVEN '+$app)}
+  $tree=@(Get-OwnedAppProcessTree $app @(Get-CimInstance Win32_Process) $source $node)
+  if($listeners[0].LocalAddress -ne '127.0.0.1' -or @($tree|Where-Object {$_.ProcessId -eq $listeners[0].OwningProcess -and $_.Name -eq 'node.exe'}).Count -ne 1){throw ('APP_PROCESS_OWNER_UNPROVEN '+$app)}
 }
 if($mode -eq 'start'){
   if($t.State -eq 'Running' -and $listeners.Count -eq 1){Write-Output ('APP_START_ALREADY_RUNNING '+$app);return}
@@ -686,12 +668,16 @@ for($i=0;$i -lt 12;$i++){
 if(@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count -ne 0){
   throw ('APP_PORT_STILL_OCCUPIED_NO_PROCESS_KILL '+$app)
 }
-if((Get-ScheduledTask -TaskName $s.N).State -eq 'Running'){throw ('APP_TASK_STILL_RUNNING '+$app)}
-Start-ScheduledTask -TaskName $s.N -ErrorAction Stop
+if((Get-VerifiedAppTask $s).State -eq 'Running'){throw ('APP_TASK_STILL_RUNNING '+$app)}
+Start-ScheduledTask -TaskPath '\' -TaskName $s.N -ErrorAction Stop
 Write-Output ('APP_START_TASK_REQUESTED '+$app)
 for($i=0;$i -lt 40;$i++){
   $listener=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
-  if($listener.Count -eq 1){Write-Output ('APP_LISTENER_STARTED '+$app+' port='+$s.P);return}
+  if($listener.Count -eq 1){
+    $tree=@(Get-OwnedAppProcessTree $app @(Get-CimInstance Win32_Process) $source $node)
+    if($listener[0].LocalAddress -ne '127.0.0.1' -or @($tree|Where-Object {$_.ProcessId -eq $listener[0].OwningProcess -and $_.Name -eq 'node.exe'}).Count -ne 1){throw 'APP_LISTENER_OWNER_UNVERIFIED'}
+    Write-Output ('APP_LISTENER_STARTED '+$app+' port='+$s.P);return
+  }
   Start-Sleep -Seconds 1
 }
 throw ('APP_LISTENER_NOT_READY '+$app)
@@ -881,7 +867,7 @@ function Open-AppSurfaces {
 }
 
 function Invoke-AppDependencyReconcile {
-  $task=Task-Action $ownerTasks[0].Name $ownerTasks[0].Pattern
+  $task=Task-Action $ownerTasks[0].Name
   Assert-Ok ($task.State -eq 'Running') 'DEPENDENCY_SOURCE_WATCHER_STOPPED'
   $node=Get-Command node.exe -ErrorAction Stop
   $result=@(& $node.Source (Join-Path $repo 'tools/dev/sync-lenovo-source.mjs') '--verify-dependency-inputs' 2>&1)
@@ -966,11 +952,7 @@ $pin=(Get-Content -LiteralPath (Join-Path $root 'package.json') -Raw|ConvertFrom
 if($pin -cne ('pnpm@'+(& $pnpm --version).Trim()) -or $LASTEXITCODE){throw 'DEPENDENCY_PNPM_PIN_MISMATCH'}
 $plans=@();$snapshot=@(Get-CimInstance Win32_Process)
 foreach($s in $specs){
-  $task=Get-ScheduledTask -TaskName $s.N
-  $actions=@($task.Actions)
-  $args=[string]$actions[0].Arguments
-  if($actions.Count -ne 1 -or $args.IndexOf((Join-Path $root 'tools\dev\Start-App.ps1'),[StringComparison]::OrdinalIgnoreCase) -lt 0 -or
-     $args -notmatch ('(?i)(?:^|\s)-App\s+"?'+[regex]::Escape($s.A)+'"?(?:\s|$)')){throw ('DEPENDENCY_TASK_OWNER_CHANGED '+$s.A)}
+  $task=Get-VerifiedAppTask $s
   if($task.State -eq 'Running'){
     $tree=@(Get-OwnedAppProcessTree $s.A $snapshot $root $node)
     Assert-OwnedAppPort $s.A $s.P $tree
@@ -1036,9 +1018,9 @@ if($safe){
   try{
     foreach($plan in $plans){
       $s=$plan.Spec
-      if((Get-ScheduledTask -TaskName $s.N).State -eq 'Running'){continue}
+      if((Get-VerifiedAppTask $s).State -eq 'Running'){continue}
       if(@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue).Count){throw ('DEPENDENCY_RESTART_PORT_OCCUPIED '+$s.A)}
-      Start-ScheduledTask -TaskName $s.N -ErrorAction Stop
+      Start-ScheduledTask -TaskPath '\' -TaskName $s.N -ErrorAction Stop
     }
   }catch{$safe=$false;$failure+='; RESTART '+$_.Exception.Message}
 }
@@ -1052,7 +1034,7 @@ if($safe -and $success -and $plans.Count){
     $pending=@(foreach($plan in $plans){
       $s=$plan.Spec
       try{
-        if((Get-ScheduledTask -TaskName $s.N).State -ne 'Running'){throw 'TASK_NOT_RUNNING'}
+        if((Get-VerifiedAppTask $s).State -ne 'Running'){throw 'TASK_NOT_RUNNING'}
         $tree=@(Get-OwnedAppProcessTree $s.A $snapshot $root $node)
         $listeners=@(Get-NetTCPConnection -State Listen -LocalPort $s.P -ErrorAction SilentlyContinue)
         if($listeners.Count -ne 1 -or $tree.ProcessId -notcontains $listeners[0].OwningProcess){throw 'LISTENER_NOT_OWNED'}

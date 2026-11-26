@@ -351,10 +351,14 @@ test("Lenovo shutdown owns the complete pinned Node tree and rejects foreign des
     "$block=$ast.Find({param($n) $n -is [Management.Automation.Language.StringConstantExpressionAst] -and $n.Value -match '^function Get-OwnedAppProcessTree'},$true)",
     "if(!$block){throw 'OWNED_TREE_HELPER_MISSING'}",
     "Invoke-Expression $block.Value",
+    ". (Join-Path (Get-Location).Path 'tools/dev/task-ownership.ps1')",
     "$root='C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime';$node='C:\\Users\\bthwa\\BThwaniAppRunner\\tools\\node-v24.22.1-refoundation\\node.exe'",
     "$now=[datetime]'2026-11-24T00:00:00Z'",
     "function P($id,$parent,$name,$exe,$cmd,$seconds){[pscustomobject]@{ProcessId=$id;ParentProcessId=$parent;Name=$name;ExecutablePath=$exe;CommandLine=$cmd;CreationDate=$now.AddSeconds($seconds)}}",
-    "$launcher=P 10 1 'pwsh.exe' 'C:\\Windows\\pwsh.exe' ('pwsh -File '+$root+'\\tools\\dev\\Start-App.ps1 -App control-panel') 0",
+    "$specs=@(@{A='control-panel';N='BThwani Control Next Native'})",
+    "$exe='C:\\Program Files\\PowerShell\\7\\pwsh.exe';$arg='-NoProfile -NonInteractive -WindowStyle Hidden -File '+[char]34+$root+'\\tools\\dev\\Start-App.ps1'+[char]34+' -App control-panel'",
+    "function Get-ScheduledTask {param($TaskPath,$TaskName,$ErrorAction) [pscustomobject]@{TaskName=$TaskName;TaskPath=$TaskPath;Actions=@([pscustomobject]@{Execute=$exe;Arguments=$arg;WorkingDirectory=''})}}",
+    "$launcher=P 10 1 'pwsh.exe' $exe ([char]34+$exe+[char]34+' '+$arg) 0",
     "$parent=P 20 10 'node.exe' $node 'next dev' 1",
     "$child=P 30 20 'node.exe' $node 'next child' 2",
     "$other=P 40 1 'node.exe' $node 'unrelated' 1",
@@ -364,6 +368,8 @@ test("Lenovo shutdown owns the complete pinned Node tree and rejects foreign des
     "$reuse=P 30 20 'node.exe' $node 'next child' 4",
     "if(Test-SameOwnedAppProcess $child $reuse){throw 'REUSED_PID_ACCEPTED'}",
     "if(!(Test-SameOwnedAppProcess $child $child)){throw 'SAME_PID_REJECTED'}",
+    "$impostor=P 11 1 'pwsh.exe' $exe ([char]34+$exe+[char]34+' -Command echo '+$arg) 0",
+    "$denied=$false;try{Get-OwnedAppProcessTree 'control-panel' @($impostor,$parent) $root $node|Out-Null}catch{$denied=$_.Exception.Message -match 'APP_TREE_LAUNCHER_UNPROVEN'};if(!$denied){throw 'IMPOSTOR_LAUNCHER_ADMITTED'}",
     "$foreign=P 50 20 'cmd.exe' 'C:\\Windows\\cmd.exe' 'foreign' 3",
     "$rejected=$false;try{Get-OwnedAppProcessTree 'control-panel' @($launcher,$parent,$child,$foreign) $root $node|Out-Null}catch{$rejected=$_.Exception.Message -match 'APP_TREE_FOREIGN'};if(!$rejected){throw 'FOREIGN_DESCENDANT_ACCEPTED'}",
     "Write-Output 'OWNED_APP_TREE_POLICY_PASS'",
@@ -625,4 +631,22 @@ test("ADB mapping state rejects missing, conflicting and duplicate reverse bindi
   ].join("; ");
   const run=spawnSync("pwsh.exe",["-NoProfile","-Command",ps],{encoding:"utf8"});
   assert.equal(run.status,0,run.stderr||run.stdout);
+});
+test("canonical task ownership rejects unrelated executable, extra actions, foreign paths and unknown switches", {skip:process.platform!=="win32"},()=>{
+  const ps=[
+    "$ErrorActionPreference='Stop'",
+    ". (Join-Path (Get-Location).Path 'tools/dev/task-ownership.ps1')",
+    "$spec=@{A='merchant';N='BThwani Merchant Metro Native'}",
+    "$exe='C:\\Program Files\\PowerShell\\7\\pwsh.exe';$arg='-NoProfile -NonInteractive -WindowStyle Hidden -File '+[char]34+'C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime\\tools\\dev\\Start-App.ps1'+[char]34+' -App merchant'",
+    "function Get-ScheduledTask {param($TaskPath,$TaskName,$ErrorAction) $script:fixture}",
+    "function Action($e,$a){[pscustomobject]@{Execute=$e;Arguments=$a;WorkingDirectory=''}}",
+    "function Task($actions,$path='\\'){[pscustomobject]@{TaskName=$spec.N;TaskPath=$path;Actions=@($actions)}}",
+    "$script:fixture=Task (Action $exe $arg);$null=Get-VerifiedAppTask $spec",
+    "$bad=@((Task (Action 'C:\\Windows\\System32\\cmd.exe' $arg)),(Task @((Action $exe $arg),(Action $exe $arg))),(Task (Action $exe ($arg.Replace('source-runtime','foreign-runtime')))),(Task (Action $exe ($arg+' -Unknown'))),(Task (Action $exe $arg) '\\foreign\\'))",
+    "foreach($script:fixture in $bad){$denied=$false;try{$null=Get-VerifiedAppTask $spec}catch{$denied=$_.Exception.Message -match 'TASK_OWNER_CHANGED'};if(!$denied){throw 'FOREIGN_TASK_ADMITTED'}}",
+    "Write-Output 'EXACT_TASK_ADMISSION_PASS'",
+  ].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",timeout:15000,windowsHide:true});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/EXACT_TASK_ADMISSION_PASS/);
 });
