@@ -26,7 +26,7 @@ param(
   [string]$PreparedSourceSha,
   [string]$RecoverRuntimeAttempt,
   [Parameter(Position=1)]
-  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','build','reconcile','start','restart','android','open')]
+  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','build','reconcile','start','restart','android','open','recover')]
   [string]$DockerAction = 'help',
   [Parameter(Position=2)]
   [ValidateSet('dsh','identity','wlt','postgres','media','mailpit','payment-mock')]
@@ -343,7 +343,8 @@ function Show-AppsHelp {
   Write-Output 'pnpm dev apps status                   # read-only task, listener, process owner and mirror check'
   Write-Output 'pnpm dev apps verify                   # above plus Web and Metro HTTP, not visual Fast Refresh'
   Write-Output 'pnpm dev apps reconcile [-Apply]      # check or repair pinned Lenovo dependencies only when needed'
-  Write-Output 'pnpm dev apps android                  # inspect ADB device and reverse mappings, no changes'
+  Write-Output 'pnpm dev apps android                  # require verified ADB reverse mappings, no changes'
+  Write-Output 'pnpm dev apps recover                  # restore missing ADB mappings only; no app launch'
   Write-Output 'pnpm dev apps open                     # reuse Chrome tabs and open Samsung; no server duplication'
   Write-Output 'pnpm dev apps open -Mode Browser       # Chrome only, no Android connection needed'
   Write-Output 'pnpm dev                             # start/reuse tasks, then open available screens'
@@ -516,20 +517,58 @@ function Verify-AppWeb {
   Say 'FAST_REFRESH_VISUAL' 'NOT_RUN (requires two observed Web and Android UI edits and restoration)'
   Assert-Ok ($failures -eq 0) ('Web/Metro readiness failed on '+$failures+' checks')
 }
-function Inspect-AppAndroid {
-  $adb=Get-Command 'adb.exe' -ErrorAction SilentlyContinue
-  if(-not $adb){ Say 'ANDROID_ADB' 'NOT_FOUND'; return }
-  $devices=@(& $adb.Source 'devices' '-l' 2>&1)
-  Assert-Ok ($LASTEXITCODE -eq 0) 'adb devices failed'
-  $lines=@($devices | ForEach-Object {$_.ToString()})
-  $devicePresent=@($lines | Where-Object {$_ -match '^R5CX14S4PZW\s+device\b'}).Count -eq 1
-  Say 'ANDROID_ADB' ('SAMSUNG_DEVICE='+$devicePresent)
-  $reverses=@(& $adb.Source 'reverse' '--list' 2>&1)
-  Assert-Ok ($LASTEXITCODE -eq 0) 'adb reverse list failed'
-  foreach($port in (@($android | ForEach-Object { [int]$_.Port }) + $nativeOwnerPorts)){
-    $mapped=@($reverses | Where-Object {$_.ToString() -match ('tcp:'+$port+'\s+tcp:'+$port+'\b')}).Count -gt 0
-    Say 'ANDROID_REVERSE' ('port='+$port+' configured='+$mapped)
+function Get-AndroidMappingState([string[]]$Lines,[int[]]$Ports) {
+  foreach($p in $Ports){
+    $mappings=@($Lines | Where-Object {$_ -match ('(?:^|\s)tcp:'+$p+'\s+\S+\s*$')})
+    $configured=$mappings.Count -eq 1 -and $mappings[0] -match ('(?:^|\s)tcp:'+$p+'\s+tcp:'+$p+'\s*$')
+    [pscustomobject]@{Port=$p;Configured=$configured;Collision=($mappings.Count -gt 0 -and !$configured)}
   }
+}
+function Get-AndroidReverseState {
+  $adb=Get-Command adb.exe -ErrorAction SilentlyContinue
+  Assert-Ok ([bool]$adb) 'ADB_NOT_INSTALLED'
+  $devices=@(& $adb.Source 'devices' 2>&1 | ForEach-Object {$_.ToString()})
+  Assert-Ok ($LASTEXITCODE -eq 0) 'ADB_DEVICE_LIST_FAILED'
+  Assert-Ok (@($devices|Where-Object{$_ -match ('^'+[regex]::Escape($device)+'\s+device\s*$')}).Count -eq 1) 'EXPECTED_SAMSUNG_NOT_CONNECTED'
+  $existing=@(& $adb.Source '-s' $device 'reverse' '--list' 2>&1 | ForEach-Object {$_.ToString()})
+  Assert-Ok ($LASTEXITCODE -eq 0) 'ADB_REVERSE_LIST_FAILED'
+  $nativePorts = @($android | ForEach-Object { [int]$_.Port }) + $nativeOwnerPorts
+  [pscustomobject]@{Adb=$adb;Mappings=@(Get-AndroidMappingState -Lines $existing -Ports $nativePorts)}
+}
+function Restore-AndroidReverse {
+  # This lock owns only device mappings, never Docker, dependency installation or UI.
+  $lock=[Threading.Mutex]::new($false,'Local\BThwaniAndroidReverseV1')
+  $held=$false
+  try {
+    try {$held=$lock.WaitOne(5000)} catch [Threading.AbandonedMutexException] {$held=$true}
+    Assert-Ok $held 'ADB_REVERSE_OPERATION_BUSY'
+    $state=Get-AndroidReverseState
+    Assert-Ok (@($state.Mappings | Where-Object Collision).Count -eq 0) 'ADB_REVERSE_COLLISION'
+    $null=& (Join-Path $PSScriptRoot 'Start-AppTunnel.ps1') -VerifyOnly
+    $missing=@($state.Mappings | Where-Object {-not $_.Configured})
+    if($missing.Count){
+      $null=@(Check-LocalIdentity)
+      foreach($mapping in $missing){
+        $port='tcp:'+$mapping.Port
+        $null=@(& $state.Adb.Source '-s' $device 'reverse' '--no-rebind' $port $port 2>&1)
+        Assert-Ok ($LASTEXITCODE -eq 0) ('ADB_REVERSE_SETUP_FAILED '+$mapping.Port)
+      }
+      $state=Get-AndroidReverseState
+      Assert-Ok (@($state.Mappings | Where-Object {-not $_.Configured}).Count -eq 0) 'ADB_REVERSE_READBACK_FAILED'
+    }
+    if(!$Automatic -or $missing.Count){ Say 'ADB_REVERSE' ('PASS configured='+$state.Mappings.Count+' restored='+$missing.Count) }
+  } finally {
+    if($held){$lock.ReleaseMutex()}
+    $lock.Dispose()
+  }
+}
+function Inspect-AppAndroid {
+  $state=Get-AndroidReverseState
+  foreach($mapping in $state.Mappings){
+    Say 'ANDROID_REVERSE' ('port='+$mapping.Port+' configured='+$mapping.Configured)
+  }
+  Assert-Ok (@($state.Mappings | Where-Object {-not $_.Configured}).Count -eq 0) 'ADB_REVERSE_INCOMPLETE'
+  $null=& (Join-Path $PSScriptRoot 'Start-AppTunnel.ps1') -VerifyOnly
   Say 'ANDROID_VISUAL' 'NOT_RUN (device presence and reverse list do not prove UI Fast Refresh)'
 }
 function Show-AppLogs {
@@ -774,31 +813,8 @@ function Open-Browser {
   Say 'BROWSER_VISUAL' 'NOT_RUN (requires actual page inspection; HTTP 200 is not UI acceptance)'
 }
 function Open-Android {
-  $adb=Get-Command adb.exe -ErrorAction SilentlyContinue
-  Assert-Ok ([bool]$adb) 'ADB_NOT_INSTALLED'
-  $devices=@(& $adb.Source 'devices' | ForEach-Object {$_.ToString()})
-  Assert-Ok (@($devices|Where-Object{$_ -match ('^'+[regex]::Escape($device)+'\s+device\s*$')}).Count -eq 1) 'EXPECTED_SAMSUNG_NOT_CONNECTED'
-  $existing=@(& $adb.Source '-s' $device 'reverse' '--list' | ForEach-Object{$_.ToString()})
-  $nativePorts = @($android | ForEach-Object { [int]$_.Port }) + $nativeOwnerPorts
-  foreach($p in $nativePorts){
-    if ($p -in $nativeOwnerPorts) {
-      $listeners=@(Get-NetTCPConnection -State Listen -LocalAddress '127.0.0.1' -LocalPort $p -ErrorAction SilentlyContinue)
-      Assert-Ok ($listeners.Count -eq 1) ('NATIVE_OWNER_SSH_TUNNEL_NOT_LISTENING '+$p)
-      $owner=Get-CimInstance Win32_Process -Filter ('ProcessId=' + $listeners[0].OwningProcess)
-      $forward='127.0.0.1:'+$p+':127.0.0.1:'+$p
-      Assert-Ok ($owner -and $owner.Name -eq 'ssh.exe' -and
-        $owner.CommandLine.Contains($forward) -and
-        $owner.CommandLine.Contains('bthwani-docker')) ('NATIVE_OWNER_SSH_TUNNEL_UNVERIFIED '+$p)
-    }
-    $same=@($existing|Where-Object {$_ -match ('\btcp:'+$p+'\s+tcp:'+$p+'\b')}).Count -gt 0
-    $collision=@($existing|Where-Object {$_ -match ('\btcp:'+$p+'\s+') -and $_ -notmatch ('\btcp:'+$p+'\s+tcp:'+$p+'\b')}).Count -gt 0
-    Assert-Ok (-not $collision) ('ADB_REVERSE_COLLISION '+$p)
-    if(-not $same){
-      $null=@(& $adb.Source '-s' $device 'reverse' ('tcp:'+$p) ('tcp:'+$p) 2>&1)
-      Assert-Ok ($LASTEXITCODE -eq 0) ('ADB_REVERSE_SETUP_FAILED '+$p)
-      Say 'ADB_REVERSE' ('CREATED port='+$p)
-    } else {Say 'ADB_REVERSE' ('REUSED port='+$p)}
-  }
+  Restore-AndroidReverse
+  $adb=Get-Command adb.exe -ErrorAction Stop
   $blocked=0
   foreach($entry in $android){
     $name=[string]$entry.Name
@@ -1328,6 +1344,11 @@ function Verify-Checks {
 $originalLauncherPath=$env:Path
 try {
   Assert-Ok (!$RecoverRuntimeAttempt -or ($Action -eq 'Docker' -and $DockerAction -eq 'reconcile')) 'Runtime attempt recovery belongs to docker reconcile only'
+  if($Action -eq 'Apps' -and $DockerAction -eq 'recover'){
+    Assert-SurfaceIdentity
+    Restore-AndroidReverse
+    return
+  }
   $readOnlyOperation = $Action -in @('Status','Verify','Migrations') -or
     ($Action -eq 'Apps' -and $DockerAction -in @('help','status','verify','logs','android')) -or
     ($Action -eq 'Apps' -and $DockerAction -eq 'reconcile' -and !$Apply) -or

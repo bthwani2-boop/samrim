@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <# One loopback-only Surface -> Lenovo development tunnel; one scheduled owner. #>
 [CmdletBinding()]
-param([switch]$ValidateOnly)
+param([switch]$ValidateOnly,[switch]$VerifyOnly)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if ([Environment]::MachineName -ne 'BTHWANI') { throw 'APP_TUNNEL_SOURCE_HOST_REQUIRED' }
@@ -14,7 +14,7 @@ $forwards = @(
     @{Name=$owner.Name;Local=[int]$owner.Value;Remote=[int]$owner.Value}
   }
 )
-if($forwards.Count -ne 6 -or @($forwards.Local|Sort-Object -Unique).Count -ne $forwards.Count){throw 'APP_TUNNEL_PORT_COLLISION'}
+if($forwards.Count -eq 0 -or @($forwards.Local|Sort-Object -Unique).Count -ne $forwards.Count){throw 'APP_TUNNEL_PORT_COLLISION'}
 foreach($f in $forwards){
   if($f.Local -lt 1024 -or $f.Local -gt 65535 -or $f.Remote -lt 1024 -or $f.Remote -gt 65535){throw 'APP_TUNNEL_INVALID_PORT_CONFIG'}
 }
@@ -25,12 +25,13 @@ $argsList = @('-N','-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-
 $expectedForwards = @(foreach($f in $forwards){ '127.0.0.1:'+$f.Local+':127.0.0.1:'+$f.Remote })
 foreach($forward in $expectedForwards){ $argsList += @('-L',$forward) }
 $argsList += $target
+if ($ValidateOnly -and $VerifyOnly) { throw 'APP_TUNNEL_MODE_CONFLICT' }
 if ($ValidateOnly) {
   Write-Output ('TUNNEL_CONFIG_PASS forwards='+$forwards.Count+' '+($expectedForwards -join ' '))
   return
 }
 $logDir = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\Tunnels\logs'
-New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+if (!$VerifyOnly) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $logPath = Join-Path $logDir 'lenovo.log'
 function Write-TunnelLog([string]$message) {
   # Keep a bounded diagnostic log without logging secrets or SSH output.
@@ -41,6 +42,7 @@ function Write-TunnelLog([string]$message) {
 }
 # Recover only an orphan of this exact unified tunnel, never a foreign listener.
 $existing = @(Get-NetTCPConnection -State Listen -LocalPort $forwards.Local -ErrorAction SilentlyContinue)
+if($VerifyOnly -and ($existing.Count -ne $forwards.Count -or (Compare-Object @($forwards.Local|Sort-Object) @($existing.LocalPort|Sort-Object)))) { throw 'APP_TUNNEL_INCOMPLETE' }
 if($existing.Count){
   $owners=@($existing.OwningProcess|Sort-Object -Unique)
   if($owners.Count -ne 1 -or @($existing|Where-Object LocalAddress -ne '127.0.0.1').Count){throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'}
@@ -51,6 +53,7 @@ if($existing.Count){
   $command=[regex]::Match([string]$ownerProcess.CommandLine,'^(?:"([^"]+)"|(\S+)) (.+)$')
   $commandExe=if($command.Groups[1].Success){$command.Groups[1].Value}else{$command.Groups[2].Value}
   if(!$command.Success -or $commandExe -ine $ssh -or $command.Groups[3].Value -cne ($argsList -join ' ')){throw 'APP_TUNNEL_PORT_OWNED_BY_OTHER_PROCESS'}
+  if($VerifyOnly){ Write-Output ('TUNNEL_LIVE_PASS forwards='+$forwards.Count); return }
   $parentProcess=Get-CimInstance Win32_Process -Filter ('ProcessId='+$ownerProcess.ParentProcessId)
   if($parentProcess -and (!$parentProcess.CreationDate -or $parentProcess.CreationDate -le $ownerProcess.CreationDate)){
     if($parentProcess.Name -in @('powershell.exe','pwsh.exe') -and $parentProcess.CommandLine -match 'Start-AppTunnel\.ps1'){throw 'APP_TUNNEL_DUPLICATE_OWNER'}

@@ -123,8 +123,8 @@ test("native owner traffic reuses the verified SSH tunnel and cannot take over a
   assert.doesNotMatch(tunnel,/\$App\b|\.env\.tunnels\.local/);
   assert.equal((launcher.match(/Name=\x27BThwani Lenovo SSH Tunnel\x27/g)||[]).length,1);
   assert.match(launcher, /\$nativePorts = @\(\$android \| ForEach-Object/);
-  assert.match(launcher, /NATIVE_OWNER_SSH_TUNNEL_NOT_LISTENING/);
-  assert.match(launcher, /NATIVE_OWNER_SSH_TUNNEL_UNVERIFIED/);
+  assert.match(launcher, /Start-AppTunnel\.ps1'\) -VerifyOnly/);
+  assert.match(launcher, /reverse' '--no-rebind'/);
   assert.match(launcher, /ADB_REVERSE_COLLISION/);
   assert.match(launcher, /\+ \$nativeOwnerPorts/);
 });
@@ -136,7 +136,7 @@ test("tunnel recovery rejects SSH commands with extra forwards, a foreign host o
     `$s=Get-Content -LiteralPath '${tunnelPath}' -Raw`,
     "$start=$s.IndexOf('# Recover only an orphan');$end=$s.IndexOf(\"Write-TunnelLog ('START forwards=\",$start);if($start -lt 0 -or $end -le $start){throw 'RECOVERY_BLOCK_MISSING'}",
     "$recover=[scriptblock]::Create($s.Substring($start,$end-$start))",
-    "$ssh='C:\\Windows\\System32\\OpenSSH\\ssh.exe';$target='bthwani-docker';$expectedForwards=@('127.0.0.1:18101:127.0.0.1:28111','127.0.0.1:3201:127.0.0.1:3201');$forwards=@(@{Local=18101},@{Local=3201});$argsList=@('-N','-T','-L',$expectedForwards[0],'-L',$expectedForwards[1],$target)",
+    "$ssh='C:\\Windows\\System32\\OpenSSH\\ssh.exe';$target='bthwani-docker';$expectedForwards=@('127.0.0.1:18101:127.0.0.1:28111','127.0.0.1:3201:127.0.0.1:3201');$forwards=@(@{Local=18101},@{Local=3201});$VerifyOnly=$false;$argsList=@('-N','-T','-L',$expectedForwards[0],'-L',$expectedForwards[1],$target)",
     "$canonical='\"'+$ssh+'\" '+($argsList -join ' ');$created=[datetime]'2026-01-01T01:00:00'",
     "function Get-NetTCPConnection {foreach($f in $forwards){[pscustomobject]@{OwningProcess=100;LocalAddress='127.0.0.1';LocalPort=$f.Local}}}",
     "function Get-CimInstance {param($ClassName,$Filter);if($Filter -eq 'ProcessId=100'){[pscustomobject]@{ProcessId=100;ParentProcessId=200;ExecutablePath=$ssh;CommandLine=$script:command;CreationDate=$created}}elseif($Filter -eq 'ProcessId=200'){$script:parent}}",
@@ -613,4 +613,17 @@ test("canonical application task layout is identical in PowerShell 7 and Windows
     assert.deepEqual(records.map(r=>r.A),["customer","merchant","captain","control-panel"]);
     assert.deepEqual(records.map(r=>r.P),[28111,28112,28113,23010]);
   }
+});
+
+test("ADB mapping state rejects missing, conflicting and duplicate reverse bindings", {skip:process.platform!=="win32"},()=>{
+  const source=scriptPath.replaceAll("'","''");
+  const ps=[
+    "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest",
+    "$s=Get-Content -LiteralPath '"+source+"' -Raw",
+    "$a=$s.IndexOf('function Get-AndroidMappingState(');$b=$s.IndexOf('function Get-AndroidReverseState',$a);. ([scriptblock]::Create($s.Substring($a,$b-$a)))",
+    "$m=@(Get-AndroidMappingState -Lines @('UsbFfs tcp:18101 tcp:18101','UsbFfs tcp:3201 tcp:9000','UsbFfs tcp:3202 tcp:3202','UsbFfs tcp:3202 tcp:3202','UsbFfs tcp:9999 tcp:18102') -Ports @(18101,18102,3201,3202))",
+    "if(!$m[0].Configured -or $m[1].Configured -or $m[1].Collision -or !$m[2].Collision -or !$m[3].Collision){throw 'BAD_MAPPING_CLASSIFICATION'}"
+  ].join("; ");
+  const run=spawnSync("pwsh.exe",["-NoProfile","-Command",ps],{encoding:"utf8"});
+  assert.equal(run.status,0,run.stderr||run.stdout);
 });
