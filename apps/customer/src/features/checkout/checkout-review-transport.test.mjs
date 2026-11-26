@@ -25,9 +25,9 @@ const actor = "synthetic-customer-a";
 const store = "store-a";
 const origin = "http://127.0.0.1:3202";
 const bearer = Buffer.alloc(32, 14).toString("base64url");
-const input = { expectedCartVersion: 4, recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP" };
+const input = { expectedCartVersion: 4, salesChannel: "DIRECT", recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP" };
 const review = {
-  actorId: actor, storeId: store, cartVersion: 4, recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP",
+  actorId: actor, storeId: store, cartVersion: 4, salesChannel: "DIRECT", recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP",
   merchandise: { actorId: actor, storeId: store, cartVersion: 4, lines: [
     { offerId: "offer-a", variantId: "variant-a", quantity: 2, unitYer: "550", lineTotalYer: "1100" }],
     merchandiseSubtotalYer: "1100", checkoutReady: false },

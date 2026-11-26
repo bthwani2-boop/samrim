@@ -21,7 +21,7 @@ export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMe
 export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
 export type { CustomerCartDirectory, CustomerCartDirectoryEntry } from "./customer-cart-directory.ts";
 export { listCurrentCustomerCarts, parseCustomerCartDirectory } from "./customer-cart-directory.ts";
-export type { CheckoutFulfillmentMode, CheckoutRecipientPurpose, CustomerCheckoutBlocker, CustomerCheckoutReview, CustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
+export type { CheckoutFulfillmentMode, CheckoutRecipientPurpose, CheckoutSalesChannel, CustomerCheckoutBlocker, CustomerCheckoutReview, CustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
 export { parseCustomerCheckoutReview, reviewCurrentCustomerCheckout, validCustomerCheckoutReviewInput } from "./customer-checkout-review.ts";
 export type { EmployeeRegistrationAttempt, EmployeeRegistrationDraft, EmployeeRegistrationOutcome, EmployeeRegistrationRecovery, EmployeeRegistrationRecoveryPort } from "./employee-registration-recovery.ts";
 export { claimEmployeeRegistration, employeeRegistrationErrorOutcome, normalizeEmployeeRegistrationDraft, openEmployeeRegistrationRecovery, settleEmployeeRegistration } from "./employee-registration-recovery.ts";

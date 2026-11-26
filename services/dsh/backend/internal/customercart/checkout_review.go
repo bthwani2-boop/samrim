@@ -19,6 +19,7 @@ import (
 // Review is a non-persisted, version-bound DSH snapshot, not a quote or Order.
 // Recipient contact is validated, never returned, logged, persisted or sent to WLT.
 type checkoutReviewInput struct {
+	SalesChannel           string
 	ExpectedCartVersion    int64
 	AddressID              string
 	ExpectedAddressVersion int64
@@ -33,6 +34,7 @@ type checkoutReviewResult struct {
 	ActorID          string                                     `json:"actorId"`
 	StoreID          string                                     `json:"storeId"`
 	CartVersion      int64                                      `json:"cartVersion"`
+	SalesChannel     string                                     `json:"salesChannel"`
 	RecipientPurpose string                                     `json:"recipientPurpose"`
 	FulfillmentMode  string                                     `json:"fulfillmentMode"`
 	Merchandise      MerchandiseEstimate                        `json:"merchandise"`
@@ -78,6 +80,8 @@ func decodeCheckoutReview(w http.ResponseWriter, r *http.Request) (checkoutRevie
 		seen[key] = true
 		var field any
 		switch key {
+		case "salesChannel":
+			field = &v.SalesChannel
 		case "expectedCartVersion":
 			field = &v.ExpectedCartVersion
 		case "addressId":
@@ -105,6 +109,9 @@ func decodeCheckoutReview(w http.ResponseWriter, r *http.Request) (checkoutRevie
 	end, err := d.Token()
 	if err != nil || end != json.Delim('}') || d.Decode(new(any)) != io.EOF ||
 		!seen["expectedCartVersion"] || v.ExpectedCartVersion < 1 || v.ExpectedCartVersion > maxJSONSafeInteger {
+		return v, false
+	}
+	if v.SalesChannel != "DIRECT" && v.SalesChannel != "MARKETPLACE" {
 		return v, false
 	}
 	switch v.RecipientPurpose {
@@ -174,7 +181,26 @@ func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, code)
 		return
 	}
-	result := checkoutReviewResult{ActorID: actor, StoreID: store, CartVersion: cart.Version,
+	// Read the current Store relation in the same repeatable-read transaction
+	// as the cart, publication and offer evidence. The caller requests a
+	// channel; it never grants itself eligibility or financial rights.
+	var eligible bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM stores s JOIN service_cities c ON c.id=s.city_id
+		JOIN verticals v ON v.id=s.vertical_id
+		WHERE s.id=$1 AND s.published AND c.active AND v.active
+		AND (($2='DIRECT' AND s.relation IN ('DIRECT','MARKETPLACE'))
+		  OR ($2='MARKETPLACE' AND s.relation='MARKETPLACE'))
+	)`, store, input.SalesChannel).Scan(&eligible)
+	if err != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	if !eligible {
+		fail(w, 409, "SALES_CHANNEL_NOT_ELIGIBLE")
+		return
+	}
+	result := checkoutReviewResult{ActorID: actor, StoreID: store, CartVersion: cart.Version, SalesChannel: input.SalesChannel,
 		RecipientPurpose: input.RecipientPurpose, FulfillmentMode: input.FulfillmentMode, Merchandise: amount,
 		CheckoutReady: false, Blockers: []string{"FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"}}
 	result.StoreSchedule, err = storeavailability.ReadCustomerSchedule(ctx, tx, store)

@@ -379,9 +379,10 @@ components:
     CustomerCheckoutReviewInput:
       type: object
       additionalProperties: false
-      required: [expectedCartVersion, recipientPurpose, fulfillmentMode]
+      required: [expectedCartVersion, salesChannel, recipientPurpose, fulfillmentMode]
       properties:
         expectedCartVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        salesChannel: { type: string, enum: [DIRECT, MARKETPLACE] }
         recipientPurpose: { type: string, enum: [SELF, OTHER] }
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         addressId: { type: string, pattern: '^addr-[a-f0-9]{32}$' }
@@ -415,11 +416,12 @@ components:
     CustomerCheckoutReview:
       type: object
       additionalProperties: false
-      required: [actorId, storeId, cartVersion, recipientPurpose, fulfillmentMode, merchandise, checkoutReady, blockers, storeSchedule]
+      required: [actorId, storeId, cartVersion, salesChannel, recipientPurpose, fulfillmentMode, merchandise, checkoutReady, blockers, storeSchedule]
       properties:
         actorId: { type: string, minLength: 1, maxLength: 128 }
         storeId: { $ref: '#/components/schemas/PublicId' }
         cartVersion: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        salesChannel: { type: string, enum: [DIRECT, MARKETPLACE] }
         recipientPurpose: { type: string, enum: [SELF, OTHER] }
         fulfillmentMode: { type: string, enum: [BTHWANI_CAPTAIN, PARTNER_CAPTAIN, CUSTOMER_PICKUP] }
         merchandise: { $ref: '#/components/schemas/CustomerCartMerchandiseEstimate' }
@@ -470,7 +472,7 @@ components:
       properties:
         error:
           type: string
-          enum: [INVALID_REQUEST, UNAUTHORIZED_OR_OWNER_UNAVAILABLE, STORE_OR_OFFER_NOT_AVAILABLE, CART_VERSION_OR_OPERATION_CONFLICT, OPERATION_RESULT_UNKNOWN, OWNER_UNAVAILABLE, CART_VERSION_CONFLICT, CART_EMPTY_OR_TOO_LARGE, CART_LINE_UNAVAILABLE, MERCHANDISE_AMOUNT_OUT_OF_RANGE, ADDRESS_OR_SERVICEABILITY_UNAVAILABLE, ADDRESS_VERSION_CONFLICT]
+          enum: [INVALID_REQUEST, UNAUTHORIZED_OR_OWNER_UNAVAILABLE, STORE_OR_OFFER_NOT_AVAILABLE, CART_VERSION_OR_OPERATION_CONFLICT, OPERATION_RESULT_UNKNOWN, OWNER_UNAVAILABLE, CART_VERSION_CONFLICT, CART_EMPTY_OR_TOO_LARGE, CART_LINE_UNAVAILABLE, MERCHANDISE_AMOUNT_OUT_OF_RANGE, ADDRESS_OR_SERVICEABILITY_UNAVAILABLE, ADDRESS_VERSION_CONFLICT, SALES_CHANNEL_NOT_ELIGIBLE]
     PublicOfferEstimate:
       type: object
       additionalProperties: false

@@ -342,7 +342,7 @@ test("checkout retains only same actor/store/cart draft through transient owner 
   const cart = fixture("store-a");
   cart.lines = cart.lines.filter(line => line.previewAvailable);
   const form = () => nodes(h.render()).find(n => n.type === "CheckoutReviewForm");
-  const draft = { recipient: { purpose: "OTHER", name: "Synthetic Recipient", phone: "+967770000099", instructions: "" }, mode: "CUSTOMER_PICKUP" };
+  const draft = { recipient: { purpose: "OTHER", name: "Synthetic Recipient", phone: "+967770000099", instructions: "" }, mode: "CUSTOMER_PICKUP", salesChannel: "DIRECT" };
   const reload = async result => {
     h.blur(); h.render(); h.focus();
     h.calls.at(-1).resolve(result);

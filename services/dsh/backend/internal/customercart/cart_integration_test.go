@@ -549,7 +549,7 @@ func verifyMissingOwnerRelations(t *testing.T, dsn, sourceSchema string) {
 		{"GET", cart, ""},
 		{"GET", cart + "/merchandise-estimate?expectedVersion=0", ""},
 		{"GET", cart + "/serviceability?addressId=" + addressID, ""},
-		{"POST", cart + "/checkout-review", "{\"expectedCartVersion\":1,\"recipientPurpose\":\"SELF\",\"fulfillmentMode\":\"CUSTOMER_PICKUP\"}"},
+		{"POST", cart + "/checkout-review", "{\"expectedCartVersion\":1,\"salesChannel\":\"DIRECT\",\"recipientPurpose\":\"SELF\",\"fulfillmentMode\":\"CUSTOMER_PICKUP\"}"},
 		{"PUT", cart, "{\"operationId\":\"scope-fixture-cart-01\",\"expectedVersion\":0,\"lines\":[]}"},
 		{"GET", "/v1/addresses", ""},
 		{"GET", address, ""},

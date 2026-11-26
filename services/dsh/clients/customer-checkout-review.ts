@@ -4,16 +4,17 @@ import { type CustomerCartMerchandiseEstimate, parseCustomerCartMerchandiseEstim
 import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
+export type CheckoutSalesChannel = "DIRECT" | "MARKETPLACE";
 export type CheckoutRecipientPurpose = "SELF" | "OTHER";
 export type CheckoutFulfillmentMode = "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP";
 export type CustomerCheckoutReviewInput = Readonly<{
-  expectedCartVersion: number; recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
+  expectedCartVersion: number; salesChannel: CheckoutSalesChannel; recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
   addressId?: string; expectedAddressVersion?: number; recipientName?: string; recipientPhone?: string; deliveryInstructions?: string;
 }>;
 export type CustomerCheckoutBlocker = "FULFILLMENT_MODE_NOT_ADMITTED" | "PAYABLE_QUOTE_NOT_AVAILABLE" |
   "PAYMENT_ALLOCATION_NOT_AVAILABLE" | "ADDRESS_UNSERVICEABLE";
 export type CustomerCheckoutReview = Readonly<{
-  actorId: string; storeId: string; cartVersion: number;
+  actorId: string; storeId: string; cartVersion: number; salesChannel: CheckoutSalesChannel;
   recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
   merchandise: CustomerCartMerchandiseEstimate; delivery?: DeliveryServiceability;
   distanceFeeEstimate?: Readonly<{policyVersion: number; distanceMetres: number; feeYer: string}>;
@@ -25,10 +26,11 @@ const version = (v: unknown): v is number => typeof v === "number" && Number.isS
 const text = (v: unknown, max: number): v is string => typeof v === "string" &&
   v === v.trim() && [...v].length >= 1 && [...v].length <= max && !/[\p{Cc}\p{Cf}\uFFFD\uD800-\uDFFF]/u.test(v);
 const storeRule = /^[a-z0-9-]{1,64}$/;
-const inputKeys = ["expectedCartVersion", "recipientPurpose", "fulfillmentMode", "addressId",
+const inputKeys = ["expectedCartVersion", "salesChannel", "recipientPurpose", "fulfillmentMode", "addressId",
   "expectedAddressVersion", "recipientName", "recipientPhone", "deliveryInstructions"];
 export function validCustomerCheckoutReviewInput(v: unknown): v is CustomerCheckoutReviewInput {
   if (!object(v) || Object.keys(v).some(k => !inputKeys.includes(k)) || !version(v.expectedCartVersion)) return false;
+  if (v.salesChannel !== "DIRECT" && v.salesChannel !== "MARKETPLACE") return false;
   const has = (k: string) => Object.hasOwn(v, k);
   if (v.recipientPurpose === "SELF") {
     if (has("recipientName") || has("recipientPhone") || has("deliveryInstructions")) return false;
@@ -47,12 +49,12 @@ export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actor
   input: CustomerCheckoutReviewInput): CustomerCheckoutReview {
   const invalid = () => new DshPublicError(502, "OWNER_RESPONSE_INVALID");
   if (!validCustomerCheckoutReviewInput(input) || !object(raw)) throw invalid();
-  const keys = ["actorId", "storeId", "cartVersion", "recipientPurpose", "fulfillmentMode", "merchandise", "checkoutReady", "blockers", "storeSchedule",
+  const keys = ["actorId", "storeId", "cartVersion", "salesChannel", "recipientPurpose", "fulfillmentMode", "merchandise", "checkoutReady", "blockers", "storeSchedule",
     ...(input.addressId ? ["delivery"] : []),
     ...(Object.hasOwn(raw, "distanceFeeEstimate") ? ["distanceFeeEstimate"] : [])];
   if (Object.keys(raw).length !== keys.length || keys.some(k => !Object.hasOwn(raw, k)) ||
     raw.actorId !== actorId || raw.storeId !== storeId || raw.cartVersion !== input.expectedCartVersion ||
-    raw.recipientPurpose !== input.recipientPurpose || raw.fulfillmentMode !== input.fulfillmentMode || raw.checkoutReady !== false) throw invalid();
+    raw.salesChannel !== input.salesChannel || raw.recipientPurpose !== input.recipientPurpose || raw.fulfillmentMode !== input.fulfillmentMode || raw.checkoutReady !== false) throw invalid();
   const schedule = raw.storeSchedule;
   if (!object(schedule)) throw invalid();
   const status = schedule.status;
@@ -87,7 +89,7 @@ export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actor
   const returnedBlockers = raw.blockers;
   if (!Array.isArray(returnedBlockers) || returnedBlockers.length !== blockers.length ||
     blockers.some((b, i) => returnedBlockers[i] !== b)) throw invalid();
-  return { actorId, storeId, cartVersion: input.expectedCartVersion, recipientPurpose: input.recipientPurpose,
+  return { actorId, storeId, cartVersion: input.expectedCartVersion, salesChannel: input.salesChannel, recipientPurpose: input.recipientPurpose,
     fulfillmentMode: input.fulfillmentMode, merchandise, ...(delivery ? { delivery } : {}),
     ...(distanceFeeEstimate ? { distanceFeeEstimate } : {}), checkoutReady: false, blockers, storeSchedule };
 }

@@ -1,4 +1,4 @@
-import { type CheckoutFulfillmentMode, type CustomerAddress, type CustomerCheckoutReview, type CustomerCheckoutReviewInput, DshPublicError, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
+import { type CheckoutFulfillmentMode, type CheckoutSalesChannel, type CustomerAddress, type CustomerCheckoutReview, type CustomerCheckoutReviewInput, DshPublicError, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
@@ -14,6 +14,7 @@ type AddressSelection = Pick<CustomerAddress, "id" | "version">;
 export type CheckoutInputDraft = Readonly<{
   recipient: ReturnType<typeof emptyRecipient>;
   mode: CheckoutFulfillmentMode | null;
+  salesChannel: CheckoutSalesChannel | null;
 }>;
 export default function CheckoutReviewForm({ actorId, storeId, cartVersion, initialDraft, onDraftChange }: Readonly<{
   actorId: string; storeId: string; cartVersion: number;
@@ -24,6 +25,7 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
   const scope = JSON.stringify([actorId, storeId, cartVersion]);
   const [recipient, setRecipient] = useState(() => initialDraft?.recipient ?? emptyRecipient());
   const [mode, setMode] = useState<CheckoutFulfillmentMode | null>(initialDraft?.mode ?? null);
+  const [salesChannel, setSalesChannel] = useState<CheckoutSalesChannel | null>(initialDraft?.salesChannel ?? null);
   const [address, setAddress] = useState<AddressSelection | null>(null);
   const [result, setResult] = useState<CustomerCheckoutReview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -38,7 +40,7 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
     invalidate(); setAddress(null); setAdmitted(false);
   }, [invalidate]);
   const clear = useCallback(() => {
-    conceal(); setRecipient(emptyRecipient()); setMode(null); onDraftChange?.(scope, null);
+    conceal(); setRecipient(emptyRecipient()); setMode(null); setSalesChannel(null); onDraftChange?.(scope, null);
   }, [conceal, scope, onDraftChange]);
   useEffect(() => {
     let controller = new AbortController();
@@ -91,8 +93,8 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
     return () => { controller.abort(); clearTimeout(expiry); clearInterval(timer); active.current?.abort(); listener.remove(); };
   }, [actorId, clear, conceal]);
   const selectAddress = useCallback((value: AddressSelection | null) => { invalidate(); setAddress(value); }, [invalidate]);
-  const input: CustomerCheckoutReviewInput | null = mode ? {
-    expectedCartVersion: cartVersion, recipientPurpose: recipient.purpose, fulfillmentMode: mode,
+  const input: CustomerCheckoutReviewInput | null = mode && salesChannel ? {
+    expectedCartVersion: cartVersion, salesChannel, recipientPurpose: recipient.purpose, fulfillmentMode: mode,
     ...(mode !== "CUSTOMER_PICKUP" && address ? { addressId: address.id, expectedAddressVersion: address.version } : {}),
     ...(recipient.purpose === "OTHER" ? { recipientName: recipient.name.trim(), recipientPhone: recipient.phone.trim(),
       ...(mode !== "CUSTOMER_PICKUP" && recipient.instructions.trim() ? { deliveryInstructions: recipient.instructions.trim() } : {}) } : {}),
@@ -117,13 +119,25 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
   }
   if (!admitted) return <Text style={{ color: theme.colorSecondary }}>{error || "جارٍ التحقق من جلسة العميل للمراجعة."}</Text>;
   return <View testID="checkout-review-inputs" style={{ gap: 12 }}>
+    <Text style={{ color: theme.color, fontWeight: "700" }}>قناة البيع المطلوبة للمراجعة</Text>
+    <Text style={{ color: theme.colorSecondary }}>تتحقق DSH من أهلية القناة؛ اختيارها لا يفعّل البيع أو الدفع.</Text>
+    {(["DIRECT", "MARKETPLACE"] as const).map(channel => <Pressable key={channel}
+      testID={`checkout-sales-channel-${channel}`} accessibilityRole="radio"
+      accessibilityState={{ checked: salesChannel === channel, disabled: busy }} disabled={busy}
+      style={{ minHeight: 44, padding: 12, borderWidth: 1, borderColor: theme.borderColor,
+        borderRadius: 8, backgroundColor: salesChannel === channel ? theme.actionSoft : theme.surface }}
+      onPress={() => {
+        invalidate(); setSalesChannel(channel); onDraftChange?.(scope, { recipient, mode, salesChannel: channel });
+      }}>
+      <Text style={{ color: theme.color }}>{channel === "DIRECT" ? "البيع الخاص المباشر" : "سوق بثواني"}</Text>
+    </Pressable>)}
     <FulfillmentChoice value={mode} onChange={next => {
-      invalidate(); setMode(next); onDraftChange?.(scope, { recipient, mode: next });
+      invalidate(); setMode(next); onDraftChange?.(scope, { recipient, mode: next, salesChannel });
       if (next === "CUSTOMER_PICKUP") setAddress(null);
     }} />
     {mode && mode !== "CUSTOMER_PICKUP" ? <DeliveryAddressReview actorId={actorId} storeId={storeId} onSelectionChange={selectAddress} /> : null}
     <RecipientForm value={recipient} pickup={mode === "CUSTOMER_PICKUP"} onChange={next => {
-      invalidate(); setRecipient(next); onDraftChange?.(scope, { recipient: next, mode });
+      invalidate(); setRecipient(next); onDraftChange?.(scope, { recipient: next, mode, salesChannel });
     }} />
     <Pressable accessibilityRole="button" accessibilityState={{ disabled: !valid || busy }} disabled={!valid || busy}
       style={{ minHeight: 44, padding: 12, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 8, opacity: valid && !busy ? 1 : 0.5 }}
@@ -133,6 +147,7 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
     {error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{error}</Text> : null}
     {result ? <View testID="checkout-owner-input-review" style={{ gap: 8 }}>
       <Text style={{ color: theme.color }}>مجموع البضائع المراجع: {formatExactYer(BigInt(result.merchandise.merchandiseSubtotalYer))} ريال يمني</Text>
+      <Text style={{ color: theme.colorSecondary }}>قناة البيع المراجعة: {result.salesChannel === "DIRECT" ? "البيع الخاص المباشر" : "سوق بثواني"}</Text>
       <Text style={{ color: theme.colorSecondary }}>تمت مراجعة صيغة بيانات المستلم والنسخة الحالية للسلة لدى DSH.</Text>
       {result.delivery ? <Text style={{ color: theme.colorSecondary }}>{result.delivery.status === "SERVICEABLE" ? "العنوان ضمن النطاق الجغرافي." : "العنوان خارج النطاق الجغرافي."}</Text> : null}
       {result.delivery && (result.distanceFeeEstimate ?

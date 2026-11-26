@@ -23,14 +23,17 @@ func TestCheckoutReviewRejectsInvalidAndUnverifiedRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	self := `{"expectedCartVersion":1,"recipientPurpose":"SELF","fulfillmentMode":"CUSTOMER_PICKUP"}`
-	delivery := `{"expectedCartVersion":1,"recipientPurpose":"OTHER","fulfillmentMode":"BTHWANI_CAPTAIN","addressId":"addr-00000000000000000000000000000001","expectedAddressVersion":1,"recipientName":"Synthetic recipient","recipientPhone":"+967700000001"}`
+	self := `{"expectedCartVersion":1,"salesChannel":"DIRECT","recipientPurpose":"SELF","fulfillmentMode":"CUSTOMER_PICKUP"}`
+	delivery := `{"expectedCartVersion":1,"salesChannel":"DIRECT","recipientPurpose":"OTHER","fulfillmentMode":"BTHWANI_CAPTAIN","addressId":"addr-00000000000000000000000000000001","expectedAddressVersion":1,"recipientName":"Synthetic recipient","recipientPhone":"+967700000001"}`
 	for _, tc := range []struct {
 		name, body, actor string
 		status            int
 	}{
 		{"valid self requires identity", self, "", 401},
 		{"valid other requires identity", delivery, "", 401},
+		{"missing channel", strings.Replace(self, "\"salesChannel\":\"DIRECT\",", "", 1), "", 400},
+		{"unknown channel", strings.Replace(self, "DIRECT", "UNKNOWN", 1), "", 400},
+		{"duplicate channel", strings.Replace(self, "{", "{\"salesChannel\":\"MARKETPLACE\",", 1), "", 400},
 		{"merchant denied", self, "merchant-a", 403},
 		{"self cannot override identity", strings.Replace(self, "\"SELF\"", "\"SELF\",\"recipientPhone\":\"+967700000001\"", 1), "", 400},
 		{"unknown mode", strings.Replace(self, "CUSTOMER_PICKUP", "UNKNOWN", 1), "", 400},
@@ -99,7 +102,7 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 			t.Error(err)
 		}
 	}()
-	pickup := map[string]any{"expectedCartVersion": 1, "recipientPurpose": "SELF", "fulfillmentMode": "CUSTOMER_PICKUP"}
+	pickup := map[string]any{"expectedCartVersion": 1, "salesChannel": "DIRECT", "recipientPurpose": "SELF", "fulfillmentMode": "CUSTOMER_PICKUP"}
 	status, body := checkoutReviewRequest(t, h, "customer-a", pickup)
 	assertCartStatus(t, status, 200, body)
 	var review checkoutReviewResult
@@ -109,6 +112,32 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if review.ActorID != "customer-a" || review.StoreID != "store-a" || review.CartVersion != 1 || review.Merchandise.MerchandiseSubtotalYER != "1100" || review.CheckoutReady || review.Delivery != nil || len(review.Blockers) != 3 {
 		t.Fatalf("wrong pickup review: %s", body)
 	}
+	// Both channels may review the same MARKETPLACE Store and the same cart.
+	for _, relation := range []string{"MARKETPLACE", "DIRECT"} {
+		if _, err := db.ExecContext(ctx, "UPDATE "+schema+".stores SET relation=$1 WHERE id='store-a'", relation); err != nil {
+			t.Fatal(err)
+		}
+		for _, channel := range []string{"DIRECT", "MARKETPLACE"} {
+			pickup["salesChannel"] = channel
+			status, body = checkoutReviewRequest(t, h, "customer-a", pickup)
+			if relation == "DIRECT" && channel == "MARKETPLACE" {
+				assertCartStatus(t, status, 409, body)
+				if !strings.Contains(string(body), "SALES_CHANNEL_NOT_ELIGIBLE") {
+					t.Fatalf("forbidden channel did not fail closed: %s", body)
+				}
+				continue
+			}
+			assertCartStatus(t, status, 200, body)
+			var accepted map[string]any
+			if err := json.Unmarshal(body, &accepted); err != nil || accepted["salesChannel"] != channel || accepted["checkoutReady"] != false {
+				t.Fatalf("invalid channel evidence: %s (%v)", body, err)
+			}
+		}
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".stores SET relation='MARKETPLACE' WHERE id='store-a'"); err != nil {
+		t.Fatal(err)
+	}
+	pickup["salesChannel"] = "DIRECT"
 	if review.StoreSchedule.Status != "UNAVAILABLE" || review.StoreSchedule.Version != 0 {
 		t.Fatalf("unconfigured schedule fabricated evidence: %s", body)
 	}
@@ -134,7 +163,7 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if !strings.Contains(string(body), "CART_LINE_UNAVAILABLE") {
 		t.Fatalf("disabled vertical did not fail closed: %s", body)
 	}
-	delivery := map[string]any{"expectedCartVersion": 1, "recipientPurpose": "OTHER", "fulfillmentMode": "BTHWANI_CAPTAIN", "addressId": addressID, "expectedAddressVersion": 2, "recipientName": "Synthetic recipient", "recipientPhone": "+967700000001"}
+	delivery := map[string]any{"expectedCartVersion": 1, "salesChannel": "DIRECT", "recipientPurpose": "OTHER", "fulfillmentMode": "BTHWANI_CAPTAIN", "addressId": addressID, "expectedAddressVersion": 2, "recipientName": "Synthetic recipient", "recipientPhone": "+967700000001"}
 	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
 	assertCartStatus(t, status, 200, body)
 	review = checkoutReviewResult{}
