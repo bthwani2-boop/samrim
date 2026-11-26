@@ -401,3 +401,42 @@ test("documentation placement rejects retired parallel index and journey dossier
   rmSync(path.join(dir, "docs", "README.md"));
   assert.throws(() => verifyWorkspace(dir), /Required source must be a real file: docs\/README.md/);
 });
+
+
+test("workspace tool admission compares exact membership rather than manifest key order", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const file = path.join(dir, "package.json");
+  const manifest = JSON.parse(readFileSync(file, "utf8"));
+  manifest.devDependencies = Object.fromEntries(Object.entries(manifest.devDependencies).reverse());
+  writeFileSync(file, JSON.stringify(manifest));
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  delete manifest.devDependencies.knip;
+  manifest.devDependencies.unapproved = "1.0.0";
+  writeFileSync(file, JSON.stringify(manifest));
+  assert.throws(() => verifyWorkspace(dir), /unapproved/);
+});
+
+test("service placement reports stable ordinal diagnostics independent of creation order", async t => {
+  const { serviceSourcePlacementIssues } = await import("./check-service-placement.mjs");
+  const dir = mkdtempSync(path.join(tmpdir(), "bthwani-placement-order-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  mkdirSync(path.join(dir, "services"));
+  for (const name of ["z.ts", "a.ts", "Z-test.ts", "_test.ts", "é.ts"]) {
+    writeFileSync(path.join(dir, "services", name), "fixture");
+  }
+  assert.deepEqual(serviceSourcePlacementIssues(dir),
+    ["Z-test.ts", "_test.ts", "a.ts", "z.ts", "é.ts"].map(name => "services/" + name + ": unowned service root file"));
+});
+
+test("workspace admission refuses a required manifest reached through an ancestor junction", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const target = mkdtempSync(path.join(tmpdir(), "bthwani-external-workspace-"));
+  t.after(() => rmSync(target, { recursive: true, force: true }));
+  const project = path.join(dir, "apps", "customer");
+  copyFileSync(path.join(project, "package.json"), path.join(target, "package.json"));
+  rmSync(project, { recursive: true, force: true });
+  symlinkSync(target, project, "junction");
+  assert.throws(() => verifyWorkspace(dir), /Required source directory/);
+});
