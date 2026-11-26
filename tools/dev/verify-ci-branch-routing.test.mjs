@@ -83,26 +83,25 @@ function candidate(directory) {
 const full = "github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')";
 const publish = "github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')";
 
-test("push routing suppresses only a verified same-commit open main PR and falls back safely", () => fixture("ci-routing-", directory => {
+test("an exact open main PR owns verification before its workflow run exists", () => fixture("ci-routing-", directory => {
   const route = ci.jobs.route;
   const step = runs(route, /gh api/);
   mandatory(route, step);
-  assert.deepEqual(route.permissions, { "pull-requests": "read", actions: "read" });
+  assert.deepEqual(route.permissions, { "pull-requests": "read" });
+  assert.doesNotMatch(command(step), /actions\/workflows|workflow_runs/);
   const output = portable(path.join(directory, "output.txt"));
   const sha = "a".repeat(40);
-  const exact = sha + ":195";
-  const stub = 'gh() { if [[ "$*" == *"/actions/workflows/"* ]]; then [[ "$RUN_API_OK" == yes ]] || return 1; printf "%s\\n" "$API_RUNS"; else [[ "$API_OK" == yes ]] || return 1; printf "%s\\n" "$API_HEADS"; fi; }\n';
+  const stub = 'gh() { [[ "$*" == *"/pulls"* && "$*" != *"/actions/"* ]] || return 98; [[ "$API_OK" == yes ]] || return 1; printf "%s\\n" "$API_HEADS"; }\n';
   const scenarios = [
     { event: "pull_request", ref: "refs/pull/195/merge", mode: "full" },
     { event: "workflow_dispatch", ref: "refs/heads/dev", mode: "full" },
     { event: "push", ref: "refs/heads/main", mode: "full" },
-    { event: "push", ref: "refs/heads/dev", heads: exact, runs: exact, mode: "duplicate" },
-    { event: "push", ref: "refs/heads/dev", heads: exact, runs: sha + ":196", mode: "feedback" },
-    { event: "push", ref: "refs/heads/dev", heads: exact, runs: "", mode: "feedback" },
-    { event: "push", ref: "refs/heads/dev", heads: exact, runs: exact, runApi: "no", mode: "feedback" },
-    { event: "push", ref: "refs/heads/dev", heads: "b".repeat(40) + ":195", runs: exact, mode: "feedback" },
+    { event: "push", ref: "refs/heads/dev", heads: sha, mode: "pr_owned" },
+    { event: "push", ref: "refs/heads/dev", heads: "b".repeat(40), mode: "feedback" },
+    { event: "push", ref: "refs/heads/dev", heads: sha + "extra", mode: "feedback" },
+    { event: "push", ref: "refs/heads/dev", heads: "b".repeat(40) + "\n" + sha, mode: "pr_owned" },
     { event: "push", ref: "refs/heads/dev", heads: "", mode: "feedback" },
-    { event: "push", ref: "refs/heads/dev", heads: exact, runs: exact, api: "no", mode: "feedback" },
+    { event: "push", ref: "refs/heads/dev", heads: sha, api: "no", mode: "feedback" },
   ];
   for (const scenario of scenarios) {
     rmSync(output, { force: true });
@@ -110,10 +109,10 @@ test("push routing suppresses only a verified same-commit open main PR and falls
       GITHUB_OUTPUT: output, GITHUB_EVENT_NAME: scenario.event, GITHUB_REF: scenario.ref,
       GITHUB_REF_NAME: "dev", GITHUB_REPOSITORY: "owner/repo", GITHUB_REPOSITORY_OWNER: "owner",
       GITHUB_SHA: sha, API_OK: scenario.api ?? "yes", API_HEADS: scenario.heads ?? "",
-      RUN_API_OK: scenario.runApi ?? "yes", API_RUNS: scenario.runs ?? "",
     }, directory);
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(output, "utf8").trim(), "mode=" + scenario.mode);
+    assert.equal(result.stdout.trim(), "VERIFICATION_OWNER=" + scenario.mode);
   }
 }));
 
@@ -182,6 +181,7 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   mandatory(workspace, lint);
   assert.match(command(lint), /8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8/);
   assert.match(command(lint), /sha256sum --check --strict/);
+  assert.match(command(lint), /--proto '=https' --proto-redir '=https'/);
   assert.match(command(lint), /"\$dir\/actionlint" -color=false/);
   for (const job of [app, audit]) {
     const install = runs(job, /pnpm install --frozen-lockfile --ignore-scripts/);

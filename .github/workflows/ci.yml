@@ -25,18 +25,19 @@ concurrency:
 
 jobs:
   route:
-    # Only feedback may be suppressed. Full PR/main verification is mandatory.
+    # An open same-repository PR to main owns full verification of its head.
+    # Do not race the creation of its workflow run. A failed API lookup retains
+    # development feedback; it never suppresses the independent PR gate.
     if: ${{ github.event_name != 'schedule' }}
-    name: Select verification mode
+    name: Select verification owner
     runs-on: ubuntu-24.04
     timeout-minutes: 3
     permissions:
       pull-requests: read
-      actions: read
     outputs:
       mode: ${{ steps.mode.outputs.mode }}
     steps:
-      - name: Select full verification or nonduplicated development feedback
+      - name: Route to full verification, PR ownership or development feedback
         id: mode
         env:
           GH_TOKEN: ${{ github.token }}
@@ -49,26 +50,17 @@ jobs:
               ;;
             push:refs/heads/*)
               mode=feedback
-              # A matching open PR must also have an actual, noncancelled CI run.
-              if open="$(gh api --method GET --paginate "repos/$GITHUB_REPOSITORY/pulls" \
+              if heads="$(gh api --method GET --paginate "repos/$GITHUB_REPOSITORY/pulls" \
                 -f state=open -f base=main -f "head=$GITHUB_REPOSITORY_OWNER:$GITHUB_REF_NAME" \
-                --jq '.[] | select(.state == "open" and .base.ref == "main" and .head.repo.full_name == .base.repo.full_name) | [.head.sha, (.number | tostring)] | join(":")')" &&
-                grep -Eq "^$GITHUB_SHA:[0-9]+$" <<< "$open" &&
-                runs="$(gh api --method GET --paginate "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs" \
-                -f event=pull_request -f "head_sha=$GITHUB_SHA" \
-                --jq '.workflow_runs[] | select(.event == "pull_request" and (.status != "completed" or .conclusion == "success" or .conclusion == "failure")) | {sha: .head_sha, pr: .pull_requests[]} | [.sha, (.pr.number | tostring)] | join(":")')"; then
-                while IFS= read -r entry; do
-                  if [[ "$entry" == "$GITHUB_SHA:"* ]] && grep -Fxq -- "$entry" <<< "$runs"; then
-                    mode=duplicate
-                    echo 'Exact commit and open main PR already have a CI run; do not repeat development feedback.'
-                    break
-                  fi
-                done <<< "$open"
+                --jq '.[] | select(.state == "open" and .base.ref == "main" and .head.repo.full_name == .base.repo.full_name) | .head.sha')" &&
+                grep -Fxq -- "$GITHUB_SHA" <<< "$heads"; then
+                mode=pr_owned
               fi
               ;;
             *) exit 1 ;;
           esac
           printf 'mode=%s\n' "$mode" >> "$GITHUB_OUTPUT"
+          printf 'VERIFICATION_OWNER=%s\n' "$mode"
 
   workspace_validation:
     needs: route
@@ -99,7 +91,7 @@ jobs:
           set -euo pipefail
           dir="$(mktemp -d "$RUNNER_TEMP/actionlint.XXXXXX")"
           trap 'rm -rf -- "$dir"' EXIT
-          curl --fail --silent --show-error --location --retry 2 \
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 2 \
             https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz \
             --output "$dir/actionlint.tar.gz"
           printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' \
