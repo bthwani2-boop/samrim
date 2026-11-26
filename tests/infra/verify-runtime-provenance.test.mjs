@@ -1,235 +1,231 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { evaluateService, main, readService } from "../../tools/dev/docker/verify-runtime-provenance.mjs";
+import { main, verifyCandidate } from "../../tools/dev/docker/verify-runtime-provenance.mjs";
 
-const sha = "a".repeat(40);
-const good = {
-  owner: "dsh", service: "dsh", project: "bthwani-refoundation", environment: "refoundation",
-  running: true, health: "healthy",
-  imageId: "sha256:"+"1".repeat(64), containerImageId: "sha256:"+"1".repeat(64),
-  revisionPrimary: sha, revisionFallback: sha,
-  committedAncestor: true, ownerChanges: [], localOwnerChanges: [],
-};
+const head = "a".repeat(40);
+const successor = "b".repeat(40);
+const ownerNames = ["dsh", "identity", "wlt"];
+const args = ["--context", "bthwani-docker"];
+const label = value => value || "<no value>";
+const name = owner => "bthwani-refoundation-" + owner + "-1";
 
-test("accept source parity only when the running isolated owner has health, matching image, and clean unchanged source", () => {
-  assert.deepEqual(evaluateService(good), { revision: sha, errors: [], passed: true });
-});
-
-test("reject a committed but stale Go or contract image", () => {
-  const result = evaluateService({ ...good, ownerChanges: ["services/dsh/backend/cmd/dsh/main.go"] });
-  assert.equal(result.passed, false);
-  assert.ok(result.errors.includes("owner source changed since image build"));
-});
-
-test("reject missing and contradictory source revision labels", () => {
-  assert.equal(evaluateService({ ...good, revisionPrimary: "", revisionFallback: "" }).passed, false);
-  assert.ok(evaluateService({ ...good, revisionFallback: "b".repeat(40) })
-    .errors.some(e=>e.includes("conflicting image source labels")));
-});
-
-test("reject a healthy-looking container from another environment or service", () => {
-  assert.equal(evaluateService({ ...good, project: "donor" }).passed, false);
-  assert.equal(evaluateService({ ...good, service: "identity" }).passed, false);
-});
-
-test("reject unproven health, stopped service, and wrong runtime image", () => {
-  for (const change of [
-    { health: "NOT_CONFIGURED" },
-    { running: false },
-    { imageId: "sha256:other" },
-  ]) assert.equal(evaluateService({ ...good, ...change }).passed, false);
-});
-
-test("reject revision outside history and owner-local uncommitted edits", () => {
-  assert.equal(evaluateService({ ...good, committedAncestor: false }).passed, false);
-  assert.equal(evaluateService({ ...good, localOwnerChanges: ["?? services/dsh/new.go"] }).passed, false);
-});
-
-// These tests verify the command/attestation parser. They deliberately do not
-// claim that a real Docker runtime or source revision has been attested.
-function serviceRecords({
-  owner = "dsh", project = "bthwani-refoundation", imageId = "sha256:"+"1".repeat(64),
-  environment = "refoundation", capability = owner==="wlt"?"customer-wallet-read-only":"", previewBase = "", previewDigest = "",
-  revision = sha, fallback = sha, running = "true", health = "healthy",
-  sourceDiff = "", localStatus = "", malformed = "", state = running === "true" ? "running" : "exited",
-} = {}) {
+function fixture(options = {}) {
   const calls = [];
-  const execute = (command, args) => {
-    calls.push({ command, args });
-    if (command === "docker" && args[2] === "inspect") {
-      if (malformed === "container") return "not-a-container-record";
-      return [imageId, project, owner, running, health, environment, capability || "<no value>", state].join("|");
+  let sourceReads = 0, containerReads = 0;
+  const imageFor = owner => "sha256:" + String(ownerNames.indexOf(owner) + 1).repeat(64);
+  const containerFor = (owner, pass) => {
+    const o = {
+      id: String(ownerNames.indexOf(owner) + 4).repeat(64),
+      name: "/" + name(owner), image: imageFor(owner), project: "bthwani-refoundation",
+      service: owner, environment: "refoundation",
+      capability: owner === "wlt" ? "customer-wallet-read-only" : "",
+      running: "true", state: "running", health: "healthy",
+      startedAt: "2026-11-26T02:00:00.123456789Z", restartCount: "0",
+      ...options.containers?.[owner], ...(pass === 2 ? options.finalContainers?.[owner] : {}),
+    };
+    return [o.id, o.name, o.image, o.project, o.service, o.environment, label(o.capability),
+      o.running, o.state, o.health, o.startedAt, o.restartCount].join("|");
+  };
+  const imageForOwner = owner => {
+    const o = { id: imageFor(owner), revision: head, source: head, previewBase: "", previewDigest: "",
+      ...options.images?.[owner] };
+    return [o.id, label(o.revision), label(o.source), label(o.previewBase), label(o.previewDigest)].join("|");
+  };
+  const execute = (command, a) => {
+    calls.push([command, ...a]);
+    if (command === "docker" && a[0] === "context") return options.context ?? "ssh://user@bthwani-docker";
+    if (command === "git") {
+      if (a[0] === "rev-parse") return ++sourceReads === 2 ? options.finalHead ?? head : options.head ?? head;
+      if (a[0] === "branch") return sourceReads === 2 ? options.finalBranch ?? "development" : options.branch ?? "development";
+      if (a[0] === "status") return sourceReads === 2 ? options.finalStatus ?? options.status ?? "" : options.status ?? "";
+      if (a[0] === "diff") {
+        const owner = a.find(part => part.startsWith("services/")).split("/")[1];
+        return (options.changes?.[owner] ?? []).map(path => path + "\0").join("");
+      }
     }
-    if (command === "docker" && args[2] === "image" && args[3] === "inspect") {
-      if (malformed === "image") return "not-an-image-record";
-      return [imageId, revision || "<no value>", fallback || "<no value>", previewBase || "<no value>", previewDigest || "<no value>"].join("|");
+    if (command === "docker" && a[0] === "--context" && a[1] === "bthwani-docker") {
+      if (a[2] === "inspect") {
+        containerReads++;
+        if (options.badContainer === "malformed") return "bad";
+        const list = options.badContainer === "missing" ? ownerNames.slice(0, 2) :
+          options.badContainer === "duplicate" ? ["dsh", "identity", "dsh"] : ownerNames;
+        return list.map(owner => containerFor(owner, containerReads)).join("\r\n");
+      }
+      if (a[2] === "image" && a[3] === "inspect") {
+        if (options.badImage === "malformed") return "bad";
+        const list = options.badImage === "missing" ? ownerNames.slice(0, 2) :
+          options.badImage === "duplicate" ? ["dsh", "identity", "dsh"] : ownerNames;
+        return list.map(imageForOwner).join("\r\n");
+      }
     }
-    if (command === "git" && args[0] === "diff") return sourceDiff;
-    if (command === "git" && args[0] === "status") return localStatus;
     throw new Error("unexpected verification command");
   };
-  return { execute, calls };
+  return {
+    calls, execute,
+    ancestor: (revision, candidate) => {
+      assert.match(revision, /^[0-9a-f]{40}$/);
+      assert.equal(candidate, options.head ?? head);
+      return options.ancestor ?? true;
+    },
+  };
 }
 
-test("runtime attestation checks actual owner metadata, SHA ancestry and scoped Git queries", () => {
-  const fixture = serviceRecords();
-  const verified = readService("dsh", "isolated", sha, fixture.execute, () => true);
-  assert.deepEqual(verified, { revision: sha, errors: [], passed: true });
-  assert.equal(fixture.calls.length, 4);
-  assert.deepEqual(fixture.calls.filter((c) => c.command === "git").map((c) => c.args), [
-    ["diff", "--name-only", "--no-renames", sha, sha, "--", "services/dsh"],
-    ["status", "--porcelain", "--", "services/dsh"],
-  ]);
-  assert.ok(fixture.calls.filter((c) => c.command === "docker")
-    .every((c) => c.args[0] === "--context" && c.args[1] === "isolated"));
+function run(options, preflight = false) {
+  const f = fixture(options);
+  const result = verifyCandidate(preflight ? [...args, "--start-preflight"] : args, f.execute, f.ancestor);
+  return { ...f, result };
+}
+
+function rejectOwner(options, owner = "dsh", reason, preflight = false) {
+  const { result } = run(options, preflight);
+  assert.equal(result.passed, false);
+  const row = result.results.find(r => r.owner === owner);
+  assert.equal(row.passed, false);
+  if (reason) assert.ok(row.errors.some(e => e.includes(reason)), row.errors.join("; "));
+}
+
+test("one committed candidate checks all three actual owner names and rechecks the same window", () => {
+  const { result, calls } = run();
+  assert.equal(result.head, head);
+  assert.equal(result.passed, true);
+  assert.deepEqual(result.results.map(r => r.owner), ownerNames);
+  const snapshots = calls.filter(c => c[0] === "docker" && c[3] === "inspect");
+  assert.equal(snapshots.length, 2);
+  for (const snapshot of snapshots) {
+    assert.deepEqual(snapshot.slice(-3), ownerNames.map(name));
+    assert.ok(snapshot.includes("--format"));
+    assert.ok(!snapshot.join(" ").includes(".Config.Env"));
+  }
+  const images = calls.filter(c => c[0] === "docker" && c[3] === "image");
+  assert.equal(images.length, 1);
+  assert.equal(images[0].slice(-3).length, 3);
+  const statuses = calls.filter(c => c[0] === "git" && c[1] === "status");
+  assert.equal(statuses.length, 2);
+  for (const status of statuses) {
+    assert.ok(status.includes("--untracked-files=all"));
+    assert.ok(status.includes("-z"));
+    assert.ok(status.includes("--no-renames"));
+    assert.deepEqual(status.slice(-3), ownerNames.map(o => "services/" + o));
+  }
+  const diffs = calls.filter(c => c[0] === "git" && c[1] === "diff");
+  assert.equal(diffs.length, 3);
+  assert.deepEqual(diffs.map(d => d.at(-1)), ownerNames.map(o => "services/" + o));
+  assert.ok(diffs.every(d => d.includes("-z") && d.includes("--no-renames")));
 });
 
-test("runtime attestation rejects a changed owner, a dirty checkout and non-ancestor images", () => {
-  const changed = serviceRecords({ sourceDiff: "services/dsh/backend/cmd/dsh/main.go" });
-  assert.ok(readService("dsh", "isolated", sha, changed.execute, () => true)
-    .errors.includes("owner source changed since image build"));
-  const dirty = serviceRecords({ owner: "identity", localStatus: " M services/identity/backend/main.go" });
-  assert.ok(readService("identity", "isolated", sha, dirty.execute, () => true)
-    .errors.includes("owner worktree is not clean"));
-  const ancestorRejected = serviceRecords();
-  assert.ok(readService("dsh", "isolated", sha, ancestorRejected.execute, () => false)
-    .errors.includes("source is not an ancestor of HEAD"));
-  assert.equal(ancestorRejected.calls.some((c) => c.command === "git" && c.args[0] === "diff"), false);
-});
-
-test("mandatory WLT attestation verifies the real owner container and WLT-only source changes", () => {
-  const fixture = serviceRecords({ owner: "wlt" });
-  const verified = readService("wlt", "isolated", sha, fixture.execute, () => true);
-  assert.deepEqual(verified, { revision: sha, errors: [], passed: true });
-  assert.equal(fixture.calls.find(c => c.command === "docker" && c.args[2] === "inspect")
-    ?.args.at(-1), "bthwani-refoundation-wlt-1");
-  assert.deepEqual(fixture.calls.filter(c => c.command === "git").map(c => c.args), [
-    ["diff", "--name-only", "--no-renames", sha, sha, "--", "services/wlt"],
-    ["status", "--porcelain", "--", "services/wlt"],
-  ]);
-
-  const stale = serviceRecords({ owner: "wlt", sourceDiff: "services/wlt/backend/cmd/wlt/main.go" });
-  assert.ok(readService("wlt", "isolated", sha, stale.execute, () => true)
-    .errors.includes("owner source changed since image build"));
-  const wrongService = serviceRecords({ owner: "identity" });
-  assert.equal(readService("wlt", "isolated", sha, wrongService.execute, () => true).passed, false);
-  assert.throws(() => readService("unsupported", "isolated", sha, fixture.execute), /unknown owner/);
-  assert.throws(() => readService("wlt", "isolated", sha, (command, args) => {
-    if (command === "docker" && args[2] === "inspect") throw new Error("missing WLT container");
-    return fixture.execute(command, args);
-  }, () => true), /missing WLT container/);
-});
-
-test("all serving owners are mandatory and the retired opt-in is rejected", () => {
-  assert.throws(() => main(["--include-wlt"]), /Usage/);
-  assert.throws(() => main(["--context", "bthwani-docker", "--include-wlt"]), /Usage/);
-  const seen = [];
-  const fixture = serviceRecords();
-  const execute = (command, args) => {
-    if (command === "docker" && args[0] === "context") return "ssh://user@bthwani-docker";
-    if (command === "git" && args[0] === "rev-parse") return sha;
-    if (command === "docker" && args[2] === "inspect") {
-      const owner = args.at(-1).match(/-(dsh|identity|wlt)-1$/)[1];
-      seen.push(owner);
-      return serviceRecords({owner}).execute(command,args);
-    }
-    return fixture.execute(command,args);
-  };
-  main(["--context","bthwani-docker"], execute, () => true);
-  assert.deepEqual(seen,["dsh","identity","wlt"]);
-});
-test("runtime attestation fails closed for missing, conflicting and invalid image revisions", () => {
-  for (const revisions of [
-    { revision: "", fallback: "" },
-    { revision: "unsafe", fallback: "" },
-    { revision: sha, fallback: "b".repeat(40) },
-  ]) {
-    const fixture = serviceRecords(revisions);
-    const result = readService("dsh", "isolated", sha, fixture.execute, () => true);
-    assert.equal(result.passed, false);
-    if (revisions.revision === "unsafe") {
-      assert.equal(fixture.calls.some((c) => c.command === "git" && c.args[0] === "diff"), false);
-    }
+test("a HEAD or branch change cannot print a successful attestation for a superseded candidate", () => {
+  for (const change of [{ finalHead: successor }, { finalBranch: "different-branch" }]) {
+    const f = fixture(change);
+    assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
   }
 });
 
-test("malformed container and image metadata cannot be treated as a passing runtime", () => {
-  for (const malformed of ["container", "image"]) {
-    const fixture = serviceRecords({ malformed });
-    assert.throws(() => readService("dsh", "isolated", sha, fixture.execute, () => true),
-      /unexpected (?:container|image) metadata/);
-  }
+test("owner changes appearing during attestation invalidate the candidate", () => {
+  const f = fixture({ finalStatus: "?? services/dsh/backend/internal/new.go\0" });
+  assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
 });
 
-test("runtime command-line refuses unsafe or incomplete Docker context names before execution", () => {
-  assert.throws(() => main(["--context"]), /Usage/);
-  assert.throws(() => main(["--once"]), /Usage/);
-  assert.throws(() => main(["--context", "../unsafe"]), /invalid Docker context/);
-  assert.throws(() => main(["--context", "a;whoami"]), /invalid Docker context/);
-});
-
-test("a preview never satisfies committed runtime acceptance",()=>{
-  const result=evaluateService({...good,revisionPrimary:"worktree-"+"a".repeat(64),revisionFallback:undefined,previewBase:sha,previewDigest:"a".repeat(64)});
-  assert.equal(result.passed,false);
-  assert.ok(result.errors.some(e=>e.includes("uncommitted preview")));
-});
-
-test("committed attestation rejects absent image IDs, unknown ancestry, and preview metadata on a committed SHA", () => {
+test("replacement or restart of a serving container invalidates the entire snapshot", () => {
   for (const changes of [
-    { imageId: "", containerImageId: "" },
-    { imageId: undefined, containerImageId: undefined },
-    { committedAncestor: undefined },
-    { environment: undefined },
-    { environment: "production" },
-    { owner: "wlt", service: "wlt", capability: "other" },
-    { imageId: "sha256:invalid", containerImageId: "sha256:invalid" },
-    { previewBase: sha, previewDigest: "b".repeat(64) },
-    { previewBase: sha },
-    { previewDigest: "b".repeat(64) },
-  ]) assert.equal(evaluateService({ ...good, ...changes }).passed, false, JSON.stringify(changes));
-});
-
-test("startup preflight admits only previously exited verified owners, not unproven running health", () => {
-  const stopped={...good,running:false,health:"unhealthy",state:"exited"};
-  assert.equal(evaluateService(stopped).passed,false);
-  assert.equal(evaluateService(stopped,{startPreflight:true}).passed,true);
-  for(const change of [{state:"created"},{state:"dead"},{health:"NOT_CONFIGURED"},{ownerChanges:["infra/compose.yaml"]},{committedAncestor:false},{project:"foreign"},{running:true,state:"running"}]){
-    assert.equal(evaluateService({...stopped,...change},{startPreflight:true}).passed,false);
+    { id: "9".repeat(64) },
+    { image: "sha256:" + "9".repeat(64) },
+    { restartCount: "1" },
+    { startedAt: "2026-11-26T02:05:00Z" },
+    { health: "unhealthy" },
+  ]) {
+    const f = fixture({ finalContainers: { wlt: changes } });
+    assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
   }
 });
 
-test("startup preflight checks shared Compose source without weakening runtime verification", () => {
-  const fixture=serviceRecords({running:"false",health:"unhealthy"});
-  assert.equal(readService("dsh","isolated",sha,fixture.execute,()=>true,{startPreflight:true}).passed,true);
-  assert.ok(fixture.calls.filter(c=>c.command==="git").every(c=>c.args.includes("infra/compose.yaml")));
-  const dirty=serviceRecords({running:"false",health:"unhealthy",localStatus:" M infra/compose.yaml"});
-  assert.equal(readService("dsh","isolated",sha,dirty.execute,()=>true,{startPreflight:true}).passed,false);
-  assert.throws(()=>main(["--start-preflight"]),/Usage/);
-});
-
-test("committed test and README changes preserve serving provenance without relaxing runtime guards",()=>{
-  for(const owner of ["identity","dsh","wlt"]){
-    const prefix="services/"+owner+"/";
-    const nonRuntime=[prefix+"backend/cmd/"+owner+"/main_test.go",prefix+"README.md",prefix+"backend/README.md"];
-    for(const startPreflight of [false,true]){
-      const fixture=serviceRecords({owner,sourceDiff:nonRuntime.join("\n")});
-      assert.equal(readService(owner,"isolated",sha,fixture.execute,()=>true,{startPreflight}).passed,true);
-      for(const runtime of [prefix+"backend/cmd/"+owner+"/main.go",prefix+"database/schema/00.sql",prefix+"contracts/openapi/"+owner+".openapi.yaml","infra/compose.yaml"]){
-        const mixed=serviceRecords({owner,sourceDiff:[...nonRuntime,runtime].join("\n")});
-        assert.equal(readService(owner,"isolated",sha,mixed.execute,()=>true,{startPreflight}).passed,false);
+test("changed Go, SQL, contract and Docker inputs reject owner parity; committed non-runtime inputs do not", () => {
+  for (const owner of ownerNames) {
+    const p = "services/" + owner + "/";
+    const nonRuntime = [p + "backend/cmd/" + owner + "/main_test.go", p + "README.md",
+      p + "backend/README.md", p + "clients/public-client.ts"];
+    for (const preflight of [false, true]) {
+      assert.equal(run({ changes: { [owner]: nonRuntime } }, preflight).result.passed, true);
+      for (const path of [p + "backend/cmd/" + owner + "/main.go", p + "database/schema/00.sql",
+        p + "contracts/openapi/" + owner + ".openapi.yaml", p + ".dockerignore"]) {
+        rejectOwner({ changes: { [owner]: [...nonRuntime, path] } }, owner, "owner source changed", preflight);
       }
     }
   }
 });
 
-test("committed client-only changes preserve runtime provenance, but mixed runtime changes do not",()=>{
-  for(const startPreflight of [false,true]){
-    const client="services/dsh/clients/dsh-public-client.test.mjs";
-    const fixture=serviceRecords({sourceDiff:client});
-    assert.equal(readService("dsh","isolated",sha,fixture.execute,()=>true,{startPreflight}).passed,true);
-    for(const path of ["services/dsh/backend/cmd/dsh/main.go","services/dsh/contracts/openapi/dsh.openapi.yaml","services/dsh/database/schema/00.sql","services/dsh/.dockerignore"]){
-      const mixed=serviceRecords({sourceDiff:client+"\n"+path});
-      assert.equal(readService("dsh","isolated",sha,mixed.execute,()=>true,{startPreflight}).passed,false);
-    }
+test("dirty owner files including untracked files fail even if the image labels match", () => {
+  for (const status of [" M services/identity/backend/main.go\0", "?? services/identity/backend/untracked.go\0"]) {
+    rejectOwner({ status }, "identity", "owner worktree is not clean");
   }
+  rejectOwner({ ancestor: false }, "dsh", "source is not an ancestor");
+  const { calls } = run({ ancestor: false });
+  assert.ok(!calls.some(c => c[0] === "git" && c[1] === "diff"));
+});
+
+test("unknown or contradictory image provenance and previews fail closed", () => {
+  for (const changes of [
+    { revision: "", source: "" },
+    { revision: "unsafe", source: "" },
+    { revision: head, source: successor },
+    { revision: head, previewBase: head },
+    { revision: head, previewDigest: "f".repeat(64) },
+    { revision: head, previewBase: head, previewDigest: "f".repeat(64) },
+    { revision: "worktree-" + "f".repeat(64), source: "", previewBase: head, previewDigest: "f".repeat(64) },
+  ]) rejectOwner({ images: { dsh: changes } });
+  const { calls } = run({ images: { dsh: { revision: "unsafe", source: "" } } });
+  assert.ok(!calls.some(c => c[0] === "git" && c[1] === "diff" && c.at(-1) === "services/dsh"));
+});
+
+test("a healthy-looking foreign container and wrong WLT capability are rejected", () => {
+  for (const changes of [{ project: "donor" }, { service: "identity" }, { environment: "production" }, { environment: "" }]) {
+    rejectOwner({ containers: { dsh: changes } }, "dsh", "not the expected isolated");
+  }
+  rejectOwner({ containers: { wlt: { capability: "other" } } }, "wlt", "not the expected isolated");
+});
+
+test("unhealthy, stopped, contradictory, or malformed lifecycle metadata is not acceptance", () => {
+  for (const changes of [{ health: "NOT_CONFIGURED" }, { health: "unhealthy" },
+    { running: "false", state: "exited" }, { running: "true", state: "exited" }]) {
+    rejectOwner({ containers: { dsh: changes } }, "dsh", "container state or health not proven");
+  }
+  for (const changes of [{ id: "" }, { image: "sha256:invalid" }, { running: "unknown" },
+    { startedAt: "" }, { restartCount: "invalid" }]) {
+    assert.throws(() => run({ containers: { dsh: changes } }), /invalid container identity or lifecycle metadata/);
+  }
+});
+
+test("missing, duplicate, or malformed owner/image records block the whole candidate", () => {
+  for (const bad of ["missing", "duplicate", "malformed"]) {
+    assert.throws(() => run({ badContainer: bad }), /(?:missing|unexpected) container metadata/);
+    assert.throws(() => run({ badImage: bad }), /(?:missing|unexpected) image metadata/);
+  }
+  assert.throws(() => run({ images: { dsh: { id: "sha256:" + "9".repeat(64) } } }), /unexpected image metadata/);
+});
+
+test("startup preflight admits only previously exited isolated owners and checks Compose source", () => {
+  const exited = { running: "false", state: "exited", health: "unhealthy" };
+  rejectOwner({ containers: { dsh: exited } });
+  assert.equal(run({ containers: { dsh: exited } }, true).result.passed, true);
+  for (const changes of [{ state: "created" }, { state: "dead" }, { health: "NOT_CONFIGURED" },
+    { running: "true", state: "running" }]) {
+    rejectOwner({ containers: { dsh: { ...exited, ...changes } } }, "dsh", undefined, true);
+  }
+  const { calls } = run({}, true);
+  assert.ok(calls.filter(c => c[0] === "git" && ["status", "diff"].includes(c[1]))
+    .every(c => c.includes("infra/compose.yaml")));
+  rejectOwner({ status: " M infra/compose.yaml\0" }, "wlt", "owner worktree is not clean", true);
+  rejectOwner({ changes: { dsh: ["infra/compose.yaml"] } }, "dsh", "owner source changed", true);
+  assert.throws(() => run({ branch: "archive/legacy" }, true), /source candidate not verified/);
+});
+
+test("invalid command arguments or non-approved Docker endpoints are rejected before owner reads", () => {
+  for (const bad of [["--context"], ["--once"], ["--include-wlt"], [...args, "--include-wlt"],
+    [...args, "--start-preflight", "--start-preflight"]]) assert.throws(() => main(bad), /Usage/);
+  for (const context of ["../unsafe", "a;whoami", "default"]) {
+    assert.throws(() => main(["--context", context]), /invalid Docker context/);
+  }
+  for (const context of ["npipe:////./pipe/docker_engine", "ssh://user@other", "ssh://user@bthwani-docker/"]) {
+    assert.throws(() => run({ context }), /Wrong Docker target/);
+  }
+  assert.throws(() => run({ head: "invalid" }), /source candidate not verified/);
 });
