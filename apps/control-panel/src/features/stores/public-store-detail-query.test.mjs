@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
+
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+
 import { parsePublicStoreBrowse, parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref, resolvePublicDshOrigin } from "./public-store-query.ts";
 
 test("store detail links preserve the scoped city and encoded search without an arbitrary destination", () => {
@@ -52,34 +57,39 @@ test("malformed, repeated and overlong offer search is rejected before an owner 
   assert.equal(parsePublicStoreDetail("market-sanaa", { city: "sanaa", offerQ: " " })?.offerQuery, undefined);
 });
 
-test("Operator detail sends the Offer filter to DSH and keeps it in the next page", async () => {
+test("Operator detail sends the Offer filter to DSH and keeps it in the next page", async t => {
+  const previous = process.env.OPERATOR_POLICY_DSH_ORIGIN;
+  process.env.OPERATOR_POLICY_DSH_ORIGIN = "http://127.0.0.1:3202";
+  t.after(() => {
+    if (previous === undefined) delete process.env.OPERATOR_POLICY_DSH_ORIGIN;
+    else process.env.OPERATOR_POLICY_DSH_ORIGIN = previous;
+  });
   const root = fileURLToPath(new URL("../../../../../", import.meta.url));
   const page = path.join(root, "apps/control-panel/app/(workspace)/merchants/public-stores/[storeId]/page.tsx");
   const temp = mkdtempSync(path.join(tmpdir(), "bth-operator-offers-"));
   try {
     const compile = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), page,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000 });
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000 });
     assert.equal(compile.status, 0, compile.stderr || compile.stdout);
     const jsx = (type, props) => ({type, props});
     const nodes = node => Array.isArray(node) ? node.flatMap(nodes) :
       node && typeof node === "object" ? [node, ...nodes(node.props?.children)] : [];
     const calls = [];
     let grants = ["merchant"];
-    const mod = { exports: {} };
-    new Function("require", "module", "exports", "process", readFileSync(path.join(temp, "page.js"), "utf8"))(name => {
-      if (name === "react/jsx-runtime") return { jsx, jsxs: jsx, Fragment: "Fragment" };
-      if (name.endsWith(".css")) return { __esModule: true, default: {} };
-      if (name.endsWith("workspace-unavailable")) return { __esModule: true, default: "Unavailable" };
-      if (name.endsWith("current-operator-access")) return { currentOperatorAccess: async () => ({ grants }) };
-      if (name.endsWith("public-store-query")) return { parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref, resolvePublicDshOrigin };
-      assert.equal(name, "@bthwani/dsh");
-      return {
+    const mod = loadMappedRenderFixture(readFileSync(path.join(temp, "page.js"), "utf8"), page, {
+      "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+      "../../../../../src/features/operator-shell/operator-shell.module.css": { __esModule: true, default: {} },
+      "../../../../../src/features/operator-shell/workspace-unavailable": { __esModule: true, default: "Unavailable" },
+      "../../../../../src/server/current-operator-access": { currentOperatorAccess: async () => ({ grants }) },
+      "../../../../../src/features/stores/public-store-query": { parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref, resolvePublicDshOrigin },
+      "@bthwani/dsh": {
         getPublicStore: async (_origin, id) => ({ id, name: "مخبز", cityId: "sanaa", verticalId: "grocery", orderabilityStatus: "OPEN_FOR_ORDERS" }),
         listPublicOffers: async (_origin, id, options) => { calls.push([id, options.query, options.cursor]);
           return { items: [], revision: 3, nextCursor: "next_page" }; },
-      };
-    }, mod, mod.exports, { env: { NODE_ENV: "development" } });
+      },
+    });
+    loadedModules.push(mod);
     const render = (searchParams) => mod.exports.default({
       params: Promise.resolve({ storeId: "market-sanaa" }), searchParams: Promise.resolve(searchParams),
     });

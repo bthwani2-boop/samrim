@@ -5,6 +5,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
+
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+
 import { findWorkspaceEntry } from "../navigation/workspace-registry.ts";
 import { canShowNavigation } from "../session/operator-permissions.ts";
 
@@ -19,7 +24,13 @@ test("stores: unauthenticated or unmapped sessions never expose navigation", () 
   assert.equal(canShowNavigation(true, [], "merchant"), false);
 });
 
-test("publication review opens an exact Store, preserves its page, and fails closed outside scope", async () => {
+test("publication review opens an exact Store, preserves its page, and fails closed outside scope", async t => {
+  const previous = process.env.OPERATOR_POLICY_DSH_ORIGIN;
+  process.env.OPERATOR_POLICY_DSH_ORIGIN = "http://127.0.0.1:3202";
+  t.after(() => {
+    if (previous === undefined) delete process.env.OPERATOR_POLICY_DSH_ORIGIN;
+    else process.env.OPERATOR_POLICY_DSH_ORIGIN = previous;
+  });
   const root = fileURLToPath(new URL("../../../../../", import.meta.url));
   const app = path.join(root, "apps/control-panel");
   const files = ["app/(workspace)/merchants/joining/page.tsx", "app/(workspace)/merchants/stores/[storeId]/page.tsx",
@@ -28,7 +39,7 @@ test("publication review opens an exact Store, preserves its page, and fails clo
   try {
     const compile = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), ...files.map(file => path.join(app, file)),
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
-      "--jsx", "react-jsx", "--rootDir", app, "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000 });
+      "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--rootDir", app, "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000 });
     assert.equal(compile.status, 0, compile.stderr || compile.stdout);
     const jsx = (type, props) => ({type, props});
     const nodes = node => Array.isArray(node) ? node.flatMap(nodes) :
@@ -64,22 +75,42 @@ test("publication review opens an exact Store, preserves its page, and fails clo
       "operator-shell.module.css": { __esModule: true, default: {} },
       "workspace-unavailable": { __esModule: true, default: "Unavailable" },
     };
-    function load(file) {
-      const mod = { exports: {} };
-      new Function("require", "module", "exports", "process", readFileSync(path.join(temp, file), "utf8"))(name => {
-        if (Object.hasOwn(mocks, name)) return mocks[name];
-        const leaf = name.split("/").at(-1);
-        if (Object.hasOwn(mocks, leaf)) return mocks[leaf];
-        for (const compiled of files.slice(2).map(source => source.replace(/\.tsx?$/, ".js"))) {
-          if (path.basename(compiled, ".js") === leaf) return load(compiled);
-        }
-        assert.fail(`Unexpected dependency ${name}`);
-      }, mod, mod.exports, { env: { OPERATOR_POLICY_DSH_ORIGIN: "http://127.0.0.1:3202" } });
+    const query = loadMappedRenderFixture(readFileSync(path.join(temp, files[2].replace(/\.ts$/, ".js")), "utf8"), path.join(app, files[2]), {});
+    loadedModules.push(query);
+    const detailsModule = loadMappedRenderFixture(readFileSync(path.join(temp, files[3].replace(/\.tsx$/, ".js")), "utf8"), path.join(app, files[3]), {
+      "react/jsx-runtime": mocks["react/jsx-runtime"],
+      "./publication-review-query": query.exports,
+    });
+    loadedModules.push(detailsModule);
+    const review = loadMappedRenderFixture(readFileSync(path.join(temp, files[4].replace(/\.ts$/, ".js")), "utf8"), path.join(app, files[4]), {
+      "server-only": mocks["server-only"],
+      "@bthwani/dsh": mocks["@bthwani/dsh"],
+      "next/headers": mocks["next/headers"],
+      "../features/stores/public-store-query": mocks["public-store-query"],
+      "../features/stores/publication-review-query": query.exports,
+      "./current-operator-access": mocks["current-operator-access"],
+      "./operator-passkey-bff": mocks["operator-passkey-bff"],
+    });
+    loadedModules.push(review);
+    function load(source, prefix) {
+      const mod = loadMappedRenderFixture(readFileSync(path.join(temp, source.replace(/\.tsx$/, ".js")), "utf8"), path.join(app, source), {
+        "react/jsx-runtime": mocks["react/jsx-runtime"],
+        "@bthwani/dsh": mocks["@bthwani/dsh"],
+        [prefix + "features/operator-shell/operator-shell.module.css"]: mocks["operator-shell.module.css"],
+        [prefix + "features/operator-shell/workspace-unavailable"]: mocks["workspace-unavailable"],
+        [prefix + "features/stores/public-store-query"]: mocks["public-store-query"],
+        [prefix + "features/stores/publication-review-query"]: query.exports,
+        [prefix + "features/stores/store-details"]: detailsModule.exports,
+        [prefix + "server/operator-publication-review"]: review.exports,
+      });
+      assert.ok(!mod.filename.includes("[") && !mod.filename.includes("]"), "V8 virtual path must not contain dynamic route brackets");
+      loadedModules.push(mod);
       return mod.exports;
     }
     const scope = {city: "sanaa", relation: "DIRECT", after: "store-a"};
-    const joining = load(files[0].replace(/\.tsx$/, ".js")).default;
-    const details = load(files[1].replace(/\.tsx$/, ".js")).default;
+    const joining = load(files[0], "../../../../src/").default;
+    const details = load(files[1], "../../../../../src/").default;
+    assert.notEqual(loadedModules.at(-1).filename, loadedModules.at(-2).filename, "same-basename routes must have distinct virtual script identities");
     const render = (storeId, search = scope) => details({params: Promise.resolve({storeId}), searchParams: Promise.resolve(search)});
     const renderJoining = (search = scope) => joining({searchParams: Promise.resolve(search)});
     const initial = nodes(await renderJoining({}));

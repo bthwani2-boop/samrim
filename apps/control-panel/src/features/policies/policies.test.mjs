@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
+
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
+
 import { findWorkspaceEntry } from "../navigation/workspace-registry.ts";
 import { canShowNavigation } from "../session/operator-permissions.ts";
 import { parseCityPolicy, reconcileCityPolicy } from "./city-policy-command.ts";
@@ -161,11 +167,12 @@ test("Operator policy audit reader refuses bad cursors, mismatched pages and den
     /Identity rejected/);
 });
 
-test("registration editor provisions the first policy only after review and restores the exact command across reload, newer reads and denial", async () => {
+test("registration editor provisions the first policy only after review and restores the exact command across reload, newer reads and denial", async t => {
   const require = createRequire(import.meta.url);
   const { transformSync } = require("next/dist/build/swc/index.js");
-  const source = readFileSync(new URL("./store-registration-policy-editor.tsx", import.meta.url), "utf8");
-  const compiled = transformSync(source, {
+  const source = fileURLToPath(new URL("./store-registration-policy-editor.tsx", import.meta.url));
+  const compiled = transformSync(readFileSync(source, "utf8"), {
+    filename: source, sourceMaps: "inline", inlineSourcesContent: true,
     jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
       transform: { react: { runtime: "automatic" } } },
     module: { type: "commonjs" },
@@ -214,11 +221,14 @@ test("registration editor provisions the first policy only after review and rest
       },
     },
   };
-  const module = { exports: {} };
-  new Function("require", "module", "exports", "window", compiled)(name => {
-    assert.ok(Object.hasOwn(mocks, name), name);
-    return mocks[name];
-  }, module, module.exports, browser);
+  const priorWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  Object.defineProperty(globalThis, "window", { value: browser, configurable: true });
+  t.after(() => {
+    if (priorWindow) Object.defineProperty(globalThis, "window", priorWindow);
+    else delete globalThis.window;
+  });
+  const module = loadMappedRenderFixture(compiled, source, mocks);
+  loadedModules.push(module);
   function flatten(tree) {
     return !tree || typeof tree !== "object" ? [] : Array.isArray(tree)
       ? tree.flatMap(flatten) : [tree, ...flatten(tree.props?.children)];
@@ -304,23 +314,22 @@ test("registration editor provisions the first policy only after review and rest
 test("policy city directory reads the bounded owner pages without treating partial or failed reads as empty", async () => {
   const require = createRequire(import.meta.url);
   const { transformSync } = require("next/dist/build/swc/index.js");
-  const source = readFileSync(new URL("./policy-city-directory.ts", import.meta.url), "utf8");
-  const code = transformSync(source, { jsc: { parser: { syntax: "typescript" }, target: "es2022" },
+  const source = fileURLToPath(new URL("./policy-city-directory.ts", import.meta.url));
+  const code = transformSync(readFileSync(source, "utf8"), { filename: source, sourceMaps: "inline", inlineSourcesContent: true, jsc: { parser: { syntax: "typescript" }, target: "es2022" },
     module: { type: "commonjs" } }).code;
-  const module = { exports: {} };
   const calls = [];
   let pages = [];
   let origin = "http://127.0.0.1:3202";
-  new Function("require", "module", "exports", code)(name => {
-    if (name === "@bthwani/dsh") return { listPublicCities: async (url, options) => {
+  const module = loadMappedRenderFixture(code, source, {
+    "@bthwani/dsh": { listPublicCities: async (url, options) => {
       calls.push({ url, cursor: options.cursor, limit: options.limit });
       const page = pages.shift();
       if (!page) throw new Error("owner unavailable");
       return page;
-    } };
-    assert.equal(name, "../stores/public-store-query");
-    return { resolvePublicDshOrigin: () => origin };
-  }, module, module.exports);
+    } },
+    "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
+  });
+  loadedModules.push(module);
   const load = module.exports.loadPolicyCities;
   pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["sanaa"], revision: 7 }];
   assert.deepEqual(await load(), { status: "current", cities: [
@@ -371,7 +380,9 @@ test("operational policy never confirms a different audit identity or reason at 
 test("policy center renders independently verified city admission, clears old scope, and hides evidence after denial", async t => {
   const require = createRequire(import.meta.url);
   const { transformSync } = require("next/dist/build/swc/index.js");
-  const compiled = transformSync(readFileSync(new URL("./policies-workspace.tsx", import.meta.url), "utf8"), {
+  const source = fileURLToPath(new URL("./policies-workspace.tsx", import.meta.url));
+  const compiled = transformSync(readFileSync(source, "utf8"), {
+    filename: source, sourceMaps: "inline", inlineSourcesContent: true,
     jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
       transform: { react: { runtime: "automatic" } } }, module: { type: "commonjs" },
   }).code;
@@ -409,10 +420,8 @@ test("policy center renders independently verified city admission, clears old sc
         DIRECT: { status: "unavailable" } };
     } },
   };
-  const module = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(mocks, name), name); return mocks[name];
-  }, module, module.exports);
+  const module = loadMappedRenderFixture(compiled, source, mocks);
+  loadedModules.push(module);
   function flatten(tree) { return !tree || typeof tree !== "object" ? [] :
     Array.isArray(tree) ? tree.flatMap(flatten) : [tree, ...flatten(tree.props?.children)]; }
   const render = () => { index = 0; return flatten(module.exports.default({ actorId: "operator-1",

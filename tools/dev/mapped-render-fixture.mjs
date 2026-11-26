@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import Module from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 // Test-only loader for TypeScript-emitted CommonJS render fixtures. Preserve
 // the compiler's mappings and validate the original source before execution.
@@ -19,7 +20,12 @@ export function loadMappedRenderFixture(compiled, source, mocks) {
   map.sources = [pathToFileURL(source).href];
   // V8 reports raw script URLs, while Node encodes bracketed Expo route names.
   // Use a stable virtual generated name without URL-sensitive characters.
-  const filename = path.join(path.dirname(source), Buffer.from(path.basename(source)).toString("hex") + ".compiled.cjs");
+  // Next dynamic directories also contain brackets. Place only those virtual
+  // scripts beside this loader, with a full-source-path digest to avoid collisions.
+  const directory = path.dirname(source);
+  const filename = /[[\]]/.test(directory)
+    ? path.join(path.dirname(fileURLToPath(import.meta.url)), createHash("sha256").update(path.resolve(source)).digest("hex") + ".compiled.cjs")
+    : path.join(directory, Buffer.from(path.basename(source)).toString("hex") + ".compiled.cjs");
   const module = new Module(filename);
   module.filename = filename;
   module.require = name => {
