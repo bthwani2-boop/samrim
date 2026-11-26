@@ -3,18 +3,23 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { workspaceGroupLabels, workspaceRegistry, workspaceSubsections } from "../src/features/navigation/workspace-registry.ts";
 
 const root = resolve(import.meta.dirname, "..");
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
 const jsx = (type, props) => ({ type, props: props ?? {} });
-const source = readFileSync(resolve(root, "src/features/operator-shell/operator-shell.tsx"), "utf8");
-const compiled = transformSync(source, {
+const source = resolve(root, "src/features/operator-shell/operator-shell.tsx");
+const compiled = transformSync(readFileSync(source, "utf8"), {
+  filename: source, sourceMaps: "inline", inlineSourcesContent: true,
   jsc: { parser: { syntax: "typescript", tsx: true }, target: "es2022",
     transform: { react: { runtime: "automatic" } } },
   module: { type: "commonjs" },
 }).code;
+
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 
 function shellHarness(grants, pathname = "/marketing") {
   const states = [], effects = [], requests = [], redirects = [];
@@ -23,9 +28,7 @@ function shellHarness(grants, pathname = "/marketing") {
   const doc = { visibilityState: "visible", addEventListener: (name, fn) => events.set(name, fn), removeEventListener: () => {} };
   const win = { location: { replace: url => redirects.push(url) }, addEventListener: (name, fn) => events.set(name, fn), removeEventListener: () => {} };
   const deadline = new Date(Date.now() + 300000).toISOString();
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "window", "document", "fetch", "setTimeout", "clearTimeout", "setInterval", "clearInterval", compiled)(name => {
-    const deps = {
+  const deps = {
       "next/navigation": { usePathname: () => pathname },
       react: {
         useState(initial) { const at = index++; if (!(at in states)) states[at] = initial; return [states[at], next => { states[at] = typeof next === "function" ? next(states[at]) : next; }]; },
@@ -52,11 +55,9 @@ function shellHarness(grants, pathname = "/marketing") {
         lockedNavigationItem: "locked", content: "content", logout: "logout",
       },
       "react/jsx-runtime": { jsx, jsxs: jsx },
-    };
-    assert.ok(Object.hasOwn(deps, name), `unexpected ${name}`);
-    return deps[name];
-  }, mod, mod.exports, win, doc, (url, options) => new Promise(resolve => requests.push({ url, options, resolve })),
-    () => 1, () => {}, fn => { poll = fn; return 2; }, () => {});
+  };
+  const mod = loadMappedRenderFixture(compiled, source, deps);
+  loadedModules.push(mod);
   return {
     requests, redirects, deadline, events, doc,
     render() {
@@ -66,7 +67,23 @@ function shellHarness(grants, pathname = "/marketing") {
         verifiedExpiresAt: grants ? deadline : null,
         appearanceControl: jsx("AppearanceControl", { "aria-label": "اختيار المظهر" }) });
     },
-    mount() { for (const fn of effects) fn(); },
+    mount(t) {
+      for (const [key, value] of Object.entries({ window: win, document: doc })) {
+        const original = Object.getOwnPropertyDescriptor(globalThis, key);
+        Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+        t.after(() => {
+          if (original) Object.defineProperty(globalThis, key, original);
+          else delete globalThis[key];
+        });
+      }
+      t.mock.method(globalThis, "fetch", (url, options) => new Promise(resolve => requests.push({ url, options, resolve })));
+      t.mock.method(globalThis, "setTimeout", () => 1);
+      t.mock.method(globalThis, "clearTimeout", () => {});
+      t.mock.method(globalThis, "setInterval", fn => { poll = fn; return 2; });
+      t.mock.method(globalThis, "clearInterval", () => {});
+      const cleanup = effects.map(fn => fn()).filter(fn => typeof fn === "function");
+      return () => { for (const fn of cleanup) fn(); };
+    },
     poll() { poll?.(); },
   };
 }
@@ -133,11 +150,11 @@ test("unauthenticated entry does not render a privileged toolbar or appearance c
   }
 });
 
-test("active Operator silently revalidates the same actor and scopes, conceals on outage and refuses changed actor", async () => {
+test("active Operator silently revalidates the same actor and scopes, conceals on outage and refuses changed actor", async t => {
   const h = shellHarness(["marketing"]);
   const settle = () => new Promise(resolve => setImmediate(resolve));
   const visible = () => !walk(h.render(), n => n.type === "aside")[0].props.hidden;
-  h.render(); h.mount();
+  h.render(); h.mount(t);
   await settle();
   assert.equal(h.requests.length, 1, "active workspace must read the owner without a manual click");
   const verified = { authenticated: true, actorId: "operator-a", role: "operator", originalOperator: false, grants: ["marketing"], sessionExpiresAt: new Date(Date.now() + 300000).toISOString() };
@@ -153,9 +170,9 @@ test("active Operator silently revalidates the same actor and scopes, conceals o
   assert.equal(walk(h.render(), n => n.type === "aside").length, 0); assert.deepEqual(h.redirects, ["/"]);
 });
 
-test("changed verified Operator scopes never reuse the old workspace", async () => {
+test("changed verified Operator scopes never reuse the old workspace", async t => {
   const h = shellHarness(["marketing"]);
-  h.render(); h.mount(); await new Promise(resolve => setImmediate(resolve));
+  h.render(); h.mount(t); await new Promise(resolve => setImmediate(resolve));
   h.requests.shift().resolve(Response.json({ authenticated: true, actorId: "operator-a", role: "operator", originalOperator: false,
     grants: ["operations"], sessionExpiresAt: new Date(Date.now() + 300000).toISOString() }));
   await new Promise(resolve => setImmediate(resolve));
@@ -163,12 +180,113 @@ test("changed verified Operator scopes never reuse the old workspace", async () 
   assert.deepEqual(h.redirects, ["/"]);
 });
 
-test("Operator changes in original-owner authority discard the previous workspace even with identical grants", async () => {
+test("Operator changes in original-owner authority discard the previous workspace even with identical grants", async t => {
   const h = shellHarness(["marketing"]);
-  h.render(); h.mount(); await new Promise(resolve => setImmediate(resolve));
+  h.render(); h.mount(t); await new Promise(resolve => setImmediate(resolve));
   h.requests.shift().resolve(Response.json({ authenticated: true, actorId: "operator-a", role: "operator",
     originalOperator: true, grants: ["marketing"], sessionExpiresAt: new Date(Date.now() + 300000).toISOString() }));
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(walk(h.render(), n => n.type === "aside").length, 0);
   assert.deepEqual(h.redirects, ["/"]);
+});
+
+function verifiedOperator(h, overrides = {}) {
+  return { authenticated: true, actorId: "operator-a", role: "operator", originalOperator: false,
+    grants: ["marketing"], sessionExpiresAt: h.deadline, ...overrides };
+}
+
+test("expired owner evidence and backgrounding conceal protected content until a fresh valid reply", async t => {
+  const h = shellHarness(["marketing"]);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  h.render();
+  const cleanup = h.mount(t);
+  try {
+    h.requests.shift().resolve(Response.json(verifiedOperator(h)));
+    await settle();
+    assert.equal(walk(h.render(), n => n.type === "aside")[0].props.hidden, false);
+    h.doc.visibilityState = "hidden";
+    h.events.get("visibilitychange")();
+    assert.equal(walk(h.render(), n => n.type === "aside")[0].props.hidden, true);
+    h.poll();
+    assert.equal(h.requests.length, 0, "background workspace must not revalidate");
+    h.doc.visibilityState = "visible";
+    h.events.get("visibilitychange")();
+    h.requests.shift().resolve(Response.json(verifiedOperator(h, { sessionExpiresAt: "invalid" })));
+    await settle();
+    assert.equal(walk(h.render(), n => n.type === "aside")[0].props.hidden, true);
+    h.poll();
+    h.requests.shift().resolve(Response.json(verifiedOperator(h, { sessionExpiresAt: "2000-01-01T00:00:00Z" })));
+    await settle();
+    assert.equal(walk(h.render(), n => n.type === "aside")[0].props.hidden, true);
+    h.poll();
+    h.requests.shift().resolve(Response.json(verifiedOperator(h)));
+    await settle();
+    assert.equal(walk(h.render(), n => n.type === "aside")[0].props.hidden, false);
+    assert.deepEqual(h.redirects, []);
+  } finally { cleanup(); }
+});
+
+test("logout revalidates actor before mutation and refuses changed account", async t => {
+  const h = shellHarness(["marketing"]);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  h.render();
+  const cleanup = h.mount(t);
+  try {
+    h.requests.shift().resolve(Response.json(verifiedOperator(h)));
+    await settle();
+    const button = walk(h.render(), n => n.type === "button" && n.props.className === "logout")[0];
+    const pending = button.props.onClick();
+    assert.equal(walk(h.render(), n => n.type === "aside").length, 0);
+    assert.equal(h.requests[0].options.method, "GET");
+    h.requests.shift().resolve(Response.json(verifiedOperator(h, { actorId: "operator-b" })));
+    await pending;
+    assert.equal(h.requests.length, 0, "no revocation for replacement actor");
+    assert.deepEqual(h.redirects, ["/"]);
+  } finally { cleanup(); }
+});
+
+test("unconfirmed logout never restores previous protected workspace or claims revocation", async t => {
+  const h = shellHarness(["marketing"]);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  h.render();
+  const cleanup = h.mount(t);
+  try {
+    h.requests.shift().resolve(Response.json(verifiedOperator(h)));
+    await settle();
+    const button = walk(h.render(), n => n.type === "button" && n.props.className === "logout")[0];
+    const pending = button.props.onClick();
+    h.requests.shift().resolve(Response.json(verifiedOperator(h)));
+    await settle();
+    const mutation = h.requests.shift();
+    assert.equal(mutation.options.method, "POST");
+    assert.equal(mutation.options.credentials, "same-origin");
+    mutation.resolve(Response.json({ code: "OWNER_UNAVAILABLE" }, { status: 503 }));
+    await pending;
+    assert.equal(walk(h.render(), n => n.type === "aside").length, 0);
+    assert.deepEqual(h.redirects, []);
+    h.poll();
+    assert.equal(h.requests.length, 0, "uncertain signout cannot restart old session");
+  } finally { cleanup(); }
+});
+
+test("confirmed same-actor logout redirects only after the owner acknowledges revocation", async t => {
+  const h = shellHarness(["marketing"]);
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  h.render();
+  const cleanup = h.mount(t);
+  try {
+    h.requests.shift().resolve(Response.json(verifiedOperator(h)));
+    await settle();
+    const button = walk(h.render(), n => n.type === "button" && n.props.className === "logout")[0];
+    const pending = button.props.onClick();
+    h.requests.shift().resolve(Response.json(verifiedOperator(h)));
+    await settle();
+    assert.deepEqual(h.redirects, []);
+    const mutation = h.requests.shift();
+    assert.equal(mutation.options.method, "POST");
+    mutation.resolve(new Response(null, { status: 204 }));
+    await pending;
+    assert.deepEqual(h.redirects, ["/"]);
+    assert.equal(walk(h.render(), n => n.type === "aside").length, 0);
+  } finally { cleanup(); }
 });
