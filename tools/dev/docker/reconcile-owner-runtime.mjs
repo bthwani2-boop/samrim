@@ -15,9 +15,9 @@ const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const context = "bthwani-docker";
 const project = "bthwani-refoundation";
 const owners = {
-  dsh: { tag: "REF_DSH_IMAGE_TAG", image: "bthwani-refoundation-dsh", profile: "implementation" },
-  identity: { tag: "REF_IDENTITY_IMAGE_TAG", image: "bthwani-refoundation-identity-verifier", profile: "identity-verifier" },
-  wlt: { tag: "REF_WLT_IMAGE_TAG", image: "bthwani-refoundation-wlt", profile: "wlt-reader" },
+  dsh: { tag: "REF_DSH_IMAGE_TAG", image: "bthwani-refoundation-dsh" },
+  identity: { tag: "REF_IDENTITY_IMAGE_TAG", image: "bthwani-refoundation-identity-verifier" },
+  wlt: { tag: "REF_WLT_IMAGE_TAG", image: "bthwani-refoundation-wlt" },
 };
 const canonicalComposeFiles = Object.freeze(["compose.yaml"]);
 const canonicalComposePath = resolve(root,"infra/compose.yaml");
@@ -107,7 +107,7 @@ export function removePrivateCopyArchive(pg, archive, execute = docker) {
   execute(["exec", pg, "rmdir", "--", archive.directory]);
 }
 export function composeArgs() {
-  return ["compose","--project-directory",resolve(root,"infra"),"--env-file","infra/.env","-f",canonicalComposePath, ...Object.values(owners).flatMap(o=>["--profile",o.profile])];
+  return ["compose","--project-directory",resolve(root,"infra"),"--env-file","infra/.env","-f",canonicalComposePath, "--profile","implementation"];
 }
 function asEnv(values) {
   return Object.fromEntries(values.map(v => [v.slice(0, v.indexOf("=")), v.slice(v.indexOf("=") + 1)]));
@@ -170,7 +170,8 @@ function liveFiles(v) {
 }
 function equal(a,b) { return JSON.stringify(a) === JSON.stringify(b); }
 function configHashes(names, env, historical) {
-  const args = composeArgs().map(value => historical && value === historical.file ? "-" : value);
+  // Historical reconstruction is config-only: include retired profiles without starting any service.
+  const args = composeArgs().map(value => historical ? (value === historical.file ? "-" : value === "implementation" ? "*" : value) : value);
   const lines = docker([...args, "config", "--hash", names.join(",")], env, 30000, historical ? historical.content + "\n" : undefined).split(/\r?\n/);
   const result = Object.fromEntries(lines.map(l => l.trim().split(/\s+/)));
   if (Object.keys(result).length !== names.length || names.some(o => !/^[0-9a-f]{64}$/.test(result[o] || ""))) throw new Error("Incomplete Compose hash");

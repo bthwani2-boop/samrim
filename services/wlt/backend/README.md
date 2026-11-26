@@ -56,7 +56,7 @@ durable database state before any attempted recovery; do not delete, reset or
 rerun the provisioner blindly.
 
 Build the committed WLT source image using `tools/dev/docker/build-owner-image.ps1 -Owner wlt`,
-then use the canonical `infra/compose.yaml`, selecting `--profile wlt-reader` and
+then use the canonical `infra/compose.yaml`, selecting `--profile implementation` and
 `--no-deps` for `wlt` only after Identity and PostgreSQL are confirmed
 healthy. Verify `/health`, unauthenticated `401` and
 read-only `405`, then real Identity session authorization/denial on

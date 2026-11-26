@@ -290,7 +290,7 @@ test("every owner operation uses one canonical Compose input and the same explic
   assert.deepEqual(args, [
     "compose", "--project-directory", fileURLToPath(new URL("../../infra", import.meta.url)),
     "--env-file", "infra/.env", "-f", composeFile,
-    "--profile", "implementation", "--profile", "identity-verifier", "--profile", "wlt-reader",
+    "--profile", "implementation",
   ]);
   assert.deepEqual(composeArgs(), args);
   assert.equal(args.filter(arg => arg === "-f").length, 1);

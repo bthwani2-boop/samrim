@@ -12,8 +12,8 @@ This environment is synthetic development only, not production deployment. Legac
 | `media` | Fresh SeaweedFS mini, own media volume/credentials | 3233 |
 | `mailpit` | Local inbound test email capture | 3226 |
 | `payment-mock` | WireMock with fixed synthetic cash-in evidence (no production rails) | 3290 |
-| `wlt` (`wlt-reader` profile) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
-| `identity` (`identity-verifier` profile) | Isolated synthetic Identity authentication and authorization | 3201 |
+| `wlt` (`implementation` profile) | Real WLT read-only Customer balance/history with new isolated PostgreSQL database | 3203 |
+| `identity` (`implementation` profile) | Isolated synthetic Identity authentication and authorization | 3201 |
 | `dsh` (`implementation` profile) | DSH owner; admitted capabilities depend on explicit configuration | 3202 |
 
 The `payment-mock` image is built from `tests/infra/payment-mock/Dockerfile` using the existing
@@ -33,7 +33,7 @@ secrets, applied migrations and media are never copied or changed.
 
 ## Owner services and explicit capabilities
 
-The single canonical environment definition is [compose.yaml](compose.yaml), implementing the [environment-owned Compose policy](../governance/engineering.md#repository-checks-and-isolated-runtime-acceptance). It defines four foundational dependencies and the three real service owners (Identity, DSH, WLT), with a separately scoped DSH bootstrap role. Profiles select lifecycle roles, never applications or business capabilities. No application-specific Compose files are needed.
+The single canonical environment definition is [compose.yaml](compose.yaml), implementing the [environment-owned Compose policy](../governance/engineering.md#repository-checks-and-isolated-runtime-acceptance). It defines four foundational dependencies and the three real service owners (Identity, DSH, WLT), with a separately scoped DSH bootstrap role. The single `implementation` profile admits the three serving owners; `bootstrap` is a separate one-shot role. Profiles never select applications or business capabilities. Starting/replacing one owner always names its service explicitly. No application-specific Compose files are needed.
 
 For an already running environment, use the existing pnpm dev docker status, verify and guarded reconciliation commands. Existing containers may retain historical Compose-file labels until their next verified owner replacement; exact prior native configuration hashes remain mandatory. Never recreate a healthy container solely to change its historical labels. A replacement must preserve effective configuration, source provenance, data and peer ownership.
 
@@ -63,7 +63,7 @@ inside ignored `infra/.env`. It must never be run automatically with Compose.
 
 After a source commit, build via
 `pwsh -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner wlt`, and configure with
-`docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile wlt-reader config --quiet`.
+`docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation config --quiet`.
 Start only the admitted reader using the matching Compose invocation plus
 `up -d --no-deps wlt`. Port `3203` is bound to Lenovo loopback only;
 WLT uses the existing synthetic Identity verifier `identity:3302` and the configured DSH peer origin `http://dsh:8080`, with a
@@ -130,7 +130,7 @@ merchant permissions, identity authentication or finance correctness.
 ### Isolated Identity verifier in the SAME Compose project
 
 Identity is defined in the single `compose.yaml` alongside the other service owners. The project name remains `bthwani-refoundation`, and its published host port is loopback-only 3201.
-The service is `identity`, profile `identity-verifier`. It has no
+The service is `identity`, profile `implementation`. It has no
 automatic bootstrap, schema migrations, donor volumes or other service restarts.
 
 `services/identity/backend/Dockerfile` now builds the real Go binary in a
@@ -178,9 +178,9 @@ The opt-in deployment sequence is:
 
 ```powershell
 pwsh -NoProfile -File tools/dev/docker/build-owner-image.ps1 -Owner identity
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile identity-verifier config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile identity-verifier up -d --no-deps identity
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile identity-verifier ps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation config --quiet
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation up -d --no-deps identity
+docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml --profile implementation ps identity
 ```
 
 The committed Identity verifier now exposes `GET /health` for isolated

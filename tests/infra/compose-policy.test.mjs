@@ -47,7 +47,7 @@ test("serving containers share one canonical environment-label definition", () =
 
 test("WLT is the real isolated read-only owner and never a migration service", () => {
   const wlt = compose("compose.yaml").services.wlt;
-  assert.deepEqual(wlt.profiles, ["wlt-reader"]);
+  assert.deepEqual(wlt.profiles, ["implementation"]);
   assert.equal(wlt.restart, "unless-stopped");
   assert.equal(wlt.read_only, true);
   assert.ok(wlt.cap_drop.includes("ALL"));
@@ -103,7 +103,7 @@ test("a normal implementation profile can never implicitly bootstrap SQL", () =>
 
 test("Identity verifier is synthetic only and has no privileged host exposure", () => {
   const id = compose("compose.yaml").services.identity;
-  assert.deepEqual(id.profiles, ["identity-verifier"]);
+  assert.deepEqual(id.profiles, ["implementation"]);
   assert.equal(id.restart, "unless-stopped", "Identity must recover after Docker engine restart");
   assert.equal(id.read_only, true);
   assert.ok(id.cap_drop.includes("ALL"));
