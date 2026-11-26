@@ -376,26 +376,40 @@ export function measureFileCoverage(paths, authored, nodes, checkout) {
   assertCoverageScope(paths);
   if (!Array.isArray(nodes)) throw new Error("BLOCKED: invalid graph nodes");
   const indexed = new Set(nodes.map(node => node?.source_file).filter(name => typeof name === "string"));
-  // The Windows extractor can emit physical path casing rather than Git casing.
-  // Accept only the identical existing file, never a label, guessed alias or absent path.
-  const physicalFile = name => {
-    const path = resolve(checkout, name);
+
+  // The extractor may spell a Windows path differently from Git. A path
+  // string (even a realpath string) is not a file identity. Reuse the source
+  // admission boundary: reject redirected, linked, missing or changed files
+  // and compare the volume/file identifiers from the verified open handles.
+  function identity(name) {
     try {
-      const physical = realpathSync.native(path);
-      return lstatSync(path).isFile() && samePath(physical, path) ? physical : null;
-    } catch { return null; }
-  };
-  const hasNode = name => {
-    if (indexed.has(name)) return true;
-    if (process.platform !== "win32" || !checkout) return false;
-    const physical = physicalFile(name);
-    if (!physical) return false;
-    return [...indexed].some(source => source.toLowerCase() === name.toLowerCase() &&
-      physicalFile(source) === physical);
-  };
-  const represented = paths.filter(name => authored.has(name) && hasNode(name));
-  const missing = paths.filter(name => authored.has(name) && !represented.includes(name));
-  const unadmitted = paths.filter(name => !authored.has(name));
+      const { stat } = readVerifiedFile(resolve(checkout, name), 4 * 1024 * 1024);
+      return stat.ino !== 0n ? stat : null;
+    } catch {
+      return null;
+    }
+  }
+  function representedByGraph(name) {
+    if (indexed.has(name)) return !checkout || identity(name) !== null;
+    if (!checkout || process.platform !== "win32") return false;
+    const expected = identity(name);
+    if (!expected) return false;
+    for (const source of indexed) {
+      if (source.toLowerCase() !== name.toLowerCase()) continue;
+      const actual = identity(source);
+      if (actual && expected.dev === actual.dev && expected.ino === actual.ino) return true;
+    }
+    return false;
+  }
+
+  const represented = [];
+  const missing = [];
+  const unadmitted = [];
+  for (const name of paths) {
+    if (!authored.has(name)) unadmitted.push(name);
+    else if (representedByGraph(name)) represented.push(name);
+    else missing.push(name);
+  }
   return { coverage: missing.length || unadmitted.length ? "FAIL" : "PASS",
     requested: [...paths], represented, missing, unadmitted };
 }

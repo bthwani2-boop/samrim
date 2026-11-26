@@ -401,25 +401,52 @@ test("reviewed recovery refuses a hard-linked lock before inspecting ownership",
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("native Windows spelling resolves only to the same authored physical file", {skip:process.platform!=="win32"}, async () => {
+test("native Windows spelling resolves only to the same authored physical file", { skip: process.platform !== "win32" }, async () => {
   const { measureFileCoverage } = await import("./graphify-local.mjs");
-  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import("node:fs");
+  const { mkdtempSync, mkdirSync, writeFileSync, lstatSync, linkSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const dir=mkdtempSync(join(tmpdir(),"graphify-coverage-case-"));
+  const dir = mkdtempSync(join(tmpdir(), "graphify-coverage-case-"));
   try {
-    mkdirSync(join(dir,"tools"));
-    writeFileSync(join(dir,"tools","Start-AppTunnel.ps1"),"Write-Output 'test'\n");
-    const paths=["tools/Start-AppTunnel.ps1","tools/compose.yaml"];
-    const authored=new Set(paths);
-    const result=measureFileCoverage(paths,authored,[{source_file:"tools/start-apptunnel.ps1"},{label:"tools/compose.yaml"}],dir);
-    assert.deepEqual(result.represented,["tools/Start-AppTunnel.ps1"]);
-    assert.deepEqual(result.missing,["tools/compose.yaml"]);
-    assert.equal(result.coverage,"FAIL");
-    assert.equal(measureFileCoverage([paths[0]],authored,[{source_file:"tools/start-apptunnel.ps1"}],dir).coverage,"PASS");
-    assert.equal(measureFileCoverage([paths[0]],authored,[{source_file:"../tools/start-apptunnel.ps1"}],dir).coverage,"FAIL");
-    assert.equal(measureFileCoverage([paths[0]],new Set(),[{source_file:"tools/start-apptunnel.ps1"}],dir).coverage,"FAIL");
-    rmSync(join(dir,"tools","Start-AppTunnel.ps1"));
-    assert.equal(measureFileCoverage([paths[0]],authored,[{source_file:"tools/start-apptunnel.ps1"}],dir).coverage,"FAIL");
-  } finally {rmSync(dir,{recursive:true,force:true});}
+    mkdirSync(join(dir, "tools"));
+    const original = "tools/Start-AppTunnel.ps1";
+    const alias = "tools/start-apptunnel.ps1";
+    writeFileSync(join(dir, original), "Write-Output 'test'\n");
+    const authored = new Set([original, "tools/compose.yaml"]);
+    const check = (path, source) => measureFileCoverage([path], authored, [{ source_file: source }], dir).coverage;
+
+    // Establish actual file identity rather than assuming that every Windows
+    // volume/directory uses case-insensitive lookup.
+    const originalStat = lstatSync(join(dir, original), { bigint: true });
+    const aliasStat = lstatSync(join(dir, alias), { bigint: true, throwIfNoEntry: false });
+    const sameFile = aliasStat?.dev === originalStat.dev && aliasStat?.ino === originalStat.ino;
+    assert.notEqual(originalStat.ino, 0n);
+    assert.equal(check(original, original), "PASS");
+    assert.equal(check(original, alias), sameFile ? "PASS" : "FAIL");
+    if (!sameFile) {
+      writeFileSync(join(dir, alias), "different physical file\n", { flag: "wx" });
+      assert.equal(check(original, alias), "FAIL");
+      rmSync(join(dir, alias));
+    }
+
+    const result = measureFileCoverage([...authored], authored,
+      [{ source_file: alias }, { label: "tools/compose.yaml" }], dir);
+    assert.deepEqual(result.represented, sameFile ? [original] : []);
+    assert.deepEqual(result.missing, sameFile ? ["tools/compose.yaml"] : [...authored]);
+    assert.equal(result.coverage, "FAIL");
+    assert.equal(check(original, "../" + alias), "FAIL");
+    assert.equal(measureFileCoverage([original], new Set(), [{ source_file: original }], dir).coverage, "FAIL");
+
+    const linked = join(dir, "other.ps1");
+    linkSync(join(dir, original), linked);
+    assert.equal(check(original, original), "FAIL", "Hard-linked source is not admitted");
+    assert.equal(check(original, alias), "FAIL");
+    rmSync(linked);
+    assert.equal(check(original, original), "PASS");
+    rmSync(join(dir, original));
+    assert.equal(check(original, original), "FAIL");
+    assert.equal(check(original, alias), "FAIL");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
