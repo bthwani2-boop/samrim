@@ -72,7 +72,8 @@ function git(cwd, ...args) {
 function candidate(directory) {
   git(directory, "init", "--quiet");
   put(directory, "source.txt", "original\n");
-  git(directory, "add", "--", "source.txt");
+  put(directory, ".gitignore", "coverage/\n");
+  git(directory, "add", "--", "source.txt", ".gitignore");
   git(directory, "commit", "--quiet", "-m", "synthetic CI candidate");
   return { sha: git(directory, "rev-parse", "HEAD"), tree: git(directory, "rev-parse", "HEAD^{tree}") };
 }
@@ -249,9 +250,19 @@ for (const entry of evidence) {
       assert.ok(upload.with.path.split(/\s+/).includes(entry.manifest));
       assert.equal(readFileSync(path.join(directory, entry.manifest), "utf8"), profileManifest(path.join(directory, "coverage/owner-postgres")));
     }
+    const reject = () => assert.notEqual(shell(command(bind), { GITHUB_SHA: sha }, directory).status, 0);
     assert.notEqual(shell(command(bind), { GITHUB_SHA: "0".repeat(40) }, directory).status, 0);
+    const untracked = put(directory, "untracked-source.test.mjs");
+    reject();
+    git(directory, "add", "--", "untracked-source.test.mjs");
+    reject();
+    git(directory, "rm", "--cached", "--", "untracked-source.test.mjs");
+    rmSync(untracked);
     put(directory, "source.txt", "dirty\n");
-    assert.notEqual(shell(command(bind), { GITHUB_SHA: sha }, directory).status, 0);
+    reject();
+    git(directory, "add", "--", "source.txt");
+    put(directory, "source.txt", "original\n");
+    reject();
   }));
 }
 

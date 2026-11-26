@@ -89,7 +89,12 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
-          git diff --quiet HEAD --
+          candidate_status="$(git status --porcelain=v1 --untracked-files=all)"
+          if [[ -n "$candidate_status" ]]; then
+            echo 'Coverage producer source differs from its committed candidate' >&2
+            printf '%s\n' "$candidate_status" >&2
+            exit 1
+          fi
           test -s coverage/lcov.info
           git rev-parse 'HEAD^{tree}' > coverage/tree.txt
       - name: Publish measured JavaScript coverage
