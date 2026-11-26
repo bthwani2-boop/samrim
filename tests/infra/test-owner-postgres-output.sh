@@ -8,6 +8,14 @@ source <(sed -n '/^run_test() {/,/^}/p' "$script")
 declare -f run_test >/dev/null
 
 docker() {
+  if [[ "$1" == cp ]]; then
+    [[ "${FAKE_COPY_EXIT:-0}" == 0 ]] || return "$FAKE_COPY_EXIT"
+    printf '%s\n' "${FAKE_PROFILE:-}" > "$3"
+    return 0
+  fi
+  if [[ "${coverage_enabled:-no}" == yes ]]; then
+    [[ " $* " == *" -test.coverprofile=/tmp/dummy.test-$coverage_sequence.out "* ]] || return 1
+  fi
   printf '%s\n' "${FAKE_OWNER_OUTPUT:-}"
   return "${FAKE_OWNER_EXIT:-0}"
 }
@@ -37,6 +45,30 @@ case_output failed_test fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\
 case_output failing_exit fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestSecond\n--- PASS: TestSecond (0.01s)\nPASS' 1
 case_output duplicate_test fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\nPASS'
 echo 'OWNER_TEST_OUTPUT_GATE_PASS positive=1 negative=6'
+
+# These are tests of report admission, never measured coverage evidence.
+scratch="$(mktemp -d)"
+trap 'rm -rf -- "$scratch"' EXIT
+mkdir "$scratch/profiles"
+coverage_enabled=yes
+coverage_sequence=0
+FAKE_PROFILE=$'mode: atomic\nexample.invalid/fixture.go:1.1,1.2 1 1'
+complete=$'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestSecond\n--- PASS: TestSecond (0.01s)\nPASS'
+case_output measured pass "$complete"
+[[ -s "$scratch/profiles/dummy.test-1.out" ]]
+FAKE_PROFILE=$'mode: atomic\nexample.invalid/fixture.go:1.1,1.2 1 0'
+case_output empty_hits fail "$complete"
+FAKE_PROFILE=$'mode: set\nexample.invalid/fixture.go:1.1,1.2 1 1'
+case_output invalid_mode fail "$complete"
+FAKE_PROFILE=''
+case_output empty_profile fail "$complete"
+FAKE_COPY_EXIT=1
+case_output missing_profile fail "$complete"
+FAKE_COPY_EXIT=0
+case_output skipped_report fail $'--- SKIP: TestFirst (0.00s)\nPASS'
+[[ ! -e "$scratch/profiles/dummy.test-6.out" ]]
+coverage_enabled=no
+echo 'OWNER_COVERAGE_ADMISSION_GATE_PASS positive=1 negative=5'
 
 # Compare the declared discovery inventory against native Go selection before
 # starting any disposable Docker stage. Retain the explicit reviewed allowlist.

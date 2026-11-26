@@ -16,6 +16,19 @@ if [[ "$(docker context show)" != "default" ]]; then
   exit 2
 fi
 cd "$(dirname "$0")/../.."
+coverage_enabled=no
+cover_flags=()
+coverage_sequence=0
+if [[ $# -eq 1 && "$1" == --coverage ]]; then
+  coverage_enabled=yes
+  cover_flags=(-covermode=atomic)
+  [[ ! -e coverage/owner-postgres && ! -L coverage/owner-postgres ]] || {
+    echo 'Refusing existing owner PostgreSQL coverage output' >&2; exit 2;
+  }
+elif [[ $# -ne 0 ]]; then
+  echo 'Usage: verify-owner-postgres-ci.sh [--coverage]' >&2
+  exit 2
+fi
 image="$(awk '$1 == "image:" && $2 ~ /^postgis\/postgis:18-3\.6@sha256:/ {print $2}' infra/compose.yaml)"
 if [[ ! "$image" =~ ^postgis/postgis:18-3\.6@sha256:[a-f0-9]{64}$ ]]; then
   echo "Refusing an unpinned or unexpected PostgreSQL image" >&2
@@ -36,6 +49,7 @@ cleanup() {
   rm -rf -- "$scratch"
 }
 trap cleanup EXIT
+if [[ "$coverage_enabled" == yes ]]; then mkdir "$scratch/profiles"; fi
 
 # An ephemeral credential prevents a checked-in reusable role password. Each
 # stage exists only inside this network-disabled, volume-free CI runner.
@@ -45,18 +59,18 @@ ci_password="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
 # Static Go test executables run inside each isolated PostgreSQL container;
 # no host DB connection or external test-network grant is necessary.
 (cd services/identity/backend && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/identity-session.test" ./internal/session && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/identity-session.test" ./internal/session && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/identity" ./cmd/identity)
 (cd services/dsh/backend && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-discovery.test" ./internal/discovery && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-storeavailability.test" ./internal/storeavailability && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-captainstanding.test" ./internal/captainstanding && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-customercart.test" ./internal/customercart && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/dsh-employees.test" ./internal/employees && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -cover -o "$scratch/dsh-employee-mount.test" ./cmd/dsh && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-discovery.test" ./internal/discovery && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-storeavailability.test" ./internal/storeavailability && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-captainstanding.test" ./internal/captainstanding && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-customercart.test" ./internal/customercart && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-employees.test" ./internal/employees && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -cover "${cover_flags[@]}" -o "$scratch/dsh-employee-mount.test" ./cmd/dsh && \
   CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/dsh" ./cmd/dsh)
 (cd services/wlt/backend && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -o "$scratch/wlt-wallet.test" ./cmd/wlt)
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/wlt-wallet.test" ./cmd/wlt)
 [[ -s "$scratch/wlt-wallet.test" ]] || { echo "Missing compiled WLT owner test" >&2; exit 1; }
 for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh-employee-mount.test dsh; do
   [[ -s "$scratch/$executable" ]] || { echo "Missing compiled owner: $executable" >&2; exit 1; }
@@ -129,8 +143,15 @@ finish_stage() {
 run_test() {
   local name="$1" dir="$2" binary="$3" pattern="$4" expected="$5" output
   shift 5
+  local profile=""
+  local -a profile_flags=()
+  if [[ "${coverage_enabled:-no}" == yes ]]; then
+    coverage_sequence=$((coverage_sequence+1))
+    profile="${binary##*/}-$coverage_sequence.out"
+    profile_flags=(-test.coverprofile="/tmp/$profile")
+  fi
   if ! output="$(docker exec -w "$dir" "$@" "$name" "$binary" \
-    -test.v -test.run "$pattern" -test.timeout 180s 2>&1)"; then
+    -test.v -test.run "$pattern" -test.timeout 180s "${profile_flags[@]}" 2>&1)"; then
     printf '%s\n' "$output"
     echo "Owner-backed integration failed; do not claim PASS" >&2
     return 1
@@ -155,6 +176,17 @@ run_test() {
       return 1
     fi
   done
+  if [[ -n "$profile" ]]; then
+    local destination="$scratch/profiles/$profile"
+    if ! docker cp "$name:/tmp/$profile" "$destination" || [[ ! -s "$destination" ]] ||
+       ! awk 'NR==1 {if ($0!="mode: atomic") bad=1; next}
+         NF!=3 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ {bad=1}
+         $3>0 {hit=1} END {exit !(NR>1 && hit && !bad)}' "$destination"; then
+      echo "Missing or invalid measured coverage for $binary" >&2
+      return 1
+    fi
+    echo "OWNER_POSTGRES_COVERAGE_PROFILE=$profile"
+  fi
   printf '%s\n' "$output" | grep -E '^--- (PASS|FAIL|SKIP):|^PASS$|^FAIL$' || true
 }
 
@@ -381,4 +413,14 @@ grep -q '42501' "$scratch/wlt-sandbox-denial" || exit 1
 echo 'WLT_DISPOSABLE_RESTORE_PASS real_postgresql=true restored_balance=true reader_scope=true'
 finish_stage
 
+if [[ "$coverage_enabled" == yes ]]; then
+  profiles=("$scratch"/profiles/*.out)
+  [[ "$coverage_sequence" -gt 0 && "${#profiles[@]}" -eq "$coverage_sequence" ]] || {
+    echo 'Incomplete isolated owner coverage inventory' >&2; exit 1;
+  }
+  mkdir -p coverage
+  [[ ! -e coverage/owner-postgres && ! -L coverage/owner-postgres ]] || exit 1
+  mv -- "$scratch/profiles" coverage/owner-postgres
+  echo "OWNER_POSTGRES_COVERAGE_PASS profiles=$coverage_sequence"
+fi
 echo 'OWNER_POSTGRES_INTEGRATION_PASS network=none ephemeral_tmpfs=true durable_owner_readback=verified no_production_data=true'

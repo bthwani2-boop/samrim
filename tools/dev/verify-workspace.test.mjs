@@ -152,7 +152,10 @@ test('Sonar requires every Go owner and rejects expired quality gate waivers', a
   assert.doesNotMatch(sonar, /continue-on-error:|Verify the approved coverage exception/);
   assert.match(sonar, /for service in identity dsh wlt; do/);
   const config = readFileSync(new URL('../../sonar-project.properties', import.meta.url), 'utf8');
-  assert.match(config, /^sonar\.go\.coverage\.reportPaths=coverage\/identity-go\.out,coverage\/dsh-go\.out,coverage\/wlt-go\.out$/m);
+  assert.match(config, /^sonar\.go\.coverage\.reportPaths=coverage\/identity-go\.out,coverage\/dsh-go\.out,coverage\/wlt-go\.out,coverage\/owner-postgres\/\*\.out$/m);
+  assert.ok(sonar.includes('bash tests/infra/verify-owner-postgres-ci.sh --coverage'));
+  assert.ok(sonar.indexOf('bash tests/infra/verify-owner-postgres-ci.sh --coverage') <
+    sonar.indexOf('-Dsonar.qualitygate.wait=true'));
   assert.ok(sonar.includes('-Dsonar.qualitygate.wait=true'));
   assert.ok(sonar.includes('SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}'));
 });
