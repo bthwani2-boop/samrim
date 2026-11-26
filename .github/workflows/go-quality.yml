@@ -45,8 +45,6 @@ jobs:
             exit 1
           fi
           "$CC" --version
-      - name: Test Go runner argument, pin and module safety
-        run: node --test tools/dev/check-go.test.mjs
       - name: Verify real Go modules with race detector and measured coverage
         run: node tools/dev/check-go.mjs --ci --sonar-report
       - name: Bind Go coverage to the tested source tree

@@ -74,6 +74,8 @@ jobs:
           corepack enable pnpm
           pnpm --version
           pnpm install --frozen-lockfile --ignore-scripts
+      - name: Audit the installed locked JavaScript dependency graph (high and critical fail)
+        run: pnpm audit --audit-level high
       - name: Validate owner OpenAPI 3.1 contracts and reject broken references
         run: |
           pnpm --dir services/identity contract
@@ -138,6 +140,7 @@ jobs:
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
 
   # Development feedback is not a merge gate. Native Nx owns affected tasks.
+
   development_feedback:
     if: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
     name: Development feedback (Nx)
@@ -186,8 +189,8 @@ jobs:
         run: echo 'Development feedback only; full source tests, builds, isolated SQL and Sonar belong to PR/main verification or explicit full verification.'
 
   dependency_security:
-    if: ${{ github.event_name == 'schedule' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-    name: Dependency audit (high+)
+    if: ${{ github.event_name == 'schedule' }}
+    name: Scheduled dependency audit (high+)
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -215,7 +218,7 @@ jobs:
   required_ci:
     # Keep the protected PR context distinct from feedback and manual runs.
     name: ${{ github.event_name == 'pull_request' && 'fast-guard' || 'full-ci' }}
-    needs: [workspace_validation, application_quality, dependency_security, backend_quality]
+    needs: [workspace_validation, application_quality, backend_quality]
     if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -227,7 +230,6 @@ jobs:
           CI_EVENT: ${{ github.event_name }}
           WORKSPACE_RESULT: ${{ needs.workspace_validation.result }}
           APPLICATION_RESULT: ${{ needs.application_quality.result }}
-          DEPENDENCY_RESULT: ${{ needs.dependency_security.result }}
           BACKEND_RESULT: ${{ needs.backend_quality.result }}
         shell: bash
         run: |
@@ -240,7 +242,7 @@ jobs:
             push) test "$CI_REF" = refs/heads/main ;;
             *) exit 1 ;;
           esac
-          for result in "$WORKSPACE_RESULT" "$APPLICATION_RESULT" "$DEPENDENCY_RESULT" "$BACKEND_RESULT"; do
+          for result in "$WORKSPACE_RESULT" "$APPLICATION_RESULT" "$BACKEND_RESULT"; do
             test "$result" = success
           done
       - name: State verification boundary

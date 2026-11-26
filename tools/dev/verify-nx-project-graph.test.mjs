@@ -1,11 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import YAML from "yaml";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -127,19 +125,6 @@ test("new Merchant Feature changes only its own app", () => {
 test("Windows command separators inside --files remain literal file data", () => {
   const projects = affected("apps/merchant/src/features/catalog/new-file & echo NX_INJECTION > bad.txt");
   assert.ok(projects.has("@bthwani/merchant"));
-});
-
-test("canonical dependency audit remains fail-closed and independent of full source tests", () => {
-  const workflow = YAML.parse(readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8"));
-  const audit = workflow.jobs.dependency_security;
-  const steps = audit.steps;
-  const install = steps.find(step => step.run?.includes("pnpm install --frozen-lockfile --ignore-scripts"));
-  const scan = steps.find(step => step.run === "pnpm audit --audit-level high");
-  assert.ok(install && scan && steps.indexOf(install) < steps.indexOf(scan));
-  assert.equal(scan["continue-on-error"], undefined);
-  assert.equal(audit.needs, undefined);
-  assert.ok(workflow.jobs.application_quality.steps.some(step => step.run === "pnpm check:coverage"));
-  assert.ok(!steps.some(step => step.run?.includes("node --test")), "source regressions have one execution owner");
 });
 
 test("every typed application and owner client exposes a native Nx test target", () => {

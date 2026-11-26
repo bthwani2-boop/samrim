@@ -37,9 +37,9 @@ test("full candidate and development feedback have disjoint routing and protecte
   const full = "${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}";
   assert.equal(app.if, full);
   assert.equal(backend.if, full);
-  assert.equal(dependency.if, "${{ github.event_name == 'schedule' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}");
+  assert.equal(dependency.if, "${{ github.event_name == 'schedule' }}");
   assert.equal(feedback.if, "${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}");
-  assert.deepEqual(required.needs, ["workspace_validation", "application_quality", "dependency_security", "backend_quality"]);
+  assert.deepEqual(required.needs, ["workspace_validation", "application_quality", "backend_quality"]);
   assert.equal(required.name, "${{ github.event_name == 'pull_request' && 'fast-guard' || 'full-ci' }}");
   assert.equal(required.if, "${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}");
   assert.equal(backend.uses, "./.github/workflows/go-quality.yml");
@@ -53,14 +53,26 @@ test("full CI executes discovered source tests once and keeps real owner, build 
   const command = steps.map(step => step.run ?? "").join("\n");
   assert.equal(steps.filter(step => step.run === "pnpm check:coverage").length, 1);
   assert.doesNotMatch(command, /--check-discovery/);
-  for (const name of ["tools/security/picomatch-redos.test.mjs", "tools/dev/verify-nx-project-graph.test.mjs", "tools/mobile/verify-application-boundaries.test.mjs"]) {
+  for (const name of ["tools/security/picomatch-redos.test.mjs", "tools/dev/verify-nx-project-graph.test.mjs", "tools/mobile/verify-application-boundaries.test.mjs", "tools/dev/check-go.test.mjs"]) {
     assert.ok(discovered.has(name), name);
-    assert.ok(!ciText.includes(name), "duplicate invocation " + name);
+    assert.ok(!ciText.includes(name) && !goText.includes(name), "duplicate invocation " + name);
   }
   for (const owner of ["identity", "dsh", "wlt"]) assert.ok(command.includes("pnpm --dir services/" + owner + " contract"));
   for (const value of ["pnpm knip:files", "pnpm check:design", "pnpm check:apps:source", "pnpm -r --if-present run typecheck", "expo export --platform web", "expo export --platform android", "pnpm --dir apps/control-panel build", "node tools/dev/verify-operator-http.mjs"]) assert.ok(command.includes(value), value);
   assert.ok(ci.jobs.workspace_validation.steps.some(step => step.run?.includes("node tools/security/verify-secrets.mjs")));
-  assert.ok(dependency.steps.some(step => step.run === "pnpm audit --audit-level high" && !step["continue-on-error"]));
+  for (const job of [app, dependency]) {
+    const install = job.steps.filter(step => step.run?.includes("pnpm install --frozen-lockfile --ignore-scripts"));
+    const audit = job.steps.filter(step => step.run === "pnpm audit --audit-level high");
+    assert.equal(install.length, 1);
+    assert.equal(audit.length, 1);
+    assert.ok(job.steps.indexOf(install[0]) < job.steps.indexOf(audit[0]));
+    assert.equal(audit[0]["continue-on-error"], undefined);
+    assert.equal(audit[0].if, undefined);
+  }
+  assert.equal(dependency.needs, undefined);
+  assert.ok(!dependency.steps.some(step => step.run?.includes("node --test") || step.run?.includes("check:coverage")));
+  assert.ok(app.steps.findIndex(step => step.run === "pnpm audit --audit-level high") <
+    app.steps.findIndex(step => step.run === "pnpm check:coverage"));
   assert.ok(go.jobs["owner-postgres-integration"].steps.some(step => step.run === "./tests/infra/verify-isolated-postgres.ps1 -DockerContext default"));
   const http = steps.find(step => step.env?.BTHWANI_OPERATOR_HTTP_TEST === "1");
   assert.ok(steps.findIndex(step => step.run?.includes("pnpm --dir apps/control-panel build")) < steps.indexOf(http));
@@ -84,10 +96,10 @@ test("native Nx feedback selects affected or full targets without claiming full 
 
 test("full gate rejects failed, cancelled or skipped prerequisites, wrong events and archive refs", () => {
   const step = required.steps[0];
-  const pass = {HEAD_REF:"feature", CI_EVENT:"pull_request", CI_REF:"refs/pull/195/merge", WORKSPACE_RESULT:"success", APPLICATION_RESULT:"success", DEPENDENCY_RESULT:"success", BACKEND_RESULT:"success"};
+  const pass = {HEAD_REF:"feature", CI_EVENT:"pull_request", CI_REF:"refs/pull/195/merge", WORKSPACE_RESULT:"success", APPLICATION_RESULT:"success", BACKEND_RESULT:"success"};
   const run = env => spawnSync(bash, ["-c",step.run], {encoding:"utf8",env:{...process.env,...env}});
   assert.equal(run(pass).status,0);
-  for (const key of ["WORKSPACE_RESULT","APPLICATION_RESULT","DEPENDENCY_RESULT","BACKEND_RESULT"]) for(const value of ["failure","cancelled","skipped",""]) assert.equal(run({...pass,[key]:value}).status,1,key+":"+value);
+  for (const key of ["WORKSPACE_RESULT","APPLICATION_RESULT","BACKEND_RESULT"]) for(const value of ["failure","cancelled","skipped",""]) assert.equal(run({...pass,[key]:value}).status,1,key+":"+value);
   assert.equal(run({...pass,CI_EVENT:"push",CI_REF:"refs/heads/main"}).status,0);
   assert.equal(run({...pass,CI_EVENT:"workflow_dispatch",CI_REF:"refs/heads/feature"}).status,0);
   assert.equal(run({...pass,CI_EVENT:"push",CI_REF:"refs/heads/feature"}).status,1);
