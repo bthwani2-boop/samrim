@@ -650,3 +650,22 @@ test("canonical task ownership rejects unrelated executable, extra actions, fore
   assert.equal(result.status,0,result.stderr||result.stdout);
   assert.match(result.stdout,/EXACT_TASK_ADMISSION_PASS/);
 });
+test("exact task argument grammar admits only fixed tokens and app-specific explicit switches", {skip:process.platform!=="win32"},()=>{
+  const ps=[
+    "$ErrorActionPreference='Stop'",
+    ". (Join-Path (Get-Location).Path 'tools/dev/task-ownership.ps1')",
+    "$exe='C:\\Program Files\\PowerShell\\7\\pwsh.exe';$base='-NoProfile -NonInteractive -WindowStyle Hidden -File '+[char]34+'C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime\\tools\\dev\\Start-App.ps1'+[char]34+' -App '",
+    "function Get-ScheduledTask {param($TaskPath,$TaskName,$ErrorAction) [pscustomobject]@{TaskName=$TaskName;TaskPath=$TaskPath;Actions=@([pscustomobject]@{Execute=$exe;Arguments=$script:arguments;WorkingDirectory=''})}}",
+    "function Verify($app,$suffix,$expected){$script:arguments=$base+$app+$suffix;$accepted=$true;try{$null=Get-VerifiedAppTask @{A=$app;N='fixture'}}catch{$accepted=$false};if($accepted -ne $expected){throw ('ARGUMENT_GRAMMAR_MISMATCH '+$app+' suffixLength='+$suffix.Length)}}",
+    "Verify 'merchant' '' $true;Verify 'captain' '' $true",
+    "Verify 'merchant' ([string][char]10) $false;Verify 'merchant' ([string][char]13) $false;Verify 'merchant' ' ' $false;Verify 'merchant' ' -EnableDockerWalletWebPreview' $false",
+    "Verify 'customer' ' -EnableDockerWalletWebPreview -EnableDockerCustomerAndroidIdentityPreview' $true;Verify 'customer' ' -EnableDockerWalletWebPreview -EnableDockerWalletWebPreview' $false;Verify 'customer' '  -EnableDockerWalletWebPreview' $false;Verify 'customer' (' -EnableDockerWalletWebPreview'+[char]10) $false;Verify 'customer' ' -enableDockerWalletWebPreview' $false",
+    "Verify 'control-panel' ' -EnableIsolatedOperatorPasskeyPreview -EnableIsolatedRootBootstrap' $true;Verify 'control-panel' ' -EnableIsolatedRootBootstrap' $false;Verify 'control-panel' ' -UseDisposableOperatorSandbox' $false",
+    "$task=[pscustomobject]@{TaskName='surface';TaskPath='\\';Actions=@([pscustomobject]@{Execute='C:\\Program Files\\nodejs\\node.exe';Arguments='canonical';WorkingDirectory='D:\\samrim'})};$null=Assert-CanonicalTask $task 'surface' 'C:\\Program Files\\nodejs\\node.exe' 'canonical' 'D:\\samrim'",
+    "$task.Actions[0].Arguments+=' '+[char]10;$refused=$false;try{$null=Assert-CanonicalTask $task 'surface' 'C:\\Program Files\\nodejs\\node.exe' 'canonical' 'D:\\samrim'}catch{$refused=$true};if(!$refused){throw 'SURFACE_TRAILING_INPUT_ADMITTED'}",
+    "Write-Output 'TASK_TOKEN_GRAMMAR_PASS'",
+  ].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",timeout:15000,windowsHide:true});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/TASK_TOKEN_GRAMMAR_PASS/);
+});

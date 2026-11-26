@@ -151,10 +151,12 @@ function Task-Action([string]$name) {
   $task=Get-ScheduledTask -TaskPath '\' -TaskName $name -ErrorAction Stop
   switch -CaseSensitive ($name) {
     'BThwani Lenovo Source Sync' {
-      return Assert-CanonicalTask $task $name 'C:\Program Files\nodejs\node.exe' ('^'+[regex]::Escape('"'+(Join-Path $repo 'tools\dev\sync-lenovo-source.mjs')+'" --watch')+'$') $repo
+      $arguments='"'+(Join-Path $repo 'tools\dev\sync-lenovo-source.mjs')+'" --watch'
+      return Assert-CanonicalTask $task $name 'C:\Program Files\nodejs\node.exe' $arguments $repo
     }
     'BThwani Lenovo SSH Tunnel' {
-      return Assert-CanonicalTask $task $name 'C:\Program Files\PowerShell\7\pwsh.exe' ('^'+[regex]::Escape('-NoProfile -NonInteractive -WindowStyle Hidden -File "'+(Join-Path $repo 'tools\dev\Start-AppTunnel.ps1')+'"')+'$') $repo
+      $arguments='-NoProfile -NonInteractive -WindowStyle Hidden -File "'+(Join-Path $repo 'tools\dev\Start-AppTunnel.ps1')+'"'
+      return Assert-CanonicalTask $task $name 'C:\Program Files\PowerShell\7\pwsh.exe' $arguments $repo
     }
     default {throw ('TASK_NOT_ALLOWED '+$name)}
   }
