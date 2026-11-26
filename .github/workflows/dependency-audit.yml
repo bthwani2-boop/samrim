@@ -13,30 +13,22 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
-      - name: Checkout exact candidate
+      - name: Checkout locked dependency graph
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
       - name: Use repository-pinned Node 24
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Resolve the locked pnpm package store
-        id: pnpm-store
+      - name: Activate repository-pinned pnpm
         shell: bash
         run: |
           set -euo pipefail
           corepack enable pnpm
           pnpm --version
-          printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-      - name: Cache verified package-store inputs only
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
-      - name: Install exact locked dependencies (no lifecycle scripts)
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Audit all JavaScript dependencies (high and critical fail)
+      # Native pnpm audits the complete lockfile without installing it.
+      - name: Audit all locked JavaScript dependencies (high and critical fail)
         run: pnpm audit --audit-level high

@@ -133,7 +133,7 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.equal(ci.permissions.contents, "read");
   assert.equal(go.permissions.contents, "read");
   assert.equal(scheduled.permissions.contents, "read");
-  for (const job of [app, audit, sonar, windows]) {
+  for (const job of [app, sonar, windows]) {
     const store = one(job, step => step.id === "pnpm-store", "pinned package store");
     const cache = one(job, step => action(step, "actions/cache"), "package-store cache");
     const install = runs(job, /pnpm install --frozen-lockfile --ignore-scripts/);
@@ -152,15 +152,26 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.match(command(lint), /sha256sum --check --strict/);
   assert.match(command(lint), /--proto '=https' --proto-redir '=https'/);
   assert.match(command(lint), /"\$dir\/actionlint" -color=false/);
-  for (const job of [app, audit]) {
-    const install = runs(job, /pnpm install --frozen-lockfile --ignore-scripts/);
-    const scan = runs(job, /^pnpm audit --audit-level high\s*$/);
-    mandatory(job, install);
-    mandatory(job, scan);
-    order(job, install, scan);
-  }
+  const install = runs(app, /pnpm install --frozen-lockfile --ignore-scripts/);
+  const scan = runs(app, /^pnpm audit --audit-level high\s*$/);
+  mandatory(app, install);
+  mandatory(app, scan);
+  order(app, install, scan);
   assert.equal(audit.needs, undefined);
-  assert.doesNotMatch(commands(audit), /node --test|check:coverage/);
+  // Weekly audit consumes the exact committed lockfile; installation is
+  // required by application validation, not by native advisory lookup.
+  const checkout = one(audit, step => action(step, "actions/checkout"), "scheduled source checkout");
+  const node = one(audit, step => action(step, "actions/setup-node"), "scheduled pinned Node");
+  const activate = runs(audit, /corepack enable pnpm/);
+  const weeklyScan = runs(audit, /^pnpm audit --audit-level high\s*$/);
+  assert.equal(checkout.with["fetch-depth"], 1);
+  assert.equal(node.with["node-version-file"], ".node-version");
+  assert.equal(node.with["package-manager-cache"], false);
+  for (const step of [checkout, node, activate, weeklyScan]) mandatory(audit, step);
+  order(audit, checkout, node, activate, weeklyScan);
+  assert.equal(steps(audit).length, 4);
+  assert.ok(!steps(audit).some(step => action(step, "actions/cache")));
+  assert.doesNotMatch(commands(audit), /pnpm install|pnpm store|node --test|check:coverage|--ignore|--fix/);
   const cover = runs(app, /^pnpm check:coverage\s*$/);
   mandatory(app, cover);
   order(app, runs(app, /^pnpm audit --audit-level high\s*$/), cover);
