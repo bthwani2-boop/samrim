@@ -10,7 +10,7 @@ import { serviceSourcePlacementIssues } from "./check-service-placement.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const exact = /^\d+\.\d+\.\d+$/;
-const tools = ["@biomejs/biome", "knip", "nx", "typescript", "yaml"];
+const tools = ["@babel/parser", "@biomejs/biome", "knip", "nx", "typescript", "yaml"];
 const presentations = ["apps/customer", "apps/merchant", "apps/captain", "apps/control-panel"];
 const shared = ["packages/design-system", "packages/tamagui-config"];
 const pin = (value, label) => {

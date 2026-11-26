@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { resolvedConfigIssues, easBuildIssues, verifyResolvedConfigs } from "./verify-expo-config.mjs";
+import { easBuildIssues, resolvedConfigIssues, verifyResolvedConfigs } from "./verify-expo-config.mjs";
 
 const surfaces = ["customer","merchant","captain"];
 const read = (name,file) => JSON.parse(readFileSync(new URL("../../apps/" + name + "/" + file,import.meta.url),"utf8"));

@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "pwsh -NoProfile -File tools/dev/dev.ps1",
     "check:workspace": "node tools/dev/verify-workspace.mjs",
-     "check:coverage": "node tools/dev/run-coverage.mjs",
+    "check:coverage": "node tools/dev/run-coverage.mjs",
     "check:contracts": "node tools/dev/check-openapi.mjs identity dsh wlt && node tools/dev/generate-openapi-operations.mjs --check",
     "check:test-inclusion": "node --test tools/dev/source-test-discovery.test.mjs && node tools/dev/run-coverage.mjs --check-discovery",
     "check:toolchain": "node tools/dev/verify-workspace.mjs --require-exact-toolchain",
@@ -19,7 +19,7 @@
     "check": "pnpm run check:workspace && pnpm run check:contracts && pnpm run check:test-inclusion && pnpm run knip:files && pnpm run check:security && pnpm run check:design && pnpm run check:apps",
     "check:design": "pnpm --dir packages/design-system theme:check && pnpm --dir packages/design-system theme:verify",
     "check:apps": "node --test tools/mobile/verify-rtl.test.mjs tools/mobile/verify-expo-config.test.mjs tools/mobile/verify-native-config.test.mjs tools/mobile/verify-application-boundaries.test.mjs packages/tamagui-config/tools/appearance.test.mjs apps/customer/tests/customer-route-structure.test.mjs apps/captain/tests/captain-route-structure.test.mjs apps/merchant/tests/merchant-route-structure.test.mjs apps/merchant/tests/merchant-navigation-mode.test.mjs apps/control-panel/tests/operator-route-structure.test.mjs && pnpm run check:apps:static",
-    "check:apps:source": "node tools/mobile/verify-app-identity.mjs && node tools/mobile/verify-rtl.mjs && node tools/mobile/verify-expo-config.mjs && node tools/mobile/verify-application-boundaries.mjs && pnpm exec biome check tools/mobile/verify-application-boundaries.mjs tools/mobile/verify-application-boundaries.test.mjs tools/mobile/verify-expo-web-http.mjs tools/security/verify-secrets.mjs tools/security/verify-secrets.test.mjs",
+    "check:apps:source": "node tools/mobile/verify-app-identity.mjs && node tools/mobile/verify-rtl.mjs && node tools/mobile/verify-expo-config.mjs && node tools/mobile/verify-application-boundaries.mjs && pnpm exec biome check tools/mobile tools/security",
     "check:apps:static": "pnpm run check:apps:source && pnpm -r --if-present run typecheck",
     "nx:projects": "nx show projects",
     "nx:affected:typecheck": "nx affected -t typecheck",
@@ -27,6 +27,7 @@
     "knip:report": "knip --no-progress"
   },
   "devDependencies": {
+    "@babel/parser": "7.29.8",
     "@biomejs/biome": "2.5.12",
     "knip": "6.34.0",
     "nx": "24.0.1",
