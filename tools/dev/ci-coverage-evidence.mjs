@@ -30,12 +30,15 @@ function reportBytes(path) {
   return bytes;
 }
 
+// Report filenames are canonical ASCII identifiers, not locale-sensitive
+// presentation labels. Exact set equality rejects missing and extra artifacts.
+const compareName = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 function reports(spec, folder) {
   directory(folder);
-  const names = spec.files ?? readdirSync(folder).filter(name => name.endsWith(".out")).sort();
+  const names = spec.files ?? readdirSync(folder).filter(name => name.endsWith(".out"));
   assert.ok(names.length > 0 && names.every(name => spec.files || profilePattern.test(name)),
     "CI_COVERAGE_REPORT_INVENTORY_INVALID");
-  return new Map(names.map(name => [name, reportBytes(join(folder, name))]));
+  return new Map([...names].sort(compareName).map(name => [name, reportBytes(join(folder, name))]));
 }
 
 function manifest(files) {
@@ -44,16 +47,14 @@ function manifest(files) {
 
 function committedTree(checkout, expectedSha) {
   assert.match(expectedSha ?? "", commitPattern, "CI_CANDIDATE_SHA_INVALID");
-  const snapshot = captureSourceSnapshot(checkout);
+  const snapshot = captureSourceSnapshot(checkout, { requireCommitted: true });
   assert.equal(snapshot.head, expectedSha, "CI_CANDIDATE_SHA_MISMATCH");
-  assert.ok(!snapshot.dirty && !snapshot.unsafeTracked && !snapshot.unsafeUntracked,
-    "CI_CANDIDATE_NOT_CLEAN_AND_ADMITTED");
   const tree = execFileSync(process.platform === "win32" ? "git.exe" : "git",
     ["rev-parse", expectedSha + "^{tree}"], {
       cwd: checkout, encoding: "utf8", timeout: 10000, windowsHide: true,
     }).trim();
   assert.match(tree, commitPattern, "CI_CANDIDATE_TREE_INVALID");
-  return tree;
+  return { tree, fingerprint: snapshot.worktree };
 }
 
 function writeNew(path, contents) {
@@ -64,12 +65,14 @@ export function publishCoverageEvidence(checkout, kind, expectedSha) {
   const spec = Object.hasOwn(specifications, kind) ? specifications[kind] : null;
   assert.ok(spec, "CI_COVERAGE_PRODUCER_UNKNOWN");
   const root = resolve(checkout);
-  const tree = committedTree(root, expectedSha);
+  const candidate = committedTree(root, expectedSha);
+  const { tree } = candidate;
   const folder = join(root, spec.directory);
   const files = reports(spec, folder);
   for (const name of ["tree.txt", "reports.sha256"]) {
     assert.ok(!lstatSync(join(folder, name), { throwIfNoEntry: false }), "CI_COVERAGE_METADATA_CONFLICT");
   }
+  assert.deepEqual(committedTree(root, expectedSha), candidate, "CI_COVERAGE_SOURCE_CHANGED");
   writeNew(join(folder, "tree.txt"), tree + "\n");
   writeNew(join(folder, "reports.sha256"), manifest(files));
   return { tree, count: files.size };
@@ -78,8 +81,9 @@ export function publishCoverageEvidence(checkout, kind, expectedSha) {
 function readArtifact(temp, spec) {
   const folder = join(temp, spec.artifact);
   const files = reports(spec, folder);
-  const expected = [...files.keys(), "reports.sha256", "tree.txt"].sort();
-  assert.deepEqual(readdirSync(folder).sort(), expected, "CI_COVERAGE_ARTIFACT_INVENTORY_MISMATCH");
+  const expected = new Set([...files.keys(), "reports.sha256", "tree.txt"]);
+  const actual = readdirSync(folder);
+  assert.ok(actual.length === expected.size && actual.every(name => expected.has(name)), "CI_COVERAGE_ARTIFACT_INVENTORY_MISMATCH");
   const tree = reportBytes(join(folder, "tree.txt")).toString("utf8").trim();
   assert.match(tree, commitPattern, "CI_COVERAGE_ARTIFACT_TREE_INVALID");
   assert.ok(reportBytes(join(folder, "reports.sha256")).equals(manifest(files)),
@@ -91,13 +95,13 @@ export function admitCoverageEvidence(checkout, runnerTemp, expectedSha) {
   const root = resolve(checkout);
   const temp = resolve(runnerTemp);
   directory(temp);
-  const analysisTree = committedTree(root, expectedSha);
+  const candidate = committedTree(root, expectedSha);
   // Validate every report before admitting any. A real different PR tree is
   // not corruption: remeasure it through the existing native runners.
   const evidence = Object.values(specifications).map(spec => ({ spec, ...readArtifact(temp, spec) }));
   const tree = evidence[0].tree;
   assert.ok(evidence.every(entry => entry.tree === tree), "CI_COVERAGE_MIXED_CANDIDATES");
-  if (tree !== analysisTree) return false;
+  if (tree !== candidate.tree) return false;
   directory(join(root, "coverage"), true);
   directory(join(root, "coverage", "owner-postgres"), true);
   for (const { spec, files } of evidence) {
@@ -106,6 +110,7 @@ export function admitCoverageEvidence(checkout, runnerTemp, expectedSha) {
       assert.ok(!lstatSync(join(folder, name), { throwIfNoEntry: false }), "CI_COVERAGE_DESTINATION_CONFLICT");
     }
   }
+  assert.deepEqual(committedTree(root, expectedSha), candidate, "CI_COVERAGE_SOURCE_CHANGED");
   for (const { spec, files } of evidence) {
     for (const [name, bytes] of files) writeNew(join(root, spec.directory, name), bytes);
   }

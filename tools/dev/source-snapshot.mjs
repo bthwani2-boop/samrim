@@ -67,37 +67,44 @@ export function admittedPath(checkout, name, untracked) {
   return bytes;
 }
 
-export function inspectSourceFiles(checkout, tracked, untracked) {
+// Git object identity is distinct from the worktree fingerprint. A CI
+// attestation requires literal committed bytes; local Graphify may index edits.
+function blobIdentity(bytes, objectFormat) {
+  return createHash(objectFormat).update("blob " + bytes.length + "\0").update(bytes).digest("hex");
+}
+
+export function inspectSourceFiles(checkout, tracked, untracked, objectFormat = null) {
   const digest = createHash("sha256");
-  const unsafeTracked = [], unsafeUntracked = [], files = [];
+  const unsafeTracked = [], unsafeUntracked = [], files = [], differentFromIndex = [];
   const candidates = new Map();
   for (const entry of tracked) {
-    const match = /^(100644|100755) [0-9a-f]{40,64} 0\t(.+)$/.exec(entry);
+    const match = /^(100644|100755) ([0-9a-f]{40}|[0-9a-f]{64}) 0\t(.+)$/.exec(entry);
     if (!match) { unsafeTracked.push(entry.split("\t").at(-1)); continue; }
-    candidates.set(match[2], false);
+    candidates.set(match[3], match[2]);
   }
-  for (const name of untracked) if (!candidates.has(name)) candidates.set(name, true);
-  for (const [name, isNew] of [...candidates].sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0)) {
+  for (const name of untracked) if (!candidates.has(name)) candidates.set(name, null);
+  for (const [name, oid] of [...candidates].sort(([a],[b]) => a < b ? -1 : a > b ? 1 : 0)) {
+    const isNew = oid === null;
     digest.update(name).update("\0").update(isNew ? "untracked\0" : "tracked\0");
     try {
-      digest.update(sha256(admittedPath(checkout, name, isNew))).update("\0");
+      const bytes = admittedPath(checkout, name, isNew);
+      digest.update(sha256(bytes)).update("\0");
       files.push(name);
+      if (objectFormat && (isNew || blobIdentity(bytes, objectFormat) !== oid)) differentFromIndex.push(name);
     } catch (error) {
-      // A removed tracked path is an authored deletion, not an external file.
-      // Missing directory/file entries are allowed only when the whole lexical
-      // path was admitted up to the first genuinely absent entry.
-      if (!isNew && error.code === "ENOENT") digest.update("deleted\0");
-      else {
+      if (!isNew && error.code === "ENOENT") {
+        digest.update("deleted\0");
+        if (objectFormat) differentFromIndex.push(name);
+      } else {
         (isNew ? unsafeUntracked : unsafeTracked).push(name);
         digest.update("unsafe\0");
       }
     }
   }
-  return { digest: digest.digest("hex"), unsafeTracked, unsafeUntracked, files };
+  return { digest: digest.digest("hex"), unsafeTracked, unsafeUntracked, files, differentFromIndex };
 }
 
-
-export function captureSourceSnapshot(checkout, { requireBranch = false } = {}) {
+export function captureSourceSnapshot(checkout, { requireBranch = false, requireCommitted = false } = {}) {
   const root = resolve(checkout);
   function git(...args) {
     const result = spawnSync(process.platform === "win32" ? "git.exe" : "git", args, {
@@ -118,7 +125,22 @@ export function captureSourceSnapshot(checkout, { requireBranch = false } = {}) 
   const status = git("status", "--porcelain=v1", "-z", "--untracked-files=all");
   const index = git("ls-files", "--stage", "-z");
   const untracked = git("ls-files", "--others", "--exclude-standard", "-z");
-  const admission = inspectSourceFiles(root,index.toString("utf8").split("\0").filter(Boolean),untracked.toString("utf8").split("\0").filter(Boolean));
+  const tracked = index.toString("utf8").split("\0").filter(Boolean);
+  let objectFormat = null;
+  if (requireCommitted) {
+    objectFormat = gitText("rev-parse", "--show-object-format");
+    if (!["sha1", "sha256"].includes(objectFormat)) throw new Error("SOURCE_OBJECT_FORMAT_UNSUPPORTED");
+    const tree = git("ls-tree", "-r", "-z", before.head).toString("utf8").split("\0").filter(Boolean);
+    const expected = tree.map(entry => entry.replace(/^([0-7]{6}) blob ([0-9a-f]+)\t/, "$1 $2 0\t"));
+    if (status.length || untracked.length || expected.length !== tracked.length ||
+        expected.some((entry, i) => entry !== tracked[i])) {
+      throw new Error("CI_CANDIDATE_NOT_CLEAN_AND_ADMITTED");
+    }
+  }
+  const admission = inspectSourceFiles(root, tracked, untracked.toString("utf8").split("\0").filter(Boolean), objectFormat);
+  if (requireCommitted && (admission.unsafeTracked.length || admission.unsafeUntracked.length || admission.differentFromIndex.length)) {
+    throw new Error("CI_CANDIDATE_NOT_CLEAN_AND_ADMITTED: actual bytes differ from committed source or are unsafe");
+  }
   const worktree = createHash("sha256").update("graph-source-v2\0").update(index).update(status).update(admission.digest).digest("hex");
   const after = identity();
   if (before.branch !== after.branch || before.head !== after.head ||

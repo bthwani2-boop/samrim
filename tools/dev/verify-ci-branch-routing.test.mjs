@@ -72,9 +72,11 @@ function git(cwd, ...args) {
 }
 function candidate(directory) {
   git(directory, "init", "--quiet");
+  git(directory, "config", "core.autocrlf", "false");
+  put(directory, ".gitattributes", "* text=auto eol=lf\n");
   put(directory, "source.txt", "original\n");
   put(directory, ".gitignore", "coverage/\n");
-  git(directory, "add", "--", "source.txt", ".gitignore");
+  git(directory, "add", "--", "source.txt", ".gitignore", ".gitattributes");
   git(directory, "commit", "--quiet", "-m", "synthetic CI candidate");
   return { sha: git(directory, "rev-parse", "HEAD"), tree: git(directory, "rev-parse", "HEAD^{tree}") };
 }
@@ -336,6 +338,18 @@ for (const entry of evidence) {
     put(directory, "source.txt", "original\n");
     reject();
     git(directory, "restore", "--staged", "--worktree", "--", "source.txt");
+    // Git's stat cache can deliberately hide working-tree changes. The
+    // attestation must compare actual bytes to the committed object instead.
+    for (const flag of ["assume-unchanged", "skip-worktree"]) {
+      git(directory, "update-index", "--" + flag, "--", "source.txt");
+      put(directory, "source.txt", "hidden source\n");
+      assert.equal(git(directory, "status", "--porcelain", "--", "source.txt"), "");
+      reject();
+      put(directory, "source.txt", "original\n");
+      git(directory, "update-index", "--no-" + flag, "--", "source.txt");
+      git(directory, "restore", "--worktree", "--", "source.txt");
+      assert.equal(git(directory, "status", "--porcelain"), "", "fixture restored its actual committed source");
+    }
     put(directory, entry.directory + "/" + entry.files[0], "");
     assert.throws(() => publishCoverageEvidence(directory, entry.kind, sha), /CI_COVERAGE_REPORT_EMPTY/);
     assert.ok(!existsSync(path.join(folder, "tree.txt")));
@@ -374,6 +388,7 @@ test("Sonar uses the single artifact admission boundary and remeasures only a va
     { name: "empty JS report", empty: "sonar-js/lcov.info" },
     { name: "empty PostgreSQL profile", empty: firstProfile },
     { name: "dirty analysis candidate", dirty: true },
+    { name: "hidden analysis source edit", hidden: true },
     { name: "wrong analysis SHA", wrongSha: true },
   ];
   for (const scenario of scenarios) fixture("ci-sonar-admission-", directory => {
@@ -397,6 +412,11 @@ test("Sonar uses the single artifact admission boundary and remeasures only a va
     if (scenario.alter) put(downloaded, scenario.alter, "changed report\n");
     if (scenario.extra) put(downloaded, scenario.extra, "extra report\n");
     if (scenario.dirty) put(repo, "untracked.mjs", "export {};\n");
+    if (scenario.hidden) {
+      git(repo, "update-index", "--assume-unchanged", "--", "source.txt");
+      put(repo, "source.txt", "hidden changed source\n");
+      assert.equal(git(repo, "status", "--porcelain", "--", "source.txt"), "");
+    }
     const run = () => admitCoverageEvidence(repo, downloaded, scenario.wrongSha ? "0".repeat(40) : sha);
     if (Object.hasOwn(scenario, "expected")) assert.equal(run(), scenario.expected, scenario.name);
     else assert.throws(run, undefined, scenario.name);
