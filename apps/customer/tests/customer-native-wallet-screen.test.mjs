@@ -3,19 +3,22 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { formatExactYer } from "../src/components/format-exact-yer.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const entry = fileURLToPath(new URL("../src/features/wallet/wallet-screen.tsx", import.meta.url));
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-native-wallet-"));
 let compiled;
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 try {
   const tsc = spawnSync(process.execPath, [
     path.join(root, "node_modules/typescript/bin/tsc"), entry,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
   ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(tsc.status, 0, tsc.stderr || tsc.stdout);
   compiled = readFileSync(path.join(temp, "wallet-screen.js"), "utf8");
@@ -91,15 +94,14 @@ function harness() {
       },
     },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", "setInterval", "clearInterval", "setTimeout", "clearTimeout", compiled)(
-    name => {
-      assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`);
-      return modules[name];
-    }, mod, mod.exports,
-    (fn, delay) => timer(intervals, fn, delay), id => intervals.delete(id),
-    (fn, delay) => timer(timers, fn, delay), id => timers.delete(id),
-  );
+  const mod = loadMappedRenderFixture(compiled, entry, modules);
+  loadedModules.push(mod);
+  const timerMocks = [
+    mock.method(globalThis, "setInterval", (fn, delay) => timer(intervals, fn, delay)),
+    mock.method(globalThis, "clearInterval", id => intervals.delete(id)),
+    mock.method(globalThis, "setTimeout", (fn, delay) => timer(timers, fn, delay)),
+    mock.method(globalThis, "clearTimeout", id => timers.delete(id)),
+  ];
   const render = () => {
     index = 0;
     return mod.exports.default();
@@ -125,7 +127,10 @@ function harness() {
     deadline() { const next = [...timers.values()].find(t => t.delay === 12000); assert.ok(next, "bounded refresh deadline"); next.callback(); },
     expire() { const next = [...timers.values()].find(t => t.delay > 12000); assert.ok(next, "verified session expiry"); next.callback(); },
     pendingCount() { return requests.length; },
-    unmount() { focusCleanup?.(); focusCleanup = null; },
+    unmount() {
+      try { focusCleanup?.(); focusCleanup = null; }
+      finally { for (const timerMock of timerMocks) timerMock.mock.restore(); }
+    },
   };
 }
 function walk(node, predicate) {

@@ -3,19 +3,22 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { formatExactYer } from "../src/components/format-exact-yer.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const source = fileURLToPath(new URL("../src/features/wallet/wallet-screen.web.tsx", import.meta.url));
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-web-wallet-"));
 let compiled;
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 try {
   const tsc = spawnSync(process.execPath, [
     path.join(root, "node_modules/typescript/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
+    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
   ], {cwd:root, encoding:"utf8", timeout:20000, windowsHide:true});
   assert.equal(tsc.status, 0, tsc.stderr || tsc.stdout);
   compiled = readFileSync(path.join(temp, "wallet-screen.web.js"), "utf8");
@@ -81,14 +84,19 @@ function harness() {
       },
     },
   };
-  const mod={exports:{}};
-  new Function("require","module","exports","document","window",
-    "setTimeout","clearTimeout","setInterval","clearInterval",compiled)(
-    name=>{assert.ok(Object.hasOwn(mocks,name),"unknown import "+name);return mocks[name];},
-    mod,mod.exports,document,window,
-    (fn,delay)=>mockTimer(timers,fn,delay),id=>timers.delete(id),
-    (fn,delay)=>mockTimer(intervals,fn,delay),id=>intervals.delete(id),
-  );
+  const mod = loadMappedRenderFixture(compiled, source, mocks);
+  loadedModules.push(mod);
+  const originals = new Map();
+  for (const [key, value] of [["document", document], ["window", window]]) {
+    originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
+    Object.defineProperty(globalThis, key, { configurable: true, writable: true, value });
+  }
+  const timerMocks = [
+    mock.method(globalThis, "setTimeout", (fn, delay) => mockTimer(timers, fn, delay)),
+    mock.method(globalThis, "clearTimeout", id => timers.delete(id)),
+    mock.method(globalThis, "setInterval", (fn, delay) => mockTimer(intervals, fn, delay)),
+    mock.method(globalThis, "clearInterval", id => intervals.delete(id)),
+  ];
   function render(){index=0;return mod.exports.default();}
   return {
     mount(){const view=render();assert.equal(typeof focusEffect,"function");cleanup=focusEffect();return view;},
@@ -99,7 +107,16 @@ function harness() {
     pendingCount(){return pending.length;},
     poll(){const next=[...intervals.values()][0];assert.ok(next);next.fn();},
     expire(){const next=[...timers.values()].find(t=>t.delay>0);assert.ok(next);next.fn();},
-    unmount(){cleanup?.();cleanup=null;},
+    unmount() {
+      try { cleanup?.(); cleanup = null; }
+      finally {
+        for (const timerMock of timerMocks) timerMock.mock.restore();
+        for (const [key, descriptor] of originals) {
+          if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+          else Reflect.deleteProperty(globalThis, key);
+        }
+      }
+    },
   };
 }
 function walk(node,needle) {
