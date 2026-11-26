@@ -342,3 +342,21 @@ test("configuration rollback admits only a proven image and its paired config ha
   for(const [image,hash] of [["old-image","new-hash"],["new-image","old-hash"],["unknown","new-hash"],["new-image","unknown"]])
     assert.equal(isKnownImageConfigPair(image,hash,prior,candidate),false);
 });
+
+test("all owners classify workspace metadata consistently for committed and dirty inputs",async()=>{
+  const {ownerSourceState,ownerReconcilePlan,isOwnerNonRuntimePath}=await import("../../tools/dev/docker/owner-preview-source.mjs");
+  const {readFileSync}=await import("node:fs");
+  for(const owner of ["dsh","identity","wlt"]){
+    const base="services/"+owner+"/";
+    const files=[base+"package.json",base+"tsconfig.json"];
+    const dockerfile=readFileSync(new URL("../../"+base+"backend/Dockerfile",import.meta.url),"utf8");
+    assert.doesNotMatch(dockerfile,/package\.json|tsconfig\.json/);
+    assert.ok(files.every(isOwnerNonRuntimePath));
+    assert.deepEqual(ownerSourceState(owner,files,files),{imageChanges:[],previewChanges:[],clientPending:false});
+    assert.deepEqual(ownerReconcilePlan({changed:files,committed:{[owner]:files},preview:false,captain:true}).blocked,{});
+    const unknown=base+"backend/internal/runtime.conf";
+    assert.equal(isOwnerNonRuntimePath(unknown),false);
+    assert.deepEqual(ownerSourceState(owner,[],[...files,unknown]).imageChanges,[unknown]);
+    assert.equal(ownerReconcilePlan({changed:[...files,unknown],committed:{},preview:true,captain:true}).blocked[owner],"UNCOMMITTED_NON_GO");
+  }
+});

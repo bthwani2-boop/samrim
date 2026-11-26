@@ -1,5 +1,6 @@
-// Shared owner source identity and isolated Go preview. Never writes Git.
-
+// Canonical owner source classification and immutable Go preview.
+// Workspace metadata, documentation and SDK code are not inputs to the Go
+// Dockerfiles. Contract, schema and unknown source changes remain guarded.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -7,166 +8,183 @@ import os from "node:os";
 import path from "node:path";
 import { containsLikelySecret, forbiddenName } from "../../security/verify-secrets.mjs";
 
-const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
-const owners = ["dsh", "identity", "wlt"];
-// One decoder for committed image and immutable worktree provenance.
-export function sourceIdentity(labels, owner) {
-  const a=labels?.["org.opencontainers.image.revision"];
-  const b=labels?.["com.bthwani.source-sha"];
-  const base=labels?.["com.bthwani.preview-base"];
-  const digest=labels?.["com.bthwani.preview-digest"];
-  if(base || digest || a?.startsWith("worktree-")){
-    if(b || !/^[0-9a-f]{40}$/.test(base||"") || !/^[0-9a-f]{64}$/.test(digest||"") || a!=="worktree-"+digest) throw new Error("Invalid preview provenance: "+owner);
-    return {revision:base,digest};
-  }
-  if(a&&b&&a!==b) throw new Error("conflicting image source labels: "+owner);
-  if(!/^[0-9a-f]{40}$/.test(a||b||"")) throw new Error("source revision absent or invalid: "+owner);
-  return {revision:a||b,digest:null};
+const owners=Object.freeze(["dsh","identity","wlt"]);
+const gitExe=process.platform==="win32"?"C:\\Program Files\\Git\\cmd\\git.exe":"/usr/bin/git";
+const goFile=/^backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
+const schemaFile=/^database\/schema\/[A-Za-z0-9_-]+\.sql$/;
+const workspaceFiles=new Set(["package.json","tsconfig.json","README.md","backend/README.md"]);
+const buildFiles=new Set([".dockerignore","backend/Dockerfile","backend/go.mod","backend/go.sum"]);
+const compare=(a,b)=>a<b?-1:a>b?1:0;
+
+export const ownerComposeInputs=Object.freeze(["infra/compose.yaml"]);
+
+function classify(rel) {
+  const match=/^services\/(dsh|identity|wlt)\/(.+)$/.exec(rel);
+  if(!match)return {owner:null,kind:"shared"};
+  const [,owner,file]=match;
+  const kind=file.startsWith("clients/")?"client":
+    workspaceFiles.has(file)?"workspace":
+    goFile.test(file)?(file.endsWith("_test.go")?"test":"go"):
+    file.startsWith("database/")?"database":"guarded";
+  return {owner,file,kind};
 }
-const goPath = /^services\/(?:dsh|identity|wlt)\/backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
-export function isPreviewGoPath(rel) { return goPath.test(rel); }
-// One canonical shared environment; owner-only application source remains independently classified.
-export const ownerComposeInputs = Object.freeze(["infra/compose.yaml"]);
-function sourceOwner(rel) {
-  return owners.find(owner => rel.startsWith("services/" + owner + "/"));
+export function isPreviewGoPath(rel) {
+  return ["go","test"].includes(classify(rel).kind);
 }
-export function isSharedRuntimeInput(rel) { return !sourceOwner(rel); }
-// SDK files, exact owner README files and Go test files are not serving image inputs.
-// All three owner .dockerignore files explicitly exclude *_test.go. Keep tests
-// in isolated preview snapshots for proof, but never select a serving rebuild
-// solely because of their edits. Contracts, schema and other inputs stay guarded.
-function isOwnerClientPath(rel) {
-  return /^services\/(?:identity|dsh|wlt)\/clients\//.test(rel);
+export function isSharedRuntimeInput(rel) {
+  return classify(rel).kind==="shared";
 }
 export function isOwnerNonRuntimePath(rel) {
-  return isOwnerClientPath(rel) ||
-    /^services\/(?:identity|dsh|wlt)\/(?:backend\/)?README\.md$/.test(rel) ||
-    (isPreviewGoPath(rel) && rel.endsWith("_test.go"));
+  return ["client","workspace","test"].includes(classify(rel).kind);
 }
-export function ownerSourceState(owner, changed, committed) {
-  const prefix="services/"+owner+"/";
-  const local=changed.filter(rel=>rel.startsWith(prefix));
+export function sourceIdentity(labels,owner) {
+  const revision=labels?.["org.opencontainers.image.revision"];
+  const source=labels?.["com.bthwani.source-sha"];
+  const base=labels?.["com.bthwani.preview-base"];
+  const digest=labels?.["com.bthwani.preview-digest"];
+  if(base||digest||revision?.startsWith("worktree-")){
+    if(source||!/^[0-9a-f]{40}$/.test(base||"")||!/^[0-9a-f]{64}$/.test(digest||"")||revision!=="worktree-"+digest)
+      throw new Error("Invalid preview provenance: "+owner);
+    return {revision:base,digest};
+  }
+  if(revision&&source&&revision!==source)throw new Error("conflicting image source labels: "+owner);
+  if(!/^[0-9a-f]{40}$/.test(revision||source||""))throw new Error("source revision absent or invalid: "+owner);
+  return {revision:revision||source,digest:null};
+}
+export function ownerSourceState(owner,changed,committed) {
+  if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
+  const local=changed.filter(rel=>classify(rel).owner===owner);
   return {
     imageChanges:committed.filter(rel=>!isOwnerNonRuntimePath(rel)),
     previewChanges:local.filter(rel=>!isOwnerNonRuntimePath(rel)),
-    clientPending:[...local,...committed].some(isOwnerClientPath),
+    clientPending:[...local,...committed].some(rel=>classify(rel).kind==="client"),
   };
 }
 
-// The existing preview authority is intentionally Go-only. Partition review
-// holds by owner, and propagate only actual runtime/contract dependency risk.
-// A successful current-SHA disposable proof is necessary, never sufficient
-// on its own: the runtime transaction still checks exact retained data.
-export function ownerReconcilePlan({changed, committed, preview, captain, schemaReady=[], wltConfigDrift=false}) {
-  const blocked = {};
-  const runtimeChanges = {};
-  const order = ["dsh", "identity", "wlt"];
-  if (changed.some(isSharedRuntimeInput)) {
-    return { eligible: [], blocked: Object.fromEntries(order.map(o => [o, "SHARED_INPUT_REVIEW_REQUIRED"])) };
-  }
-  for (const owner of order) {
-    const prefix = "services/" + owner + "/";
-    const local = changed.filter(rel => sourceOwner(rel) === owner);
-    const saved = committed[owner] || [];
+export function ownerReconcilePlan({changed,committed,preview,captain,schemaReady=[],wltConfigDrift=false}) {
+  if(changed.some(isSharedRuntimeInput))
+    return {eligible:[],blocked:Object.fromEntries(owners.map(owner=>[owner,"SHARED_INPUT_REVIEW_REQUIRED"]))};
+  const blocked={}, runtimeChanges={};
+  for(const owner of owners){
+    const local=changed.filter(rel=>classify(rel).owner===owner);
+    const saved=committed[owner]||[];
     const {imageChanges,previewChanges}=ownerSourceState(owner,changed,saved);
-    runtimeChanges[owner] = [...previewChanges, ...imageChanges].some(rel =>
-      !/^(?:package\.json$|tsconfig\.json$|README\.md$)/.test(rel.slice(prefix.length)));
-    const schemaChanges=saved.filter(rel=>rel.startsWith(prefix+"database/"));
-    const schemaAdmitted=schemaReady.includes(owner) && local.length===0 &&
-      schemaChanges.every(rel=>new RegExp("^services/"+owner+"/database/"+(owner==="wlt"?"(?:schema|sandbox)":"schema")+"/[0-9]{2}_[a-z0-9_]+\\.sql$").test(rel));
-    if (owner === "wlt" && wltConfigDrift) {
-      runtimeChanges[owner] = true;
-      blocked[owner] = "CONFIG_REVIEW_REQUIRED";
-    }
-    else if (schemaChanges.length && !schemaAdmitted) blocked[owner] = "SCHEMA_REVIEW_REQUIRED";
-    else if (previewChanges.some(rel => !isPreviewGoPath(rel))) blocked[owner] = "UNCOMMITTED_NON_GO";
-    else if (!preview && (previewChanges.length || (local.length && imageChanges.length))) blocked[owner] = "PREVIEW_NOT_AUTHORIZED";
-  }
-  // DSH and WLT consume Identity; WLT consumes DSH Merchant standing;
-  // Captain-enabled Identity consumes DSH.
-  // A blocked peer with no runtime input change is not a dependency hold.
-  const edges = [["identity", "dsh"], ["identity", "wlt"], ["dsh", "wlt"], ...(captain ? [["dsh", "identity"]] : [])];
-  for (let i = 0; i < order.length; i++) {
-    for (const [peer, consumer] of edges) {
-      if (blocked[peer] && runtimeChanges[peer] && !blocked[consumer]) blocked[consumer] = "PEER_REVIEW_REQUIRED:" + peer;
+    runtimeChanges[owner]=Boolean(imageChanges.length||previewChanges.length);
+    const database=saved.filter(rel=>classify(rel).kind==="database");
+    const schemaPattern=new RegExp("^services/"+owner+"/database/"+(owner==="wlt"?"(?:schema|sandbox)":"schema")+"/[0-9]{2}_[a-z0-9_]+\\.sql$");
+    const schemaAdmitted=schemaReady.includes(owner)&&local.length===0&&database.every(rel=>schemaPattern.test(rel));
+    if(owner==="wlt"&&wltConfigDrift){
+      runtimeChanges[owner]=true;
+      blocked[owner]="CONFIG_REVIEW_REQUIRED";
+    }else if(database.length&&!schemaAdmitted){
+      blocked[owner]="SCHEMA_REVIEW_REQUIRED";
+    }else if(previewChanges.some(rel=>!isPreviewGoPath(rel))){
+      blocked[owner]="UNCOMMITTED_NON_GO";
+    }else if(!preview&&(previewChanges.length||(local.length&&imageChanges.length))){
+      blocked[owner]="PREVIEW_NOT_AUTHORIZED";
     }
   }
-  return { eligible: order.filter(owner => !blocked[owner]), blocked };
+  // Each dependency hold is attributable to a blocked owner with actual
+  // serving/contract/schema input changes, never workspace metadata alone.
+  const edges=[["identity","dsh"],["identity","wlt"],["dsh","wlt"],...(captain?[["dsh","identity"]]:[])];
+  for(let pass=0;pass<owners.length;pass++)
+    for(const [peer,consumer] of edges)
+      if(blocked[peer]&&runtimeChanges[peer]&&!blocked[consumer])blocked[consumer]="PEER_REVIEW_REQUIRED:"+peer;
+  return {eligible:owners.filter(owner=>!blocked[owner]),blocked};
 }
 
-function gitList(root, args) {
-  return execFileSync(gitExe, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20000, maxBuffer: 8*1024*1024 }).split("\0").filter(Boolean);
+function gitList(root,args) {
+  return execFileSync(gitExe,args,{cwd:root,encoding:"utf8",windowsHide:true,timeout:20000,maxBuffer:8*1024*1024}).split("\0").filter(Boolean);
 }
-export function dirtyPaths(root, scope) {
+export function dirtyPaths(root,scope) {
   const records=gitList(root,["status","--porcelain=v1","-z","--no-renames","--untracked-files=all","--",...scope]);
   return [...new Set(records.map(record=>{
     if(!/^[ MADRCU?!][ MADRCU?!] /.test(record))throw new Error("PREVIEW_STATUS_INVALID");
     return record.slice(3);
-  }))].sort((a,b)=>a<b?-1:a>b?1:0);
+  }))].sort(compare);
 }
-function safeRead(root, rel, missing = false) {
-  const parts = rel.split("/");
-  if (parts.some(x=>!x || x==="." || x===".." || !/^[A-Za-z0-9_.-]+$/.test(x)) || forbiddenName(rel)) throw new Error("PREVIEW_PATH_INVALID");
-  let full = root;
-  for (let i=0;i<parts.length;i++) {
-    full=path.join(full,parts[i]);
+function pathParts(rel) {
+  const parts=rel.split("/");
+  if(parts.some(part=>!part||part==="."||part===".."||!/^[A-Za-z0-9_.-]+$/.test(part))||forbiddenName(rel))
+    throw new Error("PREVIEW_PATH_INVALID");
+  return parts;
+}
+function safeRead(root,rel,missing=false) {
+  const parts=pathParts(rel);
+  let file=root;
+  for(const [i,part] of parts.entries()){
+    file=path.join(file,part);
     let stat;
-    try { stat=fs.lstatSync(full); }
-    catch(e) { if(missing && e.code==="ENOENT") return null; throw e; }
-    if(stat.isSymbolicLink() || (i===parts.length-1 ? !stat.isFile() : !stat.isDirectory())) throw new Error("PREVIEW_UNSAFE_PATH");
+    try{stat=fs.lstatSync(file);}catch(e){if(missing&&e.code==="ENOENT")return null;throw e;}
+    if(stat.isSymbolicLink()||(i===parts.length-1?!stat.isFile():!stat.isDirectory()))throw new Error("PREVIEW_UNSAFE_PATH");
   }
-  const fd=fs.openSync(full,fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW??0));
-  try {
-    const a=fs.fstatSync(fd,{bigint:true});
-    const b=fs.lstatSync(full,{bigint:true});
-    if(!a.isFile() || b.isSymbolicLink() || a.dev!==b.dev || a.ino!==b.ino || a.nlink!==1n || a.size>BigInt(4*1024*1024)) throw new Error("PREVIEW_UNSAFE_FILE");
-    const bytes=fs.readFileSync(fd);
-    if(bytes.includes(0) || containsLikelySecret(bytes.toString("utf8"))) throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
+  const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW??0)|(fs.constants.O_NONBLOCK??0));
+  try{
+    const opened=fs.fstatSync(fd,{bigint:true});
+    const matches=stat=>stat.isFile()&&!stat.isSymbolicLink()&&stat.nlink===1n&&
+      ["dev","ino","size","mtimeNs","ctimeNs"].every(key=>stat[key]===opened[key]);
+    if(opened.size>4194304n||!matches(opened)||!matches(fs.lstatSync(file,{bigint:true})))throw new Error("PREVIEW_UNSAFE_FILE");
+    const buffer=Buffer.alloc(Number(opened.size)+1);
+    let count=0;
+    while(count<buffer.length){
+      const n=fs.readSync(fd,buffer,count,buffer.length-count,null);
+      if(!n)break;
+      count+=n;
+    }
+    if(BigInt(count)!==opened.size||!matches(fs.fstatSync(fd,{bigint:true}))||!matches(fs.lstatSync(file,{bigint:true})))throw new Error("PREVIEW_UNSAFE_FILE");
+    const bytes=buffer.subarray(0,count);
+    if(bytes.includes(0)||containsLikelySecret(bytes.toString("utf8")))throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
     return bytes;
-  } finally { fs.closeSync(fd); }
+  }finally{fs.closeSync(fd);}
 }
 export function digestEntries(entries) {
   const hash=createHash("sha256");
-  for(const [rel,bytes] of [...entries].sort(([a],[b])=>a<b?-1:a>b?1:0)){
+  for(const [rel,bytes] of [...entries].sort(([a],[b])=>compare(a,b))){
     hash.update(rel+"\0");
     hash.update(bytes===null?"MISSING":createHash("sha256").update(bytes).digest("hex"));
     hash.update("\0");
   }
   return hash.digest("hex");
 }
-export function previewChangeKey(root, paths) {
-  if(paths.some(p=>!isPreviewGoPath(p))) throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
-  return digestEntries(paths.map(p=>[p,safeRead(root,p,true)]));
+export function previewChangeKey(root,paths) {
+  if(paths.some(rel=>!isPreviewGoPath(rel)))throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
+  return digestEntries(paths.map(rel=>[rel,safeRead(root,rel,true)]));
 }
-export function captureOwner(root, owner) {
-  if(!owners.includes(owner)) throw new Error("PREVIEW_UNKNOWN_OWNER");
+function snapshotInput(owner,file) {
+  return buildFiles.has(file)||goFile.test(file)||schemaFile.test(file);
+}
+function ownerEntries(root,owner,changes) {
   const prefix="services/"+owner+"/";
   const scope=[prefix+".dockerignore",prefix+"backend",prefix+"database/schema"];
-  const changes=dirtyPaths(root,["services/"+owner]);
-  if(changes.some(p=>!isPreviewGoPath(p) && !isOwnerNonRuntimePath(p))) throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
-  const files=[...new Set(gitList(root,["ls-files","--cached","--others","--exclude-standard","-z","--",...scope]))].sort((a,b)=>a<b?-1:a>b?1:0);
+  const files=[...new Set(gitList(root,["ls-files","--cached","--others","--exclude-standard","-z","--",...scope]))].sort(compare);
   const entries=[];
-  for(const p of files){
-    if(!p.startsWith(prefix)) throw new Error("PREVIEW_PATH_INVALID");
-    const rel=p.slice(prefix.length);
-    if(!isPreviewGoPath(p) && !/^(?:\.dockerignore|backend\/(?:Dockerfile|go\.mod|go\.sum|project\.json|README\.md)|database\/schema\/[A-Za-z0-9_-]+\.sql)$/.test(rel)) throw new Error("PREVIEW_UNREVIEWED_BUILD_INPUT");
-    const bytes=safeRead(root,p,changes.includes(p));
-    if(bytes!==null) entries.push([rel,bytes]);
+  for(const rel of files){
+    const info=classify(rel);
+    if(info.owner!==owner)throw new Error("PREVIEW_PATH_INVALID");
+    if(info.kind==="workspace"||info.file==="backend/project.json")continue;
+    if(!snapshotInput(owner,info.file))throw new Error("PREVIEW_UNREVIEWED_BUILD_INPUT");
+    const bytes=safeRead(root,rel,changes.includes(rel));
+    if(bytes!==null)entries.push([info.file,bytes]);
   }
-  if(new Set(entries.map(([p])=>p.toLowerCase())).size!==entries.length) throw new Error("PREVIEW_PATH_COLLISION");
-  for(const p of [".dockerignore","backend/Dockerfile","backend/go.mod","backend/go.sum"]) if(!entries.some(([rel])=>rel===p)) throw new Error("PREVIEW_BUILD_INPUT_MISSING");
-  // DSH's joined-owner test resolves Identity's committed schema relative to
-  // services/dsh. Keep it as a sibling test input, outside the build context.
-  const peerScope="services/identity/database/schema";
-  const peers=[];
-  if(owner==="dsh"){
-    if(dirtyPaths(root,[peerScope]).length)throw new Error("PREVIEW_PEER_SCHEMA_CHANGED");
-    for(const rel of gitList(root,["ls-files","--cached","-z","--",peerScope])){
-      if(!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
-      peers.push([rel,safeRead(root,rel)]);
-    }
-  }
-  return {owner,digest:digestEntries(entries),entries,peers};
+  if(new Set(entries.map(([rel])=>rel.toLowerCase())).size!==entries.length)throw new Error("PREVIEW_PATH_COLLISION");
+  for(const file of buildFiles)if(!entries.some(([rel])=>rel===file))throw new Error("PREVIEW_BUILD_INPUT_MISSING");
+  return entries;
+}
+function peerEntries(root,owner) {
+  if(owner!=="dsh")return [];
+  const scope="services/identity/database/schema";
+  if(dirtyPaths(root,[scope]).length)throw new Error("PREVIEW_PEER_SCHEMA_CHANGED");
+  return gitList(root,["ls-files","--cached","-z","--",scope]).map(rel=>{
+    if(!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
+    return [rel,safeRead(root,rel)];
+  });
+}
+export function captureOwner(root,owner) {
+  if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
+  const changes=dirtyPaths(root,["services/"+owner]);
+  if(changes.some(rel=>!isPreviewGoPath(rel)&&!isOwnerNonRuntimePath(rel)))throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
+  const entries=ownerEntries(root,owner,changes);
+  return {owner,digest:digestEntries(entries),entries,peers:peerEntries(root,owner)};
 }
 export function verifyMaterializedOwner(dir,snapshot) {
   const actual=[];
@@ -180,28 +198,26 @@ export function verifyMaterializedOwner(dir,snapshot) {
   }
   walk(dir);
   if(digestEntries(actual)!==snapshot.digest)throw new Error("PREVIEW_SNAPSHOT_MUTATED");
-  const temp=path.resolve(dir,"../..");
-  for(const [rel,bytes] of snapshot.peers||[]) if(!safeRead(temp,rel).equals(bytes))throw new Error("PREVIEW_PEER_SNAPSHOT_MUTATED");
+  const root=path.resolve(dir,"../..");
+  for(const [rel,bytes] of snapshot.peers||[])if(!safeRead(root,rel).equals(bytes))throw new Error("PREVIEW_PEER_SNAPSHOT_MUTATED");
+}
+function writeEntry(root,rel,bytes) {
+  const file=path.join(root,...pathParts(rel));
+  fs.mkdirSync(path.dirname(file),{recursive:true});
+  fs.writeFileSync(file,bytes,{flag:"wx"});
 }
 export function materializeOwner(snapshot) {
   if(!owners.includes(snapshot.owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"bthwani-owner-preview-"));
-  // Retain the owner path identity used by the existing SQL safety tests.
   const dir=path.join(temp,"services",snapshot.owner);
-  try {
-    for(const [rel,bytes] of snapshot.entries) {
-      if(rel.split("/").some(x=>!x||x==="."||x===".."||!/^[A-Za-z0-9_.-]+$/.test(x)))throw new Error("PREVIEW_PATH_INVALID");
-      const full=path.join(dir,...rel.split("/"));
-      fs.mkdirSync(path.dirname(full),{recursive:true});
-      fs.writeFileSync(full,bytes,{flag:"wx"});
-    }
+  const dispose=()=>fs.rmSync(temp,{recursive:true,force:true});
+  try{
+    for(const [rel,bytes] of snapshot.entries)writeEntry(dir,rel,bytes);
     for(const [rel,bytes] of snapshot.peers||[]){
-      if(snapshot.owner!=="dsh" || !/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
-      const full=path.join(temp,...rel.split("/"));
-      fs.mkdirSync(path.dirname(full),{recursive:true});
-      fs.writeFileSync(full,bytes,{flag:"wx"});
+      if(snapshot.owner!=="dsh"||!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
+      writeEntry(temp,rel,bytes);
     }
     verifyMaterializedOwner(dir,snapshot);
-    return {dir,dispose:()=>fs.rmSync(temp,{recursive:true,force:true})};
-  } catch(e) { fs.rmSync(temp,{recursive:true,force:true}); throw e; }
+    return {dir,dispose};
+  }catch(e){dispose();throw e;}
 }

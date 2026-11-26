@@ -97,3 +97,16 @@ test("preview snapshots omit unrelated client edits but still reject contract ch
   write(base+"contracts/openapi/dsh.openapi.yaml","openapi: 3.1.0");
   assert.throws(()=>captureOwner(dir,"dsh"),/PREVIEW_ONLY_GO_SOURCE_ALLOWED/);
 });
+
+test("workspace-only owner metadata is not a serving input or a snapshot dependency",t=>{
+  const {dir,write,base}=fixture(t);
+  const before=captureOwner(dir,"dsh");
+  write(base+"package.json",'{"scripts":{"test":"node test"}}');
+  write(base+"tsconfig.json",'{"compilerOptions":{"strict":true}}');
+  write(base+"backend/README.md","documentation");
+  assert.equal(captureOwner(dir,"dsh").digest,before.digest);
+  write(base+"backend/internal/new.go","package internal\n");
+  assert.notEqual(captureOwner(dir,"dsh").digest,before.digest);
+  write(base+"contracts/openapi/unknown.yaml","openapi: 3.1.0");
+  assert.throws(()=>captureOwner(dir,"dsh"),/PREVIEW_ONLY_GO_SOURCE_ALLOWED/);
+});
