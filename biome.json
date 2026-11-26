@@ -34,12 +34,32 @@
       "tools/**/*.tsx",
       "tools/**/*.mts",
       "tools/**/*.cts",
+      "tests/**/*.js",
+      "tests/**/*.jsx",
+      "tests/**/*.mjs",
+      "tests/**/*.cjs",
+      "tests/**/*.ts",
+      "tests/**/*.tsx",
+      "tests/**/*.mts",
+      "tests/**/*.cts",
+      "infra/**/*.js",
+      "infra/**/*.jsx",
+      "infra/**/*.mjs",
+      "infra/**/*.cjs",
+      "infra/**/*.ts",
+      "infra/**/*.tsx",
+      "infra/**/*.mts",
+      "infra/**/*.cts",
       "!!**/node_modules/**",
       "!!**/.expo/**",
       "!!**/.next/**",
+      "!!**/.next-dev/**",
       "!!**/dist/**",
       "!!**/build/**",
-      "!!**/generated/**"
+      "!!services/identity/clients/generated/**",
+      "!!services/dsh/clients/generated/**",
+      "!!services/wlt/clients/generated/**",
+      "!!apps/control-panel/next-env.d.ts"
     ]
   },
   "formatter": {
@@ -48,7 +68,7 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true
+      "preset": "recommended"
     }
   }
 }

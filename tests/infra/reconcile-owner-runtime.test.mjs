@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { differingKeys, selectOwners, assertSameHashes, isolatedTestEnv } from "../../tools/dev/docker/reconcile-owner-runtime.mjs";
 import { sourceIdentity } from "../../tools/dev/docker/owner-preview-source.mjs";
+import { assertSameHashes, differingKeys, isolatedTestEnv, selectOwners } from "../../tools/dev/docker/reconcile-owner-runtime.mjs";
 
 test("runtime reconciliation never rebuilds unaffected owners", () => {
   assert.deepEqual(selectOwners({ candidates: [], activateCaptain: false, currentCaptain: true }), []);
