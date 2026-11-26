@@ -2,6 +2,8 @@ name: CI
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
   # Every current and future development branch is eligible.
   # Archived donor refs stay read-only, outside development CI.
   push:
@@ -23,6 +25,7 @@ concurrency:
 
 jobs:
   workspace_validation:
+    if: ${{ github.event_name != 'schedule' }}
     name: Workspace validation (source checks)
     runs-on: ubuntu-24.04
     timeout-minutes: 6
@@ -41,6 +44,7 @@ jobs:
         run: |
           node --version
           node tools/dev/verify-workspace.mjs
+          node tools/security/verify-secrets.mjs
           git status --short
       # All source regression tests run in the coverage suite below.
       - name: Record limits explicitly
@@ -49,10 +53,9 @@ jobs:
           echo 'NOT_RUN: SQL, source services, runtime, security, finance, full Product acceptance'
 
   application_quality:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
     name: Application quality, contracts, tests and builds
     needs: workspace_validation
-    outputs:
-      full: ${{ steps.scope.outputs.full }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -71,48 +74,11 @@ jobs:
           corepack enable pnpm
           pnpm --version
           pnpm install --frozen-lockfile --ignore-scripts
-      - name: Determine affected development build scope
-        id: scope
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          NX_DAEMON: 'false'
-          NX_NO_CLOUD: 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          full=true
-          projects='[]'
-          # Keep full PR, main, manual, new-branch, shared-input and ambiguous checks.
-          if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" != refs/heads/main && "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] &&
-             git merge-base --is-ancestor "$BEFORE_SHA" "$GITHUB_SHA" &&
-             paths="$(git diff --no-renames --name-only "$BEFORE_SHA" "$GITHUB_SHA")" &&
-             [[ -n "$paths" ]]; then
-            direct=()
-            safe=true
-            while IFS= read -r file; do
-              case "$file" in
-                apps/customer/src/*|apps/customer/app/*) direct+=('@bthwani/customer') ;;
-                apps/merchant/src/*|apps/merchant/app/*) direct+=('@bthwani/merchant') ;;
-                apps/captain/src/*|apps/captain/app/*) direct+=('@bthwani/captain') ;;
-                apps/control-panel/src/*|apps/control-panel/app/*) direct+=('@bthwani/control-panel') ;;
-                *) safe=false; break ;;
-              esac
-            done <<< "$paths"
-            if [[ "$safe" == true ]] &&
-               pnpm exec nx show projects --affected --base="$BEFORE_SHA" --head="$GITHUB_SHA" --json > "$RUNNER_TEMP/ci-affected.json" &&
-               selected="$(node -e 'const p=JSON.parse(require("node:fs").readFileSync(process.argv[1],"utf8"));const known=["@bthwani/customer","@bthwani/merchant","@bthwani/captain","@bthwani/control-panel"];if(!Array.isArray(p)||!p.length||!p.every(x=>known.includes(x))||!process.argv.slice(2).every(x=>p.includes(x)))process.exit(1);console.log(JSON.stringify(p))' "$RUNNER_TEMP/ci-affected.json" "${direct[@]}")"; then
-              full=false
-              projects="$selected"
-            fi
-          fi
-          printf 'full=%s\nprojects=%s\n' "$full" "$projects" >> "$GITHUB_OUTPUT"
       - name: Validate owner OpenAPI 3.1 contracts and reject broken references
         run: |
           pnpm --dir services/identity contract
           pnpm --dir services/dsh contract
           pnpm --dir services/wlt contract
-      - name: Verify source test discovery
-        run: node tools/dev/run-coverage.mjs --check-discovery
       - name: Run discovered Feature tests and collect measured coverage
         run: pnpm check:coverage
       - name: Bind JavaScript coverage to the tested source tree
@@ -142,40 +108,25 @@ jobs:
           pnpm check:design
           pnpm check:apps:source
       - name: Typecheck all workspace projects
-        if: ${{ steps.scope.outputs.full == 'true' }}
         run: pnpm -r --if-present run typecheck
-      - name: Typecheck affected workspace projects
-        if: ${{ steps.scope.outputs.full == 'false' }}
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          NX_DAEMON: 'false'
-          NX_NO_CLOUD: 'true'
-        run: pnpm exec nx affected -t typecheck --base="$BEFORE_SHA" --head="$GITHUB_SHA" --skip-nx-cache
       - name: Export Expo Web presentation hosts (SSR artifacts only)
-        if: ${{ steps.scope.outputs.full == 'true' || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/customer') || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/merchant') }}
         run: |
           pnpm --dir apps/customer exec expo export --platform web
           pnpm --dir apps/merchant exec expo export --platform web
       - name: Smoke-test approved Customer/Merchant Expo Web SSR on loopback
-        if: ${{ steps.scope.outputs.full == 'true' || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/customer') || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/merchant') }}
         run: node tools/mobile/verify-expo-web-http.mjs
       - name: Export Customer/Merchant Android JavaScript (NOT a native binary)
-        if: ${{ steps.scope.outputs.full == 'true' || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/customer') || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/merchant') }}
         run: |
           pnpm --dir apps/customer exec expo export --platform android
           pnpm --dir apps/merchant exec expo export --platform android
       - name: Export Captain Android JavaScript (NOT a native binary)
-        if: ${{ steps.scope.outputs.full == 'true' || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/captain') }}
         run: pnpm --dir apps/captain exec expo export --platform android
       - name: Build the pinned Next.js Operator presentation host
-        if: ${{ steps.scope.outputs.full == 'true' || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/control-panel') }}
         run: pnpm --dir apps/control-panel build
       - name: Smoke-test production Operator SSR, RTL and headers on loopback
-        if: ${{ steps.scope.outputs.full == 'true' || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/control-panel') }}
         run: |
           node tools/dev/verify-operator-http.mjs
       - name: Exercise production Operator session and policy routes
-        if: ${{ steps.scope.outputs.full == 'true' || contains(fromJSON(steps.scope.outputs.projects), '@bthwani/control-panel') }}
         env:
           BTHWANI_OPERATOR_HTTP_TEST: '1'
         run: |
@@ -188,89 +139,114 @@ jobs:
         run: |
           echo 'NOT_RUN: Android/iOS binary, actual browser hydration/CSP, owner APIs, finance and security'
 
-  # All main PRs run the existing owner checks on the same candidate.
-  # Standalone path-filtered push workflows retain fast development feedback.
-  dependency_security:
-    if: ${{ github.event_name == 'pull_request' }}
-    uses: ./.github/workflows/dependency-nx-safety.yml
-
-  backend_quality:
-    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
-    uses: ./.github/workflows/go-quality.yml
-
-  required_ci:
-    # Preserve the existing required check context; fail closed on every PR.
-    name: ${{ github.event_name == 'pull_request' && 'fast-guard' || 'development-ci' }}
-    needs: [workspace_validation, application_quality, dependency_security, backend_quality]
-    # A skipped required check may be treated as successful by branch protection.
-    # Evaluate failed prerequisites and explicitly fail this required context.
-    if: ${{ !cancelled() }}
+  # Development feedback is not a merge gate. Native Nx owns affected tasks.
+  development_feedback:
+    if: ${{ github.event_name == 'push' && github.ref != 'refs/heads/main' }}
+    name: Development feedback (Nx)
+    needs: workspace_validation
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      NX_DAEMON: 'false'
+      NX_NO_CLOUD: 'true'
+      GOTOOLCHAIN: local
+      GOWORK: 'off'
     steps:
-      - name: Refuse read-only archive as main PR source
-        if: ${{ github.event_name == 'pull_request' }}
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          case "$HEAD_REF" in
-            archive/*)
-              echo 'Archived donor source must remain read-only; refuse merging to main'
-              exit 1
-              ;;
-          esac
       - name: Checkout exact candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          fetch-depth: 1
+          fetch-depth: 0
           persist-credentials: false
       - name: Use repository-pinned Node 24
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Reject failed required predecessors
-        if: ${{ !cancelled() }}
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Use repository-pinned Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
+        with:
+          go-version-file: .go-version
+          check-latest: false
+          cache: false
+      - name: Run affected native Nx targets (full fallback for unknown comparison)
         env:
-          CI_EVENT: ${{ github.event_name }}
+          BEFORE_SHA: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$BEFORE_SHA" =~ ^[a-f0-9]{40}$ ]] &&
+             git merge-base --is-ancestor "$BEFORE_SHA" "$GITHUB_SHA"; then
+            pnpm exec nx affected -t typecheck,test --base="$BEFORE_SHA" --head="$GITHUB_SHA" --skip-nx-cache
+          else
+            pnpm exec nx run-many -t typecheck,test --skip-nx-cache
+          fi
+      - name: Record development feedback boundary
+        run: echo 'Development feedback only; full source tests, builds, isolated SQL and Sonar belong to PR/main verification or explicit full verification.'
+
+  dependency_security:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    name: Dependency audit (high+)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Use repository-pinned Node 24
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install exact locked dependencies (no lifecycle scripts)
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile --ignore-scripts
+      - name: Audit all JavaScript dependencies (high and critical fail)
+        run: pnpm audit --audit-level high
+
+  backend_quality:
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    uses: ./.github/workflows/go-quality.yml
+
+  required_ci:
+    # Keep the protected PR context distinct from feedback and manual runs.
+    name: ${{ github.event_name == 'pull_request' && 'fast-guard' || 'full-ci' }}
+    needs: [workspace_validation, application_quality, dependency_security, backend_quality]
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Reject archive source and failed required predecessors
+        env:
+          HEAD_REF: ${{ github.head_ref }}
           CI_REF: ${{ github.ref }}
-          FULL_SCOPE: ${{ needs.application_quality.outputs.full }}
-          FOUNDATION_RESULT: ${{ needs.workspace_validation.result }}
-          PRESENTATION_RESULT: ${{ needs.application_quality.result }}
+          CI_EVENT: ${{ github.event_name }}
+          WORKSPACE_RESULT: ${{ needs.workspace_validation.result }}
+          APPLICATION_RESULT: ${{ needs.application_quality.result }}
           DEPENDENCY_RESULT: ${{ needs.dependency_security.result }}
-          GO_RESULT: ${{ needs.backend_quality.result }}
+          BACKEND_RESULT: ${{ needs.backend_quality.result }}
+        shell: bash
         run: |
-          node --input-type=module <<'CI_GATE'
-          const { CI_EVENT, CI_REF, FULL_SCOPE, FOUNDATION_RESULT, PRESENTATION_RESULT, DEPENDENCY_RESULT, GO_RESULT } = process.env;
-          if (!["pull_request", "push", "workflow_dispatch"].includes(CI_EVENT)) {
-            throw new Error("Unexpected CI event");
-          }
-          if (!["true", "false"].includes(FULL_SCOPE) ||
-              ((CI_EVENT !== "push" || CI_REF === "refs/heads/main") && FULL_SCOPE !== "true")) {
-            throw new Error("Missing or invalid build scope for " + CI_EVENT + " " + CI_REF);
-          }
-          const ownerExpected = CI_EVENT === "pull_request" ? "success" : "skipped";
-          const goExpected = CI_EVENT === "pull_request" || (CI_EVENT === "push" && CI_REF === "refs/heads/main") ? "success" : "skipped";
-          const checks = [
-            ["workspace_validation", FOUNDATION_RESULT, "success"],
-            ["application_quality", PRESENTATION_RESULT, "success"],
-            ["dependency_security", DEPENDENCY_RESULT, ownerExpected],
-            ["backend_quality", GO_RESULT, goExpected],
-          ];
-          for (const [job, result, expected] of checks) {
-            if (result !== expected) {
-              console.error(job + ": expected " + expected + ", got " + (result || "missing"));
-              process.exitCode = 1;
-            }
-          }
-          CI_GATE
-      - name: Scan tracked files for secrets
-        # Negative regression tests run in the source coverage suite.
-        run: node tools/security/verify-secrets.mjs
-      - name: State the scoped check boundary
-        run: |
-          echo 'CI: workspace and application quality; main PR additionally requires Go, disposable owner PostgreSQL and dependency/Nx; main push also requires Go and owner PostgreSQL'
-          echo 'NOT_RUN: full business journey, protected SQL upgrade, device, financial and security E2E'
+          set -euo pipefail
+          case "$HEAD_REF:$CI_REF" in
+            archive/*:*|*:refs/heads/archive/*) exit 1 ;;
+          esac
+          case "$CI_EVENT" in
+            pull_request|workflow_dispatch) ;;
+            push) test "$CI_REF" = refs/heads/main ;;
+            *) exit 1 ;;
+          esac
+          for result in "$WORKSPACE_RESULT" "$APPLICATION_RESULT" "$DEPENDENCY_RESULT" "$BACKEND_RESULT"; do
+            test "$result" = success
+          done
+      - name: State verification boundary
+        run: echo 'Full CI source, build and isolated owner checks; production and complete business journeys remain separate.'
 
   sonar:
     # Retain the exact required GitHub Actions check name.

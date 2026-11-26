@@ -129,28 +129,15 @@ test("Windows command separators inside --files remain literal file data", () =>
   assert.ok(projects.has("@bthwani/merchant"));
 });
 
-test("dependency security gate stays strict while independent Nx proof survives audit failure", () => {
-  const workflow = YAML.parse(readFileSync(path.join(root, ".github", "workflows",
-    "dependency-nx-safety.yml"), "utf8"));
-  const steps = workflow.jobs.dependency_and_boundaries.steps;
-  const findStep = (name) => steps.find((step) => step.name === name);
-  const install = findStep("Install pinned workspace without lifecycle scripts");
-  const audit = findStep("Audit all JavaScript dependencies (high and critical fail)");
-  assert.equal(install.id, "workspace");
-  assert.ok(steps.indexOf(install) < steps.indexOf(audit));
-  assert.equal(audit.run, "pnpm audit --audit-level high");
-  assert.equal(audit["continue-on-error"], undefined, "Audit failure must fail the job");
-
-  const afterAudit = "${{ !cancelled() && steps.workspace.outcome == 'success' }}";
-  for (const name of [
-    "Verify Nx dependency graph builds",
-    "Prove actual Nx contract, Go, design and renderer impact edges",
-    "Enforce existing application and service import boundaries",
-  ]) {
-    const step = findStep(name);
-    assert.ok(steps.indexOf(step) > steps.indexOf(audit), name);
-    assert.equal(step.if, afterAudit, name);
-  }
-  assert.equal(findStep("Report affected projects for pull requests").if,
-    "${{ !cancelled() && steps.workspace.outcome == 'success' && github.event_name == 'pull_request' }}");
+test("canonical dependency audit remains fail-closed and independent of full source tests", () => {
+  const workflow = YAML.parse(readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8"));
+  const audit = workflow.jobs.dependency_security;
+  const steps = audit.steps;
+  const install = steps.find(step => step.run?.includes("pnpm install --frozen-lockfile --ignore-scripts"));
+  const scan = steps.find(step => step.run === "pnpm audit --audit-level high");
+  assert.ok(install && scan && steps.indexOf(install) < steps.indexOf(scan));
+  assert.equal(scan["continue-on-error"], undefined);
+  assert.equal(audit.needs, undefined);
+  assert.ok(workflow.jobs.application_quality.steps.some(step => step.run === "pnpm check:coverage"));
+  assert.ok(!steps.some(step => step.run?.includes("node --test")), "source regressions have one execution owner");
 });
