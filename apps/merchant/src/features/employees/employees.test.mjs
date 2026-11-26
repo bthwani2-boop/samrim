@@ -83,6 +83,128 @@ test("Merchant employees BFF scopes GET and POST to a verified actor and Store",
 // Retain uncached modules until Node collects source coverage.
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
+
+function employeeTransport(platform, withNativeMerchantSession) {
+  const tmp = mkdtempSync(join(tmpdir(), "merchant-employee-transport-"));
+  try {
+    const root = resolve(import.meta.dirname, "../../../../..");
+    const source = resolve(import.meta.dirname, "employee-transport.ts");
+    const compiled = spawnSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), source,
+      "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
+      "--inlineSourceMap", "--inlineSources", "--outDir", tmp],
+      { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+    assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
+    const mod = loadMappedRenderFixture(readFileSync(join(tmp, "employee-transport.js"), "utf8"), source, {
+      "@bthwani/dsh": dsh,
+      "react-native": { Platform: { OS: platform } },
+      "../access/admission-transport": { withNativeMerchantSession },
+    });
+    loadedModules.push(mod);
+    return mod.exports;
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+}
+
+test("actual Web employee transport binds employer scope and rejects stale or uncertain acknowledgements", async t => {
+  const transport = employeeTransport("web", () => assert.fail("Web must not use native credentials"));
+  const actor = "merchant-a", store = "store-a";
+  const signal = new AbortController().signal;
+  const cursor = "00000000-0000-4000-8000-000000000000";
+  const page = { items: [record], nextCursor: null };
+  const wrap = (payload, writing = false) => ({ [writing ? "employee" : "employees"]: { actorId: actor, storeId: store, ...payload } });
+  const calls = [];
+  let respond = () => json(wrap({ page }));
+  t.mock.method(globalThis, "fetch", async (url, options) => { calls.push({ url, options }); return respond(); });
+  const read = (s = signal) => transport.readEmployees(actor, store, s, cursor, "NO_END_DATE");
+  const detail = () => transport.readEmployeeDetail(actor, store, id, signal);
+  const save = (s = signal) => transport.saveEmployee(actor, store, input, s);
+  assert.deepEqual(await read(), page);
+  assert.deepEqual(Object.fromEntries(new URL(calls[0].url, "http://localhost").searchParams), {
+    employees: store, cursor, endState: "NO_END_DATE",
+  });
+  assert.deepEqual(calls[0].options, { method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "X-Merchant-Context": actor } });
+  respond = () => json(wrap({ detail: { employee: record, audit } }));
+  assert.deepEqual(await detail(), { employee: record, audit });
+  assert.equal(new URL(calls[1].url, "http://localhost").searchParams.get("employeeId"), id);
+  respond = () => json(wrap({ id }, true));
+  assert.equal(await save(), id);
+  assert.deepEqual(calls[2].options, { method: "POST", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    headers: { "X-Merchant-Context": actor, "Content-Type": "application/json" }, body: JSON.stringify(input) });
+  for (const args of [
+    ["", store, signal], [actor, "../store", signal], [actor, store, signal, "bad"],
+    [actor, store, signal, undefined, "ACTIVE"],
+  ]) await assert.rejects(transport.readEmployees(...args), { code: "EMPLOYEE_QUERY_INVALID" });
+  await assert.rejects(transport.readEmployeeDetail(actor, store, "../employee", signal), { code: "EMPLOYEE_QUERY_INVALID" });
+  await assert.rejects(transport.saveEmployee(actor, store, { ...input, operationId: "bad" }, signal), { code: "EMPLOYEE_QUERY_INVALID" });
+  await assert.rejects(read(AbortSignal.abort()), { name: "AbortError" });
+  assert.equal(calls.length, 3);
+  for (const body of [
+    { employees: { actorId: "merchant-b", storeId: store, page } },
+    { employees: { actorId: actor, storeId: "store-b", page } },
+    { employees: { actorId: actor, storeId: store, page, extra: true } },
+    wrap({ page: { ...page, items: [{ ...record, endDate: "2027-01-01" }] } }),
+    [], null,
+  ]) {
+    respond = () => json(body);
+    await assert.rejects(read(), { code: "OWNER_RESPONSE_INVALID" });
+  }
+  for (const value of [null, { employee: record }, { employee: { ...record, id: cursor }, audit }, { employee: record, audit: { ...audit, employeeId: cursor } }]) {
+    respond = () => json(wrap({ detail: value }));
+    await assert.rejects(detail(), { code: "OWNER_RESPONSE_INVALID" });
+  }
+  respond = () => json(wrap({ id: "bad" }, true));
+  await assert.rejects(save(), { code: "OPERATION_RESULT_UNKNOWN" });
+  for (const [operation, unknown] of [[read, false], [save, true]]) {
+    respond = () => { throw new Error("connection closed"); };
+    await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE" });
+    respond = () => new Response("not JSON");
+    await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID" });
+    respond = () => json({ code: "EMPLOYEE_SCOPE_FORBIDDEN" }, 403);
+    await assert.rejects(operation(), { status: 403, code: "EMPLOYEE_SCOPE_FORBIDDEN" });
+    respond = () => json([], 503);
+    await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE" });
+    respond = () => Response.json({});
+    await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID" });
+    respond = () => json({}, 201);
+    await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID" });
+    const late = new AbortController();
+    respond = () => ({ json: async () => { late.abort(); return {}; } });
+    await assert.rejects(operation(late.signal), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE" });
+  }
+});
+
+test("actual Android employee transport uses canonical DSH read, audit and idempotent registration", async t => {
+  const owner = "http://127.0.0.1:13311";
+  const token = Buffer.alloc(32, 12).toString("base64url");
+  const scopes = [], calls = [];
+  const transport = employeeTransport("android", async (signal, invoke, actor, write = false) => {
+    scopes.push({ signal, actor, write });
+    return invoke(token, owner);
+  });
+  const page = { items: [record], nextCursor: null };
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const target = new URL(url);
+    calls.push({ target, options });
+    if (options.method === "POST") return json({ id });
+    if (target.pathname.endsWith("/registration-audit")) return json(audit);
+    if (target.pathname.endsWith(id)) return json(record);
+    return json(page);
+  });
+  const signal = new AbortController().signal;
+  assert.deepEqual(await transport.readEmployees("merchant-a", "store-a", signal, undefined, "NO_END_DATE"), page);
+  assert.deepEqual(await transport.readEmployeeDetail("merchant-a", "store-a", id, signal), { employee: record, audit });
+  assert.equal(await transport.saveEmployee("merchant-a", "store-a", input, signal), id);
+  assert.deepEqual(scopes, [false, false, true].map(write => ({ signal, actor: "merchant-a", write })));
+  assert.deepEqual(calls.map(call => [call.options.method, call.target.pathname]), [
+    ["GET", "/v1/stores/store-a/employees"],
+    ["GET", `/v1/stores/store-a/employees/${id}`],
+    ["GET", `/v1/stores/store-a/employees/${id}/registration-audit`],
+    ["POST", "/v1/stores/store-a/employees"],
+  ]);
+  assert.equal(calls[0].target.searchParams.get("endState"), "NO_END_DATE");
+  assert.ok(calls.every(call => call.target.origin === owner && call.options.headers.Authorization === `Bearer ${token}`));
+  assert.deepEqual(JSON.parse(calls[3].options.body), input);
+});
+
 const nodes=tree=>Array.isArray(tree)?tree.flatMap(nodes):!tree||typeof tree!=="object"?[]:[tree,...nodes(tree.props?.children)];
 const tick=()=>new Promise(setImmediate);
 async function until(predicate){for(let i=0;i<100;i++){if(predicate())return;await tick();}assert.fail("employee UI did not settle");}
