@@ -13,7 +13,7 @@ GOVERNANCE: PROGRESSIVE development; production and entire admission journey blo
 - [x] T006 Unit and adversarial tests plus real isolated PostgreSQL readback with two actors, invalid input, revocation/expiry/version, role/actor suspension, cross-header forgery and owner errors.
 - [x] T007a Go tests/vet, synthetic Linux PostgreSQL integration, staged secret marker scan, targeted governance server-declaration rejection and git diff check PASS.
 - [ ] T007b Full local Foundation after peer-managed Codex Spec Kit integration changes; GitHub SHA Foundation CI PASS but shared local working tree gate currently FAIL until its owner reconciles state.
-- [ ] T008 Independent critical security review and full source coverage quality gate; Sonar LCOV source-suite FAIL also occurred on previous parent SHA. CI presentation last seen IN_PROGRESS.
+- [ ] T008 Documented executor critical security assessment under [AGENTS.md](../../AGENTS.md) and full source coverage quality gate; Sonar LCOV source-suite FAIL also occurred on previous parent SHA. CI presentation last seen IN_PROGRESS.
 - [x] T009 Acquired exclusive Git turn, staged only 14 agent03 files, created local Commit, ordinary Push and independently verified exact remote SHA, then released Git turn.
 
 BOUNDED_SLICE_DELIVERED: PASS for implemented Identity verifier and isolated persistent PostgreSQL tests on the exact submitted SHA.

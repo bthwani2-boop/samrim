@@ -42,7 +42,7 @@ Operator original credential continuity and Passkey enrollment, live phone-provi
 
 - In an isolated test environment, reserved synthetic phone numbers receive a single-use, attempt-limited verification proof. Concurrent completion cannot create duplicate Customer identities or credentials. Repeated verified entry resolves to the same actor, and suspended actors or roles cannot regain access.
 - A verified Customer may enter and re-enter the Merchant role only through the Identity owner. Merchant sessions stay isolated from other roles and application surfaces; entry alone provides no DSH Store grant.
-- Whole-journey acceptance still requires real phone-provider verification, DSH Captain standing and Identity admission, authorized Operator Passkey and recovery, independent security review and supported native-device proof.
+- Whole-journey acceptance still requires real phone-provider verification, DSH Captain standing and Identity admission, authorized Operator Passkey and recovery, applicable executor security assessment under [AGENTS.md](../../AGENTS.md) and supported native-device proof.
 
 Acceptance requires observable replay protection, concurrent proof consumption, actor reuse, suspension, wrong-role denial, durable revocation, reload, sign-out and protected Store navigation. Independent Identity and DSH owner readback must show that an admitted Merchant cannot access an unrelated Store or use a revoked credential and that Store ownership is unchanged. A locally simulated device or test account does not substitute for physical-device or protected-environment evidence.
 
@@ -55,7 +55,7 @@ The canonical Identity owner now has an **explicitly disabled by default** one-t
 - The ticket is consumed only by a ten-minute, server-stored challenge and a real WebAuthn `navigator.credentials.create()` ceremony with exact localhost RP, resident credential and user verification required. A replay, forged origin, mismatched ceremony, expired claim, missing UV, or malformed credential fails closed.
 - Identity writes the first actor, Operator role, seven explicit canonical workspace grants, immutable original Root marker, public-key credential, one-time claim consumption and audit in a **single PostgreSQL transaction**. Competing requests must yield at most one Root, no privilege-grant input is accepted, and successful enrollment **does not issue a session**.
 - The first Operator must then authenticate separately through the existing signed WebAuthn login before accessing the UI. Identity remains the only source of truth for the operator/permissions and no DSH Store or WLT finance authority is conferred implicitly.
-- The opt-in routes and BFF must remain unavailable on current shared/production services; applying migration 008 to an existing protected database, reenrolling the historical Owner, actual Windows Hello device proof, human-verification/recovery, and independent critical security review remain distinct **NOT_CLOSED** gates.
+- The opt-in routes and BFF must remain unavailable on current shared/production services; applying migration 008 to an existing protected database, reenrolling the historical Owner, actual Windows Hello device proof, human-verification/recovery, and documented executor critical security assessment under [AGENTS.md](../../AGENTS.md) remain distinct **NOT_CLOSED** gates.
 
 Acceptance of this **synthetic** increment requires exact Go unit/negative tests, strict OpenAPI/generated operation parity, UI type/build checks, and a real disposable PostgreSQL cryptographic WebAuthn fixture that proves one-winner concurrency, durable Owner marker/grants/credential/audit, independent signed login, revoked/invalid replay refusal and zero session on enrollment. It does **not** close protected original Owner continuity or production readiness.
 
@@ -84,7 +84,7 @@ retroactively close the original Operator continuity requirement.
   replacement, counter-signature verification, replay safety, other-actor
   isolation, rollback and owner readback; the user then registers through
   Windows Hello and performs separate login.
-- AC-R03: Critical independent security review covers proof issuance and
+- AC-R03: Documented executor critical security assessment under [AGENTS.md](../../AGENTS.md) covers proof issuance and
   original actor continuity; no protected Identity changes until approved.
 
 Status: Go unit checks, OpenAPI owner-contract checks and control-panel

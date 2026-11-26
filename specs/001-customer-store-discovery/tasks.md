@@ -31,7 +31,7 @@
 ## Phase 4 — Independent acceptance and delivery
 
 - [ ] **T014** Exercise two Store owners/two cities, published and unpublished/direct-only Store, changed Offer price/availability, invalid cursor, offline/error and IDOR; read canonical DSH state for all positive/negative cases and record the resulting evidence.
-- [ ] **T015** Run affected check/test commands, full diff/UTF-8/source compatibility review, independent critical-risk review when required; record explicit iOS NOT_RUN if untested.
+- [ ] **T015** Run affected check/test commands, full diff/UTF-8/source compatibility review, documented executor critical-risk assessment under [AGENTS.md](../../AGENTS.md); record explicit iOS NOT_RUN if untested.
 - [ ] **T016** After EACH tested coherent tranche: acquire existing exclusive GIT-TURN, verify branch/index/foreign work, stage own files only and make a local Commit. Only an independently authorized Push may update origin; verify its SHA and applicable CI. Never open PR, merge, deploy or force push from this checklist.
 
 ## Stop conditions

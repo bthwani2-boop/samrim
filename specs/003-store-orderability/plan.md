@@ -12,7 +12,7 @@
 4. Integrate a single DSH API and OpenAPI/client contract with actual Identity verified sessions and store-scope checks, typed stable error responses, idempotent updates and reconciliation reads. No parallel owner or UI-side mutation authority.
 5. Add Merchant/Operator editing and Customer safe readback using existing Expo/Tamagui and Next/Ant Design source; verify RTL and delayed response invalidation.
 6. Verify synthetic isolated owner-backed PostgreSQL and networked multi-actor Web/Android journeys, fail, retry and race; only then commit with exclusive `tools/dev/git-turn.mjs` and authorized Push.
-7. Close independent technical/business and engineering/security reviews only with checks tied to the exact final SHA; production remains BLOCKED.
+7. Complete applicable executor technical and engineering/security assessment under [AGENTS.md](../../AGENTS.md), preserving required human business approvals and checks tied to the exact final SHA; production remains BLOCKED.
 
 ## Owner-backed city limits slice (2026-11-15)
 

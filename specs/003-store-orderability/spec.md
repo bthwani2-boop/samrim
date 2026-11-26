@@ -32,7 +32,7 @@
 - **SC-05** Checkout confirmation uses fresh DSH decision; stale client offer/quote fails and does not create an Order or WLT effect.
 - **SC-06** Merchant, Operator and Customer UI show authoritative data, Arabic RTL with light/dark, accessible inputs, loading/empty/denied/error/retry, and safe account/Store context switching on Web and affected Android.
 - **SC-07** Isolated PostgreSQL fresh baseline, appropriate upgrade/restore proof and owner-scoped permissions, errors and contract/client compatibility pass.
-- **SC-08** Positive, negative, interruption/recovery, security and independent engineering/business reviews plus final Git revision/Push SHA evidence are complete.
+- **SC-08** Positive, negative, interruption/recovery, security and applicable executor engineering/business evidence review under [AGENTS.md](../../AGENTS.md), required human approvals, plus final Git revision/Push SHA evidence are complete.
 
 **No closure claim** until every applicable SC has actual owner-backed proof on the final revision, including Android when claimed. iOS and production are separately not authorized/tested.
 
