@@ -92,3 +92,20 @@ test("Merchant SDK reads only the merchant-owned agreement route and rejects sto
     await assert.rejects(()=>readOwnedMerchantCommercialAgreementReview(origin,token,"../wallets/me",AbortSignal.timeout(1000)),error=>error.status===400);
   } finally { await new Promise(resolve=>owner.close(resolve)); }
 });
+
+test("all eight Store-relation, fee-model and collector combinations preserve explicit reviewed terms", () => {
+  for (const storeRelation of ["DIRECT", "MARKETPLACE"]) {
+    for (const feeModel of ["COMMISSION", "SUBSCRIPTION"]) {
+      for (const collector of ["PLATFORM_MANAGED", "STORE_MANAGED"]) {
+        const terms = { ...proposal, storeRelation, feeModel, collector,
+          commissionBasisPoints: feeModel === "COMMISSION" ? 375 : null,
+          subscriptionAmountYer: feeModel === "SUBSCRIPTION" ? "9007199254740993" : null,
+          subscriptionPeriodDays: feeModel === "SUBSCRIPTION" ? 30 : null };
+        assert.deepEqual(parseCommercialAgreementReview({ storeId: "store-a", proposal: terms }, "store-a").proposal, terms);
+        const { collector: explicit, ...missing } = terms;
+        assert.equal(explicit, collector);
+        assert.throws(() => parseCommercialAgreementReview({ storeId: "store-a", proposal: missing }, "store-a"));
+      }
+    }
+  }
+});
