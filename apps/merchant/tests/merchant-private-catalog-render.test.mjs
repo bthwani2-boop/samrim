@@ -301,7 +301,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       requests[9].resolve({ actorId: "merchant-a", storeId: "store-a", items: [] });
       await Promise.resolve(); await Promise.resolve();
       const summary = nodes(render("merchant-a", stores.slice(0, 1), "store-b")).find(n => n.type === "InventorySummary");
-      summary.props.onShowStockout();
+      summary.props.onShowStatus("stockout");
       render("merchant-a", stores.slice(0, 1), "store-b");
       assert.equal(requests[10].storeId, "store-a");
       assert.equal(requests[10].options.status, "stockout");
@@ -459,14 +459,28 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       press(tree, "إعادة المحاولة").props.onPress();
       native();
       tree = await answer([]);
-      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStockout();
+      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStatus("stockout");
       native();
       assert.equal(requests.at(-1).options.status, "stockout");
       tree = await answer([]);
       const beforeStockout = requests.length;
-      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStockout();
+      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStatus("stockout");
       native();
       assert.equal(requests.length, beforeStockout + 1, "same stockout shortcut must read fresh owner state");
+      tree = await answer([]);
+      const priorSummary = nodes(tree).find(n => n.type === "InventorySummary").props;
+      priorSummary.onShowStatus("unpublished");
+      native();
+      assert.equal(requests.at(-1).options.status, "unpublished");
+      const afterFilter = requests.length;
+      priorSummary.onShowStatus("available");
+      native();
+      assert.equal(requests.length, afterFilter, "obsolete summary action must not replace current scope");
+      assert.equal(requests.at(-1).options.query, undefined);
+      tree = await answer([]);
+      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStatus(undefined);
+      native();
+      assert.equal(requests.at(-1).options.status, undefined);
       for (const effect of effects) effect?.cleanup?.();
       assert.equal(nativeRemoved, 1);
       // Dedicated Android Inventory uses the same owner-scoped import recovery and refresh.
@@ -537,22 +551,37 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     };
     const mod = loadMappedRenderFixture(readFileSync(path.join(tmp, "inventory-summary.js"), "utf8"), inventorySrc, mocks);
     loadedInventoryModules.push(mod);
-    let stockoutClicks = 0;
-    const stockoutButton = tree => tree.find(n => n.type === "Pressable" && n.props?.children?.props?.children === "عرض العروض النافدة");
+    const selectedStatuses = [];
+    const statusButton = (tree, label) => tree.find(n => n.type === "Pressable" && n.props?.accessibilityLabel === label);
+    const stockoutButton = tree => statusButton(tree, "عرض العروض النافدة");
     function render(actorId,storeId,showStockout = true) {
       index=0; scheduled=[];
-      const tree=mod.exports.default({actorId,storeId,onShowStockout: showStockout ? () => { stockoutClicks++; } : undefined});
+      const tree=mod.exports.default({actorId,storeId,onShowStatus: showStockout ? status => { selectedStatuses.push(status); } : undefined});
       for(const effect of scheduled) effect();
       return nodes(tree);
     }
     const counts = (actorId,storeId,totalOffers)=>({actorId,storeId,totalOffers,publishedOffers:0,availableOffers:0,unavailableOffers:0,stockoutOffers:0});
     const hasCount=(tree,n)=>tree.some(node=>node.props?.children===n.toLocaleString("ar-YE"));
     assert.ok(render("merchant-a","store-a").some(n=>n.type==="ActivityIndicator"));
-    requests[0].resolve({ ...counts("merchant-a","store-a",132), stockoutOffers: 3 });
+    requests[0].resolve({ ...counts("merchant-a","store-a",132), publishedOffers: 100, availableOffers: 90, unavailableOffers: 10, stockoutOffers: 3 });
     await Promise.resolve();
     assert.ok(hasCount(render("merchant-a","store-a"),132));
     stockoutButton(render("merchant-a","store-a")).props.onPress();
-    assert.equal(stockoutClicks, 1);
+    assert.deepEqual(selectedStatuses, ["stockout"]);
+    const report = render("merchant-a","store-a");
+    assert.ok(hasCount(report,32), "unpublished offers = total minus published");
+    assert.ok(hasCount(report,7), "other unavailable offers exclude stockout");
+    const percent = new Intl.NumberFormat("ar-YE", { style:"percent", maximumFractionDigits:1 });
+    for (const [label, numerator, denominator] of [["نسبة النشر",100,132],["نسبة التوافر ضمن المنشورة",90,100]]) {
+      const metric = report.find(n=>n.props?.accessibilityLabel===label);
+      assert.ok(metric);
+      assert.ok(nodes(metric).some(n=>n.props?.children===percent.format(numerator/denominator)));
+    }
+
+    for (const [label,status] of [["عرض العروض غير المنشورة","unpublished"],["عرض العروض المنشورة","published"],["عرض العروض المتاحة","available"],["عرض العروض غير المتاحة","unavailable"],["عرض جميع العروض",undefined]]) {
+      statusButton(report,label).props.onPress();
+      assert.equal(selectedStatuses.at(-1),status);
+    }
     assert.equal(stockoutButton(render("merchant-a","store-a",false)), undefined, "embedded summary must not show a stockout action without a handler");
     const switchedStore = render("merchant-a","store-b");
     assert.ok(!hasCount(switchedStore,132));
@@ -573,5 +602,13 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     const empty = render("merchant-b","store-b");
     assert.ok(hasCount(empty,0));
     assert.equal(stockoutButton(empty), undefined);
+    assert.equal(empty.filter(n=>n.props?.children==="لا ينطبق").length, 2, "zero denominator must not be reported as zero percent");
+    render("merchant-b","store-c");
+    requests[4].resolve(counts("merchant-b","store-c",42));
+    await Promise.resolve();
+    const unpublished = render("merchant-b","store-c");
+    assert.equal(unpublished.filter(n=>n.props?.children==="لا ينطبق").length, 1);
+    assert.ok(unpublished.some(n=>n.props?.children===percent.format(0)));
+    assert.equal(statusButton(unpublished,"عرض العروض المنشورة"), undefined);
   } finally { rmSync(tmp,{recursive:true,force:true}); }
 });
