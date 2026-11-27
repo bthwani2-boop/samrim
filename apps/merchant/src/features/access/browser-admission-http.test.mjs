@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { configuredOrigin, readMutationBody } from "./browser-admission-http.ts";
+import { discardMerchantResponse } from "./merchant-json.ts";
 
 const encoder = new TextEncoder();
 const jsonHeaders = new Headers({"Content-Type":"application/json"});
@@ -116,4 +117,26 @@ test("unadmitted request cancellation rejection remains a closed result",async()
   const body=new ReadableStream({cancel(){throw new Error("cleanup rejected");}});
   assert.equal(await read(body,new Headers()),null);
   assert.equal(body.locked,false);
+});
+
+test("synchronous adapter cleanup failure preserves rejected body admission", async () => {
+  const body = { locked: false, cancel() { throw new Error("synthetic synchronous cancel failure"); } };
+  assert.equal(await read(body,new Headers()), null);
+});
+test("unread response disposal never waits, steals a reader or changes a rejection", async () => {
+  let cancelled = 0;
+  const pending = new Response(new ReadableStream({cancel() { cancelled++; return new Promise(() => {}); }}));
+  assert.equal(discardMerchantResponse(pending), undefined);
+  assert.equal(cancelled, 1);
+  const locked = new Response(new ReadableStream({cancel() { assert.fail("locked body"); }}));
+  const reader = locked.body.getReader();
+  try { assert.equal(discardMerchantResponse(locked), undefined); assert.equal(locked.body.locked, true); }
+  finally { reader.releaseLock(); }
+  for (const reply of [
+    {get body() { throw new Error("adapter accessor"); }},
+    {bodyUsed:false,body:{locked:false,cancel(){throw new Error("sync");}}},
+    {bodyUsed:false,body:{locked:false,cancel(){return Promise.reject(new Error("async"));}}},
+    {bodyUsed:true,body:{locked:false,cancel(){assert.fail("consumed body");}}},
+  ]) assert.equal(discardMerchantResponse(reply), undefined);
+  await new Promise(resolve => setImmediate(resolve));
 });

@@ -1,5 +1,5 @@
 import { DshPublicError } from "@bthwani/dsh";
-import { readMerchantJSON } from "./merchant-json.ts";
+import { discardMerchantResponse, readMerchantJSON } from "./merchant-json.ts";
 
 type OwnerMethod = "GET" | "POST" | "PUT" | "PATCH";
 type OwnerRequest = Readonly<{
@@ -16,15 +16,6 @@ type OwnerRequest = Readonly<{
 // complete request budget includes a bounded five-second body admission.
 const requestDeadlineMs = 20000;
 const bodyDeadlineMs = 5000;
-
-function discardUnread(reply: Response): void {
-  try {
-    const body = reply.body;
-    if (body && !body.locked && !reply.bodyUsed) void body.cancel().catch(() => {});
-  } catch {
-    // Disposal cannot delay or replace the operation outcome.
-  }
-}
 
 function asDocument(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
@@ -65,7 +56,7 @@ export async function requestMerchantOwnerDocument({
         ...(change === undefined ? {} : { body: JSON.stringify(change) }),
       }).then(response => {
         if (lifetime.aborted) {
-          discardUnread(response);
+          discardMerchantResponse(response);
           return null;
         }
         return response;
@@ -99,6 +90,6 @@ export async function requestMerchantOwnerDocument({
   } finally {
     clearTimeout(timer);
     lifetime.removeEventListener("abort", stop);
-    if (reply) discardUnread(reply);
+    if (reply) discardMerchantResponse(reply);
   }
 }

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root=fileURLToPath(new URL("../../../../../",import.meta.url));
 const entry=fileURLToPath(new URL("./favorite-stores-transport.ts",import.meta.url));
@@ -28,7 +28,7 @@ const session=(actorId=actor)=>({enabled:true,session:{actorId,role:"customer",s
 function harness(platform, read, native, origin = "http://127.0.0.1:3202"){
   const modules={"@bthwani/dsh":dsh,"react-native":{Platform:{OS:platform}},
     "../access/customer-session-transport":{readCustomerAdmission:read,withVerifiedNativeCustomerRead:native},
-    "../access/bounded-customer-json":{readBoundedCustomerJSON}};
+    "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON }};
   const previous = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
   try {
     if (origin === null) delete process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;

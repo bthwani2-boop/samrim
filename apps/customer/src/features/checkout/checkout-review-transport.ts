@@ -7,7 +7,7 @@ import {
   validCustomerCheckoutReviewInput,
 } from "@bthwani/dsh";
 import { Platform } from "react-native";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import { withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 import { verifyAddressSession } from "../addresses/address-transport";
 
@@ -17,15 +17,6 @@ type ReviewState =
 
 function unavailable(): ReviewState {
   return { kind: "unavailable" };
-}
-
-function discard(response: Response): void {
-  try {
-    const body = response.body;
-    if (body && !body.locked && !response.bodyUsed) void body.cancel().catch(() => {});
-  } catch {
-    // Cleanup cannot admit an otherwise rejected response.
-  }
 }
 
 export async function readCheckoutReview(
@@ -54,7 +45,7 @@ export async function readCheckoutReview(
         body: JSON.stringify(snapshot),
       });
       if (signal.aborted || response.status !== 200 || response.headers.get("Cache-Control") !== "no-store") {
-        discard(response);
+        discardCustomerResponse(response);
         signal.throwIfAborted();
         return response.status === 401 || response.status === 403 ? { kind: "signed-out" } : unavailable();
       }

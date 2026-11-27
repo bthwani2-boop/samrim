@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
 const source = path.join(import.meta.dirname, "address-transport.ts");
@@ -60,7 +60,7 @@ function harness(t, os = "web", configured = true) {
     else delete process.env[envKey];
     const fixture = loadMappedRenderFixture(compiled, source, {
       "@bthwani/dsh": dsh,
-      "../access/bounded-customer-json": { readBoundedCustomerJSON },
+      "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON },
       "react-native": { Platform: { OS: os } },
       "../access/customer-session-transport": {
         async readCustomerAdmission() { return admissions.length ? admissions.shift() : state(); },

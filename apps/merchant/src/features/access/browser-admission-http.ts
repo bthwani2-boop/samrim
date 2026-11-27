@@ -2,6 +2,7 @@
 import { DshPublicError } from "@bthwani/dsh";
 import { IdentityClientError } from "@bthwani/identity";
 import { MerchantStandingError } from "./dsh-standing.ts";
+import { discardMerchantResponse } from "./merchant-json.ts";
 
 export const cookieName = "bthwani_merchant_admission";
 export const refreshCookieName = `${cookieName}.refresh`;
@@ -26,7 +27,7 @@ export async function configuredOrigin(request: Request) {
       cache: "no-store",
       signal: AbortSignal.timeout(1500),
     });
-    if (readiness.body) void readiness.body.cancel().catch(() => {});
+    discardMerchantResponse(readiness);
     if (readiness.status === 405 && readiness.headers.get("Allow") === "POST") return localIdentity;
   } catch {
     // Owner unavailable: do not admit a local origin.

@@ -1,6 +1,6 @@
 import { type CustomerCartDirectory, DshPublicError, listCurrentCustomerCarts, parseCustomerCartDirectory } from "@bthwani/dsh";
 import { Platform } from "react-native";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
 const nativeOwner=process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
@@ -20,7 +20,7 @@ export async function readVerifiedCartDirectory(signal:AbortSignal,after?:string
     const response=await fetch("/api/customer-auth/carts"+(after?"?after="+after:""),{method:"GET",credentials:"same-origin",cache:"no-store",redirect:"error",signal,
       headers:{"X-Customer-Context":before.actorId}});
     if(response.status!==200||response.headers.get("Cache-Control")?.toLowerCase()!=="no-store"){
-      void response.body?.cancel().catch(()=>{});
+      discardCustomerResponse(response);
       throw new DshPublicError(response.status===401||response.status===403?401:503,"DIRECTORY_REQUEST_REJECTED");
     }
     const body=await readBoundedCustomerJSON({headers:response.headers,body:response.body,signal},32768);

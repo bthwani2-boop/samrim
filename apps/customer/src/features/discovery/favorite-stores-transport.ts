@@ -10,7 +10,7 @@ import {
   setCustomerFavoriteStore,
 } from "@bthwani/dsh";
 import { Platform } from "react-native";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
 const nativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
@@ -73,15 +73,6 @@ export function verifyFavoriteSession(signal: AbortSignal, actor?: string) {
   return withinLifetime(signal, current => readSession(current, actor));
 }
 
-function discardUnread(response: Response): void {
-  try {
-    const body = response.body;
-    if (!response.bodyUsed && body && !body.locked) void body.cancel().catch(() => {});
-  } catch {
-    // Cleanup cannot turn a rejected or late reply into a confirmed result.
-  }
-}
-
 async function webRequest(
   actor: string, query: URLSearchParams, signal: AbortSignal, method: "GET" | "PUT",
 ): Promise<unknown> {
@@ -115,7 +106,7 @@ async function webRequest(
     if (value === null) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
     return value;
   } finally {
-    discardUnread(response);
+    discardCustomerResponse(response);
   }
 }
 

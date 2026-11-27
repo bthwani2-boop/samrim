@@ -5,7 +5,7 @@ import {
   readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart,
 } from "@bthwani/dsh";
 import { Platform } from "react-native";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import {
   readCustomerAdmission, withVerifiedNativeCustomerRead,
 } from "../access/customer-session-transport";
@@ -39,7 +39,7 @@ async function currentAfter(signal: AbortSignal, originalActor: string): Promise
 async function readCartResponse(response: Response, signal: AbortSignal, mutating = false): Promise<unknown> {
   const body = await readBoundedCustomerJSON({ headers: response.headers, body: response.body, signal }, 65536);
   if (body === null || signal.aborted) {
-    void response.body?.cancel().catch(() => {});
+    discardCustomerResponse(response);
     throw new DshCartError(signal.aborted ? 0 : 502, mutating ? "OPERATION_RESULT_UNKNOWN" :
       signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
   }
@@ -60,7 +60,7 @@ export async function readVerifiedCart(storeId: string, signal: AbortSignal): Pr
       });
     } catch { throw new DshCartError(503, "OWNER_NETWORK_UNAVAILABLE"); }
     if (signal.aborted || response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
-      void response.body?.cancel().catch(() => {});
+      discardCustomerResponse(response);
       if (signal.aborted) throw new DshCartError(0, "OWNER_RESPONSE_STALE");
       if (response.status === 401 || response.status === 403) return { kind: "signed-out" };
       throw new DshCartError(503, "OWNER_UNAVAILABLE");
@@ -106,11 +106,11 @@ async function sendVerifiedCartChange(storeId: string, change: CustomerCartChang
       });
     } catch { throw new DshCartError(0, "OPERATION_RESULT_UNKNOWN"); }
     if (signal.aborted || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
-      void response.body?.cancel().catch(() => {});
+      discardCustomerResponse(response);
       throw new DshCartError(signal.aborted ? 0 : 502, "OPERATION_RESULT_UNKNOWN");
     }
     if (response.status !== 200) {
-      void response.body?.cancel().catch(() => {});
+      discardCustomerResponse(response);
       throw new DshCartError(response.status,
         response.status === 409 ? "CART_VERSION_OR_OPERATION_CONFLICT" :
         response.status === 400 ? "INVALID_REQUEST" :
@@ -170,7 +170,7 @@ export async function readVerifiedCartMerchandiseEstimate(storeId: string, expec
       });
     } catch { throw new DshCartError(503, "OWNER_NETWORK_UNAVAILABLE"); }
     if (signal.aborted || response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
-      void response.body?.cancel().catch(() => {});
+      discardCustomerResponse(response);
       if (signal.aborted) throw new DshCartError(0, "OWNER_RESPONSE_STALE");
       if (response.status === 401 || response.status === 403) return { kind: "signed-out" };
       throw new DshCartError(response.status, "ESTIMATE_NOT_AVAILABLE");

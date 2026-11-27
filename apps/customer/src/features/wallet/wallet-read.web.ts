@@ -6,7 +6,7 @@ import {
   parseCustomerWalletBalance,
   WltReadError,
 } from "@bthwani/wlt";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json";
 
 type AdmissionReader = (signal: AbortSignal) =>
   Promise<{ enabled: boolean; session: VerifiedIdentitySession | null }>;
@@ -19,15 +19,6 @@ export type WalletReadState =
 export type WalletTransactionsReadState =
   | { kind: "ready"; history: CustomerFundingHistory; expiresAt: number }
   | { kind: "signed-out" | "unavailable" };
-
-function discardEnvelope(response: Response): void {
-  try {
-    const body = response.body;
-    if (body && !body.locked && !response.bodyUsed) void body.cancel().catch(() => {});
-  } catch {
-    // A rejected envelope remains rejected even when cleanup fails.
-  }
-}
 
 function sessionExpiry(session: VerifiedIdentitySession | null, expectedActorId?: string): number {
   if (session?.role !== "customer" ||
@@ -60,7 +51,7 @@ async function readVerifiedFinance<T extends { actorId: string }>(
     });
     if (signal.aborted || response.status !== 200 ||
       response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
-      discardEnvelope(response);
+      discardCustomerResponse(response);
       signal.throwIfAborted();
       return { kind: response.status === 401 || response.status === 403 ? "signed-out" : "unavailable" };
     }

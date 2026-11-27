@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
 const source = path.join(import.meta.dirname, "cart-directory-transport.ts");
@@ -51,7 +51,7 @@ function harness(t, os = "web", configured = true) {
     api = loadMappedRenderFixture(compiled, source, {
       "@bthwani/dsh": dsh,
       "react-native": { Platform: { OS: os } },
-      "../access/bounded-customer-json": { readBoundedCustomerJSON },
+      "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON },
       "../access/customer-session-transport": {
         async readCustomerAdmission() { return admissions.length ? admissions.shift() : state(); },
         async withVerifiedNativeCustomerRead(s, read, expectedActor) {

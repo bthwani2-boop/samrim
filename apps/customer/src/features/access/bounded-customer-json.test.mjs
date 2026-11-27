@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readBoundedCustomerJSON } from "./bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "./bounded-customer-json.ts";
 
 const headers = new Headers({"Content-Type":"application/json"});
 const encoder = new TextEncoder();
@@ -91,4 +91,26 @@ test("stream failure and failed overflow cleanup fail closed",async()=>{
 test("valid advertised length and JSON charset are admitted",async()=>{
   const stream=new Response('{"ok":true}').body;
   assert.deepEqual(await read(stream,undefined,new Headers({"Content-Type":"application/json; charset=utf-8","Content-Length":"11"}),11),{ok:true});
+});
+
+test("synchronous adapter cleanup failure preserves rejected body admission", async () => {
+  const body = { locked: false, cancel() { throw new Error("synthetic synchronous cancel failure"); } };
+  assert.equal(await read(body,undefined,new Headers()), null);
+});
+test("unread response disposal never waits, steals a reader or changes a rejection", async () => {
+  let cancelled = 0;
+  const pending = new Response(new ReadableStream({cancel() { cancelled++; return new Promise(() => {}); }}));
+  assert.equal(discardCustomerResponse(pending), undefined);
+  assert.equal(cancelled, 1);
+  const locked = new Response(new ReadableStream({cancel() { assert.fail("locked body"); }}));
+  const reader = locked.body.getReader();
+  try { assert.equal(discardCustomerResponse(locked), undefined); assert.equal(locked.body.locked, true); }
+  finally { reader.releaseLock(); }
+  for (const reply of [
+    {get body() { throw new Error("adapter accessor"); }},
+    {bodyUsed:false,body:{locked:false,cancel(){throw new Error("sync");}}},
+    {bodyUsed:false,body:{locked:false,cancel(){return Promise.reject(new Error("async"));}}},
+    {bodyUsed:true,body:{locked:false,cancel(){assert.fail("consumed body");}}},
+  ]) assert.equal(discardCustomerResponse(reply), undefined);
+  await new Promise(resolve => setImmediate(resolve));
 });

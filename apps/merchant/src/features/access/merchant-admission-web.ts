@@ -3,7 +3,7 @@ import {
   IdentityClientError, parseCustomerPhoneChallenge, parseVerifiedIdentitySession,
   type VerifiedIdentitySession,
 } from "@bthwani/identity";
-import { readMerchantJSON } from "./merchant-json.ts";
+import { discardMerchantResponse, readMerchantJSON } from "./merchant-json.ts";
 
 type Operation = "entry" | "standing" | "challenge" | "verify" | "logout";
 type EntryState = { enabled: boolean; session: VerifiedIdentitySession | null };
@@ -67,9 +67,7 @@ async function request(operation: Operation, signal: AbortSignal, data?: object)
     if (!body) reject(operation, 502, invalidCode);
     return body;
   } finally {
-    try {
-      if (reply.body && !reply.body.locked && !reply.bodyUsed) void reply.body.cancel().catch(() => {});
-    } catch { /* Disposal must not replace the admission outcome. */ }
+    discardMerchantResponse(reply);
   }
 }
 
