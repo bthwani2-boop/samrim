@@ -117,11 +117,21 @@ async function awaitOwnerOperation<T>(
   }
 }
 
-function discardBody(response: Response): void {
+// One cleanup boundary handles both a synchronous native bridge exception and
+// an asynchronous cancellation rejection without delaying the owner result.
+async function discardStream(acquire: () => { cancel(): Promise<void> } | null): Promise<void> {
   try {
+    await acquire()?.cancel();
+  } catch {
+    // A failed cleanup cannot turn a rejected owner reply into an accepted one.
+  }
+}
+
+function discardBody(response: Response): void {
+  void discardStream(() => {
     const body = response.body;
-    if (body && !body.locked) void body.cancel().catch(() => undefined);
-  } catch { /* A failed cleanup cannot make an owner reply valid. */ }
+    return body && !body.locked ? body : null;
+  });
 }
 
 function noStore(response: Response): boolean {
@@ -162,11 +172,8 @@ async function readOwnerJSON(response: Response, signal?: AbortSignal): Promise<
     complete = true;
     return value;
   } finally {
-    try {
-      if (!complete) void reader.cancel().catch(() => undefined);
-    } finally {
-      reader.releaseLock();
-    }
+    if (!complete) void discardStream(() => reader);
+    reader.releaseLock();
   }
 }
 

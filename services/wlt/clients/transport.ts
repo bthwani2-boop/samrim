@@ -5,10 +5,21 @@ import { wltOperations } from "./generated/wlt-operations.ts";
 // One deadline covers headers, body and parsing; a caller may cancel earlier.
 const readBudgetMs = 12_000;
 
-function discardBody(response: Response): void {
+// One cleanup boundary handles both a synchronous native bridge exception and
+// an asynchronous cancellation rejection without delaying the owner result.
+async function discardStream(acquire: () => { cancel(): Promise<void> } | null): Promise<void> {
   try {
-    if (response.body && !response.body.locked) void response.body.cancel().catch(() => {});
-  } catch { /* Cleanup cannot turn a rejected reply into an accepted one. */ }
+    await acquire()?.cancel();
+  } catch {
+    // A failed cleanup cannot turn a rejected owner reply into an accepted one.
+  }
+}
+
+function discardBody(response: Response): void {
+  void discardStream(() => {
+    const body = response.body;
+    return body && !body.locked ? body : null;
+  });
 }
 
 function requestURL(origin: string, path: string, cursor?: string): URL {
@@ -79,11 +90,8 @@ async function readJSON(response: Response, maxBytes: number,
   } catch {
     throw new WltReadError(signal.aborted ? 503 : 502);
   } finally {
-    try {
-      if (!complete) void reader.cancel().catch(() => {});
-    } finally {
-      reader.releaseLock();
-    }
+    if (!complete) void discardStream(() => reader);
+    reader.releaseLock();
   }
 }
 

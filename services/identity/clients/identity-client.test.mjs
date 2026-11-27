@@ -907,3 +907,21 @@ test("Identity cleanup rejection cannot replace the authoritative failure", asyn
     assert.equal(res.body.locked, false);
   }
 });
+
+test("Identity discard protects against a synchronous native bridge failure", async () => {
+  const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
+  await withFetch(async () => ({
+    status: 202, ok: true, headers,
+    get body() { throw new Error("native body accessor failed"); },
+  }), () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+  let released = false;
+  await withFetch(async () => ({
+    status: 200, ok: true, headers,
+    body: { getReader() { return {
+      read: async () => ({ done: false, value: new Uint8Array(16385) }),
+      cancel() { throw new Error("native cancel failed"); },
+      releaseLock() { released = true; },
+    }; } },
+  }), () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+  assert.equal(released, true);
+});
