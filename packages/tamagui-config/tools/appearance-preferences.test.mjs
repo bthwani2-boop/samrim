@@ -10,50 +10,61 @@ import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixtur
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const source = fileURLToPath(new URL("../src/appearance-preferences.tsx", import.meta.url));
 
-function harness({ ready = true, save = async () => {} } = {}) {
+// Compile the authored source once per test module. Each harness still loads
+// an independent module and verifies its inline map against the current source.
+function compileAppearancePreferences() {
   const temp = mkdtempSync(path.join(tmpdir(), "appearance-preferences-"));
   try {
     const result = spawnSync(process.execPath, [
       path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
       "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
-    ], { cwd: root, encoding: "utf8", timeout: 20000 });
-    assert.equal(result.status, 0, result.stderr || result.stdout);
-    const jsx = (type, props) => ({ type, props });
-    let preference = "system", slot = 0;
-    const states = [], writes = [];
-    const mocks = {
-      "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
-      react: {
-        useState(initial) {
-          const i = slot++;
-          if (!(i in states)) states[i] = initial;
-          return [states[i], value => { states[i] = value; }];
-        },
-        useRef(initial) {
-          const i = slot++;
-          if (!(i in states)) states[i] = { current: initial };
-          return states[i];
-        },
+    ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+    assert.ifError(result.error);
+    assert.equal(result.status, 0, result.stderr || result.stdout || `Compiler exited with signal ${result.signal}`);
+    return readFileSync(path.join(temp, "appearance-preferences.js"), "utf8");
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+const compiled = compileAppearancePreferences();
+
+function harness({ ready = true, save = async () => {} } = {}) {
+  const jsx = (type, props) => ({ type, props });
+  let preference = "system", slot = 0;
+  const states = [], writes = [];
+  const mocks = {
+    "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+    react: {
+      useState(initial) {
+        const i = slot++;
+        if (!(i in states)) states[i] = initial;
+        return [states[i], value => { states[i] = value; }];
       },
-      "react-native": { Pressable: "Pressable", Text: "Text", View: "View" },
-      "./appearance": {
-        useMobileAppearance: () => ({
-          theme: {}, ready, preference,
-          async setPreference(next) {
-            writes.push(next);
-            await save(next);
-            preference = next;
-          },
-        }),
+      useRef(initial) {
+        const i = slot++;
+        if (!(i in states)) states[i] = { current: initial };
+        return states[i];
       },
-    };
-    const mod = loadMappedRenderFixture(readFileSync(path.join(temp, "appearance-preferences.js"), "utf8"), source, mocks);
-    const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ?
-      tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
-    const render = () => { slot = 0; return nodes(mod.exports.default()); };
-    return { writes, render, radios: () => render().filter(n => n.props?.accessibilityRole === "radio") };
-  } finally { rmSync(temp, { recursive: true, force: true }); }
+    },
+    "react-native": { Pressable: "Pressable", Text: "Text", View: "View" },
+    "./appearance": {
+      useMobileAppearance: () => ({
+        theme: {}, ready, preference,
+        async setPreference(next) {
+          writes.push(next);
+          await save(next);
+          preference = next;
+        },
+      }),
+    },
+  };
+  const mod = loadMappedRenderFixture(compiled, source, mocks);
+  const nodes = tree => !tree || typeof tree !== "object" ? [] : Array.isArray(tree) ?
+    tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
+  const render = () => { slot = 0; return nodes(mod.exports.default()); };
+  return { writes, render, radios: () => render().filter(n => n.props?.accessibilityRole === "radio") };
 }
 
 const labels = ["\u062d\u0633\u0628 \u0627\u0644\u0646\u0638\u0627\u0645", "\u0641\u0627\u062a\u062d", "\u062f\u0627\u0643\u0646"];
