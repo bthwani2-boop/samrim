@@ -209,7 +209,7 @@ SELECT jsonb_build_object(
   # from a historical source; all FKs and triggers remain enabled.
   function Invoke-ProofSql([string]$Database, [string]$Sql) {
     $result = $Sql | & docker --context $DockerContext exec -i $containerId psql -X -qAt -v ON_ERROR_STOP=1 -U $user -d $Database -f - 2>&1
-    if ($LASTEXITCODE -ne 0) { throw 'Dedicated owner database proof SQL failed' }
+    if ($LASTEXITCODE -ne 0) { throw ('Disposable owner SQL proof failed: '+($result | Out-String)) }
     return ($result | Out-String).Trim()
   }
   $null = Invoke-ProofSql $db "INSERT INTO $schema.service_cities(id,active,timezone_name) VALUES ('preserved-city',true,'Asia/Aden'); UPDATE $schema.public_revision SET revision=7 WHERE singleton;"
@@ -362,6 +362,59 @@ THEN 'PASS' ELSE 'FAIL' END;
     } elseif ($ok) { throw 'Incompatible or wrong-database transition unexpectedly committed' }
     elseif ($ExpectedError -and ($result | Out-String) -notmatch [regex]::Escape($ExpectedError)) { throw ('Wrong transition refusal: '+($result | Out-String)) }
   }
+
+  # Independent catalog readback: dispatch privilege operators by relation
+  # kind, never by optimizer-reorderable boolean filters.
+  function Get-WltCommandAclProof([string[]]$Archives) {
+    if (!$Archives.Count) { throw 'WLT archive inventory empty' }
+    $archiveChecks = @($Archives | ForEach-Object {
+      if ($_ -cnotmatch '^bthwani_recovery_wlt_[a-f0-9]{12}$') { throw 'WLT archive proof scope invalid' }
+      "NOT pg_catalog.has_schema_privilege('bthwani_wlt_command','$_','USAGE,CREATE')"
+    }) -join ' AND '
+    $sql = @"
+WITH principal AS (
+  SELECT oid, NOT(rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR
+    rolreplication OR rolbypassrls OR rolinherit) AS dormant
+  FROM pg_catalog.pg_roles WHERE rolname='bthwani_wlt_command'
+), relations AS (
+  SELECT c.oid,c.relkind,c.relname FROM pg_catalog.pg_class c
+    JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='wlt'
+), routines AS (
+  SELECT p.oid FROM pg_catalog.pg_proc p
+    JOIN pg_catalog.pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='wlt'
+)
+SELECT CASE WHEN
+  (SELECT dormant FROM principal)
+  AND NOT pg_catalog.has_database_privilege('bthwani_wlt_command',current_database(),'CONNECT,CREATE,TEMP')
+  AND NOT pg_catalog.has_schema_privilege('bthwani_wlt_command','public','CREATE')
+  AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members m CROSS JOIN principal r
+    WHERE m.member=r.oid OR m.roleid=r.oid)
+  AND pg_catalog.has_schema_privilege('bthwani_wlt_command','wlt','USAGE')
+  AND NOT pg_catalog.has_schema_privilege('bthwani_wlt_command','wlt','CREATE,USAGE WITH GRANT OPTION')
+  AND pg_catalog.has_table_privilege('bthwani_wlt_command','wlt.latest_commercial_agreement_reviews','SELECT')
+  AND NOT EXISTS (
+    SELECT 1 FROM relations r WHERE CASE
+      WHEN r.relkind IN ('r','v','p','m','f') THEN
+        pg_catalog.has_table_privilege('bthwani_wlt_command',r.oid,
+          'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN,SELECT WITH GRANT OPTION')
+        OR pg_catalog.has_any_column_privilege('bthwani_wlt_command',r.oid,
+          'INSERT,UPDATE,REFERENCES,SELECT WITH GRANT OPTION')
+        OR (r.relname<>'latest_commercial_agreement_reviews'
+          AND pg_catalog.has_any_column_privilege('bthwani_wlt_command',r.oid,'SELECT'))
+      WHEN r.relkind='S' THEN
+        pg_catalog.has_sequence_privilege('bthwani_wlt_command',r.oid,'USAGE,SELECT,UPDATE')
+      ELSE false
+    END
+  )
+  AND (SELECT count(*) FROM routines WHERE pg_catalog.has_function_privilege('bthwani_wlt_command',oid,'EXECUTE'))=2
+  AND pg_catalog.has_function_privilege('bthwani_wlt_command','wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE')
+  AND pg_catalog.has_function_privilege('bthwani_wlt_command','wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE')
+  AND NOT EXISTS(SELECT 1 FROM routines WHERE pg_catalog.has_function_privilege('bthwani_wlt_command',oid,'EXECUTE WITH GRANT OPTION'))
+  AND $archiveChecks
+THEN 'PASS' ELSE 'FAIL' END;
+"@
+    return Invoke-ProofSql $wltDb $sql
+  }
   # Wrong database and incompatible retained columns must leave the source
   # exactly as it was. The temporary change is exclusively in our fixture.
   Invoke-BaselineTransition 'dsh' $db $schema 'bthwani_recovery_dsh_000000000001' $false
@@ -407,30 +460,40 @@ GRANT UPDATE(revoked_at) ON $identitySchema.auth_sessions TO bthwani_identity_ru
   $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_command LOGIN;'
   Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000005' $false 'owner baseline scope or exclusive writer not proven'
   $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_command NOLOGIN;'
+  # A missing command principal is created only by the guarded transaction.
+  $null = Invoke-ProofSql $wltDb 'DROP OWNED BY bthwani_wlt_command; DROP ROLE bthwani_wlt_command;'
   Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000001'
-  $agreementProof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT review_state FROM wlt.latest_commercial_agreement_reviews WHERE store_id='fixture-store')='REVIEW_APPROVED_PENDING_ACTIVATION' AND (SELECT count(*) FROM wlt.store_commercial_agreement_decisions)=2 AND NOT has_schema_privilege('bthwani_wlt_command','bthwani_recovery_wlt_000000000001','USAGE') AND has_function_privilege('bthwani_wlt_command','wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE') THEN 'PASS' ELSE 'FAIL' END;"
-  if ($agreementProof -cne 'PASS') { throw 'WLT agreement transition state or command ACL failed' }
+  $agreementProof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT review_state FROM wlt.latest_commercial_agreement_reviews WHERE store_id='fixture-store')='REVIEW_APPROVED_PENDING_ACTIVATION' AND (SELECT count(*) FROM wlt.store_commercial_agreement_decisions)=2 THEN 'PASS' ELSE 'FAIL' END;"
+  if ($agreementProof -cne 'PASS') { throw 'WLT agreement transition state failed' }
+  $commandProof = Get-WltCommandAclProof -Archives @('bthwani_recovery_wlt_000000000001')
+  if ($commandProof -cne 'PASS') { throw 'WLT dormant command role creation or exact ACL failed' }
   $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND (SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id='$testCustomer')=0 AND NOT has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT') AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE') AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000001','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
   if ($proof -cne 'PASS') { throw 'WLT baseline transition ledger or reader boundary failed' }
   # Reproduce retired reservation names in a disposable fixture, without
   # relying on historical Git objects in shallow CI checkouts.
   $legacyRename = 'ALTER TABLE wlt.order_payment_allocations RENAME TO order_wallet_reservations; ALTER TABLE wlt.order_payment_releases RENAME TO order_wallet_releases;'
   $null = Invoke-ProofSql $wltDb $legacyRename
+  # A stale column grant on the dormant role is normalized to the exact source ACL.
+  $null = Invoke-ProofSql $wltDb 'GRANT SELECT (decision) ON wlt.store_commercial_agreement_decisions TO bthwani_wlt_command;'
   Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000002'
   $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN to_regclass('wlt.order_wallet_reservations') IS NULL AND to_regclass('wlt.order_wallet_releases') IS NULL AND (SELECT count(*) FROM bthwani_recovery_wlt_000000000002.order_wallet_reservations)=0 AND (SELECT count(*) FROM bthwani_recovery_wlt_000000000002.order_wallet_releases)=0 AND (SELECT count(*) FROM wlt.order_payment_allocations)=0 AND (SELECT count(*) FROM wlt.order_payment_releases)=0 AND (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000002','USAGE') AND NOT has_schema_privilege('bthwani_wlt_sandbox','bthwani_recovery_wlt_000000000002','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
   if ($proof -cne 'PASS') { throw 'WLT empty historical table retirement readback failed' }
+  $staleAclProof = Get-WltCommandAclProof -Archives @('bthwani_recovery_wlt_000000000001','bthwani_recovery_wlt_000000000002')
+  if ($staleAclProof -cne 'PASS') { throw 'WLT stale command grant was not normalized' }
   # A populated historical table must prevent transition, even if its
   # replacement exists. This is an isolated fixture, not a real checkout.
   $null = Invoke-ProofSql $wltDb "SET ROLE bthwani_wlt_owner; INSERT INTO wlt.order_payment_allocations(checkout_id,actor_id,store_id,quote_digest,method,total_yer,wallet_yer) VALUES('fixture-old-checkout','synthetic-retained','store-a',repeat('a',64),'MIXED',20,10); RESET ROLE; $legacyRename"
   $legacyOid = Invoke-ProofSql $wltDb "SELECT oid::text FROM pg_namespace WHERE nspname='wlt';"
+  # Role creation is part of the transition transaction: a retained-data refusal must roll it back.
+  $null = Invoke-ProofSql $wltDb 'DROP OWNED BY bthwani_wlt_command; DROP ROLE bthwani_wlt_command;'
   Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000003' $false 'retired relation has retained data: order_wallet_reservations'
-  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT oid::text FROM pg_namespace WHERE nspname='wlt')='$legacyOid' AND to_regnamespace('bthwani_recovery_wlt_000000000003') IS NULL AND (SELECT count(*) FROM wlt.order_wallet_reservations WHERE checkout_id='fixture-old-checkout' AND wallet_yer=10)=1 AND has_schema_privilege('bthwani_wlt_reader','wlt','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
-  if ($proof -cne 'PASS') { throw 'WLT retained legacy reservation did not roll back' }
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT oid::text FROM pg_namespace WHERE nspname='wlt')='$legacyOid' AND to_regnamespace('bthwani_recovery_wlt_000000000003') IS NULL AND (SELECT count(*) FROM wlt.order_wallet_reservations WHERE checkout_id='fixture-old-checkout' AND wallet_yer=10)=1 AND has_schema_privilege('bthwani_wlt_reader','wlt','USAGE') AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='bthwani_wlt_command') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT retained reservation refusal did not roll back schema and role creation' }
   $null = Invoke-ProofSql $wltDb "SET ROLE bthwani_wlt_owner; INSERT INTO wlt.order_wallet_releases(checkout_id,operation_id,reason) VALUES('fixture-old-checkout','fixture-old-release','synthetic cancellation');"
   Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000004' $false 'retired relation has retained data: order_wallet_releases'
-  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT oid::text FROM pg_namespace WHERE nspname='wlt')='$legacyOid' AND to_regnamespace('bthwani_recovery_wlt_000000000004') IS NULL AND (SELECT count(*) FROM wlt.order_wallet_releases WHERE checkout_id='fixture-old-checkout' AND operation_id='fixture-old-release')=1 AND (SELECT count(*) FROM wlt.order_wallet_reservations WHERE checkout_id='fixture-old-checkout')=1 THEN 'PASS' ELSE 'FAIL' END;"
-  if ($proof -cne 'PASS') { throw 'WLT retained legacy release did not roll back' }
-  Write-Output 'PG_BASELINE_TRANSITION_WLT=PASS immutable-ledger reversal-parity reader-denied net=0 empty-legacy-archive=yes nonempty-legacy-rollback=yes'
+  $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT oid::text FROM pg_namespace WHERE nspname='wlt')='$legacyOid' AND to_regnamespace('bthwani_recovery_wlt_000000000004') IS NULL AND (SELECT count(*) FROM wlt.order_wallet_releases WHERE checkout_id='fixture-old-checkout' AND operation_id='fixture-old-release')=1 AND (SELECT count(*) FROM wlt.order_wallet_reservations WHERE checkout_id='fixture-old-checkout')=1 AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='bthwani_wlt_command') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($proof -cne 'PASS') { throw 'WLT retained release refusal did not roll back schema and role creation' }
+  Write-Output 'PG_BASELINE_TRANSITION_WLT=PASS missing-command-role-created=yes exact-command-acl=yes stale-command-acl-normalized=yes role-create-rollback=yes immutable-ledger=yes reversal-parity=yes reader-denied=yes net=0 empty-legacy-archive=yes nonempty-legacy-rollback=yes'
 
   Write-Output 'PG_ISOLATION=PASS network=none no-host-ports tmpfs-only'
 } finally {

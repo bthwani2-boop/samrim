@@ -201,6 +201,10 @@ test("canonical database scope rejects shared, foreign or privileged principals"
     assert.throws(()=>parseReconcileArgs([mode]),/Usage/);
   assert.equal(parseReconcileArgs(["--apply-preview","--prepare-baseline"]).prepare,true);
   assert.equal(parseReconcileArgs(["--recover-attempt","a".repeat(64)]).recover,true);
+  const automaticRecovery=parseReconcileArgs(["--recover-safe","a".repeat(64)]);
+  assert.equal(automaticRecovery.recover,true);
+  assert.equal(automaticRecovery.apply,false);
+  assert.throws(()=>parseReconcileArgs(["--recover-safe","wrong"]),/exact reviewed runtime attempt key/);
   assert.equal(parseReconcileArgs(["--build-only","dsh"]).build,true);
   assert.throws(()=>parseReconcileArgs(["--check","--prepare-baseline"]),/explicit isolated apply/);
 });
@@ -226,6 +230,23 @@ test("baseline transition is owner-local, transactional and never disables trigg
   assert.doesNotMatch(sql,/DISABLE TRIGGER|session_replication_role|DROP SCHEMA/);
   assert.match(sql,/COMMIT;\nSELECT 'OWNER_BASELINE_TRANSITION_PASS';$/);
   assert.throws(()=>buildOwnerBaselineTransition("dsh","dsh_test_agent01","bthwani_recovery_dsh_abcdef123456",["SELECT '__SCHEMA__'; $bthwani_baseline$"]),/Reserved/);
+});
+
+test("WLT transition atomically provisions only the dormant command principal and exact command ACL",async()=>{
+  const {buildOwnerBaselineTransition,wltCommandRoleInactiveSQL}=await import("../../tools/dev/docker/owner-baseline-transition.mjs");
+  assert.match(wltCommandRoleInactiveSQL,/NOT EXISTS/);
+  assert.match(wltCommandRoleInactiveSQL,/rolcanlogin/);
+  assert.match(wltCommandRoleInactiveSQL,/pg_auth_members/);
+  const sql=buildOwnerBaselineTransition("wlt","wlt","bthwani_recovery_wlt_abcdef123456");
+  const create=sql.indexOf("CREATE ROLE bthwani_wlt_command NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS");
+  const owner=sql.indexOf("SET LOCAL ROLE bthwani_wlt_owner");
+  assert.ok(create>=0 && create<owner,"the no-login role must be created by the transaction administrator before owner-scoped DDL");
+  assert.match(sql,/has_table_privilege\('bthwani_wlt_command','wlt\.latest_commercial_agreement_reviews','SELECT'\)/);
+  assert.match(sql,/has_function_privilege\('bthwani_wlt_command',\s*'wlt\.append_commercial_agreement_proposal\(/);
+  assert.match(sql,/has_function_privilege\('bthwani_wlt_command',\s*'wlt\.record_commercial_agreement_decision\(/);
+  assert.match(sql,/NOT\s+(?:pg_catalog\.)?has_database_privilege\('bthwani_wlt_command',current_database\(\),'CONNECT,CREATE,TEMP'\)/);
+  assert.match(sql,/NOT EXISTS\s*\(\s*SELECT 1 FROM pg_catalog\.pg_auth_members[\s\S]*?member=[\s\S]*?roleid=/);
+  assert.doesNotMatch(sql,/CREATE ROLE bthwani_wlt_command LOGIN/);
 });
 
 test("native Compose replaces the separate owner-image builder scripts", async () => {
