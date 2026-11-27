@@ -7,7 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useStoreCart } from "../cart/use-store-cart";
 import StoreProducts, { StoreCartBar } from "../catalog/store-products";
 import FavoriteStores from "../discovery/favorite-stores";
-import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
+import { capturePublicSearchDraft, INVALID_PUBLIC_SEARCH_MESSAGE, readPublicSearch, readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
@@ -84,10 +84,11 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         setState((v) => v.scope !== scope ? v : recoverPublicStoreDetail(v, error));
     }
   };
+  const admittedDraft = readPublicSearch(draft);
   const submitSearch = () => {
-    const next = draft.trim();
-    setSearch({ storeId: id, draft, query: next });
-    if (next === query) setRetry(value => value + 1);
+    if (admittedDraft === null) return;
+    setSearch({ storeId: id, draft, query: admittedDraft });
+    if (admittedDraft === query) setRetry(value => value + 1);
   };
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
@@ -96,12 +97,13 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
           style={{ color: theme.interactiveText }}>العودة للمتاجر</Link>
         {!visible.error ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
           <TextInput testID="offers-search" accessibilityLabel="البحث في عروض المتجر" placeholder="ابحث في عروض هذا المتجر"
-            placeholderTextColor={theme.colorSecondary} value={draft} returnKeyType="search" maxLength={160}
-            onChangeText={value => setSearch({ storeId: id, draft: Array.from(value).slice(0, 80).join(""), query })}
+            placeholderTextColor={theme.colorSecondary} value={draft} returnKeyType="search"
+            onChangeText={value => setSearch({ storeId: id, draft: capturePublicSearchDraft(value), query })}
             onSubmitEditing={submitSearch}
             style={{ ...textStyle, flexGrow: 1, minWidth: 160, minHeight: 44, padding: 10,
               borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }} />
           <Pressable accessibilityRole="button" accessibilityLabel="تنفيذ البحث في عروض المتجر" onPress={submitSearch}
+            disabled={admittedDraft === null} accessibilityState={{ disabled: admittedDraft === null }}
             style={{ minHeight: 44, padding: 12, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
             <Text style={{ color: theme.interactiveText }}>بحث</Text>
           </Pressable>
@@ -111,6 +113,8 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
             <Text style={{ color: theme.interactiveText }}>مسح البحث</Text>
           </Pressable> : null}
         </View> : null}
+        {!visible.error && admittedDraft === null ? <Text testID="offers-search-error" accessibilityRole="alert"
+          style={{ ...textStyle, color: theme.dangerText }}>{INVALID_PUBLIC_SEARCH_MESSAGE}</Text> : null}
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتجر" color={theme.actionBackground} /> : null}
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>

@@ -343,3 +343,20 @@ test("duplicate Offer continuation cannot cancel the current page or reuse its c
   third.resolve({ items: [offer("third")], revision: 1 }); await current;
   assert.deepEqual(products(app.render()).map(item => item.id), ["first", "second", "third"]);
 });
+
+test("Offer search applies owner whitespace semantics and rejects malformed input without replacing the active result", async () => {
+  const app = harness();
+  await open(app);
+  submit(app, "\u0085دقيق\u0085");
+  app.read("store").resolve(store("store-a"));
+  const search = app.read();
+  assert.equal(search.query, "دقيق");
+  search.resolve({ items: [], revision: 1 });
+  await settle();
+  const rejected = submit(app, "\ud800");
+  assert.ok(byId(rejected, "offers-search-error"));
+  assert.equal(search.signal.aborted, false);
+  submit(app, "\ufeffدقيق");
+  app.read("store");
+  assert.equal(app.read().query, "\ufeffدقيق");
+});

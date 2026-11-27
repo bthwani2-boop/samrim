@@ -5,7 +5,7 @@ import * as React from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import ServiceCityScope from "../location/service-city-scope";
-import { readStoreBrowseScope, STORE_SEARCH_LIMIT, serviceCityLabel } from "../location/serviceability";
+import { capturePublicSearchDraft, INVALID_PUBLIC_SEARCH_MESSAGE, readPublicSearch, readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
 
@@ -21,7 +21,7 @@ function requiresFreshPage(code?: string) {
 function message(code?: string) {
   if (requiresFreshPage(code)) return "تغيّرت البيانات. أعد تحميل المتاجر.";
   if (code === "DSH_ENDPOINT_NOT_CONFIGURED") return "خدمة المتاجر غير متاحة حاليًا.";
-  if (code === "INVALID_SEARCH") return "عبارة البحث غير صالحة. استخدم ٨٠ حرفًا أو أقل.";
+  if (code === "INVALID_SEARCH") return INVALID_PUBLIC_SEARCH_MESSAGE;
   return "تعذّر تحميل المتاجر. تحقّق من الاتصال وحاول مجددًا.";
 }
 type Props = Readonly<{ variant?: "home" | "directory" }>;
@@ -183,7 +183,10 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   const headerAction = { ...buttonStyle, justifyContent: "center",
     alignItems: "center", backgroundColor: theme.surface } as const;
   const browseParams = { city: cityId, ...(query ? { q: query } : {}), ...(vertical ? { vertical } : {}) };
-  const submitSearch = () => setQuery(draftQuery.trim());
+  const admittedDraft = readPublicSearch(draftQuery);
+  const submitSearch = () => {
+    if (admittedDraft !== null) setQuery(admittedDraft);
+  };
   const refresh = () => {
     if (renderedGeneration !== generation.current || renderedVerticalGeneration !== verticalGeneration.current) return;
     generation.current++;
@@ -246,17 +249,22 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
               setShowCityPicker(false);
             }} /> : null}
           {showSearch ? (
-            <View style={{ flexDirection: "row", gap: 8 }}>
-              <TextInput testID="stores-search" accessibilityLabel="البحث باسم المتجر" placeholder="ابحث باسم المتجر"
-                placeholderTextColor={theme.colorSecondary} value={draftQuery}
-                autoFocus={variant === "home" && !initial.q}
-                onChangeText={value => setDraftQuery(Array.from(value).slice(0, STORE_SEARCH_LIMIT).join(""))}
-                returnKeyType="search" onSubmitEditing={submitSearch}
-                style={{ ...buttonStyle, flex: 1, minWidth: 0, color: theme.color }} />
-              <Pressable accessibilityRole="button" onPress={submitSearch}
-                style={{ ...buttonStyle, justifyContent: "center", backgroundColor: theme.actionBackground }}>
-                <Text style={{ color: theme.onAction, fontWeight: "700" }}>عرض النتائج</Text>
-              </Pressable>
+            <View style={{ gap: 6 }}>
+              <View style={{ flexDirection: "row", gap: 8 }}>
+                <TextInput testID="stores-search" accessibilityLabel="البحث باسم المتجر" placeholder="ابحث باسم المتجر"
+                  placeholderTextColor={theme.colorSecondary} value={draftQuery}
+                  autoFocus={variant === "home" && !initial.q}
+                  onChangeText={value => setDraftQuery(capturePublicSearchDraft(value))}
+                  returnKeyType="search" onSubmitEditing={submitSearch}
+                  style={{ ...buttonStyle, flex: 1, minWidth: 0, color: theme.color }} />
+                <Pressable accessibilityRole="button" onPress={submitSearch}
+                  disabled={admittedDraft === null} accessibilityState={{ disabled: admittedDraft === null }}
+                  style={{ ...buttonStyle, justifyContent: "center", backgroundColor: theme.actionBackground }}>
+                  <Text style={{ color: theme.onAction, fontWeight: "700" }}>عرض النتائج</Text>
+                </Pressable>
+              </View>
+              {admittedDraft === null ? <Text testID="stores-search-error" accessibilityRole="alert"
+                style={{ ...textStyle, color: theme.dangerText }}>{INVALID_PUBLIC_SEARCH_MESSAGE}</Text> : null}
             </View>
           ) : null}
           <View style={{ gap: 6 }}>

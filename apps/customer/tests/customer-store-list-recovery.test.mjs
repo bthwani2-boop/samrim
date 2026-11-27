@@ -557,3 +557,27 @@ test("refresh supersedes both active continuations and ignores their late respon
   assert.equal(byId(view, "store-late"), undefined);
   assert.equal(byId(view, "vertical-option-pharmacy"), undefined);
 });
+
+test("Store search uses owner whitespace semantics and rejects malformed draft without dispatch", async () => {
+  const app = harness();
+  app.render();
+  const initial = app.read();
+  initial.resolve({ items: [], revision: 1 });
+  await settle();
+  byId(app.render(), "stores-search").props.onChangeText("\u0085مخبز\u0085");
+  byId(app.render(), "stores-search").props.onSubmitEditing();
+  app.render();
+  const search = app.read();
+  assert.equal(search.query, "مخبز");
+  search.resolve({ items: [], revision: 1 });
+  await settle();
+  byId(app.render(), "stores-search").props.onChangeText("bad\u0000query");
+  byId(app.render(), "stores-search").props.onSubmitEditing();
+  const rejected = app.render();
+  assert.ok(byId(rejected, "stores-search-error"));
+  assert.equal(search.signal.aborted, false);
+  byId(app.render(), "stores-search").props.onChangeText("\ufeffمخبز");
+  byId(app.render(), "stores-search").props.onSubmitEditing();
+  app.render();
+  assert.equal(app.read().query, "\ufeffمخبز");
+});
