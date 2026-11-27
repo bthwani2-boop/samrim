@@ -8,6 +8,7 @@ import type { MerchantDSHStanding } from "../access/dsh-standing";
 import MerchantPrivateCatalog from "../catalog/merchant-private-catalog";
 import EmployeesScreen from "../employees/employees-screen";
 import WalletScreen from "../finance/wallet-screen";
+import InsightsScreen from "../insights/insights-screen";
 import MerchantStoreRegistration from "../onboarding/merchant-store-registration";
 import MerchantStoreDirectory from "./merchant-store-directory";
 import {
@@ -308,6 +309,8 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
               )}
               {staffStore ? <EmployeesScreen key={JSON.stringify([actorId, staffStore.id])} actorId={actorId} storeId={staffStore.id} /> : null}
             </View>
+          ) : section === "insights" ? (
+            <InsightsScreen key={actorId} actorId={actorId} stores={stores} />
           ) : section === "wallet" ? (
             <WalletScreen key={actorId} actorId={actorId} stores={stores} />
           ) : section === "account" ? (

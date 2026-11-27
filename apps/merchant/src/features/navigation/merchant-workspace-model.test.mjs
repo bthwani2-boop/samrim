@@ -14,7 +14,7 @@ import {
 
 test("Merchant workspace has unique functional navigation targets on desktop and mobile", () => {
   const ids = merchantNavigation.map(item => item.id);
-  assert.deepEqual(ids, ["home", "stores", "orders", "products", "inventory", "staff", "wallet", "account", "more"]);
+  assert.deepEqual(ids, ["home", "stores", "orders", "products", "inventory", "staff", "insights", "wallet", "account", "more"]);
   assert.equal(new Set(ids).size, ids.length);
   for (const section of merchantMobileSections) {
     assert.ok(ids.includes(section), `mobile section ${section} must also exist on desktop`);
@@ -86,6 +86,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       "../finance/commercial-agreement": { __esModule: true, default: "CommercialAgreement" },
       "../employees/employees-screen": { __esModule: true, default: "Employees" },
       "../finance/wallet-screen": { __esModule: true, default: "Wallet" },
+      "../insights/insights-screen": { __esModule: true, default: "Insights" },
       "./merchant-workspace-model": { filterMerchantStores, merchantNavigation, merchantMobileSections, merchantStoreSummary },
     };
     const load = code => {
@@ -127,6 +128,10 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       click("الرئيسية");
       click("الطلبات");
       assert.ok(render().some(n => n.props?.testID === "merchant-section-unavailable"));
+      click("الرئيسية");
+      if (!wide) click("المزيد");
+      click("التقارير");
+      assert.deepEqual(render().find(n => n.type === "Insights")?.props, { actorId: "merchant-a", stores });
       click("الرئيسية");
       click("المحفظة");
       assert.equal(render().find(n => n.type === "Wallet")?.props.actorId, "merchant-a");
