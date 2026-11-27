@@ -135,3 +135,55 @@ test("only one inactive versioned draft can be selected; duplicate and active id
   assert.equal(result[1].match.count,2);
   assert.equal(rows[0].editableDraft,undefined);
 });
+
+test("CSV cancellation does not await uncooperative local file cleanup", async () => {
+  const controller = new AbortController();
+  let cancelled = 0;
+  const stream = new ReadableStream({ cancel() { cancelled++; return new Promise(() => {}); } });
+  const result = readCatalogCsv({ size: 10, stream: () => stream }, controller.signal);
+  controller.abort();
+  let timer;
+  try {
+    await assert.rejects(Promise.race([
+      result,
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("cleanup stalled")), 100); }),
+    ]), /abort/i);
+    assert.equal(cancelled, 1);
+    assert.equal(stream.locked, false);
+  } finally { clearTimeout(timer); }
+});
+
+test("CSV overflow rejects without waiting for cancellation and permits the next file", async () => {
+  const signal = new AbortController().signal;
+  let cancelled = 0;
+  const stream = new ReadableStream({
+    start(c) { c.enqueue(Uint8Array.of(1, 2)); },
+    cancel() { cancelled++; return new Promise(() => {}); },
+  });
+  let timer;
+  try {
+    await assert.rejects(Promise.race([
+      readCatalogCsv({ size: 1, stream: () => stream }, signal),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("cleanup stalled")), 100); }),
+    ]), /CSV_LIMIT/);
+    assert.equal(cancelled, 1);
+    assert.equal(stream.locked, false);
+    assert.equal((await readCatalogCsv(new Blob(["abc"]), signal)).source, "abc");
+  } finally { clearTimeout(timer); }
+});
+
+test("CSV cleanup rejection preserves the original error and releases the stream", async () => {
+  const signal = new AbortController().signal;
+  const stream = new ReadableStream({
+    start(c) { c.enqueue(Uint8Array.of(1, 2)); },
+    cancel() { throw new Error("local cleanup failed"); },
+  });
+  await assert.rejects(readCatalogCsv({ size: 1, stream: () => stream }, signal), /CSV_LIMIT/);
+  assert.equal(stream.locked, false);
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(readCatalogCsv({ size: 1, stream() { assert.fail("aborted read"); } }, controller.signal), /abort/i);
+  for (const size of [0, -1, 1.5, NaN]) {
+    await assert.rejects(readCatalogCsv({ size, stream() { assert.fail("invalid size read"); } }, signal), /CSV_LIMIT/);
+  }
+});
