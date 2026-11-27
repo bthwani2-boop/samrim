@@ -1,8 +1,8 @@
 # Implementation Plan — Store Orderability
 
 **Source of truth**: `governance/stores.md` and `governance/journeys.md`; Spec Kit is derived work guidance only.
-**Branch**: `refoundation/clean-house-20261112`.
-**Collision avoidance**: Session 01 owns `CUSTOMER_STORE_CATALOG` including DSH discovery, current Store bootstrap migration, customer discovery views, and shared Go manifest. Session 02 owns `internal/storeavailability`, its subsequent migration and Merchant/Operator surfaces. Shared OpenAPI root, Store contract, Go manifest, app entrypoints and Git index require sequential peer coordination.
+**Historical creation branch**: `refoundation/clean-house-20261112`; resolve live authorized checkout per [AGENTS.md](../../AGENTS.md).
+**Ownership and collaboration**: Discover actual current DSH discovery, Store availability, owner SQL, shared contracts and application writers before editing. Isolate real conflicts only; coordinate shared resources under [AGENTS.md, section 5](../../AGENTS.md#5-execution-and-concurrency), without fixed historical session assignments.
 
 ## Implementation path
 
@@ -11,7 +11,7 @@
 3. Add a forward-only DSH migration for the operational facts referencing the **same** DSH Stores from session 01, with per-Store schedule and method eligibility independent, version and operation-ID audit; review the existing `operational_state` overlap before modifying or applying shared SQL.
 4. Integrate a single DSH API and OpenAPI/client contract with actual Identity verified sessions and store-scope checks, typed stable error responses, idempotent updates and reconciliation reads. No parallel owner or UI-side mutation authority.
 5. Add Merchant/Operator editing and Customer safe readback using existing Expo/Tamagui and Next/Ant Design source; verify RTL and delayed response invalidation.
-6. Verify synthetic isolated owner-backed PostgreSQL and networked multi-actor Web/Android journeys, fail, retry and race; only then commit with exclusive `tools/dev/git-turn.mjs` and authorized Push.
+6. Verify synthetic isolated owner-backed PostgreSQL and networked multi-actor Web/Android positive, failure, retry and race behavior as applicable. Deliver each complete tested owned foundation immediately using [AGENTS.md, section 7](../../AGENTS.md#7-git-delivery); full journey acceptance remains separate.
 7. Complete applicable executor technical and engineering/security assessment under [AGENTS.md](../../AGENTS.md), preserving required human business approvals and checks tied to the exact final SHA; production remains BLOCKED.
 
 ## Owner-backed city limits slice (2026-11-15)

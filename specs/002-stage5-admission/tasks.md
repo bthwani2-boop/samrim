@@ -8,7 +8,7 @@
 
 - [x] T001 [US2] Verify pinned `specify 1.3.0`, `specify check`, `specify workflow list` and the official no-branch/no-persist feature generation path; preserve current refoundation branch and no `.specify/feature.json` changes.
 - [x] T002 [US2] Verify final `spec.md` + `plan.md` + `tasks.md` with `.specify/scripts/powershell/check-prerequisites.ps1 -RequireSpec -RequireTasks -IncludeTasks -Json`, frozen after final content review.
-- [x] T003 [US2] Commit **only these three** `specs/002-stage5-admission/` files under exclusive GIT-TURN with no other author's staged content. Push needs separate explicit authorization and remote SHA readback if performed.
+- [x] T003 [US2] **Historical creation evidence (2026-11-14):** the three original feature artifacts were committed under the then-current exclusive delivery protocol. The protocol is retired; future delivery follows [AGENTS.md, section 7](../../AGENTS.md#7-git-delivery), not this historical task.
 
 ## Phase 2 — Human-approved Product semantics, not mere heading inventories
 

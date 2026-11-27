@@ -6,7 +6,7 @@ JOURNEY: MANAGED_PARTICIPANT_ADMISSION — prerequisite only, not full journey
 
 ## Constitution and authority
 
-Use `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, `governance/README.md`, `governance/identity.md` and the existing Codex/Spec Kit derived adapter. Never use the spec as a second permission law. Use the currently authorized active development branch only; historical archive branches remain read-only. The single Git-turn lock belongs to its current owner; no parallel Git writes.
+Use [AGENTS.md](../../AGENTS.md), `REPOSITORY-STRUCTURE.md`, `governance/README.md`, `governance/identity.md` and the existing derived Spec Kit adapter. This plan is not an authorization source. Resolve the live authorized checkout, preserve read-only archives, discover actual resource writers and deliver independent tested scopes under AGENTS.md sections 5 and 7. Do not wait for unrelated writers.
 
 ## Current owner implementation
 
@@ -25,7 +25,7 @@ Identity `services/identity/backend/internal/session` has one SHA-256 bearer par
 3. Strict OpenAPI parser and structural security guard, Go vet, formatting, exact toolchain and security checks, affected regression only.
 4. Documented executor critical security risk assessment under [AGENTS.md](../../AGENTS.md), full real identity-issued session, DSH Merchant/Operator permission path and real Web/Android acceptance are required **before** full journey CLOSED. CI/Sonar gates classified independently.
 
-Spec Kit 1.3.0 official CLI + existing project workflow/codex integration are inspected; full remote Codex SDD remains reserved to the shared-worktree Spec Kit coordinator while it holds Git turn. Never start a duplicate workflow, falsely claim Fast delivery, or bypass human review gates.
+Run the pinned native Spec Kit CLI and applicable SDD artifacts/checks directly under [AGENTS.md](../../AGENTS.md). Do not launch duplicate or unauthorized workers, infer Fast delivery, or bypass actual review/activation gates. Historical remote workflow reservations do not control present execution.
 
 ## Session-03 verified Customer → Merchant role (progressive isolated slice)
 The existing Customer bearer and canonical verified_at actor proof are necessary preconditions, never caller-supplied actor headers or the presence of a Merchant Store. A new additive 003 migration makes synthetic actors unverified by default; no public verification mutation is introduced. One Identity transaction locks actor/role/session, refuses existing roles even if disabled, creates Merchant standing, issues a single random 256-bit bearer digest-only with a short lifetime, and returns token only on success. Actual verified first-factor login and real Operator Passkey remain out of scope and cannot be certified by synthetic test data.

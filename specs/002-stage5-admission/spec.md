@@ -1,6 +1,6 @@
 # Feature Specification: Governed Admission to Commercial Implementation
 
-**Existing Git branch:** `refoundation/clean-house-20261112` — no feature Branch or Worktree was created.
+**Historical creation branch:** `refoundation/clean-house-20261112`; resolve the currently authorized checkout and branch under [AGENTS.md](../../AGENTS.md) before execution.
 **Spec Kit CLI:** pinned local `specify 1.3.0`, agent-neutral `none` integration.
 **Status:** DRAFT — DEVELOPMENT OPEN FOR EXISTING AND PROPOSED CAPABILITIES; journey/runtime acceptance remains NOT_RUN.
 **Semantic owners:** `governance/README.md` and its 14 listed owner documents; this specification is a derived acceptance workflow, not another policy writer.
@@ -26,7 +26,7 @@ An engineer can use the installed **official Spec Kit CLI and bundled PowerShell
 
 1. **Given** no feature context, **when** required Spec Kit prerequisites are checked, **then** validation fails rather than silently inventing a feature or moving branches.
 2. **Given** the feature directory and complete spec/plan/tasks, **when** prerequisites run with no persistence, **then** path and document checks pass and `.specify/feature.json` remains unchanged.
-3. **Given** a concurrent Git writer, **when** a feature is complete, **then** its exact files are staged, committed and pushed only under the exclusive Git-turn protocol and after unrelated staged changes have been cleared by their owner.
+3. **Given** concurrent independent work, **when** an owned foundation is complete and tested, **then** the executor delivers it directly under [AGENTS.md, sections 5 and 7](../../AGENTS.md#7-git-delivery), preserves unrelated staged/unstaged paths, verifies all outgoing commits and reads back the exact authorized fast-forward publication. A genuine conflict stops only its affected resource.
 
 ### US3 — First business slice can be engineered without guessing money or permissions (P1)
 
@@ -48,7 +48,7 @@ Without waiting for whole-platform governance cutover, a thin real owner-backed 
 - **FR-006:** Development is open for all existing and newly proposed capabilities. Adapt the old Stage-4-only verifier and isolate new owner runtime/SQL; no full governance cutover or per-capability vote is required to write relevant business code. A `READY` marker or document is **not** proof of a native binary, service or deployed system, and production remains blocked pending evidence and authority.
 - **FR-007:** During each journey, including newly proposed capability work, record caller role, legal owner, inputs, success, explicit errors, resource ID authorization, idempotency/unknown outcome and executable negative tests; use them to verify acceptance before closing its API/screen.
 - **FR-008:** Use pinned original toolchain, preserved Expo/EAS identities, native RTL/security constraints and one design-semantic source. Select mobile renderer/PG isolation by verified representative tests; untested iOS/Android/SQL paths remain labelled `NOT_RUN`.
-- **FR-009:** Use official Spec Kit 1.3.0 templates/scripts on the current authorized branch with `SPECIFY_FEATURE_NO_PERSIST=1`; do not use Codex CLI, create Branch/Worktree/PR, modify donor branch 41, or bypass another writer's Git-turn.
+- **FR-009:** Invoke the pinned official Spec Kit CLI and applicable no-persist workflow on the current authorized branch. Use `SPECIFY_FEATURE_NO_PERSIST=1`; preserve the archive, peer work and separate authorization for additional workers, branches, worktrees, PRs and deployments. Execution and delivery authority remain exclusively in [AGENTS.md](../../AGENTS.md).
 - **FR-010:** Do not overwrite protected databases, signer/provider keys, historical legal rights or production financial state to make the test pass.
 
 ## Failure and boundary cases
@@ -65,7 +65,7 @@ Without waiting for whole-platform governance cutover, a thin real owner-backed 
 ## Acceptance criteria (all must be satisfied for the specifically claimed stage)
 
 - **AC-01 Governance:** Each existing or new journey closes only after 100% of its applicable and traceable cross-surface criteria pass with owner/source evidence; full 14-owner semantic review remains necessary only to declare final `GOVERNANCE_CUTOVER: READY`, not to start development.
-- **AC-02 Developer workflow:** `specify check` and official no-persist feature prerequisite checks PASS; content-specific `spec.md/plan.md/tasks.md` exist and are not empty templates; branch 41 unchanged, no new branch/worktree and no foreign staged paths in own commit.
+- **AC-02 Developer workflow:** Native `specify check` and applicable official no-persist feature prerequisite checks pass; required artifacts are meaningful and owner-linked. Preserve the archive and peer index/worktree; demonstrate direct tested owned delivery under [AGENTS.md](../../AGENTS.md), not global cleanliness or an administrative release.
 - **AC-03 First service slice:** before claiming journey closure, owner contract, real service data, permission denial, failure recovery and owner-backed readback are demonstrated with tests; any native/DB/migration evidence is tied to exact SHA, versions and isolated test environment.
 - **AC-04 No false aggregation:** governance-ready, service-ready, finance-ready, mobile native-ready and release-ready remain separate PASS/BLOCKED/NOT_RUN states. No global 100% correctness claim.
 

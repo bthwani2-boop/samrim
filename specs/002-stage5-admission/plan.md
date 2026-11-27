@@ -1,6 +1,6 @@
 # Implementation Plan: Stage-5 Governance and Developer Admission
 
-**Worktree branch:** `refoundation/clean-house-20261112` (reused; **no feature branch created**)
+**Historical creation branch:** `refoundation/clean-house-20261112` (reused at creation); resolve the current authorized checkout under [AGENTS.md](../../AGENTS.md).
 **Spec:** [spec.md](spec.md) | **Status:** DRAFT / PROGRESSIVE_DEVELOPMENT_ENABLED / GLOBAL_GOVERNANCE_NOT_READY | **Date:** 2026-11-14
 
 ## Summary
@@ -20,7 +20,7 @@ Use the installed Spec Kit tooling as the workflow for a **bounded, executable r
 ## Constitution and ownership check
 
 1. **PASS (workflow source):** This plan does not create a new business owner, API/DTO catalog, service, SQL schema or policy.
-2. **PASS (branch authorization):** Continue on existing `refoundation/clean-house-20261112`; donor `41` read-only; Spec Kit official scripts run with `SPECIFY_FEATURE_NO_PERSIST=1`; no new branch/PR/worktree.
+2. **Historical branch evidence (2026-11-14):** Existing creation branch reused; donor read-only; official no-persist scripts used, no new branch/PR/worktree. Reverify actual current authority and branch before executing; this dated evidence is not standing approval.
 3. **IN_PROGRESS (full governance reconciliation, not a development stop):** `governance/README.md` is still `NOT_READY`. The human-approved 2026-11-13 policy targets must be reconciled with the significant donor source/acceptance gaps; do not present the cutover as already achieved.
 4. **NOT_RUN (business proof):** No new Go owner services, executable OpenAPI, fresh or upgrade SQL, authorization E2E, wallet/concurrency checks or signed native builds are yet proven by this feature. They are **separate** acceptance gates.
 
@@ -63,7 +63,7 @@ apps/control-panel/
 
 ## Delivery and gate criteria
 
-- Each owner uses a separate exclusive file scope. Shared index controlled with one `GIT-TURN` claim, check foreign staged changes, exact diff and UTF-8, test the slice and local Commit. Push is a distinct operation requiring explicit human authorization and subsequent SHA readback. Do not combine other agents' changes.
+- Use live [AGENTS.md, sections 5 and 7](../../AGENTS.md#7-git-delivery) for actual resource ownership, scoped native Git delivery, immutable SHA and authorized fast-forward publication. Deliver each complete tested foundation immediately; preserve peer changes and verify all outgoing commits and applicable CI. Do not impose a second delivery mechanism or wait for unrelated work.
 - Mark `PASS` only for executed checks on exact revision and environment, `REVIEW_BLOCKED` for missing material policy/assurance, `NOT_RUN` for unbuilt backend/native/SQL. Never update cutover or promote Stage5 silently.
 - No project-wide “100%” conclusion from the existence of this plan or a structural `pnpm check`.
 
