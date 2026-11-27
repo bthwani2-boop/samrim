@@ -8,6 +8,7 @@ import {test} from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import {GET,PATCH, PUT} from "../app/api/admission+api.ts";
+import * as merchantJSON from "../src/features/access/merchant-json.ts";
 import { buildImportManifest } from "../src/features/catalog/catalog-import-data.ts";
 
 const actorId="merchant-a",storeId="store-a",runId="run-0001",sourceSha256="a".repeat(64);
@@ -64,6 +65,7 @@ function importTransport(platform, withNativeMerchantSession) {
       "@bthwani/dsh": dsh,
       "react-native": { Platform: { OS: platform } },
       "../access/admission-transport": { withNativeMerchantSession },
+      "../access/merchant-json.ts": merchantJSON,
     });
     loadedModules.push(mod);
     return mod.exports.requestCatalogImport;
@@ -117,7 +119,7 @@ test("Web import transport binds the original run and validates every owner ackn
     { ...initial, total: 2 },
   ]) {
     reply = json({ catalogImport: wrong });
-    await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OWNER_RESPONSE_INVALID" });
+    await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OPERATION_RESULT_UNKNOWN" });
   }
   reply = json({ catalogImport: complete });
   await assert.rejects(request(actorId, storeId, runId, "GET", signal, undefined, 1), { code: "OWNER_RESPONSE_INVALID" });
@@ -130,7 +132,7 @@ test("Web import transport binds the original run and validates every owner ackn
   reply = json([], 503);
   await assert.rejects(request(actorId, storeId, runId, "GET", signal), { status: 503, code: "OWNER_UNAVAILABLE" });
   const aborted = new AbortController();
-  reply = { json: async () => { aborted.abort(); return { catalogImport: initial }; } };
+  reply = new Response(new ReadableStream({ pull() { aborted.abort(); } }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
   await assert.rejects(request(actorId, storeId, runId, "GET", aborted.signal), { name: "AbortError" });
 });
 
@@ -285,4 +287,56 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
     assert.ok(calls.every(c=>c.r===original));assert.equal(calls.filter(c=>c.m==="PUT").length,1);assert.equal(calls.filter(c=>c.m==="PATCH").length,1);
     remount();
   }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+
+test("Web import rejects oversized acknowledgements and preserves write uncertainty", async t => {
+  const request = importTransport("web", () => assert.fail("native credential"));
+  const signal = new AbortController().signal;
+  let reply = json({ catalogImport: initial });
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; return reply; });
+  let cancelled = 0;
+  reply = new Response(new ReadableStream({
+    start(c) { c.enqueue(new Uint8Array(65537)); c.close(); },
+    cancel() { cancelled++; },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(reply.body.locked, false);
+  reply = new Response(new ReadableStream({
+    cancel() { cancelled++; },
+  }), { headers: { "Content-Type": "application/json", "Content-Length": "999999", "Cache-Control": "no-store" } });
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal), { code: "OWNER_RESPONSE_INVALID" });
+  assert.equal(cancelled, 1);
+  assert.equal(reply.body.locked, false);
+  reply = json({ code: "OWNER_UNAVAILABLE" }, 503);
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  reply = json({ catalogImport: complete });
+  assert.deepEqual(await request(actorId, storeId, runId, "GET", signal), complete);
+  assert.equal(calls, 4);
+});
+
+test("Web import transport never treats missing or stale acknowledgement as a confirmed write", async t => {
+  const request = importTransport("web", () => assert.fail("native credential"));
+  const signal = new AbortController().signal;
+  let respond = async () => { throw new Error("network lost"); };
+  t.mock.method(globalThis, "fetch", () => respond());
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal), { code: "OWNER_NETWORK_UNAVAILABLE" });
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  respond = async () => new Response("not JSON", { status: 400 });
+  await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OPERATION_RESULT_UNKNOWN" });
+  respond = async () => json({ code: "FORBIDDEN" }, 403);
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", signal), { status: 403, code: "FORBIDDEN" });
+  let cancelled = 0;
+  const discarded = new ReadableStream({ cancel() { cancelled++; } });
+  respond = async () => new Response(discarded, { headers: { "Content-Type": "application/json" } });
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(cancelled, 1);
+  assert.equal(discarded.locked, false);
+  const abort = new AbortController();
+  const pending = new ReadableStream({ pull() { abort.abort(); } });
+  respond = async () => new Response(pending, { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", abort.signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(pending.locked, false);
+  respond = async () => json({ catalogImport: complete });
+  assert.deepEqual(await request(actorId, storeId, runId, "GET", signal), complete);
 });
