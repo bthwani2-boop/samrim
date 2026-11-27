@@ -104,7 +104,7 @@ test("Web directory verifies both sides, sends only bounded cursor and customer 
     assert.equal(r.redirect, "error");
     assert.equal(r.cache, "no-store");
     assert.equal(r.headers["X-Customer-Context"], actor);
-    assert.equal(r.signal, s);
+    assert.ok(r.signal instanceof AbortSignal); assert.notEqual(r.signal, s); assert.equal(r.signal.aborted, false);
   }
 });
 
@@ -141,7 +141,7 @@ test("Android directory uses real DSH client inside native verification and boun
   const s = signal();
   h.replies.push(json(page));
   assert.deepEqual(await h.api.readVerifiedCartDirectory(s, "store-a", actor), { value: page, expiresAt: h.expiresAt - 1000 });
-  assert.deepEqual(h.nativeCalls, [{ actor, signal: s }]);
+  assert.equal(h.nativeCalls.length, 1); assert.equal(h.nativeCalls[0].actor, actor); assert.ok(h.nativeCalls[0].signal instanceof AbortSignal); assert.notEqual(h.nativeCalls[0].signal, s);
   assert.equal(h.requests[0].url, `${origin}/v1/carts?after=store-a`);
   assert.equal(h.requests[0].headers.Authorization, `Bearer ${bearer}`);
   assert.equal(h.requests[0].credentials, "omit");
@@ -163,4 +163,74 @@ test("Android directory does not expose owner rows when native verification deni
   h.native("unavailable");
   await assert.rejects(h.api.readVerifiedCartDirectory(signal(), undefined, actor), failure(503, "DIRECTORY_REQUEST_REJECTED"));
   assert.equal(h.requests.length, 0);
+});
+
+test("directory abort settles stalled admission and never dispatches late", async t => {
+  const h = harness(t);
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  h.admissions.push(pending);
+  const controller = new AbortController();
+  const operation = h.api.readVerifiedCartDirectory(controller.signal);
+  const outcome = operation.then(() => "published", error => error.name);
+  controller.abort();
+  const observed = await Promise.race([outcome, new Promise(resolve => setTimeout(() => resolve("STALLED"), 100))]);
+  release(h.state());
+  await outcome;
+  assert.equal(observed, "AbortError");
+  assert.equal(h.requests.length, 0);
+});
+
+test("directory abort settles stalled Web headers and disposes a late response", async t => {
+  const h = harness(t);
+  let release;
+  const pending = new Promise(resolve => { release = resolve; });
+  h.replies.push(pending);
+  const controller = new AbortController();
+  const operation = h.api.readVerifiedCartDirectory(controller.signal);
+  const outcome = operation.then(() => "published", error => error.name);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.requests.length, 1);
+  controller.abort();
+  const observed = await Promise.race([outcome, new Promise(resolve => setTimeout(() => resolve("STALLED"), 100))]);
+  let cancelled = false;
+  release(new Response(new ReadableStream({ cancel() { cancelled = true; } }), {
+    headers: { "Cache-Control": "no-store", "Content-Type": "application/json" }
+  }));
+  await outcome;
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(observed, "AbortError");
+  assert.equal(cancelled, true);
+});
+
+test("directory deadline rejects stalled work and permits independent recovery", async t => {
+  const h = harness(t);
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let release;
+  h.admissions.push(new Promise(resolve => { release = resolve; }));
+  const operation = h.api.readVerifiedCartDirectory(signal());
+  const rejection = assert.rejects(operation, failure(503, "OWNER_UNAVAILABLE"));
+  t.mock.timers.tick(20000);
+  await rejection;
+  release(h.state());
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.requests.length, 0);
+  h.replies.push(json(page));
+  assert.equal((await h.api.readVerifiedCartDirectory(signal())).value.actorId, actor);
+});
+
+test("directory rejects an expired initial proof even if the later owner proof is current", async t => {
+  const h = harness(t);
+  const start = Date.now();
+  let now = start;
+  t.mock.method(Date, "now", () => now);
+  h.admissions.push(h.state(actor, start + 1000), h.state());
+  let release;
+  h.replies.push(new Promise(resolve => { release = resolve; }));
+  const operation = h.api.readVerifiedCartDirectory(signal());
+  const rejection = assert.rejects(operation, failure(401, "UNAUTHORIZED"));
+  await new Promise(resolve => setImmediate(resolve));
+  now = start + 1001;
+  release(json(page));
+  await rejection;
 });
