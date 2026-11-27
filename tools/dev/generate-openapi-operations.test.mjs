@@ -74,6 +74,8 @@ const retainedOperations = {
     ["listPublicStores", "GET", "/v1/public/stores"],
     ["listPublicVerticals", "GET", "/v1/public/verticals"],
     ["markOperatorCaptainInterestContacted", "PATCH", "/v1/operators/captain-interest/{id}/contact"],
+    ["readCurrentMerchantCatalogDraftHistory", "GET", "/v1/stores/{storeID}/catalog/{offerID}/draft-history"],
+    ["readCurrentMerchantInventorySummary", "GET", "/v1/stores/{storeID}/inventory-summary"],
     ["registerCompanyEmployee", "POST", "/v1/operators/employees"],
     ["registerMerchantStore", "POST", "/v1/stores"],
     ["replaceCityStoreOperationalPolicy", "PATCH", "/v1/operators/cities/{cityID}/store-availability-policy"],
@@ -83,8 +85,14 @@ const retainedOperations = {
     ["updateStoreOperationalAvailability", "PATCH", "/v1/stores/{storeID}/availability"],
   ],
   wlt: [
+    ["getCurrentCustomerOrderPaymentAllocation", "GET", "/v1/wallets/me/order-payment-allocations/{checkoutID}"],
     ["getCurrentCustomerWalletBalance", "GET", "/v1/wallets/me"],
+    ["getOperatorCommercialAgreementReview", "GET", "/v1/operators/stores/{storeID}/commercial-agreement"],
+    ["getOwnedMerchantCommercialAgreementReview", "GET", "/v1/merchants/stores/{storeID}/commercial-agreement"],
+    ["getWltDevelopmentHealth", "GET", "/health"],
     ["listCurrentCustomerWalletTransactions", "GET", "/v1/wallets/me/transactions"],
+    ["recordIsolatedFinanceAgreementDecision", "POST", "/v1/operators/stores/{storeID}/commercial-agreement/decisions"],
+    ["recordIsolatedMerchantAgreementDecision", "POST", "/v1/merchants/stores/{storeID}/commercial-agreement/decisions"],
   ],
 };
 const samplePaths = { identity: "/v1/sessions/current:", dsh: "/v1/stores/mine:", wlt: "/v1/wallets/me:" };
