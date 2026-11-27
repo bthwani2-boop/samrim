@@ -84,3 +84,17 @@ test("linked contract fragments cannot disappear from the owner inventory", t =>
   }
   assert.match(validate("identity", base).errors.join("\n"), /Linked owner contract entry/);
 }));
+
+test("malformed URI fragments cannot be truncated into valid owner references", () => fixture(base => {
+  const dir = ownerDir(base, "identity");
+  for (const [index, reference] of [
+    "identity.openapi.yaml#/info#unexpected",
+    "identity.openapi.yaml#/info~2",
+    "identity.openapi.yaml#/info%ZZ",
+  ].entries()) {
+    writeFileSync(path.join(dir, "probe-" + index + ".yaml"), "probe: { $ref: " + JSON.stringify(reference) + " }\n");
+  }
+  const result = validate("identity", base);
+  assert.equal(result.errors.filter(message => message.includes("invalid JSON pointer")).length, 3, result.errors.join("\n"));
+  assert.notEqual(result.normalizedContractFingerprint, "PASS");
+}));
