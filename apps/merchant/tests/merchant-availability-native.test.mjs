@@ -35,7 +35,7 @@ const json = (value, status = 200) => Response.json(value, { status, headers: { 
 
 function harness(t, { role = "merchant", initialBearer = bearer, marker = null, deletionFails = false,
   identityStatus = 200, dshStatus = 200, platform = "android", change, webReply, webMalformed = false,
-  inventory = false, inventoryReply, catalog = false, cacheable = false, onDSH = () => {}, onIdentity = () => {} } = {}) {
+  inventory = false, inventoryReply, catalog = false, cacheable = false, oversized = false, onDSH = () => {}, onIdentity = () => {} } = {}) {
   let stored = initialBearer;
   let pending = marker;
   // This suite exercises DSH Store authorization with an already-persisted,
@@ -62,6 +62,8 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
         });
       }
       if (webMalformed) return new Response("{", { status: 200, headers: { "Cache-Control": "no-store" } });
+      if (oversized) return new Response(JSON.stringify(webReply ?? { availability }) + " ".repeat(32769), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+      if (cacheable) return Response.json(webReply ?? { availability }, { headers: { "Cache-Control": "public" } });
       return json(webReply ?? (change
         ? { availability: { ...availability, version: change.expectedVersion + 1 }, replay: false }
         : { availability }), dshStatus);
@@ -153,7 +155,7 @@ const signal = () => new AbortController().signal;
 
 test("Native Merchant availability uses current private bearer with real owner-client validation", async t => {
   const h = harness(t);
-  assert.deepEqual(await h.transport.readMerchantAvailability("store-a", signal()), availability);
+  assert.deepEqual(await h.transport.readMerchantAvailability("store-a", signal(), "owner-a"), availability);
   assert.equal(h.calls.length, 2);
   assert.equal(h.current(), bearer);
 });
@@ -202,7 +204,7 @@ for (const stage of ["identity", "dsh"]) {
 test("Native abort and invalid Store ID cannot contact owners", async t => {
   const h = harness(t);
   const controller = new AbortController(); controller.abort();
-  await assert.rejects(h.transport.readMerchantAvailability("store-a", controller.signal), { code: "OWNER_RESPONSE_STALE" });
+  await assert.rejects(h.transport.readMerchantAvailability("store-a", controller.signal, "owner-a"), { code: "OWNER_RESPONSE_STALE" });
   await assert.rejects(h.transport.readMerchantAvailability("../store-a", signal()), { code: "STORE_ID_INVALID" });
   assert.equal(h.calls.length, 0);
 });
@@ -210,7 +212,7 @@ test("Native abort and invalid Store ID cannot contact owners", async t => {
 test("Native late DSH result after abort is not displayed as a current read", async t => {
   const controller = new AbortController();
   const h = harness(t, { onDSH: () => controller.abort() });
-  await assert.rejects(h.transport.readMerchantAvailability("store-a", controller.signal), { code: "OWNER_RESPONSE_STALE" });
+  await assert.rejects(h.transport.readMerchantAvailability("store-a", controller.signal, "owner-a"), { code: "OWNER_RESPONSE_STALE" });
 });
 
 test("Native owner outage keeps credentials for retry", async t => {
@@ -228,7 +230,7 @@ test("Native Identity outage fails before DSH and retains credentials for retry"
 
 test("Web availability transport returns the selected Store through the fixed same-origin BFF", async t => {
   const h = harness(t, { platform: "web" });
-  assert.deepEqual(await h.transport.readMerchantAvailability("store-a", signal()), availability);
+  assert.deepEqual(await h.transport.readMerchantAvailability("store-a", signal(), "owner-a"), availability);
   assert.equal(h.calls.length, 1);
   assert.equal(h.calls[0].options.method, "GET");
   assert.equal(h.calls[0].options.redirect, "error");
@@ -237,7 +239,7 @@ test("Web availability transport returns the selected Store through the fixed sa
 test("Web availability transport uses only the fixed same-origin BFF and rejects a late abort", async t => {
   const controller = new AbortController();
   const h = harness(t, { platform: "web", onDSH: () => controller.abort() });
-  await assert.rejects(h.transport.readMerchantAvailability("store-a", controller.signal), { code: "OWNER_RESPONSE_STALE" });
+  await assert.rejects(h.transport.readMerchantAvailability("store-a", controller.signal, "owner-a"), { code: "OWNER_RESPONSE_STALE" });
   assert.equal(h.calls.length, 1);
 });
 
@@ -446,4 +448,36 @@ test("Web filtered catalog rejects cacheable or inconsistent results", async t =
     await assert.rejects(h.transport.readMerchantCatalogPage("store-a", "owner-a", signal(),
       { limit: 20, status: "stockout" }), { code: "OWNER_RESPONSE_INVALID" });
   }
+});
+
+test("Web availability rejects invalid owner fields", async t => {
+  for (const webReply of [
+    { availability: { ...availability, privateGrant: "synthetic" } },
+    { availability: { ...availability, weekly: [{ weekday: 9, opens: 0, closes: 1 }] } },
+  ]) {
+    const h = harness(t, { platform: "web", webReply });
+    await assert.rejects(h.transport.readMerchantAvailability("store-a", signal(), "owner-a"), { code: "OWNER_RESPONSE_INVALID" });
+  }
+});
+
+test("Web availability cannot confirm an invalid receipt and does not retry", async t => {
+  const h = harness(t, { platform: "web", change, webReply: {
+    availability: { ...availability, version: 4, timezone: "Local" }, replay: false,
+  } });
+  await assert.rejects(h.transport.saveMerchantAvailability("store-a", "owner-a", change, signal()), { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(h.calls.length, 1);
+});
+
+test("Web availability rejects oversized, cacheable, and unbound reads without fallback", async t => {
+  for (const options of [{ oversized: true }, { cacheable: true }]) {
+    const h = harness(t, { platform: "web", ...options });
+    await assert.rejects(h.transport.readMerchantAvailability("store-a", signal(), "owner-a"), { code: "OWNER_RESPONSE_INVALID" });
+    assert.equal(h.calls.length, 1);
+  }
+  const h = harness(t, { platform: "web" });
+  await assert.rejects(h.transport.readMerchantAvailability("store-a", signal()), { code: "MERCHANT_CONTEXT_CHANGED" });
+  await assert.rejects(h.transport.saveMerchantAvailability("store-a", "owner-a", { ...change, operationId: 12345678 }, signal()), { code: "INVALID_OPERATIONAL_CHANGE" });
+  await assert.rejects(h.transport.saveMerchantAvailability("store-a", "owner-a", null, signal()), { code: "INVALID_OPERATIONAL_CHANGE" });
+  assert.equal(h.calls.length, 0);
+  assert.deepEqual(await h.transport.readMerchantAvailability("store-a", signal(), "owner-a"), availability);
 });

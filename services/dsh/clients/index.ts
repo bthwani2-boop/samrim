@@ -62,4 +62,4 @@ export { matchingPendingRegistration, parsePendingRegistration } from "./registr
 export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,
 } from "./store-availability.ts";
-export { getStoreOperationalAvailability, updateStoreOperationalAvailability } from "./store-availability.ts";
+export { confirmStoreOperationalResult, getStoreOperationalAvailability, parseStoreOperationalAvailability, updateStoreOperationalAvailability, validStoreOperationalChange } from "./store-availability.ts";
