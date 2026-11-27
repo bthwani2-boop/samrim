@@ -15,7 +15,7 @@ const reservation = join(coverage, ".lcov-running");
 const ownerFile = join(reservation, "owner.json");
 const pendingReport = join(reservation, "lcov.info");
 const maxReportBytes = 128 * 1024 * 1024;
-const nodeOptions = ["--experimental-transform-types", "--loader", "./packages/design-system/tools/ts-resolver.mjs"];
+const nodeOptions = ["--experimental-transform-types", "--import", "./packages/design-system/tools/ts-resolver.mjs"];
 const requiredSources = [
   "tools/mobile/verify-app-identity.mjs",
   "tools/mobile/define-bthwani-expo-app.cjs",
