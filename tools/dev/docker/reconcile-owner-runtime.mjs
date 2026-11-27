@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
-import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, recordRuntimePhase, runtimeAttemptPhase, runtimeReceiptStatus, runtimeTerminalStatus } from "../sync-lenovo-reconciliation.mjs";
+import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, recordRuntimePhase, runtimeAttemptPhase, runtimeFailureStatus, runtimeReceiptStatus, runtimeTerminalStatus, VerifiedRuntimeRollback } from "../sync-lenovo-reconciliation.mjs";
 import { reconcileComposeConfiguration } from "./compose-runtime-transition.mjs";
 import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope, wltCommandRoleInactiveSQL } from "./owner-baseline-transition.mjs";
 import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
@@ -268,7 +268,7 @@ function rebaseAndApply(owner,state,env,head,tag,targetId,ensureSource) {
       if(proof!==before+"|missing"||inspect(owner,false).Id!==old.Id||inspect(owner,false).State.Running)throw new Error("ROLLBACK_BLOCKED owner database state uncertain: "+owner);
       docker(["start",old.Id],{},45000);
       if(!inspect(owner,false).State.Running || inspect(owner,false).Id!==old.Id)throw new Error("ROLLBACK_READBACK_FAILED "+owner);
-      throw new Error("ROLLBACK_PASS "+owner+" incompatible owner baseline; original writer restored");
+      throw new VerifiedRuntimeRollback("ROLLBACK_PASS "+owner+" incompatible owner baseline; original writer restored");
     }
     throw new Error("ROLLBACK_BLOCKED owner stop outcome not proven: "+owner);
   }
@@ -702,7 +702,7 @@ function main() {
         if(now.Image!==state[o].Image||now.Config.Labels["com.docker.compose.config-hash"]!==priorHashes[o])throw new Error("ROLLBACK_READBACK_FAILED "+o);
       }
       verifyPeers();
-      throw new Error("ROLLBACK_PASS "+names.join(",")+" after failed replacement: "+e.message);
+      throw new VerifiedRuntimeRollback("ROLLBACK_PASS "+names.join(",")+" after failed replacement: "+e.message);
     }
     markAutomaticPhase("ready");
     for(const o of names){state[o]=updated[o];env[owners[o].tag]=tags[o];}
@@ -719,12 +719,12 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     const status=main();
     settleAutomaticAttempt(status);
   } catch (error) {
-    // A proven stable boundary or verified rollback can settle. Every other
-    // interrupted mutation remains held; a missing pipe cannot imply success.
+    // Reuse the single owner outcome policy; an unsuccessful ready attempt
+    // requires read-only review, and uncertain mutations retain their hold.
     if(activeAttempt){
       const {stateFile,receiptFile,key,attempt}=activeAttempt;
       const phase=runtimeAttemptPhase(stateFile,receiptFile,key,attempt);
-      const status=phase==="ready"?"retry":phase==="mutating"&&error.message.startsWith("ROLLBACK_PASS ")?"blocked":null;
+      const status=runtimeFailureStatus(phase,error);
       if(status){
         try{settleAutomaticAttempt(status);}
         catch{console.error("RUNTIME_RECEIPT_WRITE_FAILED");}

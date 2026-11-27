@@ -1075,17 +1075,37 @@ test("stable owner source audits without acquiring apply authority; drift requir
   assert.equal(runtimePollAction({...state,last:{key:"same",status:"blocked"}}),null);
   const result=(selected,terminal="PARTIAL",sha=head)=>"SELECTED="+selected+" HEAD="+sha+" CAPTAIN_ADMISSION=true\nRECONCILE_"+terminal+" HEAD="+sha+"\n";
   const audit=(code,output,signal=null,eligible=["dsh","identity","wlt"])=>runtimeAuditResult(code,signal,output,head,eligible);
-  assert.equal(audit(0,result("NONE","PASS")),"pass");
-  assert.equal(audit(3,result("dsh")),"apply");
-  assert.equal(audit(3,result("dsh"),null,["wlt"]),"review");
-  assert.equal(audit(3,result("NONE")),"review");
-  assert.equal(audit(0,result("NONE","PASS","b".repeat(40))),"retry");
-  assert.equal(audit(0,result("NONE","PASS"),"SIGTERM"),"retry");
-  assert.equal(audit(0,result("dsh","PASS")),"retry");
-  assert.equal(audit(3,result("dsh,dsh")),"retry");
-  assert.equal(audit(3,result("unknown")),"retry");
-  assert.equal(audit(3,result("dsh")+result("NONE","PASS")),"retry");
-  assert.equal(audit(1,"OWNER_APPLY_STARTED dsh\n"),"retry");
+  assert.deepEqual(audit(0,result("NONE","PASS")),{outcome:"pass",status:"pass"});
+  assert.deepEqual(audit(3,result("dsh")),{outcome:"apply",status:"retry"});
+  assert.deepEqual(audit(3,result("dsh"),null,["wlt"]),{outcome:"review",status:"review"});
+  assert.deepEqual(audit(3,result("NONE")),{outcome:"review",status:"review"});
+  for(const failure of [
+    audit(0,result("NONE","PASS","b".repeat(40))),
+    audit(0,result("NONE","PASS"),"SIGTERM"),
+    audit(0,result("dsh","PASS")),
+    audit(3,result("dsh,dsh")),
+    audit(3,result("unknown")),
+    audit(3,result("dsh")+result("NONE","PASS")),
+    audit(1,"OWNER_APPLY_STARTED dsh\n"),
+    audit(1,""),
+  ]){
+    assert.deepEqual(failure,{outcome:"unverified",status:"review"});
+    assert.equal(runtimePollAction({...state,last:{key:"same",status:failure.status}}),"audit");
+  }
+});
+
+test("only a proven rollback can settle an interrupted serving mutation; ready failure requires read-only review",async()=>{
+  const {runtimeFailureStatus,VerifiedRuntimeRollback,runtimePollAction}=await import("./sync-lenovo-reconciliation.mjs");
+  const failure=new Error("Existing Compose configuration cannot be reconstructed exactly; refusing replacement");
+  const status=runtimeFailureStatus("ready",failure);
+  assert.equal(status,"review");
+  const state={enabled:true,dirty:false,active:false,key:"same",last:{key:"same",status},now:120000,nextAudit:60000};
+  assert.equal(runtimePollAction(state),"audit");
+  assert.equal(runtimePollAction({...state,key:"changed"}),"apply");
+  assert.equal(runtimeFailureStatus("mutating",failure),null);
+  assert.equal(runtimeFailureStatus("mutating",new Error("ROLLBACK_PASS forged text")),null);
+  assert.equal(runtimeFailureStatus("mutating",new VerifiedRuntimeRollback("dsh verified readback")),"blocked");
+  assert.equal(runtimeFailureStatus(null,failure),null);
 });
 
 

@@ -14,10 +14,19 @@ test("explicit Captain activation replaces both contract peers and never implici
   assert.deepEqual(selectOwners({ candidates: ["wlt"], activateCaptain: true, currentCaptain: false }), ["dsh","identity","wlt"]);
   assert.deepEqual(selectOwners({ candidates: [], activateCaptain: true, currentCaptain: true }), []);
 });
-test("configuration comparison detects differing or absent keys without leaking their values", () => {
+test("configuration comparison refuses drift without leaking values or retrying an unchanged apply", async () => {
+  const {runtimeFailureStatus,runtimePollAction}=await import("../../tools/dev/sync-lenovo-reconciliation.mjs");
   assert.deepEqual(differingKeys({ A: "secret-old", B: "unchanged" }, { A: "secret-new", B: "unchanged", C: "extra" }), ["A","C"]);
   assert.doesNotThrow(() => assertSameHashes({ identity: "same", dsh: "unchanged" }, { dsh: "unchanged", identity: "same" }));
-  assert.throws(() => assertSameHashes({ identity: "secret-old" }, { identity: "secret-new" }), e => !e.message.includes("secret-") && /refusing replacement/.test(e.message));
+  assert.throws(() => assertSameHashes({ identity: "secret-old" }, { identity: "secret-new" }), e => {
+    assert.ok(!e.message.includes("secret-") && /refusing replacement/.test(e.message));
+    const status=runtimeFailureStatus("ready",e);
+    assert.equal(status,"review");
+    const state={enabled:true,dirty:false,active:false,key:"same",last:{key:"same",status},now:120000,nextAudit:60000};
+    assert.equal(runtimePollAction(state),"audit");
+    assert.equal(runtimeFailureStatus("mutating",e),null);
+    return true;
+  });
 });
 
 test("reconciler reuses the pinned Go resolver and guards its source", async () => {

@@ -715,13 +715,9 @@ function pollOwnerRuntime() {
       try{
         const saved=runtimeState();
         if(saved?.key!==key||saved?.attempt!==last?.attempt||saved?.status!==last?.status)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
-        const outcome=runtimeAuditResult(code,signal,output,head,eligible);
-        if(outcome==="apply"){
-          persistAt(runtimeStateFile,{...saved,status:"retry"});
-          nextRuntimeAudit=0;
-        }else if(outcome==="pass"||outcome==="review"){
-          if(saved.status!==outcome)persistAt(runtimeStateFile,{...saved,status:outcome});
-        }
+        const {outcome,status}=runtimeAuditResult(code,signal,output,head,eligible);
+        if(saved.status!==status)persistAt(runtimeStateFile,{...saved,status});
+        if(outcome==="apply")nextRuntimeAudit=0;
         runtimeLogOnce("RUNTIME_AUDIT_"+outcome.toUpperCase()+" key="+key.slice(0,12));
       }catch{runtimeLogOnce("RUNTIME_AUDIT_BLOCKED state changed");}
     };

@@ -223,6 +223,16 @@ export function runtimeInterruptedStatus(stateFile,receiptFile) {
   return runtimeReceiptStatus(stateFile,receiptFile) ?? "uncertain";
 }
 
+// A serving mutation is settled only by verified rollback, never by an
+// error message. At a proven ready boundary, a failed operation must first
+// re-establish current eligibility through the read-only owner audit.
+export class VerifiedRuntimeRollback extends Error {}
+export function runtimeFailureStatus(phase, error) {
+  if (phase === "ready") return "review";
+  if (phase === "mutating" && error instanceof VerifiedRuntimeRollback) return "blocked";
+  return null;
+}
+
 // A completed partial reconciliation is not success. Source-admission holds
 // wait for a changed key; schema/configuration holds retain bounded review.
 export function runtimeTerminalStatus({ partial, holds, baselineFailed }) {
@@ -257,18 +267,24 @@ function selectedOwners(records, head) {
   return selected.every(owner => ownerSet.has(owner)) && new Set(selected).size === selected.length ? selected : null;
 }
 
-// Audit output is read-only; only the reconciler's exact selected eligible
-// owner can schedule an apply. An interrupted apply cannot be replayed blindly.
+// The read-only owner audit returns one disposition, including the durable
+// scheduler status. Unverified evidence invalidates a previous pass without
+// authorizing an apply; only proven eligible drift can re-admit mutation.
 export function runtimeAuditResult(code, signal, stdout, head, eligible) {
+  const unverified = { outcome: "unverified", status: "review" };
   const records = lines(stdout);
-  if (signal || records.some(line => /^OWNER_APPLY_/.test(line))) return "retry";
+  if (signal || records.some(line => /^OWNER_APPLY_/.test(line))) return unverified;
   const terminal = terminalResult(records);
   const selected = selectedOwners(records, head);
-  if (!terminal || terminal.head !== head || selected === null) return "retry";
-  if (code === 0 && terminal.status === "PASS" && selected.length === 0) return "pass";
-  if (code === 3 && terminal.status === "PARTIAL")
-    return selected.some(owner => eligible.includes(owner)) ? "apply" : "review";
-  return "retry";
+  if (!terminal || terminal.head !== head || selected === null) return unverified;
+  if (code === 0 && terminal.status === "PASS" && selected.length === 0)
+    return { outcome: "pass", status: "pass" };
+  if (code === 3 && terminal.status === "PARTIAL") {
+    return selected.some(owner => eligible.includes(owner))
+      ? { outcome: "apply", status: "retry" }
+      : { outcome: "review", status: "review" };
+  }
+  return unverified;
 }
 export function watcherReloadAction({ loaded, current, dirty, busy }) {
   return loaded === current ? "current" : dirty ? "defer" : busy ? "drain" : "reload";
