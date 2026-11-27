@@ -1,18 +1,11 @@
-/** Only local paths without traversal may survive an authentication round trip. */
-export function safeAuthReturnPath(value: unknown): string {
-  if (typeof value !== "string" || value.length > 300 || !/^\/[a-zA-Z0-9/_-]*$/.test(value) || value.startsWith("//") || value.split("/").includes("..")) return "/";
-  return value;
-}
-
-/** Authentication continuation is limited to explicit screen destinations, never API or mutation routes. */
+/** Authentication continuation admits only explicit Customer screen destinations. */
 export function customerAuthDestination(value: unknown): "/" | "/account" | "/wallet" | "/addresses" | "/orders" {
-  const path = safeAuthReturnPath(value);
-  switch (path) {
+  switch (value) {
     case "/account":
     case "/wallet":
     case "/addresses":
     case "/orders":
-      return path;
+      return value;
     default:
       return "/";
   }
