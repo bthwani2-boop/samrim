@@ -74,7 +74,7 @@ jobs:
           printf 'path=%s\n' "$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - &store
         name: Cache pnpm store
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
@@ -90,7 +90,7 @@ jobs:
           pnpm check:design
           pnpm check:apps:source
       - name: Check source quality
-        run: pnpm check:lint
+        run: pnpm check:lint --diagnostic-level=warn --max-diagnostics=none
       - name: Typecheck all workspace projects
         run: pnpm -r --if-present run typecheck
 
@@ -242,7 +242,7 @@ jobs:
         run: bash tests/infra/payment-mock/smoke.sh
 
   containers:
-    name: Container Build
+    name: Container Build & Security
     needs: workspace
     runs-on: ubuntu-24.04
     timeout-minutes: 20

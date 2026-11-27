@@ -473,3 +473,16 @@ test("CodeRabbit remains native, incremental and advisory without artificial fil
   assert.ok(config.reviews.path_instructions.some(rule => rule.path === ".github/workflows/**"));
   assert.doesNotMatch(JSON.stringify(ci), /coderabbit/i);
 });
+
+test("CI uses the supported cache runtime and reports every warning and error without informational log noise", () => {
+  for (const job of [quality, app, build, sonar, windows]) {
+    const cache = one(job, step => action(step, "actions/cache"), "pinned package store cache");
+    assert.equal(cache.uses, "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9");
+  }
+  const lint = runs(quality, /^pnpm check:lint --diagnostic-level=warn --max-diagnostics=none\s*$/);
+  mandatory(quality, lint);
+  const config = JSON.parse(readFileSync(path.join(root, "biome.json"), "utf8"));
+  assert.ok(config.files.includes.every(pattern => !(pattern.startsWith("!!") && pattern.endsWith("/**"))));
+  assert.equal(config.linter.enabled, true);
+  assert.equal(config.linter.rules.preset, "recommended");
+});
