@@ -224,6 +224,10 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
 
   const error = state.kind === "failed" ? state.message : "";
   const result = state.kind === "ready" ? state.result : null;
+  const pauseEnd = result?.storeSchedule.status === "PAUSED" && result.storeSchedule.pausedUntil
+    ? new Date(`${result.storeSchedule.pausedUntil.slice(0, 19)}.000Z`).toLocaleString("ar-YE", {
+      dateStyle: "medium", timeStyle: "medium",
+    }) : undefined;
   if (!admitted) return <Text style={{ color: theme.colorSecondary }}>{error || "جارٍ التحقق من جلسة العميل للمراجعة."}</Text>;
 
   return (
@@ -269,7 +273,9 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
             : <Text testID="checkout-distance-fee-unavailable" style={{ color: theme.colorSecondary }}>تقدير رسوم المسافة غير متاح من DSH.</Text>)}
           <Text style={{ color: theme.colorSecondary }}>
             {result.storeSchedule.status === "OPEN_BY_SCHEDULE" ? "المتجر ضمن ساعات العمل، دون اعتماد طريقة التنفيذ."
-              : result.storeSchedule.status === "PAUSED" ? "المتجر متوقف مؤقتًا."
+              : result.storeSchedule.status === "PAUSED" ? (pauseEnd
+                ? `الإيقاف المؤقت حتى ${pauseEnd} بتوقيت جهازك.`
+                : "المتجر متوقف مؤقتًا.")
               : result.storeSchedule.status === "CLOSED_BY_SCHEDULE" ? "المتجر خارج ساعات العمل."
               : "لم تتوفر أدلة كافية على ساعات عمل المتجر."}
           </Text>

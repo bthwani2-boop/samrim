@@ -23,7 +23,11 @@ export type CustomerCheckoutReview = Readonly<{
   merchandise: CustomerCartMerchandiseEstimate; delivery?: DeliveryServiceability;
   distanceFeeEstimate?: Readonly<{policyVersion: number; distanceMetres: number; feeYer: string}>;
   checkoutReady: false; blockers: CustomerCheckoutBlocker[];
-  storeSchedule: Readonly<{status: "UNAVAILABLE" | "OPEN_BY_SCHEDULE" | "CLOSED_BY_SCHEDULE" | "PAUSED"; version?: number}>;
+  storeSchedule: Readonly<
+    {status: "UNAVAILABLE"} |
+    {status: "OPEN_BY_SCHEDULE" | "CLOSED_BY_SCHEDULE"; version: number} |
+    {status: "PAUSED"; version: number; pausedUntil?: string}
+  >;
   cityFulfillmentPolicy?: CityFulfillmentPolicy;
 }>;
 
@@ -82,10 +86,23 @@ export function validCustomerCheckoutReviewInput(value: unknown): value is Custo
 
 function scheduleFrom(value: unknown): CustomerCheckoutReview["storeSchedule"] {
   if (!record(value)) invalid();
-  const { status } = value;
+  const { status, version: scheduleVersion } = value;
   if (status === "UNAVAILABLE" && exact(value, ["status"])) return { status };
+  if (!version(scheduleVersion)) invalid();
   if ((status === "OPEN_BY_SCHEDULE" || status === "CLOSED_BY_SCHEDULE" || status === "PAUSED") &&
-    exact(value, ["status", "version"]) && version(value.version)) return { status, version: value.version };
+    exact(value, ["status", "version"])) return { status, version: scheduleVersion };
+  if (status === "PAUSED" && exact(value, ["status", "version", "pausedUntil"])) {
+    const { pausedUntil } = value;
+    if (typeof pausedUntil === "string" && !pausedUntil.startsWith("0000-") &&
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(pausedUntil)) {
+      // Keep owner precision on the wire. Validate the calendar using standard millisecond ISO syntax.
+      const wholeSecond = `${pausedUntil.slice(0, 19)}.000Z`;
+      const expiry = new Date(wholeSecond);
+      if (Number.isFinite(expiry.getTime()) && expiry.toISOString() === wholeSecond) {
+        return { status, version: scheduleVersion, pausedUntil };
+      }
+    }
+  }
   return invalid();
 }
 

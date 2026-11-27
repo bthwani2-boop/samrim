@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: 13b13beff76867a692477c68d1a8e1163bead00fcda2f6692a59e9d80c738475
+// Normalized OpenAPI SHA-256: 62f4e921a4fa2d025e316ad51e446ebaf671ceea2a43eeb284ff9fb601d230bb
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   advanceMerchantCatalogImport: { method: "PATCH", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },

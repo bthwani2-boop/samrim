@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
@@ -159,13 +160,15 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if review.StoreSchedule.Status != "UNAVAILABLE" || review.StoreSchedule.Version != 0 {
 		t.Fatalf("unconfigured schedule fabricated evidence: %s", body)
 	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO "+schema+".store_operational_availability(store_id,store_timezone,paused_until,preparation_minutes,changed_by_actor,change_reason) VALUES ('store-a','UTC',transaction_timestamp()+interval '1 hour',15,'synthetic-operator','checkout test')"); err != nil {
+	var pauseEnd time.Time
+	if err := db.QueryRowContext(ctx, "INSERT INTO "+schema+".store_operational_availability(store_id,store_timezone,paused_until,preparation_minutes,changed_by_actor,change_reason) VALUES ('store-a','UTC',transaction_timestamp()+interval '1 hour',15,'synthetic-operator','checkout test') RETURNING paused_until").Scan(&pauseEnd); err != nil {
 		t.Fatal(err)
 	}
 	status, body = checkoutReviewRequest(t, h, "customer-a", pickup)
 	assertCartStatus(t, status, 200, body)
 	review = checkoutReviewResult{}
-	if err := json.Unmarshal(body, &review); err != nil || review.StoreSchedule.Status != "PAUSED" || review.StoreSchedule.Version != 1 || review.CheckoutReady {
+	if err := json.Unmarshal(body, &review); err != nil || review.StoreSchedule.Status != "PAUSED" || review.StoreSchedule.Version != 1 ||
+		review.StoreSchedule.PausedUntil == nil || !review.StoreSchedule.PausedUntil.Equal(pauseEnd) || review.CheckoutReady {
 		t.Fatalf("pause must be read from owner: %s %v", body, err)
 	}
 	// A Store cannot remain orderable after its vertical is disabled. The

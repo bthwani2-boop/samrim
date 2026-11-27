@@ -503,6 +503,15 @@ components:
           properties:
             status: { type: string, enum: [UNAVAILABLE, OPEN_BY_SCHEDULE, CLOSED_BY_SCHEDULE, PAUSED] }
             version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+            pausedUntil:
+              type: string
+              format: date-time
+              pattern: '^(?!0000-)\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,9})?Z$'
+              description: DSH pause expiry in UTC at review time. Weekly hours and checkout requirements still apply after expiry.
+          dependentSchemas:
+            pausedUntil:
+              properties:
+                status: { const: PAUSED }
           if:
             properties:
               status: { const: UNAVAILABLE }

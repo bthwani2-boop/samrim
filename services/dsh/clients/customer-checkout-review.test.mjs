@@ -47,6 +47,24 @@ test("receipt schedule must contain exact own fields", () => {
   }
 });
 
+test("checkout accepts an exact UTC expiry only for a paused Store", () => {
+  const oldPause = { status: "PAUSED", version: 4 };
+  const pause = { ...oldPause, pausedUntil: "2026-11-27T20:00:00.123456Z" };
+  const parseSchedule = storeSchedule => parseCustomerCheckoutReview({ ...result, storeSchedule }, "store-a", "customer-a", input).storeSchedule;
+  assert.deepEqual(parseSchedule(pause), pause);
+  assert.deepEqual(parseSchedule(oldPause), oldPause);
+  for (const schedule of [
+    { ...pause, status: "OPEN_BY_SCHEDULE" },
+    { ...pause, status: "CLOSED_BY_SCHEDULE" },
+    { status: "UNAVAILABLE", pausedUntil: pause.pausedUntil },
+    { ...pause, pausedUntil: "2026-02-30T20:00:00Z" },
+    { ...pause, pausedUntil: "2026-11-27T20:00:00.1234567890Z" },
+    { ...pause, pausedUntil: "2026-11-27T23:00:00+03:00" },
+    { ...pause, pausedUntil: null },
+    { ...pause, reason: "internal" },
+  ]) assert.throws(() => parseSchedule(schedule), { status: 502, code: "OWNER_RESPONSE_INVALID" });
+});
+
 test("checkout keeps the city policy separate from the sales channel and overall eligibility", () => {
   const allowed = { storeRelation: "MARKETPLACE", status: "ALLOWED_BY_CITY_POLICY", version: 4 };
   for (const cityFulfillmentPolicy of [
