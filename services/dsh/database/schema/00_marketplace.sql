@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.stores (
     relation text NOT NULL CHECK (relation IN ('MARKETPLACE','DIRECT')),
     name text NOT NULL CHECK (char_length(trim(name)) BETWEEN 1 AND 120),
     description text NOT NULL DEFAULT '',
+    profile_version bigint NOT NULL DEFAULT 1 CHECK (profile_version BETWEEN 1 AND 9007199254740991),
     published boolean NOT NULL DEFAULT false,
     updated_at timestamptz NOT NULL DEFAULT now(),
     latitude double precision CHECK (latitude IS NULL OR latitude BETWEEN -90 AND 90),
@@ -75,3 +76,27 @@ CREATE TABLE IF NOT EXISTS __SCHEMA__.customer_favorite_stores (
     store_id text NOT NULL REFERENCES __SCHEMA__.stores(id) ON DELETE RESTRICT,
     PRIMARY KEY (actor_id,store_id)
 );
+-- Immutable draft metadata edits: a Store remains the sole current record.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.store_profile_commands (
+    actor_id text NOT NULL CHECK (char_length(actor_id) BETWEEN 1 AND 128),
+    operation_id text NOT NULL CHECK (operation_id ~ '^[A-Za-z0-9._-]{8,128}$'),
+    store_id text NOT NULL REFERENCES __SCHEMA__.stores(id) ON DELETE RESTRICT,
+    expected_version bigint NOT NULL CHECK (expected_version BETWEEN 1 AND 9007199254740990),
+    result_version bigint NOT NULL CHECK (result_version = expected_version + 1),
+    old_name text NOT NULL,
+    old_description text NOT NULL,
+    result_name text NOT NULL CHECK (char_length(result_name) BETWEEN 1 AND 120),
+    result_description text NOT NULL CHECK (char_length(result_description) <= 1000),
+    changed_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    PRIMARY KEY (actor_id,operation_id),
+    UNIQUE (store_id,result_version)
+);
+CREATE OR REPLACE FUNCTION __SCHEMA__.reject_store_profile_command_change()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'Store profile command records are immutable';
+END;
+$$;
+CREATE TRIGGER trg_store_profile_commands_immutable
+BEFORE UPDATE OR DELETE ON __SCHEMA__.store_profile_commands
+FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.reject_store_profile_command_change();

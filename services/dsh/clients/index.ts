@@ -32,6 +32,8 @@ export { getCustomerFavoriteStore, isFavoriteStoreId, listCustomerFavoriteStores
 export { dshOperations } from "./generated/dsh-operations.ts";
 export type { MerchantCatalogDraftChange, MerchantCatalogDraftEditChange, MerchantCatalogDraftEditResult, MerchantCatalogDraftResult, MerchantCatalogOffer, MerchantCatalogPage, MerchantCatalogStatus, MerchantInventorySummary } from "./merchant-catalog.ts";
 export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, parseMerchantInventorySummary, readMerchantInventorySummary, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit, validMerchantCatalogSearch, validMerchantCatalogStatus } from "./merchant-catalog.ts";
+export type { MerchantStoreProfile, MerchantStoreProfileChange, MerchantStoreProfileResult } from "./merchant-profile.ts";
+export { changeMerchantStoreProfile, confirmMerchantStoreProfileResult, getMerchantStoreProfile, parseMerchantStoreProfile, validMerchantStoreProfileChange } from "./merchant-profile.ts";
 export type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantRegistrationResult, MerchantStoreRegistration } from "./merchant-registration.ts";
 export { confirmMerchantRegistrationResult, isMerchantRegistrationRejection, merchantRegistrationOptionsByteLimit, parseMerchantRegistrationOptions, parseMerchantRegistrationResult, readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration } from "./merchant-registration.ts";
 // DSH-owned Merchant standing contract and transport.

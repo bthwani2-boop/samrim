@@ -1,11 +1,12 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: c397cd90b807363349b8dfe7013f6196f17bde9048c13771536e7f133802b446
+// Normalized OpenAPI SHA-256: ecf036037b899eae7269fb825c59a83560988e18d97fa6a26ea827216c54a2f5
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   advanceMerchantCatalogImport: { method: "PATCH", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
   applyCurrentCustomerForCaptainStanding: { method: "POST", path: "/v1/actors/me/captain-application" },
   changeCaptainStandingByAuthorizedOperator: { method: "PATCH", path: "/v1/operators/captains/{actorId}/standing" },
+  changeMerchantStoreProfile: { method: "PATCH", path: "/v1/stores/{storeID}/profile" },
   changeOperatorStoreRegistrationPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" },
   createCurrentMerchantCatalogDraft: { method: "POST", path: "/v1/stores/{storeID}/catalog" },
   dshHealth: { method: "GET", path: "/health" },
@@ -25,6 +26,7 @@ export const dshOperations = {
   getCurrentCustomerFavoriteStore: { method: "GET", path: "/v1/customers/me/favorite-stores/{storeID}" },
   getMerchantEmployee: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}" },
   getMerchantEmployeeRegistrationAudit: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}/registration-audit" },
+  getMerchantStoreProfile: { method: "GET", path: "/v1/stores/{storeID}/profile" },
   getMerchantStoreRegistrationOptions: { method: "GET", path: "/v1/stores/registration-options" },
   getOperatorCaptainStanding: { method: "GET", path: "/v1/operators/captains/{actorId}/standing" },
   getOperatorStoreFinancialStanding: { method: "GET", path: "/v1/operators/stores/{storeID}/financial-standing" },

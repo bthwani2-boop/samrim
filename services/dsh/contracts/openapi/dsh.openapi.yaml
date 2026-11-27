@@ -52,6 +52,8 @@ paths:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores'
   /v1/operators/stores/{storeID}/financial-standing:
     $ref: './paths/store-access.yaml#/paths/~1v1~1operators~1stores~1{storeID}~1financial-standing'
+  /v1/stores/{storeID}/profile:
+    $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1profile'
   /v1/stores/{storeID}/availability:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
   /v1/captain-interest:
@@ -111,6 +113,17 @@ components:
       required: true
       schema: { $ref: '#/components/schemas/PublicId' }
   schemas:
+    MerchantStoreProfile:
+      type: object
+      additionalProperties: false
+      required: [storeId, actorId, name, description, published, version]
+      properties:
+        storeId: { $ref: '#/components/schemas/PublicId' }
+        actorId: { type: string, minLength: 1, maxLength: 128 }
+        name: { type: string, minLength: 1, maxLength: 120 }
+        description: { type: string, maxLength: 1000 }
+        published: { type: boolean }
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
     CityFulfillmentPolicy:
       type: object
       additionalProperties: false
@@ -861,7 +874,7 @@ components:
       properties:
         code:
           type: string
-          enum: [UNAUTHENTICATED, IDENTITY_OWNER_UNAVAILABLE, STORE_OPERATION_FORBIDDEN, STORE_NOT_FOUND, STORE_AVAILABILITY_VERSION_CONFLICT, OPERATIONAL_POLICY_VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, INVALID_OPERATIONAL_CHANGE, OPERATION_RESULT_UNKNOWN, OPERATIONAL_POLICY_UNAVAILABLE, STORE_OWNER_UNAVAILABLE, OWNER_UNAVAILABLE]
+          enum: [UNAUTHENTICATED, IDENTITY_OWNER_UNAVAILABLE, STORE_OPERATION_FORBIDDEN, STORE_NOT_FOUND, STORE_AVAILABILITY_VERSION_CONFLICT, OPERATIONAL_POLICY_VERSION_CONFLICT, STORE_PROFILE_VERSION_CONFLICT, IDEMPOTENCY_KEY_REUSED, INVALID_OPERATIONAL_CHANGE, INVALID_STORE_PROFILE, OPERATION_RESULT_UNKNOWN, OPERATIONAL_POLICY_UNAVAILABLE, STORE_OWNER_UNAVAILABLE, OWNER_UNAVAILABLE]
     PublicVertical:
       type: object
       additionalProperties: false
