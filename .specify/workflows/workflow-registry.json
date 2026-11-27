@@ -3,11 +3,11 @@
   "workflows": {
     "speckit": {
       "name": "Full SDD Cycle",
-      "version": "1.0.1",
+      "version": "1.0.2",
       "description": "Runs specify \u2192 plan \u2192 tasks \u2192 implement with review gates",
       "source": "bundled",
-      "installed_at": "2026-11-12T03:13:21.784870+00:00",
-      "updated_at": "2026-11-12T03:13:21.784870+00:00"
+      "installed_at": "2026-11-27T20:08:07.283839+00:00",
+      "updated_at": "2026-11-27T20:08:07.283839+00:00"
     }
   }
 }
