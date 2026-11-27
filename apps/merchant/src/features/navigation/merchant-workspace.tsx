@@ -1,10 +1,10 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import AppearancePreferences from "@bthwani/tamagui-config/appearance-preferences";
 import { usePrimaryNavigation } from "@bthwani/tamagui-config/navigation";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
-import AccountScreen from "../account/account-screen";
 import MerchantPrivateCatalog from "../catalog/merchant-private-catalog";
 import EmployeesScreen from "../employees/employees-screen";
 import WalletScreen from "../finance/wallet-screen";
@@ -311,10 +311,10 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
           ) : section === "wallet" ? (
             <WalletScreen key={actorId} actorId={actorId} stores={stores} />
           ) : section === "account" ? (
-            <AccountScreen />
+            <AppearancePreferences />
           ) : section === "more" && !web ? (
             <View style={{ gap: 10 }}>
-              <AccountScreen />
+              <AppearancePreferences />
               {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home" && item.id !== "account")
                 .map(item => navigationButton(item))}
             </View>

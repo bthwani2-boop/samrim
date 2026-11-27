@@ -76,7 +76,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
       "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
       "@bthwani/tamagui-config/navigation": { usePrimaryNavigation: () => ({ desktop }) },
-      "../account/account-screen": { __esModule: true, default: "Account" },
+      "@bthwani/tamagui-config/appearance-preferences": { __esModule: true, default: "Account" },
       "../catalog/merchant-private-catalog": { __esModule: true, default: "Catalog" },
       "../onboarding/merchant-store-registration": { __esModule: true, default: "Registration" },
       "./merchant-store-directory": { __esModule: true, default: "Directory" },

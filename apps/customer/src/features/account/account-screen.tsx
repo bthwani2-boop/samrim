@@ -1,9 +1,9 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import AppearancePreferences from "@bthwani/tamagui-config/appearance-preferences";
 import { Link } from "expo-router";
 import { Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import FavoriteStores from "../discovery/favorite-stores";
-import AccountPreferences from "./account-preferences";
 import StoreInvitations from "./store-invitations";
 
 export default function AccountScreen() {
@@ -49,7 +49,7 @@ export default function AccountScreen() {
           </Pressable>
         </Link>
         <FavoriteStores />
-        <AccountPreferences />
+        <AppearancePreferences />
         <StoreInvitations />
       </ScrollView>
     </SafeAreaView>
