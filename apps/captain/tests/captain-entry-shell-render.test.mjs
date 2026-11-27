@@ -62,7 +62,7 @@ test("Captain workspace separates verified access from unavailable data and keep
   });
   const dashboard = nodes(home());
   assert.ok(dashboard.some(node => node.props.testID === "captain-standing-verified" &&
-    node.props.children.includes("3")));
+    node.props.children === "حساب الكابتن معتمد"));
   assert.ok(dashboard.some(node => node.props.children?.includes?.("مهام التوصيل")));
   assert.deepEqual(dashboard.filter(node => node.type === "Link"), []);
   workspace = null;
