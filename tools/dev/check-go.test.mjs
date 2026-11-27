@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, resolvePinnedGo, services } from "./check-go.mjs";
+import { checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
 
 test("Go CLI selects only an unambiguous admitted mode and owner", () => {
   assert.deepEqual(parseArgs([]), { mode: "quick", moduleName: undefined, sonarReport: false });
@@ -93,4 +94,41 @@ test("Go owner execution reports every independent outcome and returns no partia
     assert.equal(passed.length, services.length - failing.length);
     for (const name of failing) assert.ok(errors.some(message => message.includes("service=" + name + ":")));
   }
+});
+
+test("source checks exclude inherited owner data and test selectors, preserve native tools and cache", () => {
+  const inherited = { PATH: "tools", GOCACHE: "cache", GOPROXY: "proxy", GOFLAGS: "-run=^Missing$",
+    GOENV: "user-config", GOOS: "other", GOARCH: "other", BTHWANI_ISOLATED_TEST_MODE: "true",
+    WLT_SANDBOX_DATABASE_URL: "protected", BTHWANI_MERCHANT_TEST_DATABASE_URL: "protected",
+    DSH_DB_HOST: "protected", PGHOST: "protected", IDENTITY_TEST_DATABASE_URL: "protected" };
+  assert.deepEqual(sourceEnvironment(inherited), { PATH: "tools", GOCACHE: "cache", GOPROXY: "proxy",
+    GOTOOLCHAIN: "local", GOWORK: "off", GOENV: "off", GOFLAGS: "" });
+  assert.equal(inherited.GOFLAGS, "-run=^Missing$");
+});
+
+test("owner stages expose independent failures but never execute against failed dependency integrity", () => {
+  for (const failures of [[], ["format"], ["vet"], ["test"], ["format", "vet"], ["dependencies"]]) {
+    const seen = [];
+    const phases = Object.fromEntries(["format", "dependencies", "vet", "test"].map(name => [name, () => {
+      seen.push(name);
+      if (failures.includes(name)) throw new Error("fixture failure");
+      return name;
+    }]));
+    const execute = () => verifyOwnerPhases(phases, { log() {}, error() {} });
+    if (failures.length) assert.throws(execute, new RegExp(failures.join(", ")));
+    else assert.equal(execute(), "test");
+    assert.deepEqual(seen, failures.includes("dependencies") ? ["format", "dependencies"] : ["format", "dependencies", "vet", "test"]);
+  }
+});
+
+test("the actual child process receives no inherited Go test selector or owner configuration", () => {
+  const result = spawnSync(process.execPath, ["-e",
+    'console.log(JSON.stringify({flags:process.env.GOFLAGS,config:process.env.GOENV,owner:process.env.WLT_SANDBOX_DATABASE_URL,cache:process.env.GOCACHE}))'], {
+    env: sourceEnvironment({ ...process.env, GOFLAGS: "-run=^TestDoesNotExist$",
+      WLT_SANDBOX_DATABASE_URL: "protected-fixture", GOCACHE: "fixture-cache" }),
+    encoding: "utf8", timeout: 10000,
+  });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { flags: "", config: "off", cache: "fixture-cache" });
 });

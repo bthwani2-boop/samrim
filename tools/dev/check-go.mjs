@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// Native Go owner verification. A failed owner never hides independent owners;
-// incomplete verification never publishes a partial Sonar coverage inventory.
+// Native owner checks: independent quality phases, verified dependencies
+// before execution, no inherited test selectors, and complete coverage only.
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const services = Object.freeze(["identity", "dsh", "wlt"]);
@@ -60,12 +60,35 @@ export function resolvePinnedGo(expected, env = process.env, spawn = spawnSync, 
   throw new Error("Go version mismatch: expected " + expected + ", found " + observed.join(", "));
 }
 
+// This environment belongs only to native source checks, never to the
+// separately authorized PostgreSQL integration runner. Keep tool/cache/proxy
+// settings but exclude inherited selectors, target overrides and owner data.
+export function sourceEnvironment(inherited = process.env) {
+  const env = {};
+  for (const [key, value] of Object.entries(inherited)) {
+    if (/^(?:BTHWANI_|IDENTITY_|DSH_|WLT_|REF_POSTGRES_|PG[A-Z]|DATABASE_URL$|GOFLAGS$|GOENV$|GOOS$|GOARCH$|GOEXPERIMENT$|GOTOOLCHAIN$|GOWORK$)/i.test(key)) continue;
+    env[key] = value;
+  }
+  return { ...env, GOTOOLCHAIN: "local", GOWORK: "off", GOENV: "off", GOFLAGS: "" };
+}
+
+function requireDirectory(directory) {
+  const entry = lstatSync(directory);
+  if (!entry.isDirectory() || entry.isSymbolicLink() ||
+      relative(resolve(directory), realpathSync.native(directory)) !== "") {
+    throw new Error("Unsafe Go owner directory: " + directory);
+  }
+}
+
 export function discoverModules(root, moduleName) {
   if (moduleName !== undefined && !services.includes(moduleName)) throw new Error("Unknown Go service: " + moduleName);
   const selected = moduleName ? [moduleName] : [...services];
   const missing = selected.filter(name => {
-    const entry = lstatSync(join(root, "services", name, "backend", "go.mod"), { throwIfNoEntry: false });
-    return !entry?.isFile() || entry.isSymbolicLink();
+    const directory = join(root, "services", name, "backend");
+    const entry = lstatSync(join(directory, "go.mod"), { throwIfNoEntry: false });
+    if (!entry?.isFile() || entry.isSymbolicLink()) return true;
+    requireDirectory(directory);
+    return false;
   });
   if (missing.length) throw new Error("Required Go owner module not found: " + missing.join(", "));
   return selected;
@@ -74,14 +97,17 @@ export function discoverModules(root, moduleName) {
 export function listGoFiles(directory) {
   const files = [];
   function walk(path) {
+    requireDirectory(path);
     for (const entry of readdirSync(path, { withFileTypes: true })) {
+      if (["vendor", ".git"].includes(entry.name)) continue;
       const file = join(path, entry.name);
-      if (entry.isDirectory() && !["vendor", ".git"].includes(entry.name)) walk(file);
+      if (entry.isSymbolicLink()) throw new Error("Linked Go owner source: " + file);
+      if (entry.isDirectory()) walk(file);
       else if (entry.isFile() && entry.name.endsWith(".go")) files.push(file);
     }
   }
   walk(directory);
-  return files.sort();
+  return files.sort((left, right) => left < right ? -1 : Number(left > right));
 }
 
 function run(executable, args, cwd, env, timeout = 300000) {
@@ -99,31 +125,69 @@ function run(executable, args, cwd, env, timeout = 300000) {
   return result.stdout ?? "";
 }
 
-function checkOwner(root, name, mode, sonarReport, goExecutable, env) {
-  discoverModules(root, name);
-  const directory = join(root, "services", name, "backend");
-  const goFiles = listGoFiles(directory);
-  if (!goFiles.length) throw new Error("No Go source files in " + name);
-  const formatter = join(dirname(goExecutable), process.platform === "win32" ? "gofmt.exe" : "gofmt");
-  const unformatted = run(formatter, ["-l", ...goFiles], directory, env, 30000).trim();
-  if (unformatted) throw new Error("gofmt failed for " + name + ": " + unformatted);
-  run(goExecutable, ["mod", "verify"], directory, env);
-  run(goExecutable, ["vet", "./..."], directory, env);
+// Failed formatting and full vet do not suppress independent test execution.
+// Failed dependency integrity does prohibit executing that module's tests.
+export function verifyOwnerPhases(phases, log = console) {
+  const failed = [];
+  const attempt = (name, operation) => {
+    try {
+      const result = operation();
+      log.log("GO_PHASE_PASS phase=" + name);
+      return { ok: true, result };
+    } catch (error) {
+      failed.push(name);
+      log.error("GO_PHASE_FAIL phase=" + name + ": " + error.message);
+      return { ok: false };
+    }
+  };
+  attempt("format", phases.format);
+  const dependencies = attempt("dependencies", phases.dependencies);
+  let measured;
+  if (dependencies.ok) {
+    attempt("vet", phases.vet);
+    measured = attempt("test", phases.test);
+  } else {
+    log.error("GO_PHASE_NOT_RUN phase=vet,test reason=dependency_integrity");
+  }
+  if (failed.length) throw new Error("Go owner phases failed: " + failed.join(", "));
+  return measured.result;
+}
+
+function nativeOwnerTests(directory, mode, sonarReport, executable, env) {
+  // Full go vet has its own phase; do not execute the default subset again.
+  const args = ["test", "-vet=off", "-count=1"];
   if (mode === "quick") {
-    run(goExecutable, ["test", "-count=1", "./..."], directory, env);
+    run(executable, [...args, "./..."], directory, env);
     return undefined;
   }
+  if (mode === "ci") args.push("-race");
+  if (sonarReport) args.push("-covermode=atomic", "-coverpkg=./...");
   const scratch = mkdtempSync(join(tmpdir(), "bthwani-go-"));
   try {
     const profile = join(scratch, "coverage.out");
-    run(goExecutable, ["test", ...(mode === "ci" ? ["-race"] : []), "-count=1",
-      ...(sonarReport ? ["-covermode=atomic", "-coverpkg=./..."] : []),
-      "-coverprofile=" + profile, "./..."], directory, env, 600000);
-    run(goExecutable, ["tool", "cover", "-func=" + profile], directory, env);
+    run(executable, [...args, "-coverprofile=" + profile, "./..."], directory, env, 600000);
+    // Native Go validates its own coverprofile grammar before publication.
+    run(executable, ["tool", "cover", "-func=" + profile], directory, env);
     return sonarReport ? readFileSync(profile) : undefined;
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }
+}
+
+function checkOwner(root, name, mode, sonarReport, executable, formatter, env) {
+  discoverModules(root, name);
+  const directory = join(root, "services", name, "backend");
+  const files = listGoFiles(directory);
+  if (!files.length) throw new Error("No Go source files in " + name);
+  return verifyOwnerPhases({
+    format() {
+      const unformatted = run(formatter, ["-l", ...files], directory, env, 30000).trim();
+      if (unformatted) throw new Error("gofmt failed for " + name + ": " + unformatted);
+    },
+    dependencies: () => run(executable, ["mod", "verify"], directory, env),
+    vet: () => run(executable, ["vet", "./..."], directory, env),
+    test: () => nativeOwnerTests(directory, mode, sonarReport, executable, env),
+  });
 }
 
 // Keep every owner outcome observable, without permitting partial publication.
@@ -143,37 +207,62 @@ export function checkOwners(selected, check, log = console) {
   return results;
 }
 
+function requireFreshReports(directory) {
+  if (lstatSync(directory, { throwIfNoEntry: false })) requireDirectory(directory);
+  for (const name of services) {
+    if (lstatSync(join(directory, name + "-go.out"), { throwIfNoEntry: false })) {
+      throw new Error("Refusing existing Sonar Go coverage output: " + name);
+    }
+  }
+}
+
+function publishReports(directory, results) {
+  if (results.size !== services.length || services.some(name => {
+    const bytes = results.get(name);
+    return !Buffer.isBuffer(bytes) || bytes.length === 0;
+  })) throw new Error("Incomplete Sonar Go coverage inventory");
+  requireFreshReports(directory);
+  mkdirSync(directory, { recursive: true });
+  requireDirectory(directory);
+  for (const [name, profile] of results) writeFileSync(join(directory, name + "-go.out"), profile, { flag: "wx" });
+  console.log("SONAR_GO_REPORTS_PASS owners=" + results.size);
+}
+
+// Preserve only the installed toolchain's effective cache directories from
+// its existing configuration, not flags, selectors or owner credentials.
+function configuredCaches(executable, root) {
+  const result = spawnSync(executable, ["env", "-json", "GOCACHE", "GOMODCACHE"], {
+    cwd: root, env: { ...process.env, GOTOOLCHAIN: "local", GOWORK: "off", GOFLAGS: "-mod=readonly" },
+    encoding: "utf8", windowsHide: true, timeout: 20000,
+  });
+  if (result.error) throw result.error;
+  if (result.status !== 0) throw new Error("Unable to resolve native Go cache configuration");
+  const caches = JSON.parse(result.stdout);
+  if (typeof caches.GOCACHE !== "string" || !caches.GOCACHE ||
+      typeof caches.GOMODCACHE !== "string" || !caches.GOMODCACHE) {
+    throw new Error("Incomplete native Go cache configuration");
+  }
+  return { GOCACHE: caches.GOCACHE, GOMODCACHE: caches.GOMODCACHE };
+}
+
 export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(new URL("../..", import.meta.url)))) {
   const { mode, moduleName, sonarReport } = parseArgs(argv);
-  const env = { ...process.env, GOTOOLCHAIN: "local", GOWORK: "off" };
-  // Native source tests must not access inherited real or protected databases.
-  for (const key of [
-    "DATABASE_URL", "IDENTITY_DATABASE_URL", "IDENTITY_TEST_DATABASE_URL",
-    "DSH_DATABASE_URL", "BTHWANI_DSH_TEST_DATABASE_URL",
-    "WLT_DATABASE_URL", "WLT_TEST_DATABASE_URL", "BTHWANI_ISOLATED_TEST_MODE",
-  ]) delete env[key];
   const expected = readFileSync(join(root, ".go-version"), "utf8").trim();
-  const goExecutable = resolvePinnedGo(expected, env);
-  if (parseVersion(run(goExecutable, ["version"], root, env, 20000)) !== expected) {
+  const executable = resolvePinnedGo(expected, sourceEnvironment());
+  const env = { ...sourceEnvironment(), ...configuredCaches(executable, root) };
+  if (parseVersion(run(executable, ["version"], root, env, 20000)) !== expected) {
     throw new Error("Go toolchain changed");
   }
+  const goRoot = run(executable, ["env", "GOROOT"], root, env, 20000).trim();
+  const formatter = join(goRoot, "bin", process.platform === "win32" ? "gofmt.exe" : "gofmt");
   const selected = moduleName ? [moduleName] : [...services];
   const coverage = join(root, "coverage");
-  if (sonarReport && services.some(name => existsSync(join(coverage, name + "-go.out")))) {
-    throw new Error("Refusing existing Sonar Go coverage output");
-  }
+  if (sonarReport) requireFreshReports(coverage);
   const results = checkOwners(selected, name => {
     console.log("GO_SERVICE=" + name + " MODE=" + mode);
-    return checkOwner(root, name, mode, sonarReport, goExecutable, env);
+    return checkOwner(root, name, mode, sonarReport, executable, formatter, env);
   });
-  if (sonarReport) {
-    if (results.size !== services.length || [...results.values()].some(profile => !Buffer.isBuffer(profile) || profile.length === 0)) {
-      throw new Error("Incomplete Sonar Go coverage inventory");
-    }
-    mkdirSync(coverage, { recursive: true });
-    for (const [name, profile] of results) writeFileSync(join(coverage, name + "-go.out"), profile, { flag: "wx" });
-    console.log("SONAR_GO_REPORTS_PASS owners=" + results.size);
-  }
+  if (sonarReport) publishReports(coverage, results);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
