@@ -78,6 +78,11 @@ func TestIdentityHTTPRejectsUnverifiedAndMalformedOwnerResponses(t *testing.T) {
 		{"owner unavailable", 503, `{"error":"OWNER_UNAVAILABLE"}`, ErrIdentityUnavailable},
 		{"unknown role", 200, `{"actorId":"someone","role":"root","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrUnauthorized},
 		{"expired", 200, `{"actorId":"merchant-one","role":"merchant","sessionExpiresAt":"2020-01-01T00:00:00Z"}`, ErrUnauthorized},
+		{"duplicate actor", 200, `{"actorId":"other","actorId":"merchant-one","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrIdentityUnavailable},
+		{"case variant role", 200, `{"actorId":"merchant-one","Role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrIdentityUnavailable},
+		{"duplicate role", 200, `{"actorId":"merchant-one","role":"customer","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrIdentityUnavailable},
+		{"null actor", 200, `{"actorId":null,"role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrIdentityUnavailable},
+		{"missing actor", 200, `{"role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrIdentityUnavailable},
 		{"unknown field", 200, `{"actorId":"merchant-one","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z","admin":true}`, ErrIdentityUnavailable},
 		{"empty actor", 200, `{"actorId":"","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrUnauthorized},
 		{"NUL actor", 200, `{"actorId":"merchant-\u0000","role":"merchant","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, ErrUnauthorized},
@@ -239,6 +244,68 @@ func TestIdentityHTTPMapsEveryCanonicalRole(t *testing.T) {
 			actor, err := consumer.ResolveCurrentSession(t.Context(), testOpaqueIdentityToken())
 			if err != nil || actor.Subject != "actor-one" || actor.Role != tc.want {
 				t.Fatalf("role mapping failed: got %+v, err %v; wanted %s", actor, err, tc.want)
+			}
+		})
+	}
+}
+
+func TestIdentityHTTPRejectsInvalidBearerAndUnavailableClient(t *testing.T) {
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	client, err := NewIdentitySessionHTTP(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, token := range []string{"", " leading", "a b", "a\tb", "a\rb", "a\nb"} {
+		if actor, err := client.ResolveCurrentSession(t.Context(), token); actor.Subject != "" || !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("invalid session bearer admitted: %v", err)
+		}
+		if err := client.RequireOperatorPermission(t.Context(), token, "operator-a", "operations"); !errors.Is(err, ErrUnauthorized) {
+			t.Fatalf("invalid permission bearer admitted: %v", err)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatal("invalid bearer reached the owner")
+	}
+	var unavailable *IdentitySessionHTTP
+	if _, err := unavailable.ResolveCurrentSession(t.Context(), testOpaqueIdentityToken()); !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("nil client session: %v", err)
+	}
+	if err := unavailable.RequireOperatorPermission(t.Context(), testOpaqueIdentityToken(), "operator-a", "operations"); !errors.Is(err, ErrIdentityUnavailable) {
+		t.Fatalf("nil client permission: %v", err)
+	}
+}
+
+func TestIdentityHTTPRejectsNoncanonicalOwnerWire(t *testing.T) {
+	for _, tc := range []struct {
+		name, media, body string
+		status            int
+	}{
+		{"wrong media", "text/plain", `{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200},
+		{"forbidden session", "application/json", `{"error":"FORBIDDEN"}`, 403},
+		{"unpaired surrogate", "application/json", `{"actorId":"operator-\ud800","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200},
+		{"escaped duplicate", "application/json", `{"actorId":"other","actor\u0049d":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200},
+		{"trailing value", "application/json", `{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}{}`, 200},
+		{"null principal", "application/json", "null", 200},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", tc.media)
+				w.Header().Set("Cache-Control", "no-store")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer owner.Close()
+			client, err := NewIdentitySessionHTTP(owner.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if actor, err := client.ResolveCurrentSession(t.Context(), testOpaqueIdentityToken()); actor.Subject != "" || !errors.Is(err, ErrIdentityUnavailable) {
+				t.Fatalf("noncanonical wire admitted: %+v %v", actor, err)
 			}
 		})
 	}

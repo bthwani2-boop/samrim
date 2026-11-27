@@ -1,9 +1,10 @@
+// Package identityaccess consumes canonical Identity decisions without owning
+// principals, credentials, or permissions.
 package identityaccess
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/v2"
 	"io"
 	"mime"
 	"net/http"
@@ -14,11 +15,14 @@ import (
 	"unicode/utf8"
 )
 
-const identityJSONMediaType = "application/json"
+const (
+	identityJSONMediaType = "application/json"
+	maxIdentityReplyBytes = 4096
+	identityReadTimeout   = 3 * time.Second
+)
 
-// IdentitySessionHTTP is an owner-bound, uncached consumer of Identity's
-// canonical active-session read. It never verifies client-asserted actor data,
-// generates credentials, or grants Operator permissions on role alone.
+// IdentitySessionHTTP reads Identity's current session and explicit Operator
+// grants. Every decision requires a fresh, uncached owner response.
 type IdentitySessionHTTP struct {
 	endpoint       string
 	permissionBase string
@@ -36,88 +40,108 @@ func NewIdentitySessionHTTP(baseURL string) (*IdentitySessionHTTP, error) {
 		!(root.Scheme == "http" && (root.Hostname() == "127.0.0.1" || root.Hostname() == "localhost")) {
 		return nil, ErrInvalidOrigin
 	}
-	root.Path = "/v1/operators/me/permissions/"
-	permissionBase := root.String()
 	root.Path = "/v1/sessions/current"
+	endpoint := root.String()
+	root.Path = "/v1/operators/me/permissions/"
 	return &IdentitySessionHTTP{
-		endpoint:       root.String(),
-		permissionBase: permissionBase,
+		endpoint:       endpoint,
+		permissionBase: root.String(),
 		client: &http.Client{
-			Timeout: 3 * time.Second,
+			Timeout: identityReadTimeout,
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-				// Never forward an opaque bearer secret to any redirected host.
 				return http.ErrUseLastResponse
 			},
 		},
 	}, nil
 }
 
-// ValidActorID accepts only a canonical Identity actor identifier.
-// A corrupt upstream response is never proof of session or permission scope.
+// ValidActorID accepts canonical Identity actor identifiers only.
 func ValidActorID(id string) bool {
 	return id != "" && len(id) <= 128 && utf8.ValidString(id) &&
 		strings.TrimSpace(id) == id && !strings.ContainsFunc(id, unicode.IsControl)
 }
 
-func decodeIdentityOwnerJSON(response *http.Response, destination any) error {
-	cache := response.Header.Values("Cache-Control")
-	if len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") {
-		return ErrIdentityUnavailable
-	}
-	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || mediaType != identityJSONMediaType {
-		return ErrIdentityUnavailable
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-	if err != nil || len(body) > 4096 || !utf8.Valid(body) {
-		return ErrIdentityUnavailable
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err = decoder.Decode(destination); err != nil || decoder.Decode(new(any)) != io.EOF {
-		return ErrIdentityUnavailable
-	}
-	return nil
+func validBearer(token string) bool {
+	return token != "" && strings.TrimSpace(token) == token &&
+		!strings.ContainsAny(token, " \t\r\n")
 }
 
-func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, token string) (VerifiedActor, error) {
-	if identity == nil || identity.client == nil || token == "" ||
-		strings.TrimSpace(token) != token || strings.ContainsAny(token, " \t\r\n") {
-		return VerifiedActor{}, ErrUnauthorized
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, identity.endpoint, nil)
+// Pointer fields distinguish an absent or null required member from its
+// explicitly supplied zero value. JSON v2 rejects duplicate names, malformed
+// Unicode and case-mismatched names; unknown fields are rejected explicitly.
+type sessionReply struct {
+	ActorID          *string    `json:"actorId"`
+	Role             *string    `json:"role"`
+	SessionExpiresAt *time.Time `json:"sessionExpiresAt"`
+}
+
+type permissionReply struct {
+	ActorID    *string `json:"actorId"`
+	Permission *string `json:"permission"`
+}
+
+func (identity *IdentitySessionHTTP) read(ctx context.Context, endpoint, token string, destination any, permission bool) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
-		return VerifiedActor{}, ErrIdentityUnavailable
+		return ErrIdentityUnavailable
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", identityJSONMediaType)
 	request.Header.Set("Cache-Control", "no-store")
 	response, err := identity.client.Do(request)
 	if err != nil {
-		return VerifiedActor{}, ErrIdentityUnavailable
+		return ErrIdentityUnavailable
 	}
 	defer response.Body.Close()
 
-	if response.StatusCode == http.StatusUnauthorized {
+	switch response.StatusCode {
+	case http.StatusUnauthorized:
+		return ErrUnauthorized
+	case http.StatusForbidden:
+		if permission {
+			return ErrForbidden
+		}
+		return ErrIdentityUnavailable
+	case http.StatusOK:
+	default:
+		return ErrIdentityUnavailable
+	}
+
+	cache := response.Header.Values("Cache-Control")
+	if len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") {
+		return ErrIdentityUnavailable
+	}
+	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
+	if err != nil || mediaType != identityJSONMediaType ||
+		response.ContentLength > maxIdentityReplyBytes {
+		return ErrIdentityUnavailable
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxIdentityReplyBytes+1))
+	if err != nil || len(body) > maxIdentityReplyBytes {
+		return ErrIdentityUnavailable
+	}
+	if err = json.Unmarshal(body, destination, json.RejectUnknownMembers(true)); err != nil {
+		return ErrIdentityUnavailable
+	}
+	return nil
+}
+
+func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, token string) (VerifiedActor, error) {
+	if identity == nil || identity.client == nil || !validBearer(token) {
 		return VerifiedActor{}, ErrUnauthorized
 	}
-	if response.StatusCode != http.StatusOK {
-		return VerifiedActor{}, ErrIdentityUnavailable
-	}
-	var verified struct {
-		ActorID          string    `json:"actorId"`
-		Role             string    `json:"role"`
-		SessionExpiresAt time.Time `json:"sessionExpiresAt"`
-	}
-	if err = decodeIdentityOwnerJSON(response, &verified); err != nil {
+	var reply sessionReply
+	if err := identity.read(ctx, identity.endpoint, token, &reply, false); err != nil {
 		return VerifiedActor{}, err
 	}
-	if !ValidActorID(verified.ActorID) ||
-		!verified.SessionExpiresAt.After(time.Now()) {
+	if reply.ActorID == nil || reply.Role == nil || reply.SessionExpiresAt == nil {
+		return VerifiedActor{}, ErrIdentityUnavailable
+	}
+	if !ValidActorID(*reply.ActorID) || !reply.SessionExpiresAt.After(time.Now()) {
 		return VerifiedActor{}, ErrUnauthorized
 	}
 	var role ActorRole
-	switch verified.Role {
+	switch *reply.Role {
 	case "merchant":
 		role = MerchantRole
 	case "operator":
@@ -129,53 +153,34 @@ func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, 
 	default:
 		return VerifiedActor{}, ErrUnauthorized
 	}
-	return VerifiedActor{Subject: verified.ActorID, Role: role}, nil
+	return VerifiedActor{Subject: *reply.ActorID, Role: role}, nil
 }
 
-// RequireOperatorPermission checks the current effective Identity grant for
-// the SAME actor already verified via /v1/sessions/current by the consumer.
-// No role-to-permission inference, cache, redirect, or client-supplied actor ID.
+// RequireOperatorPermission requires the current explicit grant for the same
+// owner-verified actor. An Operator role alone never grants a DSH permission.
 func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Context, token, verifiedActorID, permission string) error {
 	if identity == nil || identity.client == nil {
 		return ErrIdentityUnavailable
 	}
-	if (permission != "operations" && permission != "platform_policies" && permission != "hr" && permission != "merchant") ||
-		!ValidActorID(verifiedActorID) {
-		return ErrForbidden
-	}
-	if token == "" || strings.TrimSpace(token) != token ||
-		strings.ContainsAny(token, " \t\r\n") {
-		return ErrUnauthorized
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, identity.permissionBase+permission, nil)
-	if err != nil {
-		return ErrIdentityUnavailable
-	}
-	request.Header.Set("Authorization", "Bearer "+token)
-	request.Header.Set("Accept", identityJSONMediaType)
-	request.Header.Set("Cache-Control", "no-store")
-	response, err := identity.client.Do(request)
-	if err != nil {
-		return ErrIdentityUnavailable
-	}
-	defer response.Body.Close()
-	switch response.StatusCode {
-	case http.StatusUnauthorized:
-		return ErrUnauthorized
-	case http.StatusForbidden:
-		return ErrForbidden
-	case http.StatusOK:
+	switch permission {
+	case "operations", "platform_policies", "hr", "merchant":
 	default:
-		return ErrIdentityUnavailable
+		return ErrForbidden
 	}
-	var grant struct {
-		ActorID    string `json:"actorId"`
-		Permission string `json:"permission"`
+	if !ValidActorID(verifiedActorID) {
+		return ErrForbidden
 	}
-	if err = decodeIdentityOwnerJSON(response, &grant); err != nil {
+	if !validBearer(token) {
+		return ErrUnauthorized
+	}
+	var reply permissionReply
+	if err := identity.read(ctx, identity.permissionBase+permission, token, &reply, true); err != nil {
 		return err
 	}
-	if grant.ActorID != verifiedActorID || grant.Permission != permission {
+	if reply.ActorID == nil || reply.Permission == nil {
+		return ErrIdentityUnavailable
+	}
+	if *reply.ActorID != verifiedActorID || *reply.Permission != permission {
 		return ErrForbidden
 	}
 	return nil

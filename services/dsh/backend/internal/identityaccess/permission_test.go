@@ -30,6 +30,10 @@ func TestIdentityHTTPPlatformPoliciesPermissionIsIndependentOfOperations(t *test
 		want   error
 	}{
 		{"explicit active policy grant", http.StatusOK, `{"actorId":"operator-a","permission":"platform_policies"}`, nil},
+		{"duplicate grant", http.StatusOK, `{"actorId":"operator-a","permission":"operations","permission":"platform_policies"}`, ErrIdentityUnavailable},
+		{"case variant permission", http.StatusOK, `{"actorId":"operator-a","Permission":"platform_policies"}`, ErrIdentityUnavailable},
+		{"duplicate actor", http.StatusOK, `{"actorId":"operator-b","actorId":"operator-a","permission":"platform_policies"}`, ErrIdentityUnavailable},
+		{"missing permission", http.StatusOK, `{"actorId":"operator-a"}`, ErrIdentityUnavailable},
 		{"operations grant cannot substitute", http.StatusOK, `{"actorId":"operator-a","permission":"operations"}`, ErrForbidden},
 		{"grant belongs to another actor", http.StatusOK, `{"actorId":"operator-b","permission":"platform_policies"}`, ErrForbidden},
 		{"platform grant revoked", http.StatusForbidden, `{"error":"FORBIDDEN"}`, ErrForbidden},
