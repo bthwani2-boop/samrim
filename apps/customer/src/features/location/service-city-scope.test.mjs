@@ -5,15 +5,19 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { DshPublicError } from "@bthwani/dsh";
+import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import { serviceCityLabel } from "./serviceability.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
+const entry = path.join(import.meta.dirname, "service-city-scope.tsx");
+const loadedModules = [];
+process.once("exit", () => loadedModules.length);
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-city-scope-"));
 let compiled;
 try {
   const task = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
     path.join(import.meta.dirname, "service-city-scope.tsx"), "--ignoreConfig", "--noResolve", "--noCheck",
-    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
+    "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
   assert.equal(task.status, 0, task.stderr || task.stdout);
   compiled = readFileSync(path.join(temp, "service-city-scope.js"), "utf8");
@@ -64,17 +68,14 @@ function harness(disabled = false) {
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "./serviceability": { serviceCityLabel },
   };
-  const mod = { exports: {} };
-  new Function("require", "module", "exports", compiled)(name => {
-    assert.ok(Object.hasOwn(modules, name), `unexpected import ${name}`);
-    return modules[name];
-  }, mod, mod.exports);
+  const mod = loadMappedRenderFixture(compiled, entry, modules);
+  loadedModules.push(mod);
   return {
     requests, selected,
-    render(origin = "test", isDisabled = disabled) {
+    render(origin = "test", isDisabled = disabled, currentCity = "sanaa") {
       index = 0;
       effects.length = 0;
-      const view = mod.exports.default({ origin, currentCity: "sanaa", disabled: isDisabled, onApply: city => selected.push(city) });
+      const view = mod.exports.default({ origin, currentCity, disabled: isDisabled, onApply: city => selected.push(city) });
       effects.forEach(fn => { fn(); });
       return view;
     },
@@ -225,4 +226,67 @@ test("a stale directory invalidation revokes prior city callbacks even within th
   await settle();
   button(h.render(), "عدن").props.onPress();
   assert.deepEqual(h.selected, ["aden"]);
+});
+
+
+test("city choices expose mutually exclusive checked states to Web and Android", async () => {
+  const h = harness();
+  h.render();
+  h.requests[0].resolve({ items: ["sanaa", "aden"], revision: 1 });
+  await settle();
+  const view = h.render();
+  for (const [label, checked] of [["صنعاء", true], ["عدن", false]]) {
+    const choice = button(view, label);
+    assert.equal(choice.props.accessibilityRole, "radio");
+    assert.equal(choice.props["aria-checked"], checked);
+    assert.equal(choice.props.accessibilityState.checked, checked);
+  }
+  assert.ok(find(view, node => node.props?.accessibilityRole === "radiogroup"));
+  button(view, "عدن").props.onPress();
+  assert.deepEqual(h.selected, ["aden"]);
+  const next = h.render("test", false, "aden");
+  assert.equal(button(next, "صنعاء").props["aria-checked"], false);
+  assert.equal(button(next, "عدن").props["aria-checked"], true);
+});
+
+test("duplicate first-page cities are rejected before any choice becomes available", async () => {
+  const h = harness();
+  h.render();
+  h.requests[0].resolve({ items: ["sanaa", "sanaa"], revision: 1 });
+  await settle();
+  const view = h.render();
+  assert.equal(button(view, "صنعاء"), undefined);
+  assert.ok(button(view, "إعادة المحاولة"));
+});
+
+for (const page of [
+  { items: ["aden"], revision: 2 },
+  { items: ["sanaa"], revision: 1 },
+]) {
+  test("city continuation rejects a changed revision or repeated city", async () => {
+    const h = harness();
+    h.render();
+    h.requests[0].resolve({ items: ["sanaa"], revision: 1, nextCursor: "page2" });
+    await settle();
+    button(h.render(), "عرض المزيد من المدن").props.onPress();
+    h.requests[1].resolve(page);
+    await settle();
+    assert.equal(button(h.render(), "صنعاء"), undefined);
+    assert.equal(button(h.render(), "عدن"), undefined);
+  });
+}
+
+test("empty and unavailable city directories never claim a selected choice", async () => {
+  const h = harness();
+  h.render();
+  h.requests[0].reject(new Error("network unavailable"));
+  await settle();
+  const error = h.render();
+  assert.ok(find(error, node => node.props?.accessibilityRole === "alert"));
+  button(error, "إعادة المحاولة").props.onPress();
+  h.requests[1].resolve({ items: [], revision: 1 });
+  await settle();
+  const empty = h.render();
+  assert.equal(find(empty, node => node.props?.accessibilityRole === "radio"), undefined);
+  assert.ok(find(empty, node => node.props?.children === "لا توجد مدن متاحة للتسوّق حاليًا."));
 });
