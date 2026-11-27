@@ -7,6 +7,13 @@ database is `bthwani_wlt_test`; the serving principal is
 ownership, effective grants and denial of financial commands, including
 unexpected owner objects. It permits retained isolated journal data.
 Fresh provisioning separately verifies empty state and no-login owner roles.
+The isolated `bthwani_wlt_command` principal is dormant (NOLOGIN, no database
+CONNECT, no memberships). It has only the latest agreement review projection
+and the two explicit proposal/decision commands. The owner functions require
+the isolated database, an admitted session principal and READ COMMITTED.
+The current HTTP runtime remains read-only. Activating command credentials,
+authenticated transport or retained-data handoff requires separate acceptance;
+the reconciler refuses a missing or active command role before stopping WLT.
 
 ## Runtime configuration
 

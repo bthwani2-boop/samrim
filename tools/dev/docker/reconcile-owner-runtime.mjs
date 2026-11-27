@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
-import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope } from "./owner-baseline-transition.mjs";
+import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope, wltCommandRoleInactiveSQL } from "./owner-baseline-transition.mjs";
 import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -200,7 +200,7 @@ export function baselineProofOwners({apply,prepare,blocked,dirtyInputs}) {
   return Object.keys(owners).filter(o=>blocked[o]==="SCHEMA_REVIEW_REQUIRED");
 }
 export function verifyBaselineProofOutput(output) {
-  const expected=["PG_FRESH_DSH_BASELINE","PG_READER_ACCESS","PG_RESTORE_READBACK","PG_DSH_DEDICATED_RUNTIME","PG_FRESH_IDENTITY_BASELINE","PG_FRESH_WLT_BASELINE","PG_BASELINE_TRANSITION_DSH","PG_BASELINE_TRANSITION_IDENTITY","PG_BASELINE_TRANSITION_WLT","PG_ISOLATION"];
+  const expected=["PG_FRESH_DSH_BASELINE","PG_READER_ACCESS","PG_RESTORE_READBACK","PG_DSH_DEDICATED_RUNTIME","PG_FRESH_IDENTITY_BASELINE","PG_FRESH_WLT_BASELINE","PG_WLT_AGREEMENT_COMMAND","PG_BASELINE_TRANSITION_DSH","PG_BASELINE_TRANSITION_IDENTITY","PG_BASELINE_TRANSITION_WLT","PG_ISOLATION"];
   for(const name of expected) {
     const evidence=output.split(/\r?\n/).filter(line=>line.startsWith(name+"="));
     if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
@@ -218,6 +218,8 @@ function rebaseAndApply(owner,state,env,head,tag,targetId,ensureSource) {
   const sql=(statement,timeout=30000)=>docker(["exec","-i",pg,"psql","-X","-qAt","-v","ON_ERROR_STOP=1","-U","bthwani_refoundation_admin","-d",scope.database,"-f","-"],{},timeout,statement+"\n");
   const before=sql("BEGIN READ ONLY; SELECT oid FROM pg_namespace WHERE nspname='"+schema+"' AND pg_get_userbyid(nspowner)='"+scope.owner+"'; COMMIT;");
   if(!/^[0-9]+$/.test(before))throw new Error("Owner namespace not verified");
+  if(owner==="wlt" && sql("BEGIN READ ONLY; SELECT "+wltCommandRoleInactiveSQL+"; COMMIT;")!=="t")
+    throw new Error("WLT_COMMAND_ROLE_HANDOFF_REQUIRED");
   const transaction=buildOwnerBaselineTransition(owner,schema,archive);
   const candidateEnv={...env,[owners[owner].tag]:tag};
   const groupNames=owner==="wlt"?["wlt"]:["dsh","identity"];

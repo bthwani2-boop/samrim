@@ -295,6 +295,13 @@ verify_wlt_restoration() {
       "SELECT NOT has_any_column_privilege('wlt.store_commercial_agreement_decisions','SELECT')
        AND NOT has_table_privilege('wlt.commercial_agreement_review_states','SELECT')
        AND NOT has_function_privilege('wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE');"
+    wlt_expect bthwani_wlt_command "$db" agreement-command-scope t \
+      "SELECT has_table_privilege('wlt.latest_commercial_agreement_reviews','SELECT')
+       AND NOT has_any_column_privilege('wlt.store_commercial_agreement_proposals','SELECT,INSERT,UPDATE')
+       AND NOT has_any_column_privilege('wlt.store_commercial_agreement_decisions','SELECT,INSERT,UPDATE')
+       AND has_function_privilege('wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE')
+       AND has_function_privilege('wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE')
+       AND NOT has_function_privilege('wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE');"
     wlt_expect bthwani_wlt_owner "$db" reservation-history '4:4:9007199254741080:105' \
       "SELECT count(*) || ':' || count(r.checkout_id) || ':' || sum(h.wallet_yer) || ':' || sum(h.cash_yer)
        FROM wlt.order_payment_allocations h LEFT JOIN wlt.order_payment_releases r USING(checkout_id);"
@@ -449,9 +456,10 @@ start_stage bthwani-ci-wlt-pg bthwani_wlt_owner bthwani_wlt_test
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_wlt_test \
   -c "CREATE ROLE bthwani_wlt_reader LOGIN NOINHERIT PASSWORD '$ci_password';" \
   -c "CREATE ROLE bthwani_wlt_sandbox LOGIN PASSWORD '$ci_password';" \
+  -c "CREATE ROLE bthwani_wlt_command LOGIN NOINHERIT PASSWORD '$ci_password';" \
   -c "CREATE ROLE bthwani_identity_fixture LOGIN PASSWORD '$ci_password';" \
   -c "REVOKE ALL ON DATABASE bthwani_wlt_test FROM PUBLIC;" \
-  -c "GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_identity_fixture;" \
+  -c "GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_wlt_command,bthwani_identity_fixture;" \
   -c "GRANT CREATE ON DATABASE bthwani_wlt_test TO bthwani_identity_fixture;"
 docker exec "$current" mkdir -p /agent02/services/wlt/database
 docker cp services/wlt/database/schema "$current:/agent02/services/wlt/database/schema"

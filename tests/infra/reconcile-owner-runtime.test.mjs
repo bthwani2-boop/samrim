@@ -179,7 +179,7 @@ test("fresh baseline preparation is confined to explicit isolated apply with com
   for(const patch of [{apply:false},{prepare:false},{dirtyInputs:["services/dsh/database/schema/00_marketplace.sql"]},{blocked:{identity:"UNCOMMITTED_NON_GO"}}]) {
     assert.deepEqual(baselineProofOwners({...base,...patch}),[]);
   }
-  const proof=["PG_FRESH_DSH_BASELINE=PASS count=8","PG_READER_ACCESS=PASS","PG_RESTORE_READBACK=PASS","PG_DSH_DEDICATED_RUNTIME=PASS","PG_FRESH_IDENTITY_BASELINE=PASS","PG_FRESH_WLT_BASELINE=PASS","PG_BASELINE_TRANSITION_DSH=PASS","PG_BASELINE_TRANSITION_IDENTITY=PASS","PG_BASELINE_TRANSITION_WLT=PASS","PG_ISOLATION=PASS"].join("\n");
+  const proof=["PG_FRESH_DSH_BASELINE=PASS count=8","PG_READER_ACCESS=PASS","PG_RESTORE_READBACK=PASS","PG_DSH_DEDICATED_RUNTIME=PASS","PG_FRESH_IDENTITY_BASELINE=PASS","PG_FRESH_WLT_BASELINE=PASS","PG_WLT_AGREEMENT_COMMAND=PASS","PG_BASELINE_TRANSITION_DSH=PASS","PG_BASELINE_TRANSITION_IDENTITY=PASS","PG_BASELINE_TRANSITION_WLT=PASS","PG_ISOLATION=PASS"].join("\n");
   assert.doesNotThrow(()=>verifyBaselineProofOutput(proof));
   assert.throws(()=>verifyBaselineProofOutput(proof+"\nPG_ISOLATION=FAIL"),/BASELINE_PROOF_INCOMPLETE/);
   assert.throws(()=>verifyBaselineProofOutput(proof.replace("PG_RESTORE_READBACK=PASS","PG_RESTORE_READBACK=FAIL")),/BASELINE_PROOF_INCOMPLETE/);

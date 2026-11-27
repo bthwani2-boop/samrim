@@ -297,7 +297,7 @@ THEN 'PASS' ELSE 'FAIL' END;
   if ($rollback -cne 'PASS') { throw 'WLT failed baseline retained schema or reader access' }
   # Reset only the namespace created above within this exact disposable fixture.
   $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'DROP DATABASE bthwani_wlt_test;' 'fixture-cleanup'
-  $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'DROP ROLE bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_wlt_owner;' 'fixture-cleanup'
+  $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'DROP ROLE bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_wlt_command,bthwani_wlt_owner;' 'fixture-cleanup'
   $wltProvision = Initialize-WltDatabase $DockerContext $containerId $user $wltSources $fixtureSecret
   $refused = $false
   try { $null = Initialize-WltDatabase $DockerContext $containerId $user $wltSources $fixtureSecret }
@@ -305,6 +305,34 @@ THEN 'PASS' ELSE 'FAIL' END;
   if (!$refused) { throw 'WLT existing namespace replay admitted' }
 
   Write-Output 'PG_WLT_PROVISIONER=PASS transaction-rollback=yes fresh-only=yes credential-publication=yes competing-edit-denied=yes'
+  # Command login is admitted only inside this disposable fixture.
+  $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_command LOGIN; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_command;'
+  function Assert-AgreementCommand([string]$Role,[string]$Sql,[string]$Expected,[bool]$Reject=$false) {
+    $actual = & docker --context $DockerContext exec $containerId psql -X -qAt -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U $Role -d $wltDb -c $Sql 2>&1
+    $ok = $LASTEXITCODE -eq 0
+    $result = ($actual | Out-String).Trim()
+    if ($Reject) {
+      if ($ok -or $result -notmatch [regex]::Escape($Expected)) { throw ('Agreement denial failed: '+$Role+' '+$result) }
+    } elseif (!$ok -or $result -cne $Expected) { throw ('Agreement command readback failed: '+$Role+' '+$result) }
+  }
+  $proposal = "SELECT version||':'||replay FROM wlt.append_commercial_agreement_proposal('fixture-store',0,'fixture-proposal-001','DIRECT','COMMISSION','PLATFORM_MANAGED',375,NULL,NULL,ARRAY['BTHWANI_CAPTAIN'],'2026-12-01'::timestamptz,'fixture-operator','synthetic proposal')"
+  Assert-AgreementCommand 'bthwani_wlt_command' $proposal '1:false'
+  Assert-AgreementCommand 'bthwani_wlt_command' $proposal '1:true'
+  Assert-AgreementCommand 'bthwani_wlt_reader' $proposal '42501' $true
+  Assert-AgreementCommand 'bthwani_wlt_command' 'SELECT * FROM wlt.store_commercial_agreement_proposals' '42501' $true
+  Assert-AgreementCommand 'bthwani_wlt_command' 'UPDATE wlt.store_commercial_agreement_proposals SET version=2' '42501' $true
+  Assert-AgreementCommand 'bthwani_wlt_command' "SELECT wlt.post_sandbox_customer_funding('fixture-denied','fixture-customer',1)" '42501' $true
+  $finance = "SELECT wlt.record_commercial_agreement_decision('fixture-store',1,'fixture-proposal-001','fixture-finance-001','FINANCE_APPROVED','fixture-finance','synthetic review')"
+  Assert-AgreementCommand 'bthwani_wlt_command' $finance '23514' $true
+  $consent = "SELECT wlt.record_commercial_agreement_decision('fixture-store',1,'fixture-proposal-001','fixture-consent-001','ACCEPTED','fixture-merchant','synthetic consent')"
+  Assert-AgreementCommand 'bthwani_wlt_command' $consent 'RECORDED'
+  Assert-AgreementCommand 'bthwani_wlt_command' $consent 'REPLAYED'
+  Assert-AgreementCommand 'bthwani_wlt_command' $finance 'RECORDED'
+  Assert-AgreementCommand 'bthwani_wlt_command' "SELECT review_state FROM wlt.latest_commercial_agreement_reviews WHERE store_id='fixture-store'" 'REVIEW_APPROVED_PENDING_ACTIVATION'
+  $proof = Invoke-ProofSql $wltDb "SELECT count(*)||':'||(SELECT count(*) FROM wlt.store_commercial_agreement_decisions)||':'||(SELECT count(*) FROM wlt.customer_funding_journal) FROM wlt.store_commercial_agreement_proposals;"
+  if ($proof -cne '1:2:0') { throw 'Agreement durable state or monetary isolation failed' }
+  $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_command NOLOGIN; REVOKE CONNECT ON DATABASE bthwani_wlt_test FROM bthwani_wlt_command;'
+  Write-Output 'PG_WLT_AGREEMENT_COMMAND=PASS replay=yes separate-consent=yes direct-dml-denied=yes sandbox-denied=yes ledger-unchanged=yes'
   # Sandbox login is only enabled inside this disposable test for posting proof.
   $null = Invoke-WltSql $DockerContext $containerId $user 'postgres' 'ALTER ROLE bthwani_wlt_sandbox LOGIN; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_sandbox;' 'fixture-sandbox'
   $denied = & docker --context $DockerContext exec $containerId psql -X -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U bthwani_wlt_reader -d $wltDb -c 'SELECT provider_reference FROM wlt.customer_funding_journal' 2>&1
@@ -376,7 +404,12 @@ GRANT UPDATE(revoked_at) ON $identitySchema.auth_sessions TO bthwani_identity_ru
   # The live WLT sandbox role is intentionally NOLOGIN. Match that boundary
   # after the preceding fixture-only posting/reversal tests have completed.
   $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_sandbox NOLOGIN; REVOKE CONNECT ON DATABASE bthwani_wlt_test FROM bthwani_wlt_sandbox; REVOKE ALL ON DATABASE bthwani_wlt_test FROM PUBLIC; GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader;'
+  $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_command LOGIN;'
+  Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000005' $false 'owner baseline scope or exclusive writer not proven'
+  $null = Invoke-ProofSql 'postgres' 'ALTER ROLE bthwani_wlt_command NOLOGIN;'
   Invoke-BaselineTransition 'wlt' $wltDb 'wlt' 'bthwani_recovery_wlt_000000000001'
+  $agreementProof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT review_state FROM wlt.latest_commercial_agreement_reviews WHERE store_id='fixture-store')='REVIEW_APPROVED_PENDING_ACTIVATION' AND (SELECT count(*) FROM wlt.store_commercial_agreement_decisions)=2 AND NOT has_schema_privilege('bthwani_wlt_command','bthwani_recovery_wlt_000000000001','USAGE') AND has_function_privilege('bthwani_wlt_command','wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE') THEN 'PASS' ELSE 'FAIL' END;"
+  if ($agreementProof -cne 'PASS') { throw 'WLT agreement transition state or command ACL failed' }
   $proof = Invoke-ProofSql $wltDb "SELECT CASE WHEN (SELECT count(*) FROM wlt.customer_funding_journal)=2 AND (SELECT count(*) FROM wlt.customer_funding_entries)=4 AND (SELECT sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END) FROM wlt.customer_funding_entries)=0 AND (SELECT balance_yer FROM wlt.customer_wallet_balances WHERE actor_id='$testCustomer')=0 AND NOT has_table_privilege('bthwani_wlt_reader','wlt.customer_funding_journal','SELECT') AND NOT has_function_privilege('bthwani_wlt_reader','wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE') AND NOT has_schema_privilege('bthwani_wlt_reader','bthwani_recovery_wlt_000000000001','USAGE') THEN 'PASS' ELSE 'FAIL' END;"
   if ($proof -cne 'PASS') { throw 'WLT baseline transition ledger or reader boundary failed' }
   # Reproduce retired reservation names in a disposable fixture, without

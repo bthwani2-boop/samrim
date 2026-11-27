@@ -55,6 +55,9 @@ function baselineSources(owner) {
   });
 }
 
+// Never switch a retained namespace while an agreement writer is admitted.
+export const wltCommandRoleInactiveSQL = "EXISTS(SELECT 1 FROM pg_catalog.pg_roles r WHERE r.rolname='bthwani_wlt_command' AND NOT(r.rolcanlogin OR r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls OR r.rolinherit) AND NOT pg_catalog.has_database_privilege(r.oid,current_database(),'CONNECT,CREATE,TEMP') AND NOT EXISTS(SELECT 1 FROM pg_catalog.pg_auth_members WHERE member=r.oid OR roleid=r.oid))";
+
 export function buildOwnerBaselineTransition(owner,schema,archive,sources) {
   const d=transitionScope(owner,schema,archive);
   sources??=baselineSources(owner);
@@ -65,7 +68,7 @@ export function buildOwnerBaselineTransition(owner,schema,archive,sources) {
     if(sql.includes("$bthwani_baseline$")||sql.includes("$bthwani_bootstrap$"))throw new Error("Reserved bootstrap delimiter");
     return "  EXECUTE $bthwani_baseline$"+sql+"$bthwani_baseline$;";
   }).join("\n");
-  const roles=owner==="wlt"?[d.runtime,"bthwani_wlt_sandbox"]:[d.runtime];
+  const roles=owner==="wlt"?[d.runtime,"bthwani_wlt_sandbox","bthwani_wlt_command"]:[d.runtime];
   const roleList=roles.map(r=>"'"+r+"'").join(",");
   const roleNames=roles.join(",");
   // Only the exact retired WLT reservation pair may remain archive-only.
@@ -83,6 +86,7 @@ export function buildOwnerBaselineTransition(owner,schema,archive,sources) {
 `DO $bthwani_scope$
 BEGIN
   IF current_database()<> '${d.database}' OR
+    ${owner==="wlt"?"NOT ("+wltCommandRoleInactiveSQL+") OR":""}
     NOT EXISTS(SELECT 1 FROM pg_database WHERE datname=current_database() AND pg_get_userbyid(datdba)='${d.owner}') OR
     NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='${d.owner}' AND NOT(rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)) OR
     NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='${d.runtime}' AND rolcanlogin AND NOT(rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)) OR

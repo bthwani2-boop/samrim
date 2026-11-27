@@ -9,7 +9,7 @@ import (
 )
 
 // Only synthetic owner commands; no genuine consent or authority is asserted.
-func verifyAgreementDecisions(t *testing.T, ctx context.Context, owner, reader *sql.DB) {
+func verifyAgreementDecisions(t *testing.T, ctx context.Context, owner, reader, executor *sql.DB) {
 	t.Helper()
 	const command = "SELECT wlt.record_commercial_agreement_decision($1,$2,$3,$4,$5,$6,$7)"
 	run := func(db *sql.DB, store string, version int64, proposal, operation, decision, actor, reason string) (string, error) {
@@ -24,13 +24,13 @@ func verifyAgreementDecisions(t *testing.T, ctx context.Context, owner, reader *
 		t.Fatal(err)
 	}
 	call := func(operation, decision, actor string) (string, error) {
-		return run(owner, "store-a", 2, proposal, operation, decision, actor, reason)
+		return run(executor, "store-a", 2, proposal, operation, decision, actor, reason)
 	}
 	_, err := run(reader, "store-a", 2, proposal, "decision-denied-001", "ACCEPTED", "merchant-a", reason)
 	assertSQLState(t, err, "42501")
-	_, err = run(owner, "store-a", 1, "proposal-op-0001", "decision-stale-001", "ACCEPTED", "merchant-a", reason)
+	_, err = run(executor, "store-a", 1, "proposal-op-0001", "decision-stale-001", "ACCEPTED", "merchant-a", reason)
 	assertSQLState(t, err, "40001")
-	_, err = run(owner, "store-a", 2, "wrong-proposal", "decision-invalid-001", "ACCEPTED", "merchant-a", reason)
+	_, err = run(executor, "store-a", 2, "wrong-proposal", "decision-invalid-001", "ACCEPTED", "merchant-a", reason)
 	assertSQLState(t, err, "23514")
 	_, err = call("decision-review-early", "FINANCE_APPROVED", "finance-a")
 	assertSQLState(t, err, "23514")
@@ -88,10 +88,10 @@ func verifyAgreementDecisions(t *testing.T, ctx context.Context, owner, reader *
 	_, err = call("decision-finance-other", "FINANCE_REJECTED", "finance-b")
 	assertSQLState(t, err, "23505")
 	// Declined subscription has no approval and no invoicing.
-	if state, e := run(owner, "store-b", 1, "proposal-op-0002", "decision-sub-declined", "DECLINED", "merchant-b", reason); e != nil || state != "RECORDED" {
+	if state, e := run(executor, "store-b", 1, "proposal-op-0002", "decision-sub-declined", "DECLINED", "merchant-b", reason); e != nil || state != "RECORDED" {
 		t.Fatalf("decline %s %v", state, e)
 	}
-	_, err = run(owner, "store-b", 1, "proposal-op-0002", "decision-sub-review", "FINANCE_APPROVED", "finance-b", reason)
+	_, err = run(executor, "store-b", 1, "proposal-op-0002", "decision-sub-review", "FINANCE_APPROVED", "finance-b", reason)
 	assertSQLState(t, err, "23514")
 	var a, b string
 	if err = owner.QueryRowContext(ctx, "SELECT review_state FROM wlt.commercial_agreement_review_states WHERE store_id='store-a' AND version=2").Scan(&a); err != nil || a != "REVIEW_APPROVED_PENDING_ACTIVATION" {
@@ -129,18 +129,18 @@ func verifyAgreementDecisions(t *testing.T, ctx context.Context, owner, reader *
 				}
 				var version int64
 				var replay bool
-				if e := owner.QueryRowContext(ctx, appendProposal, store, op, relation, model, collector, rate, amount, period).Scan(&version, &replay); e != nil || version != 1 || replay {
+				if e := executor.QueryRowContext(ctx, appendProposal, store, op, relation, model, collector, rate, amount, period).Scan(&version, &replay); e != nil || version != 1 || replay {
 					t.Fatalf("proposal %s/%s/%s: %d %v %v", relation, model, collector, version, replay, e)
 				}
 				merchantOp := fmt.Sprintf("matrix-consent-%d", cases)
 				financeOp := fmt.Sprintf("matrix-finance-%d", cases)
-				if state, e := run(owner, store, 1, op, merchantOp, "ACCEPTED", "synthetic-matrix-merchant", reason); e != nil || state != "RECORDED" {
+				if state, e := run(executor, store, 1, op, merchantOp, "ACCEPTED", "synthetic-matrix-merchant", reason); e != nil || state != "RECORDED" {
 					t.Fatalf("matrix consent %s: %s %v", store, state, e)
 				}
-				if state, e := run(owner, store, 1, op, financeOp, "FINANCE_APPROVED", "synthetic-matrix-finance", reason); e != nil || state != "RECORDED" {
+				if state, e := run(executor, store, 1, op, financeOp, "FINANCE_APPROVED", "synthetic-matrix-finance", reason); e != nil || state != "RECORDED" {
 					t.Fatalf("matrix finance %s: %s %v", store, state, e)
 				}
-				if state, e := run(owner, store, 1, op, financeOp, "FINANCE_APPROVED", "synthetic-matrix-finance", reason); e != nil || state != "REPLAYED" {
+				if state, e := run(executor, store, 1, op, financeOp, "FINANCE_APPROVED", "synthetic-matrix-finance", reason); e != nil || state != "REPLAYED" {
 					t.Fatalf("matrix finance replay %s: %s %v", store, state, e)
 				}
 				var gotRelation, gotModel, gotCollector, gotState string
@@ -162,7 +162,7 @@ func verifyAgreementDecisions(t *testing.T, ctx context.Context, owner, reader *
 	}
 	var ignoredVersion int64
 	var ignoredReplay bool
-	err = owner.QueryRowContext(ctx, appendProposal, "matrix-no-collector", "matrix-missing-collector", "DIRECT", "COMMISSION", nil, 375, nil, nil).Scan(&ignoredVersion, &ignoredReplay)
+	err = executor.QueryRowContext(ctx, appendProposal, "matrix-no-collector", "matrix-missing-collector", "DIRECT", "COMMISSION", nil, 375, nil, nil).Scan(&ignoredVersion, &ignoredReplay)
 	assertSQLState(t, err, "23502")
 	var proposals, decisions, allocations, releases, journal, missing int
 	err = owner.QueryRowContext(ctx, "SELECT (SELECT count(*) FROM wlt.store_commercial_agreement_proposals WHERE store_id LIKE 'matrix-store-%'),(SELECT count(*) FROM wlt.store_commercial_agreement_decisions WHERE store_id LIKE 'matrix-store-%'),(SELECT count(*) FROM wlt.order_payment_allocations),(SELECT count(*) FROM wlt.order_payment_releases),(SELECT count(*) FROM wlt.customer_funding_journal),(SELECT count(*) FROM wlt.store_commercial_agreement_proposals WHERE store_id='matrix-no-collector')").Scan(&proposals, &decisions, &allocations, &releases, &journal, &missing)

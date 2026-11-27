@@ -47,6 +47,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	wltRoot := filepath.Join(fixtureRoot, "services", "wlt", "database")
 	owner := openTestDB(t, "postgres://bthwani_wlt_owner:synthetic-only"+network)
 	reader := openTestDB(t, readerDSN)
+	executor := openTestDB(t, "postgres://bthwani_wlt_command:synthetic-only"+network)
 	identity := openTestDB(t, identityDSN)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -67,8 +68,8 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	apply("schema", "30_commercial_agreements.sql")
 	apply("schema", "40_order_wallet_reservations.sql")
 	t.Run("commercial agreement proposals", func(t *testing.T) {
-		verifyCommercialAgreementProposals(t, ctx, owner, reader)
-		verifyAgreementDecisions(t, ctx, owner, reader)
+		verifyCommercialAgreementProposals(t, ctx, owner, reader, executor)
+		verifyAgreementDecisions(t, ctx, owner, reader, executor)
 	})
 	// Post only from the isolated fixture owner; the HTTP runtime stays read-only.
 	// Preserve this exact posting while installing the separate sandbox.

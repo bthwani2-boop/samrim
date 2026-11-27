@@ -12,7 +12,7 @@ import (
 )
 
 // These are synthetic owner fixtures, not actual Merchant consent or Finance approval.
-func verifyCommercialAgreementProposals(t *testing.T, ctx context.Context, owner, reader *sql.DB) {
+func verifyCommercialAgreementProposals(t *testing.T, ctx context.Context, owner, reader, executor *sql.DB) {
 	t.Helper()
 	const appendProposal = `SELECT version,replay FROM wlt.append_commercial_agreement_proposal($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`
 	effective := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -28,19 +28,19 @@ func verifyCommercialAgreementProposals(t *testing.T, ctx context.Context, owner
 		a[index] = value
 		return a
 	}
-	v, replay, err := run(owner, args)
+	v, replay, err := run(executor, args)
 	if err != nil || v != 1 || replay {
 		t.Fatalf("create proposal: %d %v %v", v, replay, err)
 	}
-	v, replay, err = run(owner, args)
+	v, replay, err = run(executor, args)
 	if err != nil || v != 1 || !replay {
 		t.Fatalf("replay: %d %v %v", v, replay, err)
 	}
-	_, _, err = run(owner, with(args, 6, int64(400)))
+	_, _, err = run(executor, with(args, 6, int64(400)))
 	assertSQLState(t, err, "23505")
-	_, _, err = run(owner, with(args, 0, "store-b"))
+	_, _, err = run(executor, with(args, 0, "store-b"))
 	assertSQLState(t, err, "23505")
-	_, _, err = run(owner, with(args, 2, "proposal-op-stale"))
+	_, _, err = run(executor, with(args, 2, "proposal-op-stale"))
 	assertSQLState(t, err, "40001")
 	for _, bad := range [][]any{
 		with(with(args, 2, "proposal-op-invalid-01"), 3, "UNKNOWN"),
@@ -52,11 +52,11 @@ func verifyCommercialAgreementProposals(t *testing.T, ctx context.Context, owner
 		with(with(args, 2, "proposal-op-invalid-07"), 9, pq.Array([]string{"UNKNOWN"})),
 	} {
 		bad[1] = int64(1)
-		_, _, err = run(owner, bad)
+		_, _, err = run(executor, bad)
 		assertSQLState(t, err, "23514")
 	}
 	subscription := []any{"store-b", int64(0), "proposal-op-0002", "DIRECT", "SUBSCRIPTION", "STORE_MANAGED", nil, int64(9007199254740993), int64(30), pq.Array([]string{"CUSTOMER_PICKUP"}), effective, "synthetic-operator", "synthetic terms"}
-	v, replay, err = run(owner, subscription)
+	v, replay, err = run(executor, subscription)
 	if err != nil || v != 1 || replay {
 		t.Fatalf("subscription proposal: %d %v %v", v, replay, err)
 	}
@@ -70,7 +70,7 @@ func verifyCommercialAgreementProposals(t *testing.T, ctx context.Context, owner
 	for _, id := range []string{"proposal-op-race-a", "proposal-op-race-b"} {
 		a := with(next, 2, id)
 		wg.Add(1)
-		go func() { defer wg.Done(); _, _, err := run(owner, a); results <- err }()
+		go func() { defer wg.Done(); _, _, err := run(executor, a); results <- err }()
 	}
 	wg.Wait()
 	close(results)
@@ -90,7 +90,7 @@ func verifyCommercialAgreementProposals(t *testing.T, ctx context.Context, owner
 	if winners != 1 || conflicts != 1 {
 		t.Fatalf("version race winners=%d conflicts=%d", winners, conflicts)
 	}
-	v, replay, err = run(owner, args)
+	v, replay, err = run(executor, args)
 	if err != nil || v != 1 || !replay {
 		t.Fatalf("old retry after successor: %d %v %v", v, replay, err)
 	}
