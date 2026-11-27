@@ -492,3 +492,57 @@ test("Web root uses only its app-scoped localStorage key after mount", async () 
     else globalThis.window = prior;
   }
 });
+
+test("Web storage is lazy, scoped, and recovers from synchronous access and write failures", async () => {
+  const { api, effects, subscriptions } = fixture({ platform: "web" });
+  const store = new Map([["web.theme", "dark"], ["other.theme", "light"]]);
+  const prior = globalThis.window;
+  let reads = 0;
+  let failAccess = true;
+  let failWrite = false;
+  globalThis.window = {
+    get localStorage() {
+      reads++;
+      if (failAccess) throw new Error("storage denied");
+      return {
+        getItem: (key) => store.get(key) ?? null,
+        setItem: (key, value) => {
+          if (failWrite) throw new Error("storage full");
+          store.set(key, value);
+        },
+      };
+    },
+  };
+  try {
+    const forbidden = async () => { throw new Error("native storage called on Web"); };
+    const RootLayout = api.createMobileAppearanceRoot("web.theme", forbidden, forbidden, (background) => background);
+    const layout = RootLayout();
+    const controller = layout.props.controller;
+    assert.equal(reads, 0, "construction must not access browser storage");
+    assert.equal(subscriptions.size, 0);
+    layout.type(layout.props);
+    const cleanup = effects.shift()();
+    try {
+      await controller.restore();
+      assert.equal(controller.getSnapshot().preference, "system");
+      assert.equal(controller.getSnapshot().ready, true);
+      failAccess = false;
+      await controller.setPreference("light");
+      assert.equal(store.get("web.theme"), "light");
+      failWrite = true;
+      await assert.rejects(controller.setPreference("dark"), /storage full/);
+      assert.equal(controller.getSnapshot().preference, "light");
+      assert.equal(store.get("web.theme"), "light");
+      failWrite = false;
+      await controller.setPreference("dark");
+      assert.equal(store.get("web.theme"), "dark");
+      assert.equal(store.get("other.theme"), "light");
+    } finally {
+      cleanup();
+    }
+    assert.equal(subscriptions.size, 0);
+  } finally {
+    if (prior === undefined) delete globalThis.window;
+    else globalThis.window = prior;
+  }
+});

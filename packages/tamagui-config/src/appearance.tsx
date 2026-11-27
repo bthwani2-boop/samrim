@@ -1,8 +1,8 @@
-import type { ThemeColors } from "@bthwani/design-system/theme";
 import {
   isThemePreference,
   resolveTheme,
   resolveThemeName,
+  type ThemeColors,
   type ThemeName,
   type ThemePreference,
 } from "@bthwani/design-system/theme";
@@ -11,9 +11,20 @@ import { Appearance, Platform } from "react-native";
 import { TamaguiProvider, Theme } from "tamagui";
 import { tamaguiConfig } from "./index";
 
+// The controller awaits reads and serializes writes. Platform storage adapters
+// may be synchronous or asynchronous; neither owns a second promise boundary.
 export type AppearanceStorage = {
-  getItem(key: string): Promise<string | null>;
-  setItem(key: string, value: string): Promise<void>;
+  getItem(key: string): string | null | Promise<string | null>;
+  setItem(key: string, value: string): void | Promise<void>;
+};
+
+const webStorage: AppearanceStorage = {
+  getItem(key) {
+    return window.localStorage.getItem(key);
+  },
+  setItem(key, value) {
+    window.localStorage.setItem(key, value);
+  },
 };
 
 export type MobileAppearanceSnapshot = {
@@ -132,15 +143,7 @@ function useAppearanceController(
   nativeSetItem: AppearanceStorage["setItem"],
 ): MobileAppearanceController {
   const storage = React.useMemo<AppearanceStorage>(
-    () =>
-      Platform.OS === "web"
-        ? {
-            getItem: async (storageKey) => window.localStorage.getItem(storageKey),
-            setItem: async (storageKey, value) => {
-              window.localStorage.setItem(storageKey, value);
-            },
-          }
-        : { getItem: nativeGetItem, setItem: nativeSetItem },
+    () => Platform.OS === "web" ? webStorage : { getItem: nativeGetItem, setItem: nativeSetItem },
     [nativeGetItem, nativeSetItem],
   );
   return React.useMemo(() => createMobileAppearanceController({ storage, key }), [key, storage]);
