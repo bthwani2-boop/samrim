@@ -2,16 +2,11 @@ import { identityOperations } from "@bthwani/identity";
 import { type OperatorPermission, operatorPermissions } from "../features/session/operator-permissions.ts";
 import type { OperatorPasskeyConfig } from "./operator-passkey-config.ts";
 
-const limits = {
-  owner: 5000,
-  assertion: 2000,
-  empty: 1000,
-  json: 65536,
-} as const;
+const limits = { owner: 5000, assertion: 2000, empty: 1000, json: 65536 } as const;
 
 type OwnerOperation = Readonly<{ method: string; path: string }>;
-type BodyPolicy = Readonly<{ maxBytes: number; timeoutMs: number; empty: boolean }>;
-type Cancellable = Pick<ReadableStream<Uint8Array>, "cancel">;
+type BodyMode = "owner-json" | "request" | "empty";
+type BodyPolicy = Readonly<{ maxBytes: number; timeoutMs: number; mode: BodyMode }>;
 
 export function operatorPermissionOperation(permission: OperatorPermission): OwnerOperation {
   const operation = identityOperations.getEffectiveOperatorPermission;
@@ -22,9 +17,6 @@ function operationKey(operation: OwnerOperation): string {
   return operation.method + " " + operation.path;
 }
 
-// Each contract admits exactly one success status. Only its JSON response
-// may transfer body ownership to the domain parser; all other responses
-// retain the transport's cleanup responsibility.
 const ownerOperations = new Map<string, number>([
   [operationKey(identityOperations.beginOperatorPasskeyAuthentication), 200],
   [operationKey(identityOperations.finishOperatorPasskeyAuthentication), 200],
@@ -37,54 +29,76 @@ const ownerOperations = new Map<string, number>([
   ...operatorPermissions.map(permission => [operationKey(operatorPermissionOperation(permission)), 200] as const),
 ]);
 
-async function cancelRejected(source: Cancellable): Promise<void> {
+// A single cleanup boundary covers both native getters and cancellation
+// promises; a failed cleanup cannot replace the authoritative outcome.
+async function discard(acquire: () => { cancel(): Promise<void> } | null): Promise<void> {
   try {
-    await source.cancel();
+    await acquire()?.cancel();
   } catch {
-    // Cleanup is best effort and never changes the admitted outcome.
+    // Cleanup is best effort and never delays the caller.
   }
 }
 
-async function discardResponse(response: Response): Promise<void> {
-  try {
+function discardResponse(response: Response): void {
+  void discard(() => {
     const body = response.body;
-    if (body && !body.locked) await body.cancel();
-  } catch {
-    // Native getter/cancellation failures cannot replace the owner status.
-  }
+    return body && !body.locked ? body : null;
+  });
 }
 
+function privateReply(headers: Headers): boolean {
+  return headers.get("cache-control")?.split(",")
+    .some(directive => directive.trim().toLowerCase() === "no-store") ?? false;
+}
+
+function emptyDeclaration(headers: Headers): boolean {
+  const length = headers.get("content-length");
+  return (length === null || length === "0") && !headers.has("transfer-encoding");
+}
+
+// Exact status is the first admission boundary. Non-admitted status bodies
+// stay owned by the transport. A successful empty receipt must independently
+// establish privacy and absence of a representation before it is returned.
 export async function operatorIdentityRequest(
   config: OperatorPasskeyConfig,
   operation: OwnerOperation,
   init: Omit<RequestInit, "method">,
 ): Promise<Response> {
-  const admittedStatus = ownerOperations.get(operationKey(operation));
-  if (admittedStatus === undefined) throw new Error("Unexpected Identity owner operation");
+  const expected = ownerOperations.get(operationKey(operation));
+  if (expected === undefined) throw new Error("Unexpected Identity owner operation");
   const response = await fetch(config.identityOrigin + operation.path, {
     ...init,
     method: operation.method,
+    credentials: "omit",
     cache: "no-store",
     redirect: "error",
     signal: AbortSignal.timeout(limits.owner),
   });
-  if (response.status !== admittedStatus || admittedStatus === 204) {
-    void discardResponse(response);
+  if (response.status !== expected) {
+    discardResponse(response);
+  } else if (expected === 204) {
+    try {
+      if (!privateReply(response.headers) || !emptyDeclaration(response.headers) || response.body !== null) {
+        throw new Error("Unexpected Identity empty receipt");
+      }
+    } finally {
+      discardResponse(response);
+    }
   }
   return response;
 }
 
 function admitsDeclaration(headers: Headers, policy: BodyPolicy): boolean {
   if (!Number.isSafeInteger(policy.maxBytes) || policy.maxBytes < 0 || policy.maxBytes > limits.json) return false;
+  if (policy.mode === "empty") return emptyDeclaration(headers);
+  if (policy.mode === "owner-json" && (!privateReply(headers) ||
+      headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json")) return false;
   const length = headers.get("content-length");
-  if (policy.empty) {
-    return (length === null || length === "0") && !headers.has("transfer-encoding");
-  }
   return length === null || (/^\d+$/.test(length) && Number(length) <= policy.maxBytes);
 }
 
-// One admission, bounded read and cleanup path for all three body policies.
-// Acquire the reader before rejecting headers; no inadmissible bytes are read.
+// One bounded reader for requests and owner responses. Metadata is verified
+// before reading any bytes; acquire first so rejected declarations are disposed.
 async function admittedBytes(message: Request | Response, policy: BodyPolicy): Promise<Uint8Array> {
   const reader = message.body?.getReader();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -92,7 +106,7 @@ async function admittedBytes(message: Request | Response, policy: BodyPolicy): P
   try {
     if (!admitsDeclaration(message.headers, policy)) throw new Error("Unexpected body declaration");
     if (!reader) {
-      if (!policy.empty) throw new Error("Missing body");
+      if (policy.mode !== "empty") throw new Error("Missing body");
       return new Uint8Array(0);
     }
     const expires = performance.now() + policy.timeoutMs;
@@ -103,7 +117,7 @@ async function admittedBytes(message: Request | Response, policy: BodyPolicy): P
         if (performance.now() >= expires) throw new Error("Body read deadline exceeded");
         const { done, value } = await reader.read();
         if (done) return buffer.subarray(0, size);
-        if (policy.empty || value.byteLength > policy.maxBytes - size) {
+        if (policy.mode === "empty" || value.byteLength > policy.maxBytes - size) {
           throw new Error("Unexpected body size");
         }
         buffer.set(value, size);
@@ -119,7 +133,7 @@ async function admittedBytes(message: Request | Response, policy: BodyPolicy): P
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     if (reader) {
-      if (!complete) void cancelRejected(reader);
+      if (!complete) void discard(() => reader);
       reader.releaseLock();
     }
   }
@@ -130,17 +144,14 @@ function decode(bytes: Uint8Array): string {
 }
 
 export async function boundedResponseJSON(response: Response): Promise<unknown> {
-  const bytes = await admittedBytes(response, {
-    maxBytes: limits.json, timeoutMs: limits.owner, empty: false,
-  });
-  return JSON.parse(decode(bytes));
+  return JSON.parse(decode(await admittedBytes(response, {
+    maxBytes: limits.json, timeoutMs: limits.owner, mode: "owner-json",
+  })));
 }
 
 export async function boundedRequestBody(request: Request, maxBytes: number = limits.json): Promise<string | null> {
   try {
-    const bytes = await admittedBytes(request, {
-      maxBytes, timeoutMs: limits.assertion, empty: false,
-    });
+    const bytes = await admittedBytes(request, { maxBytes, timeoutMs: limits.assertion, mode: "request" });
     return bytes.byteLength === 0 ? null : decode(bytes);
   } catch {
     return null;
@@ -149,7 +160,7 @@ export async function boundedRequestBody(request: Request, maxBytes: number = li
 
 export async function isEmptyRequestBody(request: Request): Promise<boolean> {
   try {
-    await admittedBytes(request, { maxBytes: 0, timeoutMs: limits.empty, empty: true });
+    await admittedBytes(request, { maxBytes: 0, timeoutMs: limits.empty, mode: "empty" });
     return true;
   } catch {
     return false;
