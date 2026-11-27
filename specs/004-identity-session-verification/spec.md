@@ -1,94 +1,62 @@
-# Identity verified session and effective Operator permission
+# Feature: Identity verified sessions, role admission and Operator access
 
-STATUS: DEVELOPMENT_IN_PROGRESS
 CAPABILITY_ID: IDENTITY_ACTIVATION_SESSIONS
-JOURNEY: MANAGED_PARTICIPANT_ADMISSION — incomplete dependency
+JOURNEY: MANAGED_PARTICIPANT_ADMISSION
+ARTIFACT_CLASS: DERIVED_SPEC_KIT_REQUIREMENTS
 
-## User story
+This feature describes the bounded Identity-owner implementation and its applicable acceptance. It is not a policy, authority, work tracker or implementation certificate. Resolve decisions at [Identity governance](../../governance/identity.md), cross-owner boundaries at [architecture](../../governance/architecture.md), integration at [journeys](../../governance/journeys.md), and execution at [AGENTS.md](../../AGENTS.md). The [owner guide](../../services/identity/README.md), [OpenAPI entrypoint](../../services/identity/contracts/openapi/identity.openapi.yaml), owner SQL and tests define the observable source contracts. Record actual status and evidence in the current authorized work source.
 
-As a protected BThwani service, I can authenticate a current Identity actor and explicitly check an Operator workspace permission, with no ability to impersonate another actor, trust a caller-supplied role, or infer any grant from Operator status alone.
+## User scenarios
 
-## Functional requirements
+A protected service verifies a current actor and role and, where needed, an explicit current Operator grant. The person verifies their own identity, enters only eligible roles, may renew or revoke their own sessions, and recovers a credential through the authorized owner without impersonation or privilege expansion. A verified role is not a Store grant, dispatch authorization or financial command authority. Cross-role, cross-account and cross-Store state must never leak through UI, network, cache or delayed responses.
 
-- FR-001: The single canonical Identity owner verifies only opaque high-entropy bearer secrets using a stored digest, current actor and role standing, exact auth/role versions, issue time, expiry and revocation.
-- FR-002: Invalid, forged, stale, expired and revoked sessions never identify an actor or grant permission; owner outage always fails closed.
-- FR-003: An active Operator's current effective permission is granted only when an explicit matching Identity-owned permission is active in the same transaction snapshot as the verified session.
-- FR-004: Only `operations`, `merchant`, `catalog`, `marketing`, `finance`, `hr`, `platform_policies` are in scope. Historical `partners` is rejected as a new scope; unlisted, forged or malformed scope requests fail without an owner read.
-- FR-005: A role by itself cannot grant any permission. Different Operators have independent grants; revocation and account/role suspension are observed on every request.
-- FR-006: Both reads are no-store, no credential echo, no browser cross-origin bearer access. Caller actor/role headers and query/body cannot change principal or grant decisions.
-- FR-007: The isolated Identity owner is restricted to synthetic test actors and an explicitly isolated local environment. It may issue a short-lived Customer credential only after a single-use proof for an approved synthetic test phone number; that exception must not be reachable with real identities or in protected/production environments. Operator bootstrap and Operator grant mutation remain excluded from this isolated entry workflow. The separate FR-010 permits proof-bound Merchant role-scoped issuance from an already verified Customer session.
-- FR-008: DSH Store authorization remains a separate mandatory check at the actual mutation boundary. A Finance workspace grant alone does not authorize wallet/ledger execution.
-- FR-009: An authenticated DELETE /v1/sessions/current atomically sets revoked_at for only the presented bearer digest when the Identity owner confirms its current actor, role and version. First successful request returns 204 without a body; revoked replay, stale or suspended principal returns 401 without mutation; owner outage returns 503.
-- FR-010: POST /v1/actors/me/merchant-role admits a never-provisioned Merchant role only for the same actor as a currently active Customer bearer with separately verified Identity actor proof. One canonical PostgreSQL transaction both creates the role and stores only the digest of a cryptographically random new Merchant session; no Store ownership or Operator permission can follow from Identity alone.
-- FR-011: Already-active, disabled or suspended Merchant roles cannot self-register or reactivate. Missing verification and stale/forged credentials fail closed; concurrent registration has exactly one winner. The new bearer is short-lived and never logged, stored raw, embedded in a URL, or returned in an error.
+## Session and role requirements
+
+- FR-001 — Accept only opaque high-entropy Identity-issued credentials. Persist digests, resolve current actor/role standing, security versions, issue time, expiry and revocation.
+- FR-002 — Invalid, forged, stale, expired, suspended or revoked sessions never identify a principal or grant a right. Unavailable owner fails closed.
+- FR-003 — Resolve an active Operator's explicit effective permission with the current verified session in the same transaction snapshot.
+- FR-004 — Admit only the seven scopes registered by Identity governance. Reject legacy partners as a new scope and invalid/unlisted requests before an owner permission read.
+- FR-005 — No role-only permission. Independent Operators retain their own grants; suspension and revocation affect the appropriate principal and session, not unrelated actors.
+- FR-006 — Session and permission reads are no-store; no bearer echo, credential leakage, unauthorized cross-origin access or caller-supplied principal.
+- FR-007 — Synthetic phone admission is explicitly gated in the isolated environment: approved test-phone allowlist, bounded single-use verification, limited attempts, actor reuse, suspended actor/role denial, and no real-provider or production authority. Delivery uses the admitted encrypted owner transport without plaintext fallback. Protected Operator bootstrap is a separate ceremony, not an extension of this phone route.
+- FR-008 — Actual DSH resource-grant and WLT financial authorization remain independently enforced at their own read/write boundaries.
+- FR-009 — Authenticated current-session logout revokes the presented active credential atomically. A successful first revocation returns 204 without body; invalid/revoked/stale/suspended session fails closed and owner failure returns 503. Unrelated actor and role credentials remain unaffected. Persistent-family revocation uses its separate owner contract.
+- FR-010 — Direct first Merchant admission uses the same currently verified Customer actor and independently recorded actor proof. One owner transaction admits a never-provisioned role and issues a new digest-only role session; no Store or Operator right follows.
+- FR-011 — Refuse duplicate, disabled or suspended first-role admission, missing verification and stale/wrong-role credentials. Serialize competing admissions to exactly one new role and credential. An unknown response cannot justify a second role or an automatic new operation.
+- FR-012 — Active-role re-entry is a distinct owner operation; revalidate the eligible source Customer, rotate the role credential atomically, preserve unrelated roles and refuse self-reactivation. Captain admission/re-entry also requires current approved DSH standing; revalidate Identity after the peer request.
+- FR-013 — Persistent access and refresh credentials are distinct digests. Enforce owner idle/absolute expiry, atomic rotation, racing duplicate rejection, confirmed replay compromise/revocation and family logout. Client persistence, cancellation and recovery cannot resurrect revoked sessions or expose another actor.
+- FR-014 — Original-Operator permission administration requires the original current authorized Operator, finite registered scope, expected revision, reason, command identity, durable audit and affected-session invalidation. No scope delegates that authority. HR request and DSH Store-grant owners remain separate.
+
+## Protected Operator credential ceremonies
+
+The canonical requirements for original-actor continuity and user-verified Passkey authentication are owned by Identity governance. No production issuer, credential or protected database mutation is authorized here.
+
+- BOOT-01 — Initial synthetic Root bootstrap requires the exact separately admitted disposable or explicitly authorized local development boundary, an offline owner-issued random 256-bit ticket, no existing Operator or original-Owner marker, and the approved localhost RP/origin. The original bounded ten-minute challenge requirement remains subject to actual owner contract verification. No HTTP endpoint grants a caller ticket issuance, principal choice or scope selection.
+- BOOT-02 — Use genuine WebAuthn registration with resident credential, exact origin/RP and user verification; refuse replay, forged/mismatched/expired ceremonies, missing verification and malformed credentials. One transaction writes the first actor, role, seven explicit grants, immutable original-Owner marker, credential, claim consumption and audit. Competing requests admit at most one Root. Enrollment alone issues no session; separate signed authentication is required.
+- FR-R01 — Recovery consumes independently authorized, digest-bound short-lived proof for one existing active Operator. No arbitrary actor selection, proof minting, role/grant creation or second Root by HTTP.
+- FR-R02 — A single-use resident, user-verified registration ceremony uses the exact approved RP/origin. Preserve the bounded four-minute challenge and ten-minute proof lifetime acceptance from the original increment; verify them against the actual owner contract before claiming parity.
+- FR-R03 — Recovery atomically replaces credentials, revokes previous sessions/credentials, invalidates competing claims and appends audit, preserving the actor, role, permission rows and original-Owner attribution. It issues no session.
+- FR-R04 — Recovery and its presentation require independent explicit admission. Never enable protected credential effects from a source edit or successful synthetic test.
 
 ## Acceptance scenarios
 
-- AC-01: Current synthetic Merchant and Customer tokens return their actual Identity roles; two separate active Operator tokens return their own authoritative actors.
-- AC-02: Operator A with `operations` receives a successful read; Operator B with only `marketing` fails `operations` but succeeds `marketing`.
-- AC-03: Revoking A's grant immediately denies the next read; revoking A's session denies all reads, without denying B.
-- AC-04: Future-issued, expired, suspended, stale-version, unknown bearer, malformed scope, body/query injection and owner outage always reject at the correct authorization/error boundary.
-- AC-05: A forged client actor header cannot change the effective permission and the bearer is absent from responses.
-- AC-06: An isolated real PostgreSQL integration test and HTTP handler readback pass; generic mocks and HTTP 200 alone are not accepted as a complete user journey.
-- AC-07: Authenticated logout is durably confirmed from a separate PostgreSQL connection; 12 simultaneous logout attempts yield exactly one 204; replay, suspension, wrong security version and forged actor header cannot revoke another session. Current Operator B permissions remain independent.
-- AC-08: A verified synthetic Customer signs in with its current Identity session, submits direct Merchant role admission, receives a new Merchant bearer bound to the same actor; an independent owner DB connection verifies one new role and active session. The original Customer session remains valid, Merchant logout revokes only its own credential, and no DSH Store grant is fabricated.
-- AC-09: Unverified, wrong-role, stale, expired or already-provisioned (including SUSPENDED) actors cannot self-admit; 12 simultaneous attempts by one eligible Customer create one Merchant role and only one Merchant session. Retry after an uncertain committed response cannot silently create another role, but a separate role re-entry/recovery mechanism remains a full-journey dependency.
+- AC-01 — Distinct current Customer, Merchant and Operator credentials resolve their actual actors and roles. No caller-selected principal.
+- AC-02 — Operator A with operations can read that scope; B with only marketing is denied operations and can read marketing.
+- AC-03 — Revocation of A's grant immediately denies its next protected read; revocation of A's session denies its reads without altering B.
+- AC-04 — Future-issued, expired, stale-version, suspended, unknown credentials, invalid scope, malformed body/query and owner outage fail at the correct authorization/error boundary.
+- AC-05 — Forged actor/role headers cannot change decisions; responses, URLs, logs and stored state contain no raw credential leakage.
+- AC-06 — Real isolated PostgreSQL and HTTP handler evidence includes separate owner readback; unit tests, mock owners and HTTP 200 alone are insufficient.
+- AC-07 — Twelve concurrent current-session logout attempts produce one 204 and a durable revocation; replay, suspension, stale version and forgery cannot revoke a different session. Independent Operator access remains intact.
+- AC-08 — Verified Customer first Merchant admission returns one session for the same actor, with durable role/session readback; Customer access remains valid, Merchant logout is scoped, and no Store grant is created.
+- AC-09 — Unverified, wrong-role, expired/stale or already-provisioned/suspended actors cannot first-admit. Twelve simultaneous eligible first admissions yield one new role and session; unknown-response recovery cannot create another role.
+- AC-10 — Synthetic phone: real encrypted delivery, purpose/expiry/attempt bounds, failure compensation, concurrent single-use proof, actor reuse, suspension denial and durable readback. No real-provider identity claim.
+- AC-11 — Re-entry: concurrent role rotation leaves only the current role credential valid; Customer and unrelated actors remain unaffected. Captain standing denial, recheck after peer call and role/session races fail closed.
+- AC-12 — Persistent family: expiry, rotation, racing retry, replay, revocation, cancellation, late response and reload are tested against actual owner state and affected consumers; separate actors, roles, cookies and device storage.
+- AC-13 — Original-Operator grant administration: real owner readback, audit, stale-version/replay/concurrency denial, non-original administrator and wrong-actor denial, immediate affected-session invalidation.
+- AC-14 — Bootstrap: real disposable PostgreSQL and cryptographic WebAuthn test; one-winner race, durable owner/grants/credential/audit, no session on enrollment, separate signed login and rejection of invalid/replayed ceremonies.
+- AC-R01 — Recovery rejects invalid/replayed/revoked/expired/unverified/cross-actor/inactive-role and competing proofs without session or privilege gain.
+- AC-R02 — Real disposable PostgreSQL and WebAuthn prove credential replacement, counter-signature verification, replay, isolation, rollback and durable readback. Genuine supervised Windows Hello registration and separate login remain applicable device/actor proof; never substitute a synthetic credential for original continuity.
+- AC-R03 — Document executor security assessment, verify continuity and authorized proof issuance before any protected recovery.
+- AC-15 — Affected Customer/Merchant/Captain/Operator Web and Android interactions prove owner-backed admission, reload, logout/recovery, role/Store isolation, IDOR, revocation, pending-response isolation and actual DSH/WLT readback where affected. No cross-owner or production closure inferred from local source or fixtures.
 
-## Outside this bounded implementation
-
-Operator original credential continuity and Passkey enrollment, live phone-provider verification, session refresh and family-wide rotation, Operator grant administration with audit, DSH protected workspace integration, and production activation remain **NOT_CLOSED** and require implementation and critical-risk review.
-
-## Synthetic Merchant entry extension
-
-- In an isolated test environment, reserved synthetic phone numbers receive a single-use, attempt-limited verification proof. Concurrent completion cannot create duplicate Customer identities or credentials. Repeated verified entry resolves to the same actor, and suspended actors or roles cannot regain access.
-- A verified Customer may enter and re-enter the Merchant role only through the Identity owner. Merchant sessions stay isolated from other roles and application surfaces; entry alone provides no DSH Store grant.
-- Whole-journey acceptance still requires real phone-provider verification, DSH Captain standing and Identity admission, authorized Operator Passkey and recovery, applicable executor security assessment under [AGENTS.md](../../AGENTS.md) and supported native-device proof.
-
-Acceptance requires observable replay protection, concurrent proof consumption, actor reuse, suspension, wrong-role denial, durable revocation, reload, sign-out and protected Store navigation. Independent Identity and DSH owner readback must show that an admitted Merchant cannot access an unrelated Store or use a revoked credential and that Store ownership is unchanged. A locally simulated device or test account does not substitute for physical-device or protected-environment evidence.
-
-Source authority: `governance/identity.md` and `governance/journeys.md`. Branch 41 read-only.
-## Separate isolated first-Operator bootstrap increment (development only)
-
-The canonical Identity owner now has an **explicitly disabled by default** one-time synthetic Root bootstrap path. It does not register a real historical Operator, prove a human phone/email, or activate protected production authentication.
-
-- The offline-only `cmd/identity` issuer must confirm a strict isolated `identity_test_*` schema, an explicit local opt-in, and *no existing Operator role or original Owner marker*. It generates a random 256-bit ticket and never exposes an actor/scope bootstrap API.
-- The ticket is consumed only by a ten-minute, server-stored challenge and a real WebAuthn `navigator.credentials.create()` ceremony with exact localhost RP, resident credential and user verification required. A replay, forged origin, mismatched ceremony, expired claim, missing UV, or malformed credential fails closed.
-- Identity writes the first actor, Operator role, seven explicit canonical workspace grants, immutable original Root marker, public-key credential, one-time claim consumption and audit in a **single PostgreSQL transaction**. Competing requests must yield at most one Root, no privilege-grant input is accepted, and successful enrollment **does not issue a session**.
-- The first Operator must then authenticate separately through the existing signed WebAuthn login before accessing the UI. Identity remains the only source of truth for the operator/permissions and no DSH Store or WLT finance authority is conferred implicitly.
-- The opt-in routes and BFF must remain unavailable on current shared/production services; applying migration 008 to an existing protected database, reenrolling the historical Owner, actual Windows Hello device proof, human-verification/recovery, and documented executor critical security assessment under [AGENTS.md](../../AGENTS.md) remain distinct **NOT_CLOSED** gates.
-
-Acceptance of this **synthetic** increment requires exact Go unit/negative tests, strict OpenAPI/generated operation parity, UI type/build checks, and a real disposable PostgreSQL cryptographic WebAuthn fixture that proves one-winner concurrency, durable Owner marker/grants/credential/audit, independent signed login, revoked/invalid replay refusal and zero session on enrollment. It does **not** close protected original Owner continuity or production readiness.
-
-## Separate existing-Operator Passkey recovery increment — STAGED / NOT_CLOSED
-
-This is a distinct progressive increment beyond FR-001–FR-011. It does not
-retroactively close the original Operator continuity requirement.
-
-- FR-R01: An offline, separately authorized identity-continuity proof is
-  required and bound by SHA-256 digest to one existing ACTIVE Operator.
-  Browser requests cannot choose an actor, mint a proof, create a role,
-  set grants or create an original-Owner marker.
-- FR-R02: Identity allows a single-use, user-verified, resident WebAuthn
-  registration challenge under one exact localhost RP and origin. The
-  challenge expires within four minutes and the approved proof cannot
-  remain valid beyond ten minutes after issuance.
-- FR-R03: Successful recovery replaces credentials, revokes older Operator
-  sessions, invalidates other outstanding recovery claims and records
-  append-only owner audit in one SQL transaction, retaining the same actor,
-  Operator role and permission rows. It issues no session.
-- FR-R04: Identity and the Control Panel each require an independent explicit
-  recovery opt-in; current shared runtime remains disabled.
-- AC-R01: Invalid, replayed, revoked, expired, unverified, cross-actor,
-  inactive-role and concurrent proofs never grant session or privilege.
-- AC-R02: A disposable real PostgreSQL and WebAuthn integration proves
-  replacement, counter-signature verification, replay safety, other-actor
-  isolation, rollback and owner readback; the user then registers through
-  Windows Hello and performs separate login.
-- AC-R03: Documented executor critical security assessment under [AGENTS.md](../../AGENTS.md) covers proof issuance and
-  original actor continuity; no protected Identity changes until approved.
-
-Status: Go unit checks, OpenAPI owner-contract checks and control-panel
-type/security checks are available. AC-R01/02/03 are not complete: verified
-human continuity, approved proof issuance, disposable SQL/WebAuthn integration
-and independent review are missing. No credential has been issued to the
-current original owner. JOURNEY_CLOSED=NO, PRODUCTION_READY=NO.
+The active baseline, actual native test sources and current owner contracts are selected in [plan.md](plan.md); [tasks.md](tasks.md) identifies evidence responsibilities. Legal identity, protected original-Owner continuity, retained-data upgrade, real-provider activation and production are distinct acceptance/authorization boundaries. Historical requirements, extensions and implementation evidence are preserved in the [prior immutable feature tree](https://github.com/bthwani2-boop/samrim/tree/e7c7513c385650e79adaecbb486090902620c5ed/specs/004-identity-session-verification); historical commands, counts, statuses and reservations are not current instructions or proof.
