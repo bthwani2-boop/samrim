@@ -109,3 +109,34 @@ test("all eight Store-relation, fee-model and collector combinations preserve ex
     }
   }
 });
+
+test("review requires exact own wire fields and a dense fulfillment list", () => {
+  const { collector, ...rest } = proposal;
+  const inherited = Object.assign(Object.create({ collector }), rest, { unrelated: true });
+  for (const invalid of [
+    { storeId: "store-a", proposal: inherited },
+    { storeId: "store-a", proposal: { ...proposal, fulfillmentModes: Array(1) } },
+    Object.assign(Object.create({ proposal: null }), { storeId: "store-a", unrelated: true }),
+  ]) {
+    assert.throws(() => parseCommercialAgreementReview(invalid, "store-a"), { status: 502 });
+  }
+});
+
+test("verified financial review is detached from the untrusted input", () => {
+  const original = { ...proposal, fulfillmentModes: ["CUSTOMER_PICKUP"] };
+  const verified = parseCommercialAgreementReview({ storeId: "store-a", proposal: original }, "store-a");
+  original.subscriptionAmountYer = "1";
+  original.fulfillmentModes[0] = "UNKNOWN";
+  assert.equal(verified.proposal.subscriptionAmountYer, proposal.subscriptionAmountYer);
+  assert.deepEqual(verified.proposal.fulfillmentModes, ["CUSTOMER_PICKUP"]);
+});
+
+test("both agreement read routes reject non-string Store identifiers before dispatch", async t => {
+  const fetch = t.mock.method(globalThis, "fetch", async () => Response.json({storeId:"store-a",proposal:null}, { headers: {"Cache-Control":"no-store"} }));
+  for (const read of [readOperatorCommercialAgreementReview, readOwnedMerchantCommercialAgreementReview]) {
+    for (const id of [["store-a"], new String("store-a"), {toString:()=>"store-a"}, undefined, 123]) {
+      await assert.rejects(read("http://127.0.0.1:3203", Buffer.alloc(32,9).toString("base64url"), id, AbortSignal.timeout(1000)), { status: 400 });
+    }
+  }
+  assert.equal(fetch.mock.callCount(), 0);
+});
