@@ -54,6 +54,19 @@ function discard(response: Response): void {
   } catch { /* Failed cleanup cannot authorize an invalid reply. */ }
 }
 
+// The transport owns every acquired response until its domain policy finishes.
+// The bounded reader owns an acquired reader; this boundary owns unread bodies,
+// including status/media rejections and cancellation before a reader exists.
+export async function consumeOwnerResponse<T>(
+  response: Response, consume: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await consume();
+  } finally {
+    if (!response.bodyUsed) discard(response);
+  }
+}
+
 // Pinned Expo and browser fetch expose streams. A text-only bridge cannot
 // establish a byte bound before allocating the complete reply. Reject it.
 export async function readBoundedOwnerJSON(

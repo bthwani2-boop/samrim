@@ -2,7 +2,7 @@
  * Contract-bound DSH public discovery reads. No Store, price or financial writers.
  * Public wire format: paths/stores.yaml and paths/offers.yaml in the DSH OpenAPI owner.
  */
-import { DshPublicError, endpoint, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, DshPublicError, endpoint, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export { DshPublicError } from "./client-core.ts";
@@ -50,35 +50,38 @@ async function ownerRead(url: URL, signal?: AbortSignal, requireCurrent = false)
     if (signal?.aborted) throw error;
     throw new DshPublicError(0, "OWNER_NETWORK_UNAVAILABLE");
   }
-  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-  if (!response.ok) {
-    let code = "OWNER_READ_FAILED";
+  return consumeOwnerResponse(response, async () => {
+    if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+    if (!response.ok) {
+      let code = "OWNER_READ_FAILED";
+      try {
+        const data: unknown = await readBoundedOwnerJSON(response, 4096, undefined, signal);
+        if (data && typeof data === "object" && "error" in data && typeof data.error === "string") code = data.error;
+      } catch { /* keep the safe generic error */ }
+      if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+      throw new DshPublicError(response.status, code);
+    }
+    // A successful public owner read must obey the DSH JSON wire contract.
+    // Bound the decoded payload before interpreting it as a Store or Offer.
+    const mediaType = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
+    const contentLength = response.headers.get("Content-Length");
+    if (mediaType !== "application/json" ||
+      (requireCurrent && (response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store")) ||
+      (contentLength !== null && Number(contentLength) > 65536)) {
+      throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+    }
+    let body: unknown;
     try {
-      const data: unknown = await readBoundedOwnerJSON(response, 4096, undefined, signal);
-      if (data && typeof data === "object" && "error" in data && typeof data.error === "string") code = data.error;
-    } catch { /* keep the safe generic error */ }
+      body = await readBoundedOwnerJSON(response, 65536, undefined, signal);
+    } catch {
+      if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+      throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+    }
     if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-    throw new DshPublicError(response.status, code);
-  }
-  // A successful public owner read must obey the DSH JSON wire contract.
-  // Bound the decoded payload before interpreting it as a Store or Offer.
-  const mediaType = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
-  const contentLength = response.headers.get("Content-Length");
-  if (mediaType !== "application/json" ||
-    (requireCurrent && (response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store")) ||
-    (contentLength !== null && Number(contentLength) > 65536)) {
-    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
-  }
-  let body: unknown;
-  try {
-    body = await readBoundedOwnerJSON(response, 65536, undefined, signal);
-  } catch {
-    if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
-  }
-  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-  return body;
+    return body;
+  });
 }
+
 // Enforce the actual public OpenAPI schema at the client trust boundary.
 // A TypeScript interface does not remove extra JSON keys or validate wire data.
 const publicId = /^[a-z0-9-]{1,64}$/;

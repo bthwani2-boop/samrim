@@ -1,5 +1,5 @@
 /** DSH-owned Store registration; Identity grants an actor role, not a Store. */
-import { DshPublicError, endpoint, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, DshPublicError, endpoint, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export type MerchantRegistrationChoice = {
@@ -108,38 +108,41 @@ async function ownerCall(
   } catch {
     throw new DshPublicError(0, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE");
   }
-  if (signal?.aborted) throw new DshPublicError(0,
-    method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
-  if (!response.ok) {
-    let code = "OWNER_UNAVAILABLE";
-    try {
-      const error = record(await readBoundedOwnerJSON(response, 2048, 2048, signal));
-      if (typeof error?.code === "string" &&
-        ["INVALID_STORE_REGISTRATION", "STORE_REGISTRATION_CLOSED",
-          "STORE_REGISTRATION_POLICY_CHANGED", "IDEMPOTENCY_KEY_REUSED",
-          "UNAUTHENTICATED", "STORE_OPERATION_FORBIDDEN",
-          "IDENTITY_OWNER_UNAVAILABLE", "STORE_OWNER_UNAVAILABLE",
-          "OPERATION_RESULT_UNKNOWN"].includes(error.code)) code = error.code;
-    } catch { /* Untrusted owner failure stays generic. */ }
+  return consumeOwnerResponse(response, async () => {
     if (signal?.aborted) throw new DshPublicError(0,
       method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
-    if (method === "POST" && response.status >= 500) code = "OPERATION_RESULT_UNKNOWN";
-    throw new DshPublicError(response.status, code);
-  }
-  const cache = response.headers.get("Cache-Control")?.toLowerCase().split(",").map(x => x.trim()) ?? [];
-  if (!cache.includes("no-store") ||
-    response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
-    (method === "GET" ? response.status !== 200 : ![200, 201].includes(response.status))) {
-    throw new DshPublicError(signal?.aborted ? 0 : 502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
-  }
-  try {
-    const body = await readBoundedOwnerJSON(response, 65536, 65536, signal);
-    if (signal?.aborted) throw new Error("Aborted after read");
-    return { body, status: response.status };
-  } catch {
-    throw new DshPublicError(signal?.aborted ? 0 : 502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
-  }
+    if (!response.ok) {
+      let code = "OWNER_UNAVAILABLE";
+      try {
+        const error = record(await readBoundedOwnerJSON(response, 2048, 2048, signal));
+        if (typeof error?.code === "string" &&
+          ["INVALID_STORE_REGISTRATION", "STORE_REGISTRATION_CLOSED",
+            "STORE_REGISTRATION_POLICY_CHANGED", "IDEMPOTENCY_KEY_REUSED",
+            "UNAUTHENTICATED", "STORE_OPERATION_FORBIDDEN",
+            "IDENTITY_OWNER_UNAVAILABLE", "STORE_OWNER_UNAVAILABLE",
+            "OPERATION_RESULT_UNKNOWN"].includes(error.code)) code = error.code;
+      } catch { /* Untrusted owner failure stays generic. */ }
+      if (signal?.aborted) throw new DshPublicError(0,
+        method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+      if (method === "POST" && response.status >= 500) code = "OPERATION_RESULT_UNKNOWN";
+      throw new DshPublicError(response.status, code);
+    }
+    const cache = response.headers.get("Cache-Control")?.toLowerCase().split(",").map(x => x.trim()) ?? [];
+    if (!cache.includes("no-store") ||
+      response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
+      (method === "GET" ? response.status !== 200 : ![200, 201].includes(response.status))) {
+      throw new DshPublicError(signal?.aborted ? 0 : 502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
+    }
+    try {
+      const body = await readBoundedOwnerJSON(response, 65536, 65536, signal);
+      if (signal?.aborted) throw new Error("Aborted after read");
+      return { body, status: response.status };
+    } catch {
+      throw new DshPublicError(signal?.aborted ? 0 : 502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
+    }
+  });
 }
+
 export async function readMerchantRegistrationOptions(origin: string, bearer: string, signal?: AbortSignal) {
   const reply = await ownerCall(origin, bearer, "GET",
     dshOperations.getMerchantStoreRegistrationOptions.path, signal);

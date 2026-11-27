@@ -1,4 +1,4 @@
-import { DshPublicError, endpoint, isDateTime, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, DshPublicError, endpoint, isDateTime, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
@@ -90,24 +90,27 @@ export async function submitCaptainInterest(
       body: JSON.stringify(input),
     });
   } catch { throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"); }
-  if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-  if (!response.ok || response.status !== 202) {
-    if (response.status === 400) throw new DshPublicError(400, "INVALID_REQUEST");
-    if (response.status === 429) throw new DshPublicError(429, "RATE_LIMITED");
-    throw new DshPublicError(response.status, "OPERATION_RESULT_UNKNOWN");
-  }
-  if (response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
-      !response.headers.get("Cache-Control")?.toLowerCase().split(",").some(x => x.trim() === "no-store")) {
-    throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-  let body: unknown;
-  try { body = await readBoundedOwnerJSON(response, 128, 256, signal); }
-  catch { throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN"); }
-  if (!body || typeof body !== "object" || Array.isArray(body) ||
-    !onlyKeys(body as Record<string, unknown>, ["received"]) ||
-    Object.keys(body).length !== 1 || (body as { received?: unknown }).received !== true ||
-    signal?.aborted) throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  return consumeOwnerResponse(response, async () => {
+    if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
+    if (!response.ok || response.status !== 202) {
+      if (response.status === 400) throw new DshPublicError(400, "INVALID_REQUEST");
+      if (response.status === 429) throw new DshPublicError(429, "RATE_LIMITED");
+      throw new DshPublicError(response.status, "OPERATION_RESULT_UNKNOWN");
+    }
+    if (response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
+        !response.headers.get("Cache-Control")?.toLowerCase().split(",").some(x => x.trim() === "no-store")) {
+      throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+    }
+    let body: unknown;
+    try { body = await readBoundedOwnerJSON(response, 128, 256, signal); }
+    catch { throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN"); }
+    if (!body || typeof body !== "object" || Array.isArray(body) ||
+      !onlyKeys(body as Record<string, unknown>, ["received"]) ||
+      Object.keys(body).length !== 1 || (body as { received?: unknown }).received !== true ||
+      signal?.aborted) throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
+  });
 }
+
 export async function listOperatorCaptainInterest(
   baseUrl: string, bearer: string, options: OperatorCaptainInterestFilter & { signal?: AbortSignal } = {},
 ): Promise<OperatorCaptainInterestPage> {

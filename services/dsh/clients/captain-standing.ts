@@ -1,5 +1,5 @@
 /** DSH current standing is separate from the Identity Captain role. */
-import { readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 export interface CaptainStanding {
   actorId: string;
@@ -57,34 +57,37 @@ async function currentStanding(
   } catch {
     throw new CaptainStandingError(0, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_NETWORK_UNAVAILABLE");
   }
-  if (signal?.aborted) throw new CaptainStandingError(0,
-    method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
-  if (!res.ok) {
-    throw new CaptainStandingError(res.status,
-      res.status === 403 ? "CAPTAIN_NOT_ELIGIBLE" :
-      res.status === 401 ? "UNAUTHORIZED" : res.status >= 500 ?
-        (method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE") : "OWNER_REQUEST_FAILED");
-  }
-  if (res.status !== 200 ||
-    res.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
-    !res.headers.get("Cache-Control")?.toLowerCase().split(",").map(s => s.trim()).includes("no-store")) {
-    throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
-  }
-  const invalidCode = method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID";
-  let body: unknown;
-  try {
-    // Shared DSH parser enforces the Captain-specific 4096-byte cap,
-    // and observes the active request cancellation.
-    body = await readBoundedOwnerJSON(res, 4096, 4096, signal);
-  } catch {
+  return consumeOwnerResponse(res, async () => {
     if (signal?.aborted) throw new CaptainStandingError(0,
       method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
-    throw new CaptainStandingError(502, invalidCode);
-  }
-  if (signal?.aborted) throw new CaptainStandingError(0,
-    method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
-  return body;
+    if (!res.ok) {
+      throw new CaptainStandingError(res.status,
+        res.status === 403 ? "CAPTAIN_NOT_ELIGIBLE" :
+        res.status === 401 ? "UNAUTHORIZED" : res.status >= 500 ?
+          (method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE") : "OWNER_REQUEST_FAILED");
+    }
+    if (res.status !== 200 ||
+      res.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
+      !res.headers.get("Cache-Control")?.toLowerCase().split(",").map(s => s.trim()).includes("no-store")) {
+      throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+    }
+    const invalidCode = method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID";
+    let body: unknown;
+    try {
+      // Shared DSH parser enforces the Captain-specific 4096-byte cap,
+      // and observes the active request cancellation.
+      body = await readBoundedOwnerJSON(res, 4096, 4096, signal);
+    } catch {
+      if (signal?.aborted) throw new CaptainStandingError(0,
+        method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+      throw new CaptainStandingError(502, invalidCode);
+    }
+    if (signal?.aborted) throw new CaptainStandingError(0,
+      method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+    return body;
+  });
 }
+
 export async function readApprovedCaptainStanding(
   origin: string, bearer: string, role: "customer" | "captain",
   actorId: string, signal?: AbortSignal,

@@ -1,5 +1,5 @@
 /** DSH owns Customer Cart drafts; neither the SDK nor UI can author price or Order truth. */
-import { readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export interface CustomerCartLine {
@@ -190,48 +190,48 @@ async function cartRequest(origin: string, bearer: string, storeId: string, expe
   } catch {
     throw new DshCartError(0, dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_NETWORK_UNAVAILABLE");
   }
-  if (signal.aborted) throw new DshCartError(0,
-    dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
-  if (response.status !== 200) {
-    void response.body?.cancel().catch(() => {});
-    if (response.status === 401 || response.status === 403 || response.status === 404 ||
-      response.status === 409 || response.status === 400) {
-      throw new DshCartError(response.status, response.status === 409 ?
-        (method === "ESTIMATE" ? "ESTIMATE_NOT_AVAILABLE" : "CART_VERSION_OR_OPERATION_CONFLICT") : response.status === 404 ?
-          "STORE_OR_OFFER_NOT_AVAILABLE" : response.status === 400 ? "INVALID_REQUEST" : "UNAUTHORIZED");
+  return consumeOwnerResponse(response, async () => {
+    if (signal.aborted) throw new DshCartError(0,
+      dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+    if (response.status !== 200) {
+      if (response.status === 401 || response.status === 403 || response.status === 404 ||
+        response.status === 409 || response.status === 400) {
+        throw new DshCartError(response.status, response.status === 409 ?
+          (method === "ESTIMATE" ? "ESTIMATE_NOT_AVAILABLE" : "CART_VERSION_OR_OPERATION_CONFLICT") : response.status === 404 ?
+            "STORE_OR_OFFER_NOT_AVAILABLE" : response.status === 400 ? "INVALID_REQUEST" : "UNAUTHORIZED");
+      }
+      throw new DshCartError(503, dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE");
     }
-    throw new DshCartError(503, dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE");
-  }
-  const media = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
-  const cache = response.headers.get("Cache-Control")?.toLowerCase().split(",").map(x => x.trim());
-  if (media !== "application/json" || !cache?.includes("no-store")) {
-    void response.body?.cancel().catch(() => {});
-    throw new DshCartError(signal.aborted ? 0 : 502, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
-  }
-  let body: unknown;
-  try {
-    body = await readBoundedOwnerJSON(response, 65536, 65536, signal);
-  } catch {
-    throw new DshCartError(signal.aborted ? 0 : 502, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
-  }
-  if (signal.aborted) throw new DshCartError(0,
-    dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
-  if (method === "ESTIMATE") return estimateFrom(body, storeId, expectedActor, expectedVersion as number);
-  if (!dispatched) return cartFrom(body, storeId, expectedActor);
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-  const envelope = body as Record<string, unknown>;
-  if (!exactKeys(envelope, ["cart", "replay"]) || typeof envelope.replay !== "boolean") {
-    throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
-  }
-  try {
-    const cart = cartFrom(envelope.cart, storeId, expectedActor);
-    if (!change || cart.version < change.expectedVersion + 1) throw ownerError();
-    return { cart, replay: envelope.replay };
-  } catch {
-    throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
-  }
+    const media = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
+    const cache = response.headers.get("Cache-Control")?.toLowerCase().split(",").map(x => x.trim());
+    if (media !== "application/json" || !cache?.includes("no-store")) {
+      throw new DshCartError(signal.aborted ? 0 : 502, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
+    }
+    let body: unknown;
+    try {
+      body = await readBoundedOwnerJSON(response, 65536, 65536, signal);
+    } catch {
+      throw new DshCartError(signal.aborted ? 0 : 502, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
+    }
+    if (signal.aborted) throw new DshCartError(0,
+      dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+    if (method === "ESTIMATE") return estimateFrom(body, storeId, expectedActor, expectedVersion as number);
+    if (!dispatched) return cartFrom(body, storeId, expectedActor);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
+    }
+    const envelope = body as Record<string, unknown>;
+    if (!exactKeys(envelope, ["cart", "replay"]) || typeof envelope.replay !== "boolean") {
+      throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
+    }
+    try {
+      const cart = cartFrom(envelope.cart, storeId, expectedActor);
+      if (!change || cart.version < change.expectedVersion + 1) throw ownerError();
+      return { cart, replay: envelope.replay };
+    } catch {
+      throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
+    }
+  });
 }
 
 export function parseCustomerCart(value: unknown, storeId: string, actorId: string): CustomerCart {
