@@ -37,80 +37,43 @@ func verifyProposalCommandAuthority(t *testing.T, ctx context.Context, owner, re
 		FulfillmentModes:    []string{"CUSTOMER_PICKUP"},
 		ProposedEffectiveAt: time.Date(2027, 2, 1, 0, 0, 0, 123000, time.UTC), Reason: "synthetic proposal",
 	}
-	check := func(db *sql.DB, bearer string, input wallet.AgreementProposal, version int64, replay bool, want error) {
+	check := func(db *sql.DB, bearer string, input wallet.AgreementProposal, state string, want error) {
 		t.Helper()
-		document := map[string]any{
-			"expectedVersion": input.ExpectedVersion, "operationId": input.OperationID, "feeModel": input.FeeModel,
-			"collector": input.Collector, "commissionBasisPoints": input.CommissionBasisPoints, "subscriptionPeriodDays": input.SubscriptionPeriodDays,
-			"fulfillmentModes": input.FulfillmentModes, "proposedEffectiveAt": input.ProposedEffectiveAt, "reason": input.Reason,
-		}
-		if input.SubscriptionAmountYER != nil {
-			document["subscriptionAmountYer"] = strconv.FormatInt(*input.SubscriptionAmountYER, 10)
-		}
-		payload, err := json.Marshal(document)
-		if err != nil {
-			t.Fatal(err)
-		}
 		origin := commandServer.URL
 		if db == reader {
 			origin = readerServer.URL
 		}
-		request, err := http.NewRequestWithContext(ctx, http.MethodPost,
-			origin+"/v1/operators/stores/"+input.StoreID+"/commercial-agreement/proposals", bytes.NewReader(payload))
-		if err != nil {
-			t.Fatal(err)
-		}
-		request.Header.Set("Authorization", "Bearer "+bearer)
-		request.Header.Set("Content-Type", "application/json")
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer response.Body.Close()
-		body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
-		code := map[error]int{nil: 200, wallet.ErrAgreementForbidden: 403, wallet.ErrAgreementConflict: 409, wallet.ErrAgreementUnconfirmed: 503}[want]
-		if err != nil || response.StatusCode != code || response.Header.Get("Cache-Control") != "no-store" {
-			t.Fatalf("proposal HTTP %d want %d: %s %v", response.StatusCode, code, body, err)
-		}
-		var got map[string]any
-		if err := json.Unmarshal(body, &got); err != nil {
-			t.Fatal(err)
-		}
-		if want != nil {
-			public := map[error]string{wallet.ErrAgreementForbidden: "FORBIDDEN", wallet.ErrAgreementConflict: "PROPOSAL_CONFLICT",
-				wallet.ErrAgreementUnconfirmed: "PROPOSAL_UNCONFIRMED"}[want]
-			if len(got) != 1 || got["error"] != public {
-				t.Fatalf("incorrect rejection: %s", body)
-			}
-			return
-		}
-		state := "RECORDED"
-		if replay {
-			state = "REPLAYED"
-		}
-		if len(got) != 4 || got["storeId"] != input.StoreID || got["version"] != float64(version) ||
-			got["operationId"] != input.OperationID || got["state"] != state {
-			t.Fatalf("incorrect proposal receipt: %s", body)
+		switch want {
+		case nil:
+			assertProposalHTTP(t, ctx, origin, bearer, input, 200, state)
+		case wallet.ErrAgreementForbidden:
+			assertProposalHTTP(t, ctx, origin, bearer, input, 403, "FORBIDDEN")
+		case wallet.ErrAgreementConflict:
+			assertProposalHTTP(t, ctx, origin, bearer, input, 409, "PROPOSAL_CONFLICT")
+		case wallet.ErrAgreementUnconfirmed:
+			assertProposalHTTP(t, ctx, origin, bearer, input, 503, "PROPOSAL_UNCONFIRMED")
+		default:
+			t.Fatalf("unsupported proposal expectation: %v", want)
 		}
 	}
-	check(executor, merchant, proposal, 0, false, wallet.ErrAgreementForbidden)
-	check(executor, other, proposal, 0, false, wallet.ErrAgreementForbidden)
-	check(executor, revoked, proposal, 0, false, wallet.ErrAgreementForbidden)
-	check(reader, proposer, proposal, 0, false, wallet.ErrAgreementUnconfirmed)
-	check(executor, proposer, proposal, 1, false, nil)
-	check(executor, proposer, proposal, 1, true, nil)
+	check(executor, merchant, proposal, "", wallet.ErrAgreementForbidden)
+	check(executor, other, proposal, "", wallet.ErrAgreementForbidden)
+	check(executor, revoked, proposal, "", wallet.ErrAgreementForbidden)
+	check(reader, proposer, proposal, "", wallet.ErrAgreementUnconfirmed)
+	check(executor, proposer, proposal, "RECORDED", nil)
+	check(executor, proposer, proposal, "REPLAYED", nil)
 	changed := proposal
 	changed.Reason = "changed terms"
-	check(executor, proposer, changed, 0, false, wallet.ErrAgreementConflict)
+	check(executor, proposer, changed, "", wallet.ErrAgreementConflict)
 	changed = proposal
 	changed.OperationID = "proposal-owner-02"
-	check(executor, proposer, changed, 0, false, wallet.ErrAgreementConflict)
+	check(executor, proposer, changed, "", wallet.ErrAgreementConflict)
 	changed.ExpectedVersion = 1
 	amount, period := int64(9007199254740993), int32(30)
 	changed.FeeModel, changed.CommissionBasisPoints = "SUBSCRIPTION", nil
 	changed.SubscriptionAmountYER, changed.SubscriptionPeriodDays = &amount, &period
-	check(executor, proposer, changed, 2, false, nil)
-	check(executor, proposer, proposal, 1, true, nil)
+	check(executor, proposer, changed, "RECORDED", nil)
+	check(executor, proposer, proposal, "REPLAYED", nil)
 
 	var relation, state, actor, amountText string
 	var effective time.Time
@@ -176,4 +139,50 @@ func verifyProposalCommandAuthority(t *testing.T, ctx context.Context, owner, re
 		t.Fatalf("proposal/decision counts %d/%d, error %v", proposals, decisions, err)
 	}
 	t.Log("WLT_PROPOSAL_COMMAND_AUTHORITY_PASS real_http=true current_identity=true real_dsh=true mutable_relation_rollback=true conflict_disclosure_denied=true exact_replay=true exact_yer=true no_decision=true")
+}
+
+func assertProposalHTTP(t *testing.T, ctx context.Context, origin, bearer string, input wallet.AgreementProposal, status int, outcome string) {
+	t.Helper()
+	document := map[string]any{
+		"expectedVersion": input.ExpectedVersion, "operationId": input.OperationID, "feeModel": input.FeeModel,
+		"collector": input.Collector, "commissionBasisPoints": input.CommissionBasisPoints, "subscriptionPeriodDays": input.SubscriptionPeriodDays,
+		"fulfillmentModes": input.FulfillmentModes, "proposedEffectiveAt": input.ProposedEffectiveAt, "reason": input.Reason,
+	}
+	if input.SubscriptionAmountYER != nil {
+		document["subscriptionAmountYer"] = strconv.FormatInt(*input.SubscriptionAmountYER, 10)
+	}
+	payload, err := json.Marshal(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		origin+"/v1/operators/stores/"+input.StoreID+"/commercial-agreement/proposals", bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+bearer)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
+	if err != nil || response.StatusCode != status || response.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("proposal HTTP %d want %d: %s %v", response.StatusCode, status, body, err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if status != 200 {
+		if len(got) != 1 || got["error"] != outcome {
+			t.Fatalf("incorrect proposal rejection: %s", body)
+		}
+		return
+	}
+	if len(got) != 4 || got["storeId"] != input.StoreID || got["version"] != float64(input.ExpectedVersion+1) ||
+		got["operationId"] != input.OperationID || got["state"] != outcome {
+		t.Fatalf("incorrect proposal receipt: %s", body)
+	}
 }

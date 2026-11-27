@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/wallet"
 )
@@ -30,6 +32,12 @@ func verifyFinanceCommandAuthority(t *testing.T, ctx context.Context, owner, rea
 	}
 	readerServer := httptest.NewServer(readerHandler)
 	defer readerServer.Close()
+	reviewHandler, err := wallet.NewHandler(reader, origin, dshOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reviews := httptest.NewServer(reviewHandler)
+	defer reviews.Close()
 	call := func(serverURL, role, token string, d wallet.AgreementDecision, expected int, state string) {
 		t.Helper()
 		payload, err := json.Marshal(map[string]any{
@@ -68,16 +76,59 @@ func verifyFinanceCommandAuthority(t *testing.T, ctx context.Context, owner, rea
 			t.Fatalf("decision denial leaked information: %s", body)
 		}
 	}
-	const appendProposal = "SELECT version FROM wlt.append_commercial_agreement_proposal($1,0,$2,'DIRECT','COMMISSION','PLATFORM_MANAGED',375,NULL,NULL,ARRAY['CUSTOMER_PICKUP'],'2027-01-01T00:00:00Z','finance-proposer','synthetic proposal')"
-	for _, store := range []string{"finance-approve", "finance-reject", "finance-pending", "finance-revoked", "finance-relation", "finance-transfer"} {
-		var version int
-		if err := owner.QueryRowContext(ctx, appendProposal, store, "proposal-"+store).Scan(&version); err != nil || version != 1 {
-			t.Fatalf("proposal %s %d %v", store, version, err)
+	points := int32(375)
+	effective := time.Date(2027, 1, 1, 0, 0, 0, 123000, time.UTC)
+	proposal := func(store string) wallet.AgreementProposal {
+		return wallet.AgreementProposal{StoreID: store, OperationID: "proposal-" + store,
+			FeeModel: "COMMISSION", Collector: "PLATFORM_MANAGED", CommissionBasisPoints: &points,
+			FulfillmentModes: []string{"CUSTOMER_PICKUP"}, ProposedEffectiveAt: effective, Reason: "synthetic proposal"}
+	}
+	assertReview := func(input wallet.AgreementProposal, state string) {
+		t.Helper()
+		for _, view := range []struct{ audience, bearer string }{{"merchants", merchant}, {"operators", finance}} {
+			body := readWallet(t, ctx, reviews.URL, view.bearer,
+				"/v1/"+view.audience+"/stores/"+input.StoreID+"/commercial-agreement", http.StatusOK)
+			var reply struct {
+				StoreID  string `json:"storeId"`
+				Proposal *struct {
+					Version            int64     `json:"version"`
+					OperationID        string    `json:"operationId"`
+					Relation           string    `json:"storeRelation"`
+					FeeModel           string    `json:"feeModel"`
+					Collector          string    `json:"collector"`
+					Currency           string    `json:"currency"`
+					Commission         *int32    `json:"commissionBasisPoints"`
+					SubscriptionAmount *string   `json:"subscriptionAmountYer"`
+					SubscriptionPeriod *int32    `json:"subscriptionPeriodDays"`
+					FulfillmentModes   []string  `json:"fulfillmentModes"`
+					EffectiveAt        time.Time `json:"proposedEffectiveAt"`
+					State              string    `json:"reviewState"`
+				} `json:"proposal"`
+			}
+			decoder := json.NewDecoder(bytes.NewReader(body))
+			decoder.DisallowUnknownFields()
+			err := decoder.Decode(&reply)
+			got := reply.Proposal
+			if err != nil || reply.StoreID != input.StoreID || got == nil ||
+				got.Version != input.ExpectedVersion+1 || got.OperationID != input.OperationID ||
+				got.Relation != "DIRECT" || got.FeeModel != input.FeeModel || got.Collector != input.Collector ||
+				got.Currency != "YER" || got.Commission == nil || *got.Commission != *input.CommissionBasisPoints ||
+				got.SubscriptionAmount != nil || got.SubscriptionPeriod != nil ||
+				!slices.Equal(got.FulfillmentModes, input.FulfillmentModes) ||
+				!got.EffectiveAt.Equal(input.ProposedEffectiveAt) || got.State != state {
+				t.Fatalf("%s review mismatch: %s %v", view.audience, body, err)
+			}
 		}
+	}
+	for _, store := range []string{"finance-approve", "finance-reject", "finance-pending", "finance-revoked", "finance-relation", "finance-transfer"} {
+		input := proposal(store)
+		assertProposalHTTP(t, ctx, commandServer.URL, proposer, input, 200, "RECORDED")
+		assertReview(input, "AWAITING_MERCHANT_CONSENT")
 		if store != "finance-pending" {
 			consent := wallet.AgreementDecision{StoreID: store, Version: 1, ProposalOperationID: "proposal-" + store, OperationID: "consent-" + store, Decision: "ACCEPTED", Reason: "synthetic consent"}
 			call(commandServer.URL, "merchants", merchant, consent, 200, "RECORDED")
 			call(commandServer.URL, "merchants", merchant, consent, 200, "REPLAYED")
+			assertReview(input, "AWAITING_FINANCE_REVIEW")
 		}
 	}
 	decision := func(store, mode string) wallet.AgreementDecision {
@@ -107,6 +158,8 @@ func verifyFinanceCommandAuthority(t *testing.T, ctx context.Context, owner, rea
 	changed.Decision = "FINANCE_REJECTED"
 	check(executor, finance, changed, "", wallet.ErrAgreementConflict)
 	check(executor, finance, decision("finance-reject", "FINANCE_REJECTED"), "RECORDED", nil)
+	assertReview(proposal("finance-approve"), "REVIEW_APPROVED_PENDING_ACTIVATION")
+	assertReview(proposal("finance-reject"), "FINANCE_REJECTED")
 	// Revoke the current Finance grant while the transaction waits at the
 	// owner's actual advisory lock, then prove no durable approval escapes.
 	lock, err := owner.BeginTx(ctx, nil)
@@ -178,5 +231,9 @@ func verifyFinanceCommandAuthority(t *testing.T, ctx context.Context, owner, rea
 			t.Fatalf("%s state=%q want=%q err=%v", store, state, want, err)
 		}
 	}
-	t.Log("WLT_FINANCE_COMMAND_AUTHORITY_PASS real_identity=true real_dsh=true owner_transfer=true relation_denial=true distinct_authority=true consent=true replay=true rollback=true revocation=true no_activation=true")
+	var allocations int
+	if err := owner.QueryRowContext(ctx, "SELECT count(*) FROM wlt.order_payment_allocations WHERE store_id LIKE 'finance-%'").Scan(&allocations); err != nil || allocations != 0 {
+		t.Fatalf("unexpected payment allocations %d %v", allocations, err)
+	}
+	t.Log("WLT_FINANCE_COMMAND_AUTHORITY_PASS http_proposal=true http_consent=true http_finance=true both_owner_reads=true real_identity=true real_dsh=true owner_transfer=true relation_denial=true distinct_authority=true replay=true rollback=true revocation=true no_activation=true no_allocation=true")
 }
