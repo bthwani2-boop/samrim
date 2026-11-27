@@ -254,3 +254,76 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 		t.Fatal("review changed persistent cart")
 	}
 }
+
+func TestCheckoutReviewRejectsAmbiguousHTTPEnvelope(t *testing.T) {
+	const body = `{"expectedCartVersion":1,"salesChannel":"DIRECT","recipientPurpose":"SELF","fulfillmentMode":"CUSTOMER_PICKUP"}`
+	for _, tc := range []struct {
+		name            string
+		media, encoding []string
+		valid           bool
+	}{
+		{"plain JSON", []string{"application/json"}, nil, true},
+		{"UTF8 JSON", []string{"application/json; charset=UTF-8"}, nil, true},
+		{"duplicate media", []string{"application/json", "application/json"}, nil, false},
+		{"conflicting media", []string{"application/json", "text/plain"}, nil, false},
+		{"hidden encoding", []string{"application/json"}, []string{"", "gzip"}, false},
+		{"unsupported charset", []string{"application/json; charset=iso-8859-1"}, nil, false},
+		{"encoded body", []string{"application/json"}, []string{"gzip"}, false},
+		{"missing media", nil, nil, false},
+		{"wrong media", []string{"text/plain"}, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/v1/carts/store-a/checkout-review", strings.NewReader(body))
+			req.SetPathValue("storeID", "store-a")
+			for _, value := range tc.media {
+				req.Header.Add("Content-Type", value)
+			}
+			for _, value := range tc.encoding {
+				req.Header.Add("Content-Encoding", value)
+			}
+			_, valid := decodeCheckoutReview(httptest.NewRecorder(), req)
+			if valid != tc.valid {
+				t.Fatalf("admitted=%v want=%v", valid, tc.valid)
+			}
+		})
+	}
+}
+
+func TestCheckoutReviewStrictWireAndBoundedBody(t *testing.T) {
+	const self = `{"expectedCartVersion":1,"salesChannel":"DIRECT","recipientPurpose":"SELF","fulfillmentMode":"CUSTOMER_PICKUP"}`
+	const other = `{"expectedCartVersion":1,"salesChannel":"MARKETPLACE","recipientPurpose":"OTHER","fulfillmentMode":"PARTNER_CAPTAIN","addressId":"addr-00000000000000000000000000000001","expectedAddressVersion":2,"recipientName":"Synthetic","recipientPhone":"+967700000001","deliveryInstructions":"Front door"}`
+	cases := []struct {
+		name, body string
+		valid      bool
+	}{
+		{"self", self, true},
+		{"other delivery", other, true},
+		{"missing purpose", strings.Replace(self, `"recipientPurpose":"SELF",`, "", 1), false},
+		{"unknown purpose", strings.Replace(self, "SELF", "UNKNOWN", 1), false},
+		{"wrong case", strings.Replace(self, "salesChannel", "SalesChannel", 1), false},
+		{"escaped duplicate", strings.Replace(self, "{", `{"sales\u0043hannel":"DIRECT",`, 1), false},
+		{"null required", strings.Replace(self, ":1,", ":null,", 1), false},
+		{"null address", strings.Replace(other, `"addr-00000000000000000000000000000001"`, "null", 1), false},
+		{"null instructions", strings.Replace(other, `"Front door"`, " null ", 1), false},
+		{"wrong optional type", strings.Replace(other, `"Front door"`, "42", 1), false},
+		{"unpaired surrogate", strings.Replace(other, "Synthetic", `\ud800`, 1), false},
+		{"invalid UTF8", strings.Replace(other, "Synthetic", string([]byte{0xff}), 1), false},
+		{"unsafe version", strings.Replace(self, ":1,", ":9007199254740992,", 1), false},
+		{"unknown selector", strings.Replace(self, "{", `{"storeId":"store-b",`, 1), false},
+		{"exact limit", self + strings.Repeat(" ", checkoutReviewMaxBody-len(self)), true},
+		{"oversized", self + strings.Repeat(" ", checkoutReviewMaxBody-len(self)+1), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/v1/carts/store-a/checkout-review", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.SetPathValue("storeID", "store-a")
+			// Exercise the streaming size cap, not merely Content-Length admission.
+			req.ContentLength = -1
+			_, ok := decodeCheckoutReview(httptest.NewRecorder(), req)
+			if ok != tc.valid {
+				t.Fatalf("admitted=%v want=%v", ok, tc.valid)
+			}
+		})
+	}
+}
