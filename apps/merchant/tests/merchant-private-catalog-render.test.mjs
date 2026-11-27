@@ -24,6 +24,97 @@ function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
+
+test("Draft history renders exact changes, moves across owner pages and discards a detached reply", async () => {
+  const component = fileURLToPath(new URL("../src/features/catalog/catalog-draft-history.tsx", import.meta.url));
+  const temp = mkdtempSync(path.join(tmpdir(), "bthwani-draft-history-"));
+  try {
+    const compiled = spawnSync(process.execPath, [
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), component, "--ignoreConfig", "--noResolve",
+      "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",
+      "--inlineSourceMap", "--inlineSources", "--outDir", temp,
+    ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+    assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
+    const states = [], requests = [];
+    let position, prior, effect;
+    const jsx = (type, props) => ({ type, props });
+    const mod = loadMappedRenderFixture(readFileSync(path.join(temp, "catalog-draft-history.js"), "utf8"), component, {
+      "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
+      react: {
+        useState(initial) {
+          const slot = position++;
+          if (!(slot in states)) states[slot] = initial;
+          return [states[slot], change => {
+            states[slot] = typeof change === "function" ? change(states[slot]) : change;
+          }];
+        },
+        useEffect(run, deps) {
+          if (!prior || deps.some((value, i) => value !== prior.deps[i])) {
+            effect = () => {
+              prior?.stop();
+              prior = { deps, stop: run() };
+            };
+          }
+        },
+      },
+      "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+      "react-native": { ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", Text: "Text", View: "View" },
+      "./catalog-transport": {
+        readMerchantCatalogDraftHistory(storeId, offerId, actorId, signal, beforeVersion) {
+          return new Promise((resolve, reject) =>
+            requests.push({ storeId, offerId, actorId, signal, beforeVersion, resolve, reject }));
+        },
+      },
+    });
+    loadedInventoryModules.push(mod);
+    const render = (actorId = "merchant-a") => {
+      position = 0;
+      effect = undefined;
+      const elements = nodes(mod.exports.default({ actorId, storeId: "store-a", offerId: "of-draft" }));
+      effect?.();
+      return elements;
+    };
+    const text = elements => elements.filter(node => node.type === "Text")
+      .flatMap(node => node.props.children).join(" ");
+    const press = (elements, label) => elements.find(node => node.type === "Pressable" &&
+      text(nodes(node)) === label).props.onPress();
+    assert.ok(render().some(node => node.type === "ActivityIndicator"));
+    const exactPrice = 9007199254740993n;
+    requests[0].resolve({ nextBeforeVersion: "12", entries: [{
+      version: 12, previousPriceYer: "1100", priceYer: String(exactPrice),
+      previousStockUnits: 1, stockUnits: 2, committedAt: "2026-11-27T10:00:00Z",
+    }] });
+    await Promise.resolve();
+    let ready = render();
+    assert.ok(text(ready).includes(exactPrice.toLocaleString("ar-YE")));
+    assert.ok(text(ready).includes("2026-11-27T10:00:00Z"));
+    press(ready, "التعديلات الأقدم");
+    assert.ok(!text(render()).includes(exactPrice.toLocaleString("ar-YE")));
+    assert.equal(requests[1].beforeVersion, "12");
+    requests[1].reject(new Error("DSH unavailable"));
+    await Promise.resolve();
+    await Promise.resolve();
+    ready = render();
+    assert.ok(ready.some(node => node.props?.accessibilityRole === "alert"));
+    press(ready, "إعادة محاولة قراءة السجل");
+    press(render(), "العودة إلى الأحدث");
+    render();
+    assert.equal(requests[2].signal.aborted, true);
+    assert.equal(requests[3].beforeVersion, undefined);
+    render("merchant-b");
+    requests[3].resolve({ entries: [{ version: 12, previousPriceYer: "1", priceYer: String(exactPrice),
+      previousStockUnits: 0, stockUnits: 2, committedAt: "2026-11-27T10:00:00Z" }] });
+    await Promise.resolve();
+    assert.ok(!text(render("merchant-b")).includes(exactPrice.toLocaleString("ar-YE")));
+    assert.equal(requests[4].actorId, "merchant-b");
+    requests[4].resolve({ entries: [] });
+    await Promise.resolve();
+    assert.ok(text(render("merchant-b")).includes("لا توجد تعديلات مسجلة"));
+    prior.stop();
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
 test("Merchant private catalog never reuses a previous actor/Store response, and ends pagination", async () => {
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-catalog-test-"));
   try {
@@ -83,6 +174,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         } }),
       },
       "./merchant-catalog-draft-form": { __esModule: true, default: "DraftForm" },
+      "./catalog-draft-history": { __esModule: true, default: "DraftHistory" },
       "./catalog-export": { __esModule: true, default: "CatalogExport" },
       "./catalog-import": { __esModule: true, default: "CatalogImport" },
       "./inventory-summary": { __esModule: true, default: "InventorySummary" },
@@ -204,6 +296,15 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       await Promise.resolve(); await Promise.resolve();
       tree = render("merchant-b", stores);
       assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-b");
+      const historyButton = nodes(tree).find(n => n.props?.accessibilityLabel === "عرض سجل تعديلات مسودة للسعر");
+      assert.ok(historyButton);
+      assert.ok(!nodes(tree).some(n => n.props?.accessibilityLabel === "عرض سجل تعديلات عرض منشور"));
+      historyButton.props.onPress();
+      tree = render("merchant-b", stores);
+      const history = nodes(tree).find(n => n.type === "DraftHistory");
+      assert.equal(history.props.actorId, "merchant-b");
+      assert.equal(history.props.storeId, "store-b");
+      assert.equal(history.props.offerId, draftId);
       const quickMode = nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات");
       assert.ok(quickMode, "Merchant can open focused draft price editing");
       quickMode.props.onPress();
@@ -220,9 +321,12 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(edit.props.draft.id, draftId);
       tree = render("merchant-c", stores);
       assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && n.props.draft));
+      assert.ok(!nodes(tree).some(n => n.type === "DraftHistory"));
+      historyButton.props.onPress();
       assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات").props.accessibilityState.selected, false);
       tree = render("merchant-b", stores);
       assert.ok(!nodes(tree).some(privateControls), "returning to the previous actor still requires fresh verification");
+      assert.ok(!nodes(tree).some(n => n.type === "DraftHistory"));
 
       // Remount via the directory with a second Store selected, then revoke that Store.
       for (const effect of effects) effect?.cleanup?.();

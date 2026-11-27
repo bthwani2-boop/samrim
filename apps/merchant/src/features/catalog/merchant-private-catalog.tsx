@@ -3,6 +3,7 @@ import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
+import CatalogDraftHistory from "./catalog-draft-history";
 import CatalogExport from "./catalog-export";
 import CatalogImport from "./catalog-import";
 import { readMerchantCatalogPage } from "./catalog-transport";
@@ -45,6 +46,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const [selectedId, setSelectedId] = useState(initialStoreId);
   const [search, setSearch] = useState({ scope: "", draft: "", query: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ scope: string; offerId: string } | null>(null);
   const [priceScope, setPriceScope] = useState<string | null>(
     initialPriceStockOnly && initialStoreId ? JSON.stringify([actorId, initialStoreId]) : null,
   );
@@ -73,6 +75,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const searchQuery = search.scope === storeScope ? search.query : "";
   const status = filter.scope === storeScope ? filter.status : undefined;
   const scope = JSON.stringify([actorId, storeId, searchQuery, status]);
+  const historyScope = JSON.stringify([scope, retry]);
   useEffect(() => {
     const reload = () => setRetry(value => value + 1);
     if (Platform.OS === "web") {
@@ -89,6 +92,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     const epoch = ++generation.current;
     active.current?.abort();
     setEditingId(null);
+    setHistory(null);
     if (!actorId || !storeId) {
       setState({ scope, loading: false, more: false, items: [] });
       return;
@@ -246,6 +250,23 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
         <MerchantCatalogDraftForm key={`${storeScope}:${offer.id}:${offer.draftVersion}:${priceStockOnly}`}
           actorId={actorId} storeId={storeId} draft={offer} priceStockOnly={priceStockOnly}
           onCreated={() => { setEditingId(null); setRetry(value => value + 1); }} /> : null}
+      {catalogVerified && !visible.loading && canEditDraft(offer) ? <>
+        <Pressable accessibilityRole="button"
+          accessibilityLabel={`عرض سجل تعديلات ${offer.name}`}
+          accessibilityState={{ expanded: history?.scope === historyScope && history.offerId === offer.id }}
+          style={button} onPress={() => {
+            if (renderedGeneration !== generation.current) return;
+            setHistory(previous => previous?.scope === historyScope && previous.offerId === offer.id
+              ? null : { scope: historyScope, offerId: offer.id });
+          }}>
+          <Text style={{ color: theme.interactiveText }}>
+            {history?.scope === historyScope && history.offerId === offer.id ? "إغلاق السجل" : "عرض تعديلات المسودة"}
+          </Text>
+        </Pressable>
+        {history?.scope === historyScope && history.offerId === offer.id ?
+          <CatalogDraftHistory key={JSON.stringify([historyScope, offer.id])}
+            actorId={actorId} storeId={storeId} offerId={offer.id} /> : null}
+      </> : null}
       {!offer.productActive || !offer.variantSellable || !offer.requiredAttributesValid ?
         <Text style={{ color: theme.dangerText }}>المنتج أو الصنف غير مؤهل للبيع حاليًا.</Text> : null}
     </View>)}

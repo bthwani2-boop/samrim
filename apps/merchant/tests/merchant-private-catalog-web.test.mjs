@@ -19,6 +19,10 @@ const offer = {
   requiredAttributesValid: false, published: false, available: false,
 };
 const catalog = { actorId: "merchant-a", storeId: "store-a", items: [offer] };
+const draftHistory = { actorId: "merchant-a", storeId: "store-a", offerId: "of-draft", entries: [{
+  version: 2, previousPriceYer: "9007199254740993", priceYer: "9007199254740994",
+  previousStockUnits: 0, stockUnits: 4, committedAt: "2026-11-27T10:09:35Z",
+}] };
 function request(search = "?catalog=store-a&limit=20", actor = "merchant-a", token = bearer) {
   return new Request("http://localhost:18102/api/admission" + search, {
     headers: {
@@ -29,7 +33,8 @@ function request(search = "?catalog=store-a&limit=20", actor = "merchant-a", tok
     },
   });
 }
-function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false, expectedSearch = "?limit=20", inventory = false } = {}) {
+function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catalog, draft = false, edit = false,
+  expectedSearch = "?limit=20", inventory = false, history = false } = {}) {
   const env = {
     MERCHANT_SYNTHETIC_IDENTITY_ORIGIN: process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN,
     MERCHANT_SYNTHETIC_DSH_ORIGIN: process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN,
@@ -72,6 +77,12 @@ function ownerMocks(t, { role = "merchant", ownerStatus = 200, ownerPage = catal
       assert.equal(target.search, "");
       return Response.json(ownerStatus === 200 ? ownerPage : {code:"STORE_OPERATION_FORBIDDEN"},
         {status:ownerStatus,headers:{"Cache-Control":"no-store"}});
+    }
+    if (history) {
+      assert.equal(target.pathname, "/v1/stores/store-a/catalog/of-draft/draft-history");
+      assert.equal(target.search, expectedSearch);
+      assert.equal(config.method, "GET");
+      return noStore(ownerStatus === 200 ? ownerPage : { code: "STORE_OPERATION_FORBIDDEN" }, ownerStatus);
     }
     assert.equal(target.pathname, "/v1/stores/store-a/catalog");
     if (draft) {
@@ -287,6 +298,38 @@ test("inventory summary BFF delegates to the complete owner summary and denies f
   assert.equal(calls.length,3);
 });
 
+test("Draft history BFF binds Merchant session, Store, offer and the owner page", async t => {
+  const calls = ownerMocks(t, { history: true, ownerPage: draftHistory, expectedSearch: "?limit=20&beforeVersion=3" });
+  const search = "?draftHistory=store-a&offer=of-draft&beforeVersion=3";
+  const result = await GET(request(search));
+  assert.equal(result.status, 200);
+  assert.equal(result.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await result.json(), { draftHistory });
+  assert.deepEqual(calls, ["/v1/sessions/current", "/v1/stores/store-a/catalog/of-draft/draft-history"]);
+  assert.equal((await GET(request(search, "merchant-b"))).status, 403);
+  assert.equal((await GET(request(search, "merchant-a", ""))).status, 401);
+  for (const invalid of ["&offer=of-other", "&catalog=store-a", "&limit=999", "&cursor=other"]) {
+    assert.equal((await GET(request(search + invalid))).status, 400);
+  }
+  assert.equal(calls.filter(value => value.endsWith("/draft-history")).length, 1);
+});
+
+test("Draft history BFF withholds a mismatched owner offer", async t => {
+  const calls = ownerMocks(t, { history: true, ownerPage: { ...draftHistory, offerId: "of-stranger" } });
+  const result = await GET(request("?draftHistory=store-a&offer=of-draft"));
+  assert.equal(result.status, 503);
+  assert.equal((await result.json()).draftHistory, undefined);
+  assert.equal(calls.length, 2);
+});
+
+test("Draft history BFF preserves an owner refusal", async t => {
+  const calls = ownerMocks(t, { history: true, ownerStatus: 403 });
+  const result = await GET(request("?draftHistory=store-a&offer=of-draft"));
+  assert.equal(result.status, 403);
+  assert.deepEqual(await result.json(), { code: "STORE_OPERATION_FORBIDDEN" });
+  assert.equal(calls.length, 2);
+});
+
 // Exercise the actual app transport, not only the BFF and its owner SDK.
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
@@ -316,6 +359,40 @@ const newDraft = { offer: { ...offer, id: "of-new", name: create.name, priceYer:
 const editedDraft = { offer: { ...offer, name: editChange.name, priceYer: editChange.priceYer, stockUnits: editChange.stockUnits, draftVersion: 2 }, replay: false };
 const stockSummary = { actorId: testActor, storeId: testStore, totalOffers: 130, publishedOffers: 120, availableOffers: 110, unavailableOffers: 10, stockoutOffers: 3 };
 const noStore = (body, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
+
+test("Web and Android draft history transports share owner validation and forward the same cursor", async t => {
+  const signal = new AbortController().signal;
+  const web = catalogTransport("web", () => assert.fail("Web must use the same-origin session"));
+  const android = catalogTransport("android", async (supplied, action, actor) => {
+    assert.equal(supplied, signal);
+    assert.equal(actor, testActor);
+    return action(bearer, dsh);
+  });
+  let page = draftHistory;
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    const address = new URL(url, "http://localhost");
+    calls.push([address.pathname, Object.fromEntries(address.searchParams)]);
+    if (address.pathname === "/api/admission") {
+      assert.equal(options.headers["X-Merchant-Context"], testActor);
+      return noStore({ draftHistory: page });
+    }
+    assert.equal(options.headers.Authorization, "Bearer " + bearer);
+    return noStore(page);
+  });
+  for (const transport of [web, android]) {
+    assert.deepEqual(await transport.readMerchantCatalogDraftHistory(testStore, "of-draft", testActor, signal, "3"), draftHistory);
+  }
+  assert.deepEqual(calls, [
+    ["/api/admission", { draftHistory: testStore, offer: "of-draft", limit: "20", beforeVersion: "3" }],
+    ["/v1/stores/store-a/catalog/of-draft/draft-history", { limit: "20", beforeVersion: "3" }],
+  ]);
+  page = { ...draftHistory, actorId: "merchant-b" };
+  for (const transport of [web, android]) {
+    await assert.rejects(transport.readMerchantCatalogDraftHistory(testStore, "of-draft", testActor, signal),
+      { code: "OWNER_RESPONSE_INVALID" });
+  }
+});
 
 test("Web catalog transport binds selectors and validates owner pages and inventory", async t => {
   const transport = catalogTransport("web", () => assert.fail("Web must not use native credentials"));

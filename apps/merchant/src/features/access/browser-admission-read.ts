@@ -1,4 +1,4 @@
-import { DshPublicError, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, getMerchantStoreProfile, getStoreOperationalAvailability, isCompanyEmployeeId, listMerchantCatalog, listMerchantEmployees, readMerchantInventorySummary, readMerchantRegistrationOptions, validEmployeeEndState, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
+import { DshPublicError, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, getMerchantStoreProfile, getStoreOperationalAvailability, isCompanyEmployeeId, listMerchantCatalog, listMerchantEmployees, readMerchantCatalogDraftHistory, readMerchantInventorySummary, readMerchantRegistrationOptions, validEmployeeEndState, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
 import { readOwnedMerchantCommercialAgreementReview, WltReadError } from "@bthwani/wlt";
 import {
@@ -60,6 +60,14 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
     (cursorValue === null || /^[a-z0-9-]{1,64}$/.test(cursorValue));
   const inventoryId = query.size === 1 ? query.get("inventory") : null;
   const inventory = inventoryId !== null && /^[a-z0-9-]{1,64}$/.test(inventoryId);
+  const historyStore = query.get("draftHistory");
+  const historyOffer = query.get("offer");
+  const beforeVersion = query.get("beforeVersion");
+  const draftHistory = historyStore !== null && historyOffer !== null &&
+    /^[a-z0-9-]{1,64}$/.test(historyStore) && /^[a-z0-9-]{1,64}$/.test(historyOffer) &&
+    [...query.keys()].every(key => ["draftHistory", "offer", "limit", "beforeVersion"].includes(key) &&
+      query.getAll(key).length === 1) &&
+    (limitValue === null || /^(?:[1-9]|[1-4][0-9]|50)$/.test(limitValue));
   const employeeStore = query.get("employees");
   const employeeCursor = query.get("cursor");
   const employeeId = query.get("employeeId");
@@ -73,7 +81,8 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
   const profile = profileId !== null && /^[a-z0-9-]{1,64}$/.test(profileId);
   const agreementId = query.size === 1 ? query.get("agreement") : null;
   const agreement = agreementId !== null && /^[a-z0-9-]{1,64}$/.test(agreementId);
-  const protectedRead = stores || availability || registration || catalog || inventory || employees || agreement || profile;
+  const protectedRead = stores || availability || registration || catalog || inventory ||
+    draftHistory || employees || agreement || profile;
   if (query.size > 0 && !protectedRead) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
@@ -152,6 +161,18 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
         }
         return response({ inventory: await readMerchantInventorySummary(
           standingOrigin(origin), inventoryId, session.actorId, bearer, signal) });
+      }
+      if (draftHistory) {
+        const actorId = request.headers.get("X-Merchant-Context");
+        if (!actorId || actorId !== session.actorId) return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+        const history = await readMerchantCatalogDraftHistory(standingOrigin(origin), historyStore,
+          historyOffer, actorId, bearer, {
+            limit: limitValue === null ? 20 : Number(limitValue),
+            ...(beforeVersion !== null ? { beforeVersion } : {}),
+            signal,
+          });
+        signal.throwIfAborted();
+        return response({ draftHistory: history });
       }
       if (availability) {
         const actorId = request.headers.get("X-Merchant-Context");
