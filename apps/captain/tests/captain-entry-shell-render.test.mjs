@@ -73,26 +73,36 @@ test("Captain workspace separates verified access from unavailable data and keep
   assert.deepEqual(offerLinks.map(node => node.props.href), ["/home"]);
 });
 
-test("Captain account renders verified session and can request owner logout", () => {
+test("Captain account admits only its verified workspace, delegates appearance and requests owner logout", () => {
   let workspace = null;
-  let requested = false;
+  let requests = 0;
   const account = renderable("app/(tabs)/account", {
+    "@bthwani/tamagui-config/appearance-preferences": { __esModule: true, default: "AppearancePreferences" },
     "../../src/features/access/protected-route": { useCaptainWorkspace: () => workspace },
   });
   assert.equal(account(), null);
-  workspace = {
-    session: { actorId: "synthetic-captain", role: "captain", sessionExpiresAt: "2026-11-21T12:00:00Z" },
-    standing: { actorId: "synthetic-captain", status: "APPROVED", version: 3 },
-    signOut() { requested = true; },
-  };
+  const session = { actorId: "synthetic-captain", role: "captain", sessionExpiresAt: "2099-11-22T19:10:00Z" };
+  const standing = { actorId: session.actorId, status: "APPROVED", version: 3 };
+  workspace = { session, standing, signOut() { requests++; } };
   const view = account();
   assert.equal(view.type, "SafeAreaView");
   assert.deepEqual(view.props.edges, ["top", "left", "right"]);
   const content = nodes(view);
   assert.ok(content.some(node => node.props.children === "حساب الكابتن معتمد"));
+  assert.equal(content.filter(node => node.type === "AppearancePreferences").length, 1);
   assert.equal(content.some(node => node.props.testID === "captain-capability-unavailable"), false);
-  content.find(node => node.type === "Pressable" && node.props.accessibilityRole === "button").props.onPress();
-  assert.equal(requested, true);
+  const signOut = content.find(node => node.type === "Pressable" && node.props.accessibilityRole === "button");
+  assert.ok(signOut);
+  signOut.props.onPress();
+  assert.equal(requests, 1);
+  for (const invalid of [undefined, { ...standing, actorId: "other" },
+    { ...standing, status: "PENDING" }, { ...standing, version: 0 }, { ...standing, version: 1.5 }]) {
+    workspace = { session, standing: invalid, signOut() { requests++; } };
+    const rejected = nodes(account());
+    assert.ok(!rejected.some(node => node.props.children === "حساب الكابتن معتمد"));
+    assert.ok(rejected.some(node => node.props.accessibilityRole === "alert"));
+  }
+  assert.equal(requests, 1);
 });
 
 test("Captain interest leaves definite rejection retryable but stops after receipt or unknown outcome", async () => {
