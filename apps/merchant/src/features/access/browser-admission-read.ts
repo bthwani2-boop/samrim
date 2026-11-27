@@ -1,4 +1,4 @@
-import { DshPublicError, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, getStoreOperationalAvailability, isCompanyEmployeeId, listMerchantCatalog, listMerchantEmployees, readMerchantInventorySummary, readMerchantRegistrationOptions, validEmployeeEndState, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
+import { DshPublicError, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, getMerchantStoreProfile, getStoreOperationalAvailability, isCompanyEmployeeId, listMerchantCatalog, listMerchantEmployees, readMerchantInventorySummary, readMerchantRegistrationOptions, validEmployeeEndState, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
 import { readOwnedMerchantCommercialAgreementReview, WltReadError } from "@bthwani/wlt";
 import {
@@ -69,9 +69,11 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
     (employeeCursor===null || isCompanyEmployeeId(employeeCursor)) &&
     (employeeEndState===null || validEmployeeEndState(employeeEndState)) &&
     (employeeId===null || (employeeCursor===null && employeeEndState===null && isCompanyEmployeeId(employeeId)));
+  const profileId = query.size === 1 ? query.get("profile") : null;
+  const profile = profileId !== null && /^[a-z0-9-]{1,64}$/.test(profileId);
   const agreementId = query.size === 1 ? query.get("agreement") : null;
   const agreement = agreementId !== null && /^[a-z0-9-]{1,64}$/.test(agreementId);
-  const protectedRead = stores || availability || registration || catalog || inventory || employees || agreement;
+  const protectedRead = stores || availability || registration || catalog || inventory || employees || agreement || profile;
   if (query.size > 0 && !protectedRead) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
@@ -88,6 +90,11 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(5000)]);
     const session = await readVerifiedIdentitySession(origin, bearer, signal);
     if (session.role === "merchant") {
+      if (profile) {
+        const actor = request.headers.get("X-Merchant-Context");
+        if (!actor || actor !== session.actorId) return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+        return response({ profile: await getMerchantStoreProfile(standingOrigin(origin), profileId, actor, bearer, signal) });
+      }
       if (agreement) {
         const actorId = request.headers.get("X-Merchant-Context");
         if (!actorId || actorId !== session.actorId) return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);

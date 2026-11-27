@@ -82,6 +82,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       "./merchant-store-directory": { __esModule: true, default: "Directory" },
       "../stores/merchant-public-link": { __esModule: true, default: "PublicLink" },
       "../stores/store-availability": { __esModule: true, default: "Availability" },
+      "../stores/store-profile": { __esModule: true, default: "Profile" },
       "../catalog/inventory-summary": { __esModule: true, default: "InventorySummary" },
       "../finance/commercial-agreement": { __esModule: true, default: "CommercialAgreement" },
       "../employees/employees-screen": { __esModule: true, default: "Employees" },
@@ -219,6 +220,9 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     action("مسح التصفية").props.onPress();
     assert.deepEqual(renderDirectory().map(n => n.props.accessibilityLabel).filter(label => label?.startsWith("عرض ")), ["عرض أ", "عرض ب"]);
     renderDirectory().find(n => n.props.accessibilityLabel === "عرض ب").props.onPress();
+    assert.equal(renderDirectory().find(n => n.type === "Profile")?.props.storeId, "b");
+    assert.equal(renderDirectory().find(n => n.type === "Profile")?.props.actorId, "merchant-a");
+    assert.ok(!renderDirectory(stores.slice(0, 1)).some(n => n.type === "Profile"));
     action("إدارة منتجات هذا المتجر").props.onPress();
     assert.deepEqual(opened, [["b", undefined]]);
     assert.ok(!renderDirectory().some(n => n.type === "CommercialAgreement" || n.type === "InventorySummary"));

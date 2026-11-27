@@ -1,4 +1,4 @@
-import { createMerchantCatalogDraft, DshPublicError, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantStoreRegistration, registerMerchantEmployee, registerMerchantStore, type StoreOperationalChange, updateMerchantCatalogDraft, updateStoreOperationalAvailability, validEmployeeRegistration, validMerchantCatalogDraft, validMerchantCatalogDraftEdit } from "@bthwani/dsh";
+import { changeMerchantStoreProfile, createMerchantCatalogDraft, DshPublicError, type MerchantCatalogDraftChange, type MerchantCatalogDraftEditChange, type MerchantStoreRegistration, registerMerchantEmployee, registerMerchantStore, type StoreOperationalChange, updateMerchantCatalogDraft, updateStoreOperationalAvailability, validEmployeeRegistration, validMerchantCatalogDraft, validMerchantCatalogDraftEdit, validMerchantStoreProfileChange } from "@bthwani/dsh";
 import { establishPersistentIdentitySession, IdentityClientError, issueCustomerPhoneChallenge, readVerifiedIdentitySession, revokePersistentIdentitySession, revokeVerifiedIdentitySession } from "@bthwani/identity";
 import { revokeUndeliveredAdmissionSession, verifyMerchantAdmission } from "./admission.ts";
 import {
@@ -10,13 +10,15 @@ export async function PATCH(request: Request) {
   if (!isLocalMutation(request)) return response({ code: "FORBIDDEN" }, 403);
   const query = new URL(request.url).searchParams;
   const storeId = query.size === 1 ? query.get("availability") : null;
+  const profileId = query.size === 1 ? query.get("profile") : null;
+  const profileEdit = profileId !== null && /^[a-z0-9-]{1,64}$/.test(profileId);
   const editStore = query.size === 2 ? query.get("catalog") : null;
   const editOffer = query.size === 2 ? query.get("offer") : null;
   const catalogEdit = editStore !== null && editOffer !== null &&
     /^[a-z0-9-]{1,64}$/.test(editStore) && /^[a-z0-9-]{1,64}$/.test(editOffer) &&
     [...query.keys()].every(key => (key === "catalog" || key === "offer") && query.getAll(key).length === 1);
   const actorId = request.headers.get("X-Merchant-Context");
-  if ((!storeId || !/^[a-z0-9-]{1,64}$/.test(storeId)) && !catalogEdit || !actorId) {
+  if ((!storeId || !/^[a-z0-9-]{1,64}$/.test(storeId)) && !catalogEdit && !profileEdit || !actorId) {
     return response({ code: "INVALID_REQUEST" }, 400);
   }
   const bearer = bearerFrom(request);
@@ -32,6 +34,10 @@ export async function PATCH(request: Request) {
     const session = await readVerifiedIdentitySession(origin, bearer, signal);
     if (session.role !== "merchant" || session.actorId !== actorId) {
       return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+    }
+    if (profileEdit) {
+      if (!validMerchantStoreProfileChange(input)) return response({ code: "INVALID_STORE_PROFILE" }, 400);
+      return response(await changeMerchantStoreProfile(standingOrigin(origin), profileId, actorId, bearer, input, signal));
     }
     if (catalogEdit) {
       const data = input as Record<string, unknown>;

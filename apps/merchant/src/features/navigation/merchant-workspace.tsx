@@ -273,7 +273,7 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
             <>
               <MerchantStoreDirectory key={JSON.stringify([actorId, initialPublication])}
                 actorId={actorId} stores={stores} initialPublication={initialPublication}
-                initialStoreId={catalogStoreId} onOpenCatalog={openCatalog} />
+                initialStoreId={catalogStoreId} onOpenCatalog={openCatalog} onRefresh={onRefresh} />
               <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} />
             </>
           ) : section === "products" ? (
