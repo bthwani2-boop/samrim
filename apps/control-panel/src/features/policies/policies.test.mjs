@@ -320,31 +320,57 @@ test("policy city directory reads the bounded owner pages without treating parti
   const calls = [];
   let pages = [];
   let origin = "http://127.0.0.1:3202";
+  let lateController;
   const module = loadMappedRenderFixture(code, source, {
     "@bthwani/dsh": { listPublicCities: async (url, options) => {
       calls.push({ url, cursor: options.cursor, limit: options.limit });
       const page = pages.shift();
       if (!page) throw new Error("owner unavailable");
+      lateController?.abort();
       return page;
     } },
     "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
   });
   loadedModules.push(module);
   const load = module.exports.loadPolicyCities;
-  pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["sanaa"], revision: 7 }];
+  const ids = ["aden", ...Array.from({ length: 49 }, (_, i) => "city-" + String(i).padStart(2, "0"))];
+  const first = { items: ids, revision: 7, nextCursor: "next" };
+  pages = [first, { items: ["sanaa"], revision: 7 }];
   assert.deepEqual(await load(), { status: "current", cities: [
-    { value: "aden", label: "عدن" }, { value: "sanaa", label: "صنعاء" },
+    { value: "aden", label: "عدن" },
+    ...ids.slice(1).map(value => ({ value, label: value })),
+    { value: "sanaa", label: "صنعاء" },
   ] });
   assert.deepEqual(calls.map(call => call.cursor), [undefined, "next"]);
   assert.ok(calls.every(call => call.limit === 50 && call.url === origin));
-  pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["sanaa"], revision: 8 }];
-  assert.deepEqual(await load(), { status: "unavailable", cities: [] });
-  pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["aden"], revision: 7 }];
-  assert.deepEqual(await load(), { status: "unavailable", cities: [] });
-  pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }];
-  assert.deepEqual(await load(), { status: "unavailable", cities: [] });
+  for (const invalidPages of [
+    [first, { items: ["sanaa"], revision: 8 }],
+    [first, { items: ["aden"], revision: 7 }],
+    [first],
+    [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["sanaa"], revision: 7 }],
+    [first, { items: [], revision: 7 }],
+    [first, { items: ids.map(value => "other-" + value), revision: 7, nextCursor: "next" }],
+    Array.from({ length: 10 }, (_, i) => ({
+      items: Array.from({ length: 50 }, (_, j) => "city-" + (i * 50 + j)),
+      revision: 7, nextCursor: "page-" + i,
+    })),
+  ]) {
+    pages = [...invalidPages];
+    assert.deepEqual(await load(), { status: "unavailable", cities: [] });
+  }
   pages = [{ items: [], revision: 9 }];
   assert.deepEqual(await load(), { status: "current", cities: [] });
+  const deadline = new AbortController();
+  const originalTimeout = AbortSignal.timeout;
+  try {
+    AbortSignal.timeout = () => deadline.signal;
+    lateController = deadline;
+    pages = [{ items: ["sanaa"], revision: 9 }];
+    assert.deepEqual(await load(), { status: "unavailable", cities: [] });
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+    lateController = undefined;
+  }
   const before = calls.length;
   origin = null;
   assert.deepEqual(await load(), { status: "unavailable", cities: [] });
@@ -481,4 +507,55 @@ test("operational policy refuses mismatched endpoint before network access", asy
     [endpoint, "sanaa", ""],
   ]) assert.deepEqual(await reconcileCityPolicy(path, city, actor, change), { status: "rejected" });
   assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("policy directory composes the actual DSH city SDK and recovers after an invalid page", async t => {
+  const { loadPolicyCities } = await import("./policy-city-directory.ts");
+  const previous = process.env.OPERATOR_POLICY_DSH_ORIGIN;
+  process.env.OPERATOR_POLICY_DSH_ORIGIN = "http://127.0.0.1:3202";
+  let replies = [{ items: ["sanaa"], revision: 10 }];
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const target = new URL(url);
+    assert.equal(target.origin + target.pathname, "http://127.0.0.1:3202/v1/public/cities");
+    assert.equal(target.searchParams.get("limit"), "50");
+    assert.equal(init.credentials, "omit");
+    assert.equal(init.cache, "no-store");
+    requests.push(target.searchParams.get("cursor"));
+    const body = replies.shift();
+    if (!body) throw new Error("owner disconnected");
+    return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+  });
+  try {
+    assert.deepEqual(await loadPolicyCities(), { status: "current", cities: [{ value: "sanaa", label: "صنعاء" }] });
+    replies = [{ items: ["aden", "aden"], revision: 10 }];
+    assert.deepEqual(await loadPolicyCities(), { status: "unavailable", cities: [] });
+    const full = index => Array.from({ length: 50 }, (_, j) => "city-" + (index * 50 + j));
+    const first = { items: full(0), revision: 10, nextCursor: "next" };
+    for (const invalid of [
+      [first, { items: ["sanaa"], revision: 11 }],
+      [first, { items: [full(0)[0]], revision: 10 }],
+      [first, { items: [], revision: 10 }],
+      [{ items: ["aden"], revision: 10, nextCursor: "next" }],
+      [first, { items: full(1), revision: 10, nextCursor: "other" },
+        { items: full(2), revision: 10, nextCursor: "next" }],
+      Array.from({ length: 10 }, (_, i) => ({ items: full(i), revision: 10, nextCursor: "page-" + i })),
+      [first],
+    ]) {
+      replies = [...invalid];
+      assert.deepEqual(await loadPolicyCities(), { status: "unavailable", cities: [] });
+    }
+    replies = [first, { items: ["aden", "taiz"], revision: 10 }];
+    const recovered = await loadPolicyCities();
+    assert.equal(recovered.status, "current");
+    assert.deepEqual(recovered.cities.slice(-2), [{ value: "aden", label: "عدن" }, { value: "taiz", label: "taiz" }]);
+    assert.deepEqual(requests.slice(-2), [null, "next"]);
+    process.env.OPERATOR_POLICY_DSH_ORIGIN = "invalid";
+    const before = requests.length;
+    assert.deepEqual(await loadPolicyCities(), { status: "unavailable", cities: [] });
+    assert.equal(requests.length, before);
+  } finally {
+    if (previous === undefined) delete process.env.OPERATOR_POLICY_DSH_ORIGIN;
+    else process.env.OPERATOR_POLICY_DSH_ORIGIN = previous;
+  }
 });
