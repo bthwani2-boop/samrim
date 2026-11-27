@@ -276,3 +276,46 @@ test("WLT invalid origins, malformed cursor and broken header bridge never admit
   globalThis.fetch.mock.mockImplementation(async () => Response.json(agreement, opts));
   assert.deepEqual(await readAgreement(signal), agreement);
 });
+test("WLT refuses contradictory framing and declared-length mismatch before publishing a financial reply", async t => {
+  const payload = JSON.stringify(agreement);
+  const exact = String(Buffer.byteLength(payload));
+  const cases = [
+    { "Content-Length": "0" },
+    { "Content-Length": String(Number(exact) - 1) },
+    { "Content-Length": String(Number(exact) + 1) },
+    { "Content-Length": exact, "Transfer-Encoding": "chunked" },
+    { "Transfer-Encoding": "gzip, chunked" },
+    { "Content-Encoding": "gzip" },
+  ];
+  let next;
+  t.mock.method(globalThis, "fetch", async () => next);
+  for (const extra of cases) {
+    next = new Response(payload, { headers: {...opts.headers, ...extra} });
+    await assert.rejects(() => readAgreement(new AbortController().signal), {status:502}, JSON.stringify(extra));
+    assert.equal(next.body.locked, false);
+  }
+  for (const extra of cases) {
+    next = {status:200, headers:new Headers({...opts.headers, ...extra}), body:null, text:async()=>payload};
+    await assert.rejects(() => readAgreement(new AbortController().signal), {status:502}, JSON.stringify(extra));
+  }
+  for (const extra of [{"Content-Length":exact}, {"Transfer-Encoding":"chunked"}, {}]) {
+    next = new Response(payload, {headers:{...opts.headers,...extra}});
+    assert.deepEqual(await readAgreement(new AbortController().signal), agreement);
+    next = {status:200, headers:new Headers({...opts.headers,...extra}), body:null, text:async()=>payload};
+    assert.deepEqual(await readAgreement(new AbortController().signal), agreement);
+  }
+});
+
+test("WLT verifies declared UTF-8 length rather than JavaScript string length", async t => {
+  const {readCurrentCustomerWallet} = await import("./wallet-balance.ts");
+  const reply = {actorId:"عميل-أ",currency:"YER",balanceYer:"17",availableYer:"17"};
+  const payload = JSON.stringify(reply);
+  let response;
+  t.mock.method(globalThis,"fetch",async()=>response);
+  for (const length of [payload.length, Buffer.byteLength(payload)]) {
+    response = {status:200,headers:new Headers({...opts.headers,"Content-Length":String(length)}),body:null,text:async()=>payload};
+    const read = () => readCurrentCustomerWallet(origin,token,new AbortController().signal);
+    if (length === payload.length) await assert.rejects(read,{status:502});
+    else assert.deepEqual(await read(),reply);
+  }
+});
