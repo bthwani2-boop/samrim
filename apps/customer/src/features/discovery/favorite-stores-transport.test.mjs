@@ -198,3 +198,28 @@ test("Android requires native origin and verified readback; successful results r
   const unavailable = harness("android", async () => session(), async () => ({ kind: "unavailable" }));
   await assert.rejects(unavailable.readFavoriteStores(signal, actor), e => e.status === 503);
 });
+
+
+test("Web rejects noncanonical successful statuses and disposes every rejected response stream", async t => {
+  const api = harness("web", async () => session());
+  for (const [status, cache, expected] of [[201, "no-store", "OWNER_RESPONSE_INVALID"], [401, "no-store", "FAVORITE_REQUEST_REJECTED"], [200, "public", "OWNER_RESPONSE_INVALID"]]) {
+    let cancellations = 0;
+    const body = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(JSON.stringify(validState))); }, cancel() { cancellations++; } });
+    t.mock.method(globalThis, "fetch", async () => new Response(body, { status, headers: { "Cache-Control": cache, "Content-Type": "application/json" } }));
+    await assert.rejects(api.readFavoriteStore(new AbortController().signal, storeId, actor), e => e.code === expected);
+    assert.equal(cancellations, 1, "unread rejected body must be disposed");
+  }
+});
+
+test("Web abort after headers releases the unread reply without publishing state", async t => {
+  const api = harness("web", async () => session());
+  const controller = new AbortController();
+  let cancellations = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    const response = new Response(new ReadableStream({ cancel() { cancellations++; } }), { headers: { "Cache-Control": "no-store", "Content-Type": "application/json" } });
+    controller.abort();
+    return response;
+  });
+  await assert.rejects(api.readFavoriteStore(controller.signal, storeId, actor), e => e.name === "AbortError");
+  assert.equal(cancellations, 1);
+});
