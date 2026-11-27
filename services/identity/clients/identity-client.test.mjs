@@ -305,8 +305,9 @@ test("network and timeout failures do not manufacture a completed Identity opera
 test("cancelled or stale readback never revives an old Identity session or rotates a Merchant credential", async () => {
   const controller = new AbortController();
   await withFetch(async (_url, options) => {
-    assert.equal(options.signal, controller.signal);
+    assert.equal(options.signal.aborted, false);
     controller.abort();
+    assert.equal(options.signal.aborted, true);
     return response(principal());
   }, () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer, controller.signal),
     0, "OWNER_RESPONSE_STALE"));
@@ -837,8 +838,7 @@ test("Identity stops stalled bodies on an absolute deadline and releases the rea
     await withFetch(async () => res, async () => {
       const pending = status === 201 ?
         rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN") :
-        rejectsAs(() => readVerifiedIdentitySession(origin, bearer), status === 200 ? 502 : 401,
-          status === 200 ? "OWNER_RESPONSE_INVALID" : "OWNER_REQUEST_FAILED");
+        rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 0, "OWNER_NETWORK_UNAVAILABLE");
       await started.promise;
       t.mock.timers.tick(5_000);
       await pending;
@@ -1074,4 +1074,80 @@ test("pre-cancelled persistent operations never dispatch or consume credentials"
     await rejectsAs(() => readPersistentIdentityRole(origin, bearer, rotatedBearer, "customer", caller.signal,
       async () => assert.fail("cancelled rotation"), async () => assert.fail("cancelled handoff")), 0, "OWNER_RESPONSE_STALE");
   });
+});
+
+test("ordinary Identity operations have bounded headers, stable uncertainty and no late body admission", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const cases = [
+    [() => readVerifiedIdentitySession(origin, bearer), 5000, "OWNER_NETWORK_UNAVAILABLE"],
+    [() => issueCustomerPhoneChallenge(origin, "+967770000001"), 10000, "OPERATION_RESULT_UNKNOWN"],
+    [() => verifyCustomerPhoneChallenge(origin, "a".repeat(48), "123456"), 10000, "OPERATION_RESULT_UNKNOWN"],
+    [() => admitCurrentCustomerAsMerchant(origin, bearer), 10000, "OPERATION_RESULT_UNKNOWN"],
+    [() => reviewOriginalOperatorPermissions(origin, bearer, "operator-target"), 10000, "OWNER_NETWORK_UNAVAILABLE"],
+    [() => changeOriginalOperatorPermission(origin, bearer, "operator-target", "operations",
+      { state: "ACTIVE", expectedVersion: 0, operationId: "command-123", reason: "test" }), 10000, "OPERATION_RESULT_UNKNOWN"],
+    [() => revokeVerifiedIdentitySession(origin, bearer), 10000, "OPERATION_RESULT_UNKNOWN"],
+  ];
+  for (const [call, ms, code] of cases) {
+    const started = Promise.withResolvers(), late = Promise.withResolvers();
+    let ownerSignal, outcome, cancelled = false;
+    let requests = 0;
+    const reply = new Response(new ReadableStream({
+      pull() { assert.fail("late reply must not be read"); },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+    await withFetch(async (_url, options) => {
+      requests++;
+      ownerSignal = options.signal;
+      started.resolve();
+      return late.promise;
+    }, async () => {
+      const pending = call().then(value => { outcome = value; }, error => { outcome = error; });
+      await Promise.race([started.promise, pending]);
+      try {
+        assert.equal(requests, 1);
+        t.mock.timers.tick(ms);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.ok(outcome instanceof IdentityClientError, "headers must settle within the deadline");
+        assert.equal(outcome.status, 0);
+        assert.equal(outcome.code, code);
+        assert.equal(ownerSignal.aborted, true);
+      } finally {
+        late.resolve(reply);
+        await pending;
+      }
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(cancelled, true);
+      assert.equal(reply.body.locked, false);
+      assert.equal(requests, 1);
+    });
+  }
+});
+
+test("current-session header and body consume one absolute request budget", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const headers = Promise.withResolvers(), bodyStarted = Promise.withResolvers(), requestStarted = Promise.withResolvers();
+  let cancelled = false, ownerSignal, outcome;
+  const reply = new Response(new ReadableStream({
+    pull() { bodyStarted.resolve(); return new Promise(() => {}); },
+    cancel() { cancelled = true; },
+  }, { highWaterMark: 0 }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  const caller = new AbortController();
+  await withFetch(async (_url, options) => { ownerSignal = options.signal; requestStarted.resolve(); return headers.promise; }, async () => {
+    const pending = readVerifiedIdentitySession(origin, bearer, caller.signal).then(value => { outcome = value; }, error => { outcome = error; });
+    await requestStarted.promise;
+    t.mock.timers.tick(4000);
+    headers.resolve(reply);
+    await bodyStarted.promise;
+    try {
+      t.mock.timers.tick(1000);
+      await new Promise(resolve => setImmediate(resolve));
+      assert.ok(outcome instanceof IdentityClientError, "body cannot restart the request budget");
+      assert.equal(outcome.code, "OWNER_NETWORK_UNAVAILABLE");
+      assert.equal(ownerSignal.aborted, true);
+      assert.equal(caller.signal.aborted, false);
+    } finally { caller.abort(); await pending; }
+  });
+  assert.equal(cancelled, true);
+  assert.equal(reply.body.locked, false);
 });

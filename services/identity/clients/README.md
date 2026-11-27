@@ -1,28 +1,70 @@
 # Identity client — public transport boundary
 
-The private workspace package @bthwani/identity exposes [index.ts](index.ts) to its consumers. Identity Go/PostgreSQL owns session and permission decisions; this package transports requests and validates responses. DSH Store grants and WLT financial authority remain with their owners. See the [owner guide](../README.md) and [OpenAPI entrypoint](../contracts/openapi/identity.openapi.yaml).
+The private workspace package `@bthwani/identity` exposes [index.ts](index.ts).
+Identity Go/PostgreSQL owns actor, role, session and permission decisions;
+the client transports and validates owner replies. DSH owns Store grants,
+and WLT owns financial authority. See the [owner guide](../README.md) and
+[OpenAPI entrypoint](../contracts/openapi/identity.openapi.yaml).
 
-## Public operations
+## Modules and responsibilities
 
-| Module | Public functions |
+| Module | Responsibility |
 | --- | --- |
-| phone-challenge.ts | issueCustomerPhoneChallenge, verifyCustomerPhoneChallenge, normalizeYemeniMobile, parseCustomerPhoneChallenge |
-| sessions.ts | readVerifiedIdentitySession, revokeVerifiedIdentitySession |
-| persistent-sessions.ts | establishPersistentIdentitySession, rotatePersistentIdentitySession, revokePersistentIdentitySession, readPersistentIdentityRole |
-| role-admission.ts | admitCurrentCustomerAsMerchant, resumeCurrentCustomerMerchantSession, admitCurrentCustomerAsCaptain, resumeCurrentCustomerCaptainSession |
-| operator-permissions.ts | reviewOriginalOperatorPermissions, changeOriginalOperatorPermission, isOperatorActorId |
-| transport.ts / types.ts | IdentityClientError, parseVerifiedIdentitySession, identityOperatorPermissions and exported types |
+| `phone-challenge.ts` | Canonical Yemeni mobile input and owner challenge/verification |
+| `sessions.ts` | Current verified session read and revocation |
+| `persistent-sessions.ts` | Family establishment, rotation, revocation and verified credential handoff |
+| `role-admission.ts` | Customer-bound Merchant/Captain admission and re-entry |
+| `operator-permissions.ts` | Original Operator permission read and versioned command |
+| `transport.ts` | Credential/origin admission, request deadline, bounded stream and stable error classification |
+| `types.ts` | Shared public DTOs |
+| `generated/identity-operations.ts` | Contract-derived method/path metadata |
 
-The generated [operation manifest](generated/identity-operations.ts) supplies the method/path definitions used by the transports. After an authorized OpenAPI change, regenerate with node tools/dev/generate-openapi-operations.mjs identity and verify with pnpm check:contracts. Do not hand-edit the manifest. Operation parity is not runtime schema equivalence. Operator WebAuthn ceremonies use the existing Operator server transport rather than another Identity engine.
+## One bounded owner transport
 
-## Credential lifecycle
+All public SDK HTTP operations use the same transport. It rejects unsafe
+origins and malformed credentials, omits cookies, rejects redirects and
+requires `Cache-Control: no-store` for accepted responses. HTTPS is required
+except for explicit local HTTP hosts localhost, 127.0.0.1 and 10.0.2.2.
 
-transport.ts owns endpoint, credential, response and error validation. It rejects malformed opaque credentials and unsafe origins: HTTPS is required except for explicit local development HTTP hosts localhost, 127.0.0.1 and Android emulator 10.0.2.2. The transport checks response shape, expiry, caching and size; denial, unavailable owner, invalid response and unknown operation result remain distinct.
+The entire request (including headers and body) has a 10-second maximum;
+current-session read, persistent enrollment and family revocation use five
+seconds. Rejected persistent handoff cleanup has two seconds. JSON bodies
+also have a five-second read cap and a 16,384-byte limit; a bridge without
+a readable stream is not admitted. A late response after cancellation or
+deadline is discarded, never read back into another account. An owner
+deadline is an outage for reads, not a caller account switch; any interrupted
+mutation has an unknown result and is not automatically retried. A caller
+cancellation is linked to the request without aborting the caller itself.
 
-An uncertain versioned permission mutation is recovered using the same command identity and payload. Role admission and re-entry use the canonical owner endpoints; rendering a screen cannot create standing, a Store grant or a role. Do not infer a role from an interrupted response.
+## Credential and command lifecycle
 
-readPersistentIdentityRole verifies the actual owner role, uses a current credential or rotates through Identity as appropriate, quarantines the previous refresh credential before dispatch and completes the bounded credential handoff. The caller owns serialized secure device storage and account switching. A stale handoff cannot overwrite another account; the client attempts revocation when the handoff is rejected. Do not automatically replay an unknown refresh result.
+Role admission and re-entry use the canonical owner endpoints; a rendered
+screen cannot create standing or a Store grant. An uncertain versioned
+permission command is recovered with the same operation identity and payload.
 
-## Verification
+`readPersistentIdentityRole` checks the current owner role, verifies an
+unexpired receipt and principal before storage handoff, and quarantines the
+previous refresh credential before dispatching rotation. An acknowledged
+rotation is reconciled even when the view disappears; it cannot publish
+into an abandoned view. The application owns serialized secure storage and
+account switching. A rejected handoff remains rejected, with bounded
+best-effort family revocation. Never automatically replay an unknown refresh
+result. The owner HTTP budgets do not make a storage callback cancellable.
 
-Run node --test services/identity/clients/identity-client.test.mjs from the repository root and the package's pinned TypeScript check. These owner-local transport tests include synthetic responses; they do not prove real phone/Passkey login, a deployed owner, persisted device state, DSH Store authorization or production readiness. Actual owner HTTP, durable PostgreSQL and affected Web/Android proof belong to the existing acceptance workflow.
+## Verification and contract maintenance
+
+From the repository root:
+
+```sh
+node --test services/identity/clients/identity-client.test.mjs
+pnpm --filter @bthwani/identity typecheck
+node tools/dev/generate-openapi-operations.mjs --check identity
+pnpm check:contracts
+```
+
+Regenerate with `node tools/dev/generate-openapi-operations.mjs identity`
+only after an authorized contract change. Never hand-edit generated metadata.
+Transport tests use synthetic responses; they do not prove real phone/Passkey
+login, persisted device state, deployed owner ACLs or production readiness.
+Actual owner HTTP, durable PostgreSQL and affected Web/Android evidence belong
+to the existing owner and journey acceptance workflow.

@@ -13,7 +13,6 @@ type CredentialHandoff = (
 ) => Promise<boolean>;
 type VerifiedRead = { session: VerifiedIdentitySession; bearer: string };
 
-const budget = { read: 5000, enroll: 5000, rotate: 10000, revoke: 5000, cleanup: 2000 } as const;
 const unknownResult = () => new IdentityClientError(502, "OPERATION_RESULT_UNKNOWN");
 const staleView = () => new IdentityClientError(0, "OWNER_RESPONSE_STALE");
 
@@ -31,41 +30,19 @@ function grantFrom(value: unknown): PersistentIdentityGrant {
   return { refreshToken: grant.refreshToken, refreshExpiresAt: grant.refreshExpiresAt };
 }
 
-// All persistent-session owner calls have a finite end-to-end budget. The
-// owner transport races cancellation even if the fetch bridge ignores it.
-// Link the view only for operations that are allowed to stop with the view.
-async function withinOwnerBudget<T>(
-  timeout: number, operation: (signal: AbortSignal) => Promise<T>, caller?: AbortSignal,
-): Promise<T> {
-  const controller = new AbortController();
-  const cancel = () => controller.abort();
-  caller?.addEventListener("abort", cancel, { once: true });
-  if (caller?.aborted) cancel();
-  const timer = setTimeout(cancel, timeout);
-  try {
-    return await operation(controller.signal);
-  } finally {
-    clearTimeout(timer);
-    caller?.removeEventListener("abort", cancel);
-  }
-}
-
 export async function establishPersistentIdentitySession(
   baseUrl: string, accessToken: string, signal?: AbortSignal,
 ): Promise<PersistentIdentityGrant> {
   const { path } = identityOperations.establishPersistentIdentitySession;
-  const value = await withinOwnerBudget(budget.enroll,
-    deadline => ownerRequest(baseUrl, path, accessToken, "POST", 201, deadline), signal);
-  return grantFrom(value);
+  return grantFrom(await ownerRequest(baseUrl, path, accessToken, "POST", 201, signal));
 }
 
 export async function rotatePersistentIdentitySession(
   baseUrl: string, refreshToken: string, signal?: AbortSignal,
 ): Promise<RotatedIdentitySession> {
   const { path } = identityOperations.rotatePersistentIdentitySession;
-  const value = receipt(await withinOwnerBudget(budget.rotate,
-    deadline => ownerRequest(baseUrl, path, refreshToken, "POST", 200, deadline), signal),
-  ["accessToken", "sessionExpiresAt", "refreshToken", "refreshExpiresAt"]);
+  const value = receipt(await ownerRequest(baseUrl, path, refreshToken, "POST", 200, signal),
+    ["accessToken", "sessionExpiresAt", "refreshToken", "refreshExpiresAt"]);
   return {
     ...issuedSessionFrom({ accessToken: value.accessToken, sessionExpiresAt: value.sessionExpiresAt }),
     ...grantFrom({ refreshToken: value.refreshToken, refreshExpiresAt: value.refreshExpiresAt }),
@@ -73,30 +50,16 @@ export async function rotatePersistentIdentitySession(
 }
 
 async function revokeFamily(
-  origin: string, refreshToken: string, timeout: number, caller?: AbortSignal,
+  origin: string, refreshToken: string, caller?: AbortSignal, cleanup = false,
 ): Promise<void> {
   const { path } = identityOperations.revokePersistentIdentitySession;
-  await withinOwnerBudget(timeout,
-    deadline => ownerRequest(origin, path, refreshToken, "DELETE", 204, deadline), caller);
+  await ownerRequest(origin, path, refreshToken, "DELETE", 204, caller, undefined, cleanup);
 }
 
 export async function revokePersistentIdentitySession(
   baseUrl: string, refreshToken: string, signal?: AbortSignal,
 ): Promise<void> {
-  await revokeFamily(baseUrl, refreshToken, budget.revoke, signal);
-}
-
-async function verifiedRead(origin: string, bearer: string, caller?: AbortSignal): Promise<VerifiedIdentitySession> {
-  try {
-    return await withinOwnerBudget(budget.read,
-      deadline => readVerifiedIdentitySession(origin, bearer, deadline), caller);
-  } catch (error) {
-    // An internal deadline is an outage, not a caller account switch.
-    if (error instanceof IdentityClientError && error.code === "OWNER_RESPONSE_STALE" && !caller?.aborted) {
-      throw new IdentityClientError(0, "OWNER_NETWORK_UNAVAILABLE");
-    }
-    throw error;
-  }
+  await revokeFamily(baseUrl, refreshToken, signal);
 }
 
 function activeRead(session: VerifiedIdentitySession, bearer: string, signal: AbortSignal): VerifiedRead {
@@ -105,9 +68,8 @@ function activeRead(session: VerifiedIdentitySession, bearer: string, signal: Ab
   return { session, bearer };
 }
 
-// Only a currently verified, unexpired owner receipt can release storage
-// quarantine. A rejected readback or handoff never becomes admission, even
-// if the bounded attempt to revoke the received family cannot be confirmed.
+// A currently verified, unexpired receipt alone can release storage
+// quarantine. A rejected handoff stays rejected even if revocation is unknown.
 async function deliverVerified(
   origin: string, received: PersistedIdentityCredentials, grant: PersistentIdentityGrant,
   previous: string, rotated: boolean, verify: () => Promise<VerifiedIdentitySession>,
@@ -122,7 +84,7 @@ async function deliverVerified(
     if (!await commit(received, previous, rotated)) throw staleView();
     return session;
   } catch (error) {
-    await revokeFamily(origin, grant.refreshToken, budget.cleanup).catch(() => undefined);
+    await revokeFamily(origin, grant.refreshToken, undefined, true).catch(() => undefined);
     throw error;
   }
 }
@@ -135,9 +97,8 @@ async function enrollCurrent(
   try {
     grant = await establishPersistentIdentitySession(origin, bearer, signal);
   } catch (error) {
-    // Enrollment is optional for an already verified access session. Network
-    // uncertainty is not proof that enrollment failed, and is never retried
-    // here or converted to a persisted credential.
+    // Optional enrollment does not retry an uncertain write or persist a
+    // credential that was never received by this verified access session.
     if (signal.aborted) throw staleView();
     if (!(error instanceof IdentityClientError && [0, 409, 503].includes(error.status))) throw error;
     return activeRead(current, bearer, signal);
@@ -152,12 +113,12 @@ async function rotateVerified(
   current: VerifiedIdentitySession | null, signal: AbortSignal,
   prepare: () => Promise<void>, commit: CredentialHandoff,
 ): Promise<VerifiedRead> {
-  // A prepared durable rotation must finish or remain quarantined even if
-  // the view disappears. It cannot publish into an abandoned view.
+  // Once durable quarantine is prepared, rotation must finish or remain
+  // quarantined even if the view disappears. Never revive an abandoned view.
   await prepare();
   const received = await rotatePersistentIdentitySession(origin, refreshToken);
   const verified = await deliverVerified(origin, received, received, bearer, true, async () => {
-    const session = await verifiedRead(origin, received.accessToken);
+    const session = await readVerifiedIdentitySession(origin, received.accessToken);
     if (session.role !== role || (current && session.actorId !== current.actorId)) {
       throw new IdentityClientError(502, "OWNER_RESPONSE_INVALID");
     }
@@ -166,15 +127,15 @@ async function rotateVerified(
   return activeRead(verified, received.accessToken, signal);
 }
 
-// Identity owns actor, role and session family. The application owns the
-// serialized secure storage, quarantine and account-switch admission checks.
+// Identity owns the actor, role and session family. The application owns
+// serialized secure storage, quarantine and account-switch admission.
 export async function readPersistentIdentityRole(
   origin: string, bearer: string, refreshToken: string | null, role: IdentityRole,
   signal: AbortSignal, prepareRotation: () => Promise<void>, commit: CredentialHandoff,
 ): Promise<VerifiedRead> {
   let current: VerifiedIdentitySession | null;
   try {
-    current = await verifiedRead(origin, bearer, signal);
+    current = await readVerifiedIdentitySession(origin, bearer, signal);
   } catch (error) {
     if (!(refreshToken && error instanceof IdentityClientError && error.status === 401)) throw error;
     current = null;
