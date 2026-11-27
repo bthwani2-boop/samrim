@@ -473,3 +473,25 @@ test("a rejected body does not wait for a source whose cancellation rejects", as
   await assert.rejects(() => boundedResponseJSON(response));
   assert.equal(response.body.locked, false);
 });
+
+test("all rejected body declarations cancel the source without consuming or retaining it", async () => {
+  const { boundedResponseJSON, boundedRequestBody, isEmptyRequestBody } =
+    await import("../src/server/operator-passkey-transport.ts");
+  const url = "http://localhost:13000/api/auth/passkey/authentication";
+  const cases = [
+    { headers: { "content-length": "65537" }, call: body => boundedResponseJSON(new Response(body, { headers: { "content-length": "65537" } })).then(() => "accepted", () => "rejected"), expected: "rejected" },
+    { headers: { "content-length": "broken" }, call: body => boundedRequestBody(new Request(url, { method: "POST", body, duplex: "half", headers: { "content-length": "broken" } })), expected: null },
+    { headers: {}, call: body => boundedRequestBody(new Request(url, { method: "POST", body, duplex: "half" }), 65537), expected: null },
+    { headers: { "content-length": "1" }, call: body => isEmptyRequestBody(new Request(url, { method: "POST", body, duplex: "half", headers: { "content-length": "1" } })), expected: false },
+    { headers: { "transfer-encoding": "chunked" }, call: body => isEmptyRequestBody(new Request(url, { method: "POST", body, duplex: "half", headers: { "transfer-encoding": "chunked" } })), expected: false },
+  ];
+  for (const { call, expected, headers } of cases) {
+    let cancels = 0;
+    const body = new ReadableStream({
+      cancel() { cancels++; return Promise.reject(new Error("source cancel rejected")); },
+    });
+    assert.equal(await call(body), expected, JSON.stringify(headers));
+    assert.equal(cancels, 1, JSON.stringify(headers));
+    assert.equal(body.locked, false);
+  }
+});
