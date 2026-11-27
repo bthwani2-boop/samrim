@@ -470,15 +470,17 @@ async function expectPromptCancellation(call, started, controller, code, release
 
 test("non-cooperative Identity headers cancel and allow a successor", async () => {
   const controller = new AbortController(), stalled = Promise.withResolvers(), started = Promise.withResolvers();
+  let ownerSignal;
   let calls = 0;
   await withFetch((_url, opts) => {
     calls++;
-    if (calls === 1) { assert.equal(opts.signal, controller.signal); started.resolve(); return stalled.promise; }
+    if (calls === 1) { ownerSignal = opts.signal; assert.equal(ownerSignal.aborted, false); started.resolve(); return stalled.promise; }
     return Promise.resolve(response(principal()));
   }, async () => {
     await expectPromptCancellation(() => readPersistentIdentityRole(origin, bearer, rotatedBearer, "customer",
       controller.signal, async () => assert.fail("must not rotate"), async () => assert.fail("must not commit")),
       started.promise, controller, "OWNER_RESPONSE_STALE", () => stalled.resolve(response(principal())));
+    assert.equal(ownerSignal.aborted, true);
     assert.equal((await readVerifiedIdentitySession(origin, bearer)).actorId, "actor-123");
     assert.equal(calls, 2);
   });
@@ -499,6 +501,7 @@ for (const status of [200, 401]) {
 
 test("non-cooperative Identity POST remains unknown and is not retried", async () => {
   const controller = new AbortController(), stalled = Promise.withResolvers(), started = Promise.withResolvers();
+  let ownerSignal;
   let calls = 0;
   await withFetch((_url, opts) => { calls++; assert.equal(opts.method, "POST"); started.resolve(); return stalled.promise; },
     () => expectPromptCancellation(() => admitCurrentCustomerAsMerchant(origin, bearer, controller.signal),
@@ -924,4 +927,151 @@ test("Identity discard protects against a synchronous native bridge failure", as
     }; } },
   }), () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
   assert.equal(released, true);
+});
+
+test("optional persistent enrollment has a finite header deadline and does not publish a late grant", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const current = principal();
+  const started = Promise.withResolvers();
+  const late = Promise.withResolvers();
+  const signal = new AbortController().signal;
+  let calls = 0;
+  let ownerSignal;
+  await withFetch(async (url, options) => {
+    calls++;
+    if (new URL(url).pathname === "/v1/sessions/current") return response(current);
+    ownerSignal = options.signal;
+    started.resolve();
+    return late.promise;
+  }, async () => {
+    let outcome;
+    const pending = readPersistentIdentityRole(origin, bearer, null, "customer", signal,
+      async () => assert.fail("unexpected rotation"), async () => assert.fail("late grant persisted"))
+      .then(value => { outcome = { value }; }, error => { outcome = { error }; });
+    await started.promise;
+    try {
+      t.mock.timers.tick(5000);
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(ownerSignal.aborted, true);
+      assert.equal(signal.aborted, false);
+      assert.deepEqual(outcome, { value: { session: current, bearer } });
+    } finally {
+      late.resolve(response({ refreshToken: rotatedBearer, refreshExpiresAt: expires() }, 201));
+      await pending;
+    }
+  });
+  assert.equal(calls, 2);
+});
+
+test("rotated refresh receipt that expires during owner verification never reaches durable handoff", async () => {
+  const now = Date.now();
+  const oldRefresh = Buffer.alloc(32, 35).toString("base64url");
+  const newRefresh = Buffer.alloc(32, 39).toString("base64url");
+  const current = { ...principal(), sessionExpiresAt: new Date(now + 30_000).toISOString() };
+  const receipt = { ...admission(), refreshToken: newRefresh, refreshExpiresAt: new Date(now + 1000).toISOString() };
+  const realNow = Date.now;
+  let handoffs = 0;
+  let cleanup = 0;
+  try {
+    Date.now = () => now;
+    await withFetch(async (_url, options) => {
+      if (options.method === "DELETE") {
+        assert.equal(options.headers.Authorization, "Bearer " + newRefresh);
+        cleanup++;
+        return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+      }
+      if (options.method === "POST") return response(receipt);
+      if (options.headers.Authorization === "Bearer " + bearer) return response(current);
+      Date.now = () => now + 1001;
+      return response(principal());
+    }, () => rejectsAs(() => readPersistentIdentityRole(origin, bearer, oldRefresh, "customer",
+      new AbortController().signal, async () => {}, async () => { handoffs++; return true; }),
+      502, "OPERATION_RESULT_UNKNOWN"));
+  } finally { Date.now = realNow; }
+  assert.equal(handoffs, 0);
+  assert.equal(cleanup, 1);
+});
+
+test("persistent current read deadline fails as an outage without consuming a refresh credential", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const started = Promise.withResolvers();
+  const late = Promise.withResolvers();
+  const caller = new AbortController();
+  let requests = 0;
+  let ownerSignal;
+  await withFetch(async (_url, options) => {
+    requests++;
+    assert.equal(options.method, "GET");
+    ownerSignal = options.signal;
+    started.resolve();
+    return late.promise;
+  }, async () => {
+    let outcome;
+    const pending = readPersistentIdentityRole(origin, bearer, rotatedBearer, "customer", caller.signal,
+      async () => assert.fail("outage must not rotate"), async () => assert.fail("outage must not persist"))
+      .then(value => { outcome = value; }, error => { outcome = error; });
+    await started.promise;
+    try {
+      t.mock.timers.tick(5000);
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(ownerSignal.aborted, true);
+      assert.equal(caller.signal.aborted, false);
+      assert.ok(outcome instanceof IdentityClientError);
+      assert.equal(outcome.status, 0);
+      assert.equal(outcome.code, "OWNER_NETWORK_UNAVAILABLE");
+    } finally { late.resolve(response(principal())); await pending; }
+  });
+  assert.equal(requests, 1);
+});
+
+test("persistent handoff rejects expiry of the issued access receipt and the verified principal", async () => {
+  const now = Date.now();
+  const next = Buffer.alloc(32, 39).toString("base64url");
+  const previous = Buffer.alloc(32, 35).toString("base64url");
+  for (const expired of ["issued access", "verified principal"]) {
+    const actualNow = Date.now;
+    let cleanup = 0;
+    let handoffs = 0;
+    try {
+      Date.now = () => now;
+      const current = { ...principal(), sessionExpiresAt: new Date(now + 30_000).toISOString() };
+      const issued = { ...admission(), refreshToken: next, refreshExpiresAt: expires(),
+        sessionExpiresAt: new Date(now + (expired === "issued access" ? 1000 : 60_000)).toISOString() };
+      await withFetch(async (_url, options) => {
+        if (options.method === "DELETE") {
+          cleanup++;
+          return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+        }
+        if (options.method === "POST") return response(issued);
+        if (options.headers.Authorization === "Bearer " + bearer) return response(current);
+        if (expired === "issued access") {
+          Date.now = () => now + 1001;
+          return response(principal());
+        }
+        // Keep the expiry valid through the transport parser, then expire
+        // immediately before the durable handoff admission recheck.
+        let reads = 0;
+        Date.now = () => ++reads === 1 ? now : now + 1001;
+        return response({ ...principal(), sessionExpiresAt: new Date(now + 1000).toISOString() });
+      }, async () => {
+        await assert.rejects(() => readPersistentIdentityRole(origin, bearer, previous, "customer",
+          new AbortController().signal, async () => {}, async () => { handoffs++; return true; }),
+        error => error instanceof IdentityClientError);
+      });
+    } finally { Date.now = actualNow; }
+    assert.equal(handoffs, 0, expired);
+    assert.equal(cleanup, 1, expired);
+  }
+});
+
+test("pre-cancelled persistent operations never dispatch or consume credentials", async () => {
+  const caller = new AbortController();
+  caller.abort();
+  await withFetch(async () => assert.fail("cancelled persistent operation dispatched"), async () => {
+    await rejectsAs(() => establishPersistentIdentitySession(origin, bearer, caller.signal), 0, "OPERATION_RESULT_UNKNOWN");
+    await rejectsAs(() => rotatePersistentIdentitySession(origin, rotatedBearer, caller.signal), 0, "OPERATION_RESULT_UNKNOWN");
+    await rejectsAs(() => revokePersistentIdentitySession(origin, rotatedBearer, caller.signal), 0, "OPERATION_RESULT_UNKNOWN");
+    await rejectsAs(() => readPersistentIdentityRole(origin, bearer, rotatedBearer, "customer", caller.signal,
+      async () => assert.fail("cancelled rotation"), async () => assert.fail("cancelled handoff")), 0, "OWNER_RESPONSE_STALE");
+  });
 });
