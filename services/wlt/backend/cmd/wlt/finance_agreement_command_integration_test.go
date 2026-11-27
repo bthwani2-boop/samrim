@@ -18,13 +18,13 @@ import (
 // Use the real Identity and the isolated durable WLT owner transaction.
 func verifyFinanceCommandAuthority(t *testing.T, ctx context.Context, owner, reader, executor, identity, dsh *sql.DB, origin, dshOrigin, merchant, finance, other, proposer, revoked string) {
 	t.Helper()
-	commandHandler, err := wallet.NewIsolatedAgreementDecisionHandler(executor, origin, dshOrigin)
+	commandHandler, err := wallet.NewIsolatedAgreementCommandHandler(executor, origin, dshOrigin)
 	if err != nil {
 		t.Fatal(err)
 	}
 	commandServer := httptest.NewServer(commandHandler)
 	defer commandServer.Close()
-	readerHandler, err := wallet.NewIsolatedAgreementDecisionHandler(reader, origin, dshOrigin)
+	readerHandler, err := wallet.NewIsolatedAgreementCommandHandler(reader, origin, dshOrigin)
 	if err != nil {
 		t.Fatal(err)
 	}

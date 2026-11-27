@@ -303,7 +303,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		revoked := session("finance-command-revoked", "operator", 24)
 		verifyFinanceCommandAuthority(t, ctx, owner, reader, executor, identity, dshDB, origin, dshOrigin, merchant, finance, other, proposer, revoked)
 		t.Run("proposal authority", func(t *testing.T) {
-			verifyProposalCommandAuthority(t, ctx, owner, reader, executor, dshDB, origin, dshOrigin, merchant, proposer, other, revoked)
+			verifyProposalCommandAuthority(t, ctx, owner, reader, executor, identity, dshDB, origin, dshOrigin, merchant, proposer, other, revoked)
 		})
 	})
 	handler, err := wallet.NewHandler(reader, origin)

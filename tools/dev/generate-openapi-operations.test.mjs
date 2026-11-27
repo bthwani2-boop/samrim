@@ -92,6 +92,7 @@ const retainedOperations = {
     ["getWltDevelopmentHealth", "GET", "/health"],
     ["listCurrentCustomerWalletTransactions", "GET", "/v1/wallets/me/transactions"],
     ["recordIsolatedFinanceAgreementDecision", "POST", "/v1/operators/stores/{storeID}/commercial-agreement/decisions"],
+    ["recordIsolatedFinanceAgreementProposal", "POST", "/v1/operators/stores/{storeID}/commercial-agreement/proposals"],
     ["recordIsolatedMerchantAgreementDecision", "POST", "/v1/merchants/stores/{storeID}/commercial-agreement/decisions"],
   ],
 };

@@ -1,10 +1,10 @@
 # WLT OpenAPI - isolated development reads
 
 [wlt.openapi.yaml](wlt.openapi.yaml) is the single owner entrypoint.
-The serving API exposes GET only. Six serving reads and two explicitly
-isolated-only decision operations are split by responsibility; common schemas
+The serving API exposes GET only. Serving reads and the explicitly isolated
+agreement commands are split by responsibility. Common schemas
 and the opaque-session security scheme remain in the entrypoint.
-The isolated decisions are not mounted by the serving binary.
+The serving binary excludes the isolated agreement commands.
 
 | Path fragment | Operation and scope |
 | --- | --- |
@@ -16,6 +16,7 @@ The isolated decisions are not mounted by the serving binary.
 | [commercial-agreements.yaml](paths/commercial-agreements.yaml) | `GET /v1/operators/stores/{storeID}/commercial-agreement`: current Operator with explicit Identity finance grant |
 | [commercial-agreements.yaml](paths/commercial-agreements.yaml) | Isolated-only `POST /v1/merchants/stores/{storeID}/commercial-agreement/decisions`: exact Merchant consent/refusal |
 | [commercial-agreements.yaml](paths/commercial-agreements.yaml) | Isolated-only `POST /v1/operators/stores/{storeID}/commercial-agreement/decisions`: exact Finance approval/rejection |
+| [commercial-agreements.yaml](paths/commercial-agreements.yaml) | Isolated-only `POST /v1/operators/stores/{storeID}/commercial-agreement/proposals`: record proposed terms with the current Finance grant and DSH Store standing |
 
 Protected operations recheck the required current Identity/DSH scope after
 reading owner data. The contract uses exact whole-YER decimal text;

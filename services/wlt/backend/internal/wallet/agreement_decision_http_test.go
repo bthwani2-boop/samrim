@@ -67,7 +67,7 @@ func TestAgreementDecisionAdmission(t *testing.T) {
 				tc.adjust(r)
 			}
 			rec := httptest.NewRecorder()
-			agreementDecisionRoutes(exec, exec).ServeHTTP(rec, r)
+			agreementCommandRoutes(exec, exec, nil).ServeHTTP(rec, r)
 			wantCalls := 0
 			if tc.status == 200 {
 				wantCalls = 1
@@ -105,7 +105,7 @@ func TestAgreementDecisionOwnerOutcomes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			exec := func(_ context.Context, _ string, _ AgreementDecision) (string, error) { return tc.state, tc.err }
 			rec := httptest.NewRecorder()
-			agreementDecisionRoutes(exec, nil).ServeHTTP(rec, decisionRequest(merchantDecisionPath, validDecisionBody))
+			agreementCommandRoutes(exec, nil, nil).ServeHTTP(rec, decisionRequest(merchantDecisionPath, validDecisionBody))
 			if rec.Code != tc.code {
 				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 			}
@@ -129,7 +129,7 @@ func TestAgreementDecisionCancellationAndReadOnlyBoundary(t *testing.T) {
 	ctx, cancel := context.WithCancel(r.Context())
 	cancel()
 	rec := httptest.NewRecorder()
-	agreementDecisionRoutes(exec, exec).ServeHTTP(rec, r.WithContext(ctx))
+	agreementCommandRoutes(exec, exec, nil).ServeHTTP(rec, r.WithContext(ctx))
 	if rec.Code != 503 || calls != 0 {
 		t.Fatalf("cancelled command reached owner %d %d", rec.Code, calls)
 	}
@@ -142,7 +142,7 @@ func TestAgreementDecisionCancellationAndReadOnlyBoundary(t *testing.T) {
 	if rec.Code != 404 {
 		t.Fatalf("decision exposed by read-only owner %d", rec.Code)
 	}
-	if handler, err := NewIsolatedAgreementDecisionHandler(nil, "http://127.0.0.1:1", "http://127.0.0.1:2"); err == nil || handler != nil {
+	if handler, err := NewIsolatedAgreementCommandHandler(nil, "http://127.0.0.1:1", "http://127.0.0.1:2"); err == nil || handler != nil {
 		t.Fatal("missing command principal accepted")
 	}
 }

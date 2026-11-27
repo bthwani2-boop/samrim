@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-const agreementDecisionMaxBody = 4096
+const agreementCommandMaxBody = 4096
 
 type agreementDecisionWire struct {
 	Version             int64  `json:"version"`
@@ -32,28 +32,32 @@ type agreementDecisionReceipt struct {
 
 type agreementDecisionExecutor func(context.Context, string, AgreementDecision) (string, error)
 
-// NewIsolatedAgreementDecisionHandler is the authenticated transport of the
+// NewIsolatedAgreementCommandHandler is the authenticated transport of the
 // existing WLT command owner. It is NOT mounted by the read-only serving
 // binary. The owner independently admits the database principal on every
 // transaction; constructing this handler grants no database permission.
-func NewIsolatedAgreementDecisionHandler(db *sql.DB, identityOrigin, dshOrigin string) (http.Handler, error) {
+func NewIsolatedAgreementCommandHandler(db *sql.DB, identityOrigin, dshOrigin string) (http.Handler, error) {
 	if db == nil || !validLoopbackOwnerOrigin(identityOrigin) || !validLoopbackOwnerOrigin(dshOrigin) {
 		return nil, errors.New("isolated agreement command dependencies unavailable")
 	}
-	return agreementDecisionRoutes(
+	return agreementCommandRoutes(
 		func(ctx context.Context, token string, d AgreementDecision) (string, error) {
 			return RecordMerchantAgreementDecision(ctx, db, identityOrigin, dshOrigin, token, d)
 		},
 		func(ctx context.Context, token string, d AgreementDecision) (string, error) {
 			return RecordFinanceAgreementDecision(ctx, db, identityOrigin, dshOrigin, token, d)
 		},
+		func(ctx context.Context, token string, p AgreementProposal) (AgreementProposalReceipt, error) {
+			return RecordFinanceAgreementProposal(ctx, db, identityOrigin, dshOrigin, token, p)
+		},
 	), nil
 }
 
-func agreementDecisionRoutes(merchant, finance agreementDecisionExecutor) http.Handler {
+func agreementCommandRoutes(merchant, finance agreementDecisionExecutor, propose agreementProposalExecutor) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v1/merchants/stores/{storeID}/commercial-agreement/decisions", agreementDecisionHandler(merchantStage, merchant))
 	mux.HandleFunc("/v1/operators/stores/{storeID}/commercial-agreement/decisions", agreementDecisionHandler(financeStage, finance))
+	mux.HandleFunc("/v1/operators/stores/{storeID}/commercial-agreement/proposals", agreementProposalHandler(propose))
 	// Do not let ServeMux normalize alternate paths or redirect a command.
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -61,7 +65,8 @@ func agreementDecisionRoutes(merchant, finance agreementDecisionExecutor) http.H
 		parts := strings.Split(r.URL.Path, "/")
 		if r.URL.RawPath != "" || len(parts) != 7 || parts[0] != "" || parts[1] != "v1" ||
 			(parts[2] != "merchants" && parts[2] != "operators") || parts[3] != "stores" ||
-			!storeIDRule.MatchString(parts[4]) || parts[5] != "commercial-agreement" || parts[6] != "decisions" {
+			!storeIDRule.MatchString(parts[4]) || parts[5] != "commercial-agreement" ||
+			(parts[6] != "decisions" && !(parts[2] == "operators" && parts[6] == "proposals")) {
 			failure(w, http.StatusBadRequest, "INVALID_REQUEST")
 			return
 		}
@@ -69,28 +74,32 @@ func agreementDecisionRoutes(merchant, finance agreementDecisionExecutor) http.H
 	})
 }
 
-func decodeAgreementDecision(w http.ResponseWriter, r *http.Request, stage decisionStage) (AgreementDecision, bool) {
+func decodeAgreementCommandBody(w http.ResponseWriter, r *http.Request, input any) bool {
 	types := r.Header.Values("Content-Type")
 	if len(types) != 1 || len(r.Header.Values("Content-Encoding")) != 0 ||
 		r.URL.RawQuery != "" || r.URL.ForceQuery || r.Body == nil ||
-		r.ContentLength < -1 || r.ContentLength == 0 || r.ContentLength > agreementDecisionMaxBody {
-		return AgreementDecision{}, false
+		r.ContentLength < -1 || r.ContentLength == 0 || r.ContentLength > agreementCommandMaxBody {
+		return false
 	}
 	media, params, err := mime.ParseMediaType(types[0])
 	if err != nil || media != "application/json" {
-		return AgreementDecision{}, false
+		return false
 	}
 	for name, value := range params {
 		if name != "charset" || !strings.EqualFold(value, "utf-8") {
-			return AgreementDecision{}, false
+			return false
 		}
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, agreementDecisionMaxBody))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, agreementCommandMaxBody))
 	if err != nil || (r.ContentLength >= 0 && int64(len(body)) != r.ContentLength) {
-		return AgreementDecision{}, false
+		return false
 	}
+	return json.Unmarshal(body, input, json.RejectUnknownMembers(true)) == nil
+}
+
+func decodeAgreementDecision(w http.ResponseWriter, r *http.Request, stage decisionStage) (AgreementDecision, bool) {
 	var wire agreementDecisionWire
-	if err := json.Unmarshal(body, &wire, json.RejectUnknownMembers(true)); err != nil {
+	if !decodeAgreementCommandBody(w, r, &wire) {
 		return AgreementDecision{}, false
 	}
 	d := AgreementDecision{StoreID: r.PathValue("storeID"), Version: wire.Version,
@@ -100,6 +109,29 @@ func decodeAgreementDecision(w http.ResponseWriter, r *http.Request, stage decis
 }
 
 func agreementDecisionHandler(stage decisionStage, execute agreementDecisionExecutor) http.HandlerFunc {
+	return agreementCommandHandler("DECISION_CONFLICT", "DECISION_UNCONFIRMED",
+		func(w http.ResponseWriter, r *http.Request) (AgreementDecision, bool) {
+			return decodeAgreementDecision(w, r, stage)
+		},
+		func(ctx context.Context, token string, d AgreementDecision) (agreementDecisionReceipt, error) {
+			if execute == nil {
+				return agreementDecisionReceipt{}, ErrAgreementUnconfirmed
+			}
+			state, err := execute(ctx, token, d)
+			if err != nil {
+				return agreementDecisionReceipt{}, err
+			}
+			if state != "RECORDED" && state != "REPLAYED" {
+				return agreementDecisionReceipt{}, ErrAgreementUnconfirmed
+			}
+			return agreementDecisionReceipt{StoreID: d.StoreID, Version: d.Version,
+				ProposalOperationID: d.ProposalOperationID, OperationID: d.OperationID, State: state}, nil
+		})
+}
+
+func agreementCommandHandler[I, R any](conflict, unconfirmed string,
+	decode func(http.ResponseWriter, *http.Request) (I, bool),
+	execute func(context.Context, string, I) (R, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			w.Header().Set("Allow", "POST")
@@ -113,16 +145,16 @@ func agreementDecisionHandler(stage decisionStage, execute agreementDecisionExec
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
-		d, valid := decodeAgreementDecision(w, r, stage)
+		input, valid := decode(w, r)
 		if !valid {
 			failure(w, http.StatusBadRequest, "INVALID_REQUEST")
 			return
 		}
-		if execute == nil || ctx.Err() != nil {
-			failure(w, http.StatusServiceUnavailable, "DECISION_UNCONFIRMED")
+		if ctx.Err() != nil {
+			failure(w, http.StatusServiceUnavailable, unconfirmed)
 			return
 		}
-		state, err := execute(ctx, strings.TrimPrefix(auth[0], "Bearer "), d)
+		result, err := execute(ctx, strings.TrimPrefix(auth[0], "Bearer "), input)
 		switch {
 		case errors.Is(err, ErrAgreementInvalid):
 			failure(w, http.StatusBadRequest, "INVALID_REQUEST")
@@ -131,14 +163,13 @@ func agreementDecisionHandler(stage decisionStage, execute agreementDecisionExec
 		case errors.Is(err, ErrAgreementForbidden):
 			failure(w, http.StatusForbidden, "FORBIDDEN")
 		case errors.Is(err, ErrAgreementConflict):
-			failure(w, http.StatusConflict, "DECISION_CONFLICT")
-		case err != nil || ctx.Err() != nil || (state != "RECORDED" && state != "REPLAYED"):
+			failure(w, http.StatusConflict, conflict)
+		case err != nil || ctx.Err() != nil:
 			// The owner may have committed before transport confirmation was lost.
 			// Never claim rejection, activate terms or retry with a new operation ID.
-			failure(w, http.StatusServiceUnavailable, "DECISION_UNCONFIRMED")
+			failure(w, http.StatusServiceUnavailable, unconfirmed)
 		default:
-			reply(w, http.StatusOK, agreementDecisionReceipt{StoreID: d.StoreID, Version: d.Version,
-				ProposalOperationID: d.ProposalOperationID, OperationID: d.OperationID, State: state})
+			reply(w, http.StatusOK, result)
 		}
 	}
 }

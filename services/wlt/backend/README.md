@@ -17,11 +17,16 @@ The current HTTP runtime remains read-only. If the command role is absent,
 the guarded owner-baseline transaction creates it atomically with that exact
 dormant ACL. An existing active, privileged, connected or membership-linked
 command role is rejected before WLT is stopped. This does not activate command credentials or any serving HTTP write route.
-The isolated decision handler can be exercised with the existing disposable
-owner integration fixture; it is not mounted by the serving binary. Its two
-POST routes bind Store, version, proposal and operation identity and use the
-existing command owner. Activation, serving credentials, application write
-consumers and retained-data access remain separate acceptance boundaries.
+The disposable owner integration fixture hosts the isolated agreement command
+handler. Finance can record proposed terms, the Merchant can record consent or
+refusal, and Finance can approve or reject the same proposal. The read-only
+serving binary excludes these routes. Activation and application write consumers
+require separate acceptance.
+
+WLT compares bounded Identity and DSH observations around each Store-locked
+transaction. A drift it observes rolls the command back. DSH and WLT commit
+independently, so a proposal records the Store relation observed by the command.
+Subsequent decision commands compare that relation to current DSH standing.
 
 ## Runtime configuration
 

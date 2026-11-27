@@ -242,10 +242,12 @@ func executeAgreementCommand[T any](ctx context.Context, db *sql.DB, authority d
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended('wlt:commercial-proposal:'||$1,0))", authority.store); err != nil {
 		return empty, ErrAgreementUnconfirmed
 	}
-	result, err := write(ctx, tx, actor, standing)
-	if err != nil {
-		return empty, err
+	result, outcome := write(ctx, tx, actor, standing)
+	if outcome != nil && !errors.Is(outcome, ErrAgreementConflict) {
+		return empty, outcome
 	}
+	// A conflict also discloses the outcome of a Store-scoped owner read.
+	// Recheck authority for it before disclosing it, then roll it back.
 	current, currentStanding, err := authority.current(ctx)
 	if err != nil {
 		return empty, err
@@ -256,6 +258,9 @@ func executeAgreementCommand[T any](ctx context.Context, db *sql.DB, authority d
 	}
 	if standing != currentStanding {
 		return empty, ErrAgreementForbidden
+	}
+	if outcome != nil {
+		return empty, outcome
 	}
 	if ctx.Err() != nil || tx.Commit() != nil {
 		return empty, ErrAgreementUnconfirmed

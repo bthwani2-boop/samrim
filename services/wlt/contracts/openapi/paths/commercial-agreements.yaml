@@ -151,6 +151,65 @@ paths:
           content:
             application/json:
               schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementDecisionError' }
+  /v1/operators/stores/{storeID}/commercial-agreement/proposals:
+    post:
+      operationId: recordIsolatedFinanceAgreementProposal
+      summary: Record proposed terms for an isolated Store agreement
+      description: >-
+        Disposable owner integration only. Identity verifies the Finance Operator and DSH verifies current
+        Store standing. WLT records a proposal at the next version and replays identical operations.
+        Reconcile an uncertain result using the same operation ID and payload. This operation creates
+        neither consent nor agreement activation, and does not change wallet balances.
+      x-bthwani-isolated-only: true
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementProposalInput' }
+      responses:
+        '200':
+          description: Exact recorded or replayed proposal identity
+          headers: { Cache-Control: { schema: { type: string, const: no-store } } }
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementProposalReceipt' }
+        '400':
+          description: Invalid path or proposal input
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementProposalError' }
+        '401':
+          description: Current Identity session required
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementProposalError' }
+        '403':
+          description: Finance or Store authority denied
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementProposalError' }
+        '405':
+          description: POST only
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementProposalError' }
+        '409':
+          description: Proposal version or operation identity conflicts with recorded terms
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementProposalError' }
+        '503':
+          description: Proposal unconfirmed; retry only identical identity and payload
+          content:
+            application/json:
+              schema: { $ref: '../wlt.openapi.yaml#/components/schemas/AgreementProposalError' }
   /v1/operators/stores/{storeID}/commercial-agreement/decisions:
     post:
       operationId: recordIsolatedFinanceAgreementDecision
