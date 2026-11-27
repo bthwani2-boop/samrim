@@ -1,0 +1,6 @@
+# Operator market city selection — BTH-28/BTH-14
+Authority: governance/experience.md (DESIGN-03, usable Arabic workspaces), governance/stores.md (DSH city and visibility), existing DSH public read contract. No new permission or endpoint.
+AC1: On authorized Home, Stores, Marketing and Products views, the bounded owner city options remain available after a valid selection; current city remains selected, including a city outside the first bounded list.
+AC2: Read cities, stores and verticals concurrently where applicable; independent city failure must not suppress confirmed Store/vertical results; show explicit city error, preserve validated input and existing retry. No fabricated options or totals.
+AC3: Invalid scope and unauthorized view perform zero owner reads. Products retains search and cursor semantics; changing city resets cursor via existing GET form. No change to owner access or private data.
+AC4: RED/GREEN component regression and affected tests, pinned Nx/typecheck, Biome, actual Web/owner read and exact SHA CI; independent review as applicable. No financial, SQL or native surface change.
