@@ -31,9 +31,9 @@ test("configuration reconciliation admits only the resource/logging policy and h
 
 test("a resource-only replacement preserves persistent mounts, actual image and effective owner configuration", async () => {
   const { verifyReplacement } = await import("../../tools/dev/docker/compose-runtime-transition.mjs");
-  const record = { Image: `sha256:${"a".repeat(64)}`, Config: { Hostname: "before", Image: "owner:old", Env: ["A=1"], Labels: { "com.bthwani.environment": "refoundation" } }, HostConfig: { Memory: 0, PidsLimit: null, MemorySwap: 0, LogConfig: { Type: "local", Config: {} }, Privileged: false }, Mounts: [{ Name: "data", Destination: "/data", Type: "volume", RW: true }], NetworkSettings: { Networks: { isolated: { NetworkID: "network" } } }, State: { Running: true, Health: { Status: "healthy" } } };
+  const record = { Id: "a".repeat(64), Image: `sha256:${"a".repeat(64)}`, Config: { Hostname: "a".repeat(12), Image: "owner:old", Env: ["A=1"], Labels: { "com.bthwani.environment": "refoundation" } }, HostConfig: { Memory: 0, PidsLimit: null, MemorySwap: 0, LogConfig: { Type: "local", Config: {} }, Privileged: false }, Mounts: [{ Name: "data", Destination: "/data", Type: "volume", RW: true }], NetworkSettings: { Networks: { isolated: { NetworkID: "network" } } }, State: { Running: true, Health: { Status: "healthy" } } };
   const after = structuredClone(record);
-  after.Config.Hostname = "after";
+  after.Id = "b".repeat(64); after.Config.Hostname = "b".repeat(12);
   Object.assign(after.HostConfig, { Memory: 536870912, PidsLimit: 256, MemorySwap: 1073741824, LogConfig: { Type: "local", Config: { "max-size": "10m", "max-file": "3" } } });
   const policy = { mem_limit: 536870912, pids_limit: 256, logging: { driver: "local", options: { "max-size": "10m", "max-file": "3" } } };
   assert.doesNotThrow(() => verifyReplacement(record, after, policy));
@@ -74,5 +74,56 @@ test("native Compose variables are recovered only from matching live service fie
     const nextState = structuredClone(state);
     corrupt(nextModel, nextState);
     assert.throws(() => runtimeEnvironment(nextModel, nextState));
+  }
+});
+
+test("Docker default representations do not obscure the protected effective configuration", async () => {
+  const { verifyReplacement } = await import("../../tools/dev/docker/compose-runtime-transition.mjs");
+  const before = {
+    Id: "a".repeat(64), Image: `sha256:${"b".repeat(64)}`,
+    Config: { Hostname: "a".repeat(12), Image: "owner:old", Env: ["A=1"], Labels: {} },
+    HostConfig: { Memory: 0, MemorySwap: 0, PidsLimit: null, LogConfig: { Type: "local", Config: {} }, Dns: [], DnsOptions: [], DnsSearch: [], OomKillDisable: false, Privileged: false },
+    Mounts: [], NetworkSettings: { Networks: { isolated: { NetworkID: "network" } } },
+    State: { Running: true, Health: { Status: "healthy" } },
+  };
+  const after = structuredClone(before);
+  after.Id = "c".repeat(64);
+  after.Config.Hostname = "c".repeat(12);
+  Object.assign(after.HostConfig, { Memory: 536870912, MemorySwap: 1073741824, PidsLimit: 256, Dns: null, DnsOptions: null, DnsSearch: null, OomKillDisable: null, LogConfig: { Type: "local", Config: { "max-size": "10m", "max-file": "3" } } });
+  const policy = { mem_limit: 536870912, pids_limit: 256, logging: { driver: "local", options: { "max-size": "10m", "max-file": "3" } } };
+  assert.doesNotThrow(() => verifyReplacement(before, after, policy));
+  for (const change of [
+    value => { value.HostConfig.Dns = ["192.0.2.1"]; },
+    value => { value.HostConfig.DnsOptions = ["timeout:1"]; },
+    value => { value.HostConfig.DnsSearch = ["fixture.invalid"]; },
+    value => { value.HostConfig.OomKillDisable = true; },
+    value => { value.HostConfig.MemorySwap = -1; },
+    value => { value.Config.Hostname = "different-explicit-host"; },
+  ]) {
+    const candidate = structuredClone(after);
+    change(candidate);
+    assert.throws(() => verifyReplacement(before, candidate, policy));
+  }
+});
+
+test("interrupted transition cannot treat a current hash as proof of actual serving attachments", async () => {
+  const { verifyLiveDefinition } = await import("../../tools/dev/docker/compose-runtime-transition.mjs");
+  const model = { services: { dsh: { volumes: [{ type: "volume", source: "data", target: "/data", read_only: true }], networks: { isolated: {} }, ports: [{ target: 8080, protocol: "tcp", host_ip: "127.0.0.1", published: "8181" }], read_only: true, restart: "unless-stopped", cap_drop: ["ALL"], security_opt: ["no-new-privileges:true"], environment: { MODE: "synthetic" }, labels: { "com.bthwani.environment": "refoundation" } } }, volumes: { data: { name: "project-data" } }, networks: { isolated: { name: "project-isolated" } } };
+  const record = { Config: { Env: ["MODE=synthetic"], Labels: { "com.bthwani.environment": "refoundation" } }, HostConfig: { Privileged: false, ReadonlyRootfs: true, RestartPolicy: { Name: "unless-stopped" }, CapDrop: ["ALL"], SecurityOpt: ["no-new-privileges:true"], PortBindings: { "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: "8181" }] } }, Mounts: [{ Type: "volume", Driver: "local", Name: "project-data", Destination: "/data", RW: false }], NetworkSettings: { Networks: { "project-isolated": {} } } };
+  assert.doesNotThrow(() => verifyLiveDefinition(model, "dsh", record));
+  for (const change of [
+    value => { value.Mounts[0].Name = "other-data"; },
+    value => { value.Mounts[0].RW = true; },
+    value => { value.NetworkSettings.Networks.public = {}; },
+    value => { value.HostConfig.PortBindings["8080/tcp"][0].HostIp = "0.0.0.0"; },
+    value => { value.HostConfig.ReadonlyRootfs = false; },
+    value => { value.HostConfig.CapDrop = []; },
+    value => { value.HostConfig.SecurityOpt = []; },
+    value => { value.Config.Env = ["MODE=other"]; },
+    value => { value.Config.Labels["com.bthwani.environment"] = "other"; },
+  ]) {
+    const candidate = structuredClone(record);
+    change(candidate);
+    assert.throws(() => verifyLiveDefinition(model, "dsh", candidate));
   }
 });
