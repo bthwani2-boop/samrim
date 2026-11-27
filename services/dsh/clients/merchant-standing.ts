@@ -80,18 +80,13 @@ export async function readMerchantDSHStanding(origin: string, bearer: string, si
       }
       throw new MerchantStandingError(503, "OWNER_UNAVAILABLE");
     }
-    const directives = response.headers.get("Cache-Control")
-      ?.toLowerCase().split(",").map(x => x.trim()) ?? [];
-    if (response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
-      !directives.includes("no-store")) {
-      throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
-    }
+    if (response.status !== 200) throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
     let body: unknown;
     try {
       // The 100-Store Unicode envelope remains supported, but streaming owners
       // must be stopped at the byte limit rather than drained into memory.
       // Pinned native fetch and browser fetch use the same bounded stream parser.
-      body = await readBoundedOwnerJSON(response, 262144, 262144, signal);
+      body = await readBoundedOwnerJSON(response, 262144, 262144, signal, "private-json");
     } catch {
       throw new MerchantStandingError(signal?.aborted ? 0 : 502, signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
     }

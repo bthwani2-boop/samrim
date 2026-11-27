@@ -66,9 +66,7 @@ async function currentStanding(
         res.status === 401 ? "UNAUTHORIZED" : res.status >= 500 ?
           (method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE") : "OWNER_REQUEST_FAILED");
     }
-    if (res.status !== 200 ||
-      res.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
-      !res.headers.get("Cache-Control")?.toLowerCase().split(",").map(s => s.trim()).includes("no-store")) {
+    if (res.status !== 200) {
       throw new CaptainStandingError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
     }
     const invalidCode = method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID";
@@ -76,7 +74,7 @@ async function currentStanding(
     try {
       // Shared DSH parser enforces the Captain-specific 4096-byte cap,
       // and observes the active request cancellation.
-      body = await readBoundedOwnerJSON(res, 4096, 4096, signal);
+      body = await readBoundedOwnerJSON(res, 4096, 4096, signal, "private-json");
     } catch {
       if (signal?.aborted) throw new CaptainStandingError(0,
         method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");

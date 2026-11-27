@@ -4,16 +4,9 @@ import { consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, read
 const defaultTextLimit = 32 * 1024;
 type OwnerMethod = "GET" | "PATCH" | "POST" | "PUT";
 
-function privateJSON(response: Response): boolean {
-  const cache = response.headers.get("Cache-Control")
-    ?.toLowerCase().split(",").map(value => value.trim()) ?? [];
-  return cache.includes("no-store")
-    && response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() === "application/json";
-}
-
 async function readFailure(response: Response, signal?: AbortSignal): Promise<string> {
   try {
-    const failure = await readBoundedOwnerJSON(response, defaultTextLimit, undefined, signal);
+    const failure = await readBoundedOwnerJSON(response, defaultTextLimit, undefined, signal, "private-json");
     if (failure && typeof failure === "object") {
       if ("code" in failure && typeof failure.code === "string") return failure.code;
       if ("error" in failure && typeof failure.error === "string") return failure.error;
@@ -65,13 +58,13 @@ export async function privateOwnerRequest(
       throw new DshPublicError(response.status,
         mutating && response.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
     }
-    if (!acceptedStatuses.includes(response.status) || !privateJSON(response)) throw invalid();
+    if (!acceptedStatuses.includes(response.status)) throw invalid();
 
     let result: unknown;
     try {
       // A larger owner projection must supply its contract-derived byte budget.
       // All existing callers retain the original default text/byte bounds.
-      result = await readBoundedOwnerJSON(response, responseByteLimit ?? defaultTextLimit, responseByteLimit, signal);
+      result = await readBoundedOwnerJSON(response, responseByteLimit ?? defaultTextLimit, responseByteLimit, signal, "private-json");
     } catch {
       stale();
       throw invalid();

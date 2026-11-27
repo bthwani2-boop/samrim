@@ -133,12 +133,6 @@ export function isMerchantRegistrationRejection(status: number, code: unknown): 
     || (status === 409 && (code === "STORE_REGISTRATION_POLICY_CHANGED" || code === "IDEMPOTENCY_KEY_REUSED"));
 }
 
-function isPrivateJSON(response: Response): boolean {
-  const cache = response.headers.get("Cache-Control")?.toLowerCase().split(",").map(x => x.trim()) ?? [];
-  return cache.includes("no-store")
-    && response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() === "application/json";
-}
-
 async function ownerCall(
   origin: string, bearer: string, method: "GET" | "POST", path: string,
   signal?: AbortSignal, input?: MerchantStoreRegistration,
@@ -169,12 +163,10 @@ async function ownerCall(
     current();
     if (!response.ok) {
       let code: string | undefined;
-      if (isPrivateJSON(response)) {
-        try {
-          const error = record(await readBoundedOwnerJSON(response, 2048, 2048, signal));
-          if (error && exact(error, ["code"]) && typeof error.code === "string") code = error.code;
-        } catch { /* A malformed failure is not a definitive owner rejection. */ }
-      }
+      try {
+        const error = record(await readBoundedOwnerJSON(response, 2048, 2048, signal, "private-json"));
+        if (error && exact(error, ["code"]) && typeof error.code === "string") code = error.code;
+      } catch { /* A malformed failure is not a definitive owner rejection. */ }
       current();
       if (code && isMerchantRegistrationRejection(response.status, code)) {
         throw new DshPublicError(response.status, code);
@@ -183,13 +175,13 @@ async function ownerCall(
         (response.status === 503 && (code === "IDENTITY_OWNER_UNAVAILABLE" || code === "STORE_OWNER_UNAVAILABLE"))
           ? code : "OWNER_UNAVAILABLE");
     }
-    if (!isPrivateJSON(response) || (writing ? ![200, 201].includes(response.status) : response.status !== 200)) {
+    if ((writing ? ![200, 201].includes(response.status) : response.status !== 200)) {
       throw invalid();
     }
     const limit = writing ? receiptLimit : merchantRegistrationOptionsByteLimit;
     let body: unknown;
     try {
-      body = await readBoundedOwnerJSON(response, limit, limit, signal);
+      body = await readBoundedOwnerJSON(response, limit, limit, signal, "private-json");
     } catch {
       current();
       throw invalid();

@@ -126,6 +126,7 @@ export async function consumeOwnerResponse<T>(
 // establish a byte bound before allocating the complete reply. Reject it.
 export async function readBoundedOwnerJSON(
   response: Response, maxTextLength: number, strictByteLimit?: number, signal?: AbortSignal,
+  representation: "json" | "private-json" = "json",
 ): Promise<unknown> {
   const maxBytes = strictByteLimit ?? 3 * maxTextLength;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -134,6 +135,11 @@ export async function readBoundedOwnerJSON(
   let onAbort: (() => void) | undefined;
 
   try {
+    if (representation === "private-json" &&
+      (response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
+        response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json")) {
+      throw new Error("Invalid private DSH owner representation");
+    }
     const length = response.headers.get("Content-Length");
     if (length !== null && (!/^\d+$/.test(length) || Number(length) > maxBytes)) {
       throw new Error("Oversized or invalid DSH owner reply length");
@@ -145,7 +151,12 @@ export async function readBoundedOwnerJSON(
     const acquired = body.getReader();
     reader = acquired;
     const bytes = new Uint8Array(maxBytes);
+    const expires = performance.now() + bodyDeadlineMs;
     let size = 0;
+    const assertCurrent = () => {
+      if (signal?.aborted) throw new Error("DSH owner read cancelled");
+      if (performance.now() >= expires) throw new Error("DSH owner body deadline exceeded");
+    };
     const stopped = new Promise<never>((_resolve, reject) => {
       timer = setTimeout(() => reject(new Error("DSH owner body deadline exceeded")), bodyDeadlineMs);
       if (signal) {
@@ -158,7 +169,9 @@ export async function readBoundedOwnerJSON(
       stopped,
       (async () => {
         for (;;) {
+          assertCurrent();
           const chunk = await acquired.read();
+          assertCurrent();
           if (chunk.done) break;
           if (chunk.value.byteLength > maxBytes - size) throw new Error("Oversized DSH owner reply");
           bytes.set(chunk.value, size);
@@ -169,7 +182,7 @@ export async function readBoundedOwnerJSON(
         return JSON.parse(decoded) as unknown;
       })(),
     ]);
-    if (signal?.aborted) throw new Error("DSH owner read cancelled");
+    assertCurrent();
     complete = true;
     return result;
   } finally {
@@ -179,7 +192,10 @@ export async function readBoundedOwnerJSON(
       if (!complete) void discardStream(() => reader ?? null);
       reader.releaseLock();
     } else {
-      discardUnread(response);
+      // The enclosing response owner performs final unread-body cancellation
+      // for rejected private representations; raw decoder callers still own
+      // their supplied response.
+      if (representation === "json") discardUnread(response);
     }
   }
 }

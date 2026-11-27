@@ -202,14 +202,9 @@ async function cartRequest(origin: string, bearer: string, storeId: string, expe
       }
       throw new DshCartError(503, dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE");
     }
-    const media = response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase();
-    const cache = response.headers.get("Cache-Control")?.toLowerCase().split(",").map(x => x.trim());
-    if (media !== "application/json" || !cache?.includes("no-store")) {
-      throw new DshCartError(signal.aborted ? 0 : 502, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
-    }
     let body: unknown;
     try {
-      body = await readBoundedOwnerJSON(response, 65536, 65536, signal);
+      body = await readBoundedOwnerJSON(response, 65536, 65536, signal, "private-json");
     } catch {
       throw new DshCartError(signal.aborted ? 0 : 502, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
     }

@@ -165,6 +165,43 @@ test("all direct DSH transports discard rejected success media without reading",
   }
 });
 
+test("private DSH representations reject every noncanonical no-store value before reading", async t => {
+  const invalid = [null, "public", "no-store-unsafe", "no-store=1",
+    'extension="before,no-store,after"', 'extension="escaped\\",no-store,after"',
+    "no-store, public", "no-store, no-store"];
+  const calls = (await ownerCalls()).filter(([name]) => name !== "discovery");
+  for (const [name, call, status] of calls) {
+    await t.test(name, async child => {
+      const expected = ["private write", "guest interest", "registration write"].includes(name)
+        ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID";
+      for (const cache of invalid) {
+        let reads = 0, cancelled = 0;
+        const body = new ReadableStream({
+          pull(controller) { reads++; controller.close(); },
+          cancel() { cancelled++; },
+        }, { highWaterMark: 0 });
+        const headers = { "Content-Type": "application/json" };
+        if (cache !== null) headers["Cache-Control"] = cache;
+        child.mock.method(globalThis, "fetch", async () => new Response(body, { status, headers }));
+        await assert.rejects(call(new AbortController().signal), { status: 502, code: expected });
+        assert.equal(reads, 0);
+        assert.equal(cancelled, 1);
+        assert.equal(body.locked, false);
+        child.mock.restoreAll();
+      }
+    });
+  }
+});
+
+test("private owner rejection metadata cannot assert a forged conflict code", async t => {
+  const { privateOwnerRequest } = await import("./private-owner-request.ts");
+  t.mock.method(globalThis, "fetch", async () => Response.json({ code: "VERSION_CONFLICT" }, {
+    status: 409, headers: { "Cache-Control": 'extension="before,no-store,after"' },
+  }));
+  await assert.rejects(privateOwnerRequest(origin, "/v1/stores/store-1/availability", bearer, "PATCH", {}),
+    { status: 409, code: "STORE_OPERATION_FAILED" });
+});
+
 test("direct status-only owner rejections discard the unread body without waiting", async t => {
   const calls = await ownerCalls();
   for (const [name, call] of calls.filter(([name]) => ["cart", "captain standing", "guest interest", "merchant standing"].includes(name))) {
