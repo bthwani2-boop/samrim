@@ -375,3 +375,101 @@ test("Operator principal and token obey exact Identity response schemas", () => 
     { ...principal, actorId: "مشغّل" },
     "valid UTF-8 Identity actor IDs must remain supported");
 });
+
+test("stalled Identity response fails closed and cancels its stream before returning", { timeout: 7500 }, async () => {
+  const { boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  let cancelled = false;
+  let controller;
+  const response = new Response(new ReadableStream({
+    start(value) { controller = value; value.enqueue(new TextEncoder().encode('{"actorId":')); },
+    cancel() { cancelled = true; },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  let timer;
+  try {
+    const result = await Promise.race([
+      boundedResponseJSON(response).then(() => "accepted", () => "rejected"),
+      new Promise(resolve => { timer = setTimeout(() => resolve("unbounded"), 5800); }),
+    ]);
+    assert.equal(result, "rejected");
+    assert.equal(cancelled, true);
+    assert.equal(response.body.locked, false);
+  } finally {
+    clearTimeout(timer);
+    if (!cancelled) controller.close();
+  }
+});
+
+test("oversized owner response cancels the remaining stream and releases its reader", async () => {
+  const { boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  let cancelled = false;
+  const response = new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(65537)); },
+    cancel() { cancelled = true; },
+  }));
+  await assert.rejects(() => boundedResponseJSON(response));
+  assert.equal(cancelled, true);
+  assert.equal(response.body.locked, false);
+});
+
+test("body admission rejects invalid length, empty data, malformed UTF-8 and broken streams", async () => {
+  const { boundedResponseJSON, boundedRequestBody, isEmptyRequestBody } =
+    await import("../src/server/operator-passkey-transport.ts");
+  const url = "http://localhost:13000/api/auth/passkey/authentication";
+  const request = (body, headers = {}) => new Request(url, { method: "POST", body, headers, duplex: "half" });
+  for (const length of ["bogus", "65537"]) {
+    assert.equal(await boundedRequestBody(request("{}", { "content-length": length })), null);
+    await assert.rejects(() => boundedResponseJSON(new Response("{}", { headers: { "content-length": length } })));
+  }
+  assert.equal(await boundedRequestBody(request(null)), null);
+  assert.equal(await boundedRequestBody(request("")), null);
+  assert.equal(await boundedRequestBody(request("12345"), 4), null);
+  assert.equal(await boundedRequestBody(request(new Uint8Array([0xff]))), null);
+  assert.equal(await isEmptyRequestBody(request(null, { "transfer-encoding": "chunked" })), false);
+  assert.equal(await isEmptyRequestBody(request(null, { "content-length": "0" })), true);
+  await assert.rejects(() => boundedResponseJSON(new Response(null)));
+  await assert.rejects(() => boundedResponseJSON(new Response("not JSON")));
+  await assert.rejects(() => boundedResponseJSON(new Response(new Uint8Array([0xff]))));
+  const locked = request("{}");
+  const reader = locked.body.getReader();
+  try { assert.equal(await boundedRequestBody(locked), null); }
+  finally { reader.releaseLock(); }
+  const broken = new Response(new ReadableStream({ start(controller) { controller.error(new Error("source failed")); } }));
+  await assert.rejects(() => boundedResponseJSON(broken));
+  assert.equal(broken.body.locked, false);
+  const valid = new Response(new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode('{"value":'));
+    controller.enqueue(new TextEncoder().encode('42}'));
+    controller.close();
+  }}), { headers: { "content-length": "12" } });
+  assert.deepEqual(await boundedResponseJSON(valid), { value: 42 });
+});
+
+test("Identity transport permits only owner operations and preserves the finite request policy", async t => {
+  const { operatorIdentityRequest } = await import("../src/server/operator-passkey-transport.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    calls.push({ url, init });
+    return Response.json({});
+  });
+  await assert.rejects(() => operatorIdentityRequest(config, { method: "GET", path: "/v1/unowned" }, {}));
+  assert.equal(calls.length, 0);
+  await operatorIdentityRequest(config, { method: "GET", path: "/v1/sessions/current" }, {
+    cache: "force-cache", redirect: "follow", headers: { Authorization: "Bearer " + token },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, config.identityOrigin + "/v1/sessions/current");
+  assert.equal(calls[0].init.cache, "no-store");
+  assert.equal(calls[0].init.redirect, "error");
+  assert.ok(calls[0].init.signal instanceof AbortSignal);
+});
+
+test("a rejected body does not wait for a source whose cancellation rejects", async () => {
+  const { boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  const response = new Response(new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(65537)); },
+    cancel() { return Promise.reject(new Error("uncooperative source")); },
+  }));
+  await assert.rejects(() => boundedResponseJSON(response));
+  assert.equal(response.body.locked, false);
+});
