@@ -16,7 +16,7 @@ func TestOperatorPermissionRejectsUnrecognizedScopeWithoutOwnerCall(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.RequireOperatorPermission(context.Background(), testOpaqueIdentityToken(), "operator-a", "finance"); !errors.Is(err, ErrForbidden) {
+	if err := client.RequireOperatorPermission(context.Background(), testOpaqueIdentityToken(), "operator-a", "financial_execution"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("unrecognized DSH permission admitted: %v", err)
 	}
 }
@@ -99,7 +99,7 @@ func TestIdentityHTTPRejectsUnapprovedPolicyPermissionStringsBeforeNetwork(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scope := range []string{"", "finance", "platform_policies/operations", "PLATFORM_POLICIES", "platform_policies?admin=true", "operations/../platform_policies"} {
+	for _, scope := range []string{"", "financial_execution", "platform_policies/operations", "PLATFORM_POLICIES", "platform_policies?admin=true", "operations/../platform_policies"} {
 		if err := consumer.RequireOperatorPermission(context.Background(), testOpaqueIdentityToken(), "operator-a", scope); !errors.Is(err, ErrForbidden) {
 			t.Fatalf("unapproved scope %q accepted: %v", scope, err)
 		}

@@ -50,6 +50,8 @@ paths:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores~1registration-options'
   /v1/stores:
     $ref: './paths/merchant-registration.yaml#/paths/~1v1~1stores'
+  /v1/operators/stores/{storeID}/financial-standing:
+    $ref: './paths/store-access.yaml#/paths/~1v1~1operators~1stores~1{storeID}~1financial-standing'
   /v1/stores/{storeID}/availability:
     $ref: './paths/store-access.yaml#/paths/~1v1~1stores~1{storeID}~1availability'
   /v1/captain-interest:

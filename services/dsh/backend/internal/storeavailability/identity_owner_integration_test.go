@@ -178,6 +178,9 @@ func TestIsolatedRealIdentityAndDshAvailability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Run("Financial standing", func(t *testing.T) {
+		verifyFinancialStanding(t, ctx, db, identity, grants, identitySchema, dshSchema, operator, merchantA, merchantB, tokenOperator, tokenA, store)
+	})
 	dshServer := httptest.NewServer(mux)
 	defer dshServer.Close()
 	cityPolicyHandler, err := NewCityPolicyHandler(identity, policies, policies)

@@ -163,7 +163,7 @@ func (identity *IdentitySessionHTTP) RequireOperatorPermission(ctx context.Conte
 		return ErrIdentityUnavailable
 	}
 	switch permission {
-	case "operations", "platform_policies", "hr", "merchant":
+	case "operations", "platform_policies", "hr", "merchant", "finance":
 	default:
 		return ErrForbidden
 	}

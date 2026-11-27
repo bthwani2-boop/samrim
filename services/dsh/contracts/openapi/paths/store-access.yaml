@@ -21,6 +21,45 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+  /v1/operators/stores/{storeID}/financial-standing:
+    get:
+      operationId: getOperatorStoreFinancialStanding
+      summary: Read minimal DSH Store facts for agreement review
+      description: Requires current explicit Identity Finance permission for the same Operator before and after reading one exact Store, including unpublished Stores. No financial, publication, payment or checkout authorization is conveyed. No query or request body is accepted.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Minimal current DSH-owned Store identity, relation and owner actor
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, storeId, relation, ownerActorId]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  storeId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+                  relation: { type: string, enum: [DIRECT, MARKETPLACE] }
+                  ownerActorId: { type: string, minLength: 1, maxLength: 128 }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreMissing'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
   /v1/stores/{storeID}/availability:
     get:
       operationId: getStoreOperationalAvailability
