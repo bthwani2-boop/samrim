@@ -16,6 +16,10 @@ paths:
     $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1merchants~1stores~1{storeID}~1commercial-agreement'
   /v1/operators/stores/{storeID}/commercial-agreement:
     $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1operators~1stores~1{storeID}~1commercial-agreement'
+  /v1/merchants/stores/{storeID}/commercial-agreement/decisions:
+    $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1merchants~1stores~1{storeID}~1commercial-agreement~1decisions'
+  /v1/operators/stores/{storeID}/commercial-agreement/decisions:
+    $ref: './paths/commercial-agreements.yaml#/paths/~1v1~1operators~1stores~1{storeID}~1commercial-agreement~1decisions'
 components:
   securitySchemes:
     OpaqueSession:
@@ -143,6 +147,37 @@ components:
               commissionBasisPoints: { type: 'null' }
               subscriptionAmountYer: { type: string }
               subscriptionPeriodDays: { type: integer }
+    AgreementDecisionInput:
+      type: object
+      additionalProperties: false
+      required: [version, proposalOperationId, operationId, decision, reason]
+      properties:
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        proposalOperationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        decision: { type: string, enum: [ACCEPTED, DECLINED, FINANCE_APPROVED, FINANCE_REJECTED] }
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 300
+          description: Required trimmed Unicode reason without control characters; retained only by the WLT owner.
+    AgreementDecisionReceipt:
+      type: object
+      additionalProperties: false
+      required: [storeId, version, proposalOperationId, operationId, state]
+      description: Exact recorded or replayed review decision identity, not effective terms or authorization of money or an Order.
+      properties:
+        storeId: { type: string, pattern: '^[a-z0-9-]{1,64}$' }
+        version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+        proposalOperationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+        state: { type: string, enum: [RECORDED, REPLAYED] }
+    AgreementDecisionError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { type: string, enum: [INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, METHOD_NOT_ALLOWED, DECISION_CONFLICT, DECISION_UNCONFIRMED] }
     Error:
       type: object
       additionalProperties: false

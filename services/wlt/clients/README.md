@@ -54,6 +54,10 @@ Verify generated metadata without changing files using
 `node tools/dev/generate-openapi-operations.mjs --check wlt` and
 `pnpm check:contracts`.
 
+The generated operation metadata also describes the two isolated-only
+agreement-decision routes. They are not callable by the read-only SDK or
+serving binary. Do not infer command admission from generated metadata.
+
 Contract parity and transport tests do not prove live authorization,
 persistence or journey acceptance; use the existing
 [Go owner and disposable PostgreSQL suite](../backend/README.md)

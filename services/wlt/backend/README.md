@@ -16,9 +16,12 @@ database, an admitted session principal and READ COMMITTED.
 The current HTTP runtime remains read-only. If the command role is absent,
 the guarded owner-baseline transaction creates it atomically with that exact
 dormant ACL. An existing active, privileged, connected or membership-linked
-command role is rejected before WLT is stopped. This does not activate command
-credentials, authenticated transport or any serving HTTP write route; those
-still require separate acceptance.
+command role is rejected before WLT is stopped. This does not activate command credentials or any serving HTTP write route.
+The isolated decision handler can be exercised with the existing disposable
+owner integration fixture; it is not mounted by the serving binary. Its two
+POST routes bind Store, version, proposal and operation identity and use the
+existing command owner. Activation, serving credentials, application write
+consumers and retained-data access remain separate acceptance boundaries.
 
 ## Runtime configuration
 

@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/wallet"
@@ -13,6 +18,56 @@ import (
 // Use the real Identity and the isolated durable WLT owner transaction.
 func verifyFinanceCommandAuthority(t *testing.T, ctx context.Context, owner, reader, executor, identity, dsh *sql.DB, origin, dshOrigin, merchant, finance, other, proposer, revoked string) {
 	t.Helper()
+	commandHandler, err := wallet.NewIsolatedAgreementDecisionHandler(executor, origin, dshOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandServer := httptest.NewServer(commandHandler)
+	defer commandServer.Close()
+	readerHandler, err := wallet.NewIsolatedAgreementDecisionHandler(reader, origin, dshOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readerServer := httptest.NewServer(readerHandler)
+	defer readerServer.Close()
+	call := func(serverURL, role, token string, d wallet.AgreementDecision, expected int, state string) {
+		t.Helper()
+		payload, err := json.Marshal(map[string]any{
+			"version": d.Version, "proposalOperationId": d.ProposalOperationID,
+			"operationId": d.OperationID, "decision": d.Decision, "reason": d.Reason,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		request, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			serverURL+"/v1/"+role+"/stores/"+d.StoreID+"/commercial-agreement/decisions", bytes.NewReader(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		request.Header.Set("Content-Type", "application/json")
+		response, err := http.DefaultClient.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer response.Body.Close()
+		body, err := io.ReadAll(io.LimitReader(response.Body, 4097))
+		if err != nil || response.StatusCode != expected || response.Header.Get("Cache-Control") != "no-store" {
+			t.Fatalf("decision HTTP %d want %d: %s %v", response.StatusCode, expected, body, err)
+		}
+		var result map[string]any
+		if err := json.Unmarshal(body, &result); err != nil {
+			t.Fatal(err)
+		}
+		if expected == 200 {
+			if len(result) != 5 || result["storeId"] != d.StoreID || result["version"] != float64(d.Version) ||
+				result["proposalOperationId"] != d.ProposalOperationID || result["operationId"] != d.OperationID || result["state"] != state {
+				t.Fatalf("wrong decision receipt: %s", body)
+			}
+		} else if len(result) != 1 || result["error"] == nil {
+			t.Fatalf("decision denial leaked information: %s", body)
+		}
+	}
 	const appendProposal = "SELECT version FROM wlt.append_commercial_agreement_proposal($1,0,$2,'DIRECT','COMMISSION','PLATFORM_MANAGED',375,NULL,NULL,ARRAY['CUSTOMER_PICKUP'],'2027-01-01T00:00:00Z','finance-proposer','synthetic proposal')"
 	for _, store := range []string{"finance-approve", "finance-reject", "finance-pending", "finance-revoked", "finance-relation", "finance-transfer"} {
 		var version int
@@ -21,9 +76,8 @@ func verifyFinanceCommandAuthority(t *testing.T, ctx context.Context, owner, rea
 		}
 		if store != "finance-pending" {
 			consent := wallet.AgreementDecision{StoreID: store, Version: 1, ProposalOperationID: "proposal-" + store, OperationID: "consent-" + store, Decision: "ACCEPTED", Reason: "synthetic consent"}
-			if state, err := wallet.RecordMerchantAgreementDecision(ctx, executor, origin, dshOrigin, merchant, consent); err != nil || state != "RECORDED" {
-				t.Fatalf("consent %s %q %v", store, state, err)
-			}
+			call(commandServer.URL, "merchants", merchant, consent, 200, "RECORDED")
+			call(commandServer.URL, "merchants", merchant, consent, 200, "REPLAYED")
 		}
 	}
 	decision := func(store, mode string) wallet.AgreementDecision {
@@ -31,10 +85,13 @@ func verifyFinanceCommandAuthority(t *testing.T, ctx context.Context, owner, rea
 	}
 	check := func(db *sql.DB, token string, d wallet.AgreementDecision, want string, wantErr error) {
 		t.Helper()
-		got, err := wallet.RecordFinanceAgreementDecision(ctx, db, origin, dshOrigin, token, d)
-		if got != want || !errors.Is(err, wantErr) {
-			t.Fatalf("%s: got %q %v want %q %v", d.StoreID, got, err, want, wantErr)
+		expected := map[error]int{nil: 200, wallet.ErrAgreementInvalid: 400, wallet.ErrAgreementUnauthorized: 401,
+			wallet.ErrAgreementForbidden: 403, wallet.ErrAgreementConflict: 409, wallet.ErrAgreementUnconfirmed: 503}[wantErr]
+		serverURL := commandServer.URL
+		if db == reader {
+			serverURL = readerServer.URL
 		}
+		call(serverURL, "operators", token, d, expected, want)
 	}
 	approve := decision("finance-approve", "FINANCE_APPROVED")
 	check(executor, merchant, approve, "", wallet.ErrAgreementForbidden)

@@ -1,9 +1,10 @@
 # WLT OpenAPI - isolated development reads
 
 [wlt.openapi.yaml](wlt.openapi.yaml) is the single owner entrypoint.
-The serving API exposes GET only. Its six operations are split by
-responsibility; common schemas and the opaque-session security scheme
-remain in the entrypoint.
+The serving API exposes GET only. Six serving reads and two explicitly
+isolated-only decision operations are split by responsibility; common schemas
+and the opaque-session security scheme remain in the entrypoint.
+The isolated decisions are not mounted by the serving binary.
 
 | Path fragment | Operation and scope |
 | --- | --- |
@@ -13,6 +14,8 @@ remain in the entrypoint.
 | [payment-intents.yaml](paths/payment-intents.yaml) | `GET /v1/wallets/me/order-payment-allocations/{checkoutID}`: current Customer exact allocation/release or explicit absence |
 | [commercial-agreements.yaml](paths/commercial-agreements.yaml) | `GET /v1/merchants/stores/{storeID}/commercial-agreement`: current Merchant and DSH-owned Store relation |
 | [commercial-agreements.yaml](paths/commercial-agreements.yaml) | `GET /v1/operators/stores/{storeID}/commercial-agreement`: current Operator with explicit Identity finance grant |
+| [commercial-agreements.yaml](paths/commercial-agreements.yaml) | Isolated-only `POST /v1/merchants/stores/{storeID}/commercial-agreement/decisions`: exact Merchant consent/refusal |
+| [commercial-agreements.yaml](paths/commercial-agreements.yaml) | Isolated-only `POST /v1/operators/stores/{storeID}/commercial-agreement/decisions`: exact Finance approval/rejection |
 
 Protected operations recheck the required current Identity/DSH scope after
 reading owner data. The contract uses exact whole-YER decimal text;
