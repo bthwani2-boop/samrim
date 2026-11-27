@@ -6,6 +6,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -179,4 +182,42 @@ func verifyAddressesOnRealPostgres(t *testing.T, ctx context.Context, db *sql.DB
 	sessions.mu.Lock()
 	sessions.revoked = false
 	sessions.mu.Unlock()
+}
+
+func TestAddressAndFavoriteUseLiteralOwnerSQL(t *testing.T) {
+	for _, path := range []string{"addresses.go", "favorites.go"} {
+		t.Run(path, func(t *testing.T) {
+			file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			checked := 0
+			ast.Inspect(file, func(node ast.Node) bool {
+				call, ok := node.(*ast.CallExpr)
+				if !ok {
+					return true
+				}
+				method, ok := call.Fun.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				switch method.Sel.Name {
+				case "QueryContext", "QueryRowContext", "ExecContext":
+					checked++
+					if len(call.Args) < 2 {
+						t.Error("missing owner statement")
+						return true
+					}
+					lit, ok := call.Args[1].(*ast.BasicLit)
+					if !ok || lit.Kind != token.STRING {
+						t.Errorf("%s must use fixed literal SQL", method.Sel.Name)
+					}
+				}
+				return true
+			})
+			if checked == 0 {
+				t.Fatal("no SQL calls examined")
+			}
+		})
+	}
 }

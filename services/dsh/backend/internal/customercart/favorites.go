@@ -13,8 +13,6 @@ import (
 )
 
 const favoritePageLimit = 20
-const publicFavoriteJoin = " JOIN stores s ON s.id=f.store_id JOIN service_cities c ON c.id=s.city_id JOIN verticals v ON v.id=s.vertical_id "
-const publicFavoriteWhere = " AND s.published AND c.active AND v.active "
 
 type favoriteState struct {
 	ActorID  string `json:"actorId"`
@@ -102,7 +100,7 @@ func (h *Handler) favorites(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case list:
 		page := favoritePage{ActorID: actor, StoreIDs: []string{}}
-		rows, e := tx.QueryContext(ctx, "SELECT f.store_id FROM customer_favorite_stores f"+publicFavoriteJoin+"WHERE f.actor_id=$1 AND f.store_id COLLATE \"C\">$2"+publicFavoriteWhere+"ORDER BY f.store_id COLLATE \"C\" LIMIT $3", actor, after, favoritePageLimit+1)
+		rows, e := tx.QueryContext(ctx, "SELECT f.store_id FROM customer_favorite_stores f JOIN stores s ON s.id=f.store_id JOIN service_cities c ON c.id=s.city_id JOIN verticals v ON v.id=s.vertical_id WHERE f.actor_id=$1 AND f.store_id COLLATE \"C\">$2 AND s.published AND c.active AND v.active ORDER BY f.store_id COLLATE \"C\" LIMIT $3", actor, after, favoritePageLimit+1)
 		if e != nil {
 			fail(w, 503, "OWNER_UNAVAILABLE")
 			return
@@ -151,7 +149,7 @@ func (h *Handler) favorites(w http.ResponseWriter, r *http.Request) {
 		result = favoriteState{actor, store, desired}
 	default:
 		var favorite bool
-		err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM customer_favorite_stores f"+publicFavoriteJoin+"WHERE f.actor_id=$1 AND f.store_id=$2"+publicFavoriteWhere+")", actor, store).Scan(&favorite)
+		err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM customer_favorite_stores f JOIN stores s ON s.id=f.store_id JOIN service_cities c ON c.id=s.city_id JOIN verticals v ON v.id=s.vertical_id WHERE f.actor_id=$1 AND f.store_id=$2 AND s.published AND c.active AND v.active)", actor, store).Scan(&favorite)
 		if err != nil {
 			fail(w, 503, "OWNER_UNAVAILABLE")
 			return

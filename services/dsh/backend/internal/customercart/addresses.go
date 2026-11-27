@@ -120,8 +120,6 @@ func decodeAddressChange(w http.ResponseWriter, r *http.Request) (AddressChange,
 	return v, true
 }
 
-const addressFields = "id,city_id,label,details,latitude,longitude,version"
-
 func scanAddress(row interface{ Scan(...any) error }) (Address, error) {
 	var a Address
 	err := row.Scan(&a.ID, &a.CityID, &a.Label, &a.Details, &a.Latitude, &a.Longitude, &a.Version)
@@ -150,7 +148,7 @@ func (h *Handler) listAddresses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, "SELECT "+addressFields+" FROM customer_addresses WHERE actor_id=$1 AND id COLLATE \"C\" > $2 ORDER BY id COLLATE \"C\" LIMIT $3", actor, after, addressPageLimit+1)
+	rows, err := tx.QueryContext(ctx, "SELECT id,city_id,label,details,latitude,longitude,version FROM customer_addresses WHERE actor_id=$1 AND id COLLATE \"C\" > $2 ORDER BY id COLLATE \"C\" LIMIT $3", actor, after, addressPageLimit+1)
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -201,7 +199,7 @@ func (h *Handler) getAddress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	address, err := scanAddress(tx.QueryRowContext(ctx, "SELECT "+addressFields+" FROM customer_addresses WHERE actor_id=$1 AND id=$2", actor, id))
+	address, err := scanAddress(tx.QueryRowContext(ctx, "SELECT id,city_id,label,details,latitude,longitude,version FROM customer_addresses WHERE actor_id=$1 AND id=$2", actor, id))
 	missing := errors.Is(err, sql.ErrNoRows)
 	if (err != nil && !missing) || tx.Commit() != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
@@ -267,7 +265,7 @@ func (h *Handler) writeAddress(ctx context.Context, actor, token, id string, c A
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(84933,hashtext($1))", actor+":"+id); err != nil {
 		return AddressResult{}, 503
 	}
-	old, err := scanAddress(tx.QueryRowContext(ctx, "SELECT "+addressFields+" FROM customer_addresses WHERE actor_id=$1 AND id=$2 FOR UPDATE", actor, id))
+	old, err := scanAddress(tx.QueryRowContext(ctx, "SELECT id,city_id,label,details,latitude,longitude,version FROM customer_addresses WHERE actor_id=$1 AND id=$2 FOR UPDATE", actor, id))
 	exists := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return AddressResult{}, 503
