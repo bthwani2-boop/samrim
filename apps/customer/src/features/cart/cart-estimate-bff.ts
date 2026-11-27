@@ -1,7 +1,5 @@
-import {
-  DshCartError, readCurrentCustomerCartMerchandiseEstimate,
-} from "@bthwani/dsh";
-import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
+import { DshCartError, readCurrentCustomerCartMerchandiseEstimate } from "@bthwani/dsh";
+import { withCustomerOwnerSession } from "../access/customer-owner-session.ts";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 import { customerCartOwnerOrigins } from "./cart-owner-origins.ts";
 
@@ -30,32 +28,26 @@ export async function handleCustomerMerchandiseEstimate(request: Request): Promi
   }
   const storeIds = url.searchParams.getAll("storeId");
   const versions = url.searchParams.getAll("expectedVersion");
+  const storeId = storeIds[0];
   if (url.searchParams.size !== 2 || storeIds.length !== 1 || versions.length !== 1 ||
-    !storeIds[0] || !storeRule.test(storeIds[0]) || !versions[0] || !versionRule.test(versions[0])) {
+    !storeId || !storeRule.test(storeId) || !versions[0] || !versionRule.test(versions[0])) {
     return result({ error: "INVALID_REQUEST" }, 400);
   }
   const expectedVersion = Number(versions[0]);
   if (!Number.isSafeInteger(expectedVersion)) return result({ error: "INVALID_REQUEST" }, 400);
   const bearer = bearerForCustomerRequest(request);
   if (!bearer) return result({ error: "UNAUTHORIZED" }, 401);
-  try {
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10500)]);
-    const before = await readVerifiedIdentitySession(identity, bearer, signal);
-    if (before.role !== "customer") return result({ error: "FORBIDDEN" }, 403);
-    const estimate = await readCurrentCustomerCartMerchandiseEstimate(
-      dsh, bearer, storeIds[0], before.actorId, expectedVersion, signal);
-    const after = await readVerifiedIdentitySession(identity, bearer, signal);
-    if (signal.aborted || after.role !== "customer" || after.actorId !== before.actorId) {
-      return result({ error: "UNAUTHORIZED" }, 401);
-    }
-    return result(estimate);
-  } catch (error) {
-    if (error instanceof DshCartError && [400, 401, 403, 409].includes(error.status)) {
-      return result({ error: error.code }, error.status);
-    }
-    if (error instanceof IdentityClientError && [401, 403].includes(error.status)) {
-      return result({ error: "UNAUTHORIZED" }, error.status);
-    }
-    return result({ error: "OWNER_UNAVAILABLE" }, 503);
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10500)]);
+  const outcome = await withCustomerOwnerSession(identity, bearer, null, signal, actor =>
+    readCurrentCustomerCartMerchandiseEstimate(dsh, bearer, storeId, actor, expectedVersion, signal));
+  if (outcome.kind === "accepted") return result(outcome.value);
+  if (outcome.kind === "denied") {
+    const code = outcome.status === 503 ? "OWNER_UNAVAILABLE"
+      : outcome.reason === "role" && outcome.stage === "before" ? "FORBIDDEN" : "UNAUTHORIZED";
+    return result({ error: code }, outcome.status);
   }
+  if (outcome.error instanceof DshCartError && [400, 401, 403, 409].includes(outcome.error.status)) {
+    return result({ error: outcome.error.code }, outcome.error.status);
+  }
+  return result({ error: "OWNER_UNAVAILABLE" }, 503);
 }

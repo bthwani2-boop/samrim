@@ -1,12 +1,13 @@
 import { DshPublicError, reviewCurrentCustomerCheckout, validCustomerCheckoutReviewInput } from "@bthwani/dsh";
-import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
 import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { withCustomerOwnerSession } from "../access/customer-owner-session.ts";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 import { customerCartOwnerOrigins } from "../cart/cart-owner-origins.ts";
 
-const reply = (value: unknown, status = 200) => Response.json(value, { status, headers: {
+const reply = (value: unknown, status = 200): Response => Response.json(value, { status, headers: {
   "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
 } });
+
 export async function handleCustomerCheckoutReview(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const owners = customerCartOwnerOrigins(url);
@@ -21,17 +22,18 @@ export async function handleCustomerCheckoutReview(request: Request): Promise<Re
   if (!bearer) return reply({ error: "UNAUTHORIZED" }, 401);
   const input = await readBoundedCustomerJSON(request, 4096);
   if (!validCustomerCheckoutReviewInput(input)) return reply({ error: "INVALID_REQUEST" }, 400);
-  try {
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10500)]);
-    const before = await readVerifiedIdentitySession(owners.identity, bearer, signal);
-    if (before.role !== "customer" || before.actorId !== actor) return reply({ error: "FORBIDDEN" }, 403);
-    const review = await reviewCurrentCustomerCheckout(owners.dsh, bearer, actor, store, input, signal);
-    const after = await readVerifiedIdentitySession(owners.identity, bearer, signal);
-    if (signal.aborted || after.role !== "customer" || after.actorId !== actor) return reply({ error: "UNAUTHORIZED" }, 401);
-    return reply(review);
-  } catch (error) {
-    if (error instanceof DshPublicError && [400, 401, 403, 409].includes(error.status)) return reply({ error: error.code }, error.status);
-    if (error instanceof IdentityClientError && [401, 403].includes(error.status)) return reply({ error: "UNAUTHORIZED" }, error.status);
-    return reply({ error: "OWNER_UNAVAILABLE" }, 503);
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10500)]);
+  const outcome = await withCustomerOwnerSession(owners.identity, bearer, actor, signal,
+    verified => reviewCurrentCustomerCheckout(owners.dsh, bearer, verified, store, input, signal));
+  if (outcome.kind === "accepted") return reply(outcome.value);
+  if (outcome.kind === "denied") {
+    const code = outcome.status === 503 ? "OWNER_UNAVAILABLE"
+      : outcome.stage === "before" && (outcome.reason === "role" || outcome.reason === "actor")
+        ? "FORBIDDEN" : "UNAUTHORIZED";
+    return reply({ error: code }, outcome.status);
   }
+  if (outcome.error instanceof DshPublicError && [400, 401, 403, 409].includes(outcome.error.status)) {
+    return reply({ error: outcome.error.code }, outcome.error.status);
+  }
+  return reply({ error: "OWNER_UNAVAILABLE" }, 503);
 }

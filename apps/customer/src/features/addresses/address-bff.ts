@@ -2,8 +2,8 @@ import {
   type CustomerAddressChange, DshPublicError, evaluateDeliveryServiceability, getCustomerAddress,
   isCustomerAddressId, listCustomerAddresses, normalizeCustomerAddressChange, saveCustomerAddress,
 } from "@bthwani/dsh";
-import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
 import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { withCustomerOwnerSession } from "../access/customer-owner-session.ts";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 import { customerCartOwnerOrigins } from "../cart/cart-owner-origins.ts";
 
@@ -14,7 +14,6 @@ type Command =
   | { kind: "save"; id: string; change: CustomerAddressChange };
 type Method = "GET" | "PUT" | "SERVICEABILITY";
 type Owners = NonNullable<ReturnType<typeof customerCartOwnerOrigins>>;
-type Outcome = { ok: true; value: unknown } | { ok: false; error: unknown };
 
 const response = (value: unknown, status = 200) => Response.json(value, { status, headers: {
   "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
@@ -43,28 +42,14 @@ async function admitCommand(request: Request, url: URL, method: Method): Promise
   return params.size === 1 && after !== null && isCustomerAddressId(after) ? { kind: "list", after } : null;
 }
 
-async function ownerOutcome(owners: Owners, bearer: string, actor: string, command: Command, signal: AbortSignal): Promise<Outcome> {
-  try {
-    let value: unknown;
-    switch (command.kind) {
-      case "save": value = await saveCustomerAddress(owners.dsh, bearer, actor, command.id, command.change, signal); break;
-      case "read": value = await getCustomerAddress(owners.dsh, bearer, actor, command.id, signal); break;
-      case "serviceability": value = await evaluateDeliveryServiceability(owners.dsh, bearer, actor, command.store, command.id, signal); break;
-      case "list": value = await listCustomerAddresses(owners.dsh, bearer, actor, command.after, signal); break;
-    }
-    return { ok: true, value };
-  } catch (error) {
-    return { ok: false, error };
+async function executeCommand(owners: Owners, bearer: string, actor: string,
+  command: Command, signal: AbortSignal): Promise<unknown> {
+  switch (command.kind) {
+    case "save": return saveCustomerAddress(owners.dsh, bearer, actor, command.id, command.change, signal);
+    case "read": return getCustomerAddress(owners.dsh, bearer, actor, command.id, signal);
+    case "serviceability": return evaluateDeliveryServiceability(owners.dsh, bearer, actor, command.store, command.id, signal);
+    case "list": return listCustomerAddresses(owners.dsh, bearer, actor, command.after, signal);
   }
-}
-
-function verifiedOutcome(outcome: Outcome, mutating: boolean): Response {
-  if (outcome.ok) return response(outcome.value);
-  const error = outcome.error;
-  if (error instanceof DshPublicError && [400, 401, 403, 404, 409].includes(error.status)) {
-    return rejected(error.code, error.status);
-  }
-  return mutating ? uncertain() : unavailable();
 }
 
 /** Identity admits both successful and rejected owner outcomes to the same actor. */
@@ -78,7 +63,6 @@ export async function handleCustomerAddresses(request: Request, method: Method):
   }
   const actor = request.headers.get("X-Customer-Context");
   const bearer = bearerForCustomerRequest(request);
-  // Selector and command admission remain independent of owner traffic.
   let command: Command | null;
   try {
     command = await admitCommand(request, url, method);
@@ -89,23 +73,19 @@ export async function handleCustomerAddresses(request: Request, method: Method):
   if (!bearer) return rejected("UNAUTHORIZED", 401);
   if (!actor) return rejected("INVALID_REQUEST", 400);
   const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10000)]);
-  let dispatched = false;
-  try {
-    const before = await readVerifiedIdentitySession(owners.identity, bearer, signal);
-    if (before.role !== "customer" || before.actorId !== actor) return rejected("FORBIDDEN", 403);
-    if (signal.aborted) return unavailable();
-    dispatched = command.kind === "save";
-    const outcome = await ownerOutcome(owners, bearer, actor, command, signal);
-    const after = await readVerifiedIdentitySession(owners.identity, bearer, signal);
-    if (signal.aborted || after.actorId !== actor || after.role !== "customer") {
-      return dispatched ? uncertain() : rejected("UNAUTHORIZED", 401);
-    }
-    return verifiedOutcome(outcome, dispatched);
-  } catch (error) {
-    if (dispatched) return uncertain();
-    if (error instanceof IdentityClientError && [401, 403].includes(error.status)) {
-      return rejected("UNAUTHORIZED", error.status);
-    }
-    return unavailable();
+  const outcome = await withCustomerOwnerSession(owners.identity, bearer, actor, signal,
+    verified => executeCommand(owners, bearer, verified, command, signal));
+  const mutating = command.kind === "save";
+  if (outcome.kind === "accepted") return response(outcome.value);
+  if (outcome.kind === "denied") {
+    if (outcome.stage === "after" && mutating) return uncertain();
+    if (outcome.status === 503) return unavailable();
+    const code = outcome.stage === "before" && (outcome.reason === "role" || outcome.reason === "actor")
+      ? "FORBIDDEN" : "UNAUTHORIZED";
+    return rejected(code, outcome.status);
   }
+  if (outcome.error instanceof DshPublicError && [400, 401, 403, 404, 409].includes(outcome.error.status)) {
+    return rejected(outcome.error.code, outcome.error.status);
+  }
+  return mutating ? uncertain() : unavailable();
 }

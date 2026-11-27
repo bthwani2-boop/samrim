@@ -1,10 +1,9 @@
 import { DshPublicError, listCurrentCustomerCarts } from "@bthwani/dsh";
-import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
+import { withCustomerOwnerSession } from "../access/customer-owner-session.ts";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 import { customerCartOwnerOrigins } from "./cart-owner-origins.ts";
 
 const deadlineMs = 10_000;
-type Owners = NonNullable<ReturnType<typeof customerCartOwnerOrigins>>;
 type DirectoryRequest = { bearer: string; actor: string; after: string | undefined };
 
 function result(value: unknown, status = 200): Response {
@@ -29,7 +28,6 @@ function admitRequest(request: Request, url: URL): DirectoryRequest | Response {
       (origin !== null && origin !== url.origin)) {
     return deny(403, "FORBIDDEN");
   }
-
   const after = url.searchParams.get("after");
   const length = request.headers.get("Content-Length");
   if (request.method !== "GET" || request.body ||
@@ -40,35 +38,11 @@ function admitRequest(request: Request, url: URL): DirectoryRequest | Response {
       (after !== null && !/^[a-z0-9-]{1,64}$/.test(after))) {
     return deny(400, "INVALID_REQUEST");
   }
-
   const bearer = bearerForCustomerRequest(request);
   if (!bearer) return deny(401, "UNAUTHORIZED");
   const actor = request.headers.get("X-Customer-Context");
   if (!actor) return deny(400, "INVALID_REQUEST");
   return { bearer, actor, after: after ?? undefined };
-}
-
-async function readDirectory(
-  owners: Owners, admission: DirectoryRequest, signal: AbortSignal,
-): Promise<Response> {
-  const { bearer, actor, after } = admission;
-  signal.throwIfAborted();
-  const before = await readVerifiedIdentitySession(owners.identity, bearer, signal);
-  signal.throwIfAborted();
-  if (before.role !== "customer" || before.actorId !== actor) return deny(403, "FORBIDDEN");
-  const initialExpiry = Date.parse(before.sessionExpiresAt);
-  if (!(initialExpiry > Date.now())) return deny(401, "UNAUTHORIZED");
-
-  const page = await listCurrentCustomerCarts(owners.dsh, bearer, actor, after, signal);
-  signal.throwIfAborted();
-  const current = await readVerifiedIdentitySession(owners.identity, bearer, signal);
-  signal.throwIfAborted();
-  const expiresAt = Math.min(initialExpiry, Date.parse(current.sessionExpiresAt));
-  if (current.role !== "customer" || current.actorId !== actor ||
-      page.actorId !== actor || !(expiresAt > Date.now())) {
-    return deny(401, "UNAUTHORIZED");
-  }
-  return result(page);
 }
 
 export async function handleCustomerCartDirectory(request: Request): Promise<Response> {
@@ -77,16 +51,22 @@ export async function handleCustomerCartDirectory(request: Request): Promise<Res
   if (!owners) return deny(503, "OWNER_UNAVAILABLE");
   const admission = admitRequest(request, url);
   if (admission instanceof Response) return admission;
-
-  try {
-    // The two Identity proofs and DSH read share the same absolute budget.
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(deadlineMs)]);
-    return await readDirectory(owners, admission, signal);
-  } catch (error) {
-    if ((error instanceof DshPublicError || error instanceof IdentityClientError) &&
-        [400, 401, 403].includes(error.status)) {
-      return deny(error.status, "DIRECTORY_REQUEST_REJECTED");
-    }
-    return deny(503, "OWNER_UNAVAILABLE");
+  const { bearer, actor, after } = admission;
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(deadlineMs)]);
+  const outcome = await withCustomerOwnerSession(owners.identity, bearer, actor, signal,
+    verified => listCurrentCustomerCarts(owners.dsh, bearer, verified, after, signal));
+  if (outcome.kind === "accepted") {
+    return outcome.value.actorId === actor ? result(outcome.value) : deny(401, "UNAUTHORIZED");
   }
+  if (outcome.kind === "denied") {
+    const code = outcome.status === 503 ? "OWNER_UNAVAILABLE"
+      : outcome.stage === "after" ? "UNAUTHORIZED"
+        : outcome.reason === "identity" ? "DIRECTORY_REQUEST_REJECTED"
+          : outcome.status === 403 ? "FORBIDDEN" : "UNAUTHORIZED";
+    return deny(outcome.status, code);
+  }
+  if (outcome.error instanceof DshPublicError && [400, 401, 403].includes(outcome.error.status)) {
+    return deny(outcome.error.status, "DIRECTORY_REQUEST_REJECTED");
+  }
+  return deny(503, "OWNER_UNAVAILABLE");
 }

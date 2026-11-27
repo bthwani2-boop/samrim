@@ -82,7 +82,7 @@ test("merchandise BFF never reveals result after Identity account switch", async
   assert.equal(identityReads, 2);
 });
 
-test("merchandise BFF fails closed on DSH denial and does not retry", async t => {
+test("merchandise BFF verifies Identity after DSH denial and does not retry the owner", async t => {
   let identityReads = 0;
   let dshReads = 0;
   t.mock.method(globalThis, "fetch", async input => {
@@ -98,5 +98,5 @@ test("merchandise BFF fails closed on DSH denial and does not retry", async t =>
   assert.equal(result.status, 409);
   assert.equal((await result.json()).error, "ESTIMATE_NOT_AVAILABLE");
   assert.equal(dshReads, 1);
-  assert.equal(identityReads, 1);
+  assert.equal(identityReads, 2, "the rejection also requires a current Identity proof");
 });

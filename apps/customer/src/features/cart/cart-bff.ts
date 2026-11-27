@@ -1,9 +1,9 @@
 import {
-  type CustomerCartChange,
+  type CustomerCart, type CustomerCartChange, type CustomerCartResult,
   DshCartError, prepareCustomerCartChange, readCurrentCustomerCart, replaceCurrentCustomerCart,
 } from "@bthwani/dsh";
-import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
 import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { withCustomerOwnerSession } from "../access/customer-owner-session.ts";
 import { bearerForCustomerRequest } from "../access/customer-session-cookie.ts";
 import { customerCartOwnerOrigins } from "./cart-owner-origins.ts";
 
@@ -46,33 +46,22 @@ export async function handleCustomerCart(request: Request, method: "GET" | "PUT"
   if (method === "PUT" && !expectedActor) return result({ error: "INVALID_REQUEST" }, 400);
   const bearer = bearerForCustomerRequest(request);
   if (!bearer) return result({ error: "UNAUTHORIZED" }, 401);
-  let dispatched = false;
-  try {
-    const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10500)]);
-    const before = await readVerifiedIdentitySession(identityOrigin, bearer, signal);
-    if (before.role !== "customer") return result({ error: "FORBIDDEN" }, 403);
-    if (method === "PUT" && before.actorId !== expectedActor) {
-      return result({ error: "CUSTOMER_CONTEXT_CHANGED" }, 403);
-    }
-    dispatched = method === "PUT";
-    const value = method === "GET"
-      ? await readCurrentCustomerCart(origin, bearer, storeId, before.actorId, signal)
-      : await replaceCurrentCustomerCart(origin, bearer, storeId, before.actorId, change as CustomerCartChange, signal);
-    const after = await readVerifiedIdentitySession(identityOrigin, bearer, signal);
-    if (signal.aborted || after.role !== "customer" || before.actorId !== after.actorId) {
-      return result({ error: dispatched ? "OPERATION_RESULT_UNKNOWN" : "UNAUTHORIZED" }, dispatched ? 503 : 401);
-    }
-    return result(value);
-  } catch (error) {
-    if (error instanceof DshCartError) {
-      const allowed = [400, 401, 403, 404, 409].includes(error.status);
-      return result({ error: allowed ? error.code : dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE" },
-        allowed ? error.status : 503);
-    }
-    if (error instanceof IdentityClientError && [401, 403].includes(error.status)) {
-      return result({ error: dispatched ? "OPERATION_RESULT_UNKNOWN" : "UNAUTHORIZED" },
-        dispatched ? 503 : error.status);
-    }
-    return result({ error: dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE" }, 503);
+  const signal = AbortSignal.any([request.signal, AbortSignal.timeout(10500)]);
+  const outcome = await withCustomerOwnerSession<CustomerCart | CustomerCartResult>(
+    identityOrigin, bearer, method === "PUT" ? expectedActor : null, signal,
+    actor => change
+      ? replaceCurrentCustomerCart(origin, bearer, storeId, actor, change, signal)
+      : readCurrentCustomerCart(origin, bearer, storeId, actor, signal));
+  if (outcome.kind === "accepted") return result(outcome.value);
+  if (outcome.kind === "denied") {
+    if (outcome.stage === "after" && method === "PUT") return result({ error: "OPERATION_RESULT_UNKNOWN" }, 503);
+    const code = outcome.reason === "actor" && outcome.stage === "before" ? "CUSTOMER_CONTEXT_CHANGED"
+      : outcome.status === 503 ? "OWNER_UNAVAILABLE"
+        : outcome.reason === "role" && outcome.stage === "before" ? "FORBIDDEN" : "UNAUTHORIZED";
+    return result({ error: code }, outcome.status);
   }
+  if (outcome.error instanceof DshCartError && [400, 401, 403, 404, 409].includes(outcome.error.status)) {
+    return result({ error: outcome.error.code }, outcome.error.status);
+  }
+  return result({ error: method === "PUT" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE" }, 503);
 }
