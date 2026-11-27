@@ -1209,3 +1209,45 @@ test("Identity empty stream cannot extend the owner request deadline", async t =
   assert.equal(cancelled, true);
   assert.equal(body.locked, false);
 });
+
+test("Identity revocation admits only empty private receipts over real HTTP", { timeout: 15000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const trace = [];
+  let mode = "valid";
+  const server = createServer((request, reply) => {
+    trace.push([request.method, request.url, request.headers.authorization]);
+    reply.setHeader("Cache-Control", "no-store");
+    if (request.method === "GET") {
+      reply.setHeader("Content-Type", "application/json");
+      reply.end(JSON.stringify(principal()));
+      return;
+    }
+    if (mode === "length") reply.setHeader("Content-Length", "1");
+    if (mode === "transfer") reply.setHeader("Transfer-Encoding", "chunked");
+    reply.statusCode = 204;
+    reply.end();
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  try {
+    const address = "http://127.0.0.1:" + server.address().port;
+    for (const revoke of [revokeVerifiedIdentitySession, revokePersistentIdentitySession]) {
+      mode = "valid";
+      await revoke(address, bearer);
+      for (mode of ["length", "transfer"]) {
+        await assert.rejects(() => revoke(address, bearer),
+          error => error instanceof IdentityClientError && error.code === "OPERATION_RESULT_UNKNOWN");
+      }
+    }
+    assert.equal((await readVerifiedIdentitySession(address, bearer)).actorId, "actor-123");
+    assert.deepEqual(trace, [
+      ...Array.from({ length: 3 }, () => ["DELETE", "/v1/sessions/current", "Bearer " + bearer]),
+      ...Array.from({ length: 3 }, () => ["DELETE", "/v1/sessions/refresh", "Bearer " + bearer]),
+      ["GET", "/v1/sessions/current", "Bearer " + bearer],
+    ]);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
