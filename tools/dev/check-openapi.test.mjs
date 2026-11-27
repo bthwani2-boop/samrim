@@ -64,6 +64,18 @@ test("all current owner OpenAPI 3.1 documents parse with their admitted operatio
   }
 });
 
+test("DSH cart versions reserve room for one exact increment on replacement", async () => {
+  const { default: YAML } = await import("yaml");
+  const filename = path.join(root, "services/dsh/contracts/openapi/dsh.openapi.yaml");
+  const { schemas } = YAML.parse(readFileSync(filename, "utf8")).components;
+  assert.deepEqual(schemas.CustomerCart.properties.version, {
+    type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER,
+  });
+  assert.deepEqual(schemas.CustomerCartChange.properties.expectedVersion, {
+    type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER - 1,
+  });
+});
+
 test("owner contract tree contains only populated modules, not reserved or legacy Customer placeholders", async () => {
   const { readdirSync } = await import("node:fs");
   const { default: YAML } = await import("yaml");
