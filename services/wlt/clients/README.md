@@ -1,4 +1,4 @@
-# WLT read-only client
+# WLT client — serving reads and isolated decision integration
 
 The [WLT OpenAPI entrypoint](../contracts/openapi/wlt.openapi.yaml) owns the
 HTTP operations and financial response schemas. Consumers import the public
@@ -15,7 +15,8 @@ agreements or settle payments.
 | `order-payment-readback.ts` | Actor- and checkout-bound allocation/release or explicit absence |
 | `commercial-agreement.ts` | Operator and owned Merchant Store agreement proposal/review readback |
 | `types.ts`, `errors.ts`, `validation.ts` | Shared DTOs, bounded errors and field/native-origin validation |
-| `transport.ts` | Contract-bound reads, verified response framing, one 12-second budget and cancellation |
+| `isolated-agreement-decision.ts` | Disposable local Merchant and Finance decision commands; exact receipt, rejection and uncertainty |
+| `transport.ts` | Contract-bound reads and isolated decision exchange, verified response framing, one 12-second budget and cancellation |
 | `generated/wlt-operations.ts` | Contract-derived method/path metadata; never edit manually |
 
 ## Admission and financial meaning
@@ -54,9 +55,23 @@ Verify generated metadata without changing files using
 `node tools/dev/generate-openapi-operations.mjs --check wlt` and
 `pnpm check:contracts`.
 
-The generated operation metadata also describes the two isolated-only
-agreement-decision routes. They are not callable by the read-only SDK or
-serving binary. Do not infer command admission from generated metadata.
+The generated operation metadata includes two isolated-only decision routes.
+The explicit SDK entrypoints `recordIsolatedMerchantAgreementDecision` and
+`recordIsolatedFinanceAgreementDecision` admit only a configured HTTP
+`127.0.0.1` origin and exact Store, proposal version/operation identity,
+decision operation identity and role-specific decision. The serving binary
+still does not mount these routes. No app activation or new grant is implied.
+
+The caller supplies and retains one operation ID and immutable payload.
+A verified receipt binds Store, version, proposal operation and decision
+operation, returning only `RECORDED` or `REPLAYED`. `WltDecisionError` distinguishes
+`NOT_SENT` (local admission), `REJECTED` (the current request's verified owner
+rejection) and `UNCONFIRMED` (including lost, malformed or mismatched replies).
+A subsequent rejection does not resolve a previous unknown effect. The SDK
+never retries automatically, generates a replacement identity or implies
+activation. Reconcile uncertainty with the original owner using the same
+identity and payload. Actual authorization remains exclusively in WLT and
+its Identity/DSH dependencies.
 
 Contract parity and transport tests do not prove live authorization,
 persistence or journey acceptance; use the existing

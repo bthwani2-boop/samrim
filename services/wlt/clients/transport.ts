@@ -47,9 +47,9 @@ function discardResponse(response: Response): void {
   });
 }
 
-function admitFrame(response: Response, limit: number): Frame {
+function admitFrame(response: Response, limit: number, statuses: readonly number[]): Frame {
   const status = response.status;
-  if (status !== 200 ||
+  if (!statuses.includes(status) ||
     response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
     response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
     throw new WltReadError([400, 401, 403].includes(status) ? status : 503);
@@ -159,11 +159,11 @@ async function collectStream(reader: ReadableStreamDefaultReader<Uint8Array>, fr
 // only that reader owns collection, cancellation and release. Both paths
 // converge on the same complete document admission before financial parsing.
 async function consumeResponse(response: Response, limit: number, signal: AbortSignal,
-  stopped: Promise<never>): Promise<unknown> {
+  stopped: Promise<never>, statuses: readonly number[]): Promise<unknown> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
     if (signal.aborted) throw new WltReadError(503);
-    const frame = admitFrame(response, limit);
+    const frame = admitFrame(response, limit, statuses);
     const body = response.body;
     let text: string;
     if (body?.getReader && typeof TextDecoder === "function") {
@@ -184,6 +184,25 @@ async function consumeResponse(response: Response, limit: number, signal: AbortS
 export async function readOwner(origin: string, bearer: string, method: "GET", path: string,
   signal: AbortSignal, cursor?: string): Promise<unknown> {
   const { url, maxBytes } = admitRequest(origin, method, path, cursor);
+  return (await exchangeOwner(url, bearer, method, signal, maxBytes, [200])).value;
+}
+
+// Only generated disposable integration commands are admitted here. The
+// serving reader remains GET-only; no command is retried by the transport.
+export async function requestIsolatedDecision(origin: string, bearer: string, path: string,
+  body: string, signal: AbortSignal): Promise<{ status: number; value: unknown }> {
+  const address = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(origin);
+  const store = path.split("/")[4];
+  if (!address || Number(address[1]) > 65535 || !store || !/^[a-z0-9-]{1,64}$/.test(store) ||
+      (path !== wltOperations.recordIsolatedMerchantAgreementDecision.path.replace("{storeID}", store) &&
+       path !== wltOperations.recordIsolatedFinanceAgreementDecision.path.replace("{storeID}", store))) {
+    throw new WltReadError(503);
+  }
+  return exchangeOwner(new URL(path, origin), bearer, "POST", signal, 4096, [200, 400, 401, 403, 409], body);
+}
+
+async function exchangeOwner(url: URL, bearer: string, method: "GET" | "POST", signal: AbortSignal,
+  maxBytes: number, statuses: readonly number[], body?: string): Promise<{ status: number; value: unknown }> {
   if (!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(bearer)) throw new WltReadError(401);
   if (signal.aborted) throw new WltReadError(503);
 
@@ -204,7 +223,9 @@ export async function readOwner(origin: string, bearer: string, method: "GET", p
         if (controller.signal.aborted) throw new WltReadError(503);
         const reply = await fetch(url, {
           method, signal: controller.signal, redirect: "error", credentials: "omit", cache: "no-store",
-          headers: { Accept: "application/json", Authorization: "Bearer " + bearer },
+          headers: { Accept: "application/json", Authorization: "Bearer " + bearer,
+            ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+          ...(body === undefined ? {} : { body }),
         });
         if (controller.signal.aborted) {
           discardResponse(reply);
@@ -215,9 +236,9 @@ export async function readOwner(origin: string, bearer: string, method: "GET", p
     } catch {
       throw new WltReadError(503);
     }
-    const value = await consumeResponse(response, maxBytes, controller.signal, stopped);
+    const value = await consumeResponse(response, maxBytes, controller.signal, stopped, statuses);
     if (controller.signal.aborted) throw new WltReadError(503);
-    return value;
+    return { status: response.status, value };
   } finally {
     clearTimeout(deadline);
     signal.removeEventListener("abort", stop);
