@@ -453,6 +453,11 @@ run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
 finish_stage
 
 start_stage bthwani-ci-wlt-pg bthwani_wlt_owner bthwani_wlt_test
+docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c "CREATE ROLE bthwani_wlt_dsh_fixture LOGIN PASSWORD '$ci_password';" \
+  -c "CREATE DATABASE bthwani_refoundation OWNER bthwani_wlt_dsh_fixture;"
+docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_refoundation \
+  -c "REVOKE ALL ON DATABASE bthwani_refoundation FROM PUBLIC;"
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_wlt_test \
   -c "CREATE ROLE bthwani_wlt_reader LOGIN NOINHERIT PASSWORD '$ci_password';" \
   -c "CREATE ROLE bthwani_wlt_sandbox LOGIN PASSWORD '$ci_password';" \

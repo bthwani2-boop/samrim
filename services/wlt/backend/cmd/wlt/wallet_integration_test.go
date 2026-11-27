@@ -290,7 +290,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	}
 	origin := startIdentity(t, ctx, filepath.Join(fixtureRoot, "bin", "identity"), identityDSN, identitySchema)
 	t.Run("Merchant agreement command authority", func(t *testing.T) {
-		verifyMerchantCommandAuthority(t, ctx, owner, reader, executor, origin, merchant, one)
+		verifyMerchantCommandAuthority(t, ctx, owner, reader, executor, fixtureRoot, origin, merchant, one)
 	})
 	handler, err := wallet.NewHandler(reader, origin)
 	if err != nil {
