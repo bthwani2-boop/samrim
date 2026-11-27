@@ -7,8 +7,8 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
+import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, runtimeTerminalStatus } from "../sync-lenovo-reconciliation.mjs";
 import { reconcileComposeConfiguration } from "./compose-runtime-transition.mjs";
-import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
 import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope, wltCommandRoleInactiveSQL } from "./owner-baseline-transition.mjs";
 import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
@@ -432,6 +432,7 @@ function main() {
   const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain,wltConfigDrift);
   let blocked=change.plan.blocked;
   const schemaReady=[];
+  let baselineFailed=false;
   const proofOwners=baselineProofOwners({apply,prepare,blocked,dirtyInputs:dirtyPaths(root,baselineProofScope)});
   if(proofOwners.length){
     ensureSource();
@@ -446,12 +447,14 @@ function main() {
       console.log("BASELINE_PROOF_PASS HEAD="+head+" OWNERS="+proofOwners.join(",")+" CUTOVER=ELIGIBLE_IF_COMPATIBLE");
     } catch(e) {
       ensureSource();
+      baselineFailed=true;
       console.error("BASELINE_PROOF_FAIL "+e.message);
       // A failed disposable rehearsal does not authorize SQL; independently
       // eligible image-only owners can still advance.
     }
   }
   let partial=Object.keys(blocked).length>0;
+  const holds=Object.values(blocked);
   if(mode==="--apply-captain" && (partial || change.changed.length)) throw new Error("Captain activation requires a fully reviewed committed source");
   const snapshots=new Map();
   const candidates=[];
@@ -466,6 +469,7 @@ function main() {
     if(source.clientPending && dirty) partial=true;
     if(dirty && old.digest && !preview) {
       partial=true;
+      holds.push("PREVIEW_NOT_AUTHORIZED");
       console.log(o+" RUNTIME=BLOCKED revision="+old.revision+" reason=PREVIEW_NOT_AUTHORIZED");
       continue;
     }
@@ -486,11 +490,12 @@ function main() {
     console.log("RUNTIME_ATTEMPT_REARMED HEAD="+head+" key="+recovery.key.slice(0,12));
     return;
   }
-  if (!apply || selected.length===0) {
-    if(partial || selected.length){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
-    else console.log("RECONCILE_PASS HEAD="+head);
-    return;
-  }
+  const complete = incomplete => {
+    console.log("RECONCILE_"+(incomplete?"PARTIAL":"PASS")+" HEAD="+head);
+    if(incomplete)process.exitCode=3;
+    return runtimeTerminalStatus({partial:incomplete,holds,baselineFailed});
+  };
+  if (!apply || selected.length===0) return complete(partial || selected.length>0);
   ensureSource();
   const tags={};
   const targetIds={};
@@ -606,20 +611,19 @@ function main() {
   }
   ensureSource();
   for(const [o,snap] of snapshots) if(captureOwner(root,o).digest!==snap.digest)throw new Error("RUNTIME_STALE preview input advanced: "+o);
-  if(partial){console.log("RECONCILE_PARTIAL HEAD="+head);process.exitCode=3;}
-  else console.log("RECONCILE_PASS HEAD="+head);
+  return complete(partial);
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    main();
-    // The actual reconciler owns the terminal proof, not the watcher's pipe.
-    // Only a complete successful automatic apply can release the matching hold.
+    const status=main();
+    // Only the reconciler that actually reached a settled terminal outcome
+    // can acknowledge its exact attempt, including a verified partial result.
     const key=process.env.BTHWANI_RUNTIME_ATTEMPT_KEY;
     const attempt=process.env.BTHWANI_RUNTIME_ATTEMPT_ID;
-    if((key||attempt) && !process.exitCode && ["--apply","--apply-preview"].includes(process.argv[2])){
+    if((key||attempt) && ["--apply","--apply-preview"].includes(process.argv[2])){
       if(!key||!attempt||!process.env.LOCALAPPDATA)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
       const directory=resolve(process.env.LOCALAPPDATA,"BThwani","Operations","SourceSync");
-      acknowledgeRuntimeAttempt(resolve(directory,"runtime-reconcile.json"),resolve(directory,"runtime-reconcile.receipt.json"),key,attempt);
+      acknowledgeRuntimeAttempt(resolve(directory,"runtime-reconcile.json"),resolve(directory,"runtime-reconcile.receipt.json"),key,attempt,status);
     }
   } catch (e) { console.error("RUNTIME_RECONCILE_BLOCKED " + e.message); process.exitCode = 1; }
 }

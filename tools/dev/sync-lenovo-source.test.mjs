@@ -487,7 +487,7 @@ test("runtime reconciliation trigger is immediate for changed committed source a
   assert.equal(runtimePollAction({...base,last:{key:"old",status:"blocked"}}),"apply");
 });
 
-test("a reconciler can durably acknowledge only its own verified attempt after watcher loss", async()=>{
+test("a reconciler durably records every settled attempt without manufacturing success after watcher loss", async()=>{
   const { acknowledgeRuntimeAttempt, runtimeReceiptStatus } = await import("./sync-lenovo-reconciliation.mjs");
   const folder=mkdtempSync(path.join(tmpdir(),"bthwani-runtime-receipt-"));
   const file=path.join(folder,"runtime-reconcile.json");
@@ -498,20 +498,27 @@ test("a reconciler can durably acknowledge only its own verified attempt after w
   try {
     writeFileSync(file,JSON.stringify(running));
     assert.equal(runtimeReceiptStatus(file,receipt),null);
-    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,next),/RUNTIME_ATTEMPT_MISMATCH/);
+    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,next,"pass"),/RUNTIME_ATTEMPT_MISMATCH/);
+    for(const invalid of [undefined,"running","uncertain","unknown"]){
+      assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt,invalid),/RUNTIME_TERMINAL_STATUS_INVALID/);
+    }
     assert.equal(existsSync(receipt),false);
-    acknowledgeRuntimeAttempt(file,receipt,key,attempt);
-    assert.deepEqual(JSON.parse(readFileSync(file,"utf8")),running);
-    assert.equal(runtimeReceiptStatus(file,receipt),"pass");
-    writeFileSync(file,JSON.stringify({...running,status:"uncertain"}));
-    assert.equal(runtimeReceiptStatus(file,receipt),"pass");
-    writeFileSync(file,JSON.stringify({...running,attempt:next}));
+    for(const status of ["pass","review","blocked","retry"]){
+      writeFileSync(file,JSON.stringify(running));
+      acknowledgeRuntimeAttempt(file,receipt,key,attempt,status);
+      assert.deepEqual(JSON.parse(readFileSync(file,"utf8")),running);
+      assert.equal(runtimeReceiptStatus(file,receipt),status);
+      writeFileSync(file,JSON.stringify({...running,status:"uncertain"}));
+      assert.equal(runtimeReceiptStatus(file,receipt),status);
+      writeFileSync(file,JSON.stringify({...running,attempt:next}));
+      assert.equal(runtimeReceiptStatus(file,receipt),null);
+      assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt,status),/RUNTIME_ATTEMPT_MISMATCH/);
+    }
+    writeFileSync(file,JSON.stringify(running));
+    writeFileSync(receipt,JSON.stringify({version:1,key,attempt,status:"uncertain"}));
     assert.equal(runtimeReceiptStatus(file,receipt),null);
-    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt),/RUNTIME_ATTEMPT_MISMATCH/);
+    writeFileSync(receipt,"{broken");
     assert.equal(runtimeReceiptStatus(file,receipt),null);
-    const corruptReceipt=path.join(folder,"corrupt.receipt.json");
-    writeFileSync(corruptReceipt,"{broken",{flag:"wx"});
-    assert.equal(runtimeReceiptStatus(file,corruptReceipt),null);
   } finally { rmSync(folder,{recursive:true,force:true}); }
 });
 
