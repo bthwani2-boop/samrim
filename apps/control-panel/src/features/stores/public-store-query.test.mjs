@@ -75,3 +75,29 @@ test("only development may use the fixed isolated DSH loopback fallback", () => 
   assert.equal(resolvePublicDshOrigin("http://evil.example:3202", "development"), null);
   assert.equal(resolvePublicDshOrigin("http://127.0.0.1:3202", "production"), "http://127.0.0.1:3202");
 });
+
+test("public directory and catalog preserve the DSH Unicode search scope and reject non-own parameters", async () => {
+  const { parsePublishedOfferQuery } = await import("./public-store-query.ts");
+  for (const q of ["\uFEFFmarket", "market\uFEFF", "\u2003market\u2003", "\u0085market\u0085"]) {
+    const expected = q.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+    assert.equal(parsePublicStoreBrowse({ city: "sanaa", q })?.query, expected);
+    assert.equal(parsePublishedOfferQuery({ store: "market-sanaa", q })?.query, expected);
+  }
+  assert.equal(parsePublicStoreBrowse(Object.create({city:"sanaa"})),null);
+  assert.equal(parsePublishedOfferQuery(Object.create({store:"market-sanaa"})),null);
+});
+
+test("one query boundary handles malformed inputs, invalid code points and owner origin rejection", async () => {
+  const { parsePublishedOfferQuery, parsePublicStoreDetail } = await import("./public-store-query.ts");
+  for (const params of [null, [], 1, Object.create({q:"test"})]) {
+    assert.equal(parsePublicStoreBrowse(params),null);
+    assert.equal(parsePublishedOfferQuery(params),null);
+    assert.equal(parsePublicStoreDetail("store-a",params),null);
+  }
+  for (const q of ["\u007f","\udfff","\u0001","x".repeat(81)]) {
+    assert.equal(parsePublicStoreBrowse({city:"sanaa",q}),null);
+    assert.equal(parsePublishedOfferQuery({store:"store-a",q}),null);
+  }
+  assert.equal(parsePublicStoreDetail(["store-a"],{city:"sanaa"}),null);
+  assert.equal(isolatedPublicDshOrigin("http://127.0.0.1:99999"),null);
+});

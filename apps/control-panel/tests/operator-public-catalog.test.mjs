@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
-import { parsePublishedOfferQuery, publishedOfferHref } from "../src/features/catalog/published-offer-query.ts";
+import { parsePublishedOfferQuery, publishedOfferHref } from "../src/features/stores/public-store-query.ts";
 
 const requirePanel = createRequire(new URL("../package.json", import.meta.url));
 const { transformSync } = requirePanel("next/dist/build/swc/index.js");
@@ -58,12 +58,11 @@ function harness({ permitted = true, origin = "http://127.0.0.1:3202", failStore
     "../operator-shell/operator-shell.module.css": { workspace: "workspace", sectionGrid: "sectionGrid", sectionCard: "sectionCard" },
     "./published-offers.module.css": { intro: "intro", eyebrow: "eyebrow", filters: "filters", results: "results", table: "table" },
     "../operator-shell/workspace-unavailable": () => null,
-    "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
+    "../stores/public-store-query": { parsePublishedOfferQuery, publishedOfferHref, resolvePublicDshOrigin: () => origin },
     "../workspace/public-market-overview": { __esModule: true, default: "MarketOverview" },
     "../../server/current-operator-access": {
       currentOperatorAccess: async () => permitted ? { grants: ["catalog"] } : { grants: ["merchant"] },
     },
-    "./published-offer-query": { parsePublishedOfferQuery, publishedOfferHref },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   };
   const mod = loadMappedRenderFixture(compiled, source, modules);
