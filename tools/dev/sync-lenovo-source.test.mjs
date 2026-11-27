@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { assertMirrorPackageManifest, mirrorCandidatePaths } from "./sync-lenovo-reconciliation.mjs";
-import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict, remoteInvocation } from "./sync-lenovo-source.mjs";
+import { allowed, appendLogFile, assertCompatibleBranchTransition, branchTransitionPins, buildManagedDeleteCode, buildPublishCode, buildRemoteHashCode, failureDetail, hash, isUnchanged, needsReconcile, parseRemoteHashes, persistAt, remoteAuditDue, remoteConflict, remoteInvocation } from "./sync-lenovo-source.mjs";
 
 test("manifest verification rejects an edit before HEAD changes and recovers after sync", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-verify-mirror-"));
@@ -322,13 +322,92 @@ test("compatible new branch at the same HEAD still must reconcile manifest branc
 
 const fixturePowerShell = process.platform === "win32" ? "C:\\Program Files\\PowerShell\\7\\pwsh.exe" : "pwsh";
 function isolatedPowerShell(code) {
-  // Run only command builders against disposable local files. Never invoke SSH,
-  // the Lenovo watcher, or source reconciliation during this regression.
-  return spawnSync(fixturePowerShell, [
-    "-NoProfile", "-NonInteractive", "-EncodedCommand",
-    Buffer.from(code, "utf16le").toString("base64"),
-  ], { encoding: "utf8", windowsHide: true, timeout: 15000 });
+  // Exercise the same bounded, single-line transport as the actual SSH
+  // invoker. Nested fixture scripts may exceed the Windows argv limit.
+  // No temporary scripts, live SSH, or dependency operations are involved.
+  const invocation = remoteInvocation(code);
+  const index = invocation.args.indexOf("-EncodedCommand");
+  assert.ok(index >= 0, "missing PowerShell transport");
+  const result = spawnSync(fixturePowerShell, [
+    "-NoProfile", "-NonInteractive", ...invocation.args.slice(index),
+  ], { encoding: "utf8", windowsHide: true, timeout: 15000, input: invocation.input });
+  if (result.error) throw result.error;
+  return result;
 }
+
+test("one remote path admission rejects redirected mirror roots, directories and staging in every operation", (t) => {
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-mirror-paths-"));
+  const root = path.join(folder, "mirror");
+  const outside = path.join(folder, "outside");
+  const paths = ["apps/customer/probe.ts", "apps/customer/missing.ts"];
+  const digest = value => createHash("sha256").update(value).digest("hex").toUpperCase();
+  const audit = args => isolatedPowerShell("$env:COMPUTERNAME='BTHWANI-FIXTURE';" +
+    buildRemoteHashCode({ root, identity: "BTHWANI-FIXTURE", ...args }));
+  const write = (name, value) => writeFileSync(path.join(root, name), value);
+  try {
+    mkdirSync(path.join(root, "apps", "customer"), { recursive: true });
+    mkdirSync(outside);
+    write(paths[0], "source");
+    const ordinary = audit({ paths });
+    assert.equal(ordinary.status, 0, ordinary.stderr);
+    assert.deepEqual([...parseRemoteHashes(ordinary.stdout, paths)],
+      [[paths[0], digest("source")], [paths[1], "MISSING"]]);
+    const stage = path.join(root, "audit.json");
+    const payload = JSON.stringify(paths);
+    writeFileSync(stage, payload);
+    const staged = audit({ stage, digest: digest(payload) });
+    assert.equal(staged.status, 0, staged.stderr);
+    assert.deepEqual([...parseRemoteHashes(staged.stdout, paths)], [...parseRemoteHashes(ordinary.stdout, paths)]);
+    assert.equal(existsSync(stage), false);
+    writeFileSync(stage, payload);
+    const corrupt = audit({ stage, digest: digest("wrong") });
+    assert.notEqual(corrupt.status, 0);
+    assert.match(corrupt.stderr, /AUDIT_STAGE_HASH_MISMATCH/);
+    assert.equal(existsSync(stage), false);
+    const link = path.join(root, "apps", "customer");
+    rmSync(link, { recursive: true });
+    try { symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir"); }
+    catch (error) {
+      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) { t.skip("junction creation unavailable"); return; }
+      throw error;
+    }
+    const externalFile = path.join(outside, "probe.ts");
+    writeFileSync(externalFile, "protected");
+    const denied = audit({ paths });
+    assert.notEqual(denied.status, 0, "audit may not hash a redirected parent");
+    assert.match(denied.stderr, /UNSAFE_TARGET_DIRECTORY/);
+    assert.doesNotMatch(denied.stdout, new RegExp(digest("protected")));
+    writeFileSync(stage, payload);
+    const stagedDenied = audit({ stage, digest: digest(payload) });
+    assert.notEqual(stagedDenied.status, 0);
+    assert.match(stagedDenied.stderr, /UNSAFE_TARGET_DIRECTORY/);
+    assert.equal(existsSync(stage), false);
+    const dest = path.join(link, "probe.ts"), source = path.join(root, "staged.ts");
+    writeFileSync(source, "replacement");
+    const publication = buildPublishCode({ dest, stage: source, backup: dest + ".bak",
+      archive: path.join(folder, "conflicts", "probe.ts"), actual: digest("protected"),
+      expected: digest("replacement"), conflict: false, root });
+    const deletion = buildManagedDeleteCode({ dest, quarantine: dest + ".quarantine",
+      archive: path.join(folder, "conflicts", "probe.ts"), actual: digest("protected"), conflict: false, root });
+    for (const command of [publication, deletion]) {
+      const result = isolatedPowerShell(command);
+      assert.notEqual(result.status, 0);
+      assert.match(result.stderr, /UNSAFE_TARGET_DIRECTORY/);
+    }
+    assert.equal(readFileSync(externalFile, "utf8"), "protected");
+    assert.equal(existsSync(dest + ".bak"), false);
+    assert.equal(existsSync(dest + ".quarantine"), false);
+    const redirectedRoot = path.join(folder, "redirected");
+    symlinkSync(root, redirectedRoot, process.platform === "win32" ? "junction" : "dir");
+    const rootDenied = audit({ root: redirectedRoot, paths });
+    assert.notEqual(rootDenied.status, 0);
+    assert.match(rootDenied.stderr, /UNSAFE_TARGET_DIRECTORY/);
+    const outsideDenied = audit({ stage: path.join(outside, "probe.ts"), digest: digest("protected") });
+    assert.notEqual(outsideDenied.status, 0);
+    assert.match(outsideDenied.stderr, /UNSAFE_TARGET_BOUNDARY/);
+    assert.equal(readFileSync(externalFile, "utf8"), "protected");
+  } finally { rmSync(folder, { recursive: true, force: true }); }
+});
 
 test("replacement archives bytes written after the initial digest check", () => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-atomic-replace-"));
@@ -372,7 +451,7 @@ test("managed deletion archives a concurrent edit before removing its quarantine
     const archive = path.join(folder, "conflicts", "managed.txt");
     writeFileSync(dest, "observed");
     const code = buildManagedDeleteCode({
-      dest, quarantine, archive,
+      dest, quarantine, root: folder, archive,
       actual: createHash("sha256").update("observed").digest("hex").toUpperCase(),
       conflict: false,
     });
@@ -399,7 +478,7 @@ test("failed archive restores a quarantined file without losing bytes", () => {
     writeFileSync(dest, "observed");
     writeFileSync(notDirectory, "existing");
     const code = buildManagedDeleteCode({
-      dest, quarantine, archive: path.join(notDirectory, "unwritable.txt"),
+      dest, quarantine, root: folder, archive: path.join(notDirectory, "unwritable.txt"),
       actual: createHash("sha256").update("observed").digest("hex").toUpperCase(),
       conflict: true,
     });
@@ -419,7 +498,7 @@ test("a replacement created during deletion is never overwritten or removed", ()
     const quarantine = dest + ".quarantine";
     writeFileSync(dest, "observed");
     const code = buildManagedDeleteCode({
-      dest, quarantine, archive: path.join(folder, "conflicts", "managed.txt"),
+      dest, quarantine, root: folder, archive: path.join(folder, "conflicts", "managed.txt"),
       actual: createHash("sha256").update("observed").digest("hex").toUpperCase(),
       conflict: false,
     });

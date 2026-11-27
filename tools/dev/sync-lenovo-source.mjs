@@ -89,75 +89,73 @@ function remote(code) {
   const {args, input} = remoteInvocation(code);
   return run("ssh", args, 30000, input);
 }
-function copyToRemote(local, remotePath) {
-  run("scp", ["-q", ...sshOptions, local, targetHost + ":" + remotePath.replaceAll("\\", "/")], 45000);
+// Own a staging name only after the remote boundary accepts its absence.
+// A consumed stage was already removed by the verified remote operation.
+// A deferred or failed operation may leave our stage, never another writer's.
+function transferAndConsume(local, stage, consume) {
+  remote(remoteStageAdmission(stage));
+  let consumed = false;
+  try {
+    run("scp", ["-q", ...sshOptions, local, targetHost + ":" + stage.replaceAll("\\", "/")], 45000);
+    const value = consume();
+    consumed = value !== false;
+    return value;
+  } finally {
+    if (!consumed) {
+      try { remote(remoteStageCleanup(stage)); } catch {}
+    }
+  }
+}
+function buildRemoteHashCode({ paths, stage, digest, root = targetRoot, identity = targetIdentity }) {
+  if (paths && paths.some(rel => !allowed(rel))) throw new Error("REMOTE_HASH_PATH_INVALID");
+  if (Boolean(paths) === Boolean(stage)) throw new Error("REMOTE_HASH_INPUT_INVALID");
+  const code = [
+    "$ErrorActionPreference='Stop'", "$ProgressPreference='SilentlyContinue'",
+    "$root=" + quote(root),
+    "if($env:COMPUTERNAME -ne " + quote(identity) + "){throw 'TARGET_IDENTITY_MISMATCH'}",
+    ...remotePathAdmission(),
+    "$null=Assert-SyncPath $root $root -Directory",
+  ];
+  if (paths) {
+    code.push("$paths=ConvertFrom-Json -InputObject " + quote(JSON.stringify(paths)));
+  } else {
+    code.push(
+      "$stage=" + quote(stage), "$expected=" + quote(digest),
+      "$null=Assert-SyncPath $stage $root",
+      "try{",
+      "$bytes=[IO.File]::ReadAllBytes($stage)",
+      "if([Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($bytes)) -ne $expected){throw 'AUDIT_STAGE_HASH_MISMATCH'}",
+      "$paths=ConvertFrom-Json -InputObject ([Text.Encoding]::UTF8.GetString($bytes))"
+    );
+  }
+  code.push(
+    "foreach($rel in $paths){",
+    "$p=Join-Path $root $rel",
+    "$h=if(Assert-SyncPath $p $root -AllowMissing){(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash}else{'MISSING'}",
+    "Write-Output ($rel+'|'+$h)",
+    "}"
+  );
+  if (stage) code.push("}finally{if(Assert-SyncPath $stage $root -AllowMissing){Remove-Item -LiteralPath $stage -Force}}");
+  return code.join(";");
 }
 function remoteHashes(paths) {
   if (!paths.length) return new Map();
   for (const rel of paths) if (!allowed(rel)) throw new Error("REMOTE_HASH_PATH_INVALID");
   const payload = JSON.stringify(paths);
-  // Inline small lists in the PowerShell command; file bytes use SCP.
-  // Larger inventories use a verified SFTP staging file to stay under the
-  // Windows command-line limit.
-  const inline = Buffer.byteLength(payload, "utf8") <= 2048;
-  const token = inline ? "" : crypto.randomUUID();
-  const localStage = inline ? "" : path.join(stateDir, "audit-" + token + ".json");
-  const remoteStage = inline ? "" :
-    path.win32.join(targetRoot, ".source-sync-audit-" + token + ".json");
-  const codeParts = [
-    "$ErrorActionPreference='Stop'",
-    "$ProgressPreference='SilentlyContinue'",
-    "$root=" + quote(targetRoot),
-    "if($env:COMPUTERNAME -ne 'BTHWANI-DOCKER'){throw 'TARGET_IDENTITY_MISMATCH'}"
-  ];
-  if (inline) {
-    codeParts.push("$paths=ConvertFrom-Json -InputObject " + quote(payload));
-  } else {
-    const digest = crypto.createHash("sha256").update(payload).digest("hex").toUpperCase();
-    codeParts.push(
-      "$stage=" + quote(remoteStage),
-      "$expected=" + quote(digest),
-      "try{",
-      "$item=Get-Item -LiteralPath $stage -Force",
-      "if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_AUDIT_STAGE'}",
-      "if((Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash -ne $expected){throw 'AUDIT_STAGE_HASH_MISMATCH'}",
-      "$paths=ConvertFrom-Json -InputObject ([IO.File]::ReadAllText($stage))"
-    );
+  if (Buffer.byteLength(payload, "utf8") <= 2048) {
+    return parseRemoteHashes(remote(buildRemoteHashCode({ paths })), paths);
   }
-  codeParts.push(
-    "foreach($rel in $paths){",
-    "$p=Join-Path $root $rel.Replace('/','\\')",
-    "if(Test-Path -LiteralPath $p -PathType Leaf){",
-    "$file=Get-Item -LiteralPath $p -Force",
-    "if($file.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_FILE'}",
-    "$h=(Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash",
-    "}else{$h='MISSING'}",
-    "Write-Output ($rel+'|'+$h)",
-    "}"
-  );
-  if (!inline) {
-    codeParts.push(
-      "}finally{if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Force}}"
-    );
-  }
-  const code = codeParts.join(";");
-  if (inline) return parseRemoteHashes(remote(code), paths);
+  // The verified staging payload stays below the Windows command-line limit.
+  const token = crypto.randomUUID();
+  const localStage = path.join(stateDir, "audit-" + token + ".json");
+  const remoteStage = path.win32.join(targetRoot, ".source-sync-audit-" + token + ".json");
+  const code = buildRemoteHashCode({ stage: remoteStage, digest: digestBytes(Buffer.from(payload)) });
   fs.mkdirSync(stateDir, { recursive: true });
   fs.writeFileSync(localStage, payload, { flag: "wx", mode: 0o600 });
-  let completed = false;
   try {
-    copyToRemote(localStage, remoteStage);
-    const observed = parseRemoteHashes(remote(code), paths);
-    completed = true;
-    return observed;
+    return transferAndConsume(localStage, remoteStage, () => parseRemoteHashes(remote(code), paths));
   } finally {
     fs.rmSync(localStage, { force: true });
-    if (!completed) {
-      try {
-        remote("if(Test-Path -LiteralPath " + quote(remoteStage) +
-          "){Remove-Item -LiteralPath " + quote(remoteStage) + " -Force}");
-      } catch {}
-    }
   }
 }
 function appendLogFile(file, message, limit = 1048576) {
@@ -315,17 +313,45 @@ function withDependencyInputMutex(code, name, receiptPath, processName = "pnpm")
     "}finally{if($dependencyInputHeld){$dependencyInputLock.ReleaseMutex()};$dependencyInputLock.Dispose()}"
   ].join(";");
 }
-// Keep the same reparse-point protection for publication and managed deletion.
-function targetParentChecks(target) {
+// One admission contract for the remote audit, publication and managed removal.
+// Reject redirection from the volume root down, including the mirror root itself.
+// Missing destinations are permitted; an existing non-regular leaf is not.
+function remotePathAdmission() {
   return [
-    "$part=Split-Path -Parent " + target,
-    "while($part -and $part.Length -ge $root.Length){",
-    "if(Test-Path -LiteralPath $part){",
-    "$parent=Get-Item -LiteralPath $part -Force",
-    "if($parent.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_DIRECTORY'}",
-    "};if($part -ieq $root){break};$part=Split-Path -Parent $part",
+    "function Get-SyncAttributes([string]$file){",
+    "try{return [IO.File]::GetAttributes($file)}catch{",
+    "$cause=$_.Exception.GetBaseException()",
+    "if($cause -is [IO.FileNotFoundException] -or $cause -is [IO.DirectoryNotFoundException]){return $null};throw",
+    "}}",
+    "function Assert-SyncPath([string]$candidate,[string]$boundary,[switch]$Directory,[switch]$AllowMissing){",
+    "$full=[IO.Path]::GetFullPath($candidate);$base=[IO.Path]::GetFullPath($boundary)",
+    "$relative=[IO.Path]::GetRelativePath($base,$full)",
+    "if([IO.Path]::IsPathRooted($relative) -or $relative -eq '..' -or $relative.StartsWith('..'+[IO.Path]::DirectorySeparatorChar)){throw 'UNSAFE_TARGET_BOUNDARY'}",
+    "$chain=[Collections.Generic.List[string]]::new();$part=$full",
+    "while($part){$chain.Add($part);$part=[IO.Path]::GetDirectoryName($part)}",
+    "$exists=$true",
+    "for($i=$chain.Count-1;$i -ge 0;$i--){",
+    "$part=$chain[$i];$attributes=Get-SyncAttributes $part;$directoryExpected=$i -ne 0 -or $Directory",
+    "if($null -eq $attributes){if(!$AllowMissing -or $part -eq $base){throw 'TARGET_PATH_MISSING'};$exists=$false;continue}",
+    "if($attributes -band [IO.FileAttributes]::ReparsePoint){throw $(if($directoryExpected){'UNSAFE_TARGET_DIRECTORY'}else{'UNSAFE_TARGET_FILE'})}",
+    "if([bool]($attributes -band [IO.FileAttributes]::Directory) -ne [bool]$directoryExpected){throw 'UNSAFE_TARGET_TYPE'}",
+    "};return $exists",
     "}"
   ];
+}
+function remoteStageAdmission(stage, root = targetRoot) {
+  return [
+    "$ErrorActionPreference='Stop'", ...remotePathAdmission(),
+    "$root=" + quote(root), "$stage=" + quote(stage),
+    "if(Assert-SyncPath $stage $root -AllowMissing){throw 'TARGET_STAGE_EXISTS'}"
+  ].join(";");
+}
+function remoteStageCleanup(stage, root = targetRoot) {
+  return [
+    "$ErrorActionPreference='Stop'", ...remotePathAdmission(),
+    "$root=" + quote(root), "$stage=" + quote(stage),
+    "if(Assert-SyncPath $stage $root -AllowMissing){Remove-Item -LiteralPath $stage -Force}"
+  ].join(";");
 }
 function conflictArchive(rel) {
   return path.win32.join("C:\\Users\\bthwa\\AppData\\Local", "BThwani",
@@ -335,45 +361,45 @@ function conflictArchive(rel) {
 }
 function buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, root = targetRoot, dependencyMutex, dependencyReceipt, dependencyProcessName}) {
   const code = [
-    "$ErrorActionPreference='Stop'",
-    "$root=" + quote(root),
-    "$dest=" + quote(dest),
-    "$stage=" + quote(stage),
-    "$backup=" + quote(backup),
-    "$archive=" + quote(archive),
-    "$expectedOld=" + quote(actual),
-    "$expectedNew=" + quote(expected),
+    "$ErrorActionPreference='Stop'", ...remotePathAdmission(),
+    "$root=" + quote(root), "$dest=" + quote(dest), "$stage=" + quote(stage),
+    "$backup=" + quote(backup), "$archive=" + quote(archive),
+    "$expectedOld=" + quote(actual), "$expectedNew=" + quote(expected),
     "$archiveConflict=" + (conflict ? "$true" : "$false"),
-    ...targetParentChecks("$dest"),
+    "$null=Assert-SyncPath $stage $root",
+    "if(Assert-SyncPath $backup $root -AllowMissing){throw 'TARGET_BACKUP_EXISTS'}",
+    "$null=Assert-SyncPath $dest $root -AllowMissing",
     "try{",
     "if((Get-FileHash -LiteralPath $stage -Algorithm SHA256).Hash -ne $expectedNew){throw 'STAGE_HASH_MISMATCH'}",
     "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest)|Out-Null",
-    "$current=if(Test-Path -LiteralPath $dest -PathType Leaf){",
-    "$item=Get-Item -LiteralPath $dest -Force;",
-    "if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_FILE'};",
-    "(Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash",
-    "}else{'MISSING'}",
+    "$current=if(Assert-SyncPath $dest $root -AllowMissing){(Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash}else{'MISSING'}",
     "if($current -ne $expectedOld){throw 'TARGET_CHANGED_DURING_PUBLISH'}",
     "if($archiveConflict){",
-    "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive)|Out-Null;",
-    "Copy-Item -LiteralPath $dest -Destination $archive -ErrorAction Stop;",
+    "$null=Assert-SyncPath $archive ([IO.Path]::GetPathRoot($archive)) -AllowMissing",
+    "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive)|Out-Null",
+    "if(Assert-SyncPath $archive ([IO.Path]::GetPathRoot($archive)) -AllowMissing){throw 'TARGET_ARCHIVE_EXISTS'}",
+    "Copy-Item -LiteralPath $dest -Destination $archive -ErrorAction Stop",
     "if((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $expectedOld){throw 'TARGET_ARCHIVE_VERIFY_FAILED'}",
     "}",
+    "$displacedConflict=$false",
     "if($current -eq 'MISSING'){[IO.File]::Move($stage,$dest)}else{",
     "[IO.File]::Replace($stage,$dest,$backup);",
-    "$displaced=(Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash;",
-    "$displacedConflict=$displaced -ne $expectedOld;",
+    "$null=Assert-SyncPath $backup $root",
+    "$displaced=(Get-FileHash -LiteralPath $backup -Algorithm SHA256).Hash",
+    "$displacedConflict=$displaced -ne $expectedOld",
     "if($displacedConflict){",
-    "$preserved=$archive+'.replaced-'+[Guid]::NewGuid().ToString('N');",
-    "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $preserved)|Out-Null;",
-    "[IO.File]::Move($backup,$preserved);",
+    "$preserved=$archive+'.replaced-'+[Guid]::NewGuid().ToString('N')",
+    "$null=Assert-SyncPath $preserved ([IO.Path]::GetPathRoot($preserved)) -AllowMissing",
+    "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $preserved)|Out-Null",
+    "if(Assert-SyncPath $preserved ([IO.Path]::GetPathRoot($preserved)) -AllowMissing){throw 'TARGET_ARCHIVE_EXISTS'}",
+    "[IO.File]::Move($backup,$preserved)",
     "if((Get-FileHash -LiteralPath $preserved -Algorithm SHA256).Hash -ne $displaced){throw 'TARGET_DISPLACED_ARCHIVE_VERIFY_FAILED'}",
-    "}",
-    "}",
+    "}}",
+    "$null=Assert-SyncPath $dest $root",
     "if((Get-FileHash -LiteralPath $dest -Algorithm SHA256).Hash -ne $expectedNew){throw 'PUBLISHED_HASH_MISMATCH'}",
-    "if(Test-Path -LiteralPath $backup){Remove-Item -LiteralPath $backup -Force}",
+    "if(Assert-SyncPath $backup $root -AllowMissing){Remove-Item -LiteralPath $backup -Force}",
     "Write-Output $(if($displacedConflict){'PUBLISHED_PRESERVED'}else{'PUBLISHED'})",
-    "}finally{if(Test-Path -LiteralPath $stage){Remove-Item -LiteralPath $stage -Force}}"
+    "}finally{if(Assert-SyncPath $stage $root -AllowMissing){Remove-Item -LiteralPath $stage -Force}}"
   ].join(";");
   return withDependencyInputMutex(code, dependencyMutex, dependencyReceipt, dependencyProcessName);
 }
@@ -382,69 +408,58 @@ function publish(rel, expected, previous, observed) {
   if (mirrorFile(rel).digest !== expected) throw new Error("SOURCE_CHANGED_WHILE_READING " + rel);
   const actual = observed ?? remoteHash(rel);
   if (actual === expected) return true;
-  // The Windows SSH stdin pipe can stall on binary payloads. SFTP-backed scp
-  // transports bytes; one SSH invocation verifies and commits the staged copy.
+  // SFTP-backed SCP transports bytes; the same path admission owns its stage.
   const dest = destination(rel);
   const stage = path.win32.join(targetRoot, ".source-sync-" + crypto.randomUUID() + ".tmp");
   const backup = dest + ".source-sync-" + crypto.randomUUID() + ".bak";
   const conflict = remoteConflict(actual, expected, previous);
   const archive = conflictArchive(rel);
   const code = buildPublishCode({dest, stage, backup, archive, actual, expected, conflict, dependencyMutex: isDependencyInput(rel) ? dependencyInputMutex : undefined});
-  let committed = false;
   try {
-    copyToRemote(full, stage);
-    if (mirrorFile(rel).digest !== expected) throw new Error("SOURCE_CHANGED_WHILE_COPYING " + rel);
-    const result = remote(code);
-    if (["DEPENDENCY_INPUT_BUSY", "DEPENDENCY_INPUT_RECOVERY_REQUIRED"].includes(result)) return false;
-    if (result !== "PUBLISHED" && result !== "PUBLISHED_PRESERVED") {
-      throw new Error("REMOTE_PUBLISH_RESPONSE_INVALID " + rel);
-    }
-    committed = true;
+    const result = transferAndConsume(full, stage, () => {
+      if (mirrorFile(rel).digest !== expected) throw new Error("SOURCE_CHANGED_WHILE_COPYING " + rel);
+      const reply = remote(code);
+      if (["DEPENDENCY_INPUT_BUSY", "DEPENDENCY_INPUT_RECOVERY_REQUIRED"].includes(reply)) return false;
+      if (reply !== "PUBLISHED" && reply !== "PUBLISHED_PRESERVED") {
+        throw new Error("REMOTE_PUBLISH_RESPONSE_INVALID " + rel);
+      }
+      return reply;
+    });
+    if (result === false) return false;
     if (result === "PUBLISHED_PRESERVED") logger("REMOTE_CONCURRENT_EDIT_ARCHIVED " + rel);
   } catch (error) {
     throw new Error("REMOTE_PUBLISH_FAILED " + rel + ": " + error.message);
-  } finally {
-    if (!committed) {
-      // The random staging name is owned solely by this invocation.
-      try {
-        remote("if(Test-Path -LiteralPath " + quote(stage) +
-          "){Remove-Item -LiteralPath " + quote(stage) + " -Force}");
-      } catch {}
-    }
   }
   if (conflict) logger("REMOTE_DRIFT_ARCHIVED " + rel);
   return true;
 }
 function buildManagedDeleteCode({dest, actual, archive, conflict, quarantine, root = targetRoot, dependencyMutex, dependencyReceipt, dependencyProcessName}) {
   const code = [
-    "$ErrorActionPreference='Stop'",
-    "$p=" + quote(dest),
-    "$root=" + quote(root),
-    ...targetParentChecks("$p"),
-    "$quarantine=" + quote(quarantine),
-    "$expected=" + quote(actual),
-    "$archive=" + quote(archive),
+    "$ErrorActionPreference='Stop'", ...remotePathAdmission(),
+    "$p=" + quote(dest), "$root=" + quote(root), "$quarantine=" + quote(quarantine),
+    "$expected=" + quote(actual), "$archive=" + quote(archive),
     "$archiveConflict=" + (conflict ? "$true" : "$false"),
-    "if(!(Test-Path -LiteralPath $p -PathType Leaf)){throw 'TARGET_CHANGED_DURING_DELETE'}",
-    "$item=Get-Item -LiteralPath $p -Force",
-    "if($item.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_TARGET_FILE'}",
+    "if(!(Assert-SyncPath $p $root -AllowMissing)){throw 'TARGET_CHANGED_DURING_DELETE'}",
+    "if(Assert-SyncPath $quarantine $root -AllowMissing){throw 'TARGET_QUARANTINE_EXISTS'}",
     "[IO.File]::Move($p,$quarantine)",
     "try{",
-    "$movedItem=Get-Item -LiteralPath $quarantine -Force",
-    "if($movedItem.Attributes -band [IO.FileAttributes]::ReparsePoint){throw 'UNSAFE_QUARANTINED_FILE'}",
+    "$null=Assert-SyncPath $quarantine $root",
     "$movedHash=(Get-FileHash -LiteralPath $quarantine -Algorithm SHA256).Hash",
     "$preserve=$archiveConflict -or ($movedHash -ne $expected)",
     "if($preserve){",
+    "$null=Assert-SyncPath $archive ([IO.Path]::GetPathRoot($archive)) -AllowMissing",
     "New-Item -ItemType Directory -Force -Path (Split-Path -Parent $archive)|Out-Null",
+    "if(Assert-SyncPath $archive ([IO.Path]::GetPathRoot($archive)) -AllowMissing){throw 'TARGET_ARCHIVE_EXISTS'}",
     "Copy-Item -LiteralPath $quarantine -Destination $archive -ErrorAction Stop",
     "if((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash -ne $movedHash){throw 'TARGET_ARCHIVE_VERIFY_FAILED'}",
     "}",
-    "if(Test-Path -LiteralPath $p){throw 'TARGET_REPLACED_DURING_DELETE'}",
+    "if(Assert-SyncPath $p $root -AllowMissing){throw 'TARGET_REPLACED_DURING_DELETE'}",
+    "$null=Assert-SyncPath $quarantine $root",
     "Remove-Item -LiteralPath $quarantine -Force",
     "Write-Output $(if($preserve){'DELETED_PRESERVED'}else{'DELETED'})",
     "}catch{",
-    "if(Test-Path -LiteralPath $quarantine){",
-    "if(!(Test-Path -LiteralPath $p)){[IO.File]::Move($quarantine,$p)}",
+    "if(Assert-SyncPath $quarantine $root -AllowMissing){",
+    "if(!(Assert-SyncPath $p $root -AllowMissing)){[IO.File]::Move($quarantine,$p)}",
     "else{Write-Error ('QUARANTINE_RETAINED '+$quarantine) -ErrorAction Continue}",
     "};throw",
     "}"
@@ -957,4 +972,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
 }
 
 export { assertCompatibleBranchTransition, branchTransitionPins, isUnchanged, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict } from "./sync-lenovo-reconciliation.mjs";
-export { allowed, appendLogFile, buildManagedDeleteCode, buildPublishCode, failureDetail, hash, persistAt, publish, remoteHashes, remoteInvocation };
+export { allowed, appendLogFile, buildManagedDeleteCode, buildPublishCode, buildRemoteHashCode, failureDetail, hash, persistAt, publish, remoteHashes, remoteInvocation };
