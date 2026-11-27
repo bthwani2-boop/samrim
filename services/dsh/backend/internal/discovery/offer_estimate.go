@@ -18,12 +18,19 @@ type offerEstimate struct {
 	SubtotalYER string `json:"subtotalYer"`
 }
 
+func estimateQuantity(rawQuery string) (int64, bool) {
+	parameters, err := url.ParseQuery(rawQuery)
+	if err != nil || len(parameters) != 1 || len(parameters["quantity"]) != 1 {
+		return 0, false
+	}
+	raw := parameters.Get("quantity")
+	quantity, err := strconv.ParseInt(raw, 10, 32)
+	return quantity, err == nil && quantity > 0 && strconv.FormatInt(quantity, 10) == raw
+}
+
 func (s *Server) estimateOffer(ctx context.Context, w http.ResponseWriter, r *http.Request, storeID, offerID string) {
-	parameters, err := url.ParseQuery(r.URL.RawQuery)
-	rawQuantity := parameters.Get("quantity")
-	quantity, quantityErr := strconv.ParseInt(rawQuantity, 10, 32)
-	if err != nil || quantityErr != nil || quantity < 1 || strconv.FormatInt(quantity, 10) != rawQuantity ||
-		len(parameters) != 1 || len(parameters["quantity"]) != 1 || r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+	quantity, valid := estimateQuantity(r.URL.RawQuery)
+	if !valid {
 		errorJSON(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}

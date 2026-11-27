@@ -102,6 +102,7 @@ paths:
     get:
       operationId: getPublicStore
       summary: Read one published Store via public link, including DIRECT Stores
+      description: Public Store detail accepts only a bodyless GET with the path Store ID and no query string.
       security: []
       parameters:
         - $ref: '../dsh.openapi.yaml#/components/parameters/StoreId'
@@ -111,6 +112,8 @@ paths:
           content:
             application/json:
               schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicStore' }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/BadRequest'
         '404':
           $ref: '../dsh.openapi.yaml#/components/responses/NotFound'
         '503':

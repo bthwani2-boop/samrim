@@ -116,25 +116,11 @@ type pageCursor struct {
 var errStale = errors.New("cursor is stale")
 var errInvalid = errors.New("invalid cursor")
 
+// ServeHTTP admits bodyless public reads before any owner transaction.
+// Health is a separate readiness probe and CORS preflight never reads owner data.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/health" {
-		if r.Method != "GET" {
-			errorJSON(w, 405, "METHOD_NOT_ALLOWED")
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
-		defer cancel()
-		tx, err := s.Owner.viewTx(ctx)
-		if err == nil {
-			defer tx.Rollback()
-			// The revision row is initialized by the baseline discovery migration.
-			_, err = s.Owner.revision(ctx, tx)
-		}
-		if err != nil {
-			errorJSON(w, 503, "OWNER_UNAVAILABLE")
-			return
-		}
-		jsonResponse(w, 200, map[string]string{"service": "dsh", "status": "ok"})
+		s.health(w, r)
 		return
 	}
 	origin := r.Header.Get("Origin")
@@ -144,25 +130,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
 	}
-	if r.Method == "OPTIONS" {
+	switch r.Method {
+	case http.MethodOptions:
 		if origin != "" && !s.AllowedOrigins[origin] {
-			errorJSON(w, 403, "ORIGIN_NOT_ALLOWED")
+			errorJSON(w, http.StatusForbidden, "ORIGIN_NOT_ALLOWED")
 			return
 		}
-		w.WriteHeader(204)
+		w.WriteHeader(http.StatusNoContent)
 		return
-	}
-	if r.Method != "GET" {
-		errorJSON(w, 405, "METHOD_NOT_ALLOWED")
+	case http.MethodGet:
+	default:
+		errorJSON(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
 		return
 	}
 	if len(r.URL.RawQuery) > 4096 || len(r.URL.Path) > 400 {
-		errorJSON(w, 400, "INVALID_REQUEST")
+		errorJSON(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
 	segments := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 	if len(segments) < 3 || segments[0] != "v1" || segments[1] != "public" {
-		errorJSON(w, 404, "NOT_FOUND")
+		errorJSON(w, http.StatusNotFound, "NOT_FOUND")
+		return
+	}
+	// Reject fixed-length and streamed bodies instead of discarding them.
+	if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
+		errorJSON(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
@@ -175,6 +167,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case len(segments) == 3 && segments[2] == "stores":
 		s.listStores(ctx, w, r)
 	case len(segments) == 4 && segments[2] == "stores" && validID(segments[3]):
+		// Detail uses only the path Store ID, never query selectors.
+		if r.URL.RawQuery != "" || r.URL.ForceQuery {
+			errorJSON(w, http.StatusBadRequest, "INVALID_REQUEST")
+			return
+		}
 		s.storeDetail(ctx, w, segments[3])
 	case len(segments) == 5 && segments[2] == "stores" && validID(segments[3]) && segments[4] == "offers":
 		s.listOffers(ctx, w, r, segments[3])
@@ -182,9 +179,29 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		segments[4] == "offers" && validID(segments[5]) && segments[6] == "estimate":
 		s.estimateOffer(ctx, w, r, segments[3], segments[5])
 	default:
-		errorJSON(w, 404, "NOT_FOUND")
+		errorJSON(w, http.StatusNotFound, "NOT_FOUND")
 	}
 }
+
+func (s *Server) health(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		errorJSON(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+	defer cancel()
+	tx, err := s.Owner.viewTx(ctx)
+	if err == nil {
+		defer tx.Rollback()
+		_, err = s.Owner.revision(ctx, tx)
+	}
+	if err != nil {
+		errorJSON(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
+		return
+	}
+	jsonResponse(w, http.StatusOK, map[string]string{"service": "dsh", "status": "ok"})
+}
+
 func validID(v string) bool {
 	if len(v) == 0 || len(v) > 64 {
 		return false
