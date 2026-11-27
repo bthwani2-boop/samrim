@@ -585,3 +585,48 @@ func TestOwnerJSONRejectsActualCompressedHTTPAndRecovers(t *testing.T) {
 		t.Fatalf("plain recovery failed: %d", status)
 	}
 }
+
+func TestFinanceObservationRejectsSessionChangeDuringGrant(t *testing.T) {
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	for _, tc := range []struct {
+		name, successor string
+		status, want    int
+	}{
+		{"revoked", "", 401, 401},
+		{"different actor", `{"actorId":"operator-b","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200, 401},
+		{"different role", `{"actorId":"operator-a","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200, 403},
+		{"expired", `{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2000-01-01T00:00:00Z"}`, 200, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var grants atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case sessionPath:
+					if grants.Load() > 0 {
+						w.WriteHeader(tc.status)
+						_, _ = w.Write([]byte(tc.successor))
+						return
+					}
+					_, _ = w.Write([]byte(`{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`))
+				case financePermissionPath:
+					grants.Add(1)
+					_, _ = w.Write([]byte(`{"actorId":"operator-a","permission":"finance"}`))
+				default:
+					t.Errorf("unexpected path %s", r.URL.Path)
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+			reader, err := newIdentityReader(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actor, status := reader.finance(t.Context(), token)
+			if status != tc.want || actor.ActorID != "" {
+				t.Errorf("stale finance proof admitted: status=%d actor=%q", status, actor.ActorID)
+			}
+		})
+	}
+}

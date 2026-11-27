@@ -106,9 +106,11 @@ func (identity identityReader) readRole(ctx context.Context, auth, role string) 
 	return actor, http.StatusOK
 }
 
-// Finance requires the current explicit grant for the same verified actor.
+// Finance authority is one observation of an explicit grant bracketed by
+// current Identity session reads. A delayed grant cannot revive an expired,
+// revoked, replaced or differently scoped operator session.
 func (identity identityReader) finance(ctx context.Context, auth string) (principal, int) {
-	actor, status := identity.readRole(ctx, auth, "operator")
+	before, status := identity.readRole(ctx, auth, "operator")
 	if status != http.StatusOK {
 		return principal{}, status
 	}
@@ -117,17 +119,27 @@ func (identity identityReader) finance(ctx context.Context, auth string) (princi
 		Permission *string `json:"permission"`
 	}
 	endpoint := strings.TrimSuffix(identity.endpoint, sessionPath) + financePermissionPath
-	status = identity.readBoundedOwner(ctx, auth, endpoint, &grant, identityReplyLimit)
-	if status != http.StatusOK {
+	if status = identity.readBoundedOwner(ctx, auth, endpoint, &grant, identityReplyLimit); status != http.StatusOK {
 		return principal{}, status
 	}
 	if grant.ActorID == nil || grant.Permission == nil {
 		return principal{}, http.StatusServiceUnavailable
 	}
-	if *grant.ActorID != actor.ActorID || *grant.Permission != "finance" {
+	if *grant.ActorID != before.ActorID || *grant.Permission != "finance" {
 		return principal{}, http.StatusForbidden
 	}
-	return actor, http.StatusOK
+	after, status := identity.readRole(ctx, auth, "operator")
+	if status != http.StatusOK {
+		return principal{}, status
+	}
+	if ctx.Err() != nil {
+		return principal{}, http.StatusServiceUnavailable
+	}
+	now := time.Now()
+	if before.ActorID != after.ActorID || !before.Expires.After(now) || !after.Expires.After(now) {
+		return principal{}, http.StatusUnauthorized
+	}
+	return after, http.StatusOK
 }
 
 func (identity identityReader) readBoundedOwner(ctx context.Context, auth, endpoint string, destination any, limit int64) int {
