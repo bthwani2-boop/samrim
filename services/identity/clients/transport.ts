@@ -93,8 +93,9 @@ export function issuedSessionFrom(value: unknown): IssuedRoleSession {
   return session as unknown as IssuedRoleSession;
 }
 
-// One transport owns the absolute request budgets. The short cleanup budget
-// applies only to a rejected persistent-family handoff, never an ordinary write.
+type ReplyMode = "json" | "empty";
+
+// Preserve the transport-owned total request budget, including headers and body.
 function requestBudget(method: Method, path: string, cleanup: boolean): number {
   if (method === "DELETE" && path === identityOperations.revokePersistentIdentitySession.path) {
     return cleanup ? 2_000 : 5_000;
@@ -106,8 +107,6 @@ function requestBudget(method: Method, path: string, cleanup: boolean): number {
   return 10_000;
 }
 
-// Race even non-cooperative native bridges against cancellation. The body
-// also retains its independent maximum read duration inside the total budget.
 async function awaitOwnerOperation<T>(
   start: () => Promise<T>, signal: AbortSignal, timeoutMs?: number,
 ): Promise<T> {
@@ -132,13 +131,12 @@ async function awaitOwnerOperation<T>(
   }
 }
 
-// A synchronous native exception and an asynchronous cancellation rejection
-// both stay inside the same best-effort cleanup boundary.
+// One non-blocking cleanup boundary for native getters and cancellation.
 async function discardStream(acquire: () => { cancel(): Promise<void> } | null): Promise<void> {
   try {
     await acquire()?.cancel();
   } catch {
-    // Failed cleanup must not replace the authoritative request outcome.
+    // Cleanup must not replace the authoritative request outcome.
   }
 }
 
@@ -149,38 +147,50 @@ function discardBody(response: Response): void {
   });
 }
 
-function noStore(response: Response): boolean {
-  return response.headers.get("Cache-Control")?.split(",")
+function admittedMetadata(headers: Headers, mode: ReplyMode): boolean {
+  const privateReply = headers.get("Cache-Control")?.split(",")
     .some(part => part.trim().toLowerCase() === "no-store") ?? false;
-}
-
-function jsonMetadata(response: Response): boolean {
-  const length = response.headers.get("Content-Length");
-  return noStore(response) &&
-    response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() === "application/json" &&
+  if (!privateReply) return false;
+  const length = headers.get("Content-Length");
+  if (mode === "empty") {
+    return (length === null || length === "0") && !headers.has("Transfer-Encoding");
+  }
+  return headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() === "application/json" &&
     (length === null || (/^\d+$/.test(length) && Number(length) <= maxOwnerBytes));
 }
 
-async function readOwnerJSON(response: Response, signal: AbortSignal): Promise<unknown> {
-  const body = response.body;
-  if (!jsonMetadata(response) || !body?.getReader) {
+// Browser Fetch exposes null for 204; Expo native Fetch exposes a stream.
+// Both must establish an empty representation. JSON and empty receipts share
+// metadata admission, byte cap, deadline, and disposal.
+async function readOwnerReply(response: Response, mode: ReplyMode, signal: AbortSignal): Promise<unknown> {
+  if (!admittedMetadata(response.headers, mode)) {
     discardBody(response);
-    throw new Error("Invalid Identity reply metadata or stream");
+    throw new Error("Invalid Identity reply metadata");
+  }
+  const body = response.body;
+  if (body === null && mode === "empty") return undefined;
+  if (!body?.getReader) {
+    discardBody(response);
+    throw new Error("Invalid Identity reply stream");
   }
   const reader = body.getReader();
   let complete = false;
   try {
+    const expires = performance.now() + bodyDeadlineMs;
     const value = await awaitOwnerOperation(async () => {
-      const bytes = new Uint8Array(maxOwnerBytes);
+      const bytes = new Uint8Array(mode === "empty" ? 0 : maxOwnerBytes);
       let size = 0;
       for (;;) {
+        if (signal.aborted || performance.now() >= expires) throw new Error("Identity reply deadline exceeded");
         const chunk = await reader.read();
         if (chunk.done) break;
-        if (chunk.value.byteLength > maxOwnerBytes - size) throw new Error("Oversized Identity reply");
+        if (chunk.value.byteLength > bytes.length - size) throw new Error("Oversized Identity reply");
         bytes.set(chunk.value, size);
         size += chunk.value.byteLength;
       }
-      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size))) as unknown;
+      if (signal.aborted || performance.now() >= expires) throw new Error("Identity reply deadline exceeded");
+      return mode === "empty" ? undefined :
+        JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size))) as unknown;
     }, signal, bodyDeadlineMs);
     complete = true;
     return value;
@@ -234,20 +244,15 @@ async function exchange(
     }
     let code = "OWNER_REQUEST_FAILED";
     try {
-      const failure = record(await readOwnerJSON(response, signal));
+      const failure = record(await readOwnerReply(response, "json", signal));
       if (typeof failure?.error === "string" && allowedErrors.has(failure.error)) code = failure.error;
     } catch { /* Never expose an unverified owner message. */ }
     if (signal.aborted) throw interrupted(mutation, caller);
     throw new IdentityClientError(response.status,
       mutation && response.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
   }
-  if (expectedStatus === 204) {
-    discardBody(response);
-    if (!noStore(response)) throw invalidReply(mutation);
-    return undefined;
-  }
   try {
-    const value = await readOwnerJSON(response, signal);
+    const value = await readOwnerReply(response, expectedStatus === 204 ? "empty" : "json", signal);
     if (signal.aborted) throw interrupted(mutation, caller);
     return value;
   } catch {

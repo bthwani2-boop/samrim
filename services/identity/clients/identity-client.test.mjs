@@ -1151,3 +1151,61 @@ test("current-session header and body consume one absolute request budget", asyn
   assert.equal(cancelled, true);
   assert.equal(reply.body.locked, false);
 });
+
+test("both Identity revocation paths reject contradictory empty owner receipts", async () => {
+  const operations = [
+    () => revokeVerifiedIdentitySession(origin, bearer),
+    () => revokePersistentIdentitySession(origin, rotatedBearer),
+  ];
+  for (const operation of operations) {
+    for (const headers of [
+      { "Cache-Control": "no-store", "Content-Length": "1" },
+      { "Cache-Control": "no-store", "Transfer-Encoding": "chunked" },
+      { "Cache-Control": "no-store", "Content-Length": "0, 1" },
+    ]) {
+      await withFetch(async () => new Response(null, { status: 204, headers }),
+        () => rejectsAs(operation, 502, "OPERATION_RESULT_UNKNOWN"));
+    }
+    let cancelled = 0;
+    const body = new ReadableStream({
+      pull(controller) { controller.enqueue(new Uint8Array([1])); },
+      cancel() { cancelled++; },
+    }, { highWaterMark: 0 });
+    await withFetch(async () => ({
+      status: 204, ok: true, headers: new Headers({ "Cache-Control": "no-store" }), body,
+    }), () => rejectsAs(operation, 502, "OPERATION_RESULT_UNKNOWN"));
+    assert.equal(cancelled, 1);
+    assert.equal(body.locked, false);
+    await withFetch(async () => new Response(null, {
+      status: 204, headers: { "Cache-Control": "no-store", "Content-Length": "0" },
+    }), operation);
+    const empty = new ReadableStream({ start(controller) {
+      controller.enqueue(new Uint8Array(0));
+      controller.close();
+    } });
+    await withFetch(async () => ({
+      status: 204, ok: true, headers: new Headers({ "Cache-Control": "no-store" }), body: empty,
+    }), operation);
+    assert.equal(empty.locked, false);
+  }
+});
+
+test("Identity empty stream cannot extend the owner request deadline", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let cancelled = false;
+  const started = Promise.withResolvers();
+  const body = new ReadableStream({
+    pull() { started.resolve(); return new Promise(() => {}); },
+    cancel() { cancelled = true; },
+  }, { highWaterMark: 0 });
+  await withFetch(async () => ({
+    status: 204, ok: true, headers: new Headers({ "Cache-Control": "no-store" }), body,
+  }), async () => {
+    const pending = rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN");
+    await started.promise;
+    t.mock.timers.tick(5000);
+    await pending;
+  });
+  assert.equal(cancelled, true);
+  assert.equal(body.locked, false);
+});
