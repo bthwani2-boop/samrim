@@ -1,17 +1,17 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
-import Module from "node:module";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
 const captain = path.resolve(import.meta.dirname, "..");
 const root = path.resolve(captain, "../..");
 const location = "src/features/location/device-location-readiness";
 const home = "src/features/dispatch/captain-home-screen";
 const route = "app/(tabs)/home";
-const sources = [location, home, route].filter(name => existsSync(path.join(captain, name + ".tsx")));
+const sources = [location, home, route];
 const temp = mkdtempSync(path.join(tmpdir(), "captain-device-readiness-"));
 const compiled = new Map();
 try {
@@ -21,19 +21,10 @@ try {
     "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--rootDir", captain, "--outDir", temp],
     { cwd: root, timeout: 20000, encoding: "utf8", windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  for (const name of sources) {
-    const entry = path.join(captain, name + ".tsx");
-    const code = readFileSync(path.join(temp, name + ".js"), "utf8").replace(
-      /(\/\/# sourceMappingURL=data:application\/json;base64,)([A-Za-z0-9+/=]+)/,
-      (_, prefix, data) => {
-        const map = JSON.parse(Buffer.from(data, "base64").toString("utf8"));
-        map.sourceRoot = "";
-        map.sources = [path.basename(entry)];
-        return prefix + Buffer.from(JSON.stringify(map)).toString("base64");
-      });
-    compiled.set(name, code);
-  }
-} finally { rmSync(temp, { recursive: true, force: true }); }
+  for (const name of sources) compiled.set(name, readFileSync(path.join(temp, name + ".js"), "utf8"));
+} finally {
+  rmSync(temp, { recursive: true, force: true });
+}
 
 const jsx = (type, props) => ({ type, props: props ?? {} });
 const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes) : tree && typeof tree === "object"
@@ -49,12 +40,8 @@ const base = {
 };
 function load(name, dependencies) {
   assert.ok(compiled.has(name), "native device readiness component is missing");
-  const modules = { ...base, ...dependencies };
-  const filename = path.join(captain, name + ".tsx.compiled.cjs");
-  const mod = new Module(filename);
-  mod.require = id => { assert.ok(Object.hasOwn(modules, id), id); return modules[id]; };
-  mod._compile(compiled.get(name), filename);
-  return mod.exports.default;
+  return loadMappedRenderFixture(compiled.get(name), path.join(captain, name + ".tsx"),
+    { ...base, ...dependencies }).exports.default;
 }
 function harness({ platform = "android", initial = "active", permission = { granted: false, canAskAgain: true },
   services = false } = {}) {
