@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   workspace:
-    name: Workspace
+    name: Validation
     if: ${{ github.event_name != 'pull_request' || !startsWith(github.head_ref, 'archive/') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 6
@@ -55,17 +55,13 @@ jobs:
           "$dir/actionlint" -version
           "$dir/actionlint" -color=false
 
-  frontend:
-    name: Frontend
+  quality:
+    name: TypeScript Quality & Contracts
     needs: workspace
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
-      - name: Checkout exact candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
+      - *checkout
       - *node
       - &pnpm
         name: Activate pinned pnpm
@@ -87,6 +83,28 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
       - name: Validate all owner OpenAPI contracts and generated operation parity
         run: pnpm check:contracts
+      - name: Reject orphaned JavaScript and TypeScript files
+        run: pnpm knip:files
+      - name: Validate design and application configuration
+        run: |
+          pnpm check:design
+          pnpm check:apps:source
+      - name: Check source quality
+        run: pnpm check:lint
+      - name: Typecheck all workspace projects
+        run: pnpm -r --if-present run typecheck
+
+  typescript_tests:
+    name: TypeScript Tests
+    needs: workspace
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - *checkout
+      - *node
+      - *pnpm
+      - *store
+      - *install
       - name: Run source tests and measure coverage
         run: pnpm check:coverage
       - name: Attest JavaScript coverage to the exact committed candidate
@@ -102,15 +120,18 @@ jobs:
           if-no-files-found: error
           retention-days: 7
           overwrite: true
-      - name: Reject orphaned JavaScript and TypeScript files
-        run: pnpm knip:files
-      - name: Validate design, application configuration and source quality
-        run: |
-          pnpm check:design
-          pnpm check:apps:source
-          pnpm check:lint
-      - name: Typecheck all workspace projects
-        run: pnpm -r --if-present run typecheck
+
+  application_build:
+    name: Application Build
+    needs: workspace
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - *checkout
+      - *node
+      - *pnpm
+      - *store
+      - *install
       - name: Export Expo Web presentation hosts (SSR artifacts only)
         run: |
           pnpm --dir apps/customer exec expo export --platform web
@@ -132,7 +153,7 @@ jobs:
         run: node tools/dev/run-coverage.mjs --operator-runtime
 
   backend:
-    name: Backend
+    name: Go Quality & Tests
     needs: workspace
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -187,8 +208,6 @@ jobs:
     needs: workspace
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    permissions:
-      contents: read
     env:
       GOTOOLCHAIN: local
       GOWORK: 'off'
@@ -224,7 +243,7 @@ jobs:
 
   containers:
     name: Container Build
-    needs: [workspace, security]
+    needs: workspace
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
@@ -254,12 +273,31 @@ jobs:
             container="$(docker create --network none "$image")"
             docker cp "$container:/usr/local/bin/$service" "$binary"
             docker rm "$container" >/dev/null
-            go version -m "$binary" | grep -F "go$expected_go"
+            [[ "$(go version "$binary")" == "$binary: go$expected_go" ]]
             rm -f "$binary"
           done
+      - name: Scan the built container images for high and critical vulnerabilities
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="$(mktemp -d "$RUNNER_TEMP/trivy.XXXXXX")"
+          trap 'rm -rf -- "$dir"' EXIT
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 2 \
+            https://github.com/aquasecurity/trivy/releases/download/v0.76.2/trivy_0.76.2_Linux-64bit.tar.gz \
+            --output "$dir/trivy.tar.gz"
+          printf '%s  %s\n' 'bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf' \
+            "$dir/trivy.tar.gz" | sha256sum --check --strict
+          tar -xzf "$dir/trivy.tar.gz" -C "$dir" trivy
+          "$dir/trivy" --version
+          result=0
+          for service in identity dsh wlt; do
+            "$dir/trivy" image --image-src docker --scanners vuln --severity HIGH,CRITICAL --exit-code 1 --no-progress \
+              "bthwani-go-check-$service:$GITHUB_SHA" || result=1
+          done
+          exit "$result"
 
   windows:
-    name: Windows
+    name: Windows Tooling
     needs: workspace
     runs-on: windows-2025
     timeout-minutes: 15
@@ -292,24 +330,11 @@ jobs:
   sonar:
     # Retain the exact required GitHub Actions check name.
     name: SonarQube Cloud Quality Gate
-    needs: [frontend, backend, postgres]
-    if: ${{ always() }}
+    needs: [typescript_tests, backend, postgres]
+    if: ${{ success() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - name: Require trusted source and successful coverage producers
-        env:
-          PRESENTATION_RESULT: ${{ needs.frontend.result }}
-          GO_RESULT: ${{ needs.backend.result }}
-          POSTGRES_RESULT: ${{ needs.postgres.result }}
-          TRUSTED_SOURCE: ${{ github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$TRUSTED_SOURCE" = true
-          test "$PRESENTATION_RESULT" = success
-          test "$GO_RESULT" = success
-          test "$POSTGRES_RESULT" = success
       - name: Checkout exact PR source and base history
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -369,38 +394,33 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
   required_ci:
+    # Stable protected check context until a separately verified ruleset cutover.
     name: fast-guard
-    needs: [workspace, frontend, backend, postgres, containers, windows, security, sonar]
+    needs: [workspace, quality, typescript_tests, application_build, backend, postgres, containers, windows, security, sonar]
     if: ${{ always() }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Reject archive source and failed required predecessors
+      - name: Require all integration evidence
         env:
-          HEAD_REF: ${{ github.head_ref }}
-          CI_REF: ${{ github.ref }}
-          CI_EVENT: ${{ github.event_name }}
-          WORKSPACE_RESULT: ${{ needs.workspace.result }}
-          APPLICATION_RESULT: ${{ needs.frontend.result }}
-          BACKEND_RESULT: ${{ needs.backend.result }}
-          POSTGRES_RESULT: ${{ needs.postgres.result }}
-          CONTAINERS_RESULT: ${{ needs.containers.result }}
-          SECURITY_RESULT: ${{ needs.security.result }}
-          SONAR_RESULT: ${{ needs.sonar.result }}
-          WINDOWS_RESULT: ${{ needs.windows.result }}
+          WORKSPACE: ${{ needs.workspace.result }}
+          QUALITY: ${{ needs.quality.result }}
+          TYPESCRIPT_TESTS: ${{ needs.typescript_tests.result }}
+          APPLICATION_BUILD: ${{ needs.application_build.result }}
+          BACKEND: ${{ needs.backend.result }}
+          POSTGRES: ${{ needs.postgres.result }}
+          CONTAINERS: ${{ needs.containers.result }}
+          WINDOWS: ${{ needs.windows.result }}
+          SECURITY: ${{ needs.security.result }}
+          SONAR: ${{ needs.sonar.result }}
         shell: bash
         run: |
           set -euo pipefail
-          case "$HEAD_REF:$CI_REF" in
-            archive/*:*|*:refs/heads/archive/*) exit 1 ;;
-          esac
-          case "$CI_EVENT" in
-            pull_request) ;;
-            push) test "$CI_REF" = refs/heads/main ;;
-            *) exit 1 ;;
-          esac
-          for result in "$WORKSPACE_RESULT" "$APPLICATION_RESULT" "$BACKEND_RESULT" "$POSTGRES_RESULT" "$CONTAINERS_RESULT" "$WINDOWS_RESULT" "$SECURITY_RESULT" "$SONAR_RESULT"; do
-            test "$result" = success
+          result=0
+          for check in WORKSPACE QUALITY TYPESCRIPT_TESTS APPLICATION_BUILD BACKEND POSTGRES CONTAINERS WINDOWS SECURITY SONAR; do
+            if [[ "${!check:-}" != success ]]; then
+              printf '::error::Required check %s: %s\n' "$check" "${!check:-missing}"
+              result=1
+            fi
           done
-      - name: State verification boundary
-        run: echo 'CI verifies source, builds and isolated owners; native device, browser journeys and production readiness remain separate.'
+          exit "$result"

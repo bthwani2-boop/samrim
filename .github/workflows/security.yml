@@ -67,3 +67,18 @@ jobs:
             echo "Scanning Go owner: $service (CGO_ENABLED=0)"
             (cd "services/$service/backend" && "$scanner" ./...)
           done
+
+  dependency_review:
+    name: Dependency Review
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Review newly introduced vulnerable dependencies
+        uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
+        with:
+          fail-on-severity: high
