@@ -1,4 +1,4 @@
-import { type CustomerAddress, type CustomerAddressChange, DshPublicError, isCustomerAddressId, validCustomerAddressChange } from "@bthwani/dsh";
+import { type CustomerAddress, type CustomerAddressChange, DshPublicError, isCustomerAddressId, matchesCustomerAddressChange, normalizeCustomerAddressChange } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { randomUUID } from "expo-crypto";
 import { Link, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -15,18 +15,16 @@ type Draft = { id:string; expectedVersion:number; cityId:string; label:string; d
 type ReadState = {actor:string;items:CustomerAddress[];next?:string|undefined};
 type Pending = {actor:string;id:string;change:CustomerAddressChange};
 type Retained = {actor:string;routeId:string|undefined;draft:Draft;pending:Pending|null};
-function committed(address:CustomerAddress,command:Pending):boolean {
-  const c=command.change;
-  return address.id===command.id&&address.version===c.expectedVersion+1&&address.cityId===c.cityId&&address.label===c.label&&address.details===c.details&&address.latitude===c.latitude&&address.longitude===c.longitude;
-}
 const toDraft = (a:CustomerAddress):Draft => ({id:a.id,expectedVersion:a.version,cityId:a.cityId,label:a.label,details:a.details,
   latitude:String(a.latitude),longitude:String(a.longitude)});
 const fresh = ():Draft => ({id:`addr-${randomUUID().replaceAll("-","")}`,expectedVersion:0,cityId:"",label:"",details:"",latitude:"",longitude:""});
-function toChange(d:Draft):CustomerAddressChange {
-  return {cityId:d.cityId,label:d.label.trim(),details:d.details.trim(),
-    latitude:d.latitude.trim()?Number(d.latitude):NaN,longitude:d.longitude.trim()?Number(d.longitude):NaN,expectedVersion:d.expectedVersion};
+function toChange(d:Draft):CustomerAddressChange|undefined {
+  return normalizeCustomerAddressChange({
+    cityId:d.cityId,label:d.label,details:d.details,
+    latitude:d.latitude.trim()?Number(d.latitude):NaN,
+    longitude:d.longitude.trim()?Number(d.longitude):NaN,expectedVersion:d.expectedVersion,
+  });
 }
-
 export default function AddressesScreen() {
   const { theme }=useMobileAppearance();
   const {id}=useLocalSearchParams<{id?:string}>();
@@ -40,71 +38,77 @@ export default function AddressesScreen() {
   const active=useRef<AbortController|null>(null);
   const scope=useRef<AbortController|null>(null);
   const expires=useRef<ReturnType<typeof setTimeout>|undefined>(undefined);
+  const deadline=useRef(0);
   const retained=useRef<Retained|null>(null);
   const discardOnDenial=useCallback((error:unknown)=>{
     if(error instanceof DshPublicError&&[401,403].includes(error.status))retained.current=null;
   },[]);
   const clear=useCallback(()=>{
     scope.current?.abort();scope.current=null;active.current?.abort();active.current=null;
-    clearTimeout(expires.current);setView(null);setDraft(null);setPending(null);setMap(false);setBusy(false);
+    clearTimeout(expires.current);deadline.current=0;setView(null);setDraft(null);setPending(null);setMap(false);setBusy(false);
   },[]);
   const reload=useCallback(()=>{clear();setRetry(v=>v+1);},[clear]);
+  const admitExpiry=useCallback((controller:AbortController,expiresAt:number)=>{
+    controller.signal.throwIfAborted();
+    const limit=deadline.current===0?expiresAt:Math.min(deadline.current,expiresAt);
+    if(scope.current!==controller||!Number.isFinite(limit)||limit<=Date.now()){
+      throw new DshPublicError(503,"OWNER_UNAVAILABLE");
+    }
+    deadline.current=limit;
+    clearTimeout(expires.current);
+    expires.current=setTimeout(()=>{
+      if(scope.current===controller)reload();
+    },Math.min(2147483647,Math.max(0,limit-Date.now())));
+  },[reload]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: retry deliberately refreshes private owner state.
   useFocusEffect(useCallback(()=>{
     clear();setMessage("");
     if(retained.current?.routeId!==id)retained.current=null;
     const controller=new AbortController();
     scope.current=controller;
-    void readVerifiedAddresses(controller.signal).then(async result=>{
-      if(controller.signal.aborted)return;
-      if(retained.current&&retained.current.actor!==result.page.actorId)retained.current=null;
-      let selected=result.page.items.find(address=>address.id===id);
-      let expiresAt=result.expiresAt;
-      let unavailable=false;
-      if(id!==undefined&&!selected){
-        unavailable=typeof id!=="string"||!isCustomerAddressId(id);
-        if(!unavailable){
-          try{
-            const lookup=await readVerifiedAddress(controller.signal,result.page.actorId,id);
-            selected=lookup.address;
-            expiresAt=Math.min(expiresAt,lookup.expiresAt);
-          }catch(error){
-            if(!(error instanceof DshPublicError)||error.status!==404)throw error;
-            unavailable=true;
-          }
+    void (async()=>{
+      const result=await readVerifiedAddresses(controller.signal);
+      admitExpiry(controller,result.expiresAt);
+      const actor=result.page.actorId;
+      if(retained.current&&retained.current.actor!==actor)retained.current=null;
+      const find=async(addressId:string)=>{
+        const known=result.page.items.find(address=>address.id===addressId);
+        if(known)return known;
+        try{
+          const lookup=await readVerifiedAddress(controller.signal,actor,addressId);
+          admitExpiry(controller,lookup.expiresAt);
+          return lookup.address;
+        }catch(error){
+          if(!(error instanceof DshPublicError)||error.status!==404)throw error;
+          const session=await verifyAddressSession(controller.signal,actor);
+          admitExpiry(controller,Date.parse(session.sessionExpiresAt));
+          return undefined;
         }
-      }
-      if(controller.signal.aborted)return;
+      };
+      const selected=typeof id==="string"&&isCustomerAddressId(id)?await find(id):undefined;
       const saved=retained.current;
+      let selection=selected;
       if(saved){
-        let owner=result.page.items.find(address=>address.id===saved.draft.id);
-        if(!owner){
-          try{
-            const lookup=await readVerifiedAddress(controller.signal,result.page.actorId,saved.draft.id);
-            owner=lookup.address;expiresAt=Math.min(expiresAt,lookup.expiresAt);
-          }catch(error){if(!(error instanceof DshPublicError)||error.status!==404)throw error;}
-        }
-        if(controller.signal.aborted)return;
-        if(expiresAt<=Date.now())throw new DshPublicError(503,"OWNER_UNAVAILABLE");
-        if(saved.pending&&owner&&committed(owner,saved.pending)){
+        const owner=saved.draft.id===id?selected:await find(saved.draft.id);
+        admitExpiry(controller,deadline.current);
+        if(saved.pending&&owner&&matchesCustomerAddressChange(owner,saved.pending.id,saved.pending.change)){
           retained.current=null;setMessage("تم التحقق من حفظ العنوان لدى DSH.");
-          if(id===owner.id)selected=owner;
+          if(id===owner.id)selection=owner;
         }else if(owner?owner.version===saved.draft.expectedVersion:saved.draft.expectedVersion===0){
           setDraft(saved.draft);setPending(saved.pending);
         }else{
           retained.current=null;setMessage("تغيّر العنوان لدى DSH؛ أعد إدخال التعديلات على النسخة الحالية.");
         }
       }
-      if(expiresAt<=Date.now())throw new DshPublicError(503,"OWNER_UNAVAILABLE");
-      setView({actor:result.page.actorId,items:result.page.items,next:result.page.nextCursor});
-      if(!retained.current&&selected)setDraft(toDraft(selected));
-      if(unavailable)setMessage("هذا العنوان غير متاح في حسابك.");
-      expires.current=setTimeout(reload,Math.max(0,Math.min(2147483647,expiresAt-Date.now())));
-    }).catch(error=>{
-      if(!controller.signal.aborted){discardOnDenial(error);setMessage("تعذّر التحقق من عناوين حسابك. تحقق من الدخول والاتصال ثم أعد المحاولة.");}
+      admitExpiry(controller,deadline.current);
+      setView({actor,items:result.page.items,next:result.page.nextCursor});
+      if(!retained.current&&selection)setDraft(toDraft(selection));
+      if(id!==undefined&&!selection)setMessage("هذا العنوان غير متاح في حسابك.");
+    })().catch(error=>{
+      if(!controller.signal.aborted){discardOnDenial(error);clear();setMessage("تعذّر التحقق من عناوين حسابك. تحقق من الدخول والاتصال ثم أعد المحاولة.");}
     });
     return clear;
-  },[clear,reload,retry,id,discardOnDenial]));
+  },[clear,retry,id,discardOnDenial,admitExpiry]));
   useEffect(()=>{
     if(Platform.OS==="web"){
       const visibility=()=>{if(document.visibilityState==="hidden")clear();else reload();};
@@ -123,14 +127,20 @@ export default function AddressesScreen() {
     const timer=setInterval(()=>{
       if(checking||active.current||controller.signal.aborted)return;
       checking=true;
-      void verifyAddressSession(controller.signal,view.actor).catch(error=>{
+      void verifyAddressSession(controller.signal,view.actor).then(session=>{admitExpiry(controller,Date.parse(session.sessionExpiresAt));}).catch(error=>{
         if(!controller.signal.aborted){discardOnDenial(error);clear();setMessage("تعذّر التحقق من الجلسة. أعد التحقق من الحساب.");}
       }).finally(()=>{checking=false;});
     },15000);
     return ()=>clearInterval(timer);
-  },[view,clear,discardOnDenial]);
+  },[view,clear,discardOnDenial,admitExpiry]);
+  function currentScope(){
+    const controller=scope.current;
+    if(!view||!controller||controller.signal.aborted)return null;
+    if(deadline.current<=Date.now()){reload();return null;}
+    return controller;
+  }
   function updateDraft(update:(old:Draft|null)=>Draft|null){
-    if(!view||!scope.current||scope.current.signal.aborted||active.current||pending)return;
+    if(!view||!currentScope()||active.current||pending)return;
     const previous=retained.current?.actor===view.actor&&retained.current.routeId===id?retained.current.draft:draft;
     const next=update(previous);
     retained.current=next?{actor:view.actor,routeId:id,draft:next,pending:null}:null;
@@ -139,19 +149,23 @@ export default function AddressesScreen() {
   const button={minHeight:44,borderWidth:1,borderColor:theme.borderColor,borderRadius:10,padding:12,justifyContent:"center" as const};
   const input={...button,color:theme.color,textAlign:"auto" as const};
   async function more() {
-    if(!view?.next||active.current)return;
+    const controller=currentScope();
+    if(!controller||!view?.next||active.current||pending)return;
     const c=new AbortController();active.current=c;setBusy(true);
     try{
       const result=await readVerifiedAddresses(c.signal,view.actor,view.next);
       if(c.signal.aborted)return;
+      admitExpiry(controller,result.expiresAt);
       setView(old=>old?.actor===view.actor&&old.next===view.next?{actor:old.actor,items:[...old.items,...result.page.items],next:result.page.nextCursor}:old);
     }catch(error){if(!c.signal.aborted){discardOnDenial(error);clear();setMessage("تعذّرت قراءة العناوين؛ أعد التحقق.");}}
     finally{if(active.current===c){active.current=null;setBusy(false);}}
   }
   async function save() {
-    if(!view||!draft||active.current)return;
-    const command=pending??{actor:view.actor,id:draft.id,change:toChange(draft)};
-    if(command.actor!==view.actor||!validCustomerAddressChange(command.change)){setMessage("تحقق من المدينة واسم العنوان وتفاصيله والإحداثيات.");return;}
+    const controller=currentScope();
+    if(!controller||!view||!draft||active.current)return;
+    const change=toChange(draft);
+    const command=pending??(change?{actor:view.actor,id:draft.id,change}:null);
+    if(!command||command.actor!==view.actor){setMessage("تحقق من المدينة واسم العنوان وتفاصيله والإحداثيات.");return;}
     retained.current={actor:view.actor,routeId:id,draft,pending:command};
     const c=new AbortController();active.current=c;setBusy(true);setPending(command);setMessage("");
     try{
@@ -166,7 +180,8 @@ export default function AddressesScreen() {
         else retained.current={actor:view.actor,routeId:id,draft,pending:null};
       }else {
         try{
-          await verifyAddressSession(c.signal,command.actor);
+          const session=await verifyAddressSession(c.signal,command.actor);
+          admitExpiry(controller,Date.parse(session.sessionExpiresAt));
           if(!c.signal.aborted)setMessage("لم تتأكد نتيجة الحفظ. أعد إرسال نفس العملية أو أعد قراءة العناوين للتحقق.");
         }catch(error){if(!c.signal.aborted){discardOnDenial(error);clear();setMessage("لم تتأكد نتيجة الحفظ. أعد التحقق من الحساب ثم اقرأ العناوين.");}}
       }
@@ -199,7 +214,7 @@ export default function AddressesScreen() {
           {field("latitude","خط العرض",24)}{field("longitude","خط الطول",24)}
           {!pending?<Pressable testID="address-location-open" accessibilityRole="button" accessibilityState={{expanded:map}} disabled={busy} style={button} onPress={()=>setMap(v=>!v)}><Text style={{color:theme.interactiveText}}>{map?"إغلاق محدد الموقع":Platform.OS==="web"?"تحديد الموقع الحالي":"اختيار الموقع على الخريطة"}</Text></Pressable>:null}
           {map&&!pending?<View style={Platform.OS==="web"?undefined:{height:460}}><AddressEditor onSelect={pin=>{updateDraft(old=>old?{...old,latitude:String(pin.latitude),longitude:String(pin.longitude)}:null);setMap(false);}}/></View>:null}
-          <Pressable accessibilityRole="button" disabled={busy||!validCustomerAddressChange(toChange(draft))} style={button} onPress={()=>void save()}>
+          <Pressable accessibilityRole="button" disabled={busy||(!pending&&!toChange(draft))} style={button} onPress={()=>void save()}>
             <Text style={{color:theme.interactiveText}}>{busy?"جارٍ التحقق…":pending?"إعادة نفس الحفظ":"حفظ لدى DSH"}</Text>
           </Pressable>
         </View>:null}

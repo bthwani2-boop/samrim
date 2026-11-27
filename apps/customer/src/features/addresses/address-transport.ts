@@ -1,5 +1,5 @@
 import { type CustomerAddressChange, type CustomerAddressPage, type CustomerAddressResult, type DeliveryServiceability, DshPublicError, evaluateDeliveryServiceability,
-  getCustomerAddress, isCustomerAddressId, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "@bthwani/dsh";
+  getCustomerAddress, isCustomerAddressId, listCustomerAddresses, normalizeCustomerAddressChange, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "@bthwani/dsh";
 import { Platform } from "react-native";
 import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
@@ -80,21 +80,24 @@ export async function readVerifiedAddress(signal: AbortSignal, actor: string, id
   }
 }
 export async function writeVerifiedAddress(actor:string,id:string,change:CustomerAddressChange,signal:AbortSignal):Promise<CustomerAddressResult> {
+  const command=normalizeCustomerAddressChange(change);
+  if(!command||!isCustomerAddressId(id))throw new DshPublicError(400,"INVALID_REQUEST");
   await verifyAddressSession(signal,actor);
   let dispatched=false;
   try {
     if (Platform.OS==="web") {
       dispatched=true;
-      const result=parseCustomerAddressResult(await webRead(`${route}?addressId=${encodeURIComponent(id)}`,actor,signal,change),actor,id,change);
+      const result=parseCustomerAddressResult(await webRead(`${route}?addressId=${encodeURIComponent(id)}`,actor,signal,command),actor,id,command);
       await verifyAddressSession(signal,actor);
       return result;
     }
     if (!nativeOwner) throw new DshPublicError(503,"OWNER_UNAVAILABLE");
     const result=await withVerifiedNativeCustomerRead(signal,bearer=>{
       dispatched=true;
-      return saveCustomerAddress(nativeOwner,bearer,actor,id,change,signal);
+      return saveCustomerAddress(nativeOwner,bearer,actor,id,command,signal);
     },actor);
     if (result.kind!=="ready") throw new DshPublicError(503,"OPERATION_RESULT_UNKNOWN");
+    signal.throwIfAborted();
     return result.value;
   } catch(error) {
     if (dispatched && (!(error instanceof DshPublicError) || ![400,404,409].includes(error.status))) {
@@ -103,7 +106,6 @@ export async function writeVerifiedAddress(actor:string,id:string,change:Custome
     throw error;
   }
 }
-
 
 export async function readVerifiedDeliveryServiceability(actor:string,store:string,address:string,signal:AbortSignal):Promise<DeliveryServiceability> {
   await verifyAddressSession(signal,actor);

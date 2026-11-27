@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { DshPublicError, isCustomerAddressId, validCustomerAddressChange } from "@bthwani/dsh";
+import { DshPublicError, isCustomerAddressId, matchesCustomerAddressChange, normalizeCustomerAddressChange } from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 const source=file=>readFileSync(new URL(file,import.meta.url),"utf8");
@@ -48,7 +48,7 @@ function harness(t, routeId) {
     useEffect(fn) { const at = index++; if (!(at in hooks)) hooks[at] = fn(); },
   };
   const deps = {
-    "@bthwani/dsh": { DshPublicError, isCustomerAddressId, validCustomerAddressChange },
+    "@bthwani/dsh": { DshPublicError, isCustomerAddressId, matchesCustomerAddressChange, normalizeCustomerAddressChange },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "expo-crypto": { randomUUID: () => (++counter).toString(16).padStart(32, "0") },
     "expo-router": { Link: "Link", useFocusEffect: cb => { focus = cb; }, useLocalSearchParams: () => ({ id: routeId }) },
@@ -207,5 +207,40 @@ test("map selection changes only draft coordinates; version conflict discards th
   h.focus(); h.pages.shift().resolve(page("actor-a", [{ ...entry, version: 4 }])); await settle();
   assert.equal(field(h, "اسم العنوان"), undefined);
   assert.equal(h.writes.length, 0);
+  h.close();
+});
+
+test("uncertain save dispatches owner-normalized Unicode and recognizes canonical readback", async t => {
+  const h = harness(t);
+  h.focus(); h.pages.shift().resolve(page("actor-a")); await settle();
+  enterNew(h);
+  field(h, "اسم العنوان").props.onChangeText("\u0085Test home\u0085");
+  field(h, "تفاصيل الوصول").props.onChangeText("\ufeffSynthetic detail");
+  button(h, "حفظ لدى DSH").props.onPress();
+  const write = h.writes.shift();
+  assert.equal(write.change.label, "Test home");
+  assert.equal(write.change.details, "\ufeffSynthetic detail");
+  h.sessionFailure(new DshPublicError(503, "OWNER_UNAVAILABLE"));
+  write.reject(new DshPublicError(503, "OPERATION_RESULT_UNKNOWN")); await settle();
+  const { expectedVersion, ...fields } = write.change;
+  const saved = { ...fields, id: write.id, version: expectedVersion + 1 };
+  h.owner("actor-a", saved);
+  h.sessionFailure(undefined);
+  h.focus(); h.pages.shift().resolve(page("actor-a", [saved])); await settle();
+  assert.match(words(h.render()), /تم التحقق من حفظ العنوان/);
+  assert.equal(button(h, "إعادة نفس الحفظ"), undefined);
+  h.close();
+});
+
+test("expired pagination evidence cannot append or retain private rows", async t => {
+  const h = harness(t);
+  const first = addressFixture("a"), second = addressFixture("b");
+  h.focus();
+  h.pages.shift().resolve({ ...page("actor-a", [first]), page: { actorId: "actor-a", items: [first], nextCursor: first.id } });
+  await settle();
+  button(h, "المزيد من العناوين").props.onPress();
+  h.pages.shift().resolve({ ...page("actor-a", [second]), expiresAt: Date.now() - 1 });
+  await settle();
+  assert.doesNotMatch(words(h.render()), /Home [ab]/);
   h.close();
 });

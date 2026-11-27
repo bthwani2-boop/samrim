@@ -65,7 +65,7 @@ function normalizedText(value: unknown, max: number): string | undefined {
 function canonicalText(value: unknown, max: number): boolean {
   return typeof value === "string" && normalizedText(value, max) === value;
 }
-function snapshot(value: unknown): CustomerAddressChange | undefined {
+export function normalizeCustomerAddressChange(value: unknown): CustomerAddressChange | undefined {
   if (!record(value) || !exact(value, ["cityId", "label", "details", "latitude", "longitude", "expectedVersion"])) return undefined;
   const { cityId, label, details, latitude, longitude, expectedVersion } = value;
   const canonicalLabel = normalizedText(label, 80);
@@ -77,7 +77,7 @@ function snapshot(value: unknown): CustomerAddressChange | undefined {
   return { cityId, label: canonicalLabel, details: canonicalDetails, latitude, longitude, expectedVersion };
 }
 export function validCustomerAddressChange(value: unknown): value is CustomerAddressChange {
-  return snapshot(value) !== undefined;
+  return normalizeCustomerAddressChange(value) !== undefined;
 }
 function addressRecord(value: unknown): value is CustomerAddress {
   return record(value) && exact(value, ["id", "cityId", "label", "details", "latitude", "longitude", "version"]) &&
@@ -117,15 +117,19 @@ export function parseCustomerAddress(value: unknown, actor: string, id: string):
     !addressRecord(value.address) || value.address.id !== id) invalidResponse();
   return { actorId: actor, address: value.address };
 }
+export function matchesCustomerAddressChange(value: unknown, id: string, change: CustomerAddressChange): value is CustomerAddress {
+  const command = normalizeCustomerAddressChange(change);
+  return command !== undefined && addressRecord(value) &&
+    value.id === id && value.version === command.expectedVersion + 1 &&
+    value.cityId === command.cityId && value.label === command.label &&
+    value.details === command.details && value.latitude === command.latitude &&
+    value.longitude === command.longitude;
+}
 export function parseCustomerAddressResult(value: unknown, actor: string, id: string, change: CustomerAddressChange): CustomerAddressResult {
-  const command = snapshot(change);
-  if (!command || !record(value) || !exact(value, ["actorId", "address", "replay"]) || value.actorId !== actor ||
-    typeof value.replay !== "boolean" || !addressRecord(value.address)) unknownResult();
-  const address = value.address;
-  if (address.id !== id || address.version !== command.expectedVersion + 1 || address.cityId !== command.cityId ||
-    address.label !== command.label || address.details !== command.details ||
-    address.latitude !== command.latitude || address.longitude !== command.longitude) unknownResult();
-  return { actorId: actor, address, replay: value.replay };
+  if (!record(value) || !exact(value, ["actorId", "address", "replay"]) ||
+    value.actorId !== actor || typeof value.replay !== "boolean" ||
+    !matchesCustomerAddressChange(value.address, id, change)) unknownResult();
+  return { actorId: actor, address: value.address, replay: value.replay };
 }
 export async function listCustomerAddresses(origin: string, bearer: string, actor: string, after?: string, signal?: AbortSignal) {
   requireBearer(bearer);
@@ -145,7 +149,7 @@ export async function getCustomerAddress(origin: string, bearer: string, actor: 
 }
 export async function saveCustomerAddress(origin: string, bearer: string, actor: string, id: string, change: CustomerAddressChange, signal?: AbortSignal) {
   requireBearer(bearer);
-  const command = snapshot(change);
+  const command = normalizeCustomerAddressChange(change);
   if (!isCustomerAddressId(id) || !command) throw new DshPublicError(400, "INVALID_REQUEST");
   const path = dshOperations.saveCurrentCustomerAddress.path.replace("{addressID}", id);
   const value = await privateOwnerRequest(origin, path, bearer, "PUT", command, signal);

@@ -268,3 +268,17 @@ test("Android without an admitted DSH origin never dispatches", async t => {
   assert.equal(h.requests.length, 0);
   assert.equal(h.nativeCalls.length, 0);
 });
+
+test("Web and Android capture the same canonical command before asynchronous admission", async t => {
+  for (const os of ["web", "android"]) {
+    const h = harness(t, os);
+    const draft = { ...change, label: "\u0085Test home\u0085", details: "\ufeffSynthetic address" };
+    const canonical = { ...change, details: "\ufeffSynthetic address" };
+    h.replies.push(json({ ...receipt, address: { ...address, details: canonical.details } }));
+    const result = h.api.writeVerifiedAddress(actor, id, draft, signal());
+    draft.label = "different draft";
+    draft.expectedVersion = 9;
+    assert.deepEqual(await result, { ...receipt, address: { ...address, details: canonical.details } });
+    assert.deepEqual(JSON.parse(h.requests[0].body), canonical);
+  }
+});
