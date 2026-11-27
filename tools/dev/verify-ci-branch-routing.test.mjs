@@ -39,6 +39,14 @@ function mandatory(job, step) {
   assert.notEqual(step["continue-on-error"], true);
   assert.notEqual(job["continue-on-error"], true);
 }
+function qualityCheck(step) {
+  const install = runs(quality, /pnpm install --frozen-lockfile --ignore-scripts/);
+  assert.equal(install.id, "dependencies");
+  sameExpression(step.if, "!cancelled() && steps.dependencies.outcome == 'success'");
+  assert.notEqual(step["continue-on-error"], true);
+  assert.notEqual(quality["continue-on-error"], true);
+  order(quality, install, step);
+}
 function order(job, ...ordered) {
   const positions = ordered.map(step => steps(job).indexOf(step));
   assert.ok(positions.every((position, i) => position >= 0 && (i === 0 || position > positions[i - 1])), "Incorrect execution order");
@@ -170,7 +178,7 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
     assert.ok(!jobs.some(job => commands(job).includes(file)), "Duplicate invocation: " + file);
   }
   // Local and CI consume the same complete owner contract admission command.
-  mandatory(quality, runs(quality, /^pnpm check:contracts\s*$/));
+  qualityCheck(runs(quality, /^pnpm check:contracts\s*$/));
   const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
   assert.equal(manifest.scripts["check:contracts"], "node tools/dev/check-openapi.mjs identity dsh wlt");
   for (const owner of owners) {
@@ -185,9 +193,9 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.equal(Object.hasOwn(manifest.scripts, "check:apps:static"), false);
   assert.doesNotMatch(commands(quality), /pnpm --dir services\/\S+ contract|generate-openapi-operations\.mjs --check/);
   for (const pattern of [/pnpm knip:files/, /pnpm check:design/, /pnpm check:apps:source/, /pnpm check:lint/]) {
-    mandatory(quality, runs(quality, pattern));
+    qualityCheck(runs(quality, pattern));
   }
-  mandatory(quality, runs(quality, /pnpm -r --if-present run typecheck/));
+  qualityCheck(runs(quality, /pnpm -r --no-bail --if-present run typecheck/));
   for (const pattern of [ /expo export --platform web/,
     /pnpm --dir apps\/control-panel build/, /node tools\/dev\/verify-operator-http.mjs/,
     /node tools\/mobile\/verify-expo-web-http.mjs/]) {
@@ -480,9 +488,25 @@ test("CI uses the supported cache runtime and reports every warning and error wi
     assert.equal(cache.uses, "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9");
   }
   const lint = runs(quality, /^pnpm check:lint --diagnostic-level=warn --max-diagnostics=none\s*$/);
-  mandatory(quality, lint);
+  qualityCheck(lint);
   const config = JSON.parse(readFileSync(path.join(root, "biome.json"), "utf8"));
   assert.ok(config.files.includes.every(pattern => !(pattern.startsWith("!!") && pattern.endsWith("/**"))));
   assert.equal(config.linter.enabled, true);
   assert.equal(config.linter.rules.preset, "recommended");
+});
+
+test("all six independent static checks execute after installation even when another fails", () => {
+  const independent = [
+    /^pnpm check:contracts\s*$/,
+    /^pnpm knip:files\s*$/,
+    /^pnpm check:design\s*$/,
+    /^pnpm check:apps:source\s*$/,
+    /^pnpm check:lint --diagnostic-level=warn --max-diagnostics=none\s*$/,
+    /^pnpm -r --no-bail --if-present run typecheck\s*$/
+  ].map(pattern => runs(quality, pattern));
+  assert.equal(new Set(independent).size, 6);
+  for (const step of independent) qualityCheck(step);
+  const install = runs(quality, /pnpm install --frozen-lockfile --ignore-scripts/);
+  mandatory(quality, install);
+  assert.ok(required.needs.includes("quality"));
 });

@@ -80,19 +80,26 @@ jobs:
           key: pnpm-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.node-version', 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml', 'patches/**') }}
       - &install
         name: Install locked dependencies
+        id: dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Validate all owner OpenAPI contracts and generated operation parity
+      - name: Validate OpenAPI contracts and generated clients
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: pnpm check:contracts
-      - name: Reject orphaned JavaScript and TypeScript files
+      - name: Reject orphaned source files
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: pnpm knip:files
-      - name: Validate design and application configuration
-        run: |
-          pnpm check:design
-          pnpm check:apps:source
+      - name: Validate design
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: pnpm check:design
+      - name: Validate application configuration
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: pnpm check:apps:source
       - name: Check source quality
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: pnpm check:lint --diagnostic-level=warn --max-diagnostics=none
       - name: Typecheck all workspace projects
-        run: pnpm -r --if-present run typecheck
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
+        run: pnpm -r --no-bail --if-present run typecheck
 
   typescript_tests:
     name: TypeScript Tests
