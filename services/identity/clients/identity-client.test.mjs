@@ -174,15 +174,16 @@ test("session scope is parsed from exactly the three owner fields and never impl
 });
 
 test("verified Identity actor IDs follow Go's UTF-8 byte and Unicode control limits", async () => {
-  const allowed = { ...principal(), actorId: "ع".repeat(64) };
-  await withFetch(async () => response(allowed),
-    async () => assert.deepEqual(await readVerifiedIdentitySession(origin, bearer), allowed));
-  for (const actorId of ["ع".repeat(65), "actor\u0001name", "actor\u0085name", "actor\ud800name"]) {
+  for (const actorId of ["ع".repeat(64), "\uFEFFactor"]) {
+    const allowed = { ...principal(), actorId };
+    await withFetch(async () => response(allowed),
+      async () => assert.deepEqual(await readVerifiedIdentitySession(origin, bearer), allowed));
+  }
+  for (const actorId of ["ع".repeat(65), "actor\u0001name", "actor\u0085name", "actor\ud800name", "\u00a0actor", "actor\u2000"]) {
     await withFetch(async () => response({ ...principal(), actorId }),
       () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
   }
 });
-
 test("phone proof carries exact JSON without credentials and logout requires a no-store 204", async () => {
   const phone = "+967770000033";
   const ticket = "a".repeat(48);
@@ -640,21 +641,60 @@ test("fresh access avoids mutation; denied or wrong-role sessions cannot enroll"
   await withFetch(async () => response({ error: "OWNER_UNAVAILABLE" }, 503), () => rejectsAs(run, 503, "OWNER_UNAVAILABLE"));
 });
 
-test("definitive enrollment denial and malformed receipts cannot return an old session", async () => {
-  const signal = new AbortController().signal;
-  for (const result of [
-    () => response({ error: "UNAUTHORIZED" }, 401),
-    () => response(null, 201), () => response([], 201), () => response("invalid", 201),
-    () => response({ refreshToken: 42, refreshExpiresAt: expires() }, 201),
-    () => response({ refreshToken: bearer }, 201),
-  ]) {
-    await withFetch(async (url) => new URL(url).pathname === "/v1/sessions/current" ? response(principal()) : result(),
-      () => assert.rejects(() => readPersistentIdentityRole(origin, bearer, null, "customer", signal,
-        async () => assert.fail("unexpected rotation"), async () => assert.fail("unexpected handoff")),
-      error => error instanceof IdentityClientError && [401, 502].includes(error.status)));
+test("owner representation and error classification follow the exact private wire contract", async () => {
+  const cases = [
+    ["public", false], ["no-store-unsafe", false],
+    ['extension="before,no-store,after"', false],
+    ['extension="escaped\\",no-store,after"', false],
+    ["no-store, public", false], ["no-store=1", false],
+    ["no-store, no-store", false], ["no-store", true], ["NO-STORE", true],
+  ];
+  for (const [cache, accepted] of cases) {
+    const headers = { "Cache-Control": cache };
+    await withFetch(async (_url, options) => {
+      assert.equal(options.headers["Cache-Control"], "no-store");
+      return response(principal(), 200, headers);
+    }, async () => {
+      if (accepted) assert.equal((await readVerifiedIdentitySession(origin, bearer)).actorId, "actor-123");
+      else await rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID");
+    });
+    await withFetch(async () => response(admission(), 201, headers), async () => {
+      if (accepted) assert.equal((await admitCurrentCustomerAsMerchant(origin, bearer)).accessToken, rotatedBearer);
+      else await rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN");
+    });
+    await withFetch(async () => response({ error: "UNAUTHORIZED" }, 401, headers),
+      () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 401,
+        accepted ? "UNAUTHORIZED" : "OWNER_REQUEST_FAILED"));
+    await withFetch(async () => new Response(null, { status: 204, headers }), async () => {
+      if (accepted) await revokeVerifiedIdentitySession(origin, bearer);
+      else await rejectsAs(() => revokeVerifiedIdentitySession(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN");
+    });
   }
 });
 
+test("definitive enrollment denial and malformed receipts cannot return an old session", async () => {
+  const cases = [
+    [401, { error: "UNAUTHORIZED" }, 401, "UNAUTHORIZED"],
+    [201, null, 502, "OPERATION_RESULT_UNKNOWN"],
+    [201, [], 502, "OPERATION_RESULT_UNKNOWN"],
+    [201, "invalid", 502, "OPERATION_RESULT_UNKNOWN"],
+    [201, { refreshToken: 42, refreshExpiresAt: expires() }, 502, "OPERATION_RESULT_UNKNOWN"],
+    [201, { refreshToken: bearer }, 502, "OPERATION_RESULT_UNKNOWN"],
+  ];
+  for (const [status, body, expectedStatus, expectedCode] of cases) {
+    const signal = new AbortController().signal;
+    const calls = [];
+    await withFetch(async (url, options) => {
+      const path = new URL(url).pathname;
+      calls.push([options.method, path]);
+      return path === "/v1/sessions/current" ? response(principal()) : response(body, status);
+    }, () => rejectsAs(() => readPersistentIdentityRole(origin, bearer, null, "customer", signal,
+      async () => assert.fail("unexpected rotation"), async () => assert.fail("unexpected handoff")),
+    expectedStatus, expectedCode));
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls.map(([method]) => method), ["GET", "POST"]);
+  }
+});
 test("an acknowledged enrollment cannot expose an aborted or expired session", async () => {
   const next = Buffer.alloc(32, 39).toString("base64url");
   for (const reason of ["cancel", "expire"]) {
