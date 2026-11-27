@@ -337,76 +337,109 @@ function isolatedPowerShell(code) {
 
 test("one remote path admission rejects redirected mirror roots, directories and staging in every operation", (t) => {
   const folder = mkdtempSync(path.join(tmpdir(), "bthwani-mirror-paths-"));
+  t.after(() => rmSync(folder, { recursive: true, force: true }));
+
   const root = path.join(folder, "mirror");
   const outside = path.join(folder, "outside");
+  const identity = "BTHWANI-FIXTURE";
   const paths = ["apps/customer/probe.ts", "apps/customer/missing.ts"];
+  const payload = JSON.stringify(paths);
   const digest = value => createHash("sha256").update(value).digest("hex").toUpperCase();
-  const audit = args => isolatedPowerShell("$env:COMPUTERNAME='BTHWANI-FIXTURE';" +
-    buildRemoteHashCode({ root, identity: "BTHWANI-FIXTURE", ...args }));
-  const write = (name, value) => writeFileSync(path.join(root, name), value);
+  const audit = options => isolatedPowerShell(
+    "$env:COMPUTERNAME='BTHWANI-FIXTURE';" + buildRemoteHashCode({ root, identity, ...options }),
+  );
+
+  // Each command receives its own exclusive, single-use stage. A successful
+  // or rejected audit must consume it; a previous absence observation never
+  // authorizes another write to a previously consumed path.
+  function stagedAudit(label, expectedDigest) {
+    const name = "audit-" + label + ".json";
+    const stage = path.join(root, name);
+    writeFileSync(stage, payload, { encoding: "utf8", flag: "wx" });
+    assert.throws(() => writeFileSync(stage, "unexpected", { flag: "wx" }), { code: "EEXIST" });
+    assert.equal(readFileSync(stage, "utf8"), payload);
+    const result = audit({ stage, digest: expectedDigest });
+    assert.equal(readdirSync(root).includes(name), false, "audit must consume its own stage");
+    return result;
+  }
+
+  const customer = path.join(root, "apps", "customer");
+  mkdirSync(customer, { recursive: true });
+  mkdirSync(outside);
+  writeFileSync(path.join(root, paths[0]), "source", { flag: "wx" });
+
+  const ordinary = audit({ paths });
+  assert.equal(ordinary.status, 0, ordinary.stderr);
+  const expected = [[paths[0], digest("source")], [paths[1], "MISSING"]];
+  assert.deepEqual([...parseRemoteHashes(ordinary.stdout, paths)], expected);
+
+  const verified = stagedAudit("verified", digest(payload));
+  assert.equal(verified.status, 0, verified.stderr);
+  assert.deepEqual([...parseRemoteHashes(verified.stdout, paths)], expected);
+
+  const corrupt = stagedAudit("corrupt", digest("wrong"));
+  assert.notEqual(corrupt.status, 0);
+  assert.match(corrupt.stderr, /AUDIT_STAGE_HASH_MISMATCH/);
+
+  rmSync(customer, { recursive: true });
   try {
-    mkdirSync(path.join(root, "apps", "customer"), { recursive: true });
-    mkdirSync(outside);
-    write(paths[0], "source");
-    const ordinary = audit({ paths });
-    assert.equal(ordinary.status, 0, ordinary.stderr);
-    assert.deepEqual([...parseRemoteHashes(ordinary.stdout, paths)],
-      [[paths[0], digest("source")], [paths[1], "MISSING"]]);
-    const stage = path.join(root, "audit.json");
-    const payload = JSON.stringify(paths);
-    writeFileSync(stage, payload);
-    const staged = audit({ stage, digest: digest(payload) });
-    assert.equal(staged.status, 0, staged.stderr);
-    assert.deepEqual([...parseRemoteHashes(staged.stdout, paths)], [...parseRemoteHashes(ordinary.stdout, paths)]);
-    assert.equal(existsSync(stage), false);
-    writeFileSync(stage, payload);
-    const corrupt = audit({ stage, digest: digest("wrong") });
-    assert.notEqual(corrupt.status, 0);
-    assert.match(corrupt.stderr, /AUDIT_STAGE_HASH_MISMATCH/);
-    assert.equal(existsSync(stage), false);
-    const link = path.join(root, "apps", "customer");
-    rmSync(link, { recursive: true });
-    try { symlinkSync(outside, link, process.platform === "win32" ? "junction" : "dir"); }
-    catch (error) {
-      if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) { t.skip("junction creation unavailable"); return; }
-      throw error;
+    symlinkSync(outside, customer, process.platform === "win32" ? "junction" : "dir");
+  } catch (error) {
+    if (["EPERM", "EACCES", "ENOTSUP"].includes(error.code)) {
+      t.skip("junction creation unavailable");
+      return;
     }
-    const externalFile = path.join(outside, "probe.ts");
-    writeFileSync(externalFile, "protected");
-    const denied = audit({ paths });
-    assert.notEqual(denied.status, 0, "audit may not hash a redirected parent");
-    assert.match(denied.stderr, /UNSAFE_TARGET_DIRECTORY/);
-    assert.doesNotMatch(denied.stdout, new RegExp(digest("protected")));
-    writeFileSync(stage, payload);
-    const stagedDenied = audit({ stage, digest: digest(payload) });
-    assert.notEqual(stagedDenied.status, 0);
-    assert.match(stagedDenied.stderr, /UNSAFE_TARGET_DIRECTORY/);
-    assert.equal(existsSync(stage), false);
-    const dest = path.join(link, "probe.ts"), source = path.join(root, "staged.ts");
-    writeFileSync(source, "replacement");
-    const publication = buildPublishCode({ dest, stage: source, backup: dest + ".bak",
-      archive: path.join(folder, "conflicts", "probe.ts"), actual: digest("protected"),
-      expected: digest("replacement"), conflict: false, root });
-    const deletion = buildManagedDeleteCode({ dest, quarantine: dest + ".quarantine",
-      archive: path.join(folder, "conflicts", "probe.ts"), actual: digest("protected"), conflict: false, root });
-    for (const command of [publication, deletion]) {
-      const result = isolatedPowerShell(command);
-      assert.notEqual(result.status, 0);
-      assert.match(result.stderr, /UNSAFE_TARGET_DIRECTORY/);
-    }
+    throw error;
+  }
+
+  const externalFile = path.join(outside, "probe.ts");
+  writeFileSync(externalFile, "protected", { flag: "wx" });
+  const externalDigest = digest("protected");
+  const redirected = audit({ paths });
+  assert.notEqual(redirected.status, 0, "audit may not hash a redirected parent");
+  assert.match(redirected.stderr, /UNSAFE_TARGET_DIRECTORY/);
+  assert.doesNotMatch(redirected.stdout, new RegExp(externalDigest));
+
+  const redirectedStage = stagedAudit("redirected", digest(payload));
+  assert.notEqual(redirectedStage.status, 0);
+  assert.match(redirectedStage.stderr, /UNSAFE_TARGET_DIRECTORY/);
+  assert.doesNotMatch(redirectedStage.stdout, new RegExp(externalDigest));
+
+  const dest = path.join(customer, "probe.ts");
+  const source = path.join(root, "staged.ts");
+  const backup = dest + ".bak";
+  const quarantine = dest + ".quarantine";
+  const archive = path.join(folder, "conflicts", "probe.ts");
+  writeFileSync(source, "replacement", { flag: "wx" });
+
+  const commands = [
+    buildPublishCode({
+      dest, stage: source, backup, archive, actual: externalDigest,
+      expected: digest("replacement"), conflict: false, root,
+    }),
+    buildManagedDeleteCode({
+      dest, quarantine, archive, actual: externalDigest, conflict: false, root,
+    }),
+  ];
+  for (const command of commands) {
+    const result = isolatedPowerShell(command);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /UNSAFE_TARGET_DIRECTORY/);
     assert.equal(readFileSync(externalFile, "utf8"), "protected");
-    assert.equal(existsSync(dest + ".bak"), false);
-    assert.equal(existsSync(dest + ".quarantine"), false);
-    const redirectedRoot = path.join(folder, "redirected");
-    symlinkSync(root, redirectedRoot, process.platform === "win32" ? "junction" : "dir");
-    const rootDenied = audit({ root: redirectedRoot, paths });
-    assert.notEqual(rootDenied.status, 0);
-    assert.match(rootDenied.stderr, /UNSAFE_TARGET_DIRECTORY/);
-    const outsideDenied = audit({ stage: path.join(outside, "probe.ts"), digest: digest("protected") });
-    assert.notEqual(outsideDenied.status, 0);
-    assert.match(outsideDenied.stderr, /UNSAFE_TARGET_BOUNDARY/);
-    assert.equal(readFileSync(externalFile, "utf8"), "protected");
-  } finally { rmSync(folder, { recursive: true, force: true }); }
+    assert.deepEqual(readdirSync(outside), ["probe.ts"]);
+  }
+
+  const redirectedRoot = path.join(folder, "redirected");
+  symlinkSync(root, redirectedRoot, process.platform === "win32" ? "junction" : "dir");
+  const rootDenied = audit({ root: redirectedRoot, paths });
+  assert.notEqual(rootDenied.status, 0);
+  assert.match(rootDenied.stderr, /UNSAFE_TARGET_DIRECTORY/);
+
+  const outsideDenied = audit({ stage: externalFile, digest: externalDigest });
+  assert.notEqual(outsideDenied.status, 0);
+  assert.match(outsideDenied.stderr, /UNSAFE_TARGET_BOUNDARY/);
+  assert.equal(readFileSync(externalFile, "utf8"), "protected");
+  assert.deepEqual(readdirSync(outside), ["probe.ts"]);
 });
 
 test("replacement archives bytes written after the initial digest check", () => {
