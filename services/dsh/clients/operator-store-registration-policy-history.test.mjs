@@ -108,3 +108,55 @@ test("history SDK propagates denied read", async t => {
   t.mock.method(globalThis, "fetch", async () => Response.json({ code: "FORBIDDEN" }, { status: 403 }));
   await assert.rejects(listOperatorStoreRegistrationPolicyHistory(origin, "sanaa", "MARKETPLACE", bearer), { status: 403 });
 });
+
+test("history admits a complete owner-bounded page, including Go HTML-escaped Unicode text", async t => {
+  const full = {entries: Array.from({length:50},(_,i)=>({
+    ...row(51-i), changedByActor:"<".repeat(128),
+    termsVersion:"a".repeat(80), changeReason:"&".repeat(300),
+  })),nextBeforeVersion:"2"};
+  const wire=JSON.stringify(full).replaceAll("<","\\u003c").replaceAll("&","\\u0026");
+  assert.ok(Buffer.byteLength(wire)>96*1024);
+  t.mock.method(globalThis,"fetch",async()=>new Response(wire,{
+    headers:{"Content-Type":"application/json","Cache-Control":"no-store"},
+  }));
+  assert.deepEqual(await listOperatorStoreRegistrationPolicyHistory(origin,"sanaa","DIRECT",bearer,50),full);
+});
+
+test("history actor and reason obey the persisted Go owner constraints",()=>{
+  for(const changedByActor of [" actor-a","actor-a\u0085","a\u0000b","😀".repeat(33),"\ud800"]) {
+    assert.equal(isStoreRegistrationPolicyHistoryPage({entries:[{...row(1),changedByActor}]}),false);
+  }
+  for(const changeReason of [" reason","reason\u00a0","a\u0085b","\ud800","a\u0000b"]) {
+    assert.equal(isStoreRegistrationPolicyHistoryPage({entries:[{...row(1),changeReason}]}),false);
+  }
+  assert.equal(isStoreRegistrationPolicyHistoryPage({entries:[{...row(1),changedByActor:"😀".repeat(32),changeReason:"\uFEFF"}]}),true);
+});
+
+test("history rejects oversized declared and streamed pages using the requested limit", async t=>{
+  const read=()=>listOperatorStoreRegistrationPolicyHistory(origin,"sanaa","DIRECT",bearer,1);
+  const budget=3200;
+  let cancelled=0;
+  let reply=new Response(new ReadableStream({cancel(){cancelled++;}}),{
+    headers:{"Content-Type":"application/json","Cache-Control":"no-store","Content-Length":String(budget+1)},
+  });
+  t.mock.method(globalThis,"fetch",async()=>reply);
+  await assert.rejects(read(),{code:"OWNER_RESPONSE_INVALID"});
+  assert.equal(cancelled,1);
+  const stream=new ReadableStream({
+    start(c){c.enqueue(new Uint8Array(budget+1));},
+    cancel(){cancelled++;},
+  });
+  reply=new Response(stream,{headers:{"Content-Type":"application/json","Cache-Control":"no-store"}});
+  await assert.rejects(read(),{code:"OWNER_RESPONSE_INVALID"});
+  assert.equal(cancelled,2);
+  assert.equal(stream.locked,false);
+});
+
+test("shared transport rejects malformed bearer before fetch without coercion",async t=>{
+  const {privateOwnerRequest}=await import("./private-owner-request.ts");
+  const calls=t.mock.method(globalThis,"fetch",()=>assert.fail("unexpected dispatch"));
+  for(const token of [null,[],[bearer],"",bearer+" ","a b"]) {
+    await assert.rejects(privateOwnerRequest(origin,"/v1/test",token,"GET"),{status:401,code:"UNAUTHENTICATED"});
+  }
+  assert.equal(calls.mock.callCount(),0);
+});
