@@ -543,3 +543,19 @@ test("DSH public pages reject duplicate IDs, empty continuations and nonadvancin
       () => rejectsAs(call, 502, "OWNER_RESPONSE_INVALID"));
   }
 });
+
+test("public discovery rejects noncanonical status, enum types and price receipts", async () => {
+  const estimate = { storeId: store.id, offerId: offer.id, variantId: offer.variantId,
+    quantity: 2, unitYer: "9223372036854775808", subtotalYer: "18446744073709551616" };
+  const cases = [
+    [json({ ...store, orderabilityStatus: ["PAUSED"] }), () => getPublicStore(base, store.id)],
+    [json(store, 201), () => getPublicStore(base, store.id)],
+    [json({ items: [store], revision: 1 }, 202), () => listPublicStores(base, "sanaa")],
+    [json({ items: [offer], revision: 1 }, 203), () => listPublicOffers(base, store.id)],
+    [Response.json(estimate, { headers: { "Cache-Control": "no-store" } }),
+      () => estimatePublicOffer(base, store.id, offer.id, 2)],
+  ];
+  for (const [response, call] of cases) {
+    await withFetch(async () => response, () => rejectsAs(call, 502, "OWNER_RESPONSE_INVALID"));
+  }
+});
