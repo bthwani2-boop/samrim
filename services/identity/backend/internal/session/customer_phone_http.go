@@ -143,7 +143,7 @@ func (h *customerPhoneHandler) verify(ctx context.Context, w http.ResponseWriter
 // The same implicit TLS protocol is mandatory for the container and loopback.
 type phoneSMTP struct {
 	address string
-	tls     *tls.Config
+	dialer  tls.Dialer
 }
 
 func newPhoneSMTP(address string, containerMode bool, caPEM []byte) (*phoneSMTP, error) {
@@ -158,7 +158,9 @@ func newPhoneSMTP(address string, containerMode bool, caPEM []byte) (*phoneSMTP,
 	// machine roots or silently accept a leaf certificate as a trust anchor.
 	roots := x509.NewCertPool()
 	rest := bytes.TrimSpace(caPEM)
-	count := 0
+	if len(rest) == 0 {
+		return nil, errors.New("missing isolated phone SMTP trust anchor")
+	}
 	for len(rest) != 0 {
 		if !bytes.HasPrefix(rest, []byte("-----BEGIN CERTIFICATE-----")) {
 			return nil, errors.New("invalid isolated phone SMTP trust anchor")
@@ -173,17 +175,16 @@ func newPhoneSMTP(address string, containerMode bool, caPEM []byte) (*phoneSMTP,
 			return nil, errors.New("invalid isolated phone SMTP trust anchor")
 		}
 		roots.AddCert(cert)
-		count++
 		rest = bytes.TrimSpace(next)
 	}
-	if count == 0 {
-		return nil, errors.New("missing isolated phone SMTP trust anchor")
-	}
-	return &phoneSMTP{address: address, tls: &tls.Config{
-		MinVersion: tls.VersionTLS12,
-		ServerName: host,
-		RootCAs:    roots,
-	}}, nil
+	return &phoneSMTP{
+		address: address,
+		dialer: tls.Dialer{Config: &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			ServerName: host,
+			RootCAs:    roots,
+		}},
+	}, nil
 }
 
 func (s *phoneSMTP) deliver(ctx context.Context, phone, code string) error {
@@ -199,12 +200,15 @@ func (s *phoneSMTP) deliver(ctx context.Context, phone, code string) error {
 		return errors.New("invalid synthetic phone verification payload")
 	}
 
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.address)
+	// DialContext authenticates the peer before handing a connection to SMTP.
+	conn, err := s.dialer.DialContext(ctx, "tcp", s.address)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	// TLS dialing observes ctx through the handshake. SMTP requires its own
+	// deadline and interruption because its client methods take no context.
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Now()) })
 	defer stop()
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
@@ -212,17 +216,13 @@ func (s *phoneSMTP) deliver(ctx context.Context, phone, code string) error {
 		}
 	}
 
-	// Authenticate the peer before any SMTP command or verification payload.
-	// No STARTTLS negotiation, downgrade, plaintext fallback or retry exists.
-	secured := tls.Client(conn, s.tls)
-	if err := secured.HandshakeContext(ctx); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	client, err := smtp.NewClient(secured, s.tls.ServerName)
+	client, err := smtp.NewClient(conn, s.dialer.Config.ServerName)
 	if err != nil {
 		return err
 	}
-	defer client.Close()
 	const sender, inbox = "identity@identity.test", "verification@identity.test"
 	if err := client.Mail(sender); err != nil {
 		return err
