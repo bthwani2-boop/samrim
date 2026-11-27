@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
-	"io"
-	"mime"
 	"net/http"
 	"regexp"
 	"strings"
@@ -70,25 +68,6 @@ func validRecipientText(v string, max int) bool {
 	})
 }
 
-func validCheckoutEnvelope(r *http.Request) bool {
-	media := r.Header.Values("Content-Type")
-	if len(media) != 1 || len(r.Header.Values("Content-Encoding")) != 0 ||
-		r.URL.RawQuery != "" || r.URL.ForceQuery || !resourceRule.MatchString(r.PathValue("storeID")) ||
-		r.Body == nil || r.ContentLength > checkoutReviewMaxBody {
-		return false
-	}
-	kind, params, err := mime.ParseMediaType(media[0])
-	if err != nil || kind != "application/json" {
-		return false
-	}
-	for key, value := range params {
-		if key != "charset" || !strings.EqualFold(value, "utf-8") {
-			return false
-		}
-	}
-	return true
-}
-
 func checkoutOptional[T any](raw jsontext.Value, dst *T) bool {
 	return len(raw) == 0 || (string(raw) != "null" && json.Unmarshal(raw, dst) == nil)
 }
@@ -136,16 +115,9 @@ func admitCheckoutReview(wire checkoutReviewWire) (checkoutReviewInput, bool) {
 }
 
 func decodeCheckoutReview(w http.ResponseWriter, r *http.Request) (checkoutReviewInput, bool) {
-	if !validCheckoutEnvelope(r) {
-		return checkoutReviewInput{}, false
-	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, checkoutReviewMaxBody))
-	if err != nil {
-		return checkoutReviewInput{}, false
-	}
 	var wire checkoutReviewWire
-	// JSON v2 rejects duplicate names, invalid Unicode and case variants.
-	if err := json.Unmarshal(body, &wire, json.RejectUnknownMembers(true)); err != nil {
+	if !resourceRule.MatchString(r.PathValue("storeID")) ||
+		!decodeCustomerCommand(w, r, checkoutReviewMaxBody, &wire) {
 		return checkoutReviewInput{}, false
 	}
 	return admitCheckoutReview(wire)

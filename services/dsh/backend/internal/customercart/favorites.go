@@ -3,10 +3,7 @@ package customercart
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"time"
@@ -26,28 +23,13 @@ type favoritePage struct {
 }
 
 func decodeFavorite(w http.ResponseWriter, r *http.Request) (bool, bool) {
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" || r.Header.Get("Content-Encoding") != "" || r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+	var input struct {
+		Favorite *bool `json:"favorite"`
+	}
+	if !decodeCustomerCommand(w, r, 256, &input) || input.Favorite == nil {
 		return false, false
 	}
-	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256))
-	start, err := d.Token()
-	if err != nil || start != json.Delim('{') {
-		return false, false
-	}
-	key, err := d.Token()
-	if err != nil || key != "favorite" {
-		return false, false
-	}
-	var value *bool
-	if d.Decode(&value) != nil || value == nil {
-		return false, false
-	}
-	end, err := d.Token()
-	if err != nil || end != json.Delim('}') || d.Decode(new(any)) != io.EOF {
-		return false, false
-	}
-	return *value, true
+	return *input.Favorite, true
 }
 
 // The existing isolated Customer transport verifies the purchasing actor.

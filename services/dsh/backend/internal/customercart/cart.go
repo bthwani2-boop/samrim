@@ -7,8 +7,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"io"
-	"mime"
 	"net/http"
 	"regexp"
 	"sort"
@@ -236,7 +234,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	reply(w, value)
 }
 func validChange(change Change) bool {
-	if !operationRule.MatchString(change.OperationID) || change.ExpectedVersion == nil || *change.ExpectedVersion < 0 ||
+	if !operationRule.MatchString(change.OperationID) || change.ExpectedVersion == nil || *change.ExpectedVersion < 0 || *change.ExpectedVersion >= maxJSONSafeInteger ||
 		change.Lines == nil || len(change.Lines) > 20 {
 		return false
 	}
@@ -251,17 +249,8 @@ func validChange(change Change) bool {
 }
 func (h *Handler) put(w http.ResponseWriter, r *http.Request) {
 	store := r.PathValue("storeID")
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if !resourceRule.MatchString(store) || media != "application/json" || err != nil ||
-		r.URL.RawQuery != "" || r.URL.ForceQuery {
-		fail(w, 400, "INVALID_REQUEST")
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, 8192)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
 	var change Change
-	if decoder.Decode(&change) != nil || decoder.Decode(new(any)) != io.EOF || !validChange(change) {
+	if !resourceRule.MatchString(store) || !decodeCustomerCommand(w, r, 8192, &change) || !validChange(change) {
 		fail(w, 400, "INVALID_REQUEST")
 		return
 	}
