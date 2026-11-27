@@ -715,3 +715,32 @@ test("exact task argument grammar admits only fixed tokens and app-specific expl
   assert.equal(result.status,0,result.stderr||result.stdout);
   assert.match(result.stdout,/TASK_TOKEN_GRAMMAR_PASS/);
 });
+test("development registration seed requires explicit application and uses the existing Docker resource", { skip: process.platform !== "win32" }, () => {
+  const helper = path.join(path.dirname(scriptPath), "dev-resource-admission.ps1").replaceAll("'", "''");
+  const launcher = scriptPath.replaceAll("'", "''");
+  const ps = [
+    "$ErrorActionPreference='Stop'",
+    ". '"+helper+"'",
+    "$d='Global\\BThwaniDevDockerV1'",
+    "if(@(Get-DevOperationResources 'Docker' 'seed' $false).Count){throw 'READ_ONLY_SEED_TAKES_WRITE_LEASE'}",
+    "if((@(Get-DevOperationResources 'Docker' 'seed' $true) -join ',') -cne $d){throw 'SEED_WRITE_LEASE_MISSING'}",
+    "$tokens=$null;$errors=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseFile('"+launcher+"',[ref]$tokens,[ref]$errors)",
+    "if($errors.Count){throw 'LAUNCHER_PARSE'}",
+    "foreach($name in @('Assert-Ok','Invoke-DevelopmentRegistrationSeed')){$n=$ast.Find({param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $name},$true);if(!$n){throw ('MISSING_FUNCTION '+$name)};Invoke-Expression $n.Extent.Text}",
+    "$repo='D:\\samrim';$dockerContext='bthwani-docker';$DockerService='dsh';$Apply=$false;$Automatic=$false;$Preview=$false;$EnableCaptain=$false;$PrepareBaseline=$false;$RecoverRuntimeAttempt='';$ConfigurationFrom='';$DeepSql=$false",
+    "$script:target='a'*64;$script:nodeExit=0;$script:invocations=@();$script:dbProof='DSH_DEVELOPMENT_DATABASE_PASS'",
+    "function Say($key,$value){}",
+    "function node { $script:LASTEXITCODE=$script:nodeExit; $script:target }",
+    "function Invoke-DockerCli([string[]]$argsList){$script:invocations+=,($argsList -join ' ');if($argsList[-1] -eq 'verify-development-db'){$script:dbProof}else{'DSH_ISOLATED_OWNER_IMPORT_PASS schema=dsh_test_retained'}}",
+    "Invoke-DevelopmentRegistrationSeed;if($script:invocations.Count -ne 1 -or $script:invocations[0] -cne ('exec '+$script:target+' /usr/local/bin/dsh -mode verify-development-db')){throw 'DRY_RUN_MUTATION'}",
+    "$Apply=$true;$script:invocations=@();Invoke-DevelopmentRegistrationSeed;if($script:invocations.Count -ne 2 -or $script:invocations[1] -cne ('exec '+$script:target+' /usr/local/bin/dsh -mode isolated-seed -seed-profile development-registration')){throw 'WRONG_OWNER_SEED_COMMAND'}",
+    "foreach($case in @('wrong-owner','automatic','invalid-target','failed-attestation','failed-db')){$DockerService='dsh';$Automatic=$false;$script:target='a'*64;$script:nodeExit=0;$script:dbProof='DSH_DEVELOPMENT_DATABASE_PASS';switch($case){'wrong-owner'{$DockerService='wlt'}'automatic'{$Automatic=$true}'invalid-target'{$script:target='foreign'}'failed-attestation'{$script:nodeExit=1}'failed-db'{$script:dbProof='invalid'}};$script:invocations=@();$denied=$false;try{Invoke-DevelopmentRegistrationSeed}catch{$denied=$true};if(!$denied -or @($script:invocations|Where-Object {$_ -match 'isolated-seed'}).Count){throw ('UNSAFE_SEED_ADMITTED '+$case)}}",
+    "Write-Output 'SEED_ADMISSION_PASS'",
+  ].join("; ");
+  const result = spawnSync("pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", timeout: 15000, windowsHide: true });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /SEED_ADMISSION_PASS/);
+  const source = readFileSync(scriptPath, "utf8");
+  assert.match(source, /'seed'\s*\{\s*Invoke-DevelopmentRegistrationSeed\s*\}/);
+});

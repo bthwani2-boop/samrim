@@ -21,7 +21,7 @@ param(
   [string]$RecoverRuntimeAttempt,
   [string]$ConfigurationFrom,
   [Parameter(Position=1)]
-  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','build','reconcile','start','restart','android','open','recover')]
+  [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','build','reconcile','start','restart','android','open','recover','seed')]
   [string]$DockerAction = 'help',
   [Parameter(Position=2)]
   [ValidateSet('dsh','identity','wlt','postgres','media','mailpit','payment-mock')]
@@ -1125,7 +1125,7 @@ function Show-Docker {
   Assert-OwnerRuntime
 }
 function Show-DockerCommands {
-  Write-Output 'DOCKER_COMMANDS=READ_ONLY except explicit build or authorized reconcile -Apply (Surface -> Lenovo)'
+  Write-Output 'DOCKER_COMMANDS=READ_ONLY except explicit build, authorized reconcile -Apply or explicit seed dsh -Apply (Surface -> Lenovo)'
   Write-Output 'pnpm dev docker help           # command reference, no Docker changes'
   Write-Output 'pnpm dev docker status         # project containers and provenance summary'
   Write-Output 'pnpm dev docker ps             # project containers'
@@ -1137,6 +1137,8 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker networks       # project-scoped networks'
   Write-Output 'pnpm dev docker config         # validate the complete admitted Compose configuration safely'
   Write-Output 'pnpm dev docker verify         # strict DSH + Identity + WLT live image provenance'
+  Write-Output 'pnpm dev docker seed dsh       # read-only DSH registration preparation admission'
+  Write-Output 'pnpm dev docker seed dsh -Apply # explicit missing-only synthetic registration policies'
   Write-Output 'pnpm dev docker reconcile      # check existing runtime and owner source drift'
   Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
   Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit owner admission activation'
@@ -1146,6 +1148,28 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=pnpm dev docker build dsh|identity|wlt (image only, no start)'
   Write-Output 'UNSUPPORTED=prune, down -v, SQL migration execution, bootstrap, protected state operations'
+}
+function Invoke-DevelopmentRegistrationSeed {
+  Assert-Ok ($DockerService -eq 'dsh') 'seed supports the existing DSH development-registration owner only'
+  Assert-Ok (!$Automatic -and !$Preview -and !$EnableCaptain -and !$PrepareBaseline -and !$RecoverRuntimeAttempt -and !$ConfigurationFrom -and !$DeepSql) 'seed cannot be combined with automatic, preview, capability, baseline, recovery or SQL options'
+  # A read-only, immutable container ID from the existing provenance owner.
+  # Apply holds the same Docker resource lease as the reconciler.
+  $target=@(& node (Join-Path $repo 'tools\dev\docker\verify-runtime-provenance.mjs') '--context' $dockerContext '--seed-dsh-preflight')
+  Assert-Ok ($LASTEXITCODE -eq 0 -and $target.Count -eq 1 -and $target[0] -cmatch '^[a-f0-9]{64}$') 'DSH seed runtime provenance incomplete'
+  $id=$target[0]
+  $verified=@(Invoke-DockerCli -argsList @('exec',$id,'/usr/local/bin/dsh','-mode','verify-development-db'))
+  Assert-Ok ($verified.Count -eq 1 -and $verified[0] -ceq 'DSH_DEVELOPMENT_DATABASE_PASS') 'DSH development database principal not verified'
+  if(!$Apply){
+    Say 'DEVELOPMENT_SEED' 'READY; no seed executed; use explicit -Apply'
+    return
+  }
+  try {
+    $result=@(Invoke-DockerCli -argsList @('exec',$id,'/usr/local/bin/dsh','-mode','isolated-seed','-seed-profile','development-registration'))
+    Assert-Ok ($result.Count -eq 1 -and $result[0] -cmatch '^DSH_ISOLATED_OWNER_IMPORT_PASS schema=dsh_test_[a-z0-9_]{1,54}$') 'DSH seed commit acknowledgement not verified'
+  } catch {
+    throw ('DSH seed outcome requires owner readback before retry: '+$_.Exception.Message)
+  }
+  Say 'DEVELOPMENT_SEED' 'PASS owner command committed; existing policies preserved; no Store, grant or money created'
 }
 function Invoke-ScopedDocker {
   if ($DockerAction -eq 'help') { Show-DockerCommands; return }
@@ -1174,6 +1198,7 @@ function Invoke-ScopedDocker {
       Invoke-DockerCli -argsList @('network','ls','--filter',('label=com.docker.compose.project='+$project),'--format','{{.Name}}') | ForEach-Object { Write-Output $_ }
     }
     'config' { Assert-CompleteCompose }
+    'seed' { Invoke-DevelopmentRegistrationSeed }
     'build' {
       Assert-Ok ($DockerService -in @('dsh','identity','wlt')) 'build requires one owner: dsh|identity|wlt'
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE

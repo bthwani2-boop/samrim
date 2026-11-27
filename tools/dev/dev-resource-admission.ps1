@@ -17,7 +17,7 @@ function Get-DevOperationResources(
   })
   switch ($Action) {
     'Docker' {
-      if($Command -eq 'build' -or ($Command -eq 'reconcile' -and ($Apply -or $RecoveryKey))){$docker}
+      if($Command -eq 'build' -or ($Command -eq 'reconcile' -and ($Apply -or $RecoveryKey)) -or ($Command -eq 'seed' -and $Apply)){$docker}
     }
     'Apps' {
       if($Command -eq 'recover'){$android}

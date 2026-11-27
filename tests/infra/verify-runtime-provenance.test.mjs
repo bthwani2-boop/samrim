@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { fileURLToPath } from 'node:url';
 import { main, verifyCandidate } from "../../tools/dev/docker/verify-runtime-provenance.mjs";
 
-import { fileURLToPath } from 'node:url';
 const canonicalCompose = fileURLToPath(new URL('../../infra/compose.yaml', import.meta.url));
 
 const head = "a".repeat(40);
@@ -54,6 +54,39 @@ function fixture(options = {}) {
       ...options.images?.[owner] };
     return [o.id, label(o.revision), label(o.source), label(o.previewBase), label(o.previewDigest)].join("|");
   };
+  const seedEnv = {
+    DSH_DB_HOST: "postgres", REF_POSTGRES_DB: "bthwani_dsh_dev",
+    REF_POSTGRES_USER: "bthwani_dsh_runtime", DSH_DB_SCHEMA: "dsh_test_retained",
+    REF_POSTGRES_PASSWORD: "synthetic-fixture", BTHWANI_ISOLATED_TEST_MODE: "true",
+    BTHWANI_ISOLATED_CONTAINER_MODE: "true",
+  };
+  const model = {
+    name: "bthwani-refoundation",
+    networks: { isolated: { name: "bthwani-refoundation_isolated" }, loopback: { name: "bthwani-refoundation_loopback" } },
+    services: Object.fromEntries(allServices.map(service => [service, {
+      ...policy(service), image: imageRef(service),
+      ...(service === "dsh" ? { environment: seedEnv, networks: { isolated: {}, loopback: {} } } :
+        service === "postgres" ? { networks: { isolated: {} } } : {}),
+    }])),
+  };
+  const seedRecord = service => {
+    const dsh = service === "dsh";
+    const definition = model.services[service];
+    const env = dsh ? { ...seedEnv, ...options.seedEnvironment } : {};
+    const networks = Object.fromEntries(Object.keys(definition.networks).map(key => [
+      model.networks[key].name, { NetworkID: key === "isolated" ? (dsh ? options.seedNetwork ?? "e".repeat(64) : "e".repeat(64)) : "f".repeat(64),
+        Aliases: [service] },
+    ]));
+    return {
+      Id: String(allServices.indexOf(service) + 1).repeat(64), Name: "/" + name(service), Image: imageFor(service),
+      State: { Running: true, Health: { Status: "healthy" }, StartedAt: "2026-11-26T02:00:00.123456789Z" }, RestartCount: 0,
+      Config: { Env: Object.entries(env).map(([key, value]) => key + "=" + value), Labels: definition.labels },
+      HostConfig: { Privileged: false, ReadonlyRootfs: definition.read_only, RestartPolicy: { Name: definition.restart },
+        CapDrop: definition.cap_drop, CapAdd: [], SecurityOpt: definition.security_opt, PortBindings: {} },
+      Mounts: [], NetworkSettings: { Networks: networks },
+      ...options.seedRecords?.[service],
+    };
+  };
   const execute = (command, a, input) => {
     calls.push([command, ...a]);
     if (command === "docker" && a[0] === "context") return options.context ?? "ssh://user@bthwani-docker";
@@ -70,9 +103,13 @@ function fixture(options = {}) {
       if (a[2] === "ps") return (options.inventory ?? allServices).map(name).join("\n");
       if (a[2] === "compose") {
         if (a.includes("--hash")) return foundations.map(service => service + " " + hashFor(service, !input.includes("  com.bthwani.worktree: samrim-refoundation-clean-20261112"))).join("\n");
-        if (a.includes("--format")) return JSON.stringify({ name: "bthwani-refoundation", services: Object.fromEntries(allServices.map(service => [service, { ...policy(service), image: imageRef(service) }])) });
+        if (a.includes("--format")) return JSON.stringify(model);
       }
       if (a[2] === "inspect") {
+        if (!a.includes("--format")) {
+          assert.deepEqual(a.slice(3), ["1".repeat(64), "4".repeat(64)]);
+          return JSON.stringify(["dsh", "postgres"].map(seedRecord));
+        }
         containerReads++;
         if (options.badContainer === "malformed") return "bad";
         const list = options.badContainer === "missing" ? allServices.slice(0, -1) :
@@ -332,4 +369,43 @@ test('every serving owner requires exactly the canonical Compose origin in both 
 test('a changed Compose origin invalidates the observation window', () => {
   const f = fixture({ finalContainers: { wlt: { configFiles: 'D:/foreign/infra/compose.yaml' } } });
   assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
+});
+
+test("explicit seed preflight selects only admitted DSH and PostgreSQL and freezes the container identity", () => {
+  const seedArgs = [...args, "--seed-dsh-preflight"];
+  const f = fixture({ changes: { wlt: ["services/wlt/backend/cmd/wlt/main.go"] }, containers: { identity: { health: "unhealthy" } } });
+  const result = verifyCandidate(seedArgs, f.execute, f.ancestor);
+  assert.equal(result.passed, true);
+  assert.equal(result.seedTarget, "1".repeat(64));
+  assert.equal(result.results.find(row => row.owner === "wlt").passed, false);
+  assert.equal(result.results.find(row => row.owner === "identity").passed, false);
+  for (const options of [
+    { changes: { dsh: ["services/dsh/backend/cmd/dsh/main.go"] } },
+    { containers: { dsh: { configFiles: "D:/foreign/infra/compose.yaml" } } },
+    { containers: { postgres: { configHash: "f".repeat(64) } } },
+    { status: " M infra/compose.yaml\0" },
+  ]) {
+    const denied = fixture(options);
+    const checked = verifyCandidate(seedArgs, denied.execute, denied.ancestor);
+    assert.equal(checked.passed, false);
+    assert.equal(checked.seedTarget, undefined);
+  }
+  const changed = fixture({ finalContainers: { dsh: { id: "9".repeat(64) } } });
+  assert.throws(() => verifyCandidate(seedArgs, changed.execute, changed.ancestor), /candidate changed during runtime attestation/);
+  assert.throws(() => main([...seedArgs, "--start-preflight"]), /Usage/);
+});
+
+test("seed preflight refuses foreign live database binding and network even if image attestation passes", () => {
+  for (const options of [
+    { seedEnvironment: { DSH_DB_HOST: "foreign-db" } },
+    { seedEnvironment: { REF_POSTGRES_DB: "bthwani_refoundation" } },
+    { seedEnvironment: { DSH_DB_SCHEMA: "dsh_test_other" } },
+    { seedEnvironment: { BTHWANI_ISOLATED_TEST_MODE: "false" } },
+    { seedNetwork: "0".repeat(64) },
+  ]) {
+    const f = fixture(options);
+    const checked = verifyCandidate([...args, "--seed-dsh-preflight"], f.execute, f.ancestor);
+    assert.equal(checked.passed, false);
+    assert.equal(checked.seedTarget, undefined);
+  }
 });

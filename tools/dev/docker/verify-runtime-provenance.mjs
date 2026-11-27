@@ -5,9 +5,9 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { readVerifiedFile } from "../source-snapshot.mjs";
+import { verifyLiveDefinition } from './compose-runtime-transition.mjs';
 import { isOwnerNonRuntimePath, sourceIdentity } from "./owner-preview-source.mjs";
-
-import { composeFileNames } from './reconcile-owner-runtime.mjs';
+import { assertOwnerDatabase, composeFileNames } from './reconcile-owner-runtime.mjs';
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const infra = resolve(root, "infra");
@@ -23,7 +23,7 @@ const digest = /^[a-f0-9]{64}$/;
 const imageId = /^sha256:[a-f0-9]{64}$/;
 const historicalLabel = "samrim-refoundation-clean-20261112";
 
-// One bounded metadata projection. Never inspect or print Config.Env.
+// Normal read-only provenance uses one bounded metadata projection. Seed admission privately verifies the actual configuration using the existing Compose owner.
 const containerFields = {
   id: "{{.Id}}", name: "{{.Name}}", image: "{{.Image}}",
   project: '{{index .Config.Labels "com.docker.compose.project"}}',
@@ -192,7 +192,7 @@ function resolvedPolicy(service, definition) {
   };
 }
 
-function readRuntimeModel(docker, composeSource) {
+function readRuntimeModel(docker, composeSource, seed = false) {
   const args = ["compose", "--project-directory", infra, "--env-file", resolve(infra, ".env"), "-f", "-"];
   const canonical = readHashes(docker, args, composeSource);
   const marker = /^  com\.bthwani\.worktree: samrim-refoundation-clean-20261112\r?\n/gm;
@@ -209,7 +209,10 @@ function readRuntimeModel(docker, composeSource) {
   }
   const ids = docker(["image", "inspect", "--format", "{{.Id}}", ...refs]).trim().split(/\r?\n/);
   if (ids.length !== refs.length || ids.some(id => !imageId.test(id))) throw new Error("invalid foundation image identity");
-  return { canonical, historical, policy, images: Object.fromEntries(foundations.map((service, i) => [service, ids[i]])) };
+  return { canonical, historical, policy, images: Object.fromEntries(foundations.map((service, i) => [service, ids[i]])),
+    // Only seed admission needs the resolved DSH/database configuration.
+    // Keep it in process memory, never in the returned evidence or logs.
+    seedModel: seed ? { services: { dsh: model.services.dsh, postgres: model.services.postgres }, networks: model.networks, volumes: model.volumes } : undefined };
 }
 
 function ownerScope(owner, preflight) {
@@ -307,42 +310,106 @@ function admitRuntime(containers, images, model, source, execute, isAncestor, pr
   return { results, foundationResults, passed: [...results, ...foundationResults].every(row => row.passed) };
 }
 
+function seedBinding(docker, containers, model) {
+  try {
+    const targets = ['dsh', 'postgres'].map(service => containers.get(nameOf(service)));
+    const records = JSON.parse(docker(['inspect', ...targets.map(row => row.id)]));
+    if (!Array.isArray(records) || records.length !== targets.length) throw new Error('seed inventory');
+    for (const [index, service] of ['dsh', 'postgres'].entries()) {
+      const row = records[index], target = targets[index];
+      if (row.Id !== target.id || row.Name !== target.name || row.Image !== target.image ||
+          row.State.Running !== true || row.State.Health?.Status !== 'healthy' ||
+          row.State.StartedAt !== target.startedAt || String(row.RestartCount) !== target.restarts) {
+        throw new Error('seed target changed');
+      }
+      verifyLiveDefinition(model.seedModel, service, row);
+    }
+    // The canonical Compose verifier already validated unique environment
+    // entries and their resolved values. Reuse the existing owner DB guard.
+    const env = Object.fromEntries(records[0].Config.Env.map(value => {
+      const separator = value.indexOf('=');
+      return [value.slice(0, separator), value.slice(separator + 1)];
+    }));
+    if (env.BTHWANI_ISOLATED_TEST_MODE !== 'true' || env.BTHWANI_ISOLATED_CONTAINER_MODE !== 'true') throw new Error('not isolated');
+    const scope = assertOwnerDatabase('dsh', env);
+    const name = model.seedModel.networks.isolated.name;
+    const [dsh, postgres] = records.map(row => row.NetworkSettings.Networks[name]);
+    if (!dsh || !postgres || !digest.test(postgres.NetworkID) || dsh.NetworkID !== postgres.NetworkID ||
+        !postgres.Aliases?.includes('postgres')) throw new Error('database network identity');
+    return { schema: scope.schema, network: postgres.NetworkID };
+  } catch {
+    // Never propagate an inspection or configuration payload containing env.
+    return { error: 'seed owner database destination or live Compose configuration not proven' };
+  }
+}
+
 const readCanonicalCompose = () => readVerifiedFile(resolve(infra, 'compose.yaml'), 1024 * 1024).bytes.toString('utf8');
 
 function runtimeTarget(argv, execute) {
   const preflight = argv.includes('--start-preflight');
-  const args = argv.filter(arg => arg !== '--start-preflight');
-  if (argv.length !== args.length + Number(preflight) || args.length !== 2 || args[0] !== '--context') {
-    throw new Error('Usage: node tools/dev/docker/verify-runtime-provenance.mjs --context bthwani-docker [--start-preflight]');
+  const seed = argv.includes('--seed-dsh-preflight');
+  const args = argv.filter(arg => arg !== '--start-preflight' && arg !== '--seed-dsh-preflight');
+  if ((preflight && seed) || argv.length !== args.length + Number(preflight) + Number(seed) || args.length !== 2 || args[0] !== '--context') {
+    throw new Error('Usage: node tools/dev/docker/verify-runtime-provenance.mjs --context bthwani-docker [--start-preflight | --seed-dsh-preflight]');
   }
   const context = args[1];
   if (context !== 'bthwani-docker') throw new Error('invalid Docker context');
   const endpoint = execute('docker', ['context', 'inspect', context, '--format', '{{.Endpoints.docker.Host}}']).trim();
   if (!/^ssh:\/\/[A-Za-z0-9_.-]+@bthwani-docker$/.test(endpoint)) throw new Error('Wrong Docker target');
-  return { preflight, docker: (args, input) => execute('docker', ['--context', context, ...args], input) };
+  return { preflight, seed, docker: (args, input) => execute('docker', ['--context', context, ...args], input) };
 }
 
 export function verifyCandidate(argv, execute = checked, isAncestor = gitAncestor, readCompose = readCanonicalCompose) {
-  const { preflight, docker } = runtimeTarget(argv, execute);
+  const { preflight, seed, docker } = runtimeTarget(argv, execute);
   const source = sourceWindow(execute, preflight);
   const compose = readCompose();
   const containers = readContainers(docker);
-  const model = readRuntimeModel(docker, compose);
+  const model = readRuntimeModel(docker, compose, seed);
   const images = readOwnerImages(docker, containers);
   const admission = admitRuntime(containers, images, model, source, execute, isAncestor, preflight);
+  const seedOwnersPassed = seed && admission.results.find(row => row.owner === 'dsh').passed &&
+    admission.foundationResults.find(row => row.service === 'postgres').passed;
+  const binding = seedOwnersPassed ? seedBinding(docker, containers, model) : undefined;
   // All decisions attach to the same immutable observation window.
-  const finalModel = readRuntimeModel(docker, compose);
+  const finalModel = readRuntimeModel(docker, compose, seed);
   const finalContainers = readContainers(docker);
   const finalSource = sourceWindow(execute, preflight);
+  const finalBinding = seedOwnersPassed ? seedBinding(docker, finalContainers, finalModel) : undefined;
   if (compose !== readCompose() || !isDeepStrictEqual(model, finalModel) ||
-      !isDeepStrictEqual(source, finalSource) || !isDeepStrictEqual(containers, finalContainers)) {
+      !isDeepStrictEqual(source, finalSource) || !isDeepStrictEqual(containers, finalContainers) ||
+      !isDeepStrictEqual(binding, finalBinding)) {
     throw new Error('candidate changed during runtime attestation; retry the read-only check');
+  }
+  if (seed) {
+    // Reuse the same attested observation window and owner admission. The
+    // seed has no Identity or WLT dependency, but must use the proven DSH
+    // owner and its PostgreSQL foundation; an unrelated failed row does not
+    // turn this explicit preparation into a global readiness gate.
+    const dsh = admission.results.find(row => row.owner === 'dsh');
+    const postgres = admission.foundationResults.find(row => row.service === 'postgres');
+    if (binding?.error) {
+      dsh.errors.push(binding.error);
+      dsh.passed = false;
+    }
+    const passed = dsh.passed && postgres.passed && Boolean(binding?.schema);
+    return { head: source.head, preflight, ...admission, seed, passed,
+      seedTarget: passed ? containers.get(nameOf('dsh')).id : undefined };
   }
   return { head: source.head, preflight, ...admission };
 }
 
 export function main(argv = process.argv.slice(2), execute = checked, isAncestor = gitAncestor) {
   const result = verifyCandidate(argv, execute, isAncestor);
+  if (result.seed) {
+    if (result.passed) {
+      console.log(result.seedTarget);
+      return 0;
+    }
+    for (const row of [...result.results, ...result.foundationResults].filter(row => row.owner === 'dsh' || row.service === 'postgres')) {
+      for (const reason of row.errors) console.error('  ' + (row.owner ?? row.service) + ': ' + reason);
+    }
+    return 1;
+  }
   const prefix = result.preflight ? 'START_PREFLIGHT_' : 'RUNTIME_SOURCE_';
   for (const row of result.results) {
     console.log(prefix + row.owner.toUpperCase() + '=' + (row.passed ? 'PASS' : 'FAIL') + ' revision=' + (row.revision || 'UNLABELED'));
