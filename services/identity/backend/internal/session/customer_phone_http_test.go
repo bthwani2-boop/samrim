@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -181,5 +182,48 @@ func TestDeliverPhoneCodePreservesCanonicalSyntheticEmail(t *testing.T) {
 		}
 	case <-ctx.Done():
 		t.Fatal("synthetic SMTP transport did not finish")
+	}
+}
+
+func TestDeliverPhoneCodeCancelsConnectedTransport(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- deliverPhoneCode(ctx, listener.Addr().String(), "+967770000003", "000123")
+	}()
+	var conn net.Conn
+	select {
+	case conn = <-accepted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("transport did not connect")
+	}
+	defer conn.Close()
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("cancelled transport reported success")
+		}
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("connected SMTP transport ignored request cancellation")
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := conn.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Fatalf("cancelled socket was not closed: %v", err)
 	}
 }

@@ -28,8 +28,8 @@ type customerPhoneHandler struct {
 	phones map[string]struct{}
 }
 
-// This delivery adapter is available only to Identity's isolated development
-// binary. It sends proof for approved Yemeni test numbers to the Mailpit inbox.
+// NewCustomerPhoneHandler admits only the isolated synthetic phone owner.
+// Neither the recipient nor the transport destination is supplied by callers.
 func NewCustomerPhoneHandler(owner *PostgresReader, keyHex, address string, containerMode bool, approvedPhones string) (http.Handler, error) {
 	key, err := hex.DecodeString(keyHex)
 	host, port, addrErr := net.SplitHostPort(address)
@@ -48,91 +48,100 @@ func NewCustomerPhoneHandler(owner *PostgresReader, keyHex, address string, cont
 	return &customerPhoneHandler{owner: owner, key: key, smtp: address, phones: phones}, nil
 }
 
+func phoneError(w http.ResponseWriter, status int, code string) {
+	respond(w, status, map[string]string{"error": code})
+}
+
 func (h *customerPhoneHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	noStore(w)
 	w.Header().Set("Allow", "POST")
 	if r.Method != http.MethodPost {
-		respond(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
+		phoneError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED")
 		return
-	}
-	invalid := func() {
-		respond(w, http.StatusBadRequest, map[string]string{"error": "INVALID_REQUEST"})
 	}
 	mediaType, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if mediaType != "application/json" || r.URL.RawQuery != "" {
-		invalid()
+		phoneError(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 512))
 	decoder.DisallowUnknownFields()
 	switch r.URL.Path {
 	case PhoneChallengePath:
-		var input struct {
-			Phone string `json:"phone"`
-		}
-		if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
-			invalid()
-			return
-		}
-		if _, allowed := h.phones[input.Phone]; !allowed {
-			invalid()
-			return
-		}
-		ticket, code, err := h.owner.issuePhoneChallenge(ctx, h.key, input.Phone)
-		if errors.Is(err, errPhoneLimit) {
-			respond(w, http.StatusTooManyRequests, map[string]string{"error": "PHONE_CHALLENGE_LIMIT"})
-			return
-		}
-		if err == nil {
-			err = deliverPhoneCode(ctx, h.smtp, input.Phone, code)
-			if err != nil {
-				// SMTP acceptance may be unknown after a timeout. The client never
-				// received this ticket, so invalidate it even if the request was
-				// cancelled. Preserve the durable send counter for abuse limits.
-				cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 2*time.Second)
-				_ = h.owner.cancelUndeliveredPhoneChallenge(cleanupCtx, ticket)
-				cleanupCancel()
-			}
-		}
-		if err == nil {
-			respond(w, http.StatusCreated, map[string]string{"ticket": ticket})
-			return
-		}
+		h.challenge(ctx, w, decoder)
 	case PhoneVerifyPath:
-		var input struct {
-			Ticket string `json:"ticket"`
-			Code   string `json:"code"`
-		}
-		if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF ||
-			!phoneTicket.MatchString(input.Ticket) || !phoneCode.MatchString(input.Code) {
-			invalid()
-			return
-		}
-		issued, err := h.owner.verifyPhoneChallenge(ctx, h.key, input.Ticket, input.Code)
-		if errors.Is(err, ErrUnauthorized) {
-			respond(w, http.StatusUnauthorized, map[string]string{"error": "UNAUTHORIZED"})
-			return
-		}
-		if err == nil {
-			respond(w, http.StatusOK, issued)
-			return
-		}
+		h.verify(ctx, w, decoder)
 	default:
-		respond(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
-		return
+		phoneError(w, http.StatusNotFound, "NOT_FOUND")
 	}
-	respond(w, http.StatusServiceUnavailable, map[string]string{"error": "OWNER_UNAVAILABLE"})
 }
 
+func (h *customerPhoneHandler) challenge(ctx context.Context, w http.ResponseWriter, decoder *json.Decoder) {
+	var input struct {
+		Phone string `json:"phone"`
+	}
+	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF {
+		phoneError(w, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	if _, allowed := h.phones[input.Phone]; !allowed {
+		phoneError(w, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	ticket, code, err := h.owner.issuePhoneChallenge(ctx, h.key, input.Phone)
+	if errors.Is(err, errPhoneLimit) {
+		phoneError(w, http.StatusTooManyRequests, "PHONE_CHALLENGE_LIMIT")
+		return
+	}
+	if err != nil {
+		phoneError(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
+		return
+	}
+
+	// A cancelled or ambiguous delivery must never release the ticket.
+	// Cleanup has an independent bounded lifetime and keeps the send counter.
+	if err := deliverPhoneCode(ctx, h.smtp, input.Phone, code); err != nil || ctx.Err() != nil {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = h.owner.cancelUndeliveredPhoneChallenge(cleanupCtx, ticket)
+		phoneError(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
+		return
+	}
+	respond(w, http.StatusCreated, map[string]string{"ticket": ticket})
+}
+
+func (h *customerPhoneHandler) verify(ctx context.Context, w http.ResponseWriter, decoder *json.Decoder) {
+	var input struct {
+		Ticket string `json:"ticket"`
+		Code   string `json:"code"`
+	}
+	if decoder.Decode(&input) != nil || decoder.Decode(new(any)) != io.EOF ||
+		!phoneTicket.MatchString(input.Ticket) || !phoneCode.MatchString(input.Code) {
+		phoneError(w, http.StatusBadRequest, "INVALID_REQUEST")
+		return
+	}
+	issued, err := h.owner.verifyPhoneChallenge(ctx, h.key, input.Ticket, input.Code)
+	if errors.Is(err, ErrUnauthorized) {
+		phoneError(w, http.StatusUnauthorized, "UNAUTHORIZED")
+		return
+	}
+	if err != nil {
+		phoneError(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
+		return
+	}
+	respond(w, http.StatusOK, issued)
+}
+
+// deliverPhoneCode owns the complete lifetime of one isolated SMTP exchange.
+// Dial cancellation alone does not interrupt a connected socket. Bind the
+// connection to the context until DATA acknowledgement, including all reads.
 func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
-	// Both fields have anchored digit-only formats before SMTP DATA.
 	if !syntheticPhone.MatchString(phone) || !phoneCode.MatchString(code) {
 		return errors.New("invalid synthetic phone verification payload")
 	}
-	// Reconstruct the fixed-format Yemeni test number and six-digit code from
-	// parsed integers, so request text cannot enter SMTP message content.
 	phoneSuffix, err := strconv.ParseUint(phone[4:], 10, 32)
 	if err != nil {
 		return errors.New("invalid synthetic phone verification payload")
@@ -141,35 +150,45 @@ func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
 	if err != nil {
 		return errors.New("invalid synthetic phone verification payload")
 	}
+
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
-	deadline, _ := ctx.Deadline()
-	if err = conn.SetDeadline(deadline); err != nil {
+	stop := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stop()
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return err
+		}
+	}
+	host, _, err := net.SplitHostPort(address)
+	if err != nil {
 		return err
 	}
-	host, _, _ := net.SplitHostPort(address)
 	client, err := smtp.NewClient(conn, host)
 	if err != nil {
 		return err
 	}
 	defer client.Close()
 	const sender, inbox = "identity@identity.test", "verification@identity.test"
-	if err = client.Mail(sender); err != nil {
+	if err := client.Mail(sender); err != nil {
 		return err
 	}
-	if err = client.Rcpt(inbox); err != nil {
+	if err := client.Rcpt(inbox); err != nil {
 		return err
 	}
 	payload, err := client.Data()
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(payload, "From: %s\r\nTo: %s\r\nSubject: BThwani synthetic phone verification\r\n\r\nPhone: +967%09d\r\nCode: %06d\r\n", sender, inbox, phoneSuffix, verificationCode)
-	if err != nil {
+	// Reconstruct both values from integers, never from request text.
+	if _, err := fmt.Fprintf(payload, "From: %s\r\nTo: %s\r\nSubject: BThwani synthetic phone verification\r\n\r\nPhone: +967%09d\r\nCode: %06d\r\n", sender, inbox, phoneSuffix, verificationCode); err != nil {
 		return err
 	}
-	return payload.Close()
+	if err := payload.Close(); err != nil {
+		return err
+	}
+	return ctx.Err()
 }
