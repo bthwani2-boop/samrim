@@ -436,6 +436,10 @@ test("background cancellation cannot discard an acknowledged persistent rotation
   await withFetch(async (url, options) => {
     const path = new URL(url).pathname;
     if (path === "/v1/sessions/current") {
+      if (options.headers.Authorization === "Bearer " + rotatedBearer) {
+        assert.equal(options.signal.aborted, false);
+        return response(principal());
+      }
       assert.equal(options.headers.Authorization, "Bearer " + bearer);
       return response({ error: "UNAUTHORIZED" }, 401);
     }
@@ -576,7 +580,7 @@ for (const rotated of [false, true]) {
     await withFetch(async (url, options) => {
       const path = new URL(url).pathname;
       if (path === "/v1/sessions/current") {
-        return rotated ? response({ error: "UNAUTHORIZED" }, 401) : response(principal());
+        return rotated && options.headers.Authorization === "Bearer " + bearer ? response({ error: "UNAUTHORIZED" }, 401) : response(principal());
       }
       if (options.method === "DELETE") {
         revoked.push(options.headers.Authorization);
@@ -712,7 +716,7 @@ test("rotation reads the exact actor and role; disagreement never exposes the re
       if (valid) assert.deepEqual(await run(), { session: verified, bearer: rotatedBearer });
       else await rejectsAs(run, 502, "OWNER_RESPONSE_INVALID");
     });
-    assert.deepEqual(trace, ["current", "quarantine", "rotate", "handoff", "readback", ...(valid ? [] : ["revoke"])]);
+    assert.deepEqual(trace, ["current", "quarantine", "rotate", "readback", ...(valid ? ["handoff"] : ["revoke"])]);
   }
 });
 
@@ -756,4 +760,29 @@ test("an unresponsive rotation times out once without retry or credential handof
     await result;
   });
   assert.equal(rotations, 1);
+});
+
+test("unverified rotation never releases quarantine even if revocation fails", async () => {
+  const previous = Buffer.alloc(32, 35).toString("base64url");
+  const next = Buffer.alloc(32, 39).toString("base64url");
+  const current = { ...principal(), sessionExpiresAt: new Date(Date.now() + 30_000).toISOString() };
+  for (const outcome of ["actor", "role", "outage"]) {
+    let quarantine = false;
+    let published = null;
+    let revocations = 0;
+    await withFetch(async (url, options) => {
+      if (options.method === "DELETE") { revocations++; throw new Error("revocation unavailable"); }
+      if (options.method === "POST") return response({ ...admission(), refreshToken: next, refreshExpiresAt: expires() });
+      if (options.headers.Authorization === "Bearer " + bearer) return response(current);
+      if (outcome === "outage") throw new Error("readback unavailable");
+      return response({ ...principal(), ...(outcome === "actor" ? { actorId: "another-actor" } : { role: "merchant" }) });
+    }, async () => {
+      await assert.rejects(() => readPersistentIdentityRole(origin, bearer, previous, "customer",
+        new AbortController().signal, async () => { quarantine = true; },
+        async credentials => { published = credentials; quarantine = false; return true; }));
+      assert.equal(published, null, outcome);
+      assert.equal(quarantine, true, outcome);
+      assert.equal(revocations, 1, outcome);
+    });
+  }
 });
