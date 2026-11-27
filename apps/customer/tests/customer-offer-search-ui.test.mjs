@@ -57,6 +57,7 @@ function harness({ params = {}, id = "store-a" } = {}) {
     "../location/serviceability": serviceability,
     "../discovery/favorite-stores": { __esModule: true, default: "FavoriteStores" },
     "../sharing/store-share": { publicStorefrontPath: storeId => `/s/${storeId}` },
+    "../sharing/store-share-button": { __esModule: true, default: "StoreShareButton" },
     "./orderability": { describeStoreOrderability: () => ({}) },
     "./public-store-origin": { resolvePublicStoreOrigin: () => "" },
     "./store-detail-loader": loader,
@@ -110,6 +111,19 @@ test("full storefront navigation preserves bounded directory context without fil
   assert.equal(initial.query, "");
   const link = find(app.render(), node => node.type === "Link" && node.props.children === "عرض موقع المتجر الكامل");
   assert.deepEqual(link.props.href, { pathname: "/s/store-a", params: { city: "aden", vertical: "grocery", q: "متجر" } });
+});
+
+test("Store sharing is available only for the currently verified public Store", async () => {
+  const app = harness();
+  assert.equal(find(app.render(), node => node.type === "StoreShareButton"), undefined);
+  app.read("store").resolve(store("store-a"));
+  app.read().resolve({ items: [], revision: 1 });
+  await settle();
+  const share = find(app.render(), node => node.type === "StoreShareButton");
+  assert.equal(share?.props.storeId, "store-a");
+  app.store("store-b");
+  assert.equal(find(app.render(), node => node.type === "StoreShareButton"), undefined);
+  app.unmount();
 });
 
 test("unscoped public storefront link remains canonical", async () => {

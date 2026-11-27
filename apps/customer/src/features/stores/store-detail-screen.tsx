@@ -9,6 +9,7 @@ import StoreProducts, { StoreCartBar } from "../catalog/store-products";
 import FavoriteStores from "../discovery/favorite-stores";
 import { capturePublicSearchDraft, INVALID_PUBLIC_SEARCH_MESSAGE, readPublicSearch, readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
+import StoreShareButton from "../sharing/store-share-button";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
 import { type PublicStoreDetailState, recoverPublicStoreDetail, resolvePublicStoreDetail } from "./store-detail-loader";
@@ -119,6 +120,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
           <FavoriteStores key={visible.store.id} storeId={visible.store.id} />
+          <StoreShareButton key={JSON.stringify([visible.store.id, api])} storeId={visible.store.id} ownerOrigin={api} />
           {!fullPage ? (
             <Link href={(browse.city ? { pathname: publicStorefrontPath(id), params: browse } : publicStorefrontPath(id)) as Href}
               style={{ color: theme.interactiveText }}>
