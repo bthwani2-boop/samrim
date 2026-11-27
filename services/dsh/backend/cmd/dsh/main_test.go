@@ -223,37 +223,6 @@ func TestProtectedStoreCorsDoesNotGrantAuthorization(t *testing.T) {
 	}
 }
 
-func TestPrivatePolicyPreflightCannotAuthorizePolicyMutation(t *testing.T) {
-	origin := "http://127.0.0.1:18102"
-	readonly := storePolicyCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}), map[string]bool{origin: true})
-	for _, tc := range []struct {
-		name, origin, method string
-		want                 int
-	}{
-		{"approved read preflight", origin, "GET", http.StatusNoContent},
-		{"approved scoped policy write preflight", origin, "PATCH", http.StatusNoContent},
-		{"unapproved policy delete preflight", origin, "DELETE", http.StatusForbidden},
-		{"unrelated origin", "http://evil.invalid", "GET", http.StatusForbidden},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodOptions, "/v1/operators/cities/city-a/store-availability-policy", nil)
-			request.Header.Set("Origin", tc.origin)
-			request.Header.Set("Access-Control-Request-Method", tc.method)
-			request.Header.Set("Access-Control-Request-Headers", "authorization")
-			rec := httptest.NewRecorder()
-			readonly.ServeHTTP(rec, request)
-			if rec.Code != tc.want {
-				t.Fatalf("%s returned %d expected %d", tc.name, rec.Code, tc.want)
-			}
-			if tc.want == http.StatusNoContent && rec.Header().Get("Access-Control-Allow-Methods") != "GET, PATCH" {
-				t.Fatal("Operator policy preflight advertised unexpected methods")
-			}
-		})
-	}
-}
-
 func TestCustomerCartContainerRejectsUnverifiedDatabaseTransport(t *testing.T) {
 	t.Setenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART", "true")
 	t.Setenv("BTHWANI_ISOLATED_TEST_MODE", "true")

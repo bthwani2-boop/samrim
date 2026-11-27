@@ -73,8 +73,8 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 		return nil, err
 	}
 	mux := http.NewServeMux()
-	mux.Handle("/v1/stores/", storeAvailabilityCORS(private, allowedOrigins))
-	mux.Handle("/v1/operators/cities/", storePolicyCORS(policyRead, allowedOrigins))
+	mux.Handle("/v1/stores/", privateOwnerCORS(private, allowedOrigins))
+	mux.Handle("/v1/operators/cities/", privateOwnerCORS(policyRead, allowedOrigins))
 	mux.Handle("/v1/operators/stores/{storeID}/financial-standing", storeavailability.NewOperatorFinancialStandingHandler(identity, grants))
 	mux.Handle("/", public)
 	return mux, nil
@@ -109,57 +109,6 @@ func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http
 	mux.Handle("/v1/addresses/", cart)
 	mux.Handle("/", public)
 	return mux, nil
-}
-
-// Store mutation is cross-origin only for exact configured development origins.
-// Preflight never grants access to the Store; every real request still verifies
-// Identity and DSH authority. No wildcard or credentialed-cookie CORS.
-func storeAvailabilityCORS(next http.Handler, origins map[string]bool) http.Handler {
-	return storeOperationalCORS(next, origins, true)
-}
-
-func storePolicyCORS(next http.Handler, origins map[string]bool) http.Handler {
-	return storeOperationalCORS(next, origins, true)
-}
-
-func storeOperationalCORS(next http.Handler, origins map[string]bool, allowPatch bool) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if origin == "null" || !origins[origin] {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		if r.Method != http.MethodOptions {
-			next.ServeHTTP(w, r)
-			return
-		}
-		method := r.Header.Get("Access-Control-Request-Method")
-		if method != http.MethodGet && !(allowPatch && method == http.MethodPatch) {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		for _, requested := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
-			key := strings.ToLower(strings.TrimSpace(requested))
-			if key != "" && key != "authorization" && key != "content-type" {
-				w.WriteHeader(http.StatusForbidden)
-				return
-			}
-		}
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		if allowPatch {
-			w.Header().Set("Access-Control-Allow-Methods", "GET, PATCH")
-		} else {
-			w.Header().Set("Access-Control-Allow-Methods", "GET")
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
 }
 
 func main() {
