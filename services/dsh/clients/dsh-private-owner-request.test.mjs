@@ -47,44 +47,34 @@ test("cancelled GET fetch rejection never leaks a raw AbortError into a new acco
     0, "OWNER_RESPONSE_STALE");
 });
 
+function abortingReply(controller, status = 200) {
+  return new Response(new ReadableStream({
+    pull(stream) {
+      controller.abort();
+      stream.close();
+    },
+  }, { highWaterMark: 0 }), { status,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
 test("cancelled GET response body cannot authorize a stale Store view", async t => {
   const controller = new AbortController();
-  t.mock.method(globalThis, "fetch", async () => ({
-    ok: true, status: 200,
-    headers: new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" }),
-    text: async () => {
-      controller.abort();
-      return JSON.stringify({ storeId: "store-a" });
-    },
-  }));
+  t.mock.method(globalThis, "fetch", async () => abortingReply(controller));
   await errorCode(() => privateOwnerRequest(origin, path, bearer, "GET", undefined, controller.signal),
     0, "OWNER_RESPONSE_STALE");
 });
 
 test("cancelled PATCH response body stays unknown, never a confirmed success", async t => {
   const controller = new AbortController();
-  t.mock.method(globalThis, "fetch", async () => ({
-    ok: true, status: 200,
-    headers: new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" }),
-    text: async () => {
-      controller.abort();
-      return JSON.stringify({ availability: { storeId: "store-a" }, replay: false });
-    },
-  }));
+  t.mock.method(globalThis, "fetch", async () => abortingReply(controller));
   await errorCode(() => privateOwnerRequest(origin, path, bearer, "PATCH", change, controller.signal),
     0, "OPERATION_RESULT_UNKNOWN");
 });
 
 test("cancelled PATCH after the owner sends 409 must not update a newer Store context", async t => {
   const controller = new AbortController();
-  t.mock.method(globalThis, "fetch", async () => ({
-    ok: false, status: 409,
-    headers: new Headers(),
-    text: async () => {
-      controller.abort();
-      return '{"code":"VERSION_CONFLICT"}';
-    },
-  }));
+  t.mock.method(globalThis, "fetch", async () => abortingReply(controller, 409));
   await errorCode(() => privateOwnerRequest(origin, path, bearer, "PATCH", change, controller.signal),
     0, "OPERATION_RESULT_UNKNOWN");
 });

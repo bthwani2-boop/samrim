@@ -54,7 +54,7 @@ async function ownerRead(url: URL, signal?: AbortSignal, requireCurrent = false)
   if (!response.ok) {
     let code = "OWNER_READ_FAILED";
     try {
-      const data: unknown = await readBoundedOwnerJSON(response, 4096);
+      const data: unknown = await readBoundedOwnerJSON(response, 4096, undefined, signal);
       if (data && typeof data === "object" && "error" in data && typeof data.error === "string") code = data.error;
     } catch { /* keep the safe generic error */ }
     if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
@@ -71,7 +71,7 @@ async function ownerRead(url: URL, signal?: AbortSignal, requireCurrent = false)
   }
   let body: unknown;
   try {
-    body = await readBoundedOwnerJSON(response, 65536);
+    body = await readBoundedOwnerJSON(response, 65536, undefined, signal);
   } catch {
     if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
     throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");

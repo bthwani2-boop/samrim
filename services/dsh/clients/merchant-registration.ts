@@ -113,7 +113,7 @@ async function ownerCall(
   if (!response.ok) {
     let code = "OWNER_UNAVAILABLE";
     try {
-      const error = record(await readBoundedOwnerJSON(response, 2048, 2048));
+      const error = record(await readBoundedOwnerJSON(response, 2048, 2048, signal));
       if (typeof error?.code === "string" &&
         ["INVALID_STORE_REGISTRATION", "STORE_REGISTRATION_CLOSED",
           "STORE_REGISTRATION_POLICY_CHANGED", "IDEMPOTENCY_KEY_REUSED",
@@ -121,6 +121,8 @@ async function ownerCall(
           "IDENTITY_OWNER_UNAVAILABLE", "STORE_OWNER_UNAVAILABLE",
           "OPERATION_RESULT_UNKNOWN"].includes(error.code)) code = error.code;
     } catch { /* Untrusted owner failure stays generic. */ }
+    if (signal?.aborted) throw new DshPublicError(0,
+      method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
     if (method === "POST" && response.status >= 500) code = "OPERATION_RESULT_UNKNOWN";
     throw new DshPublicError(response.status, code);
   }
@@ -128,14 +130,14 @@ async function ownerCall(
   if (!cache.includes("no-store") ||
     response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
     (method === "GET" ? response.status !== 200 : ![200, 201].includes(response.status))) {
-    throw new DshPublicError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+    throw new DshPublicError(signal?.aborted ? 0 : 502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
   }
   try {
-    const body = await readBoundedOwnerJSON(response, 65536, 65536);
+    const body = await readBoundedOwnerJSON(response, 65536, 65536, signal);
     if (signal?.aborted) throw new Error("Aborted after read");
     return { body, status: response.status };
   } catch {
-    throw new DshPublicError(502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+    throw new DshPublicError(signal?.aborted ? 0 : 502, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
   }
 }
 export async function readMerchantRegistrationOptions(origin: string, bearer: string, signal?: AbortSignal) {

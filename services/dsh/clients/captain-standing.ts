@@ -74,8 +74,8 @@ async function currentStanding(
   let body: unknown;
   try {
     // Shared DSH parser enforces the Captain-specific 4096-byte cap,
-    // including streamed owners, while retaining text-only Native support.
-    body = await readBoundedOwnerJSON(res, 4096, 4096);
+    // and observes the active request cancellation.
+    body = await readBoundedOwnerJSON(res, 4096, 4096, signal);
   } catch {
     if (signal?.aborted) throw new CaptainStandingError(0,
       method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");

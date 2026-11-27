@@ -206,13 +206,13 @@ async function cartRequest(origin: string, bearer: string, storeId: string, expe
   const cache = response.headers.get("Cache-Control")?.toLowerCase().split(",").map(x => x.trim());
   if (media !== "application/json" || !cache?.includes("no-store")) {
     void response.body?.cancel().catch(() => {});
-    throw new DshCartError(502, dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+    throw new DshCartError(signal.aborted ? 0 : 502, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
   }
   let body: unknown;
   try {
-    body = await readBoundedOwnerJSON(response, 65536, 65536);
+    body = await readBoundedOwnerJSON(response, 65536, 65536, signal);
   } catch {
-    throw new DshCartError(502, dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+    throw new DshCartError(signal.aborted ? 0 : 502, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
   }
   if (signal.aborted) throw new DshCartError(0,
     dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");

@@ -89,10 +89,10 @@ export async function readMerchantDSHStanding(origin: string, bearer: string, si
   try {
     // The 100-Store Unicode envelope remains supported, but streaming owners
     // must be stopped at the byte limit rather than drained into memory.
-    // Native text-only fetch is handled by the same bounded DSH owner parser.
-    body = await readBoundedOwnerJSON(response, 262144, 262144);
+    // Pinned native fetch and browser fetch use the same bounded stream parser.
+    body = await readBoundedOwnerJSON(response, 262144, 262144, signal);
   } catch {
-    throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
+    throw new MerchantStandingError(signal?.aborted ? 0 : 502, signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
   }
   if (signal?.aborted) throw new MerchantStandingError(0, "OWNER_RESPONSE_STALE");
   return standingFrom(body);

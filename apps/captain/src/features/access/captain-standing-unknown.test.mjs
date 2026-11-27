@@ -69,9 +69,11 @@ test("Captain POST response body failure and cancellation after dispatch are unk
   let controller;
   t.mock.method(globalThis, "fetch", async (_url, options) => {
     if (bodyError) {
-      return { status: 200, ok: true, headers: new Headers({
-        "Content-Type": "application/json", "Cache-Control": "no-store",
-      }), text: async () => { throw new Error("connection closed during reply"); } };
+      return new Response(new ReadableStream({
+        pull(stream) { stream.error(new Error("connection closed during reply")); },
+      }, { highWaterMark: 0 }), { status: 200,
+        headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+      });
     }
     controller.abort();
     assert.equal(options.signal, controller.signal);
@@ -125,20 +127,23 @@ test("Customer readback is a no-write, actor-scoped GET and never self-grants Ca
   await expectCode(() => readCaptainApplication(base, bearer, actor), "CAPTAIN_NOT_ELIGIBLE", 403);
 });
 
+function abortingStanding(controller) {
+  return new Response(new ReadableStream({
+    pull(stream) {
+      controller.abort();
+      stream.close();
+    },
+  }, { highWaterMark: 0 }), { status: 200,
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+}
+
 test("Captain cancellation during response body never turns an uncertain POST into success", async t => {
   const controller = new AbortController();
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => {
     calls++;
-    return {
-      status: 200,
-      ok: true,
-      headers: new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" }),
-      text: async () => {
-        controller.abort();
-        return JSON.stringify(standing);
-      },
-    };
+    return abortingStanding(controller);
   });
   await expectCode(() => requestCaptainApplication(base, bearer, actor, controller.signal),
     "OPERATION_RESULT_UNKNOWN", 0);
@@ -147,15 +152,7 @@ test("Captain cancellation during response body never turns an uncertain POST in
 
 test("Captain cancellation during GET body yields a stale read, never approved access", async t => {
   const controller = new AbortController();
-  t.mock.method(globalThis, "fetch", async () => ({
-    status: 200,
-    ok: true,
-    headers: new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" }),
-    text: async () => {
-      controller.abort();
-      return JSON.stringify({ actorId: actor, status: "APPROVED", version: 2 });
-    },
-  }));
+  t.mock.method(globalThis, "fetch", async () => abortingStanding(controller));
   await expectCode(() => readApprovedCaptainStanding(base, bearer, "captain", actor, controller.signal),
     "OWNER_RESPONSE_STALE", 0);
 });
@@ -192,11 +189,9 @@ test("Captain GET refuses advertised oversized owner response before reading pri
   assert.equal(textCalled, false, "declared oversize must be rejected before body read");
 });
 
-test("Captain Native text-only transport remains available without a global TextEncoder", async t => {
-  const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
-  t.mock.method(globalThis, "fetch", async () => ({
-    status: 200, ok: true, headers, text: async () => JSON.stringify(standing),
-  }));
+test("Captain Native streaming transport remains available without a global TextEncoder", async t => {
+  const valid = ownerResponse();
+  t.mock.method(globalThis, "fetch", async () => valid);
   const saved = globalThis.TextEncoder;
   try {
     globalThis.TextEncoder = undefined;
@@ -204,6 +199,18 @@ test("Captain Native text-only transport remains available without a global Text
   } finally {
     globalThis.TextEncoder = saved;
   }
+});
+
+test("Captain refuses a text-only bridge without consuming a private body", async t => {
+  let consumed = false;
+  t.mock.method(globalThis, "fetch", async () => ({
+    status: 200, ok: true,
+    headers: new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" }),
+    text: async () => { consumed = true; return JSON.stringify(standing); },
+  }));
+  await expectCode(() => requestCaptainApplication(base, bearer, actor),
+    "OPERATION_RESULT_UNKNOWN", 502);
+  assert.equal(consumed, false);
 });
 
 test("Captain POST treats invalid streamed UTF-8 as unknown while GET refuses the read", async t => {

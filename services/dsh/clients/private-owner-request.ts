@@ -38,7 +38,7 @@ export async function privateOwnerRequest(
   if (!response.ok) {
     let code = "STORE_OPERATION_FAILED";
     try {
-      const err = await readBoundedOwnerJSON(response, maxOwnerTextLength);
+      const err = await readBoundedOwnerJSON(response, maxOwnerTextLength, undefined, signal);
       if (err && typeof err === "object") {
         if ("code" in err && typeof err.code === "string") code = err.code;
         else if ("error" in err && typeof err.error === "string") code = err.error;
@@ -60,7 +60,7 @@ export async function privateOwnerRequest(
   }
   let body: unknown;
   try {
-    body = await readBoundedOwnerJSON(response, maxOwnerTextLength);
+    body = await readBoundedOwnerJSON(response, maxOwnerTextLength, undefined, signal);
   } catch {
     stale();
     throw new DshPublicError(502, mutating ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");

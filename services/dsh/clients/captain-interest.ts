@@ -101,7 +101,7 @@ export async function submitCaptainInterest(
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   let body: unknown;
-  try { body = await readBoundedOwnerJSON(response, 128, 256); }
+  try { body = await readBoundedOwnerJSON(response, 128, 256, signal); }
   catch { throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN"); }
   if (!body || typeof body !== "object" || Array.isArray(body) ||
     !onlyKeys(body as Record<string, unknown>, ["received"]) ||
