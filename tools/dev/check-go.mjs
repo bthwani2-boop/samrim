@@ -34,6 +34,15 @@ export function parseArgs(argv) {
   return { mode, moduleName, sonarReport };
 }
 
+// Race execution belongs to the native hosted Linux producer only.
+// Runner variables are routing metadata, not authentication.
+export function requireModeEnvironment(mode, env = process.env, platform = process.platform) {
+  if (mode === "ci" && (platform !== "linux" || env.GITHUB_ACTIONS !== "true" ||
+      env.RUNNER_ENVIRONMENT !== "github-hosted" || env.RUNNER_OS !== "Linux")) {
+    throw new Error("GO_RACE_REQUIRES_HOSTED_LINUX_CI");
+  }
+}
+
 export function parseVersion(output) {
   return /^go version go(\d+\.\d+\.\d+)(?=\s|$)/m.exec(output)?.[1] ?? null;
 }
@@ -285,6 +294,7 @@ function configuredCaches(executable, root) {
 
 export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(new URL("../..", import.meta.url)))) {
   const { mode, moduleName, sonarReport } = parseArgs(argv);
+  requireModeEnvironment(mode);
   const expected = readFileSync(join(root, ".go-version"), "utf8").trim();
   const executable = resolvePinnedGo(expected, sourceEnvironment());
   const env = { ...sourceEnvironment(), ...configuredCaches(executable, root) };

@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { admitNativeGoCoverage, admitNativeGoTests, checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
+import { admitNativeGoCoverage, admitNativeGoTests, checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, requireModeEnvironment, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
 
 test("Go CLI selects only an unambiguous admitted mode and owner", () => {
   assert.deepEqual(parseArgs([]), { mode: "quick", moduleName: undefined, sonarReport: false });
@@ -152,4 +152,28 @@ test("native Go coverage requires a single positive measured total", () => {
     assert.throws(() => admitNativeGoCoverage(value), /NATIVE_GO_COVERAGE_NOT_MEASURED/);
   }
   assert.equal(admitNativeGoCoverage("owner/file.go:10\tfunc\t70.0%\ntotal:\t(statements)\t70.0%\n"), 70);
+});
+
+test("Go Race admission is CI-only and rejects before toolchain or filesystem access", () => {
+  const hosted = { GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted", RUNNER_OS: "Linux" };
+  const rejected = [{}, { ...hosted, GITHUB_ACTIONS: "false" }, { ...hosted, RUNNER_ENVIRONMENT: "self-hosted" }, { ...hosted, RUNNER_OS: "Windows" }];
+  for (const env of rejected) {
+    assert.throws(() => requireModeEnvironment("ci", env, "linux"), /GO_RACE_REQUIRES_HOSTED_LINUX_CI/);
+    for (const mode of ["quick", "coverage"]) assert.doesNotThrow(() => requireModeEnvironment(mode, env, "win32"));
+  }
+  assert.throws(() => requireModeEnvironment("ci", hosted, "win32"), /GO_RACE_REQUIRES_HOSTED_LINUX_CI/);
+  assert.doesNotThrow(() => requireModeEnvironment("ci", hosted, "linux"));
+  const root = mkdtempSync(join(tmpdir(), "bthwani-go-race-admission-"));
+  try {
+    const script = 'import {main} from "./tools/dev/check-go.mjs"; main(["--ci"], process.argv[1]);';
+    const result = spawnSync(process.execPath, ["--input-type=module", "-e", script, root], {
+      cwd: new URL("../..", import.meta.url), env: { ...process.env, GITHUB_ACTIONS: "false", RUNNER_ENVIRONMENT: "self-hosted" },
+      encoding: "utf8", timeout: 10000,
+    });
+    if (result.error) throw result.error;
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /GO_RACE_REQUIRES_HOSTED_LINUX_CI/);
+    assert.doesNotMatch(result.stderr, /ENOENT/);
+    assert.equal(result.stdout, "");
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
