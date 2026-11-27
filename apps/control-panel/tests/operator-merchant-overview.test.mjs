@@ -197,3 +197,16 @@ test("city directory outage does not hide confirmed selected-city market data", 
   assert.ok(find(tree, node => node.type === "strong" && node.props.children === "grocery"));
   assert.equal(find(tree, node => node.type === "input" && node.props.name === "city").props.defaultValue, "sanaa");
 });
+
+test("Merchant overview exposes actual DSH preparation review, not fake creation actions", () => {
+  const render = compile("src/features/stores/stores-workspace.tsx", {
+    "../operator-shell/operator-shell.module.css": { sectionGrid: "grid", sectionCard: "card" },
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+  });
+  const tree = render({});
+  const review = find(tree, node => node.type === "a" && node.props.href === "/merchants/joining");
+  assert.ok(review, "actual review must be discoverable from the Merchant overview");
+  assert.match(JSON.stringify(review.props.children), /مراجعة المتاجر غير المنشورة/);
+  assert.equal(find(tree, node => node.type === "a" && node.props.href === "/merchants/new"), undefined);
+  assert.ok(find(tree, node => node.type === "a" && node.props.href === "/merchants/public-stores"));
+});

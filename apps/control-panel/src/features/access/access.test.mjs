@@ -77,7 +77,7 @@ test("merchant navigation and page headings use canonical trader/store terminolo
   assert.equal(merchant?.label, "التجار والمتاجر");
   assert.equal(merchant?.permission, "merchant");
   assert.deepEqual(workspaceSubsections.filter((entry) => entry.parent === "/merchants").slice(0, 2).map((entry) => entry.label), [
-    "طلبات انضمام التجار",
+    "مراجعة المتاجر غير المنشورة",
     "إضافة تاجر",
   ]);
   const panelRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
