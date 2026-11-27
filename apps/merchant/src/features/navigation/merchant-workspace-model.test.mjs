@@ -14,7 +14,7 @@ import {
 
 test("Merchant workspace has unique functional navigation targets on desktop and mobile", () => {
   const ids = merchantNavigation.map(item => item.id);
-  assert.deepEqual(ids, ["home", "stores", "orders", "products", "inventory", "staff", "wallet", "account", "more"]);
+  assert.deepEqual(ids, ["home", "stores", "orders", "products", "inventory", "staff", "insights", "wallet", "account", "more"]);
   assert.equal(new Set(ids).size, ids.length);
   for (const section of merchantMobileSections) {
     assert.ok(ids.includes(section), `mobile section ${section} must also exist on desktop`);
@@ -56,7 +56,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     const sources = ["merchant-workspace.tsx", "merchant-store-directory.tsx"]
       .map(file => fileURLToPath(new URL(`./${file}`, import.meta.url)));
     const result = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), ...sources,
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), ...sources,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
       "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
     ], { cwd: root, encoding: "utf8", timeout: 20000 });
@@ -76,16 +76,18 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
       "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
       "@bthwani/tamagui-config/navigation": { usePrimaryNavigation: () => ({ desktop }) },
-      "../account/account-screen": { __esModule: true, default: "Account" },
+      "@bthwani/tamagui-config/appearance-preferences": { __esModule: true, default: "Account" },
       "../catalog/merchant-private-catalog": { __esModule: true, default: "Catalog" },
       "../onboarding/merchant-store-registration": { __esModule: true, default: "Registration" },
       "./merchant-store-directory": { __esModule: true, default: "Directory" },
       "../stores/merchant-public-link": { __esModule: true, default: "PublicLink" },
       "../stores/store-availability": { __esModule: true, default: "Availability" },
+      "../stores/store-profile": { __esModule: true, default: "Profile" },
       "../catalog/inventory-summary": { __esModule: true, default: "InventorySummary" },
       "../finance/commercial-agreement": { __esModule: true, default: "CommercialAgreement" },
       "../employees/employees-screen": { __esModule: true, default: "Employees" },
       "../finance/wallet-screen": { __esModule: true, default: "Wallet" },
+      "../insights/insights-screen": { __esModule: true, default: "Insights" },
       "./merchant-workspace-model": { filterMerchantStores, merchantNavigation, merchantMobileSections, merchantStoreSummary },
     };
     const load = code => {
@@ -127,6 +129,10 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
       click("الرئيسية");
       click("الطلبات");
       assert.ok(render().some(n => n.props?.testID === "merchant-section-unavailable"));
+      click("الرئيسية");
+      if (!wide) click("المزيد");
+      click("التقارير");
+      assert.deepEqual(render().find(n => n.type === "Insights")?.props, { actorId: "merchant-a", stores });
       click("الرئيسية");
       click("المحفظة");
       assert.equal(render().find(n => n.type === "Wallet")?.props.actorId, "merchant-a");
@@ -214,6 +220,9 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     action("مسح التصفية").props.onPress();
     assert.deepEqual(renderDirectory().map(n => n.props.accessibilityLabel).filter(label => label?.startsWith("عرض ")), ["عرض أ", "عرض ب"]);
     renderDirectory().find(n => n.props.accessibilityLabel === "عرض ب").props.onPress();
+    assert.equal(renderDirectory().find(n => n.type === "Profile")?.props.storeId, "b");
+    assert.equal(renderDirectory().find(n => n.type === "Profile")?.props.actorId, "merchant-a");
+    assert.ok(!renderDirectory(stores.slice(0, 1)).some(n => n.type === "Profile"));
     action("إدارة منتجات هذا المتجر").props.onPress();
     assert.deepEqual(opened, [["b", undefined]]);
     assert.ok(!renderDirectory().some(n => n.type === "CommercialAgreement" || n.type === "InventorySummary"));

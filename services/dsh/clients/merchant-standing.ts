@@ -1,5 +1,5 @@
 /** Verified Merchant Store standing from DSH. No client-owned grants or Store writes. */
-import { readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 export interface MerchantOwnedStore {
   id: string;
@@ -64,36 +64,33 @@ export async function readMerchantDSHStanding(origin: string, bearer: string, si
   const endpoint = ownerEndpoint(origin);
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    response = await fetchOwnerHeaders(endpoint, {
       method: "GET", redirect: "error", cache: "no-store", credentials: "omit",
       signal: signal ?? null,
       headers: { Accept: "application/json", Authorization: "Bearer " + bearer },
     });
   } catch {
-    throw new MerchantStandingError(503, "OWNER_UNAVAILABLE");
+    throw new MerchantStandingError(signal?.aborted ? 0 : 503, signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_UNAVAILABLE");
   }
-  if (signal?.aborted) throw new MerchantStandingError(0, "OWNER_RESPONSE_STALE");
-  if (!response.ok) {
-    if (response.status === 401 || response.status === 403) {
-      throw new MerchantStandingError(response.status, "STORE_ACCESS_DENIED");
+  return consumeOwnerResponse(response, async () => {
+    if (signal?.aborted) throw new MerchantStandingError(0, "OWNER_RESPONSE_STALE");
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new MerchantStandingError(response.status, "STORE_ACCESS_DENIED");
+      }
+      throw new MerchantStandingError(503, "OWNER_UNAVAILABLE");
     }
-    throw new MerchantStandingError(503, "OWNER_UNAVAILABLE");
-  }
-  const directives = response.headers.get("Cache-Control")
-    ?.toLowerCase().split(",").map(x => x.trim()) ?? [];
-  if (response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
-    !directives.includes("no-store")) {
-    throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
-  }
-  let body: unknown;
-  try {
-    // The 100-Store Unicode envelope remains supported, but streaming owners
-    // must be stopped at the byte limit rather than drained into memory.
-    // Native text-only fetch is handled by the same bounded DSH owner parser.
-    body = await readBoundedOwnerJSON(response, 262144, 262144);
-  } catch {
-    throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
-  }
-  if (signal?.aborted) throw new MerchantStandingError(0, "OWNER_RESPONSE_STALE");
-  return standingFrom(body);
+    if (response.status !== 200) throw new MerchantStandingError(502, "OWNER_RESPONSE_INVALID");
+    let body: unknown;
+    try {
+      // The 100-Store Unicode envelope remains supported, but streaming owners
+      // must be stopped at the byte limit rather than drained into memory.
+      // Pinned native fetch and browser fetch use the same bounded stream parser.
+      body = await readBoundedOwnerJSON(response, 262144, 262144, signal, "private-json");
+    } catch {
+      throw new MerchantStandingError(signal?.aborted ? 0 : 502, signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_RESPONSE_INVALID");
+    }
+    if (signal?.aborted) throw new MerchantStandingError(0, "OWNER_RESPONSE_STALE");
+    return standingFrom(body);
+  });
 }

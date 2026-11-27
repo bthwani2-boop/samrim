@@ -18,7 +18,7 @@ const temp = mkdtempSync(path.join(tmpdir(), "bthwani-checkout-review-"));
 let compiled;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), sourceFile,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), sourceFile,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
   ], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20_000 });
@@ -342,7 +342,7 @@ test("checkout retains only same actor/store/cart draft through transient owner 
   const cart = fixture("store-a");
   cart.lines = cart.lines.filter(line => line.previewAvailable);
   const form = () => nodes(h.render()).find(n => n.type === "CheckoutReviewForm");
-  const draft = { recipient: { purpose: "OTHER", name: "Synthetic Recipient", phone: "+967770000099", instructions: "" }, mode: "CUSTOMER_PICKUP" };
+  const draft = { recipient: { purpose: "OTHER", name: "Synthetic Recipient", phone: "+967770000099", instructions: "" }, mode: "CUSTOMER_PICKUP", salesChannel: "DIRECT" };
   const reload = async result => {
     h.blur(); h.render(); h.focus();
     h.calls.at(-1).resolve(result);

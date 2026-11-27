@@ -6,14 +6,14 @@ import path from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
 const source = path.join(import.meta.dirname, "cart-directory-transport.ts");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-cart-directory-transport-"));
 let compiled;
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--inlineSourceMap", "--inlineSources", "--outDir", temp],
     { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
@@ -51,7 +51,7 @@ function harness(t, os = "web", configured = true) {
     api = loadMappedRenderFixture(compiled, source, {
       "@bthwani/dsh": dsh,
       "react-native": { Platform: { OS: os } },
-      "../access/bounded-customer-json": { readBoundedCustomerJSON },
+      "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON },
       "../access/customer-session-transport": {
         async readCustomerAdmission() { return admissions.length ? admissions.shift() : state(); },
         async withVerifiedNativeCustomerRead(s, read, expectedActor) {
@@ -145,7 +145,8 @@ test("Android directory uses real DSH client inside native verification and boun
   assert.equal(h.requests[0].url, `${origin}/v1/carts?after=store-a`);
   assert.equal(h.requests[0].headers.Authorization, `Bearer ${bearer}`);
   assert.equal(h.requests[0].credentials, "omit");
-  assert.equal(h.requests[0].signal, s);
+  assert.ok(h.requests[0].signal instanceof AbortSignal);
+  assert.equal(h.requests[0].signal.aborted, false);
 });
 
 test("Android directory rejects missing owner and denied native scope without dispatch", async t => {

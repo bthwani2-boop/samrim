@@ -148,3 +148,57 @@ test("Merchant public Store detail refuses malformed and unpublished DSH results
   assert.equal((await GET(new Request(url))).status, 404);
   assert.equal(calls.length, 3);
 });
+
+test("Merchant public discovery rejects malformed wire envelopes before normalization or owner access", async t => {
+  const calls = setup(t);
+  const root = "http://localhost:18102/v1/public/";
+  for (const path of ["stores/market-sanaa?", "stores/market-sanaa/offers?q=water;flour"]) {
+    const reply = await GET(new Request(root + path));
+    assert.equal(reply.status, 400, path);
+    assert.deepEqual(await reply.json(), { error: "INVALID_REQUEST" });
+  }
+  for (const path of ["stores/market-sanaa", "stores/market-sanaa/offers"]) {
+    for (const headers of [{ "Content-Length": "2" }, { "Transfer-Encoding": "chunked" }]) {
+      assert.equal((await GET(new Request(root + path, { headers }))).status, 400, path);
+    }
+  }
+  for (const path of ["cities", "verticals?city_id=sanaa", "stores?city_id=sanaa", "stores/market-sanaa/offers/of-flour/estimate?quantity=1"]) {
+    assert.equal((await GET(new Request(root + path))).status, 404, path);
+  }
+  assert.equal(calls.length, 0);
+  assert.equal((await GET(new Request(root + "stores/market-sanaa/offers?q=water%3Bflour"))).status, 200);
+  assert.equal(new URL(calls[0].url).searchParams.get("q"), "water;flour");
+});
+
+test("Merchant adapter preserves its narrow owner origin and error boundary", async t => {
+  let failure = false;
+  const calls = setup(t, () => failure
+    ? Response.json({ error: "INSUFFICIENT_AVAILABLE_QUANTITY" }, { status: 409 })
+    : Response.json({ items: [], revision: 2 }));
+  delete process.env.MERCHANT_SYNTHETIC_DSH_ORIGIN;
+  assert.equal((await GET(new Request(base, { headers: { "Content-Length": "0" } }))).status, 200);
+  assert.equal(new URL(calls[0].url).origin, "http://127.0.0.1:3202");
+  const method = await GET(new Request(base, { method: "POST" }));
+  assert.equal(method.status, 405);
+  assert.equal(method.headers.get("Allow"), "GET");
+  failure = true;
+  assert.equal((await GET(new Request(base))).status, 503);
+  assert.equal(calls.length, 2);
+});
+
+test("Public discovery preserves zero-byte framing and rejects an explicit empty query delimiter", async t => {
+  const calls = setup(t);
+  const url = "http://localhost:18102/v1/public/stores/market-sanaa/offers";
+  for (const length of ["00", "000"]) {
+    const reply = await GET(new Request(url, { headers: { "Content-Length": length } }));
+    assert.equal(reply.status, 200, length);
+  }
+  for (const length of ["01", "0, 0", "-0", "0.0"]) {
+    const reply = await GET(new Request(url, { headers: { "Content-Length": length } }));
+    assert.equal(reply.status, 400, length);
+  }
+  const reply = await GET(new Request(url + "?"));
+  assert.equal(reply.status, 400);
+  assert.deepEqual(await reply.json(), { error: "INVALID_REQUEST" });
+  assert.equal(calls.length, 2);
+});

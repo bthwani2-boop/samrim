@@ -1,4 +1,4 @@
-/** Shared DSH SDK error, endpoint safety and strict object-key checks. No domain writers. */
+/** Shared DSH SDK error, endpoint validation and bounded owner-response decoding. */
 export class DshPublicError extends Error {
   readonly status: number;
   readonly code: string;
@@ -10,6 +10,7 @@ export class DshPublicError extends Error {
     this.code = code;
   }
 }
+
 export function endpoint(baseUrl: string, path: string): URL {
   if (!baseUrl) throw new DshPublicError(0, "DSH_ENDPOINT_NOT_CONFIGURED");
   let root: URL;
@@ -18,9 +19,9 @@ export function endpoint(baseUrl: string, path: string): URL {
   } catch {
     throw new DshPublicError(0, "DSH_ENDPOINT_INVALID");
   }
-  if (root.username || root.password || root.pathname !== "/" || root.search || root.hash ||
-    !(root.protocol === "https:" ||
-      (root.protocol === "http:" && ["localhost", "127.0.0.1", "10.0.2.2"].includes(root.hostname)))) {
+  const secure = root.protocol === "https:" ||
+    (root.protocol === "http:" && ["localhost", "127.0.0.1", "10.0.2.2"].includes(root.hostname));
+  if (!secure || root.username || root.password || root.pathname !== "/" || root.search || root.hash) {
     throw new DshPublicError(0, "DSH_ENDPOINT_UNSAFE");
   }
   const pathname = path.split("?")[0] ?? "";
@@ -30,15 +31,13 @@ export function endpoint(baseUrl: string, path: string): URL {
     /(^|\/)(?:\.|%2e){1,2}(\/|$)/i.test(pathname)) {
     throw new DshPublicError(0, "DSH_ENDPOINT_UNSAFE");
   }
-  // URL accepts absolute and network-path inputs, so resolve only after
-  // checking that the owner-authored path cannot select a different host.
   const target = new URL(path, root);
   if (target.origin !== root.origin) throw new DshPublicError(0, "DSH_ENDPOINT_UNSAFE");
   return target;
 }
 
 export function onlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
-  return Object.keys(value).every((key) => allowed.includes(key));
+  return Object.keys(value).every(key => allowed.includes(key));
 }
 
 export function isDateTime(value: unknown): value is string {
@@ -47,57 +46,156 @@ export function isDateTime(value: unknown): value is string {
     Number.isFinite(Date.parse(value));
 }
 
-// One bounded JSON transport parser for DSH public and private owner replies.
-// A successful decode does not grant authority: domain clients still validate
-// every schema field and actor/Store binding after parsing.
-export async function readBoundedOwnerJSON(
-  response: Response, maxTextLength: number, strictByteLimit?: number,
-): Promise<unknown> {
-  const maxBytes = strictByteLimit ?? 3 * maxTextLength; // UTF-8 bytes per UTF-16 code unit are at most 3.
-  if (Number(response.headers.get("Content-Length")) > maxBytes) {
-    void response.body?.cancel().catch(() => {});
-    throw new Error("Oversized DSH owner reply");
-  }
-  // React Native may expose only text() instead of a ReadableStream.
-  if (!response.body?.getReader || typeof TextDecoder !== "function") {
-    const text = await response.text();
-    if (text.length > maxTextLength) throw new Error("Oversized DSH owner reply");
-    if (strictByteLimit !== undefined) {
-      // React Native/Hermes may not provide TextEncoder. Count UTF-8 bytes
-      // without platform globals; lone surrogates encode as U+FFFD (3 bytes).
-      let byteCount = 0;
-      for (const character of text) {
-        const codePoint = character.codePointAt(0) ?? 0xfffd;
-        byteCount += codePoint < 0x80 ? 1 : codePoint < 0x800 ? 2 : codePoint < 0x10000 ? 3 : 4;
-        if (byteCount > maxBytes) throw new Error("Oversized DSH owner reply");
-      }
-    }
-    return JSON.parse(text) as unknown;
-  }
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
+const bodyDeadlineMs = 5_000;
+
+// One best-effort cancellation boundary handles native synchronous access and
+// asynchronous cancellation alike. Callers never wait for transport cleanup.
+async function discardStream(acquire: () => { cancel(): Promise<void> } | null): Promise<void> {
   try {
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > maxBytes) throw new Error("Oversized DSH owner reply");
-      chunks.push(value);
+    await acquire()?.cancel();
+  } catch {
+    // Cleanup failure must not replace the established owner outcome.
+  }
+}
+
+function discardUnread(response: Response): void {
+  void discardStream(() => {
+    if (response.bodyUsed) return null;
+    const body = response.body;
+    return body && !body.locked ? body : null;
+  });
+}
+
+// A response body has its own established byte and read budget. Header
+// acquisition must also settle even when a native fetch ignores cancellation.
+const headerDeadlineMs = 10_000;
+
+export async function fetchOwnerHeaders(input: string | URL, init: RequestInit): Promise<Response> {
+  const caller = init.signal;
+  const stale = () => new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  if (caller?.aborted) throw stale();
+
+  const transport = new AbortController();
+  let interrupted = false;
+  let rejectStopped!: (error: Error) => void;
+  const stopped = new Promise<never>((_, reject) => { rejectStopped = reject; });
+  function interrupt(error: Error): void {
+    if (interrupted) return;
+    interrupted = true;
+    rejectStopped(error);
+    transport.abort();
+  }
+  const onAbort = () => interrupt(stale());
+  caller?.addEventListener("abort", onAbort, { once: true });
+  const deadline = setTimeout(() => interrupt(new Error("DSH owner header deadline exceeded")), headerDeadlineMs);
+
+  try {
+    const pending = (async () => {
+      const response = await fetch(input, { ...init, signal: transport.signal });
+      if (interrupted) {
+        discardUnread(response);
+        throw stale();
+      }
+      return response;
+    })();
+    const response = await Promise.race([pending, stopped]);
+    if (caller?.aborted) {
+      discardUnread(response);
+      throw stale();
     }
-  } catch (error) {
-    await reader.cancel().catch(() => {});
-    throw error;
+    return response;
   } finally {
-    reader.releaseLock();
+    clearTimeout(deadline);
+    caller?.removeEventListener("abort", onAbort);
   }
-  const bytes = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
+}
+
+// The response boundary owns unread bodies. The bounded decoder owns its
+// acquired reader, including cancellation before releasing the lock.
+export async function consumeOwnerResponse<T>(
+  response: Response, consume: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await consume();
+  } finally {
+    discardUnread(response);
   }
-  const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  if (text.length > maxTextLength) throw new Error("Oversized DSH owner reply");
-  return JSON.parse(text) as unknown;
+}
+
+// Pinned Expo and browser fetch expose streams. A text-only bridge cannot
+// establish a byte bound before allocating the complete reply. Reject it.
+export async function readBoundedOwnerJSON(
+  response: Response, maxTextLength: number, strictByteLimit?: number, signal?: AbortSignal,
+  representation: "json" | "private-json" = "json",
+): Promise<unknown> {
+  const maxBytes = strictByteLimit ?? 3 * maxTextLength;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let complete = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onAbort: (() => void) | undefined;
+
+  try {
+    if (representation === "private-json" &&
+      (response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
+        response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json")) {
+      throw new Error("Invalid private DSH owner representation");
+    }
+    const length = response.headers.get("Content-Length");
+    if (length !== null && (!/^\d+$/.test(length) || Number(length) > maxBytes)) {
+      throw new Error("Oversized or invalid DSH owner reply length");
+    }
+    const body = response.body;
+    if (signal?.aborted || !body?.getReader || typeof TextDecoder !== "function") {
+      throw new Error(signal?.aborted ? "DSH owner read cancelled" : "DSH owner reply stream unavailable");
+    }
+    const acquired = body.getReader();
+    reader = acquired;
+    const bytes = new Uint8Array(maxBytes);
+    const expires = performance.now() + bodyDeadlineMs;
+    let size = 0;
+    const assertCurrent = () => {
+      if (signal?.aborted) throw new Error("DSH owner read cancelled");
+      if (performance.now() >= expires) throw new Error("DSH owner body deadline exceeded");
+    };
+    const stopped = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("DSH owner body deadline exceeded")), bodyDeadlineMs);
+      if (signal) {
+        onAbort = () => reject(new Error("DSH owner read cancelled"));
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      }
+    });
+    const result = await Promise.race([
+      stopped,
+      (async () => {
+        for (;;) {
+          assertCurrent();
+          const chunk = await acquired.read();
+          assertCurrent();
+          if (chunk.done) break;
+          if (chunk.value.byteLength > maxBytes - size) throw new Error("Oversized DSH owner reply");
+          bytes.set(chunk.value, size);
+          size += chunk.value.byteLength;
+        }
+        const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size));
+        if (decoded.length > maxTextLength) throw new Error("Oversized DSH owner reply");
+        return JSON.parse(decoded) as unknown;
+      })(),
+    ]);
+    assertCurrent();
+    complete = true;
+    return result;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+    if (reader) {
+      if (!complete) void discardStream(() => reader ?? null);
+      reader.releaseLock();
+    } else {
+      // The enclosing response owner performs final unread-body cancellation
+      // for rejected private representations; raw decoder callers still own
+      // their supplied response.
+      if (representation === "json") discardUnread(response);
+    }
+  }
 }

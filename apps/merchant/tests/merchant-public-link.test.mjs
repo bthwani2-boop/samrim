@@ -5,10 +5,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { publicStorefrontPath } from "../../customer/src/features/sharing/store-share.ts";
 import { publicStorefrontLink } from "../src/features/stores/public-storefront-link.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
+const retainedFixtures = [];
+process.once("exit", () => retainedFixtures.length);
 const component = fileURLToPath(new URL("../src/features/stores/merchant-public-link.tsx", import.meta.url));
 
 function nodes(tree) {
@@ -45,9 +48,9 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
   globalThis.window = { location: { origin: "http://localhost:18102" } };
   try {
     const compiled = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), component,
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), component,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-      "--module", "commonjs", "--jsx", "react-jsx", "--outDir", tmp,
+      "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
     assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
     const code = readFileSync(path.join(tmp, "merchant-public-link.js"), "utf8");
@@ -102,10 +105,8 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
       "react/jsx-runtime": { jsx, jsxs: jsx },
       "react-native": { Platform: { OS: "web" }, Pressable: "Pressable", Text: "Text", View: "View" },
     };
-    const mod = { exports: {} };
-    new Function("require", "module", "exports", code)(
-      name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; }, mod, mod.exports,
-    );
+    const mod = loadMappedRenderFixture(code, component, mocks);
+    retainedFixtures.push(mod);
     function render(actorId, storeId, published = true) {
       index = 0;
       effects = [];
@@ -120,6 +121,8 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     assert.ok(action(tree));
     action(tree).props.onPress();
     assert.equal(requests.length, 1);
+    action(tree).props.onPress();
+    assert.equal(requests.length, 1, "duplicate press must not start a second read");
     assert.equal(requests[0].origin, "http://localhost:18102");
     assert.equal(requests[0].id, "store-one");
     assert.deepEqual(copied, []);
@@ -176,6 +179,58 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     await Promise.resolve(); await Promise.resolve();
     assert.equal(copied.at(-1), "https://customer.example/storefront/store-three");
     assert.equal(notice(render("actor-b", "store-three")), "تم نسخ رابط المتجر المنشور.");
+    // An event queued by the previous render must not begin an owner read,
+    // even when the same actor and Store later become current again.
+    const obsolete = action(render("actor-b", "store-three"));
+    render("actor-b", "store-three", false);
+    render("actor-b", "store-three", true);
+    obsolete.props.onPress();
+    assert.equal(requests.length, 6, "revoked render must never begin an owner request");
+
+    const current = action(render("actor-b", "store-three"));
+    current.props.onPress();
+    assert.equal(requests.length, 7);
+    requests[6].resolve({ id: "different-store" });
+    await Promise.resolve(); await Promise.resolve();
+    assert.match(notice(render("actor-b", "store-three")), /تعذّر تأكيد نشر/);
+    assert.equal(copied.length, 2);
+
+    assert.equal(action(render("", "store-three")), undefined);
+    delete process.env.EXPO_PUBLIC_BTHWANI_CUSTOMER_WEB_ORIGIN;
+    assert.equal(action(render("actor-b", "store-three")), undefined);
+    process.env.EXPO_PUBLIC_BTHWANI_CUSTOMER_WEB_ORIGIN = "https://customer.example";
+    const detached = action(render("actor-b", "store-three"));
+    for (const effect of effectState) effect?.cleanup?.();
+    detached.props.onPress();
+    assert.equal(requests.length, 7, "unmounted render must never begin an owner request");
+    // The browser origin is resolved when the action actually runs.
+    delete globalThis.window;
+    action(render("actor-c", "store-four")).props.onPress();
+    assert.equal(requests[7].origin, "");
+    requests[7].reject(new Error("owner endpoint absent"));
+    await Promise.resolve(); await Promise.resolve();
+    assert.match(notice(render("actor-c", "store-four")), /تعذّر تأكيد نشر/);
+
+    mocks["react-native"].Platform.OS = "android";
+    const previousNative = process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN;
+    try {
+      process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN = "http://127.0.0.1:3202";
+      action(render("actor-d", "store-five")).props.onPress();
+      assert.equal(requests[8].origin, "http://127.0.0.1:3202");
+      requests[8].resolve({ id: "store-five" });
+      await Promise.resolve(); await Promise.resolve();
+      assert.equal(copied.at(-1), "https://customer.example/storefront/store-five");
+
+      delete process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN;
+      action(render("actor-d", "store-six")).props.onPress();
+      assert.equal(requests[9].origin, "");
+      requests[9].reject(new Error("owner endpoint absent"));
+      await Promise.resolve(); await Promise.resolve();
+      assert.match(notice(render("actor-d", "store-six")), /تعذّر تأكيد نشر/);
+    } finally {
+      if (previousNative === undefined) delete process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN;
+      else process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN = previousNative;
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
     if (previousOrigin === undefined) delete process.env.EXPO_PUBLIC_BTHWANI_CUSTOMER_WEB_ORIGIN;

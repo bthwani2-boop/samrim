@@ -450,3 +450,17 @@ test("native Windows spelling resolves only to the same authored physical file",
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("Graphify recovery admits verified Surface identity without environment metadata but rejects spoofed or foreign identity", async () => {
+  const { assertRecoverySource } = await import("./graphify-local.mjs");
+  const base = { platform: "win32", host: "Bthwani", reportedHost: undefined, checkout: "D:\\samrim" };
+  assert.doesNotThrow(() => assertRecoverySource(base));
+  assert.doesNotThrow(() => assertRecoverySource({ ...base, reportedHost: "BTHWANI" }));
+  for (const foreign of [
+    { platform: "linux" },
+    { host: "BTHWANI-DOCKER", reportedHost: "BTHWANI" },
+    { reportedHost: "BTHWANI-DOCKER" },
+    { checkout: "D:\\samrim-copy" },
+    { checkout: "C:\\samrim" },
+  ]) assert.throws(() => assertRecoverySource({ ...base, ...foreign }), /authorized Surface/);
+});

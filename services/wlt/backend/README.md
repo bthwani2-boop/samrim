@@ -1,99 +1,97 @@
-# WLT Go owner
+# WLT - isolated Go runtime
 
-`cmd/wlt` serves the Customer's posted balance and successive bounded pages of
-posted funding transactions (up to ten entries per page) in isolated development. No funding write endpoint is exposed.
-Use the pinned Go toolchain and a fresh `bthwani_wlt_test` PostgreSQL database.
-Runtime startup verifies the complete required owner baseline and the effective reader privileges across all WLT relations, functions and sequences, including previously unknown objects. The reader must not inherit roles, create schemas or temporary objects, or receive private-table/command access. Fresh provisioning also separately proves empty-state and non-login owner roles; startup does not require an empty retained ledger. The runtime requires all of these settings.
+The serving binary `cmd/wlt` exposes the read-only
+[owner contract](../contracts/openapi/README.md). The current owner
+database is `bthwani_wlt_test`; the serving principal is
+`bthwani_wlt_reader`. Startup checks the complete required baseline,
+ownership, effective grants and denial of financial commands, including
+unexpected owner objects. It permits retained isolated journal data.
+Fresh provisioning separately verifies empty state and no-login owner roles.
+When present, the isolated `bthwani_wlt_command` principal is dormant
+(NOLOGIN, NOINHERIT, no database CONNECT and no role memberships). Its ACL is
+limited to the latest agreement review projection and the two explicit
+proposal/decision functions. The owner functions require the isolated
+database, an admitted session principal and READ COMMITTED.
 
-- `BTHWANI_ISOLATED_TEST_MODE=true`
-- `WLT_DEV_LISTEN_ADDR` as an explicit `127.0.0.1` address with a port
-- `WLT_TEST_DATABASE_URL` as a local PostgreSQL URL for the `bthwani_wlt_reader` role and `bthwani_wlt_test` database, with `sslmode=disable`
-- `WLT_TEST_IDENTITY_ORIGIN` as the isolated Identity HTTP origin on `127.0.0.1`
+The current HTTP runtime remains read-only. If the command role is absent,
+the guarded owner-baseline transaction creates it atomically with that exact
+dormant ACL. An existing active, privileged, connected or membership-linked
+command role is rejected before WLT is stopped. This does not activate command
+credentials, authenticated transport or any serving HTTP write route; those
+still require separate acceptance.
 
-For opt-in Customer **Android emulator** preview, the same WLT process must
-remain bound only to the isolated host loopback. The emulator reaches that
-host via `10.0.2.2:<port>`, only after the launcher confirms that WLT
-rejects an unauthenticated balance read. WLT never binds to a LAN address
-for this preview. Physical device, real credentials and production financial
-activation are not approved by this development transport.
+## Runtime configuration
 
-For Customer Web, set `CUSTOMER_SYNTHETIC_WLT_ORIGIN` to the same WLT loopback
-origin in the Surface preview. The route reads the existing preview cookie
-and the app confirms the current actor on both sides of the wallet request.
+Use the exact repository Go pin. Both modes require
+`BTHWANI_ISOLATED_TEST_MODE=true`.
 
-The HTTP owner verifies the Customer with Identity before querying PostgreSQL,
-then checks the same binding again before releasing the balance or transaction
-history. `hasMore` and an optional `nextCursor` indicate older pages without
-an actor selector. The [fresh owner schema](../database/schema/) defines journal records and the
-reader's grant. The disposable baseline is the only current authored WLT schema.
-The five experimental migrations remain available in Git at
-`6db78a588760e21bab1d895eceab13cb8763590e`, not in the active source tree.
+| Setting | Local preview | Canonical Compose |
+| --- | --- | --- |
+| `BTHWANI_ISOLATED_CONTAINER_MODE` | Not enabled | `true` |
+| `WLT_DEV_LISTEN_ADDR` | `127.0.0.1:<port>` | `0.0.0.0:8080` inside the container |
+| `WLT_TEST_DATABASE_URL` | PostgreSQL loopback URL | `postgres:5432` in the isolated network |
+| `WLT_TEST_IDENTITY_ORIGIN` | Explicit HTTP loopback origin | `http://identity:3302` |
+| `WLT_TEST_DSH_ORIGIN` | HTTP loopback origin when Merchant agreement reads are needed | `http://dsh:8080` |
 
-### Isolated Docker development reader
+In either mode the database URL requires the exact isolated database and
+reader role, with `sslmode=disable`. Credentials are private, never
+committed. A missing DSH peer origin leaves Merchant Store agreement reads
+unavailable; an invalid origin is rejected. Compose publishes WLT on Lenovo
+loopback port 3203, runs as UID 65532 with the owner-owned pinned image,
+and does not grant a financial command or migration authority.
+The [environment owner](../../../infra/README.md) describes provisioning,
+native image build and guarded reconciliation. WLT is a default serving
+service, not a separate application profile. Never restart or replace an
+existing service outside the authorized lifecycle.
 
-`infra/compose.yaml` defines the opt-in `wlt` service in the
-existing `bthwani-refoundation` Compose project. Its pinned `Dockerfile`
-runs the actual Go reader as UID 65532 with no writable filesystem or container
-capabilities and loopback-only host port `3203`. It uses an explicit
-`BTHWANI_ISOLATED_CONTAINER_MODE=true`, a *different* startup mode from the
-existing strict local/Android loopback mode. The only permitted endpoints are
-`postgres:5432/bthwani_wlt_test` under `bthwani_wlt_reader` and the
-synthetic `http://identity:3302` verifier. No ledger writes, funding command,
-automatic migrations, provider credentials or production services are enabled.
+Customer Web uses the configured same-origin preview adapter and existing
+HttpOnly session. Android preview admission and the shared client boundary
+are described in [clients/README.md](../clients/README.md). There is no
+production or physical-device finance admission from these preview modes.
 
-The new `tools/dev/provision-wlt-test-db.ps1` is an additive, explicit, one-time
-development-only provisioner. It refuses an existing WLT database, roles or
-credential entry, requires the verified refoundation PostgreSQL container, and
-creates `bthwani_wlt_test` plus no-login owner/sandbox roles and a unique
-read-only reader credential in the Git-ignored `infra/.env`. It applies the ordered current domain baseline files from `database/schema/` and
-synthetic funding commands from `database/sandbox/` only to a NEW empty
-isolated database in one transaction; it verifies journal emptiness, SELECT grants and write-denial before atomic credential publication. The existing disposable proof exercises the same provisioner, including rollback, replay refusal and competing environment edits.
-The five historical files were retired after isolated catalog equivalence,
-owner-backed HTTP, immutable journal, concurrency, privilege and restore tests.
-Never replay the baseline over an existing database. It never runs as
-part of Compose or on another database. If a step fails, inspect the actual
-durable database state before any attempted recovery; do not delete, reset or
-rerun the provisioner blindly.
+## Protected data and explicit synthetic commands
 
-Build the committed WLT source image using `pnpm dev docker build wlt`,
-then use guarded reconciliation for an existing WLT. For an explicitly approved first start, set `REF_WLT_IMAGE_TAG` to the returned `build-<full SHA>` tag and use the canonical `infra/compose.yaml` with `--no-deps --no-build --pull never` for `wlt` only after Identity and PostgreSQL are confirmed healthy. Verify `/health`, unauthenticated `401` and
-read-only `405`, then real Identity session authorization/denial on
-`/v1/wallets/me`; health alone is not journey acceptance.
+Provision only a verified new empty isolated database using the existing
+`tools/dev/provision-wlt-test-db.ps1` workflow. It stages private credentials,
+applies ordered owner schema and sandbox functions, proves roles/grants and
+empty state, then publishes credentials atomically after durable readback.
+Never replay this baseline over an existing database. Historical experimental
+migrations remain in Git at `6db78a588760e21bab1d895eceab13cb8763590e`,
+not in the active source. On an interrupted or ambiguous result inspect
+durable state before recovery; never reset or rerun blindly.
 
-### Post synthetic Customer funding
+The serving reader cannot run the commands below. For an explicitly
+authorized synthetic funding exercise, the separate CLI requires
+`BTHWANI_ISOLATED_TEST_MODE=true`, `WLT_SANDBOX_DATABASE_URL` with the
+dedicated `bthwani_wlt_sandbox` role on loopback, and the isolated
+`WLT_TEST_IDENTITY_ORIGIN`. Supply the current synthetic Customer bearer on
+standard input, never in arguments or logs.
 
-The fresh disposable baseline installs the sandbox functions from
-`database/sandbox/` with the separate owner-only provisioner. An existing
-schema must already have the required functions and privileges; if it does not,
-refuse use and reconcile its version against the preserved Git history. Never
-install the fresh baseline over it or automatically reset its data. Set `WLT_SANDBOX_DATABASE_URL` to the loopback database URL
-for that role. Use the existing isolation mode and Identity origin settings
-above. Run `wlt post-sandbox-funding <reference> <whole-yemeni-riyals>` and
-supply the current synthetic Customer session token through standard input.
+- `wlt post-sandbox-funding <reference> <whole-yemeni-riyals>` records
+  synthetic funding through the immutable journal.
+- `wlt verify-sandbox-provider-funding <reference> <whole-yemeni-riyals>`
+  additionally requires the loopback `WLT_SANDBOX_PROVIDER_ORIGIN`.
+  It verifies the fixed synthetic provider's
+  `GET /sandbox/v1/funding/{reference}` before posting the same owner
+  journal. Unknown, pending, failed, mismatched, redirected, malformed,
+  oversized or unreachable evidence is rejected. It is not a production
+  provider verification or external money transfer.
+- `wlt reverse-sandbox-funding <original-reference>` appends an offsetting
+  journal entry without deleting the original.
 
-An additional **development-only, provider-confirmed** command,
-`wlt verify-sandbox-provider-funding <reference> <whole-yemeni-riyals>`,
-requires `WLT_SANDBOX_PROVIDER_ORIGIN=http://127.0.0.1:<port>` in addition
-to the isolated sandbox credentials. With the existing synthetic Customer
-session on standard input, WLT checks the sandbox provider's
-`GET /sandbox/v1/funding/{reference}` response before using its *existing*
-immutable synthetic journal function. It accepts only an exact successful
-YER amount, provider reference and current Identity actor. A missing,
-pending, failed, mismatched, redirected, malformed, oversized or unreachable
-response fails without a new credit. The simulator and this command are **not**
-a production provider verification scheme; no external funds are transferred.
-The WLT process must reach the simulator through a separately authorized
-local loopback endpoint or tunnel, never a LAN-open financial port.
+Funding reports POSTED or REPLAYED; reversal reports REVERSED or REPLAYED.
+After an uncertain outcome repeat only the same authorized reference,
+actor and amount (original reference and actor for reversal). Changed actor
+or amount is denied; session validity is rechecked before commit. Verify
+posted balance and linked history through the owner reads. The isolated
+SQL agreement and allocation commands are not serving HTTP write routes.
 
-The command returns `POSTED` or `REPLAYED`. After a lost or uncertain result,
-submit the same reference, actor and amount. A changed actor or amount for
-an existing reference is rejected. The same Customer session must still be
-current immediately before the journal transaction commits. Use the existing
-wallet and history HTTP reads to verify the result. The synthetic posting
-operation is CLI-only and permits writes exclusively in `bthwani_wlt_test`.
+## Evidence
 
-Run `wlt reverse-sandbox-funding <original-reference>` with the current
-synthetic Customer session on standard input to offset that Customer's exact
-posted amount. The command returns `REVERSED` or `REPLAYED`. After a lost
-result, repeat the command with the same reference and Customer. Verify the net
-balance and the linked entries through the existing wallet reads.
+Use the existing disposable PostgreSQL owner tests, which exercise the
+baseline, read and write denial, actor and Store isolation, concurrency,
+replay, conservation, recovery and durable readback. Verify generated
+operations against OpenAPI and compare the actual image/source/configuration
+with the selected candidate. Health, unauthenticated rejection and read-only
+method rejection alone do not establish any financial journey or production
+readiness.

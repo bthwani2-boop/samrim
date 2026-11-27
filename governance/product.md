@@ -6,7 +6,7 @@ STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Purpose and Product target
-BThwani is **one** delivery-commerce platform for Customer, Merchant, Captain and authorized Operator, initially serving approved cities and business types. A Merchant can own multiple DSH Stores. Each Store has exactly one relation: `MARKETPLACE` («داخل سوق بثواني») or `DIRECT` («متجر مباشر»), selected during registration when permitted. Different relations are policies/channels, not duplicate Store, Product, cart, checkout, Order, fulfillment or payment engines.
+BThwani is **one** delivery-commerce platform for Customer, Merchant, Captain and authorized Operator, initially serving approved cities and business types. A Merchant can own multiple DSH Stores. Each Store has exactly one relation: `MARKETPLACE` («داخل سوق بثواني») or `DIRECT` («متجر مباشر»), selected during registration when permitted. Both relations share Direct commerce; MARKETPLACE additionally admits marketplace discovery and sales under [Store policy](stores.md). No duplicate Store, Product, cart, checkout, Order, fulfillment or payment engines.
 
 The complete public Store presentation belongs to the **same Customer Expo Web application**, available through a governed link; marketplace listings and compact Store views belong to the existing Customer app surfaces. A DIRECT Store does not acquire marketplace exposure just by creating a link. No extra website framework, merchant-specific wallet or separate commerce platform follows from the relation name.
 

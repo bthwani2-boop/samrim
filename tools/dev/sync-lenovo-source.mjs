@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { containsLikelySecret } from "../security/verify-secrets.mjs";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
-import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptResult, runtimeAuditResult, runtimeBaselineProofDue, runtimePollAction, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -558,15 +558,15 @@ function reconcile() {
 // Backend source is built from Surface, not copied into the app-only mirror.
 const runtimeScope = [
   "services/identity", "services/dsh", "services/wlt", ".go-version",
-  ...ownerComposeInputs, "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1", "tools/dev/provision-wlt-test-db.ps1",
+  ...ownerComposeInputs, "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/compose-runtime-transition.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1", "tools/dev/provision-wlt-test-db.ps1",
   "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
-  "tools/dev/check-go.mjs", "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
+  "tools/dev/check-go.mjs", "tools/dev/dev.ps1", "tools/dev/dev-resource-admission.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
 ];
 const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
 const runtimeStateFile = path.join(stateDir, "runtime-reconcile.json");
 const runtimeReceiptFile = path.join(stateDir, "runtime-reconcile.receipt.json");
 let runtimeChild = null;
-let dependencyChild = false;
+let dependencyChild = null;
 let nextRuntimeAudit = 0;
 let runtimeNotice = "";
 function runtimeLogOnce(message) {
@@ -583,62 +583,102 @@ let nextDependencyAudit=0;
 let dependencyKey="";
 let dependencyNotice="";
 function pollAppDependencies() {
-  if(runtimeChild)return;
+  if(dependencyChild)return;
   const state=readState();
   if(!state||state.branch==="main"||state.branch.startsWith("archive/"))return;
   const paths=dependencyInputChanges({files:{}},new Map(Object.entries(state.files)));
   const key=crypto.createHash("sha256").update(JSON.stringify(paths.map(p=>[p,state.files[p]]))).digest("hex");
   if(key===dependencyKey&&Date.now()<nextDependencyAudit)return;
-  if(run("git",["status","--porcelain","--","tools/dev/dev.ps1","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"]))return;
+  if(run("git",["status","--porcelain","--","tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"]))return;
   dependencyKey=key;
   nextDependencyAudit=Date.now()+60_000;
   const child=spawn(exe.pwsh,["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Apps","reconcile","-Apply","-Automatic"],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
-  runtimeChild=child;
-  dependencyChild=true;
+  dependencyChild=child;
   let output="",errors="",settled=false;
   child.stdout.on("data",chunk=>{output=(output+chunk.toString()).slice(-65536);});
   child.stderr.on("data",chunk=>{errors=(errors+chunk.toString()).slice(-65536);});
   const finish=(code)=>{
-    if(settled)return;settled=true;runtimeChild=null;dependencyChild=false;sourcePending=true;
+    if(settled)return;settled=true;dependencyChild=null;sourcePending=true;
     const result=code===0&&output.includes("APP_DEPENDENCY_RECONCILE_PASS")?"DEPENDENCY_RECONCILE_PASS":
       code===0&&output.includes("APP_DEPENDENCY_CURRENT")?"DEPENDENCY_CURRENT":
-      "DEPENDENCY_RECONCILE_BLOCKED "+(errors.match(/DEPENDENCY_[A-Z_]+|APP_SOURCE_SYNC_NOT_CURRENT|another unified dev operation/i)?.[0]||"inspect unified dev log");
+      "DEPENDENCY_RECONCILE_BLOCKED "+(errors.match(/DEPENDENCY_[A-Z_]+|APP_SOURCE_SYNC_NOT_CURRENT|DEV_RESOURCE_BUSY|DEV_RESOURCE_RECOVERY_REQUIRED/i)?.[0]||"inspect unified dev log");
     if(result!==dependencyNotice){logger(result);dependencyNotice=result;}
   };
   child.on("error",()=>finish(1));
   child.on("close",code=>finish(code));
 }
+function launchRuntimeAttempt({key,attempt,args,recovery=false}) {
+  nextRuntimeAudit=Date.now()+60_000;
+  logger((recovery?"RUNTIME_SAFE_RECOVERY_STARTED":"RUNTIME_RECONCILE_STARTED")+" key="+key.slice(0,12));
+  const child=spawn(exe.pwsh,["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile",...args],{
+    cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"],
+    env:recovery?process.env:{...process.env,BTHWANI_RUNTIME_ATTEMPT_KEY:key,BTHWANI_RUNTIME_ATTEMPT_ID:attempt}
+  });
+  runtimeChild=child;
+  let output="",settled=false;
+  child.stdout.on("data",chunk=>{output=(output+chunk.toString()).slice(-65536);});
+  child.stderr.resume();
+  const finish=()=>{
+    if(settled)return;
+    settled=true;runtimeChild=null;sourcePending=true;
+    nextRuntimeAudit=Date.now()+60_000;
+    try{
+      const saved=runtimeState();
+      if(saved?.key!==key||saved?.attempt!==attempt)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+      const status=runtimeInterruptedStatus(runtimeStateFile,runtimeReceiptFile);
+      persistAt(runtimeStateFile,{version:1,key,attempt,status});
+      for(const line of output.split(/\r?\n/)){
+        if(/^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=[A-Z_:a-z]+$/.test(line)||
+           /^BASELINE_PROOF_PASS HEAD=[a-f0-9]{40} OWNERS=[a-z,]+ CUTOVER=ELIGIBLE_IF_COMPATIBLE$/.test(line))logger(line);
+      }
+      runtimeLogOnce("RUNTIME_RECONCILE_"+status.toUpperCase()+" key="+key.slice(0,12));
+    }catch{runtimeLogOnce("RUNTIME_UPDATE_BLOCKED attempt state could not be persisted");}
+  };
+  child.on("error",finish);
+  child.on("close",finish);
+}
+
 function pollOwnerRuntime() {
   if (runtimeChild || !fs.existsSync(runtimeOptIn)) return;
   const optIn=fs.readFileSync(runtimeOptIn,"utf8").trim();
   const preview=optIn==="isolated-owner-go-preview-v2";
   if(!preview && optIn!=="isolated-committed-owner-images-v1")throw new Error("RUNTIME_OPT_IN_INVALID");
   remoteReady();
-  const currentBranch = branch();
-  if (!currentBranch || currentBranch === "main" || currentBranch.startsWith("archive/")) {
-    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED branch"); return;
+  const currentBranch=branch();
+  if(!currentBranch||currentBranch==="main"||currentBranch.startsWith("archive/")){
+    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED branch");return;
   }
   const changed=dirtyPaths(root,runtimeScope);
-  // The owner reconciler owns per-service admission and dependency holds.
-  // Only inputs shared by the active owners require a global hold.
-  // The separate WLT Compose group is reviewed by its owner reconciler.
-  const dirty=changed.some(isSharedRuntimeInput);
-  if(dirty){runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (shared runtime input)");return;}
-  // The periodic audit also handles committed schema holds and active overlays.
-  // Do not read or hash excluded owner files just to schedule another owner.
-  const eligible=ownerReconcilePlan({changed,committed:{},preview,captain:false}).eligible;
-  const go=changed.filter(p=>isPreviewGoPath(p) && eligible.some(o=>p.startsWith("services/"+o+"/")));
-  const key=crypto.createHash("sha256").update(run("git",["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(JSON.stringify(changed)).update(previewChangeKey(root,go)).update(optIn).digest("hex");
-  let last = runtimeState();
-  const recovered=last && runtimeReceiptStatus(runtimeStateFile,runtimeReceiptFile);
-  if (recovered) {
+  let last=runtimeState();
+  const recovered=last&&runtimeReceiptStatus(runtimeStateFile,runtimeReceiptFile);
+  if(recovered){
     last={...last,status:recovered};
     persistAt(runtimeStateFile,last);
     runtimeLogOnce("RUNTIME_RECONCILE_RECOVERED key="+last.key.slice(0,12));
     nextRuntimeAudit=Date.now()+60_000;
   }
-  if (last && (["running","uncertain"].includes(last.status) || (last.key === key && last.status === "blocked"))) {
-    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation"); return;
+  if(last&&["running","uncertain"].includes(last.status)){
+    // A proven stable boundary does not depend on desired source. Only the
+    // recovery implementation must be committed. The existing Docker lease
+    // and orphan check establish that the previous writer is gone.
+    if(runtimeAttemptPhase(runtimeStateFile,runtimeReceiptFile)!=="ready"){
+      runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation");return;
+    }
+    const recoveryInputs=["tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"];
+    if(changed.some(p=>recoveryInputs.includes(p))){
+      runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (recovery input)");return;
+    }
+    if(Date.now()>=nextRuntimeAudit)
+      launchRuntimeAttempt({key:last.key,attempt:last.attempt,args:["-RecoverRuntimeAttempt",last.key,"-Automatic"],recovery:true});
+    return;
+  }
+  const dirty=changed.some(isSharedRuntimeInput);
+  if(dirty){runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (shared runtime input)");return;}
+  const eligible=ownerReconcilePlan({changed,committed:{},preview,captain:false}).eligible;
+  const go=changed.filter(p=>isPreviewGoPath(p)&&eligible.some(o=>p.startsWith("services/"+o+"/")));
+  const key=crypto.createHash("sha256").update(run("git",["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(JSON.stringify(changed)).update(previewChangeKey(root,go)).update(optIn).digest("hex");
+  if(last?.key===key&&last.status==="blocked"){
+    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation");return;
   }
   const action=runtimePollAction({enabled:true,dirty,active:false,key,last,now:Date.now(),nextAudit:nextRuntimeAudit});
   if(!action)return;
@@ -675,39 +715,8 @@ function pollOwnerRuntime() {
     return;
   }
   const attempt=crypto.randomUUID();
-  persistAt(runtimeStateFile, {version:1,key,attempt,status:"running"});
-  logger("RUNTIME_RECONCILE_STARTED key="+key.slice(0,12));
-  // The unified dev launcher holds the existing lifecycle mutex. Keep the app
-  // file sync responsive while its one bounded build/replacement runs.
-  const child = spawn(exe.pwsh, ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply",...(preview?["-Preview"]:[]),...(runtimeBaselineProofDue(key,last)?["-PrepareBaseline"]:[])], {
-    cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"],
-    env:{...process.env,BTHWANI_RUNTIME_ATTEMPT_KEY:key,BTHWANI_RUNTIME_ATTEMPT_ID:attempt}
-  });
-  runtimeChild=child;
-  let output="",errors="",settled=false;
-  child.stdout.on("data", chunk => { output=(output+chunk.toString()).slice(-65536); });
-  child.stderr.on("data", chunk => { errors=(errors+chunk.toString()).slice(-65536); });
-  const finish=(status)=>{
-    if(settled)return;
-    settled=true;
-    runtimeChild=null;
-    sourcePending=true;
-    nextRuntimeAudit=Date.now()+60_000;
-    try {
-      const saved=runtimeState();
-      if(saved?.key!==key||saved?.attempt!==attempt)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
-      status=runtimeReceiptStatus(runtimeStateFile,runtimeReceiptFile)||status;
-      persistAt(runtimeStateFile,{version:1,key,attempt,status});
-      const holds=output.split(/\r?\n/).filter(line=>/^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=[A-Z_:a-z]+$/.test(line));
-      for(const hold of holds) logger(hold);
-      for(const proof of output.split(/\r?\n/).filter(line=>/^BASELINE_PROOF_PASS HEAD=[a-f0-9]{40} OWNERS=[a-z,]+ CUTOVER=ELIGIBLE_IF_COMPATIBLE$/.test(line))) logger(proof);
-      runtimeLogOnce("RUNTIME_RECONCILE_"+status.toUpperCase()+" key="+key.slice(0,12));
-    } catch {
-      runtimeLogOnce("RUNTIME_UPDATE_BLOCKED attempt state could not be persisted");
-    }
-  };
-  child.on("error",()=>finish("retry"));
-  child.on("close",(code,signal)=>finish(runtimeAttemptResult(code,signal,output,errors)));
+  beginRuntimeAttempt(runtimeStateFile,runtimeReceiptFile,key,attempt);
+  launchRuntimeAttempt({key,attempt,args:["-Apply",...(preview?["-Preview"]:[]),...(runtimeBaselineProofDue(key,last)?["-PrepareBaseline"]:[])]});
 }
 // Same process as the existing source mirror. The native Graphify runner
 // remains the exclusive index writer; the event subscription only schedules it.
@@ -869,7 +878,7 @@ function main(command) {
     let nextSourceCycle = 0;
     const attempt = () => {
       if (active) return;
-      // Drain both children before returning a reload request to the same
+      // Drain every child before returning a reload request to the same
       // task-owned process. Never run two source watchers concurrently.
       if (Date.now()>=nextReloadAudit || reloadAction==="drain") {
         nextReloadAudit=Date.now()+5_000;
@@ -877,7 +886,7 @@ function main(command) {
           const current=watcherDigest();
           reloadAction=watcherReloadAction({loaded,current,
             dirty:Boolean(run("git",["status","--porcelain","--",...watcherInputs])),
-            busy:Boolean(runtimeChild||graphChild)});
+            busy:Boolean(runtimeChild||dependencyChild||graphChild)});
         } catch {
           reloadAction="defer";
         }

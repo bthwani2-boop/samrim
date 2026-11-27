@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./appearance": "./src/appearance.tsx",
-    "./navigation": "./src/navigation.tsx"
+    "./navigation": "./src/navigation.tsx",
+    "./appearance-preferences": "./src/appearance-preferences.tsx"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",

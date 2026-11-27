@@ -9,6 +9,7 @@ type Reading =
   | { kind: "unavailable" }
   | { kind: "ready"; granted: boolean; canAskAgain: boolean; servicesEnabled: boolean };
 type Scope = { active: boolean; revision: number };
+type NativeCommand = "permission" | "settings";
 
 /** Device readiness only: no position collection, background tracking or dispatch authority. */
 export default function CaptainDeviceLocationReadiness() {
@@ -16,27 +17,31 @@ export default function CaptainDeviceLocationReadiness() {
   const [reading, setReading] = useState<Reading>({ kind: "checking" });
   const latest = useRef(reading);
   const scope = useRef<Scope | null>(null);
-  const requestPending = useRef(false);
+  const pending = useRef<NativeCommand | null>(null);
+
   const publish = useCallback((next: Reading) => {
     latest.current = next;
     setReading(next);
   }, []);
-  const current = useCallback((s: Scope, revision: number) =>
-    scope.current === s && s.active && s.revision === revision, []);
+
   const read = useCallback(async (s: Scope) => {
-    if (scope.current !== s || !s.active) return;
+    if (scope.current !== s || !s.active || pending.current !== null) return;
     const revision = ++s.revision;
     publish({ kind: "checking" });
+    const isCurrent = () => scope.current === s && s.active && s.revision === revision;
     try {
       const [permission, servicesEnabled] = await Promise.all([
-        Location.getForegroundPermissionsAsync(), Location.hasServicesEnabledAsync(),
+        Location.getForegroundPermissionsAsync(),
+        Location.hasServicesEnabledAsync(),
       ]);
-      if (current(s, revision)) publish({ kind: "ready", granted: permission.granted,
-        canAskAgain: permission.canAskAgain, servicesEnabled });
+      if (isCurrent()) {
+        publish({ kind: "ready", granted: permission.granted,
+          canAskAgain: permission.canAskAgain, servicesEnabled });
+      }
     } catch {
-      if (current(s, revision)) publish({ kind: "unavailable" });
+      if (isCurrent()) publish({ kind: "unavailable" });
     }
-  }, [current, publish]);
+  }, [publish]);
 
   useFocusEffect(useCallback(() => {
     if (Platform.OS === "web") return;
@@ -46,10 +51,12 @@ export default function CaptainDeviceLocationReadiness() {
     if (s.active) void read(s);
     const subscription = AppState.addEventListener("change", state => {
       if (scope.current !== s) return;
-      s.active = state === "active";
+      const active = state === "active";
+      if (s.active === active) return;
+      s.active = active;
       s.revision++;
       publish({ kind: "checking" });
-      if (s.active) void read(s);
+      if (active) void read(s);
     });
     return () => {
       subscription.remove();
@@ -62,50 +69,41 @@ export default function CaptainDeviceLocationReadiness() {
   }, [publish, read]));
 
   const renderedScope = scope.current;
-  function currentScope() {
+  function actionableScope() {
     return renderedScope && scope.current === renderedScope && renderedScope.active &&
-      latest.current === reading ? renderedScope : null;
+      pending.current === null && latest.current === reading ? renderedScope : null;
   }
+
   function refresh() {
-    const s = currentScope();
+    const s = actionableScope();
     if (s) void read(s);
   }
-  async function requestPermission() {
-    const s = currentScope();
-    if (!s || reading.kind !== "ready" || reading.granted || !reading.canAskAgain || requestPending.current) return;
-    requestPending.current = true;
+
+  async function runNativeCommand() {
+    const s = actionableScope();
+    if (!s || reading.kind !== "ready" || reading.granted) return;
+    const command: NativeCommand = reading.canAskAgain ? "permission" : "settings";
+    pending.current = command;
     const revision = ++s.revision;
     publish({ kind: "checking" });
+    let failed = false;
     try {
-      await Location.requestForegroundPermissionsAsync();
+      if (command === "permission") await Location.requestForegroundPermissionsAsync();
+      else await Linking.openSettings();
     } catch {
-      if (current(s, revision)) publish({ kind: "unavailable" });
-      return;
+      failed = true;
     } finally {
-      requestPending.current = false;
+      pending.current = null;
     }
-    // The OS dialog may outlive its original focus. Re-read current device facts, not the old result.
+    // Dialog results are never permission truth. Only the current active scope
+    // may read the device again; an old failure cannot mark a newer view failed.
     const active = scope.current;
-    if (active?.active) void read(active);
-  }
-
-
-  async function openSettings() {
-    const s = currentScope();
-    if (!s || reading.kind !== "ready" || reading.granted || reading.canAskAgain || requestPending.current) return;
-    requestPending.current = true;
-    const revision = ++s.revision;
-    publish({ kind: "checking" });
-    try {
-      await Linking.openSettings();
-    } catch {
-      if (current(s, revision)) publish({ kind: "unavailable" });
-      return;
-    } finally {
-      requestPending.current = false;
+    if (!active?.active) return;
+    if (failed && active === s && active.revision === revision) {
+      publish({ kind: "unavailable" });
+    } else {
+      void read(active);
     }
-    const active = scope.current;
-    if (active?.active) void read(active);
   }
 
   const actionStyle = { borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
@@ -128,13 +126,13 @@ export default function CaptainDeviceLocationReadiness() {
           <Text testID="captain-location-services" style={{ color: reading.servicesEnabled ? theme.successText : theme.warningText }}>
             {reading.servicesEnabled ? "خدمات الموقع مفعّلة" : "خدمات الموقع متوقفة"}
           </Text>
-          {!reading.granted && reading.canAskAgain ? (
-            <Pressable accessibilityRole="button" testID="captain-location-request" onPress={() => void requestPermission()} style={actionStyle}>
-              <Text style={{ color: theme.interactiveText }}>منح إذن الموقع</Text>
-            </Pressable>
-          ) : !reading.granted ? (
-            <Pressable accessibilityRole="button" testID="captain-location-settings" onPress={() => void openSettings()} style={actionStyle}>
-              <Text style={{ color: theme.interactiveText }}>فتح إعدادات التطبيق لمنح إذن الموقع</Text>
+          {!reading.granted ? (
+            <Pressable accessibilityRole="button"
+              testID={reading.canAskAgain ? "captain-location-request" : "captain-location-settings"}
+              onPress={() => void runNativeCommand()} style={actionStyle}>
+              <Text style={{ color: theme.interactiveText }}>
+                {reading.canAskAgain ? "منح إذن الموقع" : "فتح إعدادات التطبيق لمنح إذن الموقع"}
+              </Text>
             </Pressable>
           ) : null}
           {!reading.servicesEnabled ? <Text style={{ color: theme.colorSecondary }}>فعّل خدمات الموقع من إعدادات الجهاز.</Text> : null}

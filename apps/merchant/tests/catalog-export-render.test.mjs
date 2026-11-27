@@ -25,7 +25,7 @@ test("export button hands off fresh CSV only in its current owner scope", async 
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-export-render-"));
   try {
     const compile = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), src, "--ignoreConfig",
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), src, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
@@ -47,15 +47,16 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     const shared = [];
     let sharingAvailable = true;
     let shareFails = false;
+    let createFails = false, elementFails = false, existingFile = false, removeFails = false;
     let deferDelete = false, releaseDelete;
     let deferWrite = false, releaseWrite, writeFails = false;
     class NativeFile {
       constructor(_cache, name) {
         this.uri = `file:///synthetic-cache/${name}`;
-        this.exists = false;
+        this.exists = existingFile;
         nativeFiles.push(this);
       }
-      create() { this.exists = true; }
+      create() { this.exists = true; if (createFails) throw new Error("creation interrupted"); }
       write(csv) {
         assert.equal(this.exists, true);
         if (!deferWrite) {
@@ -109,10 +110,10 @@ test("export button hands off fresh CSV only in its current owner scope", async 
         return new Promise((resolve, reject) => { call.resolve = resolve; call.reject = reject; });
       } },
     };
-    const doc = { body: { appendChild() {} }, createElement: () => ({
+    const doc = { body: { appendChild() {} }, createElement: () => { if (elementFails) throw new Error("DOM unavailable"); return ({
       click() { downloads.push({ name: this.download, blob: urls.get(this.href) }); },
-      remove() {},
-    }) };
+      remove() { if (removeFails) throw new Error("DOM removal failed"); },
+    }); } };
     const url = {
       createObjectURL(blob) { urls.set("blob:synthetic", blob); return "blob:synthetic"; },
       revokeObjectURL(value) { urls.delete(value); },
@@ -121,10 +122,11 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     const mod = new Module(filename);
     mod.filename = filename;
     mod.require = name => { assert.ok(Object.hasOwn(mocks, name), name); return mocks[name]; };
+    const timers = new Map(); let timerId = 0;
     mod.fixtureGlobals = {
       document: doc, URL: url,
-      setTimeout: (fn, delay) => { if (delay === 1000) fn(); return 0; },
-      clearTimeout: () => {},
+      setTimeout: (fn, delay) => { if (delay === 1000) { fn(); return 0; } timers.set(++timerId, fn); return timerId; },
+      clearTimeout: id => timers.delete(id),
     };
     mod._compile("const { document, URL, setTimeout, clearTimeout } = module.fixtureGlobals;\n" + source, filename);
     const scope = { actorId: "merchant-a", storeId: "store-a" };
@@ -278,6 +280,81 @@ test("export button hands off fresh CSV only in its current owner scope", async 
     assert.equal(shared.length, sharesBeforeFailure, "rejected write cannot share a file");
     assert.equal(nativeFiles.at(-1).exists, false, "rejected write cleans temporary file");
     assert.equal(draftButton().props.disabled, false, "failed write permits retry");
+
+    writeFails = false;
+    createFails = true;
+    draftButton().props.onPress();
+    requests.at(-1).resolve(draftResult);
+    await tick();
+    const retainedNativeFile = nativeFiles.at(-1).exists;
+    createFails = false;
+    cleanup();
+    mounted = false; states.length = 0; refs.length = 0;
+    platform.OS = "web";
+    elementFails = true;
+    draftButton().props.onPress();
+    requests.at(-1).resolve(draftResult);
+    await tick();
+    assert.deepEqual({ retainedNativeFile, retainedObjectURLs: urls.size }, { retainedNativeFile: false, retainedObjectURLs: 0 });
+
+    elementFails = false;
+    removeFails = true;
+    draftButton().props.onPress();
+    requests.at(-1).resolve(draftResult);
+    await tick();
+    assert.equal(urls.size, 0, "DOM removal failure still releases URL");
+    removeFails = false;
+    cleanup();
+    mounted = false; states.length = 0; refs.length = 0;
+    platform.OS = "android";
+    existingFile = true;
+    const shareCount = shared.length;
+    draftButton().props.onPress();
+    requests.at(-1).resolve(draftResult);
+    await tick();
+    assert.equal(nativeFiles.at(-1).exists, true, "previous file must not be deleted");
+    assert.equal(nativeFiles.at(-1).csv, undefined, "previous file must not be overwritten");
+    assert.equal(shared.length, shareCount);
+    assert.equal(draftButton().props.disabled, false);
+    existingFile = false;
+    draftButton().props.onPress();
+    requests.at(-1).resolve(draftResult);
+    await tick();
+    assert.equal(shared.length, shareCount + 1);
+    assert.equal(nativeFiles.at(-1).exists, false);
+    assert.equal(draftButton().props.disabled, false);
+
+    // A retained cancel action cannot cancel an already finished attempt.
+    button().props.onPress();
+    const previousCancel = nodes(render()).find(n => n.props?.accessibilityLabel === "إلغاء تجهيز التصدير").props.onPress;
+    const expired = requests.at(-1);
+    assert.equal(timers.size, 1);
+    [...timers.values()][0]();
+    assert.equal(expired.signal.aborted, true);
+    expired.resolve(draftResult);
+    await tick();
+    previousCancel();
+    assert.equal(button().props.disabled, false);
+    assert.equal(timers.size, 0);
+    button().props.onPress();
+    requests.at(-1).reject(new Error("CATALOG_EXPORT_LIMIT"));
+    await tick();
+    assert.ok(nodes(render()).some(n => n.props?.children === "يتجاوز الكتالوج 5000 عرض. لم يُنشأ ملف جزئي."));
+
+    // Every supported selector shape uses the same scoped export traversal.
+    cleanup();
+    for (const selectors of [{ query: "قهوة" }, { status: "stockout" }]) {
+      mounted = false; states.length = 0; refs.length = 0; stateIndex = 0; refIndex = 0;
+      platform.OS = "web";
+      const selected = mod.exports.default({ ...scope, ...selectors });
+      const action = nodes(selected.type(selected.props)).find(n => n.props?.accessibilityLabel === "تصدير نتائج التصفية CSV");
+      action.props.onPress();
+      assert.deepEqual(requests.at(-1).options, { limit: 50, ...selectors });
+      requests.at(-1).resolve(result);
+      await tick();
+      assert.equal(timers.size, 0);
+      cleanup();
+    }
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }

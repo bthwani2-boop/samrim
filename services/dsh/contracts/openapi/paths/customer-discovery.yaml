@@ -8,13 +8,13 @@ paths:
       parameters:
         - name: after
           in: query
+          description: Exclusive Store identifier from the previous page.
           schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
       responses:
         '200':
           description: Private page of visible Store identifiers
           headers:
-            Cache-Control:
-              schema: { type: string, const: no-store }
+            Cache-Control: { $ref: '#/components/headers/NoStore' }
           content:
             application/json:
               schema:
@@ -28,62 +28,35 @@ paths:
                     maxItems: 20
                     uniqueItems: true
                     items: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
-                  nextCursor: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
-        '400':
-          description: Invalid request or selector
-          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
-        '401':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
-        '403':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
-        '503':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+                  nextCursor:
+                    description: Last identifier of a full page when more visible Stores exist.
+                    $ref: '../dsh.openapi.yaml#/components/schemas/PublicId'
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/ReadUnavailable' }
   /v1/customers/me/favorite-stores/{storeID}:
+    parameters:
+      - name: storeID
+        in: path
+        required: true
+        schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
     get:
       operationId: getCurrentCustomerFavoriteStore
       summary: Read one Store favorite for the current Customer
       description: Returns false for a missing, withdrawn or unsaved Store without revealing private Store facts.
       security: [{ OpaqueSession: [] }]
-      parameters:
-        - name: storeID
-          in: path
-          required: true
-          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
       responses:
-        '200':
-          description: Current verified Customer favorite state
-          headers:
-            Cache-Control:
-              schema: { type: string, const: no-store }
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [actorId, storeId, favorite]
-                properties:
-                  actorId: { type: string, minLength: 1, maxLength: 128 }
-                  storeId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
-                  favorite: { type: boolean }
-        '400':
-          description: Invalid request or selector
-          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
-        '401':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
-        '403':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
-        '503':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
+        '200': { $ref: '#/components/responses/FavoriteState' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '503': { $ref: '#/components/responses/ReadUnavailable' }
     put:
       operationId: setCurrentCustomerFavoriteStore
       summary: Set one Store favorite to the requested boolean state
       description: Adding requires current public eligibility; removing is always scoped to the current Customer. Repeated identical requests converge. After an unknown result read the owner before another write.
       security: [{ OpaqueSession: [] }]
-      parameters:
-        - name: storeID
-          in: path
-          required: true
-          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
       requestBody:
         required: true
         content:
@@ -95,30 +68,98 @@ paths:
               properties:
                 favorite: { type: boolean }
       responses:
-        '200':
-          description: Current verified Customer favorite state
-          headers:
-            Cache-Control:
-              schema: { type: string, const: no-store }
-          content:
-            application/json:
-              schema:
-                type: object
-                additionalProperties: false
-                required: [actorId, storeId, favorite]
-                properties:
-                  actorId: { type: string, minLength: 1, maxLength: 128 }
-                  storeId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
-                  favorite: { type: boolean }
-        '400':
-          description: Invalid request or selector
-          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
-        '401':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartUnauthorized'
-        '403':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartForbidden'
-        '503':
-          $ref: '../dsh.openapi.yaml#/components/responses/CartUnavailable'
-        '404':
-          description: Store not publicly eligible for addition
-          content: { application/json: { schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CartError' } } }
+        '200': { $ref: '#/components/responses/FavoriteState' }
+        '400': { $ref: '#/components/responses/InvalidRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/StoreUnavailable' }
+        '503': { $ref: '#/components/responses/WriteUnavailable' }
+
+components:
+  headers:
+    NoStore:
+      schema: { type: string, const: no-store }
+  schemas:
+    SessionError:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error: { type: string, const: UNAUTHORIZED_OR_OWNER_UNAVAILABLE }
+  responses:
+    FavoriteState:
+      description: Current verified Customer favorite state
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [actorId, storeId, favorite]
+            properties:
+              actorId: { type: string, minLength: 1, maxLength: 128 }
+              storeId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+              favorite: { type: boolean }
+    InvalidRequest:
+      description: Invalid request, selector or favorite command
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: { type: string, const: INVALID_REQUEST }
+    Unauthorized:
+      description: No current verified Customer session
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SessionError' }
+    Forbidden:
+      description: Current session does not carry the Customer role
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/SessionError' }
+    StoreUnavailable:
+      description: Store not publicly eligible for addition
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: { type: string, const: STORE_UNAVAILABLE }
+    ReadUnavailable:
+      description: Identity or DSH could not verify current favorite state
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: { type: string, enum: [UNAUTHORIZED_OR_OWNER_UNAVAILABLE, OWNER_UNAVAILABLE] }
+    WriteUnavailable:
+      description: Identity or DSH could not confirm the mutation; read the owner before another write
+      headers:
+        Cache-Control: { $ref: '#/components/headers/NoStore' }
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: { type: string, enum: [UNAUTHORIZED_OR_OWNER_UNAVAILABLE, OWNER_UNAVAILABLE, OPERATION_RESULT_UNKNOWN] }

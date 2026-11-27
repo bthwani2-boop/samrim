@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 import * as cartSession from "./cart-session.ts";
 
 const source = path.join(import.meta.dirname, "cart-transport.ts");
@@ -14,7 +14,7 @@ const root = path.resolve(import.meta.dirname, "../../../../..");
 const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-cart-transport-"));
 let compiled;
 try {
-  const r = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+  const r = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--inlineSourceMap", "--inlineSources", "--outDir", tmp], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
   assert.equal(r.status, 0, r.stderr || r.stdout);
@@ -58,7 +58,7 @@ function harness(t, os = "web", configured = true) {
   const mod = loadMappedRenderFixture(compiled, source, {
     "@bthwani/dsh": dsh,
     "react-native": { Platform: { OS: os } },
-    "../access/bounded-customer-json": { readBoundedCustomerJSON },
+    "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON },
     "../access/customer-session-transport": {
       async readCustomerAdmission() { return admissions.shift() ?? admission; },
       async withVerifiedNativeCustomerRead(s, read, a) {
@@ -116,7 +116,7 @@ test("Cart write with cacheable receipt stays pending and recovers only the same
   const receipt = { cart, replay: false };
   h.replies.push(json(receipt, 200, "public"));
   await assert.rejects(h.api.replaceVerifiedCart(store, change, actor, signal()), failure(502, "OPERATION_RESULT_UNKNOWN"));
-  assert.equal(cartSession.pendingCartChange(actor, store), change);
+  assert.deepEqual(cartSession.pendingCartChange(actor, store), change);
   await assert.rejects(h.api.replaceVerifiedCart(store, { ...change, operationId: "synthetic-cart-operation-two" }, actor, signal()), failure(409, "CART_PENDING_RECONCILIATION"));
   assert.equal(h.requests.length, 1);
   h.replies.push(json({ cart, replay: true }));
@@ -142,7 +142,7 @@ test("Aborting a stalled cart write releases its body and keeps the original pen
     ctl.abort();
     assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 500); })]), "OPERATION_RESULT_UNKNOWN");
     assert.equal(cancelled, true);
-    assert.equal(cartSession.pendingCartChange(actor, otherStore), change);
+    assert.deepEqual(cartSession.pendingCartChange(actor, otherStore), change);
   } finally {
     clearTimeout(timer);
     if (!cancelled) stream.close();
@@ -194,7 +194,7 @@ test("Cart mutations preserve definitive rejection and never confirm malformed o
   ]) {
     h.replies.push(response);
     await assert.rejects(send(), failure(status, code));
-    assert.equal(cartSession.pendingCartChange(actor, store), change);
+    assert.deepEqual(cartSession.pendingCartChange(actor, store), change);
   }
   h.admissions.push(h.admission, { enabled: false });
   h.replies.push(json({ cart, replay: true }));
@@ -215,7 +215,7 @@ test("Native cart write keeps same pending operation across lost verification", 
     h.setNative(mode);
     h.replies.push(json({ cart, replay: true }));
     await assert.rejects(send(), failure(0, "OPERATION_RESULT_UNKNOWN"));
-    assert.equal(cartSession.pendingCartChange(actor, store), change);
+    assert.deepEqual(cartSession.pendingCartChange(actor, store), change);
   }
   h.setNative("ready");
   h.replies.push(json({ cart, replay: true }));
@@ -243,4 +243,17 @@ test("Cart transport refuses expired or foreign admission and Native calls the a
   assert.deepEqual(await h.api.readVerifiedCartMerchandiseEstimate(store, 2, actor, signal()), { kind: "ready", estimate });
   assert.equal(h.native.length, 2);
   assert.ok(h.requests.every(r => r.credentials === "omit" && r.headers.Authorization.startsWith("Bearer ")));
+});
+
+test("Web retry sends the original admitted command after the caller changes its draft object", async t => {
+  const h = harness(t);
+  const change = { operationId: "synthetic-cart-immutable", expectedVersion: 1, lines: [{ offerId: "offer-a", quantity: 2 }] };
+  const original = structuredClone(change);
+  h.replies.push(new Error("lost acknowledgement"));
+  await assert.rejects(h.api.replaceVerifiedCart(store, change, actor, signal()), failure(0, "OPERATION_RESULT_UNKNOWN"));
+  change.lines[0].quantity = 3;
+  await assert.rejects(h.api.replaceVerifiedCart(store, change, actor, signal()), failure(409, "CART_PENDING_RECONCILIATION"));
+  h.replies.push(json({ cart, replay: true }));
+  assert.deepEqual(await h.api.replaceVerifiedCart(store, cartSession.pendingCartChange(actor, store), actor, signal()), { cart, replay: true });
+  assert.deepEqual(h.requests.map(r => JSON.parse(r.body)), [original, original]);
 });

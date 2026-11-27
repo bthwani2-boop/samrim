@@ -12,7 +12,7 @@ const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-sidebar-"));
 let compiled;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
   ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });

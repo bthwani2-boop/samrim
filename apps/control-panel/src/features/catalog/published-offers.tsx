@@ -2,9 +2,8 @@ import { getPublicStore, listPublicOffers, type PublicOffer, type PublicPage, ty
 import { currentOperatorAccess } from "../../server/current-operator-access";
 import styles from "../operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../operator-shell/workspace-unavailable";
-import { resolvePublicDshOrigin } from "../stores/public-store-query";
+import { parsePublishedOfferQuery, publishedOfferHref, resolvePublicDshOrigin } from "../stores/public-store-query";
 import PublicMarketOverview from "../workspace/public-market-overview";
-import { parsePublishedOfferQuery, publishedOfferHref } from "./published-offer-query";
 import catalogStyles from "./published-offers.module.css";
 
 export default async function PublishedOffers({ searchParams, pathname = "/catalog" }: Readonly<{

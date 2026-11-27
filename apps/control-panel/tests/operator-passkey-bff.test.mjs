@@ -24,6 +24,19 @@ const goodEnv = {
   OPERATOR_PASSKEY_BROWSER_ORIGIN: "http://localhost:13000",
   OPERATOR_PASSKEY_IDENTITY_ORIGIN: "http://127.0.0.1:18110",
 };
+
+// Owner fixtures model the actual private JSON contract unless a test
+// explicitly constructs an invalid response.
+function ownerResponse(body, init = {}) {
+  return new Response(body, {
+    ...init,
+    headers: { "content-type": "application/json", "cache-control": "no-store", ...init.headers },
+  });
+}
+function ownerJSON(value, init = {}) {
+  return ownerResponse(JSON.stringify(value), init);
+}
+
 const now = Date.parse("2026-11-18T12:00:00Z");
 const token = "A".repeat(43);
 
@@ -236,13 +249,13 @@ test("Operator workspace grants require fresh Identity session and seven owner p
     queried.push(path);
     assert.equal(init.headers.Authorization, `Bearer ${token}`);
     if (path === "/v1/sessions/current") {
-      return Response.json({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
+      return ownerJSON({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
     }
     const permission = path.split("/").at(-1);
     if (permission === "operations" || permission === "merchant") {
-      return Response.json({ actorId: "operator-one", permission });
+      return ownerJSON({ actorId: "operator-one", permission });
     }
-    return Response.json({ error: "FORBIDDEN" }, { status: 403 });
+    return ownerJSON({ error: "FORBIDDEN" }, { status: 403 });
   });
   assert.deepEqual(await readVerifiedOperatorAccess(config, token), {
     actorId: "operator-one", sessionExpiresAt: expiry, grants: ["operations", "merchant"],
@@ -261,15 +274,15 @@ test("Operator workspace owner mismatch, role spoof, revoked session and outage 
     calls++;
     const path = new URL(url).pathname;
     if (path === "/v1/sessions/current") {
-      if (mode === "revoked") return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
-      if (mode === "role-spoof") return Response.json({ actorId: "operator-one", role: "merchant", sessionExpiresAt: expiry });
-      if (mode === "outage") return Response.json({ error: "OWNER_UNAVAILABLE" }, { status: 503 });
-      return Response.json({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
+      if (mode === "revoked") return ownerJSON({ error: "UNAUTHORIZED" }, { status: 401 });
+      if (mode === "role-spoof") return ownerJSON({ actorId: "operator-one", role: "merchant", sessionExpiresAt: expiry });
+      if (mode === "outage") return ownerJSON({ error: "OWNER_UNAVAILABLE" }, { status: 503 });
+      return ownerJSON({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
     }
     const permission = path.split("/").at(-1);
-    if (mode === "no-grants") return Response.json({ error: "FORBIDDEN" }, { status: 403 });
-    if (mode === "revoked-during-read") return Response.json({ error: "UNAUTHORIZED" }, { status: 401 });
-    return Response.json({
+    if (mode === "no-grants") return ownerJSON({ error: "FORBIDDEN" }, { status: 403 });
+    if (mode === "revoked-during-read") return ownerJSON({ error: "UNAUTHORIZED" }, { status: 401 });
+    return ownerJSON({
       actorId: mode === "different-actor" ? "operator-two" : "operator-one", permission,
       ...(mode === "extra-field" ? { granted: false } : {}),
     });
@@ -374,4 +387,365 @@ test("Operator principal and token obey exact Identity response schemas", () => 
   assert.deepEqual(parseVerifiedOperatorPrincipal({ ...principal, actorId: "مشغّل" }, issued, now),
     { ...principal, actorId: "مشغّل" },
     "valid UTF-8 Identity actor IDs must remain supported");
+});
+
+test("stalled Identity response fails closed and cancels its stream before returning", { timeout: 7500 }, async () => {
+  const { boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  let cancelled = false;
+  let controller;
+  const response = ownerResponse(new ReadableStream({
+    start(value) { controller = value; value.enqueue(new TextEncoder().encode('{"actorId":')); },
+    cancel() { cancelled = true; },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  let timer;
+  try {
+    const result = await Promise.race([
+      boundedResponseJSON(response).then(() => "accepted", () => "rejected"),
+      new Promise(resolve => { timer = setTimeout(() => resolve("unbounded"), 5800); }),
+    ]);
+    assert.equal(result, "rejected");
+    assert.equal(cancelled, true);
+    assert.equal(response.body.locked, false);
+  } finally {
+    clearTimeout(timer);
+    if (!cancelled) controller.close();
+  }
+});
+
+test("oversized owner response cancels the remaining stream and releases its reader", async () => {
+  const { boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  let cancelled = false;
+  const response = ownerResponse(new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(65537)); },
+    cancel() { cancelled = true; },
+  }));
+  await assert.rejects(() => boundedResponseJSON(response));
+  assert.equal(cancelled, true);
+  assert.equal(response.body.locked, false);
+});
+
+test("body admission rejects invalid length, empty data, malformed UTF-8 and broken streams", async () => {
+  const { boundedResponseJSON, boundedRequestBody, isEmptyRequestBody } =
+    await import("../src/server/operator-passkey-transport.ts");
+  const url = "http://localhost:13000/api/auth/passkey/authentication";
+  const request = (body, headers = {}) => new Request(url, { method: "POST", body, headers, duplex: "half" });
+  for (const length of ["bogus", "65537"]) {
+    assert.equal(await boundedRequestBody(request("{}", { "content-length": length })), null);
+    await assert.rejects(() => boundedResponseJSON(ownerResponse("{}", { headers: { "content-length": length } })));
+  }
+  assert.equal(await boundedRequestBody(request(null)), null);
+  assert.equal(await boundedRequestBody(request("")), null);
+  assert.equal(await boundedRequestBody(request("12345"), 4), null);
+  assert.equal(await boundedRequestBody(request(new Uint8Array([0xff]))), null);
+  assert.equal(await isEmptyRequestBody(request(null, { "transfer-encoding": "chunked" })), false);
+  assert.equal(await isEmptyRequestBody(request(null, { "content-length": "0" })), true);
+  await assert.rejects(() => boundedResponseJSON(ownerResponse(null)));
+  await assert.rejects(() => boundedResponseJSON(ownerResponse("not JSON")));
+  await assert.rejects(() => boundedResponseJSON(ownerResponse(new Uint8Array([0xff]))));
+  const locked = request("{}");
+  const reader = locked.body.getReader();
+  try { assert.equal(await boundedRequestBody(locked), null); }
+  finally { reader.releaseLock(); }
+  const broken = ownerResponse(new ReadableStream({ start(controller) { controller.error(new Error("source failed")); } }));
+  await assert.rejects(() => boundedResponseJSON(broken));
+  assert.equal(broken.body.locked, false);
+  const valid = ownerResponse(new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode('{"value":'));
+    controller.enqueue(new TextEncoder().encode('42}'));
+    controller.close();
+  }}), { headers: { "content-length": "12" } });
+  assert.deepEqual(await boundedResponseJSON(valid), { value: 42 });
+});
+
+test("Identity transport permits only owner operations and preserves the finite request policy", async t => {
+  const { operatorIdentityRequest } = await import("../src/server/operator-passkey-transport.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    calls.push({ url, init });
+    return ownerJSON({});
+  });
+  await assert.rejects(() => operatorIdentityRequest(config, { method: "GET", path: "/v1/unowned" }, {}));
+  assert.equal(calls.length, 0);
+  await operatorIdentityRequest(config, { method: "GET", path: "/v1/sessions/current" }, {
+    cache: "force-cache", redirect: "follow", headers: { Authorization: "Bearer " + token },
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, config.identityOrigin + "/v1/sessions/current");
+  assert.equal(calls[0].init.cache, "no-store");
+  assert.equal(calls[0].init.redirect, "error");
+  assert.ok(calls[0].init.signal instanceof AbortSignal);
+});
+
+test("a rejected body does not wait for a source whose cancellation rejects", async () => {
+  const { boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  const response = ownerResponse(new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(65537)); },
+    cancel() { return Promise.reject(new Error("uncooperative source")); },
+  }));
+  await assert.rejects(() => boundedResponseJSON(response));
+  assert.equal(response.body.locked, false);
+});
+
+test("all rejected body declarations cancel the source without consuming or retaining it", async () => {
+  const { boundedResponseJSON, boundedRequestBody, isEmptyRequestBody } =
+    await import("../src/server/operator-passkey-transport.ts");
+  const url = "http://localhost:13000/api/auth/passkey/authentication";
+  const cases = [
+    { headers: { "content-length": "65537" }, call: body => boundedResponseJSON(ownerResponse(body, { headers: { "content-length": "65537" } })).then(() => "accepted", () => "rejected"), expected: "rejected" },
+    { headers: { "content-length": "broken" }, call: body => boundedRequestBody(new Request(url, { method: "POST", body, duplex: "half", headers: { "content-length": "broken" } })), expected: null },
+    { headers: {}, call: body => boundedRequestBody(new Request(url, { method: "POST", body, duplex: "half" }), 65537), expected: null },
+    { headers: { "content-length": "1" }, call: body => isEmptyRequestBody(new Request(url, { method: "POST", body, duplex: "half", headers: { "content-length": "1" } })), expected: false },
+    { headers: { "transfer-encoding": "chunked" }, call: body => isEmptyRequestBody(new Request(url, { method: "POST", body, duplex: "half", headers: { "transfer-encoding": "chunked" } })), expected: false },
+  ];
+  for (const { call, expected, headers } of cases) {
+    let cancels = 0;
+    const body = new ReadableStream({
+      cancel() { cancels++; return Promise.reject(new Error("source cancel rejected")); },
+    });
+    assert.equal(await call(body), expected, JSON.stringify(headers));
+    assert.equal(cancels, 1, JSON.stringify(headers));
+    assert.equal(body.locked, false);
+  }
+});
+
+test("Operator permission outcome preserves authoritative session rejection across concurrent owner failures", async t => {
+  const { readOperatorAccessState, readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  assert.ok(config);
+  const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
+  let mode = "outage";
+  let rejectedPermission = "operations";
+  let failedPermission = "finance";
+  let includesRejection = true;
+  t.mock.method(globalThis, "fetch", async url => {
+    const path = new URL(url).pathname;
+    if (path === "/v1/sessions/current") {
+      return ownerJSON({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
+    }
+    const permission = path.split("/").at(-1);
+    if (permission === rejectedPermission && includesRejection) {
+      return ownerJSON({ code: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (permission === failedPermission) {
+      if (mode === "network") throw new Error("Owner unavailable");
+      if (mode === "outage") return ownerJSON({ code: "OWNER_UNAVAILABLE" }, { status: 503 });
+      return ownerJSON({ actorId: "different-operator", permission });
+    }
+    return ownerJSON({ actorId: "operator-one", permission });
+  });
+  for (mode of ["outage", "network", "mismatch"]) {
+    for (const [rejection, failure] of [["operations", "finance"], ["finance", "operations"]]) {
+      rejectedPermission = rejection;
+      failedPermission = failure;
+      includesRejection = true;
+      assert.deepEqual(await readOperatorAccessState(config, token), { status: "signed-out" }, mode + " with " + rejection);
+      assert.equal(await readVerifiedOperatorAccess(config, token), null);
+      includesRejection = false;
+      assert.deepEqual(await readOperatorAccessState(config, token), { status: "unavailable" }, mode + " without rejection");
+      assert.equal(await readVerifiedOperatorAccess(config, token), null);
+    }
+  }
+});
+
+test("Operator grant outcome rejects malformed principals and expiry during permission reads", async t => {
+  const { readOperatorAccessState } = await import("../src/server/operator-passkey-bff.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  assert.ok(config);
+  const start = Date.now();
+  const expiry = new Date(start + 60_000).toISOString();
+  let mode = "network";
+  let reads = 0;
+  let current = start;
+  t.mock.method(Date, "now", () => current);
+  t.mock.method(globalThis, "fetch", async url => {
+    const path = new URL(url).pathname;
+    if (path === "/v1/sessions/current") {
+      if (mode === "network") throw new Error("Owner unavailable");
+      if (mode === "missing-expiry") return ownerJSON({ actorId: "operator-one", role: "operator" });
+      return ownerJSON({
+        actorId: "operator-one", role: mode === "unknown-role" ? "unknown" : "operator", sessionExpiresAt: expiry,
+      });
+    }
+    reads++;
+    current = start + 60_000;
+    return ownerJSON({ actorId: "operator-one", permission: path.split("/").at(-1) });
+  });
+  for (mode of ["network", "missing-expiry", "unknown-role"]) {
+    assert.deepEqual(await readOperatorAccessState(config, token), { status: "unavailable" }, mode);
+    assert.equal(reads, 0);
+  }
+  mode = "expires-during-read";
+  assert.deepEqual(await readOperatorAccessState(config, token), { status: "signed-out" });
+  assert.equal(reads, 7);
+});
+
+test("Operator owner transport releases all non-admitted response streams without changing their status", async t => {
+  const { operatorIdentityRequest, operatorPermissionOperation, boundedResponseJSON } =
+    await import("../src/server/operator-passkey-transport.ts");
+  const { identityOperations } = await import("../../../services/identity/clients/index.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  const operations = [
+    [identityOperations.beginOperatorPasskeyAuthentication, 200],
+    [identityOperations.finishOperatorPasskeyAuthentication, 200],
+    [identityOperations.beginInitialOperatorPasskeyRegistration, 200],
+    [identityOperations.finishInitialOperatorPasskeyRegistration, 201],
+    [identityOperations.beginExistingOperatorPasskeyRecovery, 200],
+    [identityOperations.finishExistingOperatorPasskeyRecovery, 200],
+    [identityOperations.getVerifiedIdentitySession, 200],
+    [identityOperations.revokeCurrentIdentitySession, 204],
+    [operatorPermissionOperation("operations"), 200],
+  ];
+  let response;
+  t.mock.method(globalThis, "fetch", async () => response);
+  for (const [operation, accepted] of operations) {
+    for (const status of [401, 403, 503, accepted === 201 ? 200 : 201]) {
+      let cancelled = 0;
+      const body = new ReadableStream({ cancel() { cancelled++; return new Promise(() => {}); } });
+      response = ownerResponse(body, { status });
+      const reply = await operatorIdentityRequest(config, operation, {});
+      assert.equal(reply.status, status);
+      assert.equal(cancelled, 1, operation.path + " " + status);
+      assert.equal(body.locked, false);
+    }
+    if (accepted === 204) {
+      response = ownerResponse(null, { status: accepted });
+      assert.equal((await operatorIdentityRequest(config, operation, {})).status, 204);
+    } else {
+      response = ownerJSON({ admitted: true }, { status: accepted });
+      const reply = await operatorIdentityRequest(config, operation, {});
+      assert.deepEqual(await boundedResponseJSON(reply), { admitted: true });
+    }
+  }
+});
+
+test("Operator owner rejection closes a real HTTP stream and permits subsequent recovery", { timeout: 6000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const { operatorIdentityRequest, boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  let requests = 0;
+  let closed;
+  const disconnected = new Promise(resolve => { closed = resolve; });
+  const server = createServer((_request, response) => {
+    if (++requests === 1) {
+      response.on("close", closed);
+      response.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" });
+      response.write('{"code":"UNAUTHORIZED"');
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    response.end('{"recovered":true}');
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  let timer;
+  try {
+    const config = { ...resolveIsolatedOperatorConfig(goodEnv), identityOrigin: "http://127.0.0.1:" + server.address().port };
+    const operation = { method: "GET", path: "/v1/sessions/current" };
+    assert.equal((await operatorIdentityRequest(config, operation, {})).status, 401);
+    const deadline = new Promise(resolve => { timer = setTimeout(() => resolve(false), 1500); });
+    assert.notEqual(await Promise.race([disconnected, deadline]), false, "rejected socket remained open");
+    const recovered = await operatorIdentityRequest(config, operation, {});
+    assert.equal(recovered.status, 200);
+    assert.deepEqual(await boundedResponseJSON(recovered), { recovered: true });
+    assert.equal(requests, 2);
+  } finally {
+    clearTimeout(timer);
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("Operator response cleanup errors preserve authoritative rejection", async t => {
+  const { operatorIdentityRequest } = await import("../src/server/operator-passkey-transport.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  const operation = { method: "GET", path: "/v1/sessions/current" };
+  let response;
+  t.mock.method(globalThis, "fetch", async () => response);
+  for (const body of [
+    null,
+    { locked: true, cancel() { assert.fail("locked body is not owned"); } },
+    { locked: false, cancel() { throw new Error("native cancellation failed"); } },
+    { locked: false, cancel() { return Promise.reject(new Error("cancellation rejected")); } },
+  ]) {
+    response = { status: 401, body };
+    assert.equal((await operatorIdentityRequest(config, operation, {})).status, 401);
+  }
+  response = { status: 503, get body() { throw new Error("native getter failed"); } };
+  assert.equal((await operatorIdentityRequest(config, operation, {})).status, 503);
+});
+
+test("Operator session and permission admission rejects cacheable or non-JSON owner replies", async t => {
+  const { readOperatorAccessState } = await import("../src/server/operator-passkey-bff.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
+  let badPath = "/v1/sessions/current";
+  let badHeaders = { "content-type": "application/json", "cache-control": "public, max-age=120" };
+  t.mock.method(globalThis, "fetch", async url => {
+    const path = new URL(url).pathname;
+    const value = path === "/v1/sessions/current"
+      ? { actorId: "operator-one", role: "operator", sessionExpiresAt: expiry }
+      : { actorId: "operator-one", permission: path.split("/").at(-1) };
+    return new Response(JSON.stringify(value), {
+      headers: (typeof badPath === "string" ? path === badPath : badPath.test(path)) ? badHeaders : { "content-type": "application/json", "cache-control": "no-store" },
+    });
+  });
+  for (badPath of ["/v1/sessions/current", /finance$/]) {
+    for (badHeaders of [
+      { "content-type": "application/json", "cache-control": "public, max-age=120" },
+      { "content-type": "application/json" },
+      { "content-type": "text/plain", "cache-control": "no-store" },
+    ]) {
+      assert.deepEqual(await readOperatorAccessState(config, token), { status: "unavailable" });
+    }
+  }
+});
+
+
+test("Operator empty owner receipt requires private metadata and no body", async t => {
+  const { operatorIdentityRequest } = await import("../src/server/operator-passkey-transport.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  const operation = { method: "DELETE", path: "/v1/sessions/current" };
+  let reply;
+  t.mock.method(globalThis, "fetch", async () => reply);
+  for (const headers of [
+    {},
+    { "cache-control": "public" },
+    { "cache-control": "no-store", "content-length": "1" },
+    { "cache-control": "no-store", "transfer-encoding": "chunked" },
+  ]) {
+    reply = new Response(null, { status: 204, headers });
+    await assert.rejects(() => operatorIdentityRequest(config, operation, {}), /Unexpected Identity empty receipt/);
+  }
+  let cancelled = 0;
+  reply = { status: 204, headers: new Headers({ "cache-control": "no-store" }),
+    body: new ReadableStream({ cancel() { cancelled++; } }) };
+  await assert.rejects(() => operatorIdentityRequest(config, operation, {}), /Unexpected Identity empty receipt/);
+  assert.equal(cancelled, 1);
+  reply = new Response(null, { status: 204, headers: { "cache-control": "private, NO-STORE", "content-length": "0" } });
+  assert.equal((await operatorIdentityRequest(config, operation, {})).status, 204);
+});
+
+test("Operator rejects inadmissible owner metadata without reading the stream", async () => {
+  const { boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  for (const headers of [
+    { "content-type": "application/json" },
+    { "content-type": "application/json", "cache-control": "no-store=false" },
+    { "content-type": "text/plain", "cache-control": "no-store" },
+    { "cache-control": "no-store" },
+  ]) {
+    let cancelled = 0;
+    let pulled = 0;
+    const stream = new ReadableStream({
+      pull() { pulled++; },
+      cancel() { cancelled++; },
+    }, { highWaterMark: 0 });
+    await assert.rejects(() => boundedResponseJSON(new Response(stream, { headers })));
+    assert.equal(pulled, 0);
+    assert.equal(cancelled, 1);
+    assert.equal(stream.locked, false);
+  }
+  assert.deepEqual(await boundedResponseJSON(new Response('{"ok":true}', {
+    headers: { "content-type": "Application/JSON; charset=utf-8", "cache-control": "private, NO-STORE" },
+  })), { ok: true });
 });

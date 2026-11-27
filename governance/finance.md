@@ -3,11 +3,11 @@
 ARTIFACT_CLASS: DOMAIN_GOVERNANCE_DRAFT
 SEMANTIC_OWNER: governance/finance.md
 STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
-POLICY_DECISION: HUMAN_APPROVED_2026-11-13
+POLICY_DECISION: HUMAN_APPROVED_2026-11-13; COLLECTION_RELATION_DEFAULTS_SUPERSEDED_2026-11-26
 IMPLEMENTATION_RISK_ASSURANCE: NOT_RUN
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
-This is a **newly authored target** for the approved business distinctions and the human-approved initial target collection defaults (explicit user approval on 2026-11-13). It is not a copy of historical finance.md, a migration, proof of available payments, or an activation switch. The chosen target policy is human-approved; operational activation requires remaining owner reconciliation, accepted effective agreements and a verified runnable implementation with documented internal risk assurance. The root governance README still says NOT_READY.
+This is the approved financial target; the human decision of 2026-11-26 supersedes the initial relation-specific collection defaults of 2026-11-13. It is not a copy of historical finance.md, a migration, proof of available payments, or an activation switch. The chosen target policy is human-approved; operational activation requires remaining owner reconciliation, accepted effective agreements and a verified runnable implementation with documented internal risk assurance. The root governance README still says NOT_READY.
 
 ## 1. One money writer, one order writer
 
@@ -17,21 +17,23 @@ This is a **newly authored target** for the approved business distinctions and t
 
 ## 2. Four independent dimensions — no parallel engines
 
-1. **Store channel relation**: `MARKETPLACE` or `DIRECT` — selected for the Store on registration, subject to DSH publication and checkout eligibility.
+1. **Store relation and Order sales channel**: distinct DSH facts governed by [stores](stores.md) and [commerce](commerce.md). Neither chooses the collector or financial terms.
 2. **Commercial fee model**: `COMMISSION` or `SUBSCRIPTION` — an Operator-configurable permitted default per relation, materialized as one versioned, accepted, Store-specific WLT agreement. Either model may be configured for either relation. Do not hard-code `MARKETPLACE=COMMISSION` or `DIRECT=SUBSCRIPTION`.
 3. **Financial collection/settlement responsibility**: `PLATFORM_MANAGED` or `STORE_MANAGED` — a separately approved Store-specific financial responsibility, with documented custodians, settlement terms and refund liability. This is **not** a second WLT or DSH engine.
 4. **Fulfillment method**: the approved DSH pickup/dispatch/Store-Captain method, separately checked against financial and operational readiness.
 
 An Operator may change effective defaults in the **single owner-backed policy configuration** for future agreements only. It cannot silently rewrite historical agreements or orders, change an active Store's signed terms without an effective agreement transition, or make an unimplemented capability ready.
 
-## 3. Human-approved initial target collection policy
+## 3. Collection responsibility under accepted agreements
 
-| Store relation | Default collection responsibility | What it means |
-| --- | --- | --- |
-| `MARKETPLACE` | `PLATFORM_MANAGED` | The platform coordinates eligible customer wallet/cash/mixed allocations, WLT holds/receivables and beneficiary settlements; physical COD cash custody follows the admitted Captain/Store contract, not a fictional platform cash drawer. |
-| `DIRECT` | `STORE_MANAGED` | The Store is responsible for its **externally collected** customer funds, refunds and customer-facing receipts under its accepted terms; WLT records only verified platform fees/claims/settlements and other admitted platform-owned financial effects. A Store external cash balance is never represented as a WLT customer wallet. |
+**Human decision (2026-11-26):** The former relation-specific collection defaults are superseded for future agreements. Neither MARKETPLACE nor DIRECT implies a collector. WLT proposes explicit collector terms through existing owner-backed policy and the versioned Store agreement. Missing, unresolved or unsupported terms fail closed; no UI or relation-derived fallback authorizes collection. Existing legally accepted terms and frozen Orders retain their original obligations until lawfully superseded.
 
-These are **human-approved initial target defaults**, not immutable restrictions, accepted Store agreements, or a claim that they work today. A different combination is valid only after the owner-backed policy permits it, the Store accepts a versioned agreement, DSH/WLT contracts support it and the exact flow passes financial/legal/security acceptance. Never expose a disabled combination as a usable UI choice.
+| Collection responsibility | Meaning |
+| --- | --- |
+| `PLATFORM_MANAGED` | Platform coordinates eligible customer wallet/cash/mixed allocations, WLT holds/receivables and beneficiary settlements; physical COD custody follows admitted Captain/Store terms. |
+| `STORE_MANAGED` | Store is responsible for externally collected customer funds, refunds and receipts under accepted terms; WLT records only verified platform-owned financial effects. External cash is not a WLT customer wallet. |
+
+Either collector may apply to either relation and any admitted sales channel only where accepted terms, policy, payment/fulfillment combination and verified legal/financial/security implementation permit it. No proposal or consent alone activates payment.
 
 ## 4. Fee-model semantics
 
@@ -51,14 +53,14 @@ These are **human-approved initial target defaults**, not immutable restrictions
 ## 6. Registration, consent and later changes
 
 1. Merchant registers as one Identity actor and creates a DSH Store, selecting `MARKETPLACE` or `DIRECT`. No additional Merchant identity or Store engine is created.
-2. DSH obtains the effective policy version for that relation; the permitted fee model and suggested collection/fulfillment options are displayed as terms, not silently charged.
+2. DSH obtains effective owner policy and WLT agreement options; permitted fee, explicit collector and fulfillment terms are displayed for acceptance, never inferred from relation or silently charged.
 3. WLT creates/accepts the versioned Store agreement, including fee model and financial responsibilities only when the supporting capabilities and required approvals are ready.
 4. DSH publication and checkout remain unavailable until their own legal, catalog, payment, dispatch and security gates succeed; Store registration alone is not publication or payment activation.
 5. Changes are prospective and versioned. Preserve Store ID, published permitted links, past Order snapshots, financial obligations, open disputes and cash settlement/reconciliation; verify no overlapping fee period or duplicate charge.
 
 ## 7. Mandatory financial acceptance before activating a combination
 
-- Matrix tests for **both Store relations × both fee models × each separately admitted collector/fulfillment/payment choice**; unsupported combinations must fail closed and be invisible to normal purchasers.
+- Matrix tests for **every permitted relation/sales-channel pair × both fee models × each separately admitted collector/fulfillment/payment choice**, plus rejection of DIRECT Stores on the marketplace channel; unsupported combinations must fail closed and be invisible to normal purchasers.
 - Prove fresh and existing Order behavior: price change/unavailable item, COD/WALLET/MIXED split, unknown payment, replay, concurrent accepts/holds, cancellation before/after collection, refund/dispute, failed settlement and retry.
 - Prove every WLT ledger posting balances, no double debit, commission and subscription invoice exactly once per liability/period, preserved beneficiary assignment, segregation of customer funding versus Store earnings, and immutable old terms.
 - Verify real authorized Identity/DSH/WLT responses and durable WLT readback; a UI render, mock, HTTP 200 or syntactic pass is not financial proof.

@@ -43,6 +43,13 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 		}
 		writeJSON(w, http.StatusOK, current)
 	})
+	if owner, ok := policies.(cityFulfillmentPolicyOwner); ok {
+		path := "/v1/operators/cities/{cityID}/fulfillment-policy/{relation}"
+		mux.HandleFunc("GET "+path, cityFulfillmentPolicyHandler(identity, owner))
+		if writer != nil {
+			mux.HandleFunc("PATCH "+path, cityFulfillmentPolicyHandler(identity, owner))
+		}
+	}
 	if history, ok := policies.(CityPolicyHistoryReader); ok {
 		mux.HandleFunc("GET "+path+"/history", cityPolicyHistoryHandler(identity, history))
 	}

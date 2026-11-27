@@ -31,6 +31,7 @@ BEGIN
     RAISE EXCEPTION 'Posted WLT journals are immutable' USING ERRCODE = '23514';
 END;
 $immutable$;
+REVOKE ALL ON FUNCTION wlt.reject_funding_rewrite() FROM PUBLIC;
 CREATE TRIGGER customer_funding_immutable
 BEFORE UPDATE OR DELETE OR TRUNCATE ON wlt.customer_funding_journal
 FOR EACH STATEMENT EXECUTE FUNCTION wlt.reject_funding_rewrite();

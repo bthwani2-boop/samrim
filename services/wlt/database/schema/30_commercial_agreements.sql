@@ -56,8 +56,8 @@ CREATE TRIGGER commercial_proposal_immutable
 BEFORE UPDATE OR DELETE OR TRUNCATE ON wlt.store_commercial_agreement_proposals
 FOR EACH STATEMENT EXECUTE FUNCTION wlt.reject_commercial_proposal_rewrite();
 
--- Owner-only preparation boundary. The eventual authenticated WLT agreement
--- command must verify current Identity rights and DSH Store relation first.
+-- Explicit agreement command boundary. The authenticated WLT transport must
+-- verify current Identity rights and DSH Store relation before invocation.
 -- This function deliberately records no consent, effective agreement or charge.
 CREATE FUNCTION wlt.append_commercial_agreement_proposal(
     p_store_id text, p_expected_version bigint, p_operation_id text,
@@ -66,13 +66,15 @@ CREATE FUNCTION wlt.append_commercial_agreement_proposal(
     p_subscription_period_days integer, p_fulfillment_modes text[],
     p_effective_at timestamptz, p_actor text, p_reason text
 ) RETURNS TABLE(version bigint, replay boolean)
-LANGUAGE plpgsql SET search_path = pg_catalog AS $append$
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog AS $append$
 DECLARE
     prior wlt.store_commercial_agreement_proposals%ROWTYPE;
     current_version bigint;
 BEGIN
-    IF current_database() <> 'bthwani_wlt_test' OR current_user <> 'bthwani_wlt_owner' THEN
-        RAISE EXCEPTION 'WLT proposal requires isolated owner' USING ERRCODE = '42501';
+    IF current_database() <> 'bthwani_wlt_test' OR current_user <> 'bthwani_wlt_owner'
+        OR session_user NOT IN ('bthwani_wlt_owner','bthwani_wlt_command')
+        OR current_setting('transaction_isolation') <> 'read committed' THEN
+        RAISE EXCEPTION 'isolated agreement command principal required' USING ERRCODE = '42501';
     END IF;
     IF p_store_id IS NULL OR p_store_id !~ '^[a-z0-9-]{1,64}$'
         OR p_expected_version IS NULL OR p_expected_version < 0 OR p_expected_version >= 9007199254740991
@@ -142,12 +144,12 @@ CREATE TRIGGER commercial_decision_immutable
 BEFORE UPDATE OR DELETE OR TRUNCATE ON wlt.store_commercial_agreement_decisions
 FOR EACH STATEMENT EXECUTE FUNCTION wlt.reject_commercial_proposal_rewrite();
 
--- Owner-only preparation. Future transport must prove current Identity role,
--- Finance permission and DSH Store ownership before calling this command.
+-- Future authenticated transport must prove current Identity role, Finance
+-- permission and DSH Store ownership before calling this command.
 CREATE FUNCTION wlt.record_commercial_agreement_decision(
     p_store text,p_version bigint,p_proposal_operation text,p_operation text,
     p_decision text,p_actor text,p_reason text
-) RETURNS text LANGUAGE plpgsql SET search_path=pg_catalog AS $decision$
+) RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog AS $decision$
 DECLARE
     proposal wlt.store_commercial_agreement_proposals%ROWTYPE;
     prior wlt.store_commercial_agreement_decisions%ROWTYPE;
@@ -155,8 +157,9 @@ DECLARE
     decision_stage text;
 BEGIN
     IF current_database()<>'bthwani_wlt_test' OR current_user<>'bthwani_wlt_owner'
+        OR session_user NOT IN ('bthwani_wlt_owner','bthwani_wlt_command')
         OR current_setting('transaction_isolation')<>'read committed' THEN
-        RAISE EXCEPTION 'isolated agreement owner required' USING ERRCODE='42501';
+        RAISE EXCEPTION 'isolated agreement command principal required' USING ERRCODE='42501';
     END IF;
     IF p_store IS NULL OR p_store !~ '^[a-z0-9-]{1,64}$'
        OR p_version IS NULL OR p_version NOT BETWEEN 1 AND 9007199254740991
@@ -236,3 +239,9 @@ JOIN wlt.commercial_agreement_review_states s USING (store_id,version)
 ORDER BY p.store_id,p.version DESC;
 REVOKE ALL ON wlt.latest_commercial_agreement_reviews FROM PUBLIC;
 GRANT SELECT ON wlt.latest_commercial_agreement_reviews TO bthwani_wlt_reader;
+
+-- Dormant until a separately admitted authenticated transport owns this role.
+GRANT USAGE ON SCHEMA wlt TO bthwani_wlt_command;
+GRANT SELECT ON wlt.latest_commercial_agreement_reviews TO bthwani_wlt_command;
+GRANT EXECUTE ON FUNCTION wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text),
+    wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text) TO bthwani_wlt_command;

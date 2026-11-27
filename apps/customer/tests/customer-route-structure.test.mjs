@@ -101,7 +101,7 @@ test("protected feature routes delegate to feature-owned screens and fail closed
   assert.match(read("(tabs)/account/index.tsx"), /export \{ default \} from/);
   const account = readFeature("account/account-screen.tsx");
   assert.match(account, /href="\/login"/);
-  assert.match(account, /<AccountPreferences/);
+  assert.match(account, /<AppearancePreferences/);
   assert.doesNotMatch(account, /fetch\(|checkout\(|confirm\(|credit\(/);
   const unavailable = readFileSync(resolve(customer, "src/components/capability-unavailable-screen.tsx"), "utf8");
   assert.match(unavailable, /هذه الخدمة غير مفعّلة حاليًا/);

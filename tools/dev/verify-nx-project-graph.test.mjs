@@ -138,3 +138,33 @@ test("every typed application and owner client exposes a native Nx test target",
   assert.equal(customer.status, 0, customer.stderr);
   assert.ok(JSON.parse(customer.stdout).targets.test);
 });
+
+test("Nx uses its supported TypeScript API and secure minimatch while app tasks retain the native compiler", () => {
+  const nxRequire=createRequire(nxPackagePath);
+  const manifest=require("../../package.json");
+  assert.equal(require("@typescript/native/package.json").version,manifest.devDependencies["@typescript/native"].split("@").at(-1));
+  assert.equal(nxRequire("typescript/package.json").version,manifest.devDependencies.typescript.split("@").at(-1));
+  assert.equal(typeof nxRequire("typescript").readConfigFile,"function");
+  assert.equal(nxRequire("minimatch/package.json").version,require("nx/package.json").dependencies.minimatch);
+  const run=runNx(["run-many","-t","typecheck","--projects=@bthwani/*","--exclude=@bthwani/control-panel","--graph=stdout"]);
+  assert.equal(run.status,0,run.stderr+"\n"+run.stdout);
+  const graph=JSON.parse(run.stdout);
+  const targets=Object.keys(graph.tasks.tasks);
+  assert.ok(targets.includes("@bthwani/customer:typecheck"));
+  assert.ok(targets.includes("@bthwani/merchant:typecheck"));
+  assert.ok(!targets.includes("@bthwani/control-panel:typecheck"));
+});
+test('native compiler consumers never resolve the TypeScript 6 API package as a compiler', () => {
+  const oldEntry = ['node_modules', 'typescript', 'bin', 'tsc'].join('/');
+  const census = spawnSync('git', ['grep', '-n', '-F', oldEntry, '--', '*.test.mjs'], {
+    cwd: root, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(census.status, 1, census.stderr + census.stdout);
+  const compiler = require('@typescript/native/package.json');
+  const executable = path.resolve(root, 'node_modules/@typescript/native/bin/tsc');
+  const result = spawnSync(process.execPath, [executable, '--version'], {
+    cwd: root, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'Version ' + compiler.version);
+});

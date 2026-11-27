@@ -42,6 +42,9 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 	// Every registration still checks an explicitly enabled city/relation policy
 	// within the same owner SQL transaction as the new unpublished Store.
 	routes.Handle("GET /v1/stores/mine", storeavailability.NewMerchantStandingHandler(identity, reader))
+	profile := storeavailability.NewMerchantStoreProfileHandler(registrar)
+	routes.Handle("GET /v1/stores/{storeID}/profile", profile)
+	routes.Handle("PATCH /v1/stores/{storeID}/profile", profile)
 	catalog, err := storeavailability.NewMerchantCatalogHandler(identity, db, schema)
 	if err != nil {
 		return nil, err

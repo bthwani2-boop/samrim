@@ -8,6 +8,7 @@ import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import { GET, POST } from "../../../app/api/admission+api.ts";
+import * as merchantOwnerWeb from "../access/merchant-owner-web.ts";
 import * as recovery from "../onboarding/merchant-registration-attempt.ts";
 
 const id="00000000-0000-4000-8000-000000000001";
@@ -89,7 +90,7 @@ function employeeTransport(platform, withNativeMerchantSession) {
   try {
     const root = resolve(import.meta.dirname, "../../../../..");
     const source = resolve(import.meta.dirname, "employee-transport.ts");
-    const compiled = spawnSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), source,
+    const compiled = spawnSync(process.execPath, [join(root, "node_modules/@typescript/native/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--inlineSourceMap", "--inlineSources", "--outDir", tmp],
       { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
@@ -98,6 +99,7 @@ function employeeTransport(platform, withNativeMerchantSession) {
       "@bthwani/dsh": dsh,
       "react-native": { Platform: { OS: platform } },
       "../access/admission-transport": { withNativeMerchantSession },
+      "../access/merchant-owner-web.ts": merchantOwnerWeb,
     });
     loadedModules.push(mod);
     return mod.exports;
@@ -121,13 +123,19 @@ test("actual Web employee transport binds employer scope and rejects stale or un
   assert.deepEqual(Object.fromEntries(new URL(calls[0].url, "http://localhost").searchParams), {
     employees: store, cursor, endState: "NO_END_DATE",
   });
-  assert.deepEqual(calls[0].options, { method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "X-Merchant-Context": actor } });
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[0].options.signal, signal);
+  assert.equal(calls[0].options.signal.aborted, false);
+  assert.deepEqual(calls[0].options, { method: "GET", signal: calls[0].options.signal, credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "X-Merchant-Context": actor } });
   respond = () => json(wrap({ detail: { employee: record, audit } }));
   assert.deepEqual(await detail(), { employee: record, audit });
   assert.equal(new URL(calls[1].url, "http://localhost").searchParams.get("employeeId"), id);
   respond = () => json(wrap({ id }, true));
   assert.equal(await save(), id);
-  assert.deepEqual(calls[2].options, { method: "POST", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+  assert.ok(calls[2].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[2].options.signal, signal);
+  assert.equal(calls[2].options.signal.aborted, false);
+  assert.deepEqual(calls[2].options, { method: "POST", signal: calls[2].options.signal, credentials: "same-origin", cache: "no-store", redirect: "error",
     headers: { "X-Merchant-Context": actor, "Content-Type": "application/json" }, body: JSON.stringify(input) });
   for (const args of [
     ["", store, signal], [actor, "../store", signal], [actor, store, signal, "bad"],
@@ -155,7 +163,7 @@ test("actual Web employee transport binds employer scope and rejects stale or un
   await assert.rejects(save(), { code: "OPERATION_RESULT_UNKNOWN" });
   for (const [operation, unknown] of [[read, false], [save, true]]) {
     respond = () => { throw new Error("connection closed"); };
-    await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE" });
+    await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_NETWORK_UNAVAILABLE" });
     respond = () => new Response("not JSON");
     await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID" });
     respond = () => json({ code: "EMPLOYEE_SCOPE_FORBIDDEN" }, 403);
@@ -167,7 +175,7 @@ test("actual Web employee transport binds employer scope and rejects stale or un
     respond = () => json({}, 201);
     await assert.rejects(operation(), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID" });
     const late = new AbortController();
-    respond = () => ({ json: async () => { late.abort(); return {}; } });
+    respond = () => new Response(new ReadableStream({pull(controller) { late.abort(); controller.close(); }}), {headers: {"Content-Type": "application/json", "Cache-Control": "no-store"}});
     await assert.rejects(operation(late.signal), { code: unknown ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE" });
   }
 });
@@ -213,7 +221,7 @@ test("Employee screen loads current scope and retains the original operation thr
   try{
     const root=resolve(import.meta.dirname,"../../../../..");
     const source=resolve(import.meta.dirname,"employees-screen.tsx");
-    const compiled=spawnSync(process.execPath,[join(root,"node_modules/typescript/bin/tsc"),source,
+    const compiled=spawnSync(process.execPath,[join(root,"node_modules/@typescript/native/bin/tsc"),source,
       "--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",tmp],
       {cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
     assert.equal(compiled.status,0,compiled.stderr||compiled.stdout);
@@ -363,4 +371,22 @@ test("Employee screen loads current scope and retains the original operation thr
     await until(()=>filter("ALL")?.props.accessibilityState.checked===true);
     restart();
   }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+
+test("Web employee transport rejects oversized valid-looking replies and recovers", async t => {
+  const transport = employeeTransport("web", () => assert.fail("native credentials"));
+  const signal = new AbortController().signal;
+  const page = {items: [record], nextCursor: null};
+  const readBody = {employees: {actorId: "merchant-a", storeId: "store-a", page}};
+  const writeBody = {employee: {actorId: "merchant-a", storeId: "store-a", id}};
+  const oversized = (body, size) => new Response(JSON.stringify(body) + " ".repeat(size), {
+    headers: {"Content-Type": "application/json", "Cache-Control": "no-store"},
+  });
+  let reply = () => oversized(readBody, 262145);
+  t.mock.method(globalThis, "fetch", async () => reply());
+  await assert.rejects(transport.readEmployees("merchant-a", "store-a", signal), {code: "OWNER_RESPONSE_INVALID"});
+  reply = () => oversized(writeBody, 65537);
+  await assert.rejects(transport.saveEmployee("merchant-a", "store-a", input, signal), {code: "OPERATION_RESULT_UNKNOWN"});
+  reply = () => json(readBody);
+  assert.deepEqual(await transport.readEmployees("merchant-a", "store-a", signal), page);
 });

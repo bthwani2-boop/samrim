@@ -1,72 +1,75 @@
-/** Shared authenticated DSH owner transport; domain clients validate changes before calling. */
-import { DshPublicError, endpoint, readBoundedOwnerJSON } from "./client-core.ts";
+/** Shared authenticated DSH transport for fixed owner-authored routes. */
+import { consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 
-const maxOwnerTextLength = 32 * 1024;
+const defaultTextLimit = 32 * 1024;
+type OwnerMethod = "GET" | "PATCH" | "POST" | "PUT";
+
+async function readFailure(response: Response, signal?: AbortSignal): Promise<string> {
+  try {
+    const failure = await readBoundedOwnerJSON(response, defaultTextLimit, undefined, signal, "private-json");
+    if (failure && typeof failure === "object") {
+      if ("code" in failure && typeof failure.code === "string") return failure.code;
+      if ("error" in failure && typeof failure.error === "string") return failure.error;
+    }
+  } catch {
+    // Unavailable or malformed failure detail must not become a success.
+  }
+  return "STORE_OPERATION_FAILED";
+}
 
 export async function privateOwnerRequest(
-  baseUrl: string, path: string, bearer: string, method: "GET" | "PATCH" | "POST" | "PUT", change?: unknown, signal?: AbortSignal,
-  acceptedStatuses: readonly number[] = [200],
+  baseUrl: string, path: string, bearer: string, method: OwnerMethod,
+  change?: unknown, signal?: AbortSignal, acceptedStatuses: readonly number[] = [200],
+  responseByteLimit?: number,
 ): Promise<unknown> {
-  // Only fixed owner-authored paths assembled by the public functions below
-  // reach this uncached transport. A user cannot supply an arbitrary URL.
-  if (!bearer || bearer.trim() !== bearer || /\s/.test(bearer)) throw new DshPublicError(401, "UNAUTHENTICATED");
+  if (typeof bearer !== "string" || !bearer || bearer.trim() !== bearer || /\s/.test(bearer)) {
+    throw new DshPublicError(401, "UNAUTHENTICATED");
+  }
   const mutating = method !== "GET";
   const stale = () => {
-    if (signal?.aborted) throw new DshPublicError(0,
-      mutating ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+    if (signal?.aborted) {
+      throw new DshPublicError(0, mutating ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+    }
   };
+  const invalid = () => new DshPublicError(502, mutating ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
   const url = endpoint(baseUrl, path);
-  stale(); // Do not dispatch a request already abandoned by an account/Store switch.
+  stale();
+
   let response: Response;
   try {
-    response = await fetch(url.toString(), {
+    response = await fetchOwnerHeaders(url.toString(), {
       method, signal: signal ?? null, redirect: "error", credentials: "omit", cache: "no-store",
       headers: {
-        Authorization: `Bearer ${bearer}`,
-        Accept: "application/json",
+        Authorization: "Bearer " + bearer, Accept: "application/json",
         ...(mutating ? { "Content-Type": "application/json" } : {}),
       },
       ...(mutating ? { body: JSON.stringify(change) } : {}),
     });
   } catch {
-    // A write may have committed before the transport failed. Never report
-    // an ordinary read outage or imply that retrying with a NEW key is safe.
-    if (mutating) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-    throw new DshPublicError(0, signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_NETWORK_UNAVAILABLE");
+    stale();
+    throw new DshPublicError(0, mutating ? "OPERATION_RESULT_UNKNOWN" : "OWNER_NETWORK_UNAVAILABLE");
   }
-  stale();
-  if (!response.ok) {
-    let code = "STORE_OPERATION_FAILED";
+
+  return consumeOwnerResponse(response, async () => {
+    stale();
+    if (!response.ok) {
+      const code = await readFailure(response, signal);
+      stale();
+      throw new DshPublicError(response.status,
+        mutating && response.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
+    }
+    if (!acceptedStatuses.includes(response.status)) throw invalid();
+
+    let result: unknown;
     try {
-      const err = await readBoundedOwnerJSON(response, maxOwnerTextLength);
-      if (err && typeof err === "object") {
-        if ("code" in err && typeof err.code === "string") code = err.code;
-        else if ("error" in err && typeof err.error === "string") code = err.error;
-      }
-    } catch { /* fail closed with a stable generic error */ }
+      // A larger owner projection must supply its contract-derived byte budget.
+      // All existing callers retain the original default text/byte bounds.
+      result = await readBoundedOwnerJSON(response, responseByteLimit ?? defaultTextLimit, responseByteLimit, signal, "private-json");
+    } catch {
+      stale();
+      throw invalid();
+    }
     stale();
-    // A server-side failure after a write does not prove that the owner
-    // transaction was rolled back. Reconcile using the original operationId.
-    throw new DshPublicError(response.status,
-      mutating && response.status >= 500 ? "OPERATION_RESULT_UNKNOWN" : code);
-  }
-  const directives = response.headers.get("Cache-Control")
-    ?.toLowerCase().split(",").map(value => value.trim()) ?? [];
-  if (!acceptedStatuses.includes(response.status) ||
-    response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
-    !directives.includes("no-store")) {
-    void response.body?.cancel().catch(() => {});
-    throw new DshPublicError(502, mutating ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
-  }
-  let body: unknown;
-  try {
-    body = await readBoundedOwnerJSON(response, maxOwnerTextLength);
-  } catch {
-    stale();
-    throw new DshPublicError(502, mutating ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
-  }
-  // A body can arrive after an aborted signal even if fetch previously resolved.
-  // Never expose a stale GET or accept a PATCH as confirmed for a new context.
-  stale();
-  return body;
+    return result;
+  });
 }

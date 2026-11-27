@@ -59,3 +59,46 @@ func TestPublicDirectoriesRejectExplicitEmptyPagingSelectors(t *testing.T) {
 		})
 	}
 }
+
+func TestPublicReadsRejectUnsupportedRequestEnvelopes(t *testing.T) {
+	for _, tc := range []struct {
+		name, path, body string
+		chunked          bool
+	}{
+		{"detail unknown selector", "/v1/public/stores/store-a?actorId=other", "", false},
+		{"detail empty query", "/v1/public/stores/store-a?", "", false},
+		{"detail duplicate selector", "/v1/public/stores/store-a?city_id=a&city_id=b", "", false},
+		{"cities body", "/v1/public/cities", "{}", false},
+		{"verticals body", "/v1/public/verticals?city_id=sanaa", "{}", false},
+		{"stores body", "/v1/public/stores?city_id=sanaa", "{}", false},
+		{"detail body", "/v1/public/stores/store-a", "{}", false},
+		{"offers body", "/v1/public/stores/store-a/offers", "{}", false},
+		{"estimate body", "/v1/public/stores/store-a/offers/offer-a/estimate?quantity=1", "{}", false},
+		{"chunked body", "/v1/public/stores/store-a", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, tc.path, strings.NewReader(tc.body))
+			if tc.chunked {
+				r.ContentLength = -1
+				r.TransferEncoding = []string{"chunked"}
+			}
+			w := httptest.NewRecorder()
+			(&Server{}).ServeHTTP(w, r)
+			if w.Code != http.StatusBadRequest || w.Body.String() != "{\"error\":\"INVALID_REQUEST\"}\n" {
+				t.Fatalf("malformed public request reached owner: %d %s", w.Code, w.Body.String())
+			}
+		})
+	}
+	for _, path := range []string{
+		"/v1/public/cities", "/v1/public/verticals?city_id=sanaa",
+		"/v1/public/stores?city_id=sanaa", "/v1/public/stores/store-a",
+		"/v1/public/stores/store-a/offers",
+		"/v1/public/stores/store-a/offers/offer-a/estimate?quantity=1",
+	} {
+		w := httptest.NewRecorder()
+		(&Server{}).ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusServiceUnavailable {
+			t.Fatalf("valid request failed to reach owner: %s => %d %s", path, w.Code, w.Body.String())
+		}
+	}
+}

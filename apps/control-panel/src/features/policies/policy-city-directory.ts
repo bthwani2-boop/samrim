@@ -6,42 +6,53 @@ export type PolicyCityDirectory = Readonly<{
   status: "current" | "unavailable";
 }>;
 
-// The public DSH city directory contains active cities only. Historical policy
-// reads remain independently authorized at the policy BFF.
+const pageLimit = 50;
+const pageBudget = 10;
+
+// The owner determines active identities, ordering and opaque continuation.
+// A directory is published only after a complete, live, single-revision read.
 export async function loadPolicyCities(): Promise<PolicyCityDirectory> {
+  const unavailable: PolicyCityDirectory = { cities: [], status: "unavailable" };
   const origin = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
-  if (!origin) return { cities: [], status: "unavailable" };
-  const cities = new Set<string>();
-  const seen = new Set<string>();
+  if (!origin) return unavailable;
+
   const signal = AbortSignal.timeout(5000);
+  const cities = new Map<string, { value: string; label: string }>();
+  const cursors = new Set<string>();
   let cursor: string | undefined;
   let revision: number | undefined;
+
   try {
-    for (let pageNumber = 0; pageNumber < 10; pageNumber++) {
+    for (let remaining = pageBudget; remaining > 0; remaining--) {
+      signal.throwIfAborted();
       const page = await listPublicCities(origin, {
-        limit: 50, signal, ...(cursor ? { cursor } : {}),
+        limit: pageLimit, signal, ...(cursor === undefined ? {} : { cursor }),
       });
-      if (revision !== undefined && page.revision !== revision) throw new Error("City revision changed");
+      signal.throwIfAborted();
+      if (revision !== undefined && page.revision !== revision) return unavailable;
       revision = page.revision;
-      for (const city of page.items) {
-        if (cities.has(city)) throw new Error("Repeated city");
-        cities.add(city);
+
+      // The owner uses LIMIT + 1 to advertise a continuation. A continuation
+      // from a short page, or an empty page after one, is inconsistent.
+      if ((page.nextCursor !== undefined && page.items.length !== pageLimit) ||
+          (cursor !== undefined && page.items.length === 0)) return unavailable;
+      for (const value of page.items) {
+        if (cities.has(value)) return unavailable;
+        cities.set(value, { value, label: policyCityLabel(value) });
       }
-      if (!page.nextCursor) return {
-        cities: [...cities].map(value => ({ value, label: policyCityLabel(value) })), status: "current",
-      };
-      if (seen.has(page.nextCursor)) throw new Error("Repeated cursor");
-      seen.add(page.nextCursor);
+      if (page.nextCursor === undefined) return { cities: [...cities.values()], status: "current" };
+      if (cursors.has(page.nextCursor)) return unavailable;
+      cursors.add(page.nextCursor);
       cursor = page.nextCursor;
     }
   } catch {
-    // Never present a partial or failed directory as an authoritative empty list.
+    // A failed or abandoned read cannot be presented as a current empty directory.
+    return unavailable;
   }
-  return { cities: [], status: "unavailable" };
+  return unavailable;
 }
 
-export function policyCityLabel(city: string): string {
-  // Presentation labels only; the owner directory supplies all eligible IDs.
+function policyCityLabel(city: string): string {
   if (city === "sanaa") return "صنعاء";
   if (city === "aden") return "عدن";
   return city;

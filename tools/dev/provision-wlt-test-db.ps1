@@ -126,7 +126,7 @@ function Assert-WltFresh([string]$Context,[string]$Container,[string]$Admin) {
 SELECT CASE WHEN current_database()='postgres' AND current_user='$Admin'
  AND EXISTS(SELECT 1 FROM pg_roles WHERE rolname=current_user AND rolsuper)
  AND NOT EXISTS(SELECT 1 FROM pg_database WHERE datname='bthwani_wlt_test')
- AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname IN('bthwani_wlt_owner','bthwani_wlt_reader','bthwani_wlt_sandbox'))
+ AND NOT EXISTS(SELECT 1 FROM pg_roles WHERE rolname IN('bthwani_wlt_owner','bthwani_wlt_reader','bthwani_wlt_sandbox','bthwani_wlt_command'))
 THEN 'ABSENT' ELSE 'BLOCKED' END;
 "@ 'fresh-admission'
   if ($proof -cne 'ABSENT') { throw 'WLT_EXISTING_NAMESPACE_OR_ADMIN' }
@@ -139,6 +139,7 @@ function Initialize-WltDatabase([string]$Context,[string]$Container,[string]$Adm
 BEGIN;
 CREATE ROLE bthwani_wlt_owner NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 CREATE ROLE bthwani_wlt_sandbox NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+CREATE ROLE bthwani_wlt_command NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 CREATE ROLE bthwani_wlt_reader LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD '$Secret';
 COMMIT;
 "@ 'roles'
@@ -163,15 +164,32 @@ END $boundary$;
   $proof = @'
 SELECT CASE WHEN current_database()='bthwani_wlt_test'
  AND EXISTS(SELECT 1 FROM pg_database WHERE datname=current_database() AND pg_get_userbyid(datdba)='bthwani_wlt_owner')
- AND (SELECT count(*) FROM pg_roles WHERE rolname IN('bthwani_wlt_owner','bthwani_wlt_reader','bthwani_wlt_sandbox')
+ AND (SELECT count(*) FROM pg_roles WHERE rolname IN('bthwani_wlt_owner','bthwani_wlt_reader','bthwani_wlt_sandbox','bthwani_wlt_command')
  AND NOT(rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR rolinherit)
- AND rolcanlogin=(rolname='bthwani_wlt_reader'))=3
- AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member IN(SELECT oid FROM pg_roles WHERE rolname IN('bthwani_wlt_owner','bthwani_wlt_reader','bthwani_wlt_sandbox')))
+ AND rolcanlogin=(rolname='bthwani_wlt_reader'))=4
+ AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE member IN(SELECT oid FROM pg_roles WHERE rolname IN('bthwani_wlt_owner','bthwani_wlt_reader','bthwani_wlt_sandbox','bthwani_wlt_command')))
  AND has_database_privilege('bthwani_wlt_reader',current_database(),'CONNECT')
  AND NOT has_database_privilege('bthwani_wlt_reader',current_database(),'CREATE,TEMP')
  AND NOT has_schema_privilege('bthwani_wlt_reader','public','CREATE')
  AND has_schema_privilege('bthwani_wlt_reader','wlt','USAGE')
  AND NOT has_schema_privilege('bthwani_wlt_reader','wlt','CREATE,USAGE WITH GRANT OPTION')
+ AND NOT has_database_privilege('bthwani_wlt_command',current_database(),'CONNECT,CREATE,TEMP')
+ AND NOT EXISTS(SELECT 1 FROM pg_auth_members WHERE roleid=(SELECT oid FROM pg_roles WHERE rolname='bthwani_wlt_command'))
+ AND has_schema_privilege('bthwani_wlt_command','wlt','USAGE')
+ AND NOT has_schema_privilege('bthwani_wlt_command','wlt','CREATE,USAGE WITH GRANT OPTION')
+ AND NOT has_schema_privilege('bthwani_wlt_command','public','CREATE')
+ AND has_table_privilege('bthwani_wlt_command','wlt.latest_commercial_agreement_reviews','SELECT')
+ AND NOT EXISTS(SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+   WHERE n.nspname='wlt' AND c.relkind IN('r','v','p','m') AND (
+     has_table_privilege('bthwani_wlt_command',c.oid,'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN,SELECT WITH GRANT OPTION')
+     OR has_any_column_privilege('bthwani_wlt_command',c.oid,'INSERT,UPDATE,REFERENCES,SELECT WITH GRANT OPTION')
+     OR (c.relname<>'latest_commercial_agreement_reviews' AND has_any_column_privilege('bthwani_wlt_command',c.oid,'SELECT'))))
+ AND (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='wlt' AND has_function_privilege('bthwani_wlt_command',p.oid,'EXECUTE'))=2
+ AND has_function_privilege('bthwani_wlt_command','wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE')
+ AND has_function_privilege('bthwani_wlt_command','wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE')
+ AND NOT EXISTS(SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+   WHERE n.nspname='wlt' AND has_function_privilege('bthwani_wlt_command',p.oid,'EXECUTE WITH GRANT OPTION'))
  AND (SELECT count(*) FROM wlt.customer_funding_journal)=0
  AND (SELECT count(*) FROM wlt.store_commercial_agreement_proposals)=0
  AND (SELECT count(*) FROM wlt.store_commercial_agreement_decisions)=0
@@ -222,12 +240,11 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if ([Environment]::MachineName -ine 'BTHWANI' -or $root -ine 'D:\samrim' -or $DockerContext -cne 'bthwani-docker') { throw 'WLT_CANONICAL_TARGET_REQUIRED' }
 $branch = (& git -C $root branch --show-current | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or !$branch -or $branch -eq 'main' -or $branch.StartsWith('archive/')) { throw 'WLT_BRANCH_UNAUTHORIZED' }
-$mutex = [Threading.Mutex]::new($false,'Local\BThwaniUnifiedDevV1')
-$held = $false
+. (Join-Path $PSScriptRoot 'dev-resource-admission.ps1')
+$resourceLeases=@()
 $oldPath = $env:Path
 try {
-  try { $held = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true; throw 'WLT_RECOVERY_REQUIRED' }
-  if (!$held) { throw 'WLT_LIFECYCLE_BUSY' }
+  $resourceLeases=@(Enter-DevResources @(Get-DevOperationResources 'ProvisionWlt'))
   $path = Join-Path $root 'infra/.env'
   $environment = Read-WltEnvironment $path
   if (@(Get-ChildItem -LiteralPath (Split-Path -Parent $path) -Filter '.env.prepare-wlt-*' -Force).Count) { throw 'WLT_PRIOR_CANDIDATE_REQUIRES_REVIEW' }
@@ -257,6 +274,5 @@ try {
   }
 } finally {
   $env:Path = $oldPath
-  if ($held) { $mutex.ReleaseMutex() }
-  $mutex.Dispose()
+  Exit-DevResources $resourceLeases
 }

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { test } from "node:test";
+import { afterEach, test } from "node:test";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
@@ -11,7 +11,7 @@ const source = path.join(import.meta.dirname, "address-editor.native.tsx");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-address-races-"));
 let compiled;
 try {
-  const task = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const task = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     source, "--ignoreConfig", "--noResolve", "--noCheck",
     "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
@@ -19,11 +19,14 @@ try {
   compiled = readFileSync(path.join(temp, "address-editor.native.js"), "utf8");
 } finally { rmSync(temp, { recursive: true, force: true }); }
 
+const cleanups = [];
+afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup(); });
 function harness() {
   const hooks = [];
   const effects = [];
   const calls = { services: [], permissions: [], positions: [] };
   const movements = [];
+  const selected = [];
   let index = 0;
   let writesAfterUnmount = 0;
   let mounted = true;
@@ -51,17 +54,19 @@ function harness() {
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
   };
   const mod = loadMappedRenderFixture(compiled, source, modules);
+  const unmount = () => { if (!mounted) return; hooks.forEach(hook => { hook?.cleanup?.(); }); mounted = false; };
+  cleanups.push(unmount);
   return {
-    calls, movements,
+    calls, movements, selected,
     render() {
       index = 0;
       effects.length = 0;
-      const view = mod.exports.default();
+      const view = mod.exports.default({ onSelect: pin => selected.push(pin) });
       effects.forEach(fn => { fn(); });
       byID(view, "address-location-map").props.ref.current = { animateToRegion: (...args) => movements.push(args) };
       return view;
     },
-    unmount() { hooks.forEach(hook => { hook?.cleanup?.(); }); mounted = false; },
+    unmount,
     writesAfterUnmount: () => writesAfterUnmount,
   };
 }
@@ -141,3 +146,60 @@ test("current invalid GPS and denied permission remain recoverable", async () =>
   choose(h.render());
   assert.equal(byID(h.render(), "address-location-error"), undefined);
 });
+
+test("a new GPS request invalidates the old pin even if it fails", async () => {
+  const h = harness();
+  choose(h.render());
+  locate(h.render());
+  assert.equal(byID(h.render(), "address-location-coordinate"), undefined);
+  h.calls.services[0].resolve(false); await settle();
+  assert.equal(byID(h.render(), "address-location-coordinate"), undefined);
+  assert.equal(byID(h.render(), "address-location-request").props.disabled, false);
+});
+
+test("GPS acquisition deadline releases busy state and discards late results", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = harness();
+  locate(h.render()); await allow(h);
+  t.mock.timers.tick(15000); await settle();
+  assert.equal(byID(h.render(), "address-location-request").props.disabled, false);
+  assert.ok(byID(h.render(), "address-location-error"));
+  h.calls.positions[0].resolve({ coords: { latitude: 12, longitude: 45 } }); await settle();
+  assert.equal(byID(h.render(), "address-location-coordinate"), undefined);
+  assert.equal(h.movements.length, 0);
+  h.unmount();
+});
+
+test("confirmation from a superseded render cannot commit a stale pin", async () => {
+  const h = harness();
+  choose(h.render());
+  const obsolete = byID(h.render(), "address-location-confirm");
+  locate(h.render());
+  obsolete.props.onPress();
+  assert.deepEqual(h.selected, []);
+  choose(h.render(), { latitude: 14, longitude: 45 });
+  byID(h.render(), "address-location-confirm").props.onPress();
+  assert.deepEqual(h.selected, [{ latitude: 14, longitude: 45 }]);
+  h.unmount();
+  obsolete.props.onPress();
+  assert.equal(h.selected.length, 1);
+});
+
+for (const stage of ["services", "permissions", "positions"]) {
+  test(`deadline during ${stage} allows a new attempt without admitting the old result`, async t => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const h = harness(); locate(h.render());
+    if (stage !== "services") { h.calls.services[0].resolve(true); await settle(); }
+    if (stage === "positions") { h.calls.permissions[0].resolve({ status: "granted" }); await settle(); }
+    t.mock.timers.tick(15000);
+    assert.equal(byID(h.render(), "address-location-request").props.disabled, false);
+    locate(h.render());
+    const old = h.calls[stage][0];
+    old.resolve(stage === "services" ? true : stage === "permissions" ? { status: "granted" } : { coords: { latitude: 12, longitude: 45 } });
+    await settle();
+    assert.equal(byID(h.render(), "address-location-request").props.disabled, true);
+    assert.equal(byID(h.render(), "address-location-coordinate"), undefined);
+    h.calls.services[1].reject(new Error("unavailable")); await settle();
+    assert.ok(byID(h.render(), "address-location-error"));
+  });
+}

@@ -6,7 +6,7 @@ STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
 ## Common invariants
-DSH is the **one** owner of cart, quote, checkout, Order, price and adjustment truth for Marketplace and Direct. Each confirmed Store Order has one Store ID, frozen authoritative price/units/tax-if-applicable/policy/agreement/fulfillment/payment allocation snapshot. WLT handles payment authorization, holds, ledger and settlement; Identity handles actor/authorization. Direct Web checkout (guest or authenticated as explicitly approved) reuses DSH Order engine and may not spawn a second direct-orders table or cart state machine.
+DSH is the **one** owner of cart, quote, checkout, Order, price and adjustment truth for Marketplace and Direct. Each confirmed Store Order has one Store ID and one immutable sales channel, with frozen authoritative price/units/tax-if-applicable/policy/agreement/fulfillment/payment allocation snapshot. WLT handles payment authorization, holds, ledger and settlement; Identity handles actor/authorization. Direct Web checkout (guest or authenticated as explicitly approved) reuses DSH Order engine and may not spawn a second direct-orders table or cart state machine.
 
 ## SERVICEABILITY_ADDRESSES — Service cities and destination eligibility
 CAPABILITY_ID: SERVICEABILITY_ADDRESSES
@@ -21,6 +21,8 @@ DSH distinguishes three outcomes rather than collapsing a failed dependency into
 
 ## CART_CHECKOUT — Single-Store Cart and canonical confirmation
 CAPABILITY_ID: CART_CHECKOUT
+
+DSH uses the Store relation/channel matrix in [stores](stores.md). Every checkout explicitly identifies the requested sales channel (DIRECT or MARKETPLACE), independently of Store relation. DSH validates current channel eligibility before quoting and again at confirmation. DIRECT Stores on MARKETPLACE, missing/unknown channels and mismatches fail closed; no URL or client flag alone authorizes a channel, collector or fee. Bind the admitted channel to the quote, stable checkout operation identity and immutable confirmed Order; a changed channel under the same identity conflicts. Keep one cart per Customer and Store across entry surfaces. Historical Orders without verified channel evidence are not relabeled by assumption.
 
 A user can compose a Store cart, receive one short-lived server quote, and confirm only if current Store publication, owner, price, stock, quantity, consent, serviceability, selected fulfillment and payment all remain eligible. UI totals are advisory; DSH authoritatively prices from StoreOffer and WLT authorizes funds. Confirmations have bounded idempotency, unknown-result reconciliation and no duplicate Orders or charges. Cancellation/refund eligibility is a versioned policy and original Order fact; legal changes post confirmation use DSH adjustments and WLT effects, never overwrite the initial snapshot.
 

@@ -5,10 +5,21 @@ import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { publicStorefrontLink } from "./public-storefront-link";
 
-const ownerOrigin = Platform.OS === "web"
-  ? (typeof window === "undefined" ? "" : window.location.origin)
-  : process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN ?? "";
-const customerOrigin = process.env.EXPO_PUBLIC_BTHWANI_CUSTOMER_WEB_ORIGIN;
+type SharingContext = {
+  actorId: string;
+  storeId: string;
+  published: boolean;
+  active: boolean;
+  request: AbortController | null;
+};
+type SharingView = { context: SharingContext | null; busy: boolean; notice: string };
+const idle: SharingView = { context: null, busy: false, notice: "" };
+
+function discoveryOrigin() {
+  return Platform.OS === "web"
+    ? (typeof window === "undefined" ? "" : window.location.origin)
+    : process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN ?? "";
+}
 
 export default function MerchantPublicLink({ actorId, storeId, published }: Readonly<{
   actorId: string;
@@ -16,54 +27,51 @@ export default function MerchantPublicLink({ actorId, storeId, published }: Read
   published: boolean;
 }>) {
   const { theme } = useMobileAppearance();
-  const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
-  const controller = useRef<AbortController | null>(null);
-  const latest = useRef({ actorId, storeId, published });
-  latest.current = { actorId, storeId, published };
-  const link = publicStorefrontLink(storeId, customerOrigin);
+  const link = publicStorefrontLink(storeId, process.env.EXPO_PUBLIC_BTHWANI_CUSTOMER_WEB_ORIGIN);
+  const [view, setView] = useState<SharingView>(idle);
+  const latest = useRef<SharingContext | null>(null);
+  if (!latest.current || latest.current.actorId !== actorId ||
+      latest.current.storeId !== storeId || latest.current.published !== published) {
+    latest.current = { actorId, storeId, published, active: false, request: null };
+  }
+  const context = latest.current;
+  const visible = view.context === context ? view : idle;
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Actor, Store and publication changes revoke in-flight link requests.
   useEffect(() => {
-    setBusy(false);
-    setNotice("");
+    context.active = true;
     return () => {
-      controller.current?.abort();
-      controller.current = null;
+      context.active = false;
+      context.request?.abort();
+      context.request = null;
     };
-  }, [actorId, storeId, published]);
+  }, [context]);
+
+  const isCurrent = () => context.active && latest.current === context;
 
   async function copyPublicLink() {
-    if (controller.current || !published || !actorId || !link) return;
+    if (!isCurrent() || context.request || !context.published || !context.actorId || !link) return;
     const request = new AbortController();
-    controller.current = request;
-    setBusy(true);
-    setNotice("");
+    context.request = request;
+    const currentRequest = () => isCurrent() && context.request === request && !request.signal.aborted;
+    setView({ context, busy: true, notice: "" });
+    let notice = "";
     try {
-      // Public publication can change after the authenticated Merchant's DSH
-      // standing was read. Recheck with the real public owner before sharing.
-      const current = await getPublicStore(ownerOrigin, storeId, request.signal);
-      if (request.signal.aborted || current.id !== storeId ||
-          latest.current.actorId !== actorId || latest.current.storeId !== storeId ||
-          !latest.current.published) return;
-      let copied = false;
+      const current = await getPublicStore(discoveryOrigin(), context.storeId, request.signal);
+      if (!currentRequest()) return;
+      if (current.id !== context.storeId) throw new Error("Unexpected Store projection");
       try {
-        copied = await Clipboard.setStringAsync(link);
+        notice = await Clipboard.setStringAsync(link) === true
+          ? "تم نسخ رابط المتجر المنشور."
+          : "تعذّر نسخ الرابط إلى الحافظة. أعد المحاولة.";
       } catch {
-        // A rejected clipboard write is also an unacknowledged copy.
-      }
-      if (!request.signal.aborted && latest.current.actorId === actorId &&
-          latest.current.storeId === storeId && latest.current.published) {
-        setNotice(copied === true ? "تم نسخ رابط المتجر المنشور." : "تعذّر نسخ الرابط إلى الحافظة. أعد المحاولة.");
+        notice = "تعذّر نسخ الرابط إلى الحافظة. أعد المحاولة.";
       }
     } catch {
-      if (!request.signal.aborted) {
-        setNotice("تعذّر تأكيد نشر المتجر لدى DSH. لم يُنسخ رابط غير متحقق منه.");
-      }
+      notice = "تعذّر تأكيد نشر المتجر لدى DSH. لم يُنسخ رابط غير متحقق منه.";
     } finally {
-      if (controller.current === request) {
-        controller.current = null;
-        setBusy(false);
+      if (currentRequest()) {
+        context.request = null;
+        setView({ context, busy: false, notice });
       }
     }
   }
@@ -78,13 +86,13 @@ export default function MerchantPublicLink({ actorId, storeId, published }: Read
         {published ? "يتحقق بثواني من نشر المتجر لدى DSH قبل نسخ رابطه العام." :
           "هذا المتجر غير منشور؛ لا يمكن مشاركة رابط عام له."}
       </Text>
-      {published && link ? (
+      {published && actorId && link ? (
         <Pressable accessibilityRole="button" accessibilityLabel="نسخ رابط المتجر العام"
-          disabled={busy} onPress={() => void copyPublicLink()}
+          disabled={visible.busy} onPress={() => void copyPublicLink()}
           style={{ minHeight: 44, padding: 12, borderRadius: 10, borderWidth: 1,
-            borderColor: theme.borderColor, opacity: busy ? 0.5 : 1 }}>
+            borderColor: theme.borderColor, opacity: visible.busy ? 0.5 : 1 }}>
           <Text style={{ color: theme.interactiveText }}>
-            {busy ? "جارٍ التحقق من النشر…" : "نسخ رابط المتجر"}
+            {visible.busy ? "جارٍ التحقق من النشر…" : "نسخ رابط المتجر"}
           </Text>
         </Pressable>
       ) : null}
@@ -93,7 +101,7 @@ export default function MerchantPublicLink({ actorId, storeId, published }: Read
           رابط واجهة العميل غير مضبوط أو غير موثوق. لا يمكن مشاركة المتجر قبل ضبطه.
         </Text>
       ) : null}
-      {notice ? <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>{notice}</Text> : null}
+      {visible.notice ? <Text accessibilityLiveRegion="polite" style={{ color: theme.color }}>{visible.notice}</Text> : null}
     </View>
   );
 }

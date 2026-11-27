@@ -16,7 +16,7 @@ func TestOperatorPermissionRejectsUnrecognizedScopeWithoutOwnerCall(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := client.RequireOperatorPermission(context.Background(), testOpaqueIdentityToken(), "operator-a", "finance"); !errors.Is(err, ErrForbidden) {
+	if err := client.RequireOperatorPermission(context.Background(), testOpaqueIdentityToken(), "operator-a", "financial_execution"); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("unrecognized DSH permission admitted: %v", err)
 	}
 }
@@ -30,6 +30,10 @@ func TestIdentityHTTPPlatformPoliciesPermissionIsIndependentOfOperations(t *test
 		want   error
 	}{
 		{"explicit active policy grant", http.StatusOK, `{"actorId":"operator-a","permission":"platform_policies"}`, nil},
+		{"duplicate grant", http.StatusOK, `{"actorId":"operator-a","permission":"operations","permission":"platform_policies"}`, ErrIdentityUnavailable},
+		{"case variant permission", http.StatusOK, `{"actorId":"operator-a","Permission":"platform_policies"}`, ErrIdentityUnavailable},
+		{"duplicate actor", http.StatusOK, `{"actorId":"operator-b","actorId":"operator-a","permission":"platform_policies"}`, ErrIdentityUnavailable},
+		{"missing permission", http.StatusOK, `{"actorId":"operator-a"}`, ErrIdentityUnavailable},
 		{"operations grant cannot substitute", http.StatusOK, `{"actorId":"operator-a","permission":"operations"}`, ErrForbidden},
 		{"grant belongs to another actor", http.StatusOK, `{"actorId":"operator-b","permission":"platform_policies"}`, ErrForbidden},
 		{"platform grant revoked", http.StatusForbidden, `{"error":"FORBIDDEN"}`, ErrForbidden},
@@ -95,7 +99,7 @@ func TestIdentityHTTPRejectsUnapprovedPolicyPermissionStringsBeforeNetwork(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, scope := range []string{"", "finance", "platform_policies/operations", "PLATFORM_POLICIES", "platform_policies?admin=true", "operations/../platform_policies"} {
+	for _, scope := range []string{"", "financial_execution", "platform_policies/operations", "PLATFORM_POLICIES", "platform_policies?admin=true", "operations/../platform_policies"} {
 		if err := consumer.RequireOperatorPermission(context.Background(), testOpaqueIdentityToken(), "operator-a", scope); !errors.Is(err, ErrForbidden) {
 			t.Fatalf("unapproved scope %q accepted: %v", scope, err)
 		}

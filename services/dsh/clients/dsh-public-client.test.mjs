@@ -213,14 +213,15 @@ test("owner 409 stale cursor and other explicit owner errors propagate safely", 
     () => rejectsAs(() => getPublicStore(base, store.id), 503, "OWNER_READ_FAILED"));
 });
 
-test("network errors are normalized, except an aborted caller's own error", async () => {
+test("network errors are normalized and pre-aborted callers never dispatch", async () => {
   await withFetch(async () => { throw new Error("private transport details"); },
     () => rejectsAs(() => getPublicStore(base, store.id), 0, "OWNER_NETWORK_UNAVAILABLE"));
   const controller = new AbortController();
-  const aborted = new Error("caller cancelled");
   controller.abort();
-  await withFetch(async () => { throw aborted; },
-    () => assert.rejects(() => getPublicStore(base, store.id, controller.signal), error => error === aborted));
+  let dispatched = false;
+  await withFetch(async () => { dispatched = true; throw new Error("unexpected dispatch"); },
+    () => rejectsAs(() => getPublicStore(base, store.id, controller.signal), 0, "OWNER_RESPONSE_STALE"));
+  assert.equal(dispatched, false);
 });
 
 test("invalid owner JSON or an invalid page envelope fails closed", async () => {
@@ -276,10 +277,11 @@ test("an Offer page cannot inject another Store's Offers into the selected Store
     () => rejectsAs(() => listPublicOffers(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
 });
 
-test("owner request carries the caller AbortSignal instead of starting an unrelated session", async () => {
+test("owner request carries an active bounded transport signal", async () => {
   const controller = new AbortController();
   await withFetch(async (_url, options) => {
-    assert.equal(options.signal, controller.signal);
+    assert.ok(options.signal instanceof AbortSignal);
+    assert.equal(options.signal.aborted, false);
     return json(store);
   }, async () => {
     const result = await getPublicStore(base, store.id, controller.signal);
@@ -382,10 +384,13 @@ test("a late owner denial after Store/account switch is stale, never an error fo
   }, () => rejectsAs(() => getPublicStore(base, store.id, controller.signal), 0, "OWNER_RESPONSE_STALE"));
 
   const bodyAbort = new AbortController();
-  await withFetch(async () => ({
-    ok: false, status: 403, headers: new Headers({ "Content-Type": "application/json" }),
-    text: async () => { bodyAbort.abort(); return '{"error":"FORBIDDEN"}'; },
-  }), () => rejectsAs(() => getPublicStore(base, store.id, bodyAbort.signal), 0, "OWNER_RESPONSE_STALE"));
+  await withFetch(async () => new Response(new ReadableStream({
+    pull(controller) {
+      bodyAbort.abort();
+      controller.close();
+    },
+  }, { highWaterMark: 0 }), { status: 403, headers: { "Content-Type": "application/json" } }),
+  () => rejectsAs(() => getPublicStore(base, store.id, bodyAbort.signal), 0, "OWNER_RESPONSE_STALE"));
 });
 
 test("Captain standing owner PATCH must return exactly the next version, including replay", async () => {
@@ -500,20 +505,16 @@ test("Public DSH owner error body is size-bounded and falls back to safe error c
   assert.ok(pulls <= 5, `error body must be capped at 12 KB, got ${pulls} chunks`);
 });
 
-test("Shared DSH parser respects strict Unicode byte caps in text-only Native fetch without TextEncoder", async () => {
+test("Shared DSH parser respects strict Unicode byte caps in streaming Native fetch without TextEncoder", async () => {
   const payload = JSON.stringify({ name: "ي".repeat(2200) });
   assert.ok(payload.length < 4096 && Buffer.byteLength(payload, "utf8") > 4096);
-  const fakeReply = {
-    headers: new Headers({ "Content-Type": "application/json" }),
-    text: async () => payload,
-  };
+  const oversized = new Response(Buffer.from(payload));
+  const valid = new Response(Buffer.from('{"name":"بثواني"}'));
   const saved = globalThis.TextEncoder;
   try {
     globalThis.TextEncoder = undefined;
-    await assert.rejects(() => readBoundedOwnerJSON(fakeReply, 4096, 4096), /Oversized/);
-    assert.deepEqual(await readBoundedOwnerJSON({
-      headers: fakeReply.headers, text: async () => '{"name":"بثواني"}',
-    }, 4096, 4096), { name: "بثواني" });
+    await assert.rejects(() => readBoundedOwnerJSON(oversized, 4096, 4096), /Oversized/);
+    assert.deepEqual(await readBoundedOwnerJSON(valid, 4096, 4096), { name: "بثواني" });
   } finally {
     globalThis.TextEncoder = saved;
   }

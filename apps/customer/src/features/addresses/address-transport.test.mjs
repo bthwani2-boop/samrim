@@ -6,14 +6,14 @@ import path from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
 const source = path.join(import.meta.dirname, "address-transport.ts");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-address-transport-"));
 let compiled;
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--inlineSourceMap", "--inlineSources", "--outDir", temp],
     { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
@@ -50,7 +50,7 @@ function harness(t, os = "web", configured = true) {
     assert.ok(replies.length, "unexpected request");
     const next = replies.shift();
     if (next instanceof Error) throw next;
-    return next;
+    return typeof next === "function" ? next(init) : next;
   });
   const envKey = "EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN";
   const previous = process.env[envKey];
@@ -60,7 +60,7 @@ function harness(t, os = "web", configured = true) {
     else delete process.env[envKey];
     const fixture = loadMappedRenderFixture(compiled, source, {
       "@bthwani/dsh": dsh,
-      "../access/bounded-customer-json": { readBoundedCustomerJSON },
+      "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON },
       "react-native": { Platform: { OS: os } },
       "../access/customer-session-transport": {
         async readCustomerAdmission() { return admissions.length ? admissions.shift() : state(); },
@@ -238,9 +238,51 @@ test("Android uses the real DSH SDK within verified native scope and bounds expi
     ["PUT", origin + "/v1/addresses/" + id],
     ["GET", origin + "/v1/carts/" + store + "/serviceability?addressId=" + id],
   ]);
-  assert.ok(h.requests.every(r => r.headers.Authorization === "Bearer " + bearer && r.credentials === "omit" && r.signal === s));
+  for (const request of h.requests) {
+    assert.equal(request.headers.Authorization, "Bearer " + bearer);
+    assert.equal(request.credentials, "omit");
+    assert.ok(request.signal instanceof AbortSignal);
+    assert.notEqual(request.signal, s, "owner SDK owns the bounded transport signal");
+    assert.equal(request.signal.aborted, false);
+  }
   assert.ok(h.nativeCalls.every(r => r.actor === actor && r.signal === s));
   assert.deepEqual(JSON.parse(h.requests[2].body), change);
+});
+
+test("Android caller cancellation interrupts the actual SDK transport and discards a late response", async t => {
+  const h = harness(t, "android");
+  const controller = new AbortController();
+  let entered, release;
+  const dispatched = new Promise(resolve => { entered = resolve; });
+  const late = new Promise(resolve => { release = resolve; });
+  let transportSignal, cancelled = false;
+  h.replies.push(init => {
+    transportSignal = init.signal;
+    entered();
+    return late;
+  });
+  const response = new Response(new ReadableStream({
+    cancel() { cancelled = true; },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  const pending = h.api.readVerifiedAddresses(controller.signal, actor);
+  try {
+    await dispatched;
+    assert.notEqual(transportSignal, controller.signal);
+    assert.equal(transportSignal.aborted, false);
+    controller.abort();
+    await assert.rejects(pending, failure(0, "OWNER_RESPONSE_STALE"));
+    assert.equal(transportSignal.aborted, true);
+    assert.equal(h.requests.length, 1);
+  } finally {
+    release(response);
+    await pending.catch(() => {});
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(cancelled, true);
+  h.replies.push(json(page));
+  assert.deepEqual(await h.api.readVerifiedAddresses(signal(), actor), { page, expiresAt: h.expiresAt - 1000 });
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].signal.aborted, false);
 });
 
 test("Android unavailable or revoked native scope does not expose owner data or permit an unconfirmed save", async t => {
@@ -267,4 +309,18 @@ test("Android without an admitted DSH origin never dispatches", async t => {
   await assert.rejects(h.api.readVerifiedDeliveryServiceability(actor, store, id, signal()), failure(503, "OWNER_UNAVAILABLE"));
   assert.equal(h.requests.length, 0);
   assert.equal(h.nativeCalls.length, 0);
+});
+
+test("Web and Android capture the same canonical command before asynchronous admission", async t => {
+  for (const os of ["web", "android"]) {
+    const h = harness(t, os);
+    const draft = { ...change, label: "\u0085Test home\u0085", details: "\ufeffSynthetic address" };
+    const canonical = { ...change, details: "\ufeffSynthetic address" };
+    h.replies.push(json({ ...receipt, address: { ...address, details: canonical.details } }));
+    const result = h.api.writeVerifiedAddress(actor, id, draft, signal());
+    draft.label = "different draft";
+    draft.expectedVersion = 9;
+    assert.deepEqual(await result, { ...receipt, address: { ...address, details: canonical.details } });
+    assert.deepEqual(JSON.parse(h.requests[0].body), canonical);
+  }
 });

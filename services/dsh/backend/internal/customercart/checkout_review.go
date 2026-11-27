@@ -1,9 +1,9 @@
 package customercart
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"io"
 	"mime"
 	"net/http"
@@ -19,6 +19,7 @@ import (
 // Review is a non-persisted, version-bound DSH snapshot, not a quote or Order.
 // Recipient contact is validated, never returned, logged, persisted or sent to WLT.
 type checkoutReviewInput struct {
+	SalesChannel           string
 	ExpectedCartVersion    int64
 	AddressID              string
 	ExpectedAddressVersion int64
@@ -29,10 +30,25 @@ type checkoutReviewInput struct {
 	FulfillmentMode        string
 }
 
+// Required fields have no admissible zero value. Raw optional fields preserve
+// presence, so explicit null cannot be mistaken for an omitted field.
+type checkoutReviewWire struct {
+	SalesChannel           string         `json:"salesChannel"`
+	ExpectedCartVersion    int64          `json:"expectedCartVersion"`
+	RecipientPurpose       string         `json:"recipientPurpose"`
+	FulfillmentMode        string         `json:"fulfillmentMode"`
+	AddressID              jsontext.Value `json:"addressId"`
+	ExpectedAddressVersion jsontext.Value `json:"expectedAddressVersion"`
+	RecipientName          jsontext.Value `json:"recipientName"`
+	RecipientPhone         jsontext.Value `json:"recipientPhone"`
+	DeliveryInstructions   jsontext.Value `json:"deliveryInstructions"`
+}
+
 type checkoutReviewResult struct {
 	ActorID          string                                     `json:"actorId"`
 	StoreID          string                                     `json:"storeId"`
 	CartVersion      int64                                      `json:"cartVersion"`
+	SalesChannel     string                                     `json:"salesChannel"`
 	RecipientPurpose string                                     `json:"recipientPurpose"`
 	FulfillmentMode  string                                     `json:"fulfillmentMode"`
 	Merchandise      MerchandiseEstimate                        `json:"merchandise"`
@@ -43,6 +59,8 @@ type checkoutReviewResult struct {
 	StoreSchedule    storeavailability.CustomerScheduleEvidence `json:"storeSchedule"`
 }
 
+const checkoutReviewMaxBody = 4096
+
 var checkoutRecipientPhone = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
 func validRecipientText(v string, max int) bool {
@@ -52,89 +70,86 @@ func validRecipientText(v string, max int) bool {
 	})
 }
 
-func decodeCheckoutReview(w http.ResponseWriter, r *http.Request) (checkoutReviewInput, bool) {
-	var v checkoutReviewInput
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" || r.Header.Get("Content-Encoding") != "" ||
-		r.URL.RawQuery != "" || r.URL.ForceQuery || !resourceRule.MatchString(r.PathValue("storeID")) {
-		return v, false
+func validCheckoutEnvelope(r *http.Request) bool {
+	media := r.Header.Values("Content-Type")
+	if len(media) != 1 || len(r.Header.Values("Content-Encoding")) != 0 ||
+		r.URL.RawQuery != "" || r.URL.ForceQuery || !resourceRule.MatchString(r.PathValue("storeID")) ||
+		r.Body == nil || r.ContentLength > checkoutReviewMaxBody {
+		return false
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4096))
-	if err != nil || !utf8.Valid(body) {
-		return v, false
+	kind, params, err := mime.ParseMediaType(media[0])
+	if err != nil || kind != "application/json" {
+		return false
 	}
-	d := json.NewDecoder(bytes.NewReader(body))
-	token, err := d.Token()
-	if err != nil || token != json.Delim('{') {
-		return v, false
-	}
-	seen := map[string]bool{}
-	for d.More() {
-		raw, err := d.Token()
-		key, ok := raw.(string)
-		if err != nil || !ok || seen[key] {
-			return v, false
-		}
-		seen[key] = true
-		var field any
-		switch key {
-		case "expectedCartVersion":
-			field = &v.ExpectedCartVersion
-		case "addressId":
-			field = &v.AddressID
-		case "expectedAddressVersion":
-			field = &v.ExpectedAddressVersion
-		case "recipientPurpose":
-			field = &v.RecipientPurpose
-		case "recipientName":
-			field = &v.RecipientName
-		case "recipientPhone":
-			field = &v.RecipientPhone
-		case "deliveryInstructions":
-			field = &v.DeliveryInstructions
-		case "fulfillmentMode":
-			field = &v.FulfillmentMode
-		default:
-			return v, false
-		}
-		var value json.RawMessage
-		if d.Decode(&value) != nil || bytes.Equal(bytes.TrimSpace(value), []byte("null")) || json.Unmarshal(value, field) != nil {
-			return v, false
+	for key, value := range params {
+		if key != "charset" || !strings.EqualFold(value, "utf-8") {
+			return false
 		}
 	}
-	end, err := d.Token()
-	if err != nil || end != json.Delim('}') || d.Decode(new(any)) != io.EOF ||
-		!seen["expectedCartVersion"] || v.ExpectedCartVersion < 1 || v.ExpectedCartVersion > maxJSONSafeInteger {
-		return v, false
+	return true
+}
+
+func checkoutOptional[T any](raw jsontext.Value, dst *T) bool {
+	return len(raw) == 0 || (string(raw) != "null" && json.Unmarshal(raw, dst) == nil)
+}
+
+func admitCheckoutReview(wire checkoutReviewWire) (checkoutReviewInput, bool) {
+	v := checkoutReviewInput{
+		SalesChannel: wire.SalesChannel, ExpectedCartVersion: wire.ExpectedCartVersion,
+		RecipientPurpose: wire.RecipientPurpose, FulfillmentMode: wire.FulfillmentMode,
+	}
+	if v.ExpectedCartVersion < 1 || v.ExpectedCartVersion > maxJSONSafeInteger ||
+		(v.SalesChannel != "DIRECT" && v.SalesChannel != "MARKETPLACE") ||
+		!checkoutOptional(wire.AddressID, &v.AddressID) ||
+		!checkoutOptional(wire.ExpectedAddressVersion, &v.ExpectedAddressVersion) ||
+		!checkoutOptional(wire.RecipientName, &v.RecipientName) ||
+		!checkoutOptional(wire.RecipientPhone, &v.RecipientPhone) ||
+		!checkoutOptional(wire.DeliveryInstructions, &v.DeliveryInstructions) {
+		return checkoutReviewInput{}, false
 	}
 	switch v.RecipientPurpose {
 	case "SELF":
-		if seen["recipientName"] || seen["recipientPhone"] || seen["deliveryInstructions"] {
-			return v, false
+		if len(wire.RecipientName) != 0 || len(wire.RecipientPhone) != 0 || len(wire.DeliveryInstructions) != 0 {
+			return checkoutReviewInput{}, false
 		}
 	case "OTHER":
 		if !validRecipientText(v.RecipientName, 100) || !checkoutRecipientPhone.MatchString(v.RecipientPhone) ||
-			(seen["deliveryInstructions"] && !validRecipientText(v.DeliveryInstructions, 300)) {
-			return v, false
+			(len(wire.DeliveryInstructions) != 0 && !validRecipientText(v.DeliveryInstructions, 300)) {
+			return checkoutReviewInput{}, false
 		}
 	default:
-		return v, false
+		return checkoutReviewInput{}, false
 	}
 	switch v.FulfillmentMode {
 	case "CUSTOMER_PICKUP":
-		if seen["addressId"] || seen["expectedAddressVersion"] || seen["deliveryInstructions"] {
-			return v, false
+		if len(wire.AddressID) != 0 || len(wire.ExpectedAddressVersion) != 0 || len(wire.DeliveryInstructions) != 0 {
+			return checkoutReviewInput{}, false
 		}
 	case "BTHWANI_CAPTAIN", "PARTNER_CAPTAIN":
 		if !addressIDRule.MatchString(v.AddressID) || v.ExpectedAddressVersion < 1 || v.ExpectedAddressVersion > maxJSONSafeInteger {
-			return v, false
+			return checkoutReviewInput{}, false
 		}
 	default:
-		return v, false
+		return checkoutReviewInput{}, false
 	}
 	return v, true
 }
 
+func decodeCheckoutReview(w http.ResponseWriter, r *http.Request) (checkoutReviewInput, bool) {
+	if !validCheckoutEnvelope(r) {
+		return checkoutReviewInput{}, false
+	}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, checkoutReviewMaxBody))
+	if err != nil {
+		return checkoutReviewInput{}, false
+	}
+	var wire checkoutReviewWire
+	// JSON v2 rejects duplicate names, invalid Unicode and case variants.
+	if err := json.Unmarshal(body, &wire, json.RejectUnknownMembers(true)); err != nil {
+		return checkoutReviewInput{}, false
+	}
+	return admitCheckoutReview(wire)
+}
 func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 	input, valid := decodeCheckoutReview(w, r)
 	if !valid {
@@ -174,7 +189,26 @@ func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 		fail(w, 409, code)
 		return
 	}
-	result := checkoutReviewResult{ActorID: actor, StoreID: store, CartVersion: cart.Version,
+	// Read the current Store relation in the same repeatable-read transaction
+	// as the cart, publication and offer evidence. The caller requests a
+	// channel; it never grants itself eligibility or financial rights.
+	var eligible bool
+	err = tx.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM stores s JOIN service_cities c ON c.id=s.city_id
+		JOIN verticals v ON v.id=s.vertical_id
+		WHERE s.id=$1 AND s.published AND c.active AND v.active
+		AND (($2='DIRECT' AND s.relation IN ('DIRECT','MARKETPLACE'))
+		  OR ($2='MARKETPLACE' AND s.relation='MARKETPLACE'))
+	)`, store, input.SalesChannel).Scan(&eligible)
+	if err != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	if !eligible {
+		fail(w, 409, "SALES_CHANNEL_NOT_ELIGIBLE")
+		return
+	}
+	result := checkoutReviewResult{ActorID: actor, StoreID: store, CartVersion: cart.Version, SalesChannel: input.SalesChannel,
 		RecipientPurpose: input.RecipientPurpose, FulfillmentMode: input.FulfillmentMode, Merchandise: amount,
 		CheckoutReady: false, Blockers: []string{"FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"}}
 	result.StoreSchedule, err = storeavailability.ReadCustomerSchedule(ctx, tx, store)

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root=fileURLToPath(new URL("../../../../../",import.meta.url));
 const entry=fileURLToPath(new URL("./favorite-stores-transport.ts",import.meta.url));
@@ -16,7 +16,7 @@ let compiled;
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 try {
-  const result=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),entry,
+  const result=spawnSync(process.execPath,[path.join(root,"node_modules/@typescript/native/bin/tsc"),entry,
     "--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs",
     "--inlineSourceMap","--inlineSources","--outDir",temp],
     {cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
@@ -28,7 +28,7 @@ const session=(actorId=actor)=>({enabled:true,session:{actorId,role:"customer",s
 function harness(platform, read, native, origin = "http://127.0.0.1:3202"){
   const modules={"@bthwani/dsh":dsh,"react-native":{Platform:{OS:platform}},
     "../access/customer-session-transport":{readCustomerAdmission:read,withVerifiedNativeCustomerRead:native},
-    "../access/bounded-customer-json":{readBoundedCustomerJSON}};
+    "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON }};
   const previous = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
   try {
     if (origin === null) delete process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
@@ -139,7 +139,8 @@ test("Web list and mutation use the current actor and bound session deadline", a
     assert.equal(init.cache, "no-store");
     assert.equal(init.credentials, "same-origin");
     assert.equal(init.redirect, "error");
-    assert.equal(init.signal, signal);
+    assert.ok(init.signal instanceof AbortSignal);
+    assert.equal(init.signal.aborted, false);
   }
 });
 
@@ -197,4 +198,129 @@ test("Android requires native origin and verified readback; successful results r
   assert.equal(calls, 3);
   const unavailable = harness("android", async () => session(), async () => ({ kind: "unavailable" }));
   await assert.rejects(unavailable.readFavoriteStores(signal, actor), e => e.status === 503);
+});
+
+
+test("Web rejects noncanonical successful statuses and disposes every rejected response stream", async t => {
+  const api = harness("web", async () => session());
+  for (const [status, cache, expected] of [[201, "no-store", "OWNER_RESPONSE_INVALID"], [401, "no-store", "FAVORITE_REQUEST_REJECTED"], [200, "public", "OWNER_RESPONSE_INVALID"]]) {
+    let cancellations = 0;
+    const body = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(JSON.stringify(validState))); }, cancel() { cancellations++; } });
+    t.mock.method(globalThis, "fetch", async () => new Response(body, { status, headers: { "Cache-Control": cache, "Content-Type": "application/json" } }));
+    await assert.rejects(api.readFavoriteStore(new AbortController().signal, storeId, actor), e => e.code === expected);
+    assert.equal(cancellations, 1, "unread rejected body must be disposed");
+  }
+});
+
+test("Web abort after headers releases the unread reply without publishing state", async t => {
+  const api = harness("web", async () => session());
+  const controller = new AbortController();
+  let cancellations = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    const response = new Response(new ReadableStream({ cancel() { cancellations++; } }), { headers: { "Cache-Control": "no-store", "Content-Type": "application/json" } });
+    controller.abort();
+    return response;
+  });
+  await assert.rejects(api.readFavoriteStore(controller.signal, storeId, actor), e => e.name === "AbortError");
+  assert.equal(cancellations, 1);
+});
+
+test("cancelled Web reads settle even when the fetch ignores abort; late bodies are disposed", async t => {
+  const api = harness("web", async () => session());
+  const controller = new AbortController();
+  let deliver, cancellations = 0;
+  const dispatched = Promise.withResolvers();
+  t.mock.method(globalThis, "fetch", () => {
+    dispatched.resolve();
+    return new Promise(resolve => { deliver = resolve; });
+  });
+  const pending = api.readFavoriteStore(controller.signal, storeId, actor).catch(error => error.name);
+  await dispatched.promise;
+  controller.abort();
+  let timer;
+  try {
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]), "AbortError");
+  } finally {
+    clearTimeout(timer);
+    deliver(new Response(new ReadableStream({ cancel() { cancellations++; } }), {
+      headers: { "Cache-Control": "no-store", "Content-Type": "application/json" },
+    }));
+    await pending;
+  }
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(cancellations, 1);
+});
+
+test("cancelled writes settle unknown after dispatch without automatic retry", async t => {
+  const api = harness("web", async () => session());
+  const controller = new AbortController();
+  let deliver, calls = 0;
+  const dispatched = Promise.withResolvers();
+  t.mock.method(globalThis, "fetch", () => {
+    calls++;
+    dispatched.resolve();
+    return new Promise(resolve => { deliver = resolve; });
+  });
+  const pending = api.writeFavoriteStore(controller.signal, actor, storeId, true).catch(error => error.code);
+  await dispatched.promise;
+  controller.abort();
+  let timer;
+  try {
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]), "OPERATION_RESULT_UNKNOWN");
+  } finally {
+    clearTimeout(timer);
+    deliver(reply(validState));
+    await pending;
+  }
+  assert.equal(calls, 1);
+});
+
+test("cancelled initial session read cannot later dispatch an owner request", async t => {
+  const controller = new AbortController();
+  const started = Promise.withResolvers();
+  let deliver, calls = 0;
+  const api = harness("web", () => {
+    started.resolve();
+    return new Promise(resolve => { deliver = resolve; });
+  });
+  t.mock.method(globalThis, "fetch", async () => { calls++; return reply(validState); });
+  const pending = api.readFavoriteStore(controller.signal, storeId, actor).catch(error => error.name);
+  await started.promise;
+  controller.abort();
+  let timer;
+  try {
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]), "AbortError");
+  } finally {
+    clearTimeout(timer);
+    deliver(session());
+    await pending;
+  }
+  assert.equal(calls, 0);
+});
+
+test("one absolute deadline covers both owner proof and HTTP lifetime", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const api = harness("web", async () => session());
+  const started = Promise.withResolvers();
+  let ownerSignal;
+  t.mock.method(globalThis, "fetch", (_url, init) => {
+    ownerSignal = init.signal;
+    started.resolve();
+    return new Promise(() => {});
+  });
+  const caller = new AbortController();
+  const pending = assert.rejects(api.writeFavoriteStore(caller.signal, actor, storeId, true), unknown);
+  await started.promise;
+  t.mock.timers.tick(20_000);
+  await pending;
+  assert.equal(ownerSignal.aborted, true);
+  assert.equal(caller.signal.aborted, false);
+});
+
+test("standalone session verification also releases on timeout", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const api = harness("web", () => new Promise(() => {}));
+  const pending = assert.rejects(api.verifyFavoriteSession(new AbortController().signal, actor), e => e.code === "OWNER_UNAVAILABLE");
+  t.mock.timers.tick(20_000);
+  await pending;
 });

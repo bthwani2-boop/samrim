@@ -139,3 +139,53 @@ DROP TRIGGER IF EXISTS trg_store_operational_policy_commands_immutable ON __SCHE
 CREATE TRIGGER trg_store_operational_policy_commands_immutable
 BEFORE UPDATE OR DELETE ON __SCHEMA__.store_operational_policy_commands
 FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.reject_operational_audit_rewrite();
+
+-- One append-only version stream per City/Store relation. This policy is
+-- a permissible-mode ceiling, never per-Store admission or payment authority.
+CREATE TABLE IF NOT EXISTS __SCHEMA__.city_fulfillment_policy_versions (
+    city_id text NOT NULL REFERENCES __SCHEMA__.service_cities(id) ON DELETE RESTRICT,
+    relation text NOT NULL CHECK (relation IN ('DIRECT','MARKETPLACE')),
+    version bigint NOT NULL CHECK (version BETWEEN 1 AND 9007199254740991),
+    operation_id text NOT NULL CHECK (operation_id ~ '^[A-Za-z0-9._-]{8,128}$'),
+    allowed_modes text[] NOT NULL CHECK (
+        allowed_modes = array_remove(ARRAY[
+            CASE WHEN 'BTHWANI_CAPTAIN'=ANY(allowed_modes) THEN 'BTHWANI_CAPTAIN' END,
+            CASE WHEN 'PARTNER_CAPTAIN'=ANY(allowed_modes) THEN 'PARTNER_CAPTAIN' END,
+            CASE WHEN 'CUSTOMER_PICKUP'=ANY(allowed_modes) THEN 'CUSTOMER_PICKUP' END
+        ]::text[],NULL) AND array_position(allowed_modes,NULL) IS NULL
+    ),
+    acting_actor_id text NOT NULL CHECK (char_length(acting_actor_id) BETWEEN 1 AND 128 AND acting_actor_id=trim(acting_actor_id)),
+    reason text NOT NULL CHECK (char_length(reason) BETWEEN 1 AND 300 AND reason=trim(reason)),
+    recorded_at timestamptz NOT NULL DEFAULT transaction_timestamp(),
+    PRIMARY KEY (city_id,relation,version),
+    UNIQUE (city_id,relation,operation_id)
+);
+
+CREATE OR REPLACE FUNCTION __SCHEMA__.guard_city_fulfillment_policy_version()
+RETURNS trigger LANGUAGE plpgsql AS $policy$
+DECLARE
+    city_active boolean;
+    previous_version bigint;
+BEGIN
+    SELECT active INTO city_active FROM __SCHEMA__.service_cities WHERE id=NEW.city_id FOR UPDATE;
+    IF city_active IS DISTINCT FROM true THEN
+        RAISE EXCEPTION 'Fulfillment policy requires an active City';
+    END IF;
+    SELECT COALESCE(max(version),0) INTO previous_version
+        FROM __SCHEMA__.city_fulfillment_policy_versions
+        WHERE city_id=NEW.city_id AND relation=NEW.relation;
+    IF NEW.version <> previous_version+1 THEN
+        RAISE EXCEPTION 'Fulfillment policy version must advance by one';
+    END IF;
+    NEW.recorded_at := transaction_timestamp();
+    RETURN NEW;
+END;
+$policy$;
+DROP TRIGGER IF EXISTS trg_city_fulfillment_policy_version ON __SCHEMA__.city_fulfillment_policy_versions;
+CREATE TRIGGER trg_city_fulfillment_policy_version
+BEFORE INSERT ON __SCHEMA__.city_fulfillment_policy_versions
+FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.guard_city_fulfillment_policy_version();
+DROP TRIGGER IF EXISTS trg_city_fulfillment_policy_immutable ON __SCHEMA__.city_fulfillment_policy_versions;
+CREATE TRIGGER trg_city_fulfillment_policy_immutable
+BEFORE UPDATE OR DELETE ON __SCHEMA__.city_fulfillment_policy_versions
+FOR EACH ROW EXECUTE FUNCTION __SCHEMA__.reject_operational_audit_rewrite();

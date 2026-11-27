@@ -49,7 +49,7 @@ const scratch = mkdtempSync(join(tmpdir(), "bthwani-funding-adapters-"));
 let compiled;
 try {
   const result = spawnSync(process.execPath, [
-    join(repo, "node_modules/typescript/bin/tsc"), ...adapters.map(adapter => adapter.source),
+    join(repo, "node_modules/@typescript/native/bin/tsc"), ...adapters.map(adapter => adapter.source),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", scratch,
   ], { cwd: repo, encoding: "utf8", timeout: 20000, windowsHide: true });

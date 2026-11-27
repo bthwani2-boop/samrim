@@ -3,21 +3,16 @@ package wallet
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"io"
-	"mime"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
-	"strings"
 	"time"
 )
 
 // VerifySandboxProviderFunding confirms a synthetic provider record before
-// invoking WLT's existing immutable, idempotent sandbox journal posting.
-// This route is development-only: it must never become an external rail adapter.
+// invoking WLT's immutable idempotent sandbox journal posting. It never
+// admits an external payment rail.
 func VerifySandboxProviderFunding(ctx context.Context, db *sql.DB, identityOrigin, providerOrigin, token, reference string, amount int64) (string, error) {
 	if amount < 1 || !sandboxReference.MatchString(reference) || !validBearer("Bearer "+token) {
 		return "", errors.New("invalid sandbox provider funding input")
@@ -33,8 +28,7 @@ func VerifySandboxProviderFunding(ctx context.Context, db *sql.DB, identityOrigi
 	if err := verifySandboxProviderEvidence(ctx, providerOrigin, reference, actor.ActorID, amount); err != nil {
 		return "", err
 	}
-	// Revalidate Identity at the write boundary and immediately before commit.
-	// The sandbox SQL function, not this provider response, owns persistence.
+	// Identity is revalidated before the existing sandbox posting and commit.
 	return writeSandboxFunding(ctx, db, identityOrigin, token, reference, actor.ActorID, sandboxPosting, amount)
 }
 
@@ -46,19 +40,8 @@ type sandboxProviderEvidence struct {
 	Status    string `json:"status"`
 }
 
-func validSandboxProviderOrigin(origin string) bool {
-	u, err := url.Parse(origin)
-	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" || u.User != nil ||
-		u.Port() == "" || u.Path != "" || u.RawPath != "" || u.RawQuery != "" ||
-		u.Fragment != "" || u.Opaque != "" || u.ForceQuery || u.String() != origin {
-		return false
-	}
-	port, err := strconv.ParseUint(u.Port(), 10, 16)
-	return err == nil && port > 0
-}
-
 func verifySandboxProviderEvidence(ctx context.Context, origin, reference, actor string, amount int64) error {
-	if !validSandboxProviderOrigin(origin) || !sandboxReference.MatchString(reference) {
+	if !validLoopbackOwnerOrigin(origin) || !sandboxReference.MatchString(reference) {
 		return errors.New("sandbox provider requires explicit isolated loopback configuration")
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/sandbox/v1/funding/"+reference, nil)
@@ -82,21 +65,8 @@ func verifySandboxProviderEvidence(ctx context.Context, origin, reference, actor
 	if response.StatusCode != http.StatusOK || response.ContentLength > 1024 {
 		return errors.New("sandbox provider response unconfirmed; reconcile same reference")
 	}
-	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || mediaType != "application/json" {
-		return errors.New("invalid sandbox provider evidence")
-	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, 1025))
-	if err != nil || len(raw) > 1024 {
-		return errors.New("invalid sandbox provider evidence")
-	}
 	var evidence sandboxProviderEvidence
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
-	decoder.DisallowUnknownFields()
-	if err = decoder.Decode(&evidence); err != nil {
-		return errors.New("invalid sandbox provider evidence")
-	}
-	if err = decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+	if err := decodeBoundedOwnerReply(response, &evidence, 1024); err != nil {
 		return errors.New("invalid sandbox provider evidence")
 	}
 	if evidence.Reference != reference || evidence.ActorID != actor ||

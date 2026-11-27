@@ -75,6 +75,7 @@ func isolatedStoreAvailabilityHandler(db *sql.DB, schema string, public http.Han
 	mux := http.NewServeMux()
 	mux.Handle("/v1/stores/", storeAvailabilityCORS(private, allowedOrigins))
 	mux.Handle("/v1/operators/cities/", storePolicyCORS(policyRead, allowedOrigins))
+	mux.Handle("/v1/operators/stores/{storeID}/financial-standing", storeavailability.NewOperatorFinancialStandingHandler(identity, grants))
 	mux.Handle("/", public)
 	return mux, nil
 }

@@ -26,6 +26,10 @@ const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles ?
 const expr = body => "$" + "{{ " + body + " }}";
 const compact = value => String(value).replace(/\s+/g, "");
 const sameExpression = (actual, expected) => assert.equal(compact(actual), compact(expr(expected)));
+const fullEvent = "github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')";
+const developmentEvent = "github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/')";
+const noArchiveEvent = "github.event_name != 'pull_request' || !startsWith(github.head_ref, 'archive/')";
+const fullGate = "!cancelled() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))";
 const steps = job => job.steps ?? [];
 const command = step => step.run ?? "";
 const commands = job => steps(job).map(command).join("\n");
@@ -38,6 +42,11 @@ const runs = (job, pattern) => one(job, step => pattern.test(command(step)), Str
 const action = (step, name) => typeof step.uses === "string" && step.uses.startsWith(name + "@");
 function mandatory(job, step) {
   assert.equal(step.if, undefined, "Required step may not be conditionally skipped");
+  assert.notEqual(step["continue-on-error"], true);
+  assert.notEqual(job["continue-on-error"], true);
+}
+function integrationStep(job, step) {
+  sameExpression(step.if, fullEvent);
   assert.notEqual(step["continue-on-error"], true);
   assert.notEqual(job["continue-on-error"], true);
 }
@@ -82,9 +91,9 @@ function candidate(directory) {
   git(directory, "commit", "--quiet", "-m", "synthetic CI candidate");
   return { sha: git(directory, "rev-parse", "HEAD"), tree: git(directory, "rev-parse", "HEAD^{tree}") };
 }
-test("native events admit only PR updates and integrated main pushes; periodic audit owns its own event", () => {
+test("one CI owner admits development pushes and preserves protected integration events; periodic audit stays separate", () => {
   assert.deepEqual(Object.keys(ci.on).sort(), ["pull_request", "push"]);
-  assert.deepEqual(ci.on.push, { branches: ["main"] });
+  assert.deepEqual(ci.on.push, { branches: ["main", "codex/**"] });
   assert.deepEqual(ci.on.pull_request.branches, ["main"]);
   assert.deepEqual(ci.on.pull_request.types, ["opened", "reopened", "synchronize", "ready_for_review", "converted_to_draft"]);
   assert.equal(ci.on.pull_request.paths, undefined);
@@ -98,16 +107,20 @@ test("native events admit only PR updates and integrated main pushes; periodic a
   for (const obsolete of ["dependency-nx-safety.yml", "sonar-quality.yml"]) {
     assert.ok(!existsSync(path.join(root, ".github/workflows", obsolete)));
   }
-  for (const job of [workspace, app, backend, windows, audit]) assert.equal(job.if, undefined);
+  for (const job of [app, audit]) assert.equal(job.if, undefined);
+  sameExpression(workspace.if, noArchiveEvent);
+  sameExpression(backend.if, fullEvent);
+  sameExpression(windows.if, fullEvent);
   assert.equal(workspace.needs, undefined);
   assert.equal(app.needs, "workspace_validation");
   assert.equal(windows.needs, "workspace_validation");
   assert.equal(windows["runs-on"], "windows-2025");
   assert.equal(backend.needs, "workspace_validation");
-  sameExpression(required.if, "!cancelled()");
-  sameExpression(sonar.if, "!cancelled()");
-  assert.equal(required.name, "fast-guard");
-  assert.equal(sonar.name, "SonarQube Cloud Quality Gate");
+  sameExpression(required.if, fullGate);
+  sameExpression(sonar.if, fullGate);
+  sameExpression(required.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'fast-guard' || 'Full integration gate (not run on development)'");
+  sameExpression(sonar.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'SonarQube Cloud Quality Gate' || 'Sonar integration gate (not run on development)'");
+  sameExpression(app.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'Application quality, contracts, tests and builds' || 'Development feedback (affected source checks)'");
   assert.equal(backend.uses, "./.github/workflows/go-quality.yml");
   assert.deepEqual(new Set(required.needs), new Set(["workspace_validation", "application_quality", "backend_quality", "windows_platform"]));
   assert.deepEqual(new Set(sonar.needs), new Set(["application_quality", "backend_quality"]));
@@ -115,9 +128,82 @@ test("native events admit only PR updates and integrated main pushes; periodic a
   assert.equal(ci.concurrency.group, "ci-" + expr("github.ref"));
   for (const parsed of [ci, go, scheduled]) {
     for (const job of Object.values(parsed.jobs)) {
-      assert.doesNotMatch(commands(job), /gh api|nx affected|nx run-many|VERIFICATION_OWNER/);
+      assert.doesNotMatch(commands(job), /gh api|VERIFICATION_OWNER/);
+      if (job !== app) assert.doesNotMatch(commands(job), /nx affected|nx run-many/);
     }
   }
+});
+
+test("development feedback uses the actual accumulated Git diff, safe full fallback and fail-closed native commands", () => {
+  const step = one(app, item => item.name === "Verify development changes through native Nx and owner checks", "development feedback");
+  const setupGo = one(app, item => action(item, "actions/setup-go"), "development Go setup");
+  sameExpression(step.if, developmentEvent);
+  sameExpression(setupGo.if, developmentEvent);
+  assert.equal(setupGo.with["go-version-file"], ".go-version");
+  assert.equal(setupGo.with.cache, false);
+  assert.equal(step["continue-on-error"], undefined);
+  assert.equal(step.env.NX_NO_CLOUD, "true");
+  assert.equal(step.env.NX_SKIP_NX_CACHE, "true");
+  assert.equal(step.env.NX_DAEMON, "false");
+  assert.equal(step.env.GOTOOLCHAIN, "local");
+  order(app, setupGo, step);
+  const capture = [
+    'pnpm() { printf "PNPM:%s\\n" "$*"; if [[ "$CI_TEST_FAIL" == pnpm ]]; then return 19; fi; }',
+    'node() { printf "NODE:%s\\n" "$*"; }',
+  ].join("\n");
+  const run = (dir, fail = "") => shell(capture + "\n" + command(step), { CI_TEST_FAIL: fail }, dir);
+  const commit = (dir, file, value) => {
+    put(dir, file, value);
+    git(dir, "add", "--", file);
+    git(dir, "commit", "--quiet", "-m", "synthetic development input");
+  };
+  const checkGlobal = result => {
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /DEVELOPMENT_GLOBAL_SOURCE_CHECKS/);
+    assert.match(result.stdout, /PNPM:check:coverage/);
+    assert.match(result.stdout, /PNPM:exec nx run-many -t typecheck --skip-nx-cache/);
+    assert.match(result.stdout, /NODE:tools\/dev\/check-go.mjs --quick/);
+    assert.doesNotMatch(result.stdout, /PNPM:exec nx affected/);
+  };
+  fixture("ci-dev-accumulated-", dir => {
+    const { sha } = candidate(dir);
+    git(dir, "update-ref", "refs/remotes/origin/main", sha);
+    commit(dir, "apps/merchant/src/one.ts", "export const one = 1;\n");
+    const prior = git(dir, "rev-parse", "HEAD");
+    commit(dir, "services/dsh/backend/two.go", "package dsh\n");
+    const result = run(dir);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(result.stdout.includes("PNPM:exec nx affected -t typecheck test --base=" + sha + " --head=HEAD --skip-nx-cache"), result.stdout);
+    assert.ok(!result.stdout.includes("--base=" + prior), "Do not ignore earlier cancelled work");
+    assert.doesNotMatch(result.stdout, /DEVELOPMENT_GLOBAL_SOURCE_CHECKS|PNPM:check:coverage/);
+    const failed = run(dir, "pnpm");
+    assert.equal(failed.status, 19, failed.stdout);
+    assert.doesNotMatch(failed.stdout, /DEVELOPMENT_FEEDBACK_ONLY/);
+    commit(dir, "packages/design-system/src/theme.ts", "export const theme = 1;\n");
+    checkGlobal(run(dir));
+  });
+  for (const file of ["README.md", "apps/merchant/package.json", "services/dsh/backend/go.mod", "tools/dev/check-go.mjs"]) {
+    fixture("ci-dev-foundation-", dir => {
+      const { sha } = candidate(dir);
+      git(dir, "update-ref", "refs/remotes/origin/main", sha);
+      commit(dir, file, "shared input\n");
+      checkGlobal(run(dir));
+    });
+  }
+  fixture("ci-dev-delete-", dir => {
+    candidate(dir);
+    commit(dir, "apps/merchant/src/deleted.ts", "export const old = 1;\n");
+    git(dir, "update-ref", "refs/remotes/origin/main", git(dir, "rev-parse", "HEAD"));
+    git(dir, "rm", "--", "apps/merchant/src/deleted.ts");
+    git(dir, "commit", "--quiet", "-m", "synthetic deletion");
+    checkGlobal(run(dir));
+  });
+  fixture("ci-dev-baseline-", dir => {
+    const { sha } = candidate(dir);
+    checkGlobal(run(dir));
+    git(dir, "update-ref", "refs/remotes/origin/main", sha);
+    checkGlobal(run(dir));
+  });
 });
 
 test("required jobs retain the read-only pinned dependency, source, contract, build and owner checks", () => {
@@ -173,7 +259,7 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.ok(!steps(audit).some(step => action(step, "actions/cache")));
   assert.doesNotMatch(commands(audit), /pnpm install|pnpm store|node --test|check:coverage|--ignore|--fix/);
   const cover = runs(app, /^pnpm check:coverage\s*$/);
-  mandatory(app, cover);
+  integrationStep(app, cover);
   order(app, runs(app, /^pnpm audit --audit-level high\s*$/), cover);
   assert.doesNotMatch(commands(app), /--check-discovery/);
   const discovered = new Set(discoverWorkspaceNodeTests(root));
@@ -197,21 +283,23 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.equal(Object.hasOwn(manifest.scripts, "check:apps"), false);
   assert.equal(Object.hasOwn(manifest.scripts, "check:apps:static"), false);
   assert.doesNotMatch(commands(app), /pnpm --dir services\/\S+ contract|generate-openapi-operations\.mjs --check/);
-  for (const pattern of [/pnpm knip:files/, /pnpm check:design/, /pnpm check:apps:source/,
-    /pnpm -r --if-present run typecheck/, /expo export --platform web/,
-    /pnpm --dir apps\/control-panel build/, /node tools\/dev\/verify-operator-http.mjs/,
-    /node tools\/mobile\/verify-expo-web-http.mjs/]) {
+  for (const pattern of [/pnpm knip:files/, /pnpm check:design/, /pnpm check:apps:source/]) {
     mandatory(app, runs(app, pattern));
   }
+  for (const pattern of [/pnpm -r --if-present run typecheck/, /expo export --platform web/,
+    /pnpm --dir apps\/control-panel build/, /node tools\/dev\/verify-operator-http.mjs/,
+    /node tools\/mobile\/verify-expo-web-http.mjs/]) {
+    integrationStep(app, runs(app, pattern));
+  }
   for (const owner of ["customer", "merchant"]) {
-    mandatory(app, runs(app, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform web")));
+    integrationStep(app, runs(app, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform web")));
   }
   for (const owner of ["customer", "merchant", "captain"]) {
     const android = runs(app, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform android"));
-    mandatory(app, android);
+    integrationStep(app, android);
   }
   const http = runs(app, /^node tools\/dev\/run-coverage\.mjs --operator-runtime\s*$/);
-  mandatory(app, http);
+  integrationStep(app, http);
   order(app, runs(app, /pnpm --dir apps\/control-panel build/), http);
   const suites = discoverWorkspaceTestSuites(root);
   for (const name of ["operator-captain-review-http", "operator-merchant-finance-http", "operator-policy-http",
@@ -299,8 +387,9 @@ for (const entry of evidence) {
     const bind = runs(entry.job, new RegExp("^node tools/dev/ci-coverage-evidence\\.mjs publish " + entry.kind + "\\s*$"));
     const upload = one(entry.job, step => action(step, "actions/upload-artifact") && step.with.name === entry.artifact, entry.artifact);
     const download = one(sonar, step => action(step, "actions/download-artifact") && step.with.name === entry.artifact, entry.artifact);
-    mandatory(entry.job, bind);
-    mandatory(entry.job, upload);
+    const requireProducer = entry.job === app ? integrationStep : mandatory;
+    requireProducer(entry.job, bind);
+    requireProducer(entry.job, upload);
     order(entry.job, bind, upload);
     assert.equal(upload.with["if-no-files-found"], "error");
     for (const metadata of ["tree.txt", "reports.sha256"]) {

@@ -1,13 +1,14 @@
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import AppearancePreferences from "@bthwani/tamagui-config/appearance-preferences";
 import { usePrimaryNavigation } from "@bthwani/tamagui-config/navigation";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { MerchantDSHStanding } from "../access/dsh-standing";
-import AccountScreen from "../account/account-screen";
 import MerchantPrivateCatalog from "../catalog/merchant-private-catalog";
 import EmployeesScreen from "../employees/employees-screen";
 import WalletScreen from "../finance/wallet-screen";
+import InsightsScreen from "../insights/insights-screen";
 import MerchantStoreRegistration from "../onboarding/merchant-store-registration";
 import MerchantStoreDirectory from "./merchant-store-directory";
 import {
@@ -272,7 +273,7 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
             <>
               <MerchantStoreDirectory key={JSON.stringify([actorId, initialPublication])}
                 actorId={actorId} stores={stores} initialPublication={initialPublication}
-                initialStoreId={catalogStoreId} onOpenCatalog={openCatalog} />
+                initialStoreId={catalogStoreId} onOpenCatalog={openCatalog} onRefresh={onRefresh} />
               <MerchantStoreRegistration actorId={actorId} onCreated={onRefresh} />
             </>
           ) : section === "products" ? (
@@ -308,13 +309,15 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
               )}
               {staffStore ? <EmployeesScreen key={JSON.stringify([actorId, staffStore.id])} actorId={actorId} storeId={staffStore.id} /> : null}
             </View>
+          ) : section === "insights" ? (
+            <InsightsScreen key={actorId} actorId={actorId} stores={stores} />
           ) : section === "wallet" ? (
             <WalletScreen key={actorId} actorId={actorId} stores={stores} />
           ) : section === "account" ? (
-            <AccountScreen />
+            <AppearancePreferences />
           ) : section === "more" && !web ? (
             <View style={{ gap: 10 }}>
-              <AccountScreen />
+              <AppearancePreferences />
               {merchantNavigation.filter(item => item.id !== "more" && item.id !== "home" && item.id !== "account")
                 .map(item => navigationButton(item))}
             </View>

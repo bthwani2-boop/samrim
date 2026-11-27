@@ -1,11 +1,12 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: 6b1115b2e3bb018777d8e1a9bd648080e47057a72dbed41bdb9a9f7fa2ecfb0b
+// Normalized OpenAPI SHA-256: ecf036037b899eae7269fb825c59a83560988e18d97fa6a26ea827216c54a2f5
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   advanceMerchantCatalogImport: { method: "PATCH", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
   applyCurrentCustomerForCaptainStanding: { method: "POST", path: "/v1/actors/me/captain-application" },
   changeCaptainStandingByAuthorizedOperator: { method: "PATCH", path: "/v1/operators/captains/{actorId}/standing" },
+  changeMerchantStoreProfile: { method: "PATCH", path: "/v1/stores/{storeID}/profile" },
   changeOperatorStoreRegistrationPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" },
   createCurrentMerchantCatalogDraft: { method: "POST", path: "/v1/stores/{storeID}/catalog" },
   dshHealth: { method: "GET", path: "/health" },
@@ -13,6 +14,7 @@ export const dshOperations = {
   estimatePublicOffer: { method: "GET", path: "/v1/public/stores/{id}/offers/{offerId}/estimate" },
   evaluateCurrentCustomerDeliveryAddress: { method: "GET", path: "/v1/carts/{storeID}/serviceability" },
   getCityDeliveryPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/delivery-policy" },
+  getCityFulfillmentPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/fulfillment-policy/{relation}" },
   getCityStoreOperationalPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/store-availability-policy" },
   getCompanyEmployee: { method: "GET", path: "/v1/operators/employees/{id}" },
   getCompanyEmployeeRegistrationAudit: { method: "GET", path: "/v1/operators/employees/{id}/registration-audit" },
@@ -24,8 +26,10 @@ export const dshOperations = {
   getCurrentCustomerFavoriteStore: { method: "GET", path: "/v1/customers/me/favorite-stores/{storeID}" },
   getMerchantEmployee: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}" },
   getMerchantEmployeeRegistrationAudit: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}/registration-audit" },
+  getMerchantStoreProfile: { method: "GET", path: "/v1/stores/{storeID}/profile" },
   getMerchantStoreRegistrationOptions: { method: "GET", path: "/v1/stores/registration-options" },
   getOperatorCaptainStanding: { method: "GET", path: "/v1/operators/captains/{actorId}/standing" },
+  getOperatorStoreFinancialStanding: { method: "GET", path: "/v1/operators/stores/{storeID}/financial-standing" },
   getOperatorStoreRegistrationPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" },
   getPublicStore: { method: "GET", path: "/v1/public/stores/{id}" },
   getStoreOperationalAvailability: { method: "GET", path: "/v1/stores/{storeID}/availability" },
@@ -53,6 +57,7 @@ export const dshOperations = {
   registerMerchantEmployee: { method: "POST", path: "/v1/stores/{storeID}/employees" },
   registerMerchantStore: { method: "POST", path: "/v1/stores" },
   replaceCityDeliveryPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/delivery-policy" },
+  replaceCityFulfillmentPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/fulfillment-policy/{relation}" },
   replaceCityStoreOperationalPolicy: { method: "PATCH", path: "/v1/operators/cities/{cityID}/store-availability-policy" },
   replaceCurrentCustomerCart: { method: "PUT", path: "/v1/carts/{storeID}" },
   reviewCurrentCustomerCheckout: { method: "POST", path: "/v1/carts/{storeID}/checkout-review" },

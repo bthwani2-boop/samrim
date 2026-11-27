@@ -190,6 +190,170 @@ run_test() {
   printf '%s\n' "$output" | grep -E '^--- (PASS|FAIL|SKIP):|^PASS$|^FAIL$' || true
 }
 
+# Recovery verification is based on the complete owner state, not a second
+# fixture inventory. The owner test above verifies the admissible fixture
+# semantics; the snapshot preserves every table/view row, including new terms,
+# exact integer amounts, timestamps, operation IDs and private decision history.
+capture_wlt_snapshot() {
+  local db="$1" destination="$2"
+  if ! docker exec -i "$current" psql -X -q -At --single-transaction -v ON_ERROR_STOP=1 \
+    -U bthwani_wlt_owner -d "$db" -f - > "$destination" <<'SQL'
+SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY;
+SET TIME ZONE 'UTC';
+SELECT format(
+  'SELECT jsonb_build_object(''relation'',%L,''kind'',%L,''rows'',COALESCE(jsonb_agg(to_jsonb(r) ORDER BY to_jsonb(r)::text COLLATE "C"),''[]''::jsonb)) FROM %I.%I AS r;',
+  c.relname,c.relkind::text,n.nspname,c.relname)
+FROM pg_catalog.pg_class c
+JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
+WHERE n.nspname='wlt' AND c.relkind IN ('r','p','v','m')
+ORDER BY c.relname COLLATE "C"
+\gexec
+SQL
+  then
+    echo "WLT snapshot SQL failed: $db" >&2
+    return 1
+  fi
+  local relation
+  # Required owner relations must exist even if both compared databases are empty.
+  for relation in customer_funding_journal customer_funding_entries customer_wallet_balances \
+    customer_funding_history store_commercial_agreement_proposals store_commercial_agreement_decisions \
+    commercial_agreement_review_states latest_commercial_agreement_reviews \
+    order_payment_allocations order_payment_releases customer_wallet_availability customer_order_payment_readback; do
+    if ! grep -Fq -- "\"relation\": \"$relation\"" "$destination"; then
+      echo "WLT snapshot missing required relation: $relation" >&2
+      return 1
+    fi
+  done
+}
+
+assert_wlt_snapshot_equal() {
+  local expected="$1" actual="$2" label="$3"
+  if [[ ! -s "$expected" || ! -s "$actual" ]] || ! cmp -s -- "$expected" "$actual"; then
+    echo "WLT complete recovery snapshot differs: $label" >&2
+    return 1
+  fi
+}
+
+wlt_expect() {
+  local role="$1" db="$2" label="$3" expected="$4" sql="$5" actual
+  if ! actual="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U "$role" -d "$db" -c "$sql")"; then
+    echo "WLT SQL assertion failed: $db $label" >&2
+    return 1
+  fi
+  if [[ "$actual" != "$expected" ]]; then
+    echo "WLT assertion mismatch: $db $label" >&2
+    return 1
+  fi
+}
+
+wlt_expect_denied() {
+  local role="$1" db="$2" label="$3" sql="$4"
+  if docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
+    -U "$role" -d "$db" -c "$sql" >/dev/null 2>"$scratch/wlt-denial"; then
+    echo "WLT forbidden operation succeeded: $db $label" >&2
+    return 1
+  fi
+  if ! grep -q '42501' "$scratch/wlt-denial"; then
+    echo "WLT expected permission denial was not proven: $db $label" >&2
+    return 1
+  fi
+}
+
+verify_wlt_restoration() {
+  local db
+  local original="$scratch/wlt-before.jsonl" restored="$scratch/wlt-after.jsonl" unchanged="$scratch/wlt-source-after.jsonl"
+  capture_wlt_snapshot bthwani_wlt_test "$original"
+  docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+    -c "CREATE DATABASE bthwani_wlt_restore OWNER bthwani_wlt_owner;"
+  docker exec "$current" pg_dump --format=custom --schema=wlt --no-owner \
+    -U bthwani_wlt_owner -d bthwani_wlt_test --file=/tmp/wlt-owner.dump
+  docker exec "$current" pg_restore --no-owner --exit-on-error --single-transaction \
+    -U bthwani_wlt_owner -d bthwani_wlt_restore /tmp/wlt-owner.dump
+  capture_wlt_snapshot bthwani_wlt_restore "$restored"
+  capture_wlt_snapshot bthwani_wlt_test "$unchanged"
+  assert_wlt_snapshot_equal "$original" "$unchanged" source-unchanged
+  assert_wlt_snapshot_equal "$original" "$restored" complete-restore
+  for db in bthwani_wlt_test bthwani_wlt_restore; do
+    # Independent semantic sentinels. Base fixtures are explicitly scoped;
+    # the complete owner-generated matrix and every other row are compared above.
+    wlt_expect bthwani_wlt_owner "$db" base-proposal-history \
+      'store-a:1:COMMISSION:375,store-a:2:COMMISSION:425,store-b:1:SUBSCRIPTION:9007199254740993' \
+      "SELECT string_agg(store_id || ':' || version || ':' || fee_model || ':' ||
+        COALESCE(commission_basis_points::text,subscription_amount_yer::text), ',' ORDER BY store_id,version)
+       FROM wlt.store_commercial_agreement_proposals WHERE store_id IN ('store-a','store-b');"
+    wlt_expect bthwani_wlt_owner "$db" base-review-history \
+      'store-a:1:SUPERSEDED_PROPOSAL,store-a:2:REVIEW_APPROVED_PENDING_ACTIVATION,store-b:1:DECLINED' \
+      "SELECT string_agg(store_id || ':' || version || ':' || review_state, ',' ORDER BY store_id,version)
+       FROM wlt.commercial_agreement_review_states WHERE store_id IN ('store-a','store-b');"
+    wlt_expect bthwani_wlt_owner "$db" base-decision-history '3' \
+      "SELECT count(*) FROM wlt.store_commercial_agreement_decisions WHERE store_id IN ('store-a','store-b');"
+    wlt_expect bthwani_wlt_reader "$db" proposal-reader-scope t \
+      "SELECT NOT has_any_column_privilege('wlt.store_commercial_agreement_proposals','SELECT')
+       AND NOT has_table_privilege('wlt.store_commercial_agreement_proposals','INSERT,UPDATE,DELETE,TRUNCATE')
+       AND NOT has_function_privilege('wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE');"
+    wlt_expect bthwani_wlt_reader "$db" decision-reader-scope t \
+      "SELECT NOT has_any_column_privilege('wlt.store_commercial_agreement_decisions','SELECT')
+       AND NOT has_table_privilege('wlt.commercial_agreement_review_states','SELECT')
+       AND NOT has_function_privilege('wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE');"
+    wlt_expect bthwani_wlt_command "$db" agreement-command-scope t \
+      "SELECT has_table_privilege('wlt.latest_commercial_agreement_reviews','SELECT')
+       AND NOT has_any_column_privilege('wlt.store_commercial_agreement_proposals','SELECT,INSERT,UPDATE')
+       AND NOT has_any_column_privilege('wlt.store_commercial_agreement_decisions','SELECT,INSERT,UPDATE')
+       AND has_function_privilege('wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE')
+       AND has_function_privilege('wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE')
+       AND NOT has_function_privilege('wlt.post_sandbox_customer_funding(text,text,bigint)','EXECUTE');"
+    wlt_expect bthwani_wlt_owner "$db" reservation-history '4:4:9007199254741080:105' \
+      "SELECT count(*) || ':' || count(r.checkout_id) || ':' || sum(h.wallet_yer) || ':' || sum(h.cash_yer)
+       FROM wlt.order_payment_allocations h LEFT JOIN wlt.order_payment_releases r USING(checkout_id);"
+    wlt_expect bthwani_wlt_reader "$db" reservation-reader-scope t \
+      "SELECT NOT has_any_column_privilege('wlt.order_payment_allocations','SELECT')
+       AND NOT has_any_column_privilege('wlt.order_payment_releases','SELECT')
+       AND NOT has_function_privilege('wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint)','EXECUTE')
+       AND NOT has_function_privilege('wlt.release_order_payment(text,text,text,text)','EXECUTE')
+       AND NOT has_function_privilege('wlt.available_order_wallet_yer(text)','EXECUTE');"
+    wlt_expect bthwani_wlt_owner "$db" available-balance 'wallet-one:9007199254741062,wallet-two:58' \
+      "SELECT string_agg(actor_id || ':' || wlt.available_order_wallet_yer(actor_id), ',' ORDER BY actor_id)
+       FROM wlt.customer_wallet_balances;"
+    wlt_expect bthwani_wlt_reader "$db" available-projection \
+      'wallet-one:9007199254741062:9007199254741062,wallet-two:58:58' \
+      "SELECT string_agg(actor_id || ':' || balance_yer || ':' || available_yer, ',' ORDER BY actor_id)
+       FROM wlt.customer_wallet_availability;"
+    wlt_expect bthwani_wlt_reader "$db" availability-reader-scope t \
+      "SELECT has_table_privilege('wlt.customer_wallet_availability','SELECT')
+       AND NOT has_any_column_privilege('wlt.customer_wallet_availability','UPDATE,INSERT')
+       AND NOT has_any_column_privilege('wlt.order_payment_allocations','SELECT');"
+    wlt_expect bthwani_wlt_reader "$db" balances 'wallet-one:9007199254741062,wallet-two:58' \
+      "SELECT string_agg(actor_id || ':' || balance_yer, ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;"
+    wlt_expect bthwani_wlt_reader "$db" exact-funding-history 'funding-0001:9007199254740993,funding-0003:57' \
+      "SELECT string_agg(funding_id || ':' || amount_yer, ',' ORDER BY funding_id)
+       FROM wlt.customer_funding_history WHERE actor_id='wallet-one' AND funding_id IN ('funding-0001','funding-0003');"
+    wlt_expect bthwani_wlt_reader "$db" paging-journal '14' \
+      "SELECT count(*) FROM wlt.customer_funding_history WHERE actor_id='wallet-one';"
+    wlt_expect bthwani_wlt_owner "$db" provider-credit '1:17' \
+      "SELECT count(*) || ':' || coalesce(sum(amount_yer),0) FROM wlt.customer_funding_journal
+       WHERE provider_id='sandbox' AND provider_reference='cash-in-accepted-01' AND actor_id='wallet-two'
+       AND amount_yer=17 AND currency='YER';"
+    wlt_expect bthwani_wlt_owner "$db" provider-journal '2:0' \
+      "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END)
+       FROM wlt.customer_funding_entries WHERE funding_id='sandbox-cash-in-accepted-01';"
+    wlt_expect_denied bthwani_wlt_reader "$db" private-journal 'SELECT provider_reference FROM wlt.customer_funding_journal;'
+    wlt_expect bthwani_wlt_owner "$db" balanced-reversal-journal '8:0' \
+      "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END)
+       FROM wlt.customer_funding_entries WHERE funding_id IN ('sandbox-concurrent-credit','sandbox-interrupted-credit',
+       'sandbox_reversal-concurrent-credit','sandbox_reversal-interrupted-credit');"
+    wlt_expect bthwani_wlt_reader "$db" reversal-history 'sandbox-concurrent-credit:7,sandbox-interrupted-credit:9' \
+      "SELECT string_agg(reverses_funding_id || ':' || amount_yer, ',' ORDER BY reverses_funding_id)
+       FROM wlt.customer_funding_history WHERE actor_id='wallet-two' AND reverses_funding_id IS NOT NULL;"
+  done
+  wlt_expect_denied bthwani_wlt_sandbox bthwani_wlt_restore sandbox-post \
+    "SELECT wlt.post_sandbox_customer_funding('restore-denial','wallet-two',9)"
+  wlt_expect_denied bthwani_wlt_sandbox bthwani_wlt_restore sandbox-reversal \
+    "SELECT wlt.reverse_sandbox_customer_funding('concurrent-credit','wallet-two')"
+  capture_wlt_snapshot bthwani_wlt_restore "$restored"
+  assert_wlt_snapshot_equal "$original" "$restored" denied-operations-left-state-unchanged
+  echo 'WLT_DISPOSABLE_RESTORE_PASS real_postgresql=true complete_owner_snapshot=true restored_balance=true reader_scope=true'
+}
+
 start_stage bthwani-ci-discovery-pg bthwani_ci bthwani_refoundation
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -c "CREATE DATABASE bthwani_dsh_boundary_fixture OWNER bthwani_ci;" \
@@ -282,19 +446,25 @@ finish_stage
 
 start_stage bthwani-session01-merchant-pg bthwani_session01 merchant_agent01
 run_test "$current" /agent02/services/dsh/backend/internal/storeavailability \
-  /agent02/bin/dsh-storeavailability.test '^(TestMerchantOwnedStoresRealPostgresAndHTTPReadback|TestMerchantStoreRegistrationIsolatedPostgresDurability|TestStoreRegistrationPolicyRealPostgresAuthorizationAndReconciliation)$' 'TestMerchantOwnedStoresRealPostgresAndHTTPReadback,TestMerchantStoreRegistrationIsolatedPostgresDurability,TestStoreRegistrationPolicyRealPostgresAuthorizationAndReconciliation' \
+  /agent02/bin/dsh-storeavailability.test '^(TestMerchantOwnedStoresRealPostgresAndHTTPReadback|TestMerchantStoreRegistrationIsolatedPostgresDurability|TestStoreRegistrationPolicyRealPostgresAuthorizationAndReconciliation|TestMerchantStoreProfileRealPostgres)$' 'TestMerchantOwnedStoresRealPostgresAndHTTPReadback,TestMerchantStoreRegistrationIsolatedPostgresDurability,TestStoreRegistrationPolicyRealPostgresAuthorizationAndReconciliation,TestMerchantStoreProfileRealPostgres' \
   -e BTHWANI_ISOLATED_TEST_MODE=true \
   -e BTHWANI_MERCHANT_TEST_CONTAINER=bthwani-session01-merchant-pg \
   -e BTHWANI_MERCHANT_TEST_DATABASE_URL="postgres://bthwani_session01:${ci_password}@127.0.0.1:5432/merchant_agent01?sslmode=disable"
 finish_stage
 
 start_stage bthwani-ci-wlt-pg bthwani_wlt_owner bthwani_wlt_test
+docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c "CREATE ROLE bthwani_wlt_dsh_fixture LOGIN PASSWORD '$ci_password';" \
+  -c "CREATE DATABASE bthwani_refoundation OWNER bthwani_wlt_dsh_fixture;"
+docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_refoundation \
+  -c "REVOKE ALL ON DATABASE bthwani_refoundation FROM PUBLIC;"
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d bthwani_wlt_test \
   -c "CREATE ROLE bthwani_wlt_reader LOGIN NOINHERIT PASSWORD '$ci_password';" \
   -c "CREATE ROLE bthwani_wlt_sandbox LOGIN PASSWORD '$ci_password';" \
+  -c "CREATE ROLE bthwani_wlt_command LOGIN NOINHERIT PASSWORD '$ci_password';" \
   -c "CREATE ROLE bthwani_identity_fixture LOGIN PASSWORD '$ci_password';" \
   -c "REVOKE ALL ON DATABASE bthwani_wlt_test FROM PUBLIC;" \
-  -c "GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_identity_fixture;" \
+  -c "GRANT CONNECT ON DATABASE bthwani_wlt_test TO bthwani_wlt_reader,bthwani_wlt_sandbox,bthwani_wlt_command,bthwani_identity_fixture;" \
   -c "GRANT CREATE ON DATABASE bthwani_wlt_test TO bthwani_identity_fixture;"
 docker exec "$current" mkdir -p /agent02/services/wlt/database
 docker cp services/wlt/database/schema "$current:/agent02/services/wlt/database/schema"
@@ -303,116 +473,7 @@ docker cp "$scratch/wlt-wallet.test" "$current:/agent02/bin/wlt-wallet.test"
 run_test "$current" /agent02/bin /agent02/bin/wlt-wallet.test \
   '^TestWalletOwnerPostgresAndIdentity$' 'TestWalletOwnerPostgresAndIdentity' \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e WLT_OWNER_CI_TEST=true
-docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
-  -c "CREATE DATABASE bthwani_wlt_restore OWNER bthwani_wlt_owner;"
-docker exec "$current" pg_dump --format=custom --schema=wlt --no-owner \
-  -U bthwani_wlt_owner -d bthwani_wlt_test --file=/tmp/wlt-owner.dump
-docker exec "$current" pg_restore --no-owner --exit-on-error --single-transaction \
-  -U bthwani_wlt_owner -d bthwani_wlt_restore /tmp/wlt-owner.dump
-for db in bthwani_wlt_test bthwani_wlt_restore; do
-  proposed_terms="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT string_agg(store_id || ':' || version || ':' || fee_model || ':' ||
-          COALESCE(commission_basis_points::text,subscription_amount_yer::text), ',' ORDER BY store_id,version)
-        FROM wlt.store_commercial_agreement_proposals;")"
-  [[ "$proposed_terms" == 'store-a:1:COMMISSION:375,store-a:2:COMMISSION:425,store-b:1:SUBSCRIPTION:9007199254740993' ]] ||
-    { echo "WLT restored commercial proposal versions differ" >&2; exit 1; }
-  proposal_scope="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT NOT has_any_column_privilege('wlt.store_commercial_agreement_proposals','SELECT')
-        AND NOT has_table_privilege('wlt.store_commercial_agreement_proposals','INSERT,UPDATE,DELETE,TRUNCATE')
-        AND NOT has_function_privilege('wlt.append_commercial_agreement_proposal(text,bigint,text,text,text,text,integer,bigint,integer,text[],timestamptz,text,text)','EXECUTE');")"
-  [[ "$proposal_scope" == 't' ]] || { echo "WLT restore exposed commercial proposals" >&2; exit 1; }
-  agreement_decisions="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT string_agg(store_id || ':' || version || ':' || review_state, ',' ORDER BY store_id,version)
-        FROM wlt.commercial_agreement_review_states;")"
-  [[ "$agreement_decisions" == 'store-a:1:SUPERSEDED_PROPOSAL,store-a:2:REVIEW_APPROVED_PENDING_ACTIVATION,store-b:1:DECLINED' ]] ||
-    { echo "WLT restored agreement review states differ" >&2; exit 1; }
-  decision_count="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT count(*) FROM wlt.store_commercial_agreement_decisions;")"
-  [[ "$decision_count" == '3' ]] || { echo "WLT restored decision history differs" >&2; exit 1; }
-  decision_scope="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT NOT has_any_column_privilege('wlt.store_commercial_agreement_decisions','SELECT')
-        AND NOT has_table_privilege('wlt.commercial_agreement_review_states','SELECT')
-        AND NOT has_function_privilege('wlt.record_commercial_agreement_decision(text,bigint,text,text,text,text,text)','EXECUTE');")"
-  [[ "$decision_scope" == 't' ]] || { echo "WLT restore exposed commercial decisions" >&2; exit 1; }
-  reservation_proof="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT count(*) || ':' || count(r.checkout_id) || ':' || sum(h.wallet_yer) || ':' || sum(h.cash_yer)
-        FROM wlt.order_payment_allocations h LEFT JOIN wlt.order_payment_releases r USING(checkout_id);")"
-  [[ "$reservation_proof" == '4:4:9007199254741080:105' ]] || { echo "WLT restored reservation history differs" >&2; exit 1; }
-  reservation_scope="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT NOT has_any_column_privilege('wlt.order_payment_allocations','SELECT')
-        AND NOT has_any_column_privilege('wlt.order_payment_releases','SELECT')
-        AND NOT has_function_privilege('wlt.allocate_order_payment(text,text,text,text,text,bigint,bigint)','EXECUTE')
-        AND NOT has_function_privilege('wlt.release_order_payment(text,text,text,text)','EXECUTE')
-        AND NOT has_function_privilege('wlt.available_order_wallet_yer(text)','EXECUTE');")"
-  [[ "$reservation_scope" == 't' ]] || { echo "WLT restore exposed reservations" >&2; exit 1; }
-  available_totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT string_agg(actor_id || ':' || wlt.available_order_wallet_yer(actor_id), ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
-  [[ "$available_totals" == 'wallet-one:9007199254741062,wallet-two:58' ]] || { echo "WLT restored available balance differs" >&2; exit 1; }
-  available_projection="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT string_agg(actor_id || ':' || balance_yer || ':' || available_yer, ',' ORDER BY actor_id)
-        FROM wlt.customer_wallet_availability;")"
-  [[ "$available_projection" == 'wallet-one:9007199254741062:9007199254741062,wallet-two:58:58' ]] ||
-    { echo "WLT restored wallet availability projection differs" >&2; exit 1; }
-  availability_scope="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT has_table_privilege('wlt.customer_wallet_availability','SELECT')
-        AND NOT has_any_column_privilege('wlt.customer_wallet_availability','UPDATE,INSERT')
-        AND NOT has_any_column_privilege('wlt.order_payment_allocations','SELECT');")"
-  [[ "$availability_scope" == 't' ]] || { echo "WLT restored availability privileges differ" >&2; exit 1; }
-  totals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT string_agg(actor_id || ':' || balance_yer, ',' ORDER BY actor_id) FROM wlt.customer_wallet_balances;")"
-  [[ "$totals" == 'wallet-one:9007199254741062,wallet-two:58' ]] || { echo "WLT restored balances differ after verified sandbox provider credit" >&2; exit 1; }
-  recent="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT string_agg(funding_id || ':' || amount_yer, ',' ORDER BY funding_id)
-        FROM wlt.customer_funding_history WHERE actor_id = 'wallet-one'
-          AND funding_id IN ('funding-0001', 'funding-0003');")"
-  [[ "$recent" == 'funding-0001:9007199254740993,funding-0003:57' ]] ||
-    { echo "WLT restored funding history differs" >&2; exit 1; }
-  history_count="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT count(*) FROM wlt.customer_funding_history WHERE actor_id='wallet-one';")"
-  [[ "$history_count" == '14' ]] || { echo "WLT restored paging journal differs" >&2; exit 1; }
-  provider_credit="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT count(*) || ':' || coalesce(sum(amount_yer), 0)
-        FROM wlt.customer_funding_journal WHERE provider_id='sandbox'
-          AND provider_reference='cash-in-accepted-01' AND actor_id='wallet-two'
-          AND amount_yer=17 AND currency='YER';")"
-  [[ "$provider_credit" == '1:17' ]] || { echo "WLT verified provider posting missing or duplicated after restore" >&2; exit 1; }
-  provider_legs="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END)
-        FROM wlt.customer_funding_entries
-        WHERE funding_id='sandbox-cash-in-accepted-01';")"
-  [[ "$provider_legs" == '2:0' ]] || { echo "WLT verified provider journal was not balanced after restore" >&2; exit 1; }
-  if docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose -U bthwani_wlt_reader -d "$db" \
-    -c 'SELECT provider_reference FROM wlt.customer_funding_journal;' >/dev/null 2>"$scratch/wlt-reader-denial"; then
-    echo "WLT restore exposed the private funding journal" >&2
-    exit 1
-  fi
-  grep -q '42501' "$scratch/wlt-reader-denial" || exit 1
-  journal_net="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_owner -d "$db" \
-    -c "SELECT count(*) || ':' || sum(CASE side WHEN 'debit' THEN amount_yer ELSE -amount_yer END)
-        FROM wlt.customer_funding_entries WHERE funding_id IN ('sandbox-concurrent-credit','sandbox-interrupted-credit',
-          'sandbox_reversal-concurrent-credit','sandbox_reversal-interrupted-credit');")"
-  [[ "$journal_net" == '8:0' ]] || { echo "WLT sandbox journal is not balanced" >&2; exit 1; }
-  reversals="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bthwani_wlt_reader -d "$db" \
-    -c "SELECT string_agg(reverses_funding_id || ':' || amount_yer, ',' ORDER BY reverses_funding_id)
-        FROM wlt.customer_funding_history WHERE actor_id='wallet-two' AND reverses_funding_id IS NOT NULL;")"
-  [[ "$reversals" == 'sandbox-concurrent-credit:7,sandbox-interrupted-credit:9' ]] ||
-    { echo "WLT restored reversal evidence differs" >&2; exit 1; }
-done
-if docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
-  -U bthwani_wlt_sandbox -d bthwani_wlt_restore \
-  -c "SELECT wlt.post_sandbox_customer_funding('restore-denial','wallet-two',9)" >/dev/null 2>"$scratch/wlt-sandbox-denial"; then
-  echo "WLT sandbox accepted a posting in the restore database" >&2
-  exit 1
-fi
-grep -q '42501' "$scratch/wlt-sandbox-denial" || exit 1
-if docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -v VERBOSITY=verbose \
-  -U bthwani_wlt_sandbox -d bthwani_wlt_restore \
-  -c "SELECT wlt.reverse_sandbox_customer_funding('concurrent-credit','wallet-two')" >/dev/null 2>"$scratch/wlt-sandbox-denial"; then
-  echo "WLT sandbox accepted a reversal in the restore database" >&2
-  exit 1
-fi
-grep -q '42501' "$scratch/wlt-sandbox-denial" || exit 1
-echo 'WLT_DISPOSABLE_RESTORE_PASS real_postgresql=true restored_balance=true reader_scope=true'
+verify_wlt_restoration
 finish_stage
 
 if [[ "$coverage_enabled" == yes ]]; then

@@ -16,7 +16,7 @@ process.once("exit", () => loadedModules.length);
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-checkout-fee-"));
 let compiled;
 try {
-  const r = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const r = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     source, "--ignoreConfig", "--noResolve",
     "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",
     "--inlineSourceMap", "--inlineSources", "--outDir", temp],
@@ -124,19 +124,20 @@ const settle = () => new Promise(resolve => setImmediate(resolve));
 test("checkout renders only owner distance fee evidence and clears it on method change or session background", async () => {
   const h = harness();
   const address = { id: "addr-00000000000000000000000000000001", version: 2 };
-  const read = { kind: "ready", review: { actorId: "customer-a", storeId: "store-a", cartVersion: 4,
+  const read = { kind: "ready", review: { actorId: "customer-a", storeId: "store-a", cartVersion: 4, salesChannel: "DIRECT",
     fulfillmentMode: "BTHWANI_CAPTAIN", merchandise: { merchandiseSubtotalYer: "1100" },
     delivery: { status: "SERVICEABLE" }, storeSchedule: { status: "OPEN_BY_SCHEDULE" },
     distanceFeeEstimate: { policyVersion: 7, distanceMetres: 2001, feeYer: "601" }, checkoutReady: false } };
-  const find = type => nodes(h.render()).find(n => n.type === type);
+  const find = type => nodes(h.render()).find(n => n.type === type && (type !== "Pressable" || n.props?.testID === "checkout-submit-review"));
   const fee = () => nodes(h.render()).find(n => n.props?.testID === "checkout-distance-fee-estimate");
   try {
     h.render(); await settle();
+    nodes(h.render()).find(n => n.props?.testID === "checkout-sales-channel-DIRECT").props.onPress();
     find("FulfillmentChoice").props.onChange("BTHWANI_CAPTAIN");
     find("DeliveryAddressReview").props.onSelectionChange(address);
     find("Pressable").props.onPress();
     assert.equal(h.reads.length, 1);
-    assert.deepEqual(h.reads[0].input, { expectedCartVersion: 4, recipientPurpose: "SELF", fulfillmentMode: "BTHWANI_CAPTAIN", addressId: address.id, expectedAddressVersion: 2 });
+    assert.deepEqual(h.reads[0].input, { expectedCartVersion: 4, salesChannel: "DIRECT", recipientPurpose: "SELF", fulfillmentMode: "BTHWANI_CAPTAIN", addressId: address.id, expectedAddressVersion: 2 });
     assert.equal(fee(), undefined);
     h.reads[0].resolve(read); await settle();
     assert.ok(flatten(fee()).includes(formatExactYer(601n)));
@@ -156,10 +157,11 @@ test("checkout renders only owner distance fee evidence and clears it on method 
 
 test("transient verification failure hides checkout draft and restores it only after fresh same-actor verification", async () => {
   const h = harness();
-  const find = type => nodes(h.render()).find(n => n.type === type);
+  const find = type => nodes(h.render()).find(n => n.type === type && (type !== "Pressable" || n.props?.testID === "checkout-submit-review"));
   const recipient = { purpose: "OTHER", name: "Synthetic Recipient", phone: "+967770000099", instructions: "" };
   try {
     h.render(); await settle();
+    nodes(h.render()).find(n => n.props?.testID === "checkout-sales-channel-DIRECT").props.onPress();
     find("FulfillmentChoice").props.onChange("CUSTOMER_PICKUP");
     find("RecipientForm").props.onChange(recipient);
     h.setVerify(async () => { throw new DshPublicError(503, "OWNER_UNAVAILABLE"); });
@@ -179,7 +181,7 @@ test("transient verification failure hides checkout draft and restores it only a
 test("checkout never verifies or reveals a draft before native foreground admission", async () => {
   for (const initialState of ["background", "inactive", null]) {
     const h = harness({ initialState });
-    const find = type => nodes(h.render()).find(n => n.type === type);
+    const find = type => nodes(h.render()).find(n => n.type === type && (type !== "Pressable" || n.props?.testID === "checkout-submit-review"));
     try {
       h.render(); await settle(); h.poll(); await settle();
       assert.equal(h.verifications.length, 0, "hidden or unknown native state must not verify");
@@ -196,7 +198,7 @@ test("checkout never verifies or reveals a draft before native foreground admiss
 
 test("hidden browser checkout stays concealed even after a focus event until visible", async () => {
   const h = harness({ platform: "web", initiallyVisible: false });
-  const find = type => nodes(h.render()).find(n => n.type === type);
+  const find = type => nodes(h.render()).find(n => n.type === type && (type !== "Pressable" || n.props?.testID === "checkout-submit-review"));
   try {
     h.render(); await settle();
     h.browserFocus(); await settle(); h.poll(); await settle();
@@ -213,13 +215,14 @@ test("hidden browser checkout stays concealed even after a focus event until vis
 
 test("invalid inputs and overlapping requests never start another owner review; failures permit retry", async () => {
   const h = harness();
-  const find = type => nodes(h.render()).find(n => n.type === type);
+  const find = type => nodes(h.render()).find(n => n.type === type && (type !== "Pressable" || n.props?.testID === "checkout-submit-review"));
   const alert = () => nodes(h.render()).find(n => n.props?.accessibilityRole === "alert");
   try {
     h.render(); await settle();
     assert.equal(find("Pressable").props.disabled, true);
     find("Pressable").props.onPress();
     assert.equal(h.reads.length, 0);
+    nodes(h.render()).find(n => n.props?.testID === "checkout-sales-channel-DIRECT").props.onPress();
     find("FulfillmentChoice").props.onChange("BTHWANI_CAPTAIN");
     assert.equal(find("Pressable").props.disabled, true);
     find("DeliveryAddressReview").props.onSelectionChange({ id: "addr-00000000000000000000000000000001", version: 2 });
@@ -247,16 +250,17 @@ test("invalid inputs and overlapping requests never start another owner review; 
 
 test("unavailable distance fee and schedule remain read-only; stale review cannot reappear after input change", async () => {
   const h = harness();
-  const find = type => nodes(h.render()).find(n => n.type === type);
+  const find = type => nodes(h.render()).find(n => n.type === type && (type !== "Pressable" || n.props?.testID === "checkout-submit-review"));
   const result = () => nodes(h.render()).find(n => n.props?.testID === "checkout-owner-input-review");
   try {
     h.render(); await settle();
+    nodes(h.render()).find(n => n.props?.testID === "checkout-sales-channel-DIRECT").props.onPress();
     find("FulfillmentChoice").props.onChange("PARTNER_CAPTAIN");
     find("DeliveryAddressReview").props.onSelectionChange({ id: "addr-00000000000000000000000000000001", version: 2 });
     for (const status of ["PAUSED", "CLOSED_BY_SCHEDULE", "UNAVAILABLE"]) {
       find("Pressable").props.onPress();
       h.reads.at(-1).resolve({ kind: "ready", review: {
-        actorId: "customer-a", storeId: "store-a", cartVersion: 4,
+        actorId: "customer-a", storeId: "store-a", cartVersion: 4, salesChannel: "DIRECT",
         fulfillmentMode: "PARTNER_CAPTAIN", merchandise: { merchandiseSubtotalYer: "1100" },
         delivery: { status: "UNSERVICEABLE" }, storeSchedule: { status }, checkoutReady: false,
       } });
@@ -271,5 +275,48 @@ test("unavailable distance fee and schedule remain read-only; stale review canno
     assert.equal(previous.signal.aborted, true);
     previous.resolve({ kind: "ready", review: {} }); await settle();
     assert.equal(result(), undefined);
+  } finally { h.cleanup(); }
+});
+
+test("sales-channel choices expose keyboard-compatible selected buttons and preserve exact review/draft scope", async () => {
+  const h = harness({ platform: "web" });
+  const find = id => nodes(h.render()).find(n => n.props?.testID === id);
+  const direct = () => find("checkout-sales-channel-DIRECT");
+  const market = () => find("checkout-sales-channel-MARKETPLACE");
+  const submit = () => find("checkout-submit-review");
+  try {
+    h.render(); await settle();
+    for (const control of [direct(),market()]) {
+      assert.equal(control.props.accessibilityRole,"button");
+      assert.equal(control.props.accessibilityState.selected,false);
+      assert.ok(control.props.accessibilityLabel);
+    }
+    direct().props.onPress();
+    assert.equal(direct().props.accessibilityState.selected,true);
+    assert.equal(market().props.accessibilityState.selected,false);
+    nodes(h.render()).find(n => n.type === "FulfillmentChoice").props.onChange("CUSTOMER_PICKUP");
+    submit().props.onPress();
+    assert.equal(h.reads[0].input.salesChannel,"DIRECT");
+    assert.equal(direct().props.disabled,true);
+    market().props.onPress();
+    assert.equal(h.drafts.at(-1).draft.salesChannel,"DIRECT","busy selection must not change");
+    h.reads[0].resolve({ kind:"ready",review:{ actorId:"customer-a",storeId:"store-a",cartVersion:4,salesChannel:"DIRECT",
+      fulfillmentMode:"CUSTOMER_PICKUP",merchandise:{merchandiseSubtotalYer:"1100"},storeSchedule:{status:"OPEN_BY_SCHEDULE"},checkoutReady:false } });
+    await settle();
+    assert.ok(find("checkout-owner-input-review"));
+    market().props.onPress();
+    assert.equal(market().props.accessibilityState.selected,true);
+    assert.equal(direct().props.accessibilityState.selected,false);
+    assert.equal(find("checkout-owner-input-review"),undefined);
+    assert.deepEqual(h.drafts.at(-1),{scope:JSON.stringify(["customer-a","store-a",4]),
+      draft:{recipient:{purpose:"SELF",name:"",phone:"",instructions:""},mode:"CUSTOMER_PICKUP",salesChannel:"MARKETPLACE"}});
+    submit().props.onPress();
+    assert.equal(h.reads[1].input.salesChannel,"MARKETPLACE");
+    const staleSubmit=submit().props.onPress;
+    h.browserBlur();
+    assert.equal(h.reads[1].signal.aborted,true);
+    staleSubmit();
+    assert.equal(h.reads.length,2,"hidden stale press cannot issue owner request");
+    assert.equal(find("checkout-owner-input-review"),undefined);
   } finally { h.cleanup(); }
 });

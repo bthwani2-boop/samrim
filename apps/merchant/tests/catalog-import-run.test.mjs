@@ -8,6 +8,7 @@ import {test} from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import {GET,PATCH, PUT} from "../app/api/admission+api.ts";
+import * as merchantOwnerWeb from "../src/features/access/merchant-owner-web.ts";
 import { buildImportManifest } from "../src/features/catalog/catalog-import-data.ts";
 
 const actorId="merchant-a",storeId="store-a",runId="run-0001",sourceSha256="a".repeat(64);
@@ -55,7 +56,7 @@ function importTransport(platform, withNativeMerchantSession) {
     const root = path.resolve(import.meta.dirname, "../../..");
     const source = path.resolve(import.meta.dirname, "../src/features/catalog/catalog-import-transport.ts");
     const compiled = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), source,
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
       "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
@@ -64,6 +65,7 @@ function importTransport(platform, withNativeMerchantSession) {
       "@bthwani/dsh": dsh,
       "react-native": { Platform: { OS: platform } },
       "../access/admission-transport": { withNativeMerchantSession },
+      "../access/merchant-owner-web.ts": merchantOwnerWeb,
     });
     loadedModules.push(mod);
     return mod.exports.requestCatalogImport;
@@ -81,8 +83,11 @@ test("Web import transport binds the original run and validates every owner ackn
   const signal = new AbortController().signal;
   assert.deepEqual(await request(actorId, storeId, runId, "PUT", signal, manifest), initial);
   assert.equal(calls[0].url, "/api/admission?catalogImport=store-a&run=run-0001");
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[0].options.signal, signal);
+  assert.equal(calls[0].options.signal.aborted, false);
   assert.deepEqual(calls[0].options, {
-    method: "PUT", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    method: "PUT", signal: calls[0].options.signal, credentials: "same-origin", cache: "no-store", redirect: "error",
     headers: { "X-Merchant-Context": actorId, "Content-Type": "application/json" }, body: JSON.stringify(manifest),
   });
   reply = json({ catalogImport: complete });
@@ -117,7 +122,7 @@ test("Web import transport binds the original run and validates every owner ackn
     { ...initial, total: 2 },
   ]) {
     reply = json({ catalogImport: wrong });
-    await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OWNER_RESPONSE_INVALID" });
+    await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OPERATION_RESULT_UNKNOWN" });
   }
   reply = json({ catalogImport: complete });
   await assert.rejects(request(actorId, storeId, runId, "GET", signal, undefined, 1), { code: "OWNER_RESPONSE_INVALID" });
@@ -130,8 +135,8 @@ test("Web import transport binds the original run and validates every owner ackn
   reply = json([], 503);
   await assert.rejects(request(actorId, storeId, runId, "GET", signal), { status: 503, code: "OWNER_UNAVAILABLE" });
   const aborted = new AbortController();
-  reply = { json: async () => { aborted.abort(); return { catalogImport: initial }; } };
-  await assert.rejects(request(actorId, storeId, runId, "GET", aborted.signal), { name: "AbortError" });
+  reply = new Response(new ReadableStream({ pull() { aborted.abort(); } }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  await assert.rejects(request(actorId, storeId, runId, "GET", aborted.signal), { code: "OWNER_RESPONSE_STALE" });
 });
 
 test("Android import uses the verified native session and the canonical DSH client", async t => {
@@ -168,7 +173,7 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
   try{
     const root=path.resolve(import.meta.dirname,"../../..");
     const source=path.resolve(import.meta.dirname,"../src/features/catalog/catalog-import-run.tsx");
-    const compiled=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),source,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",tmp],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
+    const compiled=spawnSync(process.execPath,[path.join(root,"node_modules/@typescript/native/bin/tsc"),source,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",tmp],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
     assert.equal(compiled.status,0,compiled.stderr||compiled.stdout);
     const code=readFileSync(path.join(tmp,"catalog-import-run.js"),"utf8");
     const storage=new Map(),calls=[];let states=[],refs=[],effects=[],si=0,ri=0,ei=0;
@@ -285,4 +290,56 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
     assert.ok(calls.every(c=>c.r===original));assert.equal(calls.filter(c=>c.m==="PUT").length,1);assert.equal(calls.filter(c=>c.m==="PATCH").length,1);
     remount();
   }finally{rmSync(tmp,{recursive:true,force:true});}
+});
+
+test("Web import rejects oversized acknowledgements and preserves write uncertainty", async t => {
+  const request = importTransport("web", () => assert.fail("native credential"));
+  const signal = new AbortController().signal;
+  let reply = json({ catalogImport: initial });
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; return reply; });
+  let cancelled = 0;
+  reply = new Response(new ReadableStream({
+    start(c) { c.enqueue(new Uint8Array(65537)); c.close(); },
+    cancel() { cancelled++; },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(reply.body.locked, false);
+  reply = new Response(new ReadableStream({
+    cancel() { cancelled++; },
+  }), { headers: { "Content-Type": "application/json", "Content-Length": "999999", "Cache-Control": "no-store" } });
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal), { code: "OWNER_RESPONSE_INVALID" });
+  assert.equal(cancelled, 1);
+  assert.equal(reply.body.locked, false);
+  reply = json({ code: "OWNER_UNAVAILABLE" }, 503);
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  reply = json({ catalogImport: complete });
+  assert.deepEqual(await request(actorId, storeId, runId, "GET", signal), complete);
+  assert.equal(calls, 4);
+});
+
+test("Web import transport never treats missing or stale acknowledgement as a confirmed write", async t => {
+  const request = importTransport("web", () => assert.fail("native credential"));
+  const signal = new AbortController().signal;
+  let respond = async () => { throw new Error("network lost"); };
+  t.mock.method(globalThis, "fetch", () => respond());
+  await assert.rejects(request(actorId, storeId, runId, "GET", signal), { code: "OWNER_NETWORK_UNAVAILABLE" });
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  respond = async () => new Response("not JSON", { status: 400 });
+  await assert.rejects(request(actorId, storeId, runId, "PUT", signal, manifest), { code: "OPERATION_RESULT_UNKNOWN" });
+  respond = async () => json({ code: "FORBIDDEN" }, 403);
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", signal), { status: 403, code: "FORBIDDEN" });
+  let cancelled = 0;
+  const discarded = new ReadableStream({ cancel() { cancelled++; } });
+  respond = async () => new Response(discarded, { headers: { "Content-Type": "application/json" } });
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(cancelled, 1);
+  assert.equal(discarded.locked, false);
+  const abort = new AbortController();
+  const pending = new ReadableStream({ pull() { abort.abort(); } });
+  respond = async () => new Response(pending, { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  await assert.rejects(request(actorId, storeId, runId, "PATCH", abort.signal), { code: "OPERATION_RESULT_UNKNOWN" });
+  assert.equal(pending.locked, false);
+  respond = async () => json({ catalogImport: complete });
+  assert.deepEqual(await request(actorId, storeId, runId, "GET", signal), complete);
 });

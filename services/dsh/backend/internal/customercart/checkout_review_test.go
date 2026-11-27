@@ -23,14 +23,17 @@ func TestCheckoutReviewRejectsInvalidAndUnverifiedRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	self := `{"expectedCartVersion":1,"recipientPurpose":"SELF","fulfillmentMode":"CUSTOMER_PICKUP"}`
-	delivery := `{"expectedCartVersion":1,"recipientPurpose":"OTHER","fulfillmentMode":"BTHWANI_CAPTAIN","addressId":"addr-00000000000000000000000000000001","expectedAddressVersion":1,"recipientName":"Synthetic recipient","recipientPhone":"+967700000001"}`
+	self := `{"expectedCartVersion":1,"salesChannel":"DIRECT","recipientPurpose":"SELF","fulfillmentMode":"CUSTOMER_PICKUP"}`
+	delivery := `{"expectedCartVersion":1,"salesChannel":"DIRECT","recipientPurpose":"OTHER","fulfillmentMode":"BTHWANI_CAPTAIN","addressId":"addr-00000000000000000000000000000001","expectedAddressVersion":1,"recipientName":"Synthetic recipient","recipientPhone":"+967700000001"}`
 	for _, tc := range []struct {
 		name, body, actor string
 		status            int
 	}{
 		{"valid self requires identity", self, "", 401},
 		{"valid other requires identity", delivery, "", 401},
+		{"missing channel", strings.Replace(self, "\"salesChannel\":\"DIRECT\",", "", 1), "", 400},
+		{"unknown channel", strings.Replace(self, "DIRECT", "UNKNOWN", 1), "", 400},
+		{"duplicate channel", strings.Replace(self, "{", "{\"salesChannel\":\"MARKETPLACE\",", 1), "", 400},
 		{"merchant denied", self, "merchant-a", 403},
 		{"self cannot override identity", strings.Replace(self, "\"SELF\"", "\"SELF\",\"recipientPhone\":\"+967700000001\"", 1), "", 400},
 		{"unknown mode", strings.Replace(self, "CUSTOMER_PICKUP", "UNKNOWN", 1), "", 400},
@@ -99,7 +102,7 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 			t.Error(err)
 		}
 	}()
-	pickup := map[string]any{"expectedCartVersion": 1, "recipientPurpose": "SELF", "fulfillmentMode": "CUSTOMER_PICKUP"}
+	pickup := map[string]any{"expectedCartVersion": 1, "salesChannel": "DIRECT", "recipientPurpose": "SELF", "fulfillmentMode": "CUSTOMER_PICKUP"}
 	status, body := checkoutReviewRequest(t, h, "customer-a", pickup)
 	assertCartStatus(t, status, 200, body)
 	var review checkoutReviewResult
@@ -109,6 +112,32 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if review.ActorID != "customer-a" || review.StoreID != "store-a" || review.CartVersion != 1 || review.Merchandise.MerchandiseSubtotalYER != "1100" || review.CheckoutReady || review.Delivery != nil || len(review.Blockers) != 3 {
 		t.Fatalf("wrong pickup review: %s", body)
 	}
+	// Both channels may review the same MARKETPLACE Store and the same cart.
+	for _, relation := range []string{"MARKETPLACE", "DIRECT"} {
+		if _, err := db.ExecContext(ctx, "UPDATE "+schema+".stores SET relation=$1 WHERE id='store-a'", relation); err != nil {
+			t.Fatal(err)
+		}
+		for _, channel := range []string{"DIRECT", "MARKETPLACE"} {
+			pickup["salesChannel"] = channel
+			status, body = checkoutReviewRequest(t, h, "customer-a", pickup)
+			if relation == "DIRECT" && channel == "MARKETPLACE" {
+				assertCartStatus(t, status, 409, body)
+				if !strings.Contains(string(body), "SALES_CHANNEL_NOT_ELIGIBLE") {
+					t.Fatalf("forbidden channel did not fail closed: %s", body)
+				}
+				continue
+			}
+			assertCartStatus(t, status, 200, body)
+			var accepted map[string]any
+			if err := json.Unmarshal(body, &accepted); err != nil || accepted["salesChannel"] != channel || accepted["checkoutReady"] != false {
+				t.Fatalf("invalid channel evidence: %s (%v)", body, err)
+			}
+		}
+	}
+	if _, err := db.ExecContext(ctx, "UPDATE "+schema+".stores SET relation='MARKETPLACE' WHERE id='store-a'"); err != nil {
+		t.Fatal(err)
+	}
+	pickup["salesChannel"] = "DIRECT"
 	if review.StoreSchedule.Status != "UNAVAILABLE" || review.StoreSchedule.Version != 0 {
 		t.Fatalf("unconfigured schedule fabricated evidence: %s", body)
 	}
@@ -134,7 +163,7 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if !strings.Contains(string(body), "CART_LINE_UNAVAILABLE") {
 		t.Fatalf("disabled vertical did not fail closed: %s", body)
 	}
-	delivery := map[string]any{"expectedCartVersion": 1, "recipientPurpose": "OTHER", "fulfillmentMode": "BTHWANI_CAPTAIN", "addressId": addressID, "expectedAddressVersion": 2, "recipientName": "Synthetic recipient", "recipientPhone": "+967700000001"}
+	delivery := map[string]any{"expectedCartVersion": 1, "salesChannel": "DIRECT", "recipientPurpose": "OTHER", "fulfillmentMode": "BTHWANI_CAPTAIN", "addressId": addressID, "expectedAddressVersion": 2, "recipientName": "Synthetic recipient", "recipientPhone": "+967700000001"}
 	status, body = checkoutReviewRequest(t, h, "customer-a", delivery)
 	assertCartStatus(t, status, 200, body)
 	review = checkoutReviewResult{}
@@ -223,5 +252,78 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	}
 	if version != 1 || commands != 1 || lines != 1 {
 		t.Fatal("review changed persistent cart")
+	}
+}
+
+func TestCheckoutReviewRejectsAmbiguousHTTPEnvelope(t *testing.T) {
+	const body = `{"expectedCartVersion":1,"salesChannel":"DIRECT","recipientPurpose":"SELF","fulfillmentMode":"CUSTOMER_PICKUP"}`
+	for _, tc := range []struct {
+		name            string
+		media, encoding []string
+		valid           bool
+	}{
+		{"plain JSON", []string{"application/json"}, nil, true},
+		{"UTF8 JSON", []string{"application/json; charset=UTF-8"}, nil, true},
+		{"duplicate media", []string{"application/json", "application/json"}, nil, false},
+		{"conflicting media", []string{"application/json", "text/plain"}, nil, false},
+		{"hidden encoding", []string{"application/json"}, []string{"", "gzip"}, false},
+		{"unsupported charset", []string{"application/json; charset=iso-8859-1"}, nil, false},
+		{"encoded body", []string{"application/json"}, []string{"gzip"}, false},
+		{"missing media", nil, nil, false},
+		{"wrong media", []string{"text/plain"}, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/v1/carts/store-a/checkout-review", strings.NewReader(body))
+			req.SetPathValue("storeID", "store-a")
+			for _, value := range tc.media {
+				req.Header.Add("Content-Type", value)
+			}
+			for _, value := range tc.encoding {
+				req.Header.Add("Content-Encoding", value)
+			}
+			_, valid := decodeCheckoutReview(httptest.NewRecorder(), req)
+			if valid != tc.valid {
+				t.Fatalf("admitted=%v want=%v", valid, tc.valid)
+			}
+		})
+	}
+}
+
+func TestCheckoutReviewStrictWireAndBoundedBody(t *testing.T) {
+	const self = `{"expectedCartVersion":1,"salesChannel":"DIRECT","recipientPurpose":"SELF","fulfillmentMode":"CUSTOMER_PICKUP"}`
+	const other = `{"expectedCartVersion":1,"salesChannel":"MARKETPLACE","recipientPurpose":"OTHER","fulfillmentMode":"PARTNER_CAPTAIN","addressId":"addr-00000000000000000000000000000001","expectedAddressVersion":2,"recipientName":"Synthetic","recipientPhone":"+967700000001","deliveryInstructions":"Front door"}`
+	cases := []struct {
+		name, body string
+		valid      bool
+	}{
+		{"self", self, true},
+		{"other delivery", other, true},
+		{"missing purpose", strings.Replace(self, `"recipientPurpose":"SELF",`, "", 1), false},
+		{"unknown purpose", strings.Replace(self, "SELF", "UNKNOWN", 1), false},
+		{"wrong case", strings.Replace(self, "salesChannel", "SalesChannel", 1), false},
+		{"escaped duplicate", strings.Replace(self, "{", `{"sales\u0043hannel":"DIRECT",`, 1), false},
+		{"null required", strings.Replace(self, ":1,", ":null,", 1), false},
+		{"null address", strings.Replace(other, `"addr-00000000000000000000000000000001"`, "null", 1), false},
+		{"null instructions", strings.Replace(other, `"Front door"`, " null ", 1), false},
+		{"wrong optional type", strings.Replace(other, `"Front door"`, "42", 1), false},
+		{"unpaired surrogate", strings.Replace(other, "Synthetic", `\ud800`, 1), false},
+		{"invalid UTF8", strings.Replace(other, "Synthetic", string([]byte{0xff}), 1), false},
+		{"unsafe version", strings.Replace(self, ":1,", ":9007199254740992,", 1), false},
+		{"unknown selector", strings.Replace(self, "{", `{"storeId":"store-b",`, 1), false},
+		{"exact limit", self + strings.Repeat(" ", checkoutReviewMaxBody-len(self)), true},
+		{"oversized", self + strings.Repeat(" ", checkoutReviewMaxBody-len(self)+1), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest("POST", "/v1/carts/store-a/checkout-review", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			req.SetPathValue("storeID", "store-a")
+			// Exercise the streaming size cap, not merely Content-Length admission.
+			req.ContentLength = -1
+			_, ok := decodeCheckoutReview(httptest.NewRecorder(), req)
+			if ok != tc.valid {
+				t.Fatalf("admitted=%v want=%v", ok, tc.valid)
+			}
+		})
 	}
 }

@@ -13,7 +13,7 @@ import {
 } from "@bthwani/identity";
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
-import { readBoundedCustomerJSON } from "./bounded-customer-json";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "./bounded-customer-json";
 
 const lenovoAndroidPreview = process.env.EXPO_PUBLIC_BTHWANI_LENOVO_CUSTOMER_ANDROID_PREVIEW === "1";
 const configuredNativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN;
@@ -122,18 +122,17 @@ async function webRequest(method: "GET" | "POST" | "DELETE", expectedStatus: num
   } catch {
     throw new IdentityClientError(0, mutation ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_NETWORK_UNAVAILABLE");
   }
-  const discard = () => { void response.body?.cancel().catch(() => {}); };
-  if (signal.aborted) { discard(); throw cancelled(); }
+  if (signal.aborted) { discardCustomerResponse(response); throw cancelled(); }
   if (response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
       (response.ok && response.status !== expectedStatus)) {
-    discard();
+    discardCustomerResponse(response);
     throw invalid();
   }
   if (response.status === 204) return undefined;
-  if (mutation && response.status >= 500) { discard(); throw invalid(); }
+  if (mutation && response.status >= 500) { discardCustomerResponse(response); throw invalid(); }
   const body = await readBoundedCustomerJSON({ headers: response.headers, body: response.body, signal }, 16384);
-  if (signal.aborted) { discard(); throw cancelled(); }
-  if (body === null) { discard(); throw invalid(); }
+  if (signal.aborted) { discardCustomerResponse(response); throw cancelled(); }
+  if (body === null) { discardCustomerResponse(response); throw invalid(); }
   if (!response.ok) {
     if (!isRecord(body) || Object.keys(body).length !== 1 ||
         typeof body.code !== "string" || !/^[A-Z0-9_]{1,64}$/.test(body.code)) throw invalid();

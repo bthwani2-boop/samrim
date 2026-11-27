@@ -10,6 +10,7 @@ import {
 import CityPolicyHistory from "./city-policy-history";
 import DeliveryPolicyPreview from "./delivery-policy-preview";
 import type { PolicyCityDirectory } from "./policy-city-directory";
+import { requestPolicyOwner } from "./policy-owner-web.ts";
 import { type RegistrationOverview, readRegistrationOverview } from "./store-registration-command";
 
 const validCity = /^[a-z0-9-]{1,64}$/;
@@ -73,19 +74,12 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
       // Independent owner reads: a failed relation or availability policy must
       // never become an implicit admission, closure or default configuration.
       const [response, overview, radius] = await Promise.allSettled([
-        fetch(endpoint, {
-          method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
-          headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
-        }),
+        requestPolicyOwner(endpoint, actorId),
         readRegistrationOverview(city, actorId),
-        fetch(endpoint + "?delivery=1", {
-          method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error",
-          headers: { "X-BThwani-Operator": encodeURIComponent(actorId) },
-        }).then(async result => {
+        requestPolicyOwner(endpoint + "?delivery=1", actorId).then(result => {
           if (result.status === 401 || result.status === 403) return "denied" as const;
-          if (!result.ok) return "unavailable" as const;
-          const value: unknown = await result.json();
-          return isCityDeliveryPolicyState(value, city) ? value : "unavailable" as const;
+          return result.status === 200 && isCityDeliveryPolicyState(result.document, city)
+            ? result.document : "unavailable" as const;
         }),
       ]);
       if ((response.status === "fulfilled" && (response.value.status === 401 || response.value.status === 403)) ||
@@ -97,10 +91,10 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
       setDelivery(radius.status === "fulfilled" && radius.value !== "denied" ? radius.value : "unavailable");
       if (response.status === "rejected") throw response.reason;
       const responseValue = response.value;
-      if (!responseValue.ok) {
+      if (responseValue.status !== 200) {
         throw new Error("تعذر قراءة سياسة إتاحة المتاجر من DSH. لا توجد قيم افتراضية مفترضة؛ لا تعتبر 503 دليلًا على غياب السياسة.");
       }
-      const current = parseCityPolicy(await responseValue.json(), city);
+      const current = parseCityPolicy(responseValue.document, city);
       if (!current) throw new Error("أعاد DSH بيانات سياسة غير معتمدة.");
       setPolicy(current);
       setRequiresRead(false);
@@ -164,7 +158,7 @@ export default function PoliciesWorkspace({ actorId, directory }: Readonly<{
           : "تم اعتماد السياسة والتحقق من الإصدار والقيم الحالية.");
       return;
     }
-    if (result.status === "conflict") {
+    if (result.status === "conflict" && !uncertain) {
       setPending(null);
       setUncertain(false);
       setPolicy(null);

@@ -1,26 +1,70 @@
-# Identity client — verified-session and Merchant admission transport
+# Identity client — public transport boundary
 
-STATUS: IMPLEMENTATION_IN_PROGRESS
+The private workspace package `@bthwani/identity` exposes [index.ts](index.ts).
+Identity Go/PostgreSQL owns actor, role, session and permission decisions;
+the client transports and validates owner replies. DSH owns Store grants,
+and WLT owns financial authority. See the [owner guide](../README.md) and
+[OpenAPI entrypoint](../contracts/openapi/identity.openapi.yaml).
 
-The owner-derived `clients/generated/identity-operations.ts` supplies typed operation method/path constants used by the active session and admission transports. `pnpm check:contracts` regenerates no source; it refuses any stale or manually edited manifest. To update this file after reviewing a canonical OpenAPI change, run `node tools/dev/generate-openapi-operations.mjs identity`. This is operation-index parity only, not generated request/response schema or live Go runtime equivalence.
+## Modules and responsibilities
 
-The `@bthwani/identity` workspace package exports these HTTP operations from `clients/index.ts`:
-- `issueCustomerPhoneChallenge` and `verifyCustomerPhoneChallenge`: request and consume isolated phone proof using the two `/v1/customer-auth` endpoints.
-- `readVerifiedIdentitySession`: read only the actor, active Identity role and session expiry from `GET /v1/sessions/current`.
-- `revokeVerifiedIdentitySession`: revoke the current credential through `DELETE /v1/sessions/current`.
-- `reviewOriginalOperatorPermissions`: read an active Operator's assigned or revoked scope revisions through `GET /v1/operators/{actorId}/permissions`. Identity requires the current original Operator session.
-- `changeOriginalOperatorPermission`: send a versioned grant or revocation with a reason and an operation ID to the existing Identity owner. After an uncertain result, resend the exact command to recover its receipt.
-- `admitCurrentCustomerAsMerchant`: request initial Merchant role admission using an already verified Customer bearer from `POST /v1/actors/me/merchant-role`.
-- `resumeCurrentCustomerMerchantSession`: request owner-side rotation of an already active Merchant role session through `POST /v1/actors/me/merchant-session`.
+| Module | Responsibility |
+| --- | --- |
+| `phone-challenge.ts` | Canonical Yemeni mobile input and owner challenge/verification |
+| `sessions.ts` | Current verified session read and revocation |
+| `persistent-sessions.ts` | Family establishment, rotation, revocation and verified credential handoff |
+| `role-admission.ts` | Customer-bound Merchant/Captain admission and re-entry |
+| `operator-permissions.ts` | Original Operator permission read and versioned command |
+| `transport.ts` | Credential/origin admission, request deadline, bounded stream and stable error classification |
+| `types.ts` | Shared public DTOs |
+| `generated/identity-operations.ts` | Contract-derived method/path metadata |
 
-Session authority, revocation and mutation remain on Identity's Go/PostgreSQL owner. Protected operations require a current Identity bearer. Store authorization and financial execution belong to their respective owners. The underlying API contracts are `contracts/openapi/paths/customer-auth.yaml`, `contracts/openapi/paths/session.yaml` and `contracts/openapi/paths/managed-enrollment-auth.yaml`.
+## One bounded owner transport
 
-The transport refuses unsafe non-HTTPS endpoints outside explicit development loopback addresses, malformed opaque tokens, expired or wrong-shaped responses, unsafe response caching, oversized declared response bodies and unexpected owner statuses. Recovery is explicit. An uncertain versioned permission change is recoverable through its original operation ID and payload. Cancellation prevents a late result from being displayed as a current session.
+All public SDK HTTP operations use the same transport. It rejects unsafe
+origins and malformed credentials, omits cookies, rejects redirects and
+requires `Cache-Control: no-store` for accepted responses. HTTPS is required
+except for explicit local HTTP hosts localhost, 127.0.0.1 and 10.0.2.2.
 
-**Development admission only:** The Node client has owner-local positive/negative tests in `./identity-client.test.mjs` and is TypeScript-checked. These tests include synthetic HTTP responses; they are not proof of first-factor login, a real app consumer, session persistence on a connected device, production activation or WLT financial access. Do not expose a protected workspace until real Identity and DSH scoped authorization is integrated and independently tested.
+The entire request (including headers and body) has a 10-second maximum;
+current-session read, persistent enrollment and family revocation use five
+seconds. Rejected persistent handoff cleanup has two seconds. JSON bodies
+also have a five-second read cap and a 16,384-byte limit; a bridge without
+a readable stream is not admitted. A late response after cancellation or
+deadline is discarded, never read back into another account. An owner
+deadline is an outage for reads, not a caller account switch; any interrupted
+mutation has an unknown result and is not automatically retried. A caller
+cancellation is linked to the request without aborting the caller itself.
 
-The service's Go backend, OpenAPI and SQL are owned under `backend/`, `contracts/openapi/` and `database/` respectively. This file describes only its client transport, not another identity session engine or decision source.
+## Credential and command lifecycle
 
-## Client module boundaries
+Role admission and re-entry use the canonical owner endpoints; a rendered
+screen cannot create standing or a Store grant. An uncertain versioned
+permission command is recovered with the same operation identity and payload.
 
-`clients/index.ts` remains the stable public export boundary of `@bthwani/identity`. `types.ts` holds shared contracts; `transport.ts` exclusively handles request validation, HTTP exchange and owner-response errors. `phone-challenge.ts`, `sessions.ts`, `persistent-sessions.ts`, `role-admission.ts` and `operator-permissions.ts` each implement their named operations. All use the existing contract-derived `generated/identity-operations.ts`; no second Identity engine, permission writer or alternative session store is introduced. Native applications remain responsible for secure device storage and account-switch serialization.
+`readPersistentIdentityRole` checks the current owner role, verifies an
+unexpired receipt and principal before storage handoff, and quarantines the
+previous refresh credential before dispatching rotation. An acknowledged
+rotation is reconciled even when the view disappears; it cannot publish
+into an abandoned view. The application owns serialized secure storage and
+account switching. A rejected handoff remains rejected, with bounded
+best-effort family revocation. Never automatically replay an unknown refresh
+result. The owner HTTP budgets do not make a storage callback cancellable.
+
+## Verification and contract maintenance
+
+From the repository root:
+
+```sh
+node --test services/identity/clients/identity-client.test.mjs
+pnpm --filter @bthwani/identity typecheck
+node tools/dev/generate-openapi-operations.mjs --check identity
+pnpm check:contracts
+```
+
+Regenerate with `node tools/dev/generate-openapi-operations.mjs identity`
+only after an authorized contract change. Never hand-edit generated metadata.
+Transport tests use synthetic responses; they do not prove real phone/Passkey
+login, persisted device state, deployed owner ACLs or production readiness.
+Actual owner HTTP, durable PostgreSQL and affected Web/Android evidence belong
+to the existing owner and journey acceptance workflow.

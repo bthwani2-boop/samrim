@@ -1,14 +1,26 @@
-export type PublicStoreBrowse = Readonly<{
-  city: string;
-  query: string;
-  vertical?: string | undefined;
-  cursor?: string;
+/** Operator presentation queries for the DSH public directory and Offer projection. */
+type QueryParams = Record<string, string | string[] | undefined>;
+type PublicSearchPage = Readonly<{ query: string; cursor?: string }>;
+
+export type PublicStoreBrowse = PublicSearchPage & Readonly<{
+  city: string; vertical?: string | undefined;
 }>;
+export type PublishedOfferQuery = PublicSearchPage & Readonly<{ storeId: string }>;
+type OfferSearch = Readonly<{ offerQuery?: string | undefined }>;
+export type PublicStoreDetailBrowse = PublicStoreBrowse & OfferSearch & Readonly<{ storeId: string }>;
 
-const publicId = /^[a-z0-9-]{1,64}$/;
-const publicCursor = /^[A-Za-z0-9_-]{1,512}$/;
-
-function parseSearch(value: string | string[] | undefined): string | null {
+function admittedParams(params: QueryParams, keys: readonly string[]): boolean {
+  return !!params && typeof params === "object" && !Array.isArray(params) &&
+    Object.keys(params).every(key => keys.includes(key)) &&
+    keys.every(key => !(key in params) || Object.hasOwn(params, key));
+}
+function publicId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z0-9-]{1,64}$/.test(value);
+}
+function publicCursor(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{1,512}$/.test(value);
+}
+function parseSearch(value: unknown): string | null {
   if (value === undefined) return "";
   if (typeof value !== "string") return null;
   const points = [...value];
@@ -16,40 +28,69 @@ function parseSearch(value: string | string[] | undefined): string | null {
     const point = char.codePointAt(0) ?? 0;
     return point < 32 || point === 127 || (point >= 0xD800 && point <= 0xDFFF);
   })) return null;
-  return value.trim();
+  // DSH's Go publicSearch hashes strings.TrimSpace(raw), not JS trim().
+  // Preserve BOM and normalize only the owner's Unicode White_Space set.
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+}
+function parsePage(q: unknown, cursor: unknown): PublicSearchPage | null {
+  const query = parseSearch(q);
+  if (query === null || (cursor !== undefined && !publicCursor(cursor))) return null;
+  return { query, ...(cursor === undefined ? {} : { cursor }) };
 }
 
-// A city is selected explicitly; absent city means "no owner read", never a default city.
-export function parsePublicStoreBrowse(
-  params: Record<string, string | string[] | undefined>,
-): PublicStoreBrowse | null {
-  if (Object.keys(params).some(key => !["city", "q", "vertical", "cursor"].includes(key))) return null;
+// No implicit City or Store: without a selected scope, no owner read.
+export function parsePublicStoreBrowse(params: QueryParams): PublicStoreBrowse | null {
+  if (!admittedParams(params, ["city", "q", "vertical", "cursor"])) return null;
   const { city, q, vertical: requestedVertical, cursor } = params;
-  // A native GET form submits blank optional fields. Blank means no filter.
   const vertical = requestedVertical === "" ? undefined : requestedVertical;
-  if ([city, q, vertical, cursor].some(value => Array.isArray(value))) return null;
   if (city === undefined && q === undefined && vertical === undefined && cursor === undefined) {
     return { city: "", query: "" };
   }
-  if (typeof city !== "string" || !publicId.test(city)) return null;
-  const query = parseSearch(q);
-  if (query === null) return null;
-  if (vertical !== undefined && (typeof vertical !== "string" || !publicId.test(vertical))) return null;
-  if (cursor !== undefined && (typeof cursor !== "string" || !publicCursor.test(cursor))) return null;
-  return { city, query, ...(typeof vertical === "string" ? { vertical } : {}),
-    ...(typeof cursor === "string" ? { cursor } : {}) };
+  const page = parsePage(q, cursor);
+  if (!publicId(city) || !page || (vertical !== undefined && !publicId(vertical))) return null;
+  return { city, ...page, ...(vertical === undefined ? {} : { vertical }) };
 }
 
-function browseParams(scope: PublicStoreBrowse): URLSearchParams {
-  const params = new URLSearchParams({ city: scope.city });
+export function parsePublishedOfferQuery(params: QueryParams): PublishedOfferQuery | null {
+  if (!admittedParams(params, ["store", "q", "cursor"])) return null;
+  const { store, q, cursor } = params;
+  if (store === undefined && q === undefined && cursor === undefined) return { storeId: "", query: "" };
+  const page = parsePage(q, cursor);
+  return publicId(store) && page ? { storeId: store, ...page } : null;
+}
+
+export function parsePublicStoreDetail(storeId: string, params: QueryParams): PublicStoreDetailBrowse | null {
+  if (!publicId(storeId) || !admittedParams(params, ["city", "q", "vertical", "cursor", "offerQ"])) return null;
+  const { offerQ, ...directoryParams } = params;
+  const browse = parsePublicStoreBrowse(directoryParams);
+  const offerQuery = parseSearch(offerQ);
+  if (!browse?.city || offerQuery === null) return null;
+  return { storeId, ...browse, ...(offerQuery ? { offerQuery } : {}) };
+}
+
+function searchParams(scope: PublicSearchPage, scopeKey: "city" | "store", scopeId: string): URLSearchParams {
+  const params = new URLSearchParams({ [scopeKey]: scopeId });
   if (scope.query) params.set("q", scope.query);
+  return params;
+}
+function browseParams(scope: PublicStoreBrowse): URLSearchParams {
+  const params = searchParams(scope, "city", scope.city);
   if (scope.vertical) params.set("vertical", scope.vertical);
   if (scope.cursor) params.set("cursor", scope.cursor);
   return params;
 }
-
 export function publicStorePageHref(scope: PublicStoreBrowse): string {
-  return `/merchants/public-stores?${browseParams(scope).toString()}`;
+  return "/merchants/public-stores?" + browseParams(scope).toString();
+}
+export function publicStoreDetailHref(storeId: string, scope: PublicStoreBrowse & OfferSearch): string {
+  const params = browseParams(scope);
+  if (scope.offerQuery) params.set("offerQ", scope.offerQuery);
+  return "/merchants/public-stores/" + encodeURIComponent(storeId) + "?" + params.toString();
+}
+export function publishedOfferHref(scope: PublishedOfferQuery, pathname: "/catalog" | "/catalog/products" = "/catalog"): string {
+  const params = searchParams(scope, "store", scope.storeId);
+  if (scope.cursor) params.set("cursor", scope.cursor);
+  return pathname + "?" + params.toString();
 }
 
 // Reuse the existing isolated DSH owner configured for the Operator BFF.
@@ -66,27 +107,6 @@ export function isolatedPublicDshOrigin(raw: string | undefined): string | null 
     return null;
   }
 }
-
-type OfferSearch = Readonly<{ offerQuery?: string | undefined }>;
-export type PublicStoreDetailBrowse = PublicStoreBrowse & OfferSearch & Readonly<{ storeId: string }>;
-
-export function parsePublicStoreDetail(
-  storeId: string,
-  params: Record<string, string | string[] | undefined>,
-): PublicStoreDetailBrowse | null {
-  const { offerQ, ...directoryParams } = params;
-  const browse = parsePublicStoreBrowse(directoryParams);
-  const offerQuery = parseSearch(offerQ);
-  if (!publicId.test(storeId) || !browse?.city || offerQuery === null) return null;
-  return { storeId, ...browse, ...(offerQuery ? { offerQuery } : {}) };
-}
-
-export function publicStoreDetailHref(storeId: string, scope: PublicStoreBrowse & OfferSearch): string {
-  const params = browseParams(scope);
-  if (scope.offerQuery) params.set("offerQ", scope.offerQuery);
-  return `/merchants/public-stores/${encodeURIComponent(storeId)}?${params.toString()}`;
-}
-
 export function resolvePublicDshOrigin(configured: string | undefined, runtime: string | undefined): string | null {
   // The fixed local port is a development-only fallback. Production must supply
   // an explicit, validated owner origin through the existing Operator configuration.

@@ -16,7 +16,7 @@ const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-checkout-display-
 let compiled = new Map();
 try {
   const args = [
-    path.join(root, "node_modules/typescript/bin/tsc"),
+    path.join(root, "node_modules/@typescript/native/bin/tsc"),
     ...compiledFiles.map(file => path.join(directory, [file, ".tsx"].join(""))),
     "--ignoreConfig", "--noResolve", "--noCheck",
     "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",

@@ -9,6 +9,7 @@ import { DshPublicError, MerchantStandingError } from "@bthwani/dsh";
 import { IdentityClientError } from "@bthwani/identity";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { verifyMerchantAdmission } from "../src/features/access/admission.ts";
+import * as merchantAdmissionWeb from "../src/features/access/merchant-admission-web.ts";
 
 const origin = "https://identity.bthwani.test";
 const customerBearer = Buffer.alloc(32, 1).toString("base64url");
@@ -85,7 +86,7 @@ const temporary = mkdtempSync(path.join(tmpdir(), "merchant-admission-coverage-"
 let compiled;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), transportSource,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), transportSource,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,
   ], { cwd: root, timeout: 20_000, encoding: "utf8", windowsHide: true });
@@ -106,6 +107,7 @@ function transportHarness() {
   let read = async (bearer) => ({ session: state, bearer });
   let verifyCalls = 0;
   const dependencies = {
+    "./merchant-admission-web.ts": merchantAdmissionWeb,
     "@bthwani/dsh": { DshPublicError },
     "@bthwani/identity": {
       IdentityClientError,
@@ -288,13 +290,13 @@ test("web Merchant transport uses same-origin no-store requests and distinguishe
     assert.equal(request.cache, "no-store");
     assert.equal(request.signal, signal);
     calls.push([url, request.method, request.body && JSON.parse(request.body)]);
-    if (request.method === "DELETE") return new Response(null, { status: 204 });
-    if (url.endsWith("stores=mine")) return Response.json({ code: "STORE_ACCESS_DENIED" }, { status: 403 });
-    if (request.method === "GET") return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
-    if (JSON.parse(request.body).phone) return Response.json({ ticket: "fixture-ticket" });
-    return Response.json({ session: h.state });
+    if (request.method === "DELETE") return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+    if (url.endsWith("stores=mine")) return Response.json({ code: "STORE_ACCESS_DENIED" }, { status: 403, headers: { "Cache-Control": "no-store" } });
+    if (request.method === "GET") return Response.json({ code: "UNAUTHORIZED" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+    if (JSON.parse(request.body).phone) return Response.json({ ticket: "a".repeat(48) }, { status: 201, headers: { "Cache-Control": "no-store" } });
+    return Response.json({ session: h.state }, { headers: { "Cache-Control": "no-store" } });
   });
-  assert.equal(await api.requestAdmissionCode("770000001", signal), "fixture-ticket");
+  assert.equal(await api.requestAdmissionCode("770000001", signal), "a".repeat(48));
   assert.deepEqual(await api.submitAdmissionCode("fixture-ticket", "123456", signal), h.state);
   await assert.rejects(() => api.readMerchantStanding(signal), { name: "MerchantStandingError", code: "STORE_ACCESS_DENIED" });
   await assert.rejects(() => api.readAdmission(signal), { code: "UNAUTHORIZED" });
@@ -304,4 +306,27 @@ test("web Merchant transport uses same-origin no-store requests and distinguishe
     ["/api/admission?stores=mine", "GET"], ["/api/admission", "GET"], ["/api/admission", "DELETE"],
   ]);
   assert.equal(h.storage.size, 0);
+});
+
+test("Web admission cannot accept another role or cacheable identity response", async t => {
+  const h = transportHarness();
+  const api = h.load({ platform: "web" });
+  const signal = new AbortController().signal;
+  let reply = Response.json({ enabled: true, session: { ...h.state, role: "customer" } }, {
+    headers: { "Cache-Control": "no-store" },
+  });
+  t.mock.method(globalThis, "fetch", async () => reply);
+  await assert.rejects(api.readAdmission(signal), { code: "OWNER_RESPONSE_INVALID" });
+  reply = Response.json({ enabled: true, session: h.state }, { headers: { "Cache-Control": "public" } });
+  await assert.rejects(api.readAdmission(signal), { code: "OWNER_RESPONSE_INVALID" });
+});
+
+test("Web admission does not treat a malformed sign-in acknowledgement as success", async t => {
+  const h = transportHarness();
+  const api = h.load({ platform: "web" });
+  const signal = new AbortController().signal;
+  t.mock.method(globalThis, "fetch", async () => Response.json({ session: { ...h.state, role: "operator" } }, {
+    headers: { "Cache-Control": "no-store" },
+  }));
+  await assert.rejects(api.submitAdmissionCode("fixture-ticket", "123456", signal), { code: "OPERATION_RESULT_UNKNOWN" });
 });

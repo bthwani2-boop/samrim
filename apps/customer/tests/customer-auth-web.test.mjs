@@ -374,3 +374,34 @@ test("Customer cookie namespace is canonical even with retired environment setti
   assert.equal(bearerForCustomerRequest(req(retired)), null);
   assert.equal(bearerForCustomerRequest(req(retired + "; " + cookie)), token);
 });
+
+test("Customer phone POST rejects unadmitted length and media metadata before Identity",async t=>{
+  const calls=mockOwner(t,()=>Response.json({ticket},{status:201,headers:{"Cache-Control":"no-store"}}));
+  for(const metadata of [
+    {"Content-Type":"application/json","Content-Length":"257"},
+    {"Content-Type":"application/json","Content-Length":""},
+    {"Content-Type":"text/plain"},
+  ]){
+    let cancelled=0;
+    const bytes=new TextEncoder().encode(JSON.stringify({phone:"+967770000077"}));
+    const body=new ReadableStream({start(s){s.enqueue(bytes);},cancel(){cancelled++;}});
+    const abort=new AbortController();
+    const req=new Request(host+"/api/customer-auth",{method:"POST",duplex:"half",signal:abort.signal,headers:{Origin:host,...metadata},body});
+    const pending=POST(req);
+    // Keep the fixture open for rejected metadata; bounded the test even if the old parser attempts to consume it.
+    const res=await pending;
+    assert.equal(res.status,400);
+    assert.equal(cancelled,1);
+    assert.equal(body.locked,false);
+  }
+  assert.equal(calls.length,0);
+});
+
+test("Customer phone POST rejects locked request bodies without taking another reader",async t=>{
+  const calls=mockOwner(t,()=>assert.fail("locked body must not reach Identity"));
+  const req=request("POST",{phone:"+967770000077"},{cookie:false});
+  const reader=req.body.getReader();
+  try {assert.equal((await POST(req)).status,400);assert.equal(req.body.locked,true);}
+  finally {await reader.cancel();reader.releaseLock();}
+  assert.equal(calls.length,0);
+});

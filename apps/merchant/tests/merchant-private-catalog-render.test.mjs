@@ -28,7 +28,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-catalog-test-"));
   try {
     const compiled = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), src, "--ignoreConfig",
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), src, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
@@ -503,7 +503,7 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
   try {
     const inventorySrc = fileURLToPath(new URL("../src/features/catalog/inventory-summary.tsx", import.meta.url));
     const compiled = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), inventorySrc, "--ignoreConfig",
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), inventorySrc, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });

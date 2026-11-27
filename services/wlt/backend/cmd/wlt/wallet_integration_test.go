@@ -47,6 +47,7 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	wltRoot := filepath.Join(fixtureRoot, "services", "wlt", "database")
 	owner := openTestDB(t, "postgres://bthwani_wlt_owner:synthetic-only"+network)
 	reader := openTestDB(t, readerDSN)
+	executor := openTestDB(t, "postgres://bthwani_wlt_command:synthetic-only"+network)
 	identity := openTestDB(t, identityDSN)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
@@ -67,8 +68,8 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 	apply("schema", "30_commercial_agreements.sql")
 	apply("schema", "40_order_wallet_reservations.sql")
 	t.Run("commercial agreement proposals", func(t *testing.T) {
-		verifyCommercialAgreementProposals(t, ctx, owner, reader)
-		verifyAgreementDecisions(t, ctx, owner, reader)
+		verifyCommercialAgreementProposals(t, ctx, owner, reader, executor)
+		verifyAgreementDecisions(t, ctx, owner, reader, executor)
 	})
 	// Post only from the isolated fixture owner; the HTTP runtime stays read-only.
 	// Preserve this exact posting while installing the separate sandbox.
@@ -288,6 +289,16 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		t.Fatalf("journal count=%d unbalanced=%d err=%v", journalCount, unbalanced, err)
 	}
 	origin := startIdentity(t, ctx, filepath.Join(fixtureRoot, "bin", "identity"), identityDSN, identitySchema)
+	dshDB, dshOrigin := startAgreementDSH(t, ctx, fixtureRoot, origin, merchant)
+	t.Run("Merchant agreement command authority", func(t *testing.T) {
+		verifyMerchantCommandAuthority(t, ctx, owner, reader, executor, dshDB, dshOrigin, origin, merchant, one)
+	})
+	t.Run("Finance agreement command authority", func(t *testing.T) {
+		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.actors(id,status) VALUES ('finance-command','ACTIVE'),('finance-command-other','ACTIVE'),('finance-proposer','ACTIVE'),('finance-command-revoked','ACTIVE')")
+		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.actor_roles(actor_id,role,status) VALUES ('finance-command','operator','ACTIVE'),('finance-command-other','operator','ACTIVE'),('finance-proposer','operator','ACTIVE'),('finance-command-revoked','operator','ACTIVE')")
+		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.operator_permissions(actor_id,permission) VALUES ('finance-command','finance'),('finance-proposer','finance'),('finance-command-revoked','finance')")
+		verifyFinanceCommandAuthority(t, ctx, owner, reader, executor, identity, dshDB, origin, dshOrigin, merchant, session("finance-command", "operator", 21), session("finance-command-other", "operator", 22), session("finance-proposer", "operator", 23), session("finance-command-revoked", "operator", 24))
+	})
 	handler, err := wallet.NewHandler(reader, origin)
 	if err != nil {
 		t.Fatal(err)

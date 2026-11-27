@@ -9,9 +9,9 @@ process.env.CUSTOMER_SYNTHETIC_IDENTITY_ORIGIN = "http://127.0.0.1:3201";
 const { handleCustomerCheckoutReview } = await import("./checkout-review-bff.ts");
 const bearer = Buffer.alloc(32, 14).toString("base64url");
 const page = "http://localhost/api/customer-auth/checkout-review?storeId=store-a";
-const input = { expectedCartVersion: 4, recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP" };
+const input = { expectedCartVersion: 4, salesChannel: "DIRECT", recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP" };
 const result = { actorId: "customer-a", storeId: "store-a", cartVersion: 4,
-  recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP",
+  salesChannel: "DIRECT", recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP",
   merchandise: { actorId: "customer-a", storeId: "store-a", cartVersion: 4,
     lines: [{ offerId: "offer-a", variantId: "variant-a", quantity: 2, unitYer: "550", lineTotalYer: "1100" }],
     merchandiseSubtotalYer: "1100", checkoutReady: false },
@@ -25,7 +25,7 @@ const session = actorId => ({ actorId, role: "customer", sessionExpiresAt: "2030
 test("review SDK refuses unsolicited PII, changed scope, prices and payable state", () => {
   assert.deepEqual(parseCustomerCheckoutReview(result, "store-a", "customer-a", input), result);
   for (const invalid of [{ ...result, recipientPhone: "+967770000001" }, { ...result, actorId: "customer-b" },
-    { ...result, cartVersion: 5 }, { ...result, fulfillmentMode: "BTHWANI_CAPTAIN" },
+    { ...result, salesChannel: "MARKETPLACE" }, { ...result, cartVersion: 5 }, { ...result, fulfillmentMode: "BTHWANI_CAPTAIN" },
     { ...result, checkoutReady: true }, { ...result, blockers: [] },
     { ...result, storeSchedule: { status: "OPEN_FOR_ORDERS", version: 3 } },
     { ...result, storeSchedule: { status: "PAUSED" } },
@@ -33,7 +33,10 @@ test("review SDK refuses unsolicited PII, changed scope, prices and payable stat
     { ...result, merchandise: { ...result.merchandise, merchandiseSubtotalYer: "1" } }]) {
     assert.throws(() => parseCustomerCheckoutReview(invalid, "store-a", "customer-a", input));
   }
-  for (const invalid of [{ ...input, recipientName: "Other" }, { ...input, addressId: "address-a" },
+  const { salesChannel: omitted, ...withoutChannel } = input;
+  assert.equal(omitted, "DIRECT");
+  assert.equal(validCustomerCheckoutReviewInput(withoutChannel), false);
+  for (const invalid of [{ ...input, salesChannel: "UNKNOWN" }, { ...input, recipientName: "Other" }, { ...input, addressId: "address-a" },
     { ...input, fulfillmentMode: "BTHWANI_CAPTAIN" }, { ...input, recipientPurpose: "OTHER" },
     { ...input, expectedCartVersion: 0 }]) assert.equal(validCustomerCheckoutReviewInput(invalid), false);
 });

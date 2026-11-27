@@ -6,14 +6,14 @@ import path from "node:path";
 import { test } from "node:test";
 import * as identity from "@bthwani/identity";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../src/features/access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../src/features/access/bounded-customer-json.ts";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const source = path.resolve(import.meta.dirname, "../src/features/access/customer-session-transport.ts");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-session-"));
 let compiled;
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--inlineSourceMap", "--inlineSources", "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
@@ -96,8 +96,8 @@ function harness({ stored = original, nativeOrigin = "http://127.0.0.1:33221", o
       revokeVerifiedIdentitySession: (_origin, value, signal) => revoke(value, signal),
       verifyCustomerPhoneChallenge: (_origin, ticket, code, signal) => codeVerification(ticket, code, signal),
     },
-    "../access/bounded-customer-json": { readBoundedCustomerJSON },
-    "./bounded-customer-json": { readBoundedCustomerJSON },
+    "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON },
+    "./bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON },
     "expo-secure-store": secure,
     "react-native": { Platform: { OS: platform } },
   };

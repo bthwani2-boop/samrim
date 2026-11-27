@@ -169,6 +169,7 @@ func TestRealCustomerCartPostgres(t *testing.T) {
 			t.Fatalf("seed error: %v query=%s", err, query)
 		}
 	}
+	t.Run("FulfillmentPolicyOwnerReadback", func(t *testing.T) { verifyFulfillmentPolicyOnPostgres(t, ctx, db, schema) })
 	sessions := &testSession{}
 	handler, err := NewHandler(db, schema, cartSessionAdapter{sessions})
 	if err != nil {
@@ -549,7 +550,7 @@ func verifyMissingOwnerRelations(t *testing.T, dsn, sourceSchema string) {
 		{"GET", cart, ""},
 		{"GET", cart + "/merchandise-estimate?expectedVersion=0", ""},
 		{"GET", cart + "/serviceability?addressId=" + addressID, ""},
-		{"POST", cart + "/checkout-review", "{\"expectedCartVersion\":1,\"recipientPurpose\":\"SELF\",\"fulfillmentMode\":\"CUSTOMER_PICKUP\"}"},
+		{"POST", cart + "/checkout-review", "{\"expectedCartVersion\":1,\"salesChannel\":\"DIRECT\",\"recipientPurpose\":\"SELF\",\"fulfillmentMode\":\"CUSTOMER_PICKUP\"}"},
 		{"PUT", cart, "{\"operationId\":\"scope-fixture-cart-01\",\"expectedVersion\":0,\"lines\":[]}"},
 		{"GET", "/v1/addresses", ""},
 		{"GET", address, ""},

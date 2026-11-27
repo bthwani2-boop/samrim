@@ -186,3 +186,72 @@ paths:
         '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
         '409': { $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict' }
         '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+  /v1/operators/cities/{cityID}/fulfillment-policy/{relation}:
+    get:
+      operationId: getCityFulfillmentPolicy
+      summary: Read the permitted fulfillment mode ceiling for a city and Store relation
+      description: Requires current Identity Operator platform_policies permission before and after read. Version zero explicitly means no configured policy and no permitted modes. The policy is not per-Store admission, current readiness, an accepted WLT agreement or payment authorization.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cityID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: relation
+          in: path
+          required: true
+          schema: { type: string, enum: [DIRECT, MARKETPLACE] }
+      responses:
+        '200':
+          description: Current immutable policy version or explicit absence
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityFulfillmentPolicy' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+    patch:
+      operationId: replaceCityFulfillmentPolicy
+      summary: Append a versioned explicit fulfillment mode ceiling
+      description: Requires current Operator platform_policies permission. Empty allowedModes denies all; no default is inferred from Store relation. The identical operation ID, version, modes, reason and actor replay the same committed result. A changed payload conflicts. After an unknown result retry only the same operation. This never enables fulfillment or payment by itself and does not alter historical Orders.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: cityID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: relation
+          in: path
+          required: true
+          schema: { type: string, enum: [DIRECT, MARKETPLACE] }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '../dsh.openapi.yaml#/components/schemas/CityFulfillmentPolicyChange' }
+      responses:
+        '200':
+          description: Committed or replayed policy version
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [policy, replay]
+                properties:
+                  policy: { $ref: '../dsh.openapi.yaml#/components/schemas/CityFulfillmentPolicy' }
+                  replay: { type: boolean }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/PolicyPermissionDenied' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+        '409': { $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict' }

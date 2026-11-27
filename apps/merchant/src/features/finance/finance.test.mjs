@@ -22,7 +22,7 @@ function compileFinance(t) {
   t.after(() => rmSync(temp, { recursive: true, force: true }));
   const root = resolve(import.meta.dirname, "../../../../..");
   const result = spawnSync(process.execPath, [
-    resolve(root, "node_modules/typescript/bin/tsc"),
+    resolve(root, "node_modules/@typescript/native/bin/tsc"),
     resolve(import.meta.dirname, "wallet-screen.tsx"),
     resolve(import.meta.dirname, "commercial-agreement.tsx"),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",

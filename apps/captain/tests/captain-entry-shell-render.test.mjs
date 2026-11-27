@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { validCaptainInterest } from "../../../services/dsh/clients/captain-interest.ts";
+import { DshPublicError } from "../../../services/dsh/clients/client-core.ts";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -16,7 +18,7 @@ const temporary = mkdtempSync(path.join(tmpdir(), "bthwani-captain-guest-navigat
 const compiled = new Map();
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), ...sources.map(source => path.join(captain, `${source}.tsx`)),
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), ...sources.map(source => path.join(captain, `${source}.tsx`)),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources",
     "--rootDir", captain, "--outDir", temporary,
@@ -62,7 +64,7 @@ test("Captain workspace separates verified access from unavailable data and keep
   });
   const dashboard = nodes(home());
   assert.ok(dashboard.some(node => node.props.testID === "captain-standing-verified" &&
-    node.props.children.includes("3")));
+    node.props.children === "حساب الكابتن معتمد"));
   assert.ok(dashboard.some(node => node.props.children?.includes?.("مهام التوصيل")));
   assert.deepEqual(dashboard.filter(node => node.type === "Link"), []);
   workspace = null;
@@ -73,135 +75,222 @@ test("Captain workspace separates verified access from unavailable data and keep
   assert.deepEqual(offerLinks.map(node => node.props.href), ["/home"]);
 });
 
-test("Captain account renders verified session and can request owner logout", () => {
+test("Captain account admits only its verified workspace, delegates appearance and requests owner logout", () => {
   let workspace = null;
-  let requested = false;
+  let requests = 0;
   const account = renderable("app/(tabs)/account", {
+    "@bthwani/tamagui-config/appearance-preferences": { __esModule: true, default: "AppearancePreferences" },
     "../../src/features/access/protected-route": { useCaptainWorkspace: () => workspace },
   });
   assert.equal(account(), null);
-  workspace = {
-    session: { actorId: "synthetic-captain", role: "captain", sessionExpiresAt: "2026-11-21T12:00:00Z" },
-    standing: { actorId: "synthetic-captain", status: "APPROVED", version: 3 },
-    signOut() { requested = true; },
-  };
+  const session = { actorId: "synthetic-captain", role: "captain", sessionExpiresAt: "2099-11-22T19:10:00Z" };
+  const standing = { actorId: session.actorId, status: "APPROVED", version: 3 };
+  workspace = { session, standing, signOut() { requests++; } };
   const view = account();
   assert.equal(view.type, "SafeAreaView");
   assert.deepEqual(view.props.edges, ["top", "left", "right"]);
   const content = nodes(view);
   assert.ok(content.some(node => node.props.children === "حساب الكابتن معتمد"));
+  assert.equal(content.filter(node => node.type === "AppearancePreferences").length, 1);
   assert.equal(content.some(node => node.props.testID === "captain-capability-unavailable"), false);
-  content.find(node => node.type === "Pressable" && node.props.accessibilityRole === "button").props.onPress();
-  assert.equal(requested, true);
+  const signOut = content.find(node => node.type === "Pressable" && node.props.accessibilityRole === "button");
+  assert.ok(signOut);
+  signOut.props.onPress();
+  assert.equal(requests, 1);
+  for (const invalid of [undefined, { ...standing, actorId: "other" },
+    { ...standing, status: "PENDING" }, { ...standing, version: 0 }, { ...standing, version: 1.5 }]) {
+    workspace = { session, standing: invalid, signOut() { requests++; } };
+    const rejected = nodes(account());
+    assert.ok(!rejected.some(node => node.props.children === "حساب الكابتن معتمد"));
+    assert.ok(rejected.some(node => node.props.accessibilityRole === "alert"));
+  }
+  assert.equal(requests, 1);
 });
 
-test("Captain interest leaves definite rejection retryable but stops after receipt or unknown outcome", async () => {
-  class DshPublicError extends Error {
-    constructor(status, code) {
-      super(code);
-      this.status = status;
-      this.code = code;
+// The renderer is isolated from React Native, but uses the real DSH input
+// validator and error type. Transport outcomes are explicitly controlled here;
+// these tests do not claim a real HTTP receipt or Android journey.
+function guestIntake(origin = "https://dsh.example") {
+  const previous = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
+  const hooks = [];
+  const requests = [];
+  let nextHook = 0;
+  let cleanup;
+  let writes = 0;
+  if (origin === null) delete process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
+  else process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = origin;
+  let screen;
+  try {
+    screen = renderable("src/features/join/captain-interest-screen", {
+      react: {
+        useState(initial) {
+          const index = nextHook++;
+          if (!(index in hooks)) hooks[index] = initial;
+          return [hooks[index], value => { writes++; hooks[index] = value; }];
+        },
+        useRef(initial) {
+          const index = nextHook++;
+          hooks[index] ??= { current: initial };
+          return hooks[index];
+        },
+        useEffect(effect) { cleanup ??= effect(); },
+      },
+      "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable", TextInput: "TextInput" },
+      "@bthwani/dsh": {
+        DshPublicError,
+        validCaptainInterest,
+        submitCaptainInterest: (base, input, signal) => new Promise((resolve, reject) => {
+          requests.push({ base, input, signal, resolve, reject });
+        }),
+      },
+    });
+  } finally {
+    if (previous === undefined) delete process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
+    else process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = previous;
+  }
+  const render = () => { nextHook = 0; return nodes(screen()); };
+  const field = label => render().find(node => node.type === "TextInput" && node.props.accessibilityLabel === label);
+  const enter = (label, value) => field(label).props.onChangeText(value);
+  const groups = () => render().filter(node => node.props.accessibilityRole === "radiogroup");
+  const radios = label => nodes(groups().find(group => group.props.accessibilityLabel === label))
+    .filter(node => node.props.accessibilityRole === "radio");
+  const choose = (group, label) => radios(group).find(radio => radio.props.accessibilityLabel === label).props.onPress();
+  const submit = () => render().find(node => node.props.accessibilityRole === "button");
+  const notice = () => render().find(node => node.props.accessibilityRole === "alert");
+  const fill = phone => {
+    enter("الاسم الكامل", "اسم تجريبي");
+    enter("رقم الهاتف", phone);
+    enter("المدينة", "صنعاء");
+    enter("الحي أو منطقة السكن", "الوحدة");
+  };
+  return { render, field, enter, groups, radios, choose, submit, notice, fill, requests,
+    unmount: () => cleanup(), writes: () => writes };
+}
+
+const vehicleGroup = "نوع الدراجة";
+const plateGroup = "هل الدراجة مرقمة؟";
+const experienceGroup = "هل لديك خبرة سابقة بالتوصيل؟";
+const settle = () => new Promise(setImmediate);
+
+test("Captain intake requires owner-valid facts and exposes one checked state per choice group", async () => {
+  const form = guestIntake();
+  assert.equal(form.submit().props.disabled, true);
+  form.fill("٧٧٠١٢٣٤٥٦");
+  assert.equal(form.submit().props.disabled, true, "owner requires an explicit plate answer");
+  const groups = form.groups();
+  assert.equal(groups.length, 4);
+  assert.equal(new Set(groups.map(group => group.props.accessibilityLabel)).size, 4);
+  assert.deepEqual(groups.map(group => nodes(group).filter(node => node.props.accessibilityRole === "radio" && node.props.accessibilityState.checked).length), [1, 0, 1, 1]);
+  for (const group of groups) {
+    for (const radio of nodes(group).filter(node => node.props.accessibilityRole === "radio")) {
+      assert.equal(typeof radio.props.accessibilityState.checked, "boolean");
+      assert.equal(radio.props["aria-checked"], radio.props.accessibilityState.checked);
+      assert.equal(typeof radio.props.accessibilityLabel, "string");
+      assert.equal(Object.hasOwn(radio.props.accessibilityState, "selected"), false);
     }
   }
-  const savedOrigin = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
-  process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = "https://dsh.example";
-  try {
-    for (const finalError of [new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"), null]) {
-      const hooks = [];
-      const requests = [];
-      let nextHook = 0;
-      let rejectFirst;
-      const screen = renderable("src/features/join/captain-interest-screen", {
-        react: {
-          useState(initial) {
-            const index = nextHook++;
-            if (!(index in hooks)) hooks[index] = initial;
-            return [hooks[index], value => { hooks[index] = value; }];
-          },
-          useRef(initial) {
-            const index = nextHook++;
-            hooks[index] ??= { current: initial };
-            return hooks[index];
-          },
-          useEffect() {},
-        },
-        "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable", TextInput: "TextInput" },
-        "@bthwani/dsh": {
-          DshPublicError,
-          validCaptainInterest: input => Boolean(input.name) && /^(?:\+967)?7\d{8}$/.test(input.phone),
-          submitCaptainInterest: async (_origin, input) => {
-            requests.push(input);
-            if (requests.length === 1) return new Promise((_resolve, reject) => { rejectFirst = reject; });
-            if (finalError) throw finalError;
-          },
-        },
-      });
-      const render = () => {
-        nextHook = 0;
-        return nodes(screen());
-      };
-      const findSubmit = view => view.find(node => node.props.accessibilityRole === "button");
-      const typedPhone = finalError ? "٧٧٠١٢٣٤٥٦" : "+۹۶۷۷۷۰۱۲۳۴۵۶";
-      const wirePhone = finalError ? "770123456" : "+967770123456";
-      const field = (view, label) => view.find(node => node.props.accessibilityLabel === label);
-      field(render(), "الاسم الكامل").props.onChangeText("اسم تجريبي");
-      field(render(), "رقم الهاتف").props.onChangeText(typedPhone);
-      const radios = () => render().filter(node => node.props.accessibilityRole === "radio");
-      radios()[4].props.onPress();
-      radios().at(-2).props.onPress();
-      field(render(), "تفاصيل الخبرة").props.onChangeText("خبرة تجريبية");
-      radios()[0].props.onPress();
-      radios().at(-2).props.onPress();
-      assert.deepEqual([
-        radios()[4].props.accessibilityState.selected,
-        field(render(), "تفاصيل الخبرة").props.value,
-      ], [true, "خبرة تجريبية"], "reselecting the same choices must preserve the entered facts");
-      radios()[1].props.onPress();
-      assert.equal(radios()[4].props.accessibilityState.selected, false, "changing vehicle clears the old plate choice");
-      radios()[4].props.onPress();
-      radios().at(-1).props.onPress();
-      assert.equal(field(render(), "تفاصيل الخبرة"), undefined);
-      radios().at(-2).props.onPress();
-      assert.equal(field(render(), "تفاصيل الخبرة").props.value, "", "changing experience clears obsolete details");
-      field(render(), "تفاصيل الخبرة").props.onChangeText("خبرة تجريبية");
-      const submit = findSubmit(render());
-      assert.equal(submit.props.disabled, false, "Arabic digit input must enable a valid registration");
-      const beforeRadios = render().filter(node => node.props.accessibilityRole === "radio");
-      const selected = beforeRadios.map(node => node.props.accessibilityState.selected);
-      submit.props.onPress();
-      const pending = render().filter(node => node.props.accessibilityRole === "radio");
-      assert.ok(pending.length > 0);
-      assert.ok(pending.every(node => node.props.disabled && node.props.accessibilityState.disabled),
-        "all choices must be disabled while submission is pending");
-      for (const radio of beforeRadios) {
-        if (!radio.props.accessibilityState.selected) radio.props.onPress();
-      }
-      rejectFirst(new DshPublicError(429, "RATE_LIMITED"));
-      await new Promise(setImmediate);
-      const afterRejection = render();
-      const recovered = afterRejection.filter(node => node.props.accessibilityRole === "radio");
-      assert.deepEqual(recovered.map(node => node.props.accessibilityState.selected), selected);
-      assert.ok(recovered.every(node => !node.props.disabled));
-      assert.match(afterRejection.find(node => node.props.accessibilityRole === "alert").props.children, /تجاوز عدد المحاولات/);
-      assert.equal(findSubmit(afterRejection).props.disabled, false);
-      assert.equal(afterRejection.find(node => node.props.accessibilityLabel === "الاسم الكامل").props.value, "اسم تجريبي");
-      assert.equal(field(afterRejection, "رقم الهاتف").props.value, typedPhone);
-      findSubmit(afterRejection).props.onPress();
-      await Promise.resolve();
-      const afterFinal = render();
-      assert.equal(findSubmit(afterFinal), undefined, "the screen must not offer another submission after the result");
-      assert.equal(requests.length, 2);
-      submit.props.onPress();
-      await new Promise(setImmediate);
-      assert.equal(requests.length, 2, "a retained submit callback cannot repeat a terminal intake");
-      assert.deepEqual(requests.map(input => input.phone), [wirePhone, wirePhone]);
-      assert.ok(afterFinal.some(node => node.type === "Link" && node.props.href === "/"));
-      const notice = afterFinal.find(node => node.props.accessibilityRole === "alert");
-      assert.equal(notice.props.testID, finalError ? "captain-interest-uncertain" : "captain-interest-received");
-      assert.match(notice.props.children, finalError ? /تعذّر تأكيد/ : /تم استلام بياناتك/);
+  form.choose(plateGroup, "نعم");
+  form.choose(experienceGroup, "نعم");
+  form.enter("تفاصيل الخبرة", "خبرة تجريبية");
+  form.choose(vehicleGroup, "دراجة نارية");
+  form.choose(experienceGroup, "نعم");
+  assert.equal(form.radios(plateGroup)[0].props.accessibilityState.checked, true);
+  assert.equal(form.field("تفاصيل الخبرة").props.value, "خبرة تجريبية");
+  form.choose(vehicleGroup, "دراجة كهربائية");
+  assert.equal(form.submit().props.disabled, true);
+  form.choose(plateGroup, "لا");
+  form.choose(experienceGroup, "لا");
+  assert.equal(form.field("تفاصيل الخبرة"), undefined);
+  form.choose(experienceGroup, "نعم");
+  assert.equal(form.field("تفاصيل الخبرة").props.value, "");
+  form.choose(vehicleGroup, "دراجة هوائية");
+  assert.equal(form.radios(plateGroup).length, 0);
+  assert.equal(form.submit().props.disabled, false);
+  form.submit().props.onPress();
+  assert.deepEqual(form.requests[0].input, {
+    name: "اسم تجريبي", phone: "770123456", city: "صنعاء", district: "الوحدة",
+    vehicleType: "BICYCLE", phoneType: "SMART", experienced: true,
+  });
+  form.requests[0].resolve();
+  await settle();
+  assert.equal(form.notice().props.testID, "captain-interest-received");
+});
+
+test("Captain intake serializes pending input, retries definite rejection and stops on receipt or uncertainty", async () => {
+  for (const finalError of [new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"), null]) {
+    const form = guestIntake();
+    const typedPhone = finalError ? "٧٧٠١٢٣٤٥٦" : "+۹۶۷۷۷۰۱۲۳۴۵۶";
+    const wirePhone = finalError ? "770123456" : "+967770123456";
+    form.fill(typedPhone);
+    form.choose(plateGroup, "نعم");
+    form.choose(experienceGroup, "نعم");
+    form.enter("تفاصيل الخبرة", "خبرة تجريبية");
+    const send = form.submit();
+    const staleField = form.field("الاسم الكامل");
+    const beforeRadios = form.render().filter(node => node.props.accessibilityRole === "radio");
+    const selected = beforeRadios.map(node => node.props.accessibilityState.checked);
+    send.props.onPress();
+    send.props.onPress();
+    assert.equal(form.requests.length, 1);
+    assert.equal(form.submit().props.accessibilityState.busy, true);
+    assert.equal(form.field("الاسم الكامل").props.editable, false);
+    staleField.props.onChangeText("اسم غير مقبول");
+    const pending = form.render().filter(node => node.props.accessibilityRole === "radio");
+    assert.ok(pending.every(node => node.props.disabled && node.props.accessibilityState.disabled));
+    for (const radio of beforeRadios) {
+      if (!radio.props.accessibilityState.checked) radio.props.onPress();
     }
-  } finally {
-    if (savedOrigin === undefined) delete process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
-    else process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = savedOrigin;
+    form.requests[0].reject(new DshPublicError(429, "RATE_LIMITED"));
+    await settle();
+    assert.deepEqual(form.render().filter(node => node.props.accessibilityRole === "radio")
+      .map(node => node.props.accessibilityState.checked), selected);
+    assert.match(form.notice().props.children, /تجاوز عدد المحاولات/);
+    assert.equal(form.field("الاسم الكامل").props.value, "اسم تجريبي");
+    assert.equal(form.field("رقم الهاتف").props.value, typedPhone);
+    assert.equal(form.submit().props.disabled, false);
+    form.submit().props.onPress();
+    form.requests[1].reject(new DshPublicError(400, "INVALID_REQUEST"));
+    await settle();
+    assert.match(form.notice().props.children, /تعذّر إرسال البيانات/);
+    assert.equal(form.submit().props.disabled, false);
+    form.submit().props.onPress();
+    if (finalError) form.requests[2].reject(finalError);
+    else form.requests[2].resolve();
+    await settle();
+    assert.equal(form.submit(), undefined);
+    send.props.onPress();
+    await settle();
+    assert.equal(form.requests.length, 3);
+    assert.deepEqual(form.requests.map(request => request.input.phone), [wirePhone, wirePhone, wirePhone]);
+    assert.ok(form.render().some(node => node.type === "Link" && node.props.href === "/"));
+    assert.equal(form.notice().props.testID, finalError ? "captain-interest-uncertain" : "captain-interest-received");
+  }
+});
+
+test("Captain intake denies unconfigured transport and aborts both late success and late rejection on exit", async () => {
+  const disabled = guestIntake(null);
+  disabled.fill("770123456");
+  disabled.choose(plateGroup, "نعم");
+  assert.equal(disabled.submit().props.disabled, true);
+  assert.ok(disabled.render().some(node => node.props.children === "استمارة التسجيل غير متاحة في هذه البيئة حاليًا."));
+  disabled.submit().props.onPress();
+  disabled.unmount();
+  assert.equal(disabled.requests.length, 0);
+  for (const failure of [false, true]) {
+    const form = guestIntake();
+    form.fill("770123456");
+    form.choose(plateGroup, "نعم");
+    form.submit().props.onPress();
+    const request = form.requests[0];
+    assert.equal(request.base, "https://dsh.example");
+    assert.equal(request.signal.aborted, false);
+    const before = form.writes();
+    form.unmount();
+    assert.equal(request.signal.aborted, true);
+    if (failure) request.reject(new DshPublicError(0, "OPERATION_RESULT_UNKNOWN"));
+    else request.resolve();
+    await settle();
+    assert.equal(form.writes(), before, "abandoned request must never publish state");
+    assert.equal(form.requests.length, 1);
   }
 });

@@ -7,6 +7,7 @@ import EmployeesScreen from "../employees/employees-screen";
 import CommercialAgreement from "../finance/commercial-agreement";
 import MerchantPublicLink from "../stores/merchant-public-link";
 import StoreAvailability from "../stores/store-availability";
+import StoreProfile from "../stores/store-profile";
 import { filterMerchantStores, type MerchantPublicationFilter, type MerchantRelationFilter } from "./merchant-workspace-model";
 
 const publicationOptions = [
@@ -29,12 +30,13 @@ function relationLabel(store: MerchantOwnedStore) {
   return store.relation === "MARKETPLACE" ? "ضمن سوق بثواني" : "متجر مباشر";
 }
 
-export default function MerchantStoreDirectory({ actorId, stores, initialPublication = "all", initialStoreId, onOpenCatalog }: Readonly<{
+export default function MerchantStoreDirectory({ actorId, stores, initialPublication = "all", initialStoreId, onOpenCatalog, onRefresh }: Readonly<{
   actorId: string;
   stores: readonly MerchantOwnedStore[];
   initialPublication?: MerchantPublicationFilter;
   initialStoreId?: string | undefined;
   onOpenCatalog: (storeId: string, priceStockOnly?: boolean) => void;
+  onRefresh?: (() => void) | undefined;
 }>) {
   const { theme } = useMobileAppearance();
   const [query, setQuery] = useState("");
@@ -95,6 +97,7 @@ export default function MerchantStoreDirectory({ actorId, stores, initialPublica
         </View>
         <MerchantPublicLink key={`${actorId}:${selected.id}:public`} actorId={actorId}
           storeId={selected.id} published={selected.published} />
+        <StoreProfile key={currentTeamScope} storeId={selected.id} actorId={actorId} onUpdated={onRefresh} />
         <StoreAvailability key={selected.id} storeId={selected.id} actorId={actorId} />
         <Pressable accessibilityRole="button" accessibilityLabel="إدارة موظفي التاجر" style={button}
           onPress={()=>setTeamScope(current=>current===currentTeamScope?null:currentTeamScope)}>

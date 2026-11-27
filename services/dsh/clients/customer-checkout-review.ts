@@ -4,97 +4,142 @@ import { type CustomerCartMerchandiseEstimate, parseCustomerCartMerchandiseEstim
 import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
+export type CheckoutSalesChannel = "DIRECT" | "MARKETPLACE";
 export type CheckoutRecipientPurpose = "SELF" | "OTHER";
 export type CheckoutFulfillmentMode = "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP";
 export type CustomerCheckoutReviewInput = Readonly<{
-  expectedCartVersion: number; recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
+  expectedCartVersion: number; salesChannel: CheckoutSalesChannel; recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
   addressId?: string; expectedAddressVersion?: number; recipientName?: string; recipientPhone?: string; deliveryInstructions?: string;
 }>;
 export type CustomerCheckoutBlocker = "FULFILLMENT_MODE_NOT_ADMITTED" | "PAYABLE_QUOTE_NOT_AVAILABLE" |
   "PAYMENT_ALLOCATION_NOT_AVAILABLE" | "ADDRESS_UNSERVICEABLE";
 export type CustomerCheckoutReview = Readonly<{
-  actorId: string; storeId: string; cartVersion: number;
+  actorId: string; storeId: string; cartVersion: number; salesChannel: CheckoutSalesChannel;
   recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
   merchandise: CustomerCartMerchandiseEstimate; delivery?: DeliveryServiceability;
   distanceFeeEstimate?: Readonly<{policyVersion: number; distanceMetres: number; feeYer: string}>;
   checkoutReady: false; blockers: CustomerCheckoutBlocker[];
   storeSchedule: Readonly<{status: "UNAVAILABLE" | "OPEN_BY_SCHEDULE" | "CLOSED_BY_SCHEDULE" | "PAUSED"; version?: number}>;
 }>;
-const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
-const version = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v >= 1;
-const text = (v: unknown, max: number): v is string => typeof v === "string" &&
-  v === v.trim() && [...v].length >= 1 && [...v].length <= max && !/[\p{Cc}\p{Cf}\uFFFD\uD800-\uDFFF]/u.test(v);
-const storeRule = /^[a-z0-9-]{1,64}$/;
-const inputKeys = ["expectedCartVersion", "recipientPurpose", "fulfillmentMode", "addressId",
-  "expectedAddressVersion", "recipientName", "recipientPhone", "deliveryInstructions"];
-export function validCustomerCheckoutReviewInput(v: unknown): v is CustomerCheckoutReviewInput {
-  if (!object(v) || Object.keys(v).some(k => !inputKeys.includes(k)) || !version(v.expectedCartVersion)) return false;
-  const has = (k: string) => Object.hasOwn(v, k);
-  if (v.recipientPurpose === "SELF") {
-    if (has("recipientName") || has("recipientPhone") || has("deliveryInstructions")) return false;
-  } else if (v.recipientPurpose === "OTHER") {
-    if (!text(v.recipientName, 100) || typeof v.recipientPhone !== "string" ||
-      !/^\+[1-9][0-9]{7,14}$/.test(v.recipientPhone) ||
-      (has("deliveryInstructions") && !text(v.deliveryInstructions, 300))) return false;
-  } else return false;
-  if (v.fulfillmentMode === "CUSTOMER_PICKUP") {
-    return !has("addressId") && !has("expectedAddressVersion") && !has("deliveryInstructions");
-  }
-  return (v.fulfillmentMode === "BTHWANI_CAPTAIN" || v.fulfillmentMode === "PARTNER_CAPTAIN") &&
-    typeof v.addressId === "string" && isCustomerAddressId(v.addressId) && version(v.expectedAddressVersion);
+
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actorId: string,
-  input: CustomerCheckoutReviewInput): CustomerCheckoutReview {
-  const invalid = () => new DshPublicError(502, "OWNER_RESPONSE_INVALID");
-  if (!validCustomerCheckoutReviewInput(input) || !object(raw)) throw invalid();
-  const keys = ["actorId", "storeId", "cartVersion", "recipientPurpose", "fulfillmentMode", "merchandise", "checkoutReady", "blockers", "storeSchedule",
-    ...(input.addressId ? ["delivery"] : []),
-    ...(Object.hasOwn(raw, "distanceFeeEstimate") ? ["distanceFeeEstimate"] : [])];
-  if (Object.keys(raw).length !== keys.length || keys.some(k => !Object.hasOwn(raw, k)) ||
-    raw.actorId !== actorId || raw.storeId !== storeId || raw.cartVersion !== input.expectedCartVersion ||
-    raw.recipientPurpose !== input.recipientPurpose || raw.fulfillmentMode !== input.fulfillmentMode || raw.checkoutReady !== false) throw invalid();
-  const schedule = raw.storeSchedule;
-  if (!object(schedule)) throw invalid();
-  const status = schedule.status;
-  if (status !== "UNAVAILABLE" && status !== "OPEN_BY_SCHEDULE" && status !== "CLOSED_BY_SCHEDULE" && status !== "PAUSED") throw invalid();
-  if (status === "UNAVAILABLE" ? Object.keys(schedule).length !== 1 : Object.keys(schedule).length !== 2 || !version(schedule.version)) throw invalid();
-  const storeSchedule: CustomerCheckoutReview["storeSchedule"] = { status, ...(status !== "UNAVAILABLE" && version(schedule.version) ? { version: schedule.version } : {}) };
+function exact(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+function version(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+function storeValid(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z0-9-]{1,64}$/.test(value);
+}
+function recipientText(value: unknown, max: number): value is string {
+  return typeof value === "string" && value === value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "") &&
+    [...value].length >= 1 && [...value].length <= max && !/[\p{Cc}\p{Cf}\p{Cs}\uFFFD]/u.test(value);
+}
+function invalid(): never { throw new DshPublicError(502, "OWNER_RESPONSE_INVALID"); }
+
+// Capture only the exact scalar wire fields. One detached command binds
+// validation, serialization and owner readback, including optional PII.
+function submission(value: unknown): CustomerCheckoutReviewInput | undefined {
+  if (!record(value)) return undefined;
+  const { expectedCartVersion, salesChannel, recipientPurpose, fulfillmentMode } = value;
+  if (!version(expectedCartVersion) || (salesChannel !== "DIRECT" && salesChannel !== "MARKETPLACE") ||
+    (recipientPurpose !== "SELF" && recipientPurpose !== "OTHER") ||
+    (fulfillmentMode !== "CUSTOMER_PICKUP" && fulfillmentMode !== "BTHWANI_CAPTAIN" && fulfillmentMode !== "PARTNER_CAPTAIN")) return undefined;
+  const common: CustomerCheckoutReviewInput = { expectedCartVersion, salesChannel, recipientPurpose, fulfillmentMode };
+  const keys = ["expectedCartVersion", "salesChannel", "recipientPurpose", "fulfillmentMode"];
+  let recipient: Pick<CustomerCheckoutReviewInput, "recipientName" | "recipientPhone" | "deliveryInstructions"> = {};
+  if (recipientPurpose === "OTHER") {
+    const { recipientName, recipientPhone } = value;
+    if (!recipientText(recipientName, 100) || typeof recipientPhone !== "string" || !/^\+[1-9][0-9]{7,14}$/.test(recipientPhone)) return undefined;
+    keys.push("recipientName", "recipientPhone");
+    recipient = { recipientName, recipientPhone };
+    if (fulfillmentMode !== "CUSTOMER_PICKUP" && Object.hasOwn(value, "deliveryInstructions")) {
+      const { deliveryInstructions } = value;
+      if (!recipientText(deliveryInstructions, 300)) return undefined;
+      keys.push("deliveryInstructions");
+      recipient = { ...recipient, deliveryInstructions };
+    }
+  }
+  if (fulfillmentMode === "CUSTOMER_PICKUP") {
+    return exact(value, keys) ? { ...common, ...recipient } : undefined;
+  }
+  const { addressId, expectedAddressVersion } = value;
+  keys.push("addressId", "expectedAddressVersion");
+  if (!exact(value, keys) || typeof addressId !== "string" || !isCustomerAddressId(addressId) || !version(expectedAddressVersion)) return undefined;
+  return { ...common, ...recipient, addressId, expectedAddressVersion };
+}
+export function validCustomerCheckoutReviewInput(value: unknown): value is CustomerCheckoutReviewInput {
+  return submission(value) !== undefined;
+}
+
+function scheduleFrom(value: unknown): CustomerCheckoutReview["storeSchedule"] {
+  if (!record(value)) invalid();
+  const { status } = value;
+  if (status === "UNAVAILABLE" && exact(value, ["status"])) return { status };
+  if ((status === "OPEN_BY_SCHEDULE" || status === "CLOSED_BY_SCHEDULE" || status === "PAUSED") &&
+    exact(value, ["status", "version"]) && version(value.version)) return { status, version: value.version };
+  return invalid();
+}
+
+function feeFrom(value: unknown, delivery?: DeliveryServiceability): NonNullable<CustomerCheckoutReview["distanceFeeEstimate"]> {
+  const evidence = delivery?.evidence;
+  if (!record(value) || !exact(value, ["policyVersion", "distanceMetres", "feeYer"]) ||
+    delivery?.status !== "SERVICEABLE" || !evidence) invalid();
+  const { policyVersion, distanceMetres, feeYer } = value;
+  if (policyVersion !== evidence.policyVersion || typeof distanceMetres !== "number" || !Number.isSafeInteger(distanceMetres) ||
+    distanceMetres !== Math.round(evidence.distanceMetres) || distanceMetres < 0 || distanceMetres > evidence.radiusMetres ||
+    typeof feeYer !== "string" || !/^(0|[1-9][0-9]{0,18})$/.test(feeYer) ||
+    BigInt(feeYer) > BigInt(distanceMetres) * 100000n || (distanceMetres > 0 && feeYer === "0")) invalid();
+  return { policyVersion, distanceMetres, feeYer };
+}
+
+function reviewFrom(raw: unknown, storeId: string, actorId: string, input: CustomerCheckoutReviewInput): CustomerCheckoutReview {
+  if (!record(raw)) invalid();
+  const keys = ["actorId", "storeId", "cartVersion", "salesChannel", "recipientPurpose", "fulfillmentMode",
+    "merchandise", "checkoutReady", "blockers", "storeSchedule"];
+  if (input.addressId !== undefined) keys.push("delivery");
+  if (Object.hasOwn(raw, "distanceFeeEstimate")) keys.push("distanceFeeEstimate");
+  if (!exact(raw, keys) || raw.actorId !== actorId || raw.storeId !== storeId || raw.cartVersion !== input.expectedCartVersion ||
+    raw.salesChannel !== input.salesChannel || raw.recipientPurpose !== input.recipientPurpose ||
+    raw.fulfillmentMode !== input.fulfillmentMode || raw.checkoutReady !== false) invalid();
+  const storeSchedule = scheduleFrom(raw.storeSchedule);
   let merchandise: CustomerCartMerchandiseEstimate;
   let delivery: DeliveryServiceability | undefined;
   try {
     merchandise = parseCustomerCartMerchandiseEstimate(raw.merchandise, storeId, actorId, input.expectedCartVersion);
-    if (input.addressId) {
+    if (input.addressId !== undefined) {
       delivery = parseDeliveryServiceability(raw.delivery, actorId, storeId, input.addressId);
-      if (!delivery.evidence || delivery.evidence.addressVersion !== input.expectedAddressVersion) throw invalid();
+      if (!delivery.evidence || delivery.evidence.addressVersion !== input.expectedAddressVersion) invalid();
     }
-  } catch { throw invalid(); }
-  let distanceFeeEstimate: CustomerCheckoutReview["distanceFeeEstimate"];
-  if (Object.hasOwn(raw, "distanceFeeEstimate")) {
-    const fee = raw.distanceFeeEstimate;
-    const evidence = delivery?.evidence;
-    if (!object(fee) || Object.keys(fee).length !== 3 ||
-      delivery?.status !== "SERVICEABLE" || !evidence || fee.policyVersion !== evidence.policyVersion ||
-      typeof fee.distanceMetres !== "number" || !Number.isSafeInteger(fee.distanceMetres) ||
-      fee.distanceMetres !== Math.round(evidence.distanceMetres) || fee.distanceMetres < 0 ||
-      fee.distanceMetres > evidence.radiusMetres || typeof fee.feeYer !== "string" ||
-      !/^(0|[1-9][0-9]{0,18})$/.test(fee.feeYer) ||
-      BigInt(fee.feeYer) > BigInt(fee.distanceMetres) * 100000n ||
-      (fee.distanceMetres > 0 && fee.feeYer === "0")) throw invalid();
-    distanceFeeEstimate = { policyVersion: evidence.policyVersion, distanceMetres: fee.distanceMetres, feeYer: fee.feeYer };
-  }
+  } catch { return invalid(); }
+  const distanceFeeEstimate = Object.hasOwn(raw, "distanceFeeEstimate") ? feeFrom(raw.distanceFeeEstimate, delivery) : undefined;
   const blockers: CustomerCheckoutBlocker[] = ["FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"];
   if (delivery?.status === "UNSERVICEABLE") blockers.push("ADDRESS_UNSERVICEABLE");
-  const returnedBlockers = raw.blockers;
-  if (!Array.isArray(returnedBlockers) || returnedBlockers.length !== blockers.length ||
-    blockers.some((b, i) => returnedBlockers[i] !== b)) throw invalid();
-  return { actorId, storeId, cartVersion: input.expectedCartVersion, recipientPurpose: input.recipientPurpose,
-    fulfillmentMode: input.fulfillmentMode, merchandise, ...(delivery ? { delivery } : {}),
-    ...(distanceFeeEstimate ? { distanceFeeEstimate } : {}), checkoutReady: false, blockers, storeSchedule };
+  const returned = raw.blockers;
+  if (!Array.isArray(returned) || returned.length !== blockers.length ||
+    blockers.some((blocker, index) => !Object.hasOwn(returned, index) || returned[index] !== blocker)) invalid();
+  return { actorId, storeId, cartVersion: input.expectedCartVersion, salesChannel: input.salesChannel,
+    recipientPurpose: input.recipientPurpose, fulfillmentMode: input.fulfillmentMode, merchandise,
+    ...(delivery ? { delivery } : {}), ...(distanceFeeEstimate ? { distanceFeeEstimate } : {}),
+    checkoutReady: false, blockers, storeSchedule };
 }
+
+export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actorId: string,
+  input: CustomerCheckoutReviewInput): CustomerCheckoutReview {
+  const submitted = submission(input);
+  if (!submitted || !storeValid(storeId)) invalid();
+  return reviewFrom(raw, storeId, actorId, submitted);
+}
+
 export async function reviewCurrentCustomerCheckout(origin: string, bearer: string, actorId: string,
   storeId: string, input: CustomerCheckoutReviewInput, signal?: AbortSignal): Promise<CustomerCheckoutReview> {
-  if (!storeRule.test(storeId) || !validCustomerCheckoutReviewInput(input)) throw new DshPublicError(400, "INVALID_REQUEST");
-  const path = dshOperations.reviewCurrentCustomerCheckout.path.replace("{storeID}", storeId);
-  const value = await privateOwnerRequest(origin, path, bearer, "POST", input, signal);
-  return parseCustomerCheckoutReview(value, storeId, actorId, input);
+  const submitted = submission(input);
+  if (!storeValid(storeId) || !submitted) throw new DshPublicError(400, "INVALID_REQUEST");
+  const operation = dshOperations.reviewCurrentCustomerCheckout;
+  const value = await privateOwnerRequest(origin, operation.path.replace("{storeID}", storeId), bearer, operation.method, submitted, signal);
+  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  return reviewFrom(value, storeId, actorId, submitted);
 }

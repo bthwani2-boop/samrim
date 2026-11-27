@@ -68,7 +68,7 @@ test("Operator detail sends the Offer filter to DSH and keeps it in the next pag
   const page = path.join(root, "apps/control-panel/app/(workspace)/merchants/public-stores/[storeId]/page.tsx");
   const temp = mkdtempSync(path.join(tmpdir(), "bth-operator-offers-"));
   try {
-    const compile = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), page,
+    const compile = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), page,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000 });
     assert.equal(compile.status, 0, compile.stderr || compile.stdout);

@@ -7,17 +7,33 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 
-// Execute the original TSX source instead of an anonymous VM excerpt.
+// Compile the original source with its verified source map for native LCOV.
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const sourceFile = fileURLToPath(new URL("../src/appearance.tsx", import.meta.url));
 const scratch = mkdtempSync(join(tmpdir(), "bthwani-appearance-test-"));
 let compiled;
 try {
-  const result = spawnSync(process.execPath, [
-    join(root, "node_modules/typescript/bin/tsc"), sourceFile,
-    "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
-    "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", scratch,
-  ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+  const result = spawnSync(
+    process.execPath,
+    [
+      join(root, "node_modules/@typescript/native/bin/tsc"),
+      sourceFile,
+      "--ignoreConfig",
+      "--noResolve",
+      "--noCheck",
+      "--target",
+      "es2022",
+      "--module",
+      "commonjs",
+      "--jsx",
+      "react-jsx",
+      "--inlineSourceMap",
+      "--inlineSources",
+      "--outDir",
+      scratch,
+    ],
+    { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true },
+  );
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(join(scratch, "appearance.js"), "utf8");
 } finally {
@@ -29,98 +45,117 @@ process.once("exit", () => loaded.length);
 function deferred() {
   let resolve;
   let reject;
-  const promise = new Promise((res, rej) => { resolve = res; reject = rej; });
+  const promise = new Promise((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
   return { promise, resolve, reject };
 }
 
-function harness(storage = { getItem: async () => null, setItem: async () => {} }, platform = "android") {
-  let onSchemeChanged;
-  let disposedSubscription = false;
+const noStorage = { getItem: async () => null, setItem: async () => {} };
+
+function fixture({ platform = "android", nativeSetter = true } = {}) {
+  let scheme = "light";
   const applied = [];
+  const subscriptions = new Set();
+  const effects = [];
+  let context;
+  let serverSnapshot = false;
   const appearance = {
-    getColorScheme: () => "light",
-    setColorScheme: value => applied.push(value),
-    addChangeListener: callback => {
-      onSchemeChanged = callback;
-      return { remove: () => { disposedSubscription = true; } };
+    getColorScheme: () => scheme,
+    addChangeListener(callback) {
+      subscriptions.add(callback);
+      return { remove: () => subscriptions.delete(callback) };
     },
+    ...(nativeSetter ? { setColorScheme: (value) => applied.push(value) } : {}),
   };
   const jsx = (type, props) => ({ type, props });
+  const react = {
+    createContext(initial) {
+      context = { value: initial, Provider: "AppearanceContext" };
+      return context;
+    },
+    useContext: (value) => value.value,
+    useMemo: (factory) => factory(),
+    useEffect: (effect) => effects.push(effect),
+    useSyncExternalStore: (_subscribe, get, getServer) => (serverSnapshot ? getServer() : get()),
+  };
   const module = loadMappedRenderFixture(compiled, sourceFile, {
     "@bthwani/design-system/theme": {
-      isThemePreference: value => ["system", "light", "dark"].includes(value),
-      resolveTheme: value => ({ value }),
-      resolveThemeName: (value, system) => value === "system" ? (system === "dark" ? "dark" : "light") : value,
+      isThemePreference: (value) => ["system", "light", "dark"].includes(value),
+      resolveTheme: (value) => ({ value, background: value }),
+      resolveThemeName: (value, system) => (value === "system" ? (system === "dark" ? "dark" : "light") : value),
     },
-    react: { createContext: initial => ({ initial, Provider: "AppearanceContext" }) },
+    react,
     "react/jsx-runtime": { jsx, jsxs: jsx },
     "react-native": { Appearance: appearance, Platform: { OS: platform } },
     tamagui: { TamaguiProvider: "TamaguiProvider", Theme: "Theme" },
     "./index": { tamaguiConfig: {} },
   });
   loaded.push(module);
-  const create = module.exports.createMobileAppearanceController;
-  const controller = create({ key: "test.theme", storage });
   return {
-    controller,
+    api: module.exports,
     applied,
-    subscribed: () => typeof onSchemeChanged === "function",
-    setSystemTheme: value => onSchemeChanged({ colorScheme: value }),
-    wasSubscriptionRemoved: () => disposedSubscription,
+    effects,
+    subscriptions,
+    setContext: (controller) => { context.value = controller; },
+    useServerSnapshot: () => { serverSnapshot = true; },
+    setSystemTheme(value) {
+      scheme = value;
+      for (const callback of subscriptions) callback({ colorScheme: value });
+    },
   };
 }
 
-test("restores a persisted preference and marks initialization ready", async () => {
-  const { controller } = harness({ getItem: async () => "dark", setItem: async () => {} });
+function harness(storage = noStorage, options = {}) {
+  const env = fixture(options);
+  const controller = env.api.createMobileAppearanceController({ key: "test.theme", storage });
+  const unmount = controller.mount();
+  return { ...env, controller, unmount };
+}
+
+test("restoration reads the original key and initializes the selected theme", async () => {
+  const reads = [];
+  const { controller, applied, unmount } = harness({
+    getItem: async (key) => { reads.push(key); return "dark"; },
+    setItem: async () => {},
+  });
   await controller.restore();
-  assert.equal(controller.getSnapshot().preference, "dark");
-  assert.equal(controller.getSnapshot().themeName, "dark");
-  assert.equal(controller.getSnapshot().ready, true);
-  controller.dispose();
-});
-
-test("slow restore must not overwrite a newer user choice", async () => {
-  const read = deferred();
-  let persisted;
-  const { controller } = harness({
-    getItem: () => read.promise,
-    setItem: async (_, value) => { persisted = value; },
+  assert.deepEqual(reads, ["test.theme"]);
+  assert.deepEqual(controller.getSnapshot(), {
+    preference: "dark", themeName: "dark", theme: { value: "dark", background: "dark" }, ready: true,
   });
-  const restoring = controller.restore();
-  await controller.setPreference("dark");
-  read.resolve("light");
-  await restoring;
-  assert.equal(controller.getSnapshot().preference, "dark");
-  assert.equal(controller.getSnapshot().ready, true);
-  assert.equal(persisted, "dark");
-  controller.dispose();
+  assert.deepEqual(applied, ["dark"]);
+  unmount();
 });
 
-test("explicit system choice during a pending restore beats older stored dark", async () => {
-  const read = deferred();
-  let persisted;
-  const { controller } = harness({
-    getItem: () => read.promise,
-    setItem: async (_, value) => { persisted = value; },
-  });
-  const restoring = controller.restore();
-  await controller.setPreference("system");
-  read.resolve("dark");
-  await restoring;
-  assert.equal(controller.getSnapshot().preference, "system");
-  assert.equal(controller.getSnapshot().ready, true);
-  assert.equal(persisted, "system");
-  controller.dispose();
+test("pending initial restoration cannot overwrite a newer user choice", async () => {
+  for (const [choice, previous] of [["dark", "light"], ["system", "dark"]]) {
+    const read = deferred();
+    let persisted;
+    const { controller, unmount } = harness({
+      getItem: () => read.promise,
+      setItem: async (_, value) => { persisted = value; },
+    });
+    const restoring = controller.restore();
+    await controller.setPreference(choice);
+    read.resolve(previous);
+    await restoring;
+    assert.equal(controller.getSnapshot().preference, choice);
+    assert.equal(controller.getSnapshot().ready, true);
+    assert.equal(persisted, choice);
+    unmount();
+  }
 });
 
-test("concurrent changes persist in user intent order, not completion order", async () => {
+test("concurrent writes persist in user intent order", async () => {
   const first = deferred();
   const writes = [];
   let persisted;
-  const { controller } = harness({
+  const { controller, unmount } = harness({
     getItem: async () => null,
-    setItem: async (_, value) => {
-      writes.push(value);
+    setItem: async (key, value) => {
+      writes.push([key, value]);
       if (value === "light") await first.promise;
       persisted = value;
     },
@@ -129,118 +164,117 @@ test("concurrent changes persist in user intent order, not completion order", as
   const dark = controller.setPreference("dark");
   await Promise.resolve();
   assert.equal(controller.getSnapshot().preference, "dark");
-  assert.deepEqual(writes, ["light"]);
+  assert.deepEqual(writes, [["test.theme", "light"]]);
   first.resolve();
   await Promise.all([light, dark]);
-  assert.deepEqual(writes, ["light", "dark"]);
+  assert.deepEqual(writes, [["test.theme", "light"], ["test.theme", "dark"]]);
   assert.equal(persisted, "dark");
-  controller.dispose();
+  unmount();
 });
 
-test("a failed old write must not revert a newer successful choice", async () => {
+test("failed old write does not revert a newer choice", async () => {
   const first = deferred();
-  const { controller } = harness({
+  const { controller, unmount } = harness({
     getItem: async () => null,
-    setItem: (_, value) => value === "light" ? first.promise : Promise.resolve(),
+    setItem: (_, value) => (value === "light" ? first.promise : Promise.resolve()),
   });
   const light = controller.setPreference("light");
   const dark = controller.setPreference("dark");
-  await Promise.resolve();
+  const failure = assert.rejects(light, /storage failure/);
   first.reject(new Error("storage failure"));
-  await assert.rejects(light, /storage failure/);
+  await failure;
   await dark;
   assert.equal(controller.getSnapshot().preference, "dark");
-  controller.dispose();
+  unmount();
 });
 
-test("latest failed write restores last confirmed preference", async () => {
-  const { controller } = harness({
+test("latest failed write restores confirmed preference and supports retry", async () => {
+  let rejectDark = true;
+  const { controller, applied, unmount } = harness({
     getItem: async () => null,
     setItem: async (_, value) => {
-      if (value === "dark") throw new Error("no storage");
+      if (rejectDark && value === "dark") throw new Error("no storage");
     },
   });
   await controller.setPreference("light");
   await assert.rejects(controller.setPreference("dark"), /no storage/);
   assert.equal(controller.getSnapshot().preference, "light");
   assert.equal(controller.getSnapshot().ready, true);
-  controller.dispose();
+  rejectDark = false;
+  await controller.setPreference("dark");
+  assert.equal(controller.getSnapshot().preference, "dark");
+  assert.deepEqual(applied, ["light", "dark", "light", "dark"]);
+  unmount();
 });
 
-test("disposed controller ignores an incomplete restore and releases listener", async () => {
+test("unmounted controller ignores unfinished restore and rejects new writes", async () => {
   const read = deferred();
-  const { controller, wasSubscriptionRemoved } = harness({
+  const { controller, subscriptions, applied, unmount } = harness({
     getItem: () => read.promise,
     setItem: async () => {},
   });
   const restoring = controller.restore();
-  controller.dispose();
+  unmount();
   read.resolve("dark");
   await restoring;
   assert.equal(controller.getSnapshot().preference, "system");
-  assert.equal(wasSubscriptionRemoved(), true);
-  await assert.rejects(controller.setPreference("dark"), /disposed/);
+  assert.equal(controller.getSnapshot().ready, false);
+  assert.equal(subscriptions.size, 0);
+  assert.deepEqual(applied, []);
+  await assert.rejects(controller.setPreference("dark"), /not mounted/);
+  await controller.restore();
+  assert.equal(controller.getSnapshot().ready, false);
 });
 
-test("system preference responds to the platform scheme without a second theme store", async () => {
-  const { controller, setSystemTheme } = harness();
+test("system preference follows current scheme while explicit choices remain stable", async () => {
+  const { controller, setSystemTheme, unmount } = harness();
   await controller.restore();
   setSystemTheme("dark");
   assert.equal(controller.getSnapshot().themeName, "dark");
   setSystemTheme("light");
   assert.equal(controller.getSnapshot().themeName, "light");
-  controller.dispose();
-});
-
-test("identical pending preference requests wait for the same durable save and share failure", async () => {
-  const pending = deferred();
-  const writes = [];
-  const { controller } = harness({
-    getItem: async () => "light",
-    setItem: (_, value) => { writes.push(value); return pending.promise; },
-  });
-  await controller.restore();
-  const first = controller.setPreference("dark");
-  let settled = false;
-  const second = controller.setPreference("dark");
-  const observed = second.then(() => { settled = true; }, () => { settled = true; });
-  const failures = Promise.allSettled([first, second]);
-  await new Promise(resolve => setImmediate(resolve));
-  const premature = settled;
-  pending.reject(new Error("storage failure"));
-  const results = await failures;
-  await observed;
-  assert.equal(premature, false);
-  assert.deepEqual(results.map(result => result.status), ["rejected", "rejected"]);
-  assert.deepEqual(writes, ["dark"]);
-  assert.equal(controller.getSnapshot().preference, "light");
-  controller.dispose();
-});
-
-test("identical pending preference requests share successful persistence without duplicate writes", async () => {
-  const pending = deferred();
-  const writes = [];
-  const { controller } = harness({
-    getItem: async () => null,
-    setItem: (_, value) => { writes.push(value); return pending.promise; },
-  });
-  await controller.restore();
-  const first = controller.setPreference("dark");
-  let settled = false;
-  const second = controller.setPreference("dark").then(() => { settled = true; });
-  await new Promise(resolve => setImmediate(resolve));
-  const premature = settled;
-  pending.resolve();
-  await Promise.all([first, second]);
-  assert.equal(premature, false);
   await controller.setPreference("dark");
-  assert.deepEqual(writes, ["dark"]);
-  assert.equal(controller.getSnapshot().preference, "dark");
-  controller.dispose();
+  setSystemTheme("light");
+  assert.equal(controller.getSnapshot().themeName, "dark");
+  await controller.setPreference("system");
+  assert.equal(controller.getSnapshot().themeName, "light");
+  unmount();
 });
 
-test("appearance subscribers observe changes; unsubscribe and invalid choices do not mutate state", async () => {
-  const { controller, applied } = harness();
+for (const outcome of ["success", "failure"]) {
+  test(`identical pending preference requests share one durable ${outcome}`, async () => {
+    const pending = deferred();
+    const writes = [];
+    const { controller, unmount } = harness({
+      getItem: async () => "light",
+      setItem: (_, value) => { writes.push(value); return pending.promise; },
+    });
+    await controller.restore();
+    const first = controller.setPreference("dark");
+    let settled = false;
+    const second = controller.setPreference("dark");
+    const observed = second.then(() => { settled = true; }, () => { settled = true; });
+    const results = Promise.allSettled([first, second]);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(settled, false);
+    if (outcome === "failure") pending.reject(new Error("storage failure"));
+    else pending.resolve();
+    const saved = await results;
+    await observed;
+    const status = outcome === "failure" ? "rejected" : "fulfilled";
+    assert.deepEqual(saved.map((result) => result.status), [status, status]);
+    assert.deepEqual(writes, ["dark"]);
+    assert.equal(controller.getSnapshot().preference, outcome === "failure" ? "light" : "dark");
+    if (outcome === "success") {
+      await controller.setPreference("dark");
+      assert.deepEqual(writes, ["dark"]);
+    }
+    unmount();
+  });
+}
+
+test("subscribers observe changes; unsubscribe and invalid choice leave state intact", async () => {
+  const { controller, applied, unmount } = harness();
   const observed = [];
   const unsubscribe = controller.subscribe(() => observed.push(controller.getSnapshot().preference));
   await controller.restore();
@@ -251,25 +285,264 @@ test("appearance subscribers observe changes; unsubscribe and invalid choices do
   assert.deepEqual(observed, ["system", "dark"]);
   assert.deepEqual(applied, ["unspecified", "dark", "light"]);
   assert.equal(controller.getSnapshot().preference, "light");
-  controller.dispose();
+  unmount();
 });
 
-test("unavailable or invalid stored preference falls back to system and still renders", async () => {
-  for (const getItem of [async () => { throw new Error("unavailable"); }, async () => "invalid"]) {
-    const { controller, applied } = harness({ getItem, setItem: async () => {} });
+test("invalid, absent or unavailable storage initializes system without a second read", async () => {
+  for (const getItem of [async () => { throw new Error("unavailable"); }, async () => "invalid", async () => null]) {
+    let reads = 0;
+    const { controller, applied, unmount } = harness({
+      getItem: () => { reads++; return getItem(); },
+      setItem: async () => {},
+    });
+    await controller.restore();
     await controller.restore();
     assert.equal(controller.getSnapshot().preference, "system");
     assert.equal(controller.getSnapshot().ready, true);
     assert.deepEqual(applied, ["unspecified"]);
-    controller.dispose();
+    assert.equal(reads, 1);
+    unmount();
   }
 });
 
-test("server rendering creates no process-wide native appearance subscription", () => {
-  assert.equal(typeof window, "undefined");
-  const { controller, subscribed, wasSubscriptionRemoved } = harness(undefined, "web");
-  assert.equal(subscribed(), false);
-  assert.equal(controller.getSnapshot().ready, false);
-  controller.dispose();
-  assert.equal(wasSubscriptionRemoved(), false);
+test("render-only construction has no subscriptions or native writes on Web or Android", () => {
+  for (const platform of ["web", "android"]) {
+    const { api, subscriptions, applied } = fixture({ platform });
+    const controller = api.createMobileAppearanceController({ key: "test.theme", storage: noStorage });
+    assert.equal(controller.getSnapshot().ready, false);
+    assert.equal(subscriptions.size, 0);
+    assert.deepEqual(applied, []);
+  }
+});
+
+test("replayed restore cannot overwrite a pending or committed user intent", async () => {
+  const pending = deferred();
+  let reads = 0;
+  let stored = "light";
+  const { controller, unmount } = harness({
+    getItem: async () => { reads++; return stored; },
+    setItem: async (_, value) => { await pending.promise; stored = value; },
+  });
+  await controller.restore();
+  const saving = controller.setPreference("dark");
+  await controller.restore();
+  const during = controller.getSnapshot().preference;
+  pending.resolve();
+  await saving;
+  await controller.restore();
+  assert.equal(during, "dark");
+  assert.equal(controller.getSnapshot().preference, "dark");
+  assert.equal(stored, "dark");
+  assert.equal(reads, 1);
+  unmount();
+});
+
+test("concurrent initial restoration reads storage once", async () => {
+  const pending = deferred();
+  let reads = 0;
+  const { controller, unmount } = harness({
+    getItem: () => { reads++; return pending.promise; },
+    setItem: async () => {},
+  });
+  const first = controller.restore();
+  const second = controller.restore();
+  pending.resolve("dark");
+  await Promise.all([first, second]);
+  assert.equal(reads, 1);
+  assert.equal(controller.getSnapshot().preference, "dark");
+  unmount();
+});
+
+test("effect cleanup and replay retain one subscription and one initial read", async () => {
+  const pending = deferred();
+  let reads = 0;
+  const { api, subscriptions, applied } = fixture();
+  const controller = api.createMobileAppearanceController({
+    key: "test.theme",
+    storage: { getItem: () => { reads++; return pending.promise; }, setItem: async () => {} },
+  });
+  const firstUnmount = controller.mount();
+  const staleEvent = [...subscriptions][0];
+  const firstRestore = controller.restore();
+  assert.throws(() => controller.mount(), /already mounted/);
+  firstUnmount();
+  assert.equal(subscriptions.size, 0);
+  const secondUnmount = controller.mount();
+  const secondRestore = controller.restore();
+  firstUnmount();
+  staleEvent({ colorScheme: "dark" });
+  assert.equal(controller.getSnapshot().themeName, "light");
+  assert.equal(subscriptions.size, 1);
+  pending.resolve("dark");
+  await Promise.all([firstRestore, secondRestore]);
+  assert.equal(reads, 1);
+  assert.deepEqual(applied, ["dark"]);
+  assert.equal(controller.getSnapshot().ready, true);
+  secondUnmount();
+  assert.equal(subscriptions.size, 0);
+});
+
+test("completed read during unmount can be applied on remount without another read", async () => {
+  const pending = deferred();
+  let reads = 0;
+  const { controller, unmount, applied } = harness({
+    getItem: () => { reads++; return pending.promise; },
+    setItem: async () => {},
+  });
+  const restoring = controller.restore();
+  unmount();
+  pending.resolve("dark");
+  await restoring;
+  const cleanup = controller.mount();
+  await controller.restore();
+  assert.equal(reads, 1);
+  assert.equal(controller.getSnapshot().preference, "dark");
+  assert.deepEqual(applied, ["dark"]);
+  cleanup();
+});
+
+test("unmounted failed save rolls back silently and remount reapplies confirmed preference", async () => {
+  const pending = deferred();
+  const { controller, unmount, applied, subscriptions } = harness({
+    getItem: async () => "light",
+    setItem: () => pending.promise,
+  });
+  await controller.restore();
+  const saving = controller.setPreference("dark");
+  const failure = assert.rejects(saving, /save failed/);
+  unmount();
+  pending.reject(new Error("save failed"));
+  await failure;
+  assert.deepEqual(applied, ["light", "dark"]);
+  assert.equal(subscriptions.size, 0);
+  const cleanup = controller.mount();
+  await controller.restore();
+  assert.deepEqual(applied, ["light", "dark", "light"]);
+  assert.equal(controller.getSnapshot().preference, "light");
+  cleanup();
+});
+
+test("native appearance setter is optional; storage still owns intent", async () => {
+  const { controller, unmount } = harness(noStorage, { nativeSetter: false });
+  await controller.restore();
+  await controller.setPreference("dark");
+  assert.equal(controller.getSnapshot().themeName, "dark");
+  unmount();
+});
+
+test("provider wires mount cleanup, stable server snapshot and renderer to the same controller", async () => {
+  const { api, effects, subscriptions, setContext, useServerSnapshot } = fixture();
+  assert.throws(() => api.useMobileAppearance(), /AppearanceProvider required/);
+  const rootLayout = api.createMobileAppearanceRoot(
+    "native.theme",
+    async (key) => { assert.equal(key, "native.theme"); return "dark"; },
+    async () => {},
+    (background) => ({ background }),
+  );
+  const layout = rootLayout();
+  const controller = layout.props.controller;
+  assert.equal(subscriptions.size, 0);
+  const provider = layout.type(layout.props);
+  assert.equal(provider.props.value, controller);
+  setContext(controller);
+  const cleanup = effects.shift()();
+  await controller.restore();
+  const route = layout.props.children.type();
+  assert.equal(route.props.children.background, "dark");
+  const rendered = route.type(route.props);
+  assert.equal(rendered.props.defaultTheme, "dark");
+  assert.equal(rendered.props.children.props.name, "dark");
+  useServerSnapshot();
+  const server = api.useMobileAppearance();
+  assert.equal(server.themeName, "light");
+  assert.equal(server.ready, false);
+  assert.equal(server.setPreference, controller.setPreference);
+  cleanup();
+  assert.equal(subscriptions.size, 0);
+});
+
+test("Web root uses only its app-scoped localStorage key after mount", async () => {
+  const { api, effects, subscriptions, setContext } = fixture({ platform: "web" });
+  const store = new Map([["web.theme", "dark"], ["other.theme", "light"]]);
+  const prior = globalThis.window;
+  globalThis.window = {
+    localStorage: {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => store.set(key, value),
+    },
+  };
+  try {
+    const forbidden = async () => { throw new Error("native storage called on Web"); };
+    const RootLayout = api.createMobileAppearanceRoot("web.theme", forbidden, forbidden, (background) => background);
+    const layout = RootLayout();
+    assert.equal(subscriptions.size, 0);
+    layout.type(layout.props);
+    const controller = layout.props.controller;
+    setContext(controller);
+    const cleanup = effects.shift()();
+    await controller.restore();
+    assert.equal(controller.getSnapshot().preference, "dark");
+    await controller.setPreference("light");
+    assert.equal(store.get("web.theme"), "light");
+    assert.equal(store.get("other.theme"), "light");
+    cleanup();
+    assert.equal(subscriptions.size, 0);
+  } finally {
+    if (prior === undefined) delete globalThis.window;
+    else globalThis.window = prior;
+  }
+});
+
+test("Web storage is lazy, scoped, and recovers from synchronous access and write failures", async () => {
+  const { api, effects, subscriptions } = fixture({ platform: "web" });
+  const store = new Map([["web.theme", "dark"], ["other.theme", "light"]]);
+  const prior = globalThis.window;
+  let reads = 0;
+  let failAccess = true;
+  let failWrite = false;
+  globalThis.window = {
+    get localStorage() {
+      reads++;
+      if (failAccess) throw new Error("storage denied");
+      return {
+        getItem: (key) => store.get(key) ?? null,
+        setItem: (key, value) => {
+          if (failWrite) throw new Error("storage full");
+          store.set(key, value);
+        },
+      };
+    },
+  };
+  try {
+    const forbidden = async () => { throw new Error("native storage called on Web"); };
+    const RootLayout = api.createMobileAppearanceRoot("web.theme", forbidden, forbidden, (background) => background);
+    const layout = RootLayout();
+    const controller = layout.props.controller;
+    assert.equal(reads, 0, "construction must not access browser storage");
+    assert.equal(subscriptions.size, 0);
+    layout.type(layout.props);
+    const cleanup = effects.shift()();
+    try {
+      await controller.restore();
+      assert.equal(controller.getSnapshot().preference, "system");
+      assert.equal(controller.getSnapshot().ready, true);
+      failAccess = false;
+      await controller.setPreference("light");
+      assert.equal(store.get("web.theme"), "light");
+      failWrite = true;
+      await assert.rejects(controller.setPreference("dark"), /storage full/);
+      assert.equal(controller.getSnapshot().preference, "light");
+      assert.equal(store.get("web.theme"), "light");
+      failWrite = false;
+      await controller.setPreference("dark");
+      assert.equal(store.get("web.theme"), "dark");
+      assert.equal(store.get("other.theme"), "light");
+    } finally {
+      cleanup();
+    }
+    assert.equal(subscriptions.size, 0);
+  } finally {
+    if (prior === undefined) delete globalThis.window;
+    else globalThis.window = prior;
+  }
 });

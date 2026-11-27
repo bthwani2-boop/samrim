@@ -1,11 +1,14 @@
-// HTTP utilities used only by the Merchant admission API route and its handlers.
+// Merchant browser admission owns its HTTP boundary; Identity and DSH own business state.
 import { DshPublicError } from "@bthwani/dsh";
 import { IdentityClientError } from "@bthwani/identity";
 import { MerchantStandingError } from "./dsh-standing.ts";
+import { discardMerchantResponse } from "./merchant-json.ts";
 
 export const cookieName = "bthwani_merchant_admission";
+export const refreshCookieName = `${cookieName}.refresh`;
 const localIdentity = "http://127.0.0.1:3201";
 const localDSH = "http://127.0.0.1:3202";
+
 export const noStoreHeaders = {
   "Cache-Control": "no-store",
   "Referrer-Policy": "no-referrer",
@@ -13,22 +16,21 @@ export const noStoreHeaders = {
 };
 
 export async function configuredOrigin(request: Request) {
-  const url = new URL(request.url);
-  if (!["127.0.0.1", "localhost"].includes(url.hostname)) return undefined;
+  const { hostname } = new URL(request.url);
+  if (!["127.0.0.1", "localhost"].includes(hostname)) return undefined;
   const configured = process.env.MERCHANT_SYNTHETIC_IDENTITY_ORIGIN;
   if (configured || process.env.NODE_ENV !== "development") return configured;
   try {
-    // The isolated phone handler returns 405 for a GET only while enabled.
-    // This is a read-only readiness check, independent of Metro startup.
+    // A read-only 405/POST readiness response proves the isolated entry is enabled.
     const readiness = await fetch(localIdentity + "/v1/customer-auth/phone-challenges", {
       redirect: "error",
       cache: "no-store",
       signal: AbortSignal.timeout(1500),
     });
-    await readiness.body?.cancel();
+    discardMerchantResponse(readiness);
     if (readiness.status === 405 && readiness.headers.get("Allow") === "POST") return localIdentity;
   } catch {
-    // Keep local admission unavailable until the owner responds.
+    // Owner unavailable: do not admit a local origin.
   }
 }
 
@@ -43,33 +45,46 @@ export function response(value: unknown, status = 200, cookie?: string) {
   return Response.json(value, { status, headers });
 }
 
-export function sessionCookie(request: Request, bearer: string, maxAge: number) {
-  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
-  return `${cookieName}=${bearer}; Path=/api/admission; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure}`;
+function cookieValue(request: Request, name: string) {
+  return request.headers.get("cookie")?.split(";").map(entry => entry.trim())
+    .find(entry => entry.startsWith(name + "="))?.slice(name.length + 1);
 }
 
-export const refreshCookieName = `${cookieName}.refresh`;
-export function refreshFrom(request: Request) {
-  const result = request.headers.get("cookie")?.split(";").map(entry => entry.trim())
-    .find(entry => entry.startsWith(refreshCookieName + "="))?.slice(refreshCookieName.length + 1);
-  return result && /^[A-Za-z0-9_-]{43}$/.test(result) ? result : null;
-}
-function refreshCookie(request: Request, token: string, expiry: string) {
-  const seconds = Math.max(0, Math.floor((Date.parse(expiry)-Date.now()) / 1000));
+function admissionCookie(request: Request, name: string, value: string, maxAge: number) {
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
-  return `${refreshCookieName}=${token}; Path=/api/admission; HttpOnly; SameSite=Strict; Max-Age=${seconds}${secure}`;
+  return `${name}=${value}; Path=/api/admission; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure}`;
 }
-export function appendSessionCookies(result: Response, request: Request,
-    access: string, accessExpiry: string, refresh: {refreshToken:string;refreshExpiresAt:string} | null) {
-  result.headers.append("Set-Cookie", sessionCookie(request, access,
-    Math.max(0,Math.floor((Date.parse(accessExpiry)-Date.now())/1000))));
-  if (refresh) result.headers.append("Set-Cookie",refreshCookie(request,refresh.refreshToken,refresh.refreshExpiresAt));
-  else result.headers.append("Set-Cookie",refreshCookie(request,"",new Date(0).toISOString()));
-  return result;
+
+function remainingSeconds(expiry: string) {
+  return Math.max(0, Math.floor((Date.parse(expiry) - Date.now()) / 1000));
 }
+
+export function sessionCookie(request: Request, bearer: string, maxAge: number) {
+  return admissionCookie(request, cookieName, bearer, maxAge);
+}
+
 export function bearerFrom(request: Request) {
-  return request.headers.get("cookie")?.split(";").map(entry => entry.trim())
-    .find(entry => entry.startsWith(cookieName + "="))?.slice(cookieName.length + 1);
+  return cookieValue(request, cookieName);
+}
+
+export function refreshFrom(request: Request) {
+  const token = cookieValue(request, refreshCookieName);
+  return token && /^[A-Za-z0-9_-]{43}$/.test(token) ? token : null;
+}
+
+export function appendSessionCookies(
+  result: Response,
+  request: Request,
+  access: string,
+  accessExpiry: string,
+  refresh: { refreshToken: string; refreshExpiresAt: string } | null,
+) {
+  result.headers.append("Set-Cookie", sessionCookie(request, access, remainingSeconds(accessExpiry)));
+  result.headers.append("Set-Cookie", admissionCookie(
+    request, refreshCookieName, refresh?.refreshToken ?? "",
+    refresh ? remainingSeconds(refresh.refreshExpiresAt) : 0,
+  ));
+  return result;
 }
 
 export function isLocalMutation(request: Request) {
@@ -81,44 +96,10 @@ export function ownerError(error: unknown) {
     return response({ code: error.code }, 503);
   }
   if ((error instanceof IdentityClientError || error instanceof MerchantStandingError || error instanceof DshPublicError) &&
-      error.status >= 400 && error.status < 500) {
+    error.status >= 400 && error.status < 500) {
     return response({ code: error.code }, error.status);
   }
   return response({ code: "OWNER_UNAVAILABLE" }, 503);
 }
 
-export async function readMutationBody(request: Request, limit: number): Promise<unknown> {
-  if (request.headers.get("Content-Type")?.split(";")[0] !== "application/json") {
-    return null;
-  }
-  const reader = request.body?.getReader();
-  if (!reader) return null;
-  const readSignal = AbortSignal.any([request.signal, AbortSignal.timeout(2000)]);
-  let onAbort: (() => void) | undefined;
-  const interrupted = new Promise<null>(resolve => {
-    onAbort = () => resolve(null);
-    if (readSignal.aborted) resolve(null);
-    else readSignal.addEventListener("abort", onAbort, { once: true });
-  });
-  const bytes = new Uint8Array(limit);
-  let length = 0;
-  try {
-    if (readSignal.aborted) return null;
-    for (;;) {
-      const next = await Promise.race([reader.read(), interrupted]);
-      if (next === null || readSignal.aborted) return null;
-      const { done, value } = next;
-      if (done) break;
-      if (value.length + length > bytes.length) return null;
-      bytes.set(value, length);
-      length += value.length;
-    }
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, length)));
-  } catch {
-    return null;
-  } finally {
-    if (onAbort) readSignal.removeEventListener("abort", onAbort);
-    void reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
+export { readMutationBody } from "./merchant-json.ts";

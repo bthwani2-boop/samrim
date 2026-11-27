@@ -5,6 +5,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 
+const privateReply = (body, init = {}) => Response.json(body, {
+  ...init, headers: { "Cache-Control": "no-store", ...init.headers },
+});
+
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 
@@ -43,11 +47,11 @@ test("a lost PATCH reply keeps the command uncertain and reconciles the exact pa
   const fetch = t.mock.method(globalThis, "fetch", async (url, init) => {
     assert.equal(url, endpoint);
     assert.equal(init.headers["X-BThwani-Operator"], actorId);
-    if (init.method === "GET") return Response.json(superseding);
+    if (init.method === "GET") return privateReply(superseding);
     assert.equal(init.method, "PATCH");
     assert.deepEqual(JSON.parse(init.body), change);
     if (fetch.mock.callCount() === 0) throw new TypeError("Network connection lost");
-    return Response.json({ replay: true, policy: committed });
+    return privateReply({ replay: true, policy: committed });
   });
 
   assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), { status: "unknown" });
@@ -61,7 +65,7 @@ test("a successful PATCH still requires a matching or newer independent owner re
   const stale = { ...committed, version: 1 };
   const result = { replay: false, policy: committed };
   const fetch = t.mock.method(globalThis, "fetch", async (_url, init) =>
-    Response.json(init.method === "PATCH" ? result : stale));
+    privateReply(init.method === "PATCH" ? result : stale));
   assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), { status: "unknown" });
   assert.equal(fetch.mock.callCount(), 2);
 });
@@ -74,7 +78,7 @@ test("a PATCH result for another version, city or command cannot be reported as 
     { ...committed, maxPauseSeconds: 601 },
   ]) {
     const fetch = t.mock.method(globalThis, "fetch", async () =>
-      Response.json({ replay: true, policy: conflictingPolicy }));
+      privateReply({ replay: true, policy: conflictingPolicy }));
     assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), { status: "unknown" });
     assert.equal(fetch.mock.callCount(), 1);
     fetch.mock.restore();
@@ -89,9 +93,9 @@ test("policy overview reports independent DSH relation reads and no implicit adm
     assert.equal(init.credentials, "same-origin");
     assert.equal(init.headers["X-BThwani-Operator"], "operator-1");
     if (url.endsWith("/DIRECT")) {
-      return Response.json({ cityId: "sanaa", relation: "DIRECT", version: 0, enabled: false });
+      return privateReply({ cityId: "sanaa", relation: "DIRECT", version: 0, enabled: false });
     }
-    return Response.json({
+    return privateReply({
       cityId: "sanaa", relation: "MARKETPLACE", version: 1, enabled: true,
       termsVersion: "terms-market-1", termsText: "Approved registration only",
       changedByActor: "operator-1", changeReason: "Reviewed synthetic policy",
@@ -112,8 +116,8 @@ test("policy overview reports independent DSH relation reads and no implicit adm
 
 test("policy overview never labels an owner-read failure as closed registration", async t => {
   const fetch = t.mock.method(globalThis, "fetch", async url => url.endsWith("/DIRECT")
-    ? Response.json({ cityId: "sanaa", relation: "DIRECT", version: 0, enabled: false })
-    : Response.json({ code: "IDENTITY_OWNER_UNAVAILABLE" }, { status: 503 }));
+    ? privateReply({ cityId: "sanaa", relation: "DIRECT", version: 0, enabled: false })
+    : privateReply({ code: "IDENTITY_OWNER_UNAVAILABLE" }, { status: 503 }));
   const overview = await readRegistrationOverview("sanaa", "operator-1");
   assert.deepEqual(overview.MARKETPLACE, { status: "unavailable" });
   assert.equal(overview.DIRECT.status, "current");
@@ -136,7 +140,7 @@ test("Operator policy audit pages bind the request to current city and relation"
     assert.equal(init.method, "GET");
     assert.equal(init.credentials, "same-origin");
     assert.equal(init.headers["X-BThwani-Operator"], "operator-1");
-    return Response.json({ entries });
+    return privateReply({ entries });
   });
   assert.deepEqual(await readRegistrationHistory(
     "/api/policies/cities/sanaa/store-registration/MARKETPLACE",
@@ -149,7 +153,7 @@ test("Operator policy audit reader refuses bad cursors, mismatched pages and den
   const endpoint = "/api/policies/cities/sanaa/store-registration/DIRECT";
   const fetch = t.mock.method(globalThis, "fetch", async url => {
     assert.equal(url, `${endpoint}?history=1&limit=10&beforeVersion=2`);
-    return Response.json({ entries: [{
+    return privateReply({ entries: [{
       version: 2, enabled: true, termsVersion: "merchant-terms-v1",
       changedByActor: "operator-1", changeReason: "Invalid non-descending cursor",
       updatedAt: "2026-11-23T00:00:00Z",
@@ -162,7 +166,7 @@ test("Operator policy audit reader refuses bad cursors, mismatched pages and den
     /cursor mismatch/);
   assert.equal(fetch.mock.callCount(), 1);
   fetch.mock.restore();
-  t.mock.method(globalThis, "fetch", async () => Response.json({ code: "FORBIDDEN" }, { status: 403 }));
+  t.mock.method(globalThis, "fetch", async () => privateReply({ code: "FORBIDDEN" }, { status: 403 }));
   await assert.rejects(readRegistrationHistory(endpoint, "sanaa", "DIRECT", "operator-1"),
     /Identity rejected/);
 });
@@ -320,31 +324,57 @@ test("policy city directory reads the bounded owner pages without treating parti
   const calls = [];
   let pages = [];
   let origin = "http://127.0.0.1:3202";
+  let lateController;
   const module = loadMappedRenderFixture(code, source, {
     "@bthwani/dsh": { listPublicCities: async (url, options) => {
       calls.push({ url, cursor: options.cursor, limit: options.limit });
       const page = pages.shift();
       if (!page) throw new Error("owner unavailable");
+      lateController?.abort();
       return page;
     } },
     "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
   });
   loadedModules.push(module);
   const load = module.exports.loadPolicyCities;
-  pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["sanaa"], revision: 7 }];
+  const ids = ["aden", ...Array.from({ length: 49 }, (_, i) => "city-" + String(i).padStart(2, "0"))];
+  const first = { items: ids, revision: 7, nextCursor: "next" };
+  pages = [first, { items: ["sanaa"], revision: 7 }];
   assert.deepEqual(await load(), { status: "current", cities: [
-    { value: "aden", label: "عدن" }, { value: "sanaa", label: "صنعاء" },
+    { value: "aden", label: "عدن" },
+    ...ids.slice(1).map(value => ({ value, label: value })),
+    { value: "sanaa", label: "صنعاء" },
   ] });
   assert.deepEqual(calls.map(call => call.cursor), [undefined, "next"]);
   assert.ok(calls.every(call => call.limit === 50 && call.url === origin));
-  pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["sanaa"], revision: 8 }];
-  assert.deepEqual(await load(), { status: "unavailable", cities: [] });
-  pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["aden"], revision: 7 }];
-  assert.deepEqual(await load(), { status: "unavailable", cities: [] });
-  pages = [{ items: ["aden"], revision: 7, nextCursor: "next" }];
-  assert.deepEqual(await load(), { status: "unavailable", cities: [] });
+  for (const invalidPages of [
+    [first, { items: ["sanaa"], revision: 8 }],
+    [first, { items: ["aden"], revision: 7 }],
+    [first],
+    [{ items: ["aden"], revision: 7, nextCursor: "next" }, { items: ["sanaa"], revision: 7 }],
+    [first, { items: [], revision: 7 }],
+    [first, { items: ids.map(value => "other-" + value), revision: 7, nextCursor: "next" }],
+    Array.from({ length: 10 }, (_, i) => ({
+      items: Array.from({ length: 50 }, (_, j) => "city-" + (i * 50 + j)),
+      revision: 7, nextCursor: "page-" + i,
+    })),
+  ]) {
+    pages = [...invalidPages];
+    assert.deepEqual(await load(), { status: "unavailable", cities: [] });
+  }
   pages = [{ items: [], revision: 9 }];
   assert.deepEqual(await load(), { status: "current", cities: [] });
+  const deadline = new AbortController();
+  const originalTimeout = AbortSignal.timeout;
+  try {
+    AbortSignal.timeout = () => deadline.signal;
+    lateController = deadline;
+    pages = [{ items: ["sanaa"], revision: 9 }];
+    assert.deepEqual(await load(), { status: "unavailable", cities: [] });
+  } finally {
+    AbortSignal.timeout = originalTimeout;
+    lateController = undefined;
+  }
   const before = calls.length;
   origin = null;
   assert.deepEqual(await load(), { status: "unavailable", cities: [] });
@@ -371,7 +401,7 @@ test("operational policy never confirms a different audit identity or reason at 
     [committed, { ...committed, updatedAt: "2026-11-19T06:00:00Z" }],
   ]) {
     const fetch = t.mock.method(globalThis, "fetch", async (_url, init) =>
-      Response.json(init.method === "PATCH" ? { policy: write, replay: false } : read));
+      privateReply(init.method === "PATCH" ? { policy: write, replay: false } : read));
     assert.deepEqual(await reconcileCityPolicy(endpoint, "sanaa", actorId, change), { status: "unknown" });
     fetch.mock.restore();
   }
@@ -391,15 +421,18 @@ test("policy center renders independently verified city admission, clears old sc
   const jsx = (type, props) => ({ type, props });
   let denied = false;
   let currentPolicy = null;
+  let patchReply;
+  const commands=[];
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url, init) => {
     calls.push(url);
     assert.equal(init.headers["X-BThwani-Operator"], "operator-1");
-    if (denied) return Response.json({}, { status: 403 });
-    if (url.endsWith("?delivery=1")) return Response.json({
+    if (init.method === "PATCH") { commands.push(JSON.parse(init.body)); return patchReply(init); }
+    if (denied) return privateReply({ code: "FORBIDDEN" }, { status: 403 });
+    if (url.endsWith("?delivery=1")) return privateReply({
       cityId: "sanaa", version: 3, radiusMetres: 18000, updatedAt: "2026-11-24T05:00:00Z",
     });
-    return currentPolicy ? Response.json(currentPolicy) : Response.json({}, { status: 503 });
+    return currentPolicy ? privateReply(currentPolicy) : privateReply({}, { status: 503 });
   });
   const mocks = {
     "@bthwani/dsh": require("@bthwani/dsh"),
@@ -411,6 +444,7 @@ test("policy center renders independently verified city admission, clears old sc
       Select: "Select", Space: "Space", Typography: { Title: "Title", Paragraph: "Paragraph", Text: "Text" } },
     "next/link": { __esModule: true, default: "Link" },
     "./city-policy-command": { parseCityPolicy, reconcileCityPolicy },
+    "./policy-owner-web.ts": require("./policy-owner-web.ts"),
     "./city-policy-history": { __esModule: true, default: "History" },
     "./delivery-policy-preview": { __esModule: true, default: "DeliveryPolicyPreview" },
     "./store-registration-command": { readRegistrationOverview: async (city, actor) => {
@@ -470,6 +504,84 @@ test("policy center renders independently verified city admission, clears old sc
   assert.equal(calls.length, before, "draft must not issue a network mutation");
   field("سبب تغيير السياسة").props.onChange({target: {value: "Reviewed historical values"}});
   assert.equal(submit().props.disabled, false);
+
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  const apply = () => render().filter(n => n.type === mocks.antd.Form).at(-1).props.onFinish();
+  const recovery = () => render().find(n => n.type === "Button" && n.props.children === "قراءة الحالة لدى المالك");
+  const state = () => JSON.stringify(render());
+  patchReply = () => privateReply({code:"DSH_OWNER_UNAVAILABLE"},{status:503});
+  apply(); await settle();
+  assert.equal(commands.length,1);
+  assert.ok(state().includes(commands[0].operationId));
+  assert.ok(recovery());
+  city().props.onChange("aden");
+  assert.equal(city().props.value,"sanaa");
+  patchReply = () => privateReply({code:"VERSION_CONFLICT"},{status:409});
+  apply(); await settle();
+  assert.deepEqual(commands[1],commands[0]);
+  assert.ok(recovery(), "a later conflict cannot discard uncertain command");
+  patchReply = () => privateReply({code:"FORBIDDEN"},{status:403});
+  apply(); await settle();
+  assert.deepEqual(commands[2],commands[0]);
+  assert.equal(overview(),undefined);
+  assert.equal(radius(),undefined);
+  recovery().props.onClick(); await settle();
+  assert.ok(recovery());
+  patchReply = () => {
+    const c=commands.at(-1);
+    currentPolicy={cityId:"sanaa",version:c.expectedVersion+1,maxPauseSeconds:c.maxPauseSeconds,
+      maxPreparationMinutes:c.maxPreparationMinutes,changedByActor:"operator-1",changeReason:c.reason,
+      updatedAt:"2026-11-27T00:00:00Z"};
+    return privateReply({policy:currentPolicy,replay:true});
+  };
+  apply(); await settle();
+  assert.deepEqual(commands[3],commands[0]);
+  assert.equal(recovery(),undefined);
+  assert.ok(state().includes("تم تأكيد العملية السابقة"));
+
+  function draft(reason="Next review") {
+    field("حد الإيقاف بالثواني").props.onChange(100);
+    field("حد التحضير بالدقائق").props.onChange(10);
+    field("سبب تغيير السياسة").props.onChange({target:{value:reason}});
+  }
+  draft();
+  patchReply=()=>privateReply({code:"INVALID_REQUEST"},{status:400});
+  apply();await settle();
+  assert.ok(state().includes("رفض DSH أمر السياسة"));
+  assert.equal(recovery(),undefined);
+  draft();
+  patchReply=()=>privateReply({code:"VERSION_CONFLICT"},{status:409});
+  apply();await settle();
+  assert.ok(state().includes("تعارض إصدار السياسة"));
+  read();await settle();
+  draft();
+  patchReply=()=>privateReply({code:"FORBIDDEN"},{status:403});
+  apply();await settle();
+  assert.ok(state().includes("لم تؤكد Identity"));
+  assert.equal(radius(),undefined);
+  read();await settle();
+  const deliveryWidget=()=>render().find(n=>n.type==="DeliveryPolicyPreview");
+  deliveryWidget().props.onCommitted({cityId:"sanaa",version:4,radiusMetres:17000,distanceBands:[{upToMeters:null,ratePerKmMinor:100}],updatedAt:"2026-11-27T00:00:00Z"});
+  assert.ok(state().includes("تم حفظ سياسة التوصيل"));
+  deliveryWidget().props.onDenied();
+  assert.equal(radius(),undefined);
+
+  city().props.onChange("aden");
+  currentPolicy=null;
+  read();await settle();
+  const provision=render().find(n=>n.type==="Checkbox");
+  provision.props.onChange({target:{checked:true}});
+  draft("Initial reviewed policy");
+  patchReply=()=>{
+    const c=commands.at(-1);
+    assert.equal(c.expectedVersion,0);
+    currentPolicy={cityId:"aden",version:1,maxPauseSeconds:c.maxPauseSeconds,
+      maxPreparationMinutes:c.maxPreparationMinutes,changedByActor:"operator-1",changeReason:c.reason,
+      updatedAt:"2026-11-27T00:00:00Z"};
+    return privateReply({policy:currentPolicy,replay:false});
+  };
+  apply();await settle();
+  assert.ok(state().includes("تم اعتماد السياسة"));
 });
 
 test("operational policy refuses mismatched endpoint before network access", async t => {
@@ -481,4 +593,86 @@ test("operational policy refuses mismatched endpoint before network access", asy
     [endpoint, "sanaa", ""],
   ]) assert.deepEqual(await reconcileCityPolicy(path, city, actor, change), { status: "rejected" });
   assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("policy directory composes the actual DSH city SDK and recovers after an invalid page", async t => {
+  const { loadPolicyCities } = await import("./policy-city-directory.ts");
+  const previous = process.env.OPERATOR_POLICY_DSH_ORIGIN;
+  process.env.OPERATOR_POLICY_DSH_ORIGIN = "http://127.0.0.1:3202";
+  let replies = [{ items: ["sanaa"], revision: 10 }];
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (url, init) => {
+    const target = new URL(url);
+    assert.equal(target.origin + target.pathname, "http://127.0.0.1:3202/v1/public/cities");
+    assert.equal(target.searchParams.get("limit"), "50");
+    assert.equal(init.credentials, "omit");
+    assert.equal(init.cache, "no-store");
+    requests.push(target.searchParams.get("cursor"));
+    const body = replies.shift();
+    if (!body) throw new Error("owner disconnected");
+    return Response.json(body, { headers: { "Cache-Control": "no-store" } });
+  });
+  try {
+    assert.deepEqual(await loadPolicyCities(), { status: "current", cities: [{ value: "sanaa", label: "صنعاء" }] });
+    replies = [{ items: ["aden", "aden"], revision: 10 }];
+    assert.deepEqual(await loadPolicyCities(), { status: "unavailable", cities: [] });
+    const full = index => Array.from({ length: 50 }, (_, j) => "city-" + (index * 50 + j));
+    const first = { items: full(0), revision: 10, nextCursor: "next" };
+    for (const invalid of [
+      [first, { items: ["sanaa"], revision: 11 }],
+      [first, { items: [full(0)[0]], revision: 10 }],
+      [first, { items: [], revision: 10 }],
+      [{ items: ["aden"], revision: 10, nextCursor: "next" }],
+      [first, { items: full(1), revision: 10, nextCursor: "other" },
+        { items: full(2), revision: 10, nextCursor: "next" }],
+      Array.from({ length: 10 }, (_, i) => ({ items: full(i), revision: 10, nextCursor: "page-" + i })),
+      [first],
+    ]) {
+      replies = [...invalid];
+      assert.deepEqual(await loadPolicyCities(), { status: "unavailable", cities: [] });
+    }
+    replies = [first, { items: ["aden", "taiz"], revision: 10 }];
+    const recovered = await loadPolicyCities();
+    assert.equal(recovered.status, "current");
+    assert.deepEqual(recovered.cities.slice(-2), [{ value: "aden", label: "عدن" }, { value: "taiz", label: "taiz" }]);
+    assert.deepEqual(requests.slice(-2), [null, "next"]);
+    process.env.OPERATOR_POLICY_DSH_ORIGIN = "invalid";
+    const before = requests.length;
+    assert.deepEqual(await loadPolicyCities(), { status: "unavailable", cities: [] });
+    assert.equal(requests.length, before);
+  } finally {
+    if (previous === undefined) delete process.env.OPERATOR_POLICY_DSH_ORIGIN;
+    else process.env.OPERATOR_POLICY_DSH_ORIGIN = previous;
+  }
+});
+
+test("operational policy never confirms cacheable receipts or malformed rejection",async t=>{
+  let response=Response.json({policy:committed,replay:false});
+  t.mock.method(globalThis,"fetch",async(_url,init)=>init.method==="PATCH"?response:Response.json(committed));
+  assert.deepEqual(await reconcileCityPolicy(endpoint,"sanaa",actorId,change),{status:"unknown"});
+  response=Response.json({code:"UNRELATED"},{status:409,headers:{"Cache-Control":"no-store"}});
+  assert.deepEqual(await reconcileCityPolicy(endpoint,"sanaa",actorId,change),{status:"unknown"});
+});
+
+test("operational policy distinguishes only exact private BFF failures", async t=>{
+  let response=privateReply({code:"INVALID_REQUEST"},{status:400});
+  t.mock.method(globalThis,"fetch",async()=>response);
+  for(const [status,code,outcome] of [[400,"INVALID_REQUEST","rejected"],[401,"UNAUTHORIZED","denied"],
+    [403,"FORBIDDEN","denied"],[409,"VERSION_CONFLICT","conflict"]]){
+    response=privateReply({code},{status});
+    assert.deepEqual(await reconcileCityPolicy(endpoint,"sanaa",actorId,change),{status:outcome});
+  }
+  for(const value of [null,[],{policy:committed,replay:"yes"},{policy:committed,replay:true,extra:true}]){
+    response=privateReply(value);
+    assert.deepEqual(await reconcileCityPolicy(endpoint,"sanaa",actorId,change),{status:"unknown"});
+  }
+  const mutable={...change,reason:"\u0085\uFEFFReviewed\u0085"};
+  const receipt={...committed,changeReason:"\uFEFFReviewed"};
+  t.mock.restoreAll();
+  t.mock.method(globalThis,"fetch",async(_url,init)=>{
+    if(init.method==="PATCH"){mutable.maxPauseSeconds=1;return privateReply({policy:receipt,replay:true});}
+    return privateReply(receipt);
+  });
+  assert.deepEqual(await reconcileCityPolicy(endpoint,"sanaa",actorId,mutable),
+    {status:"confirmed",current:receipt,replay:true,superseded:false});
 });

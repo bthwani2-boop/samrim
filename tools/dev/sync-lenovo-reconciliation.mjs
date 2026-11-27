@@ -128,22 +128,29 @@ export function remoteAuditDue(previous, deadline, now = Date.now()) {
   return !previous || now >= deadline;
 }
 
-// Only a receipt tied to the outstanding attempt or the exact reviewed
-// recovery record may release a durable runtime hold.
+// One scheduler admission and one leased serving writer. The receipt records
+// whether every previous serving write is verified, or a write may be in flight.
 const sha = /^[a-f0-9]{64}$/;
 const attemptId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+const settledRuntimeStates = new Set(["pass", "review", "blocked", "retry"]);
 const pending = state => ["running", "uncertain"].includes(state?.status);
 const digest = text => createHash("sha256").update(text).digest("hex");
 const readState = file => JSON.parse(readFileSync(file, "utf8"));
 const validKey = (state, key) => state?.version === 1 && sha.test(key) && state.key === key;
 const matchingAttempt = (state, key, attempt) => validKey(state, key) && pending(state) &&
   attemptId.test(attempt) && state.attempt === attempt;
-
+function optionalRecord(file) {
+  try { return readState(file); }
+  catch(error) {
+    if(error.code==="ENOENT")return null;
+    throw new Error("RUNTIME_RECORD_INVALID");
+  }
+}
 function publishReceipt(file, record) {
   const temporary = file + "." + randomUUID() + ".tmp";
   let owned = false;
   try {
-    writeFileSync(temporary, JSON.stringify(record), { flag: "wx" });
+    writeFileSync(temporary, JSON.stringify(record), { flag: "wx", flush: true });
     owned = true;
     renameSync(temporary, file);
     owned = false;
@@ -151,14 +158,54 @@ function publishReceipt(file, record) {
     if (owned) rmSync(temporary, { force: true });
   }
 }
-export function acknowledgeRuntimeAttempt(stateFile, receiptFile, key, attempt) {
-  if (!matchingAttempt(readState(stateFile), key, attempt)) throw new Error("RUNTIME_ATTEMPT_MISMATCH");
-  publishReceipt(receiptFile, { version: 1, key, attempt, status: "pass" });
+export function runtimeAttemptPhase(stateFile, receiptFile, key, attempt) {
+  try {
+    const state=readState(stateFile), receipt=readState(receiptFile);
+    if (receipt.version===1 && matchingAttempt(state,receipt.key,receipt.attempt) &&
+        (key===undefined || key===receipt.key) && (attempt===undefined || attempt===receipt.attempt) &&
+        receipt.status===undefined && receipt.reviewed===undefined &&
+        ["ready","mutating"].includes(receipt.phase)) return receipt.phase;
+  } catch { /* Unknown phase never proves a safe retry. */ }
+  return null;
 }
-export function acknowledgeRuntimeRecovery(stateFile, receiptFile, key, reviewed) {
+export function beginRuntimeAttempt(stateFile,receiptFile,key,attempt) {
+  if(!sha.test(key)||!attemptId.test(attempt))throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+  const state=optionalRecord(stateFile), prior=optionalRecord(receiptFile);
+  if(state && (!validKey(state,state.key)||!settledRuntimeStates.has(state.status)||state.attempt===attempt))
+    throw new Error("RUNTIME_ATTEMPT_NOT_SETTLED");
+  if(prior){
+    const ready=prior.phase==="ready"&&attemptId.test(prior.attempt)&&prior.status===undefined&&prior.reviewed===undefined;
+    const terminal=prior.phase===undefined&&settledRuntimeStates.has(prior.status)&&
+      ((attemptId.test(prior.attempt)&&prior.reviewed===undefined)||
+       (prior.status==="retry"&&prior.attempt===undefined&&sha.test(prior.reviewed)));
+    if(!validKey(prior,prior.key)||prior.attempt===attempt||!(ready||terminal))
+      throw new Error("RUNTIME_ATTEMPT_NOT_SETTLED");
+  }
+  // Publish the safe receipt first. A crash between files cannot strand a
+  // pending state without proof; the next scheduler can admit a fresh ID.
+  publishReceipt(receiptFile,{version:1,key,attempt,phase:"ready"});
+  publishReceipt(stateFile,{version:1,key,attempt,status:"running"});
+}
+export function recordRuntimePhase(stateFile, receiptFile, key, attempt, phase) {
+  if (!matchingAttempt(readState(stateFile),key,attempt)) throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+  const existing=runtimeAttemptPhase(stateFile,receiptFile,key,attempt);
+  if(!((existing==="ready"&&phase==="mutating")||(existing==="mutating"&&phase==="ready")))
+    throw new Error("RUNTIME_PHASE_TRANSITION_INVALID");
+  publishReceipt(receiptFile,{version:1,key,attempt,phase});
+}
+export function acknowledgeRuntimeAttempt(stateFile, receiptFile, key, attempt, status) {
+  if (!matchingAttempt(readState(stateFile), key, attempt)) throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+  if (!settledRuntimeStates.has(status)) throw new Error("RUNTIME_TERMINAL_STATUS_INVALID");
+  const phase=runtimeAttemptPhase(stateFile,receiptFile,key,attempt);
+  if(phase!=="ready"&&!(phase==="mutating"&&status==="blocked"))throw new Error("RUNTIME_PHASE_TRANSITION_INVALID");
+  publishReceipt(receiptFile, { version: 1, key, attempt, status });
+}
+export function acknowledgeRuntimeRecovery(stateFile, receiptFile, key, reviewed, safeOnly=false) {
   const text = readFileSync(stateFile, "utf8");
   const state = JSON.parse(text);
   if (text !== reviewed || !validKey(state, key) || !pending(state)) throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+  if(safeOnly && runtimeAttemptPhase(stateFile,receiptFile,key,state.attempt)!=="ready")
+    throw new Error("RUNTIME_SAFE_BOUNDARY_NOT_PROVEN");
   publishReceipt(receiptFile, { version: 1, key, status: "retry", reviewed: digest(text) });
 }
 export function runtimeReceiptStatus(stateFile, receiptFile) {
@@ -166,11 +213,24 @@ export function runtimeReceiptStatus(stateFile, receiptFile) {
     const text = readFileSync(stateFile, "utf8");
     const state = JSON.parse(text);
     const receipt = readState(receiptFile);
-    if (receipt.version !== 1) return null;
-    if (receipt.status === "pass" && matchingAttempt(state, receipt.key, receipt.attempt)) return "pass";
-    if (receipt.status === "retry" && validKey(state, receipt.key) && pending(state) && receipt.reviewed === digest(text)) return "retry";
+    if (receipt.version !== 1 || receipt.phase!==undefined || !settledRuntimeStates.has(receipt.status)) return null;
+    if (receipt.reviewed === undefined && matchingAttempt(state, receipt.key, receipt.attempt)) return receipt.status;
+    if (receipt.attempt === undefined && receipt.status === "retry" && validKey(state, receipt.key) && pending(state) && receipt.reviewed === digest(text)) return "retry";
   } catch { /* Missing or corrupt proof cannot release a hold. */ }
   return null;
+}
+export function runtimeInterruptedStatus(stateFile,receiptFile) {
+  return runtimeReceiptStatus(stateFile,receiptFile) ?? "uncertain";
+}
+
+// A completed partial reconciliation is not success. Source-admission holds
+// wait for a changed key; schema/configuration holds retain bounded review.
+export function runtimeTerminalStatus({ partial, holds, baselineFailed }) {
+  if (baselineFailed) return "retry";
+  if (!partial) return "pass";
+  const local = /^(?:PREVIEW_NOT_AUTHORIZED|UNCOMMITTED_NON_GO|SHARED_INPUT_REVIEW_REQUIRED)$/;
+  const peer = /^PEER_REVIEW_REQUIRED:(?:dsh|identity|wlt)$/;
+  return holds.some(reason => local.test(reason)) && holds.every(reason => local.test(reason) || peer.test(reason)) ? "blocked" : "review";
 }
 
 export function runtimePollAction({ enabled, dirty, active, key, last, now, nextAudit }) {
@@ -210,31 +270,6 @@ export function runtimeAuditResult(code, signal, stdout, head, eligible) {
     return selected.some(owner => eligible.includes(owner)) ? "apply" : "review";
   return "retry";
 }
-export function runtimeAttemptResult(code, signal, stdout, stderr) {
-  if (signal || /ROLLBACK_BLOCKED|ROLLBACK_READBACK_FAILED/.test(stderr)) return "uncertain";
-  if (/ROLLBACK_PASS/.test(stderr)) return "blocked";
-  const records = lines(stdout);
-  const sequence = records.map(line => /^OWNER_APPLY_(STARTED|VERIFIED) (.+)$/.exec(line)).filter(Boolean);
-  let active = null;
-  for (const [, event, owner] of sequence) {
-    if (event === "STARTED") {
-      if (active !== null) return "uncertain";
-      active = owner.trim();
-    } else {
-      if (active !== owner.trim()) return "uncertain";
-      active = null;
-    }
-  }
-  if (active !== null) return "uncertain";
-  const terminal = terminalResult(records);
-  if (code === 0 && terminal?.status === "PASS") return "pass";
-  if (terminal?.status !== "PARTIAL" || /BASELINE_PROOF_FAIL/.test(stderr)) return "retry";
-  const holds = records.filter(line => line.includes(" RUNTIME=BLOCKED "));
-  const local = /^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=(?:PREVIEW_NOT_AUTHORIZED|UNCOMMITTED_NON_GO|SHARED_INPUT_REVIEW_REQUIRED)$/;
-  const peer = /^(?:dsh|identity|wlt) RUNTIME=BLOCKED revision=[a-f0-9]{40} reason=PEER_REVIEW_REQUIRED:(?:dsh|identity|wlt)$/;
-  return holds.some(line => local.test(line)) && holds.every(line => local.test(line) || peer.test(line)) ? "blocked" : "review";
-}
-
 export function graphifyRefreshAction(assessment) {
   if (assessment?.refreshing === true) return "busy";
   if (assessment?.unsafeTracked > 0 || assessment?.unsafeUntracked > 0) return "deferred";

@@ -132,3 +132,90 @@ test("serviceability BFF binds actor and both resource selectors; denies cross-c
   assert.equal(late.status,401);assert.deepEqual(await late.json(),{error:"UNAUTHORIZED"});
   assert.equal(calls,2);
 });
+
+test("address BFF checks the actor after owner denial as well as success", async t=>{
+  let identityReads=0,owner=0,switched=true;
+  t.mock.method(globalThis,"fetch",async(input,init)=>{
+    if(input.toString().startsWith("http://127.0.0.1:3201")){
+      identityReads++;
+      return json(session(switched && identityReads>1 ? "customer-b" : actor));
+    }
+    owner++;
+    return json({code:init.method==="PUT"?"VERSION_CONFLICT":"NOT_FOUND"},init.method==="PUT"?409:404);
+  });
+  const denied=await GET(request("GET",base+"?addressId="+id));
+  assert.equal(denied.status,401);
+  assert.deepEqual(await denied.json(),{error:"UNAUTHORIZED"});
+  identityReads=0;
+  const uncertain=await PUT(request("PUT",base+"?addressId="+id));
+  assert.equal(uncertain.status,503);
+  assert.deepEqual(await uncertain.json(),{error:"OPERATION_RESULT_UNKNOWN"});
+  switched=false;identityReads=0;
+  const definitive=await PUT(request("PUT",base+"?addressId="+id));
+  assert.equal(definitive.status,409);
+  assert.deepEqual(await definitive.json(),{error:"VERSION_CONFLICT"});
+  assert.equal(identityReads,2);
+  assert.equal(owner,3);
+});
+
+test("unadmitted selectors, origin, request body and actor never reach owners",async t=>{
+  let calls=0;t.mock.method(globalThis,"fetch",async()=>{calls++;throw Error("unexpected");});
+  for(const [req,method,status] of [
+    [request("GET","http://example.invalid/api/customer-auth/addresses"),"GET",503],
+    [request("GET",base,{"X-Customer-Context":""}),"GET",400],
+    [request("GET",base,{"Content-Length":"0"}),"GET",400],
+    [request("GET",base+"?after="),"GET",400],
+    [request("GET",base+"?addressId="),"GET",400],
+    [request("PUT",base),"PUT",400],
+    [request("PUT",base+"?addressId="+id,{"Content-Type":"text/plain"}),"PUT",400],
+    [request("GET",base+"?addressId="+id),"SERVICEABILITY",400],
+    [request("GET",base+"?addressId="+id+"&storeId=BAD"),"SERVICEABILITY",400],
+  ]) {
+    const reply=await handleCustomerAddresses(req,method);
+    assert.equal(reply.status,status);
+    assert.equal(reply.headers.get("Cache-Control"),"no-store");
+  }
+  assert.equal(calls,0);
+});
+
+test("Identity denial before owner traffic and after write fail closed",async t=>{
+  let reads=0,owner=0,mode="initial-denial";
+  t.mock.method(globalThis,"fetch",async input=>{
+    if(input.toString().startsWith("http://127.0.0.1:3201")){
+      reads++;
+      if(mode==="initial-denial"||(mode==="late-denial"&&reads===2))return json({code:"UNAUTHENTICATED"},401);
+      if(mode==="initial-unavailable")throw Error("identity unavailable");
+      return json(session(actor));
+    }
+    owner++;return json(result);
+  });
+  const initial=await GET(request());
+  assert.equal(initial.status,401);assert.equal(owner,0);
+  mode="initial-unavailable";reads=0;
+  assert.equal((await GET(request())).status,503);assert.equal(owner,0);
+  mode="late-denial";reads=0;
+  const late=await PUT(request("PUT",base+"?addressId="+id));
+  assert.equal(late.status,503);assert.deepEqual(await late.json(),{error:"OPERATION_RESULT_UNKNOWN"});assert.equal(owner,1);
+});
+
+test("owner errors on admitted reads and paginated requests preserve the verified context",async t=>{
+  let owner=0,mode="page";
+  t.mock.method(globalThis,"fetch",async input=>{
+    if(input.toString().startsWith("http://127.0.0.1:3201"))return json(session(actor));
+    owner++;
+    if(mode==="page"){
+      assert.equal(input.toString(),"http://127.0.0.1:3202/v1/addresses?after="+id);
+      return json({actorId:actor,items:[]});
+    }
+    if(mode==="notfound")return json({code:"NOT_FOUND"},404);
+    throw Error("unavailable");
+  });
+  const next=await GET(request("GET",base+"?after="+id));
+  assert.deepEqual(await next.json(),{actorId:actor,items:[]});
+  mode="notfound";
+  const missing=await GET(request("GET",base+"?addressId="+id));
+  assert.equal(missing.status,404);assert.deepEqual(await missing.json(),{error:"NOT_FOUND"});
+  mode="unavailable";
+  assert.equal((await GET(request())).status,503);
+  assert.equal(owner,3);
+});

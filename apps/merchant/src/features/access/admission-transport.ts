@@ -11,7 +11,8 @@ import {
 import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { revokeUndeliveredAdmissionSession, verifyMerchantAdmission } from "./admission";
-import { MerchantStandingError, readMerchantDSHStanding, standingFrom } from "./dsh-standing";
+import { MerchantStandingError, readMerchantDSHStanding } from "./dsh-standing";
+import { readBrowserAdmission, readBrowserStanding, requestBrowserAdmissionCode, signOutBrowserAdmission, submitBrowserAdmissionCode } from "./merchant-admission-web.ts";
 
 const storageKey = "bthwani.merchant.synthetic-admission.v1";
 // Persist before writing an issued bearer. An interrupted write must remain
@@ -102,35 +103,13 @@ async function readDurableMerchant(bearer: string, signal: AbortSignal) {
   finally { if (durableMerchantInFlight === pending) durableMerchantInFlight = null; }
 }
 
-async function webRequest<T>(method: string, signal: AbortSignal, data?: object, stores = false): Promise<T> {
-  const result = await fetch(stores ? "/api/admission?stores=mine" : "/api/admission", {
-    method,
-    signal,
-    credentials: "same-origin",
-    cache: "no-store",
-    ...(data === undefined ? {} : {
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    }),
-  });
-  if (result.status === 204) return undefined as T;
-  const body = await result.json();
-  if (!result.ok) {
-    if (stores && (result.status === 401 || result.status === 403) && body.code === "STORE_ACCESS_DENIED") {
-      throw new MerchantStandingError(result.status, body.code);
-    }
-    throw new IdentityClientError(result.status, body.code);
-  }
-  return body as T;
-}
-
 function requireNativeOrigin() {
   if (!nativeOrigin) throw new IdentityClientError(503, "OWNER_UNAVAILABLE");
   return nativeOrigin;
 }
 
 export async function readAdmission(signal: AbortSignal): Promise<EntryState> {
-  if (Platform.OS === "web") return webRequest("GET", signal);
+  if (Platform.OS === "web") return readBrowserAdmission(signal);
   if (!nativeOrigin) return { enabled: false, session: null };
   if (durableMerchantInFlight) await durableMerchantInFlight.catch(() => undefined);
   if (await clearPendingNativeAdmission(signal)) return { enabled: true, session: null };
@@ -163,10 +142,7 @@ export async function readAdmission(signal: AbortSignal): Promise<EntryState> {
 /** DSH Store standing is requested separately from session issuance. It never
  * grants entry to an unverified Store or mutates the business owner. */
 export async function readMerchantStanding(signal: AbortSignal) {
-  if (Platform.OS === "web") {
-    const result = await webRequest<{ standing: unknown }>("GET", signal, undefined, true);
-    return standingFrom(result.standing);
-  }
+  if (Platform.OS === "web") return readBrowserStanding(signal);
   // Preserve the standing API's unauthenticated result for a missing or
   // quarantined bearer; the shared session guard below additionally verifies
   // the active Identity role and rejects stale Store readback.
@@ -222,7 +198,7 @@ export async function withNativeMerchantSession<T>(signal: AbortSignal, run: (be
 
 
 export async function requestAdmissionCode(phone: string, signal: AbortSignal): Promise<string> {
-  if (Platform.OS === "web") return (await webRequest<{ ticket: string }>("POST", signal, { phone })).ticket;
+  if (Platform.OS === "web") return requestBrowserAdmissionCode(phone, signal);
   return issueCustomerPhoneChallenge(requireNativeOrigin(), phone, signal);
 }
 
@@ -230,7 +206,7 @@ export async function submitAdmissionCode(
   ticket: string, code: string, signal: AbortSignal,
 ): Promise<VerifiedIdentitySession> {
   if (Platform.OS === "web") {
-    return (await webRequest<{ session: VerifiedIdentitySession }>("POST", signal, { ticket, code })).session;
+    return submitBrowserAdmissionCode(ticket, code, signal);
   }
   if (nativeAdmissionInFlight) throw new IdentityClientError(409, "SIGN_OUT_REQUIRED");
   nativeAdmissionInFlight = true;
@@ -299,7 +275,7 @@ export async function submitAdmissionCode(
 }
 
 export async function signOutOfAdmission(signal: AbortSignal): Promise<void> {
-  if (Platform.OS === "web") return webRequest("DELETE", signal);
+  if (Platform.OS === "web") return signOutBrowserAdmission(signal);
   const bearer = await mutateNativeStorage(async () => {
     const stored = await SecureStore.getItemAsync(storageKey, nativeOptions);
     if (stored) await SecureStore.setItemAsync(pendingStorageKey, "sign-out", nativeOptions);

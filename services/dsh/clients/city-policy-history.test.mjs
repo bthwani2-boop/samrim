@@ -105,3 +105,36 @@ test("an active city without a delivery policy is explicit and admits only delib
   assert.equal(isCityDeliveryPolicyChange(change),true);
   assert.equal(isCityDeliveryPolicyPreviewInput({expectedVersion:0,radiusMetres:20000,distanceMetres:1000,distanceBands:change.distanceBands}),true);
 });
+
+test("store operational receipt compares exactly the Go owner normalized reason", async t => {
+  const { replaceCityStoreOperationalPolicy } = await import("./city-policies.ts");
+  const input = { operationId:"city-store-002",expectedVersion:2,maxPauseSeconds:900,maxPreparationMinutes:40,
+    reason:"\u0085\uFEFFReviewed limits\u0085" };
+  const receipt = { policy:{ ...policy, changeReason:"\uFEFFReviewed limits" }, replay:false };
+  t.mock.method(globalThis,"fetch",async()=>Response.json(receipt,{headers:{"Cache-Control":"no-store"}}));
+  assert.deepEqual(await replaceCityStoreOperationalPolicy(origin,"sanaa",bearer,input),receipt);
+});
+test("malformed operational, delivery and fulfillment submissions fail before dispatch", async t => {
+  const api=await import("./city-policies.ts");
+  const fetch=t.mock.method(globalThis,"fetch",async()=>{throw new Error("must not dispatch");});
+  const store={operationId:"city-store-001",expectedVersion:1,maxPauseSeconds:900,maxPreparationMinutes:30,reason:"reviewed"};
+  const delivery={operationId:"city-delivery-001",expectedVersion:1,radiusMetres:20000,distanceBands:[{upToMeters:null,ratePerKmMinor:100}],reason:"reviewed"};
+  const preview={expectedVersion:1,radiusMetres:20000,distanceMetres:1000,distanceBands:delivery.distanceBands};
+  const fulfillment={operationId:"city-fulfillment-001",expectedVersion:0,allowedModes:["CUSTOMER_PICKUP"],reason:"reviewed"};
+  for(const input of [null,{...store,extra:true},{...store,maxPreparationMinutes:1441},{...store,reason:"\u0085"}])
+    await assert.rejects(api.replaceCityStoreOperationalPolicy(origin,"sanaa",bearer,input),{status:400,code:"INVALID_OPERATIONAL_CHANGE"});
+  await assert.rejects(api.getCityStoreOperationalPolicy(origin,"../aden",bearer),{status:0,code:"CITY_ID_INVALID"});
+  await assert.rejects(api.replaceCityStoreOperationalPolicy(origin,"../aden",bearer,store),{status:0,code:"CITY_ID_INVALID"});
+  for(const input of [null,{...delivery,extra:true},{...delivery,radiusMetres:0},{...delivery,distanceBands:[]},
+    {...delivery,distanceBands:[null]},{...delivery,distanceBands:[{upToMeters:0,ratePerKmMinor:100},{upToMeters:null,ratePerKmMinor:100}]},
+    {...delivery,reason:"\u0085"}]){
+    assert.equal(api.isCityDeliveryPolicyChange(input),false);
+    await assert.rejects(api.replaceCityDeliveryPolicy(origin,"sanaa",bearer,input),{status:400,code:"INVALID_OPERATIONAL_CHANGE"});
+  }
+  assert.equal(api.isCityDeliveryPolicyPreviewInput({...preview,extra:true}),false);
+  assert.equal(api.isCityFulfillmentPolicyChange(fulfillment),true);
+  assert.equal(api.isCityFulfillmentPolicyChange({...fulfillment,extra:true}),false);
+  await assert.rejects(api.getCityFulfillmentPolicy(origin,"sanaa","INVALID",bearer),{status:400,code:"INVALID_OPERATIONAL_CHANGE"});
+  await assert.rejects(api.getCityFulfillmentPolicy(origin,"../aden","DIRECT",bearer),{status:400,code:"INVALID_OPERATIONAL_CHANGE"});
+  assert.equal(fetch.mock.callCount(),0);
+});

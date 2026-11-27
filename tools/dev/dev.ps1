@@ -5,7 +5,7 @@ Run from D:\samrim: pnpm dev (fast app launch) or pnpm dev up (full isolated inf
 This existing Surface launcher reuses Lenovo Scheduled Tasks, source sync and loopback SSH tunnels.
 Never runs SQL migrations, operator bootstrap, volume deletion, branch changes,
 Git commits/pushes, or credential modifications. Explicit Docker reconcile applies only
-verified isolated owner image replacements under the shared lifecycle mutex.
+verified isolated owner image replacements under the Docker resource lease.
 #>
 [CmdletBinding()]
 param(
@@ -19,6 +19,7 @@ param(
   [switch]$Preview,
   [switch]$PrepareBaseline,
   [string]$RecoverRuntimeAttempt,
+  [string]$ConfigurationFrom,
   [Parameter(Position=1)]
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','build','reconcile','start','restart','android','open','recover')]
   [string]$DockerAction = 'help',
@@ -45,6 +46,7 @@ $baseEnv = Join-Path $repo 'infra\.env'
 $baseCompose = Join-Path $repo 'infra\compose.yaml'
 $developmentPorts = Get-Content -LiteralPath (Join-Path $repo 'tools\dev\ports.json') -Raw | ConvertFrom-Json
 . (Join-Path $PSScriptRoot 'task-ownership.ps1')
+. (Join-Path $PSScriptRoot 'dev-resource-admission.ps1')
 $ownerTasks = @(
   @{Name='BThwani Lenovo Source Sync'},
   @{Name='BThwani Lenovo SSH Tunnel'}
@@ -65,8 +67,7 @@ $android=@(
   @{Name='captain'; Package='com.bthwani.captain'; Scheme='exp+app-captain'; Port=[int]$developmentPorts.apps.captain.surface}
 )
 $logRoot = Join-Path $env:LOCALAPPDATA 'BThwani\Operations\UnifiedDev'
-$mutex = [System.Threading.Mutex]::new($false,'Local\BThwaniUnifiedDevV1')
-$hasMutex = $false
+$resourceLeases = @()
 $transcript = $false
 
 function Say([string]$key,[string]$value) { Write-Output ("$key=$value") }
@@ -527,31 +528,22 @@ function Get-AndroidReverseState {
   [pscustomobject]@{Adb=$adb;Mappings=@(Get-AndroidMappingState -Lines $existing -Ports $nativePorts)}
 }
 function Restore-AndroidReverse {
-  # This lock owns only device mappings, never Docker, dependency installation or UI.
-  $lock=[Threading.Mutex]::new($false,'Local\BThwaniAndroidReverseV1')
-  $held=$false
-  try {
-    try {$held=$lock.WaitOne(5000)} catch [Threading.AbandonedMutexException] {$held=$true}
-    Assert-Ok $held 'ADB_REVERSE_OPERATION_BUSY'
-    $state=Get-AndroidReverseState
-    Assert-Ok (@($state.Mappings | Where-Object Collision).Count -eq 0) 'ADB_REVERSE_COLLISION'
-    $null=& (Join-Path $PSScriptRoot 'Start-AppTunnel.ps1') -VerifyOnly
-    $missing=@($state.Mappings | Where-Object {-not $_.Configured})
-    if($missing.Count){
-      $null=@(Check-LocalIdentity)
-      foreach($mapping in $missing){
-        $port='tcp:'+$mapping.Port
-        $null=@(& $state.Adb.Source '-s' $device 'reverse' '--no-rebind' $port $port 2>&1)
-        Assert-Ok ($LASTEXITCODE -eq 0) ('ADB_REVERSE_SETUP_FAILED '+$mapping.Port)
-      }
-      $state=Get-AndroidReverseState
-      Assert-Ok (@($state.Mappings | Where-Object {-not $_.Configured}).Count -eq 0) 'ADB_REVERSE_READBACK_FAILED'
+  # All callers hold the same Android resource through the launcher.
+  $state=Get-AndroidReverseState
+  Assert-Ok (@($state.Mappings | Where-Object Collision).Count -eq 0) 'ADB_REVERSE_COLLISION'
+  $null=& (Join-Path $PSScriptRoot 'Start-AppTunnel.ps1') -VerifyOnly
+  $missing=@($state.Mappings | Where-Object {-not $_.Configured})
+  if($missing.Count){
+    $null=@(Check-LocalIdentity)
+    foreach($mapping in $missing){
+      $port='tcp:'+$mapping.Port
+      $null=@(& $state.Adb.Source '-s' $device 'reverse' '--no-rebind' $port $port 2>&1)
+      Assert-Ok ($LASTEXITCODE -eq 0) ('ADB_REVERSE_SETUP_FAILED '+$mapping.Port)
     }
-    if(!$Automatic -or $missing.Count){ Say 'ADB_REVERSE' ('PASS configured='+$state.Mappings.Count+' restored='+$missing.Count) }
-  } finally {
-    if($held){$lock.ReleaseMutex()}
-    $lock.Dispose()
+    $state=Get-AndroidReverseState
+    Assert-Ok (@($state.Mappings | Where-Object {-not $_.Configured}).Count -eq 0) 'ADB_REVERSE_READBACK_FAILED'
   }
+  if(!$Automatic -or $missing.Count){ Say 'ADB_REVERSE' ('PASS configured='+$state.Mappings.Count+' restored='+$missing.Count) }
 }
 function Inspect-AppAndroid {
   $state=Get-AndroidReverseState
@@ -1149,6 +1141,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
   Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit owner admission activation'
   Write-Output 'pnpm dev docker reconcile -Apply -Preview # isolated uncommitted Go snapshot'
+  Write-Output 'pnpm dev docker reconcile -ConfigurationFrom SHA [-Apply] # reviewed resource-only Compose transition'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=pnpm dev docker build dsh|identity|wlt (image only, no start)'
@@ -1194,9 +1187,10 @@ function Invoke-ScopedDocker {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain activation requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
       Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply without capability activation'
-      Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
-      $mode = if ($RecoverRuntimeAttempt) { '--recover-attempt' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
-      $reconcileOptions = @(if ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($PrepareBaseline) { '--prepare-baseline' })
+      Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
+      Assert-Ok (!$ConfigurationFrom -or (!$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and !$RecoverRuntimeAttempt -and $ConfigurationFrom -cmatch '^[0-9a-f]{40}$')) 'Configuration transition requires one reviewed Compose revision and no other mutation mode'
+      $mode = if ($ConfigurationFrom) { if ($Apply) { '--apply-config' } else { '--check-config' } } elseif ($RecoverRuntimeAttempt) { if ($Automatic) { '--recover-safe' } else { '--recover-attempt' } } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
+      $reconcileOptions = @(if ($ConfigurationFrom) { $ConfigurationFrom } elseif ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($PrepareBaseline) { '--prepare-baseline' })
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {
         if ($Apply -or $RecoverRuntimeAttempt) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
@@ -1270,6 +1264,7 @@ function Verify-Checks {
   Banner 'OWNERED STATIC CHECKS'
   $tests=@(
     'tests/infra/compose-policy.test.mjs',
+    'tests/infra/compose-runtime-transition.test.mjs',
     'tests/infra/verify-runtime-provenance.test.mjs',
     'tests/infra/reconcile-owner-runtime.test.mjs',
     'tests/infra/owner-preview-source.test.mjs',
@@ -1295,19 +1290,13 @@ function Verify-Checks {
 $originalLauncherPath=$env:Path
 try {
   Assert-Ok (!$RecoverRuntimeAttempt -or ($Action -eq 'Docker' -and $DockerAction -eq 'reconcile')) 'Runtime attempt recovery belongs to docker reconcile only'
+  Assert-Ok (!$ConfigurationFrom -or ($Action -eq 'Docker' -and $DockerAction -eq 'reconcile')) 'Configuration transition belongs to docker reconcile only'
+  $resources=@(Get-DevOperationResources $Action $DockerAction ([bool]$Apply) $RecoverRuntimeAttempt $Mode)
+  $resourceLeases=@(Enter-DevResources $resources)
   if($Action -eq 'Apps' -and $DockerAction -eq 'recover'){
-    Assert-SurfaceIdentity
+    Assert-SurfaceIdentity 'SURFACE_ONLY'
     Restore-AndroidReverse
     return
-  }
-  $readOnlyOperation = $Action -in @('Status','Verify','Migrations') -or
-    ($Action -eq 'Apps' -and $DockerAction -in @('help','status','verify','logs','android')) -or
-    ($Action -eq 'Apps' -and $DockerAction -eq 'reconcile' -and !$Apply) -or
-    ($Action -eq 'Docker' -and $DockerAction -in @('help','status','ps','logs','images','volumes','networks','config','verify'))
-  if (-not $readOnlyOperation) {
-    try { $hasMutex = $mutex.WaitOne(0) }
-    catch [Threading.AbandonedMutexException] { $hasMutex = $true }
-    Assert-Ok $hasMutex 'another unified dev operation is in progress'
   }
   New-Item -ItemType Directory -Path $logRoot -Force | Out-Null
   $logFile = Join-Path $logRoot ('dev-'+(Get-Date -Format 'yyyyMMdd-HHmmss-fff')+'-'+$PID+'.log')
@@ -1384,6 +1373,5 @@ try {
 } finally {
   $env:Path=$originalLauncherPath
   if($transcript) { Stop-Transcript | Out-Null }
-  if($hasMutex) { $mutex.ReleaseMutex() }
-  $mutex.Dispose()
+  Exit-DevResources $resourceLeases
 }

@@ -17,7 +17,7 @@ const temp = mkdtempSync(path.join(tmpdir(), "bthwani-store-cart-"));
 const files = ["cart/use-store-cart", "catalog/store-products", "catalog/product-detail", "cart/cart-screen"];
 let compiled;
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     path.join(source, "cart/use-store-cart.ts"), ...files.slice(1).map(file => path.join(source, `${file}.tsx`)),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",
     "--inlineSourceMap", "--inlineSources", "--rootDir", source, "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });

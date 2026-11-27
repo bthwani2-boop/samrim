@@ -487,32 +487,101 @@ test("runtime reconciliation trigger is immediate for changed committed source a
   assert.equal(runtimePollAction({...base,last:{key:"old",status:"blocked"}}),"apply");
 });
 
-test("a reconciler can durably acknowledge only its own verified attempt after watcher loss", async()=>{
-  const { acknowledgeRuntimeAttempt, runtimeReceiptStatus } = await import("./sync-lenovo-reconciliation.mjs");
+test("a reconciler durably records every settled attempt without manufacturing success after watcher loss",async()=>{
+  const { acknowledgeRuntimeAttempt, beginRuntimeAttempt, runtimeReceiptStatus } = await import("./sync-lenovo-reconciliation.mjs");
   const folder=mkdtempSync(path.join(tmpdir(),"bthwani-runtime-receipt-"));
-  const file=path.join(folder,"runtime-reconcile.json");
-  const receipt=path.join(folder,"runtime-reconcile.receipt.json");
-  const key="a".repeat(64), attempt="11111111-1111-4111-8111-111111111111";
-  const next="22222222-2222-4222-8222-222222222222";
-  const running={version:1,key,attempt,status:"running"};
-  try {
-    writeFileSync(file,JSON.stringify(running));
+  const file=path.join(folder,"runtime-reconcile.json"), receipt=path.join(folder,"runtime-reconcile.receipt.json");
+  const key="a".repeat(64), next="22222222-2222-4222-8222-222222222222";
+  try{
+    for(const [index,status] of ["pass","review","blocked","retry"].entries()){
+      const attempt="11111111-1111-4111-8111-11111111111"+index;
+      const running={version:1,key,attempt,status:"running"};
+      beginRuntimeAttempt(file,receipt,key,attempt);
+      assert.equal(runtimeReceiptStatus(file,receipt),null);
+      assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,next,status),/RUNTIME_ATTEMPT_MISMATCH/);
+      for(const invalid of [undefined,"running","uncertain","unknown"])
+        assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt,invalid),/RUNTIME_TERMINAL_STATUS_INVALID/);
+      acknowledgeRuntimeAttempt(file,receipt,key,attempt,status);
+      assert.deepEqual(JSON.parse(readFileSync(file,"utf8")),running);
+      assert.equal(runtimeReceiptStatus(file,receipt),status);
+      assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt,"pass"),/RUNTIME_PHASE_TRANSITION_INVALID/);
+      writeFileSync(file,JSON.stringify({...running,status:"uncertain"}));
+      assert.equal(runtimeReceiptStatus(file,receipt),status);
+      writeFileSync(file,JSON.stringify({...running,attempt:next}));
+      assert.equal(runtimeReceiptStatus(file,receipt),null);
+      writeFileSync(file,JSON.stringify({...running,status}));
+    }
+    writeFileSync(receipt,"{broken");
     assert.equal(runtimeReceiptStatus(file,receipt),null);
-    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,next),/RUNTIME_ATTEMPT_MISMATCH/);
-    assert.equal(existsSync(receipt),false);
-    acknowledgeRuntimeAttempt(file,receipt,key,attempt);
-    assert.deepEqual(JSON.parse(readFileSync(file,"utf8")),running);
-    assert.equal(runtimeReceiptStatus(file,receipt),"pass");
-    writeFileSync(file,JSON.stringify({...running,status:"uncertain"}));
-    assert.equal(runtimeReceiptStatus(file,receipt),"pass");
-    writeFileSync(file,JSON.stringify({...running,attempt:next}));
-    assert.equal(runtimeReceiptStatus(file,receipt),null);
-    assert.throws(()=>acknowledgeRuntimeAttempt(file,receipt,key,attempt),/RUNTIME_ATTEMPT_MISMATCH/);
-    assert.equal(runtimeReceiptStatus(file,receipt),null);
-    const corruptReceipt=path.join(folder,"corrupt.receipt.json");
-    writeFileSync(corruptReceipt,"{broken",{flag:"wx"});
-    assert.equal(runtimeReceiptStatus(file,corruptReceipt),null);
-  } finally { rmSync(folder,{recursive:true,force:true}); }
+    assert.throws(()=>beginRuntimeAttempt(file,receipt,key,next),/RUNTIME_RECORD_INVALID/);
+  }finally{rmSync(folder,{recursive:true,force:true});}
+});
+
+test("interruption reopens only a proven stable serving boundary and never an unknown mutation",async()=>{
+  const {beginRuntimeAttempt,recordRuntimePhase,runtimeAttemptPhase,acknowledgeRuntimeAttempt,acknowledgeRuntimeRecovery,runtimeReceiptStatus,runtimeInterruptedStatus}=await import("./sync-lenovo-reconciliation.mjs");
+  const folder=mkdtempSync(path.join(tmpdir(),"bthwani-runtime-phase-"));
+  const state=path.join(folder,"runtime-reconcile.json"), receipt=path.join(folder,"runtime-reconcile.receipt.json");
+  const key="c".repeat(64), first="11111111-1111-4111-8111-111111111111", second="22222222-2222-4222-8222-222222222222", third="33333333-3333-4333-8333-333333333333";
+  const pending={version:1,key,attempt:first,status:"running"};
+  const setState=value=>writeFileSync(state,JSON.stringify(value));
+  const read=()=>readFileSync(state,"utf8");
+  try{
+    setState(pending);
+    assert.equal(runtimeAttemptPhase(state,receipt),null);
+    assert.throws(()=>acknowledgeRuntimeRecovery(state,receipt,key,read(),true),/RUNTIME_SAFE_BOUNDARY_NOT_PROVEN/);
+    assert.throws(()=>beginRuntimeAttempt(state,receipt,key,second),/RUNTIME_ATTEMPT_NOT_SETTLED/);
+    assert.throws(()=>recordRuntimePhase(state,receipt,key,first,"mutating"),/RUNTIME_PHASE_TRANSITION_INVALID/);
+    setState({...pending,status:"retry"});
+    // A crash after the first atomic publication leaves the old settled state
+    // and an unmatched safe receipt, never a falsely admitted pending writer.
+    writeFileSync(receipt,JSON.stringify({version:1,key,attempt:second,phase:"ready"}));
+    assert.equal(runtimeAttemptPhase(state,receipt),null);
+    beginRuntimeAttempt(state,receipt,key,third);
+    assert.equal(runtimeAttemptPhase(state,receipt),"ready");
+    assert.equal(runtimeReceiptStatus(state,receipt),null);
+    assert.equal(runtimeInterruptedStatus(state,receipt),"uncertain");
+    assert.throws(()=>beginRuntimeAttempt(state,receipt,key,second),/RUNTIME_ATTEMPT_NOT_SETTLED/);
+    assert.throws(()=>recordRuntimePhase(state,receipt,key,second,"mutating"),/RUNTIME_ATTEMPT_MISMATCH/);
+    assert.throws(()=>recordRuntimePhase(state,receipt,key,third,"ready"),/RUNTIME_PHASE_TRANSITION_INVALID/);
+    recordRuntimePhase(state,receipt,key,third,"mutating");
+    assert.equal(runtimeAttemptPhase(state,receipt),"mutating");
+    assert.throws(()=>acknowledgeRuntimeRecovery(state,receipt,key,read(),true),/RUNTIME_SAFE_BOUNDARY_NOT_PROVEN/);
+    for(const status of ["pass","review","retry"])
+      assert.throws(()=>acknowledgeRuntimeAttempt(state,receipt,key,third,status),/RUNTIME_PHASE_TRANSITION_INVALID/);
+    assert.equal(runtimeInterruptedStatus(state,receipt),"uncertain");
+    assert.throws(()=>recordRuntimePhase(state,receipt,key,third,"mutating"),/RUNTIME_PHASE_TRANSITION_INVALID/);
+    const admitted=JSON.parse(read());
+    rmSync(state);
+    assert.throws(()=>beginRuntimeAttempt(state,receipt,key,second),/RUNTIME_ATTEMPT_NOT_SETTLED/);
+    setState({...admitted,status:"uncertain"});
+    recordRuntimePhase(state,receipt,key,third,"ready");
+    assert.equal(runtimeAttemptPhase(state,receipt),"ready");
+    acknowledgeRuntimeRecovery(state,receipt,key,read(),true);
+    assert.equal(runtimeReceiptStatus(state,receipt),"retry");
+    assert.equal(runtimeInterruptedStatus(state,receipt),"retry");
+    assert.equal(runtimeAttemptPhase(state,receipt),null);
+    assert.throws(()=>recordRuntimePhase(state,receipt,key,third,"mutating"),/RUNTIME_PHASE_TRANSITION_INVALID/);
+  }finally{rmSync(folder,{recursive:true,force:true});}
+});
+
+test("runtime phase survives real process exit and resumes only after verified mutation boundary",()=>{
+  const folder=mkdtempSync(path.join(tmpdir(),"bthwani-runtime-process-"));
+  const state=path.join(folder,"runtime-reconcile.json"),receipt=path.join(folder,"runtime-reconcile.receipt.json");
+  const key="d".repeat(64),attempt="11111111-1111-4111-8111-111111111111";
+  const url=JSON.stringify(new URL("./sync-lenovo-reconciliation.mjs",import.meta.url).href);
+  const run=body=>spawnSync(process.execPath,["--input-type=module","-e","import {beginRuntimeAttempt,recordRuntimePhase,runtimeAttemptPhase,acknowledgeRuntimeRecovery,runtimeReceiptStatus} from "+url+";import {readFileSync} from 'node:fs';const [state,receipt,key,attempt]=process.argv.slice(1);"+body,state,receipt,key,attempt],{encoding:"utf8",windowsHide:true,timeout:20000});
+  try{
+    const interrupted=run('beginRuntimeAttempt(state,receipt,key,attempt);recordRuntimePhase(state,receipt,key,attempt,"mutating");process.exit(9)');
+    assert.equal(interrupted.status,9,interrupted.stderr);
+    const refusal=run('if(runtimeAttemptPhase(state,receipt)!=="mutating")process.exit(4);acknowledgeRuntimeRecovery(state,receipt,key,readFileSync(state,"utf8"),true)');
+    assert.notEqual(refusal.status,0);
+    assert.match(refusal.stderr,/RUNTIME_SAFE_BOUNDARY_NOT_PROVEN/);
+    const verified=run('recordRuntimePhase(state,receipt,key,attempt,"ready");process.exit(9)');
+    assert.equal(verified.status,9,verified.stderr);
+    const recovered=run('acknowledgeRuntimeRecovery(state,receipt,key,readFileSync(state,"utf8"),true);console.log(runtimeReceiptStatus(state,receipt))');
+    assert.equal(recovered.status,0,recovered.stderr);
+    assert.equal(recovered.stdout.trim(),"retry");
+  }finally{rmSync(folder,{recursive:true,force:true});}
 });
 
 test("explicit recovery receipt releases only the exact previously reviewed hold, never a changed attempt",async()=>{
@@ -536,14 +605,6 @@ test("explicit recovery receipt releases only the exact previously reviewed hold
   } finally {rmSync(folder,{recursive:true,force:true});}
 });
 
-test("runtime attempt outcome distinguishes known readback from ambiguous writes",async()=>{
-  const {runtimeAttemptResult}=await import("./sync-lenovo-reconciliation.mjs");
-  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nOWNER_APPLY_VERIFIED dsh\n","Source changed"),"retry");
-  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n",""),"uncertain");
-  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_PASS dsh"),"blocked");
-  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_BLOCKED"),"uncertain");
-  assert.equal(runtimeAttemptResult(1,"SIGTERM","",""),"uncertain");
-});
 
 test("Graphify scheduling responds to saved code and ignores its own generated output",async()=>{
   const {graphifySourceEvent}=await import("./sync-lenovo-reconciliation.mjs");
@@ -705,34 +766,25 @@ test("native recursive file event reaches Graphify scheduling without a Git comm
   }finally{watcher?.close();rmSync(dir,{recursive:true,force:true});}
 });
 
-test("reconciliation requires an explicit terminal result and never certifies a partial result",async()=>{
-  const {runtimeAttemptResult}=await import("./sync-lenovo-reconciliation.mjs");
-  const sha="a".repeat(40);
-  assert.equal(runtimeAttemptResult(0,null,"",""),"retry");
-  assert.equal(runtimeAttemptResult(0,null,"RECONCILE_PASS HEAD="+sha+"\n",""),"pass");
-  assert.equal(runtimeAttemptResult(1,null,"RECONCILE_PARTIAL HEAD="+sha+"\n",""),"review");
-  assert.equal(runtimeAttemptResult(3,null,"RECONCILE_PARTIAL HEAD="+sha+"\n","BASELINE_PROOF_FAIL rehearsal unavailable"),"retry");
-  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_BLOCKED owner schema or runtime transition requires durable readback"),"uncertain");
-  assert.equal(runtimeAttemptResult(0,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PASS HEAD="+sha+"\n",""),"uncertain");
-  assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\nRECONCILE_PARTIAL HEAD="+sha+"\n",""),"uncertain");
+test("settled terminal results distinguish review and safe retry from full success",async()=>{
+  const {runtimeTerminalStatus}=await import("./sync-lenovo-reconciliation.mjs");
+  assert.equal(runtimeTerminalStatus({partial:false,holds:[],baselineFailed:false}),"pass");
+  assert.equal(runtimeTerminalStatus({partial:true,holds:[],baselineFailed:false}),"review");
+  assert.equal(runtimeTerminalStatus({partial:true,holds:[],baselineFailed:true}),"retry");
 });
 
-test("stable source admission holds do not repeat an automatic apply until source or authority changes", async()=>{
-  const {runtimeAttemptResult,runtimePollAction}=await import("./sync-lenovo-reconciliation.mjs");
-  const sha="a".repeat(40);
-  const hold=(owner,reason)=>owner+" RUNTIME=BLOCKED revision="+sha+" reason="+reason+"\n";
-  const terminal="RECONCILE_PARTIAL HEAD="+sha+"\n";
-  const output=hold("dsh","PREVIEW_NOT_AUTHORIZED")+hold("identity","PEER_REVIEW_REQUIRED:dsh")+hold("wlt","PEER_REVIEW_REQUIRED:dsh")+terminal;
-  const status=runtimeAttemptResult(3,null,output,"");
+test("stable source admission holds do not repeat an automatic apply until source or authority changes",async()=>{
+  const {runtimeTerminalStatus,runtimePollAction}=await import("./sync-lenovo-reconciliation.mjs");
+  const result=(holds,baselineFailed=false)=>runtimeTerminalStatus({partial:true,holds,baselineFailed});
+  const status=result(["PREVIEW_NOT_AUTHORIZED","PEER_REVIEW_REQUIRED:dsh"]);
   assert.equal(status,"blocked");
   const input={enabled:true,dirty:false,active:false,key:"same",last:{key:"same",status},now:120000,nextAudit:60000};
   assert.equal(runtimePollAction(input),null);
   assert.equal(runtimePollAction({...input,key:"changed"}),"apply");
-  assert.equal(runtimeAttemptResult(3,null,hold("dsh","UNCOMMITTED_NON_GO")+terminal,""),"blocked");
-  assert.equal(runtimeAttemptResult(3,null,hold("wlt","CONFIG_REVIEW_REQUIRED")+terminal,""),"review");
-  assert.equal(runtimeAttemptResult(3,null,hold("dsh","PREVIEW_NOT_AUTHORIZED")+hold("wlt","CONFIG_REVIEW_REQUIRED")+terminal,""),"review");
-  assert.equal(runtimeAttemptResult(3,null,output,"BASELINE_PROOF_FAIL transient"),"retry");
-  assert.equal(runtimeAttemptResult(3,null,"OWNER_APPLY_STARTED dsh\n"+output,""),"uncertain");
+  assert.equal(result(["UNCOMMITTED_NON_GO"]),"blocked");
+  assert.equal(result(["CONFIG_REVIEW_REQUIRED"]),"review");
+  assert.equal(result(["PREVIEW_NOT_AUTHORIZED","CONFIG_REVIEW_REQUIRED"]),"review");
+  assert.equal(result(["PREVIEW_NOT_AUTHORIZED"],true),"retry");
 });
 
 test("fresh baseline rehearsal is scheduled on a new runtime key, not every review audit", async()=>{

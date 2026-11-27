@@ -57,3 +57,70 @@ test("SDK binds current actor and checkout; no caller-selected actor in the requ
     await assert.rejects(()=>read(),error=>error.status===401);
   } finally {await new Promise(resolve=>owner.close(resolve));}
 });
+
+test("WLT actor wire admission follows owner Unicode scalar and whitespace semantics across all readbacks", async () => {
+  const { parseCustomerWalletBalance } = await import("./wallet-balance.ts");
+  const { parseCustomerFundingHistory } = await import("./funding-history.ts");
+  const check = id => [
+    () => parseCustomerWalletBalance({actorId:id,currency:"YER",balanceYer:"100",availableYer:"90"}),
+    () => parseCustomerFundingHistory({actorId:id,currency:"YER",items:[],hasMore:false,nextCursor:null}),
+    () => parseCustomerOrderPaymentReadback({...result,actorId:id},id,checkoutId),
+  ];
+  for (const id of ["actor", "مستخدم", "a".repeat(128), "\u{1F600}".repeat(128), "\uFEFFactor", "actor\uFEFF", "a b"]) {
+    for (const parse of check(id)) assert.equal(parse().actorId,id);
+  }
+  for (const id of ["",null,42,"a".repeat(129),"\u{1F600}".repeat(129)," actor","actor\u00a0","\u0085actor",
+    "actor\u2003","a\u007fb","a\u009fb","a\u0000b","a\ud800b","a\udfffb"]) {
+    for (const parse of check(id)) assert.throws(parse,{status:502});
+  }
+});
+
+test("WLT shared validation rejects malformed wire primitives without coercion and retains exact amounts", async () => {
+  const { actorValid, amountValid, fundingIdValid, isolatedNativeWltOrigin } = await import("./validation.ts");
+  for (const x of [undefined, {}, ["actor"], new String("actor")]) assert.equal(actorValid(x),false);
+  for (const x of [undefined, 12, "", "01", "-1", "1.0", "1e1", "9".repeat(39)]) {
+    assert.equal(amountValid(x,false),false);
+    assert.equal(amountValid(x,true),false);
+  }
+  assert.equal(amountValid("0",false),true);
+  assert.equal(amountValid("0",true),false);
+  assert.equal(amountValid("9".repeat(38),true),true);
+  for (const x of [undefined, 12345678, "short", "a".repeat(129), "invalid/id"]) assert.equal(fundingIdValid(x),false);
+  assert.equal(fundingIdValid("id._-123"),true);
+  const identity = "http://10.0.2.2:1";
+  const wallet = "http://10.0.2.2:65535";
+  assert.equal(isolatedNativeWltOrigin("android",false,identity,wallet),wallet);
+  for (const candidate of [undefined, null, [wallet], new String(wallet), "http://10.0.2.2:65536",
+    "http://10.0.2.2:01", identity, "http://127.0.0.1:2"]) {
+    assert.equal(isolatedNativeWltOrigin("android",false,identity,candidate),null);
+  }
+  assert.equal(isolatedNativeWltOrigin("android",false,[identity],wallet),null);
+  assert.equal(isolatedNativeWltOrigin("ios",false,identity,wallet),null);
+  assert.equal(isolatedNativeWltOrigin("android",true,identity,wallet),null);
+});
+
+test("all financial read projections reject substituted required fields", async () => {
+  const { parseCustomerWalletBalance } = await import("./wallet-balance.ts");
+  const { parseCustomerFundingHistory } = await import("./funding-history.ts");
+  const balance = { actorId, currency: "YER", balanceYer: "100", availableYer: "90" };
+  const entry = { fundingId: "funding-001", amountYer: "100", postedAt: "2026-11-27T00:00:00Z" };
+  const history = { actorId, currency: "YER", items: [entry], hasMore: false, nextCursor: null };
+  const substitute = (original, key) => {
+    const { [key]: inherited, ...own } = original;
+    return Object.assign(Object.create({ [key]: inherited }), own, { unrelated: true });
+  };
+  for (const [label, original, parser] of [
+    ["balance", balance, parseCustomerWalletBalance],
+    ["history", history, parseCustomerFundingHistory],
+    ["readback", result, parse],
+    ["funding entry", entry, value => parseCustomerFundingHistory({ ...history, items: [value] })],
+    ["allocation", allocation, value => parse({ ...result, allocation: value })],
+  ]) {
+    for (const key of Object.keys(original)) {
+      assert.throws(() => parser(substitute(original, key)), { status: 502 }, label + ":" + key);
+    }
+  }
+  assert.deepEqual(parseCustomerWalletBalance(balance), balance);
+  assert.deepEqual(parseCustomerFundingHistory(history), history);
+  assert.deepEqual(parse(result), result);
+});

@@ -474,3 +474,28 @@ test('Biome honors Git artifact boundaries without excluding authored tests or a
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("source admission distinguishes the native compiler, API alias and Nx peer-qualified snapshot", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const manifest = path.join(dir, "package.json");
+  const original = JSON.parse(readFileSync(manifest, "utf8"));
+  const valid = verifyWorkspace(dir);
+  assert.equal(valid.typescript, original.devDependencies["@typescript/native"].split("@").at(-1));
+  assert.equal(valid.typescriptApi, original.devDependencies.typescript.split("@").at(-1));
+  writeFileSync(manifest, JSON.stringify({...original,devDependencies:{...original.devDependencies,typescript:valid.typescript}}));
+  assert.throws(() => verifyWorkspace(dir), /TypeScript 6 API/);
+  writeFileSync(manifest, JSON.stringify(original));
+  const lock = path.join(dir, "pnpm-lock.yaml");
+  const before = readFileSync(lock, "utf8");
+  const after = before.replace("version: "+original.devDependencies.nx+"(@typescript/typescript6@"+valid.typescriptApi+")", "version: "+original.devDependencies.nx);
+  assert.notEqual(after,before);
+  writeFileSync(lock, after);
+  assert.throws(() => verifyWorkspace(dir), /Frozen lock pin differs: nx/);
+  writeFileSync(lock,before);
+  const customer = path.join(dir,"apps/customer/package.json");
+  const app=JSON.parse(readFileSync(customer,"utf8"));
+  app.devDependencies.typescript=valid.typescriptApi;
+  writeFileSync(customer,JSON.stringify(app));
+  assert.throws(() => verifyWorkspace(dir), /Project native TypeScript compiler differs/);
+});

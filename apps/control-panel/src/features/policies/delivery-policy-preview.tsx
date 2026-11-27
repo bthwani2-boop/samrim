@@ -4,6 +4,8 @@ import { type CityDeliveryPolicy, type CityDeliveryPolicyChange, type CityDelive
 import { Alert, Button, Input, InputNumber, Space, Typography } from "antd";
 import { useEffect, useRef, useState } from "react";
 
+import { requestPolicyOwner } from "./policy-owner-web.ts";
+
 type Band = { draftId: string; upToMeters: number | null; ratePerKmMinor: number | null };
 
 export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDenied, onLockChange, onCommitted }: Readonly<{
@@ -60,16 +62,12 @@ export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDen
     active.current = controller;
     setBusy(true); setResult(null); setError("");
     try {
-      const response = await fetch("/api/policies/cities/" + policy.cityId, {
-        method: "POST", credentials: "same-origin", cache: "no-store", redirect: "error",
-        headers: { "Content-Type": "application/json", "X-BThwani-Operator": encodeURIComponent(actorId) },
-        body: JSON.stringify(input), signal: controller.signal,
-      });
+      const response = await requestPolicyOwner("/api/policies/cities/" + policy.cityId, actorId, "POST", input, controller.signal);
       if (controller.signal.aborted || active.current !== controller) return;
       if (response.status === 401 || response.status === 403) { onDenied(); return; }
       if (response.status === 409) { setStale(true); setError("تغير إصدار السياسة. أعد قراءة السياسة الحالية."); return; }
-      if (!response.ok) throw new Error("unavailable");
-      const value: unknown = await response.json();
+      if (response.status !== 200) throw new Error("unavailable");
+      const value = response.document;
       if (controller.signal.aborted || active.current !== controller) return;
       if (!isCityDeliveryPolicyPreview(value, policy.cityId, input)) throw new Error("invalid");
       setResult(value);
@@ -94,13 +92,10 @@ export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDen
     active.current = controller;
     setPending(candidate); onLockChange(true); setBusy(true); setError("");
     const endpoint = "/api/policies/cities/" + policy.cityId + "?delivery=1";
-    const binding = { "X-BThwani-Operator": encodeURIComponent(actorId) };
-    const options = { credentials: "same-origin", cache: "no-store", redirect: "error", signal: controller.signal } as const;
     try {
-      const response = await fetch(endpoint, { ...options, method: "PATCH",
-        headers: { ...binding, "Content-Type": "application/json" }, body: JSON.stringify(candidate) });
+      const response = await requestPolicyOwner(endpoint, actorId, "PATCH", candidate, controller.signal);
       if (controller.signal.aborted || active.current !== controller) return;
-      if (response.status === 409 || (!pending && [400,401,403].includes(response.status))) {
+      if (!pending && [400,401,403,409].includes(response.status)) {
         clearPending();
         if (response.status === 401 || response.status === 403) { onDenied(); return; }
         setStale(response.status === 409); setError("رفض DSH التعديل أو تغير الإصدار. أعد قراءة السياسة قبل المحاولة.");
@@ -109,13 +104,13 @@ export default function DeliveryPolicyPreview({ policy, actorId, disabled, onDen
       if (response.status === 401 || response.status === 403) {
         onLockChange(false); onDenied(); return;
       }
-      const saved: unknown = response.ok ? await response.json() : null;
+      const saved = response.status === 200 ? response.document : null;
       if (controller.signal.aborted || active.current !== controller) return;
       if (!isCityDeliveryPolicyResult(saved, policy.cityId, candidate)) throw new Error("unknown");
-      const read = await fetch(endpoint, { ...options, method: "GET", headers: binding });
+      const read = await requestPolicyOwner(endpoint, actorId, "GET", undefined, controller.signal);
       if (controller.signal.aborted || active.current !== controller) return;
       if (read.status === 401 || read.status === 403) { onLockChange(false); onDenied(); return; }
-      const current: unknown = read.ok ? await read.json() : null;
+      const current = read.status === 200 ? read.document : null;
       if (controller.signal.aborted || active.current !== controller) return;
       if (!isCityDeliveryPolicy(current, policy.cityId) || current.version < candidate.expectedVersion + 1 ||
           (current.version === candidate.expectedVersion + 1 && (!matchesCityDeliveryPolicy(current, candidate) || current.updatedAt !== saved.policy.updatedAt))) throw new Error("unknown");

@@ -1,7 +1,7 @@
 import { type CustomerAddressChange, type CustomerAddressPage, type CustomerAddressResult, type DeliveryServiceability, DshPublicError, evaluateDeliveryServiceability,
-  getCustomerAddress, isCustomerAddressId, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "@bthwani/dsh";
+  getCustomerAddress, isCustomerAddressId, listCustomerAddresses, normalizeCustomerAddressChange, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress } from "@bthwani/dsh";
 import { Platform } from "react-native";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json";
 import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access/customer-session-transport";
 
 const nativeOwner = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
@@ -24,14 +24,14 @@ async function webRead(path: string,actor: string,signal: AbortSignal,change?: C
       ...(mutating?{body:JSON.stringify(change)}:{})});
   } catch { throw new DshPublicError(503,mutating?"OPERATION_RESULT_UNKNOWN":"OWNER_UNAVAILABLE"); }
   if (signal.aborted || res.status !== 200 || res.headers.get("Cache-Control") !== "no-store") {
-    void res.body?.cancel().catch(() => {});
+    discardCustomerResponse(res);
     signal.throwIfAborted();
     if (!res.ok) throw new DshPublicError(res.status,mutating && res.status>=500?"OPERATION_RESULT_UNKNOWN":"ADDRESS_REQUEST_REJECTED");
     throw new DshPublicError(502,"OWNER_RESPONSE_INVALID");
   }
   const body = await readBoundedCustomerJSON({ headers: res.headers, body: res.body, signal }, 32 * 1024);
   if (body === null) {
-    void res.body?.cancel().catch(() => {});
+    discardCustomerResponse(res);
     signal.throwIfAborted();
     throw new DshPublicError(502,"OWNER_RESPONSE_INVALID");
   }
@@ -80,21 +80,24 @@ export async function readVerifiedAddress(signal: AbortSignal, actor: string, id
   }
 }
 export async function writeVerifiedAddress(actor:string,id:string,change:CustomerAddressChange,signal:AbortSignal):Promise<CustomerAddressResult> {
+  const command=normalizeCustomerAddressChange(change);
+  if(!command||!isCustomerAddressId(id))throw new DshPublicError(400,"INVALID_REQUEST");
   await verifyAddressSession(signal,actor);
   let dispatched=false;
   try {
     if (Platform.OS==="web") {
       dispatched=true;
-      const result=parseCustomerAddressResult(await webRead(`${route}?addressId=${encodeURIComponent(id)}`,actor,signal,change),actor,id,change);
+      const result=parseCustomerAddressResult(await webRead(`${route}?addressId=${encodeURIComponent(id)}`,actor,signal,command),actor,id,command);
       await verifyAddressSession(signal,actor);
       return result;
     }
     if (!nativeOwner) throw new DshPublicError(503,"OWNER_UNAVAILABLE");
     const result=await withVerifiedNativeCustomerRead(signal,bearer=>{
       dispatched=true;
-      return saveCustomerAddress(nativeOwner,bearer,actor,id,change,signal);
+      return saveCustomerAddress(nativeOwner,bearer,actor,id,command,signal);
     },actor);
     if (result.kind!=="ready") throw new DshPublicError(503,"OPERATION_RESULT_UNKNOWN");
+    signal.throwIfAborted();
     return result.value;
   } catch(error) {
     if (dispatched && (!(error instanceof DshPublicError) || ![400,404,409].includes(error.status))) {
@@ -103,7 +106,6 @@ export async function writeVerifiedAddress(actor:string,id:string,change:Custome
     throw error;
   }
 }
-
 
 export async function readVerifiedDeliveryServiceability(actor:string,store:string,address:string,signal:AbortSignal):Promise<DeliveryServiceability> {
   await verifyAddressSession(signal,actor);

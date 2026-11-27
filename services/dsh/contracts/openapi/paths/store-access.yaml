@@ -21,6 +21,45 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+  /v1/operators/stores/{storeID}/financial-standing:
+    get:
+      operationId: getOperatorStoreFinancialStanding
+      summary: Read minimal DSH Store facts for agreement review
+      description: Requires current explicit Identity Finance permission for the same Operator before and after reading one exact Store, including unpublished Stores. No financial, publication, payment or checkout authorization is conveyed. No query or request body is accepted.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+      responses:
+        '200':
+          description: Minimal current DSH-owned Store identity, relation and owner actor
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, storeId, relation, ownerActorId]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  storeId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+                  relation: { type: string, enum: [DIRECT, MARKETPLACE] }
+                  ownerActorId: { type: string, minLength: 1, maxLength: 128 }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreMissing'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
   /v1/stores/{storeID}/availability:
     get:
       operationId: getStoreOperationalAvailability
@@ -87,3 +126,64 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict'
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+  /v1/stores/{storeID}/profile:
+    parameters:
+      - name: storeID
+        in: path
+        required: true
+        schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+    get:
+      operationId: getMerchantStoreProfile
+      summary: Read the current owned Store profile
+      security: [{ OpaqueSession: [] }]
+      responses:
+        '200':
+          description: Exact owned Store metadata; no publication permission
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantStoreProfile' }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }
+    patch:
+      operationId: changeMerchantStoreProfile
+      summary: Change name and description of an owned unpublished Store
+      description: Requires a current Merchant session and exact ownership. Full name and description replacement, version check, immutable operation replay. No change to Store ownership, location, category, relation or publication.
+      security: [{ OpaqueSession: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [operationId, expectedVersion, name, description]
+              properties:
+                operationId: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+                expectedVersion: { type: integer, minimum: 1, maximum: 9007199254740990 }
+                name: { type: string, minLength: 1, maxLength: 120 }
+                description: { type: string, maxLength: 1000 }
+      responses:
+        '200':
+          description: Committed profile or immutable result of the exact operation
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [profile, replay]
+                properties:
+                  profile: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantStoreProfile' }
+                  replay: { type: boolean }
+        '400': { $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange' }
+        '401': { $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized' }
+        '403': { $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden' }
+        '409': { $ref: '../dsh.openapi.yaml#/components/responses/StoreConflict' }
+        '503': { $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable' }

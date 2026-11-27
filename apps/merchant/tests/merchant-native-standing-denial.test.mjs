@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import * as merchantAdmissionWeb from "../src/features/access/merchant-admission-web.ts";
 
 const source = fileURLToPath(new URL("../src/features/access/admission-transport.ts", import.meta.url));
 const root = path.resolve(import.meta.dirname, "../../..");
@@ -13,7 +14,7 @@ const temporary = mkdtempSync(path.join(tmpdir(), "merchant-native-coverage-"));
 let compiled;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,
   ], { cwd: root, timeout: 20_000, encoding: "utf8", windowsHide: true });
@@ -89,6 +90,7 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
     },
   };
   const dependencies = {
+    "./merchant-admission-web.ts": merchantAdmissionWeb,
     "@bthwani/dsh": { DshPublicError: OwnerError },
     "@bthwani/identity": {
       IdentityClientError: OwnerError,

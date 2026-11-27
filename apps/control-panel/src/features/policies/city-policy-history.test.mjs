@@ -5,6 +5,10 @@ import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-
 import { readCityPolicyHistory } from "./city-policy-command.ts";
 
 // Retain uncached modules until Node collects coverage.
+const privateReply = (body, init = {}) => Response.json(body, {
+  ...init, headers: { "Cache-Control": "no-store", ...init.headers },
+});
+
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 
@@ -19,7 +23,7 @@ test("Operator audit browser request binds city, actor and cursor to the existin
     assert.equal(init.method, "GET");
     assert.equal(init.headers["X-BThwani-Operator"], "operator-a");
     assert.equal(init.cache, "no-store");
-    return Response.json(page);
+    return privateReply(page);
   });
   assert.deepEqual(await readCityPolicyHistory(endpoint, "sanaa", "operator-a", "5"), page);
   await assert.rejects(readCityPolicyHistory("/api/policies/cities/aden", "sanaa", "operator-a"));
@@ -27,13 +31,13 @@ test("Operator audit browser request binds city, actor and cursor to the existin
   assert.equal(spy.mock.callCount(), 1);
 });
 test("Operator audit browser rejects cross-city, denied and abandoned responses", async t => {
-  const spy = t.mock.method(globalThis, "fetch", async () => Response.json({ ...page, cityId: "aden" }));
+  const spy = t.mock.method(globalThis, "fetch", async () => privateReply({ ...page, cityId: "aden" }));
   await assert.rejects(readCityPolicyHistory(endpoint, "sanaa", "operator-a"));
-  spy.mock.mockImplementation(async () => Response.json({ code: "FORBIDDEN" }, { status: 403 }));
+  spy.mock.mockImplementation(async () => privateReply({ code: "FORBIDDEN" }, { status: 403 }));
   await assert.rejects(readCityPolicyHistory(endpoint, "sanaa", "operator-a"));
   const controller = new AbortController();
   controller.abort();
-  spy.mock.mockImplementation(async () => Response.json(page));
+  spy.mock.mockImplementation(async () => privateReply(page));
   await assert.rejects(readCityPolicyHistory(endpoint, "sanaa", "operator-a", undefined, controller.signal));
 });
 
@@ -72,7 +76,7 @@ test("historical limits compare against verified current policy and only prepare
     actorId: "operator-a", city: "sanaa", endpoint, current, onDraft: entry => drafts.push(entry), ...overrides,
   }));};
   const fetch = t.mock.method(globalThis, "fetch", async (_url, init) => {
-    assert.equal(init.method, "GET"); return Response.json(page);
+    assert.equal(init.method, "GET"); return privateReply(page);
   });
   render().find(n => n.type === "Button").props.onClick();
   await new Promise(resolve => setImmediate(resolve));
@@ -97,9 +101,9 @@ test("historical limits compare against verified current policy and only prepare
     cursors.push(before);
     if (before && !failed) {
       failed = true;
-      return Response.json({ code: "OWNER_UNAVAILABLE" }, { status: 503 });
+      return privateReply({ code: "OWNER_UNAVAILABLE" }, { status: 503 });
     }
-    return Response.json(before ? page : newest);
+    return privateReply(before ? page : newest);
   });
   const click = label => {
     const nodes = render();
@@ -122,4 +126,17 @@ test("historical limits compare against verified current policy and only prepare
   click("الإصدارات الأحدث");
   await settle();
   assert.deepEqual(cursors, [null, "5", "5", null]);
+});
+
+test("operational history rejects coercible cursors and non-advancing or nonprivate replies",async t=>{
+  let response=privateReply(page);
+  const calls=t.mock.method(globalThis,"fetch",async()=>response);
+  for(const cursor of [1,["5"],"9007199254740992","5\n"]){
+    await assert.rejects(readCityPolicyHistory(endpoint,"sanaa","operator-a",cursor),/INVALID_HISTORY_SCOPE/);
+  }
+  assert.equal(calls.mock.callCount(),0);
+  response=privateReply(page);
+  await assert.rejects(readCityPolicyHistory(endpoint,"sanaa","operator-a","4"),/INVALID_HISTORY_RESPONSE/);
+  response=Response.json(page);
+  await assert.rejects(readCityPolicyHistory(endpoint,"sanaa","operator-a"),/response invalid/);
 });

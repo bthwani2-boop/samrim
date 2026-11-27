@@ -6,14 +6,14 @@ import path from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
-import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
+import { discardCustomerResponse, readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
 const source = path.join(import.meta.dirname, "checkout-review-transport.ts");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-checkout-transport-"));
 let compiled;
 try {
-  const r = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+  const r = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
@@ -25,9 +25,9 @@ const actor = "synthetic-customer-a";
 const store = "store-a";
 const origin = "http://127.0.0.1:3202";
 const bearer = Buffer.alloc(32, 14).toString("base64url");
-const input = { expectedCartVersion: 4, recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP" };
+const input = { expectedCartVersion: 4, salesChannel: "DIRECT", recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP" };
 const review = {
-  actorId: actor, storeId: store, cartVersion: 4, recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP",
+  actorId: actor, storeId: store, cartVersion: 4, salesChannel: "DIRECT", recipientPurpose: "SELF", fulfillmentMode: "CUSTOMER_PICKUP",
   merchandise: { actorId: actor, storeId: store, cartVersion: 4, lines: [
     { offerId: "offer-a", variantId: "variant-a", quantity: 2, unitYer: "550", lineTotalYer: "1100" }],
     merchandiseSubtotalYer: "1100", checkoutReady: false },
@@ -59,7 +59,7 @@ function harness(t, platform = "web", configured = true) {
   const module = loadMappedRenderFixture(compiled, source, {
     "@bthwani/dsh": dsh,
     "react-native": { Platform: { OS: platform } },
-    "../access/bounded-customer-json": { readBoundedCustomerJSON },
+    "../access/bounded-customer-json": { discardCustomerResponse, readBoundedCustomerJSON },
     "../addresses/address-transport": {
       async verifyAddressSession(s, a) {
         verifications.push({ signal: s, actor: a });
@@ -213,4 +213,104 @@ test("Android checkout fails closed without its owner origin", async t => {
   assert.deepEqual(await h.read(), { kind: "unavailable" });
   assert.equal(h.nativeCalls.length, 0);
   assert.equal(h.requests.length, 0);
+});
+
+test("pre-aborted checkout dispatches neither admission nor DSH", async t => {
+  const h = harness(t);
+  const controller = new AbortController();
+  controller.abort();
+  assert.deepEqual(await h.read(controller.signal), { kind: "unavailable" });
+  assert.equal(h.verifications.length, 0);
+  assert.equal(h.requests.length, 0);
+  assert.equal(h.nativeCalls.length, 0);
+});
+
+test("cancelled checkout settles while headers are stalled and disposes the late reply", async t => {
+  const h = harness(t);
+  const controller = new AbortController();
+  let release, cancelled = 0, timer;
+  const held = new Promise(resolve => { release = resolve; });
+  t.mock.method(globalThis, "fetch", () => held);
+  const pending = h.read(controller.signal);
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  try {
+    assert.deepEqual(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 250); })]),
+      { kind: "unavailable" });
+  } finally {
+    clearTimeout(timer);
+    release(new Response(new ReadableStream({ cancel() { cancelled++; } }), {
+      headers: { "Cache-Control": "no-store", "Content-Type": "application/json" },
+    }));
+    await pending;
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(cancelled, 1);
+  assert.equal(h.verifications.length, 1);
+  t.mock.method(globalThis, "fetch", async () => json(review));
+  assert.deepEqual(await h.read(), { kind: "ready", review });
+});
+
+test("checkout binds a single immutable request to dispatch and response admission", async t => {
+  const h = harness(t);
+  const original = input.expectedCartVersion;
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    assert.equal(JSON.parse(init.body).expectedCartVersion, original);
+    input.expectedCartVersion = original + 1;
+    return json(review);
+  });
+  try {
+    assert.deepEqual(await h.read(), { kind: "ready", review });
+  } finally {
+    input.expectedCartVersion = original;
+  }
+});
+
+test("invalid review input and unsupported surfaces dispatch nothing", async t => {
+  const h = harness(t, "ios");
+  assert.deepEqual(await h.read(), { kind: "unavailable" });
+  const version = input.expectedCartVersion;
+  try {
+    input.expectedCartVersion = 0;
+    assert.deepEqual(await h.read(), { kind: "unavailable" });
+  } finally { input.expectedCartVersion = version; }
+  assert.equal(h.verifications.length, 0);
+  assert.equal(h.nativeCalls.length, 0);
+  assert.equal(h.requests.length, 0);
+});
+
+test("rejected checkout envelopes remain unavailable even if cleanup fails", async t => {
+  const h = harness(t);
+  h.replies.push(
+    { status: 503, get body() { throw new Error("body inaccessible"); } },
+    new Response(null, { status: 503 }),
+    { status: 503, body: { locked: true }, bodyUsed: false },
+    { status: 503, body: { locked: false }, bodyUsed: true },
+    new Response(new ReadableStream({ cancel() { return Promise.reject(new Error("cleanup failed")); } }), { status: 503 }),
+    new Error("network error"),
+  );
+  for (let i = 0; i < 6; i++) assert.deepEqual(await h.read(), { kind: "unavailable" });
+  h.replies.push(json(review));
+  assert.deepEqual(await h.read(), { kind: "ready", review });
+});
+
+test("Android cancellation does not admit an obsolete owner response", async t => {
+  const h = harness(t, "android");
+  const controller = new AbortController();
+  let release, timer;
+  const held = new Promise(resolve => { release = resolve; });
+  t.mock.method(globalThis, "fetch", () => held);
+  const pending = h.read(controller.signal);
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  try {
+    assert.deepEqual(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 250); })]),
+      { kind: "unavailable" });
+  } finally {
+    clearTimeout(timer);
+    release(json(review));
+    await pending;
+  }
+  t.mock.method(globalThis, "fetch", async () => json(review));
+  assert.deepEqual(await h.read(), { kind: "ready", review });
 });
