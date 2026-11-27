@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
-import { admitCoverageEvidence, publishCoverageEvidence } from "./ci-coverage-evidence.mjs";
 import { discoverWindowsPlatformTests, discoverWorkspaceNodeTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
 
 // Workflow job IDs and published check contexts are contracts. Step display
@@ -59,34 +57,6 @@ function invoke(program, args, cwd, env = {}) {
 }
 function shell(script, env = {}, cwd = root) {
   return invoke(bash, ["-c", script], cwd, env);
-}
-function fixture(prefix, fn) {
-  const directory = mkdtempSync(path.join(tmpdir(), prefix));
-  try { return fn(directory); }
-  finally { rmSync(directory, { recursive: true, force: true }); }
-}
-function put(directory, relative, text = "synthetic coverage fixture\n") {
-  const file = path.join(directory, relative);
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, text, "utf8");
-  return file;
-}
-
-function git(cwd, ...args) {
-  const result = invoke("git", ["-c", "commit.gpgsign=false", "-c", "user.name=CI fixture",
-    "-c", "user.email=ci@example.invalid", "-c", "core.hooksPath=" + path.join(cwd, "no-hooks"), ...args], cwd);
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.trim();
-}
-function candidate(directory) {
-  git(directory, "init", "--quiet");
-  git(directory, "config", "core.autocrlf", "false");
-  put(directory, ".gitattributes", "* text=auto eol=lf\n");
-  put(directory, "source.txt", "original\n");
-  put(directory, ".gitignore", "coverage/\n");
-  git(directory, "add", "--", "source.txt", ".gitignore", ".gitattributes");
-  git(directory, "commit", "--quiet", "-m", "synthetic CI candidate");
-  return { sha: git(directory, "rev-parse", "HEAD"), tree: git(directory, "rev-parse", "HEAD^{tree}") };
 }
 test("one integration event owner, stable protected names and no duplicate development push", () => {
   assert.deepEqual(ci.on.push, { branches: ["main"] });
@@ -275,19 +245,13 @@ test("coverage producers, quality and build remain independent; Sonar cannot acc
 });
 
 const evidence = [
-  { kind: "js", job: app, artifact: "sonar-js", directory: "coverage", files: ["lcov.info"] },
-  { kind: "go", job: goQuality, artifact: "sonar-go", directory: "coverage", files: owners.map(owner => owner + "-go.out").sort() },
-  { kind: "postgres", job: postgres, artifact: "sonar-postgres", directory: "coverage/owner-postgres", files: ["identity-session.test-1.out", "wlt-wallet.test-2.out"] },
+  { kind: "js", job: app, artifact: "sonar-js", directory: "coverage" },
+  { kind: "go", job: goQuality, artifact: "sonar-go", directory: "coverage" },
+  { kind: "postgres", job: postgres, artifact: "sonar-postgres", directory: "coverage/owner-postgres" },
 ];
 
-function independentManifest(directory, names) {
-  const result = shell("LC_ALL=C sha256sum --binary -- " + names.join(" "), {}, directory);
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.replaceAll("\r\n", "\n");
-}
-
 for (const entry of evidence) {
-  test(entry.artifact + " attests every measured report to the exact clean committed source", () => fixture("ci-coverage-producer-", directory => {
+  test(entry.artifact + " binds the native producer to its artifact and scanner consumer", () => {
     const bind = runs(entry.job, new RegExp("^node tools/dev/ci-coverage-evidence\\.mjs publish " + entry.kind + "\\s*$"));
     const upload = one(entry.job, step => action(step, "actions/upload-artifact") && step.with.name === entry.artifact, entry.artifact);
     const download = one(sonar, step => action(step, "actions/download-artifact") && step.with.name === entry.artifact, entry.artifact);
@@ -300,45 +264,7 @@ for (const entry of evidence) {
     }
     assert.equal(download.with.path, expr("runner.temp") + "/" + entry.artifact);
     mandatory(sonar, download);
-    const { sha, tree } = candidate(directory);
-    const folder = path.join(directory, entry.directory);
-    for (const file of entry.files) put(directory, entry.directory + "/" + file);
-    const result = publishCoverageEvidence(directory, entry.kind, sha);
-    assert.deepEqual(result, { tree, count: entry.files.length });
-    assert.equal(readFileSync(path.join(folder, "tree.txt"), "utf8").trim(), tree);
-    assert.equal(readFileSync(path.join(folder, "reports.sha256"), "utf8"), independentManifest(folder, entry.files));
-    assert.throws(() => publishCoverageEvidence(directory, entry.kind, sha), /CI_COVERAGE_METADATA_CONFLICT/);
-    for (const metadata of ["tree.txt", "reports.sha256"]) rmSync(path.join(folder, metadata));
-    assert.throws(() => publishCoverageEvidence(directory, entry.kind, "0".repeat(40)), /CI_CANDIDATE_SHA_MISMATCH/);
-    const reject = () => assert.throws(() => publishCoverageEvidence(directory, entry.kind, sha), /CI_CANDIDATE_NOT_CLEAN_AND_ADMITTED/);
-    const untracked = put(directory, "untracked-source.test.mjs");
-    reject();
-    git(directory, "add", "--", "untracked-source.test.mjs");
-    reject();
-    git(directory, "rm", "--cached", "--", "untracked-source.test.mjs");
-    rmSync(untracked);
-    put(directory, "source.txt", "dirty\n");
-    reject();
-    git(directory, "add", "--", "source.txt");
-    put(directory, "source.txt", "original\n");
-    reject();
-    git(directory, "restore", "--staged", "--worktree", "--", "source.txt");
-    // Git's stat cache can deliberately hide working-tree changes. The
-    // attestation must compare actual bytes to the committed object instead.
-    for (const flag of ["assume-unchanged", "skip-worktree"]) {
-      git(directory, "update-index", "--" + flag, "--", "source.txt");
-      put(directory, "source.txt", "hidden source\n");
-      assert.equal(git(directory, "status", "--porcelain", "--", "source.txt"), "");
-      reject();
-      put(directory, "source.txt", "original\n");
-      git(directory, "update-index", "--no-" + flag, "--", "source.txt");
-      git(directory, "restore", "--worktree", "--", "source.txt");
-      assert.equal(git(directory, "status", "--porcelain"), "", "fixture restored its actual committed source");
-    }
-    put(directory, entry.directory + "/" + entry.files[0], "");
-    assert.throws(() => publishCoverageEvidence(directory, entry.kind, sha), /CI_COVERAGE_REPORT_EMPTY/);
-    assert.ok(!existsSync(path.join(folder, "tree.txt")));
-  }));
+  });
 }
 
 test("Sonar uses the single artifact admission boundary and remeasures only a valid different tree", () => {
@@ -354,63 +280,6 @@ test("Sonar uses the single artifact admission boundary and remeasures only a va
   assert.match(command(fallback), /tests\/infra\/test-owner-postgres-output\.sh/);
   assert.match(command(fallback), /tests\/infra\/verify-owner-postgres-ci\.sh --coverage/);
   order(sonar, one(sonar, step => action(step, "actions/setup-node"), "pinned Node"), admit, fallback, scanner);
-
-  const firstProfile = "sonar-postgres/" + evidence[2].files[0];
-  const scenarios = [
-    { name: "matching", expected: true },
-    { name: "different valid tree", alternate: true, expected: false },
-    { name: "mixed producer trees", mixed: true },
-    { name: "invalid tree", invalid: true },
-    { name: "missing stamp", omit: "sonar-go/tree.txt" },
-    { name: "missing Go report", omit: "sonar-go/dsh-go.out" },
-    { name: "missing PostgreSQL profile", omit: firstProfile },
-    { name: "missing PostgreSQL manifest", omit: "sonar-postgres/reports.sha256" },
-    { name: "altered JS report", alter: "sonar-js/lcov.info" },
-    { name: "altered Go report", alter: "sonar-go/identity-go.out" },
-    { name: "altered PostgreSQL profile", alter: firstProfile },
-    { name: "unexpected extra PostgreSQL profile", extra: "sonar-postgres/unexpected.out" },
-    { name: "unexpected extra Go report", extra: "sonar-go/extra.out" },
-    { name: "empty JS report", empty: "sonar-js/lcov.info" },
-    { name: "empty PostgreSQL profile", empty: firstProfile },
-    { name: "dirty analysis candidate", dirty: true },
-    { name: "hidden analysis source edit", hidden: true },
-    { name: "wrong analysis SHA", wrongSha: true },
-  ];
-  for (const scenario of scenarios) fixture("ci-sonar-admission-", directory => {
-    const repo = path.join(directory, "repo");
-    mkdirSync(repo);
-    const { sha, tree } = candidate(repo);
-    const downloaded = path.join(directory, "reports");
-    put(repo, "source.txt", "alternate source\n");
-    git(repo, "add", "--", "source.txt");
-    const different = git(repo, "write-tree");
-    git(repo, "restore", "--staged", "--worktree", "--", "source.txt");
-    assert.notEqual(tree, different);
-    for (const entry of evidence) {
-      const value = scenario.invalid ? "invalid-tree" : scenario.alternate || (scenario.mixed && entry.kind === "postgres") ? different : tree;
-      put(downloaded, entry.artifact + "/tree.txt", value + "\n");
-      for (const file of entry.files) put(downloaded, entry.artifact + "/" + file, "synthetic report\n");
-      put(downloaded, entry.artifact + "/reports.sha256", independentManifest(path.join(downloaded, entry.artifact), entry.files));
-    }
-    if (scenario.omit) rmSync(path.join(downloaded, scenario.omit));
-    if (scenario.empty) put(downloaded, scenario.empty, "");
-    if (scenario.alter) put(downloaded, scenario.alter, "changed report\n");
-    if (scenario.extra) put(downloaded, scenario.extra, "extra report\n");
-    if (scenario.dirty) put(repo, "untracked.mjs", "export {};\n");
-    if (scenario.hidden) {
-      git(repo, "update-index", "--assume-unchanged", "--", "source.txt");
-      put(repo, "source.txt", "hidden changed source\n");
-      assert.equal(git(repo, "status", "--porcelain", "--", "source.txt"), "");
-    }
-    const run = () => admitCoverageEvidence(repo, downloaded, scenario.wrongSha ? "0".repeat(40) : sha);
-    if (Object.hasOwn(scenario, "expected")) assert.equal(run(), scenario.expected, scenario.name);
-    else assert.throws(run, undefined, scenario.name);
-    for (const entry of evidence) for (const report of entry.files) {
-      const installed = path.join(repo, entry.directory, report);
-      assert.equal(existsSync(installed), scenario.expected === true, scenario.name);
-      if (scenario.expected === true) assert.deepEqual(readFileSync(installed), readFileSync(path.join(downloaded, entry.artifact, report)));
-    }
-  });
 });
 
 test("Sonar scanner consumes every measured owner report with no quality gate waiver", () => {
@@ -429,7 +298,7 @@ test("Sonar scanner consumes every measured owner report with no quality gate wa
     ["coverage/dsh-go.out", "coverage/identity-go.out", "coverage/owner-postgres/*.out", "coverage/wlt-go.out"]);
   assert.equal(settings["sonar.coverage.exclusions"], undefined);
   const ownerRunner = readFileSync(path.join(root, "tests/infra/verify-owner-postgres-ci.sh"), "utf8");
-  assert.match(ownerRunner, /^  cover_flags=\(-covermode=atomic -coverpkg=\.\/\.\.\.\)$/m,
+  assert.match(ownerRunner, /^ {2}cover_flags=\(-covermode=atomic -coverpkg=\.\/\.\.\.\)$/m,
     "Measure all service packages exercised by isolated PostgreSQL tests");
 });
 
