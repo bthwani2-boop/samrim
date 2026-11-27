@@ -13,7 +13,20 @@ const hash = /^[a-f0-9]{64}$/;
 const imageId = /^sha256:[a-f0-9]{64}$/;
 const nameOf = name => `${project}-${name}-1`;
 const configHash = row => row.Config.Labels["com.docker.compose.config-hash"];
-const sorted = values => [...values].sort();
+
+const compareText = (a, b) => a < b ? -1 : a > b ? 1 : 0;
+function orderedText(values) {
+  requireProof(values.every(value => typeof value === "string"), "COMPOSE_TEXT_IDENTITY_INVALID");
+  return [...values].sort(compareText);
+}
+// A mount destination is an exact path identity, not a locale-collated
+// name. Both the live inventory and Compose model share this rule.
+function orderedMounts(values, target) {
+  const keys = values.map(target);
+  requireProof(keys.every(key => typeof key === "string" && key.length > 0) &&
+    new Set(keys).size === keys.length, "COMPOSE_MOUNT_TARGET_INVALID");
+  return [...values].sort((a, b) => compareText(target(a), target(b)));
+}
 const same = (a, b, reason) => requireProof(equal(a, b), reason);
 
 function requireProof(condition, reason) {
@@ -58,73 +71,6 @@ export function verifyPolicyTransition(previous, next) {
     "COMPOSE_LABEL_NOT_ADMITTED");
 }
 
-// Docker's empty DNS lists may be null or []; absent and false OOM-kill-disable
-// both mean normal OOM handling. Preserve nonempty ordered DNS settings, every
-// other HostConfig field, and explicit hostnames. Compose-generated hostnames
-// and labels describe the replacement identity, not application configuration.
-function protectedConfiguration(row) {
-  const config = structuredClone(row.Config);
-  if (row.Id && config.Hostname === row.Id.slice(0, 12)) delete config.Hostname;
-  delete config.Image;
-  config.Env = sorted(config.Env || []);
-  config.Labels = Object.fromEntries(Object.entries(config.Labels || {}).filter(([key]) =>
-    !key.startsWith("com.docker.compose.") && key !== legacyLabel));
-  const host = structuredClone(row.HostConfig);
-  for (const key of ["Memory", "MemorySwap", "PidsLimit", "LogConfig"]) delete host[key];
-  for (const key of ["Dns", "DnsOptions", "DnsSearch"]) host[key] = host[key] ?? [];
-  host.OomKillDisable = host.OomKillDisable ?? false;
-  for (const key of ["Binds", "CapAdd", "CapDrop", "SecurityOpt", "MaskedPaths", "ReadonlyPaths"]) {
-    if (Array.isArray(host[key])) host[key] = sorted(host[key]);
-  }
-  const mounts = [...(row.Mounts || [])].sort((a, b) => a.Destination.localeCompare(b.Destination));
-  const networks = Object.fromEntries(Object.entries(row.NetworkSettings.Networks || {}).map(([key, value]) => [key, value.NetworkID]));
-  return { config, host, mounts, networks };
-}
-
-function assertProtected(before, after) {
-  requireProof(before.Image === after.Image && imageId.test(after.Image), "COMPOSE_IMAGE_CHANGED");
-  const a = protectedConfiguration(before), b = protectedConfiguration(after);
-  // Only print top-level field names, never inspect values or environment data.
-  for (const key of Object.keys(a)) {
-    if (equal(a[key], b[key])) continue;
-    const fields = ["config", "host"].includes(key)
-      ? [...new Set([...Object.keys(a[key]), ...Object.keys(b[key])])].filter(field => !equal(a[key][field], b[key][field]))
-      : [];
-    throw new Error(`COMPOSE_PROTECTED_CONFIGURATION_CHANGED ${key}${fields.length ? `.${fields.join(",")}` : ""}`);
-  }
-}
-
-function assertHealthy(row) {
-  requireProof(row.State.Running && row.State.Health?.Status === "healthy", "COMPOSE_HEALTH_NOT_PROVEN");
-}
-
-export function verifyReplacement(before, after, desired) {
-  assertProtected(before, after);
-  same(effectivePolicy(after), desiredPolicy(desired), "COMPOSE_EFFECTIVE_POLICY_MISMATCH");
-  assertHealthy(after);
-}
-
-function inventory(docker) {
-  const names = docker(["ps", "-a", "--filter", `label=com.docker.compose.project=${project}`, "--format", "{{.Names}}"]).split(/\r?\n/);
-  same(sorted(names), sorted(services.map(nameOf)), "COMPOSE_INVENTORY_MISMATCH");
-  const rows = JSON.parse(docker(["inspect", ...services.map(nameOf)]));
-  const records = Object.fromEntries(rows.map(row => [row.Config.Labels?.["com.docker.compose.service"], row]));
-  for (const service of services) {
-    const row = records[service], labels = row?.Config.Labels;
-    requireProof(row?.Name === `/${nameOf(service)}` && labels?.["com.docker.compose.project"] === project &&
-      labels["com.bthwani.environment"] === "refoundation" && hash.test(configHash(row)) &&
-      hash.test(row.Id) && imageId.test(row.Image) && !row.HostConfig.Privileged &&
-      (row.Mounts || []).every(mount => mount.Type === "volume" && (mount.Name.startsWith(`${project}-`) || mount.Name.startsWith(`${project}_`))),
-    `COMPOSE_EXISTING_OWNER_NOT_PROVEN ${service}`);
-  }
-  return records;
-}
-
-function healthyInventory(docker) {
-  const rows = inventory(docker);
-  for (const service of services) assertHealthy(rows[service]);
-  return rows;
-}
 
 function environment(row) {
   const entries = row.Config.Env.map(value => {
@@ -186,8 +132,56 @@ function resolved(docker, args, env, input) {
   return { model, hashes, input };
 }
 
-// Independently establish actual storage, network, port, security and environment
-// configuration even when a prior interrupted operation already converged.
+
+// Normalize only equivalent engine defaults and generated identities.
+// Explicit hostnames, ordered DNS settings and all other host fields remain
+// protected. Environment identity is validated once by the same owner used
+// for native interpolation and direct live-model attestation.
+function protectedConfiguration(row) {
+  const config = structuredClone(row.Config);
+  if (row.Id && config.Hostname === row.Id.slice(0, 12)) delete config.Hostname;
+  delete config.Image;
+  config.Env = environment(row);
+  config.Labels = Object.fromEntries(Object.entries(config.Labels || {}).filter(([key]) =>
+    !key.startsWith("com.docker.compose.") && key !== legacyLabel));
+  const host = structuredClone(row.HostConfig);
+  for (const key of ["Memory", "MemorySwap", "PidsLimit", "LogConfig"]) delete host[key];
+  for (const key of ["Dns", "DnsOptions", "DnsSearch"]) host[key] = host[key] ?? [];
+  host.OomKillDisable = host.OomKillDisable ?? false;
+  for (const key of ["Binds", "CapAdd", "CapDrop", "SecurityOpt", "MaskedPaths", "ReadonlyPaths"]) {
+    if (Array.isArray(host[key])) host[key] = orderedText(host[key]);
+  }
+  const mounts = orderedMounts(row.Mounts || [], mount => mount.Destination);
+  const networks = Object.fromEntries(Object.entries(row.NetworkSettings.Networks || {}).map(([key, value]) => [key, value.NetworkID]));
+  return { config, host, mounts, networks };
+}
+
+function assertProtected(before, after) {
+  requireProof(before.Image === after.Image && imageId.test(after.Image), "COMPOSE_IMAGE_CHANGED");
+  const a = protectedConfiguration(before), b = protectedConfiguration(after);
+  // Only print top-level field names, never inspect values or environment data.
+  for (const key of Object.keys(a)) {
+    if (equal(a[key], b[key])) continue;
+    const fields = ["config", "host"].includes(key)
+      ? [...new Set([...Object.keys(a[key]), ...Object.keys(b[key])])].filter(field => !equal(a[key][field], b[key][field]))
+      : [];
+    throw new Error(`COMPOSE_PROTECTED_CONFIGURATION_CHANGED ${key}${fields.length ? `.${fields.join(",")}` : ""}`);
+  }
+}
+
+function assertHealthy(row) {
+  requireProof(row.State.Running && row.State.Health?.Status === "healthy", "COMPOSE_HEALTH_NOT_PROVEN");
+}
+
+export function verifyReplacement(before, after, desired) {
+  assertProtected(before, after);
+  same(effectivePolicy(after), desiredPolicy(desired), "COMPOSE_EFFECTIVE_POLICY_MISMATCH");
+  assertHealthy(after);
+}
+
+
+// Independently establish actual model fields even when an interrupted
+// operation already converged. Do not rely on the native hash alone.
 export function verifyLiveDefinition(model, service, row) {
   const definition = model.services[service], host = row.HostConfig;
   const expectedMounts = (definition.volumes || []).map(volume => {
@@ -198,28 +192,52 @@ export function verifyLiveDefinition(model, service, row) {
     requireProof(mount.Type === "volume" && mount.Driver === "local", "COMPOSE_VOLUME_DRIVER_MISMATCH");
     return [mount.Destination, mount.Name, mount.RW];
   });
-  const byTarget = entries => entries.sort((a, b) => a[0].localeCompare(b[0]));
-  same(byTarget(mounts), byTarget(expectedMounts), `COMPOSE_VOLUME_MISMATCH ${service}`);
+  const target = entry => entry[0];
+  same(orderedMounts(mounts, target), orderedMounts(expectedMounts, target), `COMPOSE_VOLUME_MISMATCH ${service}`);
   const networkNames = Object.keys(definition.networks || {}).map(key => model.networks[key]?.name);
-  same(sorted(Object.keys(row.NetworkSettings.Networks || {})), sorted(networkNames), `COMPOSE_NETWORK_MISMATCH ${service}`);
-  const ports = Object.entries(host.PortBindings || {}).flatMap(([port, bindings]) => bindings.map(binding => `${port}|${binding.HostIp}|${binding.HostPort}`));
-  const expectedPorts = (definition.ports || []).map(port => `${port.target}/${port.protocol}|${port.host_ip}|${port.published}`);
-  same(sorted(ports), sorted(expectedPorts), `COMPOSE_PORT_MISMATCH ${service}`);
+  same(orderedText(Object.keys(row.NetworkSettings.Networks || {})), orderedText(networkNames), `COMPOSE_NETWORK_MISMATCH ${service}`);
+  const ports = Object.entries(host.PortBindings || {}).flatMap(([port, bindings]) => bindings.map(binding => [port, binding.HostIp, binding.HostPort].join("|")));
+  const expectedPorts = (definition.ports || []).map(port => [`${port.target}/${port.protocol}`, port.host_ip, port.published].join("|"));
+  same(orderedText(ports), orderedText(expectedPorts), `COMPOSE_PORT_MISMATCH ${service}`);
   requireProof(host.Privileged === Boolean(definition.privileged) &&
     host.ReadonlyRootfs === Boolean(definition.read_only) &&
     host.RestartPolicy.Name === definition.restart &&
-    equal(sorted(host.CapDrop || []), sorted(definition.cap_drop || [])) &&
-    equal(sorted(host.CapAdd || []), sorted(definition.cap_add || [])) &&
-    equal(sorted(host.SecurityOpt || []), sorted(definition.security_opt || [])),
+    equal(orderedText(host.CapDrop || []), orderedText(definition.cap_drop || [])) &&
+    equal(orderedText(host.CapAdd || []), orderedText(definition.cap_add || [])) &&
+    equal(orderedText(host.SecurityOpt || []), orderedText(definition.security_opt || [])),
   `COMPOSE_SECURITY_POLICY_MISMATCH ${service}`);
-  const live = environment(row);
+  const actual = environment(row);
   for (const [key, value] of Object.entries(definition.environment || {}))
-    requireProof(live[key] === String(value), `COMPOSE_ENVIRONMENT_MISMATCH ${service}`);
+    requireProof(actual[key] === String(value), `COMPOSE_ENVIRONMENT_MISMATCH ${service}`);
   for (const [key, value] of Object.entries(definition.labels || {}))
     requireProof(row.Config.Labels[key] === value, `COMPOSE_LABEL_MISMATCH ${service}`);
   requireProof(row.Config.Labels[legacyLabel] === definition.labels?.[legacyLabel], `COMPOSE_HISTORICAL_LABEL_MISMATCH ${service}`);
   if (definition.hostname) requireProof(row.Config.Hostname === definition.hostname, `COMPOSE_HOSTNAME_MISMATCH ${service}`);
 }
+
+function inventory(docker) {
+  const names = docker(["ps", "-a", "--filter", `label=com.docker.compose.project=${project}`, "--format", "{{.Names}}"]).split(/\r?\n/);
+  same(orderedText(names), orderedText(services.map(nameOf)), "COMPOSE_INVENTORY_MISMATCH");
+  const rows = JSON.parse(docker(["inspect", ...services.map(nameOf)]));
+  const records = Object.fromEntries(rows.map(row => [row.Config.Labels?.["com.docker.compose.service"], row]));
+  requireProof(rows.length === services.length && Object.keys(records).length === services.length, "COMPOSE_INVENTORY_MISMATCH");
+  for (const service of services) {
+    const row = records[service], labels = row?.Config.Labels;
+    requireProof(row?.Name === `/${nameOf(service)}` && labels?.["com.docker.compose.project"] === project &&
+      labels["com.bthwani.environment"] === "refoundation" && hash.test(configHash(row)) &&
+      hash.test(row.Id) && imageId.test(row.Image) && !row.HostConfig.Privileged &&
+      (row.Mounts || []).every(mount => mount.Type === "volume" && (mount.Name.startsWith(`${project}-`) || mount.Name.startsWith(`${project}_`))),
+    `COMPOSE_EXISTING_OWNER_NOT_PROVEN ${service}`);
+  }
+  return records;
+}
+
+function healthyInventory(docker) {
+  const rows = inventory(docker);
+  for (const service of services) assertHealthy(rows[service]);
+  return rows;
+}
+
 
 function verifyIdentity(docker, source, service, row) {
   requireProof(configHash(row) === source.hashes[service], `COMPOSE_CONFIG_HASH_MISMATCH ${service}`);
@@ -268,6 +286,7 @@ function verifyUnchanged(before, after, except) {
   }
 }
 
+
 export function reconcileComposeConfiguration({ docker, git, root, head, previous, apply, verifyOwners, ensureSource }) {
   requireProof(/^[a-f0-9]{40}$/.test(previous) && previous !== head, "COMPOSE_PREVIOUS_REVISION_REQUIRED");
   git(["merge-base", "--is-ancestor", previous, head]);
@@ -281,6 +300,11 @@ export function reconcileComposeConfiguration({ docker, git, root, head, previou
   const canonicalPath = resolve(root, "infra/compose.yaml").replaceAll("/", "\\").toLowerCase();
   const assertCanonical = row => requireProof(row.Config.Labels["com.docker.compose.project.config_files"]?.replaceAll("/", "\\").toLowerCase() === canonicalPath, "COMPOSE_CANONICAL_PATH_MISMATCH");
   const ownerReadback = rows => verifyOwners(Object.fromEntries(owners.map(owner => [owner, rows[owner]])));
+  const verifyCurrent = (source, service, row, before = row) => {
+    verifyIdentity(docker, source, service, row);
+    assertCanonical(row);
+    verifyReplacement(before, row, source.model.services[service]);
+  };
   ensureSource();
   let state = healthyInventory(docker);
   const raw = JSON.parse(docker([...priorArgs, "config", "--no-interpolate", "--format", "json"], {}, 30000, current));
@@ -297,11 +321,11 @@ export function reconcileComposeConfiguration({ docker, git, root, head, previou
     same(source.model.volumes, next.model.volumes, "COMPOSE_STORAGE_CHANGE");
     same(source.model.networks, next.model.networks, "COMPOSE_NETWORK_CHANGE");
     verifyPolicyTransition(source.model.services[service], next.model.services[service]);
-    verifyIdentity(docker, source, service, row);
-    if (current) {
-      assertCanonical(row);
-      verifyReplacement(row, row, next.model.services[service]);
-    } else plan.set(service, source);
+    if (current) verifyCurrent(next, service, row);
+    else {
+      verifyIdentity(docker, source, service, row);
+      plan.set(service, source);
+    }
     console.log(`COMPOSE_POLICY_${service.toUpperCase()}=${current ? "CURRENT" : "TRANSITION_READY"}`);
   }
   ensureSource();
@@ -331,9 +355,7 @@ export function reconcileComposeConfiguration({ docker, git, root, head, previou
       verifyUnchanged(before, after, service);
       unchangedResources(after);
       const row = after[service];
-      verifyIdentity(docker, next, service, row);
-      assertCanonical(row);
-      verifyReplacement(oldRow, row, next.model.services[service]);
+      verifyCurrent(next, service, row, oldRow);
       if (owners.includes(service) || service === "postgres") ownerReadback(after);
       state = after;
       console.log(`COMPOSE_POLICY_APPLY_VERIFIED ${service}`);
@@ -367,11 +389,7 @@ export function reconcileComposeConfiguration({ docker, git, root, head, previou
   const final = healthyInventory(docker);
   verifyUnchanged(state, final);
   unchangedResources(final);
-  for (const service of services) {
-    verifyIdentity(docker, next, service, final[service]);
-    assertCanonical(final[service]);
-    verifyReplacement(final[service], final[service], next.model.services[service]);
-  }
+  for (const service of services) verifyCurrent(next, service, final[service]);
   ownerReadback(final);
   console.log(`COMPOSE_CONFIGURATION_TRANSITION_PASS HEAD=${head}`);
 }

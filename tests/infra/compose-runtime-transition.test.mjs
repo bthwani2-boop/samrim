@@ -127,3 +127,126 @@ test("interrupted transition cannot treat a current hash as proof of actual serv
     assert.throws(() => verifyLiveDefinition(model, "dsh", candidate));
   }
 });
+
+test("effective Compose attestation compares distinct textual paths ordinally and rejects duplicate mount destinations", async () => {
+  const { verifyLiveDefinition, verifyReplacement } = await import("../../tools/dev/docker/compose-runtime-transition.mjs");
+  const paths = ["/caf\u00e9", "/cafe\u0301"];
+  const policy = { mem_limit: 1024, pids_limit: 8, logging: { driver: "local", options: { "max-size": "10m", "max-file": "3" } } };
+  const model = {services:{dsh:{...policy, restart:"unless-stopped", volumes:paths.map((target,i)=>({type:"volume",source:`v${i}`,target}))}},volumes:{v0:{name:"v0"},v1:{name:"v1"}},networks:{}};
+  const record = { Id:"a".repeat(64),Image:`sha256:${"b".repeat(64)}`,Config:{Hostname:"a".repeat(12),Env:[],Labels:{}}, HostConfig:{Memory:1024,MemorySwap:2048,PidsLimit:8,LogConfig:{Type:"local",Config:{"max-size":"10m","max-file":"3"}},Privileged:false,ReadonlyRootfs:false,RestartPolicy:{Name:"unless-stopped"}},Mounts:paths.map((Destination,i)=>({Type:"volume",Driver:"local",Name:`v${i}`,Destination,RW:true})),NetworkSettings:{Networks:{}},State:{Running:true,Health:{Status:"healthy"}} };
+  const reordered=structuredClone(record);
+  reordered.Mounts.reverse();
+  assert.doesNotThrow(()=>verifyReplacement(record,reordered,policy));
+  assert.doesNotThrow(()=>verifyLiveDefinition(model,"dsh",reordered));
+  const duplicate=structuredClone(record), duplicateModel=structuredClone(model);
+  duplicate.Mounts[1].Destination=paths[0];
+  duplicateModel.services.dsh.volumes[1].target=paths[0];
+  assert.throws(()=>verifyReplacement(duplicate,duplicate,policy),/COMPOSE_MOUNT_TARGET/);
+  assert.throws(()=>verifyLiveDefinition(duplicateModel,"dsh",duplicate),/COMPOSE_MOUNT_TARGET/);
+});
+
+/* Exercise the transition coordinator with a deterministic transport fixture.
+ * This is protocol/rollback proof, not evidence of live Docker behavior. */
+async function transitionFixture({ stale = [], fault, mutate } = {}) {
+  const { createHash } = await import("node:crypto");
+  const { resolve } = await import("node:path");
+  const { reconcileComposeConfiguration } = await import("../../tools/dev/docker/compose-runtime-transition.mjs");
+  const project = "bthwani-refoundation";
+  const services = ["postgres","media","mailpit","payment-mock","identity","dsh","wlt"];
+  const root = resolve(".");
+  const compose = resolve(root,"infra/compose.yaml");
+  const digest = value => createHash("sha256").update(value).digest("hex");
+  const labels = {"com.bthwani.environment":"refoundation"};
+  const volume = `${project}_data`, network = `${project}_isolated`;
+  const policy = {mem_limit:1024,pids_limit:8,logging:{driver:"local",options:{"max-size":"10m","max-file":"3"}}};
+  const oldModel = {name:project,services:Object.fromEntries(services.map(name=>[name,{image:`fixture/${name}:fixed`,restart:"unless-stopped",environment:{A:"1"},labels,volumes:[{type:"volume",source:"data",target:"/data"}],networks:{isolated:{}}}])),volumes:{data:{name:volume}},networks:{isolated:{name:network,driver:"bridge",internal:true}}};
+  const newModel = structuredClone(oldModel);
+  for(const name of services) Object.assign(newModel.services[name],policy);
+  const hashes = current => Object.fromEntries(services.map(name=>[name,digest(name+String(current))]));
+  const newRow = (name,current,serial=0) => {
+    const Id=digest(name+serial);
+    return {Id,Name:`/${project}-${name}-1`,Image:`sha256:${digest(`${name}image`)}`,
+      Config:{Image:oldModel.services[name].image,Hostname:Id.slice(0,12),Env:["A=1"],Labels:{...labels,"com.docker.compose.project":project,"com.docker.compose.service":name,"com.docker.compose.config-hash":hashes(current)[name],"com.docker.compose.project.config_files":current?compose:"historical"}},
+      HostConfig:{Privileged:false,ReadonlyRootfs:false,RestartPolicy:{Name:"unless-stopped"},Memory:current?1024:0,MemorySwap:current?2048:0,PidsLimit:current?8:null,LogConfig:{Type:"local",Config:current?policy.logging.options:{}}},
+      Mounts:[{Type:"volume",Driver:"local",Name:volume,Source:"/fixture/data",Destination:"/data",RW:true}],
+      NetworkSettings:{Networks:{[network]:{NetworkID:digest(network)}}},
+      State:{Running:true,Health:{Status:"healthy"},StartedAt:String(serial)}};
+  };
+  const rows = Object.fromEntries(services.map(name=>[name,newRow(name,!stale.includes(name))]));
+  const operations=[],readbacks=[];
+  let serial=0;
+  const docker=(args,_env,_timeout,input)=>{
+    if(args[0]==="ps") return services.map(name=>rows[name].Name.slice(1)).reverse().join("\n");
+    if(args[0]==="inspect") return JSON.stringify(Object.values(rows));
+    if(args[0]==="image"&&args[1]==="inspect") return rows[services.find(name=>rows[name].Config.Image===args.at(-1))].Image;
+    if(args[0]==="volume"&&args[1]==="inspect") return JSON.stringify([{Name:volume,Driver:"local",CreatedAt:"fixture",Mountpoint:"/fixture/data"}]);
+    if(args[0]==="network"&&args[1]==="inspect") return JSON.stringify([{Name:network,Id:digest(network),Driver:"bridge",Internal:true}]);
+    if(args[0]==="compose"){
+      const current=input!=="old";
+      if(args.includes("config")){
+        if(args.includes("--hash"))return Object.entries(hashes(current)).map(pair=>pair.join(" ")).join("\n");
+        return JSON.stringify(current?newModel:oldModel);
+      }
+      if(args.includes("up")){
+        const name=args.at(-1);
+        operations.push([name,current]);
+        assert.ok(args.includes("--no-deps")&&args.includes("--no-build")&&args.includes("--wait"));
+        if(current&&fault==="before-write")throw new Error("candidate rejected before replacement");
+        rows[name]=newRow(name,current,++serial);
+        if(current&&fault==="health") rows[name].State.Health.Status="unhealthy";
+        if(current&&fault==="timeout") throw Object.assign(new Error("unknown operation"),{code:"ETIMEDOUT"});
+        if(current&&fault==="foreign-volume") rows[name].Mounts[0].Source="/foreign";
+        return "";
+      }
+    }
+    throw new Error(`unexpected fixture command: ${args[0]}`);
+  };
+  const run=apply=>reconcileComposeConfiguration({docker,git:args=>args[0]==="show"?(args[1].startsWith("a")?"old":"new"):"",root,head:"b".repeat(40),previous:"a".repeat(40),apply,ensureSource(){},verifyOwners(snapshot){readbacks.push(Object.keys(snapshot));if(mutate&&readbacks.length===1)mutate(rows);}});
+  return {run,rows,operations,readbacks,hashes};
+}
+
+test("native reconciliation plan and apply select only stale policy owners and verify final owner readback",async()=>{
+  const fixture=await transitionFixture({stale:["media","wlt"]});
+  fixture.run(false);
+  assert.deepEqual(fixture.operations,[]);
+  fixture.run(true);
+  assert.deepEqual(fixture.operations,[["media",true],["wlt",true]]);
+  for(const [name,row] of Object.entries(fixture.rows))assert.equal(row.Config.Labels["com.docker.compose.config-hash"],fixture.hashes(true)[name]);
+  fixture.run(true);
+  assert.equal(fixture.operations.length,2);
+  assert.ok(fixture.readbacks.every(names=>names.join(",")==="identity,dsh,wlt"));
+});
+
+test("known unhealthy candidate rolls back exactly one owner; unknown outcomes never replay",async()=>{
+  const unchanged=await transitionFixture({stale:["wlt"],fault:"before-write"});
+  assert.throws(()=>unchanged.run(true),/COMPOSE_TRANSITION_UNCHANGED wlt/);
+  assert.deepEqual(unchanged.operations,[["wlt",true]]);
+  assert.equal(unchanged.rows.wlt.Config.Labels["com.docker.compose.config-hash"],unchanged.hashes(false).wlt);
+  const unhealthy=await transitionFixture({stale:["wlt"],fault:"health"});
+  assert.throws(()=>unhealthy.run(true),/COMPOSE_ROLLBACK_PASS wlt/);
+  assert.deepEqual(unhealthy.operations,[["wlt",true],["wlt",false]]);
+  assert.equal(unhealthy.rows.wlt.Config.Labels["com.docker.compose.config-hash"],unhealthy.hashes(false).wlt);
+  for(const fault of ["timeout","foreign-volume"]){
+    const fixture=await transitionFixture({stale:["media"],fault});
+    assert.throws(()=>fixture.run(true),/COMPOSE_ROLLBACK_BLOCKED|COMPOSE_STORAGE_IDENTITY_MISMATCH/);
+    assert.deepEqual(fixture.operations,[["media",true]]);
+  }
+});
+
+test("unproven inventory and concurrent owner changes are rejected before mutation",async()=>{
+  for(const corrupt of [
+    rows=>{rows.media.Config.Labels["com.docker.compose.config-hash"]="c".repeat(64);},
+    rows=>{rows.media.Mounts[0].Source="/foreign";},
+    rows=>{rows.media.State.Health.Status="unhealthy";},
+    rows=>{rows.media.HostConfig.Memory=0;},
+    rows=>{rows.media.Config.Labels["com.docker.compose.project.config_files"]="historical";},
+  ]){
+    const fixture=await transitionFixture();
+    corrupt(fixture.rows);
+    assert.throws(()=>fixture.run(true));
+    assert.deepEqual(fixture.operations,[]);
+  }
+  const fixture=await transitionFixture({stale:["wlt"],mutate:rows=>{rows.identity.State.StartedAt="concurrent";}});
+  assert.throws(()=>fixture.run(true),/COMPOSE_CONCURRENT_CHANGE identity/);
+  assert.deepEqual(fixture.operations,[]);
+});
