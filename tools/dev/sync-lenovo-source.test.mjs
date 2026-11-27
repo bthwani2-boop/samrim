@@ -543,6 +543,8 @@ test("runtime attempt outcome distinguishes known readback from ambiguous writes
   assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_PASS dsh"),"blocked");
   assert.equal(runtimeAttemptResult(1,null,"OWNER_APPLY_STARTED dsh\n","ROLLBACK_BLOCKED"),"uncertain");
   assert.equal(runtimeAttemptResult(1,"SIGTERM","",""),"uncertain");
+  assert.equal(runtimeAttemptResult(1,null,"","DEV_RESOURCE_RECOVERY_REQUIRED"),"uncertain");
+  assert.equal(runtimeAttemptResult(1,null,"","DEV_RESOURCE_BUSY"),"retry");
 });
 
 test("Graphify scheduling responds to saved code and ignores its own generated output",async()=>{

@@ -240,12 +240,11 @@ $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 if ([Environment]::MachineName -ine 'BTHWANI' -or $root -ine 'D:\samrim' -or $DockerContext -cne 'bthwani-docker') { throw 'WLT_CANONICAL_TARGET_REQUIRED' }
 $branch = (& git -C $root branch --show-current | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or !$branch -or $branch -eq 'main' -or $branch.StartsWith('archive/')) { throw 'WLT_BRANCH_UNAUTHORIZED' }
-$mutex = [Threading.Mutex]::new($false,'Local\BThwaniUnifiedDevV1')
-$held = $false
+. (Join-Path $PSScriptRoot 'dev-resource-admission.ps1')
+$resourceLeases=@()
 $oldPath = $env:Path
 try {
-  try { $held = $mutex.WaitOne(0) } catch [Threading.AbandonedMutexException] { $held = $true; throw 'WLT_RECOVERY_REQUIRED' }
-  if (!$held) { throw 'WLT_LIFECYCLE_BUSY' }
+  $resourceLeases=@(Enter-DevResources @(Get-DevOperationResources 'ProvisionWlt'))
   $path = Join-Path $root 'infra/.env'
   $environment = Read-WltEnvironment $path
   if (@(Get-ChildItem -LiteralPath (Split-Path -Parent $path) -Filter '.env.prepare-wlt-*' -Force).Count) { throw 'WLT_PRIOR_CANDIDATE_REQUIRES_REVIEW' }
@@ -275,6 +274,5 @@ try {
   }
 } finally {
   $env:Path = $oldPath
-  if ($held) { $mutex.ReleaseMutex() }
-  $mutex.Dispose()
+  Exit-DevResources $resourceLeases
 }

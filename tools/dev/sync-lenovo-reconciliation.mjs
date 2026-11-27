@@ -211,7 +211,7 @@ export function runtimeAuditResult(code, signal, stdout, head, eligible) {
   return "retry";
 }
 export function runtimeAttemptResult(code, signal, stdout, stderr) {
-  if (signal || /ROLLBACK_BLOCKED|ROLLBACK_READBACK_FAILED/.test(stderr)) return "uncertain";
+  if (signal || /ROLLBACK_BLOCKED|ROLLBACK_READBACK_FAILED|DEV_RESOURCE_RECOVERY_REQUIRED/.test(stderr)) return "uncertain";
   if (/ROLLBACK_PASS/.test(stderr)) return "blocked";
   const records = lines(stdout);
   const sequence = records.map(line => /^OWNER_APPLY_(STARTED|VERIFIED) (.+)$/.exec(line)).filter(Boolean);

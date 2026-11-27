@@ -316,11 +316,36 @@ test("down preflights all Docker peers before stopping any applications or tunne
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /STOP_PREFLIGHT_POLICY_PASS/);
 });
-test("read-only diagnostics do not monopolize the global app lifecycle mutex", () => {
-  const launcher = readFileSync(scriptPath, "utf8");
-  assert.match(launcher, /\$readOnlyOperation\s*=/);
-  assert.match(launcher, /'status','verify','logs','android'/);
-  assert.match(launcher, /if\s*\(-not\s+\$readOnlyOperation\)\s*\{/);
+test("development resource admission separates readers and actual writers", {skip:process.platform!=="win32"}, () => {
+  const helper = path.join(path.dirname(scriptPath), "dev-resource-admission.ps1").replaceAll("'", "''");
+  const script = [
+    "$ErrorActionPreference='Stop'",
+    ". '"+helper+"'",
+    "$d='Global\\BThwaniDevDockerV1';$a='Global\\BThwaniDevAppsV1';$b='Global\\BThwaniDevBrowserV1';$m='Global\\BThwaniDevAndroidV1'",
+    "$rows=@(@('Docker','reconcile',$false,'','All',''),@('Docker','reconcile',$true,'','All',$d),@('Docker','reconcile',$false,('a'*64),'All',$d),@('Docker','build',$false,'','All',$d),@('Apps','reconcile',$false,'','All',''),@('Apps','reconcile',$true,'','All',$a),@('Apps','restart',$false,'','All',''),@('Apps','start',$false,'','All',''),@('Apps','restart',$true,'','All',$a),@('Apps','start',$true,'','All',$a),@('Apps','open',$false,'','Browser',$b),@('Apps','open',$false,'','Android',$m),@('Apps','open',$false,'','All',($b+','+$m)),@('Apps','recover',$false,'','All',$m),@('Apps','android',$false,'','All',''),@('Status','help',$false,'','All',''),@('Verify','help',$false,'','All',''),@('Migrations','help',$false,'','All',''),@('Launch','help',$false,'','All',($a+','+$b+','+$m)),@('Launch','help',$false,'','Browser',($a+','+$b)),@('Up','help',$false,'','All',($d+','+$a+','+$b+','+$m)),@('Warm','help',$false,'','All',($d+','+$a+','+$b+','+$m)),@('Down','help',$false,'','All',($d+','+$a+','+$b+','+$m)),@('Docker','ps',$false,'','All',''),@('Docker','status',$false,'','All',''),@('Docker','logs',$false,'','All',''),@('Docker','verify',$false,'','All',''),@('Docker','config',$false,'','All',''),@('ProvisionWlt','help',$false,'','All',$d))",
+    "foreach($r in $rows){$actual=@(Get-DevOperationResources $r[0] $r[1] $r[2] $r[3] $r[4]) -join ',';if($actual -cne $r[5]){throw ('RESOURCE_MATRIX_FAIL '+($r -join '|')+' actual='+$actual)}}",
+    "$prefix='Global\\BThwaniFixture-'+[guid]::NewGuid().ToString('N');$one=$prefix+'-one';$two=$prefix+'-two'",
+    "$childPrefix='. ''"+helper+"'';$ErrorActionPreference=''Stop'';'",
+    "$locks=@(Enter-DevResources @($two));try{$body=$childPrefix+'$rejected=$false;try{$bad=@(Enter-DevResources @('''+$one+''','''+$two+'''));Exit-DevResources $bad}catch{$rejected=$_.Exception.Message -match ''DEV_RESOURCE_BUSY''};if(!$rejected){throw ''CONFLICT_ADMITTED''};$good=@(Enter-DevResources @('''+$one+'''));Exit-DevResources $good;''INDEPENDENT_PASS''';$result=& pwsh.exe -NoProfile -NonInteractive -Command $body;if($LASTEXITCODE -or $result -ne 'INDEPENDENT_PASS'){throw 'CROSS_PROCESS_FAIL'}}finally{Exit-DevResources $locks}",
+    "$locks=@(Enter-DevResources @($one,$two));Exit-DevResources $locks",
+    "$keep=[Threading.Mutex]::new($false,$one);try{$body=$childPrefix+'$lock=[Threading.Mutex]::new($false,'''+$one+''');if(!$lock.WaitOne(0)){throw ''FIXTURE_BUSY''};exit 0';& pwsh.exe -NoProfile -NonInteractive -Command $body;if($LASTEXITCODE){throw 'ABANDONMENT_FIXTURE_FAILED'};$rejected=$false;try{$bad=@(Enter-DevResources @($one));Exit-DevResources $bad}catch{$rejected=$_.Exception.Message -match 'DEV_RESOURCE_RECOVERY_REQUIRED'};if(!$rejected){throw 'ABANDONED_RESOURCE_ADMITTED'}}finally{$keep.Dispose()}",
+    "Write-Output 'RESOURCE_ADMISSION_PASS'",
+  ].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",script],{encoding:"utf8",timeout:30000,windowsHide:true});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/RESOURCE_ADMISSION_PASS/);
+});
+
+test("launcher and WLT use the sole resource admission owner", () => {
+  const launcher=readFileSync(scriptPath,"utf8");
+  const wlt=readFileSync(new URL("./provision-wlt-test-db.ps1",import.meta.url),"utf8");
+  for(const source of [launcher,wlt]){
+    assert.match(source,/dev-resource-admission\.ps1/);
+    assert.match(source,/Enter-DevResources/);
+    assert.match(source,/Exit-DevResources/);
+    assert.doesNotMatch(source,/BThwaniUnifiedDevV1|BThwaniAndroidReverseV1|readOnlyOperation/);
+  }
+  assert.match(wlt,/Get-DevOperationResources 'ProvisionWlt'/);
 });
 
 test("an offline Lenovo fails quickly without weakening SSH host-key checks", () => {
@@ -506,7 +531,9 @@ test("dependency reconcile uses the existing lifecycle and only retries changed 
   assert.match(source,/Stop-OwnedAppTree \$plan\.Spec\.N/);
   assert.match(source,/install --frozen-lockfile --prefer-offline/);
   assert.match(source,/DEPENDENCY_ROLLBACK_LOCK_CHANGED/);
-  assert.match(watch,/if\(runtimeChild\)return;/);
+  assert.match(watch,/if\(dependencyChild\)return;/);
+  assert.match(watch,/if \(runtimeChild \|\| !fs\.existsSync\(runtimeOptIn\)\) return;/);
+  assert.match(watch,/busy:Boolean\(runtimeChild\|\|dependencyChild\|\|graphChild\)/);
   assert.match(watch,/\"Apps\",\"reconcile\",\"-Apply\",\"-Automatic\"/);
   assert.match(watch,/cycle\(\);\s*try \{ pollAppDependencies\(\)/);
 });

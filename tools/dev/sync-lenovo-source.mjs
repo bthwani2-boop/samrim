@@ -560,13 +560,13 @@ const runtimeScope = [
   "services/identity", "services/dsh", "services/wlt", ".go-version",
   ...ownerComposeInputs, "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1", "tools/dev/provision-wlt-test-db.ps1",
   "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
-  "tools/dev/check-go.mjs", "tools/dev/dev.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
+  "tools/dev/check-go.mjs", "tools/dev/dev.ps1", "tools/dev/dev-resource-admission.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
 ];
 const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
 const runtimeStateFile = path.join(stateDir, "runtime-reconcile.json");
 const runtimeReceiptFile = path.join(stateDir, "runtime-reconcile.receipt.json");
 let runtimeChild = null;
-let dependencyChild = false;
+let dependencyChild = null;
 let nextRuntimeAudit = 0;
 let runtimeNotice = "";
 function runtimeLogOnce(message) {
@@ -583,26 +583,25 @@ let nextDependencyAudit=0;
 let dependencyKey="";
 let dependencyNotice="";
 function pollAppDependencies() {
-  if(runtimeChild)return;
+  if(dependencyChild)return;
   const state=readState();
   if(!state||state.branch==="main"||state.branch.startsWith("archive/"))return;
   const paths=dependencyInputChanges({files:{}},new Map(Object.entries(state.files)));
   const key=crypto.createHash("sha256").update(JSON.stringify(paths.map(p=>[p,state.files[p]]))).digest("hex");
   if(key===dependencyKey&&Date.now()<nextDependencyAudit)return;
-  if(run("git",["status","--porcelain","--","tools/dev/dev.ps1","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"]))return;
+  if(run("git",["status","--porcelain","--","tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"]))return;
   dependencyKey=key;
   nextDependencyAudit=Date.now()+60_000;
   const child=spawn(exe.pwsh,["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Apps","reconcile","-Apply","-Automatic"],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
-  runtimeChild=child;
-  dependencyChild=true;
+  dependencyChild=child;
   let output="",errors="",settled=false;
   child.stdout.on("data",chunk=>{output=(output+chunk.toString()).slice(-65536);});
   child.stderr.on("data",chunk=>{errors=(errors+chunk.toString()).slice(-65536);});
   const finish=(code)=>{
-    if(settled)return;settled=true;runtimeChild=null;dependencyChild=false;sourcePending=true;
+    if(settled)return;settled=true;dependencyChild=null;sourcePending=true;
     const result=code===0&&output.includes("APP_DEPENDENCY_RECONCILE_PASS")?"DEPENDENCY_RECONCILE_PASS":
       code===0&&output.includes("APP_DEPENDENCY_CURRENT")?"DEPENDENCY_CURRENT":
-      "DEPENDENCY_RECONCILE_BLOCKED "+(errors.match(/DEPENDENCY_[A-Z_]+|APP_SOURCE_SYNC_NOT_CURRENT|another unified dev operation/i)?.[0]||"inspect unified dev log");
+      "DEPENDENCY_RECONCILE_BLOCKED "+(errors.match(/DEPENDENCY_[A-Z_]+|APP_SOURCE_SYNC_NOT_CURRENT|DEV_RESOURCE_BUSY|DEV_RESOURCE_RECOVERY_REQUIRED/i)?.[0]||"inspect unified dev log");
     if(result!==dependencyNotice){logger(result);dependencyNotice=result;}
   };
   child.on("error",()=>finish(1));
@@ -677,8 +676,8 @@ function pollOwnerRuntime() {
   const attempt=crypto.randomUUID();
   persistAt(runtimeStateFile, {version:1,key,attempt,status:"running"});
   logger("RUNTIME_RECONCILE_STARTED key="+key.slice(0,12));
-  // The unified dev launcher holds the existing lifecycle mutex. Keep the app
-  // file sync responsive while its one bounded build/replacement runs.
+  // The unified dev launcher holds the Docker resource lease. Keep source
+  // publication and the independent dependency lifecycle responsive.
   const child = spawn(exe.pwsh, ["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Docker","reconcile","-Apply",...(preview?["-Preview"]:[]),...(runtimeBaselineProofDue(key,last)?["-PrepareBaseline"]:[])], {
     cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"],
     env:{...process.env,BTHWANI_RUNTIME_ATTEMPT_KEY:key,BTHWANI_RUNTIME_ATTEMPT_ID:attempt}
@@ -869,7 +868,7 @@ function main(command) {
     let nextSourceCycle = 0;
     const attempt = () => {
       if (active) return;
-      // Drain both children before returning a reload request to the same
+      // Drain every child before returning a reload request to the same
       // task-owned process. Never run two source watchers concurrently.
       if (Date.now()>=nextReloadAudit || reloadAction==="drain") {
         nextReloadAudit=Date.now()+5_000;
@@ -877,7 +876,7 @@ function main(command) {
           const current=watcherDigest();
           reloadAction=watcherReloadAction({loaded,current,
             dirty:Boolean(run("git",["status","--porcelain","--",...watcherInputs])),
-            busy:Boolean(runtimeChild||graphChild)});
+            busy:Boolean(runtimeChild||dependencyChild||graphChild)});
         } catch {
           reloadAction="defer";
         }

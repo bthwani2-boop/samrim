@@ -168,7 +168,7 @@ function buildOwnerImage(owner, head, tag, service, snapshot) {
   return image;
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services",...ownerComposeInputs,"tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",".go-version"];
+const guardedScope = ["services",...ownerComposeInputs,"tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -330,7 +330,7 @@ export function parseReconcileArgs(argv) {
 }
 function main() {
   const {mode,options,build,recover,prepare,apply}=parseReconcileArgs(process.argv.slice(2));
-  if((build||apply||recover)&&process.env.BTHWANI_UNIFIED_DEV_RECONCILE!=="1")throw new Error("Use the unified dev launcher with its lifecycle mutex");
+  if((build||apply||recover)&&process.env.BTHWANI_UNIFIED_DEV_RECONCILE!=="1")throw new Error("Use the unified dev launcher with its Docker resource lease");
   assertSourceHost(hostname(),process.env.COMPUTERNAME,root);
   if(docker(["context","inspect",context,"--format","{{.Endpoints.docker.Host}}"])!=="ssh://bthwa@bthwani-docker")throw new Error("Wrong Docker target");
   const head=git(["rev-parse","HEAD"]),branch=git(["branch","--show-current"]);
