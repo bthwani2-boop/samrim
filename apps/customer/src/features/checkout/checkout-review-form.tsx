@@ -12,10 +12,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
 import { formatExactYer } from "../../components/format-exact-yer";
 import { verifyAddressSession } from "../addresses/address-transport";
+import { readCheckoutReview } from "./checkout-review-transport";
 import DeliveryAddressReview from "./delivery-address-review";
 import FulfillmentChoice from "./fulfillment-choice";
 import RecipientForm from "./recipient-form";
-import { readCheckoutReview } from "./checkout-review-transport";
 
 type Recipient = { purpose: "SELF" | "OTHER"; name: string; phone: string; instructions: string };
 type AddressSelection = Pick<CustomerAddress, "id" | "version">;
