@@ -309,3 +309,123 @@ test("cleanup never acquires a locked or already-consumed body", async () => {
   }
   assert.equal(cancelled, 0);
 });
+
+test("all DSH transports release cancelled header waits and discard late replies", async t => {
+  for (const [name, call, status] of await ownerCalls()) {
+    await t.test(name, async child => {
+      const caller = new AbortController();
+      const started = Promise.withResolvers();
+      let deliver, cancelled = 0, calls = 0;
+      child.mock.method(globalThis, "fetch", () => {
+        calls++;
+        started.resolve();
+        return new Promise(resolve => { deliver = resolve; });
+      });
+      const pending = call(caller.signal).then(() => "SUCCESS", error => error.code ?? error.name);
+      await started.promise;
+      caller.abort();
+      let timer;
+      try {
+        const result = await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]);
+        assert.match(result, /OWNER_RESPONSE_STALE|OPERATION_RESULT_UNKNOWN/);
+      } finally {
+        clearTimeout(timer);
+        deliver(new Response(new ReadableStream({ cancel() { cancelled++; } }), {
+          status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+        }));
+        await pending;
+      }
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(cancelled, 1);
+      assert.equal(calls, 1);
+    });
+  }
+});
+
+test("DSH header deadline aborts the transport without caller cancellation or retry", async t => {
+  const { privateOwnerRequest } = await import("./private-owner-request.ts");
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const caller = new AbortController();
+  let signal, calls = 0, deliver;
+  t.mock.method(globalThis, "fetch", (_url, init) => {
+    signal = init.signal;
+    calls++;
+    return new Promise(resolve => { deliver = resolve; });
+  });
+  const result = privateOwnerRequest(origin, "/v1/test", bearer, "PATCH", {}, caller.signal)
+    .then(() => "SUCCESS", error => error.code);
+  t.mock.timers.tick(10_000);
+  await new Promise(resolve => setImmediate(resolve));
+  try {
+    assert.equal(signal.aborted, true);
+    assert.equal(caller.signal.aborted, false);
+    assert.equal(await result, "OPERATION_RESULT_UNKNOWN");
+    assert.equal(calls, 1);
+  } finally {
+    deliver(Response.json({ result: true }, { headers: { "Cache-Control": "no-store" } }));
+    await result;
+  }
+});
+
+test("native synchronous transport rejection during cancellation remains classified", async t => {
+  const { privateOwnerRequest } = await import("./private-owner-request.ts");
+  const caller = new AbortController();
+  t.mock.method(globalThis, "fetch", () => {
+    caller.abort();
+    throw new Error("native synchronous cancellation");
+  });
+  await assert.rejects(privateOwnerRequest(origin, "/v1/test", bearer, "GET", undefined, caller.signal),
+    { code: "OWNER_RESPONSE_STALE" });
+});
+
+test("header handoff cannot revive a caller cancelled before delivery", async t => {
+  const { fetchOwnerHeaders } = await import("./client-core.ts");
+  const caller = new AbortController();
+  let cancelled = 0;
+  t.mock.method(globalThis, "fetch", () => {
+    const pending = Promise.resolve(new Response(new ReadableStream({ cancel() { cancelled++; } })));
+    queueMicrotask(() => queueMicrotask(() => caller.abort()));
+    return pending;
+  });
+  await assert.rejects(fetchOwnerHeaders(origin, { signal: caller.signal }), { code: "OWNER_RESPONSE_STALE" });
+  assert.equal(cancelled, 1);
+});
+
+test("real loopback HTTP header cancellation closes the request and allows recovery", { timeout: 5000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const { privateOwnerRequest } = await import("./private-owner-request.ts");
+  const first = Promise.withResolvers();
+  const closed = Promise.withResolvers();
+  let requests = 0;
+  const server = createServer((_request, response) => {
+    requests++;
+    if (requests === 1) {
+      response.once("close", closed.resolve);
+      first.resolve();
+      return;
+    }
+    response.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    response.end('{"recovered":true}');
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const caller = new AbortController();
+  let watchdog;
+  try {
+    const base = "http://127.0.0.1:" + server.address().port;
+    const pending = assert.rejects(privateOwnerRequest(base, "/v1/test", bearer, "GET", undefined, caller.signal),
+      { code: "OWNER_RESPONSE_STALE" });
+    await first.promise;
+    caller.abort();
+    await pending;
+    const timeout = new Promise(resolve => { watchdog = setTimeout(() => resolve(false), 1500); });
+    assert.notEqual(await Promise.race([closed.promise, timeout]), false);
+    assert.deepEqual(await privateOwnerRequest(base, "/v1/test", bearer, "GET"), { recovered: true });
+    assert.equal(requests, 2);
+  } finally {
+    clearTimeout(watchdog);
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

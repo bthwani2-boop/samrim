@@ -66,6 +66,50 @@ function discardUnread(response: Response): void {
   });
 }
 
+// A response body has its own established byte and read budget. Header
+// acquisition must also settle even when a native fetch ignores cancellation.
+const headerDeadlineMs = 10_000;
+
+export async function fetchOwnerHeaders(input: string | URL, init: RequestInit): Promise<Response> {
+  const caller = init.signal;
+  const stale = () => new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  if (caller?.aborted) throw stale();
+
+  const transport = new AbortController();
+  let interrupted = false;
+  let rejectStopped!: (error: Error) => void;
+  const stopped = new Promise<never>((_, reject) => { rejectStopped = reject; });
+  function interrupt(error: Error): void {
+    if (interrupted) return;
+    interrupted = true;
+    rejectStopped(error);
+    transport.abort();
+  }
+  const onAbort = () => interrupt(stale());
+  caller?.addEventListener("abort", onAbort, { once: true });
+  const deadline = setTimeout(() => interrupt(new Error("DSH owner header deadline exceeded")), headerDeadlineMs);
+
+  try {
+    const pending = (async () => {
+      const response = await fetch(input, { ...init, signal: transport.signal });
+      if (interrupted) {
+        discardUnread(response);
+        throw stale();
+      }
+      return response;
+    })();
+    const response = await Promise.race([pending, stopped]);
+    if (caller?.aborted) {
+      discardUnread(response);
+      throw stale();
+    }
+    return response;
+  } finally {
+    clearTimeout(deadline);
+    caller?.removeEventListener("abort", onAbort);
+  }
+}
+
 // The response boundary owns unread bodies. The bounded decoder owns its
 // acquired reader, including cancellation before releasing the lock.
 export async function consumeOwnerResponse<T>(

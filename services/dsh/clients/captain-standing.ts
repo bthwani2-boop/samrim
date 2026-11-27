@@ -1,5 +1,5 @@
 /** DSH current standing is separate from the Identity Captain role. */
-import { consumeOwnerResponse, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 export interface CaptainStanding {
   actorId: string;
@@ -49,13 +49,13 @@ async function currentStanding(
   }
   let res: Response;
   try {
-    res = await fetch(url, {
+    res = await fetchOwnerHeaders(url, {
       method, redirect: "error", cache: "no-store", credentials: "omit",
       headers: { Authorization: "Bearer " + bearer, Accept: "application/json" },
       signal: signal ?? null,
     });
   } catch {
-    throw new CaptainStandingError(0, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : "OWNER_NETWORK_UNAVAILABLE");
+    throw new CaptainStandingError(0, method === "POST" ? "OPERATION_RESULT_UNKNOWN" : signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_NETWORK_UNAVAILABLE");
   }
   return consumeOwnerResponse(res, async () => {
     if (signal?.aborted) throw new CaptainStandingError(0,

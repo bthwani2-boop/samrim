@@ -25,7 +25,8 @@ test("Operator Captain queue uses only the current bearer and fixed bounded owne
     assert.deepEqual([...target.searchParams], [["status", "PENDING"], ["limit", "2"], ["cursor", "next-page"]]);
     assert.equal(options.method, "GET"); assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     assert.equal(options.credentials, "omit"); assert.equal(options.cache, "no-store"); assert.equal(options.redirect, "error");
-    assert.equal(options.signal, controller.signal);
+    assert.ok(options.signal instanceof AbortSignal);
+    assert.equal(options.signal.aborted, false);
     return json({ items: [standing], nextCursor: "page-3" });
   }, async () => assert.deepEqual(await sdk.listOperatorCaptainStandings(base, bearer,
     { status: "PENDING", limit: 2, cursor: "next-page", signal: controller.signal }), { items: [standing], nextCursor: "page-3" }));

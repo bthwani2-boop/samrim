@@ -32,7 +32,8 @@ test("Captain review mutation forwards exact versioned decision to DSH with curr
     assert.equal(options.redirect, "error");
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
     assert.equal(options.headers["Content-Type"], "application/json");
-    assert.equal(options.signal, abort.signal);
+    assert.ok(options.signal instanceof AbortSignal);
+    assert.equal(options.signal.aborted, false);
     assert.deepEqual(JSON.parse(options.body), change);
     return ownerJSON(standing);
   }, async () => assert.deepEqual(

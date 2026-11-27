@@ -66,6 +66,7 @@ test("Captain POST cannot call a malformed or stale successful reply an uncommit
 
 test("Captain POST response body failure and cancellation after dispatch are unknown", async t => {
   let bodyError = false;
+  let transportCancelled = false;
   let controller;
   t.mock.method(globalThis, "fetch", async (_url, options) => {
     if (bodyError) {
@@ -76,12 +77,13 @@ test("Captain POST response body failure and cancellation after dispatch are unk
       });
     }
     controller.abort();
-    assert.equal(options.signal, controller.signal);
+    transportCancelled = options.signal.aborted;
     return ownerResponse();
   });
   controller = new AbortController();
   await expectCode(() => requestCaptainApplication(base, bearer, actor, controller.signal),
     "OPERATION_RESULT_UNKNOWN", 0);
+  assert.equal(transportCancelled, true);
   bodyError = true;
   await expectCode(() => requestCaptainApplication(base, bearer, actor),
     "OPERATION_RESULT_UNKNOWN", 502);

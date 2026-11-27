@@ -1,5 +1,5 @@
 /** Shared authenticated DSH transport for fixed owner-authored routes. */
-import { consumeOwnerResponse, DshPublicError, endpoint, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 
 const defaultTextLimit = 32 * 1024;
 type OwnerMethod = "GET" | "PATCH" | "POST" | "PUT";
@@ -44,7 +44,7 @@ export async function privateOwnerRequest(
 
   let response: Response;
   try {
-    response = await fetch(url.toString(), {
+    response = await fetchOwnerHeaders(url.toString(), {
       method, signal: signal ?? null, redirect: "error", credentials: "omit", cache: "no-store",
       headers: {
         Authorization: "Bearer " + bearer, Accept: "application/json",

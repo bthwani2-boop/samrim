@@ -1,5 +1,5 @@
 /** DSH-owned Store registration; Identity grants an actor role, not a Store. */
-import { consumeOwnerResponse, DshPublicError, endpoint, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export type MerchantRegistrationChoice = {
@@ -155,7 +155,7 @@ async function ownerCall(
   current();
   let response: Response;
   try {
-    response = await fetch(url.toString(), {
+    response = await fetchOwnerHeaders(url.toString(), {
       method, redirect: "error", credentials: "omit", cache: "no-store", signal: signal ?? null,
       headers: { Accept: "application/json", Authorization: "Bearer " + bearer,
         ...(input ? { "Content-Type": "application/json" } : {}) },

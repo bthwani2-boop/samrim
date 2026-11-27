@@ -1,5 +1,5 @@
 /** DSH owns Customer Cart drafts; neither the SDK nor UI can author price or Order truth. */
-import { consumeOwnerResponse, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export interface CustomerCartLine {
@@ -175,7 +175,7 @@ async function cartRequest(origin: string, bearer: string, storeId: string, expe
   const dispatched = method === "PUT";
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await fetchOwnerHeaders(url, {
       method: method === "ESTIMATE" ? "GET" : method, cache: "no-store", credentials: "omit", redirect: "error", signal,
       headers: {
         Accept: "application/json",
@@ -188,7 +188,7 @@ async function cartRequest(origin: string, bearer: string, storeId: string, expe
       }) } : {}),
     });
   } catch {
-    throw new DshCartError(0, dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_NETWORK_UNAVAILABLE");
+    throw new DshCartError(0, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_NETWORK_UNAVAILABLE");
   }
   return consumeOwnerResponse(response, async () => {
     if (signal.aborted) throw new DshCartError(0,

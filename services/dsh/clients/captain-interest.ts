@@ -1,4 +1,4 @@
-import { consumeOwnerResponse, DshPublicError, endpoint, isDateTime, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, isDateTime, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
@@ -83,7 +83,7 @@ export async function submitCaptainInterest(
   const url = endpoint(baseUrl, dshOperations.submitPublicCaptainInterest.path);
   let response: Response;
   try {
-    response = await fetch(url.toString(), {
+    response = await fetchOwnerHeaders(url.toString(), {
       method: "POST", signal: signal ?? null, redirect: "error",
       credentials: "omit", cache: "no-store",
       headers: { Accept: "application/json", "Content-Type": "application/json" },

@@ -1,5 +1,5 @@
 /** Verified Merchant Store standing from DSH. No client-owned grants or Store writes. */
-import { consumeOwnerResponse, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 export interface MerchantOwnedStore {
   id: string;
@@ -64,13 +64,13 @@ export async function readMerchantDSHStanding(origin: string, bearer: string, si
   const endpoint = ownerEndpoint(origin);
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    response = await fetchOwnerHeaders(endpoint, {
       method: "GET", redirect: "error", cache: "no-store", credentials: "omit",
       signal: signal ?? null,
       headers: { Accept: "application/json", Authorization: "Bearer " + bearer },
     });
   } catch {
-    throw new MerchantStandingError(503, "OWNER_UNAVAILABLE");
+    throw new MerchantStandingError(signal?.aborted ? 0 : 503, signal?.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_UNAVAILABLE");
   }
   return consumeOwnerResponse(response, async () => {
     if (signal?.aborted) throw new MerchantStandingError(0, "OWNER_RESPONSE_STALE");

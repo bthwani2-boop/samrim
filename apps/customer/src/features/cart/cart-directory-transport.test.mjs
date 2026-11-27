@@ -145,7 +145,8 @@ test("Android directory uses real DSH client inside native verification and boun
   assert.equal(h.requests[0].url, `${origin}/v1/carts?after=store-a`);
   assert.equal(h.requests[0].headers.Authorization, `Bearer ${bearer}`);
   assert.equal(h.requests[0].credentials, "omit");
-  assert.equal(h.requests[0].signal, s);
+  assert.ok(h.requests[0].signal instanceof AbortSignal);
+  assert.equal(h.requests[0].signal.aborted, false);
 });
 
 test("Android directory rejects missing owner and denied native scope without dispatch", async t => {

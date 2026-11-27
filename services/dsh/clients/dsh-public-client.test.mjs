@@ -213,14 +213,15 @@ test("owner 409 stale cursor and other explicit owner errors propagate safely", 
     () => rejectsAs(() => getPublicStore(base, store.id), 503, "OWNER_READ_FAILED"));
 });
 
-test("network errors are normalized, except an aborted caller's own error", async () => {
+test("network errors are normalized and pre-aborted callers never dispatch", async () => {
   await withFetch(async () => { throw new Error("private transport details"); },
     () => rejectsAs(() => getPublicStore(base, store.id), 0, "OWNER_NETWORK_UNAVAILABLE"));
   const controller = new AbortController();
-  const aborted = new Error("caller cancelled");
   controller.abort();
-  await withFetch(async () => { throw aborted; },
-    () => assert.rejects(() => getPublicStore(base, store.id, controller.signal), error => error === aborted));
+  let dispatched = false;
+  await withFetch(async () => { dispatched = true; throw new Error("unexpected dispatch"); },
+    () => rejectsAs(() => getPublicStore(base, store.id, controller.signal), 0, "OWNER_RESPONSE_STALE"));
+  assert.equal(dispatched, false);
 });
 
 test("invalid owner JSON or an invalid page envelope fails closed", async () => {
@@ -276,10 +277,11 @@ test("an Offer page cannot inject another Store's Offers into the selected Store
     () => rejectsAs(() => listPublicOffers(base, store.id), 502, "OWNER_RESPONSE_INVALID"));
 });
 
-test("owner request carries the caller AbortSignal instead of starting an unrelated session", async () => {
+test("owner request carries an active bounded transport signal", async () => {
   const controller = new AbortController();
   await withFetch(async (_url, options) => {
-    assert.equal(options.signal, controller.signal);
+    assert.ok(options.signal instanceof AbortSignal);
+    assert.equal(options.signal.aborted, false);
     return json(store);
   }, async () => {
     const result = await getPublicStore(base, store.id, controller.signal);

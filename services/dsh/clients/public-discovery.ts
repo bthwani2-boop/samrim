@@ -2,7 +2,7 @@
  * Contract-bound DSH public discovery reads. No Store, price or financial writers.
  * Public wire format: paths/stores.yaml and paths/offers.yaml in the DSH OpenAPI owner.
  */
-import { consumeOwnerResponse, DshPublicError, endpoint, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export { DshPublicError } from "./client-core.ts";
@@ -42,12 +42,12 @@ export interface PublicPage<T> {
 async function ownerRead(url: URL, signal?: AbortSignal, requireCurrent = false): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(url.toString(), {
+    response = await fetchOwnerHeaders(url.toString(), {
       method: "GET", signal: signal ?? null, redirect: "error", credentials: "omit", cache: "no-store",
       headers: { Accept: "application/json" },
     });
-  } catch (error) {
-    if (signal?.aborted) throw error;
+  } catch {
+    if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
     throw new DshPublicError(0, "OWNER_NETWORK_UNAVAILABLE");
   }
   return consumeOwnerResponse(response, async () => {
