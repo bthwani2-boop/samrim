@@ -10,104 +10,100 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/lib/pq"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
-// PostgresRepository writes only the isolated DSH Captain-standing owner table.
-// No process here writes Identity roles, Store memberships, or WLT financial facts.
+// PostgresRepository owns only DSH Captain standing. Every operation binds
+// the exact owner relations in a transaction, without constructing SQL text.
 type PostgresRepository struct {
-	db       *sql.DB
-	table    string
-	commands string
-	audit    string
+	db     *sql.DB
+	schema string
 }
 
-var isolatedSchema = regexp.MustCompile(`^dsh_test_[a-z0-9_]+$`)
+var isolatedSchema = regexp.MustCompile("^dsh_test_[a-z0-9_]+$")
 
 func NewPostgresRepository(db *sql.DB, schema string) (*PostgresRepository, error) {
 	if db == nil || len(schema) > 63 || !isolatedSchema.MatchString(schema) {
 		return nil, ErrInvalidChange
 	}
-	prefix := pq.QuoteIdentifier(schema) + "."
-	return &PostgresRepository{
-		db:       db,
-		table:    prefix + "captain_standing",
-		commands: prefix + "captain_standing_commands",
-		audit:    prefix + "captain_standing_audit",
-	}, nil
+	return &PostgresRepository{db: db, schema: schema}, nil
+}
+
+func scanStanding(row interface{ Scan(...any) error }) (Standing, error) {
+	var result Standing
+	err := row.Scan(&result.ActorID, &result.Status, &result.Version)
+	return result, err
 }
 
 func (r *PostgresRepository) Read(ctx context.Context, actorID string) (Standing, error) {
 	if r == nil || r.db == nil || !validActorID(actorID) {
 		return Standing{}, ErrInvalidChange
 	}
-	var standing Standing
-	err := r.db.QueryRowContext(ctx, `SELECT actor_id,status,version FROM `+r.table+` WHERE actor_id=$1`, actorID).
-		Scan(&standing.ActorID, &standing.Status, &standing.Version)
-	if errors.Is(err, sql.ErrNoRows) {
-		return Standing{}, ErrNotEligible
-	}
+	tx, err := dbscope.Begin(ctx, r.db, r.schema, &sql.TxOptions{ReadOnly: true}, "captain_standing")
 	if err != nil {
 		return Standing{}, ErrOwnerUnavailable
 	}
-	return standing, nil
+	defer tx.Rollback()
+	result, err := scanStanding(tx.QueryRowContext(ctx, "SELECT actor_id,status,version FROM captain_standing WHERE actor_id=$1", actorID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return Standing{}, ErrNotEligible
+	}
+	if err != nil || tx.Commit() != nil {
+		return Standing{}, ErrOwnerUnavailable
+	}
+	return result, nil
 }
 
-// List reads only the review projection. Actor identity is an opaque DSH key;
-// no phone, Identity factor, audit reason or delivery data leaves this query.
-// Seek and order use the same database collation on the existing actor key.
+// List exposes only the review projection, not personal or audit data.
 func (r *PostgresRepository) List(ctx context.Context, status Status, after string, limit int) ([]Standing, error) {
 	if r == nil || r.db == nil || !reviewStatus(status) || limit < 1 || limit > 51 || (after != "" && !reviewActorID(after)) {
 		return nil, ErrInvalidChange
 	}
-	rows, err := r.db.QueryContext(ctx, `SELECT actor_id,status,version FROM `+r.table+`
-		WHERE status=$1 AND ($2='' OR actor_id>$2) ORDER BY actor_id LIMIT $3`, status, after, limit)
+	tx, err := dbscope.Begin(ctx, r.db, r.schema, &sql.TxOptions{ReadOnly: true}, "captain_standing")
+	if err != nil {
+		return nil, ErrOwnerUnavailable
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, "SELECT actor_id,status,version FROM captain_standing WHERE status=$1 AND ($2='' OR actor_id>$2) ORDER BY actor_id LIMIT $3", status, after, limit)
 	if err != nil {
 		return nil, ErrOwnerUnavailable
 	}
 	defer rows.Close()
 	items := []Standing{}
 	for rows.Next() {
-		var item Standing
-		if err := rows.Scan(&item.ActorID, &item.Status, &item.Version); err != nil {
+		item, err := scanStanding(rows)
+		if err != nil {
 			return nil, ErrOwnerUnavailable
 		}
 		items = append(items, item)
 	}
-	if rows.Err() != nil {
+	if rows.Err() != nil || rows.Close() != nil || tx.Commit() != nil {
 		return nil, ErrOwnerUnavailable
 	}
 	return items, nil
 }
 
-// Apply inserts one immutable pending application. ON CONFLICT does not update
-// an old APPROVED, SUSPENDED or REVOKED record, even under concurrent retries.
+// Apply never reactivates an existing standing, including concurrent retries.
 func (r *PostgresRepository) Apply(ctx context.Context, actorID string) (Standing, error) {
 	if r == nil || r.db == nil || !validActorID(actorID) {
 		return Standing{}, ErrInvalidChange
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, err := dbscope.Begin(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "captain_standing")
 	if err != nil {
 		return Standing{}, ErrOwnerUnavailable
 	}
 	defer tx.Rollback()
-	_, err = tx.ExecContext(ctx, `INSERT INTO `+r.table+`
-		(actor_id,status,version,changed_by_actor,change_reason)
-		VALUES ($1,'PENDING',1,$1,'Verified Customer application')
-		ON CONFLICT (actor_id) DO NOTHING`, actorID)
+	if _, err := tx.ExecContext(ctx, "INSERT INTO captain_standing (actor_id,status,version,changed_by_actor,change_reason) VALUES ($1,'PENDING',1,$1,'Verified Customer application') ON CONFLICT (actor_id) DO NOTHING", actorID); err != nil {
+		return Standing{}, ErrOwnerUnavailable
+	}
+	result, err := scanStanding(tx.QueryRowContext(ctx, "SELECT actor_id,status,version FROM captain_standing WHERE actor_id=$1 FOR SHARE", actorID))
 	if err != nil {
 		return Standing{}, ErrOwnerUnavailable
 	}
-	var standing Standing
-	err = tx.QueryRowContext(ctx, `SELECT actor_id,status,version FROM `+r.table+` WHERE actor_id=$1 FOR SHARE`, actorID).
-		Scan(&standing.ActorID, &standing.Status, &standing.Version)
-	if err != nil {
-		return Standing{}, ErrOwnerUnavailable
-	}
-	if err = tx.Commit(); err != nil {
+	if tx.Commit() != nil {
 		return Standing{}, ErrUnknownResult
 	}
-	return standing, nil
+	return result, nil
 }
 
 func hashCommand(c Change) (string, error) {
@@ -119,91 +115,78 @@ func hashCommand(c Change) (string, error) {
 	return hex.EncodeToString(sum[:]), nil
 }
 
-// Change serializes one Operator approval/suspension/revocation on a row
-// created by the verified applicant. Each decision has one immutable audit and
-// operation-key record; a stale request cannot overwrite a newer decision.
+func validDecision(c Change) bool {
+	return validActorID(c.ActorID) && validActorID(c.ActingActorID) &&
+		c.ExpectedVersion >= 1 && operationID.MatchString(c.OperationID) &&
+		(c.Status == Approved || c.Status == Suspended || c.Status == Revoked) &&
+		strings.TrimSpace(c.Reason) != "" && len([]rune(c.Reason)) <= 300
+}
+
+// Change locks the applicant before checking immutable operation identity.
+// The decision, replay record and audit commit together on the same owner.
 func (r *PostgresRepository) Change(ctx context.Context, c Change) (Standing, error) {
-	if r == nil || r.db == nil || !validActorID(c.ActorID) ||
-		!validActorID(c.ActingActorID) || c.ExpectedVersion < 1 ||
-		!operationID.MatchString(c.OperationID) ||
-		(c.Status != Approved && c.Status != Suspended && c.Status != Revoked) ||
-		strings.TrimSpace(c.Reason) == "" || len([]rune(c.Reason)) > 300 {
+	if r == nil || r.db == nil || !validDecision(c) {
 		return Standing{}, ErrInvalidChange
 	}
-	hash, err := hashCommand(c)
+	fingerprint, err := hashCommand(c)
 	if err != nil {
 		return Standing{}, ErrInvalidChange
 	}
-	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, err := dbscope.Begin(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted},
+		"captain_standing", "captain_standing_commands", "captain_standing_audit")
 	if err != nil {
 		return Standing{}, ErrOwnerUnavailable
 	}
 	defer tx.Rollback()
-	var old Standing
-	err = tx.QueryRowContext(ctx, `SELECT actor_id,status,version FROM `+r.table+`
-		WHERE actor_id=$1 FOR UPDATE`, c.ActorID).Scan(&old.ActorID, &old.Status, &old.Version)
+
+	old, err := scanStanding(tx.QueryRowContext(ctx, "SELECT actor_id,status,version FROM captain_standing WHERE actor_id=$1 FOR UPDATE", c.ActorID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Standing{}, ErrNotEligible
 	}
 	if err != nil {
 		return Standing{}, ErrOwnerUnavailable
 	}
-	var previousHash string
-	var previousVersion int64
-	err = tx.QueryRowContext(ctx, `SELECT request_hash,resulting_version FROM `+r.commands+`
-		WHERE actor_id=$1 AND operation_id=$2`, c.ActorID, c.OperationID).Scan(&previousHash, &previousVersion)
-	switch {
-	case err == nil:
-		if previousHash != hash {
+
+	var priorHash string
+	var priorVersion int64
+	err = tx.QueryRowContext(ctx, "SELECT request_hash,resulting_version FROM captain_standing_commands WHERE actor_id=$1 AND operation_id=$2", c.ActorID, c.OperationID).Scan(&priorHash, &priorVersion)
+	if err == nil {
+		if priorHash != fingerprint {
 			return Standing{}, ErrVersionConflict
 		}
-		// Even after subsequent decisions, replay returns the exact historical
-		// result of this operation, never the newer active standing.
-		var historicalStatus Status
-		err = tx.QueryRowContext(ctx, `SELECT new_status FROM `+r.audit+`
-			WHERE actor_id=$1 AND operation_id=$2 AND version=$3`,
-			c.ActorID, c.OperationID, previousVersion).Scan(&historicalStatus)
-		if err != nil {
+		var priorStatus Status
+		if err := tx.QueryRowContext(ctx, "SELECT new_status FROM captain_standing_audit WHERE actor_id=$1 AND operation_id=$2 AND version=$3", c.ActorID, c.OperationID, priorVersion).Scan(&priorStatus); err != nil {
 			return Standing{}, ErrOwnerUnavailable
 		}
-		if err = tx.Commit(); err != nil {
+		if tx.Commit() != nil {
 			return Standing{}, ErrUnknownResult
 		}
-		return Standing{ActorID: c.ActorID, Status: historicalStatus, Version: previousVersion}, nil
-	case !errors.Is(err, sql.ErrNoRows):
+		return Standing{ActorID: c.ActorID, Status: priorStatus, Version: priorVersion}, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
 		return Standing{}, ErrOwnerUnavailable
 	}
+
 	if old.Version != c.ExpectedVersion || old.Status == Revoked ||
 		(c.Status == Approved && old.Status != Pending) || old.Status == c.Status {
 		return Standing{}, ErrVersionConflict
 	}
-	var next Standing
-	err = tx.QueryRowContext(ctx, `UPDATE `+r.table+`
-		SET status=$2,version=version+1,changed_by_actor=$3,change_reason=$4,
-			updated_at=clock_timestamp()
-		WHERE actor_id=$1 AND version=$5
-		RETURNING actor_id,status,version`, c.ActorID, c.Status, c.ActingActorID, c.Reason, c.ExpectedVersion).
-		Scan(&next.ActorID, &next.Status, &next.Version)
+	next, err := scanStanding(tx.QueryRowContext(ctx, "UPDATE captain_standing SET status=$2,version=version+1,changed_by_actor=$3,change_reason=$4,updated_at=clock_timestamp() WHERE actor_id=$1 AND version=$5 RETURNING actor_id,status,version",
+		c.ActorID, c.Status, c.ActingActorID, c.Reason, c.ExpectedVersion))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Standing{}, ErrVersionConflict
 	}
 	if err != nil {
 		return Standing{}, ErrOwnerUnavailable
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO `+r.commands+`
-		(actor_id,operation_id,request_hash,resulting_version)
-		VALUES($1,$2,$3,$4)`, c.ActorID, c.OperationID, hash, next.Version)
-	if err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO captain_standing_commands (actor_id,operation_id,request_hash,resulting_version) VALUES($1,$2,$3,$4)", c.ActorID, c.OperationID, fingerprint, next.Version); err != nil {
 		return Standing{}, ErrOwnerUnavailable
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO `+r.audit+`
-		(actor_id,version,operation_id,previous_status,new_status,acting_actor_id,change_reason)
-		VALUES($1,$2,$3,$4,$5,$6,$7)`,
-		c.ActorID, next.Version, c.OperationID, old.Status, next.Status, c.ActingActorID, c.Reason)
-	if err != nil {
+	if _, err := tx.ExecContext(ctx, "INSERT INTO captain_standing_audit (actor_id,version,operation_id,previous_status,new_status,acting_actor_id,change_reason) VALUES($1,$2,$3,$4,$5,$6,$7)",
+		c.ActorID, next.Version, c.OperationID, old.Status, next.Status, c.ActingActorID, c.Reason); err != nil {
 		return Standing{}, ErrOwnerUnavailable
 	}
-	if err = tx.Commit(); err != nil {
+	if tx.Commit() != nil {
 		return Standing{}, ErrUnknownResult
 	}
 	return next, nil
