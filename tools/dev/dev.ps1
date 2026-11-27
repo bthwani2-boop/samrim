@@ -1187,9 +1187,9 @@ function Invoke-ScopedDocker {
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain activation requires explicit -Apply'
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
       Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply without capability activation'
-      Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
+      Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
       Assert-Ok (!$ConfigurationFrom -or (!$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and !$RecoverRuntimeAttempt -and $ConfigurationFrom -cmatch '^[0-9a-f]{40}$')) 'Configuration transition requires one reviewed Compose revision and no other mutation mode'
-      $mode = if ($ConfigurationFrom) { if ($Apply) { '--apply-config' } else { '--check-config' } } elseif ($RecoverRuntimeAttempt) { '--recover-attempt' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
+      $mode = if ($ConfigurationFrom) { if ($Apply) { '--apply-config' } else { '--check-config' } } elseif ($RecoverRuntimeAttempt) { if ($Automatic) { '--recover-safe' } else { '--recover-attempt' } } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
       $reconcileOptions = @(if ($ConfigurationFrom) { $ConfigurationFrom } elseif ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($PrepareBaseline) { '--prepare-baseline' })
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {

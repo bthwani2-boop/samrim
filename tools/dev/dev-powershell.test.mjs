@@ -496,6 +496,25 @@ test("owner baseline reconciliation forwards one intact native option", {
   assert.deepEqual(actual, [["--apply-preview", "--prepare-baseline"], ["--apply-preview"]]);
 });
 
+test("automatic recovery forwards only the proven safe-boundary mode and exact attempt key", {
+  skip: process.platform !== "win32",
+}, () => {
+  const quoted = scriptPath.replaceAll("'","''");
+  const ps = [
+    "$ErrorActionPreference='Stop';$tok=$null;$errors=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseFile('"+quoted+"',[ref]$tok,[ref]$errors)",
+    "if($errors){throw 'PARSE_FAILED'}",
+    "$modeAssignment=$ast.Find({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$mode' -and $n.Extent.Text.Contains('--recover-safe')},$true)",
+    "$optionsAssignment=$ast.Find({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$reconcileOptions'},$true)",
+    "if(!$modeAssignment -or !$optionsAssignment){throw 'RECOVERY_DISPATCH_MISSING'}",
+    "$RecoverRuntimeAttempt='a'*64;$Apply=$false;$EnableCaptain=$false;$Preview=$false;$PrepareBaseline=$false;$ConfigurationFrom=$null",
+    "foreach($Automatic in @($true,$false)){Invoke-Expression $modeAssignment.Extent.Text;Invoke-Expression $optionsAssignment.Extent.Text;& node -e 'console.log(JSON.stringify(process.argv.slice(1)))' -- $mode @reconcileOptions;if($LASTEXITCODE){throw 'PROBE_FAILED'}}",
+  ].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",windowsHide:true,timeout:15000});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.deepEqual(result.stdout.trim().split(/\r?\n/).map(line=>JSON.parse(line)),[["--recover-safe","a".repeat(64)],["--recover-attempt","a".repeat(64)]]);
+});
+
 test("pnpm package-manager lock document is excluded but workspace changes are not", {
   skip: process.platform !== "win32",
 },()=>{

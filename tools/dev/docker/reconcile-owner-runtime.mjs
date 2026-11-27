@@ -7,7 +7,7 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
-import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, runtimeTerminalStatus } from "../sync-lenovo-reconciliation.mjs";
+import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, recordRuntimePhase, runtimeAttemptPhase, runtimeTerminalStatus } from "../sync-lenovo-reconciliation.mjs";
 import { reconcileComposeConfiguration } from "./compose-runtime-transition.mjs";
 import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope, wltCommandRoleInactiveSQL } from "./owner-baseline-transition.mjs";
 import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
@@ -230,6 +230,7 @@ function rebaseAndApply(owner,state,env,head,tag,targetId,ensureSource) {
   ensureSource();
   if(Object.keys(owners).some(o=>inspect(o).Id!==state[o].Id)||imageRecord(owners[owner].image+":"+tag).Id!==targetId||imageRecord(old.Config.Image).Id!==old.Image)
     throw new Error("Concurrent owner or image change");
+  markAutomaticPhase("mutating");
   let stopped=false,committed=false,applyStarted=false;
   try {
     console.log("OWNER_APPLY_STARTED "+owner);
@@ -271,6 +272,7 @@ function rebaseAndApply(owner,state,env,head,tag,targetId,ensureSource) {
     }
     throw new Error("ROLLBACK_BLOCKED owner stop outcome not proven: "+owner);
   }
+  markAutomaticPhase("ready");
 }
 
 function assertNoOrphanReconciler() {
@@ -317,11 +319,11 @@ export function assertSourceHost(machineName, reportedName, checkoutRoot) {
 export function parseReconcileArgs(argv) {
   const [mode, ...options] = argv;
   const build = mode === "--build-only";
-  const recover = mode === "--recover-attempt";
+  const recover = ["--recover-attempt","--recover-safe"].includes(mode);
   const configuration = ["--check-config", "--apply-config"].includes(mode);
   const prepare = options.length === 1 && options[0] === "--prepare-baseline";
-  if (!["--check", "--apply", "--apply-preview", "--apply-captain", "--recover-attempt", "--build-only", "--check-config", "--apply-config"].includes(mode))
-    throw new Error("Usage: --check | --apply [--prepare-baseline] | --apply-preview [--prepare-baseline] | --apply-captain | --recover-attempt KEY | --build-only OWNER | --check-config REVISION | --apply-config REVISION");
+  if (!["--check", "--apply", "--apply-preview", "--apply-captain", "--recover-attempt", "--recover-safe", "--build-only", "--check-config", "--apply-config"].includes(mode))
+    throw new Error("Usage: --check | --apply [--prepare-baseline] | --apply-preview [--prepare-baseline] | --apply-captain | --recover-attempt KEY | --recover-safe KEY | --build-only OWNER | --check-config REVISION | --apply-config REVISION");
   if (build) {
     if (options.length !== 1 || !Object.hasOwn(owners, options[0])) throw new Error("Expected one owner for --build-only");
   } else if (recover) {
@@ -333,6 +335,37 @@ export function parseReconcileArgs(argv) {
   }
   return { mode, options, build, recover, configuration, prepare, apply: ["--apply", "--apply-preview", "--apply-captain", "--apply-config"].includes(mode) };
 }
+let activeAttempt=null;
+function attemptFiles() {
+  if(!process.env.LOCALAPPDATA)throw new Error("Missing runtime attempt directory");
+  const directory=resolve(process.env.LOCALAPPDATA,"BThwani","Operations","SourceSync");
+  return {stateFile:resolve(directory,"runtime-reconcile.json"),receiptFile:resolve(directory,"runtime-reconcile.receipt.json")};
+}
+function openAutomaticAttempt(mode) {
+  if(!["--apply","--apply-preview"].includes(mode))return null;
+  const key=process.env.BTHWANI_RUNTIME_ATTEMPT_KEY,attempt=process.env.BTHWANI_RUNTIME_ATTEMPT_ID;
+  if(!key&&!attempt)return null;
+  const files=attemptFiles();
+  if(!key||!attempt||runtimeAttemptPhase(files.stateFile,files.receiptFile,key,attempt)!=="ready")
+    throw new Error("RUNTIME_SAFE_BOUNDARY_NOT_PROVEN");
+  return {...files,key,attempt};
+}
+function markAutomaticPhase(phase) {
+  if(activeAttempt){
+    const {stateFile,receiptFile,key,attempt}=activeAttempt;
+    recordRuntimePhase(stateFile,receiptFile,key,attempt,phase);
+  }
+}
+function settleAutomaticAttempt(status) {
+  if(activeAttempt) {
+    const {stateFile,receiptFile,key,attempt}=activeAttempt;
+    acknowledgeRuntimeAttempt(stateFile,receiptFile,key,attempt,status);
+  }
+}
+function assertUnusedBuildTag(reference) {
+  if(docker(["ps","-a","--format","{{.Image}}"]).split(/\r?\n/).includes(reference))
+    throw new Error("Build-only tag is in use by a container");
+}
 function main() {
   const {mode,options,build,recover,configuration,prepare,apply}=parseReconcileArgs(process.argv.slice(2));
   if((build||apply||recover)&&process.env.BTHWANI_UNIFIED_DEV_RECONCILE!=="1")throw new Error("Use the unified dev launcher with its Docker resource lease");
@@ -340,6 +373,7 @@ function main() {
   if(docker(["context","inspect",context,"--format","{{.Endpoints.docker.Host}}"])!=="ssh://bthwa@bthwani-docker")throw new Error("Wrong Docker target");
   const head=git(["rev-parse","HEAD"]),branch=git(["branch","--show-current"]);
   if(!/^[a-f0-9]{40}$/.test(head)||!branch||branch==="main"||branch.startsWith("archive/"))throw new Error("Not an active development branch");
+  activeAttempt=openAutomaticAttempt(mode);
   if (configuration) {
     const scope = [...ownerComposeInputs, "tools/dev/docker", "tools/dev/dev.ps1", "tools/dev/dev-resource-admission.ps1"];
     const ensureSource = () => {
@@ -352,7 +386,7 @@ function main() {
   if(build){
     const [owner]=options,tag="build-"+head;
     const reference=owners[owner].image+":"+tag;
-    if(docker(["ps","-a","--format","{{.Image}}"]).split(/\r?\n/).includes(reference))throw new Error("Build-only tag is in use by a container");
+    assertUnusedBuildTag(reference);
     const snapshot=captureCommittedOwner(root,owner,head);
     const staged=materializeOwner(snapshot);
     let image;
@@ -363,14 +397,18 @@ function main() {
   }
   let recovery=null;
   if(recover){
-    if(!process.env.LOCALAPPDATA)throw new Error("Missing runtime attempt directory");
-    const directory=resolve(process.env.LOCALAPPDATA,"BThwani","Operations","SourceSync");
-    const stateFile=resolve(directory,"runtime-reconcile.json"), receiptFile=resolve(directory,"runtime-reconcile.receipt.json");
+    const {stateFile,receiptFile}=attemptFiles();
     const reviewed=readFileSync(stateFile,"utf8");
     const attempt=JSON.parse(reviewed);
     if(attempt.version!==1||attempt.key!==options[0]||!["running","uncertain"].includes(attempt.status))
       throw new Error("RUNTIME_ATTEMPT_MISMATCH");
     assertNoOrphanReconciler();
+    if(runtimeAttemptPhase(stateFile,receiptFile,options[0],attempt.attempt)==="ready"){
+      acknowledgeRuntimeRecovery(stateFile,receiptFile,options[0],reviewed,true);
+      console.log("RUNTIME_SAFE_BOUNDARY_REARMED key="+options[0].slice(0,12));
+      return;
+    }
+    if(mode==="--recover-safe")throw new Error("RUNTIME_SAFE_BOUNDARY_NOT_PROVEN");
     recovery={stateFile,receiptFile,reviewed,key:options[0]};
   }
   const state = Object.fromEntries(Object.keys(owners).map(o => [o, inspect(o)]));
@@ -529,6 +567,7 @@ function main() {
         throw new Error("Owner tests failed: "+o+" "+(go.error?.code||go.status)+" "+names.slice(0,15).join(","));
       }
       console.log("OWNER_TEST_PASS "+o);
+      if(activeAttempt)assertUnusedBuildTag(owners[o].image+":"+tag);
       const image=buildOwnerImage(o,head,tag,service,snapshot);
       targetIds[o]=image.Id;
       nextEnv[owners[o].tag]=tag;
@@ -574,6 +613,7 @@ function main() {
     for(const o of names){
       if(imageRecord(owners[o].image+":"+tags[o]).Id!==targetIds[o]||imageRecord(state[o].Config.Image).Id!==state[o].Image)throw new Error("Candidate or rollback image tag changed: "+o);
     }
+    markAutomaticPhase("mutating");
     const updated={};
     try{
       console.log("OWNER_APPLY_STARTED "+names.join(","));
@@ -604,6 +644,7 @@ function main() {
       verifyPeers();
       throw new Error("ROLLBACK_PASS "+names.join(",")+" after failed replacement: "+e.message);
     }
+    markAutomaticPhase("ready");
     for(const o of names){state[o]=updated[o];env[owners[o].tag]=tags[o];}
     if(activate&&names.includes("dsh")&&names.includes("identity")){
       for(const key of ["REF_IDENTITY_CAPTAIN_ADMISSION","REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING","REF_DSH_PRIVATE_TLS_CERT","REF_DSH_PRIVATE_TLS_KEY"])env[key]=nextEnv[key];
@@ -616,14 +657,20 @@ function main() {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     const status=main();
-    // Only the reconciler that actually reached a settled terminal outcome
-    // can acknowledge its exact attempt, including a verified partial result.
-    const key=process.env.BTHWANI_RUNTIME_ATTEMPT_KEY;
-    const attempt=process.env.BTHWANI_RUNTIME_ATTEMPT_ID;
-    if((key||attempt) && ["--apply","--apply-preview"].includes(process.argv[2])){
-      if(!key||!attempt||!process.env.LOCALAPPDATA)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
-      const directory=resolve(process.env.LOCALAPPDATA,"BThwani","Operations","SourceSync");
-      acknowledgeRuntimeAttempt(resolve(directory,"runtime-reconcile.json"),resolve(directory,"runtime-reconcile.receipt.json"),key,attempt,status);
+    settleAutomaticAttempt(status);
+  } catch (error) {
+    // A proven stable boundary or verified rollback can settle. Every other
+    // interrupted mutation remains held; a missing pipe cannot imply success.
+    if(activeAttempt){
+      const {stateFile,receiptFile,key,attempt}=activeAttempt;
+      const phase=runtimeAttemptPhase(stateFile,receiptFile,key,attempt);
+      const status=phase==="ready"?"retry":phase==="mutating"&&error.message.startsWith("ROLLBACK_PASS ")?"blocked":null;
+      if(status){
+        try{settleAutomaticAttempt(status);}
+        catch{console.error("RUNTIME_RECEIPT_WRITE_FAILED");}
+      }
     }
-  } catch (e) { console.error("RUNTIME_RECONCILE_BLOCKED " + e.message); process.exitCode = 1; }
+    console.error("RUNTIME_RECONCILE_BLOCKED "+error.message);
+    process.exitCode=1;
+  }
 }
