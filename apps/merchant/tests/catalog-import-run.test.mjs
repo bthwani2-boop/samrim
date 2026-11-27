@@ -8,7 +8,7 @@ import {test} from "node:test";
 import * as dsh from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import {GET,PATCH, PUT} from "../app/api/admission+api.ts";
-import * as merchantJSON from "../src/features/access/merchant-json.ts";
+import * as merchantOwnerWeb from "../src/features/access/merchant-owner-web.ts";
 import { buildImportManifest } from "../src/features/catalog/catalog-import-data.ts";
 
 const actorId="merchant-a",storeId="store-a",runId="run-0001",sourceSha256="a".repeat(64);
@@ -65,7 +65,7 @@ function importTransport(platform, withNativeMerchantSession) {
       "@bthwani/dsh": dsh,
       "react-native": { Platform: { OS: platform } },
       "../access/admission-transport": { withNativeMerchantSession },
-      "../access/merchant-json.ts": merchantJSON,
+      "../access/merchant-owner-web.ts": merchantOwnerWeb,
     });
     loadedModules.push(mod);
     return mod.exports.requestCatalogImport;
@@ -133,7 +133,7 @@ test("Web import transport binds the original run and validates every owner ackn
   await assert.rejects(request(actorId, storeId, runId, "GET", signal), { status: 503, code: "OWNER_UNAVAILABLE" });
   const aborted = new AbortController();
   reply = new Response(new ReadableStream({ pull() { aborted.abort(); } }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
-  await assert.rejects(request(actorId, storeId, runId, "GET", aborted.signal), { name: "AbortError" });
+  await assert.rejects(request(actorId, storeId, runId, "GET", aborted.signal), { code: "OWNER_RESPONSE_STALE" });
 });
 
 test("Android import uses the verified native session and the canonical DSH client", async t => {

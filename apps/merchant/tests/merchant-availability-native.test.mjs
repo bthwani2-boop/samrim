@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
 import * as dshClient from "../../../services/dsh/clients/index.ts";
 import * as identityClient from "../../../services/identity/clients/index.ts";
+import * as merchantOwnerWeb from "../src/features/access/merchant-owner-web.ts";
 
 function compileTransport(relativePath, exports) {
   const source = readFileSync(new URL(relativePath, import.meta.url), "utf8");
@@ -123,6 +124,7 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
     },
     "react-native": { Platform: { OS: platform } },
     "./admission": {}, "./dsh-standing": dshClient,
+    "../access/merchant-owner-web.ts": merchantOwnerWeb,
   };
   const module = { exports: {} };
   new Function("require", "module", "exports", "process", compiled)(
