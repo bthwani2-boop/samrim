@@ -12,21 +12,35 @@ type OwnerRequest = Readonly<{
   byteLimit?: number;
 }>;
 
-/** App-local same-origin DSH projection; the owner SDK retains business validation. */
+async function discardUnread(reply: Response): Promise<void> {
+  try {
+    const body = reply.body;
+    if (body && !body.locked && !reply.bodyUsed) await body.cancel();
+  } catch {
+    // Cleanup failure must not replace the request outcome.
+  }
+}
+
+function asDocument(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
 export async function requestMerchantOwnerDocument({
   query, actorId, method, signal, change, acceptedStatuses = [200], byteLimit = 64 * 1024,
 }: OwnerRequest): Promise<{ status: number; document: Record<string, unknown> }> {
   const writing = method !== "GET";
-  const invalid = () => new DshPublicError(502,
-    writing ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+  const invalid = () => new DshPublicError(502, writing ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_INVALID");
+  const unknown = (status: number) => new DshPublicError(status, writing ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE");
   const current = () => {
-    if (signal.aborted) throw new DshPublicError(0,
-      writing ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
+    if (signal.aborted) throw new DshPublicError(0, writing ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
   };
+
   current();
   let reply: Response;
   try {
-    reply = await fetch(`/api/admission?${query}`, {
+    reply = await fetch("/api/admission?" + query.toString(), {
       method, signal, credentials: "same-origin", cache: "no-store", redirect: "error",
       headers: { "X-Merchant-Context": actorId, ...(change === undefined ? {} : { "Content-Type": "application/json" }) },
       ...(change === undefined ? {} : { body: JSON.stringify(change) }),
@@ -35,26 +49,29 @@ export async function requestMerchantOwnerDocument({
     current();
     throw new DshPublicError(0, writing ? "OPERATION_RESULT_UNKNOWN" : "OWNER_NETWORK_UNAVAILABLE");
   }
-  // Every acquired response is either consumed by the bounded decoder or
-  // discarded without waiting for the remote transport to finish cleanup.
-  const noStore = reply.headers.get("Cache-Control")?.toLowerCase().split(",")
-    .some(value => value.trim() === "no-store");
-  if (reply.ok && (!acceptedStatuses.includes(reply.status) || !noStore)) {
-    if (reply.body && !reply.body.locked) void reply.body.cancel().catch(() => {});
+
+  try {
     current();
-    throw invalid();
-  }
-  const payload = await readMerchantJSON(reply, signal, byteLimit, 5000);
-  current();
-  const document = payload && typeof payload === "object" && !Array.isArray(payload)
-    ? payload as Record<string, unknown> : null;
-  if (!reply.ok) {
-    const code = typeof document?.code === "string" && document.code ? document.code : null;
-    if (writing && (reply.status >= 500 || !code)) {
-      throw new DshPublicError(reply.status, "OPERATION_RESULT_UNKNOWN");
+    const noStore = reply.headers.get("Cache-Control")?.toLowerCase().split(",")
+      .some(value => value.trim() === "no-store");
+    if (!noStore || (reply.ok && !acceptedStatuses.includes(reply.status))) {
+      throw reply.ok ? invalid() : unknown(reply.status);
     }
-    throw new DshPublicError(reply.status, code ?? "OWNER_UNAVAILABLE");
+
+    const document = asDocument(await readMerchantJSON(
+      reply, signal, reply.ok ? byteLimit : Math.min(byteLimit, 4096), 5000,
+    ));
+    current();
+    if (!reply.ok) {
+      const code = document && Object.keys(document).length === 1 &&
+        Object.hasOwn(document, "code") && typeof document.code === "string" && document.code
+        ? document.code : null;
+      if (!code || (writing && reply.status >= 500)) throw unknown(reply.status);
+      throw new DshPublicError(reply.status, code);
+    }
+    if (!document) throw invalid();
+    return { status: reply.status, document };
+  } finally {
+    void discardUnread(reply);
   }
-  if (!document) throw invalid();
-  return { status: reply.status, document };
 }

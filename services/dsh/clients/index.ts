@@ -33,7 +33,7 @@ export { dshOperations } from "./generated/dsh-operations.ts";
 export type { MerchantCatalogDraftChange, MerchantCatalogDraftEditChange, MerchantCatalogDraftEditResult, MerchantCatalogDraftResult, MerchantCatalogOffer, MerchantCatalogPage, MerchantCatalogStatus, MerchantInventorySummary } from "./merchant-catalog.ts";
 export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, parseMerchantInventorySummary, readMerchantInventorySummary, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit, validMerchantCatalogSearch, validMerchantCatalogStatus } from "./merchant-catalog.ts";
 export type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantRegistrationResult, MerchantStoreRegistration } from "./merchant-registration.ts";
-export { parseMerchantRegistrationOptions, parseMerchantRegistrationResult, readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration } from "./merchant-registration.ts";
+export { confirmMerchantRegistrationResult, isMerchantRegistrationRejection, merchantRegistrationOptionsByteLimit, parseMerchantRegistrationOptions, parseMerchantRegistrationResult, readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration } from "./merchant-registration.ts";
 // DSH-owned Merchant standing contract and transport.
 export type { MerchantDSHStanding, MerchantOwnedStore } from "./merchant-standing.ts";
 export { MerchantStandingError, readMerchantDSHStanding, standingFrom } from "./merchant-standing.ts";
