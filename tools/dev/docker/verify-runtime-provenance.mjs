@@ -7,6 +7,8 @@ import { isDeepStrictEqual } from "node:util";
 import { readVerifiedFile } from "../source-snapshot.mjs";
 import { isOwnerNonRuntimePath, sourceIdentity } from "./owner-preview-source.mjs";
 
+import { composeFileNames } from './reconcile-owner-runtime.mjs';
+
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const infra = resolve(root, "infra");
 const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
@@ -233,107 +235,128 @@ function sourceWindow(execute, preflight) {
   return { head, branch, dirty };
 }
 
-function evaluateContainer(service, actual, expected, preflight) {
+function containerAdmission(service, actual, expected, preflight) {
   const errors = [];
-  if (actual.project !== project || actual.service !== service || actual.environment !== "refoundation" ||
-      actual.privileged !== "false" || actual.capability !== expected.capability ||
-      (service === "wlt" && actual.capability !== "customer-wallet-read-only")) {
-    errors.push("not the expected isolated Compose project and owner");
+  const serving = owners.includes(service);
+  if (actual.project !== project || actual.service !== service || actual.environment !== 'refoundation' ||
+      actual.privileged !== 'false' || actual.capability !== expected.capability ||
+      (service === 'wlt' && actual.capability !== 'customer-wallet-read-only')) {
+    errors.push('not the expected isolated Compose project and owner');
   }
-  const active = actual.running === "true" && actual.state === "running" && actual.health === "healthy";
-  const stopped = preflight && actual.running === "false" && actual.state === "exited" &&
-    ["healthy", "unhealthy", "starting"].includes(actual.health);
-  if (!active && !stopped) errors.push("container state or health not proven");
-  for (const key of Object.keys(expected.policy)) {
-    if (!isDeepStrictEqual(actual.policy[key], expected.policy[key])) errors.push("effective container policy mismatch: " + key);
+  // Serving provenance is not just a matching project or image label: the
+  // canonical Compose origin is required even for an exited startup candidate.
+  if (serving) {
+    try { composeFileNames(actual.configFiles, root); }
+    catch { errors.push('serving owner canonical Compose origin not proven'); }
+    if (!/^[1-9]\d*(?::[1-9]\d*)?$/.test(actual.user)) errors.push('non-root owner user not proven');
   }
-  if (owners.includes(service) && !/^[1-9]\d*(?::[1-9]\d*)?$/.test(actual.user)) errors.push("non-root owner user not proven");
+  const running = actual.running === 'true' && actual.state === 'running' && actual.health === 'healthy';
+  const previouslyExited = preflight && actual.running === 'false' && actual.state === 'exited' &&
+    ['healthy', 'unhealthy', 'starting'].includes(actual.health);
+  if (!running && !previouslyExited) errors.push('container state or health not proven');
+  for (const [key, value] of Object.entries(expected.policy)) {
+    if (!isDeepStrictEqual(actual.policy[key], value)) errors.push('effective container policy mismatch: ' + key);
+  }
   return errors;
 }
 
-function evaluateOwner(owner, container, image, model, source, execute, isAncestor, preflight) {
-  const errors = evaluateContainer(owner, container, model.policy[owner], preflight);
-  if (image.id !== container.image) errors.push("runtime image ID absent, invalid or mismatched");
-  const value = field => field === "<no value>" ? "" : field;
-  let revision = "";
+function ownerSourceAdmission(owner, image, container, source, execute, isAncestor, preflight) {
+  const errors = [];
+  const scope = ownerScope(owner, preflight);
+  let revision = '';
+  if (image.id !== container.image) errors.push('runtime image ID absent, invalid or mismatched');
+  const label = field => field === '<no value>' ? '' : field;
   try {
     const identity = sourceIdentity({
-      "org.opencontainers.image.revision": value(image.revision),
-      "com.bthwani.source-sha": value(image.source),
-      "com.bthwani.preview-base": value(image.previewBase),
-      "com.bthwani.preview-digest": value(image.previewDigest),
+      'org.opencontainers.image.revision': label(image.revision),
+      'com.bthwani.source-sha': label(image.source),
+      'com.bthwani.preview-base': label(image.previewBase),
+      'com.bthwani.preview-digest': label(image.previewDigest),
     }, owner);
     revision = identity.revision;
-    if (identity.digest) errors.push("uncommitted preview is not committed acceptance");
-    else if (!isAncestor(revision, source.head)) errors.push("source is not an ancestor of HEAD");
+    if (identity.digest) errors.push('uncommitted preview is not committed acceptance');
+    else if (!isAncestor(revision, source.head)) errors.push('source is not an ancestor of HEAD');
     else {
-      const changes = execute("git", ["diff", "--name-only", "--no-renames", "-z", revision, source.head, "--", ...ownerScope(owner, preflight)]).split("\0").filter(Boolean);
-      if (changes.some(path => !isOwnerNonRuntimePath(path))) errors.push("owner source changed since image build");
+      const changes = execute('git', ['diff', '--name-only', '--no-renames', '-z', revision, source.head, '--', ...scope]).split('\0').filter(Boolean);
+      if (changes.some(path => !isOwnerNonRuntimePath(path))) errors.push('owner source changed since image build');
     }
   } catch (error) { errors.push(error.message); }
-  if ([...source.dirty].some(path => inScope(path, ownerScope(owner, preflight)))) errors.push("owner worktree is not clean");
-  return { owner, revision, passed: errors.length === 0, errors };
+  if ([...source.dirty].some(path => inScope(path, scope))) errors.push('owner worktree is not clean');
+  return { revision, errors };
 }
 
-function evaluateFoundation(service, container, model, source, preflight) {
-  const errors = evaluateContainer(service, container, model.policy[service], preflight);
-  const canonical = container.configHash === model.canonical.get(service) && container.worktree === historicalLabel;
-  const historical = service !== "payment-mock" && container.configHash === model.historical.get(service) && container.worktree === "<no value>";
-  if (!canonical && !historical) errors.push("foundation native Compose configuration mismatch");
-  if (container.image !== model.images[service]) errors.push("foundation image identity mismatch");
-  if (source.dirty.has("infra/compose.yaml")) errors.push("foundation Compose source is not clean");
-  return { service, configuration: canonical ? "CANONICAL" : historical ? "HISTORICAL_LABEL_ONLY" : "MISMATCH", passed: errors.length === 0, errors };
+function admitRuntime(containers, images, model, source, execute, isAncestor, preflight) {
+  const results = [], foundationResults = [];
+  for (const service of services) {
+    const container = containers.get(nameOf(service));
+    const errors = containerAdmission(service, container, model.policy[service], preflight);
+    if (owners.includes(service)) {
+      const provenance = ownerSourceAdmission(service, images.get(container.image), container, source, execute, isAncestor, preflight);
+      errors.push(...provenance.errors);
+      results.push({ owner: service, revision: provenance.revision, passed: errors.length === 0, errors });
+      continue;
+    }
+    const canonical = container.configHash === model.canonical.get(service) && container.worktree === historicalLabel;
+    const historical = service !== 'payment-mock' && container.configHash === model.historical.get(service) && container.worktree === '<no value>';
+    const configuration = canonical ? 'CANONICAL' : historical ? 'HISTORICAL_LABEL_ONLY' : 'MISMATCH';
+    if (!canonical && !historical) errors.push('foundation native Compose configuration mismatch');
+    if (container.image !== model.images[service]) errors.push('foundation image identity mismatch');
+    if (source.dirty.has('infra/compose.yaml')) errors.push('foundation Compose source is not clean');
+    foundationResults.push({ service, configuration, passed: errors.length === 0, errors });
+  }
+  return { results, foundationResults, passed: [...results, ...foundationResults].every(row => row.passed) };
 }
 
-const readCanonicalCompose = () => readVerifiedFile(resolve(infra, "compose.yaml"), 1024 * 1024).bytes.toString("utf8");
+const readCanonicalCompose = () => readVerifiedFile(resolve(infra, 'compose.yaml'), 1024 * 1024).bytes.toString('utf8');
+
+function runtimeTarget(argv, execute) {
+  const preflight = argv.includes('--start-preflight');
+  const args = argv.filter(arg => arg !== '--start-preflight');
+  if (argv.length !== args.length + Number(preflight) || args.length !== 2 || args[0] !== '--context') {
+    throw new Error('Usage: node tools/dev/docker/verify-runtime-provenance.mjs --context bthwani-docker [--start-preflight]');
+  }
+  const context = args[1];
+  if (context !== 'bthwani-docker') throw new Error('invalid Docker context');
+  const endpoint = execute('docker', ['context', 'inspect', context, '--format', '{{.Endpoints.docker.Host}}']).trim();
+  if (!/^ssh:\/\/[A-Za-z0-9_.-]+@bthwani-docker$/.test(endpoint)) throw new Error('Wrong Docker target');
+  return { preflight, docker: (args, input) => execute('docker', ['--context', context, ...args], input) };
+}
 
 export function verifyCandidate(argv, execute = checked, isAncestor = gitAncestor, readCompose = readCanonicalCompose) {
-  const preflight = argv.includes("--start-preflight"), args = argv.filter(arg => arg !== "--start-preflight");
-  if (argv.length !== args.length + Number(preflight) || args.length !== 2 || args[0] !== "--context") {
-    throw new Error("Usage: node tools/dev/docker/verify-runtime-provenance.mjs --context bthwani-docker [--start-preflight]");
-  }
-  if (args[1] !== "bthwani-docker") throw new Error("invalid Docker context");
-  const context = args[1];
-  if (!/^ssh:\/\/[A-Za-z0-9_.-]+@bthwani-docker$/.test(execute("docker", ["context", "inspect", context, "--format", "{{.Endpoints.docker.Host}}"]).trim())) {
-    throw new Error("Wrong Docker target");
-  }
-  const docker = (args, input) => execute("docker", ["--context", context, ...args], input);
+  const { preflight, docker } = runtimeTarget(argv, execute);
   const source = sourceWindow(execute, preflight);
   const compose = readCompose();
-  const first = readContainers(docker);
+  const containers = readContainers(docker);
   const model = readRuntimeModel(docker, compose);
-  const images = readOwnerImages(docker, first);
-  const results = owners.map(owner => {
-    const container = first.get(nameOf(owner));
-    return evaluateOwner(owner, container, images.get(container.image), model, source, execute, isAncestor, preflight);
-  });
-  const foundationResults = foundations.map(service => evaluateFoundation(service, first.get(nameOf(service)), model, source, preflight));
-  const lastModel = readRuntimeModel(docker, compose);
-  const last = readContainers(docker);
+  const images = readOwnerImages(docker, containers);
+  const admission = admitRuntime(containers, images, model, source, execute, isAncestor, preflight);
+  // All decisions attach to the same immutable observation window.
+  const finalModel = readRuntimeModel(docker, compose);
+  const finalContainers = readContainers(docker);
   const finalSource = sourceWindow(execute, preflight);
-  if (compose !== readCompose() || !isDeepStrictEqual(model, lastModel) ||
-      !isDeepStrictEqual(source, finalSource) || !isDeepStrictEqual(first, last)) {
-    throw new Error("candidate changed during runtime attestation; retry the read-only check");
+  if (compose !== readCompose() || !isDeepStrictEqual(model, finalModel) ||
+      !isDeepStrictEqual(source, finalSource) || !isDeepStrictEqual(containers, finalContainers)) {
+    throw new Error('candidate changed during runtime attestation; retry the read-only check');
   }
-  return { head: source.head, preflight, results, foundationResults, passed: [...results, ...foundationResults].every(row => row.passed) };
+  return { head: source.head, preflight, ...admission };
 }
 
 export function main(argv = process.argv.slice(2), execute = checked, isAncestor = gitAncestor) {
   const result = verifyCandidate(argv, execute, isAncestor);
-  const prefix = result.preflight ? "START_PREFLIGHT_" : "RUNTIME_SOURCE_";
+  const prefix = result.preflight ? 'START_PREFLIGHT_' : 'RUNTIME_SOURCE_';
   for (const row of result.results) {
-    console.log(prefix + row.owner.toUpperCase() + "=" + (row.passed ? "PASS" : "FAIL") + " revision=" + (row.revision || "UNLABELED"));
-    for (const reason of row.errors) console.error("  " + row.owner + ": " + reason);
+    console.log(prefix + row.owner.toUpperCase() + '=' + (row.passed ? 'PASS' : 'FAIL') + ' revision=' + (row.revision || 'UNLABELED'));
+    for (const reason of row.errors) console.error('  ' + row.owner + ': ' + reason);
   }
   for (const row of result.foundationResults) {
-    console.log("FOUNDATION_CONFIG_" + row.service.toUpperCase() + "=" + (row.passed ? "PASS" : "FAIL") + " configuration=" + row.configuration);
-    for (const reason of row.errors) console.error("  " + row.service + ": " + reason);
+    console.log('FOUNDATION_CONFIG_' + row.service.toUpperCase() + '=' + (row.passed ? 'PASS' : 'FAIL') + ' configuration=' + row.configuration);
+    for (const reason of row.errors) console.error('  ' + row.service + ': ' + reason);
   }
-  console.log("RUNTIME_CHECK_HEAD=" + result.head);
+  console.log('RUNTIME_CHECK_HEAD=' + result.head);
   return result.passed ? 0 : 1;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try { process.exitCode = main(); }
-  catch (error) { console.error("RUNTIME_CHECK_BLOCKED " + error.message); process.exitCode = 2; }
+  catch (error) { console.error('RUNTIME_CHECK_BLOCKED ' + error.message); process.exitCode = 2; }
 }

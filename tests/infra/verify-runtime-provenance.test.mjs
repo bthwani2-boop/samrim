@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { main, verifyCandidate } from "../../tools/dev/docker/verify-runtime-provenance.mjs";
 
+import { fileURLToPath } from 'node:url';
+const canonicalCompose = fileURLToPath(new URL('../../infra/compose.yaml', import.meta.url));
+
 const head = "a".repeat(40);
 const successor = "b".repeat(40);
 const ownerNames = ["dsh", "identity", "wlt"];
@@ -37,7 +40,7 @@ function fixture(options = {}) {
       running: "true", state: "running", health: "healthy",
       startedAt: "2026-11-26T02:00:00.123456789Z", restartCount: "0",
       configHash: foundations.includes(owner) ? hashFor(owner) : "a".repeat(64),
-      worktree: "samrim-refoundation-clean-20261112", configFiles: "D:/samrim/infra/compose.yaml", privileged: "false",
+      worktree: "samrim-refoundation-clean-20261112", configFiles: canonicalCompose, privileged: "false",
       memory: memory[owner], pids: pids(owner), logging: { Type: "local", Config: logOptions }, restart: "unless-stopped",
       readOnly: ownerNames.includes(owner), capDrop: ownerNames.includes(owner) ? ["ALL"] : null,
       security: ownerNames.includes(owner) ? ["no-new-privileges:true"] : null, capAdd: null, user: ownerNames.includes(owner) ? "65532:65532" : "",
@@ -313,4 +316,20 @@ test("native inventory is an exact unordered set, not a sorted sequence", () => 
   assert.equal(run({ inventory: [...allServices].reverse() }).result.passed, true);
   assert.throws(() => run({ inventory: [...allServices.slice(0, -1), "dsh"] }), /unexpected project container inventory/);
   assert.throws(() => run({ inventory: [...allServices, "dsh"] }), /unexpected project container inventory/);
+});
+
+test('every serving owner requires exactly the canonical Compose origin in both admission modes', () => {
+  for (const owner of ownerNames) {
+    for (const preflight of [false, true]) {
+      for (const configFiles of ['', '<no value>', 'D:/foreign/infra/compose.yaml', canonicalCompose + ',overlay.yaml']) {
+        rejectOwner({ containers: { [owner]: { configFiles } } }, owner, 'canonical Compose origin', preflight);
+      }
+      assert.equal(run({ containers: { [owner]: { configFiles: canonicalCompose } } }, preflight).result.passed, true);
+    }
+  }
+});
+
+test('a changed Compose origin invalidates the observation window', () => {
+  const f = fixture({ finalContainers: { wlt: { configFiles: 'D:/foreign/infra/compose.yaml' } } });
+  assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
 });
