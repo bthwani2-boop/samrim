@@ -17,18 +17,20 @@ export type WalletTransactionsReadState =
   | { kind: "ready"; history: CustomerFundingHistory; expiresAt: number }
   | { kind: "signed-out" | "unavailable" };
 
-// Both financial reads confirm the browser's current Customer twice.
-// A Store, Merchant or old Customer cannot be inherited from a previous view.
+// Verify the same current Customer across the entire bounded owner read.
+// The parser owns the financial response contract (including continuation).
 async function readVerifiedFinance<T extends { actorId: string }>(
-  path: string, parse: (body: unknown) => T, maxBytes: number,
-  readCustomerAdmission: AdmissionReader, signal: AbortSignal, expectedActorId?: string,
+  admission: AdmissionReader, signal: AbortSignal, expectedActorId: string | undefined,
+  path: string, maxBytes: number, parse: (body: unknown) => T,
 ): Promise<Result<T>> {
-  const before = await readCustomerAdmission(signal);
+  const before = await admission(signal);
   signal.throwIfAborted();
   if (!before.enabled) return { kind: "unavailable" };
-  if (before.session?.role !== "customer" ||
-    (expectedActorId !== undefined && before.session.actorId !== expectedActorId) ||
-    !(Date.parse(before.session.sessionExpiresAt) > Date.now())) return { kind: "signed-out" };
+  const initial = before.session;
+  if (initial?.role !== "customer" ||
+    (expectedActorId !== undefined && initial.actorId !== expectedActorId) ||
+    !(Date.parse(initial.sessionExpiresAt) > Date.now())) return { kind: "signed-out" };
+
   const response = await fetch(path, {
     method: "GET", credentials: "same-origin", redirect: "error", cache: "no-store", signal,
   });
@@ -38,27 +40,27 @@ async function readVerifiedFinance<T extends { actorId: string }>(
     return { kind: response.status === 401 || response.status === 403 ? "signed-out" : "unavailable" };
   }
   const body = await readBoundedCustomerJSON({ headers: response.headers, body: response.body, signal }, maxBytes);
+  signal.throwIfAborted();
   if (body === null) {
     void response.body?.cancel().catch(() => {});
-    signal.throwIfAborted();
     throw new WltReadError(502);
   }
-  signal.throwIfAborted();
   const value = parse(body);
-  const after = await readCustomerAdmission(signal);
+
+  const after = await admission(signal);
   signal.throwIfAborted();
-  if (!after.enabled || after.session?.role !== "customer" ||
-    before.session.actorId !== after.session.actorId ||
-    after.session.actorId !== value.actorId) return { kind: "signed-out" };
-  const expiresAt = Math.min(Date.parse(before.session.sessionExpiresAt), Date.parse(after.session.sessionExpiresAt));
+  const current = after.session;
+  if (!after.enabled || current?.role !== "customer" ||
+    initial.actorId !== current.actorId || current.actorId !== value.actorId) return { kind: "signed-out" };
+  const expiresAt = Math.min(Date.parse(initial.sessionExpiresAt), Date.parse(current.sessionExpiresAt));
   return expiresAt > Date.now() ? { kind: "ready", value, expiresAt } : { kind: "signed-out" };
 }
 
 export async function readVerifiedWallet(
   readCustomerAdmission: AdmissionReader, signal: AbortSignal, expectedActorId?: string,
 ): Promise<WalletReadState> {
-  const result = await readVerifiedFinance("/api/customer-auth/wallet",
-    parseCustomerWalletBalance, 4096, readCustomerAdmission, signal, expectedActorId);
+  const result = await readVerifiedFinance(readCustomerAdmission, signal, expectedActorId,
+    "/api/customer-auth/wallet", 4096, parseCustomerWalletBalance);
   return result.kind === "ready"
     ? { kind: "ready", balance: result.value, expiresAt: result.expiresAt } : result;
 }
@@ -71,9 +73,9 @@ export async function readVerifiedWalletTransactions(
     return { kind: "unavailable" };
   }
   const path = "/api/customer-auth/wallet-transactions" +
-    (cursor === undefined ? "" : `?cursor=${encodeURIComponent(cursor)}`);
-  const result = await readVerifiedFinance(path,
-    parseCustomerFundingHistory, 8192, readCustomerAdmission, signal, expectedActorId);
+    (cursor === undefined ? "" : "?cursor=" + encodeURIComponent(cursor));
+  const result = await readVerifiedFinance(readCustomerAdmission, signal, expectedActorId,
+    path, 8192, body => parseCustomerFundingHistory(body, cursor));
   return result.kind === "ready"
     ? { kind: "ready", history: result.value, expiresAt: result.expiresAt } : result;
 }

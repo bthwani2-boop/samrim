@@ -358,12 +358,17 @@ test("WLT funding page envelopes require matching nextCursor and hasMore with a 
   }
 });
 
+const olderItems = tenFunding.map(item => ({ ...item, fundingId: item.fundingId.replace("page", "older"), postedAt: "2026-11-19T00:00:00Z" }));
+const pageTwo = {
+  ...pageOne, items: olderItems,
+  nextCursor: Buffer.from("2026-11-19T00:00:00Z|funding-older-00").toString("base64url"),
+};
 test("a verified Customer can request an older bounded WLT history page", async (t) => {
   let admissionReads = 0;
   t.mock.method(globalThis, "fetch", async (path, options) => {
     assert.equal(path, `/api/customer-auth/wallet-transactions?cursor=${nextCursor}`);
     assert.equal(options.credentials, "same-origin");
-    return Response.json(pageOne, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(pageTwo, { headers: { "Cache-Control": "no-store" } });
   });
   const result = await readVerifiedWalletTransactions(async () => {
     admissionReads++;
@@ -371,12 +376,12 @@ test("a verified Customer can request an older bounded WLT history page", async 
   }, new AbortController().signal, nextCursor, "actor-a");
   assert.equal(admissionReads, 2);
   assert.equal(result.kind, "ready");
-  assert.equal(result.history.nextCursor, nextCursor);
+  assert.equal(result.history.nextCursor, pageTwo.nextCursor);
 });
 
 test("a changed Customer cannot inherit an older wallet history page", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
-    Response.json(pageOne, { headers: { "Cache-Control": "no-store" } }));
+    Response.json(pageTwo, { headers: { "Cache-Control": "no-store" } }));
   const sessions = [live("actor-a"), live("actor-b")];
   const result = await readVerifiedWalletTransactions(
     async () => sessions.shift(), new AbortController().signal, nextCursor,
@@ -386,7 +391,7 @@ test("a changed Customer cannot inherit an older wallet history page", async (t)
 
 test("wallet history stays bound to the Customer whose balance is already displayed", async (t) => {
   t.mock.method(globalThis, "fetch", async () =>
-    Response.json({ ...pageOne, actorId: "actor-b" }, { headers: { "Cache-Control": "no-store" } }));
+    Response.json({ ...pageTwo, actorId: "actor-b" }, { headers: { "Cache-Control": "no-store" } }));
   for (const cursor of [undefined, nextCursor]) {
     const result = await readVerifiedWalletTransactions(
       async () => live("actor-b"), new AbortController().signal, cursor, "actor-a",
@@ -402,11 +407,11 @@ test("WLT SDK forwards only a canonical cursor to its isolated owner", async (t)
     assert.equal(url.href, `http://127.0.0.1:3203/v1/wallets/me/transactions?cursor=${nextCursor}`);
     assert.equal(options.method, "GET");
     assert.equal(options.headers.Authorization, `Bearer ${bearer}`);
-    return Response.json(pageOne, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(pageTwo, { headers: { "Cache-Control": "no-store" } });
   });
   assert.deepEqual(await readCurrentCustomerWalletTransactions(
     "http://127.0.0.1:3203", bearer, new AbortController().signal, nextCursor,
-  ), pageOne);
+  ), pageTwo);
   await assert.rejects(() => readCurrentCustomerWalletTransactions(
     "http://127.0.0.1:3203", bearer, new AbortController().signal, "invalid",
   ), { status: 400 });
@@ -464,7 +469,7 @@ test("Customer history BFF forwards a valid cursor only and refuses all other se
   };
   t.mock.method(globalThis, "fetch", async (url) => {
     assert.equal(url.search, `?cursor=${nextCursor}`);
-    return Response.json(pageOne, { headers: { "Cache-Control": "no-store" } });
+    return Response.json(pageTwo, { headers: { "Cache-Control": "no-store" } });
   });
   for (const suffix of ["?actorId=actor-b", "?cursor=bad", `?cursor=${nextCursor}&actorId=actor-b`,
     `?cursor=${nextCursor}&cursor=${nextCursor}`, "?limit=1000"]) {
@@ -473,7 +478,7 @@ test("Customer history BFF forwards a valid cursor only and refuses all other se
   assert.equal(globalThis.fetch.mock.callCount(), 0);
   const result = await GET(new Request(`${base}?cursor=${nextCursor}`, { headers }));
   assert.equal(result.status, 200);
-  assert.deepEqual(await result.json(), pageOne);
+  assert.deepEqual(await result.json(), pageTwo);
   assert.equal(globalThis.fetch.mock.callCount(), 1);
 });
 
@@ -610,4 +615,115 @@ test("WLT wallet projection distinguishes posted from available funding without 
   }
   const { availableYer, ...old } = balance;
   assert.throws(() => parseCustomerWalletBalance(old), WltReadError);
+});
+
+test("funding continuation refuses a repeated or newer owner key before any append", async (t) => {
+  const token = Buffer.alloc(32, 17).toString("base64url");
+  const older = { ...history, items: [{ fundingId: "funding-page-01", amountYer: "17", postedAt: "2026-11-19T23:59:59.999999999Z" }] };
+  const invalid = [
+    pageOne,
+    { ...history, items: [{ fundingId: "funding-page-01", amountYer: "17", postedAt: "2026-11-20T00:00:00Z" }] },
+    { ...history, items: [{ fundingId: "funding-page-00", amountYer: "17", postedAt: "2026-11-20T00:00:00Z" }] },
+    { ...history, items: [{ fundingId: "funding-page-01", amountYer: "17", postedAt: "2026-11-20T00:00:00.000000001Z" }] },
+  ];
+  let body = older;
+  t.mock.method(globalThis, "fetch", async () => Response.json(body, { headers: { "Cache-Control": "no-store" } }));
+  const read = () => readCurrentCustomerWalletTransactions("http://127.0.0.1:3203", token, new AbortController().signal, nextCursor);
+  assert.deepEqual(await read(), older);
+  for (const page of invalid) {
+    body = page;
+    await assert.rejects(read, { status: 502 });
+  }
+  body = older;
+  assert.deepEqual(await read(), older);
+});
+
+test("browser finance read refuses a newer page even when the current actor is unchanged", async (t) => {
+  const newer = { ...history, items: [{ fundingId: "funding-2027", amountYer: "17", postedAt: "2027-01-01T00:00:00Z" }] };
+  t.mock.method(globalThis, "fetch", async () => Response.json(newer, { headers: { "Cache-Control": "no-store" } }));
+  await assert.rejects(() => readVerifiedWalletTransactions(async () => live("actor-a"),
+    new AbortController().signal, nextCursor, "actor-a"), { status: 502 });
+});
+test("owner cursor is canonical and permits equal-time strictly lower IDs, empty completion and retry", () => {
+  const older = { ...history, items: [{ fundingId: "funding-page--1", amountYer: "17", postedAt: "2026-11-20T00:00:00Z" }] };
+  assert.deepEqual(parseCustomerFundingHistory(older, nextCursor), older);
+  const empty = { ...history, items: [] };
+  assert.deepEqual(parseCustomerFundingHistory(empty, nextCursor), empty);
+  for (const cursor of [
+    "x", "A".repeat(20),
+    Buffer.from("2026-11-20T00:00:00.000Z|funding-page-00").toString("base64url"),
+    Buffer.from("2026-11-20T00:00:00Z|funding-page-00|extra").toString("base64url"),
+    Buffer.from("2026-02-30T00:00:00Z|funding-page-00").toString("base64url"),
+    nextCursor + "A",
+  ]) {
+    assert.throws(() => parseCustomerFundingHistory(empty, cursor), { status: 502 });
+  }
+  assert.deepEqual(parseCustomerFundingHistory(older, nextCursor), older);
+});
+
+test("history BFF rejects a stale owner page and recovers on the same continuation", async (t) => {
+  const names = ["BTHWANI_DOCKER_WALLET_WEB_PREVIEW", "CUSTOMER_SYNTHETIC_WLT_ORIGIN", "BTHWANI_ISOLATED_TEST_MODE"];
+  const old = names.map(name => process.env[name]);
+  t.after(() => names.forEach((name, index) => {
+    if (old[index] === undefined) delete process.env[name];
+    else process.env[name] = old[index];
+  }));
+  process.env.BTHWANI_DOCKER_WALLET_WEB_PREVIEW = "1";
+  process.env.BTHWANI_ISOLATED_TEST_MODE = "true";
+  process.env.CUSTOMER_SYNTHETIC_WLT_ORIGIN = "http://127.0.0.1:3203";
+  const { GET } = await import("../../../app/api/customer-auth/wallet-transactions+api.ts");
+  const bearer = Buffer.alloc(32, 17).toString("base64url");
+  const request = () => new Request("http://127.0.0.1:18101/api/customer-auth/wallet-transactions?cursor=" + nextCursor,
+    { headers: { Cookie: "bthwani_customer_auth=" + bearer } });
+  let page = pageOne;
+  t.mock.method(globalThis, "fetch", async () => Response.json(page, { headers: { "Cache-Control": "no-store" } }));
+  const denied = await GET(request());
+  assert.equal(denied.status, 503);
+  assert.deepEqual(await denied.json(), { error: "OWNER_UNAVAILABLE" });
+  page = pageTwo;
+  const recovered = await GET(request());
+  assert.equal(recovered.status, 200);
+  assert.deepEqual(await recovered.json(), pageTwo);
+});
+test("browser finance admission rejects malformed cursors without requesting a session", async (t) => {
+  const signal = new AbortController().signal;
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => { calls++; throw new Error("unexpected network"); });
+  const admission = async () => { calls++; return live("actor-a"); };
+  for (const cursor of ["short", "x".repeat(241), "a".repeat(20) + "!"]) {
+    assert.deepEqual(await readVerifiedWalletTransactions(admission, signal, cursor), { kind: "unavailable" });
+  }
+  assert.equal(calls, 0);
+});
+
+test("browser finance checks disabled admission, absent session and owner denial", async (t) => {
+  const signal = new AbortController().signal;
+  let response = () => Response.json(history, { headers: { "Cache-Control": "no-store" } });
+  t.mock.method(globalThis, "fetch", async () => response());
+  const denied = { enabled: false, session: null };
+  const missing = { enabled: true, session: null };
+  assert.deepEqual(await readVerifiedWalletTransactions(async () => denied, signal), { kind: "unavailable" });
+  assert.deepEqual(await readVerifiedWalletTransactions(async () => missing, signal), { kind: "signed-out" });
+  for (const after of [denied, missing]) {
+    const sessions = [live("actor-a"), after];
+    assert.deepEqual(await readVerifiedWalletTransactions(async () => sessions.shift(), signal), { kind: "signed-out" });
+  }
+  response = () => new Response("denied", { status: 403 });
+  assert.deepEqual(await readVerifiedWalletTransactions(async () => live("actor-a"), signal), { kind: "signed-out" });
+  response = () => new Response("denied", { status: 503 });
+  assert.deepEqual(await readVerifiedWalletTransactions(async () => live("actor-a"), signal), { kind: "unavailable" });
+});
+test("browser finance cancels rejected or malformed responses even if cancellation rejects", async (t) => {
+  const signal = new AbortController().signal;
+  let cancellations = 0;
+  let status = 403;
+  t.mock.method(globalThis, "fetch", async () => ({
+    status,
+    headers: new Headers({ "Cache-Control": "no-store", "Content-Type": "text/plain" }),
+    body: { locked: false, cancel: async () => { cancellations++; throw new Error("closed"); } },
+  }));
+  assert.deepEqual(await readVerifiedWalletTransactions(async () => live("actor-a"), signal), { kind: "signed-out" });
+  status = 200;
+  await assert.rejects(readVerifiedWalletTransactions(async () => live("actor-a"), signal), { status: 502 });
+  assert.equal(cancellations, 3);
 });
