@@ -159,8 +159,10 @@ test("read and permission errors are recoverable without granting fake permissio
 test("an OS dialog interrupted by background is re-read, never interpreted as approval", async () => {
   const h = harness(); h.render(); h.focus(); await settle();
   let resolve; h.request(() => new Promise(done => { resolve = done; }));
-  find(h.render(), "captain-location-request").props.onPress(); h.state("inactive"); h.state("active"); await settle();
-  find(h.render(), "captain-location-request").props.onPress(); assert.equal(h.calls.requests, 1);
+  const stale = find(h.render(), "captain-location-request").props.onPress;
+  stale(); h.state("inactive"); h.state("active"); await settle();
+  assert.equal(find(h.render(), "captain-location-request"), undefined);
+  stale(); assert.equal(h.calls.requests, 1);
   h.setPermission({ granted: true, canAskAgain: true }); resolve({ granted: false }); await settle();
   assert.equal(find(h.render(), "captain-location-request"), undefined); h.blur();
 });
@@ -175,17 +177,17 @@ test("late failed or successful permission request after blur cannot change the 
   }
 });
 
-
 test("successful dialog refreshes a newer focus scope using current OS facts", async () => {
   const h = harness(); h.render(); h.focus(); await settle();
   let finish; h.request(() => new Promise(resolve => { finish = resolve; }));
   find(h.render(), "captain-location-request").props.onPress(); h.blur();
   h.render(); h.focus(); await settle();
-  assert.ok(find(h.render(), "captain-location-request"));
+  assert.equal(find(h.render(), "captain-location-request"), undefined);
+  assert.equal(h.calls.permissions, 1, "new scope waits for the outstanding command");
   h.setPermission({ granted: true, canAskAgain: true }); h.setServices(true);
   finish({ granted: false }); await settle();
-  assert.equal(h.calls.permissions, 3, "fresh active scope must re-read OS permission");
-  assert.equal(h.calls.services, 3);
+  assert.equal(h.calls.permissions, 2, "fresh active scope reads OS permission once");
+  assert.equal(h.calls.services, 2);
   assert.equal(find(h.render(), "captain-location-request"), undefined);
   assert.equal(h.calls.requests, 1);
   h.blur();
@@ -254,4 +256,26 @@ test("native settings failure recovers and Web does not expose settings", async 
   web.render(); web.focus(); await settle();
   assert.equal(find(web.render(), "captain-location-settings"), undefined);
   assert.equal(web.calls.settings, 0); web.blur();
+});
+
+test("a pending native command owns readiness across foreground transitions", async () => {
+  for (const permanentlyDenied of [false, true]) {
+    const h = harness({ permission: { granted: false, canAskAgain: !permanentlyDenied } });
+    h.render(); h.focus(); await settle();
+    let finish;
+    const deferred = () => new Promise(resolve => { finish = resolve; });
+    const id = permanentlyDenied ? "captain-location-settings" : "captain-location-request";
+    if (permanentlyDenied) h.openSettings(deferred); else h.request(deferred);
+    find(h.render(), id).props.onPress();
+    h.state("inactive"); h.state("active"); await settle();
+    assert.equal(h.calls.permissions, 1, "no competing readiness read while command is pending");
+    assert.equal(find(h.render(), id), undefined, "no stale actionable readiness");
+    assert.equal(find(h.render(), "captain-location-refresh"), undefined);
+    h.setPermission({ granted: true, canAskAgain: true }); finish(); await settle();
+    assert.equal(h.calls.permissions, 2);
+    assert.equal(find(h.render(), id), undefined);
+    h.state("active"); await settle();
+    assert.equal(h.calls.permissions, 2, "duplicate active event does not restart read");
+    h.blur();
+  }
 });
