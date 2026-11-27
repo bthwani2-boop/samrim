@@ -15,9 +15,48 @@ import { readCustomerAdmission, withVerifiedNativeCustomerRead } from "../access
 
 const nativeOrigin = process.env.EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN;
 const route = "/api/customer-auth/favorite-stores";
+const requestDeadlineMs = 20_000;
 type Verified<T> = { value: T; expiresAt: number };
 
-export async function verifyFavoriteSession(signal: AbortSignal, actor?: string) {
+function unknownWrite(): DshPublicError {
+  return new DshPublicError(503, "OPERATION_RESULT_UNKNOWN");
+}
+
+// Own the entire request, including both Identity reads and the owner reply.
+// A bridge that ignores cancellation must not hold the UI or dispatch late.
+async function withinLifetime<T>(
+  caller: AbortSignal,
+  run: (signal: AbortSignal, markDispatched: () => void) => Promise<T>,
+): Promise<T> {
+  caller.throwIfAborted();
+  const controller = new AbortController();
+  let dispatched = false;
+  let rejectStopped!: (reason: unknown) => void;
+  const stopped = new Promise<never>((_, reject) => { rejectStopped = reject; });
+  function interrupt(reason: unknown) {
+    rejectStopped(dispatched ? unknownWrite() : reason);
+    controller.abort(reason);
+  }
+  const cancel = () => interrupt(caller.reason);
+  caller.addEventListener("abort", cancel, { once: true });
+  const deadline = setTimeout(() => interrupt(new DshPublicError(503, "OWNER_UNAVAILABLE")), requestDeadlineMs);
+  try {
+    const result = await Promise.race([
+      run(controller.signal, () => {
+        controller.signal.throwIfAborted();
+        dispatched = true;
+      }),
+      stopped,
+    ]);
+    if (controller.signal.aborted) throw dispatched ? unknownWrite() : controller.signal.reason;
+    return result;
+  } finally {
+    clearTimeout(deadline);
+    caller.removeEventListener("abort", cancel);
+  }
+}
+
+async function readSession(signal: AbortSignal, actor?: string) {
   signal.throwIfAborted();
   const admission = await readCustomerAdmission(signal);
   signal.throwIfAborted();
@@ -30,14 +69,16 @@ export async function verifyFavoriteSession(signal: AbortSignal, actor?: string)
   return session;
 }
 
-// The bounded reader owns an acquired stream; rejected envelopes remain
-// the transport's responsibility. Cleanup cannot change the owner outcome.
-async function discardUnread(response: Response): Promise<void> {
+export function verifyFavoriteSession(signal: AbortSignal, actor?: string) {
+  return withinLifetime(signal, current => readSession(current, actor));
+}
+
+function discardUnread(response: Response): void {
   try {
     const body = response.body;
-    if (!response.bodyUsed && body && !body.locked) await body.cancel();
+    if (!response.bodyUsed && body && !body.locked) void body.cancel().catch(() => {});
   } catch {
-    // Cancellation is best effort; never await it on the request path.
+    // Cleanup cannot turn a rejected or late reply into a confirmed result.
   }
 }
 
@@ -46,8 +87,8 @@ async function webRequest(
 ): Promise<unknown> {
   signal.throwIfAborted();
   const write = method === "PUT";
+  const suffix = query.size ? `?${query.toString()}` : "";
   let response: Response;
-  const suffix = query.size ? "?" + query.toString() : "";
   try {
     response = await fetch(route + suffix, {
       method, credentials: "same-origin", redirect: "error", cache: "no-store", signal,
@@ -57,6 +98,7 @@ async function webRequest(
     signal.throwIfAborted();
     throw new DshPublicError(503, write ? "OPERATION_RESULT_UNKNOWN" : "OWNER_UNAVAILABLE");
   }
+
   try {
     signal.throwIfAborted();
     if (!response.ok) {
@@ -73,53 +115,61 @@ async function webRequest(
     if (value === null) throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
     return value;
   } finally {
-    void discardUnread(response);
+    discardUnread(response);
   }
 }
 
-async function verified<T extends { actorId: string }>(
-  signal: AbortSignal,
+function verified<T extends { actorId: string }>(
+  caller: AbortSignal,
   actor: string | undefined,
-  web: (actor: string) => Promise<T>,
-  native: (origin: string, actor: string, bearer: string) => Promise<T>,
+  web: (actor: string, signal: AbortSignal) => Promise<T>,
+  native: (origin: string, actor: string, bearer: string, signal: AbortSignal) => Promise<T>,
   mutating = false,
 ): Promise<Verified<T>> {
-  const before = await verifyFavoriteSession(signal, actor);
-  const initialExpiry = Date.parse(before.sessionExpiresAt);
-  let dispatched = false;
-  try {
-    let result: Verified<T>;
-    if (Platform.OS === "web") {
-      dispatched = mutating;
-      const value = await web(before.actorId);
-      const after = await verifyFavoriteSession(signal, before.actorId);
-      result = { value, expiresAt: Math.min(initialExpiry, Date.parse(after.sessionExpiresAt)) };
-    } else {
-      if (!nativeOrigin) throw new DshPublicError(503, "OWNER_UNAVAILABLE");
-      const origin = nativeOrigin;
-      const outcome = await withVerifiedNativeCustomerRead(signal, bearer => {
-        signal.throwIfAborted();
-        dispatched = mutating;
-        return native(origin, before.actorId, bearer);
-      }, before.actorId);
-      if (outcome.kind !== "ready") {
-        throw new DshPublicError(outcome.kind === "signed-out" ? 401 : 503, "OWNER_UNAVAILABLE");
+  return withinLifetime(caller, async (signal, markDispatched) => {
+    const before = await readSession(signal, actor);
+    const initialExpiry = Date.parse(before.sessionExpiresAt);
+    let dispatched = false;
+    function markWrite() {
+      signal.throwIfAborted();
+      if (mutating) {
+        markDispatched();
+        dispatched = true;
       }
-      result = { value: outcome.value, expiresAt: Math.min(initialExpiry, outcome.expiresAt) };
     }
-    signal.throwIfAborted();
-    if (result.value.actorId !== before.actorId || !(result.expiresAt > Date.now())) {
-      throw new DshPublicError(401, "UNAUTHORIZED");
+    try {
+      let result: Verified<T>;
+      if (Platform.OS === "web") {
+        markWrite();
+        const value = await web(before.actorId, signal);
+        const after = await readSession(signal, before.actorId);
+        result = { value, expiresAt: Math.min(initialExpiry, Date.parse(after.sessionExpiresAt)) };
+      } else {
+        if (!nativeOrigin) throw new DshPublicError(503, "OWNER_UNAVAILABLE");
+        const origin = nativeOrigin;
+        const outcome = await withVerifiedNativeCustomerRead(signal, bearer => {
+          markWrite();
+          return native(origin, before.actorId, bearer, signal);
+        }, before.actorId);
+        if (outcome.kind !== "ready") {
+          throw new DshPublicError(outcome.kind === "signed-out" ? 401 : 503, "OWNER_UNAVAILABLE");
+        }
+        result = { value: outcome.value, expiresAt: Math.min(initialExpiry, outcome.expiresAt) };
+      }
+
+      signal.throwIfAborted();
+      if (result.value.actorId !== before.actorId || !(result.expiresAt > Date.now())) {
+        throw new DshPublicError(401, "UNAUTHORIZED");
+      }
+      return result;
+    } catch (error) {
+      // Only a definitive owner rejection can settle a dispatched mutation.
+      if (dispatched && (!(error instanceof DshPublicError) || ![400, 404].includes(error.status))) {
+        throw unknownWrite();
+      }
+      throw error;
     }
-    return result;
-  } catch (error) {
-    // A dispatched write with missing confirmation may have committed.
-    // Only definitive owner input/not-found rejections remain definitive.
-    if (dispatched && (!(error instanceof DshPublicError) || ![400, 404].includes(error.status))) {
-      throw new DshPublicError(503, "OPERATION_RESULT_UNKNOWN");
-    }
-    throw error;
-  }
+  });
 }
 
 export async function readFavoriteStores(
@@ -128,8 +178,8 @@ export async function readFavoriteStores(
   if (after !== undefined && !isFavoriteStoreId(after)) throw new DshPublicError(400, "INVALID_REQUEST");
   const query = new URLSearchParams(after === undefined ? {} : { after });
   return verified(signal, actor,
-    async a => parseFavoriteStorePage(await webRequest(a, query, signal, "GET"), a, after),
-    (origin, a, bearer) => listCustomerFavoriteStores(origin, bearer, a, after, signal));
+    async (a, current) => parseFavoriteStorePage(await webRequest(a, query, current, "GET"), a, after),
+    (origin, a, bearer, current) => listCustomerFavoriteStores(origin, bearer, a, after, current));
 }
 
 export async function readFavoriteStore(
@@ -138,8 +188,8 @@ export async function readFavoriteStore(
   if (!isFavoriteStoreId(id)) throw new DshPublicError(400, "INVALID_REQUEST");
   const query = new URLSearchParams({ storeId: id });
   return verified(signal, actor,
-    async a => parseFavoriteStoreState(await webRequest(a, query, signal, "GET"), a, id),
-    (origin, a, bearer) => getCustomerFavoriteStore(origin, bearer, a, id, signal));
+    async (a, current) => parseFavoriteStoreState(await webRequest(a, query, current, "GET"), a, id),
+    (origin, a, bearer, current) => getCustomerFavoriteStore(origin, bearer, a, id, current));
 }
 
 export async function writeFavoriteStore(
@@ -148,6 +198,6 @@ export async function writeFavoriteStore(
   if (!isFavoriteStoreId(id) || typeof favorite !== "boolean") throw new DshPublicError(400, "INVALID_REQUEST");
   const query = new URLSearchParams({ storeId: id, favorite: String(favorite) });
   return verified(signal, actor,
-    async a => parseFavoriteStoreState(await webRequest(a, query, signal, "PUT"), a, id, favorite),
-    (origin, a, bearer) => setCustomerFavoriteStore(origin, bearer, a, id, favorite, signal), true);
+    async (a, current) => parseFavoriteStoreState(await webRequest(a, query, current, "PUT"), a, id, favorite),
+    (origin, a, bearer, current) => setCustomerFavoriteStore(origin, bearer, a, id, favorite, current), true);
 }

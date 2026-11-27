@@ -139,7 +139,8 @@ test("Web list and mutation use the current actor and bound session deadline", a
     assert.equal(init.cache, "no-store");
     assert.equal(init.credentials, "same-origin");
     assert.equal(init.redirect, "error");
-    assert.equal(init.signal, signal);
+    assert.ok(init.signal instanceof AbortSignal);
+    assert.equal(init.signal.aborted, false);
   }
 });
 
@@ -222,4 +223,104 @@ test("Web abort after headers releases the unread reply without publishing state
   });
   await assert.rejects(api.readFavoriteStore(controller.signal, storeId, actor), e => e.name === "AbortError");
   assert.equal(cancellations, 1);
+});
+
+test("cancelled Web reads settle even when the fetch ignores abort; late bodies are disposed", async t => {
+  const api = harness("web", async () => session());
+  const controller = new AbortController();
+  let deliver, cancellations = 0;
+  const dispatched = Promise.withResolvers();
+  t.mock.method(globalThis, "fetch", () => {
+    dispatched.resolve();
+    return new Promise(resolve => { deliver = resolve; });
+  });
+  const pending = api.readFavoriteStore(controller.signal, storeId, actor).catch(error => error.name);
+  await dispatched.promise;
+  controller.abort();
+  let timer;
+  try {
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]), "AbortError");
+  } finally {
+    clearTimeout(timer);
+    deliver(new Response(new ReadableStream({ cancel() { cancellations++; } }), {
+      headers: { "Cache-Control": "no-store", "Content-Type": "application/json" },
+    }));
+    await pending;
+  }
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(cancellations, 1);
+});
+
+test("cancelled writes settle unknown after dispatch without automatic retry", async t => {
+  const api = harness("web", async () => session());
+  const controller = new AbortController();
+  let deliver, calls = 0;
+  const dispatched = Promise.withResolvers();
+  t.mock.method(globalThis, "fetch", () => {
+    calls++;
+    dispatched.resolve();
+    return new Promise(resolve => { deliver = resolve; });
+  });
+  const pending = api.writeFavoriteStore(controller.signal, actor, storeId, true).catch(error => error.code);
+  await dispatched.promise;
+  controller.abort();
+  let timer;
+  try {
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]), "OPERATION_RESULT_UNKNOWN");
+  } finally {
+    clearTimeout(timer);
+    deliver(reply(validState));
+    await pending;
+  }
+  assert.equal(calls, 1);
+});
+
+test("cancelled initial session read cannot later dispatch an owner request", async t => {
+  const controller = new AbortController();
+  const started = Promise.withResolvers();
+  let deliver, calls = 0;
+  const api = harness("web", () => {
+    started.resolve();
+    return new Promise(resolve => { deliver = resolve; });
+  });
+  t.mock.method(globalThis, "fetch", async () => { calls++; return reply(validState); });
+  const pending = api.readFavoriteStore(controller.signal, storeId, actor).catch(error => error.name);
+  await started.promise;
+  controller.abort();
+  let timer;
+  try {
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]), "AbortError");
+  } finally {
+    clearTimeout(timer);
+    deliver(session());
+    await pending;
+  }
+  assert.equal(calls, 0);
+});
+
+test("one absolute deadline covers both owner proof and HTTP lifetime", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const api = harness("web", async () => session());
+  const started = Promise.withResolvers();
+  let ownerSignal;
+  t.mock.method(globalThis, "fetch", (_url, init) => {
+    ownerSignal = init.signal;
+    started.resolve();
+    return new Promise(() => {});
+  });
+  const caller = new AbortController();
+  const pending = assert.rejects(api.writeFavoriteStore(caller.signal, actor, storeId, true), unknown);
+  await started.promise;
+  t.mock.timers.tick(20_000);
+  await pending;
+  assert.equal(ownerSignal.aborted, true);
+  assert.equal(caller.signal.aborted, false);
+});
+
+test("standalone session verification also releases on timeout", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const api = harness("web", () => new Promise(() => {}));
+  const pending = assert.rejects(api.verifyFavoriteSession(new AbortController().signal, actor), e => e.code === "OWNER_UNAVAILABLE");
+  t.mock.timers.tick(20_000);
+  await pending;
 });
