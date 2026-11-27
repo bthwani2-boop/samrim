@@ -566,3 +566,98 @@ test("Operator grant outcome rejects malformed principals and expiry during perm
   assert.deepEqual(await readOperatorAccessState(config, token), { status: "signed-out" });
   assert.equal(reads, 7);
 });
+
+test("Operator owner transport releases all non-admitted response streams without changing their status", async t => {
+  const { operatorIdentityRequest, operatorPermissionOperation, boundedResponseJSON } =
+    await import("../src/server/operator-passkey-transport.ts");
+  const { identityOperations } = await import("../../../services/identity/clients/index.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  const operations = [
+    [identityOperations.beginOperatorPasskeyAuthentication, 200],
+    [identityOperations.finishOperatorPasskeyAuthentication, 200],
+    [identityOperations.beginInitialOperatorPasskeyRegistration, 200],
+    [identityOperations.finishInitialOperatorPasskeyRegistration, 201],
+    [identityOperations.beginExistingOperatorPasskeyRecovery, 200],
+    [identityOperations.finishExistingOperatorPasskeyRecovery, 200],
+    [identityOperations.getVerifiedIdentitySession, 200],
+    [identityOperations.revokeCurrentIdentitySession, 204],
+    [operatorPermissionOperation("operations"), 200],
+  ];
+  let response;
+  t.mock.method(globalThis, "fetch", async () => response);
+  for (const [operation, accepted] of operations) {
+    for (const status of [401, 403, 503, accepted === 201 ? 200 : 201]) {
+      let cancelled = 0;
+      const body = new ReadableStream({ cancel() { cancelled++; return new Promise(() => {}); } });
+      response = new Response(body, { status });
+      const reply = await operatorIdentityRequest(config, operation, {});
+      assert.equal(reply.status, status);
+      assert.equal(cancelled, 1, operation.path + " " + status);
+      assert.equal(body.locked, false);
+    }
+    if (accepted === 204) {
+      response = new Response(null, { status: accepted });
+      assert.equal((await operatorIdentityRequest(config, operation, {})).status, 204);
+    } else {
+      response = Response.json({ admitted: true }, { status: accepted });
+      const reply = await operatorIdentityRequest(config, operation, {});
+      assert.deepEqual(await boundedResponseJSON(reply), { admitted: true });
+    }
+  }
+});
+
+test("Operator owner rejection closes a real HTTP stream and permits subsequent recovery", { timeout: 6000 }, async () => {
+  const { createServer } = await import("node:http");
+  const { once } = await import("node:events");
+  const { operatorIdentityRequest, boundedResponseJSON } = await import("../src/server/operator-passkey-transport.ts");
+  let requests = 0;
+  let closed;
+  const disconnected = new Promise(resolve => { closed = resolve; });
+  const server = createServer((_request, response) => {
+    if (++requests === 1) {
+      response.on("close", closed);
+      response.writeHead(401, { "content-type": "application/json", "cache-control": "no-store" });
+      response.write('{"code":"UNAUTHORIZED"');
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+    response.end('{"recovered":true}');
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  let timer;
+  try {
+    const config = { ...resolveIsolatedOperatorConfig(goodEnv), identityOrigin: "http://127.0.0.1:" + server.address().port };
+    const operation = { method: "GET", path: "/v1/sessions/current" };
+    assert.equal((await operatorIdentityRequest(config, operation, {})).status, 401);
+    const deadline = new Promise(resolve => { timer = setTimeout(() => resolve(false), 1500); });
+    assert.notEqual(await Promise.race([disconnected, deadline]), false, "rejected socket remained open");
+    const recovered = await operatorIdentityRequest(config, operation, {});
+    assert.equal(recovered.status, 200);
+    assert.deepEqual(await boundedResponseJSON(recovered), { recovered: true });
+    assert.equal(requests, 2);
+  } finally {
+    clearTimeout(timer);
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
+test("Operator response cleanup errors preserve authoritative rejection", async t => {
+  const { operatorIdentityRequest } = await import("../src/server/operator-passkey-transport.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  const operation = { method: "GET", path: "/v1/sessions/current" };
+  let response;
+  t.mock.method(globalThis, "fetch", async () => response);
+  for (const body of [
+    null,
+    { locked: true, cancel() { assert.fail("locked body is not owned"); } },
+    { locked: false, cancel() { throw new Error("native cancellation failed"); } },
+    { locked: false, cancel() { return Promise.reject(new Error("cancellation rejected")); } },
+  ]) {
+    response = { status: 401, body };
+    assert.equal((await operatorIdentityRequest(config, operation, {})).status, 401);
+  }
+  response = { status: 503, get body() { throw new Error("native getter failed"); } };
+  assert.equal((await operatorIdentityRequest(config, operation, {})).status, 503);
+});

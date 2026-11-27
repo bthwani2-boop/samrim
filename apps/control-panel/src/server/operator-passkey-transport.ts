@@ -11,39 +11,67 @@ const limits = {
 
 type OwnerOperation = Readonly<{ method: string; path: string }>;
 type BodyPolicy = Readonly<{ maxBytes: number; timeoutMs: number; empty: boolean }>;
+type Cancellable = Pick<ReadableStream<Uint8Array>, "cancel">;
 
 export function operatorPermissionOperation(permission: OperatorPermission): OwnerOperation {
   const operation = identityOperations.getEffectiveOperatorPermission;
   return { method: operation.method, path: operation.path.replace("{permission}", permission) };
 }
 
-const ownerOperations = new Set([
-  identityOperations.beginOperatorPasskeyAuthentication,
-  identityOperations.finishOperatorPasskeyAuthentication,
-  identityOperations.beginInitialOperatorPasskeyRegistration,
-  identityOperations.finishInitialOperatorPasskeyRegistration,
-  identityOperations.beginExistingOperatorPasskeyRecovery,
-  identityOperations.finishExistingOperatorPasskeyRecovery,
-  identityOperations.getVerifiedIdentitySession,
-  identityOperations.revokeCurrentIdentitySession,
-  ...operatorPermissions.map(operatorPermissionOperation),
-].map(({ method, path }) => method + " " + path));
+function operationKey(operation: OwnerOperation): string {
+  return operation.method + " " + operation.path;
+}
+
+// Each contract admits exactly one success status. Only its JSON response
+// may transfer body ownership to the domain parser; all other responses
+// retain the transport's cleanup responsibility.
+const ownerOperations = new Map<string, number>([
+  [operationKey(identityOperations.beginOperatorPasskeyAuthentication), 200],
+  [operationKey(identityOperations.finishOperatorPasskeyAuthentication), 200],
+  [operationKey(identityOperations.beginInitialOperatorPasskeyRegistration), 200],
+  [operationKey(identityOperations.finishInitialOperatorPasskeyRegistration), 201],
+  [operationKey(identityOperations.beginExistingOperatorPasskeyRecovery), 200],
+  [operationKey(identityOperations.finishExistingOperatorPasskeyRecovery), 200],
+  [operationKey(identityOperations.getVerifiedIdentitySession), 200],
+  [operationKey(identityOperations.revokeCurrentIdentitySession), 204],
+  ...operatorPermissions.map(permission => [operationKey(operatorPermissionOperation(permission)), 200] as const),
+]);
+
+async function cancelRejected(source: Cancellable): Promise<void> {
+  try {
+    await source.cancel();
+  } catch {
+    // Cleanup is best effort and never changes the admitted outcome.
+  }
+}
+
+async function discardResponse(response: Response): Promise<void> {
+  try {
+    const body = response.body;
+    if (body && !body.locked) await body.cancel();
+  } catch {
+    // Native getter/cancellation failures cannot replace the owner status.
+  }
+}
 
 export async function operatorIdentityRequest(
   config: OperatorPasskeyConfig,
   operation: OwnerOperation,
   init: Omit<RequestInit, "method">,
 ): Promise<Response> {
-  if (!ownerOperations.has(operation.method + " " + operation.path)) {
-    throw new Error("Unexpected Identity owner operation");
-  }
-  return fetch(config.identityOrigin + operation.path, {
+  const admittedStatus = ownerOperations.get(operationKey(operation));
+  if (admittedStatus === undefined) throw new Error("Unexpected Identity owner operation");
+  const response = await fetch(config.identityOrigin + operation.path, {
     ...init,
     method: operation.method,
     cache: "no-store",
     redirect: "error",
     signal: AbortSignal.timeout(limits.owner),
   });
+  if (response.status !== admittedStatus || admittedStatus === 204) {
+    void discardResponse(response);
+  }
+  return response;
 }
 
 function admitsDeclaration(headers: Headers, policy: BodyPolicy): boolean {
@@ -55,17 +83,8 @@ function admitsDeclaration(headers: Headers, policy: BodyPolicy): boolean {
   return length === null || (/^\d+$/.test(length) && Number(length) <= policy.maxBytes);
 }
 
-async function cancelRejected(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<void> {
-  try {
-    await reader.cancel();
-  } catch {
-    // Cancellation is best effort: never wait for an uncooperative source.
-  }
-}
-
-// All three body policies use one admission, bounded read and cleanup path.
-// Acquire the reader before rejecting headers so the rejected source is
-// cancelled as well. No bytes are read for inadmissible declarations.
+// One admission, bounded read and cleanup path for all three body policies.
+// Acquire the reader before rejecting headers; no inadmissible bytes are read.
 async function admittedBytes(message: Request | Response, policy: BodyPolicy): Promise<Uint8Array> {
   const reader = message.body?.getReader();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -77,7 +96,7 @@ async function admittedBytes(message: Request | Response, policy: BodyPolicy): P
       return new Uint8Array(0);
     }
     const expires = performance.now() + policy.timeoutMs;
-    const consume = async () => {
+    const consume = async (): Promise<Uint8Array> => {
       const buffer = new Uint8Array(policy.maxBytes);
       let size = 0;
       for (;;) {
@@ -91,12 +110,10 @@ async function admittedBytes(message: Request | Response, policy: BodyPolicy): P
         size += value.byteLength;
       }
     };
-    const bytes = await Promise.race([
-      consume(),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error("Body read deadline exceeded")), policy.timeoutMs);
-      }),
-    ]);
+    const deadline = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("Body read deadline exceeded")), policy.timeoutMs);
+    });
+    const bytes = await Promise.race([consume(), deadline]);
     complete = true;
     return bytes;
   } finally {
