@@ -3,6 +3,7 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { forbiddenName } from "../security/verify-secrets.mjs";
@@ -169,14 +170,31 @@ export function recoverRefreshLock(path, expectedDigest, assertNoWriters) {
   return saved;
 }
 
-function assertNoLocalGraphifyWriters() {
-  if (process.platform !== "win32" || process.env.COMPUTERNAME?.toUpperCase() !== "BTHWANI") {
+// The operating system, canonical checkout, and independent native inventory
+// own admission. A missing optional process environment hint is not identity.
+export function assertRecoverySource({ platform, host, reportedHost, checkout }) {
+  const canonical = typeof checkout === "string" && checkout.replaceAll("\\", "/").toLowerCase() === "d:/samrim";
+  if (platform !== "win32" || host?.toUpperCase() !== "BTHWANI" ||
+      (reportedHost && reportedHost.toUpperCase() !== "BTHWANI") || !canonical) {
     throw new Error("BLOCKED: refresh recovery requires the authorized Surface process inventory");
   }
-  const script = '$ErrorActionPreference="Stop"; $writers = @(Get-CimInstance Win32_Process | Where-Object { $_.ProcessId -ne ' +
-    process.pid + ' -and ($_.Name -match "^graphify.*\\.exe$" -or ($_.Name -match "^(node|pythonw?|uv|uvx).*\\.exe$" -and ' +
-    '(-not $_.CommandLine -or $_.CommandLine -match "graphify"))) }); if ($writers.Count -gt 0) { exit 3 }';
-  execute("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 15000);
+}
+
+function assertNoLocalGraphifyWriters() {
+  assertRecoverySource({
+    platform: process.platform, host: hostname(), reportedHost: process.env.COMPUTERNAME,
+    checkout: realpathSync(root),
+  });
+  const script = [
+    '$ErrorActionPreference="Stop"',
+    '$hostRecord=@(Get-CimInstance Win32_ComputerSystem -ErrorAction Stop)',
+    'if($hostRecord.Count -ne 1 -or $hostRecord[0].Name -ine "BTHWANI" -or [Environment]::MachineName -ine "BTHWANI"){throw "RECOVERY_HOST_UNVERIFIED"}',
+    '$inventory=@(Get-CimInstance Win32_Process -ErrorAction Stop)',
+    'if(@($inventory|Where-Object ProcessId -eq '+process.pid+').Count -ne 1 -or @($inventory|Where-Object ProcessId -eq $PID).Count -ne 1){throw "RECOVERY_INVENTORY_UNVERIFIED"}',
+    '$writers=@($inventory|Where-Object {$_.ProcessId -ne '+process.pid+' -and ($_.Name -match "^graphify.*\\.exe$" -or ($_.Name -match "^(node|pythonw?|uv|uvx).*\\.exe$" -and (-not $_.CommandLine -or $_.CommandLine -match "graphify")))})',
+    'if($writers.Count -gt 0){throw "RECOVERY_WRITERS_PRESENT"}',
+  ].join("; ");
+  execute("C:\\Program Files\\PowerShell\\7\\pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 15000);
 }
 
 function refresh(automatic = false) {
