@@ -215,3 +215,97 @@ test("real loopback HTTP rejection closes the abandoned owner stream and permits
     await new Promise(resolve => server.close(resolve));
   }
 });
+
+test("cleanup cannot replace an authoritative response outcome even when native accessors throw", async () => {
+  const { consumeOwnerResponse } = await import("./client-core.ts");
+  const denial = new Error("authoritative owner denial");
+  const response = { get bodyUsed() { throw new Error("native body state unavailable"); } };
+  await assert.rejects(consumeOwnerResponse(response, async () => { throw denial; }), error => error === denial);
+  assert.equal(await consumeOwnerResponse(response, async () => "accepted"), "accepted");
+});
+
+test("reader cancellation sync exceptions and asynchronous rejections retain the original byte rejection", async () => {
+  for (const cancel of [
+    () => { throw new Error("native synchronous cleanup failure"); },
+    () => Promise.reject(new Error("native asynchronous cleanup failure")),
+    () => new Promise(() => {}),
+  ]) {
+    let released = false;
+    let cancelled = 0;
+    const reader = {
+      read: async () => ({ done: false, value: new Uint8Array(257) }),
+      cancel() { cancelled++; return cancel(); },
+      releaseLock() { released = true; },
+    };
+    const response = { headers: new Headers(), body: { getReader: () => reader } };
+    await assert.rejects(readBoundedOwnerJSON(response, 128, 256), /Oversized DSH owner reply/);
+    assert.equal(cancelled, 1);
+    assert.equal(released, true);
+  }
+});
+
+test("unread response cancellation is best effort and never waits for cleanup", async () => {
+  const { consumeOwnerResponse } = await import("./client-core.ts");
+  for (const cancel of [
+    () => { throw new Error("native synchronous cleanup failure"); },
+    () => Promise.reject(new Error("native asynchronous cleanup failure")),
+    () => new Promise(() => {}),
+  ]) {
+    let cancelled = 0;
+    const response = { bodyUsed: false, body: { locked: false, cancel() { cancelled++; return cancel(); } } };
+    const denial = new Error("owner denied");
+    await assert.rejects(consumeOwnerResponse(response, async () => { throw denial; }), error => error === denial);
+    assert.equal(cancelled, 1);
+  }
+});
+
+test("pre-aborted and unadmitted response bodies are discarded without reader acquisition", async () => {
+  const caller = new AbortController();
+  caller.abort();
+  let cancelled = 0;
+  let acquired = 0;
+  const body = {
+    locked: false,
+    getReader() { acquired++; throw new Error("must not read"); },
+    async cancel() { cancelled++; },
+  };
+  await assert.rejects(readBoundedOwnerJSON({ headers: new Headers(), body }, 128, 256, caller.signal), /cancelled/);
+  await assert.rejects(readBoundedOwnerJSON({ headers: new Headers({ "Content-Length": "invalid" }), body }, 128, 256), /invalid/);
+  assert.equal(acquired, 0);
+  assert.equal(cancelled, 2);
+});
+
+test("abort during native reader acquisition still releases ownership", async () => {
+  const caller = new AbortController();
+  let cancelled = 0;
+  let released = false;
+  const response = {
+    headers: new Headers(),
+    body: {
+      getReader() {
+        caller.abort();
+        return {
+          read: () => new Promise(() => {}),
+          async cancel() { cancelled++; },
+          releaseLock() { released = true; },
+        };
+      },
+    },
+  };
+  await assert.rejects(readBoundedOwnerJSON(response, 128, 256, caller.signal), /cancelled/);
+  assert.equal(cancelled, 1);
+  assert.equal(released, true);
+});
+
+test("cleanup never acquires a locked or already-consumed body", async () => {
+  const { consumeOwnerResponse } = await import("./client-core.ts");
+  let cancelled = 0;
+  for (const response of [
+    { bodyUsed: true, get body() { throw new Error("body already owned"); } },
+    { bodyUsed: false, body: { locked: true, async cancel() { cancelled++; } } },
+    { bodyUsed: false, body: null },
+  ]) {
+    assert.equal(await consumeOwnerResponse(response, async () => 42), 42);
+  }
+  assert.equal(cancelled, 0);
+});

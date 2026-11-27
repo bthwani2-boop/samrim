@@ -48,22 +48,33 @@ export function isDateTime(value: unknown): value is string {
 
 const bodyDeadlineMs = 5_000;
 
-function discard(response: Response): void {
+// One best-effort cancellation boundary handles native synchronous access and
+// asynchronous cancellation alike. Callers never wait for transport cleanup.
+async function discardStream(acquire: () => { cancel(): Promise<void> } | null): Promise<void> {
   try {
-    if (response.body && !response.body.locked) void response.body.cancel().catch(() => undefined);
-  } catch { /* Failed cleanup cannot authorize an invalid reply. */ }
+    await acquire()?.cancel();
+  } catch {
+    // Cleanup failure must not replace the established owner outcome.
+  }
 }
 
-// The transport owns every acquired response until its domain policy finishes.
-// The bounded reader owns an acquired reader; this boundary owns unread bodies,
-// including status/media rejections and cancellation before a reader exists.
+function discardUnread(response: Response): void {
+  void discardStream(() => {
+    if (response.bodyUsed) return null;
+    const body = response.body;
+    return body && !body.locked ? body : null;
+  });
+}
+
+// The response boundary owns unread bodies. The bounded decoder owns its
+// acquired reader, including cancellation before releasing the lock.
 export async function consumeOwnerResponse<T>(
   response: Response, consume: () => Promise<T>,
 ): Promise<T> {
   try {
     return await consume();
   } finally {
-    if (!response.bodyUsed) discard(response);
+    discardUnread(response);
   }
 }
 
@@ -73,37 +84,37 @@ export async function readBoundedOwnerJSON(
   response: Response, maxTextLength: number, strictByteLimit?: number, signal?: AbortSignal,
 ): Promise<unknown> {
   const maxBytes = strictByteLimit ?? 3 * maxTextLength;
-  const length = response.headers.get("Content-Length");
-  if (length !== null && (!/^\d+$/.test(length) || Number(length) > maxBytes)) {
-    discard(response);
-    throw new Error("Oversized or invalid DSH owner reply length");
-  }
-  if (signal?.aborted || !response.body?.getReader || typeof TextDecoder !== "function") {
-    discard(response);
-    throw new Error(signal?.aborted ? "DSH owner read cancelled" : "DSH owner reply stream unavailable");
-  }
-
-  const reader = response.body.getReader();
-  const bytes = new Uint8Array(maxBytes);
-  let size = 0;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   let complete = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let onAbort: (() => void) | undefined;
-  const stopped = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new Error("DSH owner body deadline exceeded")), bodyDeadlineMs);
-    if (signal) {
-      onAbort = () => reject(new Error("DSH owner read cancelled"));
-      signal.addEventListener("abort", onAbort, { once: true });
-      if (signal.aborted) onAbort();
-    }
-  });
 
   try {
+    const length = response.headers.get("Content-Length");
+    if (length !== null && (!/^\d+$/.test(length) || Number(length) > maxBytes)) {
+      throw new Error("Oversized or invalid DSH owner reply length");
+    }
+    const body = response.body;
+    if (signal?.aborted || !body?.getReader || typeof TextDecoder !== "function") {
+      throw new Error(signal?.aborted ? "DSH owner read cancelled" : "DSH owner reply stream unavailable");
+    }
+    const acquired = body.getReader();
+    reader = acquired;
+    const bytes = new Uint8Array(maxBytes);
+    let size = 0;
+    const stopped = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new Error("DSH owner body deadline exceeded")), bodyDeadlineMs);
+      if (signal) {
+        onAbort = () => reject(new Error("DSH owner read cancelled"));
+        signal.addEventListener("abort", onAbort, { once: true });
+        if (signal.aborted) onAbort();
+      }
+    });
     const result = await Promise.race([
       stopped,
       (async () => {
         for (;;) {
-          const chunk = await reader.read();
+          const chunk = await acquired.read();
           if (chunk.done) break;
           if (chunk.value.byteLength > maxBytes - size) throw new Error("Oversized DSH owner reply");
           bytes.set(chunk.value, size);
@@ -120,12 +131,11 @@ export async function readBoundedOwnerJSON(
   } finally {
     if (timer !== undefined) clearTimeout(timer);
     if (onAbort) signal?.removeEventListener("abort", onAbort);
-    try {
-      // Do not await transport cleanup: a hung cancellation must not keep
-      // the caller or an abandoned account/Store context alive.
-      if (!complete) void reader.cancel().catch(() => undefined);
-    } finally {
+    if (reader) {
+      if (!complete) void discardStream(() => reader ?? null);
       reader.releaseLock();
+    } else {
+      discardUnread(response);
     }
   }
 }
