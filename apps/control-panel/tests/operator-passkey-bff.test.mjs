@@ -495,3 +495,74 @@ test("all rejected body declarations cancel the source without consuming or reta
     assert.equal(body.locked, false);
   }
 });
+
+test("Operator permission outcome preserves authoritative session rejection across concurrent owner failures", async t => {
+  const { readOperatorAccessState, readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  assert.ok(config);
+  const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
+  let mode = "outage";
+  let rejectedPermission = "operations";
+  let failedPermission = "finance";
+  let includesRejection = true;
+  t.mock.method(globalThis, "fetch", async url => {
+    const path = new URL(url).pathname;
+    if (path === "/v1/sessions/current") {
+      return Response.json({ actorId: "operator-one", role: "operator", sessionExpiresAt: expiry });
+    }
+    const permission = path.split("/").at(-1);
+    if (permission === rejectedPermission && includesRejection) {
+      return Response.json({ code: "UNAUTHORIZED" }, { status: 401 });
+    }
+    if (permission === failedPermission) {
+      if (mode === "network") throw new Error("Owner unavailable");
+      if (mode === "outage") return Response.json({ code: "OWNER_UNAVAILABLE" }, { status: 503 });
+      return Response.json({ actorId: "different-operator", permission });
+    }
+    return Response.json({ actorId: "operator-one", permission });
+  });
+  for (mode of ["outage", "network", "mismatch"]) {
+    for (const [rejection, failure] of [["operations", "finance"], ["finance", "operations"]]) {
+      rejectedPermission = rejection;
+      failedPermission = failure;
+      includesRejection = true;
+      assert.deepEqual(await readOperatorAccessState(config, token), { status: "signed-out" }, mode + " with " + rejection);
+      assert.equal(await readVerifiedOperatorAccess(config, token), null);
+      includesRejection = false;
+      assert.deepEqual(await readOperatorAccessState(config, token), { status: "unavailable" }, mode + " without rejection");
+      assert.equal(await readVerifiedOperatorAccess(config, token), null);
+    }
+  }
+});
+
+test("Operator grant outcome rejects malformed principals and expiry during permission reads", async t => {
+  const { readOperatorAccessState } = await import("../src/server/operator-passkey-bff.ts");
+  const config = resolveIsolatedOperatorConfig(goodEnv);
+  assert.ok(config);
+  const start = Date.now();
+  const expiry = new Date(start + 60_000).toISOString();
+  let mode = "network";
+  let reads = 0;
+  let current = start;
+  t.mock.method(Date, "now", () => current);
+  t.mock.method(globalThis, "fetch", async url => {
+    const path = new URL(url).pathname;
+    if (path === "/v1/sessions/current") {
+      if (mode === "network") throw new Error("Owner unavailable");
+      if (mode === "missing-expiry") return Response.json({ actorId: "operator-one", role: "operator" });
+      return Response.json({
+        actorId: "operator-one", role: mode === "unknown-role" ? "unknown" : "operator", sessionExpiresAt: expiry,
+      });
+    }
+    reads++;
+    current = start + 60_000;
+    return Response.json({ actorId: "operator-one", permission: path.split("/").at(-1) });
+  });
+  for (mode of ["network", "missing-expiry", "unknown-role"]) {
+    assert.deepEqual(await readOperatorAccessState(config, token), { status: "unavailable" }, mode);
+    assert.equal(reads, 0);
+  }
+  mode = "expires-during-read";
+  assert.deepEqual(await readOperatorAccessState(config, token), { status: "signed-out" });
+  assert.equal(reads, 7);
+});
