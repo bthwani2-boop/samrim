@@ -113,8 +113,10 @@ test("native foreground reads permission without auto prompt; settings action is
   h.open(() => new Promise(resolve => { finish = resolve; }));
   const press = find(h.render(), "captain-notifications-settings").props.onPress;
   press(); press(); assert.equal(h.calls.opens, 1);
-  assert.equal(find(h.render(), "captain-notifications-settings").props.disabled, true);
+  assert.equal(find(h.render(), "captain-notifications-settings"), undefined);
   h.state("background"); h.setPermission({ granted: true }); h.state("active"); await settle();
+  assert.equal(h.calls.reads, 1, "no permission read during settings launch");
+  assert.equal(find(h.render(), "captain-notifications-permission"), undefined);
   finish(); await settle();
   assert.equal(h.calls.reads, 2);
   assert.equal(find(h.render(), "captain-notifications-permission").props.children, "إذن الإشعارات ممنوح");
@@ -159,6 +161,30 @@ test("failed native read and failed settings launch expose real recovery, never 
   h.read(async () => ({ granted: true }));
   find(h.render(), "captain-notifications-refresh").props.onPress(); await settle();
   assert.ok(!find(h.render(), "captain-notifications-settings-error"));
+  assert.equal(find(h.render(), "captain-notifications-permission").props.children, "إذن الإشعارات ممنوح");
+  h.blur();
+});
+test("settings completion rereads only the current focus and duplicate foreground signals do not start extra reads", async () => {
+  const h = harness(); h.render(); h.focus(); await settle();
+  h.state("active"); await settle(); assert.equal(h.calls.reads, 1);
+  let reject;
+  h.open(() => new Promise((_resolve, fail) => { reject = fail; }));
+  const stale = find(h.render(), "captain-notifications-settings").props.onPress;
+  stale(); h.blur(); h.render(); h.focus(); await settle();
+  assert.equal(h.calls.reads, 1);
+  h.setPermission({ granted: true }); reject(Error("old launch")); await settle();
+  assert.equal(h.calls.reads, 2);
+  assert.equal(find(h.render(), "captain-notifications-permission").props.children, "إذن الإشعارات ممنوح");
+  assert.equal(find(h.render(), "captain-notifications-settings-error"), undefined);
+  stale(); assert.equal(h.calls.opens, 1);
+  h.blur();
+});
+test("settings success while still active rereads device instead of retaining pre-launch permission", async () => {
+  const h = harness(); h.render(); h.focus(); await settle();
+  h.open(async () => { h.setPermission({ granted: true }); });
+  find(h.render(), "captain-notifications-settings").props.onPress();
+  await settle();
+  assert.equal(h.calls.reads, 2);
   assert.equal(find(h.render(), "captain-notifications-permission").props.children, "إذن الإشعارات ممنوح");
   h.blur();
 });
