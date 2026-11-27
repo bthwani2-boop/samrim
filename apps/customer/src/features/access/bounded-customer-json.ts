@@ -1,13 +1,19 @@
-/** Customer owns the bounded same-origin HTTP body admission and disposal boundary. */
+/** Customer owns bounded same-origin JSON admission, consumption and disposal. */
 type Cancelable = { cancel(): Promise<void> };
+type Message = Pick<Request, "headers" | "body" | "signal">;
+type Frame = { ceiling: number; expected: number | null };
+const deadlineMs = 2000;
 
 async function cancelBestEffort(acquire: () => Cancelable | null): Promise<void> {
   try {
-    const target = acquire();
-    if (target) await target.cancel();
+    await acquire()?.cancel();
   } catch {
-    // A cleanup failure must never replace the admitted or rejected outcome.
+    // Disposal must never replace an established outcome or wait indefinitely.
   }
+}
+
+function discardUnowned(body: ReadableStream<Uint8Array> | null): void {
+  void cancelBestEffort(() => body && !body.locked ? body : null);
 }
 
 export function discardCustomerResponse(response: Pick<Response, "body" | "bodyUsed">): void {
@@ -17,62 +23,83 @@ export function discardCustomerResponse(response: Pick<Response, "body" | "bodyU
   });
 }
 
-export async function readBoundedCustomerJSON(
-  message: Pick<Request, "headers" | "body" | "signal">,
-  limit = 8192,
-): Promise<unknown> {
-  const signal = message.signal;
-  const deadlineMs = 2000;
+function admitFrame(headers: Headers, limit: number, incoming: boolean): Frame | null {
+  if (!Number.isSafeInteger(limit) || limit <= 0 ||
+    headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") return null;
+
+  const length = headers.get("Content-Length");
+  const transfer = headers.get("Transfer-Encoding");
+  const encoding = headers.get("Content-Encoding")?.toLowerCase() ?? null;
+  if (transfer !== null && (length !== null || transfer.toLowerCase() !== "chunked")) return null;
+
+  const declared = length === null ? null : Number(length);
+  if (length !== null && (!/^\d+$/.test(length) || declared === null ||
+    !Number.isSafeInteger(declared) || declared <= 0 || declared > limit)) return null;
+
+  if (encoding === null || encoding === "identity") {
+    return { ceiling: declared ?? limit, expected: declared };
+  }
+  // Browser Fetch exposes decoded response bytes but may retain the encoded
+  // wire length. Never compare those two representations. Request bodies are
+  // not transparently decompressed by this reader; reject compressed requests.
+  if (incoming || !["gzip", "deflate", "br", "zstd"].includes(encoding)) return null;
+  return { ceiling: limit, expected: null };
+}
+
+async function consumeJSON(reader: ReadableStreamDefaultReader<Uint8Array>, frame: Frame,
+  lifetime: AbortSignal, finished: () => void): Promise<unknown> {
+  const bytes = new Uint8Array(frame.ceiling);
+  let used = 0;
+  for (;;) {
+    const chunk = await reader.read();
+    if (lifetime.aborted) return null;
+    if (chunk.done) {
+      finished();
+      if (frame.expected !== null && used !== frame.expected) return null;
+      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, used))) as unknown;
+    }
+    if (!(chunk.value instanceof Uint8Array) || chunk.value.byteLength > bytes.length - used) return null;
+    bytes.set(chunk.value, used);
+    used += chunk.value.byteLength;
+  }
+}
+
+export async function readBoundedCustomerJSON(message: Message, limit = 8192): Promise<unknown> {
+  let body: ReadableStream<Uint8Array> | null = null;
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-  let deadline: AbortSignal | undefined;
+  let lifetime: AbortSignal | undefined;
   let interrupt: (() => void) | undefined;
   let complete = false;
   try {
-    const { body, headers } = message;
+    body = message.body;
     if (!body || body.locked) return null;
-    const declared = headers.get("Content-Length");
-    if (
-      signal.aborted ||
-      headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
-      (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > limit))
-    ) {
-      void cancelBestEffort(() => body);
-      return null;
-    }
+    const signal = message.signal;
+    // Inbound BFF consumers pass a Request; browser consumers pass the
+    // explicitly selected response body, headers and caller signal.
+    const frame = admitFrame(message.headers, limit, message instanceof Request);
+    if (!frame || signal.aborted) return null;
 
-    const acquired = body.getReader();
-    reader = acquired;
-    const lifetime = AbortSignal.any([signal, AbortSignal.timeout(deadlineMs)]);
-    deadline = lifetime;
+    reader = body.getReader();
+    lifetime = AbortSignal.any([signal, AbortSignal.timeout(deadlineMs)]);
     const stopped = new Promise<null>(resolve => { interrupt = () => resolve(null); });
-    lifetime.addEventListener("abort", interrupt!, { once: true });
-
-    async function consume(): Promise<unknown> {
-      const bytes = new Uint8Array(limit);
-      let used = 0;
-      for (;;) {
-        const chunk = await acquired.read();
-        if (lifetime.aborted) return null;
-        if (chunk.done) {
-          complete = true;
-          return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, used))) as unknown;
-        }
-        if (chunk.value.byteLength > bytes.length - used) return null;
-        bytes.set(chunk.value, used);
-        used += chunk.value.byteLength;
-      }
-    }
-
+    if (interrupt) lifetime.addEventListener("abort", interrupt, { once: true });
     if (lifetime.aborted) return null;
-    const result = await Promise.race([consume(), stopped]);
-    return lifetime.aborted ? null : result;
+    const value = await Promise.race([
+      consumeJSON(reader, frame, lifetime, () => { complete = true; }), stopped,
+    ]);
+    return lifetime.aborted ? null : value;
   } catch {
     return null;
   } finally {
-    if (deadline && interrupt) deadline.removeEventListener("abort", interrupt);
+    if (lifetime && interrupt) lifetime.removeEventListener("abort", interrupt);
     if (reader) {
-      if (!complete) void cancelBestEffort(() => reader ?? null);
-      try { reader.releaseLock(); } catch { /* Never change the response outcome during release. */ }
+      if (!complete) {
+        const acquired = reader;
+        void cancelBestEffort(() => acquired);
+      }
+      try { reader.releaseLock(); } catch { /* Never replace the response outcome during cleanup. */ }
+    } else {
+      discardUnowned(body);
     }
   }
 }

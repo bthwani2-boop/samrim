@@ -114,3 +114,91 @@ test("unread response disposal never waits, steals a reader or changes a rejecti
   ]) assert.equal(discardCustomerResponse(reply), undefined);
   await new Promise(resolve => setImmediate(resolve));
 });
+
+test("unencoded JSON requires exact declared UTF-8 bytes and unambiguous framing", async () => {
+  const payload = '{"name":"صنعاء"}';
+  const bytes = encoder.encode(payload);
+  for (const extra of [
+    {"Content-Length":"0"},
+    {"Content-Length":String(payload.length)},
+    {"Content-Length":String(bytes.length+1)},
+    {"Content-Length":String(bytes.length),"Transfer-Encoding":"chunked"},
+    {"Transfer-Encoding":"gzip, chunked"},
+  ]) {
+    const response = new Response(payload,{headers:{"Content-Type":"application/json",...extra}});
+    assert.equal(await read(response.body,undefined,response.headers),null,JSON.stringify(extra));
+    assert.equal(response.body.locked,false);
+  }
+  for (const extra of [{"Content-Length":String(bytes.length)},{"Transfer-Encoding":"chunked"},{}]) {
+    const response = new Response(payload,{headers:{"Content-Type":"application/json",...extra}});
+    assert.deepEqual(await read(response.body,undefined,response.headers),{name:"صنعاء"});
+  }
+});
+
+test("decoded browser compression retains the decoded byte ceiling without equating wire length", async () => {
+  const payload='{"ok":true}';
+  const metadata=new Headers({"Content-Type":"application/json","Content-Encoding":"gzip","Content-Length":"25"});
+  assert.deepEqual(await read(new Response(payload).body,undefined,metadata,32),{ok:true});
+  assert.equal(await read(new Response('{"long":"'+ "x".repeat(40)+'"}').body,undefined,metadata,32),null);
+  const unknown=new Headers({"Content-Type":"application/json","Content-Encoding":"unknown"});
+  assert.equal(await read(new Response(payload).body,undefined,unknown),null);
+});
+
+test("failed metadata and reader acquisition dispose only the unowned body", async () => {
+  for (const failure of ["headers","acquire"]) {
+    let cancel=0;
+    const stream={
+      locked:false,
+      getReader(){throw new Error("reader acquisition");},
+      cancel(){cancel++;return Promise.resolve();},
+    };
+    const message={body:stream,signal:new AbortController().signal,
+      get headers(){if(failure==="headers")throw new Error("headers");return headers;}};
+    assert.equal(await readBoundedCustomerJSON(message),null);
+    assert.equal(cancel,1,failure);
+  }
+});
+
+test("invalid bounds and non-byte chunks are rejected without leaving the reader locked", async () => {
+  for (const limit of [0,-1,NaN,1.5,Infinity]) {
+    let cancel=0;
+    const stream=new ReadableStream({cancel(){cancel++;}});
+    assert.equal(await read(stream,undefined,headers,limit),null);
+    assert.equal(cancel,1);
+  }
+  const stream=new ReadableStream({start(s){s.enqueue([123,125]);s.close();}});
+  assert.equal(await read(stream),null);
+  assert.equal(stream.locked,false);
+});
+
+test("inbound Request rejects compressed bodies rather than treating wire bytes as decoded", async () => {
+  const payload='{"ok":true}';
+  const encoded = new Request("http://127.0.0.1/api/customer-auth", {
+    method:"POST", headers:{"Content-Type":"application/json","Content-Encoding":"gzip"}, body:payload,
+  });
+  assert.equal(await readBoundedCustomerJSON(encoded),null);
+  const plain = new Request("http://127.0.0.1/api/customer-auth", {
+    method:"POST", headers:{"Content-Type":"application/json","Content-Length":String(encoder.encode(payload).length)},body:payload,
+  });
+  assert.deepEqual(await readBoundedCustomerJSON(plain),{ok:true});
+});
+
+test("actual loopback Fetch decodes gzip and retains wire length without bypassing the body bound", async () => {
+  const {createServer}=await import("node:http");
+  const {gzipSync}=await import("node:zlib");
+  const payload='{"name":"صنعاء"}';
+  const compressed=gzipSync(payload);
+  const server=createServer((_req,res)=>{
+    res.writeHead(200,{"Content-Type":"application/json","Content-Encoding":"gzip","Content-Length":compressed.length});
+    res.end(compressed);
+  });
+  await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve);});
+  try{
+    const url="http://127.0.0.1:"+server.address().port;
+    const reply=await fetch(url);
+    assert.equal(reply.headers.get("Content-Length"),String(compressed.length));
+    assert.deepEqual(await read(reply.body,undefined,reply.headers,128),{name:"صنعاء"});
+    const tooSmall=await fetch(url);
+    assert.equal(await read(tooSmall.body,undefined,tooSmall.headers,8),null);
+  }finally{server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
