@@ -297,7 +297,14 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.actors(id,status) VALUES ('finance-command','ACTIVE'),('finance-command-other','ACTIVE'),('finance-proposer','ACTIVE'),('finance-command-revoked','ACTIVE')")
 		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.actor_roles(actor_id,role,status) VALUES ('finance-command','operator','ACTIVE'),('finance-command-other','operator','ACTIVE'),('finance-proposer','operator','ACTIVE'),('finance-command-revoked','operator','ACTIVE')")
 		executeFixture(t, ctx, identity, "INSERT INTO identity_test_wlt.operator_permissions(actor_id,permission) VALUES ('finance-command','finance'),('finance-proposer','finance'),('finance-command-revoked','finance')")
-		verifyFinanceCommandAuthority(t, ctx, owner, reader, executor, identity, dshDB, origin, dshOrigin, merchant, session("finance-command", "operator", 21), session("finance-command-other", "operator", 22), session("finance-proposer", "operator", 23), session("finance-command-revoked", "operator", 24))
+		finance := session("finance-command", "operator", 21)
+		other := session("finance-command-other", "operator", 22)
+		proposer := session("finance-proposer", "operator", 23)
+		revoked := session("finance-command-revoked", "operator", 24)
+		verifyFinanceCommandAuthority(t, ctx, owner, reader, executor, identity, dshDB, origin, dshOrigin, merchant, finance, other, proposer, revoked)
+		t.Run("proposal authority", func(t *testing.T) {
+			verifyProposalCommandAuthority(t, ctx, owner, reader, executor, dshDB, origin, dshOrigin, merchant, proposer, other, revoked)
+		})
 	})
 	handler, err := wallet.NewHandler(reader, origin)
 	if err != nil {

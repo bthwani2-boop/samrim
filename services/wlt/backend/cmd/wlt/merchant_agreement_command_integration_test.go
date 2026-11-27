@@ -43,7 +43,7 @@ func startAgreementDSH(t *testing.T, ctx context.Context, root, identityOrigin, 
 	}
 	executeFixture(t, ctx, db, "INSERT INTO "+schema+".service_cities(id,active,timezone_name) VALUES('command-city',true,'Asia/Aden')")
 	executeFixture(t, ctx, db, "INSERT INTO "+schema+".verticals(id,active) VALUES('grocery',true) ON CONFLICT(id) DO NOTHING")
-	for _, store := range []string{"command-store", "command-rollback", "command-grant", "command-relation", "command-concurrent", "command-decline", "finance-approve", "finance-reject", "finance-pending", "finance-revoked", "finance-relation", "finance-transfer"} {
+	for _, store := range []string{"command-store", "command-rollback", "command-grant", "command-relation", "command-concurrent", "command-decline", "finance-approve", "finance-reject", "finance-pending", "finance-revoked", "finance-relation", "finance-transfer", "proposal-owner", "proposal-lock"} {
 		executeFixture(t, ctx, db, "INSERT INTO "+schema+".stores(id,owner_actor_id,city_id,vertical_id,relation,name,published) VALUES($1,'wallet-one','command-city','grocery','DIRECT','Synthetic',false)", store)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

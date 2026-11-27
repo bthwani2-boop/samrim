@@ -88,8 +88,12 @@ func validAgreementDecision(d AgreementDecision, stage decisionStage) bool {
 		(stage == financeStage && (d.Decision == "FINANCE_APPROVED" || d.Decision == "FINANCE_REJECTED"))
 	return validMode && storeIDRule.MatchString(d.StoreID) && d.Version >= 1 && d.Version <= 9007199254740991 &&
 		agreementOperationID.MatchString(d.ProposalOperationID) && agreementOperationID.MatchString(d.OperationID) &&
-		utf8.ValidString(d.Reason) && utf8.RuneCountInString(d.Reason) >= 1 && utf8.RuneCountInString(d.Reason) <= 300 &&
-		strings.TrimSpace(d.Reason) == d.Reason && !strings.ContainsFunc(d.Reason, unicode.IsControl)
+		validAgreementReason(d.Reason)
+}
+
+func validAgreementReason(reason string) bool {
+	return utf8.ValidString(reason) && reason != "" && utf8.RuneCountInString(reason) <= 300 &&
+		strings.TrimSpace(reason) == reason && !strings.ContainsFunc(reason, unicode.IsControl)
 }
 
 func agreementAuthorityError(status int) error {
@@ -197,80 +201,104 @@ func RecordFinanceAgreementDecision(ctx context.Context, db *sql.DB, identityOri
 // Both stages share the same isolated command principal, owner lock, durable
 // operation identity and authority recheck. Unknown commit results are retried
 // only using the original operation ID and identical payload.
-func recordAgreementDecision(ctx context.Context, db *sql.DB, identityOrigin, dshOrigin, token string, d AgreementDecision, stage decisionStage) (string, error) {
-	if db == nil || !validAgreementDecision(d, stage) {
-		return "", ErrAgreementInvalid
-	}
+func agreementCommandAuthority(identityOrigin, dshOrigin, token, store string, stage decisionStage) (decisionAuthority, error) {
 	auth := "Bearer " + token
 	if !validBearer(auth) {
-		return "", ErrAgreementUnauthorized
+		return decisionAuthority{}, ErrAgreementUnauthorized
 	}
 	identity, err := newIdentityReader(identityOrigin)
 	if err != nil || !validLoopbackOwnerOrigin(dshOrigin) {
-		return "", ErrAgreementUnconfirmed
+		return decisionAuthority{}, ErrAgreementUnconfirmed
 	}
-	authority := decisionAuthority{identity: identity, stage: stage, dshOrigin: dshOrigin, auth: auth, store: d.StoreID}
+	authority := decisionAuthority{identity: identity, stage: stage, dshOrigin: dshOrigin, auth: auth, store: store}
 	if stage == merchantStage {
 		endpoint, err := merchantStandingEndpoint(false, []string{dshOrigin})
 		if err != nil || endpoint == "" {
-			return "", ErrAgreementUnconfirmed
+			return decisionAuthority{}, ErrAgreementUnconfirmed
 		}
 		authority.dshEndpoint = endpoint
 	}
+	return authority, nil
+}
+
+func executeAgreementCommand[T any](ctx context.Context, db *sql.DB, authority decisionAuthority,
+	write func(context.Context, *sql.Tx, principal, financialStanding) (T, error)) (T, error) {
+	var empty T
 	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
 	defer cancel()
 	actor, standing, err := authority.current(ctx)
 	if err != nil {
-		return "", err
+		return empty, err
 	}
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
-		return "", ErrAgreementUnconfirmed
+		return empty, ErrAgreementUnconfirmed
 	}
 	defer tx.Rollback()
 	var admitted bool
 	if err = tx.QueryRowContext(ctx, agreementCommandAdmissionSQL).Scan(&admitted); err != nil || !admitted {
-		return "", ErrAgreementUnconfirmed
+		return empty, ErrAgreementUnconfirmed
 	}
-	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended('wlt:commercial-proposal:'||$1,0))", d.StoreID); err != nil {
-		return "", ErrAgreementUnconfirmed
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended('wlt:commercial-proposal:'||$1,0))", authority.store); err != nil {
+		return empty, ErrAgreementUnconfirmed
 	}
-	var storedRelation string
-	err = tx.QueryRowContext(ctx, "SELECT store_relation FROM wlt.latest_commercial_agreement_reviews WHERE store_id=$1", d.StoreID).Scan(&storedRelation)
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", ErrAgreementConflict
-	}
+	result, err := write(ctx, tx, actor, standing)
 	if err != nil {
-		return "", ErrAgreementUnconfirmed
-	}
-	if storedRelation != standing.Relation {
-		return "", ErrAgreementForbidden
-	}
-	var state string
-	err = tx.QueryRowContext(ctx, "SELECT wlt.record_commercial_agreement_decision($1,$2,$3,$4,$5,$6,$7)", d.StoreID, d.Version, d.ProposalOperationID, d.OperationID, d.Decision, actor.ActorID, d.Reason).Scan(&state)
-	if err != nil {
-		var pg *pq.Error
-		if errors.As(err, &pg) && (pg.Code == "23514" || pg.Code == "23505" || pg.Code == "40001") {
-			return "", ErrAgreementConflict
-		}
-		return "", ErrAgreementUnconfirmed
-	}
-	if state != "RECORDED" && state != "REPLAYED" {
-		return "", ErrAgreementUnconfirmed
+		return empty, err
 	}
 	current, currentStanding, err := authority.current(ctx)
 	if err != nil {
-		return "", err
+		return empty, err
 	}
 	now := time.Now()
 	if current.ActorID != actor.ActorID || !actor.Expires.After(now) || !current.Expires.After(now) {
-		return "", ErrAgreementUnauthorized
+		return empty, ErrAgreementUnauthorized
 	}
 	if standing != currentStanding {
-		return "", ErrAgreementForbidden
+		return empty, ErrAgreementForbidden
 	}
 	if ctx.Err() != nil || tx.Commit() != nil {
-		return "", ErrAgreementUnconfirmed
+		return empty, ErrAgreementUnconfirmed
 	}
-	return state, nil
+	return result, nil
+}
+
+func agreementWriteError(err error) error {
+	var pg *pq.Error
+	if errors.As(err, &pg) && (pg.Code == "23514" || pg.Code == "23505" || pg.Code == "40001") {
+		return ErrAgreementConflict
+	}
+	return ErrAgreementUnconfirmed
+}
+
+func recordAgreementDecision(ctx context.Context, db *sql.DB, identityOrigin, dshOrigin, token string, d AgreementDecision, stage decisionStage) (string, error) {
+	if db == nil || !validAgreementDecision(d, stage) {
+		return "", ErrAgreementInvalid
+	}
+	authority, err := agreementCommandAuthority(identityOrigin, dshOrigin, token, d.StoreID, stage)
+	if err != nil {
+		return "", err
+	}
+	return executeAgreementCommand(ctx, db, authority, func(ctx context.Context, tx *sql.Tx, actor principal, standing financialStanding) (string, error) {
+		var storedRelation string
+		err := tx.QueryRowContext(ctx, "SELECT store_relation FROM wlt.latest_commercial_agreement_reviews WHERE store_id=$1", d.StoreID).Scan(&storedRelation)
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", ErrAgreementConflict
+		}
+		if err != nil {
+			return "", ErrAgreementUnconfirmed
+		}
+		if storedRelation != standing.Relation {
+			return "", ErrAgreementForbidden
+		}
+		var state string
+		err = tx.QueryRowContext(ctx, "SELECT wlt.record_commercial_agreement_decision($1,$2,$3,$4,$5,$6,$7)", d.StoreID, d.Version, d.ProposalOperationID, d.OperationID, d.Decision, actor.ActorID, d.Reason).Scan(&state)
+		if err != nil {
+			return "", agreementWriteError(err)
+		}
+		if state != "RECORDED" && state != "REPLAYED" {
+			return "", ErrAgreementUnconfirmed
+		}
+		return state, nil
+	})
 }
