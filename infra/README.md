@@ -39,7 +39,7 @@ The single canonical environment definition is [compose.yaml](compose.yaml), imp
 
 For an already running environment, use the existing pnpm dev docker status, verify and guarded reconciliation commands. The three serving owners must use the canonical Compose file. Foundational containers may retain historical metadata until an authorized replacement; exact prior native configuration hashes remain mandatory. Never recreate a healthy container solely to change its historical labels. A replacement must preserve effective configuration, source provenance, data and peer ownership.
 
-Private TLS material belongs to the Identity/DSH service trust boundary. The physical external volume names remain unchanged so existing trust material is not lost. Owner admission and certificate inputs are explicit in the single ignored .env; the public example does not grant credentials or enable admission. Provision the private volumes before starting their owners.
+Private TLS material belongs to the corresponding service trust boundary. Preserve the existing physical external volume names and trust material. Owner admission is explicit in the single ignored .env; the public example does not grant credentials or enable admission. Provision each required private trust volume before starting its service. Mailpit uses a dedicated phone-delivery trust pair; it never mounts the Identity or DSH private keys.
 
 DSH discovery and admitted protected capabilities use the same owner. Identity is the independent synthetic Go session/Operator-permission verifier. The [WLT Customer balance reader](../services/wlt/backend/README.md) runs as an isolated container or loopback process with its own read-only database role.
 
@@ -162,7 +162,30 @@ Set `REF_IDENTITY_SYNTHETIC_PHONE_AUTH=true` only after applying the Identity
 phone verification baseline in a new synthetic schema (or confirming the compatible retained schema) and verifying the runtime role's scoped
 write privileges. Supply a fresh 32-byte hex `REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY`
 through the Identity-only local settings. Delivery stays on the project's
-`mailpit:1025` network endpoint. Verify the Yemeni phone format constraint from `database/schema/10_verification.sql`
+`mailpit:1025` network endpoint and uses mandatory implicit TLS 1.2 or newer.
+The verified DNS identity is `mailpit`; Identity trusts only the dedicated
+CA bundle. No plaintext SMTP or STARTTLS fallback is admitted.
+
+Before starting the new Compose definition, separately provision the external
+`bthwani-refoundation-phone-mailpit-tls` volume with `server.pem` (DNS SAN
+`mailpit`, server-auth usage, valid chain) and `server-key.pem` (readable only
+by the Mailpit runtime account), and `bthwani-refoundation-phone-mailpit-ca`
+with `ca.pem` (the issuing CA certificate bundle, no private key).
+Keep CA signing material outside both runtime containers. The former volume
+is mounted read-only only by Mailpit; the latter only by Identity. Mailpit
+requires TLS regardless of the phone feature flag; only its existing loopback
+HTTP UI port is published. Missing or invalid trust fails closed. Do not
+reuse another owner's private key, disable verification, or expose SMTP on the host.
+
+For an existing environment, the new trust mounts and Mailpit command are
+a semantic configuration transition, not resource-policy drift. Obtain
+separate authorization, validate the trust pair and exact old/new Compose
+configuration, and replace the affected isolated services under the existing
+guarded runtime policy; do not bypass its configuration-drift refusal.
+Verify encrypted delivery, failed-delivery compensation and independent
+database readback before accepting the transition.
+
+Verify the Yemeni phone format constraint from `database/schema/10_verification.sql`
 and set `REF_IDENTITY_SYNTHETIC_YEMEN_PHONES` to the allowed test numbers in
 international format. The Compose default is `+967770000001`.
 The local Merchant development Web endpoint checks synthetic phone availability

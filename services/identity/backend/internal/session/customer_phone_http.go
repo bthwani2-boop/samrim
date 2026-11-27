@@ -1,9 +1,13 @@
 package session
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"io"
@@ -24,18 +28,20 @@ const (
 type customerPhoneHandler struct {
 	owner  *PostgresReader
 	key    []byte
-	smtp   string
+	smtp   *phoneSMTP
 	phones map[string]struct{}
 }
 
-// NewCustomerPhoneHandler admits only the isolated synthetic phone owner.
-// Neither the recipient nor the transport destination is supplied by callers.
-func NewCustomerPhoneHandler(owner *PostgresReader, keyHex, address string, containerMode bool, approvedPhones string) (http.Handler, error) {
+// NewCustomerPhoneHandler admits only isolated synthetic phone verification.
+// Destination, dedicated trust roots and recipient are never caller-controlled.
+func NewCustomerPhoneHandler(owner *PostgresReader, keyHex, address string, containerMode bool, approvedPhones string, caPEM []byte) (http.Handler, error) {
 	key, err := hex.DecodeString(keyHex)
-	host, port, addrErr := net.SplitHostPort(address)
-	if owner == nil || err != nil || len(key) != 32 || addrErr != nil || port == "" ||
-		!(host == "127.0.0.1" || (containerMode && host == "mailpit" && port == "1025")) {
+	if owner == nil || err != nil || len(key) != 32 {
 		return nil, errors.New("invalid isolated phone verification configuration")
+	}
+	delivery, err := newPhoneSMTP(address, containerMode, caPEM)
+	if err != nil {
+		return nil, err
 	}
 	phones := make(map[string]struct{})
 	for _, value := range strings.Split(approvedPhones, ",") {
@@ -45,7 +51,7 @@ func NewCustomerPhoneHandler(owner *PostgresReader, keyHex, address string, cont
 		}
 		phones[phone] = struct{}{}
 	}
-	return &customerPhoneHandler{owner: owner, key: key, smtp: address, phones: phones}, nil
+	return &customerPhoneHandler{owner: owner, key: key, smtp: delivery, phones: phones}, nil
 }
 
 func phoneError(w http.ResponseWriter, status int, code string) {
@@ -64,7 +70,6 @@ func (h *customerPhoneHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)
 		phoneError(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
-
 	ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 	defer cancel()
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 512))
@@ -92,18 +97,18 @@ func (h *customerPhoneHandler) challenge(ctx context.Context, w http.ResponseWri
 		return
 	}
 	ticket, code, err := h.owner.issuePhoneChallenge(ctx, h.key, input.Phone)
-	if errors.Is(err, errPhoneLimit) {
+	switch {
+	case errors.Is(err, errPhoneLimit):
 		phoneError(w, http.StatusTooManyRequests, "PHONE_CHALLENGE_LIMIT")
 		return
-	}
-	if err != nil {
+	case err != nil:
 		phoneError(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
 		return
 	}
 
-	// A cancelled or ambiguous delivery must never release the ticket.
-	// Cleanup has an independent bounded lifetime and keeps the send counter.
-	if err := deliverPhoneCode(ctx, h.smtp, input.Phone, code); err != nil || ctx.Err() != nil {
+	// Never release a challenge ticket without authenticated delivery and a
+	// live request. Compensation retains the send count and has its own bound.
+	if err := h.smtp.deliver(ctx, input.Phone, code); err != nil || ctx.Err() != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 		defer cancel()
 		_ = h.owner.cancelUndeliveredPhoneChallenge(cleanupCtx, ticket)
@@ -124,21 +129,64 @@ func (h *customerPhoneHandler) verify(ctx context.Context, w http.ResponseWriter
 		return
 	}
 	issued, err := h.owner.verifyPhoneChallenge(ctx, h.key, input.Ticket, input.Code)
-	if errors.Is(err, ErrUnauthorized) {
+	switch {
+	case errors.Is(err, ErrUnauthorized):
 		phoneError(w, http.StatusUnauthorized, "UNAUTHORIZED")
-		return
-	}
-	if err != nil {
+	case err != nil:
 		phoneError(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
-		return
+	default:
+		respond(w, http.StatusOK, issued)
 	}
-	respond(w, http.StatusOK, issued)
 }
 
-// deliverPhoneCode owns the complete lifetime of one isolated SMTP exchange.
-// Dial cancellation alone does not interrupt a connected socket. Bind the
-// connection to the context until DATA acknowledgement, including all reads.
-func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
+// phoneSMTP owns destination admission and the complete authenticated exchange.
+// The same implicit TLS protocol is mandatory for the container and loopback.
+type phoneSMTP struct {
+	address string
+	tls     *tls.Config
+}
+
+func newPhoneSMTP(address string, containerMode bool, caPEM []byte) (*phoneSMTP, error) {
+	host, port, err := net.SplitHostPort(address)
+	number, portErr := strconv.ParseUint(port, 10, 16)
+	if err != nil || portErr != nil || number == 0 ||
+		!(host == "127.0.0.1" || (containerMode && address == "mailpit:1025")) {
+		return nil, errors.New("invalid isolated phone SMTP destination")
+	}
+
+	// Only the explicitly provisioned CA bundle is trusted. Never inherit
+	// machine roots or silently accept a leaf certificate as a trust anchor.
+	roots := x509.NewCertPool()
+	rest := bytes.TrimSpace(caPEM)
+	count := 0
+	for len(rest) != 0 {
+		if !bytes.HasPrefix(rest, []byte("-----BEGIN CERTIFICATE-----")) {
+			return nil, errors.New("invalid isolated phone SMTP trust anchor")
+		}
+		block, next := pem.Decode(rest)
+		if block == nil || block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			return nil, errors.New("invalid isolated phone SMTP trust anchor")
+		}
+		cert, err := x509.ParseCertificate(block.Bytes)
+		if err != nil || !cert.BasicConstraintsValid || !cert.IsCA ||
+			(cert.KeyUsage != 0 && cert.KeyUsage&x509.KeyUsageCertSign == 0) {
+			return nil, errors.New("invalid isolated phone SMTP trust anchor")
+		}
+		roots.AddCert(cert)
+		count++
+		rest = bytes.TrimSpace(next)
+	}
+	if count == 0 {
+		return nil, errors.New("missing isolated phone SMTP trust anchor")
+	}
+	return &phoneSMTP{address: address, tls: &tls.Config{
+		MinVersion: tls.VersionTLS12,
+		ServerName: host,
+		RootCAs:    roots,
+	}}, nil
+}
+
+func (s *phoneSMTP) deliver(ctx context.Context, phone, code string) error {
 	if !syntheticPhone.MatchString(phone) || !phoneCode.MatchString(code) {
 		return errors.New("invalid synthetic phone verification payload")
 	}
@@ -151,7 +199,7 @@ func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
 		return errors.New("invalid synthetic phone verification payload")
 	}
 
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", address)
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", s.address)
 	if err != nil {
 		return err
 	}
@@ -163,11 +211,14 @@ func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
 			return err
 		}
 	}
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
+
+	// Authenticate the peer before any SMTP command or verification payload.
+	// No STARTTLS negotiation, downgrade, plaintext fallback or retry exists.
+	secured := tls.Client(conn, s.tls)
+	if err := secured.HandshakeContext(ctx); err != nil {
 		return err
 	}
-	client, err := smtp.NewClient(conn, host)
+	client, err := smtp.NewClient(secured, s.tls.ServerName)
 	if err != nil {
 		return err
 	}
@@ -183,7 +234,7 @@ func deliverPhoneCode(ctx context.Context, address, phone, code string) error {
 	if err != nil {
 		return err
 	}
-	// Reconstruct both values from integers, never from request text.
+	// Reconstruct values from integers, never from untrusted header text.
 	if _, err := fmt.Fprintf(payload, "From: %s\r\nTo: %s\r\nSubject: BThwani synthetic phone verification\r\n\r\nPhone: +967%09d\r\nCode: %06d\r\n", sender, inbox, phoneSuffix, verificationCode); err != nil {
 		return err
 	}

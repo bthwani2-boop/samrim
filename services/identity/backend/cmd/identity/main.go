@@ -113,9 +113,13 @@ func main() {
 	routes := http.NewServeMux()
 	routes.Handle("/health", isolatedHealthHandler(db))
 	if os.Getenv("IDENTITY_SYNTHETIC_PHONE_AUTH") == "true" {
+		ca, err := os.ReadFile(os.Getenv("IDENTITY_SYNTHETIC_PHONE_SMTP_CA"))
+		if err != nil {
+			log.Fatal("Identity synthetic phone SMTP trust unavailable")
+		}
 		phone, err := session.NewCustomerPhoneHandler(reader,
 			os.Getenv("IDENTITY_SYNTHETIC_PHONE_HMAC_KEY"), os.Getenv("IDENTITY_SYNTHETIC_PHONE_SMTP"),
-			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true", os.Getenv("IDENTITY_SYNTHETIC_YEMEN_PHONES"))
+			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true", os.Getenv("IDENTITY_SYNTHETIC_YEMEN_PHONES"), ca)
 		if err != nil {
 			log.Fatal("Identity synthetic phone verification misconfigured")
 		}

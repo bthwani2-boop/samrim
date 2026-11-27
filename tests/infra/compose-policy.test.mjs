@@ -144,7 +144,7 @@ test("Identity verifier is synthetic only and has no privileged host exposure", 
 
 test("owner admission and private trust stay in one environment, default off", () => {
   const model = compose("compose.yaml");
-  const {dsh, identity} = model.services;
+  const {dsh, identity, mailpit} = model.services;
   const variable=(key, value="")=>"$"+"{"+key+":-"+value+"}";
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_MERCHANT_STANDING,variable("REF_DSH_ENABLE_ISOLATED_MERCHANT_STANDING","false"));
   assert.equal(dsh.environment.DSH_ENABLE_ISOLATED_CAPTAIN_STANDING,variable("REF_DSH_ENABLE_ISOLATED_CAPTAIN_STANDING","false"));
@@ -160,8 +160,22 @@ test("owner admission and private trust stay in one environment, default off", (
   assert.equal(dsh.environment.DSH_ISOLATED_CAPTAIN_TLS_CERT,variable("REF_DSH_PRIVATE_TLS_CERT"));
   assert.equal(dsh.environment.DSH_ISOLATED_CAPTAIN_TLS_KEY,variable("REF_DSH_PRIVATE_TLS_KEY"));
   assert.deepEqual(dsh.volumes,["merchant-identity-ca:/run/identity-ca:ro","captain-dsh-tls:/run/dsh-captain-tls:ro"]);
-  assert.deepEqual(identity.volumes,["merchant-identity-tls:/run/identity-tls:ro","captain-dsh-ca:/run/dsh-captain-ca:ro"]);
-  for(const name of ["merchant-identity-ca","merchant-identity-tls","captain-dsh-ca","captain-dsh-tls"]){
+  assert.equal(identity.environment.IDENTITY_SYNTHETIC_PHONE_SMTP, "mailpit:1025");
+  assert.equal(identity.environment.IDENTITY_SYNTHETIC_PHONE_SMTP_CA, "/run/mailpit-smtp-ca/ca.pem");
+  assert.deepEqual(mailpit.command, [
+    "--smtp-require-tls",
+    "--smtp-tls-cert=/run/mailpit-smtp-tls/server.pem",
+    "--smtp-tls-key=/run/mailpit-smtp-tls/server-key.pem",
+  ]);
+  assert.deepEqual(mailpit.volumes, ["phone-mailpit-tls:/run/mailpit-smtp-tls:ro"]);
+  assert.equal(mailpit.ports.length, 1);
+  assert.match(mailpit.ports[0], /^127\.0\.0\.1:.*:8025$/);
+  assert.deepEqual(identity.volumes,["merchant-identity-tls:/run/identity-tls:ro","captain-dsh-ca:/run/dsh-captain-ca:ro","phone-mailpit-ca:/run/mailpit-smtp-ca:ro"]);
+  for (const [name, service] of Object.entries(model.services)) {
+    if (name !== "mailpit") assert.ok(!(service.volumes ?? []).some(v => v.startsWith("phone-mailpit-tls:")));
+    if (name !== "identity") assert.ok(!(service.volumes ?? []).some(v => v.startsWith("phone-mailpit-ca:")));
+  }
+  for(const name of ["merchant-identity-ca","merchant-identity-tls","captain-dsh-ca","captain-dsh-tls","phone-mailpit-ca","phone-mailpit-tls"]){
     assert.deepEqual(model.volumes[name],{name:"bthwani-refoundation-"+name,external:true});
   }
   for(const owner of [dsh,identity]) assert.ok(owner.ports.every(port=>port.startsWith("127.0.0.1:")&&!/:(3343|3344)$/.test(port)));

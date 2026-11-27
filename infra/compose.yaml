@@ -97,6 +97,12 @@ services:
     mem_limit: 256m
     pids_limit: 256
     image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
+    command:
+      - --smtp-require-tls
+      - --smtp-tls-cert=/run/mailpit-smtp-tls/server.pem
+      - --smtp-tls-key=/run/mailpit-smtp-tls/server-key.pem
+    volumes:
+      - phone-mailpit-tls:/run/mailpit-smtp-tls:ro
     ports:
       - 127.0.0.1:${REF_MAILPIT_PORT:-3226}:8025
     networks:
@@ -203,6 +209,7 @@ services:
       IDENTITY_SYNTHETIC_YEMEN_PHONES: ${REF_IDENTITY_SYNTHETIC_YEMEN_PHONES:-+967770000001}
       IDENTITY_SYNTHETIC_PHONE_HMAC_KEY: ${REF_IDENTITY_SYNTHETIC_PHONE_HMAC_KEY:-}
       IDENTITY_SYNTHETIC_PHONE_SMTP: mailpit:1025
+      IDENTITY_SYNTHETIC_PHONE_SMTP_CA: /run/mailpit-smtp-ca/ca.pem
       IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH: ${REF_IDENTITY_OPERATOR_PASSKEY_AUTH:-false}
       IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP: ${REF_IDENTITY_OPERATOR_BOOTSTRAP:-false}
       IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR: ${REF_IDENTITY_LOCAL_DEV_FIRST_OPERATOR:-false}
@@ -217,6 +224,7 @@ services:
     volumes:
       - merchant-identity-tls:/run/identity-tls:ro
       - captain-dsh-ca:/run/dsh-captain-ca:ro
+      - phone-mailpit-ca:/run/mailpit-smtp-ca:ro
     ports:
       - 127.0.0.1:${REF_IDENTITY_VERIFIER_PORT:-3201}:3302
     healthcheck:
@@ -275,4 +283,10 @@ volumes:
     external: true
   captain-dsh-tls:
     name: bthwani-refoundation-captain-dsh-tls
+    external: true
+  phone-mailpit-tls:
+    name: bthwani-refoundation-phone-mailpit-tls
+    external: true
+  phone-mailpit-ca:
+    name: bthwani-refoundation-phone-mailpit-ca
     external: true
