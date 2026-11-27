@@ -1,80 +1,9 @@
 #!/usr/bin/env bash
 # Disposable owner-backed PostgreSQL acceptance on an isolated CI runner only.
 # No host ports, Docker networks, named volumes, retained schemas or real accounts.
-set -euo pipefail
-
-if [[ "$(printenv GITHUB_ACTIONS 2>/dev/null || true)" != "true" ]] ||
-   [[ "$(printenv RUNNER_ENVIRONMENT 2>/dev/null || true)" != "github-hosted" ]] ||
-   [[ "$(uname -s)" != "Linux" ]] ||
-   [[ ! "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ ]] ||
-   [[ -n "$(printenv DOCKER_HOST 2>/dev/null || true)" ]]; then
-  echo "Refusing owner SQL integration outside a local-Docker GitHub-hosted Linux runner" >&2
-  exit 2
-fi
-if [[ "$(docker context show)" != "default" ]]; then
-  echo "Refusing a nondefault or remote Docker context in CI" >&2
-  exit 2
-fi
-cd "$(dirname "$0")/../.."
-coverage_enabled=no
-cover_flags=()
-coverage_sequence=0
-if [[ $# -eq 1 && "$1" == --coverage ]]; then
-  coverage_enabled=yes
-  cover_flags=(-covermode=atomic -coverpkg=./...)
-  [[ ! -e coverage/owner-postgres && ! -L coverage/owner-postgres ]] || {
-    echo 'Refusing existing owner PostgreSQL coverage output' >&2; exit 2;
-  }
-elif [[ $# -ne 0 ]]; then
-  echo 'Usage: verify-owner-postgres-ci.sh [--coverage]' >&2
-  exit 2
-fi
-image="$(awk '$1 == "image:" && $2 ~ /^postgis\/postgis:18-3\.6@sha256:/ {print $2}' infra/compose.yaml)"
-if [[ ! "$image" =~ ^postgis/postgis:18-3\.6@sha256:[a-f0-9]{64}$ ]]; then
-  echo "Refusing an unpinned or unexpected PostgreSQL image" >&2
-  exit 2
-fi
-for program in go docker; do
-  command -v "$program" >/dev/null || { echo "Missing $program" >&2; exit 2; }
-done
-scratch="$(mktemp -d)"
-current=""
-cleanup() {
-  if [[ -n "$current" ]]; then
-    label="$(docker inspect --format '{{index .Config.Labels "com.bthwani.ci-run"}}' "$current" 2>/dev/null || true)"
-    if [[ "$label" == "$GITHUB_RUN_ID" ]]; then
-      docker rm -f "$current" >/dev/null 2>&1 || true
-    fi
-  fi
-  rm -rf -- "$scratch"
-}
-trap cleanup EXIT
-if [[ "$coverage_enabled" == yes ]]; then mkdir "$scratch/profiles"; fi
-
-# An ephemeral credential prevents a checked-in reusable role password. Each
-# stage exists only inside this network-disabled, volume-free CI runner.
-ci_password="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
-[[ "$ci_password" =~ ^[a-f0-9]{64}$ ]] || { echo "Missing secure CI entropy" >&2; exit 2; }
-
-# Static Go test executables run inside each isolated PostgreSQL container;
-# no host DB connection or external test-network grant is necessary.
-(cd services/identity/backend && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/identity-session.test" ./internal/session && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/identity" ./cmd/identity)
-(cd services/dsh/backend && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-discovery.test" ./internal/discovery && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-storeavailability.test" ./internal/storeavailability && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-captainstanding.test" ./internal/captainstanding && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-customercart.test" ./internal/customercart && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-employees.test" ./internal/employees && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -cover "${cover_flags[@]}" -o "$scratch/dsh-employee-mount.test" ./cmd/dsh && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/dsh" ./cmd/dsh)
-(cd services/wlt/backend && \
-  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/wlt-wallet.test" ./cmd/wlt)
-[[ -s "$scratch/wlt-wallet.test" ]] || { echo "Missing compiled WLT owner test" >&2; exit 1; }
-for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh-employee-mount.test dsh; do
-  [[ -s "$scratch/$executable" ]] || { echo "Missing compiled owner: $executable" >&2; exit 1; }
-done
+# Sourcing defines the same native gates without initiating Docker, SQL or Go.
+readonly discovery_pattern='^(TestOwnerBacked|TestOwnerScoped|TestOwnerBootstrapFresh)'
+readonly discovery_expected='TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedDiscoveryDemoSeed,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedCaptainStandingFreshBaseline,TestOwnerBootstrapFreshRollsBackIncompleteSchema,TestOwnerBootstrapFreshInstallsRealDSHAndRefusesReapply,TestOwnerBackedActiveCityDirectory,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch,TestOwnerBackedOfferEstimate,TestOwnerBackedPersistentSyntheticRegistrationSeed'
 
 start_stage() {
   local name="$1" role="$2" db="$3"
@@ -140,6 +69,51 @@ finish_stage() {
   docker rm -f "$current" >/dev/null
   current=""
 }
+# Test selection and coverage are admission contracts, not alternate runners.
+# Count the complete native top-level result set and reject contradictory
+# terminal output, unexpected/repeated names and all failures or skips.
+accept_owner_output() {
+  local expected="$1"
+  LC_ALL=C awk -v expected="$expected" '
+    BEGIN {
+      total=split(expected,names,",")
+      for (i=1; i<=total; i++) {
+        if (names[i] !~ /^Test[^[:space:],]+$/ || names[i] in wanted) bad=1
+        wanted[names[i]]=1
+      }
+    }
+    /--- (FAIL|SKIP):/ {bad=1}
+    /^FAIL$/ {bad=1}
+    /^PASS$/ {terminal++}
+    /^--- PASS: / {
+      if ($3 !~ /^Test[^[:space:]]+$/ || !($3 in wanted) || seen[$3]++) bad=1
+      passed++
+    }
+    END {
+      for (name in wanted) if (seen[name]!=1) bad=1
+      exit !(total>0 && passed==total && terminal==1 && !bad)
+    }'
+}
+
+# Native Go coverprofile grammar: source coordinates followed by statement
+# and hit counts. Require atomic mode and at least one measured statement.
+accept_owner_profile() {
+  LC_ALL=C awk '
+    NR==1 {if ($0!="mode: atomic") bad=1; next}
+    {
+      if (NF!=3 ||
+          $1 !~ /\.go:[1-9][0-9]*\.[1-9][0-9]*,[1-9][0-9]*\.[1-9][0-9]*$/ ||
+          $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/) {bad=1; next}
+      location=$1
+      sub(/^.*:/,"",location)
+      split(location,points,/[.,]/)
+      if (points[3]+0 < points[1]+0 ||
+          (points[3]+0 == points[1]+0 && points[4]+0 < points[2]+0)) bad=1
+      if ($2>0 && $3>0) hit=1
+    }
+    END {exit !(NR>1 && hit && !bad)}' "$1"
+}
+
 run_test() {
   local name="$1" dir="$2" binary="$3" pattern="$4" expected="$5" output
   shift 5
@@ -156,35 +130,27 @@ run_test() {
     echo "Owner-backed integration failed; do not claim PASS" >&2
     return 1
   fi
-  local -a expected_names=() passed_names=()
-  IFS=',' read -r -a expected_names <<< "$expected"
-  mapfile -t passed_names < <(printf '%s\n' "$output" | awk '/^--- PASS: Test[^ ]+ \(/ {print $3}')
-  # A single PASS must not satisfy a pattern selecting multiple tests.
-  # Reject missing, repeated, extra, skipped or renamed owner-backed tests.
-  if [[ "$output" == *"--- SKIP:"* || "$output" == *"--- FAIL:"* ]] ||
-     ! grep -Fxq 'PASS' <<< "$output" ||
-     (( ${#expected_names[@]} == 0 || ${#passed_names[@]} != ${#expected_names[@]} )); then
+  if ! accept_owner_output "$expected" <<< "$output"; then
     printf '%s\n' "$output"
     echo "Selected owner-backed tests missing, skipped or unexpectedly changed" >&2
     return 1
   fi
-  local test_name
-  for test_name in "${expected_names[@]}"; do
-    if ! printf '%s\n' "${passed_names[@]}" | grep -Fxq -- "$test_name"; then
-      printf '%s\n' "$output"
-      echo "Selected owner-backed test absent: $test_name" >&2
-      return 1
-    fi
-  done
   if [[ -n "$profile" ]]; then
-    local destination="$scratch/profiles/$profile"
-    if ! docker cp "$name:/tmp/$profile" "$destination" || [[ ! -s "$destination" ]] ||
-       ! awk 'NR==1 {if ($0!="mode: atomic") bad=1; next}
-         NF!=3 || $2 !~ /^[0-9]+$/ || $3 !~ /^[0-9]+$/ {bad=1}
-         $3>0 {hit=1} END {exit !(NR>1 && hit && !bad)}' "$destination"; then
+    local destination="$scratch/profiles/$profile" candidate
+    candidate="$destination.partial"
+    [[ ! -e "$destination" && ! -L "$destination" &&
+       ! -e "$candidate" && ! -L "$candidate" ]] || {
+      echo "Existing owner coverage destination: $profile" >&2
+      return 1
+    }
+    if ! docker cp "$name:/tmp/$profile" "$candidate" ||
+       [[ ! -f "$candidate" || -L "$candidate" || ! -s "$candidate" ]] ||
+       ! accept_owner_profile "$candidate"; then
+      rm -f -- "$candidate"
       echo "Missing or invalid measured coverage for $binary" >&2
       return 1
     fi
+    mv -- "$candidate" "$destination" || return 1
     echo "OWNER_POSTGRES_COVERAGE_PROFILE=$profile"
   fi
   printf '%s\n' "$output" | grep -E '^--- (PASS|FAIL|SKIP):|^PASS$|^FAIL$' || true
@@ -354,6 +320,83 @@ verify_wlt_restoration() {
   echo 'WLT_DISPOSABLE_RESTORE_PASS real_postgresql=true complete_owner_snapshot=true restored_balance=true reader_scope=true'
 }
 
+
+main() (
+set -euo pipefail
+
+if [[ "$(printenv GITHUB_ACTIONS 2>/dev/null || true)" != "true" ]] ||
+   [[ "$(printenv RUNNER_ENVIRONMENT 2>/dev/null || true)" != "github-hosted" ]] ||
+   [[ "$(uname -s)" != "Linux" ]] ||
+   [[ ! "${GITHUB_RUN_ID:-}" =~ ^[0-9]+$ ]] ||
+   [[ -n "$(printenv DOCKER_HOST 2>/dev/null || true)" ]]; then
+  echo "Refusing owner SQL integration outside a local-Docker GitHub-hosted Linux runner" >&2
+  exit 2
+fi
+if [[ "$(docker context show)" != "default" ]]; then
+  echo "Refusing a nondefault or remote Docker context in CI" >&2
+  exit 2
+fi
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
+coverage_enabled=no
+cover_flags=()
+coverage_sequence=0
+if [[ $# -eq 1 && "$1" == --coverage ]]; then
+  coverage_enabled=yes
+  cover_flags=(-covermode=atomic -coverpkg=./...)
+  [[ ! -e coverage/owner-postgres && ! -L coverage/owner-postgres ]] || {
+    echo 'Refusing existing owner PostgreSQL coverage output' >&2; exit 2;
+  }
+elif [[ $# -ne 0 ]]; then
+  echo 'Usage: verify-owner-postgres-ci.sh [--coverage]' >&2
+  exit 2
+fi
+image="$(awk '$1 == "image:" && $2 ~ /^postgis\/postgis:18-3\.6@sha256:/ {print $2}' infra/compose.yaml)"
+if [[ ! "$image" =~ ^postgis/postgis:18-3\.6@sha256:[a-f0-9]{64}$ ]]; then
+  echo "Refusing an unpinned or unexpected PostgreSQL image" >&2
+  exit 2
+fi
+for program in go docker; do
+  command -v "$program" >/dev/null || { echo "Missing $program" >&2; exit 2; }
+done
+scratch="$(mktemp -d)"
+current=""
+cleanup() {
+  if [[ -n "$current" ]]; then
+    label="$(docker inspect --format '{{index .Config.Labels "com.bthwani.ci-run"}}' "$current" 2>/dev/null || true)"
+    if [[ "$label" == "$GITHUB_RUN_ID" ]]; then
+      docker rm -f "$current" >/dev/null 2>&1 || true
+    fi
+  fi
+  rm -rf -- "$scratch"
+}
+trap cleanup EXIT
+if [[ "$coverage_enabled" == yes ]]; then mkdir "$scratch/profiles"; fi
+
+# An ephemeral credential prevents a checked-in reusable role password. Each
+# stage exists only inside this network-disabled, volume-free CI runner.
+ci_password="$(od -An -N32 -tx1 /dev/urandom | tr -d '[:space:]')"
+[[ "$ci_password" =~ ^[a-f0-9]{64}$ ]] || { echo "Missing secure CI entropy" >&2; exit 2; }
+
+# Static Go test executables run inside each isolated PostgreSQL container;
+# no host DB connection or external test-network grant is necessary.
+(cd services/identity/backend && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/identity-session.test" ./internal/session && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/identity" ./cmd/identity)
+(cd services/dsh/backend && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-discovery.test" ./internal/discovery && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-storeavailability.test" ./internal/storeavailability && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-captainstanding.test" ./internal/captainstanding && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-customercart.test" ./internal/customercart && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/dsh-employees.test" ./internal/employees && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c -cover "${cover_flags[@]}" -o "$scratch/dsh-employee-mount.test" ./cmd/dsh && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go build -o "$scratch/dsh" ./cmd/dsh)
+(cd services/wlt/backend && \
+  CGO_ENABLED=0 GOTOOLCHAIN=local go test -c "${cover_flags[@]}" -o "$scratch/wlt-wallet.test" ./cmd/wlt)
+[[ -s "$scratch/wlt-wallet.test" ]] || { echo "Missing compiled WLT owner test" >&2; exit 1; }
+for executable in identity-session.test identity dsh-discovery.test dsh-storeavailability.test dsh-captainstanding.test dsh-customercart.test dsh-employees.test dsh-employee-mount.test dsh; do
+  [[ -s "$scratch/$executable" ]] || { echo "Missing compiled owner: $executable" >&2; exit 1; }
+done
+
 start_stage bthwani-ci-discovery-pg bthwani_ci bthwani_refoundation
 docker exec "$current" psql -X -q -v ON_ERROR_STOP=1 -U postgres -d postgres \
   -c "CREATE DATABASE bthwani_dsh_boundary_fixture OWNER bthwani_ci;" \
@@ -381,7 +424,7 @@ restored_identity="$(docker exec "$current" psql -X -At -v ON_ERROR_STOP=1 -U bt
 [[ "$restored_identity" == '1' ]] || { echo "Identity restore must produce one isolated schema" >&2; exit 1; }
 echo 'IDENTITY_DISPOSABLE_RESTORE_PASS real_postgresql=true active_and_revoked_authorizations=true'
 run_test "$current" /agent02/services/dsh/backend/internal/discovery \
-  /agent02/bin/dsh-discovery.test '^(TestOwnerBacked|TestOwnerScoped|TestOwnerBootstrapFresh)' 'TestOwnerBackedMarketplaceVisibility,TestOwnerBackedPublicStoreOperationalStatus,TestOwnerBackedSyntheticImportDeniesAlternateDatabase,TestOwnerBackedDiscoveryDemoSeed,TestOwnerBackedOfferVisibilityAndCursorRecovery,TestOwnerBackedUnpublishedStoreRejectsOfferContinuation,TestOwnerBackedConcurrentReadsAndSafeFailures,TestOwnerScopedTransactionSearchPathResetsOnPooledConnection,TestOwnerBackedDiscoveryHealthRequiresInitializedSchema,TestOwnerBackedCaptainStandingFreshBaseline,TestOwnerBootstrapFreshRollsBackIncompleteSchema,TestOwnerBootstrapFreshInstallsRealDSHAndRefusesReapply,TestOwnerBackedActiveCityDirectory,TestOwnerBackedPublicVerticalDirectory,TestOwnerBackedVerticalFilter,TestOwnerBackedStoreSearch,TestOwnerBackedOfferSearch,TestOwnerBackedOfferEstimate,TestOwnerBackedPersistentSyntheticRegistrationSeed' \
+  /agent02/bin/dsh-discovery.test "$discovery_pattern" "$discovery_expected" \
   -e BTHWANI_ISOLATED_TEST_MODE=true -e DSH_TEST_SEED_BOUNDARY=true \
   -e REF_POSTGRES_USER=bthwani_ci -e REF_POSTGRES_PASSWORD="$ci_password" \
   -e REF_POSTGRES_DB=bthwani_refoundation \
@@ -487,3 +530,8 @@ if [[ "$coverage_enabled" == yes ]]; then
   echo "OWNER_POSTGRES_COVERAGE_PASS profiles=$coverage_sequence"
 fi
 echo 'OWNER_POSTGRES_INTEGRATION_PASS network=none ephemeral_tmpfs=true durable_owner_readback=verified no_production_data=true'
+)
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

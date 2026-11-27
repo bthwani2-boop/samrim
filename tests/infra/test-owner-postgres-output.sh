@@ -3,8 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 script="tests/infra/verify-owner-postgres-ci.sh"
-# Only load the output gate; never source the top-level Docker/test operations.
-source <(sed -n '/^run_test() {/,/^}/p' "$script")
+# Source the actual runner; importing must not start Docker, SQL or Go.
+source "$script"
 declare -f run_test >/dev/null
 
 docker() {
@@ -44,7 +44,10 @@ case_output wrong_test fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n
 case_output failed_test fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestSecond\n--- FAIL: TestSecond (0.01s)\nFAIL'
 case_output failing_exit fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestSecond\n--- PASS: TestSecond (0.01s)\nPASS' 1
 case_output duplicate_test fail $'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\nPASS'
-echo 'OWNER_TEST_OUTPUT_GATE_PASS positive=1 negative=6'
+case_output contradictory_terminal fail $'--- PASS: TestFirst (0.01s)\n--- PASS: TestSecond (0.01s)\nPASS\nFAIL'
+case_output duplicate_terminal fail $'--- PASS: TestFirst (0.01s)\n--- PASS: TestSecond (0.01s)\nPASS\nPASS'
+case_output unexpected_extra fail $'--- PASS: TestFirst (0.01s)\n--- PASS: TestSecond (0.01s)\n--- PASS: TestThird (0.01s)\nPASS'
+echo 'OWNER_TEST_OUTPUT_GATE_PASS positive=1 negative=9'
 
 # These are tests of report admission, never measured coverage evidence.
 scratch="$(mktemp -d)"
@@ -67,13 +70,22 @@ case_output missing_profile fail "$complete"
 FAKE_COPY_EXIT=0
 case_output skipped_report fail $'--- SKIP: TestFirst (0.00s)\nPASS'
 [[ ! -e "$scratch/profiles/dummy.test-6.out" ]]
+FAKE_PROFILE=$'mode: atomic\nnot-a-go-source-location 1 1'
+case_output malformed_location fail "$complete"
+FAKE_PROFILE=$'mode: atomic\nexample.invalid/fixture.go:2.1,1.2 1 1'
+case_output reversed_location fail "$complete"
+FAKE_PROFILE=$'mode: atomic\nexample.invalid/fixture.go:0.1,1.2 1 1'
+case_output zero_coordinate fail "$complete"
+FAKE_PROFILE=$'mode: atomic\nexample.invalid/fixture.go:1.1,1.2 0 1'
+case_output no_measured_statements fail "$complete"
+[[ "$(find "$scratch/profiles" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')" == 1 ]]
 coverage_enabled=no
-echo 'OWNER_COVERAGE_ADMISSION_GATE_PASS positive=1 negative=5'
+echo 'OWNER_COVERAGE_ADMISSION_GATE_PASS positive=1 negative=9'
 
 # Compare the declared discovery inventory against native Go selection before
 # starting any disposable Docker stage. Retain the explicit reviewed allowlist.
-pattern="$(sed -n "s@^  /agent02/bin/dsh-discovery.test '\([^']*\)' '\([^']*\)'.*@\1@p" "$script")"
-expected="$(sed -n "s@^  /agent02/bin/dsh-discovery.test '\([^']*\)' '\([^']*\)'.*@\2@p" "$script")"
+pattern="$discovery_pattern"
+expected="$discovery_expected"
 [[ -n "$pattern" && -n "$expected" && "$pattern" != *$'\n'* && "$expected" != *$'\n'* ]] || {
   echo "Missing or ambiguous discovery test selection" >&2
   exit 1
@@ -90,7 +102,6 @@ echo 'DISCOVERY_OWNER_TEST_INVENTORY_PASS'
 
 
 # Exact snapshot admission is separate from actual PostgreSQL proof.
-source <(sed -n '/^assert_wlt_snapshot_equal() {/,/^}/p' "$script")
 declare -f assert_wlt_snapshot_equal >/dev/null
 original="$scratch/wlt-source.jsonl"
 restored="$scratch/wlt-restored.jsonl"
