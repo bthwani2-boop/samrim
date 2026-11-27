@@ -5,6 +5,11 @@ import { ActivityIndicator, Platform, Pressable, SafeAreaView, Text, View } from
 import MapView, { type MapPressEvent, Marker, PROVIDER_GOOGLE } from "react-native-maps";
 
 type Coordinate = Readonly<{ latitude: number; longitude: number }>;
+type Selection =
+  | { kind: "idle" }
+  | { kind: "locating"; timer: ReturnType<typeof setTimeout> }
+  | { kind: "selected"; pin: Coordinate }
+  | { kind: "failed"; message: string };
 
 const SANAA_REGION = {
   latitude: 15.3694,
@@ -12,6 +17,7 @@ const SANAA_REGION = {
   latitudeDelta: 0.025,
   longitudeDelta: 0.025,
 } as const;
+const LOCATION_DEADLINE_MS = 15000;
 
 function validCoordinate(coordinate: Coordinate) {
   return Number.isFinite(coordinate.latitude) && Number.isFinite(coordinate.longitude)
@@ -22,70 +28,75 @@ export default function AddressEditor({ onSelect }: Readonly<{ onSelect?: (pin: 
   const { theme } = useMobileAppearance();
   const map = React.useRef<MapView>(null);
   const mounted = React.useRef(true);
-  const request = React.useRef(0);
-  const locating = React.useRef(false);
-  const [pin, setPin] = React.useState<Coordinate | null>(null);
-  const [busy, setBusy] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
+  const current = React.useRef<Selection>({ kind: "idle" });
+  const [selection, setSelection] = React.useState<Selection>(current.current);
 
   React.useEffect(() => {
     mounted.current = true;
-    return () => { mounted.current = false; request.current++; locating.current = false; };
+    return () => {
+      mounted.current = false;
+      if (current.current.kind === "locating") clearTimeout(current.current.timer);
+      current.current = { kind: "idle" };
+    };
   }, []);
 
-  const chooseOnMap = (event: MapPressEvent) => {
-    const coordinate = event.nativeEvent.coordinate;
-    if (validCoordinate(coordinate)) {
-      // A manual choice supersedes an outstanding device-location request.
-      request.current++;
-      locating.current = false;
-      setBusy(false);
-      setPin({ latitude: coordinate.latitude, longitude: coordinate.longitude });
-      setError(null);
-    }
-  };
+  function transition(next: Selection) {
+    if (!mounted.current) return;
+    if (current.current.kind === "locating") clearTimeout(current.current.timer);
+    current.current = next;
+    setSelection(next);
+  }
 
-  const locate = async () => {
-    if (locating.current || !mounted.current) return;
-    locating.current = true;
-    const current = ++request.current;
-    const isCurrent = () => mounted.current && request.current === current;
-    setError(null);
-    setBusy(true);
+  function chooseOnMap(event: MapPressEvent) {
+    const { latitude, longitude } = event.nativeEvent.coordinate;
+    const coordinate = { latitude, longitude };
+    if (validCoordinate(coordinate)) transition({ kind: "selected", pin: coordinate });
+  }
+
+  async function locate() {
+    if (!mounted.current || current.current.kind === "locating") return;
+    const attempt: Selection = {
+      kind: "locating",
+      timer: setTimeout(() => {
+        if (current.current === attempt) {
+          transition({ kind: "failed", message: "انتهت مهلة تحديد الموقع. حاول مجددًا أو اختر النقطة يدويًا." });
+        }
+      }, LOCATION_DEADLINE_MS),
+    };
+    transition(attempt);
+    const isCurrent = () => mounted.current && current.current === attempt;
+    const fail = (message: string) => {
+      if (isCurrent()) transition({ kind: "failed", message });
+    };
     try {
-      const serviceEnabled = await Location.hasServicesEnabledAsync();
+      const enabled = await Location.hasServicesEnabledAsync();
       if (!isCurrent()) return;
-      if (!serviceEnabled) {
-        setError("خدمات الموقع متوقفة على الجهاز. فعّلها ثم حاول مجددًا.");
+      if (!enabled) {
+        fail("خدمات الموقع متوقفة على الجهاز. فعّلها ثم حاول مجددًا.");
         return;
       }
       const permission = await Location.requestForegroundPermissionsAsync();
       if (!isCurrent()) return;
       if (permission.status !== "granted") {
-        setError("لم يتم منح إذن الموقع. يمكنك اختيار النقطة يدويًا على الخريطة.");
+        fail("لم يتم منح إذن الموقع. يمكنك اختيار النقطة يدويًا على الخريطة.");
         return;
       }
-      const result = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced,
-      });
-      const coordinate = {
-        latitude: result.coords.latitude,
-        longitude: result.coords.longitude,
-      };
+      const result = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       if (!isCurrent()) return;
-      if (!validCoordinate(coordinate)) {
-        setError("تعذر تحديد موقع صالح. اختر النقطة يدويًا.");
+      const pin = { latitude: result.coords.latitude, longitude: result.coords.longitude };
+      if (!validCoordinate(pin)) {
+        fail("تعذر تحديد موقع صالح. اختر النقطة يدويًا.");
         return;
       }
-      setPin(coordinate);
-      map.current?.animateToRegion({ ...coordinate, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
+      transition({ kind: "selected", pin });
+      map.current?.animateToRegion({ ...pin, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 300);
     } catch {
-      if (isCurrent()) setError("تعذر قراءة GPS حاليًا. تحقق من الإذن وإشارة الموقع أو اختر النقطة يدويًا.");
-    } finally {
-      if (isCurrent()) { locating.current = false; setBusy(false); }
+      fail("تعذر قراءة GPS حاليًا. تحقق من الإذن وإشارة الموقع أو اختر النقطة يدويًا.");
     }
-  };
+  }
 
+  const pin = selection.kind === "selected" ? selection.pin : null;
+  const busy = selection.kind === "locating";
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <View style={{ flex: 1, padding: 14, gap: 12 }}>
@@ -110,16 +121,17 @@ export default function AddressEditor({ onSelect }: Readonly<{ onSelect?: (pin: 
             {pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}
           </Text>
         ) : <Text style={{ color: theme.colorSecondary }}>لم تُحدّد نقطة بعد.</Text>}
-        {error ? (
+        {selection.kind === "failed" ? (
           <Text accessibilityRole="alert" testID="address-location-error" style={{ color: theme.dangerText }}>
-            {error}
+            {selection.message}
           </Text>
         ) : null}
         <Pressable accessibilityRole="button" testID="address-location-request" onPress={() => { void locate(); }}
           disabled={busy} style={{ borderWidth: 1, borderColor: theme.borderColor, backgroundColor: theme.actionSoft, padding: 15, borderRadius: 12, alignItems: "center" }}>
           {busy ? <ActivityIndicator color={theme.interactiveText} /> : <Text style={{ color: theme.interactiveText }}>استخدام موقعي الحالي</Text>}
         </Pressable>
-        {onSelect && pin ? <Pressable accessibilityRole="button" onPress={() => onSelect(pin)}
+        {onSelect && pin ? <Pressable accessibilityRole="button" testID="address-location-confirm"
+          onPress={() => { if (mounted.current && current.current === selection) onSelect(pin); }}
           style={{ minHeight: 44, padding: 12, backgroundColor: theme.actionSoft }}>
           <Text style={{ color: theme.interactiveText }}>استخدام النقطة المحددة</Text>
         </Pressable> : null}
