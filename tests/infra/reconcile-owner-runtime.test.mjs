@@ -33,8 +33,10 @@ test("reconciler reuses the pinned Go resolver and guards its source", async () 
   const { readFileSync } = await import("node:fs");
   const runner = readFileSync(new URL("../../tools/dev/docker/reconcile-owner-runtime.mjs", import.meta.url), "utf8");
   const watcher = readFileSync(new URL("../../tools/dev/sync-lenovo-source.mjs", import.meta.url), "utf8");
-  assert.match(runner, /import \{ resolvePinnedGo \} from "\.\.\/check-go\.mjs"/);
+  assert.match(runner, /import \{ admitNativeGoTests, resolvePinnedGo \} from "\.\.\/check-go\.mjs"/);
   assert.match(runner, /const goExecutable=resolvePinnedGo\(pin,testEnv\)/);
+  assert.match(runner, /const outcome=admitNativeGoTests\(go.stdout\|\|""\)/);
+  assert.doesNotMatch(runner, /readFileSync\(resolve\(root,"\.go-version"\)/);
   assert.match(runner, /spawnSync\(goExecutable,\["test"/);
   assert.match(runner.match(/const guardedScope = \[[^\n]+/)[0], /tools\/dev\/check-go\.mjs/);
   assert.match(watcher.match(/const runtimeScope = \[[\s\S]*?\];/)[0], /tools\/dev\/check-go\.mjs/);

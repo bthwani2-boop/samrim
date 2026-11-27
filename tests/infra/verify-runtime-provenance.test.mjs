@@ -171,11 +171,11 @@ test("one committed candidate checks all three actual owner names and rechecks t
     assert.ok(status.includes("--untracked-files=all"));
     assert.ok(status.includes("-z"));
     assert.ok(status.includes("--no-renames"));
-    assert.deepEqual(status.slice(-4), [...ownerNames.map(o => "services/" + o), "infra/compose.yaml"]);
+    assert.deepEqual(status.slice(status.indexOf("--")+1), ["services/dsh", ".go-version", "services/identity", "services/wlt", "infra/compose.yaml"]);
   }
   const diffs = calls.filter(c => c[0] === "git" && c[1] === "diff");
   assert.equal(diffs.length, 3);
-  assert.deepEqual(diffs.map(d => d.at(-1)), ownerNames.map(o => "services/" + o));
+  assert.deepEqual(diffs.map(d => d.slice(d.indexOf("--")+1)), ownerNames.map(o => ["services/" + o, ".go-version"]));
   assert.ok(diffs.every(d => d.includes("-z") && d.includes("--no-renames")));
 });
 
@@ -239,7 +239,7 @@ test("unknown or contradictory image provenance and previews fail closed", () =>
     { revision: "worktree-" + "f".repeat(64), source: "", previewBase: head, previewDigest: "f".repeat(64) },
   ]) rejectOwner({ images: { dsh: changes } });
   const { calls } = run({ images: { dsh: { revision: "unsafe", source: "" } } });
-  assert.ok(!calls.some(c => c[0] === "git" && c[1] === "diff" && c.at(-1) === "services/dsh"));
+  assert.ok(!calls.some(c => c[0] === "git" && c[1] === "diff" && c.includes("services/dsh")));
 });
 
 test("a healthy-looking foreign container and wrong WLT capability are rejected", () => {
@@ -408,4 +408,7 @@ test("seed preflight refuses foreign live database binding and network even if i
     assert.equal(checked.passed, false);
     assert.equal(checked.seedTarget, undefined);
   }
+});
+test("shared Go pin changes invalidate each serving owner",()=>{
+  for(const owner of ownerNames)rejectOwner({changes:{[owner]:[".go-version"]}},owner,"owner source changed");
 });

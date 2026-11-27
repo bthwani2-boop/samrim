@@ -9,7 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { containsLikelySecret } from "../security/verify-secrets.mjs";
-import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
+import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope, previewChangeKey } from "./docker/owner-preview-source.mjs";
 import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -572,7 +572,7 @@ function reconcile() {
 // Reuse the existing scheduled watcher; no second watcher or Docker daemon.
 // Backend source is built from Surface, not copied into the app-only mirror.
 const runtimeScope = [
-  "services/identity", "services/dsh", "services/wlt", ".go-version",
+  ...new Set(["identity","dsh","wlt"].flatMap(ownerSourceScope)),
   ...ownerComposeInputs, "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/compose-runtime-transition.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1", "tools/dev/provision-wlt-test-db.ps1",
   "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
   "tools/dev/check-go.mjs", "tools/dev/dev.ps1", "tools/dev/dev-resource-admission.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"

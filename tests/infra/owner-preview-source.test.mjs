@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { captureCommittedOwner, captureOwner, digestEntries, dirtyPaths, isPreviewGoPath, materializeOwner, previewChangeKey, verifyMaterializedOwner } from "../../tools/dev/docker/owner-preview-source.mjs";
+import { captureCommittedOwner, captureOwner, digestEntries, dirtyPaths, isPreviewGoPath, materializeOwner, ownerSourceScope, ownerSourceState, previewChangeKey, snapshotGoVersion, verifyMaterializedOwner } from "../../tools/dev/docker/owner-preview-source.mjs";
 
 const exe=process.platform==="win32"?"C:\\Program Files\\Git\\cmd\\git.exe":"/usr/bin/git";
 function fixture(t){
@@ -21,6 +21,7 @@ function fixture(t){
   write(base+"backend/cmd/dsh/main.go","package main\n");
   write(base+"database/schema/00.sql","SELECT 1;\n");
   write("services/identity/database/schema/20_sessions.sql","SELECT 1;\n");
+  write(".go-version","1.27.4\n");
   write(".gitignore",".env\n");
   git("add",".");git("-c","user.name=Preview Test","-c","user.email=preview@example.invalid","commit","-qm","fixture");
   return {dir,git,write,base};
@@ -131,4 +132,55 @@ test("committed owner snapshot uses Git objects, never ignored or hidden working
   fs.writeFileSync(path.resolve(staged.dir,"../identity/database/schema/extra.sql"),"SELECT 2;");
   assert.throws(()=>verifyMaterializedOwner(staged.dir,snap),/SNAPSHOT_MUTATED/);
   assert.throws(()=>captureCommittedOwner(dir,"dsh","HEAD"),/COMMITTED_REVISION_INVALID/);
+});
+
+test("committed source identity includes immutable Go pin and DSH peer test inputs", t => {
+  const {dir,git,write}=fixture(t);
+  const commit=message=>{
+    git("add",".");
+    git("-c","user.name=Preview Test","-c","user.email=preview@example.invalid","commit","-qm",message);
+    return git("rev-parse","HEAD").toString().trim();
+  };
+  const first=git("rev-parse","HEAD").toString().trim();
+  const before=captureCommittedOwner(dir,"dsh",first);
+  write(".go-version","1.27.5\n");
+  const second=commit("new pin");
+  const changedPin=captureCommittedOwner(dir,"dsh",second);
+  assert.notEqual(changedPin.digest,before.digest,"pin is part of snapshot identity");
+  for(const owner of ["dsh","identity","wlt"]){
+    const paths=git("diff","--name-only","-z",first,second,"--",...ownerSourceScope(owner)).toString().split("\0").filter(Boolean);
+    assert.deepEqual(ownerSourceState(owner,[],paths).imageChanges,[".go-version"]);
+  }
+  write("services/identity/database/schema/20_sessions.sql","SELECT 2;\n");
+  const third=commit("peer test schema");
+  const changedPeer=captureCommittedOwner(dir,"dsh",third);
+  assert.notEqual(changedPeer.digest,changedPin.digest,"peer test inputs are part of snapshot identity");
+  write(".go-version","9.9.9\n");
+  const staged=materializeOwner(before);
+  t.after(staged.dispose);
+  const pin=path.resolve(staged.dir,"../../.go-version");
+  const peer=path.resolve(staged.dir,"../identity/database/schema/20_sessions.sql");
+  assert.equal(snapshotGoVersion(before),"1.27.4");
+  assert.equal(fs.readFileSync(pin,"utf8"),"1.27.4\n");
+  assert.doesNotThrow(()=>verifyMaterializedOwner(staged.dir,before));
+  fs.writeFileSync(pin,"9.9.9\n");
+  assert.throws(()=>verifyMaterializedOwner(staged.dir,before),/SNAPSHOT_MUTATED/);
+  fs.writeFileSync(pin,before.pin);
+  fs.writeFileSync(peer,"SELECT 3;\n");
+  assert.throws(()=>verifyMaterializedOwner(staged.dir,before),/SNAPSHOT_MUTATED/);
+});
+test("preview refuses a mutable shared toolchain pin", t => {
+  const {dir,write}=fixture(t);
+  write(".go-version","1.27.5\n");
+  assert.throws(()=>captureOwner(dir,"dsh"),/PREVIEW_ONLY_GO_SOURCE_ALLOWED/);
+});
+test("preview derives pin, build and peer inputs from committed objects even if hidden locally",t=>{
+  const {dir,git,write,base}=fixture(t);
+  const before=captureOwner(dir,"dsh");
+  git("update-index","--assume-unchanged",".go-version",base+"backend/Dockerfile","services/identity/database/schema/20_sessions.sql");
+  write(".go-version","9.9.9\n");
+  write(base+"backend/Dockerfile","FROM scratch\n");
+  write("services/identity/database/schema/20_sessions.sql","SELECT 9;\n");
+  assert.equal(captureOwner(dir,"dsh").digest,before.digest);
+  assert.equal(snapshotGoVersion(captureOwner(dir,"dsh")),"1.27.4");
 });

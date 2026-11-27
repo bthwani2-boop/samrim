@@ -6,11 +6,11 @@ import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolvePinnedGo } from "../check-go.mjs";
+import { admitNativeGoTests, resolvePinnedGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, recordRuntimePhase, runtimeAttemptPhase, runtimeFailureStatus, runtimeReceiptStatus, runtimeTerminalStatus, VerifiedRuntimeRollback } from "../sync-lenovo-reconciliation.mjs";
 import { reconcileComposeConfiguration } from "./compose-runtime-transition.mjs";
 import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope, wltCommandRoleInactiveSQL } from "./owner-baseline-transition.mjs";
-import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
+import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope, ownerSourceState, ownerTestScope, ownerToolchainInput, previewChangeKey, snapshotGoVersion, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const context = "bthwani-docker";
@@ -137,7 +137,8 @@ export function ownerBuildPlan(owner, head, tag, service, digest = null) {
   };
 }
 function buildOwnerImage(owner, head, tag, service, snapshot) {
-  const pin = readFileSync(resolve(root,".go-version"),"utf8").trim();
+  verifyMaterializedOwner(service,snapshot);
+  const pin = snapshotGoVersion(snapshot);
   const file = resolve(service,"backend","Dockerfile");
   if (!readFileSync(file,"utf8").split(/\r?\n/).some(line =>
     line.startsWith("FROM golang:"+pin+"-alpine@sha256:") && /@sha256:[0-9a-f]{64} AS build$/.test(line)))
@@ -149,7 +150,7 @@ function buildOwnerImage(owner, head, tag, service, snapshot) {
     verifyMaterializedOwner(service,snapshot);
     if(preview){
       if(captureOwner(root,owner).digest!==snapshot.digest)throw new Error("Preview input changed during build: "+owner);
-    }else if(dirtyPaths(root, ["services/"+owner, ".go-version", ...ownerComposeInputs,
+    }else if(dirtyPaths(root, [...ownerTestScope(owner), ...ownerComposeInputs,
       "tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/docker/owner-preview-source.mjs"]).length){
       throw new Error("Owner or shared build input is not committed");
     }
@@ -169,7 +170,7 @@ function buildOwnerImage(owner, head, tag, service, snapshot) {
   return image;
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services",...ownerComposeInputs,"tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/compose-runtime-transition.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",".go-version"];
+const guardedScope = ["services",...ownerComposeInputs,"tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/compose-runtime-transition.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",ownerToolchainInput];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -207,7 +208,7 @@ export function verifyBaselineProofOutput(output) {
     if(evidence.length!==1 || !(evidence[0]===name+"=PASS" || evidence[0].startsWith(name+"=PASS "))) throw new Error("BASELINE_PROOF_INCOMPLETE "+name);
   }
 }
-const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","services/dsh/backend/internal/dbscope","services/dsh/backend/go.mod","services/dsh/backend/go.sum","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",".go-version","tools/dev/docker/owner-baseline-transition.mjs","infra/compose.yaml"];
+const baselineProofScope=["services/identity/database","services/dsh/database","services/wlt/database","services/dsh/backend/internal/dbscope","services/dsh/backend/go.mod","services/dsh/backend/go.sum","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",ownerToolchainInput,"tools/dev/docker/owner-baseline-transition.mjs","infra/compose.yaml"];
 function rebaseAndApply(owner,state,env,head,tag,targetId,ensureSource) {
   const old=state[owner], live=asEnv(old.Config.Env);
   const schema=assertOwnerDatabase(owner,live).schema;
@@ -532,7 +533,7 @@ function main() {
   const committed={};
   for(const o of Object.keys(owners)){
     git(["merge-base","--is-ancestor",revisions[o].revision,head]);
-    committed[o]=git(["diff","--name-only","--no-renames",revisions[o].revision,head,"--","services/"+o]).split(/\r?\n/).filter(Boolean);
+    committed[o]=git(["diff","--name-only","--no-renames","-z",revisions[o].revision,head,"--",...ownerSourceScope(o)]).split("\0").filter(Boolean);
   }
   const preview=mode==="--apply-preview" || !apply;
   const change=currentChangeKey(committed,preview,captain,wltConfigDrift);
@@ -615,18 +616,20 @@ function main() {
     const staged=materializeOwner(snapshot);
     try {
       const service=staged.dir;
-      const pin=readFileSync(resolve(root,".go-version"),"utf8").trim();
+      verifyMaterializedOwner(service,snapshot);
+      const pin=snapshotGoVersion(snapshot);
       const testEnv={...isolatedTestEnv(process.env),GOWORK:"off"};
       const goExecutable=resolvePinnedGo(pin,testEnv);
       const go=spawnSync(goExecutable,["test","-json","-count=1","./..."],{cwd:resolve(service,"backend"),encoding:"utf8",windowsHide:true,timeout:120000,maxBuffer:16*1024*1024,env:testEnv});
-      if(go.status!==0){
+      if(go.error||go.signal||go.status!==0){
         const names=[];
         for(const line of (go.stdout||"").split(/\r?\n/)){
           try{const event=JSON.parse(line);if(event.Action==="fail" && /^[A-Za-z0-9_/.+-]+$/.test(event.Package||"") && (!event.Test||/^[A-Za-z0-9_/.+-]+$/.test(event.Test)))names.push(event.Package+(event.Test?":"+event.Test:""));}catch{}
         }
         throw new Error("Owner tests failed: "+o+" "+(go.error?.code||go.status)+" "+names.slice(0,15).join(","));
       }
-      console.log("OWNER_TEST_PASS "+o);
+      const outcome=admitNativeGoTests(go.stdout||"");
+      console.log("OWNER_TEST_PASS "+o+" tests="+outcome.passed+" skipped="+outcome.skipped);
       if(activeAttempt)assertUnusedBuildTag(owners[o].image+":"+tag);
       const image=buildOwnerImage(o,head,tag,service,snapshot);
       targetIds[o]=image.Id;

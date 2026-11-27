@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 import { readVerifiedFile } from "../source-snapshot.mjs";
 import { verifyLiveDefinition } from './compose-runtime-transition.mjs';
-import { isOwnerNonRuntimePath, sourceIdentity } from "./owner-preview-source.mjs";
+import { isOwnerNonRuntimePath, ownerComposeInputs, ownerSourceScope, sourceIdentity } from "./owner-preview-source.mjs";
 import { assertOwnerDatabase, composeFileNames } from './reconcile-owner-runtime.mjs';
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -216,7 +216,7 @@ function readRuntimeModel(docker, composeSource, seed = false) {
 }
 
 function ownerScope(owner, preflight) {
-  return ["services/" + owner, ...(preflight ? ["infra/compose.yaml"] : [])];
+  return [...ownerSourceScope(owner), ...(preflight ? ownerComposeInputs : [])];
 }
 
 const inScope = (path, paths) => paths.some(base => path === base || path.startsWith(base + "/"));
@@ -227,7 +227,7 @@ function sourceWindow(execute, preflight) {
   if (!sha.test(head) || (preflight && (!branch || branch === "main" || branch.startsWith("archive/")))) {
     throw new Error("source candidate not verified");
   }
-  const paths = [...new Set([...owners.flatMap(owner => ownerScope(owner, preflight)), "infra/compose.yaml"])];
+  const paths = [...new Set([...owners.flatMap(owner => ownerScope(owner, preflight)), ...ownerComposeInputs])];
   const dirty = new Set();
   for (const record of execute("git", ["status", "--porcelain=v1", "-z", "--no-renames", "--untracked-files=all", "--", ...paths]).split("\0").filter(Boolean)) {
     if (!/^[ MADRCU?!][ MADRCU?!] /.test(record)) throw new Error("invalid owner source status");

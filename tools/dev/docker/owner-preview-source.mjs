@@ -12,11 +12,21 @@ const owners=Object.freeze(["dsh","identity","wlt"]);
 const gitExe=process.platform==="win32"?"C:\\Program Files\\Git\\cmd\\git.exe":"/usr/bin/git";
 const goFile=/^backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
 const schemaFile=/^database\/schema\/[A-Za-z0-9_-]+\.sql$/;
-const workspaceFiles=new Set(["package.json","tsconfig.json","README.md","backend/README.md"]);
+const workspaceFiles=new Set(["package.json","tsconfig.json","README.md","backend/README.md","backend/project.json"]);
 const buildFiles=new Set([".dockerignore","backend/Dockerfile","backend/go.mod","backend/go.sum"]);
 const compare=(a,b)=>a<b?-1:a>b?1:0;
 
 export const ownerComposeInputs=Object.freeze(["infra/compose.yaml"]);
+export const ownerToolchainInput=".go-version";
+const peerScope="services/identity/database/schema";
+
+export function ownerSourceScope(owner) {
+  if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
+  return ["services/"+owner,ownerToolchainInput];
+}
+export function ownerTestScope(owner) {
+  return [...ownerSourceScope(owner),...(owner==="dsh"?[peerScope]:[])];
+}
 
 function classify(rel) {
   const match=/^services\/(dsh|identity|wlt)\/(.+)$/.exec(rel);
@@ -154,14 +164,13 @@ function snapshotInput(file) {
   return buildFiles.has(file)||goFile.test(file)||schemaFile.test(file);
 }
 function scopeFor(owner) {
-  if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
-  const prefix="services/"+owner+"/";
-  return [prefix+".dockerignore",prefix+"backend",prefix+"database/schema"];
+  const [service,pin]=ownerSourceScope(owner);
+  return [service+"/.dockerignore",service+"/backend",service+"/database/schema",pin,...(owner==="dsh"?[peerScope]:[])];
 }
 function ownerInput(owner,rel) {
   const info=classify(rel);
   if(info.owner!==owner)throw new Error("PREVIEW_PATH_INVALID");
-  if(info.kind==="workspace"||info.file==="backend/project.json")return null;
+  if(info.kind==="workspace")return null;
   if(!snapshotInput(info.file))throw new Error("PREVIEW_UNREVIEWED_BUILD_INPUT");
   pathParts(rel);
   return info.file;
@@ -173,37 +182,61 @@ function checkedEntries(entries) {
     throw new Error("PREVIEW_BUILD_INPUT_MISSING");
   return entries.sort(([a],[b])=>compare(a,b));
 }
-const peerScope="services/identity/database/schema";
 function checkedPeer(rel) {
   if(!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))
     throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
   pathParts(rel);
   return rel;
 }
-function assemble(owner,entries,peers,revision=null) {
+export function snapshotGoVersion(snapshot) {
+  const pin=Buffer.isBuffer(snapshot.pin)?snapshot.pin.toString("utf8").trim():"";
+  if(!/^\d+\.\d+\.\d+$/.test(pin))throw new Error("COMMITTED_GO_PIN_INVALID");
+  return pin;
+}
+function snapshotRootEntries(snapshot) {
+  const {owner,entries,peers=[]}=snapshot;
+  ownerSourceScope(owner);
+  const prefix="services/"+owner+"/";
+  for(const [rel,bytes] of entries){
+    if(!snapshotInput(rel)||!Buffer.isBuffer(bytes))throw new Error("PREVIEW_PATH_INVALID");
+    pathParts(rel);
+  }
   checkedEntries(entries);
-  return {owner,revision,digest:digestEntries(entries),entries,peers};
+  if(owner!=="dsh"&&peers.length)throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
+  if(owner==="dsh"&&!peers.length)throw new Error("PREVIEW_PEER_SCHEMA_MISSING");
+  for(const [rel,bytes] of peers){
+    checkedPeer(rel);
+    if(!Buffer.isBuffer(bytes))throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
+  }
+  snapshotGoVersion(snapshot);
+  const files=[[ownerToolchainInput,snapshot.pin],...entries.map(([rel,bytes])=>[prefix+rel,bytes]),...peers];
+  if(new Set(files.map(([rel])=>rel.toLowerCase())).size!==files.length)
+    throw new Error("PREVIEW_PATH_COLLISION");
+  return files;
+}
+function assemble(owner,entries,peers,pin,revision=null) {
+  const snapshot={owner,revision,entries,peers,pin};
+  return {...snapshot,digest:digestEntries(snapshotRootEntries(snapshot))};
+}
+function headRevision(root) {
+  return gitList(root,["rev-parse","HEAD"])[0]?.trim();
 }
 export function captureOwner(root,owner) {
-  const scope=scopeFor(owner);
-  const changes=dirtyPaths(root,["services/"+owner]);
+  const head=headRevision(root);
+  const changes=dirtyPaths(root,ownerSourceScope(owner));
   if(changes.some(rel=>!isPreviewGoPath(rel)&&!isOwnerNonRuntimePath(rel)))
     throw new Error("PREVIEW_ONLY_GO_SOURCE_ALLOWED");
-  const files=[...new Set(gitList(root,["ls-files","--cached","--others","--exclude-standard","-z","--",...scope]))].sort(compare);
-  const entries=[];
-  for(const rel of files){
+  if(owner==="dsh"&&dirtyPaths(root,[peerScope]).length)throw new Error("PREVIEW_PEER_SCHEMA_CHANGED");
+  const base=captureCommittedOwner(root,owner,head);
+  const entries=new Map(base.entries);
+  for(const rel of changes.filter(isPreviewGoPath)){
     const file=ownerInput(owner,rel);
-    if(file===null)continue;
-    const bytes=safeRead(root,rel,changes.includes(rel));
-    if(bytes!==null)entries.push([file,bytes]);
+    const bytes=safeRead(root,rel,true);
+    if(bytes===null)entries.delete(file);
+    else entries.set(file,bytes);
   }
-  const peers=[];
-  if(owner==="dsh"){
-    if(dirtyPaths(root,[peerScope]).length)throw new Error("PREVIEW_PEER_SCHEMA_CHANGED");
-    for(const rel of gitList(root,["ls-files","--cached","-z","--",peerScope]))
-      peers.push([checkedPeer(rel),safeRead(root,rel)]);
-  }
-  return assemble(owner,entries,peers);
+  if(headRevision(root)!==head)throw new Error("PREVIEW_HEAD_CHANGED");
+  return assemble(owner,[...entries],base.peers,base.pin);
 }
 // Committed builds must never read mutable working-tree files, including
 // files hidden by ignore rules or assume-unchanged. Read the exact tree and
@@ -212,20 +245,20 @@ export function captureCommittedOwner(root,owner,revision) {
   if(!/^[a-f0-9]{40}$/.test(revision||""))throw new Error("COMMITTED_REVISION_INVALID");
   const scope=scopeFor(owner);
   const requested=[];
-  for(const record of gitList(root,["ls-tree","-r","-z",revision,"--",...scope,...(owner==="dsh"?[peerScope]:[])])){
+  for(const record of gitList(root,["ls-tree","-r","-z",revision,"--",...scope])){
     const match=/^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(record);
     if(!match)throw new Error("COMMITTED_TREE_MODE_INVALID");
     const [, ,oid,rel]=match;
-    const peer=owner==="dsh"&&rel.startsWith(peerScope+"/");
-    const file=peer?checkedPeer(rel):ownerInput(owner,rel);
-    if(file!==null)requested.push({oid,file,peer});
+    const kind=rel===ownerToolchainInput?"pin":owner==="dsh"&&rel.startsWith(peerScope+"/")?"peer":"owner";
+    const file=kind==="pin"?rel:kind==="peer"?checkedPeer(rel):ownerInput(owner,rel);
+    if(file!==null)requested.push({oid,file,kind});
   }
   if(!requested.length)throw new Error("COMMITTED_TREE_EMPTY");
   const raw=execFileSync(gitExe,["cat-file","--batch"],{cwd:root,encoding:null,windowsHide:true,
     input:requested.map(x=>x.oid+"\n").join(""),timeout:30000,maxBuffer:64*1024*1024});
-  let cursor=0;
+  let cursor=0,pin;
   const entries=[],peers=[];
-  for(const {oid,file,peer} of requested){
+  for(const {oid,file,kind} of requested){
     const end=raw.indexOf(10,cursor);
     if(end<0)throw new Error("COMMITTED_BLOB_HEADER_INVALID");
     const header=/^([a-f0-9]{40}) blob ([0-9]+)$/.exec(raw.subarray(cursor,end).toString("ascii"));
@@ -235,11 +268,12 @@ export function captureCommittedOwner(root,owner,revision) {
       throw new Error("COMMITTED_BLOB_SIZE_INVALID");
     const bytes=raw.subarray(end+1,end+1+size);
     if(bytes.includes(0)||containsLikelySecret(bytes.toString("utf8")))throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
-    (peer?peers:entries).push([file,Buffer.from(bytes)]);
+    if(kind==="pin")pin=Buffer.from(bytes);
+    else (kind==="peer"?peers:entries).push([file,Buffer.from(bytes)]);
     cursor=end+2+size;
   }
   if(cursor!==raw.length)throw new Error("COMMITTED_BLOB_TRAILING_DATA");
-  return assemble(owner,entries,peers,revision);
+  return assemble(owner,entries,peers,pin,revision);
 }
 function materializedEntries(root) {
   const actual=[];
@@ -255,10 +289,9 @@ function materializedEntries(root) {
   return actual;
 }
 export function verifyMaterializedOwner(dir,snapshot) {
-  const prefix="services/"+snapshot.owner+"/";
   const root=path.resolve(dir,"../..");
-  const expected=[...snapshot.entries.map(([rel,bytes])=>[prefix+rel,bytes]),...(snapshot.peers||[])];
-  if(digestEntries(snapshot.entries)!==snapshot.digest||digestEntries(materializedEntries(root))!==digestEntries(expected))
+  const expected=snapshotRootEntries(snapshot);
+  if(digestEntries(expected)!==snapshot.digest||digestEntries(materializedEntries(root))!==snapshot.digest)
     throw new Error("PREVIEW_SNAPSHOT_MUTATED");
 }
 function writeEntry(root,rel,bytes) {
@@ -267,19 +300,13 @@ function writeEntry(root,rel,bytes) {
   fs.writeFileSync(file,bytes,{flag:"wx"});
 }
 export function materializeOwner(snapshot) {
-  scopeFor(snapshot.owner);
+  const files=snapshotRootEntries(snapshot);
+  if(digestEntries(files)!==snapshot.digest)throw new Error("PREVIEW_SNAPSHOT_MUTATED");
   const temp=fs.mkdtempSync(path.join(os.tmpdir(),"bthwani-owner-preview-"));
   const dir=path.join(temp,"services",snapshot.owner);
   const dispose=()=>fs.rmSync(temp,{recursive:true,force:true});
   try{
-    for(const [rel,bytes] of snapshot.entries){
-      if(!snapshotInput(rel))throw new Error("PREVIEW_PATH_INVALID");
-      writeEntry(dir,rel,bytes);
-    }
-    for(const [rel,bytes] of snapshot.peers||[]){
-      if(snapshot.owner!=="dsh")throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
-      writeEntry(temp,checkedPeer(rel),bytes);
-    }
+    for(const [rel,bytes] of files)writeEntry(temp,rel,bytes);
     verifyMaterializedOwner(dir,snapshot);
     return {dir,dispose};
   }catch(e){dispose();throw e;}
