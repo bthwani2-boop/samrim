@@ -58,21 +58,43 @@ for (const kind of ["modified", "staged", "untracked"]) {
   });
 }
 
-test("a graph changed by a post-commit hook remains queryable with unverified revision", () => {
-  const result = evaluateIndex(indexed, current, "hook-rewritten-graph");
-  assert.equal(result.queryable, true);
-  assert.equal(result.status, "INVALIDATED");
+test("unverified graph bytes are blocked even if the checkout identity is unchanged", () => {
+  const result = evaluateIndex(indexed, current, "foreign-graph");
+  assert.equal(result.queryable, false);
+  assert.equal(result.status, "BLOCKED");
   assert.match(result.reason, /graph changed/);
+  assert.equal(evaluateIndex(indexed, current, null).queryable, false);
 });
 
-test("combined source and graph changes preserve all coverage warnings", () => {
-  const result = evaluateIndex(indexed, { ...current, head: "next-commit", worktree: "dirty" }, "other-digest");
+test("source drift retains a verified graph but never admits a mismatched graph digest", () => {
+  const changed = { ...current, head: "next-commit", worktree: "dirty" };
+  const result = evaluateIndex(indexed, changed, "indexed-graph");
   assert.equal(result.queryable, true);
-  assert.match(result.reason, /graph changed/);
   assert.match(result.reason, /HEAD/);
   assert.match(result.reason, /local tracked/);
+  assert.equal(evaluateIndex(indexed, changed, "other-digest").queryable, false);
 });
 
+test("ambiguous native interruption retains ownership until reviewed recovery", async () => {
+  const runner = await import("./graphify-local.mjs");
+  const { mkdtempSync, existsSync, readFileSync, rmSync, readdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "graphify-ambiguous-native-"));
+  const lock = join(dir, "refresh.lock");
+  try {
+    const interruption = Object.assign(new Error("native timeout"), { preserveRefreshLock: true });
+    assert.throws(() => runner.withRefreshLock(lock, () => { throw interruption; }), /native timeout/);
+    assert.equal(existsSync(lock), true);
+    const bytes = readFileSync(lock);
+    assert.equal(JSON.parse(bytes).pid, process.pid);
+    assert.throws(() => runner.withScheduledRefreshLock(lock, () => assert.fail("second writer"), () => assert.fail("live owner must block")), /BLOCKED.*owner/);
+    assert.deepEqual(readFileSync(lock), bytes);
+    assert.deepEqual(readdirSync(dir), ["refresh.lock"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 test("tracked and untracked source bytes are admitted through one real-file boundary", async () => {
   const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, linkSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
@@ -177,7 +199,7 @@ test("reviewed lock recovery preserves evidence and refuses a live or changed lo
 
 test("a terminated lock owner leaves durable recovery evidence, without authorizing a concurrent writer", { timeout: 15000 }, async () => {
   const runner = await import("./graphify-local.mjs");
-  const { mkdtempSync, readFileSync, existsSync, rmSync } = await import("node:fs");
+  const { mkdtempSync, readFileSync, existsSync, rmSync, readdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { createHash } = await import("node:crypto");
@@ -200,9 +222,12 @@ test("a terminated lock owner leaves durable recovery evidence, without authoriz
     child.kill("SIGKILL");
     await closed;
     assert.equal(existsSync(lock), true);
-    const saved = runner.recoverRefreshLock(lock, hash, () => {});
-    assert.deepEqual(readFileSync(saved), bytes);
-    assert.equal(runner.withRefreshLock(lock, () => "recovered"), "recovered");
+    assert.throws(() => runner.withScheduledRefreshLock(lock, () => assert.fail("unverified native writer"), () => { throw new Error("BLOCKED: native writer"); }), /native writer/);
+    assert.deepEqual(readFileSync(lock), bytes);
+    assert.equal(runner.withScheduledRefreshLock(lock, () => "recovered", () => assert.ok(child.exitCode !== null || child.signalCode !== null)), "recovered");
+    assert.equal(existsSync(lock), false);
+    const saved = readdirSync(dir).find(name => name.startsWith("refresh.lock.recovered-"));
+    assert.deepEqual(readFileSync(join(dir, saved)), bytes);
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");
@@ -258,6 +283,15 @@ test("Git events never write the local index; the sole sync path reconciles chan
     git("commit", "-m", "fixture initial");
     cli(["refresh"]);
     const first = proof();
+    const publishedGraph = join(dir, "graphify-out", "graph.json");
+    const originalGraph = JSON.parse(readFileSync(publishedGraph, "utf8"));
+    originalGraph.nodes.push({ id: "foreignGraphFixture", label: "foreignGraphFixture", source_file: "foreign.ts" });
+    writeFileSync(publishedGraph, JSON.stringify(originalGraph));
+    assert.equal(JSON.parse(cli(["status"], 2)).status, "BLOCKED");
+    cli(["query", "foreignGraphFixture"], 2);
+    cli(["sync"]);
+    assert.ok(!JSON.parse(readFileSync(publishedGraph, "utf8")).nodes.some(n => n.id === "foreignGraphFixture"));
+    proof();
     const measured = JSON.parse(cli(["coverage", "example.ts"]));
     assert.equal(measured.coverage, "PASS");
     assert.equal(measured.coverageKind, "FILE_NODE_MEMBERSHIP_ONLY");

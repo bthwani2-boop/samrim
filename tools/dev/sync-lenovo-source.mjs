@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { containsLikelySecret } from "../security/verify-secrets.mjs";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
-import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, sourceChangeEvent, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";

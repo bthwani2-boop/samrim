@@ -1,8 +1,8 @@
-// Read the locally indexed graph even when Git has pending changes.
-// Provenance/coverage warnings never silently claim current-source proof.
+// Graphify is a local analysis index, never a source of business truth.
+// The sole scheduler invokes native sync; readers never rebuild.
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, realpathSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,22 +10,30 @@ import { forbiddenName } from "../security/verify-secrets.mjs";
 import { admittedPath, captureSourceSnapshot, readVerifiedFile, samePath, sha256 } from "./source-snapshot.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const graph = join(root, "graphify-out", "graph.json");
-const stamp = join(root, "graphify-out", "local-index-state.json");
-const lock = join(root, "graphify-out", ".local-refresh.lock");
-const candidate = join(root, "graphify-out", ".candidate");
+const outputDir = join(root, "graphify-out");
+const graph = join(outputDir, "graph.json");
+const stamp = join(outputDir, "local-index-state.json");
+const lock = join(outputDir, ".local-refresh.lock");
+const candidate = join(outputDir, ".candidate");
 const candidateGraph = join(candidate, "graph.json");
 const gitExe = process.platform === "win32" ? "git.exe" : "git";
 const graphifyExe = process.platform === "win32" ? "graphify.exe" : "graphify";
+const graphLimit = 64 * 1024 * 1024;
+const busyCode = "GRAPHIFY_REFRESH_LOCK_EXISTS";
 
 function execute(program, args, timeout = 30000, env = process.env) {
   const result = spawnSync(program, args, {
     cwd: root, env, encoding: "buffer", shell: false, windowsHide: true,
-    timeout, maxBuffer: 64 * 1024 * 1024,
+    timeout, maxBuffer: graphLimit,
   });
   if (result.error || result.status !== 0) {
     const message = result.error?.code || (result.stderr || Buffer.alloc(0)).toString("utf8").slice(0, 500);
-    throw new Error(program + " failed: " + (message || "exit " + result.status));
+    const failure = new Error(program + " failed: " + (message || "exit " + result.status));
+    // A terminated native launcher may leave Python descendants behind.
+    if (program === graphifyExe && (result.signal || ["ETIMEDOUT", "ENOBUFS"].includes(result.error?.code))) {
+      failure.preserveRefreshLock = true;
+    }
+    throw failure;
   }
   return result.stdout;
 }
@@ -34,38 +42,18 @@ function git(...args) {
   return execute(gitExe, args);
 }
 
-function gitString(...args) {
-  return git(...args).toString("utf8").trim();
-}
-
-function branchAndHead() {
-  const checkout = gitString("rev-parse", "--show-toplevel").replaceAll("\\", "/");
-  if (checkout.toLowerCase() !== root.replaceAll("\\", "/").toLowerCase()) {
-    throw new Error("BLOCKED: command must run against its own local checkout");
-  }
-  const branch = gitString("symbolic-ref", "--quiet", "--short", "HEAD");
-  if (branch.startsWith("archive/")) {
-    throw new Error("BLOCKED: historical archive is read-only");
-  }
-  return { branch, head: gitString("rev-parse", "HEAD") };
-}
-
 export function evaluateIndex(stored, current, graphHash) {
-  // Only trusted provenance can authorize reading the index for this checkout.
   const blocked = (reason) => ({ status: "BLOCKED", queryable: false, reason });
   if (stored?.version !== 1) return blocked("unverified local Graphify index");
   if (stored.repository !== current.repository) return blocked("indexed repository differs");
   if (stored.branch !== current.branch) return blocked("indexed branch differs");
+  if (!graphHash) return blocked("local graph file is absent");
+  if (stored.graphSha256 !== graphHash) return blocked("graph changed since last verified local stamp; revision is unverified");
   const gaps = [];
   if (current.unsafeTracked || current.unsafeUntracked) gaps.push("source paths require safe admission");
-  if (stored.graphSha256 !== graphHash) gaps.push("graph changed since last verified local stamp; revision is unverified");
   if (stored.head !== current.head) gaps.push("indexed HEAD differs from current HEAD");
   if (stored.worktree !== current.worktree) gaps.push("local tracked, staged or untracked changes are not proven indexed");
-  return {
-    status: gaps.length ? "INVALIDATED" : "PASS",
-    queryable: true,
-    reason: gaps.length ? gaps.join("; ") : null,
-  };
+  return { status: gaps.length ? "INVALIDATED" : "PASS", queryable: true, reason: gaps.length ? gaps.join("; ") : null };
 }
 
 function currentState() {
@@ -73,30 +61,26 @@ function currentState() {
   return state;
 }
 
-function graphHash() {
-  if (!existsSync(graph)) throw new Error("BLOCKED: local graph file is absent");
-  return sha256(readFileSync(graph));
+function readPublishedGraph() {
+  return readVerifiedFile(graph, graphLimit, { allowMissing: true })?.bytes ?? null;
 }
 
 function readStamp() {
-  try {
-    return JSON.parse(readFileSync(stamp, "utf8"));
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    throw new Error("BLOCKED: local Graphify index stamp is unreadable");
-  }
+  const record = readVerifiedFile(stamp, 65536, { allowMissing: true });
+  if (!record) return null;
+  try { return JSON.parse(record.bytes.toString("utf8")); }
+  catch { throw new Error("BLOCKED: local Graphify index stamp is unreadable"); }
 }
 
 function validate() {
   const current = currentState();
   const indexed = readStamp();
-  const graphDigest = graphHash();
+  const bytes = readPublishedGraph();
+  const graphDigest = bytes ? sha256(bytes) : null;
   return { current, indexed, graphDigest, assessment: evaluateIndex(indexed, current, graphDigest) };
 }
 
 export function planSync(indexed, current, graphDigest) {
-  // A previously initialized local repository is required. A branch mismatch
-  // authorizes a rebuild of this checkout, never a query against the old branch.
   if (indexed?.version !== 1) throw new Error("BLOCKED: unverified local Graphify index; explicit refresh required");
   if (indexed.repository !== current.repository) throw new Error("BLOCKED: indexed repository differs");
   if (current.unsafeTracked || current.unsafeUntracked) return "deferred";
@@ -105,25 +89,24 @@ export function planSync(indexed, current, graphDigest) {
 
 export function withRefreshLock(path, operation) {
   let descriptor;
-  try {
-    descriptor = openSync(path, "wx");
-  } catch (error) {
-    if (error.code === "EEXIST") throw new Error("BLOCKED: local Graphify refresh is already in progress or requires lock recovery");
+  try { descriptor = openSync(path, "wx"); }
+  catch (error) {
+    if (error.code === "EEXIST") {
+      throw Object.assign(new Error("BLOCKED: local Graphify refresh is already in progress or requires lock recovery"), { code: busyCode });
+    }
     throw error;
   }
+  let release = true;
   try {
     try {
-      // Keep a durable owner record: a crashed process no longer leaves an
-      // anonymous lock indistinguishable from a live refresh.
       writeFileSync(descriptor, JSON.stringify({ version: 1, pid: process.pid, startedAt: new Date().toISOString() }) + "\n");
       fsyncSync(descriptor);
-    } finally {
-      closeSync(descriptor);
-    }
+    } finally { closeSync(descriptor); }
     return operation();
-  } finally {
-    unlinkSync(path);
-  }
+  } catch (error) {
+    if (error?.preserveRefreshLock) release = false;
+    throw error;
+  } finally { if (release) unlinkSync(path); }
 }
 
 function inspectRefreshLock(path) {
@@ -142,8 +125,8 @@ function inspectRefreshLock(path) {
   return { digest, owner, identity: [stat.dev, stat.ino, stat.size, stat.mtimeNs, stat.birthtimeNs].map(String) };
 }
 
-// Recovery is a separate, explicitly reviewed operation by the sole local
-// coordinator. A dead PID alone is not sufficient: a native child can survive.
+// Recovery is a verified operation by the sole local
+// writer. A dead PID alone is not sufficient: a native child can survive.
 export function recoverRefreshLock(path, expectedDigest, assertNoWriters) {
   const initial = inspectRefreshLock(path);
   if (!/^[a-f0-9]{64}$/.test(expectedDigest) || initial.digest !== expectedDigest) {
@@ -196,42 +179,44 @@ function assertNoLocalGraphifyWriters() {
   execute("C:\\Program Files\\PowerShell\\7\\pwsh.exe", ["-NoProfile", "-NonInteractive", "-Command", script], 15000);
 }
 
+export function withScheduledRefreshLock(path, operation, assertNoWriters) {
+  try { return withRefreshLock(path, operation); }
+  catch (error) {
+    if (error.code !== busyCode) throw error;
+    const reviewed = inspectRefreshLock(path);
+    recoverRefreshLock(path, reviewed.digest, assertNoWriters);
+    return withRefreshLock(path, operation);
+  }
+}
+
 function refresh(automatic = false) {
-  return withRefreshLock(lock, () => {
-    const initial = currentState();
-    const stored = readStamp();
-    if (stored && stored.repository !== initial.repository) throw new Error("BLOCKED: indexed repository differs");
-    if (automatic) {
-      const action = planSync(stored, initial, existsSync(graph) ? graphHash() : null);
-      if (action === "deferred") {
-        throw new Error("BLOCKED: source paths require safe admission");
-      }
-      if (action === "current") {
-        process.stdout.write("PASS: local Graphify index already matches current checkout\n");
-        return;
-      }
-    }
-    // Build against the actual checkout with the native incremental AST cache,
-    // but never let an interrupted extraction replace the published graph.
-    if (initial.unsafeTracked || initial.unsafeUntracked) throw new Error("BLOCKED: source paths require safe admission");
+  const acquire = automatic
+    ? operation => withScheduledRefreshLock(lock, operation, assertNoLocalGraphifyWriters)
+    : operation => withRefreshLock(lock, operation);
+  return acquire(() => {
     const before = currentState();
-    if (JSON.stringify(initial) !== JSON.stringify(before)) {
-      throw new Error("INVALIDATED: checkout changed before refresh");
+    const stored = readStamp();
+    const oldGraph = readPublishedGraph();
+    const oldDigest = oldGraph ? sha256(oldGraph) : null;
+    if (stored && stored.repository !== before.repository) throw new Error("BLOCKED: indexed repository differs");
+    if (before.unsafeTracked || before.unsafeUntracked) throw new Error("BLOCKED: source paths require safe admission");
+    if (automatic && planSync(stored, before, oldDigest) === "current") {
+      process.stdout.write("PASS: local Graphify index already matches current checkout\n");
+      return;
     }
+    // Native extraction uses the AST cache. Never seed from a foreign branch
+    // or a digest that does not match the last verified publication.
     mkdirSync(candidate, { recursive: true });
     if (!lstatSync(candidate).isDirectory() || !samePath(realpathSync(candidate), resolve(candidate))) {
       throw new Error("BLOCKED: redirected candidate directory");
     }
-    const oldGraph = existsSync(graph) ? readFileSync(graph) : null;
-    // Replace the candidate directory entry, never truncate a path after a
-    // separate validation. The existing exclusive refresh lock owns it.
     try {
       const info = lstatSync(candidateGraph);
-      if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) {
-        throw new Error("BLOCKED: non-regular candidate graph");
-      }
+      if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) throw new Error("BLOCKED: non-regular candidate graph");
     } catch (error) { if (error.code !== "ENOENT") throw error; }
-    if (oldGraph) {
+    const trustedSeed = oldGraph && stored?.version === 1 && stored.repository === before.repository &&
+      stored.branch === before.branch && stored.graphSha256 === oldDigest;
+    if (trustedSeed) {
       const seed = candidateGraph + "." + randomUUID() + ".seed";
       const seedDescriptor = openSync(seed, "wx");
       try {
@@ -249,15 +234,11 @@ function refresh(automatic = false) {
     if (after.unsafeTracked || after.unsafeUntracked || JSON.stringify(before) !== JSON.stringify(after)) {
       throw new Error("INVALIDATED: checkout changed during local Graphify indexing");
     }
-    const graphBytes = readVerifiedFile(candidateGraph, 64 * 1024 * 1024).bytes;
+    const graphBytes = readVerifiedFile(candidateGraph, graphLimit).bytes;
     const parsed = JSON.parse(graphBytes.toString("utf8"));
-    if (!Array.isArray(parsed.nodes) || parsed.nodes.length === 0) {
-      throw new Error("FAIL: local Graphify refresh produced no nodes");
-    }
-    const next = {
-      version: 1, repository: after.repository, branch: after.branch,
-      head: after.head, worktree: after.worktree, graphSha256: sha256(graphBytes),
-    };
+    if (!Array.isArray(parsed.nodes) || parsed.nodes.length === 0) throw new Error("FAIL: local Graphify refresh produced no nodes");
+    const next = { version: 1, repository: after.repository, branch: after.branch,
+      head: after.head, worktree: after.worktree, graphSha256: sha256(graphBytes) };
     const tempGraph = graph + "." + process.pid + ".tmp";
     const tempStamp = stamp + "." + process.pid + ".tmp";
     const rollback = graph + "." + process.pid + ".rollback";
@@ -370,8 +351,8 @@ function coverage(paths) {
   if (before.assessment.status !== "PASS") {
     return emit({ coverage: before.assessment.status, requested: paths, reason: before.assessment.reason });
   }
-  const bytes = readFileSync(graph);
-  if (sha256(bytes) !== before.graphDigest) {
+  const bytes = readPublishedGraph();
+  if (!bytes || sha256(bytes) !== before.graphDigest) {
     return emit({ coverage: "INVALIDATED", requested: paths, reason: "graph changed during coverage measurement" });
   }
   const authored = new Set(git("ls-files", "--cached", "--others", "--exclude-standard", "-z").toString("utf8").split("\0"));
@@ -417,7 +398,7 @@ function main() {
           return { digest, owner };
         } catch { return null; }
       })() : null,
-      coverage: assessment.status === "PASS" ? "NOT_RUN" : "INVALIDATED",
+      coverage: assessment.status === "PASS" ? "NOT_RUN" : assessment.status,
     }, null, 2) + "\n");
     if (!assessment.queryable) process.exitCode = 2;
     return;
