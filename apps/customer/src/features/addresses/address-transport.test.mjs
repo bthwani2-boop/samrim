@@ -50,7 +50,7 @@ function harness(t, os = "web", configured = true) {
     assert.ok(replies.length, "unexpected request");
     const next = replies.shift();
     if (next instanceof Error) throw next;
-    return next;
+    return typeof next === "function" ? next(init) : next;
   });
   const envKey = "EXPO_PUBLIC_CUSTOMER_SYNTHETIC_DSH_ORIGIN";
   const previous = process.env[envKey];
@@ -238,9 +238,51 @@ test("Android uses the real DSH SDK within verified native scope and bounds expi
     ["PUT", origin + "/v1/addresses/" + id],
     ["GET", origin + "/v1/carts/" + store + "/serviceability?addressId=" + id],
   ]);
-  assert.ok(h.requests.every(r => r.headers.Authorization === "Bearer " + bearer && r.credentials === "omit" && r.signal === s));
+  for (const request of h.requests) {
+    assert.equal(request.headers.Authorization, "Bearer " + bearer);
+    assert.equal(request.credentials, "omit");
+    assert.ok(request.signal instanceof AbortSignal);
+    assert.notEqual(request.signal, s, "owner SDK owns the bounded transport signal");
+    assert.equal(request.signal.aborted, false);
+  }
   assert.ok(h.nativeCalls.every(r => r.actor === actor && r.signal === s));
   assert.deepEqual(JSON.parse(h.requests[2].body), change);
+});
+
+test("Android caller cancellation interrupts the actual SDK transport and discards a late response", async t => {
+  const h = harness(t, "android");
+  const controller = new AbortController();
+  let entered, release;
+  const dispatched = new Promise(resolve => { entered = resolve; });
+  const late = new Promise(resolve => { release = resolve; });
+  let transportSignal, cancelled = false;
+  h.replies.push(init => {
+    transportSignal = init.signal;
+    entered();
+    return late;
+  });
+  const response = new Response(new ReadableStream({
+    cancel() { cancelled = true; },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  const pending = h.api.readVerifiedAddresses(controller.signal, actor);
+  try {
+    await dispatched;
+    assert.notEqual(transportSignal, controller.signal);
+    assert.equal(transportSignal.aborted, false);
+    controller.abort();
+    await assert.rejects(pending, failure(0, "OWNER_RESPONSE_STALE"));
+    assert.equal(transportSignal.aborted, true);
+    assert.equal(h.requests.length, 1);
+  } finally {
+    release(response);
+    await pending.catch(() => {});
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(cancelled, true);
+  h.replies.push(json(page));
+  assert.deepEqual(await h.api.readVerifiedAddresses(signal(), actor), { page, expiresAt: h.expiresAt - 1000 });
+  assert.equal(h.requests.length, 2);
+  assert.equal(h.requests[1].signal.aborted, false);
 });
 
 test("Android unavailable or revoked native scope does not expose owner data or permit an unconfirmed save", async t => {
