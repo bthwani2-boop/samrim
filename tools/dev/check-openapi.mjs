@@ -1,38 +1,101 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+// One owner contract admission boundary. Domain validation rules are kept
+// separate from file admission and independent multi-owner execution.
+import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import YAML from "yaml";
-import { generatedOperationSource } from "./generate-openapi-operations.mjs";
+import { generatedOperationSource, generatedOperationsPath } from "./generate-openapi-operations.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const allowed = new Set(["identity", "dsh", "wlt"]);
-const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
-function readFiles(folder) {
-  return readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
-    const absolute = path.join(folder, entry.name);
-    if (entry.isDirectory()) return readFiles(absolute);
-    return entry.isFile() && /\.ya?ml$/.test(entry.name) ? [absolute] : [];
-  });
+const isObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
+const relativeName = (base, file) => path.relative(base, file).replaceAll("\\", "/");
+
+function ownerFiles(folder) {
+  const files = [];
+  function walk(directory) {
+    const entry = lstatSync(directory);
+    if (!entry.isDirectory() || entry.isSymbolicLink() ||
+        path.relative(directory, realpathSync.native(directory)) !== "") {
+      throw new Error("Unsafe owner contract directory: " + directory);
+    }
+    for (const child of readdirSync(directory, { withFileTypes: true })) {
+      const file = path.join(directory, child.name);
+      if (child.isSymbolicLink()) throw new Error("Linked owner contract entry: " + file);
+      if (child.isDirectory()) walk(file);
+      else if (/\.ya?ml$/.test(child.name)) {
+        if (!child.isFile() || path.relative(file, realpathSync.native(file)) !== "") {
+          throw new Error("Unsafe owner contract file: " + file);
+        }
+        files.push(file);
+      }
+    }
+  }
+  walk(folder);
+  return files.sort();
 }
 
-export function validate(owner, base = root) {
-  if (!allowed.has(owner)) throw new Error("Invalid service owner: " + owner);
+// YAML aliases can form graphs, including actual cycles. Only finite JSON
+// documents are admitted; shared acyclic aliases are inspected once.
+function referencesIn(document) {
+  const references = [];
+  const active = new WeakSet();
+  const seen = new WeakSet();
+  const stack = [{ value: document, leaving: false }];
+  while (stack.length) {
+    const { value, leaving } = stack.pop();
+    if (value === null || typeof value !== "object") continue;
+    if (leaving) {
+      active.delete(value);
+      seen.add(value);
+      continue;
+    }
+    if (active.has(value)) throw new Error("Cyclic YAML alias in owner contract");
+    if (seen.has(value)) continue;
+    active.add(value);
+    stack.push({ value, leaving: true });
+    if (Object.hasOwn(value, "$ref")) references.push(value.$ref);
+    for (const child of Object.values(value).reverse()) stack.push({ value: child, leaving: false });
+  }
+  return references;
+}
+
+function loadDocuments(folder, base) {
+  const documents = new Map();
+  const references = new Map();
+  const errors = [];
+  let files;
+  try {
+    files = ownerFiles(folder);
+  } catch (error) {
+    errors.push("Owner contract inventory unavailable: " + error.message);
+    return { documents, references, errors };
+  }
+  for (const file of files) {
+    const name = relativeName(base, file);
+    try {
+      const document = YAML.parseDocument(readFileSync(file, "utf8"), {
+        uniqueKeys: true, strict: true, prettyErrors: true,
+      });
+      if (document.errors.length) {
+        for (const error of document.errors) errors.push(name + ": " + error.message);
+        continue;
+      }
+      const value = document.toJS();
+      if (!isObject(value)) throw new Error("OpenAPI YAML root must be an object");
+      references.set(file, referencesIn(value));
+      documents.set(file, value);
+    } catch (error) {
+      errors.push(name + ": " + error.message);
+    }
+  }
+  return { documents, references, errors };
+}
+
+function validateContract(owner, base) {
   const folder = path.join(base, "services", owner, "contracts", "openapi");
   const mainFile = path.join(folder, owner + ".openapi.yaml");
-  const documents = new Map();
-  const errors = [];
-
-  for (const file of readFiles(folder)) {
-    const document = YAML.parseDocument(readFileSync(file, "utf8"), {
-      uniqueKeys: true,
-      strict: true,
-      prettyErrors: true,
-    });
-    for (const error of document.errors) {
-      errors.push(path.relative(base, file) + ": " + error.message);
-    }
-    if (document.errors.length === 0) documents.set(file, document.toJS());
-  }
+  const { documents, references: referenced, errors } = loadDocuments(folder, base);
   if (errors.length) return { owner, errors };
 
   const entrypoint = documents.get(mainFile);
@@ -71,19 +134,10 @@ export function validate(owner, base = root) {
   }
 
   let references = 0;
-  function visit(value, file) {
-    if (!value || typeof value !== "object") return;
-    if (Array.isArray(value)) {
-      for (const child of value) visit(child, file);
-      return;
-    }
-    if (Object.hasOwn(value, "$ref")) {
-      references++;
-      resolveRef(file, value.$ref);
-    }
-    for (const child of Object.values(value)) visit(child, file);
+  for (const [file, values] of referenced) {
+    references += values.length;
+    for (const reference of values) resolveRef(file, reference);
   }
-  for (const [file, document] of documents) visit(document, file);
 
   const allowedResponseKeys = new Set(["description", "headers", "content", "links", "$ref", "summary"]);
   const allowedParameterKeys = new Set([
@@ -396,11 +450,24 @@ export function validate(owner, base = root) {
     }
   }
 
-  if (existsSync(path.join(base, "services", owner, "clients", "generated", owner + "-operations.ts"))) {
-    const generatedPath = path.join(base, "services", owner, "clients", "generated", owner + "-operations.ts");
+  const generatedPath = generatedOperationsPath(owner, base);
+  let generatedOperationParity = "NOT_RUN";
+  let normalizedContractFingerprint = "NOT_RUN";
+  if (existsSync(generatedPath)) {
     const generated = readFileSync(generatedPath, "utf8");
-    if (errors.length === 0 && generated !== generatedOperationSource(owner, base)) {
-      errors.push("Generated operation manifest is not deterministic from current owner OpenAPI: " + owner);
+    const beforeParity = errors.length;
+    if (beforeParity === 0) {
+      try {
+        if (generated !== generatedOperationSource(owner, base)) {
+          normalizedContractFingerprint = "FAIL";
+          errors.push("Generated operation manifest is not deterministic from current owner OpenAPI: " + owner);
+        } else {
+          normalizedContractFingerprint = "PASS";
+        }
+      } catch (error) {
+        normalizedContractFingerprint = "FAIL";
+        errors.push("Generated operation manifest cannot be derived: " + error.message);
+      }
     }
     const generatedIds = new Map();
     const matcher = /^\s{2}([A-Za-z][A-Za-z0-9_]*): \{ method: "([A-Z]+)", path: "([^"]+)" \},$/gm;
@@ -417,32 +484,56 @@ export function validate(owner, base = root) {
     for (const id of generatedIds.keys()) {
       if (!operations.has(id)) errors.push("Generated operation not in OpenAPI: " + id);
     }
+    generatedOperationParity = errors.length > beforeParity ? "FAIL" : beforeParity === 0 ? "PASS" : "NOT_RUN";
   } else if (path.resolve(base) === root) {
+    generatedOperationParity = "FAIL";
     errors.push("Generated operation manifest missing for active owner: " + owner);
   }
 
-  return { owner, files: documents.size, paths: pathCount, operations: operations.size, references, errors };
+  return { owner, files: documents.size, paths: pathCount, operations: operations.size, references,
+    generatedOperationParity, normalizedContractFingerprint, errors };
+}
+
+export function validate(owner, base = root) {
+  if (!allowed.has(owner)) throw new Error("Invalid service owner: " + owner);
+  try {
+    return validateContract(owner, path.resolve(base));
+  } catch (error) {
+    // Admission or parser failure is a failed owner, never a process-wide
+    // interruption that hides independent owner outcomes.
+    return { owner, errors: ["Owner contract validation failed: " + error.message] };
+  }
+}
+
+export function validateOwners(owners, base = root) {
+  if (!owners.length || new Set(owners).size !== owners.length || owners.some(owner => !allowed.has(owner))) {
+    throw new Error("Specify one or more distinct service owners: identity, dsh, wlt");
+  }
+  return owners.map(owner => validate(owner, base));
+}
+
+export function run(owners, base = root, log = console) {
+  let results;
+  try {
+    results = validateOwners(owners, base);
+  } catch (error) {
+    log.error(error.message);
+    return 2;
+  }
+  for (const result of results) {
+    const count = name => result[name] ?? "NOT_RUN";
+    log.log("OPENAPI_" + result.owner.toUpperCase() + "=" + (result.errors.length ? "FAIL" : "PASS") +
+      " files=" + count("files") + " paths=" + count("paths") +
+      " operations=" + count("operations") + " refs=" + count("references") +
+      " errors=" + result.errors.length +
+      " generatedOperationParity=" + count("generatedOperationParity") +
+      " normalizedContractFingerprint=" + count("normalizedContractFingerprint") +
+      " fullGeneratedClientParity=NOT_RUN");
+    for (const error of result.errors) log.error("  " + error);
+  }
+  return results.some(result => result.errors.length) ? 1 : 0;
 }
 
 if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === import.meta.url) {
-  const owners = process.argv.slice(2);
-  if (owners.length === 0 || owners.some((owner) => !allowed.has(owner))) {
-    console.error("Usage: node tools/dev/check-openapi.mjs identity|dsh|wlt [more owners]");
-    process.exitCode = 2;
-  } else {
-    let failed = false;
-    for (const owner of owners) {
-      const result = validate(owner);
-      if (result.errors.length) failed = true;
-      console.log("OPENAPI_" + owner.toUpperCase() + "=" + (result.errors.length ? "FAIL" : "PASS") +
-        " files=" + result.files + " paths=" + result.paths + " operations=" + result.operations +
-        " refs=" + result.references + " errors=" + result.errors.length +
-        " generatedOperationParity=" + (
-          existsSync(path.join(root, "services", owner, "clients", "generated", owner + "-operations.ts")) ? "CHECKED" : "NOT_RUN") +
-        " normalizedContractFingerprint=" + (result.errors.length ? "NOT_PROVEN" : "CHECKED") +
-        " fullGeneratedClientParity=NOT_RUN");
-      for (const error of result.errors.slice(0, 40)) console.error("  " + error);
-    }
-    if (failed) process.exitCode = 1;
-  }
+  process.exitCode = run(process.argv.slice(2));
 }
