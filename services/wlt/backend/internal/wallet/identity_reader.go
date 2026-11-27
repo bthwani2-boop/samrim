@@ -1,6 +1,7 @@
 package wallet
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	json "encoding/json/v2"
@@ -21,6 +22,7 @@ const (
 	sessionPath           = "/v1/sessions/current"
 	financePermissionPath = "/v1/operators/me/permissions/finance"
 	identityReplyLimit    = 4096
+	maxOwnerReplyLimit    = 262144
 )
 
 type principal struct {
@@ -34,13 +36,26 @@ type identityReader struct {
 	client   *http.Client
 }
 
-// Keep authenticated owner requests off ambient proxies and redirects.
-var isolatedOwnerTransport = &http.Transport{
-	Proxy:           nil,
-	DialContext:     (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-	MaxIdleConns:    16,
-	IdleConnTimeout: 90 * time.Second,
+// Isolated direct owners emit uncompressed JSON. Never silently decompress,
+// follow redirects, or use an ambient proxy for authority-bearing evidence.
+func ownerHTTPClient(dialTimeout, totalTimeout time.Duration, keepAlive bool) *http.Client {
+	transport := &http.Transport{
+		Proxy:                  nil,
+		DialContext:            (&net.Dialer{Timeout: dialTimeout, KeepAlive: 30 * time.Second}).DialContext,
+		DisableCompression:     true,
+		DisableKeepAlives:      !keepAlive,
+		MaxIdleConns:           16,
+		IdleConnTimeout:        90 * time.Second,
+		MaxResponseHeaderBytes: 16384,
+	}
+	return &http.Client{
+		Transport:     transport,
+		Timeout:       totalTimeout,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+	}
 }
+
+var isolatedOwnerClient = ownerHTTPClient(2*time.Second, 2*time.Second, true)
 
 func validLoopbackOwnerOrigin(origin string) bool {
 	u, err := url.Parse(origin)
@@ -58,19 +73,12 @@ func newIdentityReader(origin string, containerMode ...bool) (identityReader, er
 	if !allowedContainer && !validLoopbackOwnerOrigin(origin) {
 		return identityReader{}, errors.New("WLT requires the isolated Identity loopback origin")
 	}
-	return identityReader{
-		endpoint: origin + sessionPath,
-		client: &http.Client{
-			Transport:     isolatedOwnerTransport,
-			Timeout:       2 * time.Second,
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-		},
-	}, nil
+	return identityReader{endpoint: origin + sessionPath, client: isolatedOwnerClient}, nil
 }
 
 func validBearer(header string) bool {
 	token, ok := strings.CutPrefix(header, "Bearer ")
-	if !ok || len(token) != 43 || strings.ContainsAny(token, "\r\n") {
+	if !ok || len(token) != 43 || strings.ContainsRune(token, 13) || strings.ContainsRune(token, 10) {
 		return false
 	}
 	digest, err := base64.RawURLEncoding.Strict().DecodeString(token)
@@ -126,53 +134,93 @@ func (identity identityReader) readBoundedOwner(ctx context.Context, auth, endpo
 	if !validBearer(auth) {
 		return http.StatusUnauthorized
 	}
-	if identity.client == nil {
-		return http.StatusServiceUnavailable
-	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	status, err := requestOwnerDocument(ctx, identity.client, endpoint, auth, destination, limit)
 	if err != nil {
 		return http.StatusServiceUnavailable
 	}
-	request.Header.Set("Authorization", auth)
-	request.Header.Set("Accept", "application/json")
-	request.Header.Set("Cache-Control", "no-store")
-	response, err := identity.client.Do(request)
-	if err != nil {
-		return http.StatusServiceUnavailable
-	}
-	defer response.Body.Close()
-	switch response.StatusCode {
-	case http.StatusUnauthorized, http.StatusForbidden:
-		return response.StatusCode
-	case http.StatusOK:
+	switch status {
+	case http.StatusOK, http.StatusUnauthorized, http.StatusForbidden:
+		return status
 	default:
 		return http.StatusServiceUnavailable
 	}
-	cache := response.Header.Values("Cache-Control")
-	if len(cache) != 1 || !strings.EqualFold(cache[0], "no-store") {
-		return http.StatusServiceUnavailable
-	}
-	if err := decodeBoundedOwnerReply(response, destination, limit); err != nil {
-		return http.StatusServiceUnavailable
-	}
-	return http.StatusOK
 }
 
-// Every owner and synthetic provider JSON document is bounded before decoding.
-// Go JSON v2 rejects duplicate member names, invalid Unicode and noncanonical
-// field names; reject unknown members instead of silently dropping them.
+// The caller admits the fixed destination before entering this common
+// transport. An empty auth is used only for the synthetic provider read;
+// authenticated Identity/DSH documents additionally require exact no-store.
+func requestOwnerDocument(ctx context.Context, client *http.Client, endpoint, auth string, destination any, limit int64) (int, error) {
+	if client == nil || ctx.Err() != nil {
+		return 0, errors.New("owner request unavailable")
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return 0, err
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Accept-Encoding", "identity")
+	request.Header.Set("Cache-Control", "no-store")
+	if auth != "" {
+		request.Header.Set("Authorization", auth)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return response.StatusCode, nil
+	}
+	if auth != "" {
+		cache := response.Header.Values("Cache-Control")
+		if len(cache) != 1 || !strings.EqualFold(cache[0], "no-store") {
+			return 0, errors.New("invalid owner cache policy")
+		}
+	}
+	if err := decodeBoundedOwnerReply(response, destination, limit); err != nil {
+		return 0, err
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+	return http.StatusOK, nil
+}
+
+// net/http owns raw HTTP framing. Validate the representation it exposes,
+// not raw transfer metadata already consumed by the standard library.
 func decodeBoundedOwnerReply(response *http.Response, destination any, limit int64) error {
+	if response == nil || response.Body == nil || limit <= 0 || limit > maxOwnerReplyLimit {
+		return errors.New("invalid owner response bound")
+	}
+	length := response.ContentLength
+	encodings := response.Header.Values("Content-Encoding")
+	if response.Uncompressed || len(encodings) > 1 ||
+		(len(encodings) == 1 && !strings.EqualFold(encodings[0], "identity")) ||
+		length < -1 || length == 0 || length > limit ||
+		(len(response.TransferEncoding) != 0 &&
+			(len(response.TransferEncoding) != 1 || response.TransferEncoding[0] != "chunked" || length != -1)) {
+		return errors.New("invalid owner response representation")
+	}
 	contentTypes := response.Header.Values("Content-Type")
-	if len(contentTypes) != 1 || response.ContentLength > limit {
+	if len(contentTypes) != 1 {
 		return errors.New("invalid owner response metadata")
 	}
 	media, _, err := mime.ParseMediaType(contentTypes[0])
 	if err != nil || media != "application/json" {
 		return errors.New("invalid owner response media type")
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
-	if err != nil || int64(len(body)) > limit {
+	ceiling := limit
+	if length >= 0 {
+		ceiling = length
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, ceiling+1))
+	if err != nil || int64(len(body)) > ceiling || (length >= 0 && int64(len(body)) != length) {
 		return errors.New("invalid owner response size")
 	}
+	trimmed := bytes.TrimSpace(body)
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return errors.New("owner response must be a JSON object")
+	}
+	// JSON v2 rejects duplicate names, invalid Unicode and unknown members.
 	return json.Unmarshal(body, destination, json.RejectUnknownMembers(true))
 }

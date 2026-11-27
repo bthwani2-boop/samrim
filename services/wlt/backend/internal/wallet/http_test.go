@@ -2,8 +2,10 @@ package wallet
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -483,5 +485,103 @@ func TestOwnerReadRejectsInvalidTransportInputs(t *testing.T) {
 				t.Fatalf("invalid response admitted %v %d", actor, status)
 			}
 		})
+	}
+}
+
+func TestOwnerJSONWireAdmission(t *testing.T) {
+	const body = `{"actorId":"wallet-one","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	for _, encoding := range []string{"", "identity", "unknown", "gzip", "identity, unknown"} {
+		t.Run("encoding="+encoding, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				if encoding != "" {
+					w.Header().Set("Content-Encoding", encoding)
+				}
+				_, _ = w.Write([]byte(body))
+			}))
+			defer server.Close()
+			reader, err := newIdentityReader(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, status := reader.read(t.Context(), token)
+			want := http.StatusServiceUnavailable
+			if encoding == "" || encoding == "identity" {
+				want = http.StatusOK
+			}
+			if status != want {
+				t.Fatalf("encoding %q: status=%d want=%d", encoding, status, want)
+			}
+		})
+	}
+}
+
+func TestOwnerJSONNormalizedFrame(t *testing.T) {
+	const body = "{}"
+	for _, tc := range []struct {
+		name, payload string
+		length        int64
+		transfer      []string
+		uncompressed  bool
+		want          bool
+	}{
+		{"exact", body, 2, nil, false, true},
+		{"unknown", body, -1, nil, false, true},
+		{"chunked", body, -1, []string{"chunked"}, false, true},
+		{"zero", body, 0, nil, false, false},
+		{"short", body, 1, nil, false, false},
+		{"long", body, 3, nil, false, false},
+		{"contradictory", body, 2, []string{"chunked"}, false, false},
+		{"unsupported transfer", body, -1, []string{"gzip"}, false, false},
+		{"decoded", body, -1, nil, true, false},
+		{"null", "null", 4, nil, false, false},
+		{"array", "[]", 2, nil, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := &http.Response{
+				Header:        http.Header{"Content-Type": []string{"application/json"}},
+				Body:          io.NopCloser(strings.NewReader(tc.payload)),
+				ContentLength: tc.length, TransferEncoding: tc.transfer, Uncompressed: tc.uncompressed,
+			}
+			defer response.Body.Close()
+			var dst struct{}
+			if err := decodeBoundedOwnerReply(response, &dst, 8); (err == nil) != tc.want {
+				t.Fatalf("frame acceptance=%t want=%t err=%v", err == nil, tc.want, err)
+			}
+		})
+	}
+}
+
+func TestOwnerJSONRejectsActualCompressedHTTPAndRecovers(t *testing.T) {
+	const body = `{"actorId":"wallet-one","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept-Encoding") != "identity" || r.Header.Get("Cache-Control") != "no-store" || r.Header.Get("Authorization") != token {
+			t.Error("unexpected authority transport metadata")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		if calls.Add(1) == 1 {
+			w.Header().Set("Content-Encoding", "gzip")
+			writer := gzip.NewWriter(w)
+			_, _ = writer.Write([]byte(body))
+			_ = writer.Close()
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+	reader, err := newIdentityReader(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, status := reader.read(t.Context(), token); status != http.StatusServiceUnavailable {
+		t.Fatalf("compressed owner accepted: %d", status)
+	}
+	if actor, status := reader.read(t.Context(), token); status != http.StatusOK || actor.ActorID != "wallet-one" {
+		t.Fatalf("plain recovery failed: %d", status)
 	}
 }
