@@ -1,20 +1,26 @@
 package wallet
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"io"
 	"mime"
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
+)
+
+const (
+	sessionPath           = "/v1/sessions/current"
+	financePermissionPath = "/v1/operators/me/permissions/finance"
+	identityReplyLimit    = 4096
 )
 
 type principal struct {
@@ -28,10 +34,7 @@ type identityReader struct {
 	client   *http.Client
 }
 
-// Identity and DSH owner requests must stay on their admitted development
-// origins. The default HTTP transport honors ambient proxy configuration,
-// which could expose an owner bearer to a proxy for container hostnames.
-// Share a bounded direct connection pool across readers, including sandbox CLI.
+// Keep authenticated owner requests off ambient proxies and redirects.
 var isolatedOwnerTransport = &http.Transport{
 	Proxy:           nil,
 	DialContext:     (&net.Dialer{Timeout: 2 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
@@ -39,22 +42,28 @@ var isolatedOwnerTransport = &http.Transport{
 	IdleConnTimeout: 90 * time.Second,
 }
 
+func validLoopbackOwnerOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil || u.Scheme != "http" || u.Hostname() != "127.0.0.1" ||
+		u.User != nil || u.Path != "" || u.RawPath != "" || u.RawQuery != "" ||
+		u.Fragment != "" || u.Opaque != "" || u.ForceQuery || u.String() != origin {
+		return false
+	}
+	port, err := strconv.ParseUint(u.Port(), 10, 16)
+	return err == nil && port > 0
+}
+
 func newIdentityReader(origin string, containerMode ...bool) (identityReader, error) {
 	allowedContainer := len(containerMode) == 1 && containerMode[0] && origin == "http://identity:3302"
-	root, err := url.Parse(origin)
-	if err != nil || (!allowedContainer && (root.Scheme != "http" || root.Hostname() != "127.0.0.1" ||
-		root.Port() == "" || root.User != nil || root.Path != "" || root.ForceQuery ||
-		root.RawQuery != "" || root.Fragment != "" || origin != root.String())) {
+	if !allowedContainer && !validLoopbackOwnerOrigin(origin) {
 		return identityReader{}, errors.New("WLT requires the isolated Identity loopback origin")
 	}
 	return identityReader{
-		endpoint: origin + "/v1/sessions/current",
+		endpoint: origin + sessionPath,
 		client: &http.Client{
-			Transport: isolatedOwnerTransport,
-			Timeout:   2 * time.Second,
-			CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
-				return http.ErrUseLastResponse
-			},
+			Transport:     isolatedOwnerTransport,
+			Timeout:       2 * time.Second,
+			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}, nil
 }
@@ -74,45 +83,52 @@ func (identity identityReader) read(ctx context.Context, auth string) (principal
 
 func (identity identityReader) readRole(ctx context.Context, auth, role string) (principal, int) {
 	var actor principal
-	status := identity.readOwner(ctx, auth, identity.endpoint, &actor)
+	status := identity.readBoundedOwner(ctx, auth, identity.endpoint, &actor, identityReplyLimit)
 	if status != http.StatusOK {
-		return actor, status
+		return principal{}, status
 	}
 	if actor.ActorID == "" || utf8.RuneCountInString(actor.ActorID) > 128 ||
 		strings.TrimSpace(actor.ActorID) != actor.ActorID || strings.ContainsFunc(actor.ActorID, unicode.IsControl) ||
-		!actor.Expires.After(time.Now()) {
-		return actor, http.StatusServiceUnavailable
+		!actor.Expires.After(time.Now()) || actor.Role == "" {
+		return principal{}, http.StatusServiceUnavailable
 	}
 	if actor.Role != role {
-		return actor, http.StatusForbidden
+		return principal{}, http.StatusForbidden
 	}
 	return actor, http.StatusOK
 }
 
-// Finance reads require both current Operator standing and the explicit
-// Identity-owned finance grant bound to the very same actor.
+// Finance requires the current explicit grant for the same verified actor.
 func (identity identityReader) finance(ctx context.Context, auth string) (principal, int) {
 	actor, status := identity.readRole(ctx, auth, "operator")
 	if status != http.StatusOK {
-		return actor, status
+		return principal{}, status
 	}
 	var grant struct {
-		ActorID    string `json:"actorId"`
-		Permission string `json:"permission"`
+		ActorID    *string `json:"actorId"`
+		Permission *string `json:"permission"`
 	}
-	endpoint := strings.TrimSuffix(identity.endpoint, "/v1/sessions/current") + "/v1/operators/me/permissions/finance"
-	status = identity.readOwner(ctx, auth, endpoint, &grant)
-	if status == http.StatusOK && (grant.ActorID != actor.ActorID || grant.Permission != "finance") {
-		status = http.StatusForbidden
+	endpoint := strings.TrimSuffix(identity.endpoint, sessionPath) + financePermissionPath
+	status = identity.readBoundedOwner(ctx, auth, endpoint, &grant, identityReplyLimit)
+	if status != http.StatusOK {
+		return principal{}, status
 	}
-	return actor, status
-}
-
-func (identity identityReader) readOwner(ctx context.Context, auth, endpoint string, destination any) int {
-	return identity.readBoundedOwner(ctx, auth, endpoint, destination, 4096)
+	if grant.ActorID == nil || grant.Permission == nil {
+		return principal{}, http.StatusServiceUnavailable
+	}
+	if *grant.ActorID != actor.ActorID || *grant.Permission != "finance" {
+		return principal{}, http.StatusForbidden
+	}
+	return actor, http.StatusOK
 }
 
 func (identity identityReader) readBoundedOwner(ctx context.Context, auth, endpoint string, destination any, limit int64) int {
+	if !validBearer(auth) {
+		return http.StatusUnauthorized
+	}
+	if identity.client == nil {
+		return http.StatusServiceUnavailable
+	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return http.StatusServiceUnavailable
@@ -125,23 +141,38 @@ func (identity identityReader) readBoundedOwner(ctx context.Context, auth, endpo
 		return http.StatusServiceUnavailable
 	}
 	defer response.Body.Close()
-	if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+	switch response.StatusCode {
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return response.StatusCode
+	case http.StatusOK:
+	default:
+		return http.StatusServiceUnavailable
 	}
-	media, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
 	cache := response.Header.Values("Cache-Control")
-	if response.StatusCode != http.StatusOK || err != nil || media != "application/json" ||
-		len(cache) != 1 || !strings.EqualFold(cache[0], "no-store") {
+	if len(cache) != 1 || !strings.EqualFold(cache[0], "no-store") {
 		return http.StatusServiceUnavailable
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
-	if err != nil || int64(len(body)) > limit || !utf8.Valid(body) {
-		return http.StatusServiceUnavailable
-	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(destination) != nil || decoder.Decode(new(any)) != io.EOF {
+	if err := decodeBoundedOwnerReply(response, destination, limit); err != nil {
 		return http.StatusServiceUnavailable
 	}
 	return http.StatusOK
+}
+
+// Every owner and synthetic provider JSON document is bounded before decoding.
+// Go JSON v2 rejects duplicate member names, invalid Unicode and noncanonical
+// field names; reject unknown members instead of silently dropping them.
+func decodeBoundedOwnerReply(response *http.Response, destination any, limit int64) error {
+	contentTypes := response.Header.Values("Content-Type")
+	if len(contentTypes) != 1 || response.ContentLength > limit {
+		return errors.New("invalid owner response metadata")
+	}
+	media, _, err := mime.ParseMediaType(contentTypes[0])
+	if err != nil || media != "application/json" {
+		return errors.New("invalid owner response media type")
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil || int64(len(body)) > limit {
+		return errors.New("invalid owner response size")
+	}
+	return json.Unmarshal(body, destination, json.RejectUnknownMembers(true))
 }

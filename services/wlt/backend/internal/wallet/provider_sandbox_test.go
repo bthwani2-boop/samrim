@@ -24,11 +24,11 @@ func TestSandboxProviderOriginIsLoopbackOnly(t *testing.T) {
 		"http://127.0.0.1:3290/path", "http://127.0.0.1:3290?token=1",
 		"http://127.0.0.1:3290#state", "http://127.0.0.1:3290/",
 	} {
-		if validSandboxProviderOrigin(origin) {
+		if validLoopbackOwnerOrigin(origin) {
 			t.Errorf("accepted untrusted provider origin %q", origin)
 		}
 	}
-	if !validSandboxProviderOrigin("http://127.0.0.1:3290") {
+	if !validLoopbackOwnerOrigin("http://127.0.0.1:3290") {
 		t.Fatal("rejected valid isolated provider origin")
 	}
 }
@@ -42,6 +42,9 @@ func TestSandboxProviderEvidenceRejectsUnconfirmedOrMismatchedFunding(t *testing
 		allow                 bool
 	}{
 		{"confirmed", valid, "application/json", 200, true},
+		{"duplicate status", strings.Replace(valid, `"status":"SUCCEEDED"`, `"status":"FAILED","status":"SUCCEEDED"`, 1), "application/json", 200, false},
+		{"duplicate amount", strings.Replace(valid, `"amountYer":"17"`, `"amountYer":"99","amountYer":"17"`, 1), "application/json", 200, false},
+		{"case variant status", strings.Replace(valid, `"status"`, `"Status"`, 1), "application/json", 200, false},
 		{"pending", strings.Replace(valid, "SUCCEEDED", "PENDING", 1), "application/json", 200, false},
 		{"failed", strings.Replace(valid, "SUCCEEDED", "FAILED", 1), "application/json", 200, false},
 		{"unrecognized", strings.Replace(valid, "SUCCEEDED", "REFUNDED", 1), "application/json", 200, false},
@@ -127,5 +130,31 @@ func TestSandboxProviderFundingRejectsActorChangeBeforeDatabase(t *testing.T) {
 	state, err := VerifySandboxProviderFunding(t.Context(), db, identity.URL, provider.URL, token, "actor-change-01", 17)
 	if state != "" || err == nil || !strings.Contains(err.Error(), "provider actor changed") || reads.Load() != 2 {
 		t.Fatalf("expected actor change denial before database access: state=%q err=%v reads=%d", state, err, reads.Load())
+	}
+}
+
+func TestSandboxProviderFundingRejectsBeforeDatabase(t *testing.T) {
+	token := base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = fmt.Fprint(w, `{"actorId":"wallet-one","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`)
+	}))
+	defer owner.Close()
+	for _, tc := range []struct {
+		name, identity, provider string
+		amount                   int64
+	}{
+		{"invalid amount", owner.URL, "", 0},
+		{"invalid identity", "http://localhost:1234", "", 17},
+		{"unavailable identity", "http://127.0.0.1:1", "", 17},
+		{"invalid provider", owner.URL, "", 17},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// nil deliberately: any SQL access before rejection would panic.
+			if state, err := VerifySandboxProviderFunding(t.Context(), nil, tc.identity, tc.provider, token, "cash-in-accepted-01", tc.amount); state != "" || err == nil {
+				t.Fatalf("unconfirmed funding admitted %q %v", state, err)
+			}
+		})
 	}
 }

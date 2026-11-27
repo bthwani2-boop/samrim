@@ -47,6 +47,9 @@ func TestWalletReadRequiresCurrentUncachedCustomer(t *testing.T) {
 		{"unknown owner", "no-store", "", 503, 503},
 		{"cached", "max-age=60", session, 200, 503},
 		{"merchant role", "no-store", strings.Replace(session, `"customer"`, `"merchant"`, 1), 200, 403},
+		{"duplicate actor", "no-store", `{"actorId":"other","actorId":"verified-customer","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200, 503},
+		{"case variant role", "no-store", `{"actorId":"verified-customer","Role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200, 503},
+		{"duplicate role", "no-store", `{"actorId":"verified-customer","role":"merchant","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200, 503},
 		{"wrong shape", "no-store", `{"actorId":"verified-customer"}`, 200, 503},
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
@@ -336,5 +339,149 @@ func TestOwnerTransportRejectsAmbientProxy(t *testing.T) {
 	if status != http.StatusOK || actor.ActorID != "merchant-one" ||
 		standingStatus != http.StatusOK || relation != "DIRECT" || ownerCalls.Load() != 2 || proxied.Load() != 0 {
 		t.Fatalf("owner transport escaped direct routing: session=%d standing=%d direct=%d proxied=%d", status, standingStatus, ownerCalls.Load(), proxied.Load())
+	}
+}
+
+func TestFinanceRejectsAmbiguousGrantBeforeRead(t *testing.T) {
+	const session = `{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	for _, body := range []string{
+		`{"actorId":"operator-a","permission":"operations","permission":"finance"}`,
+		`{"actorId":"operator-b","actorId":"operator-a","permission":"finance"}`,
+		`{"actorId":"operator-a","Permission":"finance"}`,
+		`{"actorId":"operator-a","permission":null}`,
+		`{"actorId":"operator-a"}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/v1/sessions/current" {
+					_, _ = w.Write([]byte(session))
+					return
+				}
+				_, _ = w.Write([]byte(body))
+			}))
+			defer owner.Close()
+			reader, err := newIdentityReader(owner.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+			if _, status := reader.finance(t.Context(), token); status != 503 {
+				t.Fatalf("malformed grant status=%d", status)
+			}
+		})
+	}
+}
+
+func TestMerchantStandingRejectsAmbiguousOwnerWire(t *testing.T) {
+	for _, body := range []string{
+		`{"actorId":"other","actorId":"merchant-one","stores":[{"id":"store-a","name":"Shop","relation":"DIRECT","published":true}]}`,
+		`{"actorId":"merchant-one","stores":[{"id":"store-a","name":"Shop","relation":"MARKETPLACE","relation":"DIRECT","published":true}]}`,
+		`{"actorId":"merchant-one","Stores":[{"id":"store-a","name":"Shop","relation":"DIRECT","published":true}]}`,
+	} {
+		t.Run(body, func(t *testing.T) {
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(body))
+			}))
+			defer owner.Close()
+			reader, err := newIdentityReader(owner.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+			if relation, status := ownedStoreRelation(t.Context(), reader, owner.URL+"/v1/stores/mine", token, "merchant-one", "store-a"); relation != "" || status != 503 {
+				t.Fatalf("malformed standing status=%d relation=%s", status, relation)
+			}
+		})
+	}
+}
+
+func TestFinanceOwnerDecisionAndRecovery(t *testing.T) {
+	const session = `{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	for _, tc := range []struct {
+		name                             string
+		sessionStatus, grantStatus, want int
+		grant                            string
+	}{
+		{"valid", 200, 200, 200, `{"actorId":"operator-a","permission":"finance"}`},
+		{"revoked session", 401, 200, 401, ""},
+		{"revoked permission", 200, 403, 403, ""},
+		{"foreign actor", 200, 200, 403, `{"actorId":"other","permission":"finance"}`},
+		{"wrong permission", 200, 200, 403, `{"actorId":"operator-a","permission":"operations"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == sessionPath {
+					w.WriteHeader(tc.sessionStatus)
+					_, _ = w.Write([]byte(session))
+					return
+				}
+				if r.URL.Path != financePermissionPath {
+					t.Error("unexpected permission path")
+				}
+				w.WriteHeader(tc.grantStatus)
+				_, _ = w.Write([]byte(tc.grant))
+			}))
+			defer owner.Close()
+			reader, err := newIdentityReader(owner.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actor, status := reader.finance(t.Context(), token)
+			if status != tc.want || (status == 200 && actor.ActorID != "operator-a") || (status != 200 && actor.ActorID != "") {
+				t.Fatalf("incorrect finance decision: status=%d actor=%+v", status, actor)
+			}
+		})
+	}
+}
+
+func TestOwnerReadRejectsInvalidTransportInputs(t *testing.T) {
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	if _, status := (identityReader{}).read(t.Context(), token); status != 503 {
+		t.Fatal(status)
+	}
+	if _, status := (identityReader{}).read(t.Context(), "invalid"); status != 401 {
+		t.Fatal(status)
+	}
+	reader, err := newIdentityReader("http://127.0.0.1:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader.endpoint = "http://["
+	if _, status := reader.read(t.Context(), token); status != 503 {
+		t.Fatal(status)
+	}
+	for _, tc := range []struct {
+		name, body string
+		stream     bool
+	}{
+		{"oversize advertised", strings.Repeat("a", 4097), false},
+		{"oversize streamed", strings.Repeat("a", 4097), true},
+		{"invalid unicode", `{"actorId":"operator-\ud800","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				if tc.stream {
+					w.(http.Flusher).Flush()
+				}
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer owner.Close()
+			reader, err := newIdentityReader(owner.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if actor, status := reader.read(t.Context(), token); status != 503 || actor.ActorID != "" {
+				t.Fatalf("invalid response admitted %v %d", actor, status)
+			}
+		})
 	}
 }
