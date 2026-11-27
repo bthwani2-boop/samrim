@@ -175,6 +175,7 @@ components:
         proposedEffectiveAt:
           type: string
           format: date-time
+          pattern: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6}0*)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$'
           description: Proposed instant in RFC 3339 exactly representable at microsecond precision.
         reason:
           type: string

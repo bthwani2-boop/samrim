@@ -28,7 +28,8 @@ test("Finance proposal sends exact terms and verifies receipt against the next v
   assert.deepEqual(JSON.parse(options.body), proposal);
 
   const { subscriptionAmountYer, subscriptionPeriodDays, ...common } = proposal;
-  const commission = { ...common, feeModel: "COMMISSION", commissionBasisPoints: 0 };
+  const commission = { ...common, feeModel: "COMMISSION", commissionBasisPoints: 0,
+    proposedEffectiveAt: common.proposedEffectiveAt.replace(".000001", ".0000010000") };
   assert.deepEqual(await sdk.recordIsolatedFinanceAgreementProposal(origin, token, store, commission, signal), proposed);
   assert.deepEqual(JSON.parse(request.mock.calls[1].arguments[1].body), commission);
 });
@@ -42,6 +43,7 @@ test("invalid Finance proposal terms and pre-aborted requests dispatch nothing",
     { subscriptionAmountYer: "01" }, { subscriptionPeriodDays: 2147483648 }, { commissionBasisPoints: 0 },
     { fulfillmentModes: ["CUSTOMER_PICKUP", "CUSTOMER_PICKUP"] }, { fulfillmentModes: Array(1) },
     { proposedEffectiveAt: "2027-02-30T10:00:00Z" }, { proposedEffectiveAt: "2027-01-01T10:00:00.0000001Z" },
+    { proposedEffectiveAt: "2027-01-01T10:00:00.0000010001Z" }, { proposedEffectiveAt: "2027-01-01T10:00:00+02:60" },
     { proposedEffectiveAt: "9999-12-31T23:59:59-01:00" }, { proposedEffectiveAt: "0001-01-01T01:00:00+01:00" },
     { collector: "OTHER" }, { storeRelation: "DIRECT" }, { reason: "مقترح\nملغى" },
   ];

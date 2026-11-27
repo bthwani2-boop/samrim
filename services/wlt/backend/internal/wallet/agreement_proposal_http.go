@@ -3,21 +3,22 @@ package wallet
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"strconv"
 	"time"
 )
 
 type agreementProposalWire struct {
-	ExpectedVersion        *int64    `json:"expectedVersion"`
-	OperationID            string    `json:"operationId"`
-	FeeModel               string    `json:"feeModel"`
-	Collector              string    `json:"collector"`
-	CommissionBasisPoints  *int32    `json:"commissionBasisPoints"`
-	SubscriptionAmountYER  *string   `json:"subscriptionAmountYer"`
-	SubscriptionPeriodDays *int32    `json:"subscriptionPeriodDays"`
-	FulfillmentModes       []string  `json:"fulfillmentModes"`
-	ProposedEffectiveAt    time.Time `json:"proposedEffectiveAt"`
-	Reason                 string    `json:"reason"`
+	ExpectedVersion        *int64   `json:"expectedVersion"`
+	OperationID            string   `json:"operationId"`
+	FeeModel               string   `json:"feeModel"`
+	Collector              string   `json:"collector"`
+	CommissionBasisPoints  *int32   `json:"commissionBasisPoints"`
+	SubscriptionAmountYER  *string  `json:"subscriptionAmountYer"`
+	SubscriptionPeriodDays *int32   `json:"subscriptionPeriodDays"`
+	FulfillmentModes       []string `json:"fulfillmentModes"`
+	ProposedEffectiveAt    string   `json:"proposedEffectiveAt"`
+	Reason                 string   `json:"reason"`
 }
 
 type agreementProposalHTTPReceipt struct {
@@ -29,9 +30,17 @@ type agreementProposalHTTPReceipt struct {
 
 type agreementProposalExecutor func(context.Context, string, AgreementProposal) (AgreementProposalReceipt, error)
 
+// Admit exact microseconds before parsing, which can discard extra precision.
+var agreementProposalInstant = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6}0*)?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$`)
+
 func decodeAgreementProposal(w http.ResponseWriter, r *http.Request) (AgreementProposal, bool) {
 	var wire agreementProposalWire
-	if !decodeAgreementCommandBody(w, r, &wire) || wire.ExpectedVersion == nil {
+	if !decodeAgreementCommandBody(w, r, &wire) || wire.ExpectedVersion == nil ||
+		!agreementProposalInstant.MatchString(wire.ProposedEffectiveAt) {
+		return AgreementProposal{}, false
+	}
+	proposedAt, err := time.Parse(time.RFC3339, wire.ProposedEffectiveAt)
+	if err != nil {
 		return AgreementProposal{}, false
 	}
 	var amount *int64
@@ -46,7 +55,7 @@ func decodeAgreementProposal(w http.ResponseWriter, r *http.Request) (AgreementP
 		StoreID: r.PathValue("storeID"), ExpectedVersion: *wire.ExpectedVersion, OperationID: wire.OperationID,
 		FeeModel: wire.FeeModel, Collector: wire.Collector, CommissionBasisPoints: wire.CommissionBasisPoints,
 		SubscriptionAmountYER: amount, SubscriptionPeriodDays: wire.SubscriptionPeriodDays, FulfillmentModes: wire.FulfillmentModes,
-		ProposedEffectiveAt: wire.ProposedEffectiveAt, Reason: wire.Reason,
+		ProposedEffectiveAt: proposedAt, Reason: wire.Reason,
 	})
 }
 

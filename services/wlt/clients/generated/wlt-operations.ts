@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/wlt/contracts/openapi/wlt.openapi.yaml.
-// Normalized OpenAPI SHA-256: e5d5e20dba5dd288486c7541ae12a21b5362b8566fc93382ebe2bfaf07c92c22
+// Normalized OpenAPI SHA-256: d555f5d802b18f4c14eba6d0a73f1cdc3a5894a7f1d5b7196e73d302af7dccbf
 // DTO and runtime validation remain the owner's responsibility.
 export const wltOperations = {
   getCurrentCustomerOrderPaymentAllocation: { method: "GET", path: "/v1/wallets/me/order-payment-allocations/{checkoutID}" },

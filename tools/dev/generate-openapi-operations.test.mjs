@@ -196,3 +196,17 @@ test("WLT agreement proposal and projection share the exact positive int64 text 
     assert.equal(pattern.test(malformed), false, JSON.stringify(malformed));
   }
 });
+
+test("WLT proposal contract admits only time text exact at microsecond precision", () => {
+  const filename = path.join(root, "services", "wlt", "contracts", "openapi", "wlt.openapi.yaml");
+  const { proposedEffectiveAt } = YAML.parse(readFileSync(filename, "utf8")).components.schemas.AgreementProposalInput.properties;
+  assert.equal(proposedEffectiveAt.format, "date-time");
+  const pattern = new RegExp(proposedEffectiveAt.pattern);
+  const instant = "2027-01-01T10:00:00";
+  for (const suffix of ["Z", ".1Z", ".000001+03:00", ".0000010000+03:00"]) {
+    assert.match(instant + suffix, pattern);
+  }
+  for (const suffix of [".0000001Z", ".0000010001+03:00", ",000001Z", "+02:60", "+24:00"]) {
+    assert.doesNotMatch(instant + suffix, pattern);
+  }
+});

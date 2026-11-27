@@ -18,6 +18,7 @@ func TestAgreementProposalHTTPAdmission(t *testing.T) {
 		code             int
 	}{
 		{"success", proposalPath, proposalBody, 200},
+		{"extra zero precision", proposalPath, strings.Replace(proposalBody, "000001", "0000010000", 1), 200},
 		{"merchant path", strings.Replace(proposalPath, "/operators/", "/merchants/", 1), proposalBody, 400},
 		{"caller actor", proposalPath, strings.Replace(proposalBody, "{", `{"actorId":"other",`, 1), 400},
 		{"duplicate version", proposalPath, strings.Replace(proposalBody, "{", `{"expectedVersion":1,`, 1), 400},
@@ -26,6 +27,9 @@ func TestAgreementProposalHTTPAdmission(t *testing.T) {
 		{"leading zero", proposalPath, strings.Replace(proposalBody, "9007199254740993", "09007199254740993", 1), 400},
 		{"amount overflow", proposalPath, strings.Replace(proposalBody, "9007199254740993", "9223372036854775808", 1), 400},
 		{"unsupported precision", proposalPath, strings.Replace(proposalBody, "000001", "000001001", 1), 400},
+		{"unsupported precision past nanoseconds", proposalPath, strings.Replace(proposalBody, "000001", "0000010001", 1), 400},
+		{"noncanonical offset minutes", proposalPath, strings.Replace(proposalBody, "+03:00", "+02:60", 1), 400},
+		{"noncanonical decimal separator", proposalPath, strings.Replace(proposalBody, ".000001", ",000001", 1), 400},
 		{"query", proposalPath + "?relation=DIRECT", proposalBody, 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
