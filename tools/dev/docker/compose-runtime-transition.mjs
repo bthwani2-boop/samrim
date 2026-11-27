@@ -288,13 +288,17 @@ function verifyUnchanged(before, after, except) {
 
 
 export function reconcileComposeConfiguration({ docker, git, root, head, previous, apply, verifyOwners, ensureSource }) {
-  requireProof(/^[a-f0-9]{40}$/.test(previous) && previous !== head, "COMPOSE_PREVIOUS_REVISION_REQUIRED");
-  git(["merge-base", "--is-ancestor", previous, head]);
+  const attestOnly = previous === null && apply === false;
+  requireProof(attestOnly || (/^[a-f0-9]{40}$/.test(previous) && previous !== head), "COMPOSE_PREVIOUS_REVISION_REQUIRED");
   const current = git(["show", `${head}:infra/compose.yaml`]);
-  const prior = git(["show", `${previous}:infra/compose.yaml`]);
-  const marker = /^ {2}com\.bthwani\.worktree: samrim-refoundation-clean-20261112\r?\n/gm;
-  const variants = [prior];
-  if ([...prior.matchAll(marker)].length === 1) variants.push(prior.replace(marker, ""));
+  const variants = [];
+  if (!attestOnly) {
+    git(["merge-base", "--is-ancestor", previous, head]);
+    const prior = git(["show", `${previous}:infra/compose.yaml`]);
+    const marker = /^ {2}com\.bthwani\.worktree: samrim-refoundation-clean-20261112\r?\n/gm;
+    variants.push(prior);
+    if ([...prior.matchAll(marker)].length === 1) variants.push(prior.replace(marker, ""));
+  }
   const base = ["compose", "--project-directory", resolve(root, "infra"), "--env-file", resolve(root, "infra/.env"), "-f"];
   const canonicalArgs = [...base, resolve(root, "infra/compose.yaml")], priorArgs = [...base, "-"];
   const canonicalPath = resolve(root, "infra/compose.yaml").replaceAll("/", "\\").toLowerCase();
@@ -328,18 +332,22 @@ export function reconcileComposeConfiguration({ docker, git, root, head, previou
     }
     console.log(`COMPOSE_POLICY_${service.toUpperCase()}=${current ? "CURRENT" : "TRANSITION_READY"}`);
   }
-  ensureSource();
-  ownerReadback(state);
-  verifyUnchanged(state, healthyInventory(docker));
-  if (!apply) {
-    console.log(`COMPOSE_CONFIGURATION_PLAN_PASS HEAD=${head} PREVIOUS=${previous} SELECTED=${[...plan.keys()].join(",") || "NONE"}`);
-    return;
-  }
-
   const unchangedResources = rows => {
     same(resourceIdentities(docker, next.model), identities, "COMPOSE_RESOURCE_IDENTITY_CHANGED");
     verifyAttachments(rows, identities);
   };
+  ensureSource();
+  ownerReadback(state);
+  const observed = healthyInventory(docker);
+  verifyUnchanged(state, observed);
+  unchangedResources(observed);
+  ensureSource();
+  if (!apply) {
+    if (attestOnly) console.log(`COMPOSE_SERVING_BASELINE_PASS HEAD=${head}`);
+    else console.log(`COMPOSE_CONFIGURATION_PLAN_PASS HEAD=${head} PREVIOUS=${previous} SELECTED=${[...plan.keys()].join(",") || "NONE"}`);
+    return;
+  }
+
   const replace = (args, service, input) => docker([...args, "up", "-d", "--no-deps", "--no-build", "--pull", "never", "--wait", "--wait-timeout", "90", service], env, 120000, input);
   for (const [service, old] of plan) {
     ensureSource();

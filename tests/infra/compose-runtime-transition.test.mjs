@@ -201,7 +201,7 @@ async function transitionFixture({ stale = [], fault, mutate } = {}) {
     }
     throw new Error(`unexpected fixture command: ${args[0]}`);
   };
-  const run=apply=>reconcileComposeConfiguration({docker,git:args=>args[0]==="show"?(args[1].startsWith("a")?"old":"new"):"",root,head:"b".repeat(40),previous:"a".repeat(40),apply,ensureSource(){},verifyOwners(snapshot){readbacks.push(Object.keys(snapshot));if(mutate&&readbacks.length===1)mutate(rows);}});
+  const run=(apply,previous="a".repeat(40))=>reconcileComposeConfiguration({docker,git:args=>args[0]==="show"?(args[1].startsWith("a")?"old":"new"):"",root,head:"b".repeat(40),previous,apply,ensureSource(){},verifyOwners(snapshot){readbacks.push(Object.keys(snapshot));if(mutate&&readbacks.length===1)mutate(rows);}});
   return {run,rows,operations,readbacks,hashes};
 }
 
@@ -249,4 +249,62 @@ test("unproven inventory and concurrent owner changes are rejected before mutati
   const fixture=await transitionFixture({stale:["wlt"],mutate:rows=>{rows.identity.State.StartedAt="concurrent";}});
   assert.throws(()=>fixture.run(true),/COMPOSE_CONCURRENT_CHANGE identity/);
   assert.deepEqual(fixture.operations,[]);
+});
+
+test("reviewed serving-state attestation needs no desired owner convergence or historical Compose transition",async()=>{
+  const current=await transitionFixture();
+  current.run(false,null);
+  assert.deepEqual(current.operations,[]);
+  assert.equal(current.readbacks.length,1);
+  const stale=await transitionFixture({stale:["wlt"]});
+  assert.throws(()=>stale.run(false,null),/COMPOSE_PREVIOUS_HASH_MISMATCH wlt/);
+  assert.deepEqual(stale.operations,[]);
+  assert.throws(()=>current.run(true,null),/COMPOSE_PREVIOUS_REVISION_REQUIRED/);
+  const concurrent=await transitionFixture({mutate:rows=>{rows.identity.State.StartedAt="changed";}});
+  assert.throws(()=>concurrent.run(false,null),/COMPOSE_CONCURRENT_CHANGE identity/);
+});
+
+test("orphan admission identifies the Node entry point, not Graphify query or coverage arguments",async()=>{
+  const { conflictingReconcilerProcesses }=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const rows=[
+    {ProcessId:1,CommandLine:'"C:\\Program Files\\nodejs\\node.exe" "D:\\samrim\\tools\\dev\\docker\\reconcile-owner-runtime.mjs" --recover-attempt key'},
+    {ProcessId:2,CommandLine:'node tools/dev/graphify-local.mjs coverage tools/dev/docker/reconcile-owner-runtime.mjs'},
+    {ProcessId:3,CommandLine:'node "D:\\samrim\\tools\\dev\\docker\\reconcile-owner-runtime.mjs" --apply'},
+    {ProcessId:4,CommandLine:'node --no-warnings tools/dev/docker/reconcile-owner-runtime.mjs --apply'},
+    {ProcessId:5,CommandLine:'node tools/dev/sync-lenovo-source.mjs --watch'},
+  ];
+  assert.deepEqual(conflictingReconcilerProcesses(rows,1),[3,4]);
+  assert.deepEqual(conflictingReconcilerProcesses([{ProcessId:6,CommandLine:null}],1),[6]);
+});
+
+test("reviewed legacy recovery publishes only a retry and refuses changed or settled receipts",async()=>{
+  const {mkdtempSync,writeFileSync,readFileSync,rmSync}=await import("node:fs");
+  const {tmpdir}=await import("node:os");
+  const {join}=await import("node:path");
+  const {recoverRuntimeAttempt}=await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const {runtimeReceiptStatus,beginRuntimeAttempt}=await import("../../tools/dev/sync-lenovo-reconciliation.mjs");
+  const dir=mkdtempSync(join(tmpdir(),"bthwani-reviewed-recovery-"));
+  const stateFile=join(dir,"state.json"),receiptFile=join(dir,"receipt.json");
+  const key="a".repeat(64),attempt="2bb7f62e-27d7-434c-8484-f41396d5e0c5";
+  const legacy=JSON.stringify({version:1,key,attempt,status:"running"});
+  const unrelated=JSON.stringify({version:1,key:"b".repeat(64),attempt:"4c4b08fd-4891-4e43-9574-85ef9bc18ecf",status:"pass"});
+  const base={stateFile,receiptFile,key,safeOnly:false,assertExclusive(){},verifyCurrent(){}};
+  try{
+    writeFileSync(stateFile,legacy);writeFileSync(receiptFile,unrelated);
+    assert.throws(()=>recoverRuntimeAttempt({...base,safeOnly:true}),/RUNTIME_SAFE_BOUNDARY_NOT_PROVEN/);
+    assert.throws(()=>recoverRuntimeAttempt({...base,verifyCurrent(){throw new Error("owner readback failed");}}),/owner readback failed/);
+    assert.equal(readFileSync(receiptFile,"utf8"),unrelated);
+    assert.throws(()=>recoverRuntimeAttempt({...base,verifyCurrent(){writeFileSync(receiptFile,"changed");}}),/RUNTIME_RECEIPT_CHANGED/);
+    writeFileSync(receiptFile,unrelated);
+    let proof=0,exclusive=0;
+    recoverRuntimeAttempt({...base,assertExclusive(){exclusive++;},verifyCurrent(){proof++;}});
+    assert.equal(proof,1);assert.equal(exclusive,2);
+    assert.equal(readFileSync(stateFile,"utf8"),legacy);
+    assert.equal(runtimeReceiptStatus(stateFile,receiptFile),"retry");
+    assert.throws(()=>recoverRuntimeAttempt(base),/RUNTIME_ATTEMPT_ALREADY_SETTLED/);
+    rmSync(stateFile);rmSync(receiptFile);
+    beginRuntimeAttempt(stateFile,receiptFile,key,attempt);
+    recoverRuntimeAttempt({...base,safeOnly:true,verifyCurrent(){throw new Error("must not verify desired state");}});
+    assert.equal(runtimeReceiptStatus(stateFile,receiptFile),"retry");
+  }finally{rmSync(dir,{recursive:true,force:true});}
 });
