@@ -343,3 +343,16 @@ test("Web import transport never treats missing or stale acknowledgement as a co
   respond = async () => json({ catalogImport: complete });
   assert.deepEqual(await request(actorId, storeId, runId, "GET", signal), complete);
 });
+
+
+for(const platform of ["web","android"])test("import transport binds original manifest across "+platform+" asynchronous boundaries",async t=>{
+  const input=structuredClone(manifest);
+  const mutate=()=>{input.sourceSha256="b".repeat(64);input.rows.push({row:3,name:"Later",priceYer:"1",stockUnits:"0"});};
+  const request=importTransport(platform,async(_signal,invoke)=>{mutate();return invoke("synthetic","http://127.0.0.1:13311");});
+  t.mock.method(globalThis,"fetch",async(_url,options)=>{
+    assert.deepEqual(JSON.parse(options.body),manifest);
+    if(platform==="web")mutate();
+    return json(platform==="web"?{catalogImport:initial}:initial);
+  });
+  assert.deepEqual(await request(actorId,storeId,runId,"PUT",new AbortController().signal,input),initial);
+});

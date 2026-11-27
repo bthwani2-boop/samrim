@@ -10,7 +10,7 @@ export {
   readCaptainApplication, requestCaptainApplication,
 } from "./captain-standing.ts";
 export type { MerchantCatalogImportChange, MerchantCatalogImportOutcome, MerchantCatalogImportResult, MerchantCatalogImportRow } from "./catalog-import.ts";
-export { merchantCatalogImport, parseMerchantCatalogImportResult, validMerchantCatalogImportChange } from "./catalog-import.ts";
+export { merchantCatalogImport, parseMerchantCatalogImportResult, prepareMerchantCatalogImport, validMerchantCatalogImportChange } from "./catalog-import.ts";
 export type {
   CityDeliveryDistanceBand, CityDeliveryPolicy, CityDeliveryPolicyChange, CityDeliveryPolicyPreview, CityDeliveryPolicyPreviewInput, CityDeliveryPolicyResult, CityDeliveryPolicyState, CityFulfillmentMode, CityFulfillmentPolicy, CityFulfillmentPolicyChange, CityFulfillmentPolicyResult, CityFulfillmentRelation, CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult
 } from "./city-policies.ts";
