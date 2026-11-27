@@ -13,7 +13,7 @@ const scratch = mkdtempSync(path.join(tmpdir(), "merchant-insights-render-"));
 let compiled;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap",
     "--inlineSources", "--outDir", scratch,

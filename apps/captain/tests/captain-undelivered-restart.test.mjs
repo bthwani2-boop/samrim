@@ -13,7 +13,7 @@ const temporary = mkdtempSync(path.join(tmpdir(), "captain-admission-coverage-")
 let compiled;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,
   ], { cwd: root, timeout: 20_000, encoding: "utf8", windowsHide: true });

@@ -15,7 +15,7 @@ process.once("exit", () => loadedModules.length);
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-city-scope-"));
 let compiled;
 try {
-  const task = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const task = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     path.join(import.meta.dirname, "service-city-scope.tsx"), "--ignoreConfig", "--noResolve", "--noCheck",
     "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });

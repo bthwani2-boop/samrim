@@ -13,7 +13,7 @@ const source = path.resolve(import.meta.dirname, "../src/features/access/custome
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-session-"));
 let compiled;
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--inlineSourceMap", "--inlineSources", "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);

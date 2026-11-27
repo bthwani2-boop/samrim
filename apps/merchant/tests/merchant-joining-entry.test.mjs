@@ -63,7 +63,7 @@ function compileGate() {
   let compiled;
   try {
     const output = spawnSync(process.execPath, [
-      join(repo, "node_modules/typescript/bin/tsc"), gateSource,
+      join(repo, "node_modules/@typescript/native/bin/tsc"), gateSource,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
       "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", scratch,
     ], { cwd: repo, encoding: "utf8", timeout: 20000, windowsHide: true });

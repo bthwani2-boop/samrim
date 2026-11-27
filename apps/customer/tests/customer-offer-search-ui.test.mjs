@@ -15,12 +15,12 @@ const routeEntry = fileURLToPath(new URL("../app/storefront/[storeId].tsx", impo
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-customer-offer-search-"));
 let compiled, compiledStorefrontRoute;
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), entry,
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), entry,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   compiled = readFileSync(path.join(temp, "store-detail-screen.js"), "utf8");
-  const routeResult = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), routeEntry,
+  const routeResult = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), routeEntry,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
   assert.equal(routeResult.status, 0, routeResult.stderr || routeResult.stdout);

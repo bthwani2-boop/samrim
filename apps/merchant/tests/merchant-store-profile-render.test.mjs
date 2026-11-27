@@ -12,7 +12,7 @@ test("Store profile displays owner readback, retries the exact command and denie
   const src=fileURLToPath(new URL("../src/features/stores/store-profile.tsx",import.meta.url));
   const temp=mkdtempSync(path.join(tmpdir(),"merchant-profile-"));
   try {
-    const compiled=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),src,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--outDir",temp],{cwd:root,encoding:"utf8",timeout:20000});
+    const compiled=spawnSync(process.execPath,[path.join(root,"node_modules/@typescript/native/bin/tsc"),src,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--outDir",temp],{cwd:root,encoding:"utf8",timeout:20000});
     assert.equal(compiled.status,0,compiled.stderr||compiled.stdout);
     let index=0,scheduled=[],hooks=[],effects=[],commands=[],updated=0,fail=true;
     let profile={storeId:"store-a",actorId:"merchant-a",name:"متجر",description:"وصف",version:1,published:false};

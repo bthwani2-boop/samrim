@@ -22,7 +22,7 @@ test("Merchant draft form retries the identical operation after unknown outcome 
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-draft-render-"));
   try {
     const run = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), src, "--ignoreConfig",
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), src, "--ignoreConfig",
       "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });

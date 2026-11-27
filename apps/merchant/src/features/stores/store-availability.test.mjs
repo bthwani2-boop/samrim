@@ -9,7 +9,7 @@ const root = path.resolve(import.meta.dirname, "../../../../..");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-merchant-availability-"));
 let compiled;
 try {
-  const task = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const task = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     path.join(import.meta.dirname, "store-availability.tsx"), "--ignoreConfig", "--noResolve", "--noCheck",
     "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });

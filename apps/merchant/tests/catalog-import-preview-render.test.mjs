@@ -24,7 +24,7 @@ const nodes = tree => Array.isArray(tree) ? tree.flatMap(nodes) : !tree || typeo
 test("CSV preview is owner-scoped and drops the selected file on revocation or account change", async t => {
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-import-render-"));
   try {
-    const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+    const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp], {cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
     assert.equal(result.status, 0, result.stderr || result.stdout);

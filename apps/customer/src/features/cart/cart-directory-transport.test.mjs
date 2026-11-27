@@ -13,7 +13,7 @@ const source = path.join(import.meta.dirname, "cart-directory-transport.ts");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-cart-directory-transport-"));
 let compiled;
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), source,
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--inlineSourceMap", "--inlineSources", "--outDir", temp],
     { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });

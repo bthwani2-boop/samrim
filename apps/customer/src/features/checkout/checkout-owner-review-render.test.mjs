@@ -18,7 +18,7 @@ const temp = mkdtempSync(path.join(tmpdir(), "bthwani-checkout-review-"));
 let compiled;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), sourceFile,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), sourceFile,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp,
   ], { cwd: root, encoding: "utf8", windowsHide: true, timeout: 20_000 });

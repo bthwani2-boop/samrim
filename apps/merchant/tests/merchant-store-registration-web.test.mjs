@@ -147,7 +147,7 @@ function registrationTransport(platform="web", withNativeMerchantSession=()=>ass
     const root=path.resolve(import.meta.dirname,"../../..");
     const source=path.resolve(import.meta.dirname,"../src/features/onboarding/store-registration-transport.ts");
     const compile=spawnSync(process.execPath,[
-      path.join(root,"node_modules/typescript/bin/tsc"),source,
+      path.join(root,"node_modules/@typescript/native/bin/tsc"),source,
       "--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs",
       "--inlineSourceMap","--inlineSources","--outDir",temp,
     ],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});

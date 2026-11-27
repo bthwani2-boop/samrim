@@ -154,3 +154,17 @@ test("Nx uses its supported TypeScript API and secure minimatch while app tasks 
   assert.ok(targets.includes("@bthwani/merchant:typecheck"));
   assert.ok(!targets.includes("@bthwani/control-panel:typecheck"));
 });
+test('native compiler consumers never resolve the TypeScript 6 API package as a compiler', () => {
+  const oldEntry = ['node_modules', 'typescript', 'bin', 'tsc'].join('/');
+  const census = spawnSync('git', ['grep', '-n', '-F', oldEntry, '--', '*.test.mjs'], {
+    cwd: root, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(census.status, 1, census.stderr + census.stdout);
+  const compiler = require('@typescript/native/package.json');
+  const executable = path.resolve(root, 'node_modules/@typescript/native/bin/tsc');
+  const result = spawnSync(process.execPath, [executable, '--version'], {
+    cwd: root, encoding: 'utf8', windowsHide: true,
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stdout.trim(), 'Version ' + compiler.version);
+});

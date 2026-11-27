@@ -11,7 +11,7 @@ const renderSource = path.join(import.meta.dirname, "address-editor.tsx");
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-address-web-"));
 let compiled;
 try {
-  const task = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const task = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     renderSource, "--ignoreConfig", "--noResolve", "--noCheck",
     "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temp],
   { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });

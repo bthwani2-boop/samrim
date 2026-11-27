@@ -16,7 +16,7 @@ try {
   const result = spawnSync(
     process.execPath,
     [
-      join(root, "node_modules/typescript/bin/tsc"),
+      join(root, "node_modules/@typescript/native/bin/tsc"),
       sourceFile,
       "--ignoreConfig",
       "--noResolve",

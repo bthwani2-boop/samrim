@@ -16,7 +16,7 @@ let compiled;
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 try {
-  const result=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),entry,
+  const result=spawnSync(process.execPath,[path.join(root,"node_modules/@typescript/native/bin/tsc"),entry,
     "--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs",
     "--inlineSourceMap","--inlineSources","--outDir",temp],
     {cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});

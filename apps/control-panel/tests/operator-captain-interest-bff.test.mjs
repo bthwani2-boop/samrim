@@ -60,7 +60,7 @@ test("Operator returns through the same cursor filters with fresh owner reads", 
   const workspace = fileURLToPath(new URL("../../../", import.meta.url));
   const entry = fileURLToPath(new URL("src/features/captains/captain-interest-workspace.tsx", root));
   const result = spawnSync(process.execPath, [
-    join(workspace, "node_modules/typescript/bin/tsc"),
+    join(workspace, "node_modules/@typescript/native/bin/tsc"),
     entry,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,

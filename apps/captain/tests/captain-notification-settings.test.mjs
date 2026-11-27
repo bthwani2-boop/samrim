@@ -17,7 +17,7 @@ const sources = [home, homeScreen, route, screen, feature].filter(name => exists
 const temp = mkdtempSync(path.join(tmpdir(), "captain-notification-settings-"));
 const compiled = new Map();
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     ...sources.map(name => path.join(captain, name + ".tsx")),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--rootDir", captain, "--outDir", temp],

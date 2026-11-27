@@ -56,7 +56,7 @@ test("Merchant home opens the matching Store list and existing catalog", () => {
     const sources = ["merchant-workspace.tsx", "merchant-store-directory.tsx"]
       .map(file => fileURLToPath(new URL(`./${file}`, import.meta.url)));
     const result = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), ...sources,
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), ...sources,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
       "--module", "commonjs", "--jsx", "react-jsx", "--outDir", temp,
     ], { cwd: root, encoding: "utf8", timeout: 20000 });

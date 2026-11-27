@@ -107,7 +107,7 @@ function agreementTransport(platform, withNativeMerchantSession, isDevice = fals
     const root = path.resolve(import.meta.dirname, "../../..");
     const source = path.resolve(import.meta.dirname, "../src/features/finance/commercial-agreement-transport.ts");
     const result = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), source,
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--inlineSourceMap", "--inlineSources", "--outDir", temp,
     ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });

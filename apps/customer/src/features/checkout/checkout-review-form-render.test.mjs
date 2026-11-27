@@ -16,7 +16,7 @@ process.once("exit", () => loadedModules.length);
 const temp = mkdtempSync(path.join(tmpdir(), "bthwani-checkout-fee-"));
 let compiled;
 try {
-  const r = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const r = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     source, "--ignoreConfig", "--noResolve",
     "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",
     "--inlineSourceMap", "--inlineSources", "--outDir", temp],

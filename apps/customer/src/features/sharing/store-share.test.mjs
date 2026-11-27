@@ -14,7 +14,7 @@ const temp = mkdtempSync(path.join(tmpdir(), "bthwani-store-link-"));
 let storeRoute, storefrontRoute;
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"),
+    path.join(root, "node_modules/@typescript/native/bin/tsc"),
     path.join(app, "store/[id].tsx"), path.join(app, "storefront/[storeId].tsx"),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--rootDir", app, "--outDir", temp,

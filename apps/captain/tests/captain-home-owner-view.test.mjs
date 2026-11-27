@@ -13,7 +13,7 @@ const temporary = mkdtempSync(path.join(tmpdir(), "captain-home-owner-"));
 let code;
 try {
   const output = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), sourceFile,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), sourceFile,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", temporary,
   ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });

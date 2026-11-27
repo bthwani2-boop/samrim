@@ -18,7 +18,7 @@ const temporary = mkdtempSync(path.join(tmpdir(), "bthwani-captain-guest-navigat
 const compiled = new Map();
 try {
   const result = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), ...sources.map(source => path.join(captain, `${source}.tsx`)),
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), ...sources.map(source => path.join(captain, `${source}.tsx`)),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources",
     "--rootDir", captain, "--outDir", temporary,

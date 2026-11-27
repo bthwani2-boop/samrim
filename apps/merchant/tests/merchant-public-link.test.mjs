@@ -48,7 +48,7 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
   globalThis.window = { location: { origin: "http://localhost:18102" } };
   try {
     const compiled = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), component,
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), component,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
       "--module", "commonjs", "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });

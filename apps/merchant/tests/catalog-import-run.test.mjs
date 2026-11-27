@@ -56,7 +56,7 @@ function importTransport(platform, withNativeMerchantSession) {
     const root = path.resolve(import.meta.dirname, "../../..");
     const source = path.resolve(import.meta.dirname, "../src/features/catalog/catalog-import-transport.ts");
     const compiled = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), source,
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
       "--module", "commonjs", "--inlineSourceMap", "--inlineSources", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });
@@ -173,7 +173,7 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
   try{
     const root=path.resolve(import.meta.dirname,"../../..");
     const source=path.resolve(import.meta.dirname,"../src/features/catalog/catalog-import-run.tsx");
-    const compiled=spawnSync(process.execPath,[path.join(root,"node_modules/typescript/bin/tsc"),source,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",tmp],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
+    const compiled=spawnSync(process.execPath,[path.join(root,"node_modules/@typescript/native/bin/tsc"),source,"--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",tmp],{cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
     assert.equal(compiled.status,0,compiled.stderr||compiled.stdout);
     const code=readFileSync(path.join(tmp,"catalog-import-run.js"),"utf8");
     const storage=new Map(),calls=[];let states=[],refs=[],effects=[],si=0,ri=0,ei=0;

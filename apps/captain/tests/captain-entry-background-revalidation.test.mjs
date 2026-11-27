@@ -12,7 +12,7 @@ const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-captain-entry-"));
 let compiled;
 try {
   const output = spawnSync(process.execPath, [
-    path.join(root, "node_modules/typescript/bin/tsc"), source,
+    path.join(root, "node_modules/@typescript/native/bin/tsc"), source,
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
     "--module", "commonjs", "--jsx", "react-jsx", "--outDir", tmp,
   ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });

@@ -90,7 +90,7 @@ function employeeTransport(platform, withNativeMerchantSession) {
   try {
     const root = resolve(import.meta.dirname, "../../../../..");
     const source = resolve(import.meta.dirname, "employee-transport.ts");
-    const compiled = spawnSync(process.execPath, [join(root, "node_modules/typescript/bin/tsc"), source,
+    const compiled = spawnSync(process.execPath, [join(root, "node_modules/@typescript/native/bin/tsc"), source,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--inlineSourceMap", "--inlineSources", "--outDir", tmp],
       { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
@@ -221,7 +221,7 @@ test("Employee screen loads current scope and retains the original operation thr
   try{
     const root=resolve(import.meta.dirname,"../../../../..");
     const source=resolve(import.meta.dirname,"employees-screen.tsx");
-    const compiled=spawnSync(process.execPath,[join(root,"node_modules/typescript/bin/tsc"),source,
+    const compiled=spawnSync(process.execPath,[join(root,"node_modules/@typescript/native/bin/tsc"),source,
       "--ignoreConfig","--noResolve","--noCheck","--target","es2022","--module","commonjs","--jsx","react-jsx","--inlineSourceMap","--inlineSources","--outDir",tmp],
       {cwd:root,encoding:"utf8",timeout:20000,windowsHide:true});
     assert.equal(compiled.status,0,compiled.stderr||compiled.stdout);

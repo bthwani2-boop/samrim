@@ -23,7 +23,7 @@ test("Merchant published-offer search uses live owner query, aborts stale reques
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-merchant-search-"));
   try {
     const output = spawnSync(process.execPath, [
-      path.join(root, "node_modules/typescript/bin/tsc"), sourceFile,
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), sourceFile,
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022",
       "--module", "commonjs", "--jsx", "react-jsx", "--outDir", tmp,
     ], { cwd: root, encoding: "utf8", timeout: 20_000, windowsHide: true });

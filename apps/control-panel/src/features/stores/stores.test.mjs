@@ -37,7 +37,7 @@ test("publication review opens an exact Store, preserves its page, and fails clo
     "src/features/stores/publication-review-query.ts", "src/features/stores/store-details.tsx", "src/server/operator-publication-review.ts"];
   const temp = mkdtempSync(path.join(tmpdir(), "bth-publication-review-"));
   try {
-    const compile = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"), ...files.map(file => path.join(app, file)),
+    const compile = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"), ...files.map(file => path.join(app, file)),
       "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
       "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--rootDir", app, "--outDir", temp], { cwd: root, encoding: "utf8", timeout: 20000 });
     assert.equal(compile.status, 0, compile.stderr || compile.stdout);

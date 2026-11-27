@@ -15,7 +15,7 @@ const sources = [location, home, route];
 const temp = mkdtempSync(path.join(tmpdir(), "captain-device-readiness-"));
 const compiled = new Map();
 try {
-  const result = spawnSync(process.execPath, [path.join(root, "node_modules/typescript/bin/tsc"),
+  const result = spawnSync(process.execPath, [path.join(root, "node_modules/@typescript/native/bin/tsc"),
     ...sources.map(name => path.join(captain, name + ".tsx")),
     "--ignoreConfig", "--noResolve", "--noCheck", "--target", "es2022", "--module", "commonjs",
     "--jsx", "react-jsx", "--inlineSourceMap", "--inlineSources", "--rootDir", captain, "--outDir", temp],
