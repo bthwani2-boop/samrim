@@ -336,28 +336,20 @@ test("Identity revocation never classifies an uncertain DELETE as an ordinary re
 });
 
 test("late Identity denial must not sign out a replacement account or confirm a cancelled POST", async () => {
-  const denied = new Response(JSON.stringify({ error: "UNAUTHORIZED" }), {
+  const current = new AbortController();
+  const denied = new Response(new ReadableStream({ pull(stream) { current.abort(); stream.enqueue(new TextEncoder().encode(JSON.stringify({ error: "UNAUTHORIZED" }))); stream.close(); } }, { highWaterMark: 0 }), {
     status: 401,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
-  const current = new AbortController();
-  denied.json = async () => {
-    current.abort();
-    return { error: "UNAUTHORIZED" };
-  };
   await withFetch(async () => denied,
     () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer, current.signal),
       0, "OWNER_RESPONSE_STALE"));
 
   const cancelledPost = new AbortController();
-  const failed = new Response(JSON.stringify({ error: "VERIFICATION_REQUIRED" }), {
+  const failed = new Response(new ReadableStream({ pull(stream) { cancelledPost.abort(); stream.enqueue(new TextEncoder().encode(JSON.stringify({ error: "VERIFICATION_REQUIRED" }))); stream.close(); } }, { highWaterMark: 0 }), {
     status: 403,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
-  failed.json = async () => {
-    cancelledPost.abort();
-    return { error: "VERIFICATION_REQUIRED" };
-  };
   await withFetch(async () => failed,
     () => rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer, cancelledPost.signal),
       0, "OPERATION_RESULT_UNKNOWN"));
@@ -495,12 +487,13 @@ test("non-cooperative Identity headers cancel and allow a successor", async () =
 for (const status of [200, 401]) {
   test(`non-cooperative Identity body cancellation: ${status}`, async () => {
     const controller = new AbortController(), stalled = Promise.withResolvers(), started = Promise.withResolvers();
-    const res = response(status === 200 ? principal() : { error: "UNAUTHORIZED" }, status);
-    const read = () => { started.resolve(); return stalled.promise; };
-    if (status === 200) res.text = read; else res.json = read;
+    let cancelled = false;
+    const res = new Response(new ReadableStream({ pull() { started.resolve(); return stalled.promise; }, cancel() { cancelled = true; } }, { highWaterMark: 0 }), { status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
     await withFetch(async () => res, () => expectPromptCancellation(
       () => readVerifiedIdentitySession(origin, bearer, controller.signal), started.promise, controller,
       "OWNER_RESPONSE_STALE", () => stalled.reject(new Error("late bridge failure"))));
+    assert.equal(cancelled, true);
+    assert.equal(res.body.locked, false);
   });
 }
 
@@ -784,5 +777,133 @@ test("unverified rotation never releases quarantine even if revocation fails", a
       assert.equal(quarantine, true, outcome);
       assert.equal(revocations, 1, outcome);
     });
+  }
+});
+
+test("Identity aborts oversized success and denial streams before buffering the response", async () => {
+  for (const status of [200, 401, 201]) {
+    let pulls = 0, cancelled = false;
+    const initial = new TextEncoder().encode(JSON.stringify(status === 200 ? principal() :
+      status === 201 ? admission() : { error: "UNAUTHORIZED" }));
+    const stream = new ReadableStream({
+      pull(controller) {
+        pulls++;
+        if (pulls === 1) controller.enqueue(initial);
+        else if (pulls <= 12) controller.enqueue(new Uint8Array(4096).fill(32));
+        else controller.close();
+      },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 });
+    const res = new Response(stream, {status, headers: {
+      "Content-Type": "application/json", "Cache-Control": "no-store",
+    }});
+    await withFetch(async () => res, () => status === 201 ?
+      rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN") :
+      rejectsAs(() => readVerifiedIdentitySession(origin, bearer), status === 200 ? 502 : 401,
+        status === 200 ? "OWNER_RESPONSE_INVALID" : "OWNER_REQUEST_FAILED"));
+    assert.ok(cancelled, "oversized stream must be cancelled, status " + status);
+    assert.ok(pulls < 12, "must not read remaining oversized response");
+    assert.equal(res.body.locked, false);
+  }
+});
+
+test("Identity measures UTF-8 bytes and rejects malformed encoding", async () => {
+  // Non-ASCII padding inside a JSON string in a denial would otherwise be
+  // parsed as an allowlisted rejection despite crossing the owner byte cap.
+  const denial = { error: "UNAUTHORIZED", detail: "ع".repeat(9000) };
+  await withFetch(async () => response(denial, 401),
+    () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 401, "OWNER_REQUEST_FAILED"));
+  const malformed = new Uint8Array([...new TextEncoder().encode('{"actorId":"a'), 0xff,
+    ...new TextEncoder().encode('","role":"customer","sessionExpiresAt":"' + expires() + '"}')]);
+  await withFetch(async () => new Response(malformed, { headers: {
+    "Content-Type": "application/json", "Cache-Control": "no-store",
+  } }), () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+});
+
+test("Identity stops stalled bodies on an absolute deadline and releases the reader", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  for (const status of [200, 401, 201]) {
+    const started = Promise.withResolvers();
+    let cancelled = false;
+    const res = new Response(new ReadableStream({
+      pull() { started.resolve(); return new Promise(() => {}); },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 }), { status, headers: {
+      "Content-Type": "application/json", "Cache-Control": "no-store",
+    } });
+    await withFetch(async () => res, async () => {
+      const pending = status === 201 ?
+        rejectsAs(() => admitCurrentCustomerAsMerchant(origin, bearer), 502, "OPERATION_RESULT_UNKNOWN") :
+        rejectsAs(() => readVerifiedIdentitySession(origin, bearer), status === 200 ? 502 : 401,
+          status === 200 ? "OWNER_RESPONSE_INVALID" : "OWNER_REQUEST_FAILED");
+      await started.promise;
+      t.mock.timers.tick(5_000);
+      await pending;
+    });
+    assert.equal(cancelled, true);
+    assert.equal(res.body.locked, false);
+  }
+});
+
+test("Identity rejects absent streams, unsafe paths and declared oversize without a fallback read", async () => {
+  const { ownerRequest } = await import("./transport.ts");
+  await withFetch(async () => assert.fail("unsafe request dispatched"), async () => {
+    for (const path of ["https://elsewhere.test/session", "//elsewhere.test/session", "/\\elsewhere.test/session"]) {
+      await rejectsAs(() => ownerRequest(origin, path, bearer, "GET", 200), 0, "IDENTITY_ENDPOINT_UNSAFE");
+    }
+  });
+  const headers = new Headers({ "Content-Type": "application/json", "Cache-Control": "no-store" });
+  await withFetch(async () => ({ status: 200, ok: true, headers, body: null,
+    text: () => assert.fail("unbounded text fallback"), json: () => assert.fail("unbounded JSON fallback"),
+  }), () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+  for (const status of [200, 202]) {
+    let cancelled = false;
+    const res = new Response(new ReadableStream({
+      pull() { assert.fail("rejected body must not be consumed"); },
+      cancel() { cancelled = true; },
+    }, { highWaterMark: 0 }), { status, headers: {
+      "Content-Type": "application/json", "Cache-Control": "no-store", "Content-Length": "16385",
+    } });
+    await withFetch(async () => res,
+      () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+    assert.equal(cancelled, true);
+  }
+});
+
+test("Identity accepts valid split UTF-8 at the exact byte limit", async () => {
+  const expected = { ...principal(), actorId: "ع" };
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(JSON.stringify(expected));
+  const padded = new Uint8Array(16384).fill(32);
+  padded.set(bytes);
+  const split = bytes.indexOf(0xd8) + 1;
+  assert.ok(split > 0);
+  const res = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(padded.subarray(0, split));
+      controller.enqueue(padded.subarray(split));
+      controller.close();
+    },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  await withFetch(async () => res, async () => {
+    assert.deepEqual(await readVerifiedIdentitySession(origin, bearer), expected);
+  });
+  assert.equal(res.body.locked, false);
+});
+
+test("Identity cleanup rejection cannot replace the authoritative failure", async () => {
+  for (const headers of [
+    { "Content-Type": "text/html", "Cache-Control": "no-store" },
+    { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  ]) {
+    let cancelled = false;
+    const res = new Response(new ReadableStream({
+      pull(controller) { controller.enqueue(new Uint8Array(16385)); },
+      cancel() { cancelled = true; return Promise.reject(new Error("cleanup failed")); },
+    }, { highWaterMark: 0 }), { headers });
+    await withFetch(async () => res,
+      () => rejectsAs(() => readVerifiedIdentitySession(origin, bearer), 502, "OWNER_RESPONSE_INVALID"));
+    assert.equal(cancelled, true);
+    assert.equal(res.body.locked, false);
   }
 });
