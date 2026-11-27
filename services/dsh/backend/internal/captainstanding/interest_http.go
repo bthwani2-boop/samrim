@@ -1,11 +1,7 @@
 package captainstanding
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io"
-	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -64,60 +60,6 @@ type interestHTTPHandler struct {
 
 func NewInterestHTTPHandler(service *InterestService) http.Handler {
 	return &interestHTTPHandler{service: service}
-}
-func interestUniqueMembers(raw []byte, allowed []string, required []string) bool {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	first, err := decoder.Token()
-	if err != nil || first != json.Delim('{') {
-		return false
-	}
-	seen := map[string]bool{}
-	for decoder.More() {
-		token, err := decoder.Token()
-		name, ok := token.(string)
-		if err != nil || !ok || seen[name] {
-			return false
-		}
-		found := false
-		for _, expected := range allowed {
-			if name == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-		seen[name] = true
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return false
-		}
-	}
-	last, err := decoder.Token()
-	if err != nil || last != json.Delim('}') {
-		return false
-	}
-	if _, err = decoder.Token(); err != io.EOF {
-		return false
-	}
-	for _, name := range required {
-		if !seen[name] {
-			return false
-		}
-	}
-	return true
-}
-func interestBearer(request *http.Request) (string, error) {
-	values := request.Header.Values("Authorization")
-	if len(values) != 1 || !strings.HasPrefix(values[0], "Bearer ") {
-		return "", ErrUnauthorized
-	}
-	bearer := strings.TrimPrefix(values[0], "Bearer ")
-	if bearer == "" || strings.ContainsAny(bearer, " \r\n\t") {
-		return "", ErrUnauthorized
-	}
-	return bearer, nil
 }
 func interestFilter(raw string) (InterestFilter, error) {
 	result := InterestFilter{Limit: 20}
@@ -210,7 +152,7 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		reply(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
 		return
 	}
-	if !isList && r.URL.RawQuery != "" || isList && (r.ContentLength != 0 || len(r.TransferEncoding) > 0) {
+	if (!isList && (r.URL.RawQuery != "" || r.URL.ForceQuery)) || (isList && !captainBodyless(r)) {
 		errorReply(w, ErrInvalidChange)
 		return
 	}
@@ -221,26 +163,13 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			reply(w, http.StatusTooManyRequests, map[string]string{"error": "RATE_LIMITED"})
 			return
 		}
-		typ, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || typ != "application/json" {
-			errorReply(w, ErrInvalidChange)
-			return
-		}
-		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 2048))
-		allowed := []string{"name", "phone", "city", "district", "vehicleType", "plateRegistered", "phoneType", "experienced", "experienceDetails"}
-		required := []string{"name", "phone", "city", "district", "vehicleType", "phoneType", "experienced"}
-		if err != nil || !interestUniqueMembers(raw, allowed, required) {
-			errorReply(w, ErrInvalidChange)
-			return
-		}
 		var in InterestSubmission
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		if decoder.Decode(&in) != nil {
-			errorReply(w, ErrInvalidChange)
+		if err := decodeCaptainCommand(w, r, 2048, &in,
+			"name", "phone", "city", "district", "vehicleType", "phoneType", "experienced"); err != nil {
+			errorReply(w, err)
 			return
 		}
-		if err = h.service.Submit(ctx, in); err != nil {
+		if err := h.service.Submit(ctx, in); err != nil {
 			errorReply(w, err)
 			return
 		}
@@ -249,7 +178,7 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		reply(w, http.StatusAccepted, map[string]bool{"received": true})
 		return
 	}
-	bearer, err := interestBearer(r)
+	bearer, err := captainBearer(r)
 	if err != nil {
 		errorReply(w, err)
 		return
@@ -273,20 +202,10 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		errorReply(w, ErrInvalidChange)
 		return
 	}
-	typ, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || typ != "application/json" {
-		errorReply(w, ErrInvalidChange)
-		return
-	}
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64))
-	if err != nil || !interestUniqueMembers(raw, []string{"contacted"}, []string{"contacted"}) {
-		errorReply(w, ErrInvalidChange)
-		return
-	}
 	var change struct {
 		Contacted bool `json:"contacted"`
 	}
-	if json.Unmarshal(raw, &change) != nil || !change.Contacted {
+	if err := decodeCaptainCommand(w, r, 64, &change, "contacted"); err != nil || !change.Contacted {
 		errorReply(w, ErrInvalidChange)
 		return
 	}

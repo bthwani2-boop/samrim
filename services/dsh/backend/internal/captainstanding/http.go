@@ -1,9 +1,10 @@
 package captainstanding
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"io"
 	"mime"
@@ -52,35 +53,63 @@ func errorReply(w http.ResponseWriter, err error) {
 	reply(w, status, map[string]string{"error": code})
 }
 
-// Duplicate critical JSON fields are ambiguous; encoding/json v1 silently
-// accepts them, so reject duplicate top-level members before decoding.
-func uniqueObjectMembers(raw []byte) bool {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	start, err := decoder.Token()
-	if err != nil || start != json.Delim('{') {
-		return false
+// Decode the complete bounded command representation before any owner effect.
+// Native JSON v2 rejects duplicate names, malformed Unicode and case-mismatched
+// members. Presence and null are checked separately from Go zero values.
+func decodeCaptainCommand(w http.ResponseWriter, r *http.Request, limit int64, dst any, required ...string) error {
+	media := r.Header.Values("Content-Type")
+	if len(media) != 1 || len(r.Header.Values("Content-Encoding")) != 0 ||
+		r.URL.RawQuery != "" || r.URL.ForceQuery || r.Body == nil || r.ContentLength > limit {
+		return ErrInvalidChange
 	}
-	seen := map[string]bool{}
-	for decoder.More() {
-		token, err := decoder.Token()
-		key, ok := token.(string)
-		if err != nil || !ok || seen[key] ||
-			(key != "status" && key != "expectedVersion" &&
-				key != "operationId" && key != "reason") {
-			return false
-		}
-		seen[key] = true
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return false
+	kind, params, err := mime.ParseMediaType(media[0])
+	if err != nil || kind != "application/json" {
+		return ErrInvalidChange
+	}
+	for key, value := range params {
+		if key != "charset" || !strings.EqualFold(value, "utf-8") {
+			return ErrInvalidChange
 		}
 	}
-	end, err := decoder.Token()
-	if err != nil || end != json.Delim('}') {
-		return false
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		return ErrInvalidChange
 	}
-	_, err = decoder.Token()
-	return err == io.EOF
+	var members map[string]jsontext.Value
+	if jsonv2.Unmarshal(body, &members) != nil || members == nil {
+		return ErrInvalidChange
+	}
+	for _, value := range members {
+		if strings.TrimSpace(string(value)) == "null" {
+			return ErrInvalidChange
+		}
+	}
+	for _, name := range required {
+		if _, ok := members[name]; !ok {
+			return ErrInvalidChange
+		}
+	}
+	if jsonv2.Unmarshal(body, dst, jsonv2.RejectUnknownMembers(true)) != nil {
+		return ErrInvalidChange
+	}
+	return nil
+}
+
+func captainBearer(r *http.Request) (string, error) {
+	values := r.Header.Values("Authorization")
+	if len(values) != 1 || !strings.HasPrefix(values[0], "Bearer ") {
+		return "", ErrUnauthorized
+	}
+	bearer := strings.TrimPrefix(values[0], "Bearer ")
+	if bearer == "" || strings.ContainsAny(bearer, " \r\n\t") {
+		return "", ErrUnauthorized
+	}
+	return bearer, nil
+}
+
+func captainBodyless(r *http.Request) bool {
+	return r.ContentLength == 0 && len(r.TransferEncoding) == 0 &&
+		len(r.Header.Values("Content-Encoding")) == 0
 }
 
 // standingRoute is the authoritative admission decision for both the HTTP
@@ -154,16 +183,15 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		reply(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
 		return
 	}
-	if (!operatorList && r.URL.RawQuery != "") || (r.Method != http.MethodPatch && (r.ContentLength != 0 || len(r.TransferEncoding) > 0)) {
+	if (!operatorList && (r.URL.RawQuery != "" || r.URL.ForceQuery)) || (r.Method != http.MethodPatch && !captainBodyless(r)) {
 		errorReply(w, ErrInvalidChange)
 		return
 	}
-	headers := r.Header.Values("Authorization")
-	if len(headers) != 1 || !strings.HasPrefix(headers[0], "Bearer ") {
-		errorReply(w, ErrUnauthorized)
+	bearer, err := captainBearer(r)
+	if err != nil {
+		errorReply(w, err)
 		return
 	}
-	bearer := strings.TrimPrefix(headers[0], "Bearer ")
 	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
 	defer cancel()
 	if operatorList {
@@ -181,7 +209,6 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var standing Standing
-	var err error
 	switch expectedMethod {
 	case http.MethodGet:
 		if r.URL.Path == CaptainApplicationPath {
@@ -194,26 +221,14 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case http.MethodPost:
 		standing, err = h.service.Apply(ctx, bearer)
 	case http.MethodPatch:
-		mediaType, _, mediaErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if mediaErr != nil || mediaType != "application/json" {
-			errorReply(w, ErrInvalidChange)
-			return
-		}
 		var input struct {
 			Status          Status `json:"status"`
 			ExpectedVersion int64  `json:"expectedVersion"`
 			OperationID     string `json:"operationId"`
 			Reason          string `json:"reason"`
 		}
-		raw, readErr := io.ReadAll(http.MaxBytesReader(w, r.Body, 2048))
-		if readErr != nil || !uniqueObjectMembers(raw) {
-			errorReply(w, ErrInvalidChange)
-			return
-		}
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		if decoder.Decode(&input) != nil {
-			errorReply(w, ErrInvalidChange)
+		if err := decodeCaptainCommand(w, r, 2048, &input, "status", "expectedVersion", "operationId", "reason"); err != nil {
+			errorReply(w, err)
 			return
 		}
 		standing, err = h.service.Change(ctx, bearer, Change{
