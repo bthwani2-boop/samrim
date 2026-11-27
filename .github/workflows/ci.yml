@@ -382,6 +382,7 @@ jobs:
       - name: Measure PR source only when the tested tree differs
         if: ${{ steps.coverage.outputs.reuse == 'false' }}
         env:
+          CI_ANALYSIS_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
           GOTOOLCHAIN: local
           GOWORK: 'off'
         run: |
@@ -390,6 +391,7 @@ jobs:
           node tools/dev/check-go.mjs --coverage --sonar-report
           bash tests/infra/test-owner-postgres-output.sh
           bash tests/infra/verify-owner-postgres-ci.sh --coverage
+          GITHUB_SHA="$CI_ANALYSIS_SHA" node tools/dev/ci-coverage-evidence.mjs publish postgres
       - name: Analyze using existing Sonar project and enforce its Quality Gate
         uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
         with:

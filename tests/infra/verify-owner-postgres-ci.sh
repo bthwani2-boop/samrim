@@ -114,6 +114,34 @@ accept_owner_profile() {
     END {exit !(NR>1 && hit && !bad)}' "$1"
 }
 
+# The native producer records each validated report when it is collected.
+# Seal the exact inventory without recreating the receipt from surviving files.
+seal_owner_profiles() (
+  local folder="$1" expected="$2"
+  shift 2
+  [[ "$expected" =~ ^[1-9][0-9]*$ && "$#" -eq "$expected" ]] || exit 1
+  cd "$folder" || exit 1
+  shopt -s nullglob dotglob
+  local -a entries=(*)
+  [[ "${#entries[@]}" -eq "$expected" ]] || exit 1
+  local entry receipt name
+  local -A recorded=()
+  for receipt in "$@"; do
+    [[ "$receipt" =~ ^[a-f0-9]{64}\ \*[A-Za-z0-9][A-Za-z0-9._-]*\.out$ ]] || exit 1
+    name="${receipt:66}"
+    [[ -z "${recorded[$name]+present}" ]] || exit 1
+    recorded["$name"]=1
+  done
+  for entry in "${entries[@]}"; do
+    [[ -f "$entry" && ! -L "$entry" && -n "${recorded[$entry]+present}" ]] || exit 1
+  done
+  local manifest
+  manifest="$(printf '%s\n' "$@" | LC_ALL=C sort -k2,2)" || exit 1
+  printf '%s\n' "$manifest" | sha256sum --check --strict --status - || exit 1
+  set -o noclobber
+  printf '%s\n' "$manifest" > reports.sha256
+)
+
 run_test() {
   local name="$1" dir="$2" binary="$3" pattern="$4" expected="$5" output
   shift 5
@@ -136,7 +164,7 @@ run_test() {
     return 1
   fi
   if [[ -n "$profile" ]]; then
-    local destination="$scratch/profiles/$profile" candidate
+    local destination="$scratch/profiles/$profile" candidate receipt
     candidate="$destination.partial"
     [[ ! -e "$destination" && ! -L "$destination" &&
        ! -e "$candidate" && ! -L "$candidate" ]] || {
@@ -151,6 +179,8 @@ run_test() {
       return 1
     fi
     mv -- "$candidate" "$destination" || return 1
+    receipt="$(cd "$scratch/profiles" && sha256sum --binary -- "$profile")" || return 1
+    coverage_receipts+=("$receipt")
     echo "OWNER_POSTGRES_COVERAGE_PROFILE=$profile"
   fi
   printf '%s\n' "$output" | grep -E '^--- (PASS|FAIL|SKIP):|^PASS$|^FAIL$' || true
@@ -340,6 +370,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 coverage_enabled=no
 cover_flags=()
 coverage_sequence=0
+coverage_receipts=()
 if [[ $# -eq 1 && "$1" == --coverage ]]; then
   coverage_enabled=yes
   cover_flags=(-covermode=atomic -coverpkg=./...)
@@ -520,9 +551,8 @@ verify_wlt_restoration
 finish_stage
 
 if [[ "$coverage_enabled" == yes ]]; then
-  profiles=("$scratch"/profiles/*.out)
-  [[ "$coverage_sequence" -gt 0 && "${#profiles[@]}" -eq "$coverage_sequence" ]] || {
-    echo 'Incomplete isolated owner coverage inventory' >&2; exit 1;
+  seal_owner_profiles "$scratch/profiles" "$coverage_sequence" "${coverage_receipts[@]}" || {
+    echo 'Incomplete or altered isolated owner coverage inventory' >&2; exit 1;
   }
   mkdir -p coverage
   [[ ! -e coverage/owner-postgres && ! -L coverage/owner-postgres ]] || exit 1

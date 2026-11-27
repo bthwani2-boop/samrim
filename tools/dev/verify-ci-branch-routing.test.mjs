@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -21,7 +21,7 @@ const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles ?
 const expr = body => "$" + "{{ " + body + " }}";
 const compact = value => String(value).replace(/\s+/g, "");
 const sameExpression = (actual, expected) => assert.equal(compact(actual), compact(expr(expected)));
-const noArchiveEvent = "github.event_name != 'pull_request' || !startsWith(github.head_ref, 'archive/')";
+
 const steps = job => job.steps ?? [];
 const command = step => step.run ?? "";
 const commands = job => steps(job).map(command).join("\n");
@@ -32,17 +32,12 @@ function one(job, predicate, purpose) {
 }
 const runs = (job, pattern) => one(job, step => pattern.test(command(step)), String(pattern));
 const action = (step, name) => typeof step.uses === "string" && step.uses.startsWith(name + "@");
-function mandatory(job, step) {
+function mandatory(_job, step) {
   assert.equal(step.if, undefined, "Required step may not be conditionally skipped");
-  assert.notEqual(step["continue-on-error"], true);
-  assert.notEqual(job["continue-on-error"], true);
 }
 function qualityCheck(step) {
   const install = runs(quality, /pnpm install --frozen-lockfile --ignore-scripts/);
   assert.equal(install.id, "dependencies");
-  sameExpression(step.if, "!cancelled() && steps.dependencies.outcome == 'success'");
-  assert.notEqual(step["continue-on-error"], true);
-  assert.notEqual(quality["continue-on-error"], true);
   order(quality, install, step);
 }
 function order(job, ...ordered) {
@@ -58,6 +53,87 @@ function invoke(program, args, cwd, env = {}) {
 function shell(script, env = {}, cwd = root) {
   return invoke(bash, ["-c", script], cwd, env);
 }
+
+// Workflow syntax belongs to Actionlint. This contract covers the project's
+// actual failure propagation, token privileges, and conditional execution.
+const independentQualityChecks = [
+  /^pnpm check:contracts\s*$/,
+  /^pnpm knip:files\s*$/,
+  /^pnpm check:design\s*$/,
+  /^pnpm check:apps:source\s*$/,
+  /^pnpm check:lint --diagnostic-level=warn --max-diagnostics=none\s*$/,
+  /^pnpm -r --no-bail --if-present run typecheck\s*$/
+];
+const afterDependencies = "!cancelled() && steps.dependencies.outcome == 'success'";
+const freshCoverage = "steps.coverage.outputs.reuse == 'false'";
+const jobConditions = {
+  ci: {
+    workspace: "github.event_name != 'pull_request' || !startsWith(github.head_ref, 'archive/')",
+    sonar: "success() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)",
+    required_ci: "always()"
+  },
+  security: { dependency_review: "github.event_name == 'pull_request'" }
+};
+function requireFailurePropagation(item, location) {
+  assert.ok(item["continue-on-error"] === undefined || item["continue-on-error"] === false,
+    location + ": failure masking is forbidden, including dynamic expressions");
+}
+function assertWorkflowTrust(document, kind) {
+  assert.deepEqual(document.permissions, { contents: "read" }, "Workflow token must remain read-only");
+  for (const [id, job] of Object.entries(document.jobs)) {
+    const location = kind + "/" + id;
+    assert.equal(job.permissions, undefined, location + ": unexpected permission override");
+    requireFailurePropagation(job, location);
+    const condition = jobConditions[kind][id];
+    if (condition === undefined) {
+      assert.equal(job.if, undefined, location + ": unexpected job condition");
+    } else {
+      sameExpression(job.if, condition);
+    }
+    const admitted = new Map();
+    if (kind === "ci" && id === "quality") {
+      for (const pattern of independentQualityChecks) admitted.set(runs(job, pattern), afterDependencies);
+    }
+    if (kind === "ci" && id === "sonar") {
+      admitted.set(one(job, step => action(step, "actions/setup-go"), "conditional Go setup"), freshCoverage);
+      admitted.set(runs(job, /node tools\/dev\/check-go\.mjs --coverage --sonar-report/), freshCoverage);
+    }
+    for (const step of steps(job)) {
+      const stepLocation = location + "/" + (step.id ?? step.name ?? "unnamed step");
+      requireFailurePropagation(step, stepLocation);
+      if (admitted.has(step)) sameExpression(step.if, admitted.get(step));
+      else assert.equal(step.if, undefined, stepLocation + ": unexpected step condition");
+      if (step.uses && !step.uses.startsWith("./")) assert.match(step.uses, /@[a-f0-9]{40}$/);
+      if (action(step, "actions/checkout")) assert.equal(step.with["persist-credentials"], false);
+    }
+  }
+}
+
+test("all workflow jobs and steps preserve the exact trust and failure contract", () => {
+  assertWorkflowTrust(ci, "ci");
+  assertWorkflowTrust(scheduled, "security");
+});
+
+test("workflow trust rejects failure masking, permission expansion and undeclared skips", () => {
+  const rejected = [
+    ["ci", copy => { copy.jobs.required_ci["continue-on-error"] = true; }, /failure masking/],
+    ["ci", copy => { copy.jobs.required_ci["continue-on-error"] = expr("true"); }, /failure masking/],
+    ["ci", copy => { copy.jobs.quality.steps.at(-1)["continue-on-error"] = expr("true"); }, /failure masking/],
+    ["security", copy => { copy.jobs.go.steps.at(-1)["continue-on-error"] = true; }, /failure masking/],
+    ["ci", copy => { copy.permissions["id-token"] = "write"; }, /read-only/],
+    ["security", copy => { copy.jobs.go.permissions = { contents: "write" }; }, /permission override/],
+    ["security", copy => { copy.jobs.javascript.if = expr("false"); }, /unexpected job condition/],
+    ["ci", copy => { runs(copy.jobs.postgres, /payment-mock\/smoke\.sh/).if = expr("false"); }, /unexpected step condition/],
+    ["ci", copy => { runs(copy.jobs.quality, /^pnpm check:contracts\s*$/).if = expr("false"); }, /Expected values/],
+    ["ci", copy => { runs(copy.jobs.sonar, /check-go\.mjs --coverage --sonar-report/).if = undefined; }, /Expected values/]
+  ];
+  for (const [kind, mutate, expected] of rejected) {
+    const copy = structuredClone(kind === "ci" ? ci : scheduled);
+    mutate(copy);
+    assert.throws(() => assertWorkflowTrust(copy, kind), expected);
+  }
+});
+
 test("one integration event owner, stable protected names and no duplicate development push", () => {
   assert.deepEqual(ci.on.push, { branches: ["main"] });
   assert.deepEqual(ci.on.pull_request.branches, ["main"]);
@@ -67,19 +143,13 @@ test("one integration event owner, stable protected names and no duplicate devel
   assert.deepEqual(scheduled.on.schedule, [{ cron: "17 3 * * 1" }]);
   assert.deepEqual(Object.keys(scheduled.jobs).sort(), ["dependency_review", "go", "javascript"]);
   assert.deepEqual(Object.keys(ci.jobs).sort(), ["application_build", "backend", "containers", "postgres", "quality", "required_ci", "security", "sonar", "typescript_tests", "windows", "workspace"]);
-  for (const obsolete of ["go-quality.yml", "dependency-audit.yml", "dependency-nx-safety.yml", "sonar-quality.yml"]) {
-    assert.ok(!existsSync(path.join(root, ".github/workflows", obsolete)));
-  }
+  assert.deepEqual(readdirSync(path.join(root, ".github/workflows")).filter(name => /\.ya?ml$/i.test(name)).sort(), ["ci.yml", "security.yml"]);
   assert.equal(required.name, "fast-guard");
   assert.equal(sonar.name, "SonarQube Cloud Quality Gate");
   for (const item of Object.values(ci.jobs)) assert.doesNotMatch(item.name ?? "", /\$\{/);
-  sameExpression(workspace.if, noArchiveEvent);
   for (const item of [quality, app, build, goQuality, postgres, containers, windows, security]) {
-    assert.equal(item.if, undefined);
     assert.equal(item.needs, "workspace");
   }
-  sameExpression(required.if, "always()");
-  sameExpression(sonar.if, "success() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)");
   assert.equal(security.uses, "./.github/workflows/security.yml");
   assert.deepEqual(new Set(required.needs), new Set(["workspace","quality","typescript_tests","application_build","backend","postgres","containers","windows","security","sonar"]));
   assert.deepEqual(new Set(sonar.needs), new Set(["typescript_tests", "backend", "postgres"]));
@@ -90,16 +160,6 @@ test("one integration event owner, stable protected names and no duplicate devel
 
 test("required jobs retain the read-only pinned dependency, source, contract, build and owner checks", () => {
   const jobs = [...Object.values(ci.jobs), ...Object.values(scheduled.jobs)];
-  for (const job of jobs) {
-    assert.notEqual(job["continue-on-error"], true);
-    for (const step of steps(job)) {
-      assert.notEqual(step["continue-on-error"], true);
-      if (step.uses && !step.uses.startsWith("./")) assert.match(step.uses, /@[a-f0-9]{40}$/);
-      if (action(step, "actions/checkout")) assert.equal(step.with["persist-credentials"], false);
-    }
-  }
-  assert.equal(ci.permissions.contents, "read");
-  assert.equal(scheduled.permissions.contents, "read");
   for (const job of [quality, app, build, sonar, windows]) {
     const store = one(job, step => step.id === "pnpm-store", "pinned package store");
     const cache = one(job, step => action(step, "actions/cache"), "package-store cache");
@@ -192,8 +252,12 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.deepEqual([...suites.source, ...suites.operatorRuntime].sort(), discoverWorkspaceNodeTests(root));
   mandatory(workspace, runs(workspace, /node tools\/security\/verify-secrets\.mjs/));
   mandatory(goQuality, runs(goQuality, /node tools\/dev\/check-go\.mjs --ci --sonar-report/));
-  mandatory(postgres, runs(postgres, /tests\/infra\/verify-owner-postgres-ci\.sh/));
-  mandatory(postgres, runs(postgres, /tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/));
+  const outputGate = runs(postgres, /tests\/infra\/test-owner-postgres-output\.sh/);
+  const ownerTests = runs(postgres, /tests\/infra\/verify-owner-postgres-ci\.sh/);
+  const baselineRestore = runs(postgres, /tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/);
+  const paymentSmoke = runs(postgres, /tests\/infra\/payment-mock\/smoke\.sh/);
+  order(postgres, outputGate, ownerTests, baselineRestore, paymentSmoke);
+  for (const step of [outputGate, ownerTests, baselineRestore, paymentSmoke]) mandatory(postgres, step);
 });
 
 test("Windows acceptance runs the existing admitted platform suites and cannot be skipped by the required gate", () => {
@@ -230,7 +294,6 @@ test("required integration gate rejects every failed, cancelled, skipped or miss
 
 test("coverage producers, quality and build remain independent; Sonar cannot access a token for untrusted or incomplete evidence", () => {
   assert.deepEqual(sonar.needs, ["typescript_tests", "backend", "postgres"]);
-  sameExpression(sonar.if, "success() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)");
   assert.equal(quality.needs, "workspace");
   assert.equal(build.needs, "workspace");
   assert.equal(app.needs, "workspace");
@@ -258,6 +321,11 @@ for (const entry of evidence) {
     mandatory(entry.job, bind);
     mandatory(entry.job, upload);
     order(entry.job, bind, upload);
+    if (entry.kind === "postgres") {
+      const measure = runs(entry.job, /bash tests\/infra\/verify-owner-postgres-ci\.sh --coverage/);
+      mandatory(entry.job, measure);
+      order(entry.job, measure, bind);
+    }
     assert.equal(upload.with["if-no-files-found"], "error");
     for (const metadata of ["tree.txt", "reports.sha256"]) {
       assert.ok(upload.with.path.split(/\s+/).includes(entry.directory + "/" + metadata));
@@ -274,11 +342,10 @@ test("Sonar uses the single artifact admission boundary and remeasures only a va
   mandatory(sonar, admit);
   assert.equal(command(admit), "node tools/dev/ci-coverage-evidence.mjs admit");
   sameExpression(admit.env.CI_ANALYSIS_SHA, "github.event.pull_request.head.sha || github.sha");
-  sameExpression(fallback.if, "steps.coverage.outputs.reuse == 'false'");
-  sameExpression(one(sonar, step => action(step, "actions/setup-go"), "Go fallback setup").if, "steps.coverage.outputs.reuse == 'false'");
   assert.match(command(fallback), /pnpm check:coverage/);
   assert.match(command(fallback), /tests\/infra\/test-owner-postgres-output\.sh/);
-  assert.match(command(fallback), /tests\/infra\/verify-owner-postgres-ci\.sh --coverage/);
+  sameExpression(fallback.env.CI_ANALYSIS_SHA, "github.event.pull_request.head.sha || github.sha");
+  assert.match(command(fallback), /tests\/infra\/verify-owner-postgres-ci\.sh --coverage\s+GITHUB_SHA="\$CI_ANALYSIS_SHA" node tools\/dev\/ci-coverage-evidence\.mjs publish postgres/);
   order(sonar, one(sonar, step => action(step, "actions/setup-node"), "pinned Node"), admit, fallback, scanner);
 });
 
@@ -332,7 +399,6 @@ test("image security scans built images and rejects vulnerabilities or scanner f
 
 test("native dependency review supplements full lockfile and reachable Go audits only on PRs", () => {
   const review = scheduled.jobs.dependency_review;
-  sameExpression(review.if, "github.event_name == 'pull_request'");
   const scan = one(review, step => action(step, "actions/dependency-review-action"), "dependency review");
   mandatory(review, scan);
   assert.equal(scan.with["fail-on-severity"], "high");
@@ -362,20 +428,4 @@ test("CI uses the supported cache runtime and reports every warning and error wi
   assert.ok(config.files.includes.every(pattern => !(pattern.startsWith("!!") && pattern.endsWith("/**"))));
   assert.equal(config.linter.enabled, true);
   assert.equal(config.linter.rules.preset, "recommended");
-});
-
-test("all six independent static checks execute after installation even when another fails", () => {
-  const independent = [
-    /^pnpm check:contracts\s*$/,
-    /^pnpm knip:files\s*$/,
-    /^pnpm check:design\s*$/,
-    /^pnpm check:apps:source\s*$/,
-    /^pnpm check:lint --diagnostic-level=warn --max-diagnostics=none\s*$/,
-    /^pnpm -r --no-bail --if-present run typecheck\s*$/
-  ].map(pattern => runs(quality, pattern));
-  assert.equal(new Set(independent).size, 6);
-  for (const step of independent) qualityCheck(step);
-  const install = runs(quality, /pnpm install --frozen-lockfile --ignore-scripts/);
-  mandatory(quality, install);
-  assert.ok(required.needs.includes("quality"));
 });

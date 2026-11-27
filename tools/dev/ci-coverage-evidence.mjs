@@ -18,7 +18,6 @@ const objectId = /^[0-9a-f]{40}$/;
 const profileName = /^[A-Za-z0-9][A-Za-z0-9._-]*\.out$/;
 const maxReportBytes = 128 * 1024 * 1024;
 const exists = path => Boolean(lstatSync(path, { throwIfNoEntry: false }));
-const compare = (left, right) => left < right ? -1 : left > right ? 1 : 0;
 
 function requireDirectory(path) {
   const entry = lstatSync(path);
@@ -43,7 +42,7 @@ function readReports(spec, folder) {
   const names = spec.files ?? readdirSync(folder).filter(name => name.endsWith(".out"));
   assert.ok(names.length > 0 && names.every(name => spec.files || profileName.test(name)),
     "CI_COVERAGE_REPORT_INVENTORY_INVALID");
-  return new Map([...names].sort(compare).map(name => [name, reportBytes(join(folder, name))]));
+  return new Map([...names].sort().map(name => [name, reportBytes(join(folder, name))]));
 }
 
 function manifest(files) {
@@ -73,16 +72,20 @@ export function publishCoverageEvidence(checkout, kind, expectedSha) {
   const candidate = committedTree(root, expectedSha);
   const folder = join(root, spec.directory);
   const files = readReports(spec, folder);
-  for (const name of metadata) {
-    assert.ok(!exists(join(folder, name)), "CI_COVERAGE_METADATA_CONFLICT");
-  }
-  // PostgreSQL produces its complete profile directory, not a shared folder.
-  if (!spec.files) {
-    exactInventory(folder, files.keys(), "CI_COVERAGE_REPORT_INVENTORY_INVALID");
+  assert.ok(!exists(join(folder, "tree.txt")), "CI_COVERAGE_METADATA_CONFLICT");
+  const receipt = join(folder, "reports.sha256");
+  const expectedManifest = manifest(files);
+  // Fixed producers have a declared inventory. The native PostgreSQL runner
+  // owns its dynamic inventory and seals it at collection, before handoff.
+  if (spec.files) {
+    assert.ok(!exists(receipt), "CI_COVERAGE_METADATA_CONFLICT");
+  } else {
+    exactInventory(folder, [...files.keys(), "reports.sha256"], "CI_COVERAGE_REPORT_INVENTORY_INVALID");
+    assert.ok(reportBytes(receipt).equals(expectedManifest), "CI_COVERAGE_PRODUCER_HASH_MISMATCH");
   }
   assert.deepEqual(committedTree(root, expectedSha), candidate, "CI_COVERAGE_SOURCE_CHANGED");
+  if (spec.files) writeNew(receipt, expectedManifest);
   writeNew(join(folder, "tree.txt"), candidate.tree + "\n");
-  writeNew(join(folder, "reports.sha256"), manifest(files));
   return { tree: candidate.tree, count: files.size };
 }
 

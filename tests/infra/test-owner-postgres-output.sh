@@ -55,6 +55,7 @@ trap 'rm -rf -- "$scratch"' EXIT
 mkdir "$scratch/profiles"
 coverage_enabled=yes
 coverage_sequence=0
+coverage_receipts=()
 FAKE_PROFILE=$'mode: atomic\nexample.invalid/fixture.go:1.1,1.2 1 1'
 complete=$'=== RUN   TestFirst\n--- PASS: TestFirst (0.01s)\n=== RUN   TestSecond\n--- PASS: TestSecond (0.01s)\nPASS'
 case_output measured pass "$complete"
@@ -79,8 +80,37 @@ case_output zero_coordinate fail "$complete"
 FAKE_PROFILE=$'mode: atomic\nexample.invalid/fixture.go:1.1,1.2 0 1'
 case_output no_measured_statements fail "$complete"
 [[ "$(find "$scratch/profiles" -maxdepth 1 -type f | wc -l | tr -d '[:space:]')" == 1 ]]
+# Only the successful native measurement may contribute a receipt.
+[[ "${#coverage_receipts[@]}" -eq 1 ]]
+profile="$scratch/profiles/dummy.test-1.out"
+receipt="$scratch/profiles/reports.sha256"
+reject_seal() {
+  if seal_owner_profiles "$scratch/profiles" "$@" >/dev/null 2>&1; then
+    echo 'OWNER_COVERAGE_SEAL admitted invalid inventory' >&2; return 1
+  fi
+  [[ ! -e "$receipt" ]]
+}
+reject_seal 2 "${coverage_receipts[@]}"
+cp "$profile" "$scratch/saved.out"
+rm -- "$profile"
+reject_seal 1 "${coverage_receipts[@]}"
+cp "$scratch/saved.out" "$profile"
+printf 'changed\n' >> "$profile"
+reject_seal 1 "${coverage_receipts[@]}"
+cp "$scratch/saved.out" "$profile"
+cp "$profile" "$scratch/profiles/extra.out"
+reject_seal 1 "${coverage_receipts[@]}"
+reject_seal 2 "${coverage_receipts[@]}" "${coverage_receipts[@]}"
+rm -- "$scratch/profiles/extra.out"
+seal_owner_profiles "$scratch/profiles" 1 "${coverage_receipts[@]}"
+(cd "$scratch/profiles" && sha256sum --check --strict reports.sha256)
+[[ "$(cat "$receipt")" == "${coverage_receipts[0]}" ]]
+if seal_owner_profiles "$scratch/profiles" 1 "${coverage_receipts[@]}"; then
+  echo 'OWNER_COVERAGE_SEAL overwrote native receipt' >&2; exit 1
+fi
 coverage_enabled=no
 echo 'OWNER_COVERAGE_ADMISSION_GATE_PASS positive=1 negative=9'
+echo 'OWNER_COVERAGE_SEAL_PASS positive=1 negative=6'
 
 # Compare the declared discovery inventory against native Go selection before
 # starting any disposable Docker stage. Retain the explicit reviewed allowlist.

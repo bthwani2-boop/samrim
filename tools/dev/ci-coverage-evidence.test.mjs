@@ -137,16 +137,46 @@ test("PostgreSQL producer rejects unrelated files in its dedicated profile inven
   for (const name of ["tree.txt", "reports.sha256"]) assert.equal(existsSync(join(repo, folder, name)), false);
 }));
 
+test("PostgreSQL attestation cannot reconstruct missing native evidence", () => fixture(({ repo, sha, put }) => {
+  const folder = join(repo, postgresProducer.directory);
+  for (const name of postgresProducer.files) put(join(folder, name), content(name));
+  rmSync(join(folder, postgresProducer.files[0]));
+  assert.throws(() => publishCoverageEvidence(repo, "postgres", sha), /CI_COVERAGE_REPORT_INVENTORY_INVALID/);
+  assert.equal(existsSync(join(folder, "tree.txt")), false);
+  assert.equal(existsSync(join(folder, "reports.sha256")), false);
+}));
+
+for (const defect of ["missing", "changed", "extra"]) {
+  test("PostgreSQL attestation rejects " + defect + " profile after native collection", () => fixture(({ repo, sha, put }) => {
+    const folder = join(repo, postgresProducer.directory);
+    const files = postgresProducer.files;
+    for (const name of files) put(join(folder, name), content(name));
+    const receipt = join(folder, "reports.sha256");
+    const sealed = independentManifest(folder, files);
+    put(receipt, sealed);
+    if (defect === "missing") rmSync(join(folder, files[0]));
+    else if (defect === "changed") put(join(folder, files[0]), "changed\n");
+    else put(join(folder, "extra.out"), "extra\n");
+    assert.throws(() => publishCoverageEvidence(repo, "postgres", sha), /CI_COVERAGE_PRODUCER_HASH_MISMATCH/);
+    assert.equal(existsSync(join(folder, "tree.txt")), false);
+    assert.equal(readFileSync(receipt, "utf8"), sealed);
+  }));
+}
+
 for (const { kind, artifact, directory, files } of producers) {
   test(artifact + " attests exact committed source and rejects hidden, staged, dirty and empty inputs", () => fixture(({ repo, git, sha, tree, put }) => {
     const folder = join(repo, directory);
     for (const name of files) put(join(folder, name), content(name));
+    const receipt = join(folder, "reports.sha256");
+    const sealed = independentManifest(folder, files);
+    if (kind === "postgres") put(receipt, sealed);
     const publish = () => publishCoverageEvidence(repo, kind, sha);
     assert.deepEqual(publish(), { tree, count: files.length });
     assert.equal(readFileSync(join(folder, "tree.txt"), "utf8").trim(), tree);
     assert.equal(readFileSync(join(folder, "reports.sha256"), "utf8"), independentManifest(folder, files));
     assert.throws(publish, /CI_COVERAGE_METADATA_CONFLICT/);
-    for (const name of ["tree.txt", "reports.sha256"]) rmSync(join(folder, name));
+    rmSync(join(folder, "tree.txt"));
+    if (kind !== "postgres") rmSync(receipt);
     assert.throws(() => publishCoverageEvidence(repo, kind, "0".repeat(40)), /CI_CANDIDATE_SHA_MISMATCH/);
     const reject = () => assert.throws(publish, /CI_CANDIDATE_NOT_CLEAN_AND_ADMITTED/);
     const untracked = join(repo, "untracked-source.test.mjs");
@@ -174,7 +204,9 @@ for (const { kind, artifact, directory, files } of producers) {
     }
     put(join(folder, files[0]), "");
     assert.throws(publish, /CI_COVERAGE_REPORT_EMPTY/);
-    for (const name of ["tree.txt", "reports.sha256"]) assert.equal(existsSync(join(folder, name)), false);
+    assert.equal(existsSync(join(folder, "tree.txt")), false);
+    if (kind === "postgres") assert.equal(readFileSync(receipt, "utf8"), sealed);
+    else assert.equal(existsSync(receipt), false);
   }));
 }
 
