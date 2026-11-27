@@ -97,8 +97,11 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		JOIN variants v ON v.id=o.variant_id AND v.product_id=o.product_id
 		WHERE o.store_id=$1 AND p.active AND v.sellable AND v.required_attributes_valid
 			AND o.published AND o.available AND o.price_yer>0 AND o.stock_units>0
-			AND o.id>$2 AND strpos(lower(p.name),lower($4))>0 ORDER BY o.id LIMIT $3`
-	rows, err := tx.QueryContext(ctx, q, id, after, limit+1, search)
+			AND o.id>$2
+			AND ($4='' OR strpos(translate(lower(normalize(p.name)), $5, $6),
+				NULLIF(translate(lower(normalize($4)), $5, $6), ''))>0)
+		ORDER BY o.id LIMIT $3`
+	rows, err := tx.QueryContext(ctx, q, id, after, limit+1, search, searchArabicVariants, searchArabicReplacements)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return

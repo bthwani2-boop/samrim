@@ -24,7 +24,9 @@ const PublicStoresWithScheduleSQL = `SELECT s.id,s.name,s.city_id,s.vertical_id,
  JOIN verticals v ON v.id=s.vertical_id
  WHERE s.published AND c.active AND v.active
    AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
-     AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
+     AND s.city_id=$2 AND s.id>$3
+     AND ($4='' OR strpos(translate(lower(normalize(s.name)), $7, $8),
+       NULLIF(translate(lower(normalize($4)), $7, $8), ''))>0)
      AND ($5='' OR s.vertical_id=$5)))
  ORDER BY s.id LIMIT $6`
 
@@ -34,7 +36,8 @@ func ReadCustomerSchedule(ctx context.Context, tx *sql.Tx, storeID string) (Cust
 	var id, name, cityID, verticalID string
 	var raw []byte
 	var now time.Time
-	err := tx.QueryRowContext(ctx, PublicStoresWithScheduleSQL, storeID, "", "", "", "", 1).
+	// Exact Store lookup does not use the marketplace search selectors.
+	err := tx.QueryRowContext(ctx, PublicStoresWithScheduleSQL, storeID, "", "", "", "", 1, "", "").
 		Scan(&id, &name, &cityID, &verticalID, &raw, &now)
 	if err != nil {
 		return CustomerScheduleEvidence{}, err

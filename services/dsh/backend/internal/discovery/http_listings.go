@@ -194,8 +194,15 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 	jsonResponse(w, 200, result)
 }
 
-// Search is a literal substring, never a SQL LIKE pattern. Hashing its scope
-// keeps even multi-byte search text within the existing bounded cursor format.
+// PostgreSQL translate maps the first four characters to bare Alef and drops
+// the remaining characters: tatweel, common vowel marks and superscript Alef.
+const (
+	searchArabicVariants     = "أإآٱ\u0640\u064b\u064c\u064d\u064e\u064f\u0650\u0651\u0652\u0670"
+	searchArabicReplacements = "اااا"
+)
+
+// Keep cursors bound to the trimmed input and matching rules. A cursor from
+// the old matcher may have skipped newly matching results before its anchor.
 func publicSearch(r *http.Request, scope string) (string, string, bool) {
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil || len(values["q"]) > 1 {
@@ -207,7 +214,7 @@ func publicSearch(r *http.Request, scope string) (string, string, bool) {
 	}
 	search := strings.TrimSpace(raw)
 	if search != "" {
-		scope += fmt.Sprintf(":%x", sha256.Sum256([]byte(search)))
+		scope += fmt.Sprintf(":%x", sha256.Sum256([]byte("arabic-v1\x00"+search)))
 	}
 	return search, scope, true
 }

@@ -2,11 +2,14 @@ package discovery
 
 import (
 	"context"
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
+	"crypto/sha256"
+	"fmt"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 func TestStoreSearchValidationAndCursorScope(t *testing.T) {
@@ -201,15 +204,20 @@ func TestOwnerBackedVerticalFilter(t *testing.T) {
 
 func TestOwnerBackedStoreSearch(t *testing.T) {
 	_, s := setupIntegratedOwner(t)
-	for _, tc := range []struct {
-		query string
-		count int
-	}{
-		{"متجر", 2}, {" أ ", 1}, {"مباشر", 0}, {"مسودة", 0}, {"عدن", 0}, {"غير مسموح", 0}, {"%", 0}, {"_", 0}, {"' OR true --", 0},
-	} {
-		w, body := request(s, "/v1/public/stores?city_id=sanaa&q="+url.QueryEscape(tc.query))
-		if w.Code != 200 || len(results(t, body)) != tc.count {
-			t.Fatalf("search %q: %d %s", tc.query, w.Code, w.Body.String())
+	for _, scheduleEnabled := range []bool{false, true} {
+		s.StoreAvailabilityEnabled = scheduleEnabled
+		for _, tc := range []struct {
+			query string
+			count int
+		}{
+			{"متجر", 2}, {" أ ", 1}, {"مَتْـجَر إ", 1}, {"متجر أ", 1}, {"متجر ٱ", 1},
+			{"ـَ", 0}, {"مُباشر", 0}, {"مباشر", 0}, {"مسودة", 0}, {"عدن", 0},
+			{"غير مسموح", 0}, {"%", 0}, {"_", 0}, {"' OR true --", 0},
+		} {
+			w, body := request(s, "/v1/public/stores?city_id=sanaa&q="+url.QueryEscape(tc.query))
+			if w.Code != 200 || len(results(t, body)) != tc.count {
+				t.Errorf("schedule=%t search %q: %d %s", scheduleEnabled, tc.query, w.Code, w.Body.String())
+			}
 		}
 	}
 	path := "/v1/public/stores?city_id=sanaa&limit=1&q=" + url.QueryEscape("متجر")
@@ -224,6 +232,12 @@ func TestOwnerBackedStoreSearch(t *testing.T) {
 	w, body = request(s, path+"&cursor="+url.QueryEscape(cursor))
 	if w.Code != 200 || len(results(t, body)) != 1 || results(t, body)[0].(map[string]any)["id"] != "market-sanaa-paused" {
 		t.Fatalf("search pagination: %s", w.Body.String())
+	}
+	oldScope := fmt.Sprintf("sanaa:%x", sha256.Sum256([]byte("متجر")))
+	oldCursor := makeCursor(pageCursor{Kind: "stores", Scope: oldScope, After: "market-sanaa", Revision: int64(body["revision"].(float64))})
+	w, _ = request(s, path+"&cursor="+url.QueryEscape(oldCursor))
+	if w.Code != 400 {
+		t.Errorf("pre-normalization search cursor accepted: %d", w.Code)
 	}
 	for _, path := range []string{"/v1/public/stores?city_id=sanaa", "/v1/public/stores?city_id=aden&q=" + url.QueryEscape("متجر"), "/v1/public/stores?city_id=sanaa&q=" + url.QueryEscape("أ")} {
 		w, _ = request(s, path+"&cursor="+url.QueryEscape(cursor))
@@ -302,16 +316,17 @@ func TestOwnerBackedOfferSearch(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	mutate("UPDATE products SET name=CASE id WHEN 'p-flour' THEN 'Flour دقيق' WHEN 'p-water' THEN 'flour ماء' ELSE name END WHERE store_id='market-sanaa'")
+	mutate("UPDATE products SET name=CASE id WHEN 'p-flour' THEN 'Flour دَقِـيق أُرْز' WHEN 'p-water' THEN 'flour ماء' ELSE name END WHERE store_id='market-sanaa'")
 	for _, tc := range []struct {
 		search string
 		count  int
 	}{
-		{"flour", 2}, {"FLOUR", 2}, {" دقيق ", 1}, {"ماء", 1}, {"غير منشور", 0}, {"نفدت", 0}, {"%", 0}, {"_", 0}, {"' OR true --", 0},
+		{"flour", 2}, {"FLOUR", 2}, {" دقيق ", 1}, {"ارز", 1}, {"ماء", 1},
+		{"ـَ", 0}, {"غير منشور", 0}, {"نفدت", 0}, {"%", 0}, {"_", 0}, {"' OR true --", 0},
 	} {
 		w, body := request(s, "/v1/public/stores/market-sanaa/offers?q="+url.QueryEscape(tc.search))
 		if w.Code != 200 || len(results(t, body)) != tc.count {
-			t.Fatalf("Offer search %q: %d %s", tc.search, w.Code, w.Body.String())
+			t.Errorf("Offer search %q: %d %s", tc.search, w.Code, w.Body.String())
 		}
 		for _, item := range results(t, body) {
 			v := item.(map[string]any)

@@ -10,7 +10,12 @@ paths:
         - name: q
           in: query
           required: false
-          description: Optional literal case-insensitive Offer display-name substring. The wire value is limited to 80 Unicode code points including surrounding whitespace, then trimmed before matching. Empty means all eligible Offers. Cursors are bound to Store, trimmed search and catalog revision; changing search requires a fresh page. Percent and underscore are literal characters, never wildcards.
+          description: >-
+            Optional literal case-insensitive Offer display-name substring. Matching normalizes Unicode to NFC,
+            folds Arabic Alef variants and ignores common Arabic vowel marks and tatweel. The wire value is
+            limited to 80 Unicode code points including surrounding whitespace, then trimmed. Empty means all
+            eligible Offers. A nonempty query made only of ignored marks returns no matches. Cursors are bound
+            to Store, trimmed search, matching rules and catalog revision. Percent and underscore are literal.
           schema: { type: string, maxLength: 80 }
         - name: limit
           in: query

@@ -40,7 +40,8 @@ type publicStoreSelection struct {
 // marketplace listing. Only bound selectors vary; hours-disabled deployments
 // must not reference operational tables that have not been installed.
 func (s *Server) queryPublicStores(ctx context.Context, tx *sql.Tx, selection publicStoreSelection) (*sql.Rows, error) {
-	args := []any{selection.id, selection.city, selection.after, selection.search, selection.vertical, selection.limit}
+	args := []any{selection.id, selection.city, selection.after, selection.search, selection.vertical, selection.limit,
+		searchArabicVariants, searchArabicReplacements}
 	if s.StoreAvailabilityEnabled {
 		return tx.QueryContext(ctx, storeavailability.PublicStoresWithScheduleSQL, args...)
 	}
@@ -51,7 +52,9 @@ func (s *Server) queryPublicStores(ctx context.Context, tx *sql.Tx, selection pu
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE s.published AND c.active AND v.active
 		  AND (($1::text<>'' AND s.id=$1) OR ($1='' AND s.relation='MARKETPLACE'
-			AND s.city_id=$2 AND s.id>$3 AND strpos(lower(s.name),lower($4))>0
+			AND s.city_id=$2 AND s.id>$3
+			AND ($4='' OR strpos(translate(lower(normalize(s.name)), $7, $8),
+				NULLIF(translate(lower(normalize($4)), $7, $8), ''))>0)
 			AND ($5='' OR s.vertical_id=$5)))
 		ORDER BY s.id LIMIT $6`, args...)
 }
