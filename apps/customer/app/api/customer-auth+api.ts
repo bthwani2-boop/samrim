@@ -9,6 +9,7 @@ import {
   type VerifiedIdentitySession,
   verifyCustomerPhoneChallenge,
 } from "@bthwani/identity";
+import { readBoundedCustomerJSON } from "../../src/features/access/bounded-customer-json.ts";
 import { bearerForCustomerRequest as bearerFor, customerCookieName as cookieName } from "../../src/features/access/customer-session-cookie.ts";
 
 /** Customer's test-only, same-origin BFF. Only Identity issues and revokes sessions. */
@@ -82,40 +83,6 @@ function ownerFailure(error: unknown) {
   return json({ code: "OWNER_UNAVAILABLE" }, 503);
 }
 
-async function boundedRequestBody(request: Request): Promise<Record<string, unknown> | null> {
-  if (request.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") return null;
-  const reader = request.body?.getReader();
-  if (!reader) return null;
-  const readSignal = AbortSignal.any([request.signal, AbortSignal.timeout(2000)]);
-  let onAbort: (() => void) | undefined;
-  const interrupted = new Promise<null>(resolve => {
-    onAbort = () => resolve(null);
-    if (readSignal.aborted) resolve(null);
-    else readSignal.addEventListener("abort", onAbort, { once: true });
-  });
-  const bytes = new Uint8Array(256);
-  let size = 0;
-  try {
-    while (true) {
-      const next = await Promise.race([reader.read(), interrupted]);
-      if (next === null) return null;
-      const { done, value } = next;
-      if (done) break;
-      if (size + value.length > bytes.length) return null;
-      bytes.set(value, size);
-      size += value.length;
-    }
-    const data: unknown = JSON.parse(new TextDecoder().decode(bytes.subarray(0, size)));
-    return data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : null;
-  } catch {
-    return null;
-  } finally {
-    if (onAbort) readSignal.removeEventListener("abort", onAbort);
-    void reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
-
 async function revokeFailedProof(origin: string, bearer: string) {
   await revokeVerifiedIdentitySession(origin, bearer, AbortSignal.timeout(2000)).catch(() => undefined);
 }
@@ -157,8 +124,9 @@ export async function POST(request: Request) {
   const origin = configuredOwner(request);
   if (!origin) return json({ code: "OWNER_UNAVAILABLE" }, 503);
   if (!isSameOrigin(request)) return json({ code: "FORBIDDEN" }, 403);
-  const body = await boundedRequestBody(request);
-  if (!body) return json({ code: "INVALID_REQUEST" }, 400);
+  const parsed = await readBoundedCustomerJSON(request, 256);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return json({ code: "INVALID_REQUEST" }, 400);
+  const body = parsed as Record<string, unknown>;
   try {
     const signal = AbortSignal.timeout(15000);
     if (Object.keys(body).length === 1 && typeof body.phone === "string") {

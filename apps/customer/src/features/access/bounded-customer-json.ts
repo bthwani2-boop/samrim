@@ -1,34 +1,54 @@
-export async function readBoundedCustomerJSON(request: Pick<Request, "headers" | "body" | "signal">, textSize = 8192): Promise<unknown> {
-  if (request.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") return null;
-  const declared = request.headers.get("Content-Length");
-  if (declared && (!/^[0-9]+$/.test(declared) || Number(declared) > textSize)) return null;
-  const reader = request.body?.getReader();
-  if (!reader) return null;
-  const readSignal = AbortSignal.any([request.signal, AbortSignal.timeout(2000)]);
-  let onAbort: (() => void) | undefined;
-  const interrupted = new Promise<null>(resolve => {
-    onAbort = () => resolve(null);
-    if (readSignal.aborted) resolve(null);
-    else readSignal.addEventListener("abort", onAbort, { once: true });
+/** One bounded JSON admission boundary for Customer web/BFF requests and replies. */
+export async function readBoundedCustomerJSON(
+  request: Pick<Request, "headers" | "body" | "signal">,
+  textSize = 8192,
+): Promise<unknown> {
+  const { body, headers, signal } = request;
+  if (!body || body.locked) return null;
+
+  const declared = headers.get("Content-Length");
+  if (
+    signal.aborted ||
+    headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json" ||
+    (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > textSize))
+  ) {
+    void body.cancel().catch(() => {});
+    return null;
+  }
+
+  const reader = body.getReader();
+  const deadline = AbortSignal.any([signal, AbortSignal.timeout(2000)]);
+  let interrupt!: () => void;
+  let consumed = false;
+  const stopped = new Promise<null>((resolve) => {
+    interrupt = () => resolve(null);
   });
-  const bytes = new Uint8Array(textSize);
-  let used = 0;
-  try {
+  deadline.addEventListener("abort", interrupt, { once: true });
+
+  async function consume(): Promise<unknown> {
+    const bytes = new Uint8Array(textSize);
+    let used = 0;
     for (;;) {
-      const next = await Promise.race([reader.read(), interrupted]);
-      if (next === null) return null;
-      const { done, value } = next;
-      if (done) break;
-      if (used + value.length > bytes.length) return null;
-      bytes.set(value, used);
-      used += value.length;
+      const chunk = await reader.read();
+      if (deadline.aborted) return null;
+      if (chunk.done) {
+        consumed = true;
+        return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, used))) as unknown;
+      }
+      if (chunk.value.byteLength > bytes.length - used) return null;
+      bytes.set(chunk.value, used);
+      used += chunk.value.byteLength;
     }
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, used))) as unknown;
+  }
+
+  try {
+    const value = await Promise.race([consume(), stopped]);
+    return deadline.aborted ? null : value;
   } catch {
     return null;
   } finally {
-    if (onAbort) readSignal.removeEventListener("abort", onAbort);
-    void reader.cancel().catch(() => {});
+    deadline.removeEventListener("abort", interrupt);
+    if (!consumed) void reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
