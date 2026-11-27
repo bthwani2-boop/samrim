@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import YAML from "yaml";
 import { generatedOperationSource, generatedOperationsPath, operationRows } from "./generate-openapi-operations.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -174,4 +175,24 @@ test("fingerprints ignore YAML comments and mapping order", t => {
   assert.notEqual(changed, source);
   writeFileSync(filename, "# comment outside the parsed contract\n" + changed);
   assert.equal(generatedOperationSource("wlt", base), baseline);
+});
+
+test("WLT agreement proposal and projection share the exact positive int64 text limit", () => {
+  const filename = path.join(root, "services", "wlt", "contracts", "openapi", "wlt.openapi.yaml");
+  const { schemas } = YAML.parse(readFileSync(filename, "utf8")).components;
+  for (const name of ["AgreementProposalInput", "CommercialAgreementProposalReview"]) {
+    assert.equal(schemas[name].properties.subscriptionAmountYer.$ref, "#/components/schemas/AgreementSubscriptionAmountYer");
+  }
+  const pattern = new RegExp(schemas.AgreementSubscriptionAmountYer.pattern);
+  const limit = 9223372036854775807n;
+  const candidates = [1n, 9007199254740993n, 10n ** 18n, limit - 1n, limit, limit + 1n, 10n ** 19n - 1n];
+  // Cross the ceiling's decimal place boundaries, including prefixes that end in zero.
+  for (let place = 10n; place <= 10n ** 18n; place *= 10n) {
+    const prefix = limit / place * place;
+    candidates.push(prefix - 1n, prefix, prefix + place - 1n, prefix + place);
+  }
+  for (const amount of candidates) assert.equal(pattern.test(String(amount)), amount <= limit, String(amount));
+  for (const malformed of ["", "0", "01", "-1", "+1", "1.0", "1e3", "1\n"]) {
+    assert.equal(pattern.test(malformed), false, JSON.stringify(malformed));
+  }
 });

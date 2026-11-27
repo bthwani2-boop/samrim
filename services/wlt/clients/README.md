@@ -1,4 +1,4 @@
-# WLT client — serving reads and isolated decision integration
+# WLT client — serving reads and isolated agreement commands
 
 The [WLT OpenAPI entrypoint](../contracts/openapi/wlt.openapi.yaml) owns the
 HTTP operations and financial response schemas. Consumers import the public
@@ -15,8 +15,8 @@ agreements or settle payments.
 | `order-payment-readback.ts` | Actor- and checkout-bound allocation/release or explicit absence |
 | `commercial-agreement.ts` | Operator and owned Merchant Store agreement proposal/review readback |
 | `types.ts`, `errors.ts`, `validation.ts` | Shared DTOs, bounded errors and field/native-origin validation |
-| `isolated-agreement-decision.ts` | Disposable local Merchant and Finance decision commands; exact receipt, rejection and uncertainty |
-| `transport.ts` | Contract-bound reads and isolated decision exchange, verified response framing, one 12-second budget and cancellation |
+| `isolated-agreement-command.ts` | Disposable local Finance proposals and Merchant and Finance decisions with verified receipts and explicit uncertain outcomes |
+| `transport.ts` | Contract-bound reads and isolated agreement command exchange with verified response framing, one 12-second budget and cancellation |
 | `generated/wlt-operations.ts` | Contract-derived method/path metadata; never edit manually |
 
 ## Admission and financial meaning
@@ -55,16 +55,18 @@ Verify generated metadata without changing files using
 `node tools/dev/generate-openapi-operations.mjs --check wlt` and
 `pnpm check:contracts`.
 
-The generated operation metadata includes two isolated-only decision routes.
-The explicit SDK entrypoints `recordIsolatedMerchantAgreementDecision` and
-`recordIsolatedFinanceAgreementDecision` admit only a configured HTTP
-`127.0.0.1` origin and exact Store, proposal version/operation identity,
-decision operation identity and role-specific decision. The serving binary
-still does not mount these routes. No app activation or new grant is implied.
+The isolated SDK entrypoints accept a configured HTTP `127.0.0.1` origin.
+`recordIsolatedFinanceAgreementProposal` sends the expected current version,
+operation ID and fee terms. Subscription amounts use whole-YER decimal text.
+`recordIsolatedMerchantAgreementDecision` and
+`recordIsolatedFinanceAgreementDecision` send the Store, exact proposal version
+and operation ID, decision operation ID and role-specific decision. These
+routes are mounted in the disposable integration runtime.
 
 The caller supplies and retains one operation ID and immutable payload.
-A verified receipt binds Store, version, proposal operation and decision
-operation, returning only `RECORDED` or `REPLAYED`. `WltDecisionError` distinguishes
+A verified receipt binds the Store, version and operation. Decision receipts
+also bind the proposal operation. Receipts return `RECORDED` or `REPLAYED`.
+`WltProposalError` and `WltDecisionError` distinguish
 `NOT_SENT` (local admission), `REJECTED` (the current request's verified owner
 rejection) and `UNCONFIRMED` (including lost, malformed or mismatched replies).
 A subsequent rejection does not resolve a previous unknown effect. The SDK

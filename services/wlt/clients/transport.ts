@@ -189,13 +189,14 @@ export async function readOwner(origin: string, bearer: string, method: "GET", p
 
 // Only generated disposable integration commands are admitted here. The
 // serving reader remains GET-only; no command is retried by the transport.
-export async function requestIsolatedDecision(origin: string, bearer: string, path: string,
+export async function requestIsolatedAgreementCommand(origin: string, bearer: string, path: string,
   body: string, signal: AbortSignal): Promise<{ status: number; value: unknown }> {
   const address = /^http:\/\/127\.0\.0\.1:([1-9][0-9]{0,4})$/.exec(origin);
   const store = path.split("/")[4];
   if (!address || Number(address[1]) > 65535 || !store || !/^[a-z0-9-]{1,64}$/.test(store) ||
       (path !== wltOperations.recordIsolatedMerchantAgreementDecision.path.replace("{storeID}", store) &&
-       path !== wltOperations.recordIsolatedFinanceAgreementDecision.path.replace("{storeID}", store))) {
+       path !== wltOperations.recordIsolatedFinanceAgreementDecision.path.replace("{storeID}", store) &&
+       path !== wltOperations.recordIsolatedFinanceAgreementProposal.path.replace("{storeID}", store))) {
     throw new WltReadError(503);
   }
   return exchangeOwner(new URL(path, origin), bearer, "POST", signal, 4096, [200, 400, 401, 403, 409], body);
