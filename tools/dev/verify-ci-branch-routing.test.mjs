@@ -14,22 +14,16 @@ import { discoverWindowsPlatformTests, discoverWorkspaceNodeTests, discoverWorks
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const workflow = name => YAML.parse(readFileSync(path.join(root, ".github", "workflows", name), "utf8"));
 const ci = workflow("ci.yml");
-const go = workflow("go-quality.yml");
-const scheduled = workflow("dependency-audit.yml");
-const { workspace_validation: workspace, application_quality: app,
-  backend_quality: backend, windows_platform: windows, required_ci: required, sonar } = ci.jobs;
-const audit = scheduled.jobs.dependency_security;
-const goQuality = go.jobs["go-quality"];
-const postgres = go.jobs["owner-postgres-integration"];
+const scheduled = workflow("security.yml");
+const { workspace, frontend: app, backend: goQuality, postgres, containers, windows, security, required_ci: required, sonar } = ci.jobs;
+const audit = scheduled.jobs.javascript;
+const goAudit = scheduled.jobs.go;
 const owners = ["identity", "dsh", "wlt"];
 const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe") : "bash";
 const expr = body => "$" + "{{ " + body + " }}";
 const compact = value => String(value).replace(/\s+/g, "");
 const sameExpression = (actual, expected) => assert.equal(compact(actual), compact(expr(expected)));
-const fullEvent = "github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')";
-const developmentEvent = "github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/')";
 const noArchiveEvent = "github.event_name != 'pull_request' || !startsWith(github.head_ref, 'archive/')";
-const fullGate = "!cancelled() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))";
 const steps = job => job.steps ?? [];
 const command = step => step.run ?? "";
 const commands = job => steps(job).map(command).join("\n");
@@ -42,11 +36,6 @@ const runs = (job, pattern) => one(job, step => pattern.test(command(step)), Str
 const action = (step, name) => typeof step.uses === "string" && step.uses.startsWith(name + "@");
 function mandatory(job, step) {
   assert.equal(step.if, undefined, "Required step may not be conditionally skipped");
-  assert.notEqual(step["continue-on-error"], true);
-  assert.notEqual(job["continue-on-error"], true);
-}
-function integrationStep(job, step) {
-  sameExpression(step.if, fullEvent);
   assert.notEqual(step["continue-on-error"], true);
   assert.notEqual(job["continue-on-error"], true);
 }
@@ -91,133 +80,48 @@ function candidate(directory) {
   git(directory, "commit", "--quiet", "-m", "synthetic CI candidate");
   return { sha: git(directory, "rev-parse", "HEAD"), tree: git(directory, "rev-parse", "HEAD^{tree}") };
 }
-test("one CI owner admits development pushes and preserves protected integration events; periodic audit stays separate", () => {
-  assert.deepEqual(Object.keys(ci.on).sort(), ["pull_request", "push"]);
-  assert.deepEqual(ci.on.push, { branches: ["main", "codex/**"] });
+test("one integration event owner, stable protected names and no duplicate development push", () => {
+  assert.deepEqual(ci.on.push, { branches: ["main"] });
   assert.deepEqual(ci.on.pull_request.branches, ["main"]);
-  assert.deepEqual(ci.on.pull_request.types, ["opened", "reopened", "synchronize", "ready_for_review", "converted_to_draft"]);
   assert.equal(ci.on.pull_request.paths, undefined);
-  assert.deepEqual(Object.keys(scheduled.on), ["schedule"]);
+  assert.deepEqual(ci.on.pull_request.types, ["opened", "reopened", "synchronize", "ready_for_review", "converted_to_draft"]);
+  assert.deepEqual(Object.keys(scheduled.on).sort(), ["schedule", "workflow_call"]);
   assert.deepEqual(scheduled.on.schedule, [{ cron: "17 3 * * 1" }]);
-  assert.deepEqual(Object.keys(scheduled.jobs), ["dependency_security"]);
-  assert.deepEqual(Object.keys(go.on), ["workflow_call"]);
-  assert.deepEqual(Object.keys(ci.jobs).sort(), [
-    "application_quality", "backend_quality", "required_ci", "sonar", "windows_platform", "workspace_validation",
-  ]);
-  for (const obsolete of ["dependency-nx-safety.yml", "sonar-quality.yml"]) {
+  assert.deepEqual(Object.keys(scheduled.jobs).sort(), ["go", "javascript"]);
+  assert.deepEqual(Object.keys(ci.jobs).sort(), ["backend", "containers", "frontend", "postgres", "required_ci", "security", "sonar", "windows", "workspace"]);
+  for (const obsolete of ["go-quality.yml", "dependency-audit.yml", "dependency-nx-safety.yml", "sonar-quality.yml"]) {
     assert.ok(!existsSync(path.join(root, ".github/workflows", obsolete)));
   }
-  for (const job of [app, audit]) assert.equal(job.if, undefined);
+  assert.equal(required.name, "fast-guard");
+  assert.equal(sonar.name, "SonarQube Cloud Quality Gate");
+  for (const item of Object.values(ci.jobs)) assert.doesNotMatch(item.name ?? "", /\$\{/);
   sameExpression(workspace.if, noArchiveEvent);
-  sameExpression(backend.if, fullEvent);
-  sameExpression(windows.if, fullEvent);
-  assert.equal(workspace.needs, undefined);
-  assert.equal(app.needs, "workspace_validation");
-  assert.equal(windows.needs, "workspace_validation");
-  assert.equal(windows["runs-on"], "windows-2025");
-  assert.equal(backend.needs, "workspace_validation");
-  sameExpression(required.if, fullGate);
-  sameExpression(sonar.if, fullGate);
-  sameExpression(required.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'fast-guard' || 'Full integration gate (not run on development)'");
-  sameExpression(sonar.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'SonarQube Cloud Quality Gate' || 'Sonar integration gate (not run on development)'");
-  sameExpression(app.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'Application quality, contracts, tests and builds' || 'Development feedback (affected source checks)'");
-  assert.equal(backend.uses, "./.github/workflows/go-quality.yml");
-  assert.deepEqual(new Set(required.needs), new Set(["workspace_validation", "application_quality", "backend_quality", "windows_platform"]));
-  assert.deepEqual(new Set(sonar.needs), new Set(["application_quality", "backend_quality"]));
+  for (const item of [app, goQuality, postgres, windows, security]) {
+    assert.equal(item.if, undefined);
+    assert.equal(item.needs, "workspace");
+  }
+  assert.deepEqual(containers.needs, ["workspace", "security"]);
+  sameExpression(required.if, "always()");
+  sameExpression(sonar.if, "always()");
+  assert.equal(security.uses, "./.github/workflows/security.yml");
+  assert.deepEqual(new Set(required.needs), new Set(["workspace", "frontend", "backend", "postgres", "containers", "windows", "security", "sonar"]));
+  assert.deepEqual(new Set(sonar.needs), new Set(["frontend", "backend", "postgres"]));
   assert.equal(ci.concurrency["cancel-in-progress"], true);
   assert.equal(ci.concurrency.group, "ci-" + expr("github.ref"));
-  for (const parsed of [ci, go, scheduled]) {
-    for (const job of Object.values(parsed.jobs)) {
-      assert.doesNotMatch(commands(job), /gh api|VERIFICATION_OWNER/);
-      if (job !== app) assert.doesNotMatch(commands(job), /nx affected|nx run-many/);
-    }
-  }
-});
-
-test("development feedback uses the actual accumulated Git diff, safe full fallback and fail-closed native commands", () => {
-  const step = one(app, item => item.name === "Verify development changes through native Nx and owner checks", "development feedback");
-  const setupGo = one(app, item => action(item, "actions/setup-go"), "development Go setup");
-  sameExpression(step.if, developmentEvent);
-  sameExpression(setupGo.if, developmentEvent);
-  assert.equal(setupGo.with["go-version-file"], ".go-version");
-  assert.equal(setupGo.with.cache, false);
-  assert.equal(step["continue-on-error"], undefined);
-  assert.equal(step.env.NX_NO_CLOUD, "true");
-  assert.equal(step.env.NX_SKIP_NX_CACHE, "true");
-  assert.equal(step.env.NX_DAEMON, "false");
-  assert.equal(step.env.GOTOOLCHAIN, "local");
-  order(app, setupGo, step);
-  const capture = [
-    'pnpm() { printf "PNPM:%s\\n" "$*"; if [[ "$CI_TEST_FAIL" == pnpm ]]; then return 19; fi; }',
-    'node() { printf "NODE:%s\\n" "$*"; }',
-  ].join("\n");
-  const run = (dir, fail = "") => shell(capture + "\n" + command(step), { CI_TEST_FAIL: fail }, dir);
-  const commit = (dir, file, value) => {
-    put(dir, file, value);
-    git(dir, "add", "--", file);
-    git(dir, "commit", "--quiet", "-m", "synthetic development input");
-  };
-  const checkGlobal = result => {
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /DEVELOPMENT_GLOBAL_SOURCE_CHECKS/);
-    assert.match(result.stdout, /PNPM:check:coverage/);
-    assert.match(result.stdout, /PNPM:exec nx run-many -t typecheck --skip-nx-cache/);
-    assert.match(result.stdout, /NODE:tools\/dev\/check-go.mjs --quick/);
-    assert.doesNotMatch(result.stdout, /PNPM:exec nx affected/);
-  };
-  fixture("ci-dev-accumulated-", dir => {
-    const { sha } = candidate(dir);
-    git(dir, "update-ref", "refs/remotes/origin/main", sha);
-    commit(dir, "apps/merchant/src/one.ts", "export const one = 1;\n");
-    const prior = git(dir, "rev-parse", "HEAD");
-    commit(dir, "services/dsh/backend/two.go", "package dsh\n");
-    const result = run(dir);
-    assert.equal(result.status, 0, result.stderr);
-    assert.ok(result.stdout.includes("PNPM:exec nx affected -t typecheck test --base=" + sha + " --head=HEAD --skip-nx-cache"), result.stdout);
-    assert.ok(!result.stdout.includes("--base=" + prior), "Do not ignore earlier cancelled work");
-    assert.doesNotMatch(result.stdout, /DEVELOPMENT_GLOBAL_SOURCE_CHECKS|PNPM:check:coverage/);
-    const failed = run(dir, "pnpm");
-    assert.equal(failed.status, 19, failed.stdout);
-    assert.doesNotMatch(failed.stdout, /DEVELOPMENT_FEEDBACK_ONLY/);
-    commit(dir, "packages/design-system/src/theme.ts", "export const theme = 1;\n");
-    checkGlobal(run(dir));
-  });
-  for (const file of ["README.md", "apps/merchant/package.json", "services/dsh/backend/go.mod", "tools/dev/check-go.mjs"]) {
-    fixture("ci-dev-foundation-", dir => {
-      const { sha } = candidate(dir);
-      git(dir, "update-ref", "refs/remotes/origin/main", sha);
-      commit(dir, file, "shared input\n");
-      checkGlobal(run(dir));
-    });
-  }
-  fixture("ci-dev-delete-", dir => {
-    candidate(dir);
-    commit(dir, "apps/merchant/src/deleted.ts", "export const old = 1;\n");
-    git(dir, "update-ref", "refs/remotes/origin/main", git(dir, "rev-parse", "HEAD"));
-    git(dir, "rm", "--", "apps/merchant/src/deleted.ts");
-    git(dir, "commit", "--quiet", "-m", "synthetic deletion");
-    checkGlobal(run(dir));
-  });
-  fixture("ci-dev-baseline-", dir => {
-    const { sha } = candidate(dir);
-    checkGlobal(run(dir));
-    git(dir, "update-ref", "refs/remotes/origin/main", sha);
-    checkGlobal(run(dir));
-  });
+  assert.doesNotMatch(JSON.stringify(ci), /nx affected|DEVELOPMENT_FEEDBACK_ONLY|gh api/);
 });
 
 test("required jobs retain the read-only pinned dependency, source, contract, build and owner checks", () => {
-  const jobs = [...Object.values(ci.jobs), ...Object.values(go.jobs), audit];
+  const jobs = [...Object.values(ci.jobs), ...Object.values(scheduled.jobs)];
   for (const job of jobs) {
     assert.notEqual(job["continue-on-error"], true);
     for (const step of steps(job)) {
       assert.notEqual(step["continue-on-error"], true);
-      if (step.uses) assert.match(step.uses, /@[a-f0-9]{40}$/);
+      if (step.uses && !step.uses.startsWith("./")) assert.match(step.uses, /@[a-f0-9]{40}$/);
       if (action(step, "actions/checkout")) assert.equal(step.with["persist-credentials"], false);
     }
   }
   assert.equal(ci.permissions.contents, "read");
-  assert.equal(go.permissions.contents, "read");
   assert.equal(scheduled.permissions.contents, "read");
   for (const job of [app, sonar, windows]) {
     const store = one(job, step => step.id === "pnpm-store", "pinned package store");
@@ -239,10 +143,8 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.match(command(lint), /--proto '=https' --proto-redir '=https'/);
   assert.match(command(lint), /"\$dir\/actionlint" -color=false/);
   const install = runs(app, /pnpm install --frozen-lockfile --ignore-scripts/);
-  const scan = runs(app, /^pnpm audit --audit-level high\s*$/);
   mandatory(app, install);
-  mandatory(app, scan);
-  order(app, install, scan);
+  assert.doesNotMatch(commands(app), /pnpm audit/);
   assert.equal(audit.needs, undefined);
   // Weekly audit consumes the exact committed lockfile; installation is
   // required by application validation, not by native advisory lookup.
@@ -259,8 +161,8 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.ok(!steps(audit).some(step => action(step, "actions/cache")));
   assert.doesNotMatch(commands(audit), /pnpm install|pnpm store|node --test|check:coverage|--ignore|--fix/);
   const cover = runs(app, /^pnpm check:coverage\s*$/);
-  integrationStep(app, cover);
-  order(app, runs(app, /^pnpm audit --audit-level high\s*$/), cover);
+  mandatory(app, cover);
+  order(app, install, cover);
   assert.doesNotMatch(commands(app), /--check-discovery/);
   const discovered = new Set(discoverWorkspaceNodeTests(root));
   for (const file of ["tools/security/picomatch-redos.test.mjs", "tools/dev/verify-nx-project-graph.test.mjs",
@@ -283,23 +185,23 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.equal(Object.hasOwn(manifest.scripts, "check:apps"), false);
   assert.equal(Object.hasOwn(manifest.scripts, "check:apps:static"), false);
   assert.doesNotMatch(commands(app), /pnpm --dir services\/\S+ contract|generate-openapi-operations\.mjs --check/);
-  for (const pattern of [/pnpm knip:files/, /pnpm check:design/, /pnpm check:apps:source/]) {
+  for (const pattern of [/pnpm knip:files/, /pnpm check:design/, /pnpm check:apps:source/, /pnpm check:lint/]) {
     mandatory(app, runs(app, pattern));
   }
   for (const pattern of [/pnpm -r --if-present run typecheck/, /expo export --platform web/,
     /pnpm --dir apps\/control-panel build/, /node tools\/dev\/verify-operator-http.mjs/,
     /node tools\/mobile\/verify-expo-web-http.mjs/]) {
-    integrationStep(app, runs(app, pattern));
+    mandatory(app, runs(app, pattern));
   }
   for (const owner of ["customer", "merchant"]) {
-    integrationStep(app, runs(app, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform web")));
+    mandatory(app, runs(app, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform web")));
   }
   for (const owner of ["customer", "merchant", "captain"]) {
     const android = runs(app, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform android"));
-    integrationStep(app, android);
+    mandatory(app, android);
   }
   const http = runs(app, /^node tools\/dev\/run-coverage\.mjs --operator-runtime\s*$/);
-  integrationStep(app, http);
+  mandatory(app, http);
   order(app, runs(app, /pnpm --dir apps\/control-panel build/), http);
   const suites = discoverWorkspaceTestSuites(root);
   for (const name of ["operator-captain-review-http", "operator-merchant-finance-http", "operator-policy-http",
@@ -328,11 +230,11 @@ test("Windows acceptance runs the existing admitted platform suites and cannot b
   assert.equal(platformFiles.length, 5);
   assert.ok(platformFiles.every(file => source.has(file)));
   assert.doesNotMatch(commands(app), /--windows-platform/);
-  assert.ok(required.needs.includes("windows_platform"));
+  assert.ok(required.needs.includes("windows"));
 });
 
 test("merge gate executes fail closed for every predecessor, incorrect event and archive ref", () => {
-  const gate = one(required, step => Object.values(step.env ?? {}).some(value => value === expr("needs.application_quality.result")), "required predecessor gate");
+  const gate = one(required, step => Object.values(step.env ?? {}).some(value => value === expr("needs.frontend.result")), "required predecessor gate");
   mandatory(required, gate);
   const predecessorVariables = required.needs.map(id => {
     const keys = Object.keys(gate.env).filter(key => gate.env[key] === expr("needs." + id + ".result"));
@@ -352,21 +254,27 @@ test("merge gate executes fail closed for every predecessor, incorrect event and
   check(1, { CI_EVENT: "workflow_dispatch", CI_REF: "refs/heads/archive/old" });
 });
 
-test("Sonar rejects untrusted source or failed producers before accessing the scanner secret", () => {
+test("Sonar rejects untrusted source and every unsuccessful or absent coverage producer", () => {
   const gate = one(sonar, step => Object.hasOwn(step.env ?? {}, "TRUSTED_SOURCE"), "Sonar trust gate");
-  const scanner = one(sonar, step => action(step, "SonarSource/sonarqube-scan-action"), "Sonar quality scanner");
+  const scanner = one(sonar, step => action(step, "SonarSource/sonarqube-scan-action"), "Sonar scanner");
   mandatory(sonar, gate);
   mandatory(sonar, scanner);
   order(sonar, gate, scanner);
   assert.equal(scanner.env.SONAR_TOKEN, expr("secrets.SONAR_TOKEN"));
   assert.match(scanner.with.args, /-Dsonar\.qualitygate\.wait=true/);
   sameExpression(gate.env.TRUSTED_SOURCE, "github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository");
-  sameExpression(gate.env.PRESENTATION_RESULT, "needs.application_quality.result");
-  sameExpression(gate.env.GO_RESULT, "needs.backend_quality.result");
-  const good = { TRUSTED_SOURCE: "true", PRESENTATION_RESULT: "success", GO_RESULT: "success" };
+  const variables = sonar.needs.map(id => {
+    const keys = Object.keys(gate.env).filter(key => gate.env[key] === expr("needs." + id + ".result"));
+    assert.equal(keys.length, 1, "Every producer requires exactly one explicit result");
+    return keys[0];
+  });
+  const good = { TRUSTED_SOURCE: "true", ...Object.fromEntries(variables.map(key => [key, "success"])) };
   assert.equal(shell(command(gate), good).status, 0);
-  for (const [key, values] of [["TRUSTED_SOURCE", ["false", ""]], ["PRESENTATION_RESULT", ["failure", "skipped", "cancelled", ""]], ["GO_RESULT", ["failure", "skipped", "cancelled", ""]]]) {
-    for (const value of values) assert.equal(shell(command(gate), { ...good, [key]: value }).status, 1);
+  for (const value of ["false", ""]) assert.equal(shell(command(gate), { ...good, TRUSTED_SOURCE: value }).status, 1);
+  for (const key of variables) {
+    for (const value of ["failure", "skipped", "cancelled", ""]) {
+      assert.equal(shell(command(gate), { ...good, [key]: value }).status, 1);
+    }
   }
 });
 
@@ -387,9 +295,8 @@ for (const entry of evidence) {
     const bind = runs(entry.job, new RegExp("^node tools/dev/ci-coverage-evidence\\.mjs publish " + entry.kind + "\\s*$"));
     const upload = one(entry.job, step => action(step, "actions/upload-artifact") && step.with.name === entry.artifact, entry.artifact);
     const download = one(sonar, step => action(step, "actions/download-artifact") && step.with.name === entry.artifact, entry.artifact);
-    const requireProducer = entry.job === app ? integrationStep : mandatory;
-    requireProducer(entry.job, bind);
-    requireProducer(entry.job, upload);
+    mandatory(entry.job, bind);
+    mandatory(entry.job, upload);
     order(entry.job, bind, upload);
     assert.equal(upload.with["if-no-files-found"], "error");
     for (const metadata of ["tree.txt", "reports.sha256"]) {
@@ -531,10 +438,12 @@ test("Sonar scanner consumes every measured owner report with no quality gate wa
 });
 
 test("Go vulnerability gate is pinned, scans all deployed owners and precedes image creation", () => {
-  const scan = runs(goQuality, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@/);
-  const image = runs(goQuality, /docker build --file/);
-  mandatory(goQuality, scan);
-  order(goQuality, scan, image);
+  const scan = runs(goAudit, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@/);
+  const image = runs(containers, /docker build --file/);
+  mandatory(goAudit, scan);
+  mandatory(containers, image);
+  assert.ok(containers.needs.includes("security"));
+  assert.doesNotMatch(commands(goQuality), /govulncheck/);
   assert.equal(scan.env.CGO_ENABLED, "0");
   assert.match(command(scan), /GOSUMDB=sum\.golang\.org go install golang\.org\/x\/vuln\/cmd\/govulncheck@709015412431dd2b5b28a53c06c70bc02d49074c(?:\s|$)/);
   assert.match(command(scan), /set -euo pipefail/);

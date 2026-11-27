@@ -90,6 +90,6 @@ Any genuinely necessary placement exception belongs to its existing owner with e
 | Owner contract and generated operation parity | pnpm check:contracts, [contract guard](tools/dev/check-openapi.mjs) and its fixtures |
 | Dependency and authored-source investigation | pnpm knip:files, [source inventory](tools/dev/source-inventory.mjs) and [fixtures](tools/dev/source-inventory.test.mjs), mandatory local Graphify under AGENTS.md |
 | Affected routing and test inclusion | [Nx impact fixtures](tools/dev/verify-nx-project-graph.test.mjs), pnpm check:test-inclusion and the existing source-test discovery |
-| Real Go/SQL/restore and CI source proof | [CI](.github/workflows/ci.yml) and its call-only [Go quality workflow](.github/workflows/go-quality.yml) |
+| Real Go/SQL/restore and CI source proof | [CI](.github/workflows/ci.yml) and shared [security workflow](.github/workflows/security.yml) |
 
 Existing native guards must catch new/untracked paths, illegal owners, linked roots and representative legitimate and rejected consumers. Reuse and strengthen the applicable owner guard, not another generic checker. Acceptance requires the exact winning source, complete consumer cutover, absence of losing paths, applicable contract/build/runtime and durable owner proof on the candidate. Follow [AGENTS.md](AGENTS.md) for immutable delivery and actual evidence statuses. Structural PASS, CI PASS, runtime provenance, complete journeys, governance cutover and production authorization are independent; no historical stage, spec count or source location substitutes for them.
