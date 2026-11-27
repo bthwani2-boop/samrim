@@ -12,6 +12,8 @@ The private `@bthwani/dsh` package exposes owner-bound clients through `clients/
 
 Public discovery in `clients/public-discovery.ts` validates Store, Vertical and Offer projections, unique IDs, advancing continuations and a single revision per Customer pagination sequence. Changed revisions or duplicate IDs require a fresh first page. Public failures never authorize checkout.
 
+The server-only public-discovery-web subpath owns the shared isolated Web ingress for Customer and Merchant; thin host adapters choose their allowed routes and owner endpoint. It rejects malformed wire inputs before SDK normalization and never mounts private owner operations.
+
 Private Store availability, city policy and Operator Captain review use `clients/private-owner-request.ts` through the corresponding owner client modules. City policy requires current Identity platform permission; DSH versions and audits the actual policy. An unreachable, cancelled or malformed write response can mean the owner already committed: preserve the original operation ID and reconcile against owner readback, never automatically issue a different write. Late GETs are rejected as stale; late writes cannot authorize a newer account or Store context.
 
 Merchant Store standing (`GET /v1/stores/mine`) is validated in `clients/merchant-standing.ts`. The Merchant feature re-export introduces no separate DTO or transport. Preserve the 100-Store Unicode envelope within 262144 bytes. Owner denial, malformed replies and stale account reads fail closed.

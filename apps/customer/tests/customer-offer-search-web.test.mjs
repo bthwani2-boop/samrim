@@ -150,3 +150,21 @@ test("Offers BFF preserves owner publication denial and stale search cursor reco
     assert.deepEqual(await response.json(), { error: item.error });
   }
 });
+
+test("Customer public discovery rejects malformed wire envelopes before normalization or owner access", async t => {
+  const calls = setup(t);
+  const root = "http://localhost:18101/v1/public/";
+  for (const path of ["stores/market-sanaa?", "stores/market-sanaa/offers?q=water;flour", "cities?limit=1;cursor=x"]) {
+    const reply = await GET(new Request(root + path));
+    assert.equal(reply.status, 400, path);
+    assert.deepEqual(await reply.json(), { error: "INVALID_REQUEST" });
+  }
+  for (const path of ["cities", "verticals?city_id=sanaa", "stores?city_id=sanaa", "stores/market-sanaa", "stores/market-sanaa/offers", "stores/market-sanaa/offers/of-flour/estimate?quantity=1"]) {
+    for (const headers of [{ "Content-Length": "2" }, { "Transfer-Encoding": "chunked" }]) {
+      assert.equal((await GET(new Request(root + path, { headers }))).status, 400, path);
+    }
+  }
+  assert.equal(calls.length, 0);
+  assert.equal((await GET(new Request(root + "stores/market-sanaa/offers?q=water%3Bflour"))).status, 200);
+  assert.equal(calls[0].url.searchParams.get("q"), "water;flour");
+});

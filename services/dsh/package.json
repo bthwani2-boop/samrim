@@ -8,6 +8,10 @@
     ".": {
       "types": "./clients/index.ts",
       "default": "./clients/index.ts"
+    },
+    "./public-discovery-web": {
+      "types": "./clients/public-discovery-web.ts",
+      "default": "./clients/public-discovery-web.ts"
     }
   },
   "scripts": {
