@@ -1,6 +1,8 @@
 import {
   isOperatorStoreRegistrationPolicy,
+  isStoreRegistrationPolicyActor,
   isStoreRegistrationPolicyHistoryPage,
+  matchesOperatorStoreRegistrationChange,
   type OperatorStoreRegistrationChange,
   type OperatorStoreRegistrationPolicy,
   type OperatorStoreRegistrationPolicyHistoryPage,
@@ -34,8 +36,7 @@ function validLocation(city: unknown, relation: unknown): boolean {
 }
 
 function actorBinding(actor: string): string {
-  if (typeof actor !== "string" || !actor || actor.trim() !== actor
-    || new TextEncoder().encode(actor).length > 128 || /[\p{Cc}\p{Cs}]/u.test(actor)) {
+  if (!isStoreRegistrationPolicyActor(actor)) {
     throw new Error("Invalid registration policy scope");
   }
   return encodeURIComponent(actor);
@@ -176,10 +177,7 @@ export async function readRegistrationHistory(
 export function matchesPendingPolicy(
   policy: OperatorStoreRegistrationPolicy, actorId: string, change: OperatorStoreRegistrationChange,
 ): boolean {
-  return policy.version === change.expectedVersion + 1
-    && policy.changedByActor === actorId && policy.enabled === change.enabled
-    && policy.termsVersion === change.termsVersion && policy.termsText === change.termsText.trim()
-    && policy.changeReason === change.reason.trim();
+  return matchesOperatorStoreRegistrationChange(policy, change, actorId);
 }
 
 /** An uncertain write keeps its original operationId and full payload. */

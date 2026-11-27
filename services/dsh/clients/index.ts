@@ -12,9 +12,9 @@ export {
 export type { MerchantCatalogImportChange, MerchantCatalogImportOutcome, MerchantCatalogImportResult, MerchantCatalogImportRow } from "./catalog-import.ts";
 export { merchantCatalogImport, parseMerchantCatalogImportResult, validMerchantCatalogImportChange } from "./catalog-import.ts";
 export type {
-  CityDeliveryDistanceBand, CityDeliveryPolicy, CityDeliveryPolicyChange, CityDeliveryPolicyPreview, CityDeliveryPolicyPreviewInput, CityDeliveryPolicyResult, CityDeliveryPolicyState, CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult,
+  CityDeliveryDistanceBand, CityDeliveryPolicy, CityDeliveryPolicyChange, CityDeliveryPolicyPreview, CityDeliveryPolicyPreviewInput, CityDeliveryPolicyResult, CityDeliveryPolicyState, CityFulfillmentMode, CityFulfillmentPolicy, CityFulfillmentPolicyChange, CityFulfillmentPolicyResult, CityFulfillmentRelation, CityStoreOperationalPolicy, CityStoreOperationalPolicyChange, CityStoreOperationalPolicyHistoryPage, CityStoreOperationalPolicyResult
 } from "./city-policies.ts";
-export { getCityDeliveryPolicy, getCityStoreOperationalPolicy, isCityDeliveryDistanceBands, isCityDeliveryPolicy, isCityDeliveryPolicyChange, isCityDeliveryPolicyPreview, isCityDeliveryPolicyPreviewInput, isCityDeliveryPolicyResult, isCityDeliveryPolicyState, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, matchesCityDeliveryPolicy, previewCityDeliveryPolicy, replaceCityDeliveryPolicy, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
+export { getCityDeliveryPolicy, getCityFulfillmentPolicy, getCityStoreOperationalPolicy, isCityDeliveryDistanceBands, isCityDeliveryPolicy, isCityDeliveryPolicyChange, isCityDeliveryPolicyPreview, isCityDeliveryPolicyPreviewInput, isCityDeliveryPolicyResult, isCityDeliveryPolicyState, isCityFulfillmentPolicy, isCityFulfillmentPolicyChange, isCityStoreOperationalPolicyHistoryPage, listCityStoreOperationalPolicyHistory, matchesCityDeliveryPolicy, previewCityDeliveryPolicy, replaceCityDeliveryPolicy, replaceCityFulfillmentPolicy, replaceCityStoreOperationalPolicy } from "./city-policies.ts";
 export type { CustomerAddress, CustomerAddressChange, CustomerAddressPage, CustomerAddressRead, CustomerAddressResult, DeliveryServiceability } from "./customer-addresses.ts";
 export { evaluateDeliveryServiceability, getCustomerAddress, isCustomerAddressId, listCustomerAddresses, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress, validCustomerAddressChange } from "./customer-addresses.ts";
 export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";
@@ -48,7 +48,7 @@ export {
 export type { PublicationReviewItem, PublicationReviewPage } from "./operator-publication-review.ts";
 export { isPublicationReviewPage, listOperatorStorePublicationReview } from "./operator-publication-review.ts";
 export type { OperatorStoreRegistrationChange, OperatorStoreRegistrationPolicy, OperatorStoreRegistrationResult, StoreRegistrationRelation } from "./operator-store-registration-policy.ts";
-export { changeOperatorStoreRegistrationPolicy, getOperatorStoreRegistrationPolicy, isOperatorStoreRegistrationPolicy, validOperatorStoreRegistrationChange } from "./operator-store-registration-policy.ts";
+export { changeOperatorStoreRegistrationPolicy, getOperatorStoreRegistrationPolicy, isOperatorStoreRegistrationPolicy, isStoreRegistrationPolicyActor, matchesOperatorStoreRegistrationChange, validOperatorStoreRegistrationChange } from "./operator-store-registration-policy.ts";
 export type { OperatorStoreRegistrationPolicyHistoryEntry, OperatorStoreRegistrationPolicyHistoryPage } from "./operator-store-registration-policy-history.ts";
 export { isStoreRegistrationPolicyHistoryPage, listOperatorStoreRegistrationPolicyHistory } from "./operator-store-registration-policy-history.ts";
 export type { PublicOffer, PublicOfferEstimate, PublicPage, PublicStore, PublicVertical } from "./public-discovery.ts";
@@ -62,6 +62,3 @@ export type {
   StoreOperationalAvailability, StoreOperationalChange, StoreOperationalResult, StoreWeeklyWindow,
 } from "./store-availability.ts";
 export { getStoreOperationalAvailability, updateStoreOperationalAvailability } from "./store-availability.ts";
-
-export type { CityFulfillmentMode, CityFulfillmentPolicy, CityFulfillmentPolicyChange, CityFulfillmentPolicyResult, CityFulfillmentRelation } from "./city-policies.ts";
-export { getCityFulfillmentPolicy, isCityFulfillmentPolicy, isCityFulfillmentPolicyChange, replaceCityFulfillmentPolicy } from "./city-policies.ts";

@@ -29,8 +29,7 @@ const owner = (body, status = 200) => Response.json(body, {
 test("Store registration policy is an exact DSH snapshot, including explicit disabled default", () => {
   assert.equal(isOperatorStoreRegistrationPolicy(empty, city, relation), true);
   assert.equal(isOperatorStoreRegistrationPolicy(policy, city, relation), true);
-  assert.equal(isOperatorStoreRegistrationPolicy({ ...policy, changeReason: "" }, city, relation), true,
-    "pre-010 policy rows can have an empty legacy change reason");
+  assert.equal(isOperatorStoreRegistrationPolicy({ ...policy, changeReason: "" }, city, relation), false);
   for (const invalid of [
     { ...empty, enabled: true },
     { ...empty, changedByActor: "operator" },
@@ -107,4 +106,54 @@ test("Operator policy owner refusal propagates permission denial without creatin
   t.mock.method(globalThis, "fetch", async () => owner({ code: "STORE_OPERATION_FORBIDDEN" }, 403));
   await assert.rejects(changeOperatorStoreRegistrationPolicy(origin, city, relation, bearer, change),
     { status: 403 });
+});
+
+test("retained owner policy without the omitted legacy reason remains readable", async t => {
+  const { changeReason, ...retained } = policy;
+  assert.equal(isOperatorStoreRegistrationPolicy(retained, city, relation), true);
+  t.mock.method(globalThis, "fetch", async () => owner(retained));
+  assert.deepEqual(await getOperatorStoreRegistrationPolicy(origin, city, relation, bearer), retained);
+});
+test("policy wire admission rejects unsafe versions, invalid Unicode, and malformed scope", async t => {
+  for (const invalid of [
+    { ...change, expectedVersion: Number.MAX_SAFE_INTEGER },
+    { ...change, reason: "valid\u0085invalid" },
+    { ...change, reason: "\u0085" },
+    { ...change, termsText: "\ud800" },
+    { ...change, reason: "\udfff" },
+  ]) assert.equal(validOperatorStoreRegistrationChange(invalid), false);
+  for (const invalid of [
+    { ...policy, changedByActor: " operator" },
+    { ...policy, changedByActor: "é".repeat(65) },
+    { ...policy, changedByActor: "operator\u0085a" },
+    { ...policy, termsText: "invalid\u0000terms" },
+    { ...policy, changeReason: "invalid\u0085reason" },
+  ]) assert.equal(isOperatorStoreRegistrationPolicy(invalid, city, relation), false);
+  const calls = t.mock.method(globalThis, "fetch", async () => assert.fail("no unsafe fetch"));
+  await assert.rejects(getOperatorStoreRegistrationPolicy(origin, ["sanaa"], relation, bearer), { code: "INVALID_STORE_REGISTRATION" });
+  await assert.rejects(getOperatorStoreRegistrationPolicy(origin, city, relation, [bearer]), { code: "UNAUTHENTICATED" });
+  assert.equal(calls.mock.callCount(), 0);
+});
+test("owner-normalized committed policy accepts Go Unicode whitespace and preserves BOM", async t => {
+  const requested = { ...change, termsText: "\u0085\uFEFFterms\u0085", reason: "\u0085Reviewed\u0085" };
+  const committed = { ...policy, termsText: "\uFEFFterms", changeReason: "Reviewed" };
+  assert.equal(validOperatorStoreRegistrationChange(requested), true);
+  const calls = t.mock.method(globalThis, "fetch", async (_url, init) => {
+    assert.deepEqual(JSON.parse(init.body), requested);
+    return owner({ policy: committed, replay: true });
+  });
+  assert.deepEqual(await changeOperatorStoreRegistrationPolicy(origin, city, relation, bearer, requested),
+    { policy: committed, replay: true });
+  assert.equal(calls.mock.callCount(), 1);
+});
+
+test("GET fails closed on a forged snapshot; a retained read cannot confirm a write", async t => {
+  const { changeReason, ...retained } = policy;
+  let reply = owner({ ...policy, cityId: "other" });
+  t.mock.method(globalThis, "fetch", async () => reply);
+  await assert.rejects(getOperatorStoreRegistrationPolicy(origin, city, relation, bearer),
+    { code: "OWNER_RESPONSE_INVALID" });
+  reply = owner({ policy: retained, replay: true });
+  await assert.rejects(changeOperatorStoreRegistrationPolicy(origin, city, relation, bearer, change),
+    { code: "OPERATION_RESULT_UNKNOWN" });
 });

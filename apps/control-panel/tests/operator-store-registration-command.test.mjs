@@ -205,3 +205,19 @@ test("mutation cannot confirm unexpected response status or malformed envelope",
     assert.deepEqual(await reconcileRegistrationPolicy(endpoint, city, relation, actor, change), { status: "unknown" });
   }
 });
+
+test("browser confirms the same Go-normalized policy receipt as the owner SDK", async t => {
+  const requested = { ...change, termsText: "\u0085\uFEFFterms\u0085", reason: "\u0085Reviewed\u0085" };
+  const committed = { ...policy, termsText: "\uFEFFterms", changeReason: "Reviewed" };
+  assert.equal(matchesPendingPolicy(committed, actor, requested), true);
+  const calls = t.mock.method(globalThis, "fetch", async (_url, init) => {
+    if (init.method === "PATCH") {
+      assert.deepEqual(JSON.parse(init.body), requested);
+      return reply({ policy: committed, replay: true });
+    }
+    return reply(committed);
+  });
+  assert.deepEqual(await reconcileRegistrationPolicy(endpoint, city, relation, actor, requested),
+    { status: "confirmed", current: committed, replay: true, superseded: false });
+  assert.equal(calls.mock.callCount(), 2);
+});
