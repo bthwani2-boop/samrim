@@ -510,6 +510,22 @@ components:
             not: { required: [version] }
           else:
             required: [version]
+        cityFulfillmentPolicy:
+          description: Current DSH city policy decision for the selected mode, scoped to the actual Store relation.
+          type: object
+          additionalProperties: false
+          required: [storeRelation, status]
+          properties:
+            storeRelation: { type: string, enum: [DIRECT, MARKETPLACE] }
+            status: { type: string, enum: [UNCONFIGURED, ALLOWED_BY_CITY_POLICY, DENIED_BY_CITY_POLICY] }
+            version: { type: integer, minimum: 1, maximum: 9007199254740991 }
+          if:
+            properties:
+              status: { const: UNCONFIGURED }
+          then:
+            not: { required: [version] }
+          else:
+            required: [version]
         checkoutReady: { type: boolean, const: false }
         blockers:
           type: array

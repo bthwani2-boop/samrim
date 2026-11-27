@@ -2,8 +2,10 @@ package customercart
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"errors"
 	"net/http"
 	"regexp"
 	"strings"
@@ -55,6 +57,7 @@ type checkoutReviewResult struct {
 	CheckoutReady    bool                                       `json:"checkoutReady"`
 	Blockers         []string                                   `json:"blockers"`
 	StoreSchedule    storeavailability.CustomerScheduleEvidence `json:"storeSchedule"`
+	CityFulfillment  storeavailability.CityFulfillmentEvidence  `json:"cityFulfillmentPolicy"`
 }
 
 const checkoutReviewMaxBody = 4096
@@ -137,7 +140,7 @@ func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	store := r.PathValue("storeID")
-	relations := append(snapshotRelations(), "store_operational_availability", "store_operational_weekly_hours")
+	relations := append(snapshotRelations(), "store_operational_availability", "store_operational_weekly_hours", "city_fulfillment_policy_versions")
 	if input.AddressID != "" {
 		relations = append(relations, "customer_addresses", "service_city_delivery_policies")
 	}
@@ -164,26 +167,29 @@ func (h *Handler) checkoutReview(w http.ResponseWriter, r *http.Request) {
 	// Read the current Store relation in the same repeatable-read transaction
 	// as the cart, publication and offer evidence. The caller requests a
 	// channel; it never grants itself eligibility or financial rights.
-	var eligible bool
-	err = tx.QueryRowContext(ctx, `SELECT EXISTS (
-		SELECT 1 FROM stores s JOIN service_cities c ON c.id=s.city_id
+	var city, relation string
+	err = tx.QueryRowContext(ctx, `SELECT s.city_id,s.relation FROM stores s JOIN service_cities c ON c.id=s.city_id
 		JOIN verticals v ON v.id=s.vertical_id
 		WHERE s.id=$1 AND s.published AND c.active AND v.active
 		AND (($2='DIRECT' AND s.relation IN ('DIRECT','MARKETPLACE'))
-		  OR ($2='MARKETPLACE' AND s.relation='MARKETPLACE'))
-	)`, store, input.SalesChannel).Scan(&eligible)
-	if err != nil {
-		fail(w, 503, "OWNER_UNAVAILABLE")
+		  OR ($2='MARKETPLACE' AND s.relation='MARKETPLACE'))`, store, input.SalesChannel).Scan(&city, &relation)
+	if errors.Is(err, sql.ErrNoRows) {
+		fail(w, 409, "SALES_CHANNEL_NOT_ELIGIBLE")
 		return
 	}
-	if !eligible {
-		fail(w, 409, "SALES_CHANNEL_NOT_ELIGIBLE")
+	if err != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
 	}
 	result := checkoutReviewResult{ActorID: actor, StoreID: store, CartVersion: cart.Version, SalesChannel: input.SalesChannel,
 		RecipientPurpose: input.RecipientPurpose, FulfillmentMode: input.FulfillmentMode, Merchandise: amount,
 		CheckoutReady: false, Blockers: []string{"FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"}}
 	result.StoreSchedule, err = storeavailability.ReadCustomerSchedule(ctx, tx, store)
+	if err != nil {
+		fail(w, 503, "OWNER_UNAVAILABLE")
+		return
+	}
+	result.CityFulfillment, err = storeavailability.ReadCityFulfillmentEvidence(ctx, tx, city, relation, input.FulfillmentMode)
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return

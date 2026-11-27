@@ -13,6 +13,10 @@ export type CustomerCheckoutReviewInput = Readonly<{
 }>;
 export type CustomerCheckoutBlocker = "FULFILLMENT_MODE_NOT_ADMITTED" | "PAYABLE_QUOTE_NOT_AVAILABLE" |
   "PAYMENT_ALLOCATION_NOT_AVAILABLE" | "ADDRESS_UNSERVICEABLE";
+type CityFulfillmentPolicy = Readonly<{storeRelation: "DIRECT" | "MARKETPLACE"} & (
+  {status: "UNCONFIGURED"} |
+  {status: "ALLOWED_BY_CITY_POLICY" | "DENIED_BY_CITY_POLICY"; version: number}
+)>;
 export type CustomerCheckoutReview = Readonly<{
   actorId: string; storeId: string; cartVersion: number; salesChannel: CheckoutSalesChannel;
   recipientPurpose: CheckoutRecipientPurpose; fulfillmentMode: CheckoutFulfillmentMode;
@@ -20,6 +24,7 @@ export type CustomerCheckoutReview = Readonly<{
   distanceFeeEstimate?: Readonly<{policyVersion: number; distanceMetres: number; feeYer: string}>;
   checkoutReady: false; blockers: CustomerCheckoutBlocker[];
   storeSchedule: Readonly<{status: "UNAVAILABLE" | "OPEN_BY_SCHEDULE" | "CLOSED_BY_SCHEDULE" | "PAUSED"; version?: number}>;
+  cityFulfillmentPolicy?: CityFulfillmentPolicy;
 }>;
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -84,6 +89,19 @@ function scheduleFrom(value: unknown): CustomerCheckoutReview["storeSchedule"] {
   return invalid();
 }
 
+function cityFulfillmentFrom(value: unknown, channel: CheckoutSalesChannel): CityFulfillmentPolicy {
+  if (!record(value)) invalid();
+  const { storeRelation, status } = value;
+  if ((storeRelation !== "DIRECT" && storeRelation !== "MARKETPLACE") ||
+    (channel === "MARKETPLACE" && storeRelation !== "MARKETPLACE")) invalid();
+  if (status === "UNCONFIGURED" && exact(value, ["storeRelation", "status"])) return { storeRelation, status };
+  if ((status === "ALLOWED_BY_CITY_POLICY" || status === "DENIED_BY_CITY_POLICY") &&
+    exact(value, ["storeRelation", "status", "version"]) && version(value.version)) {
+    return { storeRelation, status, version: value.version };
+  }
+  return invalid();
+}
+
 function feeFrom(value: unknown, delivery?: DeliveryServiceability): NonNullable<CustomerCheckoutReview["distanceFeeEstimate"]> {
   const evidence = delivery?.evidence;
   if (!record(value) || !exact(value, ["policyVersion", "distanceMetres", "feeYer"]) ||
@@ -102,10 +120,13 @@ function reviewFrom(raw: unknown, storeId: string, actorId: string, input: Custo
     "merchandise", "checkoutReady", "blockers", "storeSchedule"];
   if (input.addressId !== undefined) keys.push("delivery");
   if (Object.hasOwn(raw, "distanceFeeEstimate")) keys.push("distanceFeeEstimate");
+  if (Object.hasOwn(raw, "cityFulfillmentPolicy")) keys.push("cityFulfillmentPolicy");
   if (!exact(raw, keys) || raw.actorId !== actorId || raw.storeId !== storeId || raw.cartVersion !== input.expectedCartVersion ||
     raw.salesChannel !== input.salesChannel || raw.recipientPurpose !== input.recipientPurpose ||
     raw.fulfillmentMode !== input.fulfillmentMode || raw.checkoutReady !== false) invalid();
   const storeSchedule = scheduleFrom(raw.storeSchedule);
+  const cityFulfillmentPolicy = Object.hasOwn(raw, "cityFulfillmentPolicy") ?
+    cityFulfillmentFrom(raw.cityFulfillmentPolicy, input.salesChannel) : undefined;
   let merchandise: CustomerCartMerchandiseEstimate;
   let delivery: DeliveryServiceability | undefined;
   try {
@@ -124,7 +145,7 @@ function reviewFrom(raw: unknown, storeId: string, actorId: string, input: Custo
   return { actorId, storeId, cartVersion: input.expectedCartVersion, salesChannel: input.salesChannel,
     recipientPurpose: input.recipientPurpose, fulfillmentMode: input.fulfillmentMode, merchandise,
     ...(delivery ? { delivery } : {}), ...(distanceFeeEstimate ? { distanceFeeEstimate } : {}),
-    checkoutReady: false, blockers, storeSchedule };
+    checkoutReady: false, blockers, storeSchedule, ...(cityFulfillmentPolicy ? { cityFulfillmentPolicy } : {}) };
 }
 
 export function parseCustomerCheckoutReview(raw: unknown, storeId: string, actorId: string,

@@ -273,7 +273,13 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
               : result.storeSchedule.status === "CLOSED_BY_SCHEDULE" ? "المتجر خارج ساعات العمل."
               : "لم تتوفر أدلة كافية على ساعات عمل المتجر."}
           </Text>
-          <Text accessibilityRole="alert" style={{ color: theme.warningText }}>لم تُعتمد طريقة التنفيذ أو رسومها أو تخصيص الدفع. لا يمكن تأكيد الطلب.</Text>
+          {result.cityFulfillmentPolicy ? <Text testID="checkout-city-fulfillment-policy"
+            style={{ color: result.cityFulfillmentPolicy.status === "DENIED_BY_CITY_POLICY" ? theme.warningText : theme.colorSecondary }}>
+            {result.cityFulfillmentPolicy.status === "ALLOWED_BY_CITY_POLICY" ? "سياسة المدينة تسمح بالطريقة المختارة."
+              : result.cityFulfillmentPolicy.status === "DENIED_BY_CITY_POLICY" ? "سياسة المدينة تمنع الطريقة المختارة لهذا المتجر."
+              : "لم تُضبط سياسة المدينة لطرق التنفيذ لهذا المتجر."}
+          </Text> : null}
+          <Text accessibilityRole="alert" style={{ color: theme.warningText }}>لا يمكن تأكيد الطلب قبل اعتماد طريقة التنفيذ والرسوم وتخصيص الدفع.</Text>
         </View>
       ) : null}
     </View>

@@ -95,6 +95,29 @@ func currentFulfillmentPolicy(ctx context.Context, tx *sql.Tx, city, relation st
 	return policy, err
 }
 
+type CityFulfillmentEvidence struct {
+	StoreRelation string `json:"storeRelation"`
+	Status        string `json:"status"`
+	Version       int64  `json:"version,omitempty"`
+}
+
+// ReadCityFulfillmentEvidence projects the ceiling for the selected mode in
+// the caller's admitted DSH snapshot.
+func ReadCityFulfillmentEvidence(ctx context.Context, tx *sql.Tx, city, relation, mode string) (CityFulfillmentEvidence, error) {
+	policy, err := currentFulfillmentPolicy(ctx, tx, city, relation)
+	if err != nil {
+		return CityFulfillmentEvidence{}, err
+	}
+	evidence := CityFulfillmentEvidence{StoreRelation: relation, Status: "UNCONFIGURED", Version: policy.Version}
+	if policy.Version > 0 {
+		evidence.Status = "DENIED_BY_CITY_POLICY"
+		if slices.Contains(policy.AllowedModes, mode) {
+			evidence.Status = "ALLOWED_BY_CITY_POLICY"
+		}
+	}
+	return evidence, nil
+}
+
 func (source *PostgresPolicySource) ReadCityFulfillmentPolicy(ctx context.Context, city, relation string) (CityFulfillmentPolicy, error) {
 	if !cityPolicyIDRule.MatchString(city) || !validRegistrationRelation(relation) {
 		return CityFulfillmentPolicy{}, ErrInvalidChange

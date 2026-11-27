@@ -47,6 +47,28 @@ test("receipt schedule must contain exact own fields", () => {
   }
 });
 
+test("checkout keeps the city policy separate from the sales channel and overall eligibility", () => {
+  const allowed = { storeRelation: "MARKETPLACE", status: "ALLOWED_BY_CITY_POLICY", version: 4 };
+  for (const cityFulfillmentPolicy of [
+    allowed,
+    { ...allowed, status: "DENIED_BY_CITY_POLICY" },
+    { storeRelation: "DIRECT", status: "UNCONFIGURED" },
+  ]) {
+    const evidence = { ...result, cityFulfillmentPolicy };
+    assert.deepEqual(parseCustomerCheckoutReview(evidence, "store-a", "customer-a", input), evidence);
+  }
+  for (const cityFulfillmentPolicy of [
+    { ...allowed, status: "UNCONFIGURED" }, { ...allowed, status: "OPEN" },
+    { ...allowed, version: 0 }, { ...allowed, changedByActor: "private" }, null,
+  ]) {
+    assert.throws(() => parseCustomerCheckoutReview({ ...result, cityFulfillmentPolicy }, "store-a", "customer-a", input),
+      { status: 502, code: "OWNER_RESPONSE_INVALID" });
+  }
+  assert.throws(() => parseCustomerCheckoutReview({ ...result, salesChannel: "MARKETPLACE",
+    cityFulfillmentPolicy: { ...allowed, storeRelation: "DIRECT" } }, "store-a", "customer-a",
+  { ...input, salesChannel: "MARKETPLACE" }), { status: 502, code: "OWNER_RESPONSE_INVALID" });
+});
+
 test("admission follows exact pickup and delivery recipient combinations", () => {
   const addressId = "addr-00000000000000000000000000000001";
   const other = { recipientPurpose: "OTHER", recipientName: "Recipient", recipientPhone: "+967770000001" };
