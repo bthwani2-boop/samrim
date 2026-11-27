@@ -54,8 +54,6 @@ function admitFrame(response: Response, limit: number): Frame {
     response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
     throw new WltReadError([400, 401, 403].includes(status) ? status : 503);
   }
-  // The direct WLT owner emits plain JSON. Compressed or contradictory
-  // framing cannot establish the exact representation delivered to a client.
   const headers = response.headers;
   const length = headers.get("Content-Length");
   const transfer = headers.get("Transfer-Encoding");
@@ -78,10 +76,42 @@ function checkSize(size: number, frame: Frame): void {
   }
 }
 
-async function readText(response: Response, frame: Frame, stopped: Promise<never>): Promise<unknown> {
-  // The admitted Native bridge may already buffer its text; bound and verify
-  // the decoded UTF-8 representation without pretending to bound allocation
-  // before the bridge returns it. Actual device acceptance remains separate.
+// Validate complete JSON syntax with the native parser. Before returning any
+// parsed value, inspect the same bounded document's structural tokens: native
+// JSON.parse alone collapses duplicate keys, including escaped key spellings.
+// A stack scopes names to each object; it never recurses on untrusted depth.
+function admitDocument(text: string): unknown {
+  const parsed: unknown = JSON.parse(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new WltReadError(502);
+  const stack: (Set<string> | null)[] = [];
+  const tokens = /"(?:[^"\\]|\\[\s\S])*"|[{}\[\]]/g;
+  for (const token of text.matchAll(tokens)) {
+    const lexeme = token[0];
+    if (lexeme === "{") {
+      stack.push(new Set<string>());
+    } else if (lexeme === "[") {
+      stack.push(null);
+    } else if (lexeme === "}" || lexeme === "]") {
+      stack.pop();
+    } else {
+      // Native syntax validation proves that a string followed by a colon is
+      // a member name. Decode it with the same parser, not a second unescaper.
+      let after = token.index + lexeme.length;
+      while (after < text.length && /[ \t\r\n]/.test(text.charAt(after))) after++;
+      if (text.charAt(after) !== ":") continue;
+      const names = stack.at(-1);
+      if (!names) throw new WltReadError(502);
+      const name: string = JSON.parse(lexeme);
+      if (names.has(name)) throw new WltReadError(502);
+      names.add(name);
+    }
+  }
+  return parsed;
+}
+
+async function collectText(response: Response, frame: Frame, stopped: Promise<never>): Promise<string> {
+  // The existing Native bridge may buffer before returning text. Verify the
+  // decoded UTF-8 representation; do not claim pre-allocation byte admission.
   const text = await Promise.race([response.text(), stopped]);
   if (typeof text !== "string") throw new WltReadError(502);
   let size = 0;
@@ -93,14 +123,14 @@ async function readText(response: Response, frame: Frame, stopped: Promise<never
     if (size > ceiling) throw new WltReadError(502);
   }
   checkSize(size, frame);
-  return JSON.parse(text) as unknown;
+  return text;
 }
 
-async function readStream(reader: ReadableStreamDefaultReader<Uint8Array>, frame: Frame,
-  stopped: Promise<never>): Promise<unknown> {
+async function collectStream(reader: ReadableStreamDefaultReader<Uint8Array>, frame: Frame,
+  stopped: Promise<never>): Promise<string> {
   let complete = false;
   try {
-    const value = await Promise.race([(async () => {
+    const text = await Promise.race([(async () => {
       const bytes = new Uint8Array(frame.declared ?? frame.limit);
       let size = 0;
       for (;;) {
@@ -113,10 +143,12 @@ async function readStream(reader: ReadableStreamDefaultReader<Uint8Array>, frame
         size += chunk.value.byteLength;
       }
       checkSize(size, frame);
-      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size))) as unknown;
+      // Preserve a wire BOM so native JSON syntax validation rejects it, as
+      // it does for the text bridge. Do not silently normalize either input.
+      return new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, size));
     })(), stopped]);
     complete = true;
-    return value;
+    return text;
   } finally {
     if (!complete) void cancelStream(() => reader);
     reader.releaseLock();
@@ -124,7 +156,8 @@ async function readStream(reader: ReadableStreamDefaultReader<Uint8Array>, frame
 }
 
 // Before a reader is acquired the response owns cleanup. Once acquired,
-// only that reader is responsible for consumption, cancellation and release.
+// only that reader owns collection, cancellation and release. Both paths
+// converge on the same complete document admission before financial parsing.
 async function consumeResponse(response: Response, limit: number, signal: AbortSignal,
   stopped: Promise<never>): Promise<unknown> {
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
@@ -132,11 +165,15 @@ async function consumeResponse(response: Response, limit: number, signal: AbortS
     if (signal.aborted) throw new WltReadError(503);
     const frame = admitFrame(response, limit);
     const body = response.body;
+    let text: string;
     if (body?.getReader && typeof TextDecoder === "function") {
       reader = body.getReader();
-      return await readStream(reader, frame, stopped);
+      text = await collectStream(reader, frame, stopped);
+    } else {
+      text = await collectText(response, frame, stopped);
     }
-    return await readText(response, frame, stopped);
+    if (signal.aborted) throw new WltReadError(503);
+    return admitDocument(text);
   } catch (error) {
     if (!reader) discardResponse(response);
     if (signal.aborted) throw new WltReadError(503);
