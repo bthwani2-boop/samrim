@@ -49,27 +49,30 @@ These commands prove only their actual build/loopback scope, not browser hydrati
 
 Expo configuration obtains mobile keys from explicitly provided variables or the authorized BTHWANI_SECRETS_ROOT\env\mobile.env source. Use BTHWANI_ENFORCE_NATIVE_KEYS=1 for a separately authorized native build. Do not infer donor secrets or initiate signing, EAS or release effects without authorization.
 
-## Spec Kit and Graphify
+## Native Spec Kit and applicable Graphify
 
-Follow [AGENTS.md](AGENTS.md) for required native tool evidence. Inspect the live official Codex integration, preserve its managed assets and use the project constitution as a router, not an additional governance authority.
+Follow [AGENTS.md](AGENTS.md#6-mandatory-evidence-and-acceptance) for the authoritative tool applicability and evidence contract. Native Spec Kit is required for every repository engineering task. Verify the live official Codex integration, preserve managed assets and use the project constitution as a router, not another governance authority.
 
     specify version
     specify check
     specify integration status
-    node tools/dev/graphify-local.mjs status
-    node tools/dev/graphify-local.mjs query "task-relevant source and consumers"
-    node tools/dev/graphify-local.mjs coverage <supported-affected-paths>
 
-Use existing relevant specifications under specs/. For an authorized existing feature, resolve paths through the native script without persisting feature selection or changing branches:
+Use relevant existing specifications under specs/. For an authorized existing feature, resolve its paths through the native script without persisting feature selection or changing branches:
 
     $env:SPECIFY_FEATURE_DIRECTORY = 'specs/<actual-feature>'
     $env:SPECIFY_FEATURE_NO_PERSIST = '1'
     & .\.specify\scripts\powershell\check-prerequisites.ps1 -PathsOnly -Json
     Remove-Item Env:\SPECIFY_FEATURE_DIRECTORY, Env:\SPECIFY_FEATURE_NO_PERSIST
 
-Use native setup-plan.ps1 and setup-tasks.ps1 only when derived artifacts are needed; do not initialize, create a branch or dispatch an additional agent without applicable authority. Preserve project-authored specifications in Git when publication is authorized and their contents are safe for the repository's visibility; exclude generated workflow state and secrets, not the entire specs/ directory. CLI readiness and path resolution do not establish SDD completion.
+Use native setup-plan.ps1 and setup-tasks.ps1 only where derived artifacts are needed. Do not initialize, create a branch or dispatch another agent without applicable authority. Preserve authorized public-safe project specifications in Git; exclude generated workflow state and secrets, not the whole specs/ directory. CLI readiness and path resolution do not establish SDD completion.
 
-Graphify runs locally through the existing Surface runner and watcher. An INVALIDATED index may support diagnosis but not acceptance; do not start a second refresh writer or force refresh from a query. See the [reference catalog](docs/reference/engineering-references.md) for applicable official sources and the [documentation index](docs/README.md) for history.
+When the actual engineering scope requires graph-assisted relationship or dependency evidence, use the existing local Surface runner:
+
+    node tools/dev/graphify-local.mjs status
+    node tools/dev/graphify-local.mjs query "task-relevant source and consumers"
+    node tools/dev/graphify-local.mjs coverage <supported-affected-paths>
+
+Use the existing watcher; never refresh from a read-only query or add a second scheduler, Git hook or CI gate. INVALIDATED graph evidence can support diagnosis, not acceptance. If Graphify is not needed, record the concrete scope reason and actual direct native source/owner evidence under AGENTS.md rather than executing a ritual or declaring a graph PASS. See the [reference catalog](docs/reference/engineering-references.md) for applicable official sources and the [documentation index](docs/README.md) for history.
 
 ## Nx, dependencies and CI
 
