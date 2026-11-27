@@ -34,7 +34,7 @@ This file owns repository placement, not business policy, execution permission o
 | patches/ | Necessary exact-version dependency patches referenced by the frozen pnpm graph, including current Ant Design CSP and Picomatch security patches |
 | tests/ | Cross-owner or infrastructure integration proof; focused tests remain with their implementation owners |
 
-Keep official Spec Kit managed assets at their original paths and update only through authorized official releases. The project constitution and specifications do not become another policy root. Engine methodology belongs to the published Engineering Core, not a duplicate local skill hierarchy. See [execution entry](AGENTS.md) for actual mandatory Spec Kit and Graphify invocation and official update boundaries.
+Keep official Spec Kit managed assets at their original paths and update only through authorized official releases. The project constitution and specifications do not become another policy root. Engine methodology belongs to the published Engineering Core, not a duplicate local skill hierarchy. See [execution entry](AGENTS.md) for mandatory native Spec Kit, need-based local Graphify invocation and official update boundaries.
 
 Generated graph/index artifacts, build outputs, dependencies, coverage, credentials and disposable evidence follow their existing tool/ignore rules. They are not separately authored business facts. Do not add parallel indexes, registries, runners, governance roots or synchronization paths. Archived donor source is read-only, not an active implementation.
 
@@ -89,7 +89,7 @@ All authorized remediation follows the single [mandatory removal and clean refou
 | Workspace, toolchain, Go/SQL/OpenAPI placement | pnpm check:workspace; [workspace tests](tools/dev/verify-workspace.test.mjs); [service guard](tools/dev/check-service-placement.mjs) |
 | App/import/export/renderer boundaries | [application guard](tools/mobile/verify-application-boundaries.mjs); [fixtures](tools/mobile/verify-application-boundaries.test.mjs) |
 | Owner contracts and generated parity | pnpm check:contracts; [contract guard](tools/dev/check-openapi.mjs) |
-| Dependency and source analysis | pnpm knip:files; [source inventory](tools/dev/source-inventory.mjs); [fixtures](tools/dev/source-inventory.test.mjs); mandatory local Graphify |
+| Dependency and source analysis | pnpm knip:files; [source inventory](tools/dev/source-inventory.mjs); [fixtures](tools/dev/source-inventory.test.mjs); local Graphify when applicable under AGENTS.md |
 | Affected routing and test inclusion | [Nx impact tests](tools/dev/verify-nx-project-graph.test.mjs); pnpm check:test-inclusion and existing test discovery |
 | Actual Go/SQL/restore and source integration | [CI](.github/workflows/ci.yml); [security](.github/workflows/security.yml) |
 
