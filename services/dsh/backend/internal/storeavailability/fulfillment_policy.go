@@ -17,8 +17,8 @@ import (
 	"github.com/lib/pq"
 )
 
-// CityFulfillmentPolicy is a ceiling on permissible modes, not Store-specific
-// admission, current availability, a WLT agreement or a payable quote.
+// CityFulfillmentPolicy is the city/relation ceiling, not Store admission,
+// actual availability, an accepted financial agreement or a payable quote.
 type CityFulfillmentPolicy struct {
 	CityID         string     `json:"cityId"`
 	Relation       string     `json:"relation"`
@@ -38,59 +38,61 @@ func canonicalFulfillmentModes(modes []string) ([]string, bool) {
 	if modes == nil || len(modes) > 3 {
 		return nil, false
 	}
-	result := make([]string, 0, len(modes))
-	for _, candidate := range []string{"BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"} {
-		if slices.Contains(modes, candidate) {
-			result = append(result, candidate)
+	ordered := make([]string, 0, len(modes))
+	for _, mode := range []string{"BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"} {
+		if slices.Contains(modes, mode) {
+			ordered = append(ordered, mode)
 		}
 	}
-	return result, len(result) == len(modes)
+	return ordered, len(ordered) == len(modes)
 }
 
+// Bind the owner schema once per transaction, then issue only fixed SQL with
+// bound values. Do not construct statement fragments or schema-qualified SQL.
 func (source *PostgresPolicySource) beginFulfillmentPolicy(ctx context.Context, write bool) (*sql.Tx, error) {
 	if source == nil || source.db == nil || !strings.HasPrefix(source.schema, "dsh_test_") {
 		return nil, ErrPolicyUnavailable
 	}
-	level := sql.LevelRepeatableRead
+	options := &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}
 	if write {
-		level = sql.LevelReadCommitted
+		options = &sql.TxOptions{Isolation: sql.LevelReadCommitted}
 	}
-	tx, err := dbscope.Begin(ctx, source.db, source.schema, &sql.TxOptions{Isolation: level, ReadOnly: !write}, "service_cities", "city_fulfillment_policy_versions")
+	tx, err := dbscope.Begin(ctx, source.db, source.schema, options, "service_cities", "city_fulfillment_policy_versions")
 	if err != nil {
 		return nil, ErrPolicyUnavailable
 	}
-	var db, role string
-	if err = tx.QueryRowContext(ctx, "SELECT current_database(),current_user").Scan(&db, &role); err != nil || !dbscope.IsCartPrincipal(db, role) {
+	var database, principal string
+	if err := tx.QueryRowContext(ctx, "SELECT current_database(),current_user").Scan(&database, &principal); err != nil || !dbscope.IsCartPrincipal(database, principal) {
 		_ = tx.Rollback()
 		return nil, ErrPolicyUnavailable
 	}
 	return tx, nil
 }
 
-const fulfillmentPolicyColumns = "version,allowed_modes,acting_actor_id,reason,recorded_at"
-
 func scanFulfillmentPolicy(row *sql.Row, city, relation string) (CityFulfillmentPolicy, error) {
-	p := CityFulfillmentPolicy{CityID: city, Relation: relation, AllowedModes: []string{}}
+	policy := CityFulfillmentPolicy{CityID: city, Relation: relation, AllowedModes: []string{}}
 	var recorded time.Time
-	err := row.Scan(&p.Version, pq.Array(&p.AllowedModes), &p.ChangedByActor, &p.Reason, &recorded)
-	if err != nil {
+	if err := row.Scan(&policy.Version, pq.Array(&policy.AllowedModes), &policy.ChangedByActor, &policy.Reason, &recorded); err != nil {
 		return CityFulfillmentPolicy{}, err
 	}
-	normalized, ok := canonicalFulfillmentModes(p.AllowedModes)
-	if !ok || !slices.Equal(normalized, p.AllowedModes) || p.Version < 1 || p.Version > 9007199254740991 || !identityaccess.ValidActorID(p.ChangedByActor) || recorded.IsZero() {
+	modes, valid := canonicalFulfillmentModes(policy.AllowedModes)
+	if !valid || !slices.Equal(modes, policy.AllowedModes) || policy.Version < 1 ||
+		policy.Version > 9007199254740991 || !identityaccess.ValidActorID(policy.ChangedByActor) || recorded.IsZero() {
 		return CityFulfillmentPolicy{}, ErrPolicyUnavailable
 	}
 	recorded = recorded.UTC()
-	p.UpdatedAt = &recorded
-	return p, nil
+	policy.UpdatedAt = &recorded
+	return policy, nil
 }
 
 func currentFulfillmentPolicy(ctx context.Context, tx *sql.Tx, city, relation string) (CityFulfillmentPolicy, error) {
-	p, err := scanFulfillmentPolicy(tx.QueryRowContext(ctx, "SELECT "+fulfillmentPolicyColumns+" FROM city_fulfillment_policy_versions WHERE city_id=$1 AND relation=$2 ORDER BY version DESC LIMIT 1", city, relation), city, relation)
+	row := tx.QueryRowContext(ctx, `SELECT version,allowed_modes,acting_actor_id,reason,recorded_at
+		FROM city_fulfillment_policy_versions WHERE city_id=$1 AND relation=$2 ORDER BY version DESC LIMIT 1`, city, relation)
+	policy, err := scanFulfillmentPolicy(row, city, relation)
 	if errors.Is(err, sql.ErrNoRows) {
 		return CityFulfillmentPolicy{CityID: city, Relation: relation, AllowedModes: []string{}}, nil
 	}
-	return p, err
+	return policy, err
 }
 
 func (source *PostgresPolicySource) ReadCityFulfillmentPolicy(ctx context.Context, city, relation string) (CityFulfillmentPolicy, error) {
@@ -103,26 +105,26 @@ func (source *PostgresPolicySource) ReadCityFulfillmentPolicy(ctx context.Contex
 	}
 	defer tx.Rollback()
 	var active bool
-	if err = tx.QueryRowContext(ctx, "SELECT active FROM service_cities WHERE id=$1", city).Scan(&active); err != nil || !active {
+	if err := tx.QueryRowContext(ctx, "SELECT active FROM service_cities WHERE id=$1", city).Scan(&active); err != nil || !active {
 		return CityFulfillmentPolicy{}, ErrPolicyUnavailable
 	}
-	p, err := currentFulfillmentPolicy(ctx, tx, city, relation)
+	policy, err := currentFulfillmentPolicy(ctx, tx, city, relation)
 	if err != nil || tx.Commit() != nil {
 		return CityFulfillmentPolicy{}, ErrPolicyUnavailable
 	}
-	return p, nil
+	return policy, nil
 }
 
-// Lock the canonical City before reading version or replay. The immutable
-// version row is also the operation receipt; there is no duplicate current
-// policy table, default or separate command ledger. Retry an ambiguous commit
-// with the identical operation; no new key may be invented by the server.
+// The City lock serializes competing writes. The immutable version is also
+// the operation receipt, so retries never need a second table or new key.
 func (source *PostgresPolicySource) ApplyCityFulfillmentPolicy(ctx context.Context, actor, city, relation, operation string, expected int64, modes []string, reason string) (CityFulfillmentPolicy, bool, error) {
 	normalized, valid := canonicalFulfillmentModes(modes)
 	reason = strings.TrimSpace(reason)
-	if !valid || !identityaccess.ValidActorID(actor) || !cityPolicyIDRule.MatchString(city) || !validRegistrationRelation(relation) ||
-		!operationIDRule.MatchString(operation) || expected < 0 || expected >= 9007199254740991 ||
-		!utf8.ValidString(reason) || utf8.RuneCountInString(reason) < 1 || utf8.RuneCountInString(reason) > 300 || strings.ContainsFunc(reason, unicode.IsControl) {
+	if !valid || !identityaccess.ValidActorID(actor) || !cityPolicyIDRule.MatchString(city) ||
+		!validRegistrationRelation(relation) || !operationIDRule.MatchString(operation) ||
+		expected < 0 || expected >= 9007199254740991 ||
+		!utf8.ValidString(reason) || utf8.RuneCountInString(reason) < 1 ||
+		utf8.RuneCountInString(reason) > 300 || strings.ContainsFunc(reason, unicode.IsControl) {
 		return CityFulfillmentPolicy{}, false, ErrInvalidChange
 	}
 	tx, err := source.beginFulfillmentPolicy(ctx, true)
@@ -130,23 +132,28 @@ func (source *PostgresPolicySource) ApplyCityFulfillmentPolicy(ctx context.Conte
 		return CityFulfillmentPolicy{}, false, err
 	}
 	defer tx.Rollback()
+
 	var active bool
-	if err = tx.QueryRowContext(ctx, "SELECT active FROM service_cities WHERE id=$1 FOR UPDATE", city).Scan(&active); err != nil || !active {
+	if err := tx.QueryRowContext(ctx, "SELECT active FROM service_cities WHERE id=$1 FOR UPDATE", city).Scan(&active); err != nil || !active {
 		return CityFulfillmentPolicy{}, false, ErrPolicyUnavailable
 	}
-	prior, err := scanFulfillmentPolicy(tx.QueryRowContext(ctx, "SELECT "+fulfillmentPolicyColumns+" FROM city_fulfillment_policy_versions WHERE city_id=$1 AND relation=$2 AND operation_id=$3", city, relation, operation), city, relation)
-	if err == nil {
-		if prior.Version != expected+1 || prior.ChangedByActor != actor || prior.Reason != reason || !slices.Equal(prior.AllowedModes, normalized) {
+	prior, err := scanFulfillmentPolicy(tx.QueryRowContext(ctx, `SELECT version,allowed_modes,acting_actor_id,reason,recorded_at
+		FROM city_fulfillment_policy_versions WHERE city_id=$1 AND relation=$2 AND operation_id=$3`,
+		city, relation, operation), city, relation)
+	switch {
+	case err == nil:
+		if prior.Version != expected+1 || prior.ChangedByActor != actor || prior.Reason != reason ||
+			!slices.Equal(prior.AllowedModes, normalized) {
 			return CityFulfillmentPolicy{}, false, ErrOperationConflict
 		}
 		if tx.Commit() != nil {
 			return CityFulfillmentPolicy{}, false, ErrUnknownResult
 		}
 		return prior, true, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	case !errors.Is(err, sql.ErrNoRows):
 		return CityFulfillmentPolicy{}, false, ErrPolicyUnavailable
 	}
+
 	current, err := currentFulfillmentPolicy(ctx, tx, city, relation)
 	if err != nil {
 		return CityFulfillmentPolicy{}, false, ErrPolicyUnavailable
@@ -154,15 +161,18 @@ func (source *PostgresPolicySource) ApplyCityFulfillmentPolicy(ctx context.Conte
 	if current.Version != expected {
 		return CityFulfillmentPolicy{}, false, ErrPolicyVersionConflict
 	}
-	p, err := scanFulfillmentPolicy(tx.QueryRowContext(ctx, `INSERT INTO city_fulfillment_policy_versions(city_id,relation,version,operation_id,allowed_modes,acting_actor_id,reason)
- VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING `+fulfillmentPolicyColumns, city, relation, expected+1, operation, pq.Array(normalized), actor, reason), city, relation)
+	policy, err := scanFulfillmentPolicy(tx.QueryRowContext(ctx, `INSERT INTO city_fulfillment_policy_versions
+		(city_id,relation,version,operation_id,allowed_modes,acting_actor_id,reason)
+		VALUES($1,$2,$3,$4,$5,$6,$7)
+		RETURNING version,allowed_modes,acting_actor_id,reason,recorded_at`,
+		city, relation, expected+1, operation, pq.Array(normalized), actor, reason), city, relation)
 	if err != nil {
 		return CityFulfillmentPolicy{}, false, ErrPolicyUnavailable
 	}
 	if tx.Commit() != nil {
 		return CityFulfillmentPolicy{}, false, ErrUnknownResult
 	}
-	return p, false, nil
+	return policy, false, nil
 }
 
 func cityFulfillmentPolicyHandler(identity IdentitySessions, owner cityFulfillmentPolicyOwner) http.HandlerFunc {
@@ -172,38 +182,47 @@ func cityFulfillmentPolicyHandler(identity IdentitySessions, owner cityFulfillme
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		city, relation := r.PathValue("cityID"), r.PathValue("relation")
 		actor, ok := authorizePolicyOperator(w, r, identity, r.URL.RawQuery == "" && !r.URL.ForceQuery)
 		if !ok {
 			return
 		}
+		city, relation := r.PathValue("cityID"), r.PathValue("relation")
 		if !validRegistrationRelation(relation) {
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), 4*time.Second)
 		defer cancel()
+
+		// Recheck the same current Operator before emitting private data or
+		// issuing an owner command after parsing the client request.
+		stillAuthorized := func() bool {
+			current, ok := authorizeCityPolicyOperator(w, r, identity)
+			if !ok {
+				return false
+			}
+			if current != actor {
+				writeFailure(w, ErrForbidden)
+				return false
+			}
+			return true
+		}
 		if r.Method == http.MethodGet {
 			if r.ContentLength != 0 || len(r.TransferEncoding) != 0 {
 				writeFailure(w, ErrInvalidChange)
 				return
 			}
-			p, err := owner.ReadCityFulfillmentPolicy(ctx, city, relation)
+			policy, err := owner.ReadCityFulfillmentPolicy(ctx, city, relation)
 			if err != nil {
 				writeFailure(w, err)
 				return
 			}
-			current, ok := authorizeCityPolicyOperator(w, r, identity)
-			if !ok {
-				return
+			if stillAuthorized() {
+				writeJSON(w, http.StatusOK, policy)
 			}
-			if current != actor {
-				writeFailure(w, ErrForbidden)
-				return
-			}
-			writeJSON(w, http.StatusOK, p)
 			return
 		}
+
 		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 		if err != nil || media != "application/json" || r.Header.Get("Content-Encoding") != "" {
 			writeFailure(w, ErrInvalidChange)
@@ -219,15 +238,10 @@ func cityFulfillmentPolicyHandler(identity IdentitySessions, owner cityFulfillme
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
-		current, ok := authorizeCityPolicyOperator(w, r, identity)
-		if !ok {
+		if !stillAuthorized() {
 			return
 		}
-		if current != actor {
-			writeFailure(w, ErrForbidden)
-			return
-		}
-		p, replay, err := owner.ApplyCityFulfillmentPolicy(ctx, actor, city, relation, input.OperationID, *input.ExpectedVersion, *input.AllowedModes, input.Reason)
+		policy, replay, err := owner.ApplyCityFulfillmentPolicy(ctx, actor, city, relation, input.OperationID, *input.ExpectedVersion, *input.AllowedModes, input.Reason)
 		if err != nil {
 			writeFailure(w, err)
 			return
@@ -235,6 +249,6 @@ func cityFulfillmentPolicyHandler(identity IdentitySessions, owner cityFulfillme
 		writeJSON(w, http.StatusOK, struct {
 			Policy CityFulfillmentPolicy `json:"policy"`
 			Replay bool                  `json:"replay"`
-		}{p, replay})
+		}{policy, replay})
 	}
 }

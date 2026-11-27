@@ -5,6 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -95,5 +98,38 @@ func TestCityPolicyWriterCannotAdmitNilWriterOrAdditionalWriters(t *testing.T) {
 	}
 	if _, err := NewCityPolicyHandler(id, reader, &recordingPolicyWriter{}, &recordingPolicyWriter{}); !errors.Is(err, ErrPolicyUnavailable) {
 		t.Fatalf("duplicate writers admitted %v", err)
+	}
+}
+
+func TestFulfillmentPolicyUsesLiteralBoundSQL(t *testing.T) {
+	// The schema is bound by dbscope; no dynamically assembled statements
+	// should enter the owner transaction, including a constant projection.
+	file, err := parser.ParseFile(token.NewFileSet(), "fulfillment_policy.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checked := 0
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		method, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || (method.Sel.Name != "QueryRowContext" && method.Sel.Name != "QueryContext" && method.Sel.Name != "ExecContext") {
+			return true
+		}
+		checked++
+		if len(call.Args) < 2 {
+			t.Error("SQL statement missing")
+			return true
+		}
+		statement, ok := call.Args[1].(*ast.BasicLit)
+		if !ok || statement.Kind != token.STRING {
+			t.Errorf("%s must use a literal parameterized statement", method.Sel.Name)
+		}
+		return true
+	})
+	if checked == 0 {
+		t.Fatal("no owner SQL statements checked")
 	}
 }
