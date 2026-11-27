@@ -22,15 +22,30 @@ const requiredSources = [
   "packages/design-system/src/semantics/themes.ts",
 ];
 
+// Native reporter events distinguish real tests from synthetic file successes.
+// Keep the reporter in this owner; no temporary executable or report pathname.
+async function* requireExecutedTests(source) {
+  let passed = 0;
+  for await (const { type, data } of source) {
+    if (type === "test:pass" && data.entryFile && data.details.type === "test" &&
+        !data.skip && !data.todo) passed++;
+  }
+  if (!passed) throw new Error("NATIVE_NODE_TEST_EXECUTION_EMPTY");
+  yield "NATIVE_NODE_TEST_EXECUTION_PASS tests=" + passed + "\n";
+}
+
 function nativeTests(files, concurrency, measure = false) {
   assert.ok(files.length, "No admitted source tests");
-  const reporters = measure ? [
-    "--experimental-test-coverage", "--test-reporter=spec", "--test-reporter-destination=stderr",
-    "--test-reporter=lcov", "--test-reporter-destination=stdout",
-  ] : [];
-  // The native LCOV reporter writes only to the inherited pipe. No child
-  // test receives an intermediate report pathname that it can substitute.
-  const result = spawnSync(process.execPath, [...nodeOptions, "--test-concurrency=" + concurrency,
+  const reporter = "data:text/javascript," + encodeURIComponent("export default " + requireExecutedTests.toString());
+  const destination = measure ? "stderr" : "stdout";
+  const reporters = [
+    "--test-reporter=spec", "--test-reporter-destination=" + destination,
+    "--test-reporter=" + reporter, "--test-reporter-destination=" + destination,
+  ];
+  if (measure) reporters.push("--experimental-test-coverage", "--test-reporter=lcov", "--test-reporter-destination=stdout");
+  // Native process isolation supplies entryFile; the LCOV stream remains private
+  // to the parent and is admitted only after all reporters complete successfully.
+  const result = spawnSync(process.execPath, [...nodeOptions, "--test-isolation=process", "--test-concurrency=" + concurrency,
     ...reporters, "--test", ...files], {
     cwd: root, stdio: measure ? ["ignore", "pipe", "inherit"] : "inherit", maxBuffer: maxReportBytes,
   });

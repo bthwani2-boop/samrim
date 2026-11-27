@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
+import { admitNativeGoCoverage, admitNativeGoTests, checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
 
 test("Go CLI selects only an unambiguous admitted mode and owner", () => {
   assert.deepEqual(parseArgs([]), { mode: "quick", moduleName: undefined, sonarReport: false });
@@ -131,4 +131,25 @@ test("the actual child process receives no inherited Go test selector or owner c
   if (result.error) throw result.error;
   assert.equal(result.status, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { flags: "", config: "off", cache: "fixture-cache" });
+});
+
+test("native Go outcomes require actual completed tests, not package success or skips", () => {
+  const events = (...items) => items.map(item => JSON.stringify({ Package: "owner", ...item })).join("\n");
+  const run = { Action: "run", Test: "TestActual" };
+  const pass = { Action: "pass", Test: "TestActual" };
+  const skip = { Action: "skip", Test: "TestActual" };
+  assert.throws(() => admitNativeGoTests(events({ Action: "pass" })), /NATIVE_GO_TEST_EXECUTION_EMPTY/);
+  assert.throws(() => admitNativeGoTests(events(run, skip, { Action: "pass" })), /NATIVE_GO_TEST_EXECUTION_EMPTY/);
+  assert.throws(() => admitNativeGoTests(events(pass)), /NATIVE_GO_TEST_OUTCOME_WITHOUT_RUN/);
+  assert.throws(() => admitNativeGoTests(events(run, { Action: "pass" })), /NATIVE_GO_TEST_EXECUTION_INCOMPLETE/);
+  assert.throws(() => admitNativeGoTests(events(run, { Action: "fail", Test: "TestActual" })), /NATIVE_GO_TEST_FAILED/);
+  assert.throws(() => admitNativeGoTests("not json"));
+  assert.deepEqual(admitNativeGoTests(events(run, pass, { Action: "run", Test: "TestOptional" }, { Action: "skip", Test: "TestOptional" }, { Action: "pass" })), { passed: 1, skipped: 1 });
+});
+
+test("native Go coverage requires a single positive measured total", () => {
+  for (const value of ["", "total: (statements) 0.0%", "total: (statements) 101.0%", "total: (statements) 1.0%\ntotal: (statements) 2.0%"]) {
+    assert.throws(() => admitNativeGoCoverage(value), /NATIVE_GO_COVERAGE_NOT_MEASURED/);
+  }
+  assert.equal(admitNativeGoCoverage("owner/file.go:10\tfunc\t70.0%\ntotal:\t(statements)\t70.0%\n"), 70);
 });

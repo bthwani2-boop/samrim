@@ -153,11 +153,49 @@ export function verifyOwnerPhases(phases, log = console) {
   return measured.result;
 }
 
+// Consume the native test2json stream; package-level pass and skip events
+// cannot establish that an individual test actually completed successfully.
+export function admitNativeGoTests(output) {
+  const running = new Set();
+  let passed = 0;
+  let skipped = 0;
+  for (const line of output.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    const event = JSON.parse(line);
+    if (!event || typeof event.Action !== "string") throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+    if (event.Action === "fail" || event.Action === "build-fail") throw new Error("NATIVE_GO_TEST_FAILED");
+    if (!event.Test) continue;
+    if (typeof event.Package !== "string" || typeof event.Test !== "string") throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+    const key = JSON.stringify([event.Package, event.Test]);
+    if (event.Action === "run") running.add(key);
+    if (event.Action === "pass" || event.Action === "skip") {
+      if (!running.delete(key)) throw new Error("NATIVE_GO_TEST_OUTCOME_WITHOUT_RUN");
+      if (event.Action === "pass") passed++;
+      else skipped++;
+    }
+  }
+  if (running.size) throw new Error("NATIVE_GO_TEST_EXECUTION_INCOMPLETE");
+  if (!passed) throw new Error("NATIVE_GO_TEST_EXECUTION_EMPTY");
+  return { passed, skipped };
+}
+
+export function admitNativeGoCoverage(output) {
+  const totals = [...output.matchAll(/^total:\s+\(statements\)\s+(\d+(?:\.\d+)?)%\s*$/gm)];
+  const percent = Number(totals[0]?.[1]);
+  if (totals.length !== 1 || !(percent > 0 && percent <= 100)) throw new Error("NATIVE_GO_COVERAGE_NOT_MEASURED");
+  return percent;
+}
+
 function nativeOwnerTests(directory, mode, sonarReport, executable, env) {
   // Full go vet has its own phase; do not execute the default subset again.
-  const args = ["test", "-vet=off", "-count=1"];
+  const args = ["test", "-json", "-vet=off", "-count=1"];
+  const execute = extra => {
+    const output = run(executable, [...args, ...extra, "./..."], directory, env, 600000);
+    const outcome = admitNativeGoTests(output);
+    console.log("NATIVE_GO_TEST_EXECUTION_PASS tests=" + outcome.passed + " skipped=" + outcome.skipped);
+  };
   if (mode === "quick") {
-    run(executable, [...args, "./..."], directory, env);
+    execute([]);
     return undefined;
   }
   if (mode === "ci") args.push("-race");
@@ -165,9 +203,9 @@ function nativeOwnerTests(directory, mode, sonarReport, executable, env) {
   const scratch = mkdtempSync(join(tmpdir(), "bthwani-go-"));
   try {
     const profile = join(scratch, "coverage.out");
-    run(executable, [...args, "-coverprofile=" + profile, "./..."], directory, env, 600000);
-    // Native Go validates its own coverprofile grammar before publication.
-    run(executable, ["tool", "cover", "-func=" + profile], directory, env);
+    execute(["-coverprofile=" + profile]);
+    // Native Go validates its own report; reject a valid but unmeasured profile.
+    admitNativeGoCoverage(run(executable, ["tool", "cover", "-func=" + profile], directory, env));
     return sonarReport ? readFileSync(profile) : undefined;
   } finally {
     rmSync(scratch, { recursive: true, force: true });

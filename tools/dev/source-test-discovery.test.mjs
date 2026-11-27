@@ -462,3 +462,34 @@ test("native LCOV does not expose an intermediate pathname to executing tests", 
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(readFileSync(report, "utf8"), /SF:tools\/mobile\/verify-app-identity\.mjs/);
 }));
+
+test("native outcome admission rejects skipped, todo and empty suites without publishing coverage", () => coverageFixture(({ add, report, run }) => {
+  const imports = [
+    'import "../mobile/verify-app-identity.mjs";',
+    'import "../mobile/define-bthwani-expo-app.cjs";',
+    'import "../../packages/design-system/src/semantics/themes.ts";',
+    'import test from "node:test";',
+  ].join("\n");
+  for (const body of ['test.skip("optional", () => {});', 'test.todo("planned");', "export {};"]) {
+    add("tools/dev/measure.test.mjs", imports + "\n" + body);
+    const result = run();
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /NATIVE_NODE_TEST_EXECUTION_EMPTY/);
+    assert.equal(existsSync(report), false);
+  }
+  add("tools/dev/measure.test.mjs", imports + '\ntest("executed", () => {}); test.skip("optional", () => {});');
+  const passed = run();
+  assert.equal(passed.status, 0, passed.stdout + passed.stderr);
+  assert.match(readFileSync(report, "utf8"), /SF:tools\/mobile\/verify-app-identity\.mjs/);
+}));
+
+test("operator runtime cannot accept an all-skipped or empty suite", () => coverageFixture(({ add, report, run }) => {
+  for (const body of ['import test from "node:test"; test.skip("optional", () => {});', "export {};"]) {
+    add("apps/control-panel/tests/runtime/only.test.mjs", body);
+    const result = run("--operator-runtime");
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stderr, /NATIVE_NODE_TEST_EXECUTION_EMPTY/);
+    assert.doesNotMatch(result.stdout, /OPERATOR_RUNTIME_TESTS_PASS/);
+    assert.equal(readFileSync(report, "utf8"), "STALE_REPORT");
+  }
+}));
