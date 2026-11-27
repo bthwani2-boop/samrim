@@ -4,199 +4,33 @@ import { useCallback, useRef, useState } from "react";
 import { AppState, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { formatExactYer } from "../../components/format-exact-yer";
-import {
-  type NativeWalletHistoryRead, type NativeWalletRead,
-  readNativeWallet, readNativeWalletTransactions,
-} from "./wallet-read";
+import { createWalletLifecycle, emptyWalletView } from "./wallet-lifecycle";
+import { readNativeWallet, readNativeWalletTransactions } from "./wallet-read";
 
-
-// Android read-only wallet: Identity is verified on each owner read and WLT
-// remains the only money writer. No Cash-In/payment mutation is exposed.
+// Android read-only wallet: the same display lifecycle as Web, with
+// native Identity/WLT reads and AppState as the visibility owner.
 export default function WalletScreen() {
   const { theme } = useMobileAppearance();
-  const [balance, setBalance] = useState<NativeWalletRead | null>(null);
-  const [history, setHistory] = useState<NativeWalletHistoryRead | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [moreError, setMoreError] = useState(false);
-  const generation = useRef(0);
-  const pending = useRef<AbortController | null>(null);
-  const morePending = useRef<AbortController | null>(null);
-  const moreTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const concealRef = useRef<(() => void) | null>(null);
-  const expiryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const refreshRef = useRef<(() => void) | null>(null);
-  const scheduleExpiryRef = useRef<((expiresAt: number) => void) | null>(null);
-
+  const [{ balance, history, loadingMore, moreError }, setView] = useState(emptyWalletView);
+  const lifecycle = useRef<ReturnType<typeof createWalletLifecycle> | null>(null);
   useFocusEffect(useCallback(() => {
-    let actor: string | undefined;
-    let refreshTimeout: ReturnType<typeof setTimeout> | undefined;
-    function hide() {
-      generation.current++;
-      pending.current?.abort();
-      morePending.current?.abort();
-      pending.current = null;
-      morePending.current = null;
-      clearTimeout(moreTimeout.current);
-      moreTimeout.current = undefined;
-      actor = undefined;
-      clearTimeout(refreshTimeout);
-      if (expiryTimer.current) clearTimeout(expiryTimer.current);
-      expiryTimer.current = null;
-      setBalance(null);
-      setHistory(null);
-      setLoadingMore(false);
-      setMoreError(false);
-    }
-    function conceal() {
-      hide();
-      setBalance({ kind: "signed-out" });
-    }
-    function scheduleExpiry(expiresAt: number) {
-      if (expiryTimer.current) clearTimeout(expiryTimer.current);
-      expiryTimer.current = setTimeout(conceal, Math.max(0, expiresAt - Date.now()));
-    }
-    function refresh(silent = false) {
-      if (AppState.currentState !== "active") {
-        hide();
-        return;
-      }
-      if (silent && (pending.current || morePending.current)) return;
-      if (!silent) hide();
-      const previousActor = actor;
-      const current = generation.current;
-      const controller = new AbortController();
-      pending.current = controller;
-      const stillCurrent = () => !controller.signal.aborted && generation.current === current && pending.current === controller;
-      function unavailable() {
-        if (!stillCurrent()) return;
-        hide();
-        setBalance({ kind: "unavailable" });
-      }
-      refreshTimeout = setTimeout(unavailable, 12000);
-      void (async () => {
-        try {
-          const result = await readNativeWallet(controller.signal);
-          if (!stillCurrent()) return;
-          if (result.kind !== "ready") {
-            hide();
-            setBalance(result);
-            return;
-          }
-          if ((previousActor && previousActor !== result.balance.actorId) || result.expiresAt <= Date.now()) {
-            hide();
-            setBalance({ kind: "signed-out" });
-            return;
-          }
-          if (!previousActor) {
-            actor = result.balance.actorId;
-            setBalance(result);
-            scheduleExpiry(result.expiresAt);
-          }
-          const transactions = await readNativeWalletTransactions(controller.signal, undefined, result.balance.actorId);
-          if (!stillCurrent()) return;
-          if (transactions.kind !== "ready") {
-            hide();
-            setBalance({ kind: transactions.kind });
-            return;
-          }
-          const expiresAt = Math.min(result.expiresAt, transactions.expiresAt);
-          if (transactions.history.actorId !== result.balance.actorId || expiresAt <= Date.now()) {
-            hide();
-            setBalance({ kind: "signed-out" });
-            return;
-          }
-          actor = result.balance.actorId;
-          setBalance(result);
-          setHistory(transactions);
-          setMoreError(false);
-          scheduleExpiry(expiresAt);
-        } catch {
-          unavailable();
-        } finally {
-          if (pending.current === controller) {
-            clearTimeout(refreshTimeout);
-            pending.current = null;
-          }
-        }
-      })();
-    }
-    scheduleExpiryRef.current = scheduleExpiry;
-    concealRef.current = conceal;
-    refreshRef.current = refresh;
+    const owner = createWalletLifecycle({
+      active: () => AppState.currentState === "active",
+      readBalance: (signal, actor) => readNativeWallet(signal, actor),
+      readHistory: (signal, cursor, actor) => readNativeWalletTransactions(signal, cursor, actor),
+    }, setView);
+    lifecycle.current = owner;
     const subscription = AppState.addEventListener("change", status => {
-      if (status === "active") refresh();
-      else hide();
+      if (status === "active") owner.refresh();
+      else owner.hide();
     });
-    refresh();
-    const interval = setInterval(() => refresh(true), 30000);
+    owner.refresh();
     return () => {
-      clearInterval(interval);
-      refreshRef.current = null;
-      scheduleExpiryRef.current = null;
-      concealRef.current = null;
+      lifecycle.current = null;
       subscription.remove();
-      hide();
+      owner.stop();
     };
   }, []));
-
-  async function loadMore() {
-    if (balance?.kind !== "ready" || history?.kind !== "ready" ||
-      !history.history.nextCursor || morePending.current || pending.current) return;
-    const cursor = history.history.nextCursor;
-    const actorId = history.history.actorId;
-    const current = generation.current;
-    const controller = new AbortController();
-    morePending.current = controller;
-    setLoadingMore(true);
-    setMoreError(false);
-    const stillCurrent = () => !controller.signal.aborted && generation.current === current && morePending.current === controller;
-    // A non-cooperative transport must not hold the foreground verification lock.
-    moreTimeout.current = setTimeout(() => {
-      if (!stillCurrent()) return;
-      controller.abort();
-      clearTimeout(moreTimeout.current);
-      moreTimeout.current = undefined;
-      morePending.current = null;
-      setLoadingMore(false);
-      setMoreError(true);
-    }, 12000);
-    try {
-      const next = await readNativeWalletTransactions(controller.signal, cursor, balance.balance.actorId);
-      if (!stillCurrent()) return;
-      if (next.kind === "signed-out" || (next.kind === "ready" &&
-          (next.history.actorId !== actorId || Math.min(balance.expiresAt, history.expiresAt, next.expiresAt) <= Date.now()))) {
-        concealRef.current?.();
-        return;
-      }
-      if (next.kind !== "ready" ||
-        (next.history.nextCursor !== null && next.history.nextCursor === cursor)) {
-        setMoreError(true);
-        return;
-      }
-      const seen = new Set(history.history.items.map(item => item.fundingId));
-      if (next.history.items.some(item => seen.has(item.fundingId))) {
-        setMoreError(true);
-        return;
-      }
-      setHistory(previous => {
-        if (previous?.kind !== "ready" || previous.history.actorId !== actorId ||
-          previous.history.nextCursor !== cursor) return previous;
-        return { kind: "ready", history: {
-          ...next.history, items: [...previous.history.items, ...next.history.items],
-        }, expiresAt: Math.min(previous.expiresAt, next.expiresAt) };
-      });
-      scheduleExpiryRef.current?.(Math.min(balance.expiresAt, history.expiresAt, next.expiresAt));
-    } catch {
-      if (stillCurrent()) setMoreError(true);
-    } finally {
-      if (morePending.current === controller) {
-        clearTimeout(moreTimeout.current);
-        moreTimeout.current = undefined;
-        morePending.current = null;
-        setLoadingMore(false);
-      }
-    }
-  }
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
@@ -245,7 +79,7 @@ export default function WalletScreen() {
                 {history.history.hasMore && (
                   <>
                     <Pressable accessibilityRole="button" disabled={loadingMore}
-                      testID="native-wallet-more" onPress={() => void loadMore()}>
+                      testID="native-wallet-more" onPress={() => lifecycle.current?.loadMore()}>
                       <Text style={{ color: theme.interactiveText }}>
                         {loadingMore ? "جارٍ تحميل معاملات أقدم." : "عرض المزيد من المعاملات"}
                       </Text>
@@ -267,7 +101,7 @@ export default function WalletScreen() {
         {balance?.kind === "signed-out" ? (
           <Link href={{ pathname: "/login", params: { returnTo: "/wallet" } }} style={{ color: theme.interactiveText }}>تسجيل الدخول إلى المحفظة</Link>
         ) : balance?.kind === "unavailable" || history?.kind === "unavailable" ? (
-          <Pressable accessibilityRole="button" onPress={() => refreshRef.current?.()}>
+          <Pressable accessibilityRole="button" onPress={() => lifecycle.current?.refresh()}>
             <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>
           </Pressable>
         ) : null}

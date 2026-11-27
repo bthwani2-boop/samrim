@@ -7,6 +7,7 @@ import { mock, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { formatExactYer } from "../src/components/format-exact-yer.ts";
+import * as walletLifecycle from "../src/features/wallet/wallet-lifecycle.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const source = fileURLToPath(new URL("../src/features/wallet/wallet-screen.web.tsx", import.meta.url));
@@ -71,6 +72,7 @@ function harness() {
     "react-native":Object.fromEntries(["Pressable","SafeAreaView","ScrollView","Text","View"].map(t=>[t,t])),
     "../../components/format-exact-yer": { formatExactYer },
     "../access/customer-session-transport":{readCustomerAdmission(){}},
+    "./wallet-lifecycle": walletLifecycle,
     "./wallet-read.web":{
       readVerifiedWallet(admission,signal){
         assert.equal(typeof admission,"function");
@@ -107,6 +109,7 @@ function harness() {
     pendingCount(){return pending.length;},
     poll(){const next=[...intervals.values()][0];assert.ok(next);next.fn();},
     expire(){const next=[...timers.values()].find(t=>t.delay>0);assert.ok(next);next.fn();},
+    deadline(){const next=[...timers.values()].find(t=>t.delay===12000);assert.ok(next,"bounded continuation deadline");next.fn();},
     unmount() {
       try { cleanup?.(); cleanup = null; }
       finally {
@@ -231,5 +234,47 @@ test("Web wallet does not overlap foreground refresh with itself or pagination, 
     h.read("history").reject(new Error("owner unavailable"));await settle();
     assert.equal(find(h.render(),"wallet-balance"),null);
     assert.equal(clickMore(h.render()),null);
+  }finally{h.unmount();}
+});
+
+test("Web wallet releases a stalled continuation and ignores a late result after retry", async () => {
+  const h=harness();try{
+    h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+    h.read("history").resolve(history("actor-a",[funding("funding-a")],"page-next"));await settle();
+    clickMore(h.render()).props.onPress();
+    const stalled=h.read("history");
+    h.deadline();
+    assert.equal(stalled.signal.aborted,true);
+    assert.equal(clickMore(h.render()).props.disabled,false);
+    clickMore(h.render()).props.onPress();
+    const retry=h.read("history");
+    assert.equal(retry.cursor,"page-next");
+    stalled.resolve(history("actor-a",[funding("late")]));await settle();
+    assert.equal(clickMore(h.render()).props.disabled,true);
+    retry.resolve(history("actor-a",[funding("funding-b")]));await settle();
+    assert.equal(clickMore(h.render()),null);
+  }finally{h.unmount();}
+});
+
+test("Web wallet conceals private funds on expired or cross-actor continuation", async () => {
+  for(const response of [history("actor-b",[funding("other")]),{...history("actor-a",[funding("expired")]),expiresAt:Date.now()-1}]){
+    const h=harness();try{
+      h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+      h.read("history").resolve(history("actor-a",[funding("funding-a")],"page-next"));await settle();
+      clickMore(h.render()).props.onPress();
+      h.read("history").resolve(response);await settle();
+      assert.equal(find(h.render(),"wallet-balance"),null);
+      assert.equal(clickMore(h.render()),null);
+    }finally{h.unmount();}
+  }
+});
+
+test("Web wallet conceals balance when fresh history is unavailable", async () => {
+  const h=harness();try{
+    h.mount();h.read("balance").resolve(ready("actor-a"));await settle();
+    h.read("history").resolve(history("actor-a",[funding("funding-a")]));await settle();
+    h.poll();h.read("balance").resolve(ready("actor-a"));await settle();
+    h.read("history").resolve({kind:"unavailable"});await settle();
+    assert.equal(find(h.render(),"wallet-balance"),null);
   }finally{h.unmount();}
 });
