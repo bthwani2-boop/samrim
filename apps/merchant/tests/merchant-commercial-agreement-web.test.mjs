@@ -134,9 +134,12 @@ test("actual Web agreement transport validates scope, exact terms and late respo
   let respond = () => noStore({ agreement: { actorId: "owner-a", review } });
   t.mock.method(globalThis, "fetch", async (url, options) => { calls.push({ url, options }); return respond(); });
   assert.deepEqual(await read("owner-a", "store-a", signal), review);
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[0].options.signal, signal);
+  assert.equal(calls[0].options.signal.aborted, false);
   assert.deepEqual(calls[0], {
     url: "/api/admission?agreement=store-a",
-    options: { method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error", signal,
+    options: { method: "GET", credentials: "same-origin", cache: "no-store", redirect: "error", signal: calls[0].options.signal,
       headers: { "X-Merchant-Context": "owner-a" } },
   });
   await assert.rejects(read("", "store-a", signal), { status: 400 });

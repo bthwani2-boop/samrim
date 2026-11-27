@@ -123,13 +123,19 @@ test("actual Web employee transport binds employer scope and rejects stale or un
   assert.deepEqual(Object.fromEntries(new URL(calls[0].url, "http://localhost").searchParams), {
     employees: store, cursor, endState: "NO_END_DATE",
   });
-  assert.deepEqual(calls[0].options, { method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "X-Merchant-Context": actor } });
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[0].options.signal, signal);
+  assert.equal(calls[0].options.signal.aborted, false);
+  assert.deepEqual(calls[0].options, { method: "GET", signal: calls[0].options.signal, credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "X-Merchant-Context": actor } });
   respond = () => json(wrap({ detail: { employee: record, audit } }));
   assert.deepEqual(await detail(), { employee: record, audit });
   assert.equal(new URL(calls[1].url, "http://localhost").searchParams.get("employeeId"), id);
   respond = () => json(wrap({ id }, true));
   assert.equal(await save(), id);
-  assert.deepEqual(calls[2].options, { method: "POST", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+  assert.ok(calls[2].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[2].options.signal, signal);
+  assert.equal(calls[2].options.signal.aborted, false);
+  assert.deepEqual(calls[2].options, { method: "POST", signal: calls[2].options.signal, credentials: "same-origin", cache: "no-store", redirect: "error",
     headers: { "X-Merchant-Context": actor, "Content-Type": "application/json" }, body: JSON.stringify(input) });
   for (const args of [
     ["", store, signal], [actor, "../store", signal], [actor, store, signal, "bad"],

@@ -329,7 +329,10 @@ test("Web catalog transport binds selectors and validates owner pages and invent
   assert.deepEqual(Object.fromEntries(new URL(calls[0].url, "http://localhost").searchParams), {
     catalog: testStore, limit: "20", cursor: "of-a", q: "مسودة%_", status: "unpublished",
   });
-  assert.deepEqual(calls[0].options, { method: "GET", signal, credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "X-Merchant-Context": testActor } });
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[0].options.signal, signal);
+  assert.equal(calls[0].options.signal.aborted, false);
+  assert.deepEqual(calls[0].options, { method: "GET", signal: calls[0].options.signal, credentials: "same-origin", cache: "no-store", redirect: "error", headers: { "X-Merchant-Context": testActor } });
   respond = () => noStore({ inventory: stockSummary });
   assert.deepEqual(await inventory(), stockSummary);
   assert.equal(calls[1].url, "/api/admission?inventory=store-a");
@@ -382,7 +385,10 @@ test("Web draft writes preserve operation identity and reject unknown or conflic
   const patch = (s = signal) => transport.submitMerchantCatalogDraftEdit(testStore, offer.id, testActor, editChange, s);
   assert.deepEqual(await post(), newDraft);
   assert.equal(calls[0].url, "/api/admission?catalog=store-a");
-  assert.deepEqual(calls[0].options, { method: "POST", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[0].options.signal, signal);
+  assert.equal(calls[0].options.signal.aborted, false);
+  assert.deepEqual(calls[0].options, { method: "POST", signal: calls[0].options.signal, credentials: "same-origin", cache: "no-store", redirect: "error",
     headers: { "Content-Type": "application/json", "X-Merchant-Context": testActor }, body: JSON.stringify(create) });
   respond = () => noStore({ draft: { ...newDraft, replay: true } });
   assert.deepEqual(await post(), { ...newDraft, replay: true });
@@ -484,4 +490,69 @@ test("shared Merchant Web transport discards untrusted receipts despite cleanup 
   assert.equal(reply.body.locked, false);
   reply = noStore({ catalog });
   assert.deepEqual((await invoke(new AbortController().signal)).document, { catalog });
+});
+
+test("shared owner request settles on caller cancellation before headers and discards late replies", async t => {
+  let resolveFetch;
+  let cancelled = 0;
+  const controller = new AbortController();
+  const query = new URLSearchParams({ catalog: testStore });
+  const invoke = (signal, method = "GET") => merchantOwnerWeb.requestMerchantOwnerDocument({
+    query, actorId: testActor, method, signal,
+  });
+  t.mock.method(globalThis, "fetch", () => new Promise(resolve => { resolveFetch = resolve; }));
+  const operation = invoke(controller.signal).then(() => "accepted", error => error.code);
+  controller.abort();
+  let timer;
+  const outcome = await Promise.race([operation, new Promise(resolve => { timer = setTimeout(() => resolve("stalled"), 80); })]);
+  clearTimeout(timer);
+  const reply = new Response(new ReadableStream({ cancel() { cancelled++; } }), {
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
+  });
+  resolveFetch(reply);
+  await operation;
+  await new Promise(setImmediate);
+  assert.equal(outcome, "OWNER_RESPONSE_STALE");
+  assert.equal(cancelled, 1);
+  assert.equal(reply.body.locked, false);
+});
+
+test("shared owner request deadline aborts stalled headers, preserves write uncertainty, and recovers", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let receivedSignal;
+  let rejectFetch;
+  let calls = 0;
+  const query = new URLSearchParams({ catalog: testStore });
+  const invoke = (method = "GET") => merchantOwnerWeb.requestMerchantOwnerDocument({
+    query, actorId: testActor, method, signal: new AbortController().signal,
+  });
+  t.mock.method(globalThis, "fetch", (_url, options) => {
+    calls++;
+    receivedSignal = options.signal;
+    return new Promise((_resolve, reject) => { rejectFetch = reject; });
+  });
+  for (const [method, code] of [["GET", "OWNER_NETWORK_UNAVAILABLE"], ["PATCH", "OPERATION_RESULT_UNKNOWN"]]) {
+    const outcome = invoke(method);
+    const rejected = assert.rejects(outcome, { status: 0, code });
+    t.mock.timers.tick(20000);
+    await rejected;
+    assert.equal(receivedSignal.aborted, true);
+    rejectFetch(new Error("late network rejection"));
+    await new Promise(setImmediate);
+  }
+  assert.equal(calls, 2, "never retry a possibly committed command");
+  globalThis.fetch = async () => noStore({ catalog });
+  assert.deepEqual((await invoke()).document, { catalog });
+});
+
+test("shared owner disposal tolerates synchronous adapter failure", async t => {
+  t.mock.method(globalThis, "fetch", async () => ({
+    status: 200, ok: true, headers: new Headers(),
+    body: { locked: false, cancel() { throw new Error("adapter cleanup failure"); } },
+    bodyUsed: false,
+  }));
+  await assert.rejects(merchantOwnerWeb.requestMerchantOwnerDocument({
+    query: new URLSearchParams({ catalog: testStore }), actorId: testActor,
+    method: "GET", signal: new AbortController().signal,
+  }), { code: "OWNER_RESPONSE_INVALID" });
 });

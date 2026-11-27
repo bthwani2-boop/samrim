@@ -83,8 +83,11 @@ test("Web import transport binds the original run and validates every owner ackn
   const signal = new AbortController().signal;
   assert.deepEqual(await request(actorId, storeId, runId, "PUT", signal, manifest), initial);
   assert.equal(calls[0].url, "/api/admission?catalogImport=store-a&run=run-0001");
+  assert.ok(calls[0].options.signal instanceof AbortSignal);
+  assert.notEqual(calls[0].options.signal, signal);
+  assert.equal(calls[0].options.signal.aborted, false);
   assert.deepEqual(calls[0].options, {
-    method: "PUT", signal, credentials: "same-origin", cache: "no-store", redirect: "error",
+    method: "PUT", signal: calls[0].options.signal, credentials: "same-origin", cache: "no-store", redirect: "error",
     headers: { "X-Merchant-Context": actorId, "Content-Type": "application/json" }, body: JSON.stringify(manifest),
   });
   reply = json({ catalogImport: complete });
