@@ -17,7 +17,7 @@ const [jsProducer, goProducer, postgresProducer] = producers;
 const content = name => "Fixture evidence for " + name + "\n";
 const bash = process.platform === "win32" ? join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe") : "bash";
 function independentManifest(directory, names) {
-  return execFileSync(bash, ["-c", "LC_ALL=C sha256sum --binary -- " + [...names].sort().join(" ")],
+  return execFileSync(bash, ["-c", 'set -o pipefail; sha256sum --binary -- "$@" | LC_ALL=C sort -k2,2', "native-manifest", ...names],
     { cwd: directory, encoding: "utf8", windowsHide: true, timeout: 30000 }).replaceAll("\r\n", "\n");
 }
 const fixed = [jsProducer, goProducer].flatMap(({ directory, files }) => files.map(name => directory + "/" + name));
@@ -258,4 +258,16 @@ test("admission rejects wrong SHA, dirty and hidden analysis source before publi
   assert.equal(git("status", "--porcelain", "--", "source.txt"), "");
   assert.throws(admit, /CI_CANDIDATE_NOT_CLEAN_AND_ADMITTED/);
   assertMissing();
+}));
+
+test("native receipt order is explicit ASCII byte order, independent of enumeration and locale", () => fixture(({ repo, sha, put }) => {
+  const folder = join(repo, postgresProducer.directory);
+  const names = ["zeta-2.out", "alpha_1.out", "Beta-10.out", "beta-2.out", "0zero.out", "a-1.out"];
+  for (const name of names) put(join(folder, name), content(name));
+  const expected = ["0zero.out", "Beta-10.out", "a-1.out", "alpha_1.out", "beta-2.out", "zeta-2.out"];
+  const receipt = independentManifest(folder, names);
+  assert.deepEqual(receipt.trimEnd().split("\n").map(line => line.slice(66)), expected);
+  put(join(folder, "reports.sha256"), receipt);
+  assert.equal(publishCoverageEvidence(repo, "postgres", sha).count, names.length);
+  assert.equal(readFileSync(join(folder, "reports.sha256"), "utf8"), receipt);
 }));

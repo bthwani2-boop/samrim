@@ -42,7 +42,10 @@ function readReports(spec, folder) {
   const names = spec.files ?? readdirSync(folder).filter(name => name.endsWith(".out"));
   assert.ok(names.length > 0 && names.every(name => spec.files || profileName.test(name)),
     "CI_COVERAGE_REPORT_INVENTORY_INVALID");
-  return new Map([...names].sort().map(name => [name, reportBytes(join(folder, name))]));
+  // Native PostgreSQL receipts use LC_ALL=C. Admitted names are ASCII;
+  // ordinal comparison defines the same locale-independent byte order.
+  const ordered = [...names].sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  return new Map(ordered.map(name => [name, reportBytes(join(folder, name))]));
 }
 
 function manifest(files) {
