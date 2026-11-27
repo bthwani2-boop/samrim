@@ -224,7 +224,7 @@ func TestOwnerBackedSyntheticImportDeniesAlternateDatabase(t *testing.T) {
 			// disposable PostgreSQL container. Never arrange data in shared development.
 			readback := func() [2]int64 {
 				t.Helper()
-				tx, err := owner.viewTx(ctx)
+				tx, err := owner.viewTx(ctx, "public_revision", "stores")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -332,7 +332,7 @@ func TestOwnerBackedUnpublishedStoreRejectsOfferContinuation(t *testing.T) {
 	if err = tx.Commit(); err != nil {
 		t.Fatal(err)
 	}
-	readback, err := owner.viewTx(context.Background())
+	readback, err := owner.viewTx(context.Background(), "stores")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +400,7 @@ func TestOwnerScopedTransactionSearchPathResetsOnPooledConnection(t *testing.T) 
 	// Force reuse of one physical PostgreSQL connection to detect scope leakage.
 	owner.DB.SetMaxOpenConns(1)
 	ctx := context.Background()
-	tx, err := owner.viewTx(ctx)
+	tx, err := owner.viewTx(ctx, "public_revision", "stores")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -428,17 +428,29 @@ func TestOwnerScopedTransactionSearchPathResetsOnPooledConnection(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	otherTx, err := other.viewTx(ctx)
-	if err != nil {
-		t.Fatal(err)
+	// Disposable fixture copies on the same physical connection must never
+	// substitute for relations in a missing DSH owner schema.
+	for _, relation := range []string{"public_revision", "stores", "service_cities", "verticals", "offers", "products", "variants"} {
+		if _, err := owner.DB.ExecContext(ctx, "CREATE TEMP TABLE "+relation+" AS SELECT * FROM "+owner.Schema+"."+relation); err != nil {
+			t.Fatal(err)
+		}
 	}
-	defer otherTx.Rollback()
-	var otherPath string
-	if err = otherTx.QueryRowContext(ctx, "SELECT current_setting('search_path')").Scan(&otherPath); err != nil {
-		t.Fatal(err)
+	otherServer := &Server{Owner: other}
+	for _, path := range []string{
+		"/health", "/v1/public/cities", "/v1/public/verticals?city_id=sanaa",
+		"/v1/public/stores?city_id=sanaa", "/v1/public/stores/market-sanaa",
+		"/v1/public/stores/market-sanaa/offers",
+		"/v1/public/stores/market-sanaa/offers/of-flour/estimate?quantity=1",
+	} {
+		w, body := request(otherServer, path)
+		if w.Code != 503 || body["error"] != "OWNER_UNAVAILABLE" {
+			t.Errorf("missing owner resolved temporary relations: %s => %d %s", path, w.Code, w.Body.String())
+		}
 	}
-	if !strings.Contains(otherPath, other.Schema) || strings.Contains(otherPath, owner.Schema) {
-		t.Fatalf("cross-scope DSH schema contamination: %q", otherPath)
+	validServer := &Server{Owner: owner}
+	w, body := request(validServer, "/v1/public/stores/market-sanaa")
+	if w.Code != 200 || body["id"] != "market-sanaa" {
+		t.Fatalf("valid owner not restored after rejected scope: %d %s", w.Code, w.Body.String())
 	}
 }
 

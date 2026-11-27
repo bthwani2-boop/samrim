@@ -29,7 +29,7 @@ func (s *Server) visibleStore(ctx context.Context, tx *sql.Tx, id string) (publi
 	return store, rows.Close()
 }
 func (s *Server) storeDetail(ctx context.Context, w http.ResponseWriter, id string) {
-	tx, e := s.Owner.viewTx(ctx)
+	tx, e := s.storeViewTx(ctx)
 	if e != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -66,7 +66,7 @@ func (s *Server) listOffers(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 400, "INVALID_LIMIT")
 		return
 	}
-	tx, err := s.Owner.viewTx(ctx)
+	tx, err := s.storeViewTx(ctx, "offers", "products", "variants")
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return

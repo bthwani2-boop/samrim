@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
 
@@ -190,7 +191,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	tx, err := s.Owner.viewTx(ctx)
+	tx, err := s.Owner.viewTx(ctx, "public_revision")
 	if err == nil {
 		defer tx.Rollback()
 		_, err = s.Owner.revision(ctx, tx)
@@ -258,8 +259,28 @@ func parseCursor(raw, kind, scope string, rev int64) (string, error) {
 	}
 	return c.After, nil
 }
-func (o *Owner) viewTx(ctx context.Context) (*sql.Tx, error) {
-	return o.beginScopedTx(ctx, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+
+// viewTx admits only a repeatable owner snapshot whose required relations
+// resolve to the validated DSH schema, not an implicit temporary relation.
+func (o *Owner) viewTx(ctx context.Context, firstRelation string, additionalRelations ...string) (*sql.Tx, error) {
+	if o == nil {
+		return nil, errors.New("DSH owner unavailable")
+	}
+	relations := append([]string{firstRelation}, additionalRelations...)
+	return dbscope.Begin(ctx, o.DB, o.Schema, &sql.TxOptions{
+		ReadOnly: true, Isolation: sql.LevelRepeatableRead,
+	}, relations...)
+}
+
+// All Store projections share admission; optional schedule relations are
+// required only when enabled. Catalog readers add their required relations.
+func (s *Server) storeViewTx(ctx context.Context, catalogRelations ...string) (*sql.Tx, error) {
+	relations := []string{"stores", "service_cities", "verticals"}
+	if s.StoreAvailabilityEnabled {
+		relations = append(relations, "store_operational_availability", "store_operational_weekly_hours")
+	}
+	relations = append(relations, catalogRelations...)
+	return s.Owner.viewTx(ctx, "public_revision", relations...)
 }
 func cursorError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errStale) {

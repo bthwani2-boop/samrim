@@ -36,7 +36,7 @@ func (s *Server) listVerticals(ctx context.Context, w http.ResponseWriter, r *ht
 		errorJSON(w, 400, "INVALID_LIMIT")
 		return
 	}
-	tx, err := s.Owner.viewTx(ctx)
+	tx, err := s.Owner.viewTx(ctx, "public_revision", "stores", "service_cities", "verticals")
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -142,7 +142,7 @@ func (s *Server) listStores(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 400, "INVALID_LIMIT")
 		return
 	}
-	tx, err := s.Owner.viewTx(ctx)
+	tx, err := s.storeViewTx(ctx)
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return
