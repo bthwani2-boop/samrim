@@ -289,6 +289,9 @@ func TestWalletOwnerPostgresAndIdentity(t *testing.T) {
 		t.Fatalf("journal count=%d unbalanced=%d err=%v", journalCount, unbalanced, err)
 	}
 	origin := startIdentity(t, ctx, filepath.Join(fixtureRoot, "bin", "identity"), identityDSN, identitySchema)
+	t.Run("Merchant agreement command authority", func(t *testing.T) {
+		verifyMerchantCommandAuthority(t, ctx, owner, reader, executor, origin, merchant, one)
+	})
 	handler, err := wallet.NewHandler(reader, origin)
 	if err != nil {
 		t.Fatal(err)
