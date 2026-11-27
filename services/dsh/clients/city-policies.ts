@@ -2,9 +2,9 @@ import { DshPublicError, isDateTime, onlyKeys } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 import { privateOwnerRequest } from "./private-owner-request.ts";
 
-// One city-policy client boundary. Capture the submitted primitive fields and
-// nested values synchronously; validate the owner response against that exact
-// request, never a mutable object retained by the caller across an await.
+// All city policies share one command admission and response handoff.
+// The submitted snapshot is detached from caller-owned arrays and objects.
+// Owner-normalized text follows Go strings.TrimSpace, not JavaScript trim.
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -20,11 +20,17 @@ function cityValid(city: string): boolean {
 function operationValid(value: unknown): value is string {
   return typeof value === "string" && /^[A-Za-z0-9._-]{8,128}$/.test(value);
 }
-function nonblank(value: unknown, max: number): value is string {
-  return typeof value === "string" && value.trim().length > 0 && [...value].length <= max;
+function ownerTrim(value: string): string {
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
 }
-function exactText(value: unknown, max: number): value is string {
-  return nonblank(value, max) && value.trim() === value && !/[\p{Cc}\uD800-\uDFFF]/u.test(value);
+function reasonValid(value: unknown, controlsForbidden = false): value is string {
+  if (typeof value !== "string" || /\p{Cs}/u.test(value) || [...value].length > 300) return false;
+  const normalized = ownerTrim(value);
+  return normalized.length > 0 && (!controlsForbidden || !/\p{Cc}/u.test(normalized));
+}
+function actorValid(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && ownerTrim(value) === value &&
+    !/[\p{Cc}\p{Cs}]/u.test(value) && new TextEncoder().encode(value).length <= 128;
 }
 function invalid(): never { throw new DshPublicError(400, "INVALID_OPERATIONAL_CHANGE"); }
 function invalidOwner(): never { throw new DshPublicError(502, "OWNER_RESPONSE_INVALID"); }
@@ -37,7 +43,19 @@ function cityPath(operation: CityOperation, city: string, relation?: CityFulfill
 function envelope(value: unknown): value is { policy: unknown; replay: boolean } {
   return record(value) && fields(value, ["policy", "replay"]) && typeof value.replay === "boolean";
 }
-
+// A response can become stale between the transport's promise and the
+// operation's final handoff. All reads, including non-payable previews, must
+// independently refuse stale evidence; a write must retain unknown outcome.
+function admitRead<T>(value: unknown, valid: (value: unknown) => value is T, signal?: AbortSignal): T {
+  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  if (!valid(value)) invalidOwner();
+  return value;
+}
+function admitWrite<T>(value: unknown, valid: (value: unknown) => value is T, signal?: AbortSignal): T {
+  if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
+  if (!valid(value)) unknownResult();
+  return value;
+}
 export interface CityStoreOperationalPolicy {
   cityId: string;
   version: number;
@@ -68,13 +86,13 @@ function isStorePolicy(value: unknown, city: string): value is CityStoreOperatio
   return record(value) && fields(value, ["cityId", "version", "maxPauseSeconds", "maxPreparationMinutes",
     "changedByActor", "changeReason", "updatedAt"]) && value.cityId === city && integer(value.version, 1) &&
     integer(value.maxPauseSeconds, 0, 31536000) && integer(value.maxPreparationMinutes, 0, 1440) &&
-    nonblank(value.changedByActor, 128) && nonblank(value.changeReason, 300) && isDateTime(value.updatedAt);
+    actorValid(value.changedByActor) && reasonValid(value.changeReason) && ownerTrim(value.changeReason) === value.changeReason && isDateTime(value.updatedAt);
 }
 function storeSubmission(value: unknown): CityStoreOperationalPolicyChange | null {
   if (!record(value) || !fields(value, ["operationId", "expectedVersion", "maxPauseSeconds", "maxPreparationMinutes", "reason"])) return null;
   const { operationId, expectedVersion, maxPauseSeconds, maxPreparationMinutes, reason } = value;
   if (!operationValid(operationId) || !integer(expectedVersion, 0, Number.MAX_SAFE_INTEGER - 1) ||
-    !integer(maxPauseSeconds, 0, 31536000) || !integer(maxPreparationMinutes, 0, 1440) || !nonblank(reason, 300)) return null;
+    !integer(maxPauseSeconds, 0, 31536000) || !integer(maxPreparationMinutes, 0, 1440) || !reasonValid(reason)) return null;
   return { operationId, expectedVersion, maxPauseSeconds, maxPreparationMinutes, reason };
 }
 export async function getCityStoreOperationalPolicy(
@@ -82,9 +100,7 @@ export async function getCityStoreOperationalPolicy(
 ): Promise<CityStoreOperationalPolicy> {
   if (!cityValid(cityID)) throw new DshPublicError(0, "CITY_ID_INVALID");
   const value = await privateOwnerRequest(baseUrl, cityPath("getCityStoreOperationalPolicy", cityID), bearer, "GET", undefined, signal);
-  if (!isStorePolicy(value, cityID)) invalidOwner();
-  if (signal?.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
-  return value;
+  return admitRead(value, (body): body is CityStoreOperationalPolicy => isStorePolicy(body, cityID), signal);
 }
 /** The same operationId must be retained for reconciliation after an unknown result. */
 export async function replaceCityStoreOperationalPolicy(
@@ -94,13 +110,12 @@ export async function replaceCityStoreOperationalPolicy(
   const submitted = storeSubmission(change);
   if (!submitted) invalid();
   const value = await privateOwnerRequest(baseUrl, cityPath("replaceCityStoreOperationalPolicy", cityID), bearer, "PATCH", submitted, signal);
-  if (!envelope(value) || !isStorePolicy(value.policy, cityID) ||
-    value.policy.version !== submitted.expectedVersion + 1 ||
-    value.policy.maxPauseSeconds !== submitted.maxPauseSeconds ||
-    value.policy.maxPreparationMinutes !== submitted.maxPreparationMinutes ||
-    value.policy.changeReason !== submitted.reason.trim()) unknownResult();
-  if (signal?.aborted) throw new DshPublicError(0, "OPERATION_RESULT_UNKNOWN");
-  return { policy: value.policy, replay: value.replay };
+  return admitWrite(value, (body): body is CityStoreOperationalPolicyResult =>
+    envelope(body) && isStorePolicy(body.policy, cityID) &&
+    body.policy.version === submitted.expectedVersion + 1 &&
+    body.policy.maxPauseSeconds === submitted.maxPauseSeconds &&
+    body.policy.maxPreparationMinutes === submitted.maxPreparationMinutes &&
+    body.policy.changeReason === ownerTrim(submitted.reason), signal);
 }
 function validHistoryVersion(value: string): boolean {
   return /^[1-9][0-9]{0,15}$/.test(value) && Number.isSafeInteger(Number(value));
@@ -128,8 +143,8 @@ export async function listCityStoreOperationalPolicyHistory(
   const params = new URLSearchParams({ limit: String(limit) });
   if (beforeVersion) params.set("beforeVersion", beforeVersion);
   const value = await privateOwnerRequest(baseUrl, cityPath("listCityStoreOperationalPolicyHistory", cityId) + "?" + params.toString(), bearer, "GET", undefined, signal);
-  if (!isCityStoreOperationalPolicyHistoryPage(value, cityId, limit, beforeVersion)) invalidOwner();
-  return value;
+  return admitRead(value, (body): body is CityStoreOperationalPolicyHistoryPage =>
+    isCityStoreOperationalPolicyHistoryPage(body, cityId, limit, beforeVersion), signal);
 }
 
 export interface CityDeliveryDistanceBand {
@@ -227,7 +242,7 @@ function deliverySubmission(value: unknown): CityDeliveryPolicyChange | null {
   const { operationId, expectedVersion, radiusMetres, reason } = value;
   const distanceBands = captureBands(value.distanceBands);
   if (!operationValid(operationId) || !integer(expectedVersion, 0, Number.MAX_SAFE_INTEGER - 1) ||
-    !integer(radiusMetres, 1, 2147483647) || !distanceBands || !nonblank(reason, 300)) return null;
+    !integer(radiusMetres, 1, 2147483647) || !distanceBands || !reasonValid(reason)) return null;
   return { operationId, expectedVersion, radiusMetres, distanceBands, reason };
 }
 export function isCityDeliveryPolicyChange(value: unknown): value is CityDeliveryPolicyChange {
@@ -247,8 +262,7 @@ export async function getCityDeliveryPolicy(
 ): Promise<CityDeliveryPolicyState> {
   if (!cityValid(cityId)) throw new DshPublicError(400, "CITY_ID_INVALID");
   const value = await privateOwnerRequest(baseUrl, cityPath("getCityDeliveryPolicy", cityId), bearer, "GET", undefined, signal);
-  if (!isCityDeliveryPolicyState(value, cityId)) invalidOwner();
-  return value;
+  return admitRead(value, (body): body is CityDeliveryPolicyState => isCityDeliveryPolicyState(body, cityId), signal);
 }
 export async function previewCityDeliveryPolicy(
   baseUrl: string, cityId: string, bearer: string, input: CityDeliveryPolicyPreviewInput, signal?: AbortSignal,
@@ -256,8 +270,7 @@ export async function previewCityDeliveryPolicy(
   const submitted = previewSubmission(input);
   if (!cityValid(cityId) || !submitted) invalid();
   const value = await privateOwnerRequest(baseUrl, cityPath("previewCityDeliveryPolicy", cityId), bearer, "POST", submitted, signal);
-  if (!isCityDeliveryPolicyPreview(value, cityId, submitted)) invalidOwner();
-  return value;
+  return admitRead(value, (body): body is CityDeliveryPolicyPreview => isCityDeliveryPolicyPreview(body, cityId, submitted), signal);
 }
 export async function replaceCityDeliveryPolicy(
   baseUrl: string, cityId: string, bearer: string, change: CityDeliveryPolicyChange, signal?: AbortSignal,
@@ -265,8 +278,7 @@ export async function replaceCityDeliveryPolicy(
   const submitted = deliverySubmission(change);
   if (!cityValid(cityId) || !submitted) invalid();
   const value = await privateOwnerRequest(baseUrl, cityPath("replaceCityDeliveryPolicy", cityId), bearer, "PATCH", submitted, signal);
-  if (!isCityDeliveryPolicyResult(value, cityId, submitted) || signal?.aborted) unknownResult();
-  return value;
+  return admitWrite(value, (body): body is CityDeliveryPolicyResult => isCityDeliveryPolicyResult(body, cityId, submitted), signal);
 }
 
 export type CityFulfillmentMode = "BTHWANI_CAPTAIN" | "PARTNER_CAPTAIN" | "CUSTOMER_PICKUP";
@@ -282,8 +294,10 @@ export type CityFulfillmentPolicyResult = Readonly<{ policy: CityFulfillmentPoli
 const fulfillmentModes: readonly CityFulfillmentMode[] = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"];
 function captureModes(value: unknown): CityFulfillmentMode[] | null {
   if (!Array.isArray(value) || value.length > fulfillmentModes.length) return null;
+  const size = value.length;
   const result: CityFulfillmentMode[] = [];
-  for (const item of value) {
+  for (let index = 0; index < size; index++) {
+    const item = value[index];
     if (!fulfillmentModes.includes(item) || result.includes(item)) return null;
     result.push(item);
   }
@@ -302,14 +316,14 @@ export function isCityFulfillmentPolicy(value: unknown, city: string, relation: 
   if (!modes || !canonicalModes(modes).every((mode, index) => mode === modes[index])) return false;
   if (value.version === 0) return fields(value, ["cityId", "relation", "version", "allowedModes"]) && modes.length === 0;
   return fields(value, ["cityId", "relation", "version", "allowedModes", "changedByActor", "reason", "updatedAt"]) &&
-    exactText(value.changedByActor, 128) && exactText(value.reason, 300) && isDateTime(value.updatedAt);
+    actorValid(value.changedByActor) && reasonValid(value.reason, true) && ownerTrim(value.reason) === value.reason && isDateTime(value.updatedAt);
 }
 function fulfillmentSubmission(value: unknown): CityFulfillmentPolicyChange | null {
   if (!record(value) || !fields(value, ["operationId", "expectedVersion", "allowedModes", "reason"])) return null;
   const { operationId, expectedVersion, reason } = value;
   const allowedModes = captureModes(value.allowedModes);
   if (!operationValid(operationId) || !integer(expectedVersion, 0, Number.MAX_SAFE_INTEGER - 1) ||
-    !allowedModes || typeof reason !== "string" || !exactText(reason.trim(), 300)) return null;
+    !allowedModes || !reasonValid(reason, true)) return null;
   return { operationId, expectedVersion, allowedModes, reason };
 }
 export function isCityFulfillmentPolicyChange(value: unknown): value is CityFulfillmentPolicyChange {
@@ -319,8 +333,7 @@ export async function getCityFulfillmentPolicy(baseUrl: string, city: string, re
   bearer: string, signal?: AbortSignal): Promise<CityFulfillmentPolicy> {
   if (!validFulfillmentScope(city, relation)) invalid();
   const value = await privateOwnerRequest(baseUrl, cityPath("getCityFulfillmentPolicy", city, relation), bearer, "GET", undefined, signal);
-  if (!isCityFulfillmentPolicy(value, city, relation) || signal?.aborted) invalidOwner();
-  return value;
+  return admitRead(value, (body): body is CityFulfillmentPolicy => isCityFulfillmentPolicy(body, city, relation), signal);
 }
 export async function replaceCityFulfillmentPolicy(baseUrl: string, city: string, relation: CityFulfillmentRelation,
   bearer: string, change: CityFulfillmentPolicyChange, signal?: AbortSignal): Promise<CityFulfillmentPolicyResult> {
@@ -328,9 +341,9 @@ export async function replaceCityFulfillmentPolicy(baseUrl: string, city: string
   if (!validFulfillmentScope(city, relation) || !submitted) invalid();
   const expected = canonicalModes(submitted.allowedModes);
   const value = await privateOwnerRequest(baseUrl, cityPath("replaceCityFulfillmentPolicy", city, relation), bearer, "PATCH", submitted, signal);
-  if (!envelope(value) || !isCityFulfillmentPolicy(value.policy, city, relation) || signal?.aborted ||
-    value.policy.version !== submitted.expectedVersion + 1 || value.policy.reason !== submitted.reason.trim() ||
-    value.policy.allowedModes.length !== expected.length ||
-    !expected.every((mode, index) => mode === (value.policy as CityFulfillmentPolicy).allowedModes[index])) unknownResult();
-  return { policy: value.policy, replay: value.replay };
+  return admitWrite(value, (body): body is CityFulfillmentPolicyResult =>
+    envelope(body) && isCityFulfillmentPolicy(body.policy, city, relation) &&
+    body.policy.version === submitted.expectedVersion + 1 && body.policy.reason === ownerTrim(submitted.reason) &&
+    body.policy.allowedModes.length === expected.length &&
+    expected.every((mode, index) => mode === (body.policy as CityFulfillmentPolicy).allowedModes[index]), signal);
 }
