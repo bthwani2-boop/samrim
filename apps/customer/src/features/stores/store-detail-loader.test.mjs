@@ -108,3 +108,32 @@ test("an Offers publication denial fails immediately even when the Store read ne
     clearTimeout(timer);
   }
 });
+
+test("invalid or unknown continuation responses discard the entire Offer snapshot", () => {
+  for (const reason of [new Error("OWNER_RESPONSE_INVALID"), new Error("INVALID_REQUEST"), new Error("OWNER_RESPONSE_STALE"), null]) {
+    const cached = { scope: store.id, loading: false, store, offers: [offer], cursor: "page-2", offersRevision: 3, more: true };
+    const recovered = recoverPublicStoreDetail(cached, reason);
+    assert.equal(recovered.store, store);
+    assert.deepEqual(recovered.offers, []);
+    assert.equal(recovered.cursor, undefined);
+    assert.equal(recovered.offersRevision, undefined);
+    assert.equal(recovered.more, false);
+    assert.equal(recovered.offersError, reason?.message ?? "UNKNOWN");
+  }
+});
+
+test("stale and invalid cursors erase the prior revision as well as prices", () => {
+  for (const code of ["STALE_CURSOR", "INVALID_CURSOR"]) {
+    const recovered = recoverPublicStoreDetail({ scope: store.id, loading: false, store, offers: [offer], cursor: "page-2", offersRevision: 3, more: true }, new Error(code));
+    assert.equal(recovered.offersRevision, undefined);
+  }
+});
+
+test("explicit owner unavailability keeps the verified continuation for retry", () => {
+  const cached = { scope: store.id, loading: false, store, offers: [offer], cursor: "page-2", offersRevision: 3, more: true };
+  const recovered = recoverPublicStoreDetail(cached, new Error("OWNER_UNAVAILABLE"));
+  assert.equal(recovered.offers, cached.offers);
+  assert.equal(recovered.cursor, cached.cursor);
+  assert.equal(recovered.offersRevision, 3);
+  assert.equal(recovered.more, false);
+});

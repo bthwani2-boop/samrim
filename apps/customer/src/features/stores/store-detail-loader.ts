@@ -20,38 +20,51 @@ export interface PublicStoreDetailState {
   offersError?: string | undefined;
 }
 
-// A publication denial invalidates the entire public projection. A stale
-// cursor invalidates cached Offers; only transport failures retain prior data.
-export function recoverPublicStoreDetail(state: PublicStoreDetailState, reason: unknown): PublicStoreDetailState {
-  const error = reason instanceof Error ? reason.message : "UNKNOWN";
-  if (error === "NOT_FOUND") return { scope: state.scope, loading: false, offers: [], error };
-  if (error === "STALE_CURSOR" || error === "INVALID_CURSOR") {
-    return { ...state, more: false, offers: [], cursor: undefined, offersError: error };
-  }
-  return { ...state, more: false, offersError: error };
+type OffersOutcome =
+  | { kind: "verified"; page: PublicPage<PublicOffer> }
+  | { kind: "failed"; code: string };
+
+function failureCode(reason: unknown): string {
+  return reason instanceof Error && reason.message ? reason.message : "UNKNOWN";
 }
 
-// Store identity/publication is mandatory; offers are an independent read.
-// A transient Offers failure must not erase a successfully verified Store.
+// Only an explicit temporary outage permits retrying a previously verified
+// continuation. Any other failure requires a fresh Offer snapshot.
+export function recoverPublicStoreDetail(
+  state: PublicStoreDetailState,
+  reason: unknown,
+): PublicStoreDetailState {
+  const code = failureCode(reason);
+  const empty = { scope: state.scope, loading: false, offers: [] };
+  if (code === "NOT_FOUND") return { ...empty, error: code };
+
+  if (code === "OWNER_NETWORK_UNAVAILABLE" || code === "OWNER_UNAVAILABLE") {
+    return { ...state, more: false, offersError: code };
+  }
+
+  return { ...empty, store: state.store, more: false, offersError: code };
+}
+
+// The Store and its first Offer page are separate owner reads. Observe both
+// immediately: publication denial on either read must not wait for the other.
 export async function resolvePublicStoreDetail(
   storeRequest: Promise<PublicStore>,
   offersRequest: Promise<PublicPage<PublicOffer>>,
 ): Promise<PublicStoreDetailResult> {
-  // Attach both handlers immediately so a rejected Offers read never leaks an
-  // unhandled rejection, while a forbidden Store can fail without waiting for it.
-  const offersOutcome = offersRequest.then(
-    (page) => ({ page, error: undefined }),
+  const offersOutcome = offersRequest.then<OffersOutcome, OffersOutcome>(
+    (page) => ({ kind: "verified", page }),
     (reason: unknown) => {
-      if (reason instanceof Error && reason.message === "NOT_FOUND") throw reason;
-      return { page: undefined, error: reason instanceof Error ? reason.message : "UNKNOWN" };
+      const code = failureCode(reason);
+      if (code === "NOT_FOUND") throw reason;
+      return { kind: "failed", code };
     },
   );
+
   const [store, outcome] = await Promise.all([storeRequest, offersOutcome]);
-  if (!outcome.page) return { store, offers: [], offersError: outcome.error };
-  return {
-    store,
-    offers: outcome.page.items,
-    nextCursor: outcome.page.nextCursor,
-    offersRevision: outcome.page.revision,
-  };
+  if (outcome.kind === "failed") {
+    return { store, offers: [], offersError: outcome.code };
+  }
+
+  const { items, nextCursor, revision } = outcome.page;
+  return { store, offers: items, nextCursor, offersRevision: revision };
 }
