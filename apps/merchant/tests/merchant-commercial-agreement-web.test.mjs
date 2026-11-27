@@ -4,9 +4,11 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import * as dshClient from "@bthwani/dsh";
 import * as ownerClient from "@bthwani/wlt";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { GET } from "../app/api/admission+api.ts";
+import * as merchantOwnerWeb from "../src/features/access/merchant-owner-web.ts";
 
 const identity = "http://127.0.0.1:13009";
 const wlt = "http://127.0.0.1:13011";
@@ -112,6 +114,8 @@ function agreementTransport(platform, withNativeMerchantSession, isDevice = fals
     assert.equal(result.status, 0, result.stderr || result.stdout);
     const mod = loadMappedRenderFixture(readFileSync(path.join(temp, "commercial-agreement-transport.js"), "utf8"), source, {
       "@bthwani/wlt": ownerClient,
+      "@bthwani/dsh": dshClient,
+      "../access/merchant-owner-web.ts": merchantOwnerWeb,
       "react-native": { Platform: { OS: platform } },
       "expo-device": { isDevice },
       "../access/admission-transport": { withNativeMerchantSession },
@@ -157,8 +161,10 @@ test("actual Web agreement transport validates scope, exact terms and late respo
     await assert.rejects(read("owner-a", "store-a", signal), { status });
   }
   const late = new AbortController();
-  respond = () => ({ ok: true, headers: new Headers({ "Cache-Control": "no-store" }),
-    json: async () => { late.abort(); return { agreement: { actorId: "owner-a", review } }; } });
+  respond = () => {
+    late.abort();
+    return noStore({ agreement: { actorId: "owner-a", review } });
+  };
   await assert.rejects(read("owner-a", "store-a", late.signal), { name: "AbortError" });
 });
 
@@ -221,4 +227,56 @@ test("actual Android agreement transport requires isolated emulator owners befor
   assert.equal(calls.length, 3);
   assert.equal(scopes.length, 3);
   assert.ok(scopes.every(scope => scope.actor === "owner-a" && !scope.write));
+});
+
+test("Web agreement rejects oversized, malformed media and surplus private projection fields", async t => {
+  const read = agreementTransport("web", () => assert.fail("Web must not call native session"));
+  const signal = new AbortController().signal;
+  const valid = { agreement: { actorId: "owner-a", review: { storeId: "store-a", proposal } } };
+  let reply;
+  t.mock.method(globalThis, "fetch", async () => reply);
+  for (const makeReply of [
+    () => noStore({ ...valid, surplus: "x".repeat(9000) }),
+    () => noStore({ agreement: { ...valid.agreement, surplus: true } }),
+    () => noStore({ ...valid, surplus: true }),
+    () => new Response(JSON.stringify(valid), { headers: { "Content-Type": "text/plain", "Cache-Control": "no-store" } }),
+    () => noStore(valid, 201),
+  ]) {
+    reply = makeReply();
+    await assert.rejects(read("owner-a", "store-a", signal), { status: 502 });
+  }
+  reply = noStore(valid);
+  assert.deepEqual(await read("owner-a", "store-a", signal), valid.agreement.review);
+});
+
+test("Web agreement fails closed on invalid context, network loss and interrupted streams", async t => {
+  const read = agreementTransport("web", () => assert.fail("Web must not call native session"));
+  const signal = new AbortController().signal;
+  const review = { storeId: "store-a", proposal };
+  const valid = { agreement: { actorId: "owner-a", review } };
+  let calls = 0;
+  let respond = () => { throw new TypeError("offline"); };
+  t.mock.method(globalThis, "fetch", async () => { calls++; return respond(); });
+  for (const [actor, store] of [[42, "store-a"], ["owner-a", ["store-a"]]]) {
+    await assert.rejects(read(actor, store, signal), { status: 400 });
+  }
+  const stopped = new AbortController();
+  stopped.abort();
+  await assert.rejects(read("owner-a", "store-a", stopped.signal), { name: "AbortError" });
+  assert.equal(calls, 0);
+  await assert.rejects(read("owner-a", "store-a", signal), { status: 503 });
+  for (const value of [null, [], "agreement", { review }, { actorId: "owner-a" }]) {
+    respond = () => noStore({ agreement: value });
+    await assert.rejects(read("owner-a", "store-a", signal), { status: 502 });
+  }
+  let cancelled = 0;
+  const controller = new AbortController();
+  respond = () => new Response(new ReadableStream({
+    pull() { controller.abort(); return new Promise(() => {}); },
+    cancel() { cancelled++; },
+  }), { headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
+  await assert.rejects(read("owner-a", "store-a", controller.signal), { name: "AbortError" });
+  assert.equal(cancelled, 1);
+  respond = () => noStore(valid);
+  assert.deepEqual(await read("owner-a", "store-a", signal), review);
 });
