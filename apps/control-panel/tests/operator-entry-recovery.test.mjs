@@ -283,7 +283,7 @@ test("Operator session route renews before expiry with same-actor proof and curr
       },
       "next/server": requirePanel("next/server"),
       "../../../../src/server/operator-passkey-bff": {
-        cookieLifetimeSeconds: date => Math.floor((Date.parse(date) - Date.now()) / 1000),
+        cookieLifetimeSeconds: date => Math.max(0, Math.min(1800, Math.floor((Date.parse(date) - Date.now()) / 1000))),
         isTrustedOperatorLoopbackTarget: () => true,
         OPERATOR_COOKIE: "bthwani_operator_session", OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
         resolveIsolatedOperatorConfig: () => ({ identityOrigin: "http://127.0.0.1:3201", browserOrigin: "http://localhost:13000" }),
@@ -307,6 +307,7 @@ test("Operator session route renews before expiry with same-actor proof and curr
       assert.equal(body.actorId, "operator-a");
       assert.equal(body.originalOperator, mode === "original");
       assert.equal(response.cookies.get("bthwani_operator_refresh")?.value, mode === "healthy" ? undefined : newRefresh);
+      if (mode !== "healthy") assert.ok(response.cookies.get("bthwani_operator_refresh")?.maxAge > 3500, "refresh retains its independent owner lifetime");
     } else if (mode === "outage-after-renew" || mode === "original-outage") {
       assert.equal(response.status, 503);
       assert.equal(body.actorId, undefined);
@@ -317,5 +318,101 @@ test("Operator session route renews before expiry with same-actor proof and curr
       assert.equal(response.cookies.get("bthwani_operator_refresh")?.value, "");
     }
     assert.ok(!JSON.stringify(body).includes(newRefresh));
+  }
+});
+
+test("Operator rejects a rotated credential before admission and revokes the received family", async () => {
+  const oldRefresh = Buffer.alloc(32, 70).toString("base64url");
+  const newAccess = Buffer.alloc(32, 71).toString("base64url");
+  const newRefresh = Buffer.alloc(32, 72).toString("base64url");
+  const expiry = new Date(Date.now() + 300000).toISOString();
+  class IdentityClientError extends Error { constructor(status, code) { super(code); this.status = status; } }
+  for (const mode of ["wrong-role", "denied", "verification-outage", "cleanup-outage", "rotation-outage"]) {
+    const revoked = [];
+    let permissionReads = 0;
+    const get = compile("app/api/auth/session/route.ts", {
+      "@bthwani/identity": {
+        identityOperations: {}, IdentityClientError,
+        async rotatePersistentIdentitySession(_origin, supplied) {
+          assert.equal(supplied, oldRefresh);
+          if (mode === "rotation-outage") throw new IdentityClientError(503, "OWNER_UNAVAILABLE");
+          return { accessToken: newAccess, refreshToken: newRefresh, sessionExpiresAt: expiry, refreshExpiresAt: expiry };
+        },
+        async readVerifiedIdentitySession(_origin, supplied) {
+          assert.equal(supplied, newAccess);
+          if (mode === "verification-outage") throw new IdentityClientError(503, "OWNER_UNAVAILABLE");
+          return { actorId: "operator-a", role: mode === "wrong-role" ? "customer" : "operator", sessionExpiresAt: expiry };
+        },
+        async revokePersistentIdentitySession(_origin, supplied, signal) {
+          assert.ok(signal instanceof AbortSignal);
+          revoked.push(supplied);
+          if (mode === "cleanup-outage") throw new IdentityClientError(503, "OWNER_UNAVAILABLE");
+        },
+        reviewOriginalOperatorPermissions: async () => assert.fail("rejected family must not acquire grants"),
+      },
+      "next/server": requirePanel("next/server"),
+      "../../../../src/server/operator-passkey-bff": {
+        cookieLifetimeSeconds: date => Math.floor((Date.parse(date)-Date.now())/1000),
+        isTrustedOperatorLoopbackTarget: () => true,
+        OPERATOR_COOKIE: "bthwani_operator_session", OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
+        resolveIsolatedOperatorConfig: () => ({identityOrigin:"http://127.0.0.1:3201",browserOrigin:"http://localhost:13000"}),
+        async readOperatorAccessState() { permissionReads++; return {status:"signed-out"}; },
+      },
+      "../../../../src/server/request-security": {unavailableSessionResponse:()=>Response.json({}, {status:503})},
+    }, {}, "GET");
+    const response = await get({cookies:{get:name=>name.endsWith("refresh")?{value:oldRefresh}:undefined}});
+    const body = await response.json();
+    assert.equal(response.status, ["verification-outage","rotation-outage"].includes(mode)?503:401,mode);
+    assert.equal(body.actorId, undefined,mode);
+    assert.deepEqual(revoked,mode==="rotation-outage"?[]:[newRefresh],mode);
+    assert.equal(response.cookies.get("bthwani_operator_refresh")?.value,mode==="rotation-outage"?undefined:"",mode);
+    assert.equal(response.cookies.get("bthwani_operator_session")?.value,mode==="rotation-outage"?undefined:"",mode);
+    assert.equal(permissionReads,["denied","cleanup-outage"].includes(mode)?1:0,mode);
+    assert.doesNotMatch(JSON.stringify(body),new RegExp(newRefresh));
+  }
+});
+
+test("Operator logout preserves retry credentials until family revocation is acknowledged", async () => {
+  const bearer = Buffer.alloc(32, 80).toString("base64url");
+  const refresh = Buffer.alloc(32, 81).toString("base64url");
+  class IdentityClientError extends Error { constructor(status) { super("owner failure"); this.status = status; } }
+  for (const mode of ["untrusted", "body", "family-outage", "family-replay", "access-outage", "access-throws", "success", "no-credentials"]) {
+    const calls = [];
+    const post = compile("app/api/auth/session/route.ts", {
+      "@bthwani/identity": {
+        IdentityClientError, identityOperations: {revokeCurrentIdentitySession: {method:"DELETE",path:"/v1/sessions/current"}},
+        async revokePersistentIdentitySession(_origin, token) {
+          assert.equal(token,refresh);
+          calls.push("family");
+          if(mode==="family-outage") throw new IdentityClientError(503);
+          if(mode==="family-replay") throw new IdentityClientError(401);
+        },
+      },
+      "next/server": requirePanel("next/server"),
+      "../../../../src/server/operator-passkey-bff": {
+        resolveIsolatedOperatorConfig:()=>({identityOrigin:"http://127.0.0.1:3201"}),
+        isTrustedOperatorRequest:()=>mode!=="untrusted",
+        isEmptyRequestBody:async()=>mode!=="body",
+        OPERATOR_COOKIE:"bthwani_operator_session", OPERATOR_REFRESH_COOKIE:"bthwani_operator_refresh",
+        async operatorIdentityRequest(_config, operation, options) {
+          assert.equal(operation.method,"DELETE");
+          assert.equal(options.headers.Authorization,"Bearer "+bearer);
+          calls.push("access");
+          if(mode==="access-throws") throw new Error("network outage");
+          return new Response(null,{status:mode==="access-outage"?503:mode==="family-replay"?401:204});
+        },
+      },
+      "../../../../src/server/request-security": {unavailableSessionResponse:()=>Response.json({}, {status:503})},
+    }, {}, "POST");
+    const response=await post({cookies:{get:name=>mode==="no-credentials"?undefined:{value:name.endsWith("refresh")?refresh:bearer}}});
+    const invalid=["untrusted","body"].includes(mode);
+    const failed=["family-outage","access-outage","access-throws"].includes(mode);
+    assert.equal(response.status,invalid?400:failed?503:204,mode);
+    assert.deepEqual(calls,invalid||mode==="no-credentials"?[]:mode==="family-outage"?["family"]:["family","access"],mode);
+    const cleared=!invalid&&mode!=="family-outage";
+    for(const name of ["bthwani_operator_session","bthwani_operator_refresh"]) {
+      assert.equal(response.cookies.get(name)?.value,cleared?"":undefined,mode);
+    }
+    assert.match(response.headers.get("Cache-Control"),/no-store/);
   }
 });
