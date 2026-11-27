@@ -212,21 +212,7 @@ test("a terminated lock owner leaves durable recovery evidence, without authoriz
   }
 });
 
-test("existing Graphify hooks are replaceable but unrelated or mixed hooks are protected", async () => {
-  const runner = await import("./graphify-local.mjs");
-  assert.equal(typeof runner.canReplaceHook, "function");
-  assert.equal(runner.canReplaceHook(null, "post-commit"), true);
-  assert.equal(runner.canReplaceHook("#!/bin/sh\n# graphify-hook-start\nold\n# graphify-hook-end\n", "post-commit"), true);
-  assert.equal(runner.canReplaceHook("#!/bin/sh\n# graphify-checkout-hook-start\nold\n# graphify-checkout-hook-end\n", "post-checkout"), true);
-  assert.equal(runner.canReplaceHook("#!/bin/sh\n# graphify-hook-start\nold\n# graphify-hook-end\nother-command\n", "post-commit"), false);
-  assert.equal(runner.canReplaceHook("#!/bin/sh\nother-command\n", "post-merge"), false);
-  const hook = runner.hookSource("post-checkout");
-  assert.equal(runner.canReplaceHook(hook, "post-checkout"), true);
-  assert.match(hook, /graphify-local\.mjs sync/);
-  assert.doesNotMatch(hook, /PREV_HEAD|NEW_HEAD/);
-});
-
-test("real Git events synchronize a local Graphify index in an isolated repository", {
+test("Git events never write the local index; the sole sync path reconciles changes", {
   skip: process.env.BTHWANI_GRAPHIFY_INTEGRATION !== "1",
   timeout: 240000,
 }, async () => {
@@ -282,17 +268,11 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     assert.match(measured.sourceFingerprint, /^[a-f0-9]{64}$/);
     assert.deepEqual(JSON.parse(cli(["coverage", "missing.ts"], 2)).unadmitted, ["missing.ts"]);
     cli(["coverage", "../outside.ts"], 2);
-    // A hard link to another file is not an admitted existing hook.
-    const hookPath = join(dir, ".git", "hooks", "post-commit");
-    const outsideHook = join(dir, "graphify-out", "unrelated-hook");
-    writeFileSync(outsideHook, "#!/bin/sh\n# graphify-hook-start\nold\n# graphify-hook-end\n");
     const { linkSync } = await import("node:fs");
-    linkSync(outsideHook, hookPath);
     cli(["install-hooks"], 2);
-    assert.equal(readFileSync(hookPath, "utf8"), readFileSync(outsideHook, "utf8"));
-    rmSync(hookPath);
-    cli(["install-hooks"]);
     git("switch", "-c", "fixture-b");
+    assert.equal(JSON.parse(cli(["status"], 2)).status, "BLOCKED");
+    cli(["sync"]);
     assert.equal(proof().head, first.head);
     writeFileSync(join(dir, "example.ts"), "export function example() { return 2; }\n");
     const seedPath = join(dir, "graphify-out", ".candidate", "graph.json");
@@ -331,7 +311,11 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     assert.ok(!JSON.parse(readFileSync(join(dir,"graphify-out","graph.json"),"utf8")).nodes.some(n=>String(n.label).includes("changedNewGraphFixture")));
     assert.deepEqual(JSON.parse(cli(["coverage", "apps/new.ts"], 2)).unadmitted, ["apps/new.ts"]);
     git("add", "example.ts");
+    const beforeCommit = readFileSync(stamp, "utf8");
     git("commit", "-m", "fixture update");
+    assert.equal(readFileSync(stamp, "utf8"), beforeCommit);
+    assert.equal(JSON.parse(cli(["status"])).status, "INVALIDATED");
+    cli(["sync"]);
     assert.notEqual(proof().head, first.head);
     cli(["query", "example"]);
     const verified = readFileSync(stamp, "utf8");

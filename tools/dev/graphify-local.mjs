@@ -15,7 +15,6 @@ const stamp = join(root, "graphify-out", "local-index-state.json");
 const lock = join(root, "graphify-out", ".local-refresh.lock");
 const candidate = join(root, "graphify-out", ".candidate");
 const candidateGraph = join(candidate, "graph.json");
-const hookNames = ["post-commit", "post-checkout", "post-merge", "post-rewrite"];
 const gitExe = process.platform === "win32" ? "git.exe" : "git";
 const graphifyExe = process.platform === "win32" ? "graphify.exe" : "graphify";
 
@@ -285,82 +284,6 @@ function refresh(automatic = false) {
   });
 }
 
-export function hookSource(name) {
-  if (!hookNames.includes(name)) throw new Error("Unsupported Graphify hook");
-  const checkout = name === "post-checkout" ? '[ "$3" = "1" ] || exit 0\n' : "";
-  const drain = name === "post-rewrite" ? "cat >/dev/null\n" : "";
-  return [
-    "#!/bin/sh",
-    "# bthwani-graphify-hook-start",
-    '[ "${GRAPHIFY_SKIP_HOOK:-0}" != "1" ] || exit 0',
-    checkout.trimEnd(),
-    drain.trimEnd(),
-    'root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0',
-    'gitdir=$(git rev-parse --absolute-git-dir 2>/dev/null) || exit 0',
-    '[ "$gitdir" = "$root/.git" ] || exit 0',
-    'branch=$(git symbolic-ref --quiet --short HEAD 2>/dev/null) || exit 0',
-    'case "$branch" in archive/*) exit 0 ;; esac',
-    'for marker in rebase-merge rebase-apply MERGE_HEAD CHERRY_PICK_HEAD; do',
-    '  [ ! -e "$gitdir/$marker" ] || exit 0',
-    'done',
-    'cd "$root" || exit 0',
-    '[ -f tools/dev/graphify-local.mjs ] || exit 0',
-    'node tools/dev/graphify-local.mjs sync || echo "[Graphify] index not current; inspect status and retry safely" >&2',
-    'exit 0',
-    "# bthwani-graphify-hook-end",
-    "",
-  ].join("\n");
-}
-
-export function canReplaceHook(content, name) {
-  if (content === null) return true;
-  const normalized = content.replaceAll("\r\n", "\n").trimEnd();
-  if (normalized === hookSource(name).trimEnd()) return true;
-  const legacy = name === "post-commit" ? "graphify-hook" : name === "post-checkout" ? "graphify-checkout-hook" : null;
-  return Boolean(legacy && normalized.startsWith("#!/bin/sh\n# " + legacy + "-start\n") &&
-    normalized.endsWith("\n# " + legacy + "-end"));
-}
-
-function installHooks() {
-  branchAndHead();
-  const gitDir = resolve(root, gitString("rev-parse", "--absolute-git-dir"));
-  if (!samePath(gitDir, join(root, ".git"))) throw new Error("BLOCKED: hooks must belong to the primary checkout");
-  const hooks = resolve(root, gitString("rev-parse", "--git-path", "hooks"));
-  if (!samePath(hooks, join(gitDir, "hooks")) || !lstatSync(hooks).isDirectory() || !samePath(realpathSync(hooks), resolve(hooks))) {
-    throw new Error("BLOCKED: custom or redirected hooks directory");
-  }
-  return withRefreshLock(lock, () => {
-    const planned = hookNames.map(name => {
-      const path = join(hooks, name);
-      let content = null;
-      try {
-        content = readVerifiedFile(path, 1024 * 1024).bytes.toString("utf8");
-      } catch (error) {
-        if (error.code !== "ENOENT") throw error;
-      }
-      if (!canReplaceHook(content, name)) {
-        throw new Error("BLOCKED: unrelated Git hook " + name);
-      }
-      return { name, path, content, next: hookSource(name) };
-    });
-    for (const item of planned) {
-      if (item.content === item.next) continue;
-      if (item.content !== null) {
-        const backup = item.path + ".graphify-original";
-        if (!existsSync(backup)) writeFileSync(backup, item.content, { flag: "wx" });
-      }
-      const temp = item.path + "." + process.pid + ".tmp";
-      try {
-        writeFileSync(temp, item.next, { flag: "wx", mode: 0o755 });
-        renameSync(temp, item.path);
-      } finally {
-        if (existsSync(temp)) unlinkSync(temp);
-      }
-      process.stdout.write("PASS: unified local Graphify hook " + item.name + "\n");
-    }
-  });
-}
-
 function query(question) {
   const before = validate();
   if (!before.assessment.queryable) throw new Error("BLOCKED: " + before.assessment.reason);
@@ -481,7 +404,6 @@ function main() {
   }
   if (action === "refresh" && args.length === 0) return refresh();
   if (action === "sync" && args.length === 0) return refresh(true);
-  if (action === "install-hooks" && args.length === 0) return installHooks();
   if (action === "status" && args.length === 0) {
     const { current, indexed, assessment } = validate();
     process.stdout.write(JSON.stringify({
@@ -502,7 +424,7 @@ function main() {
   }
   if (action === "coverage" && args.length > 0) return coverage(args);
   if (action === "query" && args.length === 1 && args[0].trim()) return query(args[0]);
-  throw new Error("Usage: node tools/dev/graphify-local.mjs status | refresh | sync | recover-lock <reviewed SHA-256> | install-hooks | coverage <repo-relative paths...> | query \"question\"");
+  throw new Error("Usage: node tools/dev/graphify-local.mjs status | refresh | sync | recover-lock <reviewed SHA-256> | coverage <repo-relative paths...> | query \"question\"");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

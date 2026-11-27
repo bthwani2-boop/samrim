@@ -11,4 +11,3 @@
 *.jks binary
 *.keystore binary
 *.p12 binary
-graphify-out/graph.json merge=graphify
