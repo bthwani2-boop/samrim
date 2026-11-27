@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from "node:module";
 import { test } from "node:test";
 import * as dshClient from "../../../services/dsh/clients/index.ts";
 import * as identityClient from "../../../services/identity/clients/index.ts";
+import * as merchantAdmissionWeb from "../src/features/access/merchant-admission-web.ts";
 import * as merchantOwnerWeb from "../src/features/access/merchant-owner-web.ts";
 
 function compileTransport(relativePath, exports) {
@@ -104,6 +105,7 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
     return dshStatus === 200 ? json(result) : json({ code: "STORE_OPERATION_FORBIDDEN" }, dshStatus);
   });
   const dependencies = {
+    "./merchant-admission-web.ts": merchantAdmissionWeb,
     "@bthwani/dsh": dshClient,
     "@bthwani/identity": identityClient,
     "expo-secure-store": {
