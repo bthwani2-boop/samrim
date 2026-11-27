@@ -1,3 +1,15 @@
+import { WltReadError } from "./errors.ts";
+
+// A financial projection is an exact JSON object: every required field must
+// be an enumerable own field and no undeclared fields may substitute for it.
+export function exactRecord(value: unknown, required: readonly string[], optional: readonly string[] = []): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new WltReadError(502);
+  const keys = Object.keys(value);
+  if (!required.every(key => keys.includes(key)) ||
+      !keys.every(key => required.includes(key) || optional.includes(key))) throw new WltReadError(502);
+  return value as Record<string, unknown>;
+}
+
 // Shared WLT readback field validation and isolated native-origin admission.
 // The WLT Go boundary counts Unicode scalar values and uses strings.TrimSpace
 // and unicode.IsControl. JavaScript trim includes BOM and is not equivalent.

@@ -1,7 +1,7 @@
 import { WltReadError } from "./errors.ts";
 import { wltOperations } from "./generated/wlt-operations.ts";
 import { readOwner } from "./transport.ts";
-import { fundingIdValid } from "./validation.ts";
+import { exactRecord, fundingIdValid } from "./validation.ts";
 
 const relations = ["MARKETPLACE", "DIRECT"] as const;
 const collectors = ["PLATFORM_MANAGED", "STORE_MANAGED"] as const;
@@ -32,14 +32,6 @@ const proposalFields = [
 
 function storeValid(value: unknown): value is string {
   return typeof value === "string" && /^[a-z0-9-]{1,64}$/.test(value);
-}
-
-function record(value: unknown, fields: readonly string[]): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-    Object.keys(value).length !== fields.length || !fields.every(field => Object.hasOwn(value, field))) {
-    throw new WltReadError(502);
-  }
-  return value as Record<string, unknown>;
 }
 
 function member<T extends string>(value: unknown, list: readonly T[]): value is T {
@@ -74,7 +66,7 @@ function proposalFrom(value: unknown): Proposal {
     version, operationId, storeRelation, feeModel, collector, currency,
     commissionBasisPoints, subscriptionAmountYer, subscriptionPeriodDays,
     fulfillmentModes, proposedEffectiveAt, reviewState,
-  } = record(value, proposalFields);
+  } = exactRecord(value, proposalFields);
   if (!integer(version, 1, Number.MAX_SAFE_INTEGER) || !fundingIdValid(operationId) ||
     !member(storeRelation, relations) || !member(collector, collectors) || currency !== "YER" ||
     !validDate(proposedEffectiveAt) || !member(reviewState, states)) throw new WltReadError(502);
@@ -95,7 +87,7 @@ function proposalFrom(value: unknown): Proposal {
 }
 
 export function parseCommercialAgreementReview(value: unknown, storeId: string): CommercialAgreementReview {
-  const data = record(value, ["storeId", "proposal"]);
+  const data = exactRecord(value, ["storeId", "proposal"]);
   if (!storeValid(storeId) || data.storeId !== storeId) throw new WltReadError(502);
   return { storeId, proposal: data.proposal === null ? null : proposalFrom(data.proposal) };
 }

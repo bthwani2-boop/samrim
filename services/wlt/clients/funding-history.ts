@@ -2,7 +2,7 @@ import { WltReadError } from "./errors.ts";
 import { wltOperations } from "./generated/wlt-operations.ts";
 import { readOwner } from "./transport.ts";
 import type { CustomerFundingHistory, CustomerFundingTransaction } from "./types.ts";
-import { actorValid, amountValid, fundingIdValid } from "./validation.ts";
+import { actorValid, amountValid, exactRecord, fundingIdValid } from "./validation.ts";
 
 type FundingKey = { timestamp: string; fundingId: string };
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -64,45 +64,36 @@ function decodeCursor(cursor: string): FundingKey {
 }
 
 export function parseCustomerFundingHistory(value: unknown, requestedCursor?: string): CustomerFundingHistory {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new WltReadError(502);
-  const fields = value as Record<string, unknown>;
-  if (Object.keys(fields).length !== 5 || !actorValid(fields.actorId) ||
-    fields.currency !== "YER" || typeof fields.hasMore !== "boolean" ||
-    !Array.isArray(fields.items) || fields.items.length > 10 ||
-    (fields.nextCursor !== null && typeof fields.nextCursor !== "string") ||
-    fields.hasMore !== (fields.nextCursor !== null) ||
-    (fields.hasMore && fields.items.length !== 10)) throw new WltReadError(502);
+  const { actorId, currency, items: entries, hasMore, nextCursor } =
+    exactRecord(value, ["actorId", "currency", "items", "hasMore", "nextCursor"]);
+  if (!actorValid(actorId) || currency !== "YER" || typeof hasMore !== "boolean" ||
+      !Array.isArray(entries) || entries.length > 10 ||
+      (nextCursor !== null && typeof nextCursor !== "string") ||
+      hasMore !== (nextCursor !== null) || (hasMore && entries.length !== 10)) {
+    throw new WltReadError(502);
+  }
 
   const items: CustomerFundingTransaction[] = [];
   const seen = new Set<string>();
-  // The first item of a continuation must be strictly older than the exact
-  // requested owner key, not merely older than the next item on its own page.
   let previous = requestedCursor === undefined ? null : decodeCursor(requestedCursor);
-  for (const raw of fields.items) {
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new WltReadError(502);
-    const entry = raw as Record<string, unknown>;
+  for (const raw of entries) {
+    const entry = exactRecord(raw, ["fundingId", "amountYer", "postedAt"], ["reversesFundingId"]);
+    const { fundingId, amountYer, postedAt } = entry;
     const reversal = Object.hasOwn(entry, "reversesFundingId");
-    const originalId = entry.reversesFundingId;
-    if (Object.keys(entry).length !== (reversal ? 4 : 3) ||
-      !amountValid(entry.amountYer, true) || typeof entry.postedAt !== "string" ||
-      !fundingIdValid(entry.fundingId) ||
-      (reversal && (!fundingIdValid(originalId) || originalId === entry.fundingId)) ||
-      seen.has(entry.fundingId)) throw new WltReadError(502);
-    const key = fundingKey(entry.postedAt, entry.fundingId);
+    const originalId = reversal ? entry.reversesFundingId : undefined;
+    if (!amountValid(amountYer, true) || typeof postedAt !== "string" ||
+        !fundingIdValid(fundingId) || seen.has(fundingId) ||
+        (reversal && (!fundingIdValid(originalId) || originalId === fundingId))) throw new WltReadError(502);
+    const key = fundingKey(postedAt, fundingId);
     if (previous && !strictlyOlder(key, previous)) throw new WltReadError(502);
     previous = key;
-    seen.add(key.fundingId);
-    const transaction = { fundingId: key.fundingId, amountYer: entry.amountYer, postedAt: entry.postedAt };
+    seen.add(fundingId);
+    const transaction = { fundingId, amountYer, postedAt };
     items.push(reversal && typeof originalId === "string"
       ? { ...transaction, reversesFundingId: originalId } : transaction);
   }
-  if (fields.hasMore && (!previous || fields.nextCursor !== encodeCursor(previous))) {
-    throw new WltReadError(502);
-  }
-  return {
-    actorId: fields.actorId, currency: "YER", items, hasMore: fields.hasMore,
-    nextCursor: fields.nextCursor as string | null,
-  };
+  if (hasMore && (!previous || nextCursor !== encodeCursor(previous))) throw new WltReadError(502);
+  return { actorId, currency, items, hasMore, nextCursor };
 }
 
 export async function readCurrentCustomerWalletTransactions(

@@ -98,3 +98,29 @@ test("WLT shared validation rejects malformed wire primitives without coercion a
   assert.equal(isolatedNativeWltOrigin("ios",false,identity,wallet),null);
   assert.equal(isolatedNativeWltOrigin("android",true,identity,wallet),null);
 });
+
+test("all financial read projections reject substituted required fields", async () => {
+  const { parseCustomerWalletBalance } = await import("./wallet-balance.ts");
+  const { parseCustomerFundingHistory } = await import("./funding-history.ts");
+  const balance = { actorId, currency: "YER", balanceYer: "100", availableYer: "90" };
+  const entry = { fundingId: "funding-001", amountYer: "100", postedAt: "2026-11-27T00:00:00Z" };
+  const history = { actorId, currency: "YER", items: [entry], hasMore: false, nextCursor: null };
+  const substitute = (original, key) => {
+    const { [key]: inherited, ...own } = original;
+    return Object.assign(Object.create({ [key]: inherited }), own, { unrelated: true });
+  };
+  for (const [label, original, parser] of [
+    ["balance", balance, parseCustomerWalletBalance],
+    ["history", history, parseCustomerFundingHistory],
+    ["readback", result, parse],
+    ["funding entry", entry, value => parseCustomerFundingHistory({ ...history, items: [value] })],
+    ["allocation", allocation, value => parse({ ...result, allocation: value })],
+  ]) {
+    for (const key of Object.keys(original)) {
+      assert.throws(() => parser(substitute(original, key)), { status: 502 }, label + ":" + key);
+    }
+  }
+  assert.deepEqual(parseCustomerWalletBalance(balance), balance);
+  assert.deepEqual(parseCustomerFundingHistory(history), history);
+  assert.deepEqual(parse(result), result);
+});
