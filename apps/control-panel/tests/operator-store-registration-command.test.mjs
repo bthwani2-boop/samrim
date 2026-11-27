@@ -101,3 +101,107 @@ test("initial registration policy command survives reload, scoped to its operato
   assert.throws(() => readPendingRegistrationPolicy(storage, actor));
   assert.throws(() => savePendingRegistrationPolicy(storage, actor, pending));
 });
+
+
+test("registration command rejects wrong route and invalid actor before any network request", async t => {
+  const fetch = t.mock.method(globalThis, "fetch", async () => reply(policy));
+  for (const path of ["https://example.invalid/policy", endpoint + "?history=1", endpoint + "/extra", endpoint.replace("sanaa", "aden"), endpoint.replace("MARKETPLACE", "DIRECT")]) {
+    await assert.rejects(readStoreRegistrationPolicy(path, city, relation, actor), /scope/);
+    assert.deepEqual(await reconcileRegistrationPolicy(path, city, relation, actor, change), { status: "rejected" });
+  }
+  await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, ""), /scope/);
+  assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("registration history rejects integer overflow without contacting BFF", async t => {
+  const { readRegistrationHistory } = await import("../src/features/policies/store-registration-command.ts");
+  const fetch = t.mock.method(globalThis, "fetch", async () => reply({ entries: [] }));
+  await assert.rejects(readRegistrationHistory(endpoint, city, relation, actor, "9223372036854775808"), /scope/);
+  assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("registration mutation cannot confirm a noncanonical write envelope", async t => {
+  const fetch = t.mock.method(globalThis, "fetch", async (_url, init) =>
+    reply(init.method === "PATCH" ? { policy, replay: false, extra: "unexpected" } : policy));
+  assert.deepEqual(await reconcileRegistrationPolicy(endpoint, city, relation, actor, change), { status: "unknown" });
+  assert.equal(fetch.mock.callCount(), 1);
+});
+
+test("registration command refuses oversized or non-JSON successful response", async t => {
+  const fetch = t.mock.method(globalThis, "fetch", async () =>
+    new Response(JSON.stringify(policy) + " ".repeat(65536), { headers: { "Content-Type": "application/json" } }));
+  await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, actor), /response invalid/);
+  fetch.mock.restore();
+  t.mock.method(globalThis, "fetch", async () => new Response(JSON.stringify(policy), { headers: { "Content-Type": "text/plain" } }));
+  await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, actor), /response invalid/);
+});
+
+
+test("scope admission validates real actor and city values without coercion", async t => {
+  const fetch = t.mock.method(globalThis, "fetch", async () => reply(policy));
+  for (const invalid of [123, "", " actor", "x".repeat(129), "actor\nname", "\ud800"]) {
+    await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, invalid), /scope/);
+  }
+  for (const [invalidCity, invalidRelation] of [[123, relation], ["../sanaa", relation], [city, "OTHER"]]) {
+    await assert.rejects(readStoreRegistrationPolicy(endpoint, invalidCity, invalidRelation, actor), /scope/);
+  }
+  assert.deepEqual(await reconcileRegistrationPolicy(endpoint, city, relation, actor, { ...change, reason: "" }), { status: "rejected" });
+  assert.equal(fetch.mock.callCount(), 0);
+});
+
+test("response admission cancels rejected body and handles an unavailable reader", async t => {
+  let canceled = 0;
+  const stream = new ReadableStream({ cancel() { canceled++; throw new Error("cancel failed"); } });
+  let response = new Response(stream, { headers: { "Content-Type": "application/json", "Content-Length": "65537" } });
+  t.mock.method(globalThis, "fetch", async () => response);
+  await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, actor), /response invalid/);
+  assert.equal(canceled, 1);
+  response = new Response(null, { headers: { "Content-Type": "application/json" } });
+  await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, actor), /response invalid/);
+  response = reply(policy);
+  const reader = response.body.getReader();
+  await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, actor), /response invalid/);
+  reader.releaseLock();
+  response = new Response("{", { headers: { "Content-Type": "application/json", "Content-Length": "invalid" } });
+  await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, actor), /response invalid/);
+  response = new Response(Uint8Array.of(0xff), { headers: { "Content-Type": "application/json" } });
+  await assert.rejects(readStoreRegistrationPolicy(endpoint, city, relation, actor), /response invalid/);
+  assert.equal(response.body.locked, false);
+});
+
+test("audit accepts exclusive int64 cursor and rejects malformed page", async t => {
+  const { readRegistrationHistory } = await import("../src/features/policies/store-registration-command.ts");
+  const entries = [{ version: 1, enabled: true, termsVersion: "terms-v1", changedByActor: actor, changeReason: "Reviewed", updatedAt: policy.updatedAt }];
+  let body = { entries };
+  t.mock.method(globalThis, "fetch", async () => reply(body));
+  assert.deepEqual(await readRegistrationHistory(endpoint, city, relation, actor, "9223372036854775807"), body);
+  body = { entries: [null] };
+  await assert.rejects(readRegistrationHistory(endpoint, city, relation, actor), /audit owner response invalid/);
+});
+
+test("recovery refuses invalid or mismatched pending data and retains the original command", async () => {
+  const { savePendingRegistrationPolicy, readPendingRegistrationPolicy, clearPendingRegistrationPolicy } = await import("../src/features/policies/store-registration-command.ts");
+  const data = new Map();
+  const storage = { getItem: key => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: key => data.delete(key) };
+  const pending = { cityId: city, relation, change };
+  assert.throws(() => clearPendingRegistrationPolicy(storage, actor, pending));
+  assert.throws(() => savePendingRegistrationPolicy(storage, actor, { ...pending, relation: "OTHER" }));
+  savePendingRegistrationPolicy(storage, actor, pending);
+  savePendingRegistrationPolicy(storage, actor, pending);
+  for (const different of [{ ...pending, cityId: "aden" }, { ...pending, relation: "DIRECT" }, ...Object.keys(change).map(key => ({ ...pending, change: { ...change, [key]: key === "enabled" ? false : key === "expectedVersion" ? 1 : "different-value" } }))]) {
+    assert.throws(() => clearPendingRegistrationPolicy(storage, actor, different));
+  }
+  assert.deepEqual(readPendingRegistrationPolicy(storage, actor), pending);
+  data.set([...data.keys()][0], JSON.stringify({ ...pending, extra: true }));
+  assert.throws(() => readPendingRegistrationPolicy(storage, actor), /Invalid pending/);
+});
+
+test("mutation cannot confirm unexpected response status or malformed envelope", async t => {
+  let response = reply({ policy, replay: true }, 201);
+  t.mock.method(globalThis, "fetch", async () => response);
+  assert.deepEqual(await reconcileRegistrationPolicy(endpoint, city, relation, actor, change), { status: "unknown" });
+  for (const body of [null, [], { policy, replay: "yes" }, { policy: null, replay: true }]) {
+    response = reply(body);
+    assert.deepEqual(await reconcileRegistrationPolicy(endpoint, city, relation, actor, change), { status: "unknown" });
+  }
+});
