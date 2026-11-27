@@ -18,7 +18,7 @@ export { getCityDeliveryPolicy, getCityFulfillmentPolicy, getCityStoreOperationa
 export type { CustomerAddress, CustomerAddressChange, CustomerAddressPage, CustomerAddressRead, CustomerAddressResult, DeliveryServiceability } from "./customer-addresses.ts";
 export { evaluateDeliveryServiceability, getCustomerAddress, isCustomerAddressId, listCustomerAddresses, matchesCustomerAddressChange, normalizeCustomerAddressChange, parseCustomerAddress, parseCustomerAddressPage, parseCustomerAddressResult, parseDeliveryServiceability, saveCustomerAddress, validCustomerAddressChange } from "./customer-addresses.ts";
 export type { CustomerCart, CustomerCartChange, CustomerCartLine, CustomerCartMerchandiseEstimate, CustomerCartMerchandiseEstimateLine, CustomerCartResult } from "./customer-cart.ts";
-export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
+export { DshCartError, parseCustomerCart, parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, prepareCustomerCartChange, readCurrentCustomerCart, readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart } from "./customer-cart.ts";
 export type { CustomerCartDirectory, CustomerCartDirectoryEntry } from "./customer-cart-directory.ts";
 export { listCurrentCustomerCarts, parseCustomerCartDirectory } from "./customer-cart-directory.ts";
 export type { CheckoutFulfillmentMode, CheckoutRecipientPurpose, CheckoutSalesChannel, CustomerCheckoutBlocker, CustomerCheckoutReview, CustomerCheckoutReviewInput } from "./customer-checkout-review.ts";

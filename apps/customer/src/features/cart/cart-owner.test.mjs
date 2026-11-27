@@ -120,3 +120,46 @@ test("Cart read refuses a response after actor-switch cancellation", async t => 
   await assert.rejects(readCurrentCustomerCart(origin, bearer, store, actor, controller.signal),
     { code: "OWNER_RESPONSE_STALE" });
 });
+
+
+test("Cart write binds the receipt to one exact version and the submitted offer quantities", async t => {
+  let payload;
+  t.mock.method(globalThis, "fetch", async () => success(payload));
+  for (const wrong of [
+    { ...cart, version: 3 },
+    { ...cart, lines: [] },
+    { ...cart, lines: [{ ...cart.lines[0], quantity: 4 }] },
+    { ...cart, lines: [{ ...cart.lines[0], offerId: "offer-b" }] },
+  ]) {
+    payload = { cart: wrong, replay: true };
+    await assert.rejects(replaceCurrentCustomerCart(origin, bearer, store, actor, operation, signal()), { code: "OPERATION_RESULT_UNKNOWN" });
+  }
+  payload = { cart, replay: true };
+  assert.deepEqual(await replaceCurrentCustomerCart(origin, bearer, store, actor, operation, signal()), payload);
+});
+
+test("Cart write snapshots the admitted command before asynchronous owner readback", async t => {
+  const command = structuredClone(operation);
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    assert.deepEqual(JSON.parse(init.body), operation);
+    command.expectedVersion = 15;
+    command.lines[0].quantity = 4;
+    return success({ cart, replay: false });
+  });
+  assert.deepEqual(await replaceCurrentCustomerCart(origin, bearer, store, actor, command, signal()), { cart, replay: false });
+});
+
+test("Cart write refuses sparse, coerced or unrepresentable commands before dispatch", async t => {
+  let count = 0;
+  t.mock.method(globalThis, "fetch", async () => { count++; return success({ cart, replay: false }); });
+  for (const wrong of [
+    { ...operation, lines: Array(1) },
+    { ...operation, expectedVersion: Number.MAX_SAFE_INTEGER },
+    { ...operation, operationId: 12345678 },
+    { ...operation, lines: [{ offerId: 123, quantity: 1 }] },
+    { ...operation, lines: [{ ...operation.lines[0], price: "1" }] },
+  ]) {
+    await assert.rejects(replaceCurrentCustomerCart(origin, bearer, store, actor, wrong, signal()), { code: "INVALID_REQUEST" });
+  }
+  assert.equal(count, 0);
+});

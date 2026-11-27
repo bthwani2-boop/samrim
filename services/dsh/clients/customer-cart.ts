@@ -130,18 +130,45 @@ function estimateFrom(value: unknown, expectedStore: string, expectedActor: stri
     lines, merchandiseSubtotalYer: estimate.merchandiseSubtotalYer, checkoutReady: false };
 }
 
-function changeValid(change: CustomerCartChange): boolean {
-  if (!change || !operationRule.test(change.operationId) ||
-    !Number.isSafeInteger(change.expectedVersion) || change.expectedVersion < 0 ||
-    !Array.isArray(change.lines) || change.lines.length > 20) return false;
+/** Capture one exact, detached command before any asynchronous work. */
+export function prepareCustomerCartChange(value: unknown): CustomerCartChange {
+  const reject = (): never => { throw new DshCartError(400, "INVALID_REQUEST"); };
+  if (!value || typeof value !== "object" || Array.isArray(value)) return reject();
+  const command = value as Record<string, unknown>;
+  if (!exactKeys(command, ["operationId", "expectedVersion", "lines"])) return reject();
+  const { operationId, expectedVersion, lines: input } = command;
+  if (typeof operationId !== "string" || !operationRule.test(operationId) ||
+    typeof expectedVersion !== "number" || !Number.isSafeInteger(expectedVersion) ||
+    expectedVersion < 0 || expectedVersion >= Number.MAX_SAFE_INTEGER ||
+    !Array.isArray(input) || input.length > 20) return reject();
   const seen = new Set<string>();
-  return change.lines.every(line => {
-    if (!line || !storeRule.test(line.offerId) || !Number.isSafeInteger(line.quantity) ||
-      line.quantity < 1 || line.quantity > 2147483647 || seen.has(line.offerId)) return false;
-    seen.add(line.offerId);
-    return true;
-  });
+  const lines: CustomerCartChange["lines"] = [];
+  for (const item of input) {
+    if (!item || typeof item !== "object" || Array.isArray(item) ||
+      !exactKeys(item, ["offerId", "quantity"])) return reject();
+    const { offerId, quantity } = item;
+    if (typeof offerId !== "string" || !storeRule.test(offerId) || seen.has(offerId) ||
+      typeof quantity !== "number" || !Number.isSafeInteger(quantity) ||
+      quantity < 1 || quantity > 2147483647) return reject();
+    seen.add(offerId);
+    lines.push(Object.freeze({ offerId, quantity }));
+  }
+  Object.freeze(lines);
+  return Object.freeze({ operationId, expectedVersion, lines });
 }
+
+function receiptFrom(value: unknown, storeId: string, actorId: string,
+  command: CustomerCartChange): CustomerCartResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw ownerError();
+  const envelope = value as Record<string, unknown>;
+  if (!exactKeys(envelope, ["cart", "replay"]) || typeof envelope.replay !== "boolean") throw ownerError();
+  const cart = cartFrom(envelope.cart, storeId, actorId);
+  const quantities = new Map(command.lines.map(line => [line.offerId, line.quantity]));
+  if (cart.version !== command.expectedVersion + 1 || cart.lines.length !== quantities.size ||
+    cart.lines.some(line => quantities.get(line.offerId) !== line.quantity)) throw ownerError();
+  return { cart, replay: envelope.replay };
+}
+
 function urlForCart(origin: string, storeId: string, method: "GET" | "PUT" | "ESTIMATE",
   expectedVersion?: number): URL {
   const safe = /^http:\/\/(?:127\.0\.0\.1|10\.0\.2\.2):([1-9][0-9]{0,4})$/.exec(origin);
@@ -169,9 +196,7 @@ async function cartRequest(origin: string, bearer: string, storeId: string, expe
     expectedActor.length < 1 || expectedActor.length > 128 || expectedActor.trim() !== expectedActor) {
     throw new DshCartError(401, "UNAUTHORIZED");
   }
-  if (method === "PUT" && (!change || !changeValid(change))) {
-    throw new DshCartError(400, "INVALID_REQUEST");
-  }
+  const command = method === "PUT" ? prepareCustomerCartChange(change) : undefined;
   const dispatched = method === "PUT";
   let response: Response;
   try {
@@ -182,10 +207,7 @@ async function cartRequest(origin: string, bearer: string, storeId: string, expe
         Authorization: `Bearer ${bearer}`,
         ...(dispatched ? { "Content-Type": "application/json" } : {}),
       },
-      ...(dispatched && change ? { body: JSON.stringify({
-        operationId: change.operationId, expectedVersion: change.expectedVersion,
-        lines: change.lines.map(line => ({ offerId: line.offerId, quantity: line.quantity })),
-      }) } : {}),
+      ...(command ? { body: JSON.stringify(command) } : {}),
     });
   } catch {
     throw new DshCartError(0, dispatched ? "OPERATION_RESULT_UNKNOWN" : signal.aborted ? "OWNER_RESPONSE_STALE" : "OWNER_NETWORK_UNAVAILABLE");
@@ -212,17 +234,9 @@ async function cartRequest(origin: string, bearer: string, storeId: string, expe
       dispatched ? "OPERATION_RESULT_UNKNOWN" : "OWNER_RESPONSE_STALE");
     if (method === "ESTIMATE") return estimateFrom(body, storeId, expectedActor, expectedVersion as number);
     if (!dispatched) return cartFrom(body, storeId, expectedActor);
-    if (!body || typeof body !== "object" || Array.isArray(body)) {
-      throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
-    }
-    const envelope = body as Record<string, unknown>;
-    if (!exactKeys(envelope, ["cart", "replay"]) || typeof envelope.replay !== "boolean") {
-      throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
-    }
     try {
-      const cart = cartFrom(envelope.cart, storeId, expectedActor);
-      if (!change || cart.version < change.expectedVersion + 1) throw ownerError();
-      return { cart, replay: envelope.replay };
+      if (!command) throw ownerError();
+      return receiptFrom(body, storeId, expectedActor, command);
     } catch {
       throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN");
     }
@@ -234,15 +248,8 @@ export function parseCustomerCart(value: unknown, storeId: string, actorId: stri
 }
 
 export function parseCustomerCartResult(value: unknown, storeId: string, actorId: string,
-  expectedVersion: number): CustomerCartResult {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw ownerError();
-  const envelope = value as Record<string, unknown>;
-  if (!exactKeys(envelope, ["cart", "replay"]) || typeof envelope.replay !== "boolean") {
-    throw ownerError();
-  }
-  const cart = cartFrom(envelope.cart, storeId, actorId);
-  if (!Number.isSafeInteger(expectedVersion) || cart.version < expectedVersion + 1) throw ownerError();
-  return { cart, replay: envelope.replay };
+  change: CustomerCartChange): CustomerCartResult {
+  return receiptFrom(value, storeId, actorId, prepareCustomerCartChange(change));
 }
 
 export function readCurrentCustomerCart(

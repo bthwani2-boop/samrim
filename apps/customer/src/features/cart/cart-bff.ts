@@ -1,6 +1,6 @@
 import {
   type CustomerCartChange,
-  DshCartError, readCurrentCustomerCart, replaceCurrentCustomerCart,
+  DshCartError, prepareCustomerCartChange, readCurrentCustomerCart, replaceCurrentCustomerCart,
 } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession } from "@bthwani/identity";
 import { readBoundedCustomerJSON } from "../access/bounded-customer-json.ts";
@@ -16,17 +16,9 @@ const storeRule = /^[a-z0-9-]{1,64}$/;
 function result(value: unknown, status = 200): Response {
   return Response.json(value, { status, headers: noStore });
 }
-function exactKeys(value: Record<string, unknown>, keys: string[]): boolean {
-  return Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
-}
 async function boundedChange(request: Request): Promise<CustomerCartChange | null> {
-  const payload = await readBoundedCustomerJSON(request);
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
-  const obj = payload as Record<string, unknown>;
-  if (!exactKeys(obj, ["operationId", "expectedVersion", "lines"]) || !Array.isArray(obj.lines) ||
-    obj.lines.length > 20 || !obj.lines.every(line => line && typeof line === "object" &&
-      !Array.isArray(line) && exactKeys(line as Record<string, unknown>, ["offerId", "quantity"]))) return null;
-  return payload as CustomerCartChange;
+  try { return prepareCustomerCartChange(await readBoundedCustomerJSON(request)); }
+  catch { return null; }
 }
 
 /** Customer Web is a cookie-only presentation adapter. Identity and DSH own truth. */

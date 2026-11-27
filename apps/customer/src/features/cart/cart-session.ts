@@ -1,4 +1,4 @@
-import { type CustomerCartChange, DshCartError } from "@bthwani/dsh";
+import { type CustomerCartChange, DshCartError, prepareCustomerCartChange } from "@bthwani/dsh";
 
 type PendingAttempt = { readonly change: CustomerCartChange; sending: boolean };
 
@@ -8,12 +8,6 @@ const pendingAttempts = new Map<string, PendingAttempt>();
 
 function scopeKey(actorId: string, storeId: string): string {
   return JSON.stringify([actorId, storeId]);
-}
-
-function captureChange(change: CustomerCartChange): CustomerCartChange {
-  const lines = change.lines.map(line => Object.freeze({ offerId: line.offerId, quantity: line.quantity }));
-  Object.freeze(lines);
-  return Object.freeze({ operationId: change.operationId, expectedVersion: change.expectedVersion, lines });
 }
 
 function matchesChange(original: CustomerCartChange, proposed: CustomerCartChange): boolean {
@@ -38,11 +32,18 @@ export async function withPendingCartChange<T>(
 ): Promise<T> {
   const key = scopeKey(actorId, storeId);
   const retained = pendingAttempts.get(key);
-  if (retained && (retained.sending || !matchesChange(retained.change, change))) {
-    throw new DshCartError(409, "CART_PENDING_RECONCILIATION");
+  const conflict = () => new DshCartError(409, "CART_PENDING_RECONCILIATION");
+  if (retained?.sending) throw conflict();
+  let admitted: CustomerCartChange;
+  try {
+    admitted = prepareCustomerCartChange(change);
+  } catch (error) {
+    if (retained) throw conflict();
+    throw error;
   }
+  if (retained && !matchesChange(retained.change, admitted)) throw conflict();
 
-  const attempt = retained ?? { change: captureChange(change), sending: false };
+  const attempt = retained ?? { change: admitted, sending: false };
   pendingAttempts.set(key, attempt);
   attempt.sending = true;
 

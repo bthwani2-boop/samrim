@@ -1,7 +1,7 @@
 import {
   type CustomerCart, type CustomerCartChange, type CustomerCartMerchandiseEstimate,
   type CustomerCartResult, DshCartError, parseCustomerCart,
-  parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, readCurrentCustomerCart,
+  parseCustomerCartMerchandiseEstimate, parseCustomerCartResult, prepareCustomerCartChange, readCurrentCustomerCart,
   readCurrentCustomerCartMerchandiseEstimate, replaceCurrentCustomerCart,
 } from "@bthwani/dsh";
 import { Platform } from "react-native";
@@ -81,12 +81,13 @@ export async function readVerifiedCart(storeId: string, signal: AbortSignal): Pr
 export async function replaceVerifiedCart(storeId: string, change: CustomerCartChange,
   expectedActorId: string, signal: AbortSignal): Promise<CustomerCartResult> {
   requireStore(storeId);
+  const command = prepareCustomerCartChange(change);
   const state = await admission(signal);
   if (signal.aborted || state.kind !== "ready" || state.session.actorId !== expectedActorId) {
     throw new DshCartError(401, "UNAUTHORIZED");
   }
   if (Platform.OS !== "web" && !nativeOwner) throw new DshCartError(503, "OWNER_UNAVAILABLE");
-  return withPendingCartChange(expectedActorId, storeId, change, original =>
+  return withPendingCartChange(expectedActorId, storeId, command, original =>
     sendVerifiedCartChange(storeId, original, expectedActorId, signal));
 }
 
@@ -119,7 +120,7 @@ async function sendVerifiedCartChange(storeId: string, change: CustomerCartChang
     }
     const value = await readCartResponse(response, signal, true);
     let result: CustomerCartResult;
-    try { result = parseCustomerCartResult(value, storeId, actorId, change.expectedVersion); }
+    try { result = parseCustomerCartResult(value, storeId, actorId, change); }
     catch { throw new DshCartError(502, "OPERATION_RESULT_UNKNOWN"); }
     if (!await currentAfter(signal, actorId)) throw new DshCartError(0, "OPERATION_RESULT_UNKNOWN");
     return result;

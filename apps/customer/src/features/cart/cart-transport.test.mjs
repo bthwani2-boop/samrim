@@ -148,7 +148,7 @@ test("Aborting a stalled cart write releases its body and keeps the original pen
     if (!cancelled) stream.close();
     await pending;
   }
-  h.replies.push(json({ cart: { ...cart, storeId: otherStore }, replay: true }));
+  h.replies.push(json({ cart: { ...cart, storeId: otherStore, lines: [] }, replay: true }));
   assert.equal((await h.api.replaceVerifiedCart(otherStore, change, actor, signal())).replay, true);
   assert.equal(cartSession.pendingCartChange(actor, otherStore), undefined);
 });
@@ -197,9 +197,9 @@ test("Cart mutations preserve definitive rejection and never confirm malformed o
     assert.deepEqual(cartSession.pendingCartChange(actor, store), change);
   }
   h.admissions.push(h.admission, { enabled: false });
-  h.replies.push(json({ cart, replay: true }));
+  h.replies.push(json({ cart: { ...cart, lines: [] }, replay: true }));
   await assert.rejects(send(), failure(0, "OPERATION_RESULT_UNKNOWN"));
-  h.replies.push(json({ cart, replay: true }));
+  h.replies.push(json({ cart: { ...cart, lines: [] }, replay: true }));
   assert.equal((await send()).replay, true);
   assert.equal(cartSession.pendingCartChange(actor, store), undefined);
 });
@@ -213,13 +213,13 @@ test("Native cart write keeps same pending operation across lost verification", 
   assert.equal(h.requests.length, 0);
   for (const mode of ["late-error", "late-signout"]) {
     h.setNative(mode);
-    h.replies.push(json({ cart, replay: true }));
+    h.replies.push(json({ cart: { ...cart, lines: [] }, replay: true }));
     await assert.rejects(send(), failure(0, "OPERATION_RESULT_UNKNOWN"));
     assert.deepEqual(cartSession.pendingCartChange(actor, store), change);
   }
   h.setNative("ready");
-  h.replies.push(json({ cart, replay: true }));
-  assert.deepEqual(await send(), { cart, replay: true });
+  h.replies.push(json({ cart: { ...cart, lines: [] }, replay: true }));
+  assert.deepEqual(await send(), { cart: { ...cart, lines: [] }, replay: true });
   assert.equal(cartSession.pendingCartChange(actor, store), undefined);
   assert.ok(h.requests.every(r => r.method === "PUT" && JSON.parse(r.body).operationId === change.operationId));
 });
@@ -256,4 +256,35 @@ test("Web retry sends the original admitted command after the caller changes its
   h.replies.push(json({ cart, replay: true }));
   assert.deepEqual(await h.api.replaceVerifiedCart(store, cartSession.pendingCartChange(actor, store), actor, signal()), { cart, replay: true });
   assert.deepEqual(h.requests.map(r => JSON.parse(r.body)), [original, original]);
+});
+
+test("Web cart rejects a receipt for a different command and retains the original for recovery", async t => {
+  const h = harness(t);
+  const storeId = "store-receipt";
+  const change = { operationId: "synthetic-receipt-test", expectedVersion: 1, lines: [{ offerId: "offer-a", quantity: 2 }] };
+  const correct = { ...cart, storeId };
+  for (const wrong of [{ ...correct, version: 3 }, { ...correct, lines: [] }, { ...correct, lines: [{ ...correct.lines[0], quantity: 3 }] }]) {
+    h.replies.push(json({ cart: wrong, replay: true }));
+    await assert.rejects(h.api.replaceVerifiedCart(storeId, change, actor, signal()), failure(502, "OPERATION_RESULT_UNKNOWN"));
+    assert.deepEqual(cartSession.pendingCartChange(actor, storeId), change);
+  }
+  h.replies.push(json({ cart: correct, replay: true }));
+  assert.deepEqual(await h.api.replaceVerifiedCart(storeId, change, actor, signal()), { cart: correct, replay: true });
+  assert.equal(cartSession.pendingCartChange(actor, storeId), undefined);
+});
+
+test("Web cart captures the command before awaiting admission", async t => {
+  const h = harness(t);
+  const storeId = "store-capture";
+  const change = { operationId: "synthetic-capture-test", expectedVersion: 1, lines: [{ offerId: "offer-a", quantity: 2 }] };
+  const original = structuredClone(change);
+  let resolve;
+  h.admissions.push(new Promise(r => { resolve = r; }));
+  h.replies.push(json({ cart: { ...cart, storeId }, replay: false }));
+  const pending = h.api.replaceVerifiedCart(storeId, change, actor, signal());
+  change.expectedVersion = 9;
+  change.lines[0].quantity = 8;
+  resolve(h.admission);
+  await pending;
+  assert.deepEqual(JSON.parse(h.requests[0].body), original);
 });
