@@ -44,15 +44,27 @@ type MerchantCatalogPage struct {
 // Read-only private endpoint. A current Merchant bearer and a Store row owned
 // by that actor are checked again in the same DSH transaction as the data.
 // No delegated Store grants are accepted until they are implemented by DSH.
+type merchantCatalogReadKind uint8
+
+const (
+	merchantCatalogPageRead merchantCatalogReadKind = iota
+	merchantInventoryRead
+	merchantDraftHistoryRead
+)
+
 func NewMerchantCatalogHandler(identity IdentitySessions, db *sql.DB, schema string) (http.Handler, error) {
-	return newMerchantCatalogReadHandler(identity, db, schema, false)
+	return newMerchantCatalogReadHandler(identity, db, schema, merchantCatalogPageRead)
 }
 
 func NewMerchantInventorySummaryHandler(identity IdentitySessions, db *sql.DB, schema string) (http.Handler, error) {
-	return newMerchantCatalogReadHandler(identity, db, schema, true)
+	return newMerchantCatalogReadHandler(identity, db, schema, merchantInventoryRead)
 }
 
-func newMerchantCatalogReadHandler(identity IdentitySessions, db *sql.DB, schema string, inventory bool) (http.Handler, error) {
+func NewMerchantCatalogDraftHistoryHandler(identity IdentitySessions, db *sql.DB, schema string) (http.Handler, error) {
+	return newMerchantCatalogReadHandler(identity, db, schema, merchantDraftHistoryRead)
+}
+
+func newMerchantCatalogReadHandler(identity IdentitySessions, db *sql.DB, schema string, kind merchantCatalogReadKind) (http.Handler, error) {
 	if identity == nil || db == nil || !postgresSchemaRule.MatchString(schema) {
 		return nil, ErrStoreOwnerUnavailable
 	}
@@ -69,8 +81,20 @@ func newMerchantCatalogReadHandler(identity IdentitySessions, db *sql.DB, schema
 			writeFailure(w, ErrUnauthorized)
 			return
 		}
-		limit, cursor, query, status, valid := merchantCatalogPageParameters(r)
-		if !valid || (inventory && r.URL.RawQuery != "") {
+		var limit int
+		var before int64
+		var cursor, query, status string
+		var valid bool
+		if kind == merchantDraftHistoryRead {
+			limit, before, valid = policyHistoryParams(r.URL.RawQuery)
+			valid = valid && !r.URL.ForceQuery && r.ContentLength == 0 && len(r.TransferEncoding) == 0 &&
+				registrationPublicID.MatchString(r.PathValue("storeID")) && registrationPublicID.MatchString(r.PathValue("offerID")) &&
+				before <= maxCatalogVersion
+		} else {
+			limit, cursor, query, status, valid = merchantCatalogPageParameters(r)
+			valid = valid && (kind != merchantInventoryRead || r.URL.RawQuery == "")
+		}
+		if !valid {
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
@@ -90,9 +114,12 @@ func newMerchantCatalogReadHandler(identity IdentitySessions, db *sql.DB, schema
 			return
 		}
 		var result any
-		if inventory {
+		switch kind {
+		case merchantInventoryRead:
 			result, err = readMerchantInventorySummary(ctx, db, schema, actor.Subject, r.PathValue("storeID"))
-		} else {
+		case merchantDraftHistoryRead:
+			result, err = readMerchantCatalogDraftHistory(ctx, db, schema, actor.Subject, r.PathValue("storeID"), r.PathValue("offerID"), limit, before)
+		default:
 			result, err = readMerchantCatalog(ctx, db, schema, actor.Subject, r.PathValue("storeID"), limit, cursor, query, status)
 		}
 		if err != nil {

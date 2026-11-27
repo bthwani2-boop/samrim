@@ -568,6 +568,58 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	if e = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".catalog_draft_edit_commands WHERE actor_id='merchant-a'").Scan(&records); e != nil || records != 2 {
 		t.Fatalf("edit replay wrote unexpected journal count=%d err=%v", records, e)
 	}
+
+	historyHandler, e := NewMerchantCatalogDraftHistoryHandler(merchant, db, schema)
+	if e != nil {
+		t.Fatal(e)
+	}
+	historyRoute := func(handler http.Handler, store, offer, selectors string) (int, MerchantCatalogDraftHistoryPage) {
+		t.Helper()
+		mux := http.NewServeMux()
+		mux.Handle("GET /v1/stores/{storeID}/catalog/{offerID}/draft-history", handler)
+		req := httptest.NewRequest("GET", "/v1/stores/"+store+"/catalog/"+offer+"/draft-history"+selectors, nil)
+		req.Header.Set("Authorization", "Bearer synthetic")
+		res := httptest.NewRecorder()
+		mux.ServeHTTP(res, req)
+		var page MerchantCatalogDraftHistoryPage
+		if res.Code == 200 && json.Unmarshal(res.Body.Bytes(), &page) != nil {
+			t.Fatal("invalid history response")
+		}
+		return res.Code, page
+	}
+	code, history := historyRoute(historyHandler, "catalog-a", draftOfferID, "?limit=1")
+	if code != 200 || history.ActorID != "merchant-a" || history.StoreID != "catalog-a" ||
+		history.OfferID != draftOfferID || history.NextBeforeVersion != "3" || len(history.Entries) != 1 {
+		t.Fatalf("draft history first page: %d %+v", code, history)
+	}
+	entry := history.Entries[0]
+	if entry.Version != 3 || entry.PreviousPriceYER != winning.PriceYER || entry.PriceYER != next.PriceYER ||
+		entry.PreviousStockUnits != winning.StockUnits || entry.StockUnits != next.StockUnits || entry.CommittedAt.IsZero() {
+		t.Fatalf("draft history must reflect immutable transition: %+v", entry)
+	}
+	code, history = historyRoute(historyHandler, "catalog-a", draftOfferID, "?limit=1&beforeVersion=3")
+	if code != 200 || len(history.Entries) != 1 || history.NextBeforeVersion != "" ||
+		history.Entries[0].Version != 2 || history.Entries[0].PreviousPriceYER != command.PriceYER ||
+		history.Entries[0].PriceYER != winning.PriceYER {
+		t.Fatalf("draft history second page: %d %+v", code, history)
+	}
+	code, history = historyRoute(historyHandler, "catalog-a", "of-b", "")
+	if code != 200 || history.Entries == nil || len(history.Entries) != 0 {
+		t.Fatalf("published offer must not fabricate draft history: %d %+v", code, history)
+	}
+	for _, scope := range [][2]string{{"catalog-b", draftOfferID}, {"catalog-a", "of-foreign"}, {"catalog-a", "missing"}} {
+		code, _ = historyRoute(historyHandler, scope[0], scope[1], "")
+		if code != 403 {
+			t.Fatalf("history scope %v returned %d", scope, code)
+		}
+	}
+	revokedHistory, _ := NewMerchantCatalogDraftHistoryHandler(&changingMerchantIdentity{}, db, schema)
+	if code, _ = historyRoute(revokedHistory, "catalog-a", draftOfferID, ""); code != 401 {
+		t.Fatalf("revoked history returned %d", code)
+	}
+	if _, e := readMerchantCatalogDraftHistory(ctx, shadow, schema+"_missing", "merchant-a", "catalog-a", draftOfferID, 20, 0); !errors.Is(e, ErrStoreOwnerUnavailable) {
+		t.Fatalf("missing owner history scope admitted: %v", e)
+	}
 	// Verify both historical transitions independently, including the old values
 	// from the locked version rather than a later read of the current Offer.
 	for _, entry := range []struct {
@@ -759,5 +811,45 @@ func TestMerchantCatalogFixedQueryBoundary(t *testing.T) {
 	})
 	if calls != 2 {
 		t.Errorf("expected owner authorization and one catalog projection, got %d SQL calls", calls)
+	}
+}
+
+func TestMerchantDraftHistoryRejectsInvalidScope(t *testing.T) {
+	db, err := sql.Open("postgres", "postgres://synthetic@127.0.0.1:1/unused?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	merchant := fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}
+	const route = "/v1/stores/store-a/catalog/of-a/draft-history"
+	for _, tc := range []struct {
+		path, bearer string
+		identity     IdentitySessions
+		status       int
+	}{
+		{route, "", merchant, 401},
+		{route, "synthetic", fakeIdentity{denied: true}, 401},
+		{route, "synthetic", fakeIdentity{actor: VerifiedActor{Subject: "operator-a", Role: OperatorRole}}, 403},
+		{route + "?limit=0", "synthetic", merchant, 400},
+		{route + "?beforeVersion=2&beforeVersion=3", "synthetic", merchant, 400},
+		{route + "?q=secret", "synthetic", merchant, 400},
+		{route + "?beforeVersion=9007199254740992", "synthetic", merchant, 400},
+		{"/v1/stores/store-a/catalog/INVALID/draft-history", "synthetic", merchant, 400},
+	} {
+		h, err := NewMerchantCatalogDraftHistoryHandler(tc.identity, db, "dsh_test_history")
+		if err != nil {
+			t.Fatal(err)
+		}
+		mux := http.NewServeMux()
+		mux.Handle("GET /v1/stores/{storeID}/catalog/{offerID}/draft-history", h)
+		req := httptest.NewRequest("GET", tc.path, nil)
+		if tc.bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+tc.bearer)
+		}
+		res := httptest.NewRecorder()
+		mux.ServeHTTP(res, req)
+		if res.Code != tc.status || res.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("%s: status %d expected %d", tc.path, res.Code, tc.status)
+		}
 	}
 }

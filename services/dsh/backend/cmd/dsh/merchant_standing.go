@@ -55,6 +55,11 @@ func isolatedMerchantStandingHandler(db *sql.DB, schema, listen string, existing
 		return nil, err
 	}
 	routes.Handle("GET /v1/stores/{storeID}/inventory-summary", inventory)
+	history, err := storeavailability.NewMerchantCatalogDraftHistoryHandler(identity, db, schema)
+	if err != nil {
+		return nil, err
+	}
+	routes.Handle("GET /v1/stores/{storeID}/catalog/{offerID}/draft-history", history)
 	draft, err := storeavailability.NewMerchantCatalogDraftHandler(registrar)
 	if err != nil {
 		return nil, err

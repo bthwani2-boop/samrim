@@ -44,6 +44,8 @@ paths:
     $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog~1{offerID}'
   /v1/stores/{storeID}/catalog-imports/{runID}:
     $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog-imports~1{runID}'
+  /v1/stores/{storeID}/catalog/{offerID}/draft-history:
+    $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1catalog~1{offerID}~1draft-history'
   /v1/stores/{storeID}/inventory-summary:
     $ref: './paths/catalog.yaml#/paths/~1v1~1stores~1{storeID}~1inventory-summary'
   /v1/stores/registration-options:
