@@ -270,19 +270,11 @@ export function runtimeAuditResult(code, signal, stdout, head, eligible) {
     return selected.some(owner => eligible.includes(owner)) ? "apply" : "review";
   return "retry";
 }
-export function graphifyRefreshAction(assessment) {
-  if (assessment?.refreshing === true) return "busy";
-  if (assessment?.unsafeTracked > 0 || assessment?.unsafeUntracked > 0) return "deferred";
-  if (assessment?.status === "PASS" && assessment.queryable === true) return "current";
-  if (assessment?.status === "INVALIDATED" && assessment.queryable === true) return "refresh";
-  if (assessment?.status === "BLOCKED" && assessment.queryable === false && assessment.reason === "indexed branch differs") return "refresh";
-  return "blocked";
-}
 export function watcherReloadAction({ loaded, current, dirty, busy }) {
   return loaded === current ? "current" : dirty ? "defer" : busy ? "drain" : "reload";
 }
 const excludedEvent = /^(?:\.git|node_modules|graphify-out|\.next|\.expo|\.nx|dist|build|coverage|\.cache|\.pnpm-store|\.env(?:\..*)?|\.ssh|\.secrets)$/i;
-export function graphifySourceEvent(name) {
+export function sourceChangeEvent(name) {
   if (!name) return true;
   const rel = String(name).replaceAll("\\", "/");
   if (/^\.git\/(?:HEAD|refs\/heads\/)/.test(rel)) return true;

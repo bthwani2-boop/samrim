@@ -718,11 +718,11 @@ test("explicit recovery receipt releases only the exact previously reviewed hold
 });
 
 
-test("Graphify scheduling responds to saved code and ignores its own generated output",async()=>{
-  const {graphifySourceEvent}=await import("./sync-lenovo-reconciliation.mjs");
-  for(const rel of ["services\\dsh\\backend\\cmd\\dsh\\main.go","apps/customer/src/new.tsx","AGENTS.md","docs/reference/a.md",".agents/skills/speckit-plan/SKILL.md",".git/HEAD",".git/refs/heads/codex/test"])assert.equal(graphifySourceEvent(rel),true,rel);
-  for(const rel of ["graphify-out/graph.json","apps/customer/node_modules/pkg/index.js","apps/customer/.expo/a.json","infra/.env.local",".git/index",".git/objects/aa/bb","apps/customer/coverage/data.json"])assert.equal(graphifySourceEvent(rel),false,rel);
-  assert.equal(graphifySourceEvent(null),true);
+test("Source events wake mirroring and Graphify without reacting to generated output",async()=>{
+  const {sourceChangeEvent}=await import("./sync-lenovo-reconciliation.mjs");
+  for(const rel of ["services\\dsh\\backend\\cmd\\dsh\\main.go","apps/customer/src/new.tsx","AGENTS.md","docs/reference/a.md",".agents/skills/speckit-plan/SKILL.md",".git/HEAD",".git/refs/heads/codex/test"])assert.equal(sourceChangeEvent(rel),true,rel);
+  for(const rel of ["graphify-out/graph.json","apps/customer/node_modules/pkg/index.js","apps/customer/.expo/a.json","infra/.env.local",".git/index",".git/objects/aa/bb","apps/customer/coverage/data.json"])assert.equal(sourceChangeEvent(rel),false,rel);
+  assert.equal(sourceChangeEvent(null),true);
 });
 test("source cycle does not scan an idle checkout each second and preserves event/audit recovery",async()=>{
   const {sourceCycleDue}=await import("./sync-lenovo-reconciliation.mjs");
@@ -791,16 +791,15 @@ test("a watcher failure is not mistaken for a reload request", { timeout: 10000 
   await assert.rejects(watchInProcess(entry), /fixture worker failed/);
 });
 
-test("Graphify automation refreshes stale trusted graphs but never adopts unknown provenance",async()=>{
-  const {graphifyRefreshAction}=await import("./sync-lenovo-reconciliation.mjs");
-  assert.equal(graphifyRefreshAction({status:"PASS",queryable:true}),"current");
-  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true}),"refresh");
-  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,dirty:true,unsafeUntracked:0}),"refresh");
-  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,unsafeUntracked:1}),"deferred");
-  assert.equal(graphifyRefreshAction({status:"INVALIDATED",queryable:true,refreshing:true}),"busy");
-  assert.equal(graphifyRefreshAction({status:"BLOCKED",queryable:false,reason:"indexed branch differs"}),"refresh");
-  for(const reason of ["indexed repository differs","unverified local Graphify index","index locked"])assert.equal(graphifyRefreshAction({status:"BLOCKED",queryable:false,reason}),"blocked");
-  assert.equal(graphifyRefreshAction(null),"blocked");
+test("automatic Graphify scheduling delegates one sync and never runs separate status preflight or postflight", () => {
+  const source = readFileSync(new URL("./sync-lenovo-source.mjs", import.meta.url), "utf8");
+  const poll = source.slice(source.indexOf("function pollGraphify()"), source.indexOf("// Verification is a read-only Git operation"));
+  assert.equal((poll.match(/spawn\(process\.execPath/g) || []).length, 1);
+  assert.match(poll, /\[runner, "sync"\]/);
+  assert.doesNotMatch(poll, /launch\("status"|graphifyRefreshAction/);
+  assert.match(poll, /graphChild = child/);
+  assert.match(poll, /graphChild = null/);
+  assert.match(poll, /child\.once\("close", finish\)/);
 });
 
 test("native Graphify refreshes changed tracked source before Commit",{
@@ -852,7 +851,7 @@ test("native Graphify refreshes changed tracked source before Commit",{
 
 test("native recursive file event reaches Graphify scheduling without a Git commit",{timeout:10000},async t=>{
   const {watch}=await import("node:fs");
-  const {graphifySourceEvent,graphifyPollDue,sourceCycleDue}=await import("./sync-lenovo-reconciliation.mjs");
+  const {sourceChangeEvent,graphifyPollDue,sourceCycleDue}=await import("./sync-lenovo-reconciliation.mjs");
   const dir=mkdtempSync(path.join(tmpdir(),"bthwani-graphify-event-"));
   const app=path.join(dir,"apps","customer","src");
   mkdirSync(app,{recursive:true});
@@ -862,7 +861,7 @@ test("native recursive file event reaches Graphify scheduling without a Git comm
   try{
     const observed=new Promise((resolve,reject)=>{
       watcher=watch(dir,{recursive:true},(_event,name)=>{
-        if(name && graphifySourceEvent(name) && String(name).endsWith("example.ts"))resolve(String(name));
+        if(name && sourceChangeEvent(name) && String(name).endsWith("example.ts"))resolve(String(name));
       });
       watcher.once("error",reject);
     });
@@ -873,7 +872,7 @@ test("native recursive file event reaches Graphify scheduling without a Git comm
       const name=await Promise.race([observed,new Promise((_,reject)=>{deadline=setTimeout(()=>reject(new Error("source event not delivered")),4000);})]);
       assert.equal(name.replaceAll("\\","/"),"apps/customer/src/example.ts");
       assert.equal(graphifyPollDue({now:3000,dirtySince:0,lastEvent:0,nextAudit:30000,busy:false}),true);
-      assert.equal(sourceCycleDue({pending:graphifySourceEvent(name),now:1000,nextAudit:30000}),true);
+      assert.equal(sourceCycleDue({pending:sourceChangeEvent(name),now:1000,nextAudit:30000}),true);
     }finally{clearTimeout(timer);clearTimeout(deadline);}
   }finally{watcher?.close();rmSync(dir,{recursive:true,force:true});}
 });

@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { containsLikelySecret } from "../security/verify-secrets.mjs";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, previewChangeKey } from "./docker/owner-preview-source.mjs";
-import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, graphifyRefreshAction, graphifySourceEvent, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, sourceChangeEvent, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -751,10 +751,10 @@ function signalSourceChange(name,now=Date.now()) {
   const rel=name ? String(name).replaceAll("\\","/") : null;
   // Ignore generated artifacts and internal Git writes. Git ref events and
   // unknown filenames wake the source cycle conservatively.
-  const relevant=graphifySourceEvent(rel) || rel===".git/packed-refs";
+  const relevant=sourceChangeEvent(rel) || rel===".git/packed-refs";
   if(!relevant)return;
   sourcePending=true;
-  if(graphifySourceEvent(rel)){
+  if(sourceChangeEvent(rel)){
     graphDirtySince ??= now;
     graphLastEvent=now;
   }
@@ -778,74 +778,48 @@ function startSourceEvents() {
   }catch{degraded();}
 }
 function pollGraphify() {
-  if(!fs.existsSync(graphOptIn))return;
-  if(!graphifyPollDue({now:Date.now(),dirtySince:graphDirtySince,lastEvent:graphLastEvent,nextAudit:nextGraphAudit,busy:Boolean(graphChild)}))return;
-  nextGraphAudit=Date.now()+30_000;
-  graphDirtySince=null;
-  if(fs.readFileSync(graphOptIn,"utf8").trim()!=="local-graphify-reconcile-v1"){
-    graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED invalid opt-in");return;
+  if (!fs.existsSync(graphOptIn)) return;
+  const now = Date.now();
+  if (!graphifyPollDue({ now, dirtySince: graphDirtySince, lastEvent: graphLastEvent, nextAudit: nextGraphAudit, busy: Boolean(graphChild) })) return;
+  nextGraphAudit = now + 30_000;
+  graphDirtySince = null;
+  if (fs.readFileSync(graphOptIn, "utf8").trim() !== "local-graphify-reconcile-v1") {
+    graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED invalid opt-in");
+    return;
   }
-  if(process.env.COMPUTERNAME?.toUpperCase()!=="BTHWANI" || root.toLowerCase()!=="d:\\samrim"){
-    graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED wrong source checkout");return;
+  // The same local authority admits every automatic attempt. It does not
+  // require Lenovo connectivity, a clean checkout or any Git hook.
+  remoteReady();
+  if (run("git", ["status", "--porcelain", "--", "tools/dev/graphify-local.mjs", "AGENTS.md"])) {
+    graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED runner or authority under edit");
+    return;
   }
-  // Never execute a runner or authority file being edited by another session.
-  const runnerUnderEdit=()=>Boolean(run("git",["status","--porcelain","--","tools/dev/graphify-local.mjs","AGENTS.md"]));
-  if(runnerUnderEdit()){
-    graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED runner or authority under edit");return;
-  }
-  const runner=path.join(root,"tools","dev","graphify-local.mjs");
-  const launch=(action,done)=>{
-    const child=spawn(process.execPath,[runner,action],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
-    graphChild=child;
-    let out="",settled=false;
-    child.stdout.on("data",chunk=>{out=(out+chunk.toString()).slice(-65536);});
-    child.stderr.resume(); // no raw native diagnostics in shared logs
-    const finish=(code,signal)=>{
-      if(settled)return;
-      settled=true;graphChild=null;
-      nextGraphAudit=Date.now()+30_000;
-      try{done(code,signal,out);}catch{graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED preflight or runner failure");}
-    };
-    child.on("error",()=>finish(-1,null));
-    child.on("close",finish);
+  const runner = path.join(root, "tools", "dev", "graphify-local.mjs");
+  // One invocation: the runner owns provenance, locking, admission, the
+  // current-index fast path, extraction and publication. No second preflight
+  // or verification process repeats its source snapshot.
+  const child = spawn(process.execPath, [runner, "sync"], { cwd: root, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+  graphChild = child;
+  let tail = "";
+  child.stdout.on("data", chunk => { tail = (tail + chunk.toString()).slice(-4096); });
+  child.stderr.resume();
+  let settled = false;
+  const finish = (code, signal) => {
+    if (settled) return;
+    settled = true;
+    graphChild = null;
+    nextGraphAudit = Date.now() + 30_000;
+    if (code !== 0 || signal) {
+      graphLogOnce("GRAPHIFY_RECONCILE_RETRY native sync not verified; inspect local status");
+    } else if (tail.trimEnd().endsWith("PASS: local Graphify index already matches current checkout")) {
+      graphLogOnce("GRAPHIFY_RECONCILE_CURRENT");
+    } else {
+      logger("GRAPHIFY_RECONCILE_PASS elapsedMs=" + (Date.now() - now));
+      graphNotice = "GRAPHIFY_RECONCILE_CURRENT";
+    }
   };
-  launch("status",(code,signal,out)=>{
-    if(signal || ![0,2].includes(code)){
-      graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED status failed");return;
-    }
-    let state;
-    try{state=JSON.parse(out);}catch{
-      graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED status unavailable or index locked");return;
-    }
-    const action=graphifyRefreshAction(state);
-    if(action==="current"){graphLogOnce("GRAPHIFY_RECONCILE_CURRENT");return;}
-    if(action==="busy"){graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED existing refresh");return;}
-    if(action==="deferred"){graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED unsafe untracked source");return;}
-    if(action!=="refresh" || state.branch?.startsWith("archive/")){
-      graphLogOnce("GRAPHIFY_RECONCILE_BLOCKED index provenance");return;
-    }
-    if(runnerUnderEdit()){
-      graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED runner or authority under edit");return;
-    }
-    if(!fs.existsSync(graphOptIn))return;
-    const started=Date.now();
-    graphLogOnce("GRAPHIFY_RECONCILE_STARTED");
-    launch("sync",(result,terminated)=>{
-      if(result!==0 || terminated){
-        graphLogOnce("GRAPHIFY_RECONCILE_RETRY native refresh not verified");return;
-      }
-      launch("status",(verified,interrupted,output)=>{
-        let current;
-        try{current=JSON.parse(output);}catch{}
-        if(verified===0 && !interrupted && graphifyRefreshAction(current)==="current"){
-          logger("GRAPHIFY_RECONCILE_PASS elapsedMs="+(Date.now()-started));
-          graphNotice="GRAPHIFY_RECONCILE_CURRENT";
-        }else{
-          graphLogOnce("GRAPHIFY_RECONCILE_RETRY source advanced or index not verified");
-        }
-      });
-    });
-  });
+  child.once("error", () => finish(-1, null));
+  child.once("close", finish);
 }
 // Verification is a read-only Git operation and runs on both CI and Surface.
 // Only the canonical Surface process may enter the write-capable watch loop.
