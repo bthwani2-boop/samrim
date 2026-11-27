@@ -214,3 +214,65 @@ test("WLT retains denial even when a native body accessor throws during discard"
   }));
   await assert.rejects(()=>readAgreement(new AbortController().signal),{status:403});
 });
+
+test("private WLT transport dispatches only contracted read paths and cursor operation", async t => {
+  const { readOwner } = await import("./transport.ts");
+  const signal = new AbortController().signal;
+  const sent = [];
+  t.mock.method(globalThis, "fetch", async (url, options) => {
+    sent.push([url.pathname, url.search, options.method]);
+    return Response.json(agreement, opts);
+  });
+  for (const path of ["/health", "/v1/unknown", "/v1/wallets/me?actorId=other",
+    "/v1/wallets/me#fragment", "/v1/wallets/../wallets/me",
+    "/v1/wallets/me/order-payment-allocations/%2e%2e",
+    "/v1/merchants/stores/INVALID/commercial-agreement",
+    "/v1/operators/stores/store-a/commercial-agreement/"]) {
+    await assert.rejects(() => readOwner(origin, token, "GET", path, signal), {status:503});
+  }
+  await assert.rejects(() => readOwner(origin, token, "POST", "/v1/wallets/me", signal), {status:503});
+  const cursor = Buffer.from("2026-11-20T00:00:00Z|funding-page-00").toString("base64url");
+  await assert.rejects(() => readOwner(origin, token, "GET", "/v1/wallets/me", signal, cursor), {status:400});
+  assert.deepEqual(sent, []);
+  const paths = ["/v1/wallets/me", "/v1/wallets/me/transactions",
+    "/v1/wallets/me/order-payment-allocations/checkout-0001",
+    "/v1/merchants/stores/store-a/commercial-agreement",
+    "/v1/operators/stores/store-a/commercial-agreement"];
+  for (const path of paths) await readOwner(origin, token, "GET", path, signal);
+  await readOwner(origin, token, "GET", paths[1], signal, cursor);
+  assert.deepEqual(sent, [...paths.map(path => [path, "", "GET"]), [paths[1], "?cursor=" + cursor, "GET"]]);
+});
+
+test("WLT normalizes synchronous native response accessor and reader acquisition failures", async t => {
+  const signal = new AbortController().signal;
+  for (const response of [
+    { status: 200, headers: new Headers(opts.headers), get body() { throw new Error("bridge"); } },
+    { status: 200, headers: new Headers(opts.headers), body: { getReader() { throw new Error("reader"); } } },
+  ]) {
+    t.mock.method(globalThis, "fetch", async () => response);
+    await assert.rejects(() => readAgreement(signal), {status:502});
+    t.mock.restoreAll();
+  }
+  t.mock.method(globalThis, "fetch", async () => Response.json(agreement, opts));
+  assert.deepEqual(await readAgreement(signal), agreement);
+});
+test("WLT invalid origins, malformed cursor and broken header bridge never admit a read", async t => {
+  const { readOwner } = await import("./transport.ts");
+  const signal = new AbortController().signal;
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return { status: 200, get headers() { throw new Error("bridge headers"); }, body: null };
+  });
+  for (const source of ["https://127.0.0.1:3203", "http://127.0.0.1:65536", "http://127.0.0.1:0"]) {
+    await assert.rejects(() => readOwner(source, token, "GET", "/v1/wallets/me", signal), {status:503});
+  }
+  for (const cursor of [null, "short", "a".repeat(241)]) {
+    await assert.rejects(() => readOwner(origin, token, "GET", "/v1/wallets/me/transactions", signal, cursor), {status:400});
+  }
+  assert.equal(calls, 0);
+  await assert.rejects(() => readAgreement(signal), {status:502});
+  assert.equal(calls, 1);
+  globalThis.fetch.mock.mockImplementation(async () => Response.json(agreement, opts));
+  assert.deepEqual(await readAgreement(signal), agreement);
+});
