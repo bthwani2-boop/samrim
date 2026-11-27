@@ -531,3 +531,229 @@ test("Identity removes its abort listeners after completion", async () => {
     assert.equal(active.size, 0);
   });
 });
+
+test("persistent enrollment never returns the superseded session after rejected storage handoff", async () => {
+  const refresh = Buffer.alloc(32, 39).toString("base64url");
+  const observed = [];
+  await withFetch(async (url, options) => {
+    const path = new URL(url).pathname;
+    observed.push([options.method, path, options.headers.Authorization]);
+    if (path === "/v1/sessions/current") return response(principal());
+    if (path === "/v1/sessions/persistent") return response({ refreshToken: refresh, refreshExpiresAt: expires() }, 201);
+    return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+  }, async () => {
+    await rejectsAs(() => readPersistentIdentityRole(origin, bearer, null, "customer",
+      new AbortController().signal, async () => assert.fail("unexpected rotation"), async () => false),
+    0, "OWNER_RESPONSE_STALE");
+  });
+  assert.deepEqual(observed, [
+    ["GET", "/v1/sessions/current", "Bearer " + bearer],
+    ["POST", "/v1/sessions/persistent", "Bearer " + bearer],
+    ["DELETE", "/v1/sessions/refresh", "Bearer " + refresh],
+  ]);
+});
+
+test("persistent enrollment interrupted after dispatch rejects a cancelled view", async () => {
+  const controller = new AbortController();
+  let requests = 0;
+  await withFetch(async (url) => {
+    requests++;
+    if (new URL(url).pathname === "/v1/sessions/current") return response(principal());
+    controller.abort();
+    throw new Error("interrupted transport");
+  }, () => rejectsAs(() => readPersistentIdentityRole(origin, bearer, null, "customer", controller.signal,
+    async () => assert.fail("unexpected rotation"), async () => assert.fail("unexpected handoff")),
+  0, "OWNER_RESPONSE_STALE"));
+  assert.equal(requests, 2);
+});
+
+for (const rotated of [false, true]) {
+  test("uncertain persistent storage write revokes the received credential: rotated=" + rotated, async () => {
+    const previous = Buffer.alloc(32, 35).toString("base64url");
+    const next = Buffer.alloc(32, 39).toString("base64url");
+    const storageFailure = new IdentityClientError(0, "OWNER_RESPONSE_STALE");
+    const revoked = [];
+    await withFetch(async (url, options) => {
+      const path = new URL(url).pathname;
+      if (path === "/v1/sessions/current") {
+        return rotated ? response({ error: "UNAUTHORIZED" }, 401) : response(principal());
+      }
+      if (options.method === "DELETE") {
+        revoked.push(options.headers.Authorization);
+        return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+      }
+      if (rotated) return response({ ...admission(), refreshToken: next, refreshExpiresAt: expires() });
+      return response({ refreshToken: next, refreshExpiresAt: expires() }, 201);
+    }, () => assert.rejects(() => readPersistentIdentityRole(origin, bearer, rotated ? previous : null, "customer",
+      new AbortController().signal, async () => {}, async () => { throw storageFailure; }),
+    error => error === storageFailure));
+    assert.deepEqual(revoked, ["Bearer " + next]);
+  });
+}
+
+test("optional enrollment outage or conflict preserves only an uncancelled, already verified current session", async () => {
+  for (const outcome of ["network", 409, 503]) {
+    const current = principal();
+    await withFetch(async (url) => {
+      if (new URL(url).pathname === "/v1/sessions/current") return response(current);
+      if (outcome === "network") throw new Error("unavailable");
+      return response({ error: outcome === 409 ? "CONFLICT" : "OWNER_UNAVAILABLE" }, outcome);
+    }, async () => assert.deepEqual(await readPersistentIdentityRole(origin, bearer, null, "customer",
+      new AbortController().signal, async () => assert.fail("unexpected rotation"),
+      async () => assert.fail("unexpected handoff")), { session: current, bearer }));
+  }
+});
+
+test("successful persistent enrollment acknowledges the exact received refresh credential", async () => {
+  const next = Buffer.alloc(32, 39).toString("base64url");
+  const current = principal();
+  let committed = 0;
+  await withFetch(async (url) => new URL(url).pathname === "/v1/sessions/current" ? response(current) :
+    response({ refreshToken: next, refreshExpiresAt: expires() }, 201), async () => {
+    const result = await readPersistentIdentityRole(origin, bearer, null, "customer",
+      new AbortController().signal, async () => assert.fail("unexpected rotation"), async (issued, before, rotated) => {
+        assert.deepEqual(issued, { accessToken: bearer, refreshToken: next });
+        assert.equal(before, bearer);
+        assert.equal(rotated, false);
+        committed++;
+        return true;
+      });
+    assert.deepEqual(result, { session: current, bearer });
+  });
+  assert.equal(committed, 1);
+});
+
+
+test("fresh access avoids mutation; denied or wrong-role sessions cannot enroll", async () => {
+  const refresh = Buffer.alloc(32, 35).toString("base64url");
+  const signal = new AbortController().signal;
+  const noWrite = async () => assert.fail("unexpected mutation");
+  const current = principal();
+  const run = (token = refresh) => readPersistentIdentityRole(origin, bearer, token, "customer", signal, noWrite, noWrite);
+  await withFetch(async (_url, options) => {
+    assert.equal(options.method, "GET");
+    return response(current);
+  }, async () => assert.deepEqual(await run(), { session: current, bearer }));
+  await withFetch(async () => response({ ...current, role: "merchant" }), () => rejectsAs(run, 403, "FORBIDDEN"));
+  await withFetch(async () => response({ error: "UNAUTHORIZED" }, 401), () => rejectsAs(() => run(null), 401, "UNAUTHORIZED"));
+  await withFetch(async () => response({ error: "OWNER_UNAVAILABLE" }, 503), () => rejectsAs(run, 503, "OWNER_UNAVAILABLE"));
+});
+
+test("definitive enrollment denial and malformed receipts cannot return an old session", async () => {
+  const signal = new AbortController().signal;
+  for (const result of [
+    () => response({ error: "UNAUTHORIZED" }, 401),
+    () => response(null, 201), () => response([], 201), () => response("invalid", 201),
+    () => response({ refreshToken: 42, refreshExpiresAt: expires() }, 201),
+    () => response({ refreshToken: bearer }, 201),
+  ]) {
+    await withFetch(async (url) => new URL(url).pathname === "/v1/sessions/current" ? response(principal()) : result(),
+      () => assert.rejects(() => readPersistentIdentityRole(origin, bearer, null, "customer", signal,
+        async () => assert.fail("unexpected rotation"), async () => assert.fail("unexpected handoff")),
+      error => error instanceof IdentityClientError && [401, 502].includes(error.status)));
+  }
+});
+
+test("an acknowledged enrollment cannot expose an aborted or expired session", async () => {
+  const next = Buffer.alloc(32, 39).toString("base64url");
+  for (const reason of ["cancel", "expire"]) {
+    const controller = new AbortController();
+    const current = principal();
+    const realNow = Date.now;
+    try {
+      await withFetch(async (url) => new URL(url).pathname === "/v1/sessions/current" ? response(current) :
+        response({ refreshToken: next, refreshExpiresAt: expires() }, 201), () =>
+        rejectsAs(() => readPersistentIdentityRole(origin, bearer, null, "customer", controller.signal,
+          async () => assert.fail("unexpected rotation"), async () => {
+            if (reason === "cancel") controller.abort();
+            else Date.now = () => Date.parse(current.sessionExpiresAt) + 1;
+            return true;
+          }), reason === "cancel" ? 0 : 401, reason === "cancel" ? "OWNER_RESPONSE_STALE" : "UNAUTHORIZED"));
+    } finally { Date.now = realNow; }
+  }
+});
+
+test("rotation reads the exact actor and role; disagreement never exposes the result", async () => {
+  const previous = Buffer.alloc(32, 35).toString("base64url");
+  const next = Buffer.alloc(32, 39).toString("base64url");
+  const current = { ...principal(), sessionExpiresAt: new Date(Date.now() + 30_000).toISOString() };
+  for (const result of ["same", "different actor", "different role", "revocation outage", "expired access"]) {
+    const valid = ["same", "expired access"].includes(result);
+    const verified = { ...principal(), ...(result === "different role" ? { role: "merchant" } :
+      valid ? {} : { actorId: "another-actor" }) };
+    const trace = [];
+    await withFetch(async (url, options) => {
+      const path = new URL(url).pathname;
+      const auth = options.headers.Authorization;
+      if (options.method === "DELETE") {
+        trace.push("revoke");
+        assert.equal(auth, "Bearer " + next);
+        if (result === "revocation outage") throw new Error("owner unavailable");
+        return new Response(null, { status: 204, headers: { "Cache-Control": "no-store" } });
+      }
+      if (path === "/v1/sessions/current") {
+        trace.push(auth === "Bearer " + bearer ? "current" : "readback");
+        if (auth === "Bearer " + bearer) return result === "expired access" ? response({error:"UNAUTHORIZED"},401) : response(current);
+        assert.equal(auth, "Bearer " + rotatedBearer);
+        return response(verified);
+      }
+      trace.push("rotate");
+      assert.equal(auth, "Bearer " + previous);
+      return response({ ...admission(), refreshToken: next, refreshExpiresAt: expires() });
+    }, async () => {
+      const run = () => readPersistentIdentityRole(origin, bearer, previous, "customer", new AbortController().signal,
+        async () => { trace.push("quarantine"); }, async (issued, before, rotated) => {
+          trace.push("handoff");
+          assert.equal(issued.refreshToken, next);
+          assert.equal(before, bearer);
+          assert.equal(rotated, true);
+          return true;
+        });
+      if (valid) assert.deepEqual(await run(), { session: verified, bearer: rotatedBearer });
+      else await rejectsAs(run, 502, "OWNER_RESPONSE_INVALID");
+    });
+    assert.deepEqual(trace, ["current", "quarantine", "rotate", "handoff", "readback", ...(valid ? [] : ["revoke"])]);
+  }
+});
+
+test("a rejected storage handoff remains rejected during cleanup outage; failed quarantine never rotates", async () => {
+  const refresh = Buffer.alloc(32, 35).toString("base64url");
+  const next = Buffer.alloc(32, 39).toString("base64url");
+  const signal = new AbortController().signal;
+  let calls = 0;
+  await withFetch(async (_url, options) => {
+    calls++;
+    if (options.method === "GET") return response(principal());
+    if (options.method === "DELETE") throw new Error("cleanup unavailable");
+    return response({ refreshToken: next, refreshExpiresAt: expires() }, 201);
+  }, () => rejectsAs(() => readPersistentIdentityRole(origin, bearer, null, "customer", signal,
+    async () => assert.fail("unexpected rotation"), async () => false), 0, "OWNER_RESPONSE_STALE"));
+  assert.equal(calls, 3);
+  await withFetch(async (_url, options) => {
+    assert.equal(options.method, "GET");
+    return response({ error: "UNAUTHORIZED" }, 401);
+  }, () => rejectsAs(() => readPersistentIdentityRole(origin, bearer, refresh, "customer", signal,
+    async () => { throw new IdentityClientError(0, "OWNER_RESPONSE_STALE"); },
+    async () => assert.fail("unexpected handoff")), 0, "OWNER_RESPONSE_STALE"));
+});
+
+test("an unresponsive rotation times out once without retry or credential handoff", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const refresh = Buffer.alloc(32, 35).toString("base64url");
+  const started = Promise.withResolvers();
+  let rotations = 0;
+  await withFetch(async (_url, options) => {
+    if (options.method === "GET") return response({ error: "UNAUTHORIZED" }, 401);
+    rotations++;
+    started.resolve();
+    return new Promise(() => {});
+  }, async () => {
+    const result = rejectsAs(() => readPersistentIdentityRole(origin, bearer, refresh, "customer",
+      new AbortController().signal, async () => {}, async () => assert.fail("unexpected handoff")),
+    0, "OPERATION_RESULT_UNKNOWN");
+    await started.promise;
+    t.mock.timers.tick(10_000);
+    await result;
+  });
+  assert.equal(rotations, 1);
+});
