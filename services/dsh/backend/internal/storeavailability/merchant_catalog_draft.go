@@ -16,6 +16,8 @@ import (
 	"time"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 // Draft creation deliberately writes only DSH's existing Product, Variant and
@@ -78,6 +80,37 @@ func (s *MerchantStoreRegistrar) confirmCatalogActor(ctx context.Context, token,
 	return nil
 }
 
+// All draft commands share one relation-bound transaction and actor lock.
+// Extra relations are explicit requirements of the individual command.
+func (s *MerchantStoreRegistrar) beginCatalogCommand(ctx context.Context, actor, storeID string, extraRelations ...string) (*sql.Tx, error) {
+	relations := append([]string{"stores", "offers", "products", "variants", "catalog_draft_commands"}, extraRelations...)
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, relations...)
+	if err != nil {
+		return nil, ErrStoreOwnerUnavailable
+	}
+	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(84932,hashtext($1))", actor); err != nil {
+		_ = tx.Rollback()
+		return nil, ErrStoreOwnerUnavailable
+	}
+	if err = requireMerchantCatalogStore(ctx, tx, actor, storeID); err != nil {
+		_ = tx.Rollback()
+		return nil, err
+	}
+	return tx, nil
+}
+
+// Never report success until the original actor is confirmed on both sides
+// of commit. A failed commit or lost confirmation has an unknown outcome.
+func (s *MerchantStoreRegistrar) commitCatalogCommand(ctx context.Context, tx *sql.Tx, token, actor string) error {
+	if err := s.confirmCatalogActor(ctx, token, actor); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return ErrUnknownResult
+	}
+	return s.confirmCatalogActor(ctx, token, actor)
+}
+
 func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 	ctx context.Context, token, storeID string, input MerchantCatalogDraftChange,
 ) (MerchantCatalogDraftResult, error) {
@@ -101,28 +134,24 @@ func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 	}
 	hash := sha256.Sum256(payload)
 	fingerprint := hex.EncodeToString(hash[:])
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, err := s.beginCatalogCommand(ctx, actorID, storeID)
 	if err != nil {
-		return MerchantCatalogDraftResult{}, ErrStoreOwnerUnavailable
+		return MerchantCatalogDraftResult{}, err
 	}
 	defer tx.Rollback()
-	// One canonical actor-scoped lock serializes duplicate requests and retries.
-	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(84932,hashtext($1))", actorID); err != nil {
-		return MerchantCatalogDraftResult{}, ErrStoreOwnerUnavailable
-	}
-	var ownerID string
-	err = tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1 FOR SHARE", storeID).Scan(&ownerID)
-	if errors.Is(err, sql.ErrNoRows) {
-		return MerchantCatalogDraftResult{}, ErrForbidden
-	}
+	result, err := createCatalogDraftTx(ctx, tx, actorID, storeID, input, price, fingerprint)
 	if err != nil {
-		return MerchantCatalogDraftResult{}, ErrStoreOwnerUnavailable
+		return MerchantCatalogDraftResult{}, err
 	}
-	if ownerID != actorID {
-		return MerchantCatalogDraftResult{}, ErrForbidden
+	if err = s.commitCatalogCommand(ctx, tx, token, actorID); err != nil {
+		return MerchantCatalogDraftResult{}, err
 	}
+	return result, nil
+}
+
+func createCatalogDraftTx(ctx context.Context, tx *sql.Tx, actorID, storeID string, input MerchantCatalogDraftChange, price int64, fingerprint string) (MerchantCatalogDraftResult, error) {
 	var oldHash, oldStore, offerID string
-	err = tx.QueryRowContext(ctx, `SELECT request_hash,store_id,offer_id FROM catalog_draft_commands
+	err := tx.QueryRowContext(ctx, `SELECT request_hash,store_id,offer_id FROM catalog_draft_commands
   WHERE actor_id=$1 AND operation_id=$2`, actorID, input.OperationID).Scan(&oldHash, &oldStore, &offerID)
 	if err == nil {
 		if oldHash != fingerprint || oldStore != storeID {
@@ -140,15 +169,6 @@ func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 		offer.DraftVersion = 1
 		offer.ProductActive, offer.VariantSellable, offer.RequiredAttributesValid = false, false, false
 		offer.Published, offer.Available = false, false
-		if readErr = s.confirmCatalogActor(ctx, token, actorID); readErr != nil {
-			return MerchantCatalogDraftResult{}, ErrUnknownResult
-		}
-		if err = tx.Commit(); err != nil {
-			return MerchantCatalogDraftResult{}, ErrUnknownResult
-		}
-		if readErr = s.confirmCatalogActor(ctx, token, actorID); readErr != nil {
-			return MerchantCatalogDraftResult{}, ErrUnknownResult
-		}
 		return MerchantCatalogDraftResult{Offer: offer, Replay: true}, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
@@ -177,15 +197,6 @@ func (s *MerchantStoreRegistrar) CreateCatalogDraft(
 	if _, err = tx.ExecContext(ctx, `INSERT INTO catalog_draft_commands
   (actor_id,operation_id,request_hash,store_id,offer_id) VALUES ($1,$2,$3,$4,$5)`,
 		actorID, input.OperationID, fingerprint, storeID, offerID); err != nil {
-		return MerchantCatalogDraftResult{}, ErrUnknownResult
-	}
-	if err = s.confirmCatalogActor(ctx, token, actorID); err != nil {
-		return MerchantCatalogDraftResult{}, ErrUnknownResult
-	}
-	if err = tx.Commit(); err != nil {
-		return MerchantCatalogDraftResult{}, ErrUnknownResult
-	}
-	if err = s.confirmCatalogActor(ctx, token, actorID); err != nil {
 		return MerchantCatalogDraftResult{}, ErrUnknownResult
 	}
 	return MerchantCatalogDraftResult{Offer: MerchantCatalogOffer{

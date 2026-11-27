@@ -16,8 +16,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 const catalogImportMaxRows = 5000
@@ -134,14 +132,11 @@ func (s *MerchantStoreRegistrar) CatalogImport(ctx context.Context, token, store
 			return MerchantCatalogImportResult{}, err
 		}
 	}
-	tx, err := s.beginCatalogEdit(ctx, actor, storeID)
+	tx, err := s.beginCatalogCommand(ctx, actor, storeID, "catalog_draft_edit_commands", "catalog_import_runs", "catalog_import_outcomes")
 	if err != nil {
 		return MerchantCatalogImportResult{}, err
 	}
 	defer tx.Rollback()
-	if err = dbscope.Bind(ctx, tx, s.grants.schema, "catalog_import_runs", "catalog_import_outcomes", "stores", "offers", "products", "variants", "catalog_draft_commands", "catalog_draft_edit_commands"); err != nil {
-		return MerchantCatalogImportResult{}, ErrStoreOwnerUnavailable
-	}
 	var storedStore, storedDigest string
 	var storedManifest []byte
 	err = tx.QueryRowContext(ctx, `SELECT store_id,request_hash,manifest FROM catalog_import_runs
@@ -229,14 +224,8 @@ func (s *MerchantStoreRegistrar) CatalogImport(ctx context.Context, token, store
 			result.Outcomes = append(result.Outcomes, out)
 		}
 	}
-	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
-		return MerchantCatalogImportResult{}, ErrUnknownResult
-	}
-	if err = tx.Commit(); err != nil {
-		return MerchantCatalogImportResult{}, ErrUnknownResult
-	}
-	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
-		return MerchantCatalogImportResult{}, ErrUnknownResult
+	if err = s.commitCatalogCommand(ctx, tx, token, actor); err != nil {
+		return MerchantCatalogImportResult{}, err
 	}
 	result.Processed = len(result.Outcomes)
 	if offset > result.Processed {

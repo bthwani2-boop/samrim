@@ -189,6 +189,28 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 	}
 
 	merchant := fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}
+	// The command boundary must reject an absent owner even when a connection
+	// contains a complete temporary imitation of the catalog.
+	if _, err := shadow.ExecContext(ctx, "CREATE TEMP TABLE catalog_draft_commands AS SELECT * FROM "+schema+".catalog_draft_commands"); err != nil {
+		t.Fatal(err)
+	}
+	shadowRegistrar := &MerchantStoreRegistrar{identity: merchant, grants: &PostgresStoreGrants{db: shadow, schema: schema + "_missing"}}
+	shadowCommand := MerchantCatalogDraftChange{OperationID: "shadow-create-0001", Name: "Shadow draft", PriceYER: "100", StockUnits: 1}
+	if _, err := shadowRegistrar.CreateCatalogDraft(ctx, "synthetic", "catalog-a", shadowCommand); !errors.Is(err, ErrStoreOwnerUnavailable) {
+		t.Fatalf("missing owner catalog command must fail closed: %v", err)
+	}
+	shadowEdit := MerchantCatalogDraftEditChange{OperationID: "shadow-edit-0001", ExpectedVersion: 1, Name: "Shadow edit", PriceYER: "200", StockUnits: 2}
+	if _, err := shadowRegistrar.EditCatalogDraft(ctx, "synthetic", "catalog-a", "of-a", shadowEdit); !errors.Is(err, ErrStoreOwnerUnavailable) {
+		t.Fatalf("missing owner catalog edit must fail closed: %v", err)
+	}
+	if _, err := shadowRegistrar.CatalogImport(ctx, "synthetic", "catalog-a", "shadow-import-0001", nil, false, 0); !errors.Is(err, ErrStoreOwnerUnavailable) {
+		t.Fatalf("missing owner catalog import must fail closed: %v", err)
+	}
+	var shadowCount int
+	if err := shadow.QueryRowContext(ctx, "SELECT count(*) FROM pg_temp.catalog_draft_commands").Scan(&shadowCount); err != nil || shadowCount != 0 {
+		t.Fatalf("unexpected temporary command write: count=%d error=%v", shadowCount, err)
+	}
+
 	handler, err := NewMerchantCatalogHandler(merchant, db, schema)
 	if err != nil {
 		t.Fatal(err)
