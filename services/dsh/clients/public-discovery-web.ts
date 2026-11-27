@@ -66,11 +66,13 @@ function ownerFailure(error: unknown, audience: Audience): Response {
 // valid owner request. Typed owner clients still own value and projection validation.
 function admittedQuery(request: Request, url: URL, route: Route): URLSearchParams | null {
   const length = request.headers.get("Content-Length");
-  if (request.body !== null || (length !== null && length !== "0") || request.headers.has("Transfer-Encoding")) {
-    return null;
-  }
+  const bodyless = request.body === null && !request.headers.has("Transfer-Encoding") &&
+    (length === null || /^0+$/.test(length));
+  if (!bodyless) return null;
+
+  const hasQueryDelimiter = url.href.split("#", 1)[0]?.includes("?") === true;
   if (url.search.length > 4097 || url.search.includes(";") ||
-    (route.kind === "store" && url.href.split("#", 1)[0]?.includes("?"))) {
+    (hasQueryDelimiter && (url.search === "" || route.kind === "store"))) {
     return null;
   }
   try {
@@ -78,6 +80,7 @@ function admittedQuery(request: Request, url: URL, route: Route): URLSearchParam
   } catch {
     return null;
   }
+
   const keys = route.kind === "cities" ? ["limit", "cursor"] :
     route.kind === "verticals" ? ["city_id", "limit", "cursor"] :
     route.kind === "stores" ? ["city_id", "q", "vertical_id", "limit", "cursor"] :

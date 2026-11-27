@@ -168,3 +168,20 @@ test("Customer public discovery rejects malformed wire envelopes before normaliz
   assert.equal((await GET(new Request(root + "stores/market-sanaa/offers?q=water%3Bflour"))).status, 200);
   assert.equal(calls[0].url.searchParams.get("q"), "water;flour");
 });
+
+test("Public discovery preserves zero-byte framing and rejects an explicit empty query delimiter", async t => {
+  const calls = setup(t);
+  const url = "http://localhost:18101/v1/public/stores/market-sanaa/offers";
+  for (const length of ["00", "000"]) {
+    const reply = await GET(new Request(url, { headers: { "Content-Length": length } }));
+    assert.equal(reply.status, 200, length);
+  }
+  for (const length of ["01", "0, 0", "-0", "0.0"]) {
+    const reply = await GET(new Request(url, { headers: { "Content-Length": length } }));
+    assert.equal(reply.status, 400, length);
+  }
+  const reply = await GET(new Request(url + "?"));
+  assert.equal(reply.status, 400);
+  assert.deepEqual(await reply.json(), { error: "INVALID_REQUEST" });
+  assert.equal(calls.length, 2);
+});
