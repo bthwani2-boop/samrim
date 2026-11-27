@@ -3,59 +3,77 @@ import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
 
 type Coordinate = Readonly<{ latitude: number; longitude: number }>;
+type Selection =
+  | { kind: "idle" }
+  | { kind: "locating"; timer: ReturnType<typeof setTimeout> }
+  | { kind: "selected"; pin: Coordinate }
+  | { kind: "failed"; message: string };
+const LOCATION_DEADLINE_MS = 15000;
 
 /** Browser position is a local draft input, not a DSH serviceability decision. */
 export default function AddressEditor({ onSelect }: Readonly<{ onSelect?: (pin: Coordinate) => void }> = {}) {
   const { theme } = useMobileAppearance();
-  const [pin, setPin] = useState<Coordinate | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const generation = useRef(0);
-  const pending = useRef(false);
+  const mounted = useRef(true);
+  const current = useRef<Selection>({ kind: "idle" });
+  const [selection, setSelection] = useState<Selection>(current.current);
 
-  useEffect(() => () => {
-    generation.current++;
-    pending.current = false;
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      if (current.current.kind === "locating") clearTimeout(current.current.timer);
+      current.current = { kind: "idle" };
+    };
   }, []);
 
+  function transition(next: Selection) {
+    if (!mounted.current) return;
+    if (current.current.kind === "locating") clearTimeout(current.current.timer);
+    current.current = next;
+    setSelection(next);
+  }
+
   function locate() {
-    if (pending.current) return;
-    setPin(null);
-    setError("");
-    if (typeof navigator === "undefined" || !navigator.geolocation) {
-      setError("المتصفح لا يدعم تحديد الموقع. يمكنك إدخال الإحداثيات يدويًا.");
-      return;
-    }
-    pending.current = true;
-    const request = ++generation.current;
-    setBusy(true);
-    const finish = () => {
-      if (!pending.current || generation.current !== request) return false;
-      pending.current = false;
-      setBusy(false);
-      return true;
+    if (!mounted.current || current.current.kind === "locating") return;
+    const attempt: Selection = {
+      kind: "locating",
+      timer: setTimeout(() => {
+        if (current.current === attempt) {
+          transition({ kind: "failed", message: "انتهت مهلة تحديد الموقع. حاول مجددًا أو أدخل الإحداثيات يدويًا." });
+        }
+      }, LOCATION_DEADLINE_MS),
+    };
+    transition(attempt);
+    const isCurrent = () => mounted.current && current.current === attempt;
+    const fail = (message: string) => {
+      if (isCurrent()) transition({ kind: "failed", message });
     };
     try {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        fail("المتصفح لا يدعم تحديد الموقع. يمكنك إدخال الإحداثيات يدويًا.");
+        return;
+      }
       navigator.geolocation.getCurrentPosition(position => {
-        if (!finish()) return;
+        if (!isCurrent()) return;
         const { latitude, longitude } = position.coords;
         if (!Number.isFinite(latitude) || !Number.isFinite(longitude) ||
           Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
-          setError("تعذّر تحديد نقطة صالحة. أدخل الإحداثيات يدويًا أو حاول مجددًا.");
+          fail("تعذّر تحديد نقطة صالحة. أدخل الإحداثيات يدويًا أو حاول مجددًا.");
           return;
         }
-        setPin({ latitude, longitude });
+        transition({ kind: "selected", pin: { latitude, longitude } });
       }, failure => {
-        if (!finish()) return;
-        setError(failure.code === 1
+        fail(failure.code === 1
           ? "لم يتم منح إذن الموقع. يمكنك إدخال الإحداثيات يدويًا."
           : "تعذّر تحديد الموقع. تحقق من الاتصال والإذن أو أدخل الإحداثيات يدويًا.");
-      }, { maximumAge: 0, timeout: 15000, enableHighAccuracy: true });
+      }, { maximumAge: 0, timeout: LOCATION_DEADLINE_MS, enableHighAccuracy: true });
     } catch {
-      if (finish()) setError("تعذّر الوصول إلى الموقع في هذا المتصفح. أدخل الإحداثيات يدويًا.");
+      fail("تعذّر الوصول إلى الموقع في هذا المتصفح. أدخل الإحداثيات يدويًا.");
     }
   }
 
+  const pin = selection.kind === "selected" ? selection.pin : null;
+  const busy = selection.kind === "locating";
   const button = { minHeight: 44, padding: 12, justifyContent: "center" as const,
     borderRadius: 10, borderWidth: 1, borderColor: theme.borderColor };
   return (
@@ -67,12 +85,13 @@ export default function AddressEditor({ onSelect }: Readonly<{ onSelect?: (pin: 
         {busy ? <ActivityIndicator color={theme.interactiveText} accessibilityLabel="جارٍ تحديد الموقع" />
           : <Text style={{ color: theme.interactiveText }}>استخدام موقعي الحالي</Text>}
       </Pressable>
-      {error ? <Text testID="web-address-location-error" accessibilityRole="alert" style={{ color: theme.dangerText }}>{error}</Text> : null}
+      {selection.kind === "failed" ? <Text testID="web-address-location-error" accessibilityRole="alert" style={{ color: theme.dangerText }}>{selection.message}</Text> : null}
       {pin ? (
         <View style={{ gap: 8 }}>
           <Text style={{ color: theme.color }} selectable>{pin.latitude.toFixed(5)}, {pin.longitude.toFixed(5)}</Text>
           {onSelect ? <Pressable testID="web-address-location-confirm" accessibilityRole="button"
-            onPress={() => onSelect(pin)} style={{ ...button, backgroundColor: theme.actionSoft }}>
+            onPress={() => { if (mounted.current && current.current === selection) onSelect(pin); }}
+            style={{ ...button, backgroundColor: theme.actionSoft }}>
             <Text style={{ color: theme.interactiveText }}>استخدام النقطة المحددة</Text>
           </Pressable> : null}
         </View>

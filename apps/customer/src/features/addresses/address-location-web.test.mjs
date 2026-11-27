@@ -56,6 +56,8 @@ function harness(t, available = true) {
   } } : {};
   t.mock.getter(globalThis, "navigator", () => navigator);
   const mod = loadMappedRenderFixture(compiled, renderSource, modules);
+  const unmount = () => { if (!mounted) return; hooks.forEach(hook => { hook?.cleanup?.(); }); mounted = false; };
+  t.after(unmount);
   return {
     requests, selected,
     render() {
@@ -65,7 +67,7 @@ function harness(t, available = true) {
       effects.forEach(fn => { fn(); });
       return view;
     },
-    unmount() { hooks.forEach(hook => { hook?.cleanup?.(); }); mounted = false; },
+    unmount,
     afterUnmount: () => afterUnmount,
   };
 }
@@ -127,4 +129,36 @@ test("the protected address screen exposes Web location and saves only through i
   assert.doesNotMatch(source, /Platform\.OS!=="web"&&!pending/);
   assert.match(source, /writeVerifiedAddress\(/);
   assert.match(source, /<AddressEditor onSelect=/);
+});
+
+test("obsolete Web confirmation cannot select a pin after a new request or unmount", t => {
+  const h = harness(t);
+  click(h, "web-address-location-request");
+  h.requests[0].success({ coords: { latitude: 15, longitude: 44 } });
+  const old = find(h.render(), "web-address-location-confirm");
+  click(h, "web-address-location-request");
+  old.props.onPress();
+  assert.deepEqual(h.selected, []);
+  h.requests[1].success({ coords: { latitude: 16, longitude: 45 } });
+  click(h, "web-address-location-confirm");
+  assert.deepEqual(h.selected, [{ latitude: 16, longitude: 45 }]);
+  h.unmount();
+  old.props.onPress();
+  assert.equal(h.selected.length, 1);
+});
+
+test("Web location deadline covers silent callbacks and permits independent retry", t => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const h = harness(t);
+  click(h, "web-address-location-request");
+  t.mock.timers.tick(15000);
+  assert.equal(find(h.render(), "web-address-location-request").props.disabled, false);
+  assert.ok(find(h.render(), "web-address-location-error"));
+  click(h, "web-address-location-request");
+  h.requests[0].success({ coords: { latitude: 15, longitude: 44 } });
+  assert.equal(find(h.render(), "web-address-location-confirm"), undefined);
+  assert.equal(find(h.render(), "web-address-location-request").props.disabled, true);
+  h.requests[1].success({ coords: { latitude: 16, longitude: 45 } });
+  click(h, "web-address-location-confirm");
+  assert.deepEqual(h.selected, [{ latitude: 16, longitude: 45 }]);
 });
