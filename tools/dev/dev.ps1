@@ -19,6 +19,7 @@ param(
   [switch]$Preview,
   [switch]$PrepareBaseline,
   [string]$RecoverRuntimeAttempt,
+  [string]$ConfigurationFrom,
   [Parameter(Position=1)]
   [ValidateSet('help','status','ps','logs','images','volumes','networks','config','verify','build','reconcile','start','restart','android','open','recover')]
   [string]$DockerAction = 'help',
@@ -1140,6 +1141,7 @@ function Show-DockerCommands {
   Write-Output 'pnpm dev docker reconcile -Apply # reconcile only changed isolated owners'
   Write-Output 'pnpm dev docker reconcile -Apply -EnableCaptain # explicit owner admission activation'
   Write-Output 'pnpm dev docker reconcile -Apply -Preview # isolated uncommitted Go snapshot'
+  Write-Output 'pnpm dev docker reconcile -ConfigurationFrom SHA [-Apply] # reviewed resource-only Compose transition'
   Write-Output 'pnpm dev (fast apps) | pnpm dev up (infra) | pnpm dev status | pnpm dev down'
   Write-Output 'pnpm dev migrations            # migration inventory only; NO SQL execution'
   Write-Output 'BUILD=pnpm dev docker build dsh|identity|wlt (image only, no start)'
@@ -1186,8 +1188,9 @@ function Invoke-ScopedDocker {
       Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
       Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply without capability activation'
       Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
-      $mode = if ($RecoverRuntimeAttempt) { '--recover-attempt' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
-      $reconcileOptions = @(if ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($PrepareBaseline) { '--prepare-baseline' })
+      Assert-Ok (!$ConfigurationFrom -or (!$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and !$RecoverRuntimeAttempt -and $ConfigurationFrom -cmatch '^[0-9a-f]{40}$')) 'Configuration transition requires one reviewed Compose revision and no other mutation mode'
+      $mode = if ($ConfigurationFrom) { if ($Apply) { '--apply-config' } else { '--check-config' } } elseif ($RecoverRuntimeAttempt) { '--recover-attempt' } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
+      $reconcileOptions = @(if ($ConfigurationFrom) { $ConfigurationFrom } elseif ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($PrepareBaseline) { '--prepare-baseline' })
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE
       try {
         if ($Apply -or $RecoverRuntimeAttempt) { $env:BTHWANI_UNIFIED_DEV_RECONCILE = '1' }
@@ -1261,6 +1264,7 @@ function Verify-Checks {
   Banner 'OWNERED STATIC CHECKS'
   $tests=@(
     'tests/infra/compose-policy.test.mjs',
+    'tests/infra/compose-runtime-transition.test.mjs',
     'tests/infra/verify-runtime-provenance.test.mjs',
     'tests/infra/reconcile-owner-runtime.test.mjs',
     'tests/infra/owner-preview-source.test.mjs',
@@ -1286,6 +1290,7 @@ function Verify-Checks {
 $originalLauncherPath=$env:Path
 try {
   Assert-Ok (!$RecoverRuntimeAttempt -or ($Action -eq 'Docker' -and $DockerAction -eq 'reconcile')) 'Runtime attempt recovery belongs to docker reconcile only'
+  Assert-Ok (!$ConfigurationFrom -or ($Action -eq 'Docker' -and $DockerAction -eq 'reconcile')) 'Configuration transition belongs to docker reconcile only'
   $resources=@(Get-DevOperationResources $Action $DockerAction ([bool]$Apply) $RecoverRuntimeAttempt $Mode)
   $resourceLeases=@(Enter-DevResources $resources)
   if($Action -eq 'Apps' -and $DockerAction -eq 'recover'){

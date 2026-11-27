@@ -7,6 +7,7 @@ import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolvePinnedGo } from "../check-go.mjs";
+import { reconcileComposeConfiguration } from "./compose-runtime-transition.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery } from "../sync-lenovo-reconciliation.mjs";
 import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope, wltCommandRoleInactiveSQL } from "./owner-baseline-transition.mjs";
 import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceState, previewChangeKey, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
@@ -168,7 +169,7 @@ function buildOwnerImage(owner, head, tag, service, snapshot) {
   return image;
 }
 function ownerRevision(state,owner) { return sourceIdentity(imageRecord(state[owner].Image).Config.Labels,owner); }
-const guardedScope = ["services",...ownerComposeInputs,"tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",".go-version"];
+const guardedScope = ["services",...ownerComposeInputs,"tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/docker/owner-baseline-transition.mjs","tools/dev/docker/owner-preview-source.mjs","tools/dev/docker/compose-runtime-transition.mjs","tools/dev/docker/reconcile-owner-runtime.mjs","tests/infra/verify-isolated-postgres.ps1","tools/dev/provision-wlt-test-db.ps1","tools/dev/check-go.mjs",".go-version"];
 function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
   const changed=dirtyPaths(root,guardedScope);
   const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
@@ -314,27 +315,40 @@ export function assertSourceHost(machineName, reportedName, checkoutRoot) {
 }
 
 export function parseReconcileArgs(argv) {
-  const [mode,...options]=argv;
-  const build=mode==="--build-only", recover=mode==="--recover-attempt";
-  const prepare=options.length===1&&options[0]==="--prepare-baseline";
-  if(!["--check","--apply","--apply-preview","--apply-captain","--recover-attempt","--build-only"].includes(mode))
-    throw new Error("Usage: --check | --apply [--prepare-baseline] | --apply-preview [--prepare-baseline] | --apply-captain | --recover-attempt KEY | --build-only OWNER");
-  if(build) {
-    if(options.length!==1||!Object.hasOwn(owners,options[0]))throw new Error("Expected one owner for --build-only");
-  } else if(recover) {
-    if(options.length!==1||!/^[a-f0-9]{64}$/.test(options[0]))throw new Error("Expected exact reviewed runtime attempt key");
-  } else if(options.length&&(!prepare||!["--apply","--apply-preview"].includes(mode))) {
+  const [mode, ...options] = argv;
+  const build = mode === "--build-only";
+  const recover = mode === "--recover-attempt";
+  const configuration = ["--check-config", "--apply-config"].includes(mode);
+  const prepare = options.length === 1 && options[0] === "--prepare-baseline";
+  if (!["--check", "--apply", "--apply-preview", "--apply-captain", "--recover-attempt", "--build-only", "--check-config", "--apply-config"].includes(mode))
+    throw new Error("Usage: --check | --apply [--prepare-baseline] | --apply-preview [--prepare-baseline] | --apply-captain | --recover-attempt KEY | --build-only OWNER | --check-config REVISION | --apply-config REVISION");
+  if (build) {
+    if (options.length !== 1 || !Object.hasOwn(owners, options[0])) throw new Error("Expected one owner for --build-only");
+  } else if (recover) {
+    if (options.length !== 1 || !/^[a-f0-9]{64}$/.test(options[0])) throw new Error("Expected exact reviewed runtime attempt key");
+  } else if (configuration) {
+    if (options.length !== 1 || !/^[a-f0-9]{40}$/.test(options[0])) throw new Error("Expected exact reviewed Compose source revision");
+  } else if (options.length && (!prepare || !["--apply", "--apply-preview"].includes(mode))) {
     throw new Error("Baseline preparation requires an explicit isolated apply");
   }
-  return {mode,options,build,recover,prepare,apply:!build&&!recover&&mode!=="--check"};
+  return { mode, options, build, recover, configuration, prepare, apply: ["--apply", "--apply-preview", "--apply-captain", "--apply-config"].includes(mode) };
 }
 function main() {
-  const {mode,options,build,recover,prepare,apply}=parseReconcileArgs(process.argv.slice(2));
+  const {mode,options,build,recover,configuration,prepare,apply}=parseReconcileArgs(process.argv.slice(2));
   if((build||apply||recover)&&process.env.BTHWANI_UNIFIED_DEV_RECONCILE!=="1")throw new Error("Use the unified dev launcher with its Docker resource lease");
   assertSourceHost(hostname(),process.env.COMPUTERNAME,root);
   if(docker(["context","inspect",context,"--format","{{.Endpoints.docker.Host}}"])!=="ssh://bthwa@bthwani-docker")throw new Error("Wrong Docker target");
   const head=git(["rev-parse","HEAD"]),branch=git(["branch","--show-current"]);
   if(!/^[a-f0-9]{40}$/.test(head)||!branch||branch==="main"||branch.startsWith("archive/"))throw new Error("Not an active development branch");
+  if (configuration) {
+    const scope = [...ownerComposeInputs, "tools/dev/docker", "tools/dev/dev.ps1", "tools/dev/dev-resource-admission.ps1"];
+    const ensureSource = () => {
+      if (git(["rev-parse", "HEAD"]) !== head || dirtyPaths(root, apply ? scope : ownerComposeInputs).length)
+        throw new Error("Compose transition source changed or is not committed");
+    };
+    reconcileComposeConfiguration({ docker, git, root, head, previous: options[0], apply, verifyOwners: verifyRecoveryOwners, ensureSource });
+    return;
+  }
   if(build){
     const [owner]=options,tag="build-"+head;
     const reference=owners[owner].image+":"+tag;

@@ -49,6 +49,7 @@ For a genuinely usable **isolated** Operator login, independently verify that th
 Use the existing unified lifecycle CLI, from Surface, not a second watcher:
 
 - `pnpm dev docker reconcile` checks the running Compose configuration and owner source drift.
+- `pnpm dev docker reconcile -ConfigurationFrom <full-SHA>` reconstructs an explicitly reviewed prior Compose model from Git and checks a resource/logging-only transition. With `-Apply`, it replaces only mismatched existing containers under the same Docker resource lease, preserving images, environment, mounts, networks and live owner principals; no SQL or capability changes. Unknown effects stop and require readback.
 - `pnpm dev docker reconcile -Apply` runs fresh owner tests without live DB test credentials, builds through the existing pinned owner build scripts, verifies image labels, and replaces only changed running owners with `--no-deps --no-build --pull never`. Previous image tags and reconstructed Compose hashes must match before replacement; failed known replacements restore the previous configuration/images, and ambiguous writes stop. Never start SQL/migration roles or change volumes.
 - `pnpm dev docker reconcile -Apply -EnableCaptain` explicitly admits the Captain owner capability once, only in the isolated development environment, after checking the pre-provisioned read-only TLS volumes. This option is never used by the automatic watcher.
 
