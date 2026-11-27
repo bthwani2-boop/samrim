@@ -1,106 +1,139 @@
 import { WltReadError } from "./errors.ts";
 import { wltOperations } from "./generated/wlt-operations.ts";
 
-// A non-cooperative native bridge may ignore AbortSignal. Bound the local
-// wait independently, observe late rejection, and never return stale data.
-async function awaitRead<T>(signal: AbortSignal, start: () => Promise<T>,
-  discard?: (value: T) => void): Promise<T> {
-  if (signal.aborted) throw new WltReadError(503);
-  let onAbort: (() => void) | undefined;
-  const cancelled = new Promise<never>((_resolve, reject) => {
-    onAbort = () => reject(new WltReadError(503));
-    signal.addEventListener("abort", onAbort, { once: true });
-  });
+// The existing wallet continuation budget also bounds direct owner reads.
+// One deadline covers headers, body and parsing; a caller may cancel earlier.
+const readBudgetMs = 12_000;
+
+function discardBody(response: Response): void {
   try {
-    const value = await Promise.race([Promise.resolve().then(() => {
-      if (signal.aborted) throw new WltReadError(503);
-      return start();
-    }).then(value => {
-      if (signal.aborted) {
-        discard?.(value);
-        throw new WltReadError(503);
+    if (response.body && !response.body.locked) void response.body.cancel().catch(() => {});
+  } catch { /* Cleanup cannot turn a rejected reply into an accepted one. */ }
+}
+
+function requestURL(origin: string, path: string, cursor?: string): URL {
+  // WLT is admitted only on isolated local development origins.
+  const isolated = /^http:\/\/(?:127\.0\.0\.1|10\.0\.2\.2):([1-9][0-9]{0,4})$/.exec(origin);
+  if (!isolated || Number(isolated[1]) > 65535) throw new WltReadError(503);
+  const url = new URL(path, origin);
+  if (!path.startsWith("/") || path.startsWith("//") || url.origin !== new URL(origin).origin) throw new WltReadError(503);
+  if (cursor !== undefined) {
+    if (typeof cursor !== "string" || !/^[A-Za-z0-9_-]{20,240}$/.test(cursor)) throw new WltReadError(400);
+    url.searchParams.set("cursor", cursor);
+  }
+  return url;
+}
+
+function admitResponse(response: Response, maxBytes: number): void {
+  if (response.status !== 200 ||
+      response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
+      response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
+    discardBody(response);
+    throw new WltReadError([400, 401, 403].includes(response.status) ? response.status : 503);
+  }
+  const declaredSize = response.headers.get("Content-Length");
+  if (declaredSize !== null && (!/^[0-9]+$/.test(declaredSize) || Number(declaredSize) > maxBytes)) {
+    discardBody(response);
+    throw new WltReadError(502);
+  }
+}
+
+async function readJSON(response: Response, maxBytes: number,
+  stopped: Promise<never>, signal: AbortSignal): Promise<unknown> {
+  const body = response.body;
+  // Retain the admitted text-only Native compatibility contract. This path
+  // bounds the wait and validates the decoded size; streaming is preferred.
+  if (!body?.getReader || typeof TextDecoder !== "function") {
+    try {
+      const text = await Promise.race([response.text(), stopped]);
+      let bytes = 0;
+      for (const rune of text) {
+        const point = rune.codePointAt(0) ?? 0xfffd;
+        bytes += point < 0x80 ? 1 : point < 0x800 ? 2 : point < 0x10000 ? 3 : 4;
+        if (bytes > maxBytes) throw new WltReadError(502);
       }
-      return value;
-    }), cancelled]);
-    if (signal.aborted) {
-      discard?.(value);
-      throw new WltReadError(503);
+      return JSON.parse(text) as unknown;
+    } catch {
+      discardBody(response);
+      throw new WltReadError(signal.aborted ? 503 : 502);
     }
+  }
+
+  const reader = body.getReader();
+  let complete = false;
+  try {
+    const value = await Promise.race([(async () => {
+      const bytes = new Uint8Array(maxBytes);
+      let size = 0;
+      for (;;) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        if (chunk.value.byteLength > bytes.length - size) throw new WltReadError(502);
+        bytes.set(chunk.value, size);
+        size += chunk.value.byteLength;
+      }
+      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size))) as unknown;
+    })(), stopped]);
+    complete = true;
     return value;
+  } catch {
+    throw new WltReadError(signal.aborted ? 503 : 502);
   } finally {
-    if (onAbort) signal.removeEventListener("abort", onAbort);
+    try {
+      if (!complete) void reader.cancel().catch(() => {});
+    } finally {
+      reader.releaseLock();
+    }
   }
 }
 
 export async function readOwner(origin: string, bearer: string, method: "GET", path: string,
   signal: AbortSignal, cursor?: string): Promise<unknown> {
-  // Only isolated local WLT and the Android emulator's host-loopback alias.
-  // Production/public network origins are intentionally not admitted.
-  const isolated = /^http:\/\/(?:127\.0\.0\.1|10\.0\.2\.2):([1-9][0-9]{0,4})$/.exec(origin);
-  if (!isolated || Number(isolated[1]) > 65535) throw new WltReadError(503);
+  const url = requestURL(origin, path, cursor);
   if (!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(bearer)) throw new WltReadError(401);
-  // Ten contract-valid funding entries, reversals and a keyset cursor can
-  // exceed 4 KiB. Keep the balance bound at 4 KiB and history at 8 KiB.
-  const maxBytes = path === wltOperations.listCurrentCustomerWalletTransactions.path ? 8192 : 4096;
-  const requestURL = new URL(path, origin);
-  if (cursor !== undefined) {
-    if (typeof cursor !== "string" || !/^[A-Za-z0-9_-]{20,240}$/.test(cursor)) {
-      throw new WltReadError(400);
-    }
-    requestURL.searchParams.set("cursor", cursor);
-  }
-  const response = await awaitRead(signal, () => fetch(requestURL, {
-    method, signal, redirect: "error", credentials: "omit", cache: "no-store",
-    headers: { Accept: "application/json", Authorization: "Bearer " + bearer },
-  }), late => { void late.body?.cancel().catch(() => {}); });
-  if (response.status !== 200 ||
-    response.headers.get("Cache-Control")?.toLowerCase() !== "no-store" ||
-    response.headers.get("Content-Type")?.split(";")[0]?.trim().toLowerCase() !== "application/json") {
-    void response.body?.cancel().catch(() => {});
-    throw new WltReadError([400, 401, 403].includes(response.status) ? response.status : 503);
-  }
-  const declaredSize = response.headers.get("Content-Length");
-  if (declaredSize !== null && (!/^[0-9]+$/.test(declaredSize) || Number(declaredSize) > maxBytes)) {
-    void response.body?.cancel().catch(() => {});
-    throw new WltReadError(502);
-  }
-  // Hermes/React Native may expose Response.text() but not ReadableStream or
-  // TextDecoder. In that case validate the decoded UTF-8 byte count before
-  // parsing. The WLT owner is limited to isolated host-loopback origins.
-  if (!response.body?.getReader || typeof TextDecoder !== "function") {
-    const text = await awaitRead(signal, () => response.text());
-    let bytes = 0;
-    for (const rune of text) {
-      const value = rune.codePointAt(0) ?? 0xfffd;
-      bytes += value < 0x80 ? 1 : value < 0x800 ? 2 : value < 0x10000 ? 3 : 4;
-      if (bytes > maxBytes) throw new WltReadError(502);
-    }
-    signal.throwIfAborted();
-    try { return JSON.parse(text) as unknown; }
-    catch { throw new WltReadError(502); }
-  }
-  const stream = response.body.getReader();
-  const bytes = new Uint8Array(maxBytes);
-  let size = 0;
+  if (signal.aborted) throw new WltReadError(503);
+
+  // Own transport cancellation, not the caller's lifecycle. The race is
+  // independent of whether the native bridge honors the abort signal.
+  const controller = new AbortController();
+  let rejectStop!: (error: WltReadError) => void;
+  const stopped = new Promise<never>((_resolve, reject) => { rejectStop = reject; });
+  const stop = () => {
+    controller.abort();
+    rejectStop(new WltReadError(503));
+  };
+  signal.addEventListener("abort", stop, { once: true });
+  const deadline = setTimeout(stop, readBudgetMs);
+
   try {
-    for (;;) {
-      const { value, done } = await awaitRead(signal, () => stream.read());
-      if (done) break;
-      if (size + value.length > bytes.length) {
-        void stream.cancel().catch(() => {});
-        throw new WltReadError(502);
-      }
-      bytes.set(value, size);
-      size += value.length;
-    }
-    signal.throwIfAborted();
+    let response: Response;
     try {
-      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, size))) as unknown;
+      response = await Promise.race([Promise.resolve().then(async () => {
+        if (controller.signal.aborted) throw new WltReadError(503);
+        const reply = await fetch(url, {
+          method, signal: controller.signal, redirect: "error", credentials: "omit", cache: "no-store",
+          headers: { Accept: "application/json", Authorization: "Bearer " + bearer },
+        });
+        if (controller.signal.aborted) {
+          discardBody(reply);
+          throw new WltReadError(503);
+        }
+        return reply;
+      }), stopped]);
     } catch {
-      throw new WltReadError(502);
+      throw new WltReadError(503);
     }
+    if (controller.signal.aborted) {
+      discardBody(response);
+      throw new WltReadError(503);
+    }
+    const maxBytes = path === wltOperations.listCurrentCustomerWalletTransactions.path ? 8192 : 4096;
+    admitResponse(response, maxBytes);
+    const value = await readJSON(response, maxBytes, stopped, controller.signal);
+    if (controller.signal.aborted) throw new WltReadError(503);
+    return value;
   } finally {
-    if (signal.aborted) void stream.cancel().catch(() => {});
-    stream.releaseLock();
+    clearTimeout(deadline);
+    signal.removeEventListener("abort", stop);
   }
 }
