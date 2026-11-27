@@ -725,5 +725,62 @@ test("browser finance cancels rejected or malformed responses even if cancellati
   assert.deepEqual(await readVerifiedWalletTransactions(async () => live("actor-a"), signal), { kind: "signed-out" });
   status = 200;
   await assert.rejects(readVerifiedWalletTransactions(async () => live("actor-a"), signal), { status: 502 });
-  assert.equal(cancellations, 3);
+  assert.equal(cancellations, 2);
+});
+
+test("already aborted wallet read dispatches neither Identity nor WLT", async t => {
+  const ctl = new AbortController();
+  ctl.abort();
+  let admissions = 0;
+  t.mock.method(globalThis, "fetch", async () => { assert.fail("unexpected owner request"); });
+  for (const read of [readVerifiedWallet, readVerifiedWalletTransactions]) {
+    await assert.rejects(read(async () => { admissions++; return live("actor-a"); }, ctl.signal), { name: "AbortError" });
+  }
+  assert.equal(admissions, 0);
+  assert.equal(globalThis.fetch.mock.callCount(), 0);
+});
+
+test("aborting a stalled Web wallet header read settles, disposes a late reply and permits a fresh read", async t => {
+  const ctl = new AbortController();
+  let late, cancelled = 0, timer;
+  const held = new Promise(resolve => { late = resolve; });
+  t.mock.method(globalThis, "fetch", () => held);
+  const pending = readVerifiedWallet(async () => live("actor-a"), ctl.signal).then(() => "ADMITTED", e => e.name);
+  await new Promise(resolve => setImmediate(resolve));
+  ctl.abort();
+  try {
+    assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]), "AbortError");
+  } finally {
+    clearTimeout(timer);
+    late(new Response(new ReadableStream({ cancel() { cancelled++; } }), {
+      headers: { "Cache-Control": "no-store", "Content-Type": "application/json" },
+    }));
+    await pending;
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.equal(cancelled, 1);
+  t.mock.method(globalThis, "fetch", async () => Response.json(history, { headers: { "Cache-Control": "no-store" } }));
+  assert.equal((await readVerifiedWalletTransactions(async () => live("actor-a"), new AbortController().signal)).kind, "ready");
+});
+
+test("aborting stalled Identity admission at either boundary does not publish private funds", async t => {
+  const balance = { actorId: "actor-a", currency: "YER", balanceYer: amount, availableYer: amount };
+  t.mock.method(globalThis, "fetch", async () => Response.json(balance, { headers: { "Cache-Control": "no-store" } }));
+  for (const stallAt of [1, 2]) {
+    const ctl = new AbortController();
+    let release, timer, calls = 0;
+    const held = new Promise(resolve => { release = resolve; });
+    const pending = readVerifiedWallet(() => ++calls === stallAt ? held : Promise.resolve(live("actor-a")), ctl.signal)
+      .then(() => "ADMITTED", e => e.name);
+    await new Promise(resolve => setImmediate(resolve));
+    ctl.abort();
+    try {
+      assert.equal(await Promise.race([pending, new Promise(resolve => { timer = setTimeout(() => resolve("STALLED"), 150); })]), "AbortError");
+    } finally {
+      clearTimeout(timer);
+      release(live("actor-a"));
+      await pending;
+    }
+    assert.equal(calls, stallAt);
+  }
 });

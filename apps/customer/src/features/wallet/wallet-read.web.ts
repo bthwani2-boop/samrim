@@ -1,7 +1,10 @@
 import type { VerifiedIdentitySession } from "@bthwani/identity";
 import {
-  type CustomerFundingHistory, type CustomerWalletBalance,
-  parseCustomerFundingHistory, parseCustomerWalletBalance, WltReadError,
+  type CustomerFundingHistory,
+  type CustomerWalletBalance,
+  parseCustomerFundingHistory,
+  parseCustomerWalletBalance,
+  WltReadError,
 } from "@bthwani/wlt";
 import { readBoundedCustomerJSON } from "../access/bounded-customer-json";
 
@@ -17,43 +20,72 @@ export type WalletTransactionsReadState =
   | { kind: "ready"; history: CustomerFundingHistory; expiresAt: number }
   | { kind: "signed-out" | "unavailable" };
 
-// Verify the same current Customer across the entire bounded owner read.
-// The parser owns the financial response contract (including continuation).
+function discardEnvelope(response: Response): void {
+  try {
+    const body = response.body;
+    if (body && !body.locked && !response.bodyUsed) void body.cancel().catch(() => {});
+  } catch {
+    // A rejected envelope remains rejected even when cleanup fails.
+  }
+}
+
+function sessionExpiry(session: VerifiedIdentitySession | null, expectedActorId?: string): number {
+  if (session?.role !== "customer" ||
+    (expectedActorId !== undefined && session.actorId !== expectedActorId)) return 0;
+  return Date.parse(session.sessionExpiresAt);
+}
+
+// One caller cancellation boundary owns both Identity reads and the WLT reply.
+// Every late stage checks cancellation before dispatching or publishing anything.
 async function readVerifiedFinance<T extends { actorId: string }>(
   admission: AdmissionReader, signal: AbortSignal, expectedActorId: string | undefined,
   path: string, maxBytes: number, parse: (body: unknown) => T,
 ): Promise<Result<T>> {
-  const before = await admission(signal);
   signal.throwIfAborted();
-  if (!before.enabled) return { kind: "unavailable" };
-  const initial = before.session;
-  if (initial?.role !== "customer" ||
-    (expectedActorId !== undefined && initial.actorId !== expectedActorId) ||
-    !(Date.parse(initial.sessionExpiresAt) > Date.now())) return { kind: "signed-out" };
+  let rejectStopped!: (reason: unknown) => void;
+  const stopped = new Promise<never>((_resolve, reject) => { rejectStopped = reject; });
+  const interrupt = () => rejectStopped(signal.reason);
+  signal.addEventListener("abort", interrupt, { once: true });
 
-  const response = await fetch(path, {
-    method: "GET", credentials: "same-origin", redirect: "error", cache: "no-store", signal,
-  });
-  if (signal.aborted || response.status !== 200 || response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
-    void response.body?.cancel().catch(() => {});
+  async function read(): Promise<Result<T>> {
+    const before = await admission(signal);
     signal.throwIfAborted();
-    return { kind: response.status === 401 || response.status === 403 ? "signed-out" : "unavailable" };
-  }
-  const body = await readBoundedCustomerJSON({ headers: response.headers, body: response.body, signal }, maxBytes);
-  signal.throwIfAborted();
-  if (body === null) {
-    void response.body?.cancel().catch(() => {});
-    throw new WltReadError(502);
-  }
-  const value = parse(body);
+    if (!before.enabled) return { kind: "unavailable" };
+    const initial = before.session;
+    const initialExpiry = sessionExpiry(initial, expectedActorId);
+    if (!initial || !(initialExpiry > Date.now())) return { kind: "signed-out" };
 
-  const after = await admission(signal);
-  signal.throwIfAborted();
-  const current = after.session;
-  if (!after.enabled || current?.role !== "customer" ||
-    initial.actorId !== current.actorId || current.actorId !== value.actorId) return { kind: "signed-out" };
-  const expiresAt = Math.min(Date.parse(initial.sessionExpiresAt), Date.parse(current.sessionExpiresAt));
-  return expiresAt > Date.now() ? { kind: "ready", value, expiresAt } : { kind: "signed-out" };
+    const response = await fetch(path, {
+      method: "GET", credentials: "same-origin", redirect: "error", cache: "no-store", signal,
+    });
+    if (signal.aborted || response.status !== 200 ||
+      response.headers.get("Cache-Control")?.toLowerCase() !== "no-store") {
+      discardEnvelope(response);
+      signal.throwIfAborted();
+      return { kind: response.status === 401 || response.status === 403 ? "signed-out" : "unavailable" };
+    }
+    // Once handed over, the bounded reader alone owns consumption and cancellation.
+    const body = await readBoundedCustomerJSON({ headers: response.headers, body: response.body, signal }, maxBytes);
+    signal.throwIfAborted();
+    if (body === null) throw new WltReadError(502);
+    const value = parse(body);
+
+    const after = await admission(signal);
+    signal.throwIfAborted();
+    const expiresAt = Math.min(initialExpiry, sessionExpiry(after.session, initial.actorId));
+    if (!after.enabled || value.actorId !== initial.actorId || !(expiresAt > Date.now())) {
+      return { kind: "signed-out" };
+    }
+    return { kind: "ready", value, expiresAt };
+  }
+
+  try {
+    const result = await Promise.race([read(), stopped]);
+    signal.throwIfAborted();
+    return result;
+  } finally {
+    signal.removeEventListener("abort", interrupt);
+  }
 }
 
 export async function readVerifiedWallet(
@@ -69,7 +101,8 @@ export async function readVerifiedWalletTransactions(
   readCustomerAdmission: AdmissionReader, signal: AbortSignal, cursor?: string,
   expectedActorId?: string,
 ): Promise<WalletTransactionsReadState> {
-  if (cursor !== undefined && !/^[A-Za-z0-9_-]{20,240}$/.test(cursor)) {
+  signal.throwIfAborted();
+  if (cursor !== undefined && (typeof cursor !== "string" || !/^[A-Za-z0-9_-]{20,240}$/.test(cursor))) {
     return { kind: "unavailable" };
   }
   const path = "/api/customer-auth/wallet-transactions" +
