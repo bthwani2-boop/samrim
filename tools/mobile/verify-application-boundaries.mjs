@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createScanner, SyntaxKind } from "typescript/unstable/ast";
+import { createScanner, SyntaxKind } from "@typescript/native/unstable/ast";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const apps = ["customer", "merchant", "captain", "control-panel"];

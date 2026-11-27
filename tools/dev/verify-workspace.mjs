@@ -10,7 +10,7 @@ import { resolvePinnedGo, services } from "./check-go.mjs";
 import { serviceSourcePlacementIssues } from "./check-service-placement.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
-const tools = new Set(["@babel/parser", "@biomejs/biome", "knip", "nx", "parse5", "typescript", "yaml"]);
+const tools = new Set(["@babel/parser", "@biomejs/biome", "@typescript/native", "knip", "nx", "parse5", "typescript", "yaml"]);
 const projects = ["apps/customer", "apps/merchant", "apps/captain", "apps/control-panel",
   "packages/design-system", "packages/tamagui-config"];
 const requiredSources = ["knip.jsonc", ".editorconfig", ".gitattributes",
@@ -63,15 +63,33 @@ function importer(document, name) {
   return next === -1 ? remaining : remaining.slice(0, next);
 }
 
-function locked(imported, name, version) {
+// Alias specifiers and peer-qualified snapshots are distinct lock identities.
+// Exact resolved values are mandatory; accepting only a prefix would admit drift.
+function locked(imported, name, specifier, resolved = specifier) {
   const key = name.startsWith("@") ? "'" + name + "'" : name;
+  const value = resolved.startsWith("@") ? "'" + resolved + "'" : resolved;
   const expected = new RegExp("^      " + RegExp.escape(key) +
-    ":\\n        specifier: " + RegExp.escape(version) +
-    "\\n        version: " + RegExp.escape(version) + "$", "m");
+    ":\\n        specifier: " + RegExp.escape(specifier) +
+    "\\n        version: " + RegExp.escape(value) + "$", "m");
   assert.match(imported, expected, "Frozen lock pin differs: " + name);
 }
 
-function verifyLock(document, manifest, pnpm) {
+function rootToolchain(manifest) {
+  const dependencies = manifest.devDependencies ?? {};
+  assert.deepEqual(new Set(Object.keys(dependencies)), tools);
+  const native = pin(dependencies["@typescript/native"]?.match(/^npm:typescript@(7\.\d+\.\d+)$/)?.[1],
+    "@typescript/native (TypeScript 7 compiler)");
+  const api = pin(dependencies.typescript?.match(/^npm:@typescript\/typescript6@(6\.\d+\.\d+)$/)?.[1],
+    "typescript (TypeScript 6 API)");
+  const nx = pin(dependencies.nx, "nx");
+  for (const name of tools) {
+    if (!["@typescript/native", "typescript", "nx"].includes(name)) pin(dependencies[name], name);
+  }
+  assert.ok(!manifest.dependencies?.nx, "Nx must remain a development tool");
+  return { native, api, nx };
+}
+
+function verifyLock(document, manifest, pnpm, toolchain) {
   const documents = document.split(/^---$/m).filter(value => value.trim());
   assert.equal(documents.length, 2, "Expected pnpm package-manager and workspace lock documents");
   for (const item of documents) assert.match(item, /^lockfileVersion: '9\.0'$/m);
@@ -83,7 +101,14 @@ function verifyLock(document, manifest, pnpm) {
   locked(managerRoot, "pnpm", pnpm);
   const workspaceRoot = importer(dependency, ".");
   assert.match(workspaceRoot, /^    devDependencies:$/m);
-  for (const tool of tools) locked(workspaceRoot, tool, manifest.devDependencies[tool]);
+  const snapshots = {
+    "@typescript/native": "typescript@" + toolchain.native,
+    typescript: "@typescript/typescript6@" + toolchain.api,
+    nx: toolchain.nx + "(@typescript/typescript6@" + toolchain.api + ")",
+  };
+  for (const tool of tools) {
+    locked(workspaceRoot, tool, manifest.devDependencies[tool], snapshots[tool] ?? manifest.devDependencies[tool]);
+  }
   return dependency;
 }
 
@@ -156,17 +181,17 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   const pnpm = pin(manifest.packageManager?.match(/^pnpm@(.+)$/)?.[1], "packageManager");
   assert.equal(manifest.engines?.pnpm, pnpm);
   assert.equal(manifest.engines?.node, ">=24.17.0 <25");
-  // Membership is a set property, independent of key order or locale.
-  assert.deepEqual(new Set(Object.keys(manifest.devDependencies ?? {})), tools);
-  for (const tool of tools) pin(manifest.devDependencies[tool], tool);
-  assert.ok(!manifest.dependencies?.nx, "Nx must remain a development tool");
+  // TypeScript 7 remains the single application compiler. Nx requires the
+  // separate upstream TypeScript 6 programmatic API, not a compiler downgrade.
+  const toolchain = rootToolchain(manifest);
 
   verifyWorkspaceSettings(source.read("pnpm-workspace.yaml"), source.json("nx.json"));
-  const dependency = verifyLock(source.read("pnpm-lock.yaml"), manifest, pnpm);
+  const dependency = verifyLock(source.read("pnpm-lock.yaml"), manifest, pnpm, toolchain);
   for (const project of projects) {
     source.directory(project);
-    source.read(project + "/package.json");
-    importer(dependency, project);
+    assert.equal(source.json(project + "/package.json").devDependencies?.typescript, toolchain.native,
+      "Project native TypeScript compiler differs: " + project);
+    locked(importer(dependency, project), "typescript", toolchain.native);
   }
   for (const rel of requiredSources) source.read(rel);
   for (const rel of retiredSources) source.absent(rel);
@@ -176,7 +201,7 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   const biome = source.json("biome.json");
   assert.equal(biome.linter?.enabled, true);
   assert.equal(biome.formatter?.enabled, false);
-  const ts = manifest.devDependencies.typescript;
+  const ts = toolchain.native;
   for (const owner of services) verifyOwner(source, dependency, owner, go, ts);
   const ignores = source.read(".gitignore");
   for (const entry of ["node_modules/", ".env", "secrets.local.", "apps/control-panel/next-env.d.ts"]) {
@@ -184,7 +209,7 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   }
 
   if (strict) resolvePinnedGo(go);
-  return { node, go, pnpm, typescript: ts, biome: manifest.devDependencies["@biomejs/biome"],
+  return { node, go, pnpm, typescript: ts, typescriptApi: toolchain.api, biome: manifest.devDependencies["@biomejs/biome"],
     nxCloudConfigured: true, localGoVerified: strict };
 }
 
@@ -194,7 +219,7 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     "Usage: node tools/dev/verify-workspace.mjs [--require-exact-toolchain]");
   const result = verifyWorkspace(root, { strict: args.length === 1 });
   console.log("WORKSPACE_SOURCE_PASS pnpm=" + result.pnpm + " typescript=" + result.typescript +
-    " biome=" + result.biome + " node-pin=" + result.node + " go-pin=" + result.go +
+    " typescript-api=" + result.typescriptApi + " biome=" + result.biome + " node-pin=" + result.node + " go-pin=" + result.go +
     " nx_cloud_configured=true nx_cache_execution=NOT_RUN lock=STATIC_ONLY");
   if (result.localGoVerified) console.log("EXACT_LOCAL_TOOLCHAIN_PASS node=" + result.node + " go=" + result.go);
 }

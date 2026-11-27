@@ -138,3 +138,19 @@ test("every typed application and owner client exposes a native Nx test target",
   assert.equal(customer.status, 0, customer.stderr);
   assert.ok(JSON.parse(customer.stdout).targets.test);
 });
+
+test("Nx uses its supported TypeScript API and secure minimatch while app tasks retain the native compiler", () => {
+  const nxRequire=createRequire(nxPackagePath);
+  const manifest=require("../../package.json");
+  assert.equal(require("@typescript/native/package.json").version,manifest.devDependencies["@typescript/native"].split("@").at(-1));
+  assert.equal(nxRequire("typescript/package.json").version,manifest.devDependencies.typescript.split("@").at(-1));
+  assert.equal(typeof nxRequire("typescript").readConfigFile,"function");
+  assert.equal(nxRequire("minimatch/package.json").version,require("nx/package.json").dependencies.minimatch);
+  const run=runNx(["run-many","-t","typecheck","--projects=@bthwani/*","--exclude=@bthwani/control-panel","--graph=stdout"]);
+  assert.equal(run.status,0,run.stderr+"\n"+run.stdout);
+  const graph=JSON.parse(run.stdout);
+  const targets=Object.keys(graph.tasks.tasks);
+  assert.ok(targets.includes("@bthwani/customer:typecheck"));
+  assert.ok(targets.includes("@bthwani/merchant:typecheck"));
+  assert.ok(!targets.includes("@bthwani/control-panel:typecheck"));
+});
