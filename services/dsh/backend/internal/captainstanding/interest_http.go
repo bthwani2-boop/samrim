@@ -158,6 +158,39 @@ func interestFilter(raw string) (InterestFilter, error) {
 	}
 	return result, nil
 }
+
+type interestRoute struct {
+	method       string
+	submit, list bool
+	contactID    int64
+}
+
+// Resolve exact owner paths without performing any lookup or mutation.
+func resolveInterestRoute(path string) (interestRoute, bool) {
+	switch path {
+	case CaptainInterestPath:
+		return interestRoute{method: http.MethodPost, submit: true}, true
+	case OperatorCaptainInterestPath:
+		return interestRoute{method: http.MethodGet, list: true}, true
+	default:
+		if !strings.HasPrefix(path, OperatorCaptainInterestPath+"/") || !strings.HasSuffix(path, "/contact") {
+			return interestRoute{}, false
+		}
+		value := strings.TrimSuffix(strings.TrimPrefix(path, OperatorCaptainInterestPath+"/"), "/contact")
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id < 1 || strconv.FormatInt(id, 10) != value {
+			id = 0
+		}
+		return interestRoute{method: http.MethodPatch, contactID: id}, true
+	}
+}
+
+func (h *interestHTTPHandler) AllowsMethod(r *http.Request, method string) bool {
+	route, ok := resolveInterestRoute(r.URL.Path)
+	return h != nil && h.service != nil && ok && route.method == method &&
+		(route.submit || route.list || route.contactID > 0)
+}
+
 func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -166,21 +199,12 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		errorReply(w, ErrOwnerUnavailable)
 		return
 	}
-	isSubmit := r.URL.Path == CaptainInterestPath
-	isList := r.URL.Path == OperatorCaptainInterestPath
-	isContact := strings.HasPrefix(r.URL.Path, OperatorCaptainInterestPath+"/") &&
-		strings.HasSuffix(r.URL.Path, "/contact")
-	expected := http.MethodPost
-	if isList {
-		expected = http.MethodGet
-	}
-	if isContact {
-		expected = http.MethodPatch
-	}
-	if !isSubmit && !isList && !isContact {
+	route, ok := resolveInterestRoute(r.URL.Path)
+	if !ok {
 		reply(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
 		return
 	}
+	isSubmit, isList, expected := route.submit, route.list, route.method
 	w.Header().Set("Allow", expected)
 	if r.Method != expected {
 		reply(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
@@ -244,9 +268,8 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		reply(w, http.StatusOK, page)
 		return
 	}
-	value := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, OperatorCaptainInterestPath+"/"), "/contact")
-	id, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || id < 1 || strconv.FormatInt(id, 10) != value {
+	id := route.contactID
+	if id == 0 {
 		errorReply(w, ErrInvalidChange)
 		return
 	}

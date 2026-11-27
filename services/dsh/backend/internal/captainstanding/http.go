@@ -82,6 +82,53 @@ func uniqueObjectMembers(raw []byte) bool {
 	_, err = decoder.Token()
 	return err == io.EOF
 }
+
+// standingRoute is the authoritative admission decision for both the HTTP
+// handler and its browser preflight. It never resolves Identity or accesses SQL.
+type standingRoute struct {
+	method, role, operatorID string
+	operatorList             bool
+}
+
+func resolveStandingRoute(path, method string) (standingRoute, bool) {
+	switch path {
+	case CaptainStandingPath:
+		return standingRoute{method: http.MethodGet, role: "captain"}, true
+	case CaptainEligibilityPath:
+		return standingRoute{method: http.MethodGet, role: "customer"}, true
+	case CaptainApplicationPath:
+		expected := http.MethodPost
+		if method == http.MethodGet {
+			expected = http.MethodGet
+		}
+		return standingRoute{method: expected, role: "customer"}, true
+	case OperatorCaptainsPath:
+		return standingRoute{method: http.MethodGet, operatorList: true}, true
+	default:
+		if !strings.HasPrefix(path, operatorCaptainPrefix) || !strings.HasSuffix(path, "/standing") {
+			return standingRoute{}, false
+		}
+		id := strings.TrimSuffix(strings.TrimPrefix(path, operatorCaptainPrefix), "/standing")
+		if !validActorID(id) || strings.Contains(id, "/") {
+			return standingRoute{}, false
+		}
+		expected := http.MethodPatch
+		if method == http.MethodGet {
+			if !reviewActorID(id) {
+				return standingRoute{}, false
+			}
+			expected = http.MethodGet
+		}
+		return standingRoute{method: expected, operatorID: id}, true
+	}
+}
+
+// AllowsMethod implements the side-effect-free owner route admission contract.
+func (h *HTTPHandler) AllowsMethod(r *http.Request, method string) bool {
+	route, ok := resolveStandingRoute(r.URL.Path, method)
+	return h != nil && h.service != nil && ok && route.method == method
+}
+
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -90,42 +137,12 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		errorReply(w, ErrOwnerUnavailable)
 		return
 	}
-	var role, expectedMethod string
-	operatorID := ""
-	operatorList := false
-	switch r.URL.Path {
-	case CaptainStandingPath:
-		expectedMethod, role = http.MethodGet, "captain"
-	case CaptainEligibilityPath:
-		expectedMethod, role = http.MethodGet, "customer"
-	case CaptainApplicationPath:
-		expectedMethod, role = http.MethodPost, "customer"
-		if r.Method == http.MethodGet {
-			expectedMethod = http.MethodGet
-		}
-	case OperatorCaptainsPath:
-		expectedMethod, operatorList = http.MethodGet, true
-	default:
-		if strings.HasPrefix(r.URL.Path, operatorCaptainPrefix) &&
-			strings.HasSuffix(r.URL.Path, "/standing") {
-			operatorID = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, operatorCaptainPrefix), "/standing")
-			if !validActorID(operatorID) || strings.Contains(operatorID, "/") {
-				reply(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
-				return
-			}
-			expectedMethod = http.MethodPatch
-			if r.Method == http.MethodGet {
-				if !reviewActorID(operatorID) {
-					reply(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
-					return
-				}
-				expectedMethod = http.MethodGet
-			}
-		} else {
-			reply(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
-			return
-		}
+	route, ok := resolveStandingRoute(r.URL.Path, r.Method)
+	if !ok {
+		reply(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
+		return
 	}
+	expectedMethod, role, operatorID, operatorList := route.method, route.role, route.operatorID, route.operatorList
 	w.Header().Set("Allow", expectedMethod)
 	if r.URL.Path == CaptainApplicationPath {
 		w.Header().Set("Allow", "GET, POST")

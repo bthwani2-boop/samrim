@@ -13,7 +13,7 @@ func TestPrivateOwnerCORSContract(t *testing.T) {
 	t.Setenv("BTHWANI_ISOLATED_TEST_MODE", "true")
 	t.Setenv("DSH_IDENTITY_VERIFIER_URL", "http://127.0.0.1:3302")
 	t.Setenv("DSH_ENABLE_ISOLATED_CAPTAIN_STANDING", "true")
-	t.Setenv("DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST", "false")
+	t.Setenv("DSH_ENABLE_ISOLATED_CAPTAIN_INTEREST", "true")
 	db, err := sql.Open("postgres", "postgres://synthetic@127.0.0.1:1/unused?sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +61,28 @@ func TestPrivateOwnerCORSContract(t *testing.T) {
 		{"empty method", city, "OPTIONS", []string{origin}, nil, nil, 403, false},
 		{"captain read", captain, "OPTIONS", []string{origin}, []string{"GET"}, []string{"authorization"}, 204, true},
 		{"captain delete denied", captain, "OPTIONS", []string{origin}, []string{"DELETE"}, nil, 403, false},
+		{"captain patch denied", captain, "OPTIONS", []string{origin}, []string{"PATCH"}, nil, 403, false},
+		{"captain post denied", captain, "OPTIONS", []string{origin}, []string{"POST"}, nil, 403, false},
+		{"eligibility read", "/v1/actors/me/captain-eligibility", "OPTIONS", []string{origin}, []string{"GET"}, nil, 204, true},
+		{"eligibility post denied", "/v1/actors/me/captain-eligibility", "OPTIONS", []string{origin}, []string{"POST"}, nil, 403, false},
+		{"application read", "/v1/actors/me/captain-application", "OPTIONS", []string{origin}, []string{"GET"}, nil, 204, true},
+		{"application post", "/v1/actors/me/captain-application", "OPTIONS", []string{origin}, []string{"POST"}, nil, 204, true},
+		{"application patch denied", "/v1/actors/me/captain-application", "OPTIONS", []string{origin}, []string{"PATCH"}, nil, 403, false},
+		{"operator captain list", "/v1/operators/captains", "OPTIONS", []string{origin}, []string{"GET"}, nil, 204, true},
+		{"operator captain list patch denied", "/v1/operators/captains", "OPTIONS", []string{origin}, []string{"PATCH"}, nil, 403, false},
+		{"operator captain detail", "/v1/operators/captains/captain-17/standing", "OPTIONS", []string{origin}, []string{"GET"}, nil, 204, true},
+		{"operator captain change", "/v1/operators/captains/captain-17/standing", "OPTIONS", []string{origin}, []string{"PATCH"}, nil, 204, true},
+		{"operator captain post denied", "/v1/operators/captains/captain-17/standing", "OPTIONS", []string{origin}, []string{"POST"}, nil, 403, false},
+		{"operator unknown route", "/v1/operators/captains/captain-17/unknown", "OPTIONS", []string{origin}, []string{"GET"}, nil, 403, false},
+		{"operator malformed actor", "/v1/operators/captains/bad%2Fid/standing", "OPTIONS", []string{origin}, []string{"GET"}, nil, 403, false},
+		{"interest submission", "/v1/captain-interest", "OPTIONS", []string{origin}, []string{"POST"}, nil, 204, true},
+		{"interest read denied", "/v1/captain-interest", "OPTIONS", []string{origin}, []string{"GET"}, nil, 403, false},
+		{"interest review", "/v1/operators/captain-interest", "OPTIONS", []string{origin}, []string{"GET"}, nil, 204, true},
+		{"interest list post denied", "/v1/operators/captain-interest", "OPTIONS", []string{origin}, []string{"POST"}, nil, 403, false},
+		{"interest contact", "/v1/operators/captain-interest/42/contact", "OPTIONS", []string{origin}, []string{"PATCH"}, nil, 204, true},
+		{"interest invalid contact", "/v1/operators/captain-interest/invalid/contact", "OPTIONS", []string{origin}, []string{"PATCH"}, nil, 403, false},
+		{"interest contact read denied", "/v1/operators/captain-interest/42/contact", "OPTIONS", []string{origin}, []string{"GET"}, nil, 403, false},
+		{"interest missing route", "/v1/operators/captain-interest/42/unknown", "OPTIONS", []string{origin}, []string{"PATCH"}, nil, 403, false},
 		{"anonymous preview", preview, "POST", []string{origin}, nil, nil, 401, false},
 		{"anonymous store", store, "GET", []string{origin}, nil, nil, 401, false},
 		{"anonymous city", city, "PATCH", []string{origin}, nil, nil, 401, false},

@@ -37,7 +37,7 @@ func isolatedCaptainStandingHandler(db *sql.DB, schema string, next http.Handler
 		return nil, err
 	}
 	handler := captainstanding.NewHTTPHandler(captainstanding.NewService(identity, repo))
-	private := privateOwnerCORS(handler, origins, http.MethodGet, http.MethodPost, http.MethodPatch)
+	private := privateOwnerCORS(handler, origins)
 	mux := http.NewServeMux()
 	// One-way public intake is an independent, explicit isolated opt-in.
 	// Existing authenticated Captain standing must not expose it implicitly.
@@ -47,7 +47,7 @@ func isolatedCaptainStandingHandler(db *sql.DB, schema string, next http.Handler
 			return nil, err
 		}
 		interest := privateOwnerCORS(
-			captainstanding.NewInterestHTTPHandler(captainstanding.NewInterestService(identity, interestRepo)), origins, http.MethodGet, http.MethodPost, http.MethodPatch)
+			captainstanding.NewInterestHTTPHandler(captainstanding.NewInterestService(identity, interestRepo)), origins)
 		mux.Handle(captainstanding.CaptainInterestPath, interest)
 		mux.Handle(captainstanding.OperatorCaptainInterestPath, interest)
 		mux.Handle(captainstanding.OperatorCaptainInterestPath+"/", interest)
