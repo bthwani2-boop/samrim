@@ -157,17 +157,29 @@ test("Captain interest leaves definite rejection retryable but stops after recei
       field(render(), "الاسم الكامل").props.onChangeText("اسم تجريبي");
       field(render(), "رقم الهاتف").props.onChangeText(typedPhone);
       const radios = () => render().filter(node => node.props.accessibilityRole === "radio");
+      const groups = render().filter(node => node.props.accessibilityRole === "radiogroup");
+      assert.equal(groups.length, 4);
+      assert.equal(new Set(groups.map(group => group.props.accessibilityLabel)).size, 4);
+      for (const radio of radios()) {
+        assert.equal(typeof radio.props.accessibilityState.checked, "boolean");
+        assert.equal(radio.props["aria-checked"], radio.props.accessibilityState.checked);
+        assert.equal(typeof radio.props.accessibilityLabel, "string");
+        assert.equal(Object.hasOwn(radio.props.accessibilityState, "selected"), false);
+      }
+      assert.deepEqual(groups.map(group => nodes(group).filter(node => node.props.accessibilityRole === "radio" && node.props.accessibilityState.checked).length), [1, 0, 1, 1]);
+      field(render(), "المدينة").props.onChangeText("صنعاء");
+      field(render(), "الحي أو منطقة السكن").props.onChangeText("الوحدة");
       radios()[4].props.onPress();
       radios().at(-2).props.onPress();
       field(render(), "تفاصيل الخبرة").props.onChangeText("خبرة تجريبية");
       radios()[0].props.onPress();
       radios().at(-2).props.onPress();
       assert.deepEqual([
-        radios()[4].props.accessibilityState.selected,
+        radios()[4].props.accessibilityState.checked,
         field(render(), "تفاصيل الخبرة").props.value,
       ], [true, "خبرة تجريبية"], "reselecting the same choices must preserve the entered facts");
       radios()[1].props.onPress();
-      assert.equal(radios()[4].props.accessibilityState.selected, false, "changing vehicle clears the old plate choice");
+      assert.equal(radios()[4].props.accessibilityState.checked, false, "changing vehicle clears the old plate choice");
       radios()[4].props.onPress();
       radios().at(-1).props.onPress();
       assert.equal(field(render(), "تفاصيل الخبرة"), undefined);
@@ -177,20 +189,20 @@ test("Captain interest leaves definite rejection retryable but stops after recei
       const submit = findSubmit(render());
       assert.equal(submit.props.disabled, false, "Arabic digit input must enable a valid registration");
       const beforeRadios = render().filter(node => node.props.accessibilityRole === "radio");
-      const selected = beforeRadios.map(node => node.props.accessibilityState.selected);
+      const selected = beforeRadios.map(node => node.props.accessibilityState.checked);
       submit.props.onPress();
       const pending = render().filter(node => node.props.accessibilityRole === "radio");
       assert.ok(pending.length > 0);
       assert.ok(pending.every(node => node.props.disabled && node.props.accessibilityState.disabled),
         "all choices must be disabled while submission is pending");
       for (const radio of beforeRadios) {
-        if (!radio.props.accessibilityState.selected) radio.props.onPress();
+        if (!radio.props.accessibilityState.checked) radio.props.onPress();
       }
       rejectFirst(new DshPublicError(429, "RATE_LIMITED"));
       await new Promise(setImmediate);
       const afterRejection = render();
       const recovered = afterRejection.filter(node => node.props.accessibilityRole === "radio");
-      assert.deepEqual(recovered.map(node => node.props.accessibilityState.selected), selected);
+      assert.deepEqual(recovered.map(node => node.props.accessibilityState.checked), selected);
       assert.ok(recovered.every(node => !node.props.disabled));
       assert.match(afterRejection.find(node => node.props.accessibilityRole === "alert").props.children, /تجاوز عدد المحاولات/);
       assert.equal(findSubmit(afterRejection).props.disabled, false);

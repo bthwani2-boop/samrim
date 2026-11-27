@@ -1,101 +1,155 @@
-import { type CaptainInterestInput, type CaptainPhoneType,
-  type CaptainVehicleType, DshPublicError, submitCaptainInterest, validCaptainInterest } from "@bthwani/dsh";
+import {
+  type CaptainInterestInput,
+  type CaptainPhoneType,
+  type CaptainVehicleType,
+  DshPublicError,
+  submitCaptainInterest,
+  validCaptainInterest,
+} from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-const vehicleOptions: ReadonlyArray<{value: CaptainVehicleType; label: string}> = [
+type Choice<T> = Readonly<{ value: T; label: string }>;
+const vehicles: readonly Choice<CaptainVehicleType>[] = [
   { value: "MOTORCYCLE", label: "دراجة نارية" },
   { value: "ELECTRIC", label: "دراجة كهربائية" },
   { value: "BICYCLE", label: "دراجة هوائية" },
   { value: "NONE", label: "لا أمتلك دراجة" },
 ];
-const phoneOptions: ReadonlyArray<{value: CaptainPhoneType; label: string}> = [
+const phones: readonly Choice<CaptainPhoneType>[] = [
   { value: "SMART", label: "هاتف ذكي (Android / iPhone)" },
   { value: "BASIC", label: "هاتف عادي" },
   { value: "NONE", label: "لا أمتلك هاتفًا" },
 ];
+const yesNo: readonly Choice<boolean>[] = [
+  { value: true, label: "نعم" },
+  { value: false, label: "لا" },
+];
 const dshOrigin = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN ?? "";
 
+/** Public contact intake only; DSH owns validation, storage and the receipt. */
 export default function CaptainInterestScreen() {
   const { theme } = useMobileAppearance();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
   const [district, setDistrict] = useState("");
-  const [vehicleType, setVehicleType] = useState<CaptainVehicleType>("MOTORCYCLE");
-  const [plateRegistered, setPlateRegistered] = useState<boolean | null>(null);
+  const [vehicle, setVehicle] = useState<CaptainVehicleType>("MOTORCYCLE");
+  const [plate, setPlate] = useState<boolean | null>(null);
   const [phoneType, setPhoneType] = useState<CaptainPhoneType>("SMART");
   const [experienced, setExperienced] = useState(false);
-  const [experienceDetails, setExperienceDetails] = useState("");
+  const [details, setDetails] = useState("");
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<"received" | "unknown" | null>(null);
   const [message, setMessage] = useState("");
-  const controller = useRef<AbortController | null>(null);
+  const request = useRef<AbortController | null>(null);
   const terminal = useRef(false);
-  useEffect(() => () => { controller.current?.abort(); }, []);
+  useEffect(() => () => { request.current?.abort(); }, []);
 
-  const vehicleNeedsPlate = vehicleType === "MOTORCYCLE" || vehicleType === "ELECTRIC";
-  const contactPhone = phone.trim().replace(/[٠-٩۰-۹]/g, digit =>
-    String(digit.charCodeAt(0) - (digit <= "٩" ? 0x660 : 0x6f0)));
+  const needsPlate = vehicle === "MOTORCYCLE" || vehicle === "ELECTRIC";
   const input: CaptainInterestInput = {
-    name: name.trim(), phone: contactPhone, city: city.trim(), district: district.trim(),
-    vehicleType, ...(vehicleNeedsPlate && plateRegistered !== null ? { plateRegistered } : {}),
-    phoneType, experienced,
-    ...(experienced && experienceDetails.trim() ? { experienceDetails: experienceDetails.trim() } : {}),
+    name: name.trim(),
+    phone: phone.trim().replace(/[٠-٩۰-۹]/g, digit =>
+      String(digit.charCodeAt(0) - (digit <= "٩" ? 0x660 : 0x6f0))),
+    city: city.trim(),
+    district: district.trim(),
+    vehicleType: vehicle,
+    ...(needsPlate && plate !== null ? { plateRegistered: plate } : {}),
+    phoneType,
+    experienced,
+    ...(experienced && details.trim() ? { experienceDetails: details.trim() } : {}),
   };
-  const canSubmit = validCaptainInterest(input) && !busy && receipt === null && !!dshOrigin;
+  const canSubmit = !busy && !receipt && Boolean(dshOrigin) && validCaptainInterest(input);
+  const canEdit = () => !request.current && !terminal.current;
+  const labelStyle = { color: theme.color, fontWeight: "600" as const };
   const fieldStyle = {
     borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10,
     color: theme.color, padding: 12, fontSize: 16, minHeight: 48,
   } as const;
-  const labelStyle = { color: theme.color, fontWeight: "600" as const };
-  const options = <T extends string>(values: ReadonlyArray<{value: T; label: string}>,
-    selected: T, choose: (v: T) => void) => (
-    <View style={{ gap: 8 }}>
-      {values.map(item => (
-        <Pressable key={item.value} accessibilityRole="radio"
-          accessibilityState={{ selected: item.value === selected, disabled: busy }}
-          disabled={busy}
-          onPress={() => { if (!controller.current && item.value !== selected) choose(item.value); }}
-          style={{ borderWidth: 1, borderColor: item.value === selected ? theme.actionBackground : theme.borderColor,
-            borderRadius: 10, padding: 12, minHeight: 44 }}>
-          <Text style={{ color: theme.color }}>{item.value === selected ? "◉  " : "○  "}{item.label}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
+
+  // One local selection renderer for every enum and boolean field. Native and
+  // Web expose the same checked state, including an unanswered plate question.
+  function choices<T extends string | boolean>(
+    label: string, items: readonly Choice<T>[], current: T | null,
+    choose: (value: T) => void, inline = false,
+  ) {
+    return (
+      <View style={{ gap: 5 }}>
+        <Text style={labelStyle}>{label} *</Text>
+        <View accessibilityRole="radiogroup" accessibilityLabel={label}
+          style={{ gap: 8, flexDirection: inline ? "row" : "column" }}>
+          {items.map(item => {
+            const checked = item.value === current;
+            return (
+              <Pressable key={String(item.value)} accessibilityRole="radio"
+                accessibilityLabel={item.label} aria-checked={checked}
+                accessibilityState={{ checked, disabled: busy }} disabled={busy}
+                onPress={() => { if (canEdit() && !checked) choose(item.value); }}
+                style={{
+                  ...(inline ? { flex: 1 } : {}),
+                  minHeight: 44, justifyContent: "center", padding: 12,
+                  borderWidth: 1, borderRadius: 10,
+                  borderColor: checked ? theme.actionBackground : theme.borderColor,
+                  backgroundColor: checked ? theme.actionSoft : "transparent",
+                }}>
+                <Text style={{ color: theme.color, textAlign: inline ? "center" : "auto" }}>
+                  {checked ? "◉  " : "○  "}{item.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  function field(label: string, value: string, change: (value: string) => void,
+    maxLength: number, kind: "text" | "phone" | "details" = "text") {
+    return (
+      <View style={{ gap: 5 }}>
+        <Text style={labelStyle}>{label}{kind === "details" ? " (اختياري)" : " *"}</Text>
+        <TextInput accessibilityLabel={label} style={fieldStyle} value={value}
+          onChangeText={next => { if (canEdit()) change(next); }}
+          maxLength={maxLength} editable={!busy}
+          {...(kind === "phone" ? { keyboardType: "phone-pad" as const, autoComplete: "tel" as const, placeholder: "77XXXXXXX" } : {})}
+          {...(kind === "details" ? { multiline: true } : {})} />
+      </View>
+    );
+  }
+
   async function submit() {
-    if (!canSubmit || controller.current || terminal.current) return;
-    const next = new AbortController();
-    controller.current = next;
+    if (!canSubmit || !canEdit()) return;
+    const active = new AbortController();
+    request.current = active;
     setBusy(true);
     setMessage("");
     try {
-      await submitCaptainInterest(dshOrigin, input, next.signal);
-      if (!next.signal.aborted) {
+      await submitCaptainInterest(dshOrigin, input, active.signal);
+      if (!active.signal.aborted) {
         terminal.current = true;
         setReceipt("received");
       }
     } catch (reason) {
-      if (next.signal.aborted) return;
+      if (active.signal.aborted) return;
       if (reason instanceof DshPublicError && reason.code === "OPERATION_RESULT_UNKNOWN") {
         terminal.current = true;
         setReceipt("unknown");
-      } else if (reason instanceof DshPublicError && reason.status === 429) {
-        setMessage("تم تجاوز عدد المحاولات المسموح. حاول لاحقًا.");
       } else {
-        setMessage("تعذّر إرسال البيانات. تحقق من الحقول والاتصال.");
+        setMessage(reason instanceof DshPublicError && reason.status === 429
+          ? "تم تجاوز عدد المحاولات المسموح. حاول لاحقًا."
+          : "تعذّر إرسال البيانات. تحقق من الحقول والاتصال.");
       }
     } finally {
-      if (controller.current === next) {
-        controller.current = null;
-        setBusy(false);
+      if (request.current === active) {
+        request.current = null;
+        if (!active.signal.aborted) setBusy(false);
       }
     }
   }
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
       <ScrollView keyboardShouldPersistTaps="handled"
@@ -121,88 +175,31 @@ export default function CaptainInterestScreen() {
             <Text style={{ color: theme.colorSecondary }}>
               سجّل بياناتك مرة واحدة. التسجيل لا يعني القبول، وسنتواصل هاتفيًا مع المناسبين فقط.
             </Text>
-            <View style={{ gap: 5 }}>
-              <Text style={labelStyle}>الاسم الكامل *</Text>
-              <TextInput accessibilityLabel="الاسم الكامل" style={fieldStyle} value={name}
-                onChangeText={setName} maxLength={100} editable={!busy} />
-            </View>
-            <View style={{ gap: 5 }}>
-              <Text style={labelStyle}>رقم الهاتف *</Text>
-              <TextInput accessibilityLabel="رقم الهاتف" style={fieldStyle} value={phone}
-                onChangeText={setPhone} maxLength={13} keyboardType="phone-pad"
-                autoComplete="tel" editable={!busy} placeholder="77XXXXXXX" />
-            </View>
-            <View style={{ gap: 5 }}>
-              <Text style={labelStyle}>المدينة *</Text>
-              <TextInput accessibilityLabel="المدينة" style={fieldStyle} value={city}
-                onChangeText={setCity} maxLength={80} editable={!busy} />
-            </View>
-            <View style={{ gap: 5 }}>
-              <Text style={labelStyle}>الحي أو منطقة السكن *</Text>
-              <TextInput accessibilityLabel="الحي أو منطقة السكن" style={fieldStyle} value={district}
-                onChangeText={setDistrict} maxLength={100} editable={!busy} />
-            </View>
-            <View style={{ gap: 5 }}>
-              <Text style={labelStyle}>نوع الدراجة *</Text>
-              {options(vehicleOptions, vehicleType, value => {
-                setVehicleType(value);
-                setPlateRegistered(null);
-              })}
-            </View>
-            {vehicleNeedsPlate ? (
-              <View style={{ gap: 5 }}>
-                <Text style={labelStyle}>هل الدراجة مرقمة؟ *</Text>
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  {([{label:"نعم",value:true},{label:"لا",value:false}] as const).map(item =>
-                    <Pressable key={item.label} accessibilityRole="radio"
-                      accessibilityState={{ selected: plateRegistered === item.value, disabled: busy }}
-                      disabled={busy}
-                      onPress={() => { if (!controller.current) setPlateRegistered(item.value); }}
-                      style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10,
-                        borderColor: plateRegistered === item.value ? theme.actionBackground : theme.borderColor,
-                        justifyContent: "center", padding: 8 }}>
-                      <Text style={{ color: theme.color, textAlign: "center" }}>{item.label}</Text>
-                    </Pressable>
-                  )}
-                </View>
-              </View>
-            ) : null}
-            <View style={{ gap: 5 }}>
-              <Text style={labelStyle}>نوع الهاتف المستخدم *</Text>
-              {options(phoneOptions, phoneType, setPhoneType)}
-            </View>
-            <View style={{ gap: 5 }}>
-              <Text style={labelStyle}>هل لديك خبرة سابقة بالتوصيل؟ *</Text>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                {([{label:"نعم",value:true},{label:"لا",value:false}] as const).map(item =>
-                  <Pressable key={item.label} accessibilityRole="radio"
-                    accessibilityState={{ selected: experienced === item.value, disabled: busy }}
-                    disabled={busy}
-                    onPress={() => { if (!controller.current && item.value !== experienced) { setExperienced(item.value); setExperienceDetails(""); } }}
-                    style={{ flex: 1, minHeight: 44, borderWidth: 1, borderRadius: 10,
-                      borderColor: experienced === item.value ? theme.actionBackground : theme.borderColor,
-                      justifyContent: "center", padding: 8 }}>
-                    <Text style={{ color: theme.color, textAlign: "center" }}>{item.label}</Text>
-                  </Pressable>)}
-              </View>
-            </View>
-            {experienced ? (
-              <View style={{ gap: 5 }}>
-                <Text style={labelStyle}>تفاصيل الخبرة (اختياري)</Text>
-                <TextInput accessibilityLabel="تفاصيل الخبرة" style={fieldStyle}
-                  value={experienceDetails} onChangeText={setExperienceDetails}
-                  editable={!busy} maxLength={200} multiline />
-              </View>
-            ) : null}
+            {field("الاسم الكامل", name, setName, 100)}
+            {field("رقم الهاتف", phone, setPhone, 13, "phone")}
+            {field("المدينة", city, setCity, 80)}
+            {field("الحي أو منطقة السكن", district, setDistrict, 100)}
+            {choices("نوع الدراجة", vehicles, vehicle, value => {
+              setVehicle(value);
+              setPlate(null);
+            })}
+            {needsPlate ? choices("هل الدراجة مرقمة؟", yesNo, plate, setPlate, true) : null}
+            {choices("نوع الهاتف المستخدم", phones, phoneType, setPhoneType)}
+            {choices("هل لديك خبرة سابقة بالتوصيل؟", yesNo, experienced, value => {
+              setExperienced(value);
+              setDetails("");
+            }, true)}
+            {experienced ? field("تفاصيل الخبرة", details, setDetails, 200, "details") : null}
             <Text style={{ color: theme.colorSecondary, fontSize: 12 }}>
               يعتمد التعاون على أجر المشوار وفق سياسة بثواني. تستخدم بياناتك لغرض التواصل
               بشأن فرص الانضمام، ويُسمح بالاطلاع عليها للمسؤولين المخولين فقط.
             </Text>
             {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
-            {!dshOrigin ? <Text style={{ color: theme.warningText }}>
-              استمارة التسجيل غير متاحة في هذه البيئة حاليًا.
-            </Text> : null}
-            <Pressable accessibilityRole="button" accessibilityState={{ disabled: !canSubmit }}
+            {!dshOrigin ? (
+              <Text style={{ color: theme.warningText }}>استمارة التسجيل غير متاحة في هذه البيئة حاليًا.</Text>
+            ) : null}
+            <Pressable accessibilityRole="button"
+              accessibilityState={{ disabled: !canSubmit, busy }}
               disabled={!canSubmit} onPress={() => { void submit(); }}
               style={{ backgroundColor: theme.actionBackground, padding: 15,
                 borderRadius: 12, opacity: canSubmit ? 1 : 0.5, minHeight: 48 }}>
