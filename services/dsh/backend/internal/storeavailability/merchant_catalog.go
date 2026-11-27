@@ -3,6 +3,7 @@ package storeavailability
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -10,6 +11,8 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 // MerchantCatalogOffer is the private Store-scoped DSH projection of the
@@ -165,63 +168,87 @@ func merchantCatalogPageParameters(r *http.Request) (int, string, string, string
 	return limit, cursor, query, status, true
 }
 
-// The catalog summary and status filter share the same offer-level predicate.
-const catalogAvailableSQL = `o.published AND o.available AND p.active AND v.sellable
-	AND v.required_attributes_valid AND o.price_yer>0 AND o.stock_units>0`
-
-func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, storeID string, limit int, cursor, query, status string) (MerchantCatalogPage, error) {
-	result := MerchantCatalogPage{ActorID: actorID, StoreID: storeID, Items: []MerchantCatalogOffer{}}
-	tx, err := beginScopedStoreTx(ctx, db, schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+// Both private reads derive from one fixed owner projection. NOT MATERIALIZED
+// permits PostgreSQL to push the page predicates into the Store-scoped join;
+// the inventory branch is independent of page, cursor and search limits.
+func readMerchantCatalogProjection(ctx context.Context, db *sql.DB, schema, actorID, storeID string, limit int, cursor, query, status string, inventory bool) ([]byte, error) {
+	tx, err := dbscope.Begin(ctx, db, schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "stores", "offers", "products", "variants")
 	if err != nil {
-		return result, ErrStoreOwnerUnavailable
+		return nil, ErrStoreOwnerUnavailable
 	}
 	defer tx.Rollback()
 	if err := requireMerchantCatalogStore(ctx, tx, actorID, storeID); err != nil {
-		return result, err
+		return nil, err
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT o.id,p.id,p.name,v.id,o.price_yer::text,
-		o.stock_units,o.draft_version,p.active,v.sellable,v.required_attributes_valid,o.published,o.available
+	var projection []byte
+	err = tx.QueryRowContext(ctx, `WITH catalog AS NOT MATERIALIZED (
+		SELECT o.id, p.id AS product_id, p.name, v.id AS variant_id,
+			o.price_yer::text AS price_yer, o.stock_units, o.draft_version,
+			p.active AS product_active, v.sellable AS variant_sellable,
+			v.required_attributes_valid, o.published, o.available,
+			(o.published AND o.available AND p.active AND v.sellable
+				AND v.required_attributes_valid AND o.price_yer>0 AND o.stock_units>0) AS eligible
 		FROM offers o
 		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
 		JOIN variants v ON v.id=o.variant_id AND v.product_id=p.id
-		WHERE o.store_id=$1 AND o.id COLLATE "C" > $2
-		AND ($4 = '' OR strpos(lower(p.name), lower($4)) > 0)
-		AND CASE $5
-			WHEN '' THEN true
-			WHEN 'published' THEN o.published
-			WHEN 'unpublished' THEN NOT o.published
-			WHEN 'available' THEN (`+catalogAvailableSQL+`)
-			WHEN 'unavailable' THEN o.published AND NOT (`+catalogAvailableSQL+`)
-			WHEN 'stockout' THEN o.published AND o.stock_units=0
-			ELSE false
-		END
-		ORDER BY o.id COLLATE "C" LIMIT $3`, storeID, cursor, limit+1, query, status)
+		WHERE o.store_id=$1
+	)
+	SELECT CASE WHEN $6::boolean THEN (
+		SELECT jsonb_build_object(
+			'totalOffers', COUNT(*),
+			'publishedOffers', COUNT(*) FILTER (WHERE published),
+			'availableOffers', COUNT(*) FILTER (WHERE eligible),
+			'unavailableOffers', COUNT(*) FILTER (WHERE published AND NOT eligible),
+			'stockoutOffers', COUNT(*) FILTER (WHERE published AND stock_units=0)
+		) FROM catalog
+	) ELSE (
+		SELECT COALESCE(jsonb_agg(jsonb_build_object(
+			'id', id, 'productId', product_id, 'name', name, 'variantId', variant_id,
+			'priceYer', price_yer, 'stockUnits', stock_units, 'draftVersion', draft_version,
+			'productActive', product_active, 'variantSellable', variant_sellable,
+			'requiredAttributesValid', required_attributes_valid,
+			'published', published, 'available', available
+		) ORDER BY id COLLATE "C"), '[]'::jsonb)
+		FROM (
+			SELECT * FROM catalog
+			WHERE id COLLATE "C" > $2
+			AND ($4 = '' OR strpos(lower(name), lower($4)) > 0)
+			AND CASE $5
+				WHEN '' THEN true
+				WHEN 'published' THEN published
+				WHEN 'unpublished' THEN NOT published
+				WHEN 'available' THEN eligible
+				WHEN 'unavailable' THEN published AND NOT eligible
+				WHEN 'stockout' THEN published AND stock_units=0
+				ELSE false
+			END
+			ORDER BY id COLLATE "C" LIMIT $3
+		) AS page
+	) END`, storeID, cursor, limit, query, status, inventory).Scan(&projection)
 	if err != nil {
-		return result, ErrStoreOwnerUnavailable
+		return nil, ErrStoreOwnerUnavailable
 	}
-	for rows.Next() {
-		var item MerchantCatalogOffer
-		item.StoreID = storeID
-		if err = rows.Scan(&item.ID, &item.ProductID, &item.Name, &item.VariantID,
-			&item.PriceYER, &item.StockUnits, &item.DraftVersion, &item.ProductActive, &item.VariantSellable,
-			&item.RequiredAttributesValid, &item.Published, &item.Available); err != nil {
-			break
-		}
-		result.Items = append(result.Items, item)
+	if err := tx.Commit(); err != nil {
+		return nil, ErrStoreOwnerUnavailable
 	}
-	if err == nil {
-		err = rows.Err()
-	}
-	rows.Close()
+	return projection, nil
+}
+
+func readMerchantCatalog(ctx context.Context, db *sql.DB, schema, actorID, storeID string, limit int, cursor, query, status string) (MerchantCatalogPage, error) {
+	projection, err := readMerchantCatalogProjection(ctx, db, schema, actorID, storeID, limit+1, cursor, query, status, false)
 	if err != nil {
+		return MerchantCatalogPage{}, err
+	}
+	result := MerchantCatalogPage{ActorID: actorID, StoreID: storeID, Items: []MerchantCatalogOffer{}}
+	if err := json.Unmarshal(projection, &result.Items); err != nil || result.Items == nil {
 		return MerchantCatalogPage{}, ErrStoreOwnerUnavailable
+	}
+	for i := range result.Items {
+		result.Items[i].StoreID = storeID
 	}
 	if len(result.Items) > limit {
 		result.Items = result.Items[:limit]
 		result.NextCursor = result.Items[len(result.Items)-1].ID
-	}
-	if err = tx.Commit(); err != nil {
-		return MerchantCatalogPage{}, ErrStoreOwnerUnavailable
 	}
 	return result, nil
 }
@@ -250,33 +277,16 @@ func requireMerchantCatalogStore(ctx context.Context, tx *sql.Tx, actorID, store
 	return nil
 }
 
-// One owner-scoped SQL snapshot, independent of page/search limits.
 // Availability is Offer-level catalog eligibility, not Store orderability.
 func readMerchantInventorySummary(ctx context.Context, db *sql.DB, schema, actorID, storeID string) (MerchantInventorySummary, error) {
-	result := MerchantInventorySummary{ActorID: actorID, StoreID: storeID}
-	tx, err := beginScopedStoreTx(ctx, db, schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	projection, err := readMerchantCatalogProjection(ctx, db, schema, actorID, storeID, 0, "", "", "", true)
 	if err != nil {
-		return MerchantInventorySummary{}, ErrStoreOwnerUnavailable
-	}
-	defer tx.Rollback()
-	if err := requireMerchantCatalogStore(ctx, tx, actorID, storeID); err != nil {
 		return MerchantInventorySummary{}, err
 	}
-	err = tx.QueryRowContext(ctx, `SELECT COUNT(*),
-		COUNT(*) FILTER (WHERE o.published),
-		COUNT(*) FILTER (WHERE `+catalogAvailableSQL+`),
-		COUNT(*) FILTER (WHERE o.published AND o.stock_units=0)
-		FROM offers o
-		JOIN products p ON p.id=o.product_id AND p.store_id=o.store_id
-		JOIN variants v ON v.id=o.variant_id AND v.product_id=p.id
-		WHERE o.store_id=$1`, storeID).Scan(&result.TotalOffers, &result.PublishedOffers,
-		&result.AvailableOffers, &result.StockoutOffers)
-	if err != nil {
+	var result MerchantInventorySummary
+	if err := json.Unmarshal(projection, &result); err != nil {
 		return MerchantInventorySummary{}, ErrStoreOwnerUnavailable
 	}
-	result.UnavailableOffers = result.PublishedOffers - result.AvailableOffers
-	if err := tx.Commit(); err != nil {
-		return MerchantInventorySummary{}, ErrStoreOwnerUnavailable
-	}
+	result.ActorID, result.StoreID = actorID, storeID
 	return result, nil
 }

@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -166,6 +169,25 @@ func TestMerchantCatalogRealPostgresOwnerReadback(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// A missing owner schema must never resolve catalog relations in pg_temp.
+	shadow, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shadow.Close()
+	shadow.SetMaxOpenConns(1)
+	for _, relation := range []string{"stores", "offers", "products", "variants"} {
+		if _, err := shadow.ExecContext(ctx, "CREATE TEMP TABLE "+relation+" AS SELECT * FROM "+schema+"."+relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := readMerchantCatalog(ctx, shadow, schema+"_missing", "merchant-a", "catalog-a", 20, "", "", ""); !errors.Is(err, ErrStoreOwnerUnavailable) {
+		t.Fatalf("missing schema catalog shadow must fail closed: %v", err)
+	}
+	if _, err := readMerchantInventorySummary(ctx, shadow, schema+"_missing", "merchant-a", "catalog-a"); !errors.Is(err, ErrStoreOwnerUnavailable) {
+		t.Fatalf("missing schema summary shadow must fail closed: %v", err)
+	}
+
 	merchant := fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}
 	handler, err := NewMerchantCatalogHandler(merchant, db, schema)
 	if err != nil {
@@ -683,5 +705,37 @@ func TestMerchantInventorySummaryRejectsUnauthorizedBeforeDatabase(t *testing.T)
 		if reply.Code != tc.status || reply.Header().Get("Cache-Control") != "no-store" {
 			t.Fatalf("unexpected inventory response: %d expected %d", reply.Code, tc.status)
 		}
+	}
+}
+
+// Both reads must use one fixed parameterized statement; no SQL assembly at a database call.
+func TestMerchantCatalogFixedQueryBoundary(t *testing.T) {
+	f, err := parser.ParseFile(token.NewFileSet(), "merchant_catalog.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	ast.Inspect(f, func(n ast.Node) bool {
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || (sel.Sel.Name != "QueryContext" && sel.Sel.Name != "QueryRowContext") {
+			return true
+		}
+		calls++
+		if len(call.Args) < 2 {
+			t.Error("missing SQL statement")
+			return true
+		}
+		lit, ok := call.Args[1].(*ast.BasicLit)
+		if !ok || lit.Kind != token.STRING {
+			t.Errorf("%s must use fixed SQL", sel.Sel.Name)
+		}
+		return true
+	})
+	if calls != 2 {
+		t.Errorf("expected owner authorization and one catalog projection, got %d SQL calls", calls)
 	}
 }
