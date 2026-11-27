@@ -178,8 +178,8 @@ test("transient HTTP failure recovers and persistent failure remains negative", 
     "$node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-AppHttpTarget'},$true)",
     "if(!$node){throw 'PROBE_FUNCTION_MISSING'}",
     "Invoke-Expression $node.Extent.Text",
-    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[switch]$SkipHttpErrorCheck,[string]$Uri,[int]$TimeoutSec) $script:tries++; if($script:alwaysFail -or $script:tries -eq 1){throw 'temporary failure'}; return [pscustomobject]@{StatusCode=200} }",
-    "$target=@{A='test';U='http://not-used.invalid/'}",
+    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[switch]$SkipHttpErrorCheck,[string]$Uri,[int]$TimeoutSec) $script:tries++; if($script:alwaysFail -or $script:tries -eq 1){throw 'temporary failure'}; return [pscustomobject]@{StatusCode=200;Headers=@{'Content-Type'='text/html'};Content='<html>healthy</html>'} }",
+    "$target=@{A='test';Kind='web';U='http://not-used.invalid/'}",
     "$script:tries=0;$script:alwaysFail=$false",
     "$recovered=Test-AppHttpTarget -Target $target -MaxAttempts 3 -TimeoutSec 1 -RetryDelayMs 0",
     "if(!$recovered.Success -or $recovered.Attempts -ne 2 -or $script:tries -ne 2){throw 'TRANSIENT_NOT_RECOVERED'}",
@@ -206,8 +206,8 @@ test("Expo readiness rejects an unknown-module error document even with HTTP 200
     "$ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)",
     "$node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Test-AppHttpTarget'},$true)",
     "Invoke-Expression $node.Extent.Text",
-    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[switch]$SkipHttpErrorCheck,[string]$Uri,[int]$TimeoutSec) return [pscustomobject]@{StatusCode=$script:status;Content=$script:body} }",
-    "$target=@{A='customer';U='http://not-used.invalid/'}",
+    "function Invoke-WebRequest { param([switch]$UseBasicParsing,[switch]$SkipHttpErrorCheck,[string]$Uri,[int]$TimeoutSec) return [pscustomobject]@{StatusCode=$script:status;Content=$script:body;Headers=@{'Content-Type'='text/html'}} }",
+    "$target=@{A='customer';Kind='expo-web';U='http://not-used.invalid/'}",
     "$script:status=200;$script:body='<html><body>Server Error: Requiring unknown module &quot;60&quot;. unknownModuleError</body></html>'",
     "$failed=Test-AppHttpTarget -Target $target -MaxAttempts 1",
     "if($failed.Success -or $failed.Error -ne 'EXPO_UNKNOWN_MODULE'){throw 'EXPO_ERROR_DOCUMENT_ACCEPTED'}",
@@ -224,6 +224,58 @@ test("Expo readiness rejects an unknown-module error document even with HTTP 200
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(result.stdout, /EXPO_ERROR_DOCUMENT_REJECTED/);
+});
+
+test("app readiness rejects HTTP 200 with the wrong protocol payload", {skip:process.platform!=="win32"}, async () => {
+  const {createServer}=await import("node:http");
+  const {spawn}=await import("node:child_process");
+  const server=createServer((req,res)=>{
+    const fixtures={
+      "/metro": [200, {}, "packager-status:running"],
+      "/wrong-metro": [200, {"Content-Type":"text/html"}, "<html>wrong service</html>"],
+      "/suffix": [200, {}, "packager-status:running extra"],
+      "/unavailable": [503, {}, "packager-status:running"],
+      "/web": [200, {"Content-Type":"text/html; charset=utf-8"}, "<html>ready</html>"],
+      "/json": [200, {"Content-Type":"application/json"}, "{}"],
+      "/empty": [200, {"Content-Type":"text/html"}, ""],
+      "/ssr-error": [200, {"Content-Type":"text/html"}, "<html>Server Error: Requiring unknown module 60. unknownModuleError</html>"],
+    };
+    const [status,headers,body]=fixtures[req.url]??[404,{},""];
+    res.writeHead(status,headers);res.end(body);
+  });
+  await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve);});
+  try {
+    const quoted=scriptPath.replaceAll("'","''");
+    const ps=[
+      "$ErrorActionPreference='Stop'",
+      "$tokens=$null;$errors=$null",
+      "$ast=[Management.Automation.Language.Parser]::ParseFile('"+quoted+"',[ref]$tokens,[ref]$errors)",
+      "foreach($name in @('Test-AppHttpTarget','Test-AppRestartHealth')){$n=$ast.Find({param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $name},$true);if(!$n){throw 'FUNCTION_MISSING'};Invoke-Expression $n.Extent.Text}",
+      "$base='http://127.0.0.1:"+server.address().port+"'",
+      "$cases=@(@{P='/metro';K='metro';A='captain';E=''},@{P='/wrong-metro';K='metro';A='customer';E='METRO_STATUS_MISMATCH'},@{P='/wrong-metro';K='metro';A='captain';E='METRO_STATUS_MISMATCH'},@{P='/suffix';K='metro';A='captain';E='METRO_STATUS_MISMATCH'},@{P='/unavailable';K='metro';A='captain';E='HTTP_503'},@{P='/web';K='web';A='control-panel';E=''},@{P='/json';K='web';A='control-panel';E='WEB_DOCUMENT_MISMATCH'},@{P='/empty';K='expo-web';A='merchant';E='WEB_DOCUMENT_MISMATCH'},@{P='/ssr-error';K='expo-web';A='customer';E='EXPO_UNKNOWN_MODULE'})",
+      "foreach($c in $cases){$target=@{A=$c.A;Kind=$c.K;U=$base+$c.P};$result=Test-AppHttpTarget -Target $target -MaxAttempts 1;if($result.Success -ne ($c.E -eq '') -or $result.Error -cne $c.E){throw ('WRONG_READINESS '+$c.P+' expected='+$c.E+' actual='+$result.Error+' success='+$result.Success)}}",
+      "if(Test-AppRestartHealth @{A='captain';Kind='metro';U=$base+'/wrong-metro'}){throw 'FALSE_RESTART_HEALTH'}",
+    ].join("; ");
+    const result=await new Promise((resolve,reject)=>{
+      const p=spawn("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{windowsHide:true,timeout:20000});
+      let output="";p.stdout.on("data",v=>output+=v);p.stderr.on("data",v=>output+=v);
+      p.once("error",reject);p.once("close",code=>resolve({code,output}));
+    });
+    assert.equal(result.code,0,result.output);
+  } finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
+test("browser, verify and restart use the same typed application readiness owner", () => {
+  const launcher=readFileSync(scriptPath,"utf8");
+  const browser=launcher.match(/function Open-Browser \{([\s\S]*?)\n\}/)?.[1];
+  assert.ok(browser);
+  assert.match(browser,/A=\x27customer\x27;Kind=\x27metro\x27/);
+  assert.match(browser,/A=\x27merchant\x27;Kind=\x27metro\x27/);
+  assert.match(browser,/A=\x27control-panel\x27;Kind=\x27web\x27/);
+  assert.match(browser,/Test-AppHttpTarget -Target \$target/);
+  assert.doesNotMatch(browser,/Probe-App|\$statusUrls/);
+  assert.match(launcher,/Kind=\$kind;U=/);
+  assert.match(launcher,/Kind=\x27metro\x27;U="http:\/\/127\.0\.0\.1:\$\(\$developmentPorts\.apps\.captain\.surface\)\/status"/);
 });
 
 test("Docker status requires all three serving owners", () => {
@@ -632,9 +684,9 @@ test("scoped restart reuses the canonical Expo probe and requires consecutive he
     "if($script:payload -notmatch 'if\\(Test-AppRestartHealth.*APP_RESTART_SKIPPED_HEALTHY'){throw 'REMOTE_SKIP_NOT_GUARDED'}",
     "function Start-Sleep {}",
     "function Invoke-WebRequest {param([switch]$UseBasicParsing,[switch]$SkipHttpErrorCheck,[string]$Uri,[int]$TimeoutSec) $script:count++;return $script:responses[[Math]::Min($script:count-1,$script:responses.Count-1)]}",
-    "$good=@{StatusCode=200;Content='<html>healthy</html>'};$bad=@{StatusCode=200;Content='<html>Server Error: Requiring unknown module 60. unknownModuleError</html>'};$failed=@{StatusCode=500;Content='Server Error'}",
-    "foreach($app in @('customer','merchant')){$target=@{A=$app;U='http://not-used.invalid/'};foreach($case in @(@{responses=@($good,$good,$good);expected=$true;count=3},@{responses=@($bad);expected=$false;count=1},@{responses=@($good,$bad);expected=$false;count=2},@{responses=@($good,$good,$failed);expected=$false;count=3})){$script:responses=$case.responses;$script:count=0;$actual=Test-AppRestartHealth $target;if($actual -ne $case.expected -or $script:count -ne $case.count){throw ('FALSE_RESTART_HEALTH '+$app)}}}",
-    "$script:responses=@($good);$script:count=0;if(!(Test-AppRestartHealth @{A='captain';U='http://not-used.invalid/status'}) -or $script:count -ne 1){throw 'NON_EXPO_PROBE_CHANGED'}",
+    "$good=@{StatusCode=200;Content='<html>healthy</html>';Headers=@{'Content-Type'='text/html'}};$bad=@{StatusCode=200;Content='<html>Server Error: Requiring unknown module 60. unknownModuleError</html>'};$failed=@{StatusCode=500;Content='Server Error'}",
+    "foreach($app in @('customer','merchant')){$target=@{A=$app;Kind='expo-web';U='http://not-used.invalid/'};foreach($case in @(@{responses=@($good,$good,$good);expected=$true;count=3},@{responses=@($bad);expected=$false;count=1},@{responses=@($good,$bad);expected=$false;count=2},@{responses=@($good,$good,$failed);expected=$false;count=3})){$script:responses=$case.responses;$script:count=0;$actual=Test-AppRestartHealth $target;if($actual -ne $case.expected -or $script:count -ne $case.count){throw ('FALSE_RESTART_HEALTH '+$app)}}}",
+    "$script:responses=@(@{StatusCode=200;Content=[Text.Encoding]::UTF8.GetBytes('packager-status:running')});$script:count=0;if(!(Test-AppRestartHealth @{A='captain';Kind='metro';U='http://not-used.invalid/status'}) -or $script:count -ne 1){throw 'METRO_PROBE_CHANGED'}",
     "Write-Output 'RESTART_HEALTH_PROOF_PASS'",
   ].join("; ");
   const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",windowsHide:true,timeout:15000});

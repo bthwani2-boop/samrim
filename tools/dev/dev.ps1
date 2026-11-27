@@ -448,30 +448,38 @@ foreach($s in $specs){
 }
 function Get-AppHttpTargets {
   @(
-    @{A='customer';U="http://127.0.0.1:$($developmentPorts.apps.customer.surface)/"},
-    @{A='customer';U="http://127.0.0.1:$($developmentPorts.apps.customer.surface)/stores"},
-    @{A='merchant';U="http://127.0.0.1:$($developmentPorts.apps.merchant.surface)/"},
-    @{A='captain-metro';U="http://127.0.0.1:$($developmentPorts.apps.captain.surface)/status"},
-    @{A='control-panel';U="http://127.0.0.1:$($developmentPorts.apps.'control-panel'.surface)/"}
+    @{A='customer';Kind='expo-web';U="http://127.0.0.1:$($developmentPorts.apps.customer.surface)/"},
+    @{A='customer';Kind='expo-web';U="http://127.0.0.1:$($developmentPorts.apps.customer.surface)/stores"},
+    @{A='merchant';Kind='expo-web';U="http://127.0.0.1:$($developmentPorts.apps.merchant.surface)/"},
+    @{A='captain-metro';Kind='metro';U="http://127.0.0.1:$($developmentPorts.apps.captain.surface)/status"},
+    @{A='control-panel';Kind='web';U="http://127.0.0.1:$($developmentPorts.apps.'control-panel'.surface)/"}
   )
 }
 function Test-AppHttpTarget {
   param([hashtable]$Target,[int]$TimeoutSec=7,[int]$MaxAttempts=1,[int]$RetryDelayMs=250)
-  # First Expo Web compilation can outlast a short readiness probe.
-  # Retry only within a fixed budget; never turn a persistent failure into PASS.
+  # A successful exchange is not necessarily the expected application protocol.
+  if($Target.Kind -cnotin @('metro','expo-web','web')){throw 'APP_PROBE_KIND_INVALID'}
   $timer=[Diagnostics.Stopwatch]::StartNew()
   $lastFailure='UNKNOWN'
   for($attempt=1;$attempt -le $MaxAttempts;$attempt++){
     try {
       $response=Invoke-WebRequest -UseBasicParsing -Uri $Target.U -TimeoutSec $TimeoutSec -SkipHttpErrorCheck -ErrorAction Stop
-      # Expo can return an error document during SSR. A reachable listener is
-      # not a healthy render; preserve this signature even if a retry recovers.
-      if($Target.A -in @('customer','merchant') -and
-        $response.Content -match 'Requiring unknown module' -and
-        $response.Content -match 'unknownModuleError|Server Error|metroRequire'){
+      # Metro's status response may lack Content-Type; PowerShell then returns bytes.
+      $body=if($response.Content -is [byte[]]){[Text.Encoding]::UTF8.GetString($response.Content)}else{[string]$response.Content}
+      # Preserve the known SSR failure even if a later response could recover.
+      if($Target.Kind -ceq 'expo-web' -and
+        $body -match 'Requiring unknown module' -and
+        $body -match 'unknownModuleError|Server Error|metroRequire'){
         return @{Success=$false;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error='EXPO_UNKNOWN_MODULE'}
       }
       if($response.StatusCode -eq 200){
+        if($Target.Kind -ceq 'metro'){
+          if($body -cne 'packager-status:running'){
+            return @{Success=$false;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error='METRO_STATUS_MISMATCH'}
+          }
+        } elseif(([string]$response.Headers['Content-Type']) -notmatch '^text/html(?:\s*;|$)' -or [string]::IsNullOrWhiteSpace($body)){
+          return @{Success=$false;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error='WEB_DOCUMENT_MISMATCH'}
+        }
         return @{Success=$true;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=''}
       }
       $lastFailure='HTTP_'+$response.StatusCode
@@ -487,8 +495,7 @@ function Test-AppHttpTarget {
 function Test-AppRestartHealth {
   param([hashtable]$Target)
   # A single good SSR response can hide an intermittent Metro error.
-  # Only skip an Expo Web restart after three consecutive healthy probes.
-  $samples=if($Target.A -in @('customer','merchant')){3}else{1}
+  $samples=if($Target.Kind -ceq 'expo-web'){3}else{1}
   for($i=0;$i -lt $samples;$i++){
     if(-not (Test-AppHttpTarget -Target $Target -TimeoutSec 4 -MaxAttempts 1).Success){return $false}
     if($i -lt ($samples-1)){Start-Sleep -Milliseconds 250}
@@ -646,7 +653,8 @@ if($mode -eq 'start'){
 }else{
   if($listeners.Count -eq 1){
     $route=if($app -eq 'captain'){'/status'}else{'/'}
-    $target=@{A=$app;U=('http://127.0.0.1:'+$s.P+$route)}
+    $kind=if($app -eq 'captain'){'metro'}elseif($s.Cli -eq 'expo'){'expo-web'}else{'web'}
+    $target=@{A=$app;Kind=$kind;U=('http://127.0.0.1:'+$s.P+$route)}
     if(Test-AppRestartHealth $target){Write-Output ('APP_RESTART_SKIPPED_HEALTHY '+$app);return}
   }
   if($t.State -eq 'Running'){
@@ -753,14 +761,15 @@ public static class BthwaniChromeWindowLocator {
 }
 function Open-Browser {
   Assert-Ok (Test-Path -LiteralPath $chrome -PathType Leaf) 'GOOGLE_CHROME_MISSING'
-  $statusUrls=@(
-    ("http://127.0.0.1:$($developmentPorts.apps.customer.surface)/status"),
-    ("http://127.0.0.1:$($developmentPorts.apps.merchant.surface)/status"),
-    'http://localhost:13000/'
+  # The browser launch checks transport readiness without cold SSR compilation.
+  $targets=@(
+    @{A='customer';Kind='metro';U="http://127.0.0.1:$($developmentPorts.apps.customer.surface)/status"},
+    @{A='merchant';Kind='metro';U="http://127.0.0.1:$($developmentPorts.apps.merchant.surface)/status"},
+    @{A='control-panel';Kind='web';U='http://localhost:13000/'}
   )
-  for($i=0;$i -lt $statusUrls.Count;$i++){
-    $state=Probe-App $statusUrls[$i]
-    Assert-Ok ($state.Exit -eq 0 -and $state.Code -eq '200') ('BROWSER_APP_NOT_READY '+$urls[$i])
+  foreach($target in $targets){
+    $state=Test-AppHttpTarget -Target $target -TimeoutSec 7 -MaxAttempts 1
+    Assert-Ok $state.Success ('BROWSER_APP_NOT_READY '+$target.A+' reason='+$state.Error)
   }
   $localState=Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data\Local State'
   Assert-Ok (Test-Path -LiteralPath $localState -PathType Leaf) 'CHROME_PROFILE_METADATA_MISSING'
