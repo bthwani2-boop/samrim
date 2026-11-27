@@ -3,93 +3,94 @@
 STATUS: ACTIVE_FOR_PROGRESSIVE_DEVELOPMENT
 SEMANTIC_SCOPE: authored source placement, naming, dependency boundaries and consumer cutover.
 
-This document owns repository placement. [AGENTS.md](AGENTS.md) owns execution authority and evidence. [The governance index](governance/README.md) routes Product and domain decisions to their sole owners; [architecture](governance/architecture.md) owns changing facts and business engines; [engineering](governance/engineering.md) owns acceptance, lifecycle and refoundation. Nothing in a directory name, scaffold, specification or passing placement check proves implementation or authorizes activation.
+This file owns repository placement, not business policy, execution permission or acceptance. Follow [AGENTS.md](AGENTS.md) for execution, the [governance index](governance/README.md) for decision owners, [architecture](governance/architecture.md) for service ownership and [engineering](governance/engineering.md) for lifecycle and acceptance.
 
 ## Canonical paths
 
 | Path | Responsibility |
 | --- | --- |
-| AGENTS.md | Execution, authorization, evidence and Git delivery |
-| REPOSITORY-STRUCTURE.md | Placement and source dependency boundaries |
-| governance/ | Only active durable semantic governance; historical cutover status belongs to its index |
-| docs/README.md | Single documentation navigation index; no policy or status registry |
-| docs/reference/ | Useful nonbinding references and unique historical evidence; do not duplicate plans, live configuration or journey acceptance dossiers |
-| README.md | Current development onboarding and links to canonical operations |
-| .github/ | Branch-independent CI, protected integration checks and PR configuration |
-| .specify/ | Existing pinned Spec Kit scripts, templates and derived governance router |
-| specs/ | Derived capability specifications, plans, tasks and evidence where useful; not another policy owner or admission gate |
-| package.json, pnpm-workspace.yaml, pnpm-lock.yaml, nx.json | One pinned workspace dependency graph, native tasks and cache configuration |
-| .node-version, .nvmrc, .go-version | Current executable runtime pins; no implicit version upgrade |
-| tsconfig.base.json, biome.json, knip.jsonc, .editorconfig, .gitattributes, .gitignore | Shared type, lint, dependency discovery, source encoding and exclusion configuration |
-| services/{identity,dsh,wlt}/ | Exactly three business-service owners |
-| apps/{customer,merchant,captain,control-panel}/ | Exactly four actor presentation hosts; control-panel is Operator |
-| packages/design-system/ | Authored brand and semantic color source, reproducible browser CSS projection; no second renderer |
-| packages/tamagui-config/ | Expo rendering configuration and minimal native appearance controller consuming the semantic source |
-| `packages/<purpose>/` | Additional domain-neutral public packages only for genuine multi-owner consumers |
-| tools/dev/ | Repository-wide development lifecycle, source/contract/coverage/placement tooling and operations documentation |
-| tools/mobile/ | Native Expo configuration and registered identity, renderer, route and platform-source verification |
-| tools/security/ | Shared source-security checks and their regression fixtures |
-| infra/ | One canonical environment-owned compose.yaml, configuration example and operating documentation |
-| patches/ | Only source-approved, exact-version dependency patches referenced by the frozen pnpm graph, including Ant Design CSP and Picomatch security patches |
-| tests/ | Genuine cross-owner or infrastructure integration proof; focused unit/feature tests stay with their existing owners |
+| AGENTS.md | Repository execution entry and routing to authoritative owners |
+| REPOSITORY-STRUCTURE.md | Repository placement and dependency boundaries |
+| governance/ | Single active durable semantic governance; its index owns governance cutover |
+| README.md | Current development onboarding and operations navigation |
+| docs/README.md | Single documentation navigation index |
+| docs/reference/ | Nonbinding research and unique historical evidence; engineering-references.md is the canonical external reference catalog |
+| .agents/skills/speckit-*/SKILL.md | Official Spec Kit Codex skills managed by its installed integration |
+| .specify/ | Official Spec Kit managed assets, configuration and derived project constitution |
+| specs/ | Project-owned derived specifications, plans, tasks and applicable evidence |
+| .github/ | Native CI, security and integration configuration |
+| package.json, pnpm-workspace.yaml, pnpm-lock.yaml, nx.json | Single workspace dependency and native task graph |
+| .node-version, .nvmrc, .go-version | Executable runtime pins |
+| tsconfig.base.json, biome.json, knip.jsonc, .editorconfig, .gitattributes, .gitignore | Shared type, lint, dependency discovery, encoding and exclusion configuration |
+| services/{identity,dsh,wlt}/ | Three canonical business-service source owners |
+| apps/{customer,merchant,captain,control-panel}/ | Four actor presentation hosts; control-panel is Operator |
+| packages/design-system/ | Authored brand and semantic color source with reproducible browser CSS projection |
+| packages/tamagui-config/ | Expo renderer configuration and minimal native appearance controller consuming brand semantics |
+| packages/<purpose>/ | Domain-neutral public source with actual multi-owner consumers |
+| tools/dev/ | Shared development lifecycle and source/contract/coverage/placement tools, operations documentation |
+| tools/mobile/ | Native configuration, registered identities, renderer, route and platform-source verification |
+| tools/security/ | Shared source-security checks and regression fixtures |
+| infra/ | Environment-owned compose.yaml, configuration example and operating documentation |
+| patches/ | Necessary exact-version dependency patches referenced by the frozen pnpm graph, including current Ant Design CSP and Picomatch security patches |
+| tests/ | Cross-owner or infrastructure integration proof; focused tests remain with their implementation owners |
 
-Generated graph/index artifacts, build output, dependencies, coverage, local credentials and disposable evidence are not separately authored business truth. Keep them under the existing tool and ignore rules; do not add a second index, package registry, CI runner, policy root or source synchronization path. Archived donor material is read-only and cannot become an active parallel implementation.
+Keep official Spec Kit managed assets at their original paths and update only through authorized official releases. The project constitution and specifications do not become another policy root. Engine methodology belongs to the published Engineering Core, not a duplicate local skill hierarchy. See [execution entry](AGENTS.md) for actual mandatory Spec Kit and Graphify invocation and official update boundaries.
+
+Generated graph/index artifacts, build outputs, dependencies, coverage, credentials and disposable evidence follow their existing tool/ignore rules. They are not separately authored business facts. Do not add parallel indexes, registries, runners, governance roots or synchronization paths. Archived donor source is read-only, not an active implementation.
 
 ## Service and contract placement
 
-Only Identity, DSH and WLT are admitted. The [architecture owner](governance/architecture.md) defines their business boundaries, including DSH's bounded employees capability; no fourth HR, commerce or financial service. Each service has its existing owner README, private `@bthwani/<owner>` package, root-derived strict TypeScript configuration and a public contract-derived clients/index.ts export. The root frozen lock contains the actual owner importers. Owner source and tests, not prose STATUS markers, establish implementation.
+The three service boundaries, including bounded DSH employee administration, belong to [architecture](governance/architecture.md). No fourth HR, commerce or finance service. Each owner retains its README, private @bthwani/<owner> package, root-derived strict TypeScript configuration, actual frozen-lock importer and public contract-derived clients/index.ts export.
 
 | Area | Legal placement | Rejected drift |
 | --- | --- | --- |
-| Go command | `services/<owner>/backend/cmd/<owner>/*.go`, real owner-local go.mod, Dockerfile and Nx target as needed | Go files at backend root, another service's command, empty backend or duplicate service |
-| Go domains | `backend/internal/<domain>/**/*.go`, meaningful lowercase Go package names | generic framework-layer quotas, internal/misc, legacy, partners, owner-crossing private source |
-| Fresh SQL | `services/<owner>/database/schema/NN_domain.sql`; order and owner invariants belong to SQL-01 | SQL inside backend, unnamed/duplicate baselines, new experimental migration histories |
-| Synthetic WLT commands | services/wlt/database/sandbox/NN_domain.sql | production financial commands hidden in fixtures, sandbox under another owner |
-| OpenAPI | `contracts/openapi/<owner>.openapi.yaml` and flat `paths/<domain>.yaml` for actual cohesive executable operations | second entrypoint, contracts/openapi/path/, empty or unreferenced fragments, another maintained API catalog |
-| Public client | clients/index.ts and owner-local contract-derived source and tests | app-authored duplicate DTO/SDK or cross-owner private imports |
+| Go entry | services/<owner>/backend/cmd/<owner>/*.go; owner-local go.mod, Dockerfile and Nx target as needed | Go at backend root, foreign service command, empty backend or duplicate service |
+| Go domains | backend/internal/<domain>/**/*.go; meaningful lowercase package names | generic framework-layer quotas, misc, legacy, partners, private owner-crossing source |
+| Fresh SQL | services/<owner>/database/schema/NN_domain.sql | backend SQL, unnamed/duplicate baselines, experimental migration histories |
+| Synthetic WLT SQL | services/wlt/database/sandbox/NN_domain.sql | production financial commands hidden in fixtures, another owner's sandbox |
+| OpenAPI | contracts/openapi/<owner>.openapi.yaml; flat paths/<domain>.yaml for cohesive operations | second entrypoint/catalog, path/ directory, unreferenced or unjustified empty fragments |
+| Public client | clients/index.ts with owner-local contract-derived source and tests | app-authored duplicate DTO/SDK or cross-owner private imports |
 
-Apply [API-01](governance/engineering.md#api-01--openapi-organization-and-semantic-equivalence-gate) and [SQL-01](governance/engineering.md#sql-01--safe-one-baseline-per-owner-fresh-bootstrap-protected-upgrades). The active baseline-first phase rejects new database/migrations/ files for all three owners; versioned retained-data upgrades require a separately approved epoch and aligned guard. Applied history, existing data and legal obligations remain protected. No baseline replay over retained data or copied losing migration loader. The [donor OpenAPI census](docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md) records historical coverage, not a reservation system, fixed operation count or executable source.
+[API-01](governance/engineering.md#api-01--openapi-organization-and-semantic-equivalence-gate) governs contract semantics and generated parity. Reference each executable domain fragment from its sole entrypoint, regenerate derived clients/manifests, and preserve strict schema, references, unique path/method/operationId, security/error contracts and actual backend/client parity. The [donor OpenAPI inventory](docs/reference/OPENAPI-DONOR-CONTRACT-INVENTORY.md) is historical provenance, not an operation quota or executable source. Place owner tests alongside the responsibility and cross-owner proof in tests/.
 
-The owner OpenAPI entrypoint references every executable domain fragment. Keep the single source and regenerate derived operation manifests/clients; verify strict YAML/OpenAPI, reference resolution, unique path/method/operationId, security/error/schema constraints and actual backend-client parity. A client export or a generated manifest is not a runtime operation. Place owner tests beside the implementation and use existing integration tests for cross-owner behavior.
+[SQL-01](governance/engineering.md#sql-01--safe-one-baseline-per-owner-fresh-bootstrap-protected-upgrades) governs baseline-first and protected upgrades. New database/migrations/ files are not admitted in the current phase. Versioned retained-data upgrades need the authorized migration epoch and aligned guard; preserve applied history, existing data and legal obligations. Fresh baseline is not retained-data replay.
 
 ## Application and renderer boundaries
 
-Use the [canonical surface and naming owner](governance/platform.md) for Customer/Merchant/Captain/Operator terminology, Store identity and protected external application identities. No new client/partner aliases, duplicate actor or Store engine. Retained external IDs, EAS projects, deep links, signing, historical legal/financial identifiers and compatibility mappings require the governing authorized consumer cutover, never a blind rename.
+Follow [platform](governance/platform.md) for Customer/Merchant/Captain/Operator, Store and protected external identities. No new client/partner aliases or duplicate actor/Store engine. Changes to external IDs, EAS, deep links, signing and historical financial/legal identifiers require authorized consumer transition.
 
-- Exactly one route root, `apps/<surface>/app/`, using Expo Router or Next App Router's actual conventions. Never a competing src/app/. Preserve route parameters, metadata, deep links, accessibility, authorization and failure states when moving a route. A simple route-local component is legal; a substantial presentation delegates to the existing named feature.
-- Substantive presentation belongs in `src/features/<lowercase-kebab-capability>/`; do not create empty scaffolds or require four identical templates. Optional first-tier feature directories are screens/, components/, hooks/, queries/, mappers/, state/, tests/. Deeper meaningful names and files use lowercase-kebab-case with standard platform/test suffixes. No generic common/shared/misc/legacy/new/v2, nested feature root or copied donor partners directory.
-- App-local reuse is justified by real consumers; src/components/ and src/providers/ are optional. Prefer feature locality until reuse is real. Avoid circular feature dependencies. Shared cross-app code belongs in a justified domain-neutral public package, never another app's source.
-- Operator route composition remains in apps/control-panel/app/(workspace)/, with actual server-only transport under src/server/auth/, clients/ or transport/. Next app/api/ handlers exist only for genuine authenticated, same-origin, security or bounded integration needs, not one shadow handler for every owner operation. Expo does not import Operator server modules.
-- An app may import its own code and declared public exports of approved workspace packages and owner clients. Bare app-package imports, app-to-app private paths, relative escapes, private service backend/database/contracts/clients subpaths, private renderer sources and computed-import bypasses are forbidden. Additional packages must have a meaningful purpose, private manifest, explicit public exports and at least two actual source-owner consumers. They cannot become another business or renderer owner.
-- Brand roles are authored only in design-system, consumed by the existing Expo Tamagui configuration and Operator Ant Design projection. Renderer-native components stay with their renderer. Do not introduce a second palette, component engine or cross-renderer dependency. Expo configuration uses the existing native tooling and Metro defaults; external identity is checked from actual resolved manifests.
+- Each app uses one app/ route root with actual Expo Router or Next App Router conventions, never src/app/. Preserve route parameters, metadata, links, accessibility, authorization and error states. A simple route-local component is legal; substantial presentation belongs to its feature.
+- Feature source is src/features/<lowercase-kebab-capability>/ with meaningful lowercase-kebab-case files/directories and standard platform/test suffixes. Optional first tiers: screens/, components/, hooks/, queries/, mappers/, state/, tests/. No empty scaffolds, forced identical structures, nested feature roots or generic common/shared/misc/legacy/new/v2/partners buckets.
+- App-local src/components/ and src/providers/ are optional, justified by reuse. Prefer feature locality; avoid feature cycles. Actual cross-app reuse belongs to a domain-neutral package with a private manifest, explicit public exports and at least two actual source-owner consumers.
+- Operator route composition is apps/control-panel/app/(workspace)/; server-only transport belongs to src/server/auth/, clients/ or transport/. Next app/api/ handlers require genuine authenticated same-origin, security or bounded integration needs. No shadow proxy for every owner API or Expo import of Operator server source.
+- Apps import their own code and approved public package/owner client exports only. No bare app-package imports, app-to-app private paths, relative escapes, private backend/database/contracts/clients subpaths, private renderer imports or computed-import bypasses. Shared packages do not become business engines.
+- Brand roles originate in design-system; Expo consumes through tamagui-config, Operator through Ant Design projection. Renderer-native components remain local; no second palette or component engine. Native Expo/Metro tooling remains the owner of resolved configuration.
 
-See [the application boundary guard](tools/mobile/verify-application-boundaries.mjs) for executable lexical/import and directory checks and [app identity verifier](tools/mobile/verify-app-identity.mjs) for registered identities. They check authored source including untracked files; they are not complete dependency-dataflow, cycle, native binary or runtime authorization proof.
+Use existing [application boundaries](tools/mobile/verify-application-boundaries.mjs) and [registered app identity](tools/mobile/verify-app-identity.mjs) checks. Their lexical and directory coverage includes untracked authored source but is not complete dynamic dependency, binary or runtime authorization proof.
 
 ## Dependency and runtime placement
 
-Nx and pnpm own the actual project/task graph. Contract changes invalidate the corresponding backend and actual client/consumer targets; owner schema and WLT sandbox changes invalidate the owner backend. New authored paths must be included in affected routing. Next .next/types belongs only to Operator's typecheck. Use real base/head and uncached affected tests for acceptance; a cache hit or graph membership does not prove behavior.
+pnpm and Nx own the workspace task graph. Contract changes invalidate actual owner backend and client consumers; owner schema and WLT sandbox changes invalidate that backend. New paths must be included in affected routing. Next .next/types belongs to Operator typecheck. Evidence uses verified base/head, affected targets and required direct tests; cache or graph membership is not behavioral proof.
 
-Keep the single environment-owned [Compose definition](infra/compose.yaml) and independent owner Dockerfiles. Service, actor or feature changes do not justify additional environment replicas or Compose overlays. The [operations guide](tools/dev/README-Lenovo-Development.md) and [infrastructure guide](infra/README.md) describe the existing launcher, synchronization, tunnels, database isolation and provenance checks; [engineering governance](governance/engineering.md#local-development-data-lifecycle) owns the protected runtime/data lifecycle. Actual image/source parity, contracts, ACLs and durable readback are separate acceptance.
+Keep one [environment Compose definition](infra/compose.yaml), with separate owner Dockerfiles. No environment replicas or overlays merely because a role, service or feature changes. [Development operations](tools/dev/README-Lenovo-Development.md) and [infrastructure](infra/README.md) document the existing launcher, sync, tunnels, database isolation and provenance. [Data lifecycle](governance/engineering.md#local-development-data-lifecycle) owns protected state and runtime requirements.
 
-Synthetic bootstrap/seed source stays with the actual owner's commands/domain and test fixtures; WLT synthetic SQL remains in sandbox. Cross-owner integration stays in tests/. Do not create another generic fixture writer, seed system, schema loader, data store or deployment registry. Sensitive local state, external logs, backups, screenshots, coordination notes and reports are non-authoritative artifacts, not input to a serving build. Before deletion, verify exact target, consumers, retention, recovery, protection and authority.
+Place synthetic bootstrap/seed and fixtures at the actual owner commands/domain; WLT sandbox SQL remains separate. Cross-owner tests live in tests/. No duplicate fixture writer, seed system, schema loader, store or deployment registry. Local sensitive state, logs, backups, screenshots and coordination artifacts are not build inputs or policy. Before removing them, respect actual retention, recovery, consumers and authority.
 
 ## Placement and simplification law
 
-Every authored component must have a concrete responsibility, owner, actual consumer, legal category and source contract. Reuse the correct owner before adding files. Use stable domain names, no vague or dated live-code folders, arbitrary file/line quotas or forced architecture ladders. A new repository-wide tool requires a proved shared responsibility that the existing native/owner mechanism cannot satisfy. Dependencies and patches must match the frozen graph and actual need; no speculative package, version upgrade, duplicate runner or security bypass.
+Every authored component needs a distinct responsibility, valid placement, actual consumer and source contract. Prefer existing native or owner capabilities; no arbitrary file/line quotas, forced architecture layers, speculative package or duplicate runner. Dependency additions and patches must match actual necessity and frozen versions. A placement exception requires its existing owner, exact paths, consumer evidence, reason and removal/review condition; no blanket ignore or second policy checker.
 
-Apply [mandatory removal and clean refoundation](governance/engineering.md#mandatory-removal-and-clean-refoundation) to every authorized remediation, even one finding. Inventory the complete affected foundation, direct/dynamic imports, package exports, URL/deep links, persisted keys, SQL embedding, contracts, generated outputs, settings and tests before writing. DELETE verified redundant, obsolete and unnecessary files; REFOUND every necessary defective file in full; KEEP only proven necessary sound files. Transfer required behavior and retained obligations first and verify all losing references are gone. No isolated error/line/function repair, renamed workaround, disabled duplicate, empty placeholder or deferred cleanup. A placement exception cannot override that law or authorize protected effects.
-
-Any genuinely necessary placement exception belongs to its existing owner with exact paths, consumers, reason and review/removal condition. Prove legitimate and deliberately illegal cases at the existing guard; never introduce blanket ignores or a parallel policy checker. Source inventory aids semantic cohesion review, not automatic split/deletion. Knip and Graphify findings require actual consumer/source corroboration.
+All authorized remediation follows the single [mandatory removal and clean refoundation law](governance/engineering.md#mandatory-removal-and-clean-refoundation), including complete affected-file disposition, consumer transition, elimination of superseded paths, protected state and recurrence proof. A placement exception cannot override that law. Graphify and Knip findings inform investigation; neither alone authorizes deletion. Source inventory supports cohesion review, not automatic file splitting.
 
 ## Executable checks and structural acceptance
 
 | Responsibility | Existing evidence owner |
 | --- | --- |
-| Workspace, Go/SQL/OpenAPI placement and toolchain | pnpm check:workspace, [workspace fixtures](tools/dev/verify-workspace.test.mjs), [service placement guard](tools/dev/check-service-placement.mjs) |
-| App directory/import/public export and renderer boundaries | [application boundary guard](tools/mobile/verify-application-boundaries.mjs) and [fixtures](tools/mobile/verify-application-boundaries.test.mjs) |
-| Owner contract and generated operation parity | pnpm check:contracts, [contract guard](tools/dev/check-openapi.mjs) and its fixtures |
-| Dependency and authored-source investigation | pnpm knip:files, [source inventory](tools/dev/source-inventory.mjs) and [fixtures](tools/dev/source-inventory.test.mjs), mandatory local Graphify under AGENTS.md |
-| Affected routing and test inclusion | [Nx impact fixtures](tools/dev/verify-nx-project-graph.test.mjs), pnpm check:test-inclusion and the existing source-test discovery |
-| Real Go/SQL/restore and CI source proof | [CI](.github/workflows/ci.yml) and shared [security workflow](.github/workflows/security.yml) |
+| Workspace, toolchain, Go/SQL/OpenAPI placement | pnpm check:workspace; [workspace tests](tools/dev/verify-workspace.test.mjs); [service guard](tools/dev/check-service-placement.mjs) |
+| App/import/export/renderer boundaries | [application guard](tools/mobile/verify-application-boundaries.mjs); [fixtures](tools/mobile/verify-application-boundaries.test.mjs) |
+| Owner contracts and generated parity | pnpm check:contracts; [contract guard](tools/dev/check-openapi.mjs) |
+| Dependency and source analysis | pnpm knip:files; [source inventory](tools/dev/source-inventory.mjs); [fixtures](tools/dev/source-inventory.test.mjs); mandatory local Graphify |
+| Affected routing and test inclusion | [Nx impact tests](tools/dev/verify-nx-project-graph.test.mjs); pnpm check:test-inclusion and existing test discovery |
+| Actual Go/SQL/restore and source integration | [CI](.github/workflows/ci.yml); [security](.github/workflows/security.yml) |
 
-Existing native guards must catch new/untracked paths, illegal owners, linked roots and representative legitimate and rejected consumers. Reuse and strengthen the applicable owner guard, not another generic checker. Acceptance requires the exact winning source, complete consumer cutover, absence of losing paths, applicable contract/build/runtime and durable owner proof on the candidate. Follow [AGENTS.md](AGENTS.md) for immutable delivery and actual evidence statuses. Structural PASS, CI PASS, runtime provenance, complete journeys, governance cutover and production authorization are independent; no historical stage, spec count or source location substitutes for them.
+Existing guards must cover authored/untracked paths, illegal owners, linked roots and valid/rejected consumers. Use and strengthen the owner guard for a proven gap, never a parallel checker. Placement acceptance covers actual source, winning contracts, consumer cutover and removal of losing paths. Runtime, journey, governance cutover and production acceptance are separate under the engineering owner; no scaffold, source location, spec count or structural PASS proves them.

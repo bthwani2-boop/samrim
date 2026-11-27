@@ -1,4 +1,4 @@
-# BThwani — Single Governance Root and Approval Boundary
+# BThwani — Governance Owners and Cutover
 
 ARTIFACT_CLASS: GOVERNANCE_INDEX
 SEMANTIC_OWNER: governance/README.md
@@ -11,66 +11,60 @@ BUSINESS_DECISION_AUTHORITY: CANONICAL_DOMAIN_OWNERS
 HUMAN_TARGET_POLICY_DECISION: APPROVED_2026-11-13
 IMPLEMENTATION_STATE_AUTHORITY: NONE
 
-**Current development governance: ACTIVE and authorized for capability-first implementation.** The approved canonical Product/domain owners govern progressive implementation and **capability-scoped implementation and acceptance now**; each increment may be accepted when its applicable owner-backed criteria pass, and business journeys close separately only when their complete cross-owner requirements are proven. The separate `GOVERNANCE_CUTOVER: NOT_READY` marker refers **only** to unfinished whole-platform historical semantic reconciliation. It is not a development-admission veto, a prerequisite to closing an otherwise accepted journey, or a reason to stop unrelated safe work. Protected data and external actions retain their independent authorization and evidence requirements.
-
 ## What this directory means
-This is the **only active durable governance home** for BThwani. Each subject has exactly one semantic owner; overlapping documents link to the owner rather than restating independently changeable law. Current domain documents remain subject to complete historical reconciliation, while capability-scoped Product/domain decisions may be resolved incrementally in their canonical owner and used to guide isolated SQL/service development. Their existence alone never proves runtime acceptance or authorizes production activation.
 
-Historic `docs/governance/` was removed from this candidate. Read older content and verified code from archived donor branch `archive/legacy-pre-refoundation-20261114`, ZIP archives, dated reports and external sources as **donor evidence only**, not another editable authority. Preserve any materially binding historical legal/financial records and original research links in a non-normative `docs/reference/` when later admitted; never reintroduce another governance root.
+This is BThwani's single active durable semantic governance root. The current approved domain decisions direct progressive capability development and acceptance; the index does not own their detailed rules, engineering procedures or implementation state. One decision has one semantic owner. Resolve proven contradictions at the appropriate owner under actual authority.
+
+Historic docs/governance/ and the read-only archive/legacy-pre-refoundation-20261114, ZIP archives, dated reports and original research are donor evidence, not another editable policy root. Preserve materially binding historical legal/financial records and source provenance through the existing [documentation index](../docs/README.md) and relevant owner; absence of a migrated clause is not approval to retire it.
 
 ## The canonical owner index
-| Owner file | What its decisions control |
-| --- | --- |
-| `product.md` | admission of 26 capability IDs, scope/exclusions; **single** Product census |
-| `platform.md` | actor/Store terminology, roles versus resources and surface identities |
-| `architecture.md` | single owner/writer/engine, domain boundaries, service-to-service and **policy-driven** law |
-| `identity.md` | identity, sessions, global permissions, recovery |
-| `stores.md` | Store registration, relation, publication, availability and Store delegation |
-| `catalog.md` | one product/catalogue/Offer engine, media, availability and Customer readback |
-| `commerce.md` | city/location, cart, Order, multi-Store orchestration, adjustments, communication and promotions |
-| `fulfillment.md` | method eligibility, assignment, Captain membership, handoff, delivery, pickup |
-| `finance.md` | WLT fees/agreements, collection/custody, balances, ledger, settlements and beneficiary routing |
-| `hr.md` | bounded employee administration for BThwani and Merchant staff inside DSH; no parallel Identity role or fourth HR service |
-| `experience.md` | Tamagui Expo, Ant Design Operator, brand, Arabic RTL, accessibility, recovery |
-| `safety.md` | security, privacy, financial/data integrity, migrations, incident and internal technical risk assurance |
-| `engineering.md` | acceptance, staged refoundation, policy admission and measurable engineering proof |
-| `journeys.md` | observable cross-owner handoffs, failure and recovery; not another Product list |
 
-Root `AGENTS.md` governs **execution/authority**, `REPOSITORY-STRUCTURE.md` governs **file placement**, and journey acceptance is established by existing owner tests, contracts, runtime readback and delivery evidence; no separate journey documentation directory. Historical material stays in `docs/reference/` and never becomes a current gate. GitHub CI verifies source and tests; it cannot independently certify commercial or legal policy.
+| Owner | Normative responsibility |
+| --- | --- |
+| [product.md](product.md) | Single Product capability census, scope and exclusions; original 26 IDs are traceability, not a ceiling |
+| [platform.md](platform.md) | Actor/Store terminology, roles versus resources, surface identities |
+| [architecture.md](architecture.md) | One writer/engine per fact, service boundaries and policy-driven architecture |
+| [identity.md](identity.md) | Identity, sessions, global permissions and recovery |
+| [stores.md](stores.md) | Store registration, relation, publication, availability and delegation |
+| [catalog.md](catalog.md) | Product/catalogue/Offer engine, media, availability and Customer readback |
+| [commerce.md](commerce.md) | City/location, cart, Order, multi-Store orchestration, adjustments, communication and promotions |
+| [fulfillment.md](fulfillment.md) | Method eligibility, assignment, Captain membership, handoff, delivery and pickup |
+| [finance.md](finance.md) | WLT fees/agreements, collection/custody, balances, ledger, settlement and beneficiaries |
+| [hr.md](hr.md) | Bounded employee administration for BThwani/Merchant staff inside DSH, not a fourth service or parallel Identity role |
+| [experience.md](experience.md) | Expo Tamagui and Operator Ant Design, brand, Arabic RTL, accessibility and recovery |
+| [safety.md](safety.md) | Security, privacy, data/financial integrity, migration, incidents and technical risk assurance |
+| [engineering.md](engineering.md) | Engineering law, refoundation, policy admission, work lifecycle and acceptance |
+| [journeys.md](journeys.md) | Cross-owner observable handoffs, failure and recovery, not a second Product list |
+
+[AGENTS.md](../AGENTS.md) is the execution entry, [REPOSITORY-STRUCTURE.md](../REPOSITORY-STRUCTURE.md) the placement owner, and [engineering references](../docs/reference/engineering-references.md) the canonical external reference catalog. Engineering Core owns the reusable methodology; Spec Kit specifications and technical contracts describe implementation, not alternative business rules. CI verifies source and tests, not commercial/legal policy or production permission. There is no separate journey document/status registry.
 
 ## Authority and conflict protocol
-1. A **latest explicit human approval** for the same subject supersedes an incompatible earlier decision; retain all compatible requirements. Don't infer values, permissions or legal statuses from a historic archive.
-2. The approved current domain decisions are active for progressive development; unresolved historical requirements remain subject to reconciliation, not a second authority. Use the Product admission census and the business-owner documents to reconcile older source and requirements, identify what moved, what was superseded and what remains disputed.
-3. Each material decision lives in exactly one above owner now, and consumers link to it; global cutover certifies the completeness of historical reconciliation, not the start of single-owner authority. `architecture.md` names the boundary; `finance.md` owns money; `stores.md` owns Store relation; `fulfillment.md` owns delivery eligibility. UI presentation and technical contracts do not become alternate rules.
-4. Implementation state is proven independently by code, contracts, applied migrations and runtime owner readback. A document or passing mocked test cannot assert the service is live or that financial operations are safe.
-5. Unknown or disputed material choice is recorded with an owner and a safe default **of no unauthorized activation**, not guessed away. A policy choice is only enabled when service implementation/legal acceptance makes it operable.
+
+A latest explicit human approval for the same subject supersedes incompatible earlier choices, preserving compatible obligations. Determine values, permissions and legal status from the live owner and actual evidence, never from archived implementation alone. Reconcile historical rights and obligations before changing or retiring them. Unresolved material choices fail closed for their affected action; no unauthorized activation or guessed default. Only the owner may record a substantive decision; cross-owner consumers link to it.
+
+Implementation state requires actual source, executable contracts, relevant data/schema and runtime owner readback. Documents, scaffolds, mocks and policy approval do not certify live service behavior, financial safety or legal compliance.
 
 ## Progressive capability admission — 2026-11-14 human approval
 
-The global GOVERNANCE_CUTOVER remains NOT_READY solely as a whole-policy reconciliation marker, not a stop sign. The latest human approval enables **Close as We Go analysis, design and implementation of all existing and newly proposed Product capabilities**, without preliminary admission voting or full-platform cutover. For each affected capability increment, evaluate its actual actors, surfaces, contracts, owners, persistence, permissions, dependencies, errors, races and recovery; record newly resolved capability meaning only in the single canonical Product/domain owners. Reuse the named journeys for cross-owner proof without imposing serial journey implementation. Proposed capabilities are not automatically certified as legally effective, fully tested or production-ready merely because development is open.
+IMPLEMENTATION_ADMISSION: PROGRESSIVE authorizes analysis, design and implementation of all existing and newly proposed capabilities through independently ready owner-backed increments. No preliminary per-capability approval ceremony or whole-platform policy cutover is required to start authorized development. Resolve affected Product/domain meanings in their existing owners; map each increment to existing/new Product IDs and reconcile original-source rights, scope and unsafe choices.
 
-**For each capability increment and each business journey it materially affects, apply the relevant evidence requirements below; these are not preliminary development admission votes:**
-1. Map the increment or journey to existing or newly proposed Product capability IDs in the single canonical Product owner, with one semantic owner and one Identity/DSH/WLT writer per mutable fact; record the affected scope and consumers. Adding a new ID during its affected implementation does not require a prior project-wide governance cutover.
-2. Material original-source rights, obligations and unsafe choices for this capability are reconciled against the accepted owner policy. Unresolved material decisions fail closed **for the affected action**, without blocking unrelated accepted capabilities.
-3. Track each increment's affected owners, surfaces, dependencies, positive and negative cases and recovery through the existing Product/Journey/domain owners and executable acceptance tests; use the named journey when full cross-owner integration is required. The native Spec Kit invocation and Graphify query follow the mandatory execution rule in `AGENTS.md`; creation of spec.md/plan.md/tasks.md is optional and proportionate. These artifacts never become separate approval gates or parallel business policy. Do not duplicate a specification or require additional ceremony for a small change.
-4. Enforce boundaries where they matter: Identity authorization and revocation, DSH Store/Order ownership, WLT ledger and settlement, owner OpenAPI and SQL migration tests, plus existing app boundary, CI and secrets checks. Historical document census or source-scaffolding rules are not implementation admission gates. Failed affected tests block that change, not unrelated working capabilities.
-5. Development runtime must use a separate, verified synthetic database/media namespace before the affected runtime integration needs it; do not reuse donor Docker volumes, live sessions, money or provider credentials. Prove the affected security, finance, migration, privacy and legal invariants proportionately to actual risk before closing that behavior, not as a platform-wide prerequisite to unrelated development.
+The [capability acceptance law](engineering.md#capability-scoped-implementation-acceptance-before-global-cutover) owns the detailed increment criteria, dependencies, consumers, required Spec Kit and Graphify evidence and cross-owner journey proof. Follow [engineering](engineering.md) for data lifecycle, work prioritization, refoundation and evidence, [safety](safety.md) for protected effects, and [AGENTS.md](../AGENTS.md) for tool and delivery authority. Before affected runtime integration, verify isolated synthetic database/media state; do not reuse donor volumes, live sessions, money or provider credentials.
 
-IMPLEMENTATION_ADMISSION: PROGRESSIVE authorizes **development of existing and new capabilities**, which are analyzed and reconciled within their affected capability increments rather than held behind pre-development approvals. GOVERNANCE_CUTOVER: NOT_READY records unfinished whole-platform semantic review and never blocks development. Separate authority is still required for destructive changes, real financial effects, credential access, Push/PR/merge and protected-state operations. This is not permission to bypass security boundaries during development. A capability increment may be accepted with only its applicable verified criteria; this never claims that a larger cross-owner business outcome has closed. A journey becomes CLOSED only with 100% of its defined applicable criteria proven by owner-backed evidence; failed/untested checks stay FAIL/NOT_RUN and are repaired while independent development proceeds.
+Accept an increment only on its own applicable owner-backed criteria; close a named business journey only when 100% of its applicable cross-owner criteria are proven. Keep unresolved criteria open; continue independent authorized work. No source location, historical census or policy status substitutes for actual behavior. Protected operations, destructive effects, credentials, Git and external activation retain their action-specific boundaries.
 
 ## What must be true before governance cutover
-- All 14 owner documents have been semantically reconciled against accepted decisions, relevant original source/migrations and major archived requirements, not just rewritten or filled with headings.
-- All admitted Product capability IDs (including the original **26**) occur exactly once as substantive owner sections, and no required material subfeature silently disappears. The single Product census routes each ID to one owner; no second catalog.
-- Correct reference paths, no old active `docs/governance/`, no duplicate owner/writer/engine or unresolved critical business conflict. Operator policies are actually specified as owner-managed settings, not generic unbounded executors or UI-only switches.
-- **Approved 2026-11-13 review process:** the sole human Product owner has approved the target commercial/architecture/security/migration/legal *policy choices*. No external consultant or independent sign-off is required merely to settle those choices. A material unsafe or unverified *technical implementation* remains unactivated until documented internal critical-risk assessment, negative/adversarial tests, protected historical-record reconciliation and applicable real-world legal/contract evidence are sufficient for that specific action. Missing proof is `NOT_RUN`/`REVIEW_BLOCKED` for the affected verification, never fictional `PASS`. External certification is not claimed.
-- Verify the policy cross-references, ownership, consistency and reconciliation evidence at the reviewed policy revision. Applicable source/security/contract and CI tests remain separate implementation and delivery gates for the affected candidate, not a requirement to build every admitted capability before policy reconciliation. The historical corpus remains reference evidence rather than a mandatory runtime check. Unresolved material policy decisions block their affected actions.
 
-When historical reconciliation is actually evidenced and approved, only this index may record `GOVERNANCE_CUTOVER: READY`; no retired guard or extra approval packet is needed. **This certifies complete policy reconciliation**, not permission to start development (already progressively authorized) and not SQL/application production readiness. Until then keep `NOT_READY`; do not disguise a draft as a final acceptance.
+GOVERNANCE_CUTOVER: NOT_READY records unfinished whole-platform historical semantic reconciliation only. It does not block progressive development, independent accepted increments or a fully proven journey, and is not production readiness.
+
+Only this index may record GOVERNANCE_CUTOVER: READY after all of these are evidenced and the reviewed policy revision is approved:
+
+- All 14 canonical domain documents are substantively reconciled against accepted decisions, relevant original source/migrations and material archived obligations. All admitted Product IDs, including the original 26, route exactly once to their substantive owners; no material subfeature, right or obligation is silently lost.
+- The owner boundaries and cross-references agree, with no active legacy governance, duplicate writer/engine, unresolved critical business conflict or generic unbounded policy executor. Operator-editable rules belong to their actual owners.
+- The sole human Product owner has approved target commercial, architectural, security, migration and legal policy choices under the 2026-11-13 decision. No external consultant or independent sign-off is required merely to settle those choices. Record actual normative financial rules, threat model, payout/ledger formulas and protected migration strategy with attributable approval and internal adversarial risk assessment.
+- The applicable policy-level consistency and reconciliation evidence identifies the exact reviewed revision and approval. No retired guard, duplicate approval dossier or separate certification claim. Unresolved material risks block only affected actions.
 
 ## Cutover readiness is a policy decision, not a claim of implemented software
 
-`GOVERNANCE_CUTOVER: READY` would mean **the approved target Product/Design/API/SQL/Operational rules are reviewed, internally consistent and safe enough to direct the continuing or subsequent scoped implementation**, with the latest explicit human-approved target policy decisions and internally evidenced risk-assurance criteria for financial/security/migration/legal-sensitive **implementation and activation**. It does **not** require an already-built Expo app, an OpenAPI refactor, three implemented SQL baselines, E2E customer checkout or a published software release. Those implementations have their **own later gates and actual runtime proof**; they remain `NOT_RUN` until authorized.
+READY certifies that the approved target Product/design/API/SQL/operational policy is consistently reconciled and can direct scoped implementation. It does not certify built applications, API parity, three implemented SQL baselines, checkout E2E, production release or real money/legal effects.
 
-**The 2026-11-13 human decision supersedes the earlier external/independent-reviewer prerequisite for target-policy adoption.** Record the chosen normative financial rules, threat model, payout/ledger formula and protected migration strategy now, with documented internal adversarial analysis and attributable human approval. No missing external signature alone reopens an approved strategic choice. Equally, approval of policy is not evidence of working money, legal consent, secure credential recovery or restorable SQL. Those effects remain disabled or unreleased until verified by actual owner-backed tests, contracts and protected-state evidence at implementation time.
-
-Any final historical reconciliation verdict records **which reviewed policy revision and accepted human authorization** it refers to. Approval to author/read/edit draft text and a historical Push are **not** automatic authority to invent reviewer signoffs or to merge/ship/deploy. Until semantic source reconciliation, the applicable policy-level risk analysis and reconciliation checks are verified on the reviewed policy revision, remain `NOT_READY`, even when all structural/CI checks are green. Never fabricate or relabel the historical independent-review sign-off register as completed.
+Unsafe or unverified technical implementation remains unactivated until its internal critical-risk assessment, applicable negative/adversarial tests, protected-record reconciliation, actual runtime proof and applicable real-world legal/contract evidence are sufficient. Apply the engineering and safety owners to each affected action. Missing evidence is NOT_RUN/REVIEW_BLOCKED/FAIL as appropriate, not PASS. Never fabricate independent review or a historical signature; policy approval, authority to edit and historical Push are not authorization to merge, ship or deploy.
