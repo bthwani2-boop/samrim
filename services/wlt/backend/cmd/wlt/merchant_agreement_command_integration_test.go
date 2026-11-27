@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"path/filepath"
 	"testing"
@@ -188,4 +190,83 @@ func verifyMerchantCommandAuthority(t *testing.T, ctx context.Context, owner, re
 		t.Fatalf("durable exact decision count %d %v", count, err)
 	}
 	t.Log("WLT_MERCHANT_COMMAND_AUTHORITY_PASS real_dsh=true current_identity=true ownership_recheck=true rollback=true replay=true acl_denial=true concurrent=true decline=true")
+	t.Run("Merchant agreement real owner read authority", func(t *testing.T) {
+		verifyMerchantAgreementReadAuthority(t, ctx, owner, reader, dsh, dshOrigin, origin, merchant, customer)
+	})
+}
+
+// Reuse the same isolated real owner fixture and recorded proposals. No
+// replacement Identity/DSH servers or second financial fixture are introduced.
+func verifyMerchantAgreementReadAuthority(t *testing.T, ctx context.Context, owner, reader, dsh *sql.DB, dshOrigin, identityOrigin, merchant, customer string) {
+	t.Helper()
+	handler, err := wallet.NewHandler(reader, identityOrigin, dshOrigin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	const base = "/v1/merchants/stores/"
+	const path = base + "command-store/commercial-agreement"
+	assertReview := func() {
+		t.Helper()
+		body := readWallet(t, ctx, server.URL, merchant, path, http.StatusOK)
+		var result struct {
+			StoreID  string `json:"storeId"`
+			Proposal *struct {
+				Version     int64  `json:"version"`
+				OperationID string `json:"operationId"`
+				Relation    string `json:"storeRelation"`
+				Commission  int    `json:"commissionBasisPoints"`
+				State       string `json:"reviewState"`
+			} `json:"proposal"`
+		}
+		if err := json.Unmarshal(body, &result); err != nil || result.StoreID != "command-store" ||
+			result.Proposal == nil || result.Proposal.Version != 1 || result.Proposal.OperationID != "proposal-command-store" ||
+			result.Proposal.Relation != "DIRECT" || result.Proposal.Commission != 375 || result.Proposal.State != "AWAITING_FINANCE_REVIEW" {
+			t.Fatalf("unexpected owned agreement: %s %v", body, err)
+		}
+	}
+	assertReview()
+	readWallet(t, ctx, server.URL, customer, path, http.StatusForbidden)
+	readWallet(t, ctx, server.URL, merchant, base+"absent-store/commercial-agreement", http.StatusForbidden)
+	readWallet(t, ctx, server.URL, merchant, base+"command-relation/commercial-agreement", http.StatusServiceUnavailable)
+	readWallet(t, ctx, server.URL, merchant, path+"?actorId=wallet-two", http.StatusBadRequest)
+
+	// Ownership changes after initial verified DSH/Identity observation, while
+	// the real WLT reader is blocked acquiring the PostgreSQL projection lock.
+	lock, err := owner.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Rollback()
+	if _, err := lock.ExecContext(ctx, "LOCK TABLE wlt.store_commercial_agreement_proposals IN ACCESS EXCLUSIVE MODE"); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequestWithContext(ctx, http.MethodGet, path, nil)
+	request.Header.Set("Authorization", "Bearer "+merchant)
+	pending := make(chan *httptest.ResponseRecorder, 1)
+	go func() {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, request)
+		pending <- rec
+	}()
+	waitForWalletQuery(t, ctx, reader, "wlt.latest_commercial_agreement_reviews")
+	executeFixture(t, ctx, dsh, "UPDATE dsh_test_wlt_agreement.stores SET owner_actor_id='wallet-two' WHERE id='command-store'")
+	if err := lock.Rollback(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case rec := <-pending:
+		var failure map[string]any
+		if rec.Code != http.StatusForbidden || rec.Header().Get("Cache-Control") != "no-store" ||
+			json.Unmarshal(rec.Body.Bytes(), &failure) != nil || len(failure) != 1 || failure["error"] != "FORBIDDEN" {
+			t.Fatalf("ownership transfer leaked agreement: %d %s", rec.Code, rec.Body.String())
+		}
+	case <-ctx.Done():
+		t.Fatal("merchant agreement read did not settle")
+	}
+	readWallet(t, ctx, server.URL, merchant, path, http.StatusForbidden)
+	executeFixture(t, ctx, dsh, "UPDATE dsh_test_wlt_agreement.stores SET owner_actor_id='wallet-one' WHERE id='command-store'")
+	assertReview()
+	t.Log("WLT_MERCHANT_AGREEMENT_READ_PASS real_identity=true real_dsh=true real_postgresql=true wrong_role_denied=true ownership_transfer_denied=true relation_mismatch_denied=true recovery=true")
 }
