@@ -60,6 +60,10 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     const effectState = [];
     const requests = [];
     const copied = [];
+    const shared = [];
+    let shareOutcome = "sharedAction";
+    let shareFailure = false;
+    let sharePending;
     let clipboardSucceeds = true;
     let clipboardRejects = false;
     const react = {
@@ -103,7 +107,7 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
       "./public-storefront-link": { publicStorefrontLink },
       react,
       "react/jsx-runtime": { jsx, jsxs: jsx },
-      "react-native": { Platform: { OS: "web" }, Pressable: "Pressable", Text: "Text", View: "View" },
+      "react-native": { Platform: { OS: "web" }, Share: { sharedAction: "sharedAction", dismissedAction: "dismissedAction", share: async value => { shared.push(value); if (shareFailure) throw Error("native share unavailable"); if (sharePending) return sharePending; return { action: shareOutcome }; } }, Pressable: "Pressable", Text: "Text", View: "View" },
     };
     const mod = loadMappedRenderFixture(code, component, mocks);
     retainedFixtures.push(mod);
@@ -130,16 +134,14 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     tree = render("actor-b", "store-two");
     assert.equal(requests[0].signal.aborted, true);
     requests[0].resolve({ id: "store-one" });
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(copied, [], "older actor's link must never be copied");
 
     tree = render("actor-b", "store-two");
     action(tree).props.onPress();
     assert.equal(requests.length, 2);
     requests[1].resolve({ id: "store-two" });
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(copied, ["https://customer.example/storefront/store-two"]);
     const notice = view => nodes(view).find(n => n.props?.accessibilityLiveRegion === "polite")?.props.children;
     assert.equal(notice(render("actor-b", "store-two")), "تم نسخ رابط المتجر المنشور.");
@@ -151,15 +153,14 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     tree = render("actor-b", "store-three");
     action(tree).props.onPress();
     requests[2].reject(new Error("DSH no longer publishes Store"));
-    await Promise.resolve();
-    await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.equal(copied.length, 1, "denied public Store must not be shared");
 
     clipboardSucceeds = false;
     tree = render("actor-b", "store-three");
     action(tree).props.onPress();
     requests[3].resolve({ id: "store-three" });
-    await Promise.resolve(); await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.equal(copied.length, 1);
     assert.equal(notice(render("actor-b", "store-three")), "تعذّر نسخ الرابط إلى الحافظة. أعد المحاولة.");
 
@@ -167,7 +168,7 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     tree = render("actor-b", "store-three");
     action(tree).props.onPress();
     requests[4].resolve({ id: "store-three" });
-    await Promise.resolve(); await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.equal(copied.length, 1);
     assert.equal(notice(render("actor-b", "store-three")), "تعذّر نسخ الرابط إلى الحافظة. أعد المحاولة.");
 
@@ -176,7 +177,7 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     tree = render("actor-b", "store-three");
     action(tree).props.onPress();
     requests[5].resolve({ id: "store-three" });
-    await Promise.resolve(); await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.equal(copied.at(-1), "https://customer.example/storefront/store-three");
     assert.equal(notice(render("actor-b", "store-three")), "تم نسخ رابط المتجر المنشور.");
     // An event queued by the previous render must not begin an owner read,
@@ -191,7 +192,7 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     current.props.onPress();
     assert.equal(requests.length, 7);
     requests[6].resolve({ id: "different-store" });
-    await Promise.resolve(); await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.match(notice(render("actor-b", "store-three")), /تعذّر تأكيد نشر/);
     assert.equal(copied.length, 2);
 
@@ -208,7 +209,7 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     action(render("actor-c", "store-four")).props.onPress();
     assert.equal(requests[7].origin, "");
     requests[7].reject(new Error("owner endpoint absent"));
-    await Promise.resolve(); await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.match(notice(render("actor-c", "store-four")), /تعذّر تأكيد نشر/);
 
     mocks["react-native"].Platform.OS = "android";
@@ -218,14 +219,56 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
       action(render("actor-d", "store-five")).props.onPress();
       assert.equal(requests[8].origin, "http://127.0.0.1:3202");
       requests[8].resolve({ id: "store-five" });
-      await Promise.resolve(); await Promise.resolve();
+      await new Promise(resolve => setImmediate(resolve));
       assert.equal(copied.at(-1), "https://customer.example/storefront/store-five");
 
+
+      const shareAction = tree => nodes(tree).find(n =>
+        n.type === "Pressable" && n.props?.accessibilityLabel === "مشاركة رابط المتجر العام");
+      assert.ok(shareAction(render("actor-d", "store-five")), "Android must offer native share");
+      assert.equal(shareAction(render("actor-d", "store-five", false)), undefined);
+      let v = render("actor-d", "store-five");
+      shareAction(v).props.onPress();
+      action(v).props.onPress();
+      assert.equal(requests.length, 10, "copy and share must use one active proof");
+      assert.equal(shared.length, 0);
+      requests[9].resolve({ id: "store-five" });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.deepEqual(shared, [{ message: "https://customer.example/storefront/store-five" }]);
+      assert.equal(notice(render("actor-d", "store-five")), "تم تسليم الرابط إلى واجهة المشاركة.");
+      shareOutcome = "dismissedAction";
+      shareAction(render("actor-d", "store-five")).props.onPress();
+      requests[10].resolve({ id: "store-five" });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(notice(render("actor-d", "store-five")), undefined);
+      shareFailure = true;
+      shareAction(render("actor-d", "store-five")).props.onPress();
+      requests[11].resolve({ id: "store-five" });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(notice(render("actor-d", "store-five")), "تعذّرت المشاركة. يمكنك نسخ الرابط.");
+      shareFailure = false;
+      v = render("actor-d", "store-five");
+      shareAction(v).props.onPress();
+      render("actor-e", "store-seven");
+      requests[12].resolve({ id: "store-five" });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(shared.length, 3, "late publication proof must not open the share sheet");
+      let complete;
+      sharePending = new Promise(resolve => { complete = resolve; });
+      shareAction(render("actor-e", "store-seven")).props.onPress();
+      requests[13].resolve({ id: "store-seven" });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(shared.length, 4);
+      render("actor-e", "store-eight");
+      complete({ action: "sharedAction" });
+      await new Promise(resolve => setImmediate(resolve));
+      assert.equal(notice(render("actor-e", "store-eight")), undefined, "no stale success on a new Store");
+      sharePending = undefined;
       delete process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN;
       action(render("actor-d", "store-six")).props.onPress();
-      assert.equal(requests[9].origin, "");
-      requests[9].reject(new Error("owner endpoint absent"));
-      await Promise.resolve(); await Promise.resolve();
+      assert.equal(requests[14].origin, "");
+      requests[14].reject(new Error("owner endpoint absent"));
+      await new Promise(resolve => setImmediate(resolve));
       assert.match(notice(render("actor-d", "store-six")), /تعذّر تأكيد نشر/);
     } finally {
       if (previousNative === undefined) delete process.env.EXPO_PUBLIC_MERCHANT_SYNTHETIC_DSH_ORIGIN;
