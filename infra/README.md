@@ -59,14 +59,11 @@ WLT has its own service definition in `compose.yaml` and a pinned service-owned
 Dockerfile. The existing owner databases used by Identity/DSH are
 **not** renamed, erased or migrated. Provision `bthwani_wlt_test` explicitly
 using `pwsh -NoProfile -File tools/dev/provision-wlt-test-db.ps1` only after
-confirming it and its three WLT roles do not already exist. That operation
+confirming it and all four WLT roles (owner, reader, sandbox and dormant command) do not already exist. That operation
 creates a new isolated database plus its own read-only runtime credentials
-inside ignored `infra/.env`. The complete baseline and reader admission commit together. The private credential candidate is published atomically only after durable SQL readback; an interrupted operation retains the candidate for explicit owner review, never blind replay. It must never be run automatically with Compose.
+inside ignored `infra/.env`. The fresh baseline and role setup are verified together; the command role remains NOLOGIN without CONNECT or membership and does not admit serving writes. The private credential candidate is published atomically only after durable SQL readback; an interrupted operation retains the candidate for explicit owner review, never blind replay. It must never be run automatically with Compose.
 
-After a source commit, build via
-`pnpm dev docker build wlt`, and configure with
-`docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet`.
-For an approved first start, set `REF_WLT_IMAGE_TAG` to the returned `build-<full SHA>` tag and use the matching Compose invocation plus `up -d --no-deps --no-build --pull never wlt`. For existing WLT use guarded reconciliation. Port `3203` is bound to Lenovo loopback only;
+Use the separately authorized [first provisioning](#separately-authorized-first-provisioning) procedure for WLT; for existing WLT use guarded reconciliation. Port 3203 is bound to Lenovo loopback only.
 WLT uses the existing synthetic Identity verifier `identity:3302` and the configured DSH peer origin `http://dsh:8080`, with a
 separate read-only WLT database identity. The peer origin does not grant payment-mutation authority. A successful Docker healthcheck
 indicates only local process/SQL readiness; financial delivery, checkout and
@@ -89,15 +86,7 @@ REF_DSH_DISCOVERY_SCHEMA=dsh_test_REPLACE_WITH_VERIFIED_SCHEMA
 REF_DSH_PUBLIC_CORS_ORIGINS=http://127.0.0.1:18101,http://localhost:18101
 ```
 
-Run from the checkout root (never use unscoped Compose up). The build-only command creates a separate `build-<full SHA>` candidate tag. For an explicitly approved first start, set the matching owner image tag to the returned tag; for existing owners use guarded reconciliation. An image build by itself does not recreate an existing container:
-
-```powershell
-pnpm dev docker build dsh
-$env:REF_DSH_IMAGE_TAG = "build-$(git rev-parse HEAD)"
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d --no-deps --no-build --pull never dsh
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps dsh
-```
+Build through the unified committed-owner lifecycle and follow [first provisioning](#separately-authorized-first-provisioning) only for an approved absent DSH container. An image build does not change a running container; existing DSH uses guarded reconciliation.
 
 The public DSH image serves `/health` and the public Store discovery routes.
 The Compose healthcheck requires the configured DSH discovery revision row to
@@ -149,8 +138,7 @@ The canonical service definition sets both explicit flags. The normal host defau
 but an actual networked verifier and its database permissions are separate
 runtime gates. Before starting, verify an independently isolated synthetic
 schema, least-privilege database role, reviewed applied SQL and protected
-Identity session/permission denial and revocation readback. The build script
-continues to reject uncommitted Identity Go/SQL source; no real-user or production authentication is enabled by these settings.
+Identity session/permission denial and revocation readback. The guarded native committed-source build rejects uncommitted Identity Go/SQL input; no real-user or production authentication is enabled by these settings.
 
 After those independent prerequisites are **proved**, set the Identity-only
 values `REF_IDENTITY_TEST_SCHEMA`, `REF_IDENTITY_RUNTIME_DATABASE_URL` (pointing
@@ -196,15 +184,7 @@ independently verify the Merchant session with Identity. For the containerized D
 
 For isolated Merchant standing, explicitly set `REF_DSH_ENABLE_ISOLATED_MERCHANT_STANDING=true` only after owner acceptance. The Identity TLS volume contains `server.pem` and `server-key.pem`, with the key readable only by Identity UID 65532. The separate DSH trust volume contains `ca.pem`. Issue the leaf for DNS name `identity`, keep the CA signing key off containers, and never publish port 3343. Store availability remains separately opt-in.
 
-The opt-in deployment sequence is:
-
-```powershell
-pnpm dev docker build identity
-$env:REF_IDENTITY_IMAGE_TAG = "build-$(git rev-parse HEAD)"
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d --no-deps --no-build --pull never identity
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps identity
-```
+With the above verified trust, database and capability prerequisites, use the [first provisioning](#separately-authorized-first-provisioning) procedure for an explicitly approved absent Identity container, or the guarded reconciliation path for an existing one. Never use first start to bypass the semantic transition refusal.
 
 The committed Identity verifier now exposes `GET /health` for isolated
 development only. It checks a bounded PostgreSQL Ping without exposing actor,
@@ -237,7 +217,7 @@ context must identify the authorized Lenovo engine.
 It **does not** rebuild/restart a service, examine secrets, run SQL or prove
 login, session revocation, ledger correctness, published client UX or
 production suitability. Building a
-new `sha-<commit>` image is a separate operation and does **not** update the
+new `sha-<first nine SHA characters>` image is a separate operation and does **not** update the
 container already running. Readiness always attaches to the *running* image ID.
 
 The active environment uses three dedicated owner databases on the existing PostgreSQL instance:
@@ -250,8 +230,7 @@ verified compatible transitions; there are no historical one-field exceptions.
 
 For a committed owner schema change, the existing source watcher requests one
 isolated baseline rehearsal per new runtime input key through the unified
-lifecycle mutex. The explicit equivalent is
-`pnpm dev docker reconcile -Apply -PrepareBaseline`.
+lifecycle mutex. The explicitly authorized equivalent is `pnpm dev docker reconcile -Apply -PrepareBaseline`, which may proceed to guarded live transition after successful compatible rehearsal; use the standalone disposable PostgreSQL proof above for rehearsal without serving mutation.
 The rehearsal never writes to a retained database. It proves a fresh
 baseline, compatible data transfer, preserved privileges and rollback on
 incompatible input. Only a successful proof for the current clean source
@@ -284,8 +263,7 @@ current DSH owner baseline SQL in order, then restores a custom-format backup in
 second database in the same disposable container. It compares columns,
 constraints, indexes, triggers and the discovery revision. The same synthetic
 reader must be able to read the revision and must receive SQLSTATE 42501 on
-update in both databases. The Go quality workflow runs this rehearsal with
-its local Docker context. The script stops only its own verified container.
+update in both databases. The PostgreSQL Integration CI job runs this rehearsal with its local Docker context. The script stops only its own verified container.
 
 **Scope boundary:** This proves isolated fresh installation, compatible synthetic data transfer for all three owners, least-privilege access, rollback and WLT ledger conservation. It does not prove migration of protected real data, a live schema transition, service-to-service authentication, or production acceptance. Do not take the successful scratch proof as authority to
 change shared database roles, alter protected volumes, restart active services
@@ -311,34 +289,31 @@ and the retained-data migration/recovery epoch,
 real Identity authorization, WLT integration and negative/recovery tests.
 Do not change DB grants or handle real money through this setup.
 
-The build script rejects uncommitted Go/SQL source so that its source-SHA image
-label cannot silently certify a different working-tree revision. The image
+The guarded committed-source build uses an immutable source snapshot so that its full source-SHA image label cannot certify a different working-tree revision. The image
 build itself does not certify merchant scope, login, checkout or finance.
-Identity and WLT require their genuine owner implementations and signed-off
-security/ledger evidence; no placeholder service counts as readiness.
+Identity and WLT require genuine owner implementations, applicable security/ledger evidence and attributable internal adversarial risk assessment under governance/safety.md. No additional reviewer signature is required merely for development or acceptance; protected effects, legal obligations and production gates remain separately binding. No placeholder service counts as readiness.
 
-## Credentials and startup
+## Credentials, first provisioning and startup
 
-`tools/dev/setup-env.mjs` is an idempotent local secret generator that never prints values.
-An actual ignored `infra/.env` is required before starting; a missing or blocked
-secret store is a BLOCKED state, **not** permission to use old credentials.
-The tracked [.env.example](.env.example) enumerates every Compose interpolation input. It deliberately leaves required private credentials and unprovisioned owner settings blank; the base generator creates only base infrastructure credentials. Owner admission, database grants, image selection and TLS volumes still require their existing verified preparation. Do not copy the example over an existing .env or treat its defaults as proof of runtime admission.
-Necessary non-secret names are `REF_POSTGRES_USER`, `REF_POSTGRES_DB`,
-`REF_MEDIA_BUCKET` and port variables; secrets are `REF_POSTGRES_PASSWORD`,
-`REF_MEDIA_ACCESS_KEY` and `REF_MEDIA_SECRET_KEY`.
+`tools/dev/setup-env.mjs` is the first-use isolated credential generator; an existing regular ignored `infra/.env` is left untouched. A missing or blocked secret store is BLOCKED, not permission to use old credentials. The tracked [.env.example](.env.example) enumerates Compose inputs and leaves private credentials and unprovisioned owner settings blank. The generator creates only base infrastructure credentials. Owner admission, database grants, image selection and dedicated TLS volumes require separately verified preparation. Never copy the example over an existing .env. Base non-secret names are REF_POSTGRES_USER, REF_POSTGRES_DB, REF_MEDIA_BUCKET and the port variables; private values are REF_POSTGRES_PASSWORD, REF_MEDIA_ACCESS_KEY and REF_MEDIA_SECRET_KEY.
 
-Once authorized private credentials exist, run from the checkout root:
+### Existing environment
 
-```powershell
-node tools/dev/setup-env.mjs
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml config --quiet
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d postgres media mailpit payment-mock
-docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml ps
-```
+Use `pnpm dev` for daily app launch and `pnpm dev up` / `pnpm dev warm` to start only the seven already provisioned, verified containers. The native lifecycle uses Compose start/wait, not up. Missing/stale services require the existing guarded reconciliation or separately authorized first provisioning. `pnpm dev docker config` validates the admitted Compose model without printing credentials; `pnpm dev docker status`, `verify` and `reconcile` read actual runtime. Do not use a raw Compose up as an existing-service repair. A missing service is not evidence that its prior data, volume or identity is absent. No unscoped up, down -v, prune, donor volume copy or donor task change.
 
-Do not use unscoped Compose up. Launch only services with proven
-source, isolated database permissions and authorization acceptance. WLT is a real owner; verify its actual running revision and configuration before use.
-Do not run `down -v`, `prune`, copy donor volume data or touch donor tasks.
+### Separately authorized first provisioning
+
+The following is a native first-provisioning procedure, not daily startup or authority to replace an existing service. Before any write, verify the canonical Surface checkout and strict Lenovo SSH identity, exact project, actual container/volume/network inventory, required absent owner namespace (or compatible admitted retained data), image identities, and applicable private trust volumes and permissions. Obtain the specific first-provisioning authority and exclusive lifecycle ownership; do not run concurrently with a conflicting writer. Do not assume that an absent container means an empty database or that a running container may be recreated. If the required admission, inventory or rollback evidence is absent, stop that operation.
+
+For new base infrastructure only, run `node tools/dev/setup-env.mjs` to prepare an absent ignored environment; provision approved external trust material separately. Validate the full model with `pnpm dev docker config`, obtain only the required digest-pinned PostgreSQL/SeaweedFS/Mailpit images through native Compose pull, and build the Payment Mock from its committed mapping/Dockerfile context only when its candidate tag has no existing consumers. Use the canonical project file and verified context throughout. Inspect the existing services first; provision only explicitly approved absent services, not all four by default. The native Compose build for Payment Mock does not update any existing container. Verify its exact built image ID and mapping source before starting.
+
+For a new DSH, Identity or WLT serving container, first complete its owner-specific prerequisites above, then run the existing `pnpm dev docker build <owner>` (where owner is dsh, identity or wlt). Use the returned exact `build-<full SHA>` candidate tag, verify its immutable ID and source labels, and set only that owner's image selection (REF_DSH_IMAGE_TAG, REF_IDENTITY_IMAGE_TAG or REF_WLT_IMAGE_TAG) through the authorized environment. The ordinary reconciler's serving tag is `sha-<first nine SHA characters>`, not a build-only tag; provenance always uses the full SHA and actual image ID.
+
+The only native first-start form is service-scoped, after the above admission and an exact absence check under the applicable lifecycle ownership:
+
+    docker --context bthwani-docker compose --env-file infra/.env -f infra/compose.yaml up -d --no-deps --no-build --pull never --no-recreate <approved-absent-service>
+
+Replace the placeholder with exactly the approved absent service; never run it literally or as an unscoped command. All necessary dependency containers and pinned images must already be verified ready or available. The explicit no-recreate flag is a defense against replacement, not proof of initial absence, ownership or data safety. If the service exists or the outcome is unknown, read back its actual state and use the guarded existing lifecycle; do not retry this form. Verify the exact new container ID, image, configuration, mounts/network, role/namespace and readiness, then owner behavior and required negative tests. No source build, config validation or startup success alone establishes production readiness.
 
 ## Development port map (configured ports are not readiness evidence)
 
