@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"strings"
 )
 
@@ -26,7 +27,7 @@ func (g *PostgresStoreGrants) RequireStoreAction(ctx context.Context, actorID, s
 	if strings.TrimSpace(actorID) == "" || strings.TrimSpace(storeID) == "" || action != "store_operations" {
 		return ErrForbidden
 	}
-	tx, err := beginScopedStoreTx(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true})
+	tx, err := dbscope.Begin(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true}, "stores")
 	if err != nil {
 		return err
 	}
@@ -51,7 +52,7 @@ func (g *PostgresStoreGrants) StoreTimezone(ctx context.Context, storeID string)
 	if strings.TrimSpace(storeID) == "" {
 		return "", ErrStoreMissing
 	}
-	tx, err := beginScopedStoreTx(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true})
+	tx, err := dbscope.Begin(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true}, "stores", "service_cities")
 	if err != nil {
 		return "", err
 	}

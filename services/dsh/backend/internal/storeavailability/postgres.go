@@ -1,12 +1,10 @@
 package storeavailability
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"regexp"
 
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/lib/pq"
 )
 
@@ -18,18 +16,6 @@ type PostgresRepository struct {
 }
 
 var postgresSchemaRule = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
-
-// beginScopedStoreTx binds every Store query to a single validated DSH schema,
-// without constructing executable SQL from a schema identifier. SET LOCAL is
-// transaction-scoped, so a pooled connection never retains Store access to a
-// previous caller's schema. Explicit pg_catalog and pg_temp order also blocks
-// temporary-table shadowing of canonical Store relations.
-func beginScopedStoreTx(ctx context.Context, db *sql.DB, schema string, options *sql.TxOptions) (*sql.Tx, error) {
-	if db == nil || !postgresSchemaRule.MatchString(schema) {
-		return nil, ErrInvalidChange
-	}
-	return dbscope.Begin(ctx, db, schema, options)
-}
 
 func NewPostgresRepository(db *sql.DB, schema string) (*PostgresRepository, error) {
 	if db == nil || !postgresSchemaRule.MatchString(schema) {

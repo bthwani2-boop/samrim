@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/testfixture"
 	"net/http"
 	"net/http/httptest"
@@ -76,6 +77,67 @@ func TestRealPostgresVersionIdempotencyAuditAndReadback(t *testing.T) {
 		VALUES ($1,3600,90,1,'synthetic-operator','Isolated scoped policy')`, schema), cityID)
 	if err != nil {
 		t.Fatal(err)
+	}
+	shadow, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shadow.Close()
+	shadow.SetMaxOpenConns(1)
+	for _, relation := range []string{"stores", "service_cities", "store_operational_limits", "store_operational_availability", "store_operational_weekly_hours"} {
+		if _, err = shadow.ExecContext(ctx, "CREATE TEMP TABLE "+relation+" AS SELECT * FROM "+schema+"."+relation); err != nil {
+			t.Fatal(err)
+		}
+	}
+	missing := schema + "_missing"
+	shadowGrants, err := NewPostgresStoreGrants(shadow, missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = shadowGrants.RequireStoreAction(ctx, "synthetic-merchant-01", id, "store_operations"); err == nil {
+		t.Error("missing owner admitted a temporary Store grant")
+	}
+	shadowPolicy, err := NewPostgresPolicySource(shadow, missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = shadowPolicy.ReadCityPolicy(ctx, cityID); !errors.Is(err, ErrPolicyUnavailable) {
+		t.Errorf("missing owner admitted a temporary city policy: %v", err)
+	}
+	shadowRepo, err := NewPostgresRepository(shadow, missing)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = shadowRepo.ReadAuthorized(ctx, id, "synthetic-merchant-01", "MERCHANT_STORE_GRANT"); err == nil {
+		t.Error("missing owner admitted a temporary availability snapshot")
+	}
+	if tx, err := dbscope.Begin(ctx, shadow, schema, nil); err == nil {
+		_ = tx.Rollback()
+		t.Error("undeclared transaction scope admitted")
+	}
+	if tx, err := dbscope.Begin(ctx, shadow, schema, nil, "stores", "missing_owner_relation"); err == nil {
+		_ = tx.Rollback()
+		t.Error("incomplete owner relation set admitted")
+	}
+	if err := func() error {
+		tx, err := dbscope.Begin(ctx, shadow, schema, nil, "stores")
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+		var got string
+		if err := tx.QueryRowContext(ctx, "SELECT id FROM stores WHERE id=$1", id).Scan(&got); err != nil {
+			return err
+		}
+		if got != id {
+			return fmt.Errorf("unexpected canonical store %s", got)
+		}
+		return tx.Commit()
+	}(); err != nil {
+		t.Errorf("valid owner scope rejected: %v", err)
+	}
+	if t.Failed() {
+		t.FailNow()
 	}
 	policy, err := NewPostgresPolicySource(db, schema)
 	if err != nil {

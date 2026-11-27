@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"strings"
 )
 
@@ -68,7 +69,7 @@ func (g *PostgresStoreGrants) ListOwnedMerchantStores(ctx context.Context, actor
 	if g == nil || g.db == nil || actorID == "" || strings.TrimSpace(actorID) != actorID {
 		return nil, ErrForbidden
 	}
-	tx, err := beginScopedStoreTx(ctx, g.db, g.schema, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	tx, err := dbscope.Begin(ctx, g.db, g.schema, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}, "stores")
 	if err != nil {
 		return nil, err
 	}

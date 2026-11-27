@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"regexp"
 	"strings"
 	"time"
@@ -31,8 +32,8 @@ func (source *PostgresPolicySource) CurrentLimits(ctx context.Context, storeID s
 	if storeID == "" {
 		return Limits{}, ErrPolicyUnavailable
 	}
-	tx, err := beginScopedStoreTx(ctx, source.db, source.schema,
-		&sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, source.db, source.schema,
+		&sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "stores", "service_cities", "store_operational_limits")
 	if err != nil {
 		return Limits{}, ErrPolicyUnavailable
 	}
@@ -83,8 +84,8 @@ func (source *PostgresPolicySource) ReadCityPolicy(ctx context.Context, cityID s
 	if !cityPolicyIDRule.MatchString(cityID) {
 		return CityPolicy{}, ErrInvalidChange
 	}
-	tx, err := beginScopedStoreTx(ctx, source.db, source.schema,
-		&sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, source.db, source.schema,
+		&sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "service_cities", "store_operational_limits")
 	if err != nil {
 		return CityPolicy{}, ErrPolicyUnavailable
 	}

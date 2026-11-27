@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"math"
 	"mime"
 	"net/http"
@@ -108,7 +109,7 @@ func (s *MerchantStoreRegistrar) Options(ctx context.Context, token string) (Mer
 	if _, err := s.actor(ctx, token); err != nil {
 		return MerchantRegistrationOptions{}, err
 	}
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "store_registration_policies", "store_registration_terms", "service_cities", "verticals")
 	if err != nil {
 		return MerchantRegistrationOptions{}, ErrStoreOwnerUnavailable
 	}
@@ -202,7 +203,7 @@ func (s *MerchantStoreRegistrar) Register(ctx context.Context, token string, inp
 	}
 	sum := sha256.Sum256(body)
 	fingerprint := hex.EncodeToString(sum[:])
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "store_registration_commands", "stores", "service_cities", "verticals", "store_registration_policies")
 	if err != nil {
 		return MerchantRegistrationResult{}, ErrStoreOwnerUnavailable
 	}

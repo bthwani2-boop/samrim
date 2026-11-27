@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"mime"
 	"net/http"
 	"strings"
@@ -127,7 +128,7 @@ func (source *PostgresPolicySource) ApplyCityDeliveryPolicy(ctx context.Context,
 	}
 	sum := sha256.Sum256(payload)
 	hash := hex.EncodeToString(sum[:])
-	tx, err := beginScopedStoreTx(ctx, source.db, source.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, err := dbscope.Begin(ctx, source.db, source.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "service_cities", "service_city_delivery_policies", "service_city_delivery_policy_commands")
 	if err != nil {
 		return CityDeliveryPolicy{}, false, ErrPolicyUnavailable
 	}
@@ -174,7 +175,7 @@ func (source *PostgresPolicySource) ApplyCityDeliveryPolicy(ctx context.Context,
 		return p, false, nil
 	}
 	// A lost commit reply is not proof of rollback. Only an identical command may be reconciled.
-	read, err := beginScopedStoreTx(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true})
+	read, err := dbscope.Begin(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true}, "service_city_delivery_policy_commands")
 	if err != nil {
 		return CityDeliveryPolicy{}, false, ErrUnknownResult
 	}

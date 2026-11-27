@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -106,7 +107,7 @@ func TestOwnerBackedPublicVerticalDirectory(t *testing.T) {
 			t.Errorf("restore isolated DSH Stores: %v", err)
 			return
 		}
-		cleanup, err := owner.beginScopedTx(context.Background(), nil)
+		cleanup, err := dbscope.Begin(context.Background(), owner.DB, owner.Schema, nil, "verticals")
 		if err != nil {
 			t.Errorf("restore isolated vertical: %v", err)
 			return
@@ -120,7 +121,7 @@ func TestOwnerBackedPublicVerticalDirectory(t *testing.T) {
 			t.Errorf("commit synthetic vertical cleanup: %v", err)
 		}
 	})
-	tx, err := owner.beginScopedTx(ctx, nil)
+	tx, err := dbscope.Begin(ctx, owner.DB, owner.Schema, nil, "verticals", "stores")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +290,7 @@ func TestOwnerBackedOfferSearch(t *testing.T) {
 	// public writer, external catalogue or persistent user Store is involved.
 	mutate := func(query string) {
 		t.Helper()
-		tx, err := owner.beginScopedTx(ctx, nil)
+		tx, err := dbscope.Begin(ctx, owner.DB, owner.Schema, nil, "products", "variants", "offers", "stores")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"math"
 	"mime"
 	"net/http"
@@ -67,9 +68,9 @@ func (s *MerchantStoreRegistrar) ReadRegistrationPolicy(
 	if !registrationPublicID.MatchString(cityID) || !validRegistrationRelation(relation) {
 		return StoreRegistrationPolicy{}, ErrRegistrationInvalid
 	}
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
 		ReadOnly: true, Isolation: sql.LevelRepeatableRead,
-	})
+	}, "store_registration_policies", "store_registration_terms")
 	if err != nil {
 		return StoreRegistrationPolicy{}, ErrStoreOwnerUnavailable
 	}
@@ -105,9 +106,9 @@ func (s *MerchantStoreRegistrar) ApplyRegistrationPolicy(
 	if !identityaccess.ValidActorID(actorID) || !validStoreRegistrationPolicyChange(change) {
 		return StoreRegistrationPolicyResult{}, ErrRegistrationInvalid
 	}
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
-	})
+	}, "store_registration_policy_commands", "store_registration_terms", "service_cities", "store_registration_policies")
 	if err != nil {
 		return StoreRegistrationPolicyResult{}, ErrStoreOwnerUnavailable
 	}

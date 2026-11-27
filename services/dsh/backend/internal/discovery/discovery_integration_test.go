@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -107,7 +108,7 @@ func TestOwnerBackedMarketplaceVisibility(t *testing.T) {
 func TestOwnerBackedPublicStoreOperationalStatus(t *testing.T) {
 	owner, server := setupIntegratedOwner(t)
 	ctx := context.Background()
-	tx, err := owner.beginScopedTx(ctx, nil)
+	tx, err := dbscope.Begin(ctx, owner.DB, owner.Schema, nil, "service_cities", "store_operational_availability", "store_operational_weekly_hours")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +322,7 @@ func TestOwnerBackedUnpublishedStoreRejectsOfferContinuation(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	tx, err := owner.beginScopedTx(context.Background(), nil)
+	tx, err := dbscope.Begin(context.Background(), owner.DB, owner.Schema, nil, "stores")
 	if err != nil {
 		t.Fatal(err)
 	}

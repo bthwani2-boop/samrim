@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http"
 	"time"
 
@@ -43,7 +44,7 @@ func (g *PostgresStoreGrants) readFinancialStanding(ctx context.Context, store s
 	if g == nil || g.db == nil {
 		return FinancialStanding{}, ErrStoreOwnerUnavailable
 	}
-	tx, err := beginScopedStoreTx(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "stores")
 	if err != nil {
 		return FinancialStanding{}, ErrStoreOwnerUnavailable
 	}

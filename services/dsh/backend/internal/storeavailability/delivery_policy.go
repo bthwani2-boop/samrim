@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"mime"
 	"net/http"
 	"time"
@@ -29,7 +30,7 @@ func (source *PostgresPolicySource) ReadCityDeliveryPolicy(ctx context.Context, 
 	if source == nil || source.db == nil {
 		return CityDeliveryPolicy{}, ErrPolicyUnavailable
 	}
-	tx, err := beginScopedStoreTx(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "service_cities", "service_city_delivery_policies")
 	if err != nil {
 		return CityDeliveryPolicy{}, ErrPolicyUnavailable
 	}
