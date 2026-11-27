@@ -41,7 +41,7 @@ func startAgreementDSH(t *testing.T, ctx context.Context, root, identityOrigin, 
 	}
 	executeFixture(t, ctx, db, "INSERT INTO "+schema+".service_cities(id,active,timezone_name) VALUES('command-city',true,'Asia/Aden')")
 	executeFixture(t, ctx, db, "INSERT INTO "+schema+".verticals(id,active) VALUES('grocery',true) ON CONFLICT(id) DO NOTHING")
-	for _, store := range []string{"command-store", "command-rollback", "command-grant", "command-relation", "command-concurrent", "command-decline"} {
+	for _, store := range []string{"command-store", "command-rollback", "command-grant", "command-relation", "command-concurrent", "command-decline", "finance-approve", "finance-reject", "finance-pending", "finance-revoked", "finance-relation", "finance-transfer"} {
 		executeFixture(t, ctx, db, "INSERT INTO "+schema+".stores(id,owner_actor_id,city_id,vertical_id,relation,name,published) VALUES($1,'wallet-one','command-city','grocery','DIRECT','Synthetic',false)", store)
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -78,9 +78,8 @@ func startAgreementDSH(t *testing.T, ctx context.Context, root, identityOrigin, 
 	return nil, ""
 }
 
-func verifyMerchantCommandAuthority(t *testing.T, ctx context.Context, owner, reader, executor *sql.DB, root, origin, merchant, customer string) {
+func verifyMerchantCommandAuthority(t *testing.T, ctx context.Context, owner, reader, executor, dsh *sql.DB, dshOrigin, origin, merchant, customer string) {
 	t.Helper()
-	dsh, dshOrigin := startAgreementDSH(t, ctx, root, origin, merchant)
 	const appendProposal = "SELECT version FROM wlt.append_commercial_agreement_proposal($1,0,$2,'DIRECT','COMMISSION','PLATFORM_MANAGED',375,NULL,NULL,ARRAY['CUSTOMER_PICKUP'],'2027-01-01T00:00:00Z','fixture-proposer','synthetic proposal')"
 	for _, store := range []string{"command-store", "command-rollback", "command-grant", "command-relation", "command-concurrent", "command-decline"} {
 		var version int
@@ -88,13 +87,13 @@ func verifyMerchantCommandAuthority(t *testing.T, ctx context.Context, owner, re
 			t.Fatalf("proposal %s %d %v", store, version, err)
 		}
 	}
-	decision := func(store string) wallet.MerchantDecision {
-		return wallet.MerchantDecision{StoreID: store, Version: 1, ProposalOperationID: "proposal-" + store, OperationID: "decision-" + store, Decision: "ACCEPTED", Reason: "synthetic consent"}
+	decision := func(store string) wallet.AgreementDecision {
+		return wallet.AgreementDecision{StoreID: store, Version: 1, ProposalOperationID: "proposal-" + store, OperationID: "decision-" + store, Decision: "ACCEPTED", Reason: "synthetic consent"}
 	}
-	run := func(db *sql.DB, token string, d wallet.MerchantDecision) (string, error) {
+	run := func(db *sql.DB, token string, d wallet.AgreementDecision) (string, error) {
 		return wallet.RecordMerchantAgreementDecision(ctx, db, origin, dshOrigin, token, d)
 	}
-	assert := func(db *sql.DB, token string, d wallet.MerchantDecision, want string, wantErr error) {
+	assert := func(db *sql.DB, token string, d wallet.AgreementDecision, want string, wantErr error) {
 		t.Helper()
 		got, err := run(db, token, d)
 		if got != want || !errors.Is(err, wantErr) {
