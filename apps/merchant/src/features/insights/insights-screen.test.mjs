@@ -28,17 +28,42 @@ const stores = [
   { id: "store-a", name: "متجر أ", relation: "DIRECT", published: false },
   { id: "store-b", name: "متجر ب", relation: "MARKETPLACE", published: true },
 ];
-const modules = [];
 function nodes(tree) {
   if (!tree || typeof tree !== "object") return [];
   return Array.isArray(tree) ? tree.flatMap(nodes) : [tree, ...nodes(tree.props?.children)];
 }
 function harness() {
-  let selected = null;
+  const opened = [];
+  const hooks = [];
+  const pendingEffects = [];
+  let hookIndex = 0;
   const jsx = (type, props, key) => ({ type, props, key });
   const mocks = {
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
-    react: { useState: () => [selected, next => { selected = typeof next === "function" ? next(selected) : next; }] },
+    react: {
+      useState(initial) {
+        const slot = hookIndex++;
+        if (!(slot in hooks)) hooks[slot] = initial;
+        return [hooks[slot], next => {
+          hooks[slot] = typeof next === "function" ? next(hooks[slot]) : next;
+        }];
+      },
+      useRef(initial) {
+        const slot = hookIndex++;
+        if (!(slot in hooks)) hooks[slot] = { current: initial };
+        return hooks[slot];
+      },
+      useEffect(effect, deps) {
+        const slot = hookIndex++;
+        const prior = hooks[slot];
+        if (prior && deps.length === prior.deps.length &&
+            deps.every((dependency, index) => Object.is(dependency, prior.deps[index]))) return;
+        pendingEffects.push(() => {
+          prior?.cleanup?.();
+          hooks[slot] = { deps, cleanup: effect() };
+        });
+      },
+    },
     "react-native": { Pressable: "Pressable", Text: "Text", View: "View" },
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "../../components/merchant-capability-screen": { __esModule: true, default: "Capability" },
@@ -46,11 +71,15 @@ function harness() {
     "../catalog/catalog-export": { __esModule: true, default: "CatalogExport" },
   };
   const module = loadMappedRenderFixture(compiled, source, mocks);
-  modules.push(module);
   const Component = module.exports.default;
   return {
-    render(actorId = "merchant-a", available = stores) {
-      return nodes(Component({ actorId, stores: available }));
+    opened,
+    render(actorId = "merchant-a", available = stores, withAction = false, initialStoreId) {
+      hookIndex = 0;
+      const rendered = Component({ actorId, stores: available, initialStoreId,
+        ...(withAction ? { onOpenCatalog: (...args) => opened.push(args) } : {}) });
+      for (const effect of pendingEffects.splice(0)) effect();
+      return nodes(rendered);
     },
   };
 }
@@ -63,6 +92,8 @@ test("reports require explicit current Store selection and reuse the owner-backe
   const h = harness();
   const first = h.render();
   assert.ok(!first.some(n => n.type === "InventorySummary" || n.type === "CatalogExport"));
+  const laterInitialStore = h.render("merchant-a", stores, false, "store-a");
+  assert.ok(!laterInitialStore.some(n => n.type === "InventorySummary" || n.type === "CatalogExport"));
   const pick = first.find(n => n.props?.accessibilityLabel === "تقارير متجر ب");
   assert.ok(pick, "a Store in the verified directory must be selectable");
   assert.equal(pick.props.accessibilityRole, "radio");
@@ -95,4 +126,28 @@ test("refresh reloads only the selected Store report and ignores obsolete refres
   h.render().find(n => n.props?.accessibilityLabel === "تقارير متجر ب").props.onPress();
   refresh();
   assert.equal(h.render().find(n => n.type === "InventorySummary").props.storeId, "store-b");
+});
+
+test("report drilldown preserves Store and filter, rejects obsolete or revoked selection", () => {
+  const h = harness();
+  const first = h.render("merchant-a", stores, true, "store-b");
+  const summary = first.find(n => n.type === "InventorySummary");
+  assert.ok(summary, "return to report restores the authorized selected Store");
+  assert.equal(summary.props.storeId, "store-b");
+  const old = summary.props.onShowStatus;
+  assert.equal(typeof old, "function");
+  old("stockout");
+  assert.deepEqual(h.opened, [["store-b", "stockout"]]);
+  first.find(n => n.props?.accessibilityLabel === "تقارير متجر أ").props.onPress();
+  const current = h.render("merchant-a", stores, true);
+  old("published");
+  assert.equal(h.opened.length, 1);
+  current.find(n => n.type === "InventorySummary").props.onShowStatus(undefined);
+  assert.deepEqual(h.opened.at(-1), ["store-a", undefined]);
+  h.render("merchant-a", stores.slice(1), true);
+  current.find(n => n.type === "InventorySummary").props.onShowStatus("available");
+  assert.equal(h.opened.length, 2);
+  h.render("merchant-b", stores, true);
+  old("stockout");
+  assert.equal(h.opened.length, 2);
 });

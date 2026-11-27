@@ -1,3 +1,4 @@
+import type { MerchantCatalogStatus } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import AppearancePreferences from "@bthwani/tamagui-config/appearance-preferences";
 import { usePrimaryNavigation } from "@bthwani/tamagui-config/navigation";
@@ -31,9 +32,12 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
   const webNavigation = merchantNavigation.filter(item => item.id !== "more");
   const [section, setSection] = useState<MerchantSection>("home");
   const [initialPublication, setInitialPublication] = useState<MerchantPublicationFilter>("all");
-  const [catalogTarget, setCatalogTarget] = useState<{ actorId: string; storeId: string } | null>(null);
+  const [catalogTarget, setCatalogTarget] = useState<{
+    actorId: string; storeId: string; report?: true; status?: MerchantCatalogStatus | undefined;
+  } | null>(null);
   const catalogStoreId = catalogTarget?.actorId === actorId && stores.some(store => store.id === catalogTarget.storeId)
     ? catalogTarget.storeId : undefined;
+  const reportTarget = catalogTarget?.report === true;
   const [staffTarget, setStaffTarget] = useState<{ actorId: string; storeId: string } | null>(null);
   const staffStore = staffTarget?.actorId === actorId ? stores.find(store => store.id === staffTarget.storeId) : undefined;
   const openStaff = (storeId: string) => {
@@ -47,7 +51,7 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
       setInitialPublication("all");
       setCatalogTarget(null);
     }
-    if ((next === "products" || next === "inventory") && section !== next) setCatalogTarget(null);
+    if ((next === "products" || next === "inventory" || next === "insights") && section !== next) setCatalogTarget(null);
     setSection(next);
   };
   const openStores = (publication: MerchantPublicationFilter) => {
@@ -65,6 +69,11 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
     if (!stores.some(store => store.id === storeId)) return;
     setCatalogTarget({ actorId, storeId });
     setSection(priceStockOnly ? "inventory" : "products");
+  };
+  const openReportCatalog = (storeId: string, status: MerchantCatalogStatus | undefined) => {
+    if (section !== "insights" || !actorId || !stores.some(store => store.id === storeId)) return;
+    setCatalogTarget({ actorId, storeId, report: true, status });
+    setSection("inventory");
   };
   const summary = merchantStoreSummary(stores);
   const selected = merchantNavigation.find(item => item.id === section) ?? merchantNavigation[0];
@@ -287,8 +296,18 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
               <MerchantPrivateCatalog key={actorId} actorId={actorId} stores={stores} initialStoreId={catalogStoreId} />
             </>
           ) : section === "inventory" ? (
-            <MerchantPrivateCatalog key={JSON.stringify([actorId, "inventory"])} actorId={actorId} stores={stores}
-              initialStoreId={catalogStoreId} inventoryOnly />
+            <>
+              {reportTarget ? <Pressable accessibilityRole="button" accessibilityLabel="العودة إلى التقرير"
+                onPress={() => setSection("insights")} style={{ alignSelf: "flex-start", minHeight: 44, justifyContent: "center" }}>
+                <Text style={{ color: theme.interactiveText }}>العودة إلى التقرير</Text>
+              </Pressable> : null}
+              {reportTarget && !catalogStoreId ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
+                المتجر المحدد لم يعد متاحًا لحسابك.
+              </Text> : <MerchantPrivateCatalog
+                key={JSON.stringify([actorId, "inventory", catalogStoreId, reportTarget ? catalogTarget?.status : undefined])}
+                actorId={actorId} stores={stores} initialStoreId={catalogStoreId}
+                initialStatus={reportTarget ? catalogTarget?.status : undefined} inventoryOnly />}
+            </>
           ) : section === "staff" ? (
             <View style={{ gap: 12 }}>
               <Text accessibilityRole="header" style={{ color: theme.color, fontSize: 19, fontWeight: "700" }}>اختر المتجر لإدارة الموظفين</Text>
@@ -310,7 +329,8 @@ export default function MerchantWorkspace({ actorId, stores, onRefresh, onSignOu
               {staffStore ? <EmployeesScreen key={JSON.stringify([actorId, staffStore.id])} actorId={actorId} storeId={staffStore.id} /> : null}
             </View>
           ) : section === "insights" ? (
-            <InsightsScreen key={actorId} actorId={actorId} stores={stores} />
+            <InsightsScreen key={actorId} actorId={actorId} stores={stores}
+              initialStoreId={reportTarget ? catalogStoreId : undefined} onOpenCatalog={openReportCatalog} />
           ) : section === "wallet" ? (
             <WalletScreen key={actorId} actorId={actorId} stores={stores} />
           ) : section === "account" ? (

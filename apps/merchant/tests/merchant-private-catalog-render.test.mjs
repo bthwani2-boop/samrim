@@ -112,10 +112,10 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         return mocks[name];
       };
       mod._compile(source, filename);
-      function render(actorId, stores, initialStoreId, initialPriceStockOnly = false, inventoryOnly = false) {
+      function render(actorId, stores, initialStoreId, initialPriceStockOnly = false, inventoryOnly = false, initialStatus) {
         index = 0;
         scheduled = [];
-        const tree = mod.exports.default({ actorId, stores, initialStoreId, initialPriceStockOnly, inventoryOnly });
+        const tree = mod.exports.default({ actorId, stores, initialStoreId, initialPriceStockOnly, inventoryOnly, initialStatus });
         for (const effect of scheduled) effect();
         return tree;
       }
@@ -485,8 +485,9 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(nativeRemoved, 1);
       // Dedicated Android Inventory uses the same owner-scoped import recovery and refresh.
       hooks.length = 0; effects.length = 0; requests.length = 0;
-      const nativeInventory = () => render("merchant-a", stores, "store-a", false, true);
+      const nativeInventory = () => render("merchant-a", stores, "store-a", false, true, "stockout");
       tree = nativeInventory();
+      assert.equal(requests[0].options.status, "stockout", "report filter must reach the first owner read");
       assert.ok(!nodes(tree).some(privateControls));
       requests[0].resolve({actorId:"merchant-a",storeId:"store-a",items:[nativeRows[0]]});
       await flush();

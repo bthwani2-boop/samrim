@@ -33,12 +33,13 @@ function canEditDraft(offer: MerchantCatalogOffer) {
     /^of-[a-f0-9]{32}$/.test(offer.id);
 }
 
-export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "", initialPriceStockOnly = false, inventoryOnly = false }: Readonly<{
+export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "", initialPriceStockOnly = false, inventoryOnly = false, initialStatus }: Readonly<{
   actorId: string;
   stores: MerchantDSHStanding["stores"];
   initialStoreId?: string | undefined;
   initialPriceStockOnly?: boolean;
   inventoryOnly?: boolean;
+  initialStatus?: MerchantCatalogStatus | undefined;
 }>) {
   const { theme } = useMobileAppearance();
   const [selectedId, setSelectedId] = useState(initialStoreId);
@@ -47,7 +48,9 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   const [priceScope, setPriceScope] = useState<string | null>(
     initialPriceStockOnly && initialStoreId ? JSON.stringify([actorId, initialStoreId]) : null,
   );
-  const [filter, setFilter] = useState<{ scope: string; status: MerchantCatalogStatus | undefined }>({ scope: "", status: undefined });
+  const [filter, setFilter] = useState<{ scope: string; status: MerchantCatalogStatus | undefined }>({
+    scope: initialStoreId ? JSON.stringify([actorId, initialStoreId]) : "", status: initialStatus,
+  });
   const [retry, setRetry] = useState(0);
   const [verifiedStoreScope, setVerifiedStoreScope] = useState<string | null>(null);
   const [state, setState] = useState<CatalogState>({
@@ -64,7 +67,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   useEffect(() => {
     setPriceScope(previous => previous === storeScope ? previous : null);
     setVerifiedStoreScope(previous => previous === storeScope ? previous : null);
-    setFilter({ scope: "", status: undefined });
+    setFilter(previous => previous.scope === storeScope ? previous : { scope: "", status: undefined });
   }, [storeScope]);
   const draftSearch = search.scope === storeScope ? search.draft : "";
   const searchQuery = search.scope === storeScope ? search.query : "";

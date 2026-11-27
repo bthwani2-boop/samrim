@@ -1,5 +1,6 @@
+import type { MerchantCatalogStatus } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import type { MerchantOwnedStore } from "../access/dsh-standing";
 import CatalogExport from "../catalog/catalog-export";
@@ -7,14 +8,24 @@ import InventorySummary from "../catalog/inventory-summary";
 
 type Selection = Readonly<{ actorId: string; storeId: string; revision: number }>;
 
-export default function InsightsScreen({ actorId = "", stores = [] }: Readonly<{
+export default function InsightsScreen({ actorId = "", stores = [], initialStoreId, onOpenCatalog }: Readonly<{
   actorId?: string;
   stores?: readonly MerchantOwnedStore[];
+  initialStoreId?: string | undefined;
+  onOpenCatalog?: (storeId: string, status: MerchantCatalogStatus | undefined) => void;
 }> = {}) {
   const { theme } = useMobileAppearance();
-  const [selection, setSelection] = useState<Selection | null>(null);
+  const [selection, setSelection] = useState<Selection | null>(
+    actorId && initialStoreId && stores.some(store => store.id === initialStoreId)
+      ? { actorId, storeId: initialStoreId, revision: 0 } : null,
+  );
   const selected = selection?.actorId === actorId
     ? stores.find(store => store.id === selection.storeId) : undefined;
+  const activeSelection = useRef<Selection | null>(null);
+  useEffect(() => {
+    activeSelection.current = selected ? selection : null;
+    return () => { activeSelection.current = null; };
+  }, [selected, selection]);
   const button = {
     minHeight: 44, justifyContent: "center" as const, borderWidth: 1,
     borderRadius: 10, borderColor: theme.borderColor, paddingHorizontal: 14, paddingVertical: 8,
@@ -59,7 +70,10 @@ export default function InsightsScreen({ actorId = "", stores = [] }: Readonly<{
         </Pressable>
       </View>
       <InventorySummary key={JSON.stringify([actorId, selected.id, selection.revision])}
-        actorId={actorId} storeId={selected.id} />
+        actorId={actorId} storeId={selected.id}
+        {...(onOpenCatalog ? { onShowStatus: (status: MerchantCatalogStatus | undefined) => {
+          if (activeSelection.current === selection) onOpenCatalog(selected.id, status);
+        } } : {})} />
       <CatalogExport actorId={actorId} storeId={selected.id} />
     </View> : null}
   </View>;
