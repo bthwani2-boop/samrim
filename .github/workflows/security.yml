@@ -14,24 +14,24 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
-      - name: Checkout locked dependency graph
+      - &checkout
+        name: Checkout candidate
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 1
           persist-credentials: false
-      - name: Use repository-pinned Node 24
+      - name: Set up pinned Node
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6.3.0
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Activate repository-pinned pnpm
+      - name: Activate pinned pnpm
         shell: bash
         run: |
           set -euo pipefail
           corepack enable pnpm
           pnpm --version
-      # Native pnpm audits the complete lockfile without installing it.
-      - name: Audit all locked JavaScript dependencies (high and critical fail)
+      - name: Audit locked dependencies
         run: pnpm audit --audit-level high
 
   go:
@@ -42,17 +42,14 @@ jobs:
       GOTOOLCHAIN: local
       GOWORK: 'off'
     steps:
-      - name: Checkout source
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - name: Use pinned Go (source-compatible action)
+      - *checkout
+      - name: Set up pinned Go
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16
         with:
           go-version-file: .go-version
           check-latest: false
           cache: false
-      - name: Scan deployed Go owner source for reachable vulnerabilities
+      - name: Scan all Go service owners
         shell: bash
         env:
           CGO_ENABLED: '0'
@@ -63,10 +60,19 @@ jobs:
           GOBIN="$scanner_dir" GOSUMDB=sum.golang.org go install golang.org/x/vuln/cmd/govulncheck@709015412431dd2b5b28a53c06c70bc02d49074c
           scanner="$scanner_dir/govulncheck"
           go version -m "$scanner"
+          result=0
           for service in identity dsh wlt; do
-            echo "Scanning Go owner: $service (CGO_ENABLED=0)"
-            (cd "services/$service/backend" && "$scanner" ./...)
+            echo "::group::Go vulnerabilities: $service"
+            if (cd "services/$service/backend" && "$scanner" ./...); then
+              echo 'Scan passed'
+            else
+              status=$?
+              printf '::error::Go vulnerability scan failed for %s (exit %s)\n' "$service" "$status"
+              result=1
+            fi
+            echo '::endgroup::'
           done
+          exit "$result"
 
   dependency_review:
     name: Dependency Review
@@ -74,11 +80,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Checkout candidate
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          persist-credentials: false
-      - name: Review newly introduced vulnerable dependencies
+      - *checkout
+      - name: Review introduced dependencies
         uses: actions/dependency-review-action@bbc44d14a204704ccc493733616cd1e93a0321ec # v5.0.1
         with:
           fail-on-severity: high
