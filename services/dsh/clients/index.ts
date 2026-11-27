@@ -56,6 +56,7 @@ export {
   DshPublicError, estimatePublicOffer, getPublicStore, isPublicOfferPriceYer, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
   parseOfferEstimateQuantity,
 } from "./public-discovery.ts";
+export { servePublicDiscovery } from "./public-discovery-web.ts";
 export type { PendingRegistration } from "./registration-attempt.ts";
 export { matchingPendingRegistration, parsePendingRegistration } from "./registration-attempt.ts";
 export type {

@@ -1,4 +1,4 @@
-import { servePublicDiscovery } from "@bthwani/dsh/public-discovery-web";
+import { servePublicDiscovery } from "@bthwani/dsh";
 
 // Customer Web and its isolated DSH owner share the development host.
 export function GET(request: Request) {

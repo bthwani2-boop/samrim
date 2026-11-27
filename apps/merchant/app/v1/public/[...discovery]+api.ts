@@ -1,4 +1,4 @@
-import { servePublicDiscovery } from "@bthwani/dsh/public-discovery-web";
+import { servePublicDiscovery } from "@bthwani/dsh";
 
 // Merchant Web exposes public Store detail and Offers only, never private grants.
 export function GET(request: Request) {
