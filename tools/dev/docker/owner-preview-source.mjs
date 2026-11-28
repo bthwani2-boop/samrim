@@ -121,24 +121,37 @@ export function dirtyPaths(root,scope) {
     return record.slice(3);
   }))].sort(compare);
 }
+// All source entrances share one text and path admission contract. The
+// digest is a byte identity, not a normalization of the admitted source.
+const maxPreviewBytes=4*1024*1024;
+const sourceDecoder=new TextDecoder("utf-8",{fatal:true,ignoreBOM:true});
+const exactCommit=/^[a-f0-9]{40}$/;
 function pathParts(rel) {
+  if(typeof rel!=="string")throw new Error("PREVIEW_PATH_INVALID");
   const parts=rel.split("/");
   if(parts.some(part=>!part||part==="."||part===".."||!/^[A-Za-z0-9_.-]+$/.test(part))||forbiddenName(rel)||containsLikelySecret(rel))
     throw new Error("PREVIEW_PATH_INVALID");
   return parts;
 }
-const maxPreviewBytes = 4 * 1024 * 1024;
-function admitPreviewBytes(bytes) {
-  if (!Buffer.isBuffer(bytes) || bytes.length > maxPreviewBytes ||
-      bytes.includes(0) || containsLikelySecretBytes(bytes))
+function sourceText(bytes) {
+  if(!Buffer.isBuffer(bytes)||bytes.length>maxPreviewBytes||bytes.includes(0)||containsLikelySecretBytes(bytes))
     throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
-  try { new TextDecoder("utf-8",{fatal:true}).decode(bytes); }
-  catch { throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED"); }
+  try {
+    const decoded=sourceDecoder.decode(bytes);
+    if(decoded.startsWith("\uFEFF"))throw new Error("BOM");
+    return decoded;
+  } catch {
+    throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
+  }
+}
+function admitSource(bytes) {
+  sourceText(bytes);
   return bytes;
 }
 function safeRead(root,rel,missing=false) {
   const parts=pathParts(rel);
   let file=root;
+  // Check ancestors even when an eligible Go deletion is being fingerprinted.
   for(const [i,part] of parts.entries()){
     file=path.join(file,part);
     let stat;
@@ -146,7 +159,7 @@ function safeRead(root,rel,missing=false) {
     if(stat.isSymbolicLink()||(i===parts.length-1?!stat.isFile():!stat.isDirectory()))throw new Error("PREVIEW_UNSAFE_PATH");
   }
   const result=readVerifiedFile(file,maxPreviewBytes,{allowMissing:missing});
-  return result===null?null:admitPreviewBytes(result.bytes);
+  return result===null?null:admitSource(result.bytes);
 }
 
 export function digestEntries(entries) {
@@ -177,48 +190,53 @@ function ownerInput(owner,rel) {
   pathParts(rel);
   return info.file;
 }
-function checkedEntries(entries) {
-  if(new Set(entries.map(([rel])=>rel.toLowerCase())).size!==entries.length)
-    throw new Error("PREVIEW_PATH_COLLISION");
-  for(const file of buildFiles)if(!entries.some(([rel])=>rel===file))
-    throw new Error("PREVIEW_BUILD_INPUT_MISSING");
-  return entries.sort(([a],[b])=>compare(a,b));
-}
 function checkedPeer(rel) {
-  if(!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))
+  if(typeof rel!=="string"||!/^services\/identity\/database\/schema\/[A-Za-z0-9_-]+\.sql$/.test(rel))
     throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
   pathParts(rel);
   return rel;
 }
 export function snapshotGoVersion(snapshot) {
-  const pin=Buffer.isBuffer(snapshot.pin)?snapshot.pin.toString("utf8").trim():"";
+  if(!Buffer.isBuffer(snapshot.pin))throw new Error("COMMITTED_GO_PIN_INVALID");
+  const pin=sourceText(snapshot.pin).trim();
   if(!/^\d+\.\d+\.\d+$/.test(pin))throw new Error("COMMITTED_GO_PIN_INVALID");
   return pin;
 }
+function assertUniquePaths(files) {
+  if(new Set(files.map(([rel])=>rel.toLowerCase())).size!==files.length)
+    throw new Error("PREVIEW_PATH_COLLISION");
+}
 function snapshotRootEntries(snapshot) {
-  const {owner,entries,peers=[]}=snapshot;
+  const {owner,revision,entries,peers=[]}=snapshot;
   ownerSourceScope(owner);
+  if(!Array.isArray(entries)||!Array.isArray(peers))throw new Error("PREVIEW_PATH_INVALID");
   const prefix="services/"+owner+"/";
-  for(const [rel,bytes] of entries){
-    if(!snapshotInput(rel)||!Buffer.isBuffer(bytes))throw new Error("PREVIEW_PATH_INVALID");
+  for(const entry of entries){
+    if(!Array.isArray(entry)||entry.length!==2)throw new Error("PREVIEW_PATH_INVALID");
+    const [rel,bytes]=entry;
     pathParts(rel);
+    if(!snapshotInput(rel)||!Buffer.isBuffer(bytes))throw new Error("PREVIEW_PATH_INVALID");
   }
-  checkedEntries(entries);
+  for(const file of buildFiles)if(!entries.some(([rel])=>rel===file))
+    throw new Error("PREVIEW_BUILD_INPUT_MISSING");
+  if(revision!==null&&(typeof revision!=="string"||!exactCommit.test(revision)))
+    throw new Error("COMMITTED_REVISION_INVALID");
   if(owner!=="dsh"&&peers.length)throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
   if(owner==="dsh"&&!peers.length)throw new Error("PREVIEW_PEER_SCHEMA_MISSING");
-  for(const [rel,bytes] of peers){
+  for(const entry of peers){
+    if(!Array.isArray(entry)||entry.length!==2)throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
+    const [rel,bytes]=entry;
     checkedPeer(rel);
     if(!Buffer.isBuffer(bytes))throw new Error("PREVIEW_UNREVIEWED_PEER_INPUT");
   }
   snapshotGoVersion(snapshot);
   const files=[[ownerToolchainInput,snapshot.pin],...entries.map(([rel,bytes])=>[prefix+rel,bytes]),...peers];
-  if(new Set(files.map(([rel])=>rel.toLowerCase())).size!==files.length)
-    throw new Error("PREVIEW_PATH_COLLISION");
-  for(const [,bytes] of files)admitPreviewBytes(bytes);
+  assertUniquePaths(files);
+  for(const [,bytes] of files)admitSource(bytes);
   return files;
 }
 function assemble(owner,entries,peers,pin,revision=null) {
-  const snapshot={owner,revision,entries,peers,pin};
+  const snapshot={owner,revision,entries:[...entries].sort(([a],[b])=>compare(a,b)),peers,pin};
   return {...snapshot,digest:digestEntries(snapshotRootEntries(snapshot))};
 }
 function headRevision(root) {
@@ -241,23 +259,34 @@ export function captureOwner(root,owner) {
   if(headRevision(root)!==head)throw new Error("PREVIEW_HEAD_CHANGED");
   return assemble(owner,[...entries],base.peers,base.pin);
 }
-// Committed builds must never read mutable working-tree files, including
-// files hidden by ignore rules or assume-unchanged. Read the exact tree and
-// batch its immutable blob IDs, with strict mode, framing and size checks.
-export function captureCommittedOwner(root,owner,revision) {
-  if(!/^[a-f0-9]{40}$/.test(revision||""))throw new Error("COMMITTED_REVISION_INVALID");
+
+// ls-tree accepts tree objects and peels annotated tags. Require the exact
+// supplied immutable object itself to be a commit before reading its tree.
+function committedReader(root,revision) {
+  if(typeof revision!=="string"||!exactCommit.test(revision))throw new Error("COMMITTED_REVISION_INVALID");
+  const git=openRepositoryReader(root);
+  let type;
+  try{type=git("cat-file","-t",revision).toString("ascii").trim();}
+  catch{throw new Error("COMMITTED_REVISION_INVALID");}
+  if(type!=="commit")throw new Error("COMMITTED_REVISION_INVALID");
+  return git;
+}
+function committedInventory(git,owner,revision) {
   const scope=scopeFor(owner);
   const requested=[];
-  const git=openRepositoryReader(root);
   for(const record of git("ls-tree","-r","-z",revision,"--",...scope).toString("utf8").split("\0").filter(Boolean)){
     const match=/^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(record);
     if(!match)throw new Error("COMMITTED_TREE_MODE_INVALID");
     const [, ,oid,rel]=match;
     const kind=rel===ownerToolchainInput?"pin":owner==="dsh"&&rel.startsWith(peerScope+"/")?"peer":"owner";
     const file=kind==="pin"?rel:kind==="peer"?checkedPeer(rel):ownerInput(owner,rel);
-    if(file!==null)requested.push({oid,file,kind});
+    if(file!==null)requested.push({oid,file,kind,rel});
   }
   if(!requested.length)throw new Error("COMMITTED_TREE_EMPTY");
+  assertUniquePaths(requested.map(({rel})=>[rel]));
+  return requested;
+}
+function committedInputs(git,requested) {
   const raw=git.batchBlobs(requested.map(x=>x.oid));
   let cursor=0,pin;
   const entries=[],peers=[];
@@ -267,18 +296,25 @@ export function captureCommittedOwner(root,owner,revision) {
     const header=/^([a-f0-9]{40}) blob ([0-9]+)$/.exec(raw.subarray(cursor,end).toString("ascii"));
     if(!header||header[1]!==oid)throw new Error("COMMITTED_BLOB_HEADER_INVALID");
     const size=Number(header[2]);
-    if(!Number.isSafeInteger(size)||size>4194304||end+1+size>=raw.length||raw[end+1+size]!==10)
+    const next=end+1+size;
+    if(!Number.isSafeInteger(size)||size>maxPreviewBytes||next>=raw.length||raw[next]!==10)
       throw new Error("COMMITTED_BLOB_SIZE_INVALID");
-    const bytes=raw.subarray(end+1,end+1+size);
+    const bytes=raw.subarray(end+1,next);
     if(gitBlobIdentity(bytes,"sha1")!==oid)throw new Error("COMMITTED_BLOB_IDENTITY_INVALID");
-    admitPreviewBytes(bytes);
-    if(kind==="pin")pin=Buffer.from(bytes);
-    else (kind==="peer"?peers:entries).push([file,Buffer.from(bytes)]);
-    cursor=end+2+size;
+    const admitted=Buffer.from(admitSource(bytes));
+    if(kind==="pin")pin=admitted;
+    else (kind==="peer"?peers:entries).push([file,admitted]);
+    cursor=next+1;
   }
   if(cursor!==raw.length)throw new Error("COMMITTED_BLOB_TRAILING_DATA");
+  return {entries,peers,pin};
+}
+export function captureCommittedOwner(root,owner,revision) {
+  const git=committedReader(root,revision);
+  const {entries,peers,pin}=committedInputs(git,committedInventory(git,owner,revision));
   return assemble(owner,entries,peers,pin,revision);
 }
+
 function materializedEntries(root) {
   const actual=[];
   function walk(folder,relative=""){

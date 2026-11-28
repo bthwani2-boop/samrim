@@ -216,3 +216,55 @@ test("runtime source identity cannot follow replacement commits or an alternate 
     else process.env.GIT_INDEX_FILE=prior;
   }
 });
+
+test("committed snapshots admit only exact commit objects, not trees, tags, blobs or absent objects",t=>{
+  const {dir,git,base}=fixture(t);
+  const head=git("rev-parse","HEAD").toString().trim();
+  git("-c","user.name=Fixture","-c","user.email=fixture@example.invalid","-c","tag.gpgSign=false","tag","-a","fixture-tag","-m","fixture");
+  const objects=["HEAD^{tree}","fixture-tag","HEAD:"+base+"backend/cmd/dsh/main.go"].map(ref=>git("rev-parse",ref).toString().trim());
+  assert.equal(captureCommittedOwner(dir,"dsh",head).revision,head);
+  for(const object of [...objects,"0".repeat(40)])
+    assert.throws(()=>captureCommittedOwner(dir,"dsh",object),/COMMITTED_REVISION_INVALID/);
+});
+
+test("all snapshot input boundaries reject a leading UTF-8 BOM",t=>{
+  const {dir,git,write,base}=fixture(t);
+  const rel=base+"backend/cmd/dsh/main.go";
+  const peer="services/identity/database/schema/20_sessions.sql";
+  const bom=bytes=>Buffer.concat([Buffer.from([0xef,0xbb,0xbf]),Buffer.from(bytes)]);
+  const invalid=/PREVIEW_SECRET_OR_BINARY_BLOCKED/;
+  const original=captureOwner(dir,"dsh");
+  write(rel,bom("package main\n"));
+  assert.throws(()=>previewChangeKey(dir,[rel]),invalid);
+  assert.throws(()=>captureOwner(dir,"dsh"),invalid);
+  const commit=()=>{
+    git("add",".");
+    git("-c","user.name=Fixture","-c","user.email=fixture@example.invalid","-c","commit.gpgsign=false","commit","-qm","source fixture");
+    return git("rev-parse","HEAD").toString().trim();
+  };
+  assert.throws(()=>captureCommittedOwner(dir,"dsh",commit()),invalid);
+  write(rel,"package main\n");
+  write(peer,bom("SELECT 1;\n"));
+  assert.throws(()=>captureCommittedOwner(dir,"dsh",commit()),invalid);
+  write(peer,"SELECT 1;\n");
+  write(".go-version",bom("1.27.4\n"));
+  assert.throws(()=>captureCommittedOwner(dir,"dsh",commit()),invalid);
+  assert.throws(()=>snapshotGoVersion({...original,pin:bom(original.pin)}),invalid);
+  const entries=original.entries.map(([file,bytes])=>[file,file==="backend/cmd/dsh/main.go"?bom(bytes):bytes]);
+  assert.throws(()=>materializeOwner({...original,entries}),invalid);
+  const staged=materializeOwner(original);
+  t.after(staged.dispose);
+  fs.writeFileSync(path.join(staged.dir,"backend/cmd/dsh/main.go"),bom("package main\n"));
+  assert.throws(()=>verifyMaterializedOwner(staged.dir,original),invalid);
+});
+
+test("snapshot validation preserves caller ordering and rejects malformed provenance",t=>{
+  const {dir}=fixture(t);
+  const original=captureOwner(dir,"dsh");
+  const entries=[...original.entries].reverse();
+  const order=entries.map(([file])=>file);
+  const staged=materializeOwner({...original,entries});
+  t.after(staged.dispose);
+  assert.deepEqual(entries.map(([file])=>file),order);
+  assert.throws(()=>materializeOwner({...original,revision:"HEAD"}),/COMMITTED_REVISION_INVALID/);
+});
