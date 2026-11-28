@@ -1,17 +1,17 @@
 package session
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"io"
 	"mime"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -24,18 +24,17 @@ var (
 type CaptainStandingVerifier interface {
 	Approved(context.Context, string, string) error
 }
-
 type CaptainStandingHTTP struct {
 	endpoint string
 	client   *http.Client
 }
 
+// The local integration constructor admits only an explicit loopback origin.
 func NewCaptainStandingHTTP(base string) (*CaptainStandingHTTP, error) {
 	return newCaptainStandingHTTP(base, nil)
 }
 
-// Container admission has one exact private DSH peer and a dedicated trust
-// anchor. Local loopback integration retains the existing constructor.
+// Container admission binds the exact private DSH peer to its dedicated trust anchor.
 func NewContainerCaptainStandingHTTP(base, caPath string) (*CaptainStandingHTTP, error) {
 	if base != "https://dsh:3344" || caPath == "" {
 		return nil, errors.New("Captain standing requires the isolated DSH TLS peer")
@@ -53,29 +52,29 @@ func NewContainerCaptainStandingHTTP(base, caPath string) (*CaptainStandingHTTP,
 
 func newCaptainStandingHTTP(base string, config *tls.Config) (*CaptainStandingHTTP, error) {
 	root, err := url.Parse(base)
-	if err != nil || root.Host == "" || root.User != nil || root.Opaque != "" ||
-		root.Fragment != "" || root.RawQuery != "" || (root.Path != "" && root.Path != "/") ||
-		(root.Scheme != "https" && !(root.Scheme == "http" &&
-			(root.Hostname() == "localhost" || root.Hostname() == "127.0.0.1"))) {
+	if err != nil || root.Host == "" || root.User != nil || root.Opaque != "" || strings.ContainsAny(base, "?#") || root.RawPath != "" || (root.Path != "" && root.Path != "/") {
+		return nil, errors.New("unsafe DSH Captain standing origin")
+	}
+	port, portErr := strconv.ParseUint(root.Port(), 10, 16)
+	loopback := root.Hostname() == "127.0.0.1" || root.Hostname() == "localhost" || root.Hostname() == "::1"
+	local := loopback && portErr == nil && port != 0 && ((root.Scheme == "http" && config == nil) || (root.Scheme == "https" && config != nil))
+	container := base == "https://dsh:3344" && config != nil
+	if !local && !container {
 		return nil, errors.New("unsafe DSH Captain standing origin")
 	}
 	root.Path = "/v1/actors/me/captain-eligibility"
-	var transport http.RoundTripper
-	if config != nil {
-		transport = &http.Transport{TLSClientConfig: config}
-	}
+	// Never inherit ambient proxies or transparent decompression for a bearer read.
+	transport := &http.Transport{TLSClientConfig: config, DisableCompression: true}
 	return &CaptainStandingHTTP{endpoint: root.String(), client: &http.Client{
-		Transport:     transport,
-		Timeout:       3 * time.Second,
+		Transport: transport, Timeout: 3 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}}, nil
 }
 
-// Approved compares the current DSH owner decision with the exact Identity
-// actor locked by the admission transaction; no client-supplied ID is trusted.
+// Approved accepts only the exact current, uncached DSH owner document for the
+// Identity actor. It does not confer authority from a caller-provided role.
 func (s *CaptainStandingHTTP) Approved(ctx context.Context, bearer, actorID string) error {
-	if s == nil || s.client == nil || bearer == "" || strings.TrimSpace(bearer) != bearer ||
-		strings.ContainsAny(bearer, "\r\n\t ") || actorID == "" {
+	if s == nil || s.client == nil || bearer == "" || strings.TrimSpace(bearer) != bearer || strings.ContainsAny(bearer, "\r\n\t ") || actorID == "" {
 		return ErrCaptainStandingNotApproved
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.endpoint, nil)
@@ -96,23 +95,37 @@ func (s *CaptainStandingHTTP) Approved(ctx context.Context, bearer, actorID stri
 		}
 		return ErrCaptainStandingOwnerUnavailable
 	}
-	media, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" {
+	media := resp.Header.Values("Content-Type")
+	cache := resp.Header.Values("Cache-Control")
+	if len(media) != 1 || len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") || len(resp.Header.Values("Content-Encoding")) != 0 {
 		return ErrCaptainStandingNotApproved
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 4097))
-	if err != nil || len(raw) > 4096 {
+	kind, params, err := mime.ParseMediaType(media[0])
+	if err != nil || kind != "application/json" {
 		return ErrCaptainStandingNotApproved
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
+	for key, value := range params {
+		if key != "charset" || !strings.EqualFold(value, "utf-8") {
+			return ErrCaptainStandingNotApproved
+		}
+	}
+	const limit = 4096
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil || ctx.Err() != nil {
+		return ErrCaptainStandingOwnerUnavailable
+	}
+	if len(raw) > limit {
+		return ErrCaptainStandingNotApproved
+	}
+	// Go JSON v2 rejects duplicate names, malformed Unicode, nonexact member
+	// spelling and trailing data. The contract's required nonzero values also
+	// reject missing and null members without a second parser.
 	var body struct {
 		ActorID string `json:"actorId"`
 		Status  string `json:"status"`
 		Version int64  `json:"version"`
 	}
-	if decoder.Decode(&body) != nil || decoder.Decode(new(any)) != io.EOF ||
-		body.ActorID != actorID || body.Status != "APPROVED" || body.Version < 1 {
+	if json.Unmarshal(raw, &body, json.RejectUnknownMembers(true)) != nil || body.ActorID != actorID || body.Status != "APPROVED" || body.Version < 1 {
 		return ErrCaptainStandingNotApproved
 	}
 	return nil
