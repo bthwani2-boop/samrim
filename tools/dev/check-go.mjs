@@ -162,32 +162,75 @@ export function verifyOwnerPhases(phases, log = console) {
   return measured.result;
 }
 
-// Consume the native test2json stream; package-level pass and skip events
-// cannot establish that an individual test actually completed successfully.
+// Admit only a complete native go test -json -count=1 lifecycle.
+// Package success alone, skipped tests, duplicate or unfinished events cannot
+// establish execution. Packages and parallel tests may legally interleave.
 export function admitNativeGoTests(output) {
-  const running = new Set();
+  const packages = new Map();
   let passed = 0;
   let skipped = 0;
   for (const line of output.split(/\r?\n/)) {
     if (!line.trim()) continue;
     const event = JSON.parse(line);
     if (!event || typeof event.Action !== "string") throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
-    if (event.Action === "fail" || event.Action === "build-fail") throw new Error("NATIVE_GO_TEST_FAILED");
-    if (!event.Test) continue;
-    if (typeof event.Package !== "string" || typeof event.Test !== "string") throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
-    const key = JSON.stringify([event.Package, event.Test]);
-    if (event.Action === "run") running.add(key);
-    if (event.Action === "pass" || event.Action === "skip") {
-      if (!running.delete(key)) throw new Error("NATIVE_GO_TEST_OUTCOME_WITHOUT_RUN");
-      if (event.Action === "pass") passed++;
-      else skipped++;
+    const { Action: action, Package: name, Test: testName } = event;
+    if (action === "fail" || action === "build-fail") throw new Error("NATIVE_GO_TEST_FAILED");
+    // Native build diagnostics use ImportPath instead of Package.
+    if (action === "build-output") {
+      if (typeof event.ImportPath !== "string" || !event.ImportPath || typeof event.Output !== "string") {
+        throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+      }
+      continue;
+    }
+    if (typeof name !== "string" || !name || (testName !== undefined && (typeof testName !== "string" || !testName))) {
+      throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+    }
+    if (action === "start") {
+      if (testName !== undefined || packages.has(name)) throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+      packages.set(name, { tests: new Map(), active: 0, complete: false });
+      continue;
+    }
+    const pkg = packages.get(name);
+    if (!pkg || pkg.complete) throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+    if (testName === undefined) {
+      if (action === "output") continue;
+      if (action !== "pass" && action !== "skip") throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+      if (pkg.active) throw new Error("NATIVE_GO_TEST_EXECUTION_INCOMPLETE");
+      if (action === "skip" && pkg.tests.size) throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+      pkg.complete = true;
+      continue;
+    }
+    const state = pkg.tests.get(testName);
+    switch (action) {
+      case "run":
+        if (state !== undefined) throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+        pkg.tests.set(testName, "running");
+        pkg.active++;
+        break;
+      case "pause":
+      case "cont":
+        if (state !== (action === "pause" ? "running" : "paused")) throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+        pkg.tests.set(testName, action === "pause" ? "paused" : "running");
+        break;
+      case "output":
+        if (state === undefined) throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
+        break;
+      case "pass":
+      case "skip":
+        if (state !== "running") throw new Error("NATIVE_GO_TEST_OUTCOME_WITHOUT_RUN");
+        pkg.tests.set(testName, "complete");
+        pkg.active--;
+        if (action === "pass") passed++;
+        else skipped++;
+        break;
+      default:
+        throw new Error("NATIVE_GO_TEST_EVENT_INVALID");
     }
   }
-  if (running.size) throw new Error("NATIVE_GO_TEST_EXECUTION_INCOMPLETE");
+  if ([...packages.values()].some(pkg => !pkg.complete)) throw new Error("NATIVE_GO_TEST_EXECUTION_INCOMPLETE");
   if (!passed) throw new Error("NATIVE_GO_TEST_EXECUTION_EMPTY");
   return { passed, skipped };
 }
-
 export function admitNativeGoCoverage(output) {
   const totals = [...output.matchAll(/^total:\s+\(statements\)\s+(\d+(?:\.\d+)?)%\s*$/gm)];
   const percent = Number(totals[0]?.[1]);

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { admitNativeGoCoverage, admitNativeGoTests, checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, prepareSourceGo, requireModeEnvironment, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
+import { admitNativeGoCoverage, admitNativeGoTests, checkOwners, discoverModules, listGoFiles, main, parseArgs, parseVersion, prepareSourceGo, requireModeEnvironment, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
 
 test("Go CLI selects only an unambiguous admitted mode and owner", () => {
   assert.deepEqual(parseArgs([]), { mode: "quick", moduleName: undefined, sonarReport: false });
@@ -43,6 +43,22 @@ test("Go resolver selects the exact installed pin rather than an older PATH cand
   assert.deepEqual(seen[0].args, ["go"]);
   assert.ok(seen.slice(1).every(call => call.options.env.GOTOOLCHAIN === "local" && call.options.env.GOPROXY === "off"));
   assert.throws(() => resolvePinnedGo("1.27.5", { PATH: "synthetic" }, spawn, "win32"), /Go version mismatch/);
+});
+
+test("Go resolver admits native Unix lookup and checked fallback only", () => {
+  const calls = [];
+  const lookup = (binary, args) => {
+    calls.push([binary, args]);
+    if (binary === "which") return { status: 0, stdout: "/old/go\n/old/go\n/current/go\n" };
+    if (binary === "/old/go") return { status: 1 };
+    return { status: 0, stdout: "go version go1.27.4 linux/amd64" };
+  };
+  assert.equal(resolvePinnedGo("1.27.4", {}, lookup, "linux"), "/current/go");
+  assert.deepEqual(calls, [["which", ["-a", "go"]], ["/old/go", ["version"]], ["/current/go", ["version"]]]);
+  const fallback = binary => binary === "which" ? { status: 1 } : { status: 0, stdout: "go version go1.27.4 linux/amd64" };
+  assert.equal(resolvePinnedGo("1.27.4", {}, fallback, "linux"), "go");
+  assert.throws(() => resolvePinnedGo("1.27.4", {}, () => ({ status: 1 }), "linux"), /found unavailable/);
+  assert.throws(() => resolvePinnedGo("1.27.4", {}, binary => binary === "which" ? { status: 0, stdout: "/unknown/go" } : { status: 0 }, "linux"), /found unavailable/);
 });
 
 test("complete discovery refuses missing owner modules; scoped discovery checks the requested owner", () => {
@@ -126,6 +142,24 @@ test("source toolchain reads only configured native caches and refuses incomplet
     args[0] === "env" ? { status: 0, stdout: "{}" } : spawn(binary, args, options), "win32"), /Incomplete native Go cache configuration/);
 });
 
+test("source Go rejects native cache lookup errors and incomplete paths", () => {
+  const pin = "1.27.4";
+  const env = { PATH: "fixture" };
+  const prepare = result => prepareSourceGo(pin, "fixture-root", env, (binary, args, options) => {
+    if (binary === "which") return { status: 0, stdout: "/native/go\n" };
+    if (args[0] === "version") return { status: 0, stdout: "go version go1.27.4 linux/amd64" };
+    assert.equal(options.env.GOFLAGS, "-mod=readonly");
+    assert.equal(Object.hasOwn(options.env, "GOENV"), false);
+    return result;
+  }, "linux");
+  const failure = new Error("native lookup failed");
+  assert.throws(() => prepare({ error: failure }), error => error === failure);
+  assert.throws(() => prepare({ status: 1 }), /Unable to resolve native Go cache configuration/);
+  for (const caches of [{ GOCACHE: "", GOMODCACHE: "module" }, { GOCACHE: "build" }, { GOCACHE: "build", GOMODCACHE: "" }]) {
+    assert.throws(() => prepare({ status: 0, stdout: JSON.stringify(caches) }), /Incomplete native Go cache configuration/);
+  }
+});
+
 test("owner stages expose independent failures but never execute against failed dependency integrity", () => {
   for (const failures of [[], ["format"], ["vet"], ["test"], ["format", "vet"], ["dependencies"]]) {
     const seen = [];
@@ -153,20 +187,47 @@ test("the actual child process receives no inherited Go test selector or owner c
   assert.deepEqual(JSON.parse(result.stdout), { flags: "", config: "off", cache: "fixture-cache" });
 });
 
-test("native Go outcomes require actual completed tests, not package success or skips", () => {
-  const events = (...items) => items.map(item => JSON.stringify({ Package: "owner", ...item })).join("\n");
+test("native Go evidence requires a complete, ordered package and test lifecycle", () => {
+  const encode = (...items) => items.map(item => JSON.stringify({ Package: "owner", ...item })).join("\n");
+  const start = { Action: "start" };
+  const finish = { Action: "pass" };
   const run = { Action: "run", Test: "TestActual" };
   const pass = { Action: "pass", Test: "TestActual" };
   const skip = { Action: "skip", Test: "TestActual" };
-  assert.throws(() => admitNativeGoTests(events({ Action: "pass" })), /NATIVE_GO_TEST_EXECUTION_EMPTY/);
-  assert.throws(() => admitNativeGoTests(events(run, skip, { Action: "pass" })), /NATIVE_GO_TEST_EXECUTION_EMPTY/);
-  assert.throws(() => admitNativeGoTests(events(pass)), /NATIVE_GO_TEST_OUTCOME_WITHOUT_RUN/);
-  assert.throws(() => admitNativeGoTests(events(run, { Action: "pass" })), /NATIVE_GO_TEST_EXECUTION_INCOMPLETE/);
-  assert.throws(() => admitNativeGoTests(events(run, { Action: "fail", Test: "TestActual" })), /NATIVE_GO_TEST_FAILED/);
+  assert.throws(() => admitNativeGoTests(encode(start, finish)), /NATIVE_GO_TEST_EXECUTION_EMPTY/);
+  assert.throws(() => admitNativeGoTests(encode(start, run, skip, finish)), /NATIVE_GO_TEST_EXECUTION_EMPTY/);
+  assert.throws(() => admitNativeGoTests(encode(start, pass, finish)), /NATIVE_GO_TEST_OUTCOME_WITHOUT_RUN/);
+  assert.throws(() => admitNativeGoTests(encode(start, run, finish)), /NATIVE_GO_TEST_EXECUTION_INCOMPLETE/);
+  assert.throws(() => admitNativeGoTests(encode(start, run, { Action: "fail", Test: "TestActual" })), /NATIVE_GO_TEST_FAILED/);
   assert.throws(() => admitNativeGoTests("not json"));
-  assert.deepEqual(admitNativeGoTests(events(run, pass, { Action: "run", Test: "TestOptional" }, { Action: "skip", Test: "TestOptional" }, { Action: "pass" })), { passed: 1, skipped: 1 });
+  for (const event of [null, {}, { Action: 1 }, { Action: "start" }, { Action: "build-output" }, { Action: "build-output", ImportPath: "owner" }]) {
+    assert.throws(() => admitNativeGoTests(JSON.stringify(event)), /NATIVE_GO_TEST_EVENT_INVALID/);
+  }
+  assert.throws(() => admitNativeGoTests(encode({ Action: "build-fail" })), /NATIVE_GO_TEST_FAILED/);
+  const complete = [start, run, pass, finish];
+  const invalid = [
+    [run, pass, finish], [start, run, pass], [start, start, run, pass, finish],
+    [start, run, run, pass, finish], [start, run, pass, run, pass, finish],
+    [...complete, finish], [...complete, { Action: "output" }],
+    [start, run, pass, { Action: "skip" }],
+    [start, { Action: "unknown" }, run, pass, finish],
+    [start, { Action: "start", Test: "TestActual" }, run, pass, finish],
+    [start, run, { Action: "unknown", Test: "TestActual" }, pass, finish],
+    [start, { Action: "run" }, finish],
+    [start, { Action: "run", Test: 0 }, run, pass, finish],
+    [start, run, pass, finish, { Package: "second", Action: "start" }],
+    [start, run, { Action: "cont", Test: "TestActual" }, pass, finish],
+    [start, run, { Action: "pause", Test: "TestActual" }, pass, finish],
+    [start, run, pass, { Action: "output", Test: "TestUnknown" }, finish],
+  ];
+  for (const events of invalid) assert.throws(() => admitNativeGoTests(encode(...events)), /NATIVE_GO_TEST_/);
+  assert.deepEqual(admitNativeGoTests(encode({ Action: "build-output", ImportPath: "dependency", Output: "compiler diagnostic" },
+    ...complete) + "\n\n"), { passed: 1, skipped: 0 });
+  assert.deepEqual(admitNativeGoTests(encode(start, { Package: "empty", Action: "start" }, run,
+    { Action: "pause", Test: "TestActual" }, { Package: "empty", Action: "skip" },
+    { Action: "cont", Test: "TestActual" }, pass, { Action: "run", Test: "TestOptional" },
+    { Action: "skip", Test: "TestOptional" }, finish)), { passed: 1, skipped: 1 });
 });
-
 test("native Go coverage requires a single positive measured total", () => {
   for (const value of ["", "total: (statements) 0.0%", "total: (statements) 101.0%", "total: (statements) 1.0%\ntotal: (statements) 2.0%"]) {
     assert.throws(() => admitNativeGoCoverage(value), /NATIVE_GO_COVERAGE_NOT_MEASURED/);
@@ -196,4 +257,64 @@ test("Go Race admission is CI-only and rejects before toolchain or filesystem ac
     assert.doesNotMatch(result.stderr, /ENOENT/);
     assert.equal(result.stdout, "");
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+// The JS-only CI job does not provision the pinned Go toolchain. Exercise
+// this native integration wherever that exact toolchain is available; the
+// separate mandatory Go producer always executes the real owner CLI.
+test("native owner CLI admits measured coverage and rejects incomplete or failed owner evidence", { timeout: 180000 }, t => {
+  const pin = readFileSync(new URL("../../.go-version", import.meta.url), "utf8").trim();
+  try {
+    resolvePinnedGo(pin, sourceEnvironment());
+  } catch (error) {
+    if (!error.message.startsWith("Go version mismatch:")) throw error;
+    t.skip("Exact native Go toolchain not installed; native Go producer owns this proof");
+    return;
+  }
+  const root = mkdtempSync(join(tmpdir(), "bthwani-native-go-cli-"));
+  const source = "package fixture\n\nfunc Value() int {\n\treturn 7\n}\n";
+  const tests = 'package fixture\n\nimport "testing"\n\nfunc TestValue(t *testing.T) {\n\tif Value() != 7 {\n\t\tt.Fatal("value")\n\t}\n}\n';
+  try {
+    writeFileSync(join(root, ".go-version"), pin + "\n");
+    for (const owner of services) {
+      const dir = join(root, "services", owner, "backend");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "go.mod"), "module example.invalid/" + owner + "\ngo " + pin + "\n");
+      writeFileSync(join(dir, "value.go"), source);
+      writeFileSync(join(dir, "value_test.go"), tests);
+    }
+    const dsh = join(root, "services", "dsh", "backend");
+    const coverage = join(root, "coverage");
+    main(["--quick", "--module=dsh"], root);
+    main(["--coverage", "--sonar-report"], root);
+    assert.deepEqual(readdirSync(coverage).sort(), services.map(name => name + "-go.out").sort());
+    for (const name of services) assert.match(readFileSync(join(coverage, name + "-go.out"), "utf8"), /^mode: atomic\n/);
+    assert.throws(() => main(["--coverage", "--sonar-report"], root), /Refusing existing Sonar Go coverage output/);
+    main(["--coverage", "--module=dsh"], root);
+    writeFileSync(join(dsh, "value_test.go"), tests.replace("Value() != 7", "Value() != 8"));
+    assert.throws(() => main(["--quick", "--module=dsh"], root), /Go owner verification failed: dsh/);
+    writeFileSync(join(dsh, "value_test.go"), tests);
+    writeFileSync(join(dsh, "value.go"), "package fixture\nfunc Value() int {return 7}\n");
+    assert.throws(() => main(["--quick", "--module=dsh"], root), /Go owner verification failed: dsh/);
+    rmSync(join(dsh, "value.go"));
+    rmSync(join(dsh, "value_test.go"));
+    assert.throws(() => main(["--quick", "--module=dsh"], root), /Go owner verification failed: dsh/);
+    writeFileSync(join(dsh, "value.go"), source);
+    writeFileSync(join(dsh, "value_test.go"), tests);
+    mkdirSync(join(dsh, "vendor"));
+    mkdirSync(join(dsh, ".git"));
+    mkdirSync(join(dsh, "nested"));
+    writeFileSync(join(dsh, "nested", "nested.go"), "package nested\n");
+    assert.equal(listGoFiles(dsh).length, 3);
+    const link = join(root, "linked");
+    symlinkSync(dsh, link, "junction");
+    assert.throws(() => listGoFiles(link), /Unsafe Go owner directory/);
+    const linkedChild = join(dsh, "linked");
+    symlinkSync(join(dsh, "nested"), linkedChild, "junction");
+    assert.throws(() => listGoFiles(dsh), /Linked Go owner source/);
+    rmSync(linkedChild);
+    rmSync(link);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
