@@ -123,7 +123,7 @@ test("workflow trust rejects failure masking, permission expansion and undeclare
     ["ci", copy => { copy.permissions["id-token"] = "write"; }, /read-only/],
     ["security", copy => { copy.jobs.go.permissions = { contents: "write" }; }, /permission override/],
     ["security", copy => { copy.jobs.javascript.if = expr("false"); }, /unexpected job condition/],
-    ["ci", copy => { runs(copy.jobs.postgres, /payment-mock\/smoke\.sh/).if = expr("false"); }, /unexpected step condition/],
+    ["ci", copy => { runs(copy.jobs.postgres, /payment-mock\/smoke\.mjs/).if = expr("false"); }, /unexpected step condition/],
     ["ci", copy => { runs(copy.jobs.quality, /^pnpm check:contracts\s*$/).if = expr("false"); }, /Expected values/],
     ["ci", copy => { runs(copy.jobs.sonar, /check-go\.mjs --coverage --sonar-report/).if = undefined; }, /Expected values/]
   ];
@@ -255,7 +255,8 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   const outputGate = runs(postgres, /tests\/infra\/test-owner-postgres-output\.sh/);
   const ownerTests = runs(postgres, /tests\/infra\/verify-owner-postgres-ci\.sh/);
   const baselineRestore = runs(postgres, /tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/);
-  const paymentSmoke = runs(postgres, /tests\/infra\/payment-mock\/smoke\.sh/);
+  const paymentSmoke = runs(postgres, /tests\/infra\/payment-mock\/smoke\.mjs/);
+  assert.equal(command(paymentSmoke), "node tests/infra/payment-mock/smoke.mjs");
   order(postgres, outputGate, ownerTests, baselineRestore, paymentSmoke);
   for (const step of [outputGate, ownerTests, baselineRestore, paymentSmoke]) mandatory(postgres, step);
 });

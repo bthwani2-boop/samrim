@@ -245,8 +245,7 @@ jobs:
         shell: pwsh
         run: ./tests/infra/verify-isolated-postgres.ps1 -DockerContext default
       - name: Exercise synthetic payment provider in disposable Docker
-        shell: bash
-        run: bash tests/infra/payment-mock/smoke.sh
+        run: node tests/infra/payment-mock/smoke.mjs
 
   containers:
     name: Container Build & Security
