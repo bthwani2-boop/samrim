@@ -1,40 +1,15 @@
-# Tasks: Customer Store and Catalog Discovery
+# Tasks — Customer Store and catalog discovery
 
-**Input**: spec.md and plan.md in this directory.
-**Status**: IN_PROGRESS — real isolated DSH/PostgreSQL read, Web and Android discovery smoke implemented and tested; mandatory security, Identity, orderability, cross-context race/checkout and current Lenovo mirror acceptance not complete.
-**Branch evidence**: `refoundation/clean-house-20261112` is historical provenance only. Resolve the active authorized checkout, branch and HEAD for each new acceptance run; never create a branch merely to follow an old checklist.
-**Ownership**: DSH for Store/catalog/read contract; Identity for actor; Customer Expo for presentation; WLT untouched.
-**Execution rule**: A checkbox becomes complete only with actual tested evidence and matching SHA. T001 scopes and reconciles this journey; it does not require 100% global governance cutover.
+ARTIFACT_CLASS: DERIVED_SPEC_KIT_TASKS
 
-## Phase 1 — Governance and owner readiness
+Use [spec.md](spec.md) and [plan.md](plan.md). Reuse verified evidence; actual status belongs to the authorized work source.
 
-- [ ] **T001** Reconcile the material source obligations and owner policies affecting Customer Store discovery, its cross-surface prerequisites and its negative cases. The existing 26 Product capabilities are already approved for development; global 14-owner reconciliation remains a separate end-program task. Owner: affected domain owners.
-- [ ] **T002** Establish public Store/listing permission and visibility matrix from governance/stores.md and catalog.md (MARKETPLACE versus DIRECT link-only; publish/revoke; service city/vertical); settle disputed terms with human policy owner before mutating contract.
-- [ ] **T003** Confirm original donor-41 Store/Offer read semantics from pinned source blobs (read-only), consumer contracts, external Store link identities, applicable historical migrations and protected records; do not cherry-pick or copy donor runtime blindly.
+- [ ] T01 — Current owner requirements, donor obligations, contracts, source/consumer inventory and native pre-edit evidence.
+- [ ] T02 — AC-01/02: owner visibility, publication/channel, eligibility, field allowlist, exact YER, pagination, stale/revoked scope and two Store/city negative cases.
+- [ ] T03 — AC-03: real Store and Offer UI, filters, failure/recovery, stale context, RTL, accessibility, deep links, Web/Android; no invented checkout.
+- [ ] T04 — AC-04/05: actual favorites owner/SDK/consumer, authorized scoped read and write, replay, withdrawn visibility, pagination, unknown outcome and isolation.
+- [ ] T05 — AC-06: cart clear confirmation/cancel, stale scope/version, owner readback and stable recovery on actual affected surfaces.
+- [ ] T06 — AC-07: preserve independent checkout, money and orderability boundaries; applicable real PostgreSQL/HTTP, contracts, native tests, technical risk assessment and exact runtime evidence.
+- [ ] T07 — Verify source/consumer reconciliation, required regressions, owned delivery and exact CI; keep every unmet criterion at the actual owner.
 
-## Phase 2 — One DSH owner contract and storage
-
-- [ ] **T004** [US1] Design DSH owner-backed read operations in services/dsh/contracts/openapi/dsh.openapi.yaml and reserved customer-discovery/stores/catalog/offers groups after journey-scoped T001–T003 and a passing stage-aware contract guard. Explicitly model public field allowlist, supported city, publication, relation, bounded pagination, statuses and errors; no duplicate writer.
-- [ ] **T005** [US1] Write failing contract/ACL tests for DIRECT excluded from marketplace, unpublished Store, inaccessible city/vertical, forbidden private fields and response shape; separately prove a paused/closed published Store can remain visible but marked not orderable as DSH policy permits. Verify RED against missing implementation before writing Go code.
-- [ ] **T006** [US1] Select reviewed DSH schema/read model and applied migration safety path; prove isolated fresh/upgrade/backup-restore when database work is admitted, with no real funds or customers.
-- [ ] **T007** [US1] Implement DSH public Store query with canonical eligibility and attributable readback; make tests GREEN. Do not assume HTTP 200 proves published data.
-- [ ] **T008** [US2] Write failing Offer tests for positive exact YER price, sellable Variant, Store publication, required attributes, stock visibility, modifier/quantity eligibility and unreadable draft Offers; then implement DSH public Offer query to pass.
-- [ ] **T009** [US2] Add owner-side deterministic cursor, filter and stale-pagination tests and bounded implementation; ensure no client joins across Offer/Store internals.
-
-## Phase 3 — Genuine Customer experience
-
-- [ ] **T010** [US1] Consume the approved owner-generated TypeScript read client in apps/customer/app/ only after T004–T007; render published eligible Store cards, a valid full Store link, empty and unavailable states; no hardcoded fake Store data.
-- [ ] **T011** [US2] Add eligible Offer view/filter/pagination and exact current YER price from DSH; show stale/retry error rather than invented checkout eligibility.
-- [ ] **T012** [US3] Write failing stale-promise/Store/city/account context-switch tests and then implement cancellation/revision handling that ignores prior-context responses.
-- [ ] **T013** [US1–US3] Verify Arabic RTL, WCAG 2.2 AA applicable keyboard/focus/labels, light/dark, error/empty/retry, pagination/deep-link and native Android back behavior on genuine web/Android.
-
-## Phase 4 — Independent acceptance and delivery
-
-- [ ] **T014** Exercise two Store owners/two cities, published and unpublished/direct-only Store, changed Offer price/availability, invalid cursor, offline/error and IDOR; read canonical DSH state for all positive/negative cases and record the resulting evidence.
-- [ ] **T015** Run affected check/test commands, full diff/UTF-8/source compatibility review, documented executor critical-risk assessment under [AGENTS.md](../../AGENTS.md); record explicit iOS NOT_RUN if untested.
-- [ ] **T016** Deliver each complete, tested, owned foundation immediately under [AGENTS.md, section 7](../../AGENTS.md#7-git-delivery). Preserve unrelated staged and unstaged work; verify the exact local Commit, authorized immutable-SHA fast-forward Push, remote readback and applicable CI. Journey acceptance remains separate.
-
-## Stop conditions
-
-Continue independent authorized work while reporting missing evidence accurately. Never fabricate approval, owner readback, signed consent or real-money tests. Resolve actual conflicting resources under [AGENTS.md, section 5](../../AGENTS.md#5-execution-and-concurrency); unrelated peer work is not a stop condition. GOVERNANCE_CUTOVER: NOT_READY does not bar progressive development. Material unverified security, financial or data risk blocks affected activation and closure. This checklist does not attest that any commercial service or screen currently exists.
-- [x] T017-CART-CLEAR (BTH-15), local behavior: RED/GREEN for confirmation, cancellation, stale-snapshot invalidation and same-key recovery. Thirty-one affected Customer cart tests passed. Authenticated Web and Android journey evidence stays open.
+Historical detailed tasks and original execution records are preserved in the [prior immutable feature tree](https://github.com/bthwani2-boop/samrim/tree/f0934d9c73acfbef042c818a600d4e4b32ccf0ac/specs/001-customer-store-discovery); they are not a parallel live tracker.

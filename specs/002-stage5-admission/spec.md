@@ -1,80 +1,21 @@
-# Feature Specification: Governed Admission to Commercial Implementation
+# Cross-owner implementation acceptance and Captain interest
 
-**Historical creation branch:** `refoundation/clean-house-20261112`; resolve the currently authorized checkout and branch under [AGENTS.md](../../AGENTS.md) before execution.
-**Spec Kit CLI:** pinned local `specify 1.3.0`, agent-neutral `none` integration.
-**Status:** DRAFT — DEVELOPMENT OPEN FOR EXISTING AND PROPOSED CAPABILITIES; journey/runtime acceptance remains NOT_RUN.
-**Semantic owners:** `governance/README.md` and its 14 listed owner documents; this specification is a derived acceptance workflow, not another policy writer.
-**User goal:** Enable capability-first progressive development: accept independently ready owner-backed increments, reuse verified donor behavior, and close complete cross-owner business journeys only with separate integration proof. Keep policy reconciliation and production activation separate. Preserve donor branch `41` as read-only.
+ARTIFACT_CLASS: DERIVED_SPEC_KIT_REQUIREMENTS
 
-## User scenarios and independently testable acceptance
+The existing feature directory retains its historical identifier for traceability, not a Stage-5 gate. [Governance index](../../governance/README.md), [engineering law](../../governance/engineering.md), [product](../../governance/product.md), [journeys](../../governance/journeys.md) and [AGENTS](../../AGENTS.md) own current authority, admission, cutover and acceptance. Current work, claims, proof and remaining obligations belong to the authorized private work source. No duplicate census, gate, work register or implementation status is defined here.
 
-### US1 — Product owner decides if governance can direct implementation (P1)
+## Integration verification
 
-The owner can identify the exact revision, meaning, provenance, unresolved conflicts and risk acceptance for every admitted material requirement **before** anyone changes the cutover marker.
+- AC-01: Use the native installed Spec Kit integration with explicit feature context and no branch creation or shared feature persistence for this authorized checkout. Missing required feature documents are rejected. Use current local Graphify and actual native owner checks; no substitute implementation or automatic worker.
+- AC-02: Demonstrate owner-linked, executable contracts, generated client and actual wire behavior, scope, denial, isolated PostgreSQL readback and affected Web/Android for independently admitted increments. Test revoked permissions, cross-actor/Store access, delayed results, interrupted/unknown outcomes and same-operation reconciliation. No placeholder or mock proves integration.
+- AC-03: For the affected financial/Order path, prove current terms and authority, exact YER, immutable operation identity, posted and unreserved balance, COD/WALLET/MIXED allocation, reserve/release/capture as admitted, no double effects, ledger conservation, competing acceptance and private data isolation. Agreement consent and Finance review are not activation. Use [order creation](../014-order-creation/spec.md), [finance](../../governance/finance.md) and actual owner contracts. Keep isolated bootstrap/restore and protected data/rail activation distinct.
+- AC-04: Verify actual repository placement and consumers, contract semantic and generated parity, native regression and security evidence under the existing owner mechanisms. Keep protected data, applied history, credential/provider identity and external artifacts within their authorized boundaries. Governance cutover, operational proof, journey acceptance and release remain distinct.
 
-**Independent test:** Read the 14 owner documents, the 26-capability census and 16 admitted journeys on an exact Git SHA; check provenance at the donor's pinned blob/line; challenge material choices with negative cases; inspect signed-off human choices and the internal risk evidence. A document's presence or matching heading must not count as approval.
+## Captain public interest (BTH-10 historical trace)
 
-1. **Given** a substantive donor obligation is unresolved, **when** admission is assessed, **then** the specific obligation, owner and missing semantic decision are reported as `REVIEW_BLOCKED`, and `GOVERNANCE_CUTOVER` remains `NOT_READY`.
-2. **Given** every material Product/Owner/Legal/Financial/Security requirement has a reviewed disposition and applicable risk analysis, **when** the human Product owner approves the precise revision and guard checks pass, **then** a separate, explicitly reviewed cutover change may set `READY`.
-3. **Given** policy is approved, **when** no actual service has been deployed or database restored, **then** policy readiness may be recorded without falsely labelling service/runtime readiness `PASS`.
+- CAP-INT-01: Show receipt only after DSH confirms submission. Unknown outcome displays an explicit uncertain-result notice for the current form visit and removes submit action; returning to sign-in remains available. Definite validation rejection or rate limiting permits retry with entered facts. Do not persist form inputs, expose receipt lookup or imply Identity admission.
+- CAP-INT-02: Authorized Operator navigation to previous candidate-registration page retains filters and performs a fresh DSH read. Changing filters or rechecking session resets pagination; denied read withdraws the list.
+- CAP-INT-03: Accept Yemeni phone numbers typed using Arabic-Indic and Eastern Arabic-Indic digits; normalize to the existing DSH wire format, preserve typed value during recovery and enforce current prefix/length constraints.
+- CAP-INT-04: Verify actual DSH guest interest and scoped Operations read contracts, strict SDK/BFF boundaries, rate limiting, privacy, invalid phone, unknown result, pagination, revocation and affected Captain Android/Operator Web. Interest is not a standing application, approved Captain role or dispatch authority; [Identity](../../governance/identity.md) and [Fulfillment](../../governance/fulfillment.md) retain their boundaries.
 
-### US2 — Engineer prepares one feature on the existing authorized Git branch (P1)
-
-An engineer can use the installed **official Spec Kit CLI and bundled PowerShell scripts** to create `spec.md`, `plan.md` and `tasks.md` on the existing Worktree without creating a new Git branch or writing shared `.specify/feature.json`.
-
-**Independent test:** Run `specify --version`, `specify check`, `specify workflow list`, and the installed Spec Kit scripts with `SPECIFY_FEATURE_NO_PERSIST=1` and an explicit `SPECIFY_FEATURE_DIRECTORY`. Confirm `git branch --show-current`, `git status --short .specify` and the feature files; test that missing feature, plan or tasks blocks prerequisite validation.
-
-1. **Given** no feature context, **when** required Spec Kit prerequisites are checked, **then** validation fails rather than silently inventing a feature or moving branches.
-2. **Given** the feature directory and complete spec/plan/tasks, **when** prerequisites run with no persistence, **then** path and document checks pass and `.specify/feature.json` remains unchanged.
-3. **Given** concurrent independent work, **when** an owned foundation is complete and tested, **then** the executor delivers it directly under [AGENTS.md, sections 5 and 7](../../AGENTS.md#7-git-delivery), preserves unrelated staged/unstaged paths, verifies all outgoing commits and reads back the exact authorized fast-forward publication. A genuine conflict stops only its affected resource.
-
-### US3 — First business slice can be engineered without guessing money or permissions (P1)
-
-Without waiting for whole-platform governance cutover, a thin real owner-backed Store/discovery or authentication slice has an executable contract, error and permission matrix, independent SQL/migration assurance as appropriate, and actual screen/owner-readback acceptance. The slice does not inherit functional acceptance from a historical file census.
-
-**Independent test:** For an approved feature, follow its Product owner and role through an actual contract operation, denied cross-actor/Store attempt, authenticated owner-side persistent readback, relevant Android/Web UI path, and failure/retry case on the same exact source and environment revision.
-
-1. **Given** a missing executable contract or resource authorization, **when** journey closure or activation is requested, **then** the unproven behavior remains NOT_RUN/BLOCKED; a placeholder OpenAPI `paths: {}`, mock response or static screen does not qualify, but specification and owner-side development may proceed within the permitted scope.
-2. **Given** Store and Catalog are admitted for implementation, **when** a Merchant modifies one Store and a Customer reads its published Offer, **then** data comes from the DSH owner, Identity authorizes the actor and Store scope, and a second Store/account cannot read or write restricted data.
-3. **Given** an Order, cash, balance or settlement path is later admitted, **when** replay, concurrency, timeout or partial failure occurs, **then** the owner-backed test must prove idempotency, consistent DSH/WLT readback, no double debit/accept, conserved ledger and a recoverable unknown outcome before activation.
-
-## Requirements
-
-- **FR-001:** Treat the **latest explicit human-approved** Product rules and 14 canonical `governance/` owners as the sole normative sources; use `docs/reference/` solely for source provenance, never as a parallel policy or runtime-acceptance source.
-- **FR-002:** Reconcile all **26 capability IDs** and their material subfeatures with one owner, plus the **16 admitted journeys** and their errors, authorization and observable handoffs. Resolve or explicitly block every material historical clause; do not promote all 340 donor headings merely because they were indexed.
-- **FR-003:** Preserve the 2026-11-13 human-approved FIN-01/02/03, SEC-01/02, MIG-01 and LEGAL-01 target directions in their actual owner documents without inventing independent/external reviewer signatures, financial balances, consent or evidence.
-- **FR-004:** Document internal technical threat/adverse analysis for material finance, authentication, privacy, migration and legal consequences; actual live activation separately requires owner-backed negative/concurrency/restore proof, as applicable.
-- **FR-005:** Preserve exactly one business writer per mutable fact: Identity for actors/sessions/platform grants; DSH for Store/catalog/Order/fulfillment; WLT for ledger/cash/agreements/settlement. Do not create a fourth HR business service or independent policy engine.
-- **FR-006:** Development is open for all existing and newly proposed capabilities. Adapt the old Stage-4-only verifier and isolate new owner runtime/SQL; no full governance cutover or per-capability vote is required to write relevant business code. A `READY` marker or document is **not** proof of a native binary, service or deployed system, and production remains blocked pending evidence and authority.
-- **FR-007:** During each journey, including newly proposed capability work, record caller role, legal owner, inputs, success, explicit errors, resource ID authorization, idempotency/unknown outcome and executable negative tests; use them to verify acceptance before closing its API/screen.
-- **FR-008:** Use pinned original toolchain, preserved Expo/EAS identities, native RTL/security constraints and one design-semantic source. Select mobile renderer/PG isolation by verified representative tests; untested iOS/Android/SQL paths remain labelled `NOT_RUN`.
-- **FR-009:** Invoke the pinned official Spec Kit CLI and applicable no-persist workflow on the current authorized branch. Use `SPECIFY_FEATURE_NO_PERSIST=1`; preserve the archive, peer work and separate authorization for additional workers, branches, worktrees, PRs and deployments. Execution and delivery authority remain exclusively in [AGENTS.md](../../AGENTS.md).
-- **FR-010:** Do not overwrite protected databases, signer/provider keys, historical legal rights or production financial state to make the test pass.
-
-## Failure and boundary cases
-
-- A historic requirement has a matching new title but changed meaning: keep semantic review OPEN until evidence establishes the actual rule.
-- Financial coverage policy admits a Captain who cannot safely cover the exposure: continue isolated analysis and engineering, but do not claim the financial behavior accepted or enable real exposure until FIN-01 adverse cases validate the chosen risk law.
-- The same Order key is replayed with different payloads; two Captains accept simultaneously; delivery is interrupted: require explicit deterministic owner behavior and negative proof.
-- A Merchant switches Stores or an Operator loses scope mid-request: reject stale/cross-Store actions without exposing customer addresses.
-- SQL topology grants WLT direct DSH write or unsafe public-schema CREATE: fail the isolation test before production admission.
-- A mobile preview compiles but no signed native app is installed: report `NOT_RUN`, not success.
-- A Spec Kit command tries to write `.specify/feature.json` or create a Git branch: reject or run only in no-persist/dry-run mode.
-- CI/Sonar/CodeQL PASS on one SHA but another SHA is the handoff candidate: rerun only invalidated gates on the final revision.
-
-## Acceptance criteria (all must be satisfied for the specifically claimed stage)
-
-- **AC-01 Governance:** Each existing or new journey closes only after 100% of its applicable and traceable cross-surface criteria pass with owner/source evidence; full 14-owner semantic review remains necessary only to declare final `GOVERNANCE_CUTOVER: READY`, not to start development.
-- **AC-02 Developer workflow:** Native `specify check` and applicable official no-persist feature prerequisite checks pass; required artifacts are meaningful and owner-linked. Preserve the archive and peer index/worktree; demonstrate direct tested owned delivery under [AGENTS.md](../../AGENTS.md), not global cleanliness or an administrative release.
-- **AC-03 First service slice:** before claiming journey closure, owner contract, real service data, permission denial, failure recovery and owner-backed readback are demonstrated with tests; any native/DB/migration evidence is tied to exact SHA, versions and isolated test environment.
-- **AC-04 No false aggregation:** governance-ready, service-ready, finance-ready, mobile native-ready and release-ready remain separate PASS/BLOCKED/NOT_RUN states. No global 100% correctness claim.
-
-## Current known blockers (evidence, not permanent normative rules)
-
-At initial creation on 2026-11-14, `governance/README.md` still reports `NOT_READY`; the source census identifies 340 donor headings, 113 documentary dispositions and 227 `REVIEW_PENDING` without full semantic parity; service OpenAPI remains reserved empty, with no new owner-backed Go/SQL implementation or current native finance E2E. These facts are rechecked from HEAD before each gate, never used as a stale hard-coded decision.
-
-## Captain public interest receipt recovery (BTH-10)
-
-- CAP-INT-01: Show a receipt only after DSH confirms submission. When the outcome is unknown, retain an explicit uncertain-result notice for the current form visit and remove the submit action. Allow returning to sign-in. A definite validation rejection or rate limit leaves the form available to retry, with the entered facts still present. Do not persist form entries, expose a receipt lookup, or claim Identity admission.
-- CAP-INT-02: Operators can move to a previous page of candidate registrations while retaining their selected filters. Each navigation reads DSH again with current authorization. Changing a filter or rechecking the session resets pagination. Denied reads withdraw the list.
-- CAP-INT-03: The interest form accepts Yemeni numbers typed with Arabic-Indic or Eastern Arabic-Indic digits. Convert digits in the submission to the existing DSH wire form and preserve the typed value during recovery. The existing prefix and length constraints continue to apply.
+Original admission, audit, financial proof and Captain requirements are preserved in the [prior immutable feature tree](https://github.com/bthwani2-boop/samrim/tree/f0934d9c73acfbef042c818a600d4e4b32ccf0ac/specs/002-stage5-admission). Historical counts, commands, statuses and staffing are not current constraints or proof.
