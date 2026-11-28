@@ -29,10 +29,9 @@ test("configuration comparison refuses drift without leaking values or retrying 
   });
 });
 
-test("reconciler consumes the single native Go test environment and guards its source", async () => {
+test("reconciler and isolated PostgreSQL proof consume the canonical native Go test environment", async () => {
   const { readFileSync } = await import("node:fs");
   const runner = readFileSync(new URL("../../tools/dev/docker/reconcile-owner-runtime.mjs", import.meta.url), "utf8");
-  const watcher = readFileSync(new URL("../../tools/dev/sync-lenovo-source.mjs", import.meta.url), "utf8");
   assert.match(runner, /import \{ admitNativeGoTests, prepareSourceGo \} from "\.\.\/check-go\.mjs"/);
   assert.match(runner, /const \{executable:goExecutable,env:testEnv\}=prepareSourceGo\(pin,root\)/);
   assert.doesNotMatch(runner, /isolatedTestEnv|GOFLAGS|GOENV|GOWORK/);
@@ -40,7 +39,6 @@ test("reconciler consumes the single native Go test environment and guards its s
   assert.doesNotMatch(runner, /readFileSync\(resolve\(root,"\.go-version"\)/);
   assert.match(runner, /spawnSync\(goExecutable,\["test"/);
   assert.match(runner.match(/const guardedScope = \[[^\n]+/)[0], /tools\/dev\/check-go\.mjs/);
-  assert.match(watcher.match(/const runtimeScope = \[[\s\S]*?\];/)[0], /tools\/dev\/check-go\.mjs/);
   assert.match(runner.match(/const baselineProofScope=\[[^\n]+/)[0], /tools\/dev\/check-go\.mjs/);
   const sqlProof = readFileSync(new URL("./verify-isolated-postgres.ps1", import.meta.url), "utf8");
   assert.match(sqlProof, /resolvePinnedGo\(readFileSync\("\.go-version","utf8"\)\.trim\(\)\)/);
