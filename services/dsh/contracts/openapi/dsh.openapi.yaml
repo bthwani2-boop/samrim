@@ -855,9 +855,19 @@ components:
       additionalProperties: false
       required: [weekday, opens, closes]
       properties:
-        weekday: { type: integer, minimum: 0, maximum: 6, description: 0=Sunday, 6=Saturday in DSH city timezone }
-        opens: { type: integer, minimum: 0, maximum: 1439 }
-        closes: { type: integer, minimum: 0, maximum: 1440 }
+        weekday:
+          type: integer
+          minimum: 0
+          maximum: 6
+          description: 0=Sunday, 6=Saturday in DSH city timezone
+        opens:
+          type: integer
+          minimum: 0
+          maximum: 1439
+        closes:
+          type: integer
+          minimum: 0
+          maximum: 1440
     OperationalAvailability:
       type: object
       additionalProperties: false

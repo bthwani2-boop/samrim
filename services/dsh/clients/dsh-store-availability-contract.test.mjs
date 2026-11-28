@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import YAML from "yaml";
 import {
   DshPublicError, getStoreOperationalAvailability, updateStoreOperationalAvailability,
 } from "./index.ts";
@@ -184,4 +186,18 @@ test("Store PATCH owner transport stops oversized streamed confirmations without
   assert.equal(writes, 1, "ambiguous owner confirmation must not create another mutation");
   assert.ok(chunks < 100, "oversized private reply must be rejected while streaming");
   assert.equal(cancelled, true);
+});
+
+test("weekly window schema preserves weekday semantics and exact validation constraints", () => {
+  const contract = YAML.parse(readFileSync(new URL("../contracts/openapi/dsh.openapi.yaml", import.meta.url), "utf8"));
+  assert.deepEqual(contract.components.schemas.OperationalWeeklyWindow, {
+    type: "object",
+    additionalProperties: false,
+    required: ["weekday", "opens", "closes"],
+    properties: {
+      weekday: { type: "integer", minimum: 0, maximum: 6, description: "0=Sunday, 6=Saturday in DSH city timezone" },
+      opens: { type: "integer", minimum: 0, maximum: 1439 },
+      closes: { type: "integer", minimum: 0, maximum: 1440 },
+    },
+  });
 });
