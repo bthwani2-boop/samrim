@@ -598,3 +598,35 @@ test("workspace admission rejects incomplete authored configuration rather than 
   }
   assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
 });
+
+test("native workspace admission rejects excluded authored and unexpected projects", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const file = path.join(dir, "pnpm-workspace.yaml");
+  const original = readFileSync(file, "utf8");
+  const change = pattern => original.replace('  - "packages/*"', '  - "packages/*"\n  - "' + pattern + '"');
+  writeFileSync(file, change("!apps/customer"));
+  assert.throws(() => verifyWorkspace(dir), /Native pnpm workspace membership differs/);
+  const nested = path.join(dir, "apps/customer/extra");
+  mkdirSync(nested);
+  writeFileSync(path.join(nested, "package.json"), JSON.stringify({ name: "fixture-extra", version: "0.0.0", private: true }));
+  writeFileSync(file, change("apps/customer/extra"));
+  assert.throws(() => verifyWorkspace(dir), /Native pnpm workspace contains unexpected project/);
+  writeFileSync(file, original);
+  writeFileSync(path.join(dir, "apps/README.md"), "Not a project");
+  mkdirSync(path.join(dir, "packages/notes"));
+  const other = path.join(dir, "outside-project");
+  mkdirSync(other);
+  writeFileSync(path.join(other, "package.json"), JSON.stringify({ name: "outside-project", version: "0.0.0" }));
+  const linked = path.join(dir, "packages/linked");
+  symlinkSync(other, linked, "junction");
+  assert.throws(() => verifyWorkspace(dir), /Workspace project scope contains a linked entry/);
+  rmSync(linked);
+  // A legitimate new direct package is selected by the same native policy.
+  const added = path.join(dir, "packages/new-shared");
+  mkdirSync(added);
+  writeFileSync(path.join(added, "package.json"), JSON.stringify({ name: "@bthwani/new-shared", version: "0.0.0", private: true }));
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  writeFileSync(file, change("!packages/new-shared"));
+  assert.throws(() => verifyWorkspace(dir), /Native pnpm workspace membership differs/);
+});

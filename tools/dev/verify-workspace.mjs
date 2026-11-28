@@ -2,7 +2,8 @@
 // Pre-install source admission. Native pnpm, Go, tests and runtime acceptance
 // remain separate; these static checks do not certify their execution.
 import assert from "node:assert/strict";
-import { lstatSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { openRepositoryReader, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
@@ -112,11 +113,55 @@ function verifyLock(document, manifest, pnpm, toolchain) {
   return dependency;
 }
 
-function verifyWorkspaceSettings(workspace, nx) {
-  for (const glob of ["apps/*", "services/*", "packages/*"]) {
-    assert.match(workspace, new RegExp('^  - "' + RegExp.escape(glob) + '"$', "m"),
-      "Missing canonical workspace path: " + glob);
+// pnpm owns package selection, including negation and YAML semantics. Compare
+// its native inventory with authored direct project manifests before admission.
+// The explicit Corepack version uses the same pinned manager as installation;
+// it does not require an installed dependency graph.
+function verifyWorkspaceMembership(checkout, source, manifest, pnpm, workspace) {
+  function authoredProjects() {
+    const expected = new Map([["", manifest.name]]);
+    for (const scope of ["apps", "services", "packages"]) {
+      source.directory(scope);
+      for (const entry of readdirSync(path.join(checkout, scope), { withFileTypes: true })) {
+        const project = scope + "/" + entry.name;
+        assert.ok(!entry.isSymbolicLink(), "Workspace project scope contains a linked entry: " + project);
+        if (!entry.isDirectory()) continue;
+        if (!lstatSync(path.join(checkout, project, "package.json"), { throwIfNoEntry: false })) continue;
+        source.directory(project);
+        expected.set(project, source.json(project + "/package.json").name);
+      }
+    }
+    return expected;
   }
+  const expected = authoredProjects();
+  const args = ["pnpm@" + pnpm, "list", "-r", "--depth", "-1", "--json"];
+  // Use the pinned Node distribution's Corepack, never a repository-local
+  // shim selected by the Windows command shell or another PATH entry.
+  const nodeBin = path.dirname(process.execPath);
+  const entry = process.platform === "win32"
+    ? path.join(nodeBin, "node_modules", "corepack", "dist", "corepack.js")
+    : path.join(nodeBin, "corepack");
+  const result = spawnSync(process.execPath, [entry, ...args], {
+    cwd: checkout, encoding: "utf8", windowsHide: true, timeout: 60000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  assert.equal(result.status, 0, "Native pnpm workspace inventory failed");
+  const rows = JSON.parse(result.stdout);
+  assert.ok(Array.isArray(rows), "Native pnpm workspace inventory must be an array");
+  const observed = new Map();
+  for (const row of rows) {
+    const rel = path.relative(checkout, row.path).split(path.sep).join("/");
+    assert.ok(expected.has(rel) && samePath(realpathSync.native(row.path), path.resolve(checkout, rel)),
+      "Native pnpm workspace contains unexpected project: " + rel);
+    assert.ok(!observed.has(rel), "Native pnpm workspace contains duplicate project: " + rel);
+    observed.set(rel, row.name);
+  }
+  assert.deepEqual(observed, expected, "Native pnpm workspace membership differs from authored project manifests");
+  assert.deepEqual(authoredProjects(), expected, "Authored projects changed during native pnpm inventory");
+  assert.equal(source.read("pnpm-workspace.yaml"), workspace, "Workspace settings changed during native pnpm inventory");
+}
+
+function verifyWorkspaceSettings(workspace, nx) {
   for (const [key, value] of Object.entries({
     autoInstallPeers: "false", engineStrict: "true", frozenLockfile: "true",
     nodeLinker: "isolated", saveExact: "true", sharedWorkspaceLockfile: "true",
@@ -251,7 +296,8 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   // separate upstream TypeScript 6 programmatic API, not a compiler downgrade.
   const toolchain = rootToolchain(manifest);
 
-  verifyWorkspaceSettings(source.read("pnpm-workspace.yaml"), source.json("nx.json"));
+  const workspace = source.read("pnpm-workspace.yaml");
+  verifyWorkspaceSettings(workspace, source.json("nx.json"));
   const dependency = verifyLock(source.read("pnpm-lock.yaml"), manifest, pnpm, toolchain);
   for (const project of projects) {
     source.directory(project);
@@ -270,6 +316,7 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   const ts = toolchain.native;
   for (const owner of services) verifyOwner(source, dependency, owner, go, ts);
   verifyGitIgnore(checkout, source);
+  verifyWorkspaceMembership(checkout, source, manifest, pnpm, workspace);
 
   if (strict) resolvePinnedGo(go);
   return { node, go, pnpm, typescript: ts, typescriptApi: toolchain.api, biome: manifest.devDependencies["@biomejs/biome"],
