@@ -21,8 +21,7 @@ const (
 	identityReadTimeout   = 3 * time.Second
 )
 
-// IdentitySessionHTTP reads Identity's current session and explicit Operator
-// grants. Every decision requires a fresh, uncached owner response.
+// IdentitySessionHTTP reads current, uncached decisions from the Identity owner.
 type IdentitySessionHTTP struct {
 	endpoint       string
 	permissionBase string
@@ -66,9 +65,9 @@ func validBearer(token string) bool {
 		!strings.ContainsAny(token, " \t\r\n")
 }
 
-// Pointer fields distinguish an absent or null required member from its
-// explicitly supplied zero value. JSON v2 rejects duplicate names, malformed
-// Unicode and case-mismatched names; unknown fields are rejected explicitly.
+// Pointer fields distinguish missing or null members from supplied values.
+// JSON v2 rejects duplicate and case-mismatched names, invalid Unicode and,
+// with RejectUnknownMembers, unexpected members.
 type sessionReply struct {
 	ActorID          *string    `json:"actorId"`
 	Role             *string    `json:"role"`
@@ -80,6 +79,41 @@ type permissionReply struct {
 	Permission *string `json:"permission"`
 }
 
+// decodeOwnerReply admits a single, bounded, unencoded JSON representation.
+// Header.Get discards subsequent occurrences; those must never authorize a
+// session or grant. Trailers cannot redefine admission metadata.
+func decodeOwnerReply(response *http.Response, destination any) error {
+	cache := response.Header.Values("Cache-Control")
+	media := response.Header.Values("Content-Type")
+	if len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") ||
+		len(media) != 1 || len(response.Header.Values("Content-Encoding")) != 0 ||
+		response.Uncompressed || response.ContentLength > maxIdentityReplyBytes {
+		return ErrIdentityUnavailable
+	}
+	mediaType, parameters, err := mime.ParseMediaType(media[0])
+	if err != nil || mediaType != identityJSONMediaType {
+		return ErrIdentityUnavailable
+	}
+	for name, value := range parameters {
+		if name != "charset" || !strings.EqualFold(value, "utf-8") {
+			return ErrIdentityUnavailable
+		}
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxIdentityReplyBytes+1))
+	if err != nil || len(body) > maxIdentityReplyBytes {
+		return ErrIdentityUnavailable
+	}
+	for _, name := range []string{"Cache-Control", "Content-Type", "Content-Encoding"} {
+		if _, present := response.Trailer[name]; present {
+			return ErrIdentityUnavailable
+		}
+	}
+	if err := json.Unmarshal(body, destination, json.RejectUnknownMembers(true)); err != nil {
+		return ErrIdentityUnavailable
+	}
+	return nil
+}
+
 func (identity *IdentitySessionHTTP) read(ctx context.Context, endpoint, token string, destination any, permission bool) error {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
@@ -87,6 +121,9 @@ func (identity *IdentitySessionHTTP) read(ctx context.Context, endpoint, token s
 	}
 	request.Header.Set("Authorization", "Bearer "+token)
 	request.Header.Set("Accept", identityJSONMediaType)
+	// Explicit negotiation prevents net/http from silently decompressing and
+	// removing the owner-supplied Content-Encoding metadata.
+	request.Header.Set("Accept-Encoding", "identity")
 	request.Header.Set("Cache-Control", "no-store")
 	response, err := identity.client.Do(request)
 	if err != nil {
@@ -103,27 +140,10 @@ func (identity *IdentitySessionHTTP) read(ctx context.Context, endpoint, token s
 		}
 		return ErrIdentityUnavailable
 	case http.StatusOK:
+		return decodeOwnerReply(response, destination)
 	default:
 		return ErrIdentityUnavailable
 	}
-
-	cache := response.Header.Values("Cache-Control")
-	if len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") {
-		return ErrIdentityUnavailable
-	}
-	mediaType, _, err := mime.ParseMediaType(response.Header.Get("Content-Type"))
-	if err != nil || mediaType != identityJSONMediaType ||
-		response.ContentLength > maxIdentityReplyBytes {
-		return ErrIdentityUnavailable
-	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxIdentityReplyBytes+1))
-	if err != nil || len(body) > maxIdentityReplyBytes {
-		return ErrIdentityUnavailable
-	}
-	if err = json.Unmarshal(body, destination, json.RejectUnknownMembers(true)); err != nil {
-		return ErrIdentityUnavailable
-	}
-	return nil
 }
 
 func (identity *IdentitySessionHTTP) ResolveCurrentSession(ctx context.Context, token string) (VerifiedActor, error) {

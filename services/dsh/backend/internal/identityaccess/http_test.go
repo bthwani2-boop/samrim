@@ -2,6 +2,7 @@ package identityaccess
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -306,6 +307,88 @@ func TestIdentityHTTPRejectsNoncanonicalOwnerWire(t *testing.T) {
 			}
 			if actor, err := client.ResolveCurrentSession(t.Context(), testOpaqueIdentityToken()); actor.Subject != "" || !errors.Is(err, ErrIdentityUnavailable) {
 				t.Fatalf("noncanonical wire admitted: %+v %v", actor, err)
+			}
+		})
+	}
+}
+
+func TestIdentityHTTPAdmitsOnlyUnambiguousOwnerRepresentations(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		media    []string
+		cache    []string
+		encoding string
+		trailer  string
+		want     error
+	}{
+		{"canonical", []string{"application/json"}, []string{"no-store"}, "", "", nil},
+		{"owner UTF-8", []string{"application/json; charset=utf-8"}, []string{"no-store"}, "", "", nil},
+		{"identical media", []string{"application/json", "application/json"}, []string{"no-store"}, "", "", ErrIdentityUnavailable},
+		{"conflicting media", []string{"application/json", "text/html"}, []string{"no-store"}, "", "", ErrIdentityUnavailable},
+		{"invalid charset", []string{"application/json; charset=iso-8859-1"}, []string{"no-store"}, "", "", ErrIdentityUnavailable},
+		{"unknown parameter", []string{"application/json; profile=unknown"}, []string{"no-store"}, "", "", ErrIdentityUnavailable},
+		{"duplicate cache", []string{"application/json"}, []string{"no-store", "no-store"}, "", "", ErrIdentityUnavailable},
+		{"encoded JSON", []string{"application/json"}, []string{"no-store"}, "gzip", "", ErrIdentityUnavailable},
+		{"media trailer", []string{"application/json"}, []string{"no-store"}, "", "Content-Type", ErrIdentityUnavailable},
+		{"cache trailer", []string{"application/json"}, []string{"no-store"}, "", "Cache-Control", ErrIdentityUnavailable},
+		{"encoding trailer", []string{"application/json"}, []string{"no-store"}, "", "Content-Encoding", ErrIdentityUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Accept-Encoding") != "identity" {
+					t.Errorf("owner request did not negotiate identity encoding")
+				}
+				for _, value := range tc.media {
+					w.Header().Add("Content-Type", value)
+				}
+				for _, value := range tc.cache {
+					w.Header().Add("Cache-Control", value)
+				}
+				if tc.encoding != "" {
+					w.Header().Set("Content-Encoding", tc.encoding)
+				}
+				if tc.trailer != "" {
+					w.Header().Set("Trailer", tc.trailer)
+				}
+				var body string
+				switch r.URL.Path {
+				case "/v1/sessions/current":
+					body = `{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+				case "/v1/operators/me/permissions/operations":
+					body = `{"actorId":"operator-a","permission":"operations"}`
+				default:
+					t.Errorf("unexpected owner route %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				if tc.encoding == "gzip" {
+					writer := gzip.NewWriter(w)
+					_, _ = writer.Write([]byte(body))
+					_ = writer.Close()
+				} else {
+					_, _ = w.Write([]byte(body))
+				}
+				if tc.trailer != "" {
+					w.Header().Set(tc.trailer, "unexpected")
+				}
+			}))
+			defer owner.Close()
+			client, err := NewIdentitySessionHTTP(owner.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actor, err := client.ResolveCurrentSession(context.Background(), testOpaqueIdentityToken())
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("session error=%v, want %v", err, tc.want)
+			}
+			if tc.want == nil && (actor.Subject != "operator-a" || actor.Role != OperatorRole) {
+				t.Fatalf("canonical session was not resolved: %+v", actor)
+			}
+			if tc.want != nil && actor != (VerifiedActor{}) {
+				t.Fatalf("rejected representation returned an actor: %+v", actor)
+			}
+			if err := client.RequireOperatorPermission(context.Background(), testOpaqueIdentityToken(), "operator-a", "operations"); !errors.Is(err, tc.want) {
+				t.Fatalf("grant error=%v, want %v", err, tc.want)
 			}
 		})
 	}
