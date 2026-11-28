@@ -68,7 +68,7 @@ services:
     <<: *serving
     mem_limit: 1536m
     pids_limit: 512
-    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
+    image: chrislusf/seaweedfs:4.55@sha256:7ca46aeae2f223b37e5d91593c17ab37738eec6df6ab69b48a0487f7643342b9
     command:
       - mini
       - -dir=/data

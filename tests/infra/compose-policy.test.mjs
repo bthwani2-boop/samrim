@@ -44,6 +44,25 @@ test("database and mock integrations stay in one isolated project", () => {
   assert.deepEqual(Object.keys(base.services).filter(name=>!base.services[name].profiles?.length).sort(), ["dsh","identity","mailpit","media","payment-mock","postgres","wlt"]);
 });
 
+test("media uses the reviewed secure SeaweedFS release and one persistent S3 boundary", () => {
+  const model = compose("compose.yaml");
+  const media = model.services.media;
+  const release = /^chrislusf\/seaweedfs:([0-9]+)\.([0-9]+)@sha256:[a-f0-9]{64}$/.exec(media.image);
+  assert.ok(release, "Media must use an official digest-pinned stable release");
+  const [major, minor] = release.slice(1).map(Number);
+  assert.ok(major > 4 || (major === 4 && minor >= 55), "Media must include the reviewed 4.55 security fixes");
+  assert.deepEqual(media.command, ["mini", "-dir=/data"]);
+  assert.deepEqual(media.environment, {
+    AWS_ACCESS_KEY_ID: "${REF_MEDIA_ACCESS_KEY:?generate refoundation media credentials}",
+    AWS_SECRET_ACCESS_KEY: "${REF_MEDIA_SECRET_KEY:?generate refoundation media credentials}",
+    S3_BUCKET: "${REF_MEDIA_BUCKET:-bthwani-refoundation-media}",
+  });
+  assert.deepEqual(media.volumes, ["refoundation-media-data:/data"]);
+  assert.deepEqual(media.networks, ["isolated", "loopback"]);
+  assert.deepEqual(media.ports, ["127.0.0.1:3233:8333"]);
+  assert.ok(media.healthcheck.test.includes("wget -q -O /dev/null http://127.0.0.1:8333/status || exit 1"));
+});
+
 test("serving containers share one canonical environment-label definition", () => {
   const model = compose("compose.yaml");
   const source = readFileSync(path.join(infra, "compose.yaml"), "utf8");
