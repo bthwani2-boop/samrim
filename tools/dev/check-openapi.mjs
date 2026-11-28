@@ -92,14 +92,26 @@ function loadDocuments(folder, base) {
   return { documents, references, errors };
 }
 
-const allowedResponseKeys = new Set(["description", "headers", "content", "links", "$ref", "summary"]);
-const allowedParameterKeys = new Set([
-  "name", "in", "description", "required", "deprecated", "allowEmptyValue", "style",
-  "explode", "allowReserved", "schema", "example", "examples", "content", "$ref", "summary",
+const referenceKeys = new Set(["$ref", "summary", "description"]);
+const representationKeys = [
+  "description", "required", "deprecated", "style", "explode", "schema", "example", "examples", "content",
+];
+const allowedParameterKeys = new Set(["name", "in", "allowEmptyValue", "allowReserved", ...representationKeys]);
+const allowedHeaderKeys = new Set(representationKeys);
+const allowedResponseKeys = new Set(["description", "headers", "content", "links"]);
+const allowedRequestBodyKeys = new Set(["description", "content", "required"]);
+const allowedMediaKeys = new Set(["schema", "example", "examples", "encoding"]);
+const allowedOperationKeys = new Set([
+  "tags", "summary", "description", "externalDocs", "operationId", "parameters", "requestBody",
+  "responses", "callbacks", "deprecated", "security", "servers",
 ]);
-const allowedHeaderKeys = new Set([
-  "description", "required", "deprecated", "style", "explode", "schema", "example",
-  "examples", "content", "$ref", "summary",
+const allowedInfoKeys = new Set(["title", "summary", "description", "termsOfService", "contact", "license", "version"]);
+const allowedEntrypointKeys = new Set([
+  "openapi", "info", "jsonSchemaDialect", "servers", "paths", "webhooks", "components", "security", "tags", "externalDocs",
+]);
+const allowedComponentKeys = new Set([
+  "schemas", "responses", "parameters", "examples", "requestBodies", "headers", "securitySchemes",
+  "links", "callbacks", "pathItems",
 ]);
 const supportedMethods = new Set(["get", "post", "put", "patch", "delete", "head", "options", "trace"]);
 const allowedPathItemKeys = new Set([...supportedMethods, "$ref", "summary", "description", "servers", "parameters"]);
@@ -148,21 +160,6 @@ function validateReferenceInventory(context, referenced) {
   return count;
 }
 
-function dereference(context, value, file, location) {
-  const visited = new Set();
-  while (isObject(value) && Object.hasOwn(value, "$ref")) {
-    if (visited.has(value)) {
-      context.errors.push("Cyclic OpenAPI object reference: " + location);
-      return { value: undefined, file };
-    }
-    visited.add(value);
-    const resolved = resolveReference(context, file, value.$ref);
-    if (!resolved) return { value: undefined, file };
-    ({ value, file } = resolved);
-  }
-  return { value, file };
-}
-
 function validateObjectKeys(context, object, allowed, location) {
   const { errors } = context;
   if (!isObject(object)) {
@@ -176,6 +173,105 @@ function validateObjectKeys(context, object, allowed, location) {
   }
   return true;
 }
+
+const fieldTypes = {
+  string: value => typeof value === "string",
+  boolean: value => typeof value === "boolean",
+  object: isObject,
+  array: Array.isArray,
+};
+function validateFields(context, value, fields, location) {
+  for (const [name, type] of Object.entries(fields)) {
+    if (Object.hasOwn(value, name) && !fieldTypes[type](value[name])) {
+      context.errors.push("Invalid " + name + " (expected " + type + "): " + location);
+    }
+  }
+}
+
+// Reference Objects and concrete objects have different structural contracts.
+// Check every reference wrapper and its terminal target, not only the caller.
+function resolveTypedObject(context, value, file, location, allowed) {
+  const visited = new Set();
+  while (isObject(value) && Object.hasOwn(value, "$ref")) {
+    validateObjectKeys(context, value, referenceKeys, location);
+    validateFields(context, value, { summary: "string", description: "string" }, location);
+    if (visited.has(value)) {
+      context.errors.push("Cyclic OpenAPI object reference: " + location);
+      return undefined;
+    }
+    visited.add(value);
+    const resolved = resolveReference(context, file, value.$ref);
+    if (!resolved) return undefined;
+    ({ value, file } = resolved);
+  }
+  return validateObjectKeys(context, value, allowed, location) ? { value, file } : undefined;
+}
+
+function validateSchema(context, schema, location) {
+  if (!isObject(schema) && typeof schema !== "boolean") {
+    context.errors.push("Invalid OpenAPI 3.1 schema: " + location);
+  }
+}
+
+function validateExamples(context, value, location) {
+  if (Object.hasOwn(value, "example") && Object.hasOwn(value, "examples")) {
+    context.errors.push("Conflicting example and examples: " + location);
+  }
+  validateFields(context, value, { examples: "object" }, location);
+}
+
+function validateMediaContent(context, content, location, single = false) {
+  if (!isObject(content)) {
+    context.errors.push("Invalid content map: " + location);
+    return;
+  }
+  const entries = Object.entries(content);
+  if (!entries.length || (single && entries.length !== 1)) {
+    context.errors.push("Invalid content media count: " + location);
+  }
+  for (const [media, value] of entries) {
+    const label = location + "." + media;
+    if (!media.trim()) context.errors.push("Empty content media type: " + location);
+    if (!validateObjectKeys(context, value, allowedMediaKeys, label)) continue;
+    if (Object.hasOwn(value, "schema")) validateSchema(context, value.schema, label + ".schema");
+    validateExamples(context, value, label);
+    validateFields(context, value, { encoding: "object" }, label);
+  }
+}
+
+// Parameter and Header Objects share the same representation rule (OAS 3.1):
+// exactly one of schema and content; a content representation has one media type.
+function validateRepresentation(context, value, location, kind) {
+  validateFields(context, value, {
+    description: "string", required: "boolean", deprecated: "boolean",
+    style: "string", explode: "boolean", allowEmptyValue: "boolean", allowReserved: "boolean",
+  }, location);
+  const schema = Object.hasOwn(value, "schema");
+  const content = Object.hasOwn(value, "content");
+  if (schema === content) {
+    context.errors.push("Missing " + kind + " schema or content (exactly one required): " + location);
+  }
+  if (schema) validateSchema(context, value.schema, location + ".schema");
+  if (content) validateMediaContent(context, value.content, location + ".content", true);
+  validateExamples(context, value, location);
+}
+
+function validateParameter(context, raw, file, location) {
+  const resolved = resolveTypedObject(context, raw, file, location, allowedParameterKeys);
+  if (!resolved) return undefined;
+  const { value } = resolved;
+  validateRepresentation(context, value, location, "parameter");
+  if (typeof value.name !== "string" || !value.name ||
+      !["path", "query", "header", "cookie"].includes(value.in)) {
+    context.errors.push("Invalid parameter name or location: " + location);
+    return undefined;
+  }
+  if (value.in === "path" && value.required !== true) {
+    context.errors.push("Path parameter must be required: " + location);
+  }
+  return value;
+}
+
 function validateParameters(context, parameters, file, names, location) {
   const { errors } = context;
   const declared = new Set();
@@ -185,63 +281,96 @@ function validateParameters(context, parameters, file, names, location) {
     errors.push("Invalid parameter list: " + location);
     return declared;
   }
-  for (const [index, parameter] of parameters.entries()) {
-    const label = location + "." + index;
-    if (!validateObjectKeys(context, parameter, allowedParameterKeys, label)) continue;
-    const { value } = dereference(context, parameter, file, label);
-    if (typeof value?.name !== "string" || !value.name ||
-        !["path", "query", "header", "cookie"].includes(value.in)) {
-      errors.push("Invalid parameter name or location: " + label);
-      continue;
-    }
+  for (const [index, raw] of parameters.entries()) {
+    const value = validateParameter(context, raw, file, location + "." + index);
+    if (!value) continue;
     const key = value.in + ":" + value.name;
     if (keys.has(key)) errors.push("Duplicate parameter " + key + ": " + location);
     keys.add(key);
     if (value.in !== "path") continue;
     if (!names.includes(value.name)) errors.push("Undeclared path parameter {" + value.name + "}: " + location);
-    if (value.required !== true) errors.push("Path parameter must be required: " + label);
-    else declared.add(value.name);
+    if (value.required === true) declared.add(value.name);
   }
   return declared;
 }
-function validateResponse(context, response, file, location) {
+
+function validateHeader(context, raw, file, location) {
+  const resolved = resolveTypedObject(context, raw, file, location, allowedHeaderKeys);
+  if (resolved) validateRepresentation(context, resolved.value, location, "response header");
+}
+
+function validateRequestBody(context, raw, file, location) {
+  const resolved = resolveTypedObject(context, raw, file, location, allowedRequestBodyKeys);
+  if (!resolved) return;
+  validateFields(context, resolved.value, { description: "string", required: "boolean" }, location);
+  validateMediaContent(context, resolved.value.content, location + ".content");
+}
+
+function validateResponse(context, raw, file, location) {
   const { errors } = context;
-  if (!validateObjectKeys(context, response, allowedResponseKeys, location)) return undefined;
-  const { value, file: responseFile } = dereference(context, response, file, location);
+  const resolved = resolveTypedObject(context, raw, file, location, allowedResponseKeys);
+  const value = resolved?.value;
   if (typeof value?.description !== "string" || !value.description.trim()) {
     errors.push("Missing response description: " + location);
   }
-  if (value?.headers !== undefined && !isObject(value.headers)) {
+  if (!resolved) return undefined;
+  validateFields(context, value, { links: "object" }, location);
+  if (Object.hasOwn(value, "content")) validateMediaContent(context, value.content, location + ".content");
+  if (value.headers !== undefined && !isObject(value.headers)) {
     errors.push("Invalid response headers: " + location);
     return value;
   }
   const headerNames = new Set();
-  for (const [name, header] of Object.entries(value?.headers ?? {})) {
+  for (const [name, header] of Object.entries(value.headers ?? {})) {
     const label = location + ".headers." + name;
     const normalized = name.toLowerCase();
     if (headerNames.has(normalized)) errors.push("Duplicate response header: " + label);
     headerNames.add(normalized);
-    if (!validateObjectKeys(context, header, allowedHeaderKeys, label)) continue;
-    const { value: resolvedHeader } = dereference(context, header, responseFile, label);
-    if (!isObject(resolvedHeader) ||
-        Object.hasOwn(resolvedHeader, "schema") === Object.hasOwn(resolvedHeader, "content")) {
-      errors.push("Missing response header schema or content (exactly one required): " + label);
-    }
+    validateHeader(context, header, resolved.file, label);
   }
   return value;
 }
 
 function validateComponents(context) {
-  const { entrypoint, owner, errors } = context;
-  for (const [name, response] of Object.entries(entrypoint.components?.responses ?? {})) {
-    validateObjectKeys(context, response, allowedResponseKeys, "components.responses." + name);
-  }
-  for (const [name, parameter] of Object.entries(entrypoint.components?.parameters ?? {})) {
-    validateObjectKeys(context, parameter, allowedParameterKeys, "components.parameters." + name);
+  const { entrypoint, mainFile, owner, errors, documents } = context;
+  const validators = {
+    parameters: validateParameter,
+    headers: validateHeader,
+    responses: validateResponse,
+    requestBodies: validateRequestBody,
+  };
+  // Even unreferenced definitions remain part of the owner's admitted source.
+  for (const [file, document] of documents) {
+    if (document.components === undefined) continue;
+    if (!validateObjectKeys(context, document.components, allowedComponentKeys, "components")) continue;
+    for (const [kind, map] of Object.entries(document.components)) {
+      if (kind.startsWith("x-")) continue;
+      if (!isObject(map)) {
+        errors.push("Invalid component map: components." + kind);
+        continue;
+      }
+      for (const [name, raw] of Object.entries(map)) {
+        const label = "components." + kind + "." + name;
+        if (kind === "schemas") validateSchema(context, raw, label);
+        else if (Object.hasOwn(validators, kind)) validators[kind](context, raw, file, label);
+      }
+    }
   }
   const opaqueSession = entrypoint.components?.securitySchemes?.OpaqueSession;
   if (opaqueSession?.type !== "http" || opaqueSession?.scheme !== "bearer") {
     errors.push("OpaqueSession must be HTTP bearer in " + owner);
+  }
+  validateObjectKeys(context, entrypoint, allowedEntrypointKeys, relativeName(context.base, mainFile));
+  if (validateObjectKeys(context, entrypoint.info, allowedInfoKeys, "info")) {
+    validateFields(context, entrypoint.info, {
+      title: "string", summary: "string", description: "string", termsOfService: "string",
+      contact: "object", license: "object", version: "string",
+    }, "info");
+    for (const field of ["title", "version"]) {
+      if (typeof entrypoint.info[field] !== "string" || !entrypoint.info[field].trim()) {
+        errors.push("Missing OpenAPI info." + field);
+      }
+    }
   }
 }
 
@@ -371,13 +500,18 @@ function validateOperationSecurity(context, route, operation) {
 function validateOperation(context, route, operation) {
   const { errors, operations } = context;
   const { method, urlPath, sourceFile, names, inherited } = route;
-  if (!isObject(operation)) {
-    errors.push("Invalid operation " + method + " " + urlPath);
+  const location = method + " " + urlPath;
+  if (!validateObjectKeys(context, operation, allowedOperationKeys, location)) {
+    errors.push("Invalid operation " + location);
     return;
   }
+  validateFields(context, operation, {
+    tags: "array", summary: "string", description: "string", externalDocs: "object",
+    callbacks: "object", deprecated: "boolean", servers: "array",
+  }, location);
   const id = operation.operationId;
-  if (typeof id !== "string" || !id) {
-    errors.push("Missing operationId: " + method + " " + urlPath);
+  if (typeof id !== "string" || !/^[A-Za-z][A-Za-z0-9_]*$/.test(id)) {
+    errors.push("Missing or unsafe operationId: " + location);
   } else if (operations.has(id)) {
     errors.push("Duplicate operationId: " + id);
   } else {
@@ -385,15 +519,18 @@ function validateOperation(context, route, operation) {
   }
   const admittedRoute = { ...route, id };
   const responses = validateOperationResponses(context, admittedRoute, operation);
-  const declared = validateParameters(context, operation.parameters, sourceFile, names, method + " " + urlPath + " parameters");
+  const declared = validateParameters(context, operation.parameters, sourceFile, names, location + " parameters");
   for (const name of names) {
     if (!inherited.has(name) && !declared.has(name)) {
-      errors.push("Missing required path parameter {" + name + "} in " + method + " " + urlPath);
+      errors.push("Missing required path parameter {" + name + "} in " + location);
     }
+  }
+  if (Object.hasOwn(operation, "requestBody")) {
+    validateRequestBody(context, operation.requestBody, sourceFile, location + " requestBody");
   }
   validateOperationSecurity(context, admittedRoute, operation);
   if (operation.deprecated && method !== "get" && !Object.keys(responses).some((code) => /^4\d\d$/.test(code))) {
-    errors.push("Retired mutation has no explicit refusal response: " + method + " " + urlPath);
+    errors.push("Retired mutation has no explicit refusal response: " + location);
   }
 }
 
