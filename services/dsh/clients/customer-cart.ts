@@ -1,5 +1,5 @@
 /** DSH owns Customer Cart drafts; neither the SDK nor UI can author price or Order truth. */
-import { consumeOwnerResponse, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, endpoint, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export interface CustomerCartLine {
@@ -171,14 +171,21 @@ function receiptFrom(value: unknown, storeId: string, actorId: string,
 
 function urlForCart(origin: string, storeId: string, method: "GET" | "PUT" | "ESTIMATE",
   expectedVersion?: number): URL {
-  const safe = /^http:\/\/(?:127\.0\.0\.1|10\.0\.2\.2):([1-9][0-9]{0,4})$/.exec(origin);
-  if (!safe || Number(safe[1]) > 65535 || !storeRule.test(storeId)) {
+  // Cart remains explicitly isolated: no HTTPS/remote host, default port,
+  // implicit local alias or trailing slash is an admitted development origin.
+  const safe = typeof origin === "string" && /^http:\/\/(?:127\.0\.0\.1|10\.0\.2\.2):([1-9][0-9]{0,4})$/.exec(origin);
+  if (!safe || Number(safe[1]) > 65535 || typeof storeId !== "string" || !storeRule.test(storeId)) {
     throw new DshCartError(503, "OWNER_UNAVAILABLE");
   }
   const path = method === "GET" ? dshOperations.getCurrentCustomerCart.path
     : method === "PUT" ? dshOperations.replaceCurrentCustomerCart.path
       : dshOperations.estimateCurrentCustomerCartMerchandise.path;
-  const url = new URL(path.replace("{storeID}", storeId), origin);
+  let url: URL;
+  try {
+    url = endpoint(origin, path.replace("{storeID}", storeId));
+  } catch {
+    throw new DshCartError(503, "OWNER_UNAVAILABLE");
+  }
   if (method === "ESTIMATE") {
     if (!Number.isSafeInteger(expectedVersion) || expectedVersion === undefined || expectedVersion < 0) {
       throw new DshCartError(400, "INVALID_REQUEST");

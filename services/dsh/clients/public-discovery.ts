@@ -2,7 +2,7 @@
  * Contract-bound DSH public discovery reads. No Store, price or financial writers.
  * Public wire format: paths/stores.yaml and paths/offers.yaml in the DSH OpenAPI owner.
  */
-import { consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
+import { configuredOrigin, consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, onlyKeys, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 
 export { DshPublicError } from "./client-core.ts";
@@ -72,13 +72,9 @@ export function publicStorefrontPath(storeId: unknown): string | null {
 /** Build a share destination only from the configured Customer origin. */
 export function publicStorefrontUrl(storeId: unknown, origin?: unknown): string | null {
   const pathname = publicStorefrontPath(storeId);
-  if (pathname === null || typeof origin !== "string" || origin.length === 0) return null;
+  if (pathname === null) return null;
   try {
-    const root = new URL(origin);
-    const allowed = root.protocol === "https:" ||
-      (root.protocol === "http:" && ["localhost", "127.0.0.1"].includes(root.hostname));
-    if (!allowed || root.href !== `${root.origin}/`) return null;
-    return new URL(pathname, root).href;
+    return new URL(pathname, configuredOrigin(origin, "storefront")).href;
   } catch {
     return null;
   }

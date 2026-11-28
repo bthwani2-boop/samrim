@@ -11,19 +11,31 @@ export class DshPublicError extends Error {
   }
 }
 
-export function endpoint(baseUrl: string, path: string): URL {
-  if (!baseUrl) throw new DshPublicError(0, "DSH_ENDPOINT_NOT_CONFIGURED");
+/** Admit a serialized HTTP(S) origin, optionally followed by one root slash.
+ * URL parsing alone is insufficient: it silently removes syntax such as dot
+ * segments, empty userinfo, whitespace and alternate IPv4 spellings.
+ * Storefront destinations must not use the Android emulator bridge.
+ */
+export function configuredOrigin(value: unknown, audience: "owner" | "storefront" = "owner"): URL {
+  if (value === "") throw new DshPublicError(0, "DSH_ENDPOINT_NOT_CONFIGURED");
+  if (typeof value !== "string") throw new DshPublicError(0, "DSH_ENDPOINT_INVALID");
   let root: URL;
   try {
-    root = new URL(baseUrl);
+    root = new URL(value);
   } catch {
     throw new DshPublicError(0, "DSH_ENDPOINT_INVALID");
   }
-  const secure = root.protocol === "https:" ||
-    (root.protocol === "http:" && ["localhost", "127.0.0.1", "10.0.2.2"].includes(root.hostname));
-  if (!secure || root.username || root.password || root.pathname !== "/" || root.search || root.hash) {
+  const local = root.hostname === "localhost" || root.hostname === "127.0.0.1" ||
+    (audience === "owner" && root.hostname === "10.0.2.2");
+  const secure = root.protocol === "https:" || (root.protocol === "http:" && local);
+  if (!secure || (value !== root.origin && value !== `${root.origin}/`)) {
     throw new DshPublicError(0, "DSH_ENDPOINT_UNSAFE");
   }
+  return root;
+}
+
+export function endpoint(baseUrl: string, path: string): URL {
+  const root = configuredOrigin(baseUrl);
   const pathname = path.split("?")[0] ?? "";
   if (!path.startsWith("/") || path.startsWith("//") || path.includes("\\") ||
     path.includes("#") || Array.from(path).some(character =>

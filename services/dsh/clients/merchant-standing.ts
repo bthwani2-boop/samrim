@@ -1,5 +1,5 @@
 /** Verified Merchant Store standing from DSH. No client-owned grants or Store writes. */
-import { consumeOwnerResponse, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, endpoint, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 export interface MerchantOwnedStore {
   id: string;
@@ -48,23 +48,17 @@ export function standingFrom(body: unknown): MerchantDSHStanding {
   }
   return v as unknown as MerchantDSHStanding;
 }
-function ownerEndpoint(baseUrl: string): string {
-  let url: URL;
-  try { url = new URL(baseUrl); }
-  catch { throw new MerchantStandingError(503, "OWNER_UNAVAILABLE"); }
-  if (url.username || url.password || (url.pathname !== "/" && url.pathname !== "") ||
-    url.search || url.hash || !(url.protocol === "https:" ||
-      (url.protocol === "http:" && ["localhost", "127.0.0.1", "10.0.2.2"].includes(url.hostname)))) {
-    throw new MerchantStandingError(503, "OWNER_UNAVAILABLE");
-  }
-  return new URL(dshOperations.listCurrentMerchantStores.path, url).toString();
-}
 export async function readMerchantDSHStanding(origin: string, bearer: string, signal?: AbortSignal) {
   if (!opaqueBearer.test(bearer)) throw new MerchantStandingError(401, "UNAUTHENTICATED");
-  const endpoint = ownerEndpoint(origin);
+  let url: URL;
+  try {
+    url = endpoint(origin, dshOperations.listCurrentMerchantStores.path);
+  } catch {
+    throw new MerchantStandingError(503, "OWNER_UNAVAILABLE");
+  }
   let response: Response;
   try {
-    response = await fetchOwnerHeaders(endpoint, {
+    response = await fetchOwnerHeaders(url.href, {
       method: "GET", redirect: "error", cache: "no-store", credentials: "omit",
       signal: signal ?? null,
       headers: { Accept: "application/json", Authorization: "Bearer " + bearer },
