@@ -4,7 +4,7 @@ import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from "expo-crypt
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, TextInput, View } from "react-native";
-import { withCatalogRecoveryLock } from "./catalog-recovery-lock";
+import { withMutationRecoveryLock } from "../mutation-recovery/recovery-lock";
 import { submitMerchantCatalogDraft, submitMerchantCatalogDraftEdit } from "./catalog-transport";
 
 // An uncertain write retains the ORIGINAL payload and operationId. Never
@@ -50,7 +50,7 @@ async function writeAttempt(key: string, record: DraftAttempt | null) {
 
 
 function clearAttempt(key: string, editing: boolean, operationId: string) {
-  return withCatalogRecoveryLock(Platform.OS, key, async () => {
+  return withMutationRecoveryLock(Platform.OS, key, async () => {
     const stored = await readAttempt(key, editing);
     if (stored?.operationId === operationId) await writeAttempt(key, null);
   });
@@ -132,7 +132,7 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
     setMessage("");
     let dispatchedId: string | undefined;
     try {
-      const claim = await withCatalogRecoveryLock(Platform.OS, key, async () => {
+      const claim = await withMutationRecoveryLock(Platform.OS, key, async () => {
         const stored = await readAttempt(key, editing);
         const expectedVersion = stored?.expectedVersion ?? proposedEdit?.expectedVersion ?? null;
         const fingerprint = await digest(JSON.stringify([values.name, values.priceYer, values.stockUnits, expectedVersion]));
@@ -184,7 +184,7 @@ export default function MerchantCatalogDraftForm({ actorId, storeId, onCreated, 
       if (controller.signal.aborted) return;
       const status = error && typeof error === "object" && "status" in error ? error.status : undefined;
       if (!dispatchedId) {
-        setMessage(error instanceof Error && error.message === "CATALOG_RECOVERY_LOCK_UNAVAILABLE"
+        setMessage(error instanceof Error && error.message === "MUTATION_RECOVERY_LOCK_UNAVAILABLE"
           ? "تعذر تأمين الاسترداد بين تبويبات المتصفح. استخدم متصفحًا يدعم Web Locks قبل حفظ المسودة."
           : "تعذّر حفظ محاولة الاسترداد. أعد المحاولة.");
       } else if (editing && status === 409 && error && typeof error === "object" &&

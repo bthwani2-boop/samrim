@@ -7,7 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
-import { withCatalogRecoveryLock } from "../src/features/catalog/catalog-recovery-lock.ts";
+import { withMutationRecoveryLock } from "../src/features/mutation-recovery/recovery-lock.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const src = fileURLToPath(new URL("../src/features/catalog/merchant-catalog-draft-form.tsx", import.meta.url));
@@ -92,7 +92,7 @@ test("Merchant draft form retries the identical operation after unknown outcome 
         setItemAsync: async (key, value) => localStorage.setItem(key, value),
         deleteItemAsync: async key => localStorage.removeItem(key),
       },
-      "./catalog-recovery-lock": { withCatalogRecoveryLock },
+      "../mutation-recovery/recovery-lock": { withMutationRecoveryLock },
       "./catalog-transport": {
         submitMerchantCatalogDraft(storeId, actorId, change, signal) {
           const request = { storeId, actorId, change, signal };

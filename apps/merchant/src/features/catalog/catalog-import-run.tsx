@@ -4,9 +4,9 @@ import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from "expo-crypt
 import * as SecureStore from "expo-secure-store";
 import { useLayoutEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
+import { withMutationRecoveryLock } from "../mutation-recovery/recovery-lock";
 import { buildImportManifest, type previewCatalogCsv } from "./catalog-import-data";
 import { requestCatalogImport } from "./catalog-import-transport";
-import { withCatalogRecoveryLock } from "./catalog-recovery-lock";
 
 const digest=(value:string)=>digestStringAsync(CryptoDigestAlgorithm.SHA256,value);
 const options={keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY};
@@ -79,7 +79,7 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
       if(action==="start"){
         const fingerprint=await digest(JSON.stringify(manifest));
         if(!currentStart())return;
-        const confirmed=await withCatalogRecoveryLock(Platform.OS,key,async()=>{
+        const confirmed=await withMutationRecoveryLock(Platform.OS,key,async()=>{
           signal.throwIfAborted();
           const previous=await read(key);
           signal.throwIfAborted();
@@ -137,13 +137,13 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
           }
         };
         if(action==="read")await recover();
-        else await withCatalogRecoveryLock(Platform.OS,key,recover);
+        else await withMutationRecoveryLock(Platform.OS,key,recover);
       }
     }catch(error){
       if(signal.aborted)return;
       const code=error instanceof Error?error.message:"";
-      if(code!=="CATALOG_RECOVERY_LOCK_UNAVAILABLE")setResult(null);
-      setMessage(code==="CATALOG_RECOVERY_LOCK_UNAVAILABLE"?"تعذر تأمين الاسترداد بين تبويبات المتصفح. استخدم متصفحًا يدعم Web Locks قبل تعديل الدفعة.":code==="MANIFEST_CHANGED"?"الملف أو الاختيارات لا تطابق المحاولة المحفوظة. أعد اختيار القيم نفسها أو اقرأ الدفعة الموجودة.":
+      if(code!=="MUTATION_RECOVERY_LOCK_UNAVAILABLE")setResult(null);
+      setMessage(code==="MUTATION_RECOVERY_LOCK_UNAVAILABLE"?"تعذر تأمين الاسترداد بين تبويبات المتصفح. استخدم متصفحًا يدعم Web Locks قبل تعديل الدفعة.":code==="MANIFEST_CHANGED"?"الملف أو الاختيارات لا تطابق المحاولة المحفوظة. أعد اختيار القيم نفسها أو اقرأ الدفعة الموجودة.":
         code==="SELECTION_CHANGED"?"تغيرت المعاينة أو الاختيارات. راجعها وأكد الدفعة الحالية.":
         code==="RECOVERY_CHANGED"?"تغيرت متابعة الدفعة في نافذة أخرى. أعد فتح الكتالوج.":
         "تعذر التأكيد لدى DSH. معرّف الدفعة محفوظ؛ اقرأ حالتها قبل إعادة التنفيذ.");
