@@ -2,6 +2,7 @@ import { DshPublicError, listPublicCities } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { mergePublicPage, publicFailureCode, retainsPublicContinuation } from "../discovery/public-page";
 import { serviceCityLabel } from "./serviceability";
 
 type Props = Readonly<{
@@ -24,10 +25,6 @@ function emptyDirectory(origin: string): Directory {
   return { origin, items: [], loading: true };
 }
 
-function invalidSnapshot(error: unknown): boolean {
-  return error instanceof DshPublicError &&
-    ["STALE_CURSOR", "INVALID_CURSOR", "OWNER_RESPONSE_INVALID"].includes(error.code);
-}
 
 export default function ServiceCityScope({ origin, currentCity, onApply, disabled = false }: Props) {
   const { theme } = useMobileAppearance();
@@ -56,15 +53,14 @@ export default function ServiceCityScope({ origin, currentCity, onApply, disable
         signal: request.signal, ...(cursor ? { cursor } : {}),
       });
       if (request.signal.aborted || pending.current !== request) return;
-      const repeated = page.nextCursor !== undefined && page.nextCursor === cursor;
-      if (new Set(page.items).size !== page.items.length ||
-        (previous && (page.revision !== previous.revision || repeated || page.items.some(id => items.includes(id))))) {
+      const merged = mergePublicPage(items, previous?.revision, cursor, page, id => id);
+      if (merged === null) {
         throw new DshPublicError(409, "STALE_CURSOR");
       }
-      setSnapshot({ ...page, origin, items: [...items, ...page.items], loading: false });
+      setSnapshot({ ...page, origin, items: merged, loading: false });
     } catch (error) {
       if (request.signal.aborted || pending.current !== request) return;
-      setSnapshot(invalidSnapshot(error)
+      setSnapshot(!retainsPublicContinuation(publicFailureCode(error))
         ? { origin, items: [], loading: false, error: "تغيّرت المدن المتاحة. حدّث القائمة." }
         : { ...previous, origin, items, loading: false, error: "تعذّر تحميل المدن المتاحة." });
     } finally {

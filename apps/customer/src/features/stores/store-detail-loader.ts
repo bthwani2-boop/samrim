@@ -1,4 +1,5 @@
 import type { PublicOffer, PublicPage, PublicStore } from "@bthwani/dsh";
+import { publicFailureCode, retainsPublicContinuation } from "../discovery/public-page";
 
 export interface PublicStoreDetailResult {
   store: PublicStore;
@@ -24,9 +25,6 @@ type OffersOutcome =
   | { kind: "verified"; page: PublicPage<PublicOffer> }
   | { kind: "failed"; code: string };
 
-function failureCode(reason: unknown): string {
-  return reason instanceof Error && reason.message ? reason.message : "UNKNOWN";
-}
 
 // Only an explicit temporary outage permits retrying a previously verified
 // continuation. Any other failure requires a fresh Offer snapshot.
@@ -34,11 +32,11 @@ export function recoverPublicStoreDetail(
   state: PublicStoreDetailState,
   reason: unknown,
 ): PublicStoreDetailState {
-  const code = failureCode(reason);
+  const code = publicFailureCode(reason);
   const empty = { scope: state.scope, loading: false, offers: [] };
   if (code === "NOT_FOUND") return { ...empty, error: code };
 
-  if (code === "OWNER_NETWORK_UNAVAILABLE" || code === "OWNER_UNAVAILABLE") {
+  if (retainsPublicContinuation(code)) {
     return { ...state, more: false, offersError: code };
   }
 
@@ -54,7 +52,7 @@ export async function resolvePublicStoreDetail(
   const offersOutcome = offersRequest.then<OffersOutcome, OffersOutcome>(
     (page) => ({ kind: "verified", page }),
     (reason: unknown) => {
-      const code = failureCode(reason);
+      const code = publicFailureCode(reason);
       if (code === "NOT_FOUND") throw reason;
       return { kind: "failed", code };
     },

@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { DshPublicError } from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
+import * as publicPage from "../discovery/public-page.ts";
 import { serviceCityLabel } from "./serviceability.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
@@ -41,6 +42,7 @@ function harness(disabled = false) {
     });
   };
   const modules = {
+    "../discovery/public-page": publicPage,
     "@bthwani/dsh": { DshPublicError, listPublicCities(origin, options) {
       return new Promise((resolve, reject) => requests.push({ origin, ...options, resolve, reject }));
     } },
@@ -289,4 +291,20 @@ test("empty and unavailable city directories never claim a selected choice", asy
   const empty = h.render();
   assert.equal(find(empty, node => node.props?.accessibilityRole === "radio"), undefined);
   assert.ok(find(empty, node => node.props?.children === "لا توجد مدن متاحة للتسوّق حاليًا."));
+});
+
+test("a nontransient owner rejection withdraws all prior city choices and restarts from page one", async () => {
+  for (const [status, code] of [[404, "NOT_FOUND"], [0, "OWNER_RESPONSE_STALE"], [500, "OWNER_READ_FAILED"]]) {
+    const h = harness();
+    h.render();
+    h.requests[0].resolve({ items: ["sanaa"], revision: 1, nextCursor: "page2" });
+    await settle();
+    button(h.render(), "عرض المزيد من المدن").props.onPress();
+    h.requests[1].reject(new DshPublicError(status, code));
+    await settle();
+    assert.equal(button(h.render(), "صنعاء"), undefined, code);
+    button(h.render(), "إعادة المحاولة").props.onPress();
+    assert.equal(h.requests[2].cursor, undefined, code);
+    h.unmount();
+  }
 });

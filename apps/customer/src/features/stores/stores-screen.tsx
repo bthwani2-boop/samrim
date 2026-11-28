@@ -4,6 +4,7 @@ import { Link, useLocalSearchParams } from "expo-router";
 import * as React from "react";
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { mergePublicPage, publicFailureCode, retainsPublicContinuation } from "../discovery/public-page";
 import ServiceCityScope from "../location/service-city-scope";
 import { capturePublicSearchDraft, INVALID_PUBLIC_SEARCH_MESSAGE, readPublicSearch, readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { describeStoreOrderability } from "./orderability";
@@ -11,15 +12,15 @@ import { resolvePublicStoreOrigin } from "./public-store-origin";
 
 const INITIAL_CITY = process.env.EXPO_PUBLIC_DSH_CITY_ID ?? "sanaa";
 type PageState = { scope: string; loading: boolean; loadingMore: boolean; items: PublicStore[]; revision?: number; cursor?: string | undefined; error?: string | undefined };
-type VerticalState = { city: string; loading: boolean; loadingMore: boolean; items: PublicVertical[]; revision?: number; cursor?: string | undefined; error?: string | undefined };
+type VerticalState = { scope: string; loading: boolean; loadingMore: boolean; items: PublicVertical[]; revision?: number; cursor?: string | undefined; error?: string | undefined };
 const verticalLabels: Readonly<Record<string, string>> = { grocery: "المقاضي", restaurant: "المطاعم", pharmacy: "الصيدليات" };
 function verticalLabel(id: string) { return verticalLabels[id] ?? id; }
-function requiresFreshPage(code?: string) {
+function isCursorRejection(code?: string) {
   return code === "STALE_CURSOR" || code === "INVALID_CURSOR";
 }
 
 function message(code?: string) {
-  if (requiresFreshPage(code)) return "تغيّرت البيانات. أعد تحميل المتاجر.";
+  if (isCursorRejection(code)) return "تغيّرت البيانات. أعد تحميل المتاجر.";
   if (code === "DSH_ENDPOINT_NOT_CONFIGURED") return "خدمة المتاجر غير متاحة حاليًا.";
   if (code === "INVALID_SEARCH") return INVALID_PUBLIC_SEARCH_MESSAGE;
   return "تعذّر تحميل المتاجر. تحقّق من الاتصال وحاول مجددًا.";
@@ -51,9 +52,10 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
   React.useEffect(() => {
     if (chooseCity) { setShowCityPicker(true); setShowSearch(false); }
   }, [chooseCity]);
+  const verticalScope = JSON.stringify([api, cityId]);
   const [verticalRetry, setVerticalRetry] = React.useState(0);
   const [verticalState, setVerticalState] = React.useState<VerticalState>({
-    city: "", loading: true, loadingMore: false, items: [],
+    scope: "", loading: true, loadingMore: false, items: [],
   });
   const verticalGeneration = React.useRef(0);
   const verticalAbort = React.useRef<AbortController | null>(null);
@@ -63,23 +65,23 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     const abort = new AbortController();
     verticalAbort.current?.abort();
     verticalAbort.current = abort;
-    setVerticalState({ city: cityId, loading: true, loadingMore: false, items: [] });
+    setVerticalState({ scope: verticalScope, loading: true, loadingMore: false, items: [] });
     listPublicVerticals(api, cityId, { limit: 20, signal: abort.signal })
       .then(page => {
         if (!abort.signal.aborted && verticalGeneration.current === current) {
-          setVerticalState({ city: cityId, loading: false, loadingMore: false,
+          setVerticalState({ scope: verticalScope, loading: false, loadingMore: false,
             items: page.items, cursor: page.nextCursor, revision: page.revision });
         }
       }).catch((error: unknown) => {
         if (!abort.signal.aborted && verticalGeneration.current === current) {
-          setVerticalState({ city: cityId, loading: false, loadingMore: false,
-            items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
+          setVerticalState({ scope: verticalScope, loading: false, loadingMore: false,
+            items: [], error: publicFailureCode(error) });
         }
       });
     return () => { verticalGeneration.current++; verticalAbort.current?.abort(); };
-  }, [api, cityId, verticalRetry]);
-  const visibleVerticals: VerticalState = verticalState.city === cityId ? verticalState :
-    { city: cityId, loading: true, loadingMore: false, items: [] };
+  }, [api, cityId, verticalScope, verticalRetry]);
+  const visibleVerticals: VerticalState = appliedRouteScope === routeScope && verticalState.scope === verticalScope ? verticalState :
+    { scope: verticalScope, loading: true, loadingMore: false, items: [] };
   const renderedVerticalGeneration = verticalGeneration.current;
   const loadMoreVerticals = async () => {
     if (!visibleVerticals.cursor || visibleVerticals.loading || visibleVerticals.loadingMore ||
@@ -90,32 +92,29 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     const abort = new AbortController();
     verticalAbort.current?.abort();
     verticalAbort.current = abort;
-    setVerticalState(old => old.city === cityId ? { ...old, loadingMore: true, error: undefined } : old);
+    setVerticalState(old => old.scope === verticalScope ? { ...old, loadingMore: true, error: undefined } : old);
     try {
       const page = await listPublicVerticals(api, cityId, { cursor, limit: 20, signal: abort.signal });
       if (abort.signal.aborted || current !== verticalGeneration.current) return;
       setVerticalState(old => {
-        if (old.city !== cityId) return old;
-        const seen = new Set(old.items.map(item => item.id));
-        if (page.revision !== old.revision ||
-          (page.nextCursor !== undefined && page.nextCursor === cursor) ||
-          page.items.some(item => seen.has(item.id)) ||
-          new Set(page.items.map(item => item.id)).size !== page.items.length) {
-          return { city: cityId, loading: false, loadingMore: false, items: [], error: "STALE_CURSOR" };
+        if (old.scope !== verticalScope) return old;
+        const items = mergePublicPage(old.items, old.revision, cursor, page, item => item.id);
+        if (items === null) {
+          return { scope: verticalScope, loading: false, loadingMore: false, items: [], error: "STALE_CURSOR" };
         }
         return { ...old, loadingMore: false,
-          items: [...old.items, ...page.items], cursor: page.nextCursor,
+          items, cursor: page.nextCursor,
           revision: page.revision, error: undefined };
       });
     } catch (error) {
       if (abort.signal.aborted || current !== verticalGeneration.current) return;
-      const code = error instanceof Error ? error.message : "UNKNOWN";
-      setVerticalState(old => old.city !== cityId ? old : requiresFreshPage(code)
-        ? { city: cityId, loading: false, loadingMore: false, items: [], error: code }
+      const code = publicFailureCode(error);
+      setVerticalState(old => old.scope !== verticalScope ? old : !retainsPublicContinuation(code)
+        ? { scope: verticalScope, loading: false, loadingMore: false, items: [], error: code }
         : { ...old, loadingMore: false, error: code });
     }
   };
-  const scope = JSON.stringify([cityId, query, vertical]);
+  const scope = JSON.stringify([api, cityId, query, vertical]);
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<PageState>({ scope: "", loading: true, loadingMore: false, items: [] });
   const generation = React.useRef(0);
@@ -134,7 +133,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
       })
       .catch((error: unknown) => {
         if (!abort.signal.aborted && generation.current === current)
-          setState({ scope, loading: false, loadingMore: false, items: [], error: error instanceof Error ? error.message : "UNKNOWN" });
+          setState({ scope, loading: false, loadingMore: false, items: [], error: publicFailureCode(error) });
       });
     return () => { generation.current++; pageAbort.current?.abort(); };
   }, [api, cityId, query, vertical, scope, retry]);
@@ -155,24 +154,21 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
       if (generation.current !== current || abort.signal.aborted) return;
       setState((old) => {
         if (old.scope !== scope) return old;
-        const seen = new Set(old.items.map(item => item.id));
-        if (page.revision !== old.revision ||
-          page.nextCursor === visible.cursor && page.nextCursor !== undefined ||
-          page.items.some(item => seen.has(item.id)) ||
-          new Set(page.items.map(item => item.id)).size !== page.items.length) {
+        const items = mergePublicPage(old.items, old.revision, visible.cursor, page, item => item.id);
+        if (items === null) {
           // Do not expose a mixed owner snapshot after an invalid continuation.
           return { scope, loading: false, loadingMore: false, items: [], error: "STALE_CURSOR" };
         }
-        return { ...old, loadingMore: false, items: [...old.items, ...page.items],
+        return { ...old, loadingMore: false, items,
           cursor: page.nextCursor, revision: page.revision };
       });
     } catch (error) {
       if (generation.current !== current || abort.signal.aborted) return;
-      const code = error instanceof Error ? error.message : "UNKNOWN";
+      const code = publicFailureCode(error);
       setState((old) => {
         if (old.scope !== scope) return old;
         // DSH has rejected the list snapshot. Reload before showing its cards again.
-        if (requiresFreshPage(code)) return { scope, loading: false, loadingMore: false, items: [], error: code };
+        if (!retainsPublicContinuation(code)) return { scope, loading: false, loadingMore: false, items: [], error: code };
         return { ...old, loadingMore: false, error: code };
       });
     }
@@ -194,7 +190,7 @@ export default function PublicStoresScreen({ variant = "directory" }: Props) {
     pageAbort.current?.abort();
     verticalAbort.current?.abort();
     setState({ scope, loading: true, loadingMore: false, items: [] });
-    setVerticalState({ city: cityId, loading: true, loadingMore: false, items: [] });
+    setVerticalState({ scope: verticalScope, loading: true, loadingMore: false, items: [] });
     setRetry(value => value + 1);
     setVerticalRetry(value => value + 1);
   };

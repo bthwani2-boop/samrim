@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import * as publicPage from "../src/features/discovery/public-page.ts";
 import * as serviceability from "../src/features/location/serviceability.ts";
 import * as loader from "../src/features/stores/store-detail-loader.ts";
 
@@ -36,6 +37,7 @@ function harness({ params = {}, id = "store-a" } = {}) {
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const read = (kind, storeId, options) => new Promise((resolve, reject) => requests.push({ kind, storeId, ...options, resolve, reject }));
   const modules = {
+    "../discovery/public-page": publicPage,
     "@bthwani/dsh": {
       getPublicStore: (_origin, storeId, signal) => read("store", storeId, { signal }),
       listPublicOffers: (_origin, storeId, options) => read("offers", storeId, options),

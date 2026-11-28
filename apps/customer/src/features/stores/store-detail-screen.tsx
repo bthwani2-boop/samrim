@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useStoreCart } from "../cart/use-store-cart";
 import StoreProducts, { StoreCartBar } from "../catalog/store-products";
 import FavoriteStores from "../discovery/favorite-stores";
+import { mergePublicPage, publicFailureCode } from "../discovery/public-page";
 import { capturePublicSearchDraft, INVALID_PUBLIC_SEARCH_MESSAGE, readPublicSearch, readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
 import StoreShareButton from "../sharing/store-share-button";
@@ -26,7 +27,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
   const [search, setSearch] = React.useState({ storeId: id, draft: "", query: "" });
   const query = search.storeId === id ? search.query : "";
   const draft = search.storeId === id ? search.draft : "";
-  const scope = JSON.stringify([id, query]);
+  const scope = JSON.stringify([api, id, query]);
   React.useEffect(() => { setSearch({ storeId: id, draft: "", query: "" }); }, [id]);
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<PublicStoreDetailState>({ scope: "", loading: true, offers: [] });
@@ -47,7 +48,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         setState({ scope, loading: false, store, offers, cursor: nextCursor, offersRevision, offersError });
     }).catch((error: unknown) => {
         if (!abort.signal.aborted && revision.current === current)
-          setState({ scope, loading: false, offers: [], error: error instanceof Error ? error.message : "UNKNOWN" });
+          setState({ scope, loading: false, offers: [], error: publicFailureCode(error) });
       });
     return () => { revision.current++; pending.current?.abort(); };
   }, [api, id, query, scope, retry]);
@@ -69,14 +70,11 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
       if (!abort.signal.aborted && revision.current === current) {
         setState((v) => {
           if (v.scope !== scope) return v;
-          const ids = new Set(v.offers.map(item => item.id));
-          if (page.revision !== v.offersRevision ||
-            (page.nextCursor !== undefined && page.nextCursor === visible.cursor) ||
-            page.items.some(item => ids.has(item.id)) ||
-            new Set(page.items.map(item => item.id)).size !== page.items.length) {
+          const offers = mergePublicPage(v.offers, v.offersRevision, visible.cursor, page, item => item.id);
+          if (offers === null) {
             return recoverPublicStoreDetail(v, new Error("STALE_CURSOR"));
           }
-          return { ...v, more: false, offers: [...v.offers, ...page.items],
+          return { ...v, more: false, offers,
             cursor: page.nextCursor, offersRevision: page.revision, offersError: undefined };
         });
       }
