@@ -288,7 +288,8 @@ function sourceFixture(t) {
     'pnpm-lock.yaml', 'nx.json', 'knip.jsonc', '.editorconfig', '.gitattributes',
     '.gitignore', 'tsconfig.base.json', 'biome.json',
     'tools/mobile/define-bthwani-expo-app.cjs', 'tools/mobile/verify-app-identity.mjs',
-    'patches/@rc-component__util@1.14.0.patch', 'docs/README.md',
+    'patches/@rc-component__util@1.14.0.patch', 'patches/picomatch@2.3.2.patch',
+    'patches/picomatch@4.0.7.patch', 'docs/README.md',
     ...['apps/customer','apps/merchant','apps/captain','apps/control-panel',
       'packages/design-system','packages/tamagui-config'].map(project => project + '/package.json'),
     ...['identity','dsh','wlt'].flatMap(owner => [
@@ -629,4 +630,42 @@ test("native workspace admission rejects excluded authored and unexpected projec
   assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
   writeFileSync(file, change("!packages/new-shared"));
   assert.throws(() => verifyWorkspace(dir), /Native pnpm workspace membership differs/);
+});
+
+test("native patch input admission requires every declared patch and no orphan input", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const patches = ["@rc-component__util@1.14.0.patch", "picomatch@2.3.2.patch", "picomatch@4.0.7.patch"];
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  for (const name of patches) {
+    const file = path.join(dir, "patches", name);
+    const bytes = readFileSync(file);
+    rmSync(file);
+    assert.throws(() => verifyWorkspace(dir), /[Pp]atch/, name);
+    writeFileSync(file, "");
+    assert.throws(() => verifyWorkspace(dir), /[Pp]atch/, name);
+    writeFileSync(file, bytes);
+  }
+  const extra = path.join(dir, "patches", "unused.patch");
+  writeFileSync(extra, "synthetic obsolete patch");
+  assert.throws(() => verifyWorkspace(dir), /[Pp]atch/);
+  rmSync(extra);
+  const original = readFileSync(path.join(dir, "pnpm-workspace.yaml"), "utf8");
+  const outside = path.join(dir, "outside.patch");
+  writeFileSync(outside, "synthetic external patch");
+  const settings = path.join(dir, "pnpm-workspace.yaml");
+  writeFileSync(settings, original.replace("patches/picomatch@2.3.2.patch", "outside.patch"));
+  assert.throws(() => verifyWorkspace(dir), /[Pp]atch/);
+  writeFileSync(settings, original);
+  const file = path.join(dir, "patches", patches[1]);
+  const bytes = readFileSync(file);
+  rmSync(file);
+  const linked = path.join(dir, "linked-patch-target");
+  mkdirSync(linked);
+  symlinkSync(linked, file, "junction");
+  assert.throws(() => verifyWorkspace(dir), /[Pp]atch/);
+  rmSync(file);
+  rmSync(linked, { recursive: true });
+  writeFileSync(file, bytes);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
 });

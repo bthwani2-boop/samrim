@@ -16,7 +16,7 @@ const projects = ["apps/customer", "apps/merchant", "apps/captain", "apps/contro
   "packages/design-system", "packages/tamagui-config"];
 const requiredSources = ["knip.jsonc", ".editorconfig", ".gitattributes",
   "tools/mobile/define-bthwani-expo-app.cjs", "tools/mobile/verify-app-identity.mjs",
-  "patches/@rc-component__util@1.14.0.patch", "docs/README.md"];
+  "docs/README.md"];
 const retiredSources = ["docs/journeys", "docs/reference/README.md", "contracts", "go.work",
   "apps/app-client", "apps/app-partner", "apps/app-captain", "tools/mobile/create-bthwani-metro-config.cjs"];
 
@@ -113,11 +113,47 @@ function verifyLock(document, manifest, pnpm, toolchain) {
   return dependency;
 }
 
+// The native pinned manager owns workspace and patch resolution. Do not load
+// installed dependencies or resolve a shell-selected pnpm executable here.
+function nativePnpmJson(checkout, pnpm, args) {
+  const nodeBin = path.dirname(process.execPath);
+  const entry = process.platform === "win32"
+    ? path.join(nodeBin, "node_modules", "corepack", "dist", "corepack.js")
+    : path.join(nodeBin, "corepack");
+  const result = spawnSync(process.execPath, [entry, "pnpm@" + pnpm, ...args], {
+    cwd: checkout, encoding: "utf8", windowsHide: true, timeout: 60000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  assert.equal(result.status, 0, "Native pnpm " + args[0] + " failed");
+  return JSON.parse(result.stdout);
+}
+
+// The flat patch directory is the exact source inventory resolved by pnpm.
+// Frozen install remains the sole authority for lock digests and application.
+function verifyPatchInputs(checkout, source, pnpm) {
+  const configured = nativePnpmJson(checkout, pnpm, ["config", "get", "patchedDependencies", "--json"]);
+  assert.ok(configured && typeof configured === "object" && !Array.isArray(configured),
+    "Native patch configuration must be a mapping");
+  source.directory("patches");
+  const directory = path.join(checkout, "patches");
+  const expected = new Set();
+  for (const file of Object.values(configured)) {
+    assert.ok(typeof file === "string" && path.isAbsolute(file), "Native patch path must be absolute");
+    const name = path.relative(directory, file);
+    assert.match(name, /^[^/\\:]+\.patch$/, "Native patch input must be an owned flat patch path");
+    expected.add(name);
+  }
+  const observed = new Set(readdirSync(directory));
+  assert.deepEqual(observed, expected, "Native patch input inventory differs from the owned patch directory");
+  for (const name of expected) {
+    assert.ok(source.read("patches/" + name).trim(), "Native patch input is empty: " + name);
+  }
+}
 // pnpm owns package selection, including negation and YAML semantics. Compare
 // its native inventory with authored direct project manifests before admission.
 // The explicit Corepack version uses the same pinned manager as installation;
 // it does not require an installed dependency graph.
-function verifyWorkspaceMembership(checkout, source, manifest, pnpm, workspace) {
+function verifyWorkspaceMembership(checkout, source, manifest, pnpm) {
   function authoredProjects() {
     const expected = new Map([["", manifest.name]]);
     for (const scope of ["apps", "services", "packages"]) {
@@ -134,19 +170,7 @@ function verifyWorkspaceMembership(checkout, source, manifest, pnpm, workspace) 
     return expected;
   }
   const expected = authoredProjects();
-  const args = ["pnpm@" + pnpm, "list", "-r", "--depth", "-1", "--json"];
-  // Use the pinned Node distribution's Corepack, never a repository-local
-  // shim selected by the Windows command shell or another PATH entry.
-  const nodeBin = path.dirname(process.execPath);
-  const entry = process.platform === "win32"
-    ? path.join(nodeBin, "node_modules", "corepack", "dist", "corepack.js")
-    : path.join(nodeBin, "corepack");
-  const result = spawnSync(process.execPath, [entry, ...args], {
-    cwd: checkout, encoding: "utf8", windowsHide: true, timeout: 60000,
-    maxBuffer: 4 * 1024 * 1024,
-  });
-  assert.equal(result.status, 0, "Native pnpm workspace inventory failed");
-  const rows = JSON.parse(result.stdout);
+  const rows = nativePnpmJson(checkout, pnpm, ["list", "-r", "--depth", "-1", "--json"]);
   assert.ok(Array.isArray(rows), "Native pnpm workspace inventory must be an array");
   const observed = new Map();
   for (const row of rows) {
@@ -158,7 +182,6 @@ function verifyWorkspaceMembership(checkout, source, manifest, pnpm, workspace) 
   }
   assert.deepEqual(observed, expected, "Native pnpm workspace membership differs from authored project manifests");
   assert.deepEqual(authoredProjects(), expected, "Authored projects changed during native pnpm inventory");
-  assert.equal(source.read("pnpm-workspace.yaml"), workspace, "Workspace settings changed during native pnpm inventory");
 }
 
 function verifyWorkspaceSettings(workspace, nx) {
@@ -172,7 +195,6 @@ function verifyWorkspaceSettings(workspace, nx) {
   }
   assert.doesNotMatch(workspace, /^\s*nxCloud(?:Id|AccessToken|Url):/m,
     "Nx configuration belongs in nx.json, not pnpm");
-  assert.match(workspace, /^  '@rc-component\/util@1\.14\.0': patches\/@rc-component__util@1\.14\.0\.patch$/m);
   assert.equal(nx.defaultBase, "main");
   for (const target of ["typecheck", "theme:check", "theme:verify"]) {
     assert.equal(nx.targetDefaults?.[target]?.cache, true, "Missing declared cache target: " + target);
@@ -316,7 +338,9 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   const ts = toolchain.native;
   for (const owner of services) verifyOwner(source, dependency, owner, go, ts);
   verifyGitIgnore(checkout, source);
-  verifyWorkspaceMembership(checkout, source, manifest, pnpm, workspace);
+  verifyWorkspaceMembership(checkout, source, manifest, pnpm);
+  verifyPatchInputs(checkout, source, pnpm);
+  assert.equal(source.read("pnpm-workspace.yaml"), workspace, "Workspace settings changed during native pnpm admission");
 
   if (strict) resolvePinnedGo(go);
   return { node, go, pnpm, typescript: ts, typescriptApi: toolchain.api, biome: manifest.devDependencies["@biomejs/biome"],
