@@ -113,14 +113,14 @@ test("Captain account admits only its verified workspace, delegates appearance a
 // validator and error type. Transport outcomes are explicitly controlled here;
 // these tests do not claim a real HTTP receipt or Android journey.
 function guestIntake(origin = "https://dsh.example") {
-  const previous = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
+  const previous = process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN;
   const hooks = [];
   const requests = [];
   let nextHook = 0;
   let cleanup;
   let writes = 0;
-  if (origin === null) delete process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
-  else process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = origin;
+  if (origin === null) delete process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN;
+  else process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN = origin;
   let screen;
   try {
     screen = renderable("src/features/join/captain-interest-screen", {
@@ -147,8 +147,8 @@ function guestIntake(origin = "https://dsh.example") {
       },
     });
   } finally {
-    if (previous === undefined) delete process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
-    else process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = previous;
+    if (previous === undefined) delete process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN;
+    else process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN = previous;
   }
   const render = () => { nextHook = 0; return nodes(screen()); };
   const field = label => render().find(node => node.type === "TextInput" && node.props.accessibilityLabel === label);

@@ -1,3 +1,4 @@
+import { type MerchantDSHStanding, MerchantStandingError } from "@bthwani/dsh";
 import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Link } from "expo-router";
@@ -12,7 +13,6 @@ import {
   signOutOfAdmission,
   submitAdmissionCode,
 } from "./admission-transport";
-import { type MerchantDSHStanding, MerchantStandingError } from "./dsh-standing";
 
 function errorMessage(error: unknown) {
   if (error instanceof IdentityClientError) {

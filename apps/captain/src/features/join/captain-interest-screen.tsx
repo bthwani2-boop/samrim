@@ -29,7 +29,7 @@ const yesNo: readonly Choice<boolean>[] = [
   { value: true, label: "نعم" },
   { value: false, label: "لا" },
 ];
-const dshOrigin = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN ?? "";
+const dshOrigin = process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN ?? "";
 
 /** Public contact intake only; DSH owns validation, storage and the receipt. */
 export default function CaptainInterestScreen() {

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { captainStandingFrom } from "./captain-standing.ts";
+import { captainStandingFrom } from "@bthwani/dsh";
 
 test("Captain standing accepts only DSH-approved owner record for exact actor", () => {
   const owner = { actorId: "captain-17", status: "APPROVED", version: 2 };

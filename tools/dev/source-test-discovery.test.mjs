@@ -201,23 +201,28 @@ function coverageFixture(callback) {
   }
 }
 
-test("one inventory partitions runtime tests from source and project feedback", () => coverageFixture(({ root, add, report, run }) => {
+test("one exhaustive inventory separates source, runtime and local developer tests", () => coverageFixture(({ root, add, report, run }) => {
   const runtime = "apps/control-panel/tests/runtime/real-http.test.mjs";
   const source = "apps/control-panel/tests/source.test.mjs";
+  const local = "tools/dev/graphify-local.test.mjs";
+  add(local, 'throw new Error("LOCAL_DEVELOPER_TEST_MUST_NOT_RUN_IN_CI");');
   add(runtime, 'import test from "node:test"; test("runtime must actually execute", () => { throw new Error("runtime failure"); });');
   add(source, 'import test from "node:test"; test("source only", () => {});');
   const suites = discoverWorkspaceTestSuites(root);
   assert.deepEqual(suites.operatorRuntime, [runtime]);
   assert.ok(suites.source.includes(source));
   assert.ok(!suites.source.includes(runtime));
-  assert.deepEqual([...suites.source, ...suites.operatorRuntime].sort(), discoverWorkspaceNodeTests(root));
+  assert.deepEqual(suites.localDeveloper, [local]);
+  assert.ok(!suites.source.includes(local));
+  assert.deepEqual([...suites.source, ...suites.operatorRuntime, ...suites.localDeveloper].sort(), discoverWorkspaceNodeTests(root));
   assert.deepEqual(discoverNodeSourceTests(root, join(root, "apps/control-panel")), [source]);
   const check = run("--check-discovery");
   assert.equal(check.status, 0, check.stdout + check.stderr);
-  assert.match(check.stdout, /operator_runtime=1/);
+  assert.match(check.stdout, /operator_runtime=1 local_developer=1/);
+  assert.doesNotMatch(check.stdout + check.stderr, /LOCAL_DEVELOPER_TEST_MUST_NOT_RUN_IN_CI/);
   const coverage = run();
   assert.equal(coverage.status, 0, coverage.stdout + coverage.stderr);
-  assert.doesNotMatch(coverage.stdout, /runtime must actually execute/);
+  assert.doesNotMatch(coverage.stdout + coverage.stderr, /runtime must actually execute|LOCAL_DEVELOPER_TEST_MUST_NOT_RUN_IN_CI/);
   const measured = readFileSync(report, "utf8");
   const failedRuntime = run("--operator-runtime");
   assert.equal(failedRuntime.status, 1, failedRuntime.stdout + failedRuntime.stderr);
@@ -492,4 +497,26 @@ test("operator runtime cannot accept an all-skipped or empty suite", () => cover
     assert.doesNotMatch(result.stdout, /OPERATOR_RUNTIME_TESTS_PASS/);
     assert.equal(readFileSync(report, "utf8"), "STALE_REPORT");
   }
+}));
+
+test("Windows native source safety is mandatory but local Graphify is never a Windows CI input", () => fixture(({ root }) => {
+  const expected = [
+    "apps/customer/tests/customer-cart-docker-web.test.mjs",
+    "tools/dev/Start-App-memory.test.mjs",
+    "tools/dev/dev-powershell.test.mjs",
+    "tools/dev/source-snapshot.test.mjs",
+    "tools/dev/sync-lenovo-source.test.mjs",
+  ];
+  const local = "tools/dev/graphify-local.test.mjs";
+  for (const file of [...expected, local]) {
+    const target = join(root, file);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, "");
+  }
+  assert.deepEqual(discoverWindowsPlatformTests(root), expected);
+  assert.ok(!discoverWindowsPlatformTests(root).includes(local));
+  rmSync(join(root, local));
+  assert.deepEqual(discoverWindowsPlatformTests(root), expected);
+  rmSync(join(root, "tools/dev/source-snapshot.test.mjs"));
+  assert.throws(() => discoverWindowsPlatformTests(root), /WINDOWS_PLATFORM_TEST_MISSING tools\/dev\/source-snapshot\.test\.mjs/);
 }));

@@ -9,6 +9,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
 )
 
 func TestIsolatedVerifierTLSRequiresExplicitFilesAndScope(t *testing.T) {
@@ -225,5 +227,35 @@ func TestIdentityListenerUnexpectedExitClosesPeer(t *testing.T) {
 			conn.Close()
 			t.Fatal("peer listener leaked after failure")
 		}
+	}
+}
+func TestOfflineOperatorTicketAdmission(t *testing.T) {
+	policy := session.OperatorPasskeyOriginPolicy{RPID: "localhost", Origins: []string{"http://localhost:13000"}}
+	for _, tc := range []struct {
+		name                                          string
+		args                                          []string
+		isolated, container, bootstrap, local, schema string
+		want                                          bool
+	}{
+		{"canonical", []string{"issue-local-dev-root-ticket"}, "true", "true", "true", "true", localDevelopmentOperatorSchema, true},
+		{"retired", []string{"issue-synthetic-root-ticket"}, "true", "true", "true", "true", localDevelopmentOperatorSchema, false},
+		{"unknown argument", []string{"issue-local-dev-root-ticket", "extra"}, "true", "true", "true", "true", localDevelopmentOperatorSchema, false},
+		{"no isolation", []string{"issue-local-dev-root-ticket"}, "", "true", "true", "true", localDevelopmentOperatorSchema, false},
+		{"no container", []string{"issue-local-dev-root-ticket"}, "true", "", "true", "true", localDevelopmentOperatorSchema, false},
+		{"no bootstrap", []string{"issue-local-dev-root-ticket"}, "true", "true", "", "true", localDevelopmentOperatorSchema, false},
+		{"no explicit local owner", []string{"issue-local-dev-root-ticket"}, "true", "true", "true", "", localDevelopmentOperatorSchema, false},
+		{"foreign namespace", []string{"issue-local-dev-root-ticket"}, "true", "true", "true", "true", "identity_test_foreign", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := operatorOfflineTicketAdmitted(tc.args, tc.isolated, tc.container, tc.bootstrap, tc.local, tc.schema, policy); got != tc.want {
+				t.Fatalf("admitted %t, want %t", got, tc.want)
+			}
+		})
+	}
+	if operatorOfflineTicketAdmitted([]string{"issue-local-dev-root-ticket"}, "true", "true", "true", "true", localDevelopmentOperatorSchema, session.OperatorPasskeyOriginPolicy{}) {
+		t.Fatal("unverified WebAuthn origin admitted")
+	}
+	if isLocalDevelopmentFirstOperatorDatabase(context.Background(), nil, localDevelopmentOperatorSchema) {
+		t.Fatal("missing database admitted")
 	}
 }

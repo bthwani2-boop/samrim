@@ -86,44 +86,44 @@ test("browser mutations require exact same-origin Host and Origin, never client 
   assert.equal(isTrustedOperatorRequest(patch, config, "PATCH"), false);
 });
 
-test("SSH control-panel tunnel has one exact internal origin without admitting forged browser origins", () => {
+test("Operator requests admit only the configured origin, never retired tunnel aliases", () => {
   const config = resolveIsolatedOperatorConfig(goodEnv);
   assert.ok(config);
-  const internal = "http://localhost:23010/api/auth/session";
-  const valid = { host: "localhost:13000", origin: "http://localhost:13000" };
-  assert.equal(isTrustedOperatorLoopbackTarget(new Request(internal, { headers: valid }), config.browserOrigin), true);
-  assert.equal(isTrustedOperatorRequest(new Request(internal, { method: "POST", headers: valid }), config), true);
-  assert.equal(isTrustedOperatorLoopbackTarget(new Request(internal, {
-    headers: { host: "localhost:13000", "x-forwarded-host": "localhost:13000" },
-  }), config.browserOrigin), true);
+  const origin = config.browserOrigin;
+  const valid = { host: new URL(origin).host, origin };
+  const session = origin + "/api/auth/session";
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(session, { headers: valid }), origin), true);
+  assert.equal(isTrustedOperatorRequest(new Request(session, { method: "POST", headers: valid }), config), true);
   for (const [url, headers] of [
-    [internal, { ...valid, origin: "https://evil.example" }],
-    [internal, { ...valid, host: "127.0.0.1:23010" }],
-    [internal, { ...valid, "x-forwarded-host": "evil.example" }],
-    [internal, { ...valid, authorization: "Bearer forged" }],
-    ["http://127.0.0.1:28112/api/auth/session", valid],
-    ["http://127.0.0.1:23010/api/auth/session", valid],
-    ["http://localhost:23010/api/auth/session?x=1", valid],
-  ]) {
-    const req = new Request(url, { method: "POST", headers });
-    assert.equal(isTrustedOperatorRequest(req, config), false, url);
+    ["http://localhost:23010/api/auth/session", valid],
+    ["http://localhost:23100/api/auth/session", valid],
+    ["http://127.0.0.1:13000/api/auth/session", valid],
+    [session, { ...valid, origin: "https://evil.example" }],
+    [session, { ...valid, host: "localhost:23010" }],
+    [session, { ...valid, "x-forwarded-host": "evil.example" }],
+    [session, { ...valid, "x-forwarded-proto": "https" }],
+    [session, { ...valid, authorization: "Bearer forged" }],
+    [session, { ...valid, "x-actor-id": "root" }],
+    [session + "?x=1", valid],
+  ]) assert.equal(isTrustedOperatorRequest(new Request(url, { method: "POST", headers }), config), false, url);
+  const list = origin + "/api/captains?status=PENDING&limit=20";
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(list, { headers: valid }), origin), false);
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(list, { headers: valid }), origin, true), true);
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(list, { headers: { ...valid, host: "localhost:23010" } }), origin, true), false);
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(list, { headers: { ...valid, "x-forwarded-host": "evil.example" } }), origin, true), false);
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(list.replace("13000", "23010"), { headers: valid }), origin, true), false);
+  for (const browserOrigin of ["http://localhost:23010", "http://localhost:23100"]) {
+    assert.equal(resolveIsolatedOperatorConfig({ ...goodEnv, OPERATOR_PASSKEY_BROWSER_ORIGIN: browserOrigin }), null);
   }
-  assert.equal(isTrustedOperatorLoopbackTarget(new Request(internal, { headers: valid }),
-    "http://localhost:23100"), false);
-  const captainList = "http://localhost:23010/api/captains?status=PENDING&limit=20";
-  assert.equal(isTrustedOperatorLoopbackTarget(new Request(captainList, { headers: valid }),
-    config.browserOrigin), false, "auth endpoints must still reject query parameters by default");
-  assert.equal(isTrustedOperatorLoopbackTarget(new Request(captainList, { headers: valid }),
-    config.browserOrigin, true), true, "Captain owner BFF accepts query after its own parameter validation");
-  assert.equal(isTrustedOperatorLoopbackTarget(new Request(captainList, {
-    headers: { ...valid, host: "localhost:23010" },
-  }), config.browserOrigin, true), false, "internal host cannot impersonate the browser");
-  assert.equal(isTrustedOperatorLoopbackTarget(new Request(captainList, {
-    headers: { ...valid, "x-forwarded-host": "evil.example" },
-  }), config.browserOrigin, true), false, "forged forwarded host is rejected");
-  assert.equal(isTrustedOperatorLoopbackTarget(new Request("http://127.0.0.1:23010/api/captains?status=PENDING", {
-    headers: valid,
-  }), config.browserOrigin, true), false, "only the exact pre-authorized SSH origin is allowed");
+  const ephemeralOrigin = "http://localhost:49219";
+  const fixture = { ...goodEnv, OPERATOR_PASSKEY_BROWSER_ORIGIN: ephemeralOrigin,
+    OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF: "true" };
+  assert.equal(resolveIsolatedOperatorConfig(fixture)?.browserOrigin, ephemeralOrigin);
+  assert.equal(resolveInitialOperatorBootstrapConfig(fixture), null);
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(ephemeralOrigin + "/api/auth/session", {
+    headers: { host: "localhost:49219" },
+  }), ephemeralOrigin), true);
+  assert.equal(isTrustedOperatorLoopbackTarget(new Request(session, { headers: valid }), ephemeralOrigin), false);
 });
 
 test("empty POST streams are valid logout requests, but bytes and transfer streams are rejected", async () => {

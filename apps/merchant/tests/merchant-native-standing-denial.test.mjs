@@ -91,7 +91,6 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
   };
   const dependencies = {
     "./merchant-admission-web.ts": merchantAdmissionWeb,
-    "@bthwani/dsh": { DshPublicError: OwnerError },
     "@bthwani/identity": {
       IdentityClientError: OwnerError,
       async readVerifiedIdentitySession(_origin, bearer) { return identityRead(bearer); },
@@ -116,7 +115,7 @@ function nativeHarness({ storageDeletionFails = false, postDeleteMarkerThrows = 
       async verifyMerchantAdmission() { admissionCalls++; return merchantAdmission(); },
       async revokeUndeliveredAdmissionSession(_origin, bearer) { cleanupRevocations.push(bearer); },
     },
-    "./dsh-standing": {
+    "@bthwani/dsh": { DshPublicError: OwnerError,
       MerchantStandingError: OwnerError,
       readMerchantDSHStanding(_origin, bearer, signal) { return ownerRead(bearer, signal); },
       standingFrom(value) { return value; },

@@ -9,7 +9,6 @@
     "pnpm": "12.15.0"
   },
   "scripts": {
-    "dev": "pwsh -NoProfile -File tools/dev/dev.ps1",
     "check:workspace": "node tools/dev/verify-workspace.mjs",
     "check:coverage": "node tools/dev/run-coverage.mjs",
     "check:contracts": "node tools/dev/check-openapi.mjs identity dsh wlt",

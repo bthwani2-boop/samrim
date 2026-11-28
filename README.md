@@ -4,14 +4,7 @@ BThwani is under progressive development. [AGENTS.md](AGENTS.md) is the executio
 
 ## Daily development
 
-Use PowerShell 7 from the authorized Surface checkout. The [Surface-to-Lenovo operations guide](tools/dev/README-Lenovo-Development.md) owns the current device, sync, tunnel, Docker, Android, port and recovery instructions.
-
-    pnpm dev
-    pnpm dev apps open
-    pnpm dev apps status
-    pnpm dev apps verify
-
-The default launch reuses existing servers and verifies readiness without replacing owner containers or mutating data. Use the guide for separately admitted lifecycle operations, including `pnpm dev up`; do not start duplicate watchers, tunnels, Metro or Next servers.
+The previous unified launcher and device-specific operations guide have been removed during runtime refoundation. No replacement launcher is admitted yet. Use the verified source-only checks below; do not infer shared runtime readiness or replay old provisioning instructions. Protected owner data and credentials remain governed by [engineering law](governance/engineering.md#local-development-data-lifecycle).
 
 ## Pinned toolchain and verification
 
@@ -71,6 +64,12 @@ When the actual engineering scope requires graph-assisted relationship or depend
     node tools/dev/graphify-local.mjs status
     node tools/dev/graphify-local.mjs query "task-relevant source and consumers"
     node tools/dev/graphify-local.mjs coverage <supported-affected-paths>
+
+Run the Graphify-specific tests directly on the authorized local checkout, outside CI:
+
+    node --test tools/dev/graphify-local.test.mjs
+
+Shared source-admission tests remain in the native workspace and Windows CI inventory under their actual owner, source-snapshot. A local developer suite is discovered but never executed as source or Windows CI evidence.
 
 Use the existing watcher; never refresh from a read-only query or add a second scheduler, Git hook or CI gate. INVALIDATED graph evidence can support diagnosis, not acceptance. If Graphify is not needed, record the concrete scope reason and actual direct native source/owner evidence under AGENTS.md rather than executing a ritual or declaring a graph PASS. See the [reference catalog](docs/reference/engineering-references.md) for applicable official sources and the [documentation index](docs/README.md) for history.
 

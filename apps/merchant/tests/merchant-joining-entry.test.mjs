@@ -121,7 +121,7 @@ function gateHarness(t) {
     "react-native": { AppState: appState, Pressable: "Pressable", ScrollView: "ScrollView", Text: "Text", TextInput: "TextInput", View: "View" },
     "../navigation/merchant-entry-shell": { default: "MerchantEntryShell" },
     "../navigation/merchant-workspace": { default: "MerchantWorkspace" },
-    "./dsh-standing": { MerchantStandingError },
+    "@bthwani/dsh": { MerchantStandingError },
     "./admission-transport": {
       readAdmission: signal => defer(admission, signal),
       readMerchantStanding: signal => defer(standing, signal),

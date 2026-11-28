@@ -29,8 +29,7 @@ export async function readCaptainInterestForOperator(request: Request, candidate
   const site = request.headers.get("sec-fetch-site");
   const changing = candidateId !== undefined;
   if (request.method !== (changing ? "PATCH" : "GET")) return fail("METHOD_NOT_ALLOWED", 405);
-  // Reuse the exact Operator SSH tunnel trust check; candidate filter and
-  // mutation parameters are validated separately before reaching DSH.
+  // Require the canonical browser origin before validating candidate filters and mutations.
   if (!isTrustedOperatorLoopbackTarget(request, config.browserOrigin, true) ||
     (origin !== null && origin !== config.browserOrigin) ||
     (site !== null && site !== "same-origin" && site !== "none")) {

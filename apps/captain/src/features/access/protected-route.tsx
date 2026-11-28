@@ -1,3 +1,4 @@
+import type { CaptainStanding } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { Redirect, useFocusEffect } from "expo-router";
 import { createContext, type PropsWithChildren, useCallback, useContext, useRef, useState } from "react";
@@ -5,7 +6,6 @@ import { AppState, Pressable, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { leaveCaptainAdmission, readCaptainAdmission } from "./admission-transport";
 import { type CaptainSessionView, hasActiveCaptainSession } from "./captain-session";
-import type { CaptainStanding } from "./captain-standing";
 
 type RouteAccess = "checking" | "allowed" | "denied" | "unavailable" | "signing-out" | "sign-out-unconfirmed";
 const CaptainWorkspace = createContext<Readonly<{

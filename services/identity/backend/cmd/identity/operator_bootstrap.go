@@ -13,17 +13,12 @@ import (
 	_ "github.com/lib/pq"
 )
 
-const initialOperatorDatabase = "refoundation_webauthn_s02"
-const localDevelopmentOperatorDatabase = session.DevelopmentDatabase
+// Serving enrollment and recovery use only the verified canonical local
+// Identity owner. The database role and namespace are not a second sandbox.
 const localDevelopmentOperatorSchema = "identity_test_docker_2e1e6ae0ba6b"
 
 func isLocalDevelopmentFirstOperatorDatabase(ctx context.Context, db *sql.DB, schema string) bool {
-	if schema != localDevelopmentOperatorSchema {
-		return false
-	}
-	var actualDB string
-	err := db.QueryRowContext(ctx, "SELECT current_database()").Scan(&actualDB)
-	return err == nil && actualDB == localDevelopmentOperatorDatabase && session.VerifyDevelopmentRuntime(ctx, db, schema) == nil
+	return schema == localDevelopmentOperatorSchema && session.VerifyDevelopmentRuntime(ctx, db, schema) == nil
 }
 
 func operatorPasskeyOriginPolicy() session.OperatorPasskeyOriginPolicy {
@@ -33,26 +28,21 @@ func operatorPasskeyOriginPolicy() session.OperatorPasskeyOriginPolicy {
 	}
 }
 
-func isInitialOperatorDatabase(ctx context.Context, db *sql.DB) bool {
-	var actualDB string
-	err := db.QueryRowContext(ctx, "SELECT current_database()").Scan(&actualDB)
-	return err == nil && actualDB == initialOperatorDatabase
+func operatorOfflineTicketAdmitted(args []string, isolated, container, bootstrap, local, schema string, policy session.OperatorPasskeyOriginPolicy) bool {
+	return len(args) == 1 && args[0] == "issue-local-dev-root-ticket" &&
+		isolated == "true" && container == "true" && bootstrap == "true" && local == "true" &&
+		schema == localDevelopmentOperatorSchema && policy.AllowsInitialOperatorBootstrap()
 }
 
-// This is an OFFLINE, explicitly invoked development-only tool.
-// The original sandbox command requires an empty namespace. The separate
-// local-development command may coexist only with known synthetic Operator
-// fixtures in the exact existing local database, without any original Owner.
-// Neither command is suitable for production, CI, logs, or automated startup.
+// Offline, explicitly human-supervised issuance only. No invocation from
+// startup, CI, a browser endpoint or an automated task; no ticket in logs.
 func runIsolatedInitialOperatorTicket() {
 	policy := operatorPasskeyOriginPolicy()
-	localDevelopment := len(os.Args) == 2 && os.Args[1] == "issue-local-dev-root-ticket"
-	if len(os.Args) != 2 ||
-		(os.Args[1] != "issue-synthetic-root-ticket" && !localDevelopment) ||
-		os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
-		os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") != "true" ||
-		!policy.AllowsInitialOperatorBootstrap() ||
-		!session.IsIsolatedTestSchema(os.Getenv("IDENTITY_DB_SCHEMA")) {
+	schema := os.Getenv("IDENTITY_DB_SCHEMA")
+	if !operatorOfflineTicketAdmitted(os.Args[1:],
+		os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"),
+		os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP"), os.Getenv("IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR"),
+		schema, policy) {
 		log.Fatal("initial Operator ticket issuance requires explicit isolated authorization")
 	}
 	dsn := os.Getenv("IDENTITY_TEST_DATABASE_URL")
@@ -67,23 +57,10 @@ func runIsolatedInitialOperatorTicket() {
 	db.SetMaxOpenConns(2)
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-	if err = db.PingContext(ctx); err != nil {
-		log.Fatal("isolated Identity owner unreachable")
+	if err = db.PingContext(ctx); err != nil || !isLocalDevelopmentFirstOperatorDatabase(ctx, db, schema) {
+		log.Fatal("local Root ticket issuance requires exact existing development Identity owner")
 	}
-	// The ordinary offline issuer is limited to its disposable database.
-	// Local development is a separate, explicit mode bound to the exact
-	// existing refoundation database and schema; a synthetic schema alone
-	// is never authority to issue a first-Owner ticket.
-	if localDevelopment {
-		if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") != "true" ||
-			os.Getenv("IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR") != "true" ||
-			!isLocalDevelopmentFirstOperatorDatabase(ctx, db, os.Getenv("IDENTITY_DB_SCHEMA")) {
-			log.Fatal("local development Root ticket issuance requires exact existing development Identity owner")
-		}
-	} else if !isInitialOperatorDatabase(ctx, db) {
-		log.Fatal("offline Root ticket issuer refuses non-disposable database")
-	}
-	owner, err := session.NewPostgresReader(db, os.Getenv("IDENTITY_DB_SCHEMA"))
+	owner, err := session.NewPostgresReader(db, schema)
 	if err != nil {
 		log.Fatal("isolated Identity scope rejected")
 	}
@@ -91,17 +68,12 @@ func runIsolatedInitialOperatorTicket() {
 	if err != nil {
 		log.Fatal("isolated WebAuthn relying-party invalid")
 	}
-	if localDevelopment {
-		if err := auth.AllowLocalDevelopmentFirstOwner(); err != nil {
-			log.Fatal("local development First Operator configuration refused")
-		}
+	if err := auth.AllowLocalDevelopmentFirstOwner(); err != nil {
+		log.Fatal("local development First Operator configuration refused")
 	}
 	ticket, err := auth.IssueInitialOperatorTicket(ctx)
 	if err != nil {
-		// Do not print actor IDs, identity existence, or backing SQL details.
 		log.Fatal("first-Operator bootstrap refused; verify empty isolated Owner and migrations")
 	}
-	// One-time 10-minute secret. Requires a directly supervised local terminal;
-	// never paste it into chat, logs or command arguments.
 	fmt.Println(ticket)
 }

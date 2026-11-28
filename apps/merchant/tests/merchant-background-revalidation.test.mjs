@@ -81,7 +81,7 @@ function harness() {
         return new Promise((resolve, reject) => standings.push({ signal, resolve, reject }));
       },
     },
-    "./dsh-standing": { MerchantStandingError: StandingError },
+    "@bthwani/dsh": { MerchantStandingError: StandingError },
   };
   const mod = { exports: {} };
   new Function("require", "module", "exports", "setTimeout", "clearTimeout",

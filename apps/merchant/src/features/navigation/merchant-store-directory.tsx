@@ -1,7 +1,7 @@
+import type { MerchantOwnedStore } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useState } from "react";
 import { Pressable, Text, TextInput, View } from "react-native";
-import type { MerchantOwnedStore } from "../access/dsh-standing";
 import InventorySummary from "../catalog/inventory-summary";
 import EmployeesScreen from "../employees/employees-screen";
 import CommercialAgreement from "../finance/commercial-agreement";

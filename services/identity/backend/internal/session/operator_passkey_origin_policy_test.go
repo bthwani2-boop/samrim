@@ -8,7 +8,7 @@ func TestInitialOperatorBootstrapRequiresOneApprovedOrigin(t *testing.T) {
 		allowed bool
 	}{
 		{[]string{"http://localhost:13000"}, true},
-		{[]string{"http://localhost:23100"}, true},
+		{[]string{"http://localhost:23100"}, false},
 		{[]string{"http://localhost:13000", "http://localhost:23100"}, false},
 		{[]string{"http://127.0.0.1:23100"}, false},
 		{[]string{"http://localhost:3300"}, false},
@@ -37,6 +37,9 @@ func TestOperatorPasskeyOriginPolicyRejectsUntrustedRPBinding(t *testing.T) {
 	}{
 		{"untrusted HTTP", "http://operator.bthwani.com", "bthwani.com", false},
 		{"HTTP local outside isolated", "http://localhost:13000", "localhost", false},
+		{"retired standalone sandbox", "http://localhost:23100", "localhost", true},
+		{"retired tunnel target", "http://localhost:23010", "localhost", true},
+		{"unadmitted loopback port", "http://localhost:3300", "localhost", true},
 		{"localhost root outside isolated", "https://localhost", "localhost", false},
 		{"fake subdomain", "https://operator.bthwani.com.evil.example", "bthwani.com", false},
 		{"prefix spoof", "https://evilbthwani.com", "bthwani.com", false},

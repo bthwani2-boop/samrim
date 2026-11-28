@@ -1,4 +1,4 @@
-import type { MerchantOwnedStore } from "../access/dsh-standing";
+import type { MerchantOwnedStore } from "@bthwani/dsh";
 
 export const merchantNavigation = [
   { id: "home", label: "الرئيسية", description: "ملخص المتاجر المرتبطة بحسابك" },

@@ -94,10 +94,7 @@ test("protected feature routes delegate to feature-owned screens and fail closed
   assert.match(nativeWallet, /readNativeWallet\(/);
   assert.match(nativeWallet, /readNativeWalletTransactions\(/);
   assert.doesNotMatch(nativeWallet, /fetch\(|credit\(|debit\(/);
-  assert.ok(read("login.tsx").includes('export { default } from'));
-  assert.ok(read("verification.tsx").includes('export { default } from'));
-  assert.ok(readFeature("access/identity-gate.tsx").includes("readCustomerAdmission"));
-  assert.ok(readFeature("access/verification-screen.tsx").includes('from "./identity-gate"'));
+
   assert.match(read("(tabs)/account/index.tsx"), /export \{ default \} from/);
   const account = readFeature("account/account-screen.tsx");
   assert.match(account, /href="\/login"/);
@@ -135,4 +132,12 @@ test("Account city shortcut and address login continuation reuse admitted routes
   const account = readFeature("account/account-screen.tsx");
   assert.match(account, /pathname: "\/stores", params: \{ chooseCity: "1" \}/);
   assert.match(readFeature("addresses/addresses-screen.tsx"), /pathname: "\/login", params: \{ returnTo: "\/addresses" \}/);
+});
+
+test("login and verification directly use the same canonical Identity gate", () => {
+  const owner = 'export { default } from "../src/features/access/identity-gate";';
+  assert.equal(read("login.tsx").trim(), owner);
+  assert.equal(read("verification.tsx").trim(), owner);
+  assert.ok(readFeature("access/identity-gate.tsx").includes("readCustomerAdmission"));
+  assert.equal(existsSync(resolve(customer, "src/features/access/verification-screen.tsx")), false);
 });

@@ -1,3 +1,4 @@
+import { CaptainStandingError } from "@bthwani/dsh";
 import { IdentityClientError, normalizeYemeniMobile, type VerifiedIdentitySession } from "@bthwani/identity";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { type Href, Link } from "expo-router";
@@ -8,7 +9,6 @@ import {
   leaveCaptainAdmission, readCaptainAdmission, requestCaptainPhoneCode, verifyCaptainCode,
 } from "./admission-transport";
 import { hasActiveCaptainSession } from "./captain-session";
-import { CaptainStandingError } from "./captain-standing";
 
 function admissionError(error: unknown) {
   if (error instanceof IdentityClientError) {

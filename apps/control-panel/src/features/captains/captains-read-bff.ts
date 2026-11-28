@@ -33,9 +33,7 @@ export async function readCaptainReview(request: Request, actorId?: string) {
     request.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() !== "application/json")) {
     return error("FORBIDDEN", 403);
   }
-  // Next sees localhost:23010 inside the existing Surface SSH tunnel while
-  // the browser's trusted Host remains localhost:13000. Query validation
-  // below still enforces the exact allowed Captain parameters.
+  // Require the canonical browser origin before validating Captain query parameters.
   if (!isTrustedOperatorLoopbackTarget(request, config.browserOrigin, true) ||
     (origin !== null && origin !== config.browserOrigin) ||
     (site !== null && site !== "same-origin" && site !== "none")) {

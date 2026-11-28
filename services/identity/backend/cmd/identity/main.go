@@ -52,8 +52,7 @@ func main() {
 	// Offline first-Operator registration is an explicit separate command,
 	// never part of normal Identity server startup or an HTTP route.
 	if len(os.Args) != 1 && !verifyOnly {
-		if len(os.Args) == 2 && (os.Args[1] == "issue-synthetic-root-ticket" ||
-			os.Args[1] == "issue-local-dev-root-ticket") {
+		if len(os.Args) == 2 && os.Args[1] == "issue-local-dev-root-ticket" {
 			runIsolatedInitialOperatorTicket()
 			return
 		}
@@ -170,34 +169,27 @@ func runIdentity(verifyOnly bool) error {
 		handler := session.NewOperatorPasskeyHandler(auth)
 		routes.Handle(session.OperatorPasskeyOptionsPath, handler)
 		routes.Handle(session.OperatorPasskeyFinishPath, handler)
-		// Initial Root enrollment is a separate explicit opt-in, unavailable
-		// unless the existing isolated WebAuthn RP is configured.
+		// Enrollment and recovery have separate opt-ins but one canonical
+		// verified development owner. Neither route issues a recovery proof.
 		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" {
-			localDevelopment := os.Getenv("IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR") == "true"
-			if !policy.AllowsInitialOperatorBootstrap() {
-				return errors.New("initial Operator bootstrap requires one approved WebAuthn origin")
+			if !policy.AllowsInitialOperatorBootstrap() ||
+				os.Getenv("IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR") != "true" ||
+				os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") != "true" ||
+				!isLocalDevelopmentFirstOperatorDatabase(ctx, db, schema) {
+				return errors.New("initial Operator bootstrap requires exact authorized development Identity owner and origin")
 			}
-			if localDevelopment {
-				if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") != "true" ||
-					!isLocalDevelopmentFirstOperatorDatabase(ctx, db, schema) {
-					return errors.New("local First Operator requires exact authorized development database and schema")
-				}
-				if err := auth.AllowLocalDevelopmentFirstOwner(); err != nil {
-					return errors.New("local First Operator guard refused")
-				}
-			} else if !isInitialOperatorDatabase(ctx, db) {
-				return errors.New("initial Operator bootstrap requires the disposable WebAuthn database")
+			if err := auth.AllowLocalDevelopmentFirstOwner(); err != nil {
+				return errors.New("local First Operator guard refused")
 			}
 			initial := session.NewOperatorInitialRegistrationHandler(auth)
 			routes.Handle(session.OperatorInitialRegistrationOptionsPath, initial)
 			routes.Handle(session.OperatorInitialRegistrationFinishPath, initial)
 		}
-		// Existing-actor recovery is explicitly opt-in. The HTTP handler only
-		// consumes an independently authorized, owner-bound recovery proof;
-		// it has no issuer, role creation, grant or session-issuance capability.
 		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY") == "true" {
-			if !policy.AllowsInitialOperatorBootstrap() || !isInitialOperatorDatabase(ctx, db) {
-				return errors.New("Operator recovery requires the exact isolated localhost WebAuthn origin and disposable database")
+			if !policy.AllowsInitialOperatorBootstrap() ||
+				os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") != "true" ||
+				!isLocalDevelopmentFirstOperatorDatabase(ctx, db, schema) {
+				return errors.New("Operator recovery requires exact authorized development Identity owner and origin")
 			}
 			recovery := session.NewOperatorPasskeyRecoveryHandler(auth)
 			routes.Handle(session.OperatorPasskeyRecoveryOptionsPath, recovery)

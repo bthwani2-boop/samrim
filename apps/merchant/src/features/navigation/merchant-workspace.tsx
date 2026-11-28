@@ -1,11 +1,10 @@
-import type { MerchantCatalogStatus } from "@bthwani/dsh";
+import type { MerchantCatalogStatus, MerchantDSHStanding } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import AppearancePreferences from "@bthwani/tamagui-config/appearance-preferences";
 import { usePrimaryNavigation } from "@bthwani/tamagui-config/navigation";
 import { useState } from "react";
 import { Platform, Pressable, ScrollView, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import type { MerchantDSHStanding } from "../access/dsh-standing";
 import MerchantPrivateCatalog from "../catalog/merchant-private-catalog";
 import EmployeesScreen from "../employees/employees-screen";
 import WalletScreen from "../finance/wallet-screen";

@@ -1,9 +1,8 @@
-import type { MerchantCatalogStatus } from "@bthwani/dsh";
+import type { MerchantCatalogStatus, MerchantOwnedStore } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { createRadioGroup } from "@bthwani/tamagui-config/radio-group";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
-import type { MerchantOwnedStore } from "../access/dsh-standing";
 import CatalogExport from "../catalog/catalog-export";
 import InventorySummary from "../catalog/inventory-summary";
 

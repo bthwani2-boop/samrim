@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -471,6 +471,27 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       hooks.length = 0;
       effects.length = 0;
       requests.length = 0;
+      // The surviving catalog must revalidate on Web focus and cancel stale reads.
+      tree = render("merchant-a", stores);
+      assert.equal(requests.length, 1);
+      assert.equal(typeof focus, "function");
+      assert.ok(!nodes(tree).some(n => n.props?.children === "تحديث المنتجات"), "no permanent refresh button");
+      const beforeFocus = requests[0];
+      focus();
+      tree = render("merchant-a", stores);
+      assert.equal(requests.length, 2, "browser focus must request current owner catalog");
+      assert.equal(beforeFocus.signal.aborted, true);
+      assert.equal(requests[1].storeId, "store-a");
+      beforeFocus.resolve({ actorId: "merchant-a", storeId: "store-a", items: [{ ...draft, name: "stale focus reply" }] });
+      await Promise.resolve(); await Promise.resolve();
+      assert.ok(!nodes(render("merchant-a", stores)).some(n => n.props?.children === "stale focus reply"));
+      tree = render("merchant-b", []);
+      assert.equal(requests.length, 2, "no request without current Store authority");
+      assert.ok(!nodes(tree).some(privateControls));
+      for (const effect of effects) effect?.cleanup?.();
+      hooks.length = 0;
+      effects.length = 0;
+      requests.length = 0;
       platform.OS = "android";
       const native = (actor = "merchant-a", scoped = stores) => render(actor, scoped);
       const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
@@ -716,4 +737,25 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     assert.ok(unpublished.some(n=>n.props?.children===percent.format(0)));
     assert.equal(statusButton(unpublished,"عرض العروض المنشورة"), undefined);
   } finally { rmSync(tmp,{recursive:true,force:true}); }
+});
+
+test("verified Merchant products section renders private owner-scoped DSH catalog, not public-only data", () => {
+  const merchantRoot = path.resolve(root, "apps/merchant");
+  const workspace = readFileSync(path.resolve(merchantRoot, "src/features/navigation/merchant-workspace.tsx"), "utf8");
+  const privateComponent = path.resolve(merchantRoot, "src/features/catalog/merchant-private-catalog.tsx");
+  assert.equal(existsSync(path.resolve(merchantRoot, "src/features/catalog/merchant-published-offers.tsx")), false, "superseded public-only screen must stay removed");
+  assert.ok(existsSync(privateComponent), "private Store Catalog reader must be implemented");
+  assert.match(workspace, /section === "products"\s*\?\s*\(?.*MerchantPrivateCatalog/s);
+  const catalogInvocation = workspace.match(/<MerchantPrivateCatalog\b[^>]*\/>/s)?.[0] ?? "";
+  assert.match(catalogInvocation, /\bkey=\{actorId\}/, "account switch must remount the private catalog");
+  assert.match(catalogInvocation, /\bactorId=\{actorId\}/);
+  assert.match(catalogInvocation, /\bstores=\{stores\}/);
+  assert.match(catalogInvocation, /\binitialStoreId=\{catalogStoreId\}/, "store details must preserve the selected owner store");
+  const code = readFileSync(privateComponent, "utf8");
+  assert.match(code, /readMerchantCatalogPage\(/, "private owner catalog transport is required");
+  assert.match(code, /actorId/, "visible read must be scoped to the current verified actor");
+  assert.match(code, /AbortController/, "switching Stores or account must cancel pending read");
+  assert.match(code, /page\.nextCursor/, "pagination must use owner-issued keyset");
+  assert.doesNotMatch(code, /listPublicOffers\(/, "public discovery excludes Store drafts");
+  assert.doesNotMatch(code, /localStorage|AsyncStorage|SecureStore/, "no duplicate local catalogue");
 });

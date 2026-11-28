@@ -72,11 +72,12 @@ test("Merchant public read fails closed outside isolated development and never r
   assert.equal(calls.length, 2);
 });
 
-test("Merchant published-offers Web calls only the same-origin Expo owner proxy", () => {
-  const code = readFileSync(new URL("../src/features/catalog/merchant-published-offers.tsx", import.meta.url), "utf8");
+test("Merchant public Store link reads only the same-origin public owner projection on Web", () => {
+  const code = readFileSync(new URL("../src/features/stores/merchant-public-link.tsx", import.meta.url), "utf8");
   assert.match(code, /Platform\.OS === "web"/);
   assert.match(code, /window\.location\.origin/);
-  assert.match(code, /listPublicOffers\(origin/);
+  assert.match(code, /getPublicStore\(discoveryOrigin\(\), context\.storeId, request\.signal\)/);
+  assert.match(code, /current\.id !== context\.storeId/);
 });
 test("Merchant public Offer search forwards owner query and bounded pagination unchanged", async t => {
   const calls = setup(t);

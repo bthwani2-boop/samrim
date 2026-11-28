@@ -127,7 +127,7 @@ function harness(t, { role = "merchant", initialBearer = bearer, marker = null, 
       },
     },
     "react-native": { Platform: { OS: platform } },
-    "./admission": {}, "./dsh-standing": dshClient,
+    "./admission": {},
     "../access/merchant-owner-web.ts": merchantOwnerWeb,
   };
   const module = { exports: {} };

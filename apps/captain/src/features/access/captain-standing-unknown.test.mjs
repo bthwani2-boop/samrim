@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   CaptainStandingError, readApprovedCaptainStanding, readCaptainApplication, requestCaptainApplication,
-} from "./captain-standing.ts";
+} from "@bthwani/dsh";
 
 const bearer = "A".repeat(43);
 const actor = "captain-synthetic";

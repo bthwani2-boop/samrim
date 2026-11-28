@@ -1,8 +1,8 @@
+import type { MerchantOwnedStore } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useState } from "react";
 import { Pressable, Text, View } from "react-native";
 import MerchantCapabilityScreen from "../../components/merchant-capability-screen";
-import type { MerchantOwnedStore } from "../access/dsh-standing";
 import CommercialAgreement from "./commercial-agreement";
 
 export default function WalletScreen({ actorId = "", stores = [] }: { actorId?: string; stores?: readonly MerchantOwnedStore[] } = {}) {

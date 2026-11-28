@@ -245,8 +245,8 @@ function main(args) {
     case "--check-discovery": {
       const suites = discoverWorkspaceTestSuites(root);
       assert.ok(suites.source.length, "No admitted source tests");
-      console.log("SOURCE_TEST_DISCOVERY_PASS count=" + (suites.source.length + suites.operatorRuntime.length) +
-        " source=" + suites.source.length + " operator_runtime=" + suites.operatorRuntime.length);
+      console.log("SOURCE_TEST_DISCOVERY_PASS count=" + (suites.source.length + suites.operatorRuntime.length + suites.localDeveloper.length) +
+        " source=" + suites.source.length + " operator_runtime=" + suites.operatorRuntime.length + " local_developer=" + suites.localDeveloper.length);
       break;
     }
     case "--project":
@@ -260,7 +260,7 @@ function main(args) {
     case "--windows-platform": {
       assert.equal(process.platform, "win32", "Windows platform tests require Windows");
       const result = testSuite(() => discoverWindowsPlatformTests(root), 2);
-      console.log("WINDOWS_PLATFORM_TESTS_PASS files=" + result.count + " powershell_coverage=NOT_MEASURED graphify_optional_integration=SEPARATE");
+      console.log("WINDOWS_PLATFORM_TESTS_PASS files=" + result.count + " powershell_coverage=NOT_MEASURED");
       break;
     }
     default:

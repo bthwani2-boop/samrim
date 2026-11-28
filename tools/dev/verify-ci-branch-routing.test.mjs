@@ -249,7 +249,10 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
     assert.ok(!suites.source.includes(file), file);
     assert.doesNotMatch(readFileSync(path.join(root, file), "utf8"), /BTHWANI_OPERATOR_HTTP_TEST/);
   }
-  assert.deepEqual([...suites.source, ...suites.operatorRuntime].sort(), discoverWorkspaceNodeTests(root));
+  assert.deepEqual(suites.localDeveloper, ["tools/dev/graphify-local.test.mjs"]);
+  assert.ok(!suites.source.includes("tools/dev/graphify-local.test.mjs"));
+  assert.ok(suites.source.includes("tools/dev/source-snapshot.test.mjs"));
+  assert.deepEqual([...suites.source, ...suites.operatorRuntime, ...suites.localDeveloper].sort(), discoverWorkspaceNodeTests(root));
   mandatory(workspace, runs(workspace, /node tools\/security\/verify-secrets\.mjs/));
   mandatory(goQuality, runs(goQuality, /node tools\/dev\/check-go\.mjs --ci --sonar-report/));
   const outputGate = runs(postgres, /tests\/infra\/test-owner-postgres-output\.sh/);
@@ -271,6 +274,8 @@ test("Windows acceptance runs the existing admitted platform suites and cannot b
   const platformFiles = discoverWindowsPlatformTests(root);
   const source = new Set(discoverWorkspaceTestSuites(root).source);
   assert.equal(platformFiles.length, 5);
+  assert.ok(platformFiles.includes("tools/dev/source-snapshot.test.mjs"));
+  assert.ok(!platformFiles.includes("tools/dev/graphify-local.test.mjs"));
   assert.ok(platformFiles.every(file => source.has(file)));
   assert.doesNotMatch(commands(app), /--windows-platform/);
   assert.ok(required.needs.includes("windows"));

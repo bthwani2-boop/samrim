@@ -1,8 +1,7 @@
-import { type MerchantCatalogOffer, type MerchantCatalogPage, type MerchantCatalogStatus, validMerchantCatalogSearch } from "@bthwani/dsh";
+import { type MerchantCatalogOffer, type MerchantCatalogPage, type MerchantCatalogStatus, type MerchantDSHStanding, validMerchantCatalogSearch } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
-import type { MerchantDSHStanding } from "../access/dsh-standing";
 import CatalogDraftHistory from "./catalog-draft-history";
 import CatalogExport from "./catalog-export";
 import CatalogImport from "./catalog-import";
