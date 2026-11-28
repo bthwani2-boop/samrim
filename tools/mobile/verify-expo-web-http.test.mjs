@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createServer } from "node:http";
 import { test } from "node:test";
 import { assertHtmlDocument, mimeEssence, requestSsr } from "../dev/ssr-document.mjs";
@@ -170,10 +171,17 @@ test("shared SSR media admission rejects malformed or combined Content-Type fiel
     ["text/css; extension=\"a,b; c\"", "text/css"],
     ["text/html; extension=\"a\\\"b\"", "text/html"],
     ["text/html; ; charset=utf-8", "text/html"],
+    ["text/html; extension=\" \\t!#[\\u0080\"", "text/html"],
+    ["text/html; extension=\"a\\\\\\tb\"", "text/html"],
+    ["text/html; extension=\"a\\\\\\u0080b\"", "text/html"],
   ]) assert.equal(mimeEssence(new Response(null, { headers: { "content-type": header } })), essence);
   assert.equal(mimeEssence(new Response(null)), "");
+  assert.equal(mimeEssence({ headers: { get: () => "text/html " } }), "text/html");
+  assert.equal(mimeEssence(new Response(null, { headers: { "content-type": "text/html;" } })), "text/html");
+  assert.equal(mimeEssence(new Response(null, { headers: { "content-type": `text/html${";".repeat(4096)}` } })), "text/html");
   for (const header of [
     "text/html; charset=utf-8, application/json",
+    "text/",
     "text/html; charset=\"utf-8\", text/plain",
     "text/html; charset=utf-8, text/html; charset=utf-8",
     "text/html, text/html",
@@ -184,6 +192,35 @@ test("shared SSR media admission rejects malformed or combined Content-Type fiel
     "text/html; charset =utf-8",
     "text /html",
   ]) assert.throws(() => mimeEssence(new Response(null, { headers: { "content-type": header } })), undefined, header);
+});
+
+test("shared SSR MIME admission rejects adversarial empty parameters within a bounded time", () => {
+  const moduleUrl = new URL("../dev/ssr-document.mjs", import.meta.url).href;
+  const source = [
+    'import assert from "node:assert/strict";',
+    'import { performance } from "node:perf_hooks";',
+    `import { mimeEssence } from ${JSON.stringify(moduleUrl)};`,
+    'const header = "!/!;" + "\\t;".repeat(24) + "!";',
+    'const response = new Response(null, { headers: { "content-type": header } });',
+    'assert.equal(response.headers.get("content-type"), header);',
+    'assert.throws(() => mimeEssence(response), /Invalid or combined Content-Type/);',
+    'const timings = [];',
+    'for (const size of [1000, 4000, 12000]) {',
+    '  const value = "text/html;" + " ".repeat(size) + ",";',
+    '  const response = new Response(null, { headers: { "content-type": value } });',
+    '  assert.equal(response.headers.get("content-type"), value);',
+    '  const started = performance.now();',
+    '  assert.throws(() => mimeEssence(response), /Invalid or combined Content-Type/);',
+    '  timings.push(performance.now() - started);',
+    '}',
+    'assert.ok(timings[2] <= timings[0] * 24 + 5, JSON.stringify(timings));',
+  ].join("\n");
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", source], {
+    cwd: process.cwd(), encoding: "utf8", timeout: 2000,
+  });
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.signal, null, result.stderr);
+  assert.equal(result.status, 0, result.stderr);
 });
 
 test("native SSR transport rejects singleton duplicates before field normalization", async () => {

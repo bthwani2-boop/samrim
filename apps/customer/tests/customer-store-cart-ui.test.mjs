@@ -130,6 +130,39 @@ test("first tap sends quantity one, shows only the owner-confirmed result, and m
     writes[4].resolve({ cart: { ...emptyCart, version: 8 }, replay: false });
     await settle();
     assert.deepEqual(render().cart.lines, []);
+    render().adjust({ ...offer, available: false }, 1);
+    render().adjust({ ...offer, storeId: "other-store" }, 1);
+    render().adjust(offer, -1);
+    assert.equal(writes.length, 5);
+    const stale = render();
+    stale.adjust(offer, 1);
+    writes[5].reject(new DshCartError(404, "STORE_OR_OFFER_NOT_AVAILABLE"));
+    await settle();
+    assert.match(render().message, /غير متاحة/);
+    assert.equal(render().busy, false);
+    assert.equal(render().status, "unavailable");
+    stale.adjust(offer, 1);
+    render().adjust(offer, 1);
+    assert.equal(writes.length, 6);
+    render().retry();
+    await settle();
+    assert.equal(render().status, "ready");
+    stale.adjust(offer, 1);
+    assert.equal(writes.length, 6);
+    render().adjust(offer, 1);
+    writes[6].reject(new DshCartError(400, "INVALID_REQUEST"));
+    await settle();
+    assert.match(render().message, /تعذّر تحديث السلة/);
+    render().adjust(offer, 1);
+    writes[7].reject(new DshCartError(409, "CART_VERSION_OR_OPERATION_CONFLICT"));
+    await settle();
+    assert.equal(render().status, "ready");
+    assert.equal(render().message, "");
+    render().adjust(offer, 1);
+    writes[8].reject(new DshCartError(401, "UNAUTHORIZED"));
+    await settle();
+    assert.equal(render().status, "ready");
+    assert.equal(render().message, "");
   } finally { cleanup(); }
 });
 
@@ -274,7 +307,7 @@ test("only a verified draft shows card actions, plus and minus replace add, and 
   const { default: StoreProducts, StoreCartBar } = load(compiled[1], { "expo-router": { Link: "Link" } });
   const { default: ProductDetail } = load(compiled[2]);
   const calls = [];
-  const session = { cart: null, busy: false, pending: false, message: "", adjust: (...args) => calls.push(args) };
+  const session = { status: "ready", cart: null, busy: false, pending: false, message: "", adjust: (...args) => calls.push(args) };
   const card = (storeStatus = store.orderabilityStatus) => StoreProducts({
     offers: [offer], store: { ...store, orderabilityStatus: storeStatus }, session,
   }).props.children[0].props;
@@ -297,9 +330,29 @@ test("only a verified draft shows card actions, plus and minus replace add, and 
   assert.deepEqual(calls.slice(1), [[offer, -1], [offer, 1]]);
 
   const bar = StoreCartBar({ storeId: store.id, session });
-  const subtotal = bar.props.children[2].props.children.props.children[1].props.children;
+  const subtotal = bar.props.children.at(-1).props.children.props.children[1].props.children;
   assert.equal(subtotal, `${formatExactYer(175n)} ريال يمني`);
   assert.equal(StoreCartBar({ storeId: store.id, session: { ...session, cart: emptyCart } }), null);
+});
+
+test("Store cart bar shows truthful read states and a recovery action without a verified cart", () => {
+  const { StoreCartBar } = load(compiled[1], { "expo-router": { Link: "Link" } });
+  const session = { cart: null, busy: false, message: "", pending: false };
+  const render = (status, retry) => StoreCartBar({ storeId: store.id, session: { ...session, status, retry } });
+  assert.equal(render("idle"), null);
+  assert.equal(render("ready"), null);
+  assert.match(cartText(render("loading")), /جارٍ التحقق من السلة/);
+  assert.match(cartText(render("signed-out")), /تسجيل الدخول/);
+  let retries = 0;
+  const unavailable = render("unavailable", () => retries++);
+  assert.match(cartText(unavailable), /تعذّر التحقق من سلة المتجر/);
+  const nodes = node => !node || typeof node !== "object" ? [] :
+    Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
+  const button = nodes(unavailable).find(node => node.type === "Pressable");
+  assert.equal(button.props.accessibilityRole, "button");
+  button.props.onPress();
+  assert.equal(retries, 1);
+  assert.doesNotMatch(cartText(unavailable), /مراجعة السلة/);
 });
 
 test("Store cart revalidates on native resume and discards superseded owner reads", async () => {
@@ -327,7 +380,7 @@ test("Store cart revalidates on native resume and discards superseded owner read
       addEventListener(_event, callback) { resume = callback; return { remove() {} }; },
     } },
     "./cart-transport": {
-      readVerifiedCart: (_storeId, signal) => new Promise(resolve => reads.push({ signal, resolve })),
+      readVerifiedCart: (_storeId, signal) => new Promise((resolve, reject) => reads.push({ signal, resolve, reject })),
       replaceVerifiedCart: (...args) => { writes.push(args); return new Promise(() => {}); },
     },
   });
@@ -339,6 +392,7 @@ test("Store cart revalidates on native resume and discards superseded owner read
   render();
   const cleanup = focus();
   try {
+    assert.equal(render().status, "loading");
     reads[0].resolve({ kind: "ready", cart: emptyCart });
     await settle();
     assert.equal(render().cart.actorId, "customer-a");
@@ -361,11 +415,31 @@ test("Store cart revalidates on native resume and discards superseded owner read
     resume("active");
     reads[3].resolve({ kind: "signed-out" });
     await settle();
+    assert.equal(render().status, "signed-out");
+    assert.equal(render().cart, null);
+    resume("active");
+    reads[4].reject(new Error("owner offline"));
+    await settle();
+    assert.equal(render().status, "unavailable");
+    assert.equal(render().cart, null);
+    const staleRetry = render().retry;
+    staleRetry();
+    assert.equal(render().status, "loading");
+    reads[5].resolve({ kind: "ready", cart: emptyCart });
+    await settle();
+    assert.equal(render().status, "ready");
+    staleRetry();
+    assert.equal(reads.length, 6, "superseded recovery must not restart a read");
+    assert.equal(render().cart.actorId, "customer-a");
+    resume("active");
+    reads[6].resolve({ kind: "ready", cart: { ...emptyCart, storeId: "wrong-store" } });
+    await settle();
+    assert.equal(render().status, "unavailable");
     assert.equal(render().cart, null);
     resume("active");
     cleanup();
-    assert.equal(reads[4].signal.aborted, true);
-    reads[4].resolve({ kind: "ready", cart: emptyCart });
+    assert.equal(reads[7].signal.aborted, true);
+    reads[7].resolve({ kind: "ready", cart: emptyCart });
     await settle();
     assert.equal(render().cart, null);
   } finally { cleanup(); effectCleanup?.(); }
@@ -410,4 +484,29 @@ test("bulk unavailable cleanup keeps eligible lines, requires confirmation and r
     assert.doesNotMatch(cartText(h.render()), /Unavailable [AB]/);
     assert.equal(action("إزالة المنتجات غير المتاحة"), undefined);
   } finally { cleanup(); }
+});
+
+test("definitive cart rejection revokes stale controls until fresh owner read", async () => {
+  for (const [status, code] of [[409, "CART_VERSION_OR_OPERATION_CONFLICT"], [404, "STORE_OR_OFFER_NOT_AVAILABLE"]]) {
+    const h = cartScreenHarness(); h.render(); const cleanup = h.start();
+    const nodes = node => !node || typeof node !== "object" ? [] :
+      Array.isArray(node) ? node.flatMap(nodes) : [node, ...nodes(node.props?.children)];
+    const increment = () => nodes(h.render()).find(node => node.type === "Pressable" && node.props.accessibilityLabel === "زيادة الكمية");
+    try {
+      const cart = { ...cartWithLine("Verified item", 5), actorId: "customer-rejection-" + status };
+      h.reads[0].resolve({ kind: "ready", cart }); await settle();
+      const stale = increment(); assert.ok(stale);
+      stale.props.onPress(); assert.equal(h.writes.length, 1);
+      h.writes[0].reject(new DshCartError(status, code)); await settle();
+      stale.props.onPress();
+      assert.equal(h.writes.length, 1, "definitively rejected snapshot must not authorize another write");
+      assert.equal(increment(), undefined);
+      const retry = nodes(h.render()).find(node => node.type === "Pressable" && cartText(node) === "إعادة المحاولة");
+      assert.ok(retry); retry.props.onPress();
+      h.reads[1].resolve({ kind: "ready", cart: { ...cart, version: 6 } }); await settle();
+      stale.props.onPress(); assert.equal(h.writes.length, 1);
+      increment().props.onPress(); assert.equal(h.writes[1].original.expectedVersion, 6);
+      h.writes[1].resolve({ cart: { ...cart, version: 7 }, replay: false }); await settle();
+    } finally { cleanup(); }
+  }
 });

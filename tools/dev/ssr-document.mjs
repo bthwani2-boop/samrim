@@ -63,16 +63,67 @@ export function scriptKind(element) {
   return value.toLowerCase() === "module" ? "module" : null;
 }
 
-// RFC 9110 sections 5.6 and 8.3: Content-Type is one media type, not a list.
-// A forgiving MIME parser can silently accept a conflicting combined field.
-const mediaType = /^[\t ]*([!#$%&'*+.^_\x60|~0-9A-Za-z-]+\/[!#$%&'*+.^_\x60|~0-9A-Za-z-]+)(?:[\t ]*;[\t ]*(?:[!#$%&'*+.^_\x60|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_\x60|~0-9A-Za-z-]+|"(?:[\t\x20\x21\x23-\x5B\x5D-\x7E\x80-\xFF]|\\[\t\x20-\x7E\x80-\xFF])*"))?)*[\t ]*$/;
+// RFC 9110 sections 5.6.2-5.6.6 and 8.3.1. A monotonic cursor keeps parsing linear.
+const tokenSpecials = "!#$%&'*+-.^_`|~";
+const mediaTypeEssence = value => {
+  let index = 0;
+  const skipOws = () => {
+    while (index < value.length && (value.charCodeAt(index) === 0x09 || value.charCodeAt(index) === 0x20)) index++;
+  };
+  const token = () => {
+    const start = index;
+    while (index < value.length) {
+      const code = value.charCodeAt(index);
+      if (!((code >= 0x30 && code <= 0x39) || (code >= 0x41 && code <= 0x5a) ||
+        (code >= 0x61 && code <= 0x7a) || tokenSpecials.includes(value[index]))) break;
+      index++;
+    }
+    return index > start;
+  };
+  const quotedString = () => {
+    index++;
+    while (index < value.length) {
+      const code = value.charCodeAt(index++);
+      if (code === 0x22) return true;
+      if (code === 0x5c) {
+        const escaped = value.charCodeAt(index++);
+        if (!(escaped === 0x09 || escaped === 0x20 ||
+          (escaped >= 0x21 && escaped <= 0x7e) || (escaped >= 0x80 && escaped <= 0xff))) return false;
+      } else if (!(code === 0x09 || code === 0x20 || code === 0x21 ||
+        (code >= 0x23 && code <= 0x5b) || (code >= 0x5d && code <= 0x7e) ||
+        (code >= 0x80 && code <= 0xff))) return false;
+    }
+    return false;
+  };
+
+  skipOws();
+  const typeStart = index;
+  if (!token() || value[index++] !== "/") return null;
+  const type = value.slice(typeStart, index - 1).toLowerCase();
+  const subtypeStart = index;
+  if (!token()) return null;
+  const subtype = value.slice(subtypeStart, index).toLowerCase();
+
+  while (index < value.length) {
+    skipOws();
+    if (index === value.length) break;
+    if (value[index++] !== ";") return null;
+    skipOws();
+    if (index === value.length || value[index] === ";") continue; // Empty parameter slots are valid.
+    if (!token() || value[index++] !== "=") return null;
+    if (value[index] === '"') {
+      if (!quotedString()) return null;
+    } else if (!token()) return null;
+  }
+  return `${type}/${subtype}`;
+};
 
 export function mimeEssence(response) {
   const header = response.headers.get("content-type");
   if (header === null) return "";
-  const match = mediaType.exec(header);
-  assert.ok(match, "Invalid or combined Content-Type (MIME)");
-  return match[1].toLowerCase();
+  const essence = mediaTypeEssence(header);
+  assert.ok(essence, "Invalid or combined Content-Type (MIME)");
+  return essence;
 }
 
 // Native HTTP keeps field occurrences before Fetch/Headers can combine them.
