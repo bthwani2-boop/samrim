@@ -52,7 +52,7 @@ test("missing or non-client executable references fail closed", () => {
 });
 
 test("real asset response requires HTTP success, correct MIME and exact exported bytes", async () => {
-  const asset = documentAssets(preload(script), origin)[0];
+  const asset = documentAssets('<script src="' + script + '"></script>', origin)[0];
   const bytes = Buffer.from("console.log('compiled');");
   const response = (body, status = 200, mime = "application/javascript") =>
     new Response(body, { status, headers: { "content-type": mime } });
@@ -83,4 +83,78 @@ test("asset inventory follows parsed HTML and ignores inert markup", () => {
     '<script data-note="a>b" src="' + script + '"></script>');
   assert.deepEqual(documentAssets(html, origin), [{ url: script, file: script.slice(1), type: "script" }]);
   assert.throws(() => documentAssets('<template>' + preload(script) + '</template>', origin), /No executable/);
+});
+test("a fetched hint or inert data block never establishes an executable entry", () => {
+  for (const html of [
+    preload(script),
+    '<link rel="modulepreload" href="' + script + '">',
+    '<script type="application/json" src="' + script + '"></script>',
+    '<script type="importmap" src="' + script + '"></script>',
+    '<script nomodule src="' + script + '"></script>',
+    '<script type="text/javascript; charset=utf-8" src="' + script + '"></script>',
+    '<script type=" module " src="' + script + '"></script>',
+    '<script language="vbscript" src="' + script + '"></script>',
+    '<script for="other" event="onload" src="' + script + '"></script>',
+  ]) assert.throws(() => documentAssets(html, origin), undefined, html);
+  for (const attrs of ["", 'type="module"', 'type="text/javascript"', 'type=" APPLICATION/JAVASCRIPT "']) {
+    const html = '<script ' + attrs + ' src="' + script + '"></script>';
+    assert.deepEqual(documentAssets(html, origin), [{ url: script, file: script.slice(1), type: "script" }]);
+  }
+  assert.deepEqual(documentAssets('<script type="application/json">{}</script><script src="' + script + '"></script>', origin),
+    [{ url: script, file: script.slice(1), type: "script" }]);
+});
+
+test("asset and redirect admission resolve the actual document URL, not an unrelated root", () => {
+  const entry = '<script src="' + script + '"></script>';
+  for (const html of [
+    '<base href="https://example.invalid/">' + entry,
+    '<script src="http://user@127.0.0.1:32123' + script + '"></script>',
+    '<script src="' + script + '?"></script>',
+    '<script src="' + script + '#"></script>',
+    '<script src="_expo/static/js/web/index-abc.js"></script>',
+  ]) assert.throws(() => documentAssets(html, origin, "/nested/route"), undefined, html);
+  assert.deepEqual(documentAssets(entry, origin, "/nested/route"),
+    [{ url: script, file: script.slice(1), type: "script" }]);
+  assert.throws(() => assertPublicRedirect("./", origin, "/orders/example"));
+  assert.doesNotThrow(() => assertPublicRedirect("../", origin, "/orders/example"));
+});
+
+test("a response MIME prefix is not an executable MIME essence", async () => {
+  const asset = { url: script, file: script.slice(1), type: "script" };
+  const bytes = Buffer.from("console.log('compiled');");
+  for (const mime of ["application/javascript+json", "text/javascript-extra", "text/html"]) {
+    await assert.rejects(() => assertAssetResponse(new Response(bytes, { headers: { "content-type": mime } }), bytes, asset), /MIME/);
+  }
+  await assert.doesNotReject(() => assertAssetResponse(new Response(bytes, { headers: { "content-type": "text/javascript; charset=utf-8" } }), bytes, asset));
+});
+
+test("non-executable links do not create assets and CSS preloads are checked", () => {
+  const css = "/_expo/static/css/web/app.css";
+  const html = '<link href="/favicon.ico"><link rel="icon" href="/favicon.ico">' +
+    '<link rel="preload" as="font" href="/assets/example.woff2">' +
+    '<link rel="preload" as="style" href="' + css + '">' +
+    '<script type="" src="' + script + '"></script>';
+  assert.deepEqual(documentAssets(html, origin), [
+    { url: css, file: css.slice(1), type: "style" },
+    { url: script, file: script.slice(1), type: "script" },
+  ]);
+  for (const markup of ['<link rel="stylesheet">', '<script src=""></script>', '<link rel="stylesheet" href="' + script + '">']) {
+    assert.throws(() => documentAssets(html + markup, origin));
+  }
+});
+
+test("stylesheet responses require CSS MIME and absent MIME never passes", async () => {
+  const css = "/_expo/static/css/web/app.css";
+  const asset = { url: css, file: css.slice(1), type: "style" };
+  const bytes = Buffer.from("body { display: block }");
+  await assert.doesNotReject(() => assertAssetResponse(new Response(bytes, { headers: { "content-type": "text/css; charset=utf-8" } }), bytes, asset));
+  for (const headers of [{}, { "content-type": "text/css-extra" }, { "content-type": "application/javascript" }]) {
+    await assert.rejects(() => assertAssetResponse(new Response(bytes, { headers }), bytes, asset), /MIME/);
+  }
+});
+
+test("document admission rejects missing metadata and explicit rendered body", () => {
+  assert.throws(() => assertHtmlDocument('<html lang="ar" dir="rtl"><head></head><body>' + page.body + '</body></html>', page), /wrong document title/);
+  assert.throws(() => assertHtmlDocument('<html lang="ar" dir="rtl"><head><title>' + page.title + '</title></head>' + page.body + '</html>', page), /missing rendered body/);
+  assert.throws(() => assertHtmlDocument(document(page.body, page.title, 'dir="rtl"'), page), /Arabic document/);
 });

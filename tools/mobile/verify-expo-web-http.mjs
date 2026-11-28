@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { MIMEType } from "node:util";
 import { parse } from "parse5";
 
 const root = path.resolve(import.meta.dirname, "../..");
@@ -72,53 +73,99 @@ export function assertHtmlDocument(html, { body, title, route }) {
     route + ": Metro module error in document");
 }
 
+// The HTTP/SSR contract admits actual classic/module entry points, not fetch
+// hints or inert data blocks. This is structural proof, not browser hydration.
+const javascriptMimes = new Set([
+  "application/ecmascript", "application/javascript", "application/x-ecmascript", "application/x-javascript",
+  "text/ecmascript", "text/javascript", "text/javascript1.0", "text/javascript1.1",
+  "text/javascript1.2", "text/javascript1.3", "text/javascript1.4", "text/javascript1.5",
+  "text/jscript", "text/livescript", "text/x-ecmascript", "text/x-javascript",
+]);
+const asciiTrim = value => value.replace(/^[\t\n\f\r ]+|[\t\n\f\r ]+$/g, "");
+
+function sameOriginUrl(reference, base, origin, label) {
+  const url = new URL(reference, base);
+  assert.equal(url.origin, origin, label + ": external origin");
+  assert.ok(!url.username && !url.password, label + ": credentials in URL");
+  return url;
+}
+
 export function assertPublicRedirect(location, origin, route) {
   assert.ok(location, route + ": redirect location missing");
-  assert.equal(new URL(location, origin).href, new URL("/", origin).href,
+  const requestUrl = sameOriginUrl(route, origin, origin, route);
+  assert.equal(sameOriginUrl(location, requestUrl, origin, route).href, new URL("/", origin).href,
     route + ": only same-origin public gate allowed");
+}
+
+function scriptKind(element) {
+  const type = attr(element, "type");
+  const language = attr(element, "language");
+  if (type === "" || (type === undefined && !language)) return "classic";
+  const value = type ?? "text/" + language;
+  if (javascriptMimes.has(value.toLowerCase()) ||
+      (type !== undefined && javascriptMimes.has(asciiTrim(type).toLowerCase()))) return "classic";
+  return value.toLowerCase() === "module" ? "module" : null;
 }
 
 function assetReference(element) {
   if (htmlElement(element, "script")) {
     const src = attr(element, "src");
-    return src === undefined ? null : { ref: src, type: "script" };
+    if (src === undefined) return null;
+    const kind = scriptKind(element);
+    assert.ok(kind, "Nonexecutable script has an external src: " + src);
+    // Generated Expo documents do not use obsolete event-bound script execution.
+    assert.ok(attr(element, "for") === undefined && attr(element, "event") === undefined,
+      "Legacy event-bound script is not an Expo entry: " + src);
+    return { ref: src, type: "script", entry: kind === "module" || attr(element, "nomodule") === undefined };
   }
   if (!htmlElement(element, "link")) return null;
   const rel = new Set((attr(element, "rel") ?? "").toLowerCase().split(/\s+/));
   const as = attr(element, "as")?.toLowerCase();
   if (rel.has("modulepreload") || (rel.has("preload") && as === "script"))
-    return { ref: attr(element, "href"), type: "script" };
+    return { ref: attr(element, "href"), type: "script", entry: false };
   if (rel.has("stylesheet") || (rel.has("preload") && as === "style"))
-    return { ref: attr(element, "href"), type: "style" };
+    return { ref: attr(element, "href"), type: "style", entry: false };
   return null;
 }
 
-export function documentAssets(html, origin) {
+export function documentAssets(html, origin, route = "/") {
+  const documentUrl = sameOriginUrl(route, origin, origin, route);
   const assets = new Map();
+  let hasExecutableEntry = false;
   for (const element of elements(parseDocument(html))) {
+    // Expo's export does not use a base override. Refuse altered URL resolution
+    // instead of pretending a root-relative fetch proves what the browser sees.
+    if (htmlElement(element, "base") && attr(element, "href") !== undefined) {
+      assert.equal(sameOriginUrl(attr(element, "href"), documentUrl, origin, "Document base").href,
+        documentUrl.href, "Unexpected document base override");
+    }
     const reference = assetReference(element);
     if (!reference) continue;
-    const { ref, type } = reference;
-    assert.ok(ref, "Missing executable asset URL");
-    const url = new URL(ref, origin);
-    assert.equal(url.origin, origin, "External executable asset: " + ref);
-    assert.equal(url.search + url.hash, "", "Unexpected asset query or fragment: " + ref);
+    const { ref, type, entry } = reference;
+    assert.ok(ref?.trim(), "Missing executable asset URL");
+    const url = sameOriginUrl(ref, documentUrl, origin, "Asset " + ref);
+    assert.equal(url.href, origin + url.pathname, "Unexpected asset query or fragment: " + ref);
     const pathname = decodeURIComponent(url.pathname);
     assert.match(pathname, /^\/_expo\/static\/[a-zA-Z0-9_./@()[\]-]+$/, "Unexpected executable asset path: " + ref);
     assert.ok(pathname.split("/").every(part => part !== "." && part !== ".."), "Invalid asset path");
     assert.ok(pathname.endsWith(type === "script" ? ".js" : ".css"), "Asset type/path mismatch: " + ref);
     assert.ok(!assets.has(url.pathname) || assets.get(url.pathname).type === type, "Conflicting asset types: " + ref);
     assets.set(url.pathname, { url: url.pathname, file: pathname.slice(1), type });
+    hasExecutableEntry ||= entry;
   }
-  assert.ok([...assets.values()].some(asset => asset.type === "script"), "No executable JavaScript referenced by SSR");
+  assert.ok(hasExecutableEntry, "No executable JavaScript entry referenced by SSR");
   return [...assets.values()];
+}
+
+function mimeEssence(response) {
+  const header = response.headers.get("content-type");
+  return header ? new MIMEType(header).essence : "";
 }
 
 export async function assertAssetResponse(response, expected, asset) {
   assert.equal(response.status, 200, asset.url + ": asset HTTP status");
-  const mime = response.headers.get("content-type") ?? "";
-  const expectedMime = asset.type === "script" ? /^(application|text)\/(javascript|ecmascript)\b/i : /^text\/css\b/i;
-  assert.match(mime, expectedMime, asset.url + ": asset MIME type");
+  const mime = mimeEssence(response);
+  assert.ok(asset.type === "script" ? javascriptMimes.has(mime) : mime === "text/css", asset.url + ": asset MIME type");
   assert.ok(expected.length > 0, asset.url + ": empty exported asset");
   assert.ok(Buffer.from(await response.arrayBuffer()).equals(expected), asset.url + ": served bytes differ from export");
 }
@@ -181,10 +228,10 @@ async function verifyHost({ name, pages, protectedRoutes = [] }) {
     for (const page of pages) {
       const response = await request(page.route);
       assert.equal(response.status, 200, name + page.route + ": HTTP status");
-      assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
+      assert.equal(mimeEssence(response), "text/html");
       const html = await response.text();
       assertHtmlDocument(html, { ...page, route: name + page.route });
-      for (const asset of documentAssets(html, origin)) assets.set(asset.url, asset);
+      for (const asset of documentAssets(html, origin, page.route)) assets.set(asset.url, asset);
       routes++;
     }
     for (const asset of assets.values()) {
@@ -194,7 +241,7 @@ async function verifyHost({ name, pages, protectedRoutes = [] }) {
     for (const route of [...retiredRoutes, "/_expo/server/render.js", "/_expo/static/missing-client-chunk.js"]) {
       const response = await request(route);
       assert.equal(response.status, 404, name + route + ": retired/unknown or private export path must not render");
-      if (retiredRoutes.includes(route)) assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
+      if (retiredRoutes.includes(route)) assert.equal(mimeEssence(response), "text/html");
       await response.arrayBuffer();
       routes++;
     }
@@ -208,7 +255,7 @@ async function verifyHost({ name, pages, protectedRoutes = [] }) {
     for (const route of protectedRoutes) {
       const response = await request(route);
       assert.equal(response.status, 302, name + route + ": protected route must redirect");
-      assertPublicRedirect(response.headers.get("location"), origin, name + route);
+      assertPublicRedirect(response.headers.get("location"), origin, route);
       await response.arrayBuffer();
       routes++;
     }
