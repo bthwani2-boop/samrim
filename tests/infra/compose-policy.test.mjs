@@ -162,6 +162,12 @@ test("owner admission and private trust stay in one environment, default off", (
   assert.deepEqual(dsh.volumes,["merchant-identity-ca:/run/identity-ca:ro","captain-dsh-tls:/run/dsh-captain-tls:ro"]);
   assert.equal(identity.environment.IDENTITY_SYNTHETIC_PHONE_SMTP, "mailpit:1025");
   assert.equal(identity.environment.IDENTITY_SYNTHETIC_PHONE_SMTP_CA, "/run/mailpit-smtp-ca/ca.pem");
+  // The canonical provider must not regress below the reviewed security
+  // release, including its cross-origin and SMTP parser hardening.
+  const release = /^axllent\/mailpit:v([0-9]+)\.([0-9]+)\.([0-9]+)@sha256:[a-f0-9]{64}$/.exec(mailpit.image);
+  assert.ok(release, "Mailpit must use the official digest-pinned stable release");
+  const [major, minor] = release.slice(1, 3).map(Number);
+  assert.ok(major > 1 || (major === 1 && minor >= 34), "Mailpit must include the reviewed v1.34.0 security fixes");
   assert.deepEqual(mailpit.command, [
     "--smtp-require-tls",
     "--smtp-tls-cert=/run/mailpit-smtp-tls/server.pem",

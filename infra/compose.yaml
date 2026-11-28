@@ -96,7 +96,7 @@ services:
     <<: *serving
     mem_limit: 256m
     pids_limit: 256
-    image: axllent/mailpit:v1.27.8@sha256:6abc8e633df15eaf785cfcf38bae48e66f64beecdc03121e249d0f9ec15f0707
+    image: axllent/mailpit:v1.34.0@sha256:23a2ef85bc50853ab3093645d1d64679afd8887e89da5e48a88940c172591a4e
     command:
       - --smtp-require-tls
       - --smtp-tls-cert=/run/mailpit-smtp-tls/server.pem
