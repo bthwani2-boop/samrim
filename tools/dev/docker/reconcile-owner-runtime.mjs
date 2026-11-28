@@ -6,6 +6,7 @@ import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { openRepositoryReader } from "../../security/verify-secrets.mjs";
 import { admitNativeGoTests, prepareSourceGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, recordRuntimePhase, runtimeAttemptPhase, runtimeFailureStatus, runtimeReceiptStatus, runtimeTerminalStatus, VerifiedRuntimeRollback } from "../sync-lenovo-reconciliation.mjs";
 import { reconcileComposeConfiguration } from "./compose-runtime-transition.mjs";
@@ -31,7 +32,6 @@ const operatorOverrides = {
   IDENTITY_OPERATOR_PASSKEY_ORIGINS: "REF_IDENTITY_OPERATOR_PASSKEY_ORIGINS",
   IDENTITY_OPERATOR_PASSKEY_RPID: "REF_IDENTITY_OPERATOR_PASSKEY_RPID",
 };
-const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
 const compareNames = (a,b) => a<b?-1:a>b?1:0;
 function run(executable, args, env = {}, timeout = 30000, input) {
   const out = spawnSync(executable, args, { cwd: root, encoding: "utf8", windowsHide: true, timeout, maxBuffer: 16 * 1024 * 1024, input, env: { ...process.env, ...env } });
@@ -43,7 +43,11 @@ function run(executable, args, env = {}, timeout = 30000, input) {
   }
   return out.stdout.trim();
 }
-const git = args => run(gitExe, args);
+let repositoryReader;
+const git = args => {
+  repositoryReader ??= openRepositoryReader(root);
+  return repositoryReader(...args).toString("utf8").trim();
+};
 const docker = (args, env, timeout, input) => run("docker", ["--context", context, ...args], env, timeout, input);
 export function composeArgs() {
   return ["compose","--project-directory",resolve(root,"infra"),"--env-file","infra/.env","-f",canonicalComposePath];

@@ -184,3 +184,26 @@ test("preview derives pin, build and peer inputs from committed objects even if 
   assert.equal(captureOwner(dir,"dsh").digest,before.digest);
   assert.equal(snapshotGoVersion(captureOwner(dir,"dsh")),"1.27.4");
 });
+
+test("runtime source identity cannot follow replacement commits or an alternate caller index", t => {
+  const {dir,git,write,base}=fixture(t);
+  const first=git("rev-parse","HEAD").toString().trim();
+  const original=captureCommittedOwner(dir,"dsh",first);
+  write(base+"backend/cmd/dsh/main.go","package main\n// different committed source\n");
+  git("add",".");
+  git("-c","user.name=Preview Test","-c","user.email=preview@example.invalid","commit","-qm","other fixture revision");
+  const second=git("rev-parse","HEAD").toString().trim();
+  git("replace",first,second);
+  assert.equal(captureCommittedOwner(dir,"dsh",first).digest,original.digest);
+  const alternate=path.join(dir,".git","test-index");
+  execFileSync(exe,["read-tree","--empty"],{cwd:dir,env:{...process.env,GIT_INDEX_FILE:alternate}});
+  const prior=process.env.GIT_INDEX_FILE;
+  try {
+    process.env.GIT_INDEX_FILE=alternate;
+    assert.deepEqual(dirtyPaths(dir,ownerSourceScope("dsh")),[]);
+    assert.equal(captureOwner(dir,"dsh").digest,captureCommittedOwner(dir,"dsh",second).digest);
+  } finally {
+    if(prior===undefined)delete process.env.GIT_INDEX_FILE;
+    else process.env.GIT_INDEX_FILE=prior;
+  }
+});

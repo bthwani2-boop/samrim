@@ -1,15 +1,13 @@
 // Canonical owner source classification and immutable Go preview.
 // Workspace metadata, documentation and SDK code are not inputs to the Go
 // Dockerfiles. Contract, schema and unknown source changes remain guarded.
-import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { containsLikelySecret, forbiddenName } from "../../security/verify-secrets.mjs";
+import { containsLikelySecret, forbiddenName, gitBlobIdentity, openRepositoryReader } from "../../security/verify-secrets.mjs";
 
 const owners=Object.freeze(["dsh","identity","wlt"]);
-const gitExe=process.platform==="win32"?"C:\\Program Files\\Git\\cmd\\git.exe":"/usr/bin/git";
 const goFile=/^backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
 const schemaFile=/^database\/schema\/[A-Za-z0-9_-]+\.sql$/;
 const workspaceFiles=new Set(["package.json","tsconfig.json","README.md","backend/README.md","backend/project.json"]);
@@ -104,7 +102,7 @@ export function ownerReconcilePlan({changed,committed,preview,captain,schemaRead
 }
 
 function gitList(root,args) {
-  return execFileSync(gitExe,args,{cwd:root,encoding:"utf8",windowsHide:true,timeout:20000,maxBuffer:8*1024*1024}).split("\0").filter(Boolean);
+  return openRepositoryReader(root)(...args).toString("utf8").split("\0").filter(Boolean);
 }
 export function dirtyPaths(root,scope) {
   const records=gitList(root,["status","--porcelain=v1","-z","--no-renames","--untracked-files=all","--",...scope]);
@@ -245,7 +243,8 @@ export function captureCommittedOwner(root,owner,revision) {
   if(!/^[a-f0-9]{40}$/.test(revision||""))throw new Error("COMMITTED_REVISION_INVALID");
   const scope=scopeFor(owner);
   const requested=[];
-  for(const record of gitList(root,["ls-tree","-r","-z",revision,"--",...scope])){
+  const git=openRepositoryReader(root);
+  for(const record of git("ls-tree","-r","-z",revision,"--",...scope).toString("utf8").split("\0").filter(Boolean)){
     const match=/^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(record);
     if(!match)throw new Error("COMMITTED_TREE_MODE_INVALID");
     const [, ,oid,rel]=match;
@@ -254,8 +253,7 @@ export function captureCommittedOwner(root,owner,revision) {
     if(file!==null)requested.push({oid,file,kind});
   }
   if(!requested.length)throw new Error("COMMITTED_TREE_EMPTY");
-  const raw=execFileSync(gitExe,["cat-file","--batch"],{cwd:root,encoding:null,windowsHide:true,
-    input:requested.map(x=>x.oid+"\n").join(""),timeout:30000,maxBuffer:64*1024*1024});
+  const raw=git.batchBlobs(requested.map(x=>x.oid));
   let cursor=0,pin;
   const entries=[],peers=[];
   for(const {oid,file,kind} of requested){
@@ -267,6 +265,7 @@ export function captureCommittedOwner(root,owner,revision) {
     if(!Number.isSafeInteger(size)||size>4194304||end+1+size>=raw.length||raw[end+1+size]!==10)
       throw new Error("COMMITTED_BLOB_SIZE_INVALID");
     const bytes=raw.subarray(end+1,end+1+size);
+    if(gitBlobIdentity(bytes,"sha1")!==oid)throw new Error("COMMITTED_BLOB_IDENTITY_INVALID");
     if(bytes.includes(0)||containsLikelySecret(bytes.toString("utf8")))throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
     if(kind==="pin")pin=Buffer.from(bytes);
     else (kind==="peer"?peers:entries).push([file,Buffer.from(bytes)]);

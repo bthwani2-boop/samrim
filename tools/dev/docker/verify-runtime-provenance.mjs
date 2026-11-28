@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { openRepositoryReader } from "../../security/verify-secrets.mjs";
 import { readVerifiedFile } from "../source-snapshot.mjs";
 import { verifyLiveDefinition } from './compose-runtime-transition.mjs';
 import { isOwnerNonRuntimePath, ownerComposeInputs, ownerSourceScope, sourceIdentity } from "./owner-preview-source.mjs";
@@ -11,7 +12,6 @@ import { assertOwnerDatabase, composeFileNames } from './reconcile-owner-runtime
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const infra = resolve(root, "infra");
-const gitExe = process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git";
 const project = "bthwani-refoundation";
 const owners = ["dsh", "identity", "wlt"];
 const foundations = ["postgres", "media", "mailpit", "payment-mock"];
@@ -54,8 +54,13 @@ const imageFields = {
   previewDigest: '{{index .Config.Labels "com.bthwani.preview-digest"}}',
 };
 
+let repositoryReader;
 function checked(command, args, input) {
-  const result = spawnSync(command === "git" ? gitExe : command, args, {
+  if (command === "git") {
+    repositoryReader ??= openRepositoryReader(root);
+    return repositoryReader(...args).toString("utf8");
+  }
+  const result = spawnSync(command, args, {
     cwd: root, encoding: "utf8", windowsHide: true, timeout: 25000,
     maxBuffer: 8 * 1024 * 1024, input,
     env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
@@ -65,10 +70,8 @@ function checked(command, args, input) {
 }
 
 function gitAncestor(revision, head) {
-  return spawnSync(gitExe, ["merge-base", "--is-ancestor", revision, head], {
-    cwd: root, windowsHide: true, timeout: 20000,
-    env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" },
-  }).status === 0;
+  try { checked("git", ["merge-base", "--is-ancestor", revision, head]); return true; }
+  catch { return false; }
 }
 
 const projection = fields => Object.values(fields).join("|");

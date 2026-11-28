@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
-import { containsLikelySecret } from "../security/verify-secrets.mjs";
+import { containsLikelySecret, openRepositoryReader } from "../security/verify-secrets.mjs";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope, previewChangeKey } from "./docker/owner-preview-source.mjs";
 import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
@@ -18,7 +18,6 @@ const targetIdentity = "BTHWANI-DOCKER";
 const targetRoot = "C:\\Users\\bthwa\\BThwaniAppRunner\\source-runtime";
 const exe = {
   pwsh: "C:\\Program Files\\PowerShell\\7\\pwsh.exe",
-  git: process.platform === "win32" ? "C:\\Program Files\\Git\\cmd\\git.exe" : "/usr/bin/git",
   ssh: "C:\\Windows\\System32\\OpenSSH\\ssh.exe",
   scp: "C:\\Windows\\System32\\OpenSSH\\scp.exe"
 };
@@ -189,10 +188,15 @@ function logger(line) {
   appendLogFile(logFile, message);
   console.log(message);
 }
-function head() { return run("git", ["rev-parse", "HEAD"]); }
-function branch() { return run("git", ["branch", "--show-current"]); }
+let repositoryReader;
+function readGit(args) {
+  repositoryReader ??= openRepositoryReader(root);
+  return repositoryReader(...args).toString("utf8").trim();
+}
+function head() { return readGit(["rev-parse", "HEAD"]); }
+function branch() { return readGit(["branch", "--show-current"]); }
 function inventory(filter=()=>true) {
-  const raw=run("git",["ls-files","--cached","--others","--exclude-standard","-z","--",...mirrorSourceRoots]);
+  const raw=readGit(["ls-files","--cached","--others","--exclude-standard","-z","--",...mirrorSourceRoots]);
   const paths=mirrorCandidatePaths(raw.split("\0"));
   const found=new Map(),admittedPackages=new Set();
   // Read actual package declarations first. A deleted package is absent;
@@ -604,7 +608,7 @@ function pollAppDependencies() {
   const paths=dependencyInputChanges({files:{}},new Map(Object.entries(state.files)));
   const key=crypto.createHash("sha256").update(JSON.stringify(paths.map(p=>[p,state.files[p]]))).digest("hex");
   if(key===dependencyKey&&Date.now()<nextDependencyAudit)return;
-  if(run("git",["status","--porcelain","--","tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"]))return;
+  if(readGit(["status","--porcelain","--","tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"]))return;
   dependencyKey=key;
   nextDependencyAudit=Date.now()+60_000;
   const child=spawn(exe.pwsh,["-NoProfile","-File",path.join(root,"tools","dev","dev.ps1"),"Apps","reconcile","-Apply","-Automatic"],{cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"]});
@@ -691,7 +695,7 @@ function pollOwnerRuntime() {
   if(dirty){runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (shared runtime input)");return;}
   const eligible=ownerReconcilePlan({changed,committed:{},preview,captain:false}).eligible;
   const go=changed.filter(p=>isPreviewGoPath(p)&&eligible.some(o=>p.startsWith("services/"+o+"/")));
-  const key=crypto.createHash("sha256").update(run("git",["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(JSON.stringify(changed)).update(previewChangeKey(root,go)).update(optIn).digest("hex");
+  const key=crypto.createHash("sha256").update(readGit(["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(JSON.stringify(changed)).update(previewChangeKey(root,go)).update(optIn).digest("hex");
   if(last?.key===key&&last.status==="blocked"){
     runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation");return;
   }
@@ -700,7 +704,7 @@ function pollOwnerRuntime() {
   if(action==="audit"){
     // Reuse the native owner's read-only CLI, not the mutation launcher or a
     // second watcher. No attempt receipt, lifecycle lock or transcript for idle audits.
-    const head=run("git",["rev-parse","HEAD"]);
+    const head=readGit(["rev-parse","HEAD"]);
     const child=spawn(process.execPath,[path.join(root,"tools","dev","docker","reconcile-owner-runtime.mjs"),"--check"],{
       cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"],
       env:{...process.env,Path:path.dirname(exe.ssh)+";"+process.env.Path}
@@ -786,7 +790,7 @@ function pollGraphify() {
   // The same local authority admits every automatic attempt. It does not
   // require Lenovo connectivity, a clean checkout or any Git hook.
   remoteReady();
-  if (run("git", ["status", "--porcelain", "--", "tools/dev/graphify-local.mjs", "AGENTS.md"])) {
+  if (readGit(["status", "--porcelain", "--", "tools/dev/graphify-local.mjs", "AGENTS.md"])) {
     graphLogOnce("GRAPHIFY_RECONCILE_DEFERRED runner or authority under edit");
     return;
   }
@@ -870,7 +874,7 @@ function main(command) {
         try {
           const current=watcherDigest();
           reloadAction=watcherReloadAction({loaded,current,
-            dirty:Boolean(run("git",["status","--porcelain","--",...watcherInputs])),
+            dirty:Boolean(readGit(["status","--porcelain","--",...watcherInputs])),
             busy:Boolean(runtimeChild||dependencyChild||graphChild)});
         } catch {
           reloadAction="defer";

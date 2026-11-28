@@ -105,18 +105,24 @@ export function canonicalGitEnvironment() {
 export function openRepositoryReader(checkout) {
   const base = resolve(checkout);
   const env = canonicalGitEnvironment();
-  const read = (...args) => {
+  const execute = (args, input) => {
     try {
       return execFileSync(gitExecutable, ["--no-replace-objects", "--no-optional-locks", ...args], {
-        cwd: base, env, maxBuffer: maxBytes, timeout: 30000,
-        windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+        cwd: base, env, maxBuffer: maxBytes, timeout: 30000, input,
+        windowsHide: true, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       });
     } catch {
       throw new Error("Canonical Git read failed: " + args[0]);
     }
   };
+  const read = (...args) => execute(args);
   const actual = read("rev-parse", "--show-toplevel").toString("utf8").trim();
   assert.ok(samePath(resolve(actual), base), "Wrong checkout");
+  read.batchBlobs = ids => {
+    assert.ok(Array.isArray(ids) && ids.length > 0 && ids.every(id =>
+      typeof id === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(id)), "Invalid Git blob identities");
+    return execute(["cat-file", "--batch"], ids.join("\n") + "\n");
+  };
   return read;
 }
 
