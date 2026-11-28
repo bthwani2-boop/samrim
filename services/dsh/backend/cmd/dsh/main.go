@@ -3,13 +3,16 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/customercart"
@@ -111,12 +114,95 @@ func isolatedCustomerCartHandler(db *sql.DB, schema, address string, public http
 	return mux, nil
 }
 
-func main() {
-	mode := flag.String("mode", "serve", "serve, bootstrap, isolated-seed, or verify-development-db")
-	seedProfile := flag.String("seed-profile", "regression", "isolated-seed profile: regression, discovery-demo, or development-registration")
-	flag.Parse()
-	if *seedProfile != "regression" && (*mode != "isolated-seed" || (*seedProfile != "discovery-demo" && *seedProfile != "development-registration")) {
-		log.Fatal("invalid seed profile for mode")
+// Compose's default stop grace is ten seconds; use a single shorter
+// deadline for both HTTP servers, leaving time for the owner DB to close.
+const servingDrainTimeout = 8 * time.Second
+
+type servingEndpoint struct {
+	server   *http.Server
+	listener net.Listener
+	secure   bool
+}
+
+// Bind the complete admitted listener set before serving either endpoint.
+func bindDSHServers(public, private *http.Server) ([]servingEndpoint, error) {
+	listener, err := net.Listen("tcp", public.Addr)
+	if err != nil {
+		return nil, errors.New("DSH public listener unavailable")
+	}
+	endpoints := []servingEndpoint{{server: public, listener: listener}}
+	if private != nil {
+		secure, err := net.Listen("tcp", private.Addr)
+		if err != nil {
+			listener.Close()
+			return nil, errors.New("DSH private Captain standing TLS listener unavailable")
+		}
+		endpoints = append(endpoints, servingEndpoint{server: private, listener: secure, secure: true})
+	}
+	return endpoints, nil
+}
+
+// One DSH process owns both public and private listeners. A signal or an
+// unexpected listener failure ends admission across the whole set. Drain
+// active requests concurrently, before releasing the shared database pool.
+func serveDSH(ctx context.Context, endpoints []servingEndpoint, grace time.Duration) error {
+	if len(endpoints) == 0 {
+		return errors.New("DSH listener set missing")
+	}
+	for _, endpoint := range endpoints {
+		defer endpoint.listener.Close()
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	served := make(chan error, len(endpoints))
+	for _, endpoint := range endpoints {
+		go func() {
+			if endpoint.secure {
+				served <- endpoint.server.ServeTLS(endpoint.listener, "", "")
+			} else {
+				served <- endpoint.server.Serve(endpoint.listener)
+			}
+		}()
+	}
+	var failures []error
+	received := 0
+	select {
+	case <-ctx.Done():
+	case err := <-served:
+		received++
+		failures = append(failures, err)
+	}
+	// The signal context is already cancelled. Use a fresh deadline so
+	// existing request contexts remain live during the bounded drain.
+	drain, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	shutdown := make(chan error, len(endpoints))
+	for _, endpoint := range endpoints {
+		go func() {
+			err := endpoint.server.Shutdown(drain)
+			if err != nil {
+				err = errors.Join(err, endpoint.server.Close())
+			}
+			shutdown <- err
+		}()
+	}
+	for range endpoints {
+		failures = append(failures, <-shutdown)
+	}
+	for received < len(endpoints) {
+		err := <-served
+		received++
+		if !errors.Is(err, http.ErrServerClosed) {
+			failures = append(failures, err)
+		}
+	}
+	return errors.Join(failures...)
+}
+
+func runDSH(ctx context.Context, mode, seedProfile string) error {
+	if seedProfile != "regression" && (mode != "isolated-seed" || (seedProfile != "discovery-demo" && seedProfile != "development-registration")) {
+		return errors.New("invalid seed profile for mode")
 	}
 	schema := os.Getenv("DSH_DB_SCHEMA")
 	if schema == "" {
@@ -124,54 +210,55 @@ func main() {
 	}
 	db, err := discovery.OpenFromEnvironment()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(12)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	owner, err := discovery.New(db, schema)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	startup, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
-	if err = db.PingContext(ctx); err != nil {
-		log.Fatal("DSH owner DB unavailable")
+	if err = db.PingContext(startup); err != nil {
+		return errors.New("DSH owner DB unavailable")
 	}
-	switch *mode {
+
+	switch mode {
 	case "verify-development-db":
 		if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
-			log.Fatal("DSH development database verification requires isolated mode")
+			return errors.New("DSH development database verification requires isolated mode")
 		}
-		if err := dbscope.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
-			log.Fatal(err)
+		if err := dbscope.VerifyDevelopmentRuntime(startup, db, schema); err != nil {
+			return err
 		}
 		fmt.Println("DSH_DEVELOPMENT_DATABASE_PASS")
 	case "bootstrap":
-		if err := owner.BootstrapFresh(ctx, "database/schema"); err != nil {
-			log.Fatal("fresh DSH baseline denied: ", err)
+		if err := owner.BootstrapFresh(startup, "database/schema"); err != nil {
+			return fmt.Errorf("fresh DSH baseline denied: %w", err)
 		}
 		fmt.Println("DSH_FRESH_BASELINE_PASS schema=" + schema)
 	case "isolated-seed":
-		switch *seedProfile {
+		switch seedProfile {
 		case "discovery-demo":
-			err = owner.ImportSyntheticDemo(ctx)
+			err = owner.ImportSyntheticDemo(startup)
 		case "development-registration":
-			err = storeavailability.SeedDevelopmentRegistration(ctx, db, schema)
+			err = storeavailability.SeedDevelopmentRegistration(startup, db, schema)
 		default:
-			err = owner.ImportSynthetic(ctx)
+			err = owner.ImportSynthetic(startup)
 		}
 		if err != nil {
-			log.Fatal(err)
+			return err
 		}
 		fmt.Println("DSH_ISOLATED_OWNER_IMPORT_PASS schema=" + schema)
 	case "serve":
 		if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" || os.Getenv("REF_POSTGRES_DB") == dbscope.DevelopmentDatabase {
 			if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
-				log.Fatal("DSH development runtime requires isolated mode")
+				return errors.New("DSH development runtime requires isolated mode")
 			}
-			if err := dbscope.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
-				log.Fatal(err)
+			if err := dbscope.VerifyDevelopmentRuntime(startup, db, schema); err != nil {
+				return err
 			}
 		}
 		origins := map[string]bool{}
@@ -185,50 +272,64 @@ func main() {
 			addr = ":8080"
 		}
 		public := &discovery.Server{
-			Owner:                    owner,
-			AllowedOrigins:           origins,
+			Owner: owner, AllowedOrigins: origins,
 			StoreAvailabilityEnabled: os.Getenv("DSH_ENABLE_ISOLATED_STORE_AVAILABILITY") == "true",
 		}
 		handler, err := isolatedStoreAvailabilityHandler(db, schema, public, origins)
 		if err != nil {
-			log.Fatal("DSH protected Store availability cannot start: ", err)
+			return fmt.Errorf("DSH protected Store availability cannot start: %w", err)
 		}
 		handler, err = isolatedCaptainStandingHandler(db, schema, handler, origins)
 		if err != nil {
-			log.Fatal("DSH protected Captain standing cannot start: ", err)
+			return fmt.Errorf("DSH protected Captain standing cannot start: %w", err)
 		}
 		handler, err = isolatedMerchantStandingHandler(db, schema, addr, handler)
 		if err != nil {
-			log.Fatal("DSH protected Merchant standing cannot start: ", err)
+			return fmt.Errorf("DSH protected Merchant standing cannot start: %w", err)
 		}
 		handler, err = isolatedCustomerCartHandler(db, schema, addr, handler)
 		if err != nil {
-			log.Fatal("DSH Customer Cart cannot start: ", err)
+			return fmt.Errorf("DSH Customer Cart cannot start: %w", err)
 		}
-		handler, err = isolatedEmployeeHandler(ctx, db, schema, addr, handler)
+		handler, err = isolatedEmployeeHandler(startup, db, schema, addr, handler)
 		if err != nil {
-			log.Fatal("DSH employee directory cannot start: ", err)
+			return fmt.Errorf("DSH employee directory cannot start: %w", err)
 		}
 		secureCaptain, err := isolatedCaptainTLS(schema, os.Getenv, handler)
 		if err != nil {
-			log.Fatal("DSH private Captain standing TLS cannot start: ", err)
+			return fmt.Errorf("DSH private Captain standing TLS cannot start: %w", err)
 		}
-		if secureCaptain != nil {
-			listener, err := net.Listen("tcp", secureCaptain.Addr)
-			if err != nil {
-				log.Fatal("DSH private Captain standing TLS listener unavailable")
-			}
-			go func() { log.Fatal(secureCaptain.ServeTLS(listener, "", "")) }()
+		cancel()
+		if ctx.Err() != nil {
+			return nil
 		}
 		server := &http.Server{
-			Addr:              addr,
-			Handler:           handler,
-			ReadHeaderTimeout: 5 * time.Second,
-			IdleTimeout:       30 * time.Second,
+			Addr: addr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second,
+		}
+		endpoints, err := bindDSHServers(server, secureCaptain)
+		if err != nil {
+			return err
 		}
 		log.Printf("DSH public discovery listening on %s (schema %s)", addr, schema)
-		log.Fatal(server.ListenAndServe())
+		return serveDSH(ctx, endpoints, servingDrainTimeout)
 	default:
-		log.Fatal("unsupported mode")
+		return errors.New("unsupported mode")
+	}
+	return nil
+}
+
+func main() {
+	mode := flag.String("mode", "serve", "serve, bootstrap, isolated-seed, or verify-development-db")
+	seedProfile := flag.String("seed-profile", "regression", "isolated-seed profile: regression, discovery-demo, or development-registration")
+	flag.Parse()
+	ctx := context.Background()
+	stop := func() {}
+	if *mode == "serve" {
+		ctx, stop = signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	}
+	err := runDSH(ctx, *mode, *seedProfile)
+	stop()
+	if err != nil {
+		log.Fatal(err)
 	}
 }
