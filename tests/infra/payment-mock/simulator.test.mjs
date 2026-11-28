@@ -5,63 +5,71 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
-const mappingsDir = path.join(root, "mappings");
+const funding = "/sandbox/v1/funding/";
+const expected = new Map([
+  ["cash-in-accepted-01", [200, "wallet-two", "17", "YER", "SUCCEEDED"]],
+  ["cash-in-delayed-01", [200, "wallet-two", "11", "YER", "SUCCEEDED"]],
+  ["cash-in-failed-01", [200, "wallet-two", "11", "YER", "FAILED"]],
+  ["cash-in-pending-01", [200, "wallet-two", "11", "YER", "PENDING"]],
+  ["cash-in-redirect-01", [302, "wallet-two", "11", "YER", "SUCCEEDED"]],
+  ["cash-in-server-error", [503, "wallet-two", "11", "YER", "SUCCEEDED"]],
+  ["cash-in-wrong-actor", [200, "wallet-one", "11", "YER", "SUCCEEDED"]],
+  ["cash-in-wrong-amount", [200, "wallet-two", "12", "YER", "SUCCEEDED"]],
+  ["cash-in-wrong-currency", [200, "wallet-two", "11", "USD", "SUCCEEDED"]],
+]);
 
 function allMappings() {
-  return readdirSync(mappingsDir).filter((name) => name.endsWith(".json"))
-    .map((file) => JSON.parse(readFileSync(path.join(mappingsDir, file), "utf8")));
+  const directory = path.join(root, "mappings");
+  return readdirSync(directory)
+    .filter(name => name.endsWith(".json"))
+    .map(file => JSON.parse(readFileSync(path.join(directory, file), "utf8")));
 }
 
-test("synthetic payment image owns only fixed evidence fixtures", () => {
+test("synthetic payment image owns exactly the admitted evidence fixtures", () => {
   const dockerfile = readFileSync(path.join(root, "Dockerfile"), "utf8");
-  assert.match(dockerfile, /^FROM wiremock\/wiremock:3\.13\.2-2/m);
-  assert.match(dockerfile, /^COPY mappings\/ \/home\/wiremock\/mappings\//m);
+  assert.match(dockerfile, /^FROM wiremock\/wiremock:3\.13\.2-2@sha256:[a-f0-9]{64}$/m);
+  assert.match(dockerfile, /^COPY mappings\/ \/home\/wiremock\/mappings\/$/m);
   assert.match(dockerfile, /^USER 1000:1000$/m);
   const mappings = allMappings();
-  assert.equal(mappings.length, 9);
-  const urls = new Set();
-  const ids = new Set();
+  assert.equal(mappings.length, expected.size);
+  const remaining = new Set(expected.keys());
+  const names = new Set();
   for (const mapping of mappings) {
-    assert.equal(mapping.request.method, "GET");
-    assert.match(mapping.request.url, /^\/sandbox\/v1\/funding\/cash-in-[a-z0-9-]+$/);
+    const reference = mapping.response.jsonBody.reference;
+    assert.ok(remaining.delete(reference), "unexpected or duplicate fixture: " + reference);
+    assert.ok(!names.has(mapping.name), "duplicate mapping name");
+    names.add(mapping.name);
+    assert.deepEqual(mapping.request, { method: "GET", url: funding + reference });
     assert.equal(mapping.priority, 5);
-    assert.equal(mapping.response.headers["Content-Type"], "application/json");
-    assert.equal(mapping.response.headers["Cache-Control"], "no-store");
-    assert.ok(!urls.has(mapping.request.url), "ambiguous simulator request path");
-    assert.ok(!ids.has(mapping.name), "ambiguous simulator mapping name");
-    urls.add(mapping.request.url);
-    ids.add(mapping.name);
-    const reference = mapping.request.url.split("/").at(-1);
-    const body = mapping.response.jsonBody;
-    assert.deepEqual(Object.keys(body).sort(), ["actorId", "amountYer", "currency", "reference", "status"]);
-    assert.equal(body.reference, reference);
-    assert.match(body.amountYer, /^[1-9][0-9]*$/);
-    assert.match(body.actorId, /^wallet-(one|two)$/);
-    assert.ok(["SUCCEEDED", "PENDING", "FAILED"].includes(body.status));
-    assert.ok([200, 302, 503].includes(mapping.response.status));
-    assert.ok(!mapping.request.url.startsWith("/__admin"));
+    const [status, actorId, amountYer, currency, state] = expected.get(reference);
+    const headers = { "Content-Type": "application/json", "Cache-Control": "no-store" };
+    if (status === 302) headers.Location = "http://example.invalid/never-follow";
+    assert.deepEqual(mapping.response, {
+      status,
+      headers,
+      jsonBody: { reference, actorId, amountYer, currency, status: state },
+      ...(reference === "cash-in-delayed-01" ? { fixedDelayMilliseconds: 2500 } : {}),
+    });
   }
-  assert.ok(urls.has("/sandbox/v1/funding/cash-in-accepted-01"));
-  assert.ok(urls.has("/sandbox/v1/funding/cash-in-pending-01"));
-  assert.ok(urls.has("/sandbox/v1/funding/cash-in-failed-01"));
-  assert.ok(urls.has("/sandbox/v1/funding/cash-in-delayed-01"));
+  assert.equal(remaining.size, 0);
 });
 
 test("only the explicitly confirmed fixture can credit the authorized synthetic Customer", () => {
-  const valid = allMappings().filter((mapping) => {
-    const evidence = mapping.response.jsonBody;
-    return mapping.response.status === 200 &&
-      !mapping.response.fixedDelayMilliseconds &&
+  const valid = allMappings().filter(({ request, response }) => {
+    const evidence = response.jsonBody;
+    return response.status === 200 &&
+      !response.fixedDelayMilliseconds &&
       evidence.status === "SUCCEEDED" &&
       evidence.currency === "YER" &&
       evidence.actorId === "wallet-two" &&
       evidence.amountYer === "17" &&
-      evidence.reference === mapping.request.url.split("/").at(-1);
+      request.url === funding + evidence.reference;
   });
   assert.deepEqual(valid.map(({ response }) => response.jsonBody.reference), ["cash-in-accepted-01"]);
 });
 
-test("provider build context excludes test harnesses and nonfixture files",()=>{
-  const rules=readFileSync(path.join(root,".dockerignore"),"utf8").split(/\r?\n/).filter(line=>line&&!line.startsWith("#"));
-  assert.deepEqual(rules,["**","!mappings/cash-in-*.json"]);
+test("provider build context excludes test harnesses and nonfixture files", () => {
+  const rules = readFileSync(path.join(root, ".dockerignore"), "utf8")
+    .split(/\r?\n/).filter(line => line && !line.startsWith("#"));
+  assert.deepEqual(rules, ["**", "!mappings/cash-in-*.json"]);
 });
