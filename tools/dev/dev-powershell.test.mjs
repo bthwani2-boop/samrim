@@ -609,7 +609,7 @@ test("owner baseline reconciliation forwards one intact native option", {
     `$ast=[Management.Automation.Language.Parser]::ParseFile('${quoted}',[ref]$tok,[ref]$errors)`,
     "$assignment=$ast.Find({param($n) $n -is [Management.Automation.Language.AssignmentStatementAst] -and $n.Left.Extent.Text -eq '$reconcileOptions'},$true)",
     "if(!$assignment){throw 'MISSING_RECONCILE_OPTIONS'}",
-    "$RecoverRuntimeAttempt=$null;$PrepareBaseline=$true;$mode='--apply-preview'",
+    "$RecoverRuntimeAttempt=$null;$PrepareBaseline=$true;$mode='--apply'",
     "Invoke-Expression $assignment.Extent.Text",
     "$actual=& node -e 'console.log(JSON.stringify(process.argv.slice(1)))' -- $mode @reconcileOptions",
     "if($LASTEXITCODE -ne 0){throw 'NATIVE_ARGUMENT_PROBE_FAILED'}",
@@ -625,7 +625,7 @@ test("owner baseline reconciliation forwards one intact native option", {
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
   const actual = result.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line));
-  assert.deepEqual(actual, [["--apply-preview", "--prepare-baseline"], ["--apply-preview"]]);
+  assert.deepEqual(actual, [["--apply", "--prepare-baseline"], ["--apply"]]);
 });
 
 test("automatic recovery forwards only the proven safe-boundary mode and exact attempt key", {

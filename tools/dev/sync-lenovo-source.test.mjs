@@ -601,6 +601,21 @@ test("managed deletion refuses a redirected ancestor outside the source mirror",
 });
 
 // The existing watcher owns a single bounded runtime attempt and does not retry ambiguous writes.
+test("automatic serving admission rejects every non-committed marker", async () => {
+  const { committedRuntimeAdmission } = await import("./sync-lenovo-reconciliation.mjs");
+  const mode = "isolated-committed-owner-images-v1";
+  assert.equal(committedRuntimeAdmission(mode), mode);
+  assert.equal(committedRuntimeAdmission(mode + "\r\n"), mode);
+  for (const value of [null, undefined, "", "true", "isolated-owner-go-preview-v2", mode + "\nforeign", {}])
+    assert.throws(() => committedRuntimeAdmission(value), /RUNTIME_OPT_IN_INVALID/);
+  const source = readFileSync(new URL("./sync-lenovo-source.mjs", import.meta.url), "utf8");
+  const scheduler = source.slice(source.indexOf("function pollOwnerRuntime()"), source.indexOf("// Same process as the existing source mirror."));
+  assert.match(scheduler, /committedRuntimeAdmission\(/);
+  assert.match(scheduler, /preview: false/);
+  assert.match(scheduler, /args: \["-Apply", "-Automatic"/);
+  assert.doesNotMatch(scheduler, /"-Preview"|previewChangeKey|isPreviewGoPath|isolated-owner-go-preview-v2/);
+});
+
 test("runtime reconciliation trigger is immediate for changed committed source and respects retry gates", async () => {
   const { runtimePollAction } = await import("./sync-lenovo-reconciliation.mjs");
   const base={enabled:true,dirty:false,active:false,key:"new",last:{key:"old",status:"pass"},now:100,nextAudit:200};

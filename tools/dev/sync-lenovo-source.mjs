@@ -10,8 +10,8 @@ import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { containsLikelySecretBytes, openRepositoryReader, readVerifiedFile } from "../security/verify-secrets.mjs";
 import { services } from "./check-go.mjs";
-import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope, previewChangeKey } from "./docker/owner-preview-source.mjs";
-import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runRuntimeAudit, runtimeAttemptPhase, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { dirtyPaths, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope } from "./docker/owner-preview-source.mjs";
+import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, committedRuntimeAdmission, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runRuntimeAudit, runtimeAttemptPhase, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -667,72 +667,95 @@ function launchRuntimeAttempt({key,attempt,args,recovery=false}) {
 
 function pollOwnerRuntime() {
   if (runtimeChild || !fs.existsSync(runtimeOptIn)) return;
-  const optIn=fs.readFileSync(runtimeOptIn,"utf8").trim();
-  const preview=optIn==="isolated-owner-go-preview-v2";
-  if(!preview && optIn!=="isolated-committed-owner-images-v1")throw new Error("RUNTIME_OPT_IN_INVALID");
+  const admission = committedRuntimeAdmission(fs.readFileSync(runtimeOptIn, "utf8"));
   remoteReady();
-  const currentBranch=branch();
-  if(!currentBranch||currentBranch==="main"||currentBranch.startsWith("archive/")){
-    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED branch");return;
-  }
-  const changed=dirtyPaths(root,runtimeScope);
-  let last=runtimeState();
-  const recovered=last&&runtimeReceiptStatus(runtimeStateFile,runtimeReceiptFile);
-  if(recovered){
-    last={...last,status:recovered};
-    persistAt(runtimeStateFile,last);
-    runtimeLogOnce("RUNTIME_RECONCILE_RECOVERED key="+last.key.slice(0,12));
-    nextRuntimeAudit=Date.now()+60_000;
-  }
-  if(last&&["running","uncertain"].includes(last.status)){
-    // A proven stable boundary does not depend on desired source. Only the
-    // recovery implementation must be committed. The existing Docker lease
-    // and orphan check establish that the previous writer is gone.
-    if(runtimeAttemptPhase(runtimeStateFile,runtimeReceiptFile)!=="ready"){
-      runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation");return;
-    }
-    const recoveryInputs=["tools/dev/dev.ps1","tools/dev/dev-resource-admission.ps1","tools/dev/docker/reconcile-owner-runtime.mjs","tools/dev/sync-lenovo-source.mjs","tools/dev/sync-lenovo-reconciliation.mjs"];
-    if(changed.some(p=>recoveryInputs.includes(p))){
-      runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (recovery input)");return;
-    }
-    if(Date.now()>=nextRuntimeAudit)
-      launchRuntimeAttempt({key:last.key,attempt:last.attempt,args:["-RecoverRuntimeAttempt",last.key,"-Automatic"],recovery:true});
+  const currentBranch = branch();
+  if (!currentBranch || currentBranch === "main" || currentBranch.startsWith("archive/")) {
+    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED branch");
     return;
   }
-  const dirty=changed.some(isSharedRuntimeInput);
-  if(dirty){runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (shared runtime input)");return;}
-  const eligible=ownerReconcilePlan({changed,committed:{},preview,captain:false}).eligible;
-  const go=changed.filter(p=>isPreviewGoPath(p)&&eligible.some(o=>p.startsWith("services/"+o+"/")));
-  const key=crypto.createHash("sha256").update(readGit(["ls-tree","HEAD","--",...runtimeScope])).update("\0").update(JSON.stringify(changed)).update(previewChangeKey(root,go)).update(optIn).digest("hex");
-  if(last?.key===key&&last.status==="blocked"){
-    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation");return;
+  const changed = dirtyPaths(root, runtimeScope);
+  let last = runtimeState();
+  const recovered = last && runtimeReceiptStatus(runtimeStateFile, runtimeReceiptFile);
+  if (recovered) {
+    last = { ...last, status: recovered };
+    persistAt(runtimeStateFile, last);
+    runtimeLogOnce("RUNTIME_RECONCILE_RECOVERED key=" + last.key.slice(0, 12));
+    nextRuntimeAudit = Date.now() + 60_000;
   }
-  const action=runtimePollAction({enabled:true,dirty,active:false,key,last,now:Date.now(),nextAudit:nextRuntimeAudit});
-  if(!action)return;
-  if(action==="audit"){
-    // Reuse the native owner's read-only CLI, not the mutation launcher or a
-    // second watcher. No attempt receipt, lifecycle lock or transcript for idle audits.
-    const head=readGit(["rev-parse","HEAD"]);
-    runtimeChild=runRuntimeAudit(process.execPath,[path.join(root,"tools","dev","docker","reconcile-owner-runtime.mjs"),"--check"],{
-      cwd:root,
-      env:{...process.env,Path:path.dirname(exe.ssh)+";"+process.env.Path}
-    },head,eligible,({outcome,status})=>{
-      runtimeChild=null;sourcePending=true;
-      nextRuntimeAudit=Date.now()+60_000;
-      try{
-        const saved=runtimeState();
-        if(saved?.key!==key||saved?.attempt!==last?.attempt||saved?.status!==last?.status)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
-        if(saved.status!==status)persistAt(runtimeStateFile,{...saved,status});
-        if(outcome==="apply")nextRuntimeAudit=0;
-        runtimeLogOnce("RUNTIME_AUDIT_"+outcome.toUpperCase()+" key="+key.slice(0,12));
-      }catch{runtimeLogOnce("RUNTIME_AUDIT_BLOCKED state changed");}
+
+  // An interrupted mutation must be settled before selecting desired source.
+  if (last && ["running", "uncertain"].includes(last.status)) {
+    if (runtimeAttemptPhase(runtimeStateFile, runtimeReceiptFile) !== "ready") {
+      runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation");
+      return;
+    }
+    const recoveryInputs = [
+      "tools/dev/dev.ps1", "tools/dev/dev-resource-admission.ps1",
+      "tools/dev/docker/reconcile-owner-runtime.mjs",
+      "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
+    ];
+    if (changed.some(rel => recoveryInputs.includes(rel))) {
+      runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (recovery input)");
+      return;
+    }
+    if (Date.now() >= nextRuntimeAudit) {
+      launchRuntimeAttempt({
+        key: last.key, attempt: last.attempt,
+        args: ["-RecoverRuntimeAttempt", last.key, "-Automatic"], recovery: true
+      });
+    }
+    return;
+  }
+
+  // Dirty owner files are admission holds, never automatic image inputs.
+  const dirty = changed.some(isSharedRuntimeInput);
+  if (dirty) {
+    runtimeLogOnce("RUNTIME_UPDATE_PENDING_REVIEW (shared runtime input)");
+    return;
+  }
+  const { eligible } = ownerReconcilePlan({ changed, committed: {}, preview: false, captain: false });
+  const key = crypto.createHash("sha256")
+    .update(readGit(["ls-tree", "HEAD", "--", ...runtimeScope]))
+    .update("\0").update(JSON.stringify(changed)).update(admission).digest("hex");
+  if (last?.key === key && last.status === "blocked") {
+    runtimeLogOnce("RUNTIME_UPDATE_BLOCKED previous attempt needs reconciliation");
+    return;
+  }
+  const action = runtimePollAction({ enabled: true, dirty, active: false, key, last, now: Date.now(), nextAudit: nextRuntimeAudit });
+  if (!action) return;
+  if (action === "audit") {
+    const head = readGit(["rev-parse", "HEAD"]);
+    runtimeChild = runRuntimeAudit(process.execPath, [
+      path.join(root, "tools", "dev", "docker", "reconcile-owner-runtime.mjs"), "--check"
+    ], {
+      cwd: root,
+      env: { ...process.env, Path: path.dirname(exe.ssh) + ";" + process.env.Path }
+    }, head, eligible, ({ outcome, status }) => {
+      runtimeChild = null;
+      sourcePending = true;
+      nextRuntimeAudit = Date.now() + 60_000;
+      try {
+        const saved = runtimeState();
+        if (saved?.key !== key || saved?.attempt !== last?.attempt || saved?.status !== last?.status)
+          throw new Error("RUNTIME_ATTEMPT_MISMATCH");
+        if (saved.status !== status) persistAt(runtimeStateFile, { ...saved, status });
+        if (outcome === "apply") nextRuntimeAudit = 0;
+        runtimeLogOnce("RUNTIME_AUDIT_" + outcome.toUpperCase() + " key=" + key.slice(0, 12));
+      } catch {
+        runtimeLogOnce("RUNTIME_AUDIT_BLOCKED state changed");
+      }
     });
     return;
   }
-  const attempt=crypto.randomUUID();
-  beginRuntimeAttempt(runtimeStateFile,runtimeReceiptFile,key,attempt);
-  launchRuntimeAttempt({key,attempt,args:["-Apply",...(preview?["-Preview"]:[]),...(runtimeBaselineProofDue(key,last)?["-PrepareBaseline"]:[])]});
+  const attempt = crypto.randomUUID();
+  beginRuntimeAttempt(runtimeStateFile, runtimeReceiptFile, key, attempt);
+  launchRuntimeAttempt({
+    key, attempt,
+    args: ["-Apply", "-Automatic", ...(runtimeBaselineProofDue(key, last) ? ["-PrepareBaseline"] : [])]
+  });
 }
+
 // Same process as the existing source mirror. The native Graphify runner
 // remains the exclusive index writer; the event subscription only schedules it.
 const graphOptIn = path.join(stateDir,"graphify-reconcile.enabled");

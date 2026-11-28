@@ -1304,11 +1304,15 @@ function Invoke-ScopedDocker {
       } finally { $env:BTHWANI_UNIFIED_DEV_RECONCILE = $prior }
     }
     'reconcile' {
+      Assert-Ok (!$Automatic -or (!$Preview -and !$EnableCaptain -and ($Apply -or $RecoverRuntimeAttempt))) 'Automatic reconciliation admits only committed apply or safe attempt recovery'
       Assert-Ok (!$EnableCaptain -or $Apply) 'Captain activation requires explicit -Apply'
-      Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain)) 'Preview requires explicit -Apply without capability activation'
-      Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain)) 'Baseline preparation requires isolated -Apply without capability activation'
+      Assert-Ok (!$Preview -or ($Apply -and !$EnableCaptain -and !$PrepareBaseline)) 'Preview requires explicit -Apply without capability activation or baseline preparation'
+      Assert-Ok (!$PrepareBaseline -or ($Apply -and !$EnableCaptain -and !$Preview)) 'Baseline preparation requires isolated committed -Apply'
       Assert-Ok (!$RecoverRuntimeAttempt -or (!$Apply -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and $RecoverRuntimeAttempt -cmatch '^[0-9a-f]{64}$')) 'Runtime attempt recovery requires the exact reviewed key and no Apply'
       Assert-Ok (!$ConfigurationFrom -or (!$Automatic -and !$EnableCaptain -and !$Preview -and !$PrepareBaseline -and !$RecoverRuntimeAttempt -and $ConfigurationFrom -cmatch '^[0-9a-f]{40}$')) 'Configuration transition requires one reviewed Compose revision and no other mutation mode'
+      if ($Automatic -and $Apply) {
+        Assert-Ok ($env:BTHWANI_RUNTIME_ATTEMPT_KEY -cmatch '^[a-f0-9]{64}$' -and $env:BTHWANI_RUNTIME_ATTEMPT_ID -cmatch '^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$') 'Automatic committed apply requires the scheduler attempt identity'
+      }
       $mode = if ($ConfigurationFrom) { if ($Apply) { '--apply-config' } else { '--check-config' } } elseif ($RecoverRuntimeAttempt) { if ($Automatic) { '--recover-safe' } else { '--recover-attempt' } } elseif ($EnableCaptain) { '--apply-captain' } elseif ($Preview) { '--apply-preview' } elseif ($Apply) { '--apply' } else { '--check' }
       $reconcileOptions = @(if ($ConfigurationFrom) { $ConfigurationFrom } elseif ($RecoverRuntimeAttempt) { $RecoverRuntimeAttempt } elseif ($PrepareBaseline) { '--prepare-baseline' })
       $prior = $env:BTHWANI_UNIFIED_DEV_RECONCILE

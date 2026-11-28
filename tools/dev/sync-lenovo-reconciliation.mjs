@@ -135,6 +135,22 @@ export function remoteAuditDue(previous, deadline, now = Date.now()) {
 const sha = /^[a-f0-9]{64}$/;
 const attemptId = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const settledRuntimeStates = new Set(["pass", "review", "blocked", "retry"]);
+
+// Automatic serving authority has one committed-source admission.
+export function committedRuntimeAdmission(value) {
+  if (typeof value !== "string" || value.trim() !== "isolated-committed-owner-images-v1")
+    throw new Error("RUNTIME_OPT_IN_INVALID");
+  return "isolated-committed-owner-images-v1";
+}
+export function automaticRuntimeAttempt(mode, environment) {
+  const key = environment.BTHWANI_RUNTIME_ATTEMPT_KEY;
+  const attempt = environment.BTHWANI_RUNTIME_ATTEMPT_ID;
+  if (key === undefined && attempt === undefined) return null;
+  if (mode !== "--apply" || typeof key !== "string" || typeof attempt !== "string" ||
+      !sha.test(key) || !attemptId.test(attempt))
+    throw new Error("RUNTIME_AUTOMATIC_ATTEMPT_REQUIRES_COMMITTED_APPLY");
+  return { key, attempt };
+}
 const pending = state => ["running", "uncertain"].includes(state?.status);
 const digest = text => createHash("sha256").update(text).digest("hex");
 const readState = file => JSON.parse(readFileSync(file, "utf8"));

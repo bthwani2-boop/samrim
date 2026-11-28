@@ -3,6 +3,24 @@ import test from "node:test";
 import { sourceIdentity } from "../../tools/dev/docker/owner-preview-source.mjs";
 import { assertSameHashes, differingKeys, selectOwners } from "../../tools/dev/docker/reconcile-owner-runtime.mjs";
 
+test("runtime admission separates committed audit and apply from manual preview", async () => {
+  const { parseReconcileArgs } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const key = "a".repeat(64), attempt = "11111111-1111-4111-8111-111111111111";
+  const environment = { BTHWANI_RUNTIME_ATTEMPT_KEY: key, BTHWANI_RUNTIME_ATTEMPT_ID: attempt };
+  assert.equal(parseReconcileArgs(["--check"], {}).preview, false);
+  assert.equal(parseReconcileArgs(["--apply"], {}).preview, false);
+  assert.equal(parseReconcileArgs(["--apply-preview"], {}).preview, true);
+  assert.equal(parseReconcileArgs(["--apply-preview"], {}).attempt, null);
+  assert.deepEqual(parseReconcileArgs(["--apply", "--prepare-baseline"], environment).attempt, { key, attempt });
+  for (const args of [["--check"], ["--apply-preview"], ["--apply-captain"], ["--build-only", "dsh"],
+    ["--recover-safe", key], ["--check-config", "a".repeat(40)], ["--apply-config", "a".repeat(40)]])
+    assert.throws(() => parseReconcileArgs(args, environment), /RUNTIME_AUTOMATIC_ATTEMPT_REQUIRES_COMMITTED_APPLY/);
+  for (const invalid of [{ BTHWANI_RUNTIME_ATTEMPT_KEY: key }, { BTHWANI_RUNTIME_ATTEMPT_ID: attempt },
+    { ...environment, BTHWANI_RUNTIME_ATTEMPT_KEY: "bad" }, { ...environment, BTHWANI_RUNTIME_ATTEMPT_ID: "" }])
+    assert.throws(() => parseReconcileArgs(["--apply"], invalid), /RUNTIME_AUTOMATIC_ATTEMPT_REQUIRES_COMMITTED_APPLY/);
+  assert.throws(() => parseReconcileArgs(["--apply-preview", "--prepare-baseline"], {}), /committed source/);
+});
+
 test("runtime reconciliation never rebuilds unaffected owners", () => {
   assert.deepEqual(selectOwners({ candidates: [], activateCaptain: false, currentCaptain: true }), []);
   assert.deepEqual(selectOwners({ candidates: ["dsh"], activateCaptain: false, currentCaptain: true }), ["dsh"]);
@@ -229,7 +247,8 @@ test("canonical database scope rejects shared, foreign or privileged principals"
   }
   for(const mode of ["--prepare-dsh-database","--resume-dsh-database","--cutover-dsh-database","--relocate-identity-database","--resume-identity-database"])
     assert.throws(()=>parseReconcileArgs([mode]),/Usage/);
-  assert.equal(parseReconcileArgs(["--apply-preview","--prepare-baseline"]).prepare,true);
+  assert.equal(parseReconcileArgs(["--apply","--prepare-baseline"]).prepare,true);
+  assert.throws(()=>parseReconcileArgs(["--apply-preview","--prepare-baseline"]),/committed source/);
   assert.equal(parseReconcileArgs(["--recover-attempt","a".repeat(64)]).recover,true);
   const automaticRecovery=parseReconcileArgs(["--recover-safe","a".repeat(64)]);
   assert.equal(automaticRecovery.recover,true);

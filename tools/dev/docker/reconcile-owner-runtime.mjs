@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openRepositoryReader } from "../../security/verify-secrets.mjs";
 import { admitNativeGoTests, prepareSourceGo } from "../check-go.mjs";
-import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, recordRuntimePhase, runtimeAttemptPhase, runtimeFailureStatus, runtimeReceiptStatus, runtimeTerminalStatus, VerifiedRuntimeRollback } from "../sync-lenovo-reconciliation.mjs";
+import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, automaticRuntimeAttempt, recordRuntimePhase, runtimeAttemptPhase, runtimeFailureStatus, runtimeReceiptStatus, runtimeTerminalStatus, VerifiedRuntimeRollback } from "../sync-lenovo-reconciliation.mjs";
 import { reconcileComposeConfiguration } from "./compose-runtime-transition.mjs";
 import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope, wltCommandRoleInactiveSQL } from "./owner-baseline-transition.mjs";
 import { captureCommittedOwner, captureOwner, dirtyPaths, isPreviewGoPath, materializeOwner, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope, ownerSourceState, ownerTestScope, ownerToolchainInput, previewChangeKey, snapshotGoVersion, sourceIdentity, verifyMaterializedOwner } from "./owner-preview-source.mjs";
@@ -204,14 +204,16 @@ export const recoveryProofScope = Object.freeze([
 export const guardedScope = Object.freeze([
   ...new Set(["services", ...recoveryProofScope, ...baselineProofTools]),
 ]);
-function currentChangeKey(committed, preview, captain, wltConfigDrift=false) {
-  const changed=dirtyPaths(root,guardedScope);
-  const plan=ownerReconcilePlan({changed,committed,preview,captain,wltConfigDrift});
-  const go=changed.filter(p=>isPreviewGoPath(p) && plan.eligible.some(o=>p.startsWith("services/"+o+"/")));
-  // Blocked inputs cannot be built; only their paths/review classification
-  // affect selection. Eligible Go bytes must remain exactly stable.
-  const key=createHash("sha256").update(JSON.stringify([changed,plan])).update(previewChangeKey(root,go)).digest("hex");
-  return {changed,plan,key};
+function currentChangeKey(committed, preview, captain, wltConfigDrift = false) {
+  const changed = dirtyPaths(root, guardedScope);
+  const plan = ownerReconcilePlan({ changed, committed, preview, captain, wltConfigDrift });
+  const hash = createHash("sha256").update(JSON.stringify([changed, plan]));
+  if (preview) {
+    const go = changed.filter(rel => isPreviewGoPath(rel) &&
+      plan.eligible.some(owner => rel.startsWith("services/" + owner + "/")));
+    hash.update(previewChangeKey(root, go));
+  }
+  return { changed, plan, key: hash.digest("hex") };
 }
 function checkedHead(head, key, committed, preview, captain, wltConfigDrift=false) {
   const currentBranch = git(["branch", "--show-current"]);
@@ -423,24 +425,27 @@ export function assertSourceHost(machineName, reportedName, checkoutRoot) {
     checkoutRoot.toLowerCase() !== "d:\\samrim") throw new Error("Wrong source host");
 }
 
-export function parseReconcileArgs(argv) {
+export function parseReconcileArgs(argv, environment = process.env) {
   const [mode, ...options] = argv;
   const build = mode === "--build-only";
-  const recover = ["--recover-attempt","--recover-safe"].includes(mode);
+  const recover = ["--recover-attempt", "--recover-safe"].includes(mode);
   const configuration = ["--check-config", "--apply-config"].includes(mode);
+  const preview = mode === "--apply-preview";
+  const apply = ["--apply", "--apply-preview", "--apply-captain", "--apply-config"].includes(mode);
   const prepare = options.length === 1 && options[0] === "--prepare-baseline";
   if (!["--check", "--apply", "--apply-preview", "--apply-captain", "--recover-attempt", "--recover-safe", "--build-only", "--check-config", "--apply-config"].includes(mode))
-    throw new Error("Usage: --check | --apply [--prepare-baseline] | --apply-preview [--prepare-baseline] | --apply-captain | --recover-attempt KEY | --recover-safe KEY | --build-only OWNER | --check-config REVISION | --apply-config REVISION");
+    throw new Error("Usage: --check | --apply [--prepare-baseline] | --apply-preview | --apply-captain | --recover-attempt KEY | --recover-safe KEY | --build-only OWNER | --check-config REVISION | --apply-config REVISION");
+  const attempt = automaticRuntimeAttempt(mode, environment);
   if (build) {
     if (options.length !== 1 || !Object.hasOwn(owners, options[0])) throw new Error("Expected one owner for --build-only");
   } else if (recover) {
     if (options.length !== 1 || !/^[a-f0-9]{64}$/.test(options[0])) throw new Error("Expected exact reviewed runtime attempt key");
   } else if (configuration) {
     if (options.length !== 1 || !/^[a-f0-9]{40}$/.test(options[0])) throw new Error("Expected exact reviewed Compose source revision");
-  } else if (options.length && (!prepare || !["--apply", "--apply-preview"].includes(mode))) {
-    throw new Error("Baseline preparation requires an explicit isolated apply");
+  } else if (options.length && (!prepare || mode !== "--apply")) {
+    throw new Error("Baseline preparation requires an explicit isolated apply of committed source");
   }
-  return { mode, options, build, recover, configuration, prepare, apply: ["--apply", "--apply-preview", "--apply-captain", "--apply-config"].includes(mode) };
+  return { mode, options, build, recover, configuration, prepare, apply, preview, attempt };
 }
 let activeAttempt=null;
 function attemptFiles() {
@@ -448,14 +453,13 @@ function attemptFiles() {
   const directory=resolve(process.env.LOCALAPPDATA,"BThwani","Operations","SourceSync");
   return {stateFile:resolve(directory,"runtime-reconcile.json"),receiptFile:resolve(directory,"runtime-reconcile.receipt.json")};
 }
-function openAutomaticAttempt(mode) {
-  if(!["--apply","--apply-preview"].includes(mode))return null;
-  const key=process.env.BTHWANI_RUNTIME_ATTEMPT_KEY,attempt=process.env.BTHWANI_RUNTIME_ATTEMPT_ID;
-  if(!key&&!attempt)return null;
-  const files=attemptFiles();
-  if(!key||!attempt||runtimeAttemptPhase(files.stateFile,files.receiptFile,key,attempt)!=="ready")
+function openAutomaticAttempt(request) {
+  if (!request) return null;
+  const { key, attempt } = request;
+  const files = attemptFiles();
+  if (runtimeAttemptPhase(files.stateFile, files.receiptFile, key, attempt) !== "ready")
     throw new Error("RUNTIME_SAFE_BOUNDARY_NOT_PROVEN");
-  return {...files,key,attempt};
+  return { ...files, key, attempt };
 }
 function markAutomaticPhase(phase) {
   if(activeAttempt){
@@ -474,13 +478,13 @@ function assertUnusedBuildTag(reference) {
     throw new Error("Build-only tag is in use by a container");
 }
 function main() {
-  const {mode,options,build,recover,configuration,prepare,apply}=parseReconcileArgs(process.argv.slice(2));
+  const {mode,options,build,recover,configuration,prepare,apply,preview,attempt}=parseReconcileArgs(process.argv.slice(2));
   if((build||apply||recover)&&process.env.BTHWANI_UNIFIED_DEV_RECONCILE!=="1")throw new Error("Use the unified dev launcher with its Docker resource lease");
   assertSourceHost(hostname(),process.env.COMPUTERNAME,root);
   if(docker(["context","inspect",context,"--format","{{.Endpoints.docker.Host}}"])!=="ssh://bthwa@bthwani-docker")throw new Error("Wrong Docker target");
   const head=git(["rev-parse","HEAD"]),branch=git(["branch","--show-current"]);
   if(!/^[a-f0-9]{40}$/.test(head)||!branch||branch==="main"||branch.startsWith("archive/"))throw new Error("Not an active development branch");
-  activeAttempt=openAutomaticAttempt(mode);
+  activeAttempt=openAutomaticAttempt(attempt);
   if (configuration) {
     const scope = [...ownerComposeInputs, "tools/dev/docker", "tools/dev/dev.ps1", "tools/dev/dev-resource-admission.ps1"];
     const ensureSource = () => {
@@ -564,7 +568,6 @@ function main() {
     git(["merge-base","--is-ancestor",revisions[o].revision,head]);
     committed[o]=git(["diff","--name-only","--no-renames","-z",revisions[o].revision,head,"--",...ownerSourceScope(o)]).split("\0").filter(Boolean);
   }
-  const preview=mode==="--apply-preview" || !apply;
   const change=currentChangeKey(committed,preview,captain,wltConfigDrift);
   const ensureSource=()=>checkedHead(head,change.key,committed,preview,captain,wltConfigDrift);
   let blocked=change.plan.blocked;
@@ -610,7 +613,7 @@ function main() {
       console.log(o+" RUNTIME=BLOCKED revision="+old.revision+" reason=PREVIEW_NOT_AUTHORIZED");
       continue;
     }
-    if(dirty && (source.previewChanges.length || source.imageChanges.length || old.digest)) snapshots.set(o,captureOwner(root,o));
+    if(preview && dirty && (source.previewChanges.length || source.imageChanges.length || old.digest)) snapshots.set(o,captureOwner(root,o));
     const snapshot=snapshots.get(o);
     const stale=snapshot ? old.digest!==snapshot.digest || old.revision!==head : Boolean(source.imageChanges.length || old.digest);
     if(stale)candidates.push(o);
