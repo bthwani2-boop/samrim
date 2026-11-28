@@ -206,7 +206,7 @@ func agreementCommandAuthority(identityOrigin, dshOrigin, token, store string, s
 	if !validBearer(auth) {
 		return decisionAuthority{}, ErrAgreementUnauthorized
 	}
-	identity, err := newIdentityReader(identityOrigin)
+	identity, err := newIdentityReader(identityOrigin, false)
 	if err != nil || !validLoopbackOwnerOrigin(dshOrigin) {
 		return decisionAuthority{}, ErrAgreementUnconfirmed
 	}

@@ -16,7 +16,7 @@ func VerifySandboxProviderFunding(ctx context.Context, db *sql.DB, identityOrigi
 	if amount < 1 || !sandboxReference.MatchString(reference) || !validBearer("Bearer "+token) {
 		return "", errors.New("invalid sandbox provider funding input")
 	}
-	reader, err := newIdentityReader(identityOrigin)
+	reader, err := newIdentityReader(identityOrigin, false)
 	if err != nil {
 		return "", err
 	}

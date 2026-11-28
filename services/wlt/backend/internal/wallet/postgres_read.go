@@ -24,9 +24,6 @@ func NewHandler(db *sql.DB, identityOrigin string, dshOrigin ...string) (http.Ha
 // NewContainerHandler permits only the named, internal synthetic Identity service.
 // It does not expand the local CLI or preview origin trust boundary.
 func NewContainerHandler(db *sql.DB, identityOrigin string, dshOrigin ...string) (http.Handler, error) {
-	if identityOrigin != "http://identity:3302" {
-		return nil, errors.New("WLT requires the isolated container Identity origin")
-	}
 	return newWalletHandler(db, identityOrigin, true, dshOrigin...)
 }
 

@@ -17,23 +17,44 @@ import (
 	"time"
 )
 
-func TestContainerIdentityRequiresExplicitTrustedService(t *testing.T) {
-	if _, err := newIdentityReader("http://identity:3302"); err == nil {
-		t.Fatal("local reader trusted container hostname")
-	}
-	if reader, err := newIdentityReader("http://identity:3302", true); err != nil ||
-		reader.endpoint != "http://identity:3302/v1/sessions/current" {
-		t.Fatalf("explicit container service origin denied: %v", err)
-	}
-	for _, candidate := range []string{
-		"http://identity:3303", "https://identity:3302",
-		"http://identity:3302/elsewhere", "http://identity.evil:3302",
-		"http://user@identity:3302", "http://identity:3302?redirect=1",
-		"http://127.0.0.1:3302",
+func TestIdentityReaderAdmitsExactlyOneOriginMode(t *testing.T) {
+	for _, tc := range []struct {
+		name, origin    string
+		container, want bool
+	}{
+		{"local", "http://127.0.0.1:3302", false, true},
+		{"local other port", "http://127.0.0.1:49231", false, true},
+		{"container", "http://identity:3302", true, true},
+		{"container loopback", "http://127.0.0.1:3302", true, false},
+		{"local container", "http://identity:3302", false, false},
+		{"container wrong port", "http://identity:3303", true, false},
+		{"container TLS mismatch", "https://identity:3302", true, false},
+		{"container path", "http://identity:3302/elsewhere", true, false},
+		{"container other host", "http://identity.evil:3302", true, false},
+		{"container userinfo", "http://user@identity:3302", true, false},
+		{"container query", "http://identity:3302?redirect=1", true, false},
+		{"local zero port", "http://127.0.0.1:0", false, false},
+		{"local overflow port", "http://127.0.0.1:65536", false, false},
+		{"local path", "http://127.0.0.1:3302/", false, false},
+		{"local userinfo", "http://user@127.0.0.1:3302", false, false},
+		{"local query", "http://127.0.0.1:3302?", false, false},
+		{"local fragment", "http://127.0.0.1:3302#other", false, false},
+		{"local foreign", "http://example.invalid:3302", false, false},
+		{"empty local", "", false, false},
+		{"empty container", "", true, false},
 	} {
-		if _, err := newIdentityReader(candidate, true); err == nil && candidate != "http://127.0.0.1:3302" {
-			t.Fatalf("unexpected container trust: %s", candidate)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			reader, err := newIdentityReader(tc.origin, tc.container)
+			if (err == nil) != tc.want {
+				t.Fatalf("origin %q container=%t admitted=%t want=%t", tc.origin, tc.container, err == nil, tc.want)
+			}
+			if tc.want && reader.endpoint != tc.origin+sessionPath {
+				t.Fatalf("unexpected endpoint %q", reader.endpoint)
+			}
+			if !tc.want && reader.endpoint != "" {
+				t.Fatal("rejected origin retained endpoint")
+			}
+		})
 	}
 }
 
@@ -364,7 +385,7 @@ func TestFinanceRejectsAmbiguousGrantBeforeRead(t *testing.T) {
 				_, _ = w.Write([]byte(body))
 			}))
 			defer owner.Close()
-			reader, err := newIdentityReader(owner.URL)
+			reader, err := newIdentityReader(owner.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -389,7 +410,7 @@ func TestMerchantStandingRejectsAmbiguousOwnerWire(t *testing.T) {
 				_, _ = w.Write([]byte(body))
 			}))
 			defer owner.Close()
-			reader, err := newIdentityReader(owner.URL)
+			reader, err := newIdentityReader(owner.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -431,7 +452,7 @@ func TestFinanceOwnerDecisionAndRecovery(t *testing.T) {
 				_, _ = w.Write([]byte(tc.grant))
 			}))
 			defer owner.Close()
-			reader, err := newIdentityReader(owner.URL)
+			reader, err := newIdentityReader(owner.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -451,7 +472,7 @@ func TestOwnerReadRejectsInvalidTransportInputs(t *testing.T) {
 	if _, status := (identityReader{}).read(t.Context(), "invalid"); status != 401 {
 		t.Fatal(status)
 	}
-	reader, err := newIdentityReader("http://127.0.0.1:1")
+	reader, err := newIdentityReader("http://127.0.0.1:1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +498,7 @@ func TestOwnerReadRejectsInvalidTransportInputs(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			}))
 			defer owner.Close()
-			reader, err := newIdentityReader(owner.URL)
+			reader, err := newIdentityReader(owner.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -502,7 +523,7 @@ func TestOwnerJSONWireAdmission(t *testing.T) {
 				_, _ = w.Write([]byte(body))
 			}))
 			defer server.Close()
-			reader, err := newIdentityReader(server.URL)
+			reader, err := newIdentityReader(server.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -574,7 +595,7 @@ func TestOwnerJSONRejectsActualCompressedHTTPAndRecovers(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}))
 	defer server.Close()
-	reader, err := newIdentityReader(server.URL)
+	reader, err := newIdentityReader(server.URL, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -619,7 +640,7 @@ func TestFinanceObservationRejectsSessionChangeDuringGrant(t *testing.T) {
 				}
 			}))
 			defer server.Close()
-			reader, err := newIdentityReader(server.URL)
+			reader, err := newIdentityReader(server.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}

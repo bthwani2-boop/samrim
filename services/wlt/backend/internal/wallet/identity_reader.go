@@ -68,9 +68,14 @@ func validLoopbackOwnerOrigin(origin string) bool {
 	return err == nil && port > 0
 }
 
-func newIdentityReader(origin string, containerMode ...bool) (identityReader, error) {
-	allowedContainer := len(containerMode) == 1 && containerMode[0] && origin == "http://identity:3302"
-	if !allowedContainer && !validLoopbackOwnerOrigin(origin) {
+// Every consumer must explicitly select its isolated runtime boundary.
+// The container service and local preview origins are mutually exclusive.
+func newIdentityReader(origin string, containerMode bool) (identityReader, error) {
+	if containerMode {
+		if origin != "http://identity:3302" {
+			return identityReader{}, errors.New("WLT requires the isolated container Identity origin")
+		}
+	} else if !validLoopbackOwnerOrigin(origin) {
 		return identityReader{}, errors.New("WLT requires the isolated Identity loopback origin")
 	}
 	return identityReader{endpoint: origin + sessionPath, client: isolatedOwnerClient}, nil
