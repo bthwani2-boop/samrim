@@ -23,9 +23,11 @@ function nodes(tree){
   if(Array.isArray(tree))return tree.flatMap(nodes);
   return tree&&typeof tree==="object"?[tree,...nodes(tree.props?.children)]:[];
 }
-function harness(storeId){
-  const hooks=[], reads=[], writes=[];
-  let index=0, focus, cleanup;
+function harness(storeId, { lifecycle = false, platform = "android", deferredVerification = false } = {}) {
+  const hooks=[], reads=[], writes=[], verifications=[];
+  const dependencies = new Map(), effects = new Map(), effectCleanups = new Map();
+  let index=0, focus, cleanup, appState;
+  const changed = (at, next) => !dependencies.has(at) || next.some((value, i) => value !== dependencies.get(at)[i]);
   const jsx=(type,props)=>({type,props:props??{}});
   const request=(calls,details)=>new Promise((resolve,reject)=>calls.push({...details,resolve,reject}));
   const modules={
@@ -35,22 +37,44 @@ function harness(storeId){
     react:{
       useState(initial){const at=index++;if(!(at in hooks))hooks[at]=initial;return [hooks[at],next=>{hooks[at]=typeof next==="function"?next(hooks[at]):next;}];},
       useRef(initial){const at=index++;hooks[at]??={current:initial};return hooks[at];},
-      useCallback(callback){index++;return callback;},
-      // Focus/read/write behavior only; device and timer lifecycle is not simulated.
-      useEffect(){index++;},
+      useCallback(callback, next) {
+        const at = index++;
+        if (!lifecycle) return callback;
+        if (changed(at, next)) { dependencies.set(at, next); hooks[at] = callback; }
+        return hooks[at];
+      },
+      useEffect(effect, next) {
+        const at = index++;
+        if (lifecycle && changed(at, next)) { dependencies.set(at, next); effects.set(at, effect); }
+      },
     },
     "react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},
-    "react-native":{Platform:{OS:"android"},Pressable:"Pressable",Text:"Text",View:"View",AppState:{}},
+    "react-native": { Platform: { OS: platform }, Pressable:"Pressable", Text:"Text", View:"View",
+      AppState: { addEventListener(_event, callback) { appState = callback; return { remove() { appState = undefined; } }; } } },
     "../stores/public-store-origin":{resolvePublicStoreOrigin:()=>""},
     "./favorite-stores-transport":{
       readFavoriteStore:(signal,id)=>request(reads,{signal,id}),
       readFavoriteStores:(signal,actor,after)=>request(reads,{signal,actor,after}),
       writeFavoriteStore:(signal,actor,id,favorite)=>request(writes,{signal,actor,id,favorite}),
-      verifyFavoriteSession:async()=>({sessionExpiresAt:"2030-01-01T00:00:00Z"}),
+      verifyFavoriteSession: (signal, actor) => deferredVerification ? request(verifications, { signal, actor }) :
+        Promise.resolve({ sessionExpiresAt: "2030-01-01T00:00:00Z" }),
     },
   };
   const mod=loadMappedRenderFixture(compiled,entry,modules);
-  return {reads,writes,render(){index=0;return mod.exports.default({storeId});},focus(){cleanup?.();cleanup=focus();},blur(){cleanup?.();}};
+  return {
+    reads, writes, verifications,
+    render() {
+      index=0;
+      const tree=mod.exports.default({storeId});
+      for (const [at, effect] of effects) { effectCleanups.get(at)?.(); effectCleanups.set(at, effect()); }
+      effects.clear();
+      return tree;
+    },
+    focus(){cleanup?.();cleanup=focus();},
+    blur(){cleanup?.();},
+    resume(state) { appState?.(state); },
+    dispose() { cleanup?.(); for (const effectCleanup of effectCleanups.values()) effectCleanup?.(); },
+  };
 }
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 const action=view=>nodes(view).find(n=>n.type==="Pressable"&&n.props.accessibilityState);
@@ -209,4 +233,133 @@ test("favorite list rejects removal after blur, expiry and a different verified 
   h.blur();old();assert.equal(h.writes.length,0);
   h.render();h.focus();h.reads[1].resolve(favoritePage(["store-b"]));await settle();
   old();assert.equal(h.writes.length,0);h.blur();
+});
+test("expired favorite proof cannot render private list or selected state even before timer callback", async t => {
+  const clock = Date.now();
+  let now = clock;
+  t.mock.method(Date, "now", () => now);
+  const detail = harness("store-a"), list = harness();
+  detail.render(); detail.focus(); list.render(); list.focus();
+  detail.reads[0].resolve({ ...state(true), expiresAt: clock + 1000 });
+  list.reads[0].resolve({ ...favoritePage(["store-a"]), expiresAt: clock + 1000 });
+  await settle();
+  assert.equal(action(detail.render()).props.accessibilityState.selected, true);
+  assert.deepEqual(listIds(list), ["store-a"]);
+  now = clock + 1001;
+  assert.equal(action(detail.render()), undefined);
+  assert.deepEqual(listIds(list), []);
+  detail.blur(); list.blur();
+});
+
+test("late initial and continuation results cannot publish an expired favorite proof", async t => {
+  const clock = Date.now();
+  let now = clock;
+  t.mock.method(Date, "now", () => now);
+  const detail = harness("store-a");
+  detail.render(); detail.focus();
+  now = clock + 1001;
+  detail.reads[0].resolve({ ...state(true), expiresAt: clock + 1000 });
+  await settle();
+  assert.equal(action(detail.render()), undefined);
+  assert.ok(nodes(detail.render()).some(n => n.props.accessibilityRole === "alert"));
+  detail.blur();
+  const list = harness();
+  list.render(); list.focus();
+  list.reads[0].resolve({ ...favoritePage(["store-a"], "store-a"), expiresAt: now + 1000 });
+  await settle();
+  const more = nodes(list.render()).find(n => n.props.accessibilityLabel === "عرض المزيد");
+  more.props.onPress();
+  assert.equal(list.reads.length, 2);
+  now += 1001;
+  list.reads[1].resolve(favoritePage(["store-b"]));
+  await settle();
+  assert.deepEqual(listIds(list), []);
+  assert.ok(nodes(list.render()).some(n => n.props.accessibilityRole === "alert"));
+  list.blur();
+});
+
+test("late confirmed favorite mutation does not extend the original expired view", async t => {
+  const clock = Date.now();
+  let now = clock;
+  t.mock.method(Date, "now", () => now);
+  const detail = harness("store-a");
+  detail.render(); detail.focus();
+  detail.reads[0].resolve({ ...state(false), expiresAt: clock + 1000 });
+  await settle();
+  action(detail.render()).props.onPress();
+  assert.equal(detail.writes.length, 1);
+  now = clock + 1001;
+  detail.writes[0].resolve(state(true));
+  await settle();
+  assert.equal(action(detail.render()), undefined);
+  assert.ok(nodes(detail.render()).some(n => n.props.accessibilityRole === "alert"));
+  detail.blur();
+});
+
+test("native lifecycle expires owner proof, rejects stale timer results, and hides on background", async t => {
+  const clock = Date.now();
+  let now = clock;
+  t.mock.method(Date, "now", () => now);
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const h = harness("store-a", { lifecycle: true, deferredVerification: true });
+  try {
+    h.render(); h.focus();
+    h.reads[0].resolve({ ...state(false), expiresAt: clock + 60000 });
+    await settle();
+    h.render();
+    t.mock.timers.tick(15000);
+    assert.equal(h.verifications.length, 1);
+    assert.equal(h.verifications[0].actor, "customer-a");
+    action(h.render()).props.onPress();
+    h.writes[0].resolve(state(true)); await settle(); h.render();
+    h.verifications[0].reject(new Error("older session read")); await settle();
+    assert.equal(action(h.render()).props.accessibilityState.selected, true);
+    now = clock + 60001;
+    t.mock.timers.tick(15000);
+    assert.equal(action(h.render()), undefined);
+    h.focus();
+    h.reads[1].resolve(state(false)); await settle(); h.render();
+    h.resume("background");
+    assert.equal(action(h.render()), undefined);
+    h.resume("active");
+    h.focus();
+    h.reads[2].resolve(state(true)); await settle(); h.render();
+    t.mock.timers.tick(15000);
+    h.verifications.at(-1).reject(new Error("current session revoked")); await settle();
+    assert.equal(action(h.render()), undefined);
+    assert.ok(nodes(h.render()).some(n => n.props.accessibilityRole === "alert"));
+  } finally { h.dispose(); }
+});
+
+test("web lifecycle hides private favorites on blur and visibility loss and removes listeners", async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  const windowMock = new EventTarget();
+  const documentMock = new EventTarget();
+  documentMock.visibilityState = "visible";
+  const previousWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+  const previousDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: windowMock });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: documentMock });
+  const h = harness("store-a", { lifecycle: true, platform: "web" });
+  try {
+    h.render(); h.focus(); h.reads[0].resolve(state(true)); await settle(); h.render();
+    windowMock.dispatchEvent(new Event("blur"));
+    assert.equal(action(h.render()), undefined);
+    windowMock.dispatchEvent(new Event("focus"));
+    h.focus(); h.reads[1].resolve(state(false)); await settle(); h.render();
+    documentMock.visibilityState = "hidden";
+    documentMock.dispatchEvent(new Event("visibilitychange"));
+    assert.equal(action(h.render()), undefined);
+    documentMock.visibilityState = "visible";
+    documentMock.dispatchEvent(new Event("visibilitychange"));
+    h.focus(); h.reads[2].resolve(state(true)); await settle(); h.render();
+    t.mock.timers.tick(60001);
+    assert.equal(action(h.render()), undefined);
+  } finally {
+    h.dispose();
+    if (previousWindow) Object.defineProperty(globalThis, "window", previousWindow);
+    else delete globalThis.window;
+    if (previousDocument) Object.defineProperty(globalThis, "document", previousDocument);
+    else delete globalThis.document;
+  }
 });
