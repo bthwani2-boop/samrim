@@ -358,20 +358,40 @@ function Show-AppsHelp {
 # A responding dev server is not proof the task-owned source mirror is current.
 function Inspect-AppSourceSync([switch]$StrictCheck) {
   $spec=$ownerTasks[0]
-  $task=Task-Action $spec.Name
-  $info=Get-ScheduledTaskInfo -TaskName $spec.Name -ErrorAction Stop
-  $proof=@{}
+  $taskBefore=Task-Action $spec.Name
+  $headBefore=@(Git -argsList @('rev-parse','--verify','HEAD'))
+  $branchBefore=@(Git -argsList @('branch','--show-current'))
+  $current=$false
+  $head='UNVERIFIED'
+  $mirrorHead='UNVERIFIED'
   $node=Get-Command node.exe -ErrorAction SilentlyContinue
   if($node){
     $result=@(& $node.Source (Join-Path $repo 'tools\dev\sync-lenovo-source.mjs') '--verify-manifest' 2>&1)
     if($LASTEXITCODE -eq 0){
-      try{$proof=$result -join "`n" | ConvertFrom-Json -AsHashtable -ErrorAction Stop}catch{}
+      $doc=$null
+      try {
+        # Admit precisely the native producer's three-field receipt.
+        $doc=[System.Text.Json.JsonDocument]::Parse(($result -join [char]10))
+        $root=$doc.RootElement
+        if($root.ValueKind -ne 'Object' -or @($root.EnumerateObject()).Count -ne 3){throw 'INVALID_MANIFEST_RECEIPT'}
+        $source=$root.GetProperty('head').GetString()
+        $mirror=$root.GetProperty('mirrorHead').GetString()
+        $verified=$root.GetProperty('current').GetBoolean()
+        if($source -cnotmatch '\A[a-f0-9]{40}\z' -or ($mirror -cne 'UNVERIFIED' -and $mirror -cnotmatch '\A[a-f0-9]{40}\z')){throw 'INVALID_MANIFEST_RECEIPT'}
+        $head=$source
+        $mirrorHead=$mirror
+        $current=$verified -and $headBefore.Count -eq 1 -and $branchBefore.Count -eq 1 -and
+          $branchBefore[0] -and $source -ceq $headBefore[0] -and $source -ceq $mirror
+      } catch { $current=$false } finally { if($doc){$doc.Dispose()} }
     }
   }
-  $current=$proof['current'] -eq $true
-  $running=[string]$task.State -eq 'Running'
-  $mirrorHead=$proof['mirrorHead'] ?? 'UNVERIFIED'
-  $head=$proof['head'] ?? 'UNVERIFIED'
+  $task=Task-Action $spec.Name
+  $info=Get-ScheduledTaskInfo -TaskName $spec.Name -ErrorAction Stop
+  $headAfter=@(Git -argsList @('rev-parse','--verify','HEAD'))
+  $branchAfter=@(Git -argsList @('branch','--show-current'))
+  $running=[string]$taskBefore.State -ceq 'Running' -and [string]$task.State -ceq 'Running'
+  $current=$current -and $headAfter.Count -eq 1 -and $branchAfter.Count -eq 1 -and
+    $headAfter[0] -ceq $head -and $branchAfter[0] -ceq $branchBefore[0]
   $status=if($running -and $current){'PASS'}else{'FAIL'}
   Say 'APP_SOURCE_SYNC' ($status+' task='+$task.State+' lastResult='+$info.LastTaskResult+' mirrorHead='+$mirrorHead+' sourceHead='+$head)
   if($StrictCheck){Assert-Ok ($running -and $current) 'APP_SOURCE_SYNC_NOT_CURRENT (existing watcher or current source digests not verified)'}

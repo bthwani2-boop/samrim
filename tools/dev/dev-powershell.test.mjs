@@ -565,6 +565,32 @@ test("strict app verification checks the existing watcher and its mirrored sourc
   assert.match(launcher,/'verify'\s*\{Assert-AppRuntime\}/);
   assert.match(launcher,/function Assert-AppRuntime \{\s*Inspect-AppSourceSync -StrictCheck\s*Inspect-AppOwners -StrictCheck\s*Verify-AppWeb\s*\}/);
 });
+test("source sync admission rejects malformed or stale receipts and changing task or HEAD", {skip:process.platform!=="win32"}, () => {
+  const quoted=scriptPath.replaceAll("'","''");
+  const ps=[
+    "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest",
+    "$tokens=$null;$errors=$null",
+    "$ast=[Management.Automation.Language.Parser]::ParseFile('"+quoted+"',[ref]$tokens,[ref]$errors)",
+    "$n=$ast.Find({param($x)$x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq 'Inspect-AppSourceSync'},$true);Invoke-Expression $n.Extent.Text",
+    "$ownerTasks=@(@{Name='fixture'});$repo='D:/fixture';$sha='a'*40;$other='b'*40",
+    "function Task-Action {$script:taskReads++;@{State=if($script:taskReads -eq 1){'Running'}else{$script:stateAfter}}}",
+    "function Get-ScheduledTaskInfo {@{LastTaskResult=0}}",
+    "function Get-Command {@{Source='Emit-Proof'}}",
+    "function Emit-Proof {$global:LASTEXITCODE=$script:exit;$script:raw}",
+    "function Git {param([string[]]$argsList) if($argsList[0] -eq 'branch'){$script:branchReads++;if($script:branchReads -eq 1){'fixture'}else{$script:branchAfter}}else{$script:headReads++;if($script:headReads -eq 1){$sha}else{$script:headAfter}}}",
+    "function Say($k,$v){$k+'='+$v}",
+    "function Assert-Ok($b,$m){if(!$b){throw $m}}",
+    "$good=@{head=$sha;mirrorHead=$sha;current=$true}|ConvertTo-Json -Compress",
+    "$cases=@(@{raw=$good;ok=$true},@{raw=(@{head=$sha;mirrorHead=$sha;current='True'}|ConvertTo-Json -Compress)},@{raw=(@{head=$sha;mirrorHead=$other;current=$true}|ConvertTo-Json -Compress)},@{raw=(@{head=$other;mirrorHead=$other;current=$true}|ConvertTo-Json -Compress)},@{raw=(@{head='bad';mirrorHead='foreign';current=$true}|ConvertTo-Json -Compress)},@{raw=$good.Replace('\"current\":true','\"current\":false,\"current\":true')},@{raw=(@{head=$sha;mirrorHead=$sha;current=$false}|ConvertTo-Json -Compress)},@{raw=$good+'{}'},@{raw=$good;exit=1},@{raw=$good;head=$other},@{raw=$good;branch='foreign'},@{raw=$good;state='Ready'})",
+    "foreach($c in $cases){$script:raw=$c.raw;$script:exit=$c['exit'] ?? 0;$script:headAfter=$c['head'] ?? $sha;$script:branchAfter=$c['branch'] ?? 'fixture';$script:stateAfter=$c['state'] ?? 'Running';$script:taskReads=0;$script:headReads=0;$script:branchReads=0;$accepted=$false;try{Inspect-AppSourceSync -StrictCheck|Out-Null;$accepted=$true}catch{if($_.Exception.Message -notmatch 'APP_SOURCE_SYNC_NOT_CURRENT'){throw}};if($accepted -ne [bool]$c['ok']){throw ('FALSE_RECEIPT_ADMISSION '+$c.raw)};Write-Output ('CASE_PASS '+$script:taskReads)}",
+    "Write-Output 'RECEIPT_MATRIX_COMPLETE';exit 0",
+  ].join("; ");
+  const r=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-EncodedCommand",Buffer.from(ps,"utf16le").toString("base64")],{encoding:"utf8",windowsHide:true,timeout:15000});
+  assert.equal(r.status,0,JSON.stringify({error:r.error?.message,stderr:r.stderr,stdout:r.stdout}));
+  assert.match(r.stdout,/RECEIPT_MATRIX_COMPLETE/);
+  assert.equal((r.stdout.match(/CASE_PASS/g)||[]).length,12);
+});
+
 test("strict app verification distinguishes copied lockfile from installed dependency graph", () => {
   const launcher=readFileSync(scriptPath,"utf8");
   assert.match(launcher,/node_modules\\\.pnpm\\lock\.yaml/);
