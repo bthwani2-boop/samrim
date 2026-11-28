@@ -27,6 +27,11 @@ export type MerchantRegistrationResult = {
   replay: boolean;
 };
 
+export type MerchantRegistrationReceipt = {
+  operationId: string;
+  store: MerchantRegistrationResult["store"];
+};
+
 // 100 choices * 4000 Unicode scalars * six JSON escape bytes, plus
 // bounded IDs, metadata, verticals and the browser's outer envelope.
 export const merchantRegistrationOptionsByteLimit = 2_500_000;
@@ -92,22 +97,40 @@ export function parseMerchantRegistrationOptions(body: unknown): MerchantRegistr
   return value as MerchantRegistrationOptions;
 }
 
+function validRegistrationStore(body: unknown): body is MerchantRegistrationResult["store"] {
+  const store = record(body);
+  return !!store && exact(store, ["id", "name", "relation", "published"]) &&
+    publicId(store.id) && validName(store.name) && [...store.name].length <= 120 &&
+    relation(store.relation) && typeof store.published === "boolean";
+}
+
 export function parseMerchantRegistrationResult(body: unknown): MerchantRegistrationResult {
   const value = record(body);
-  const store = record(value?.store);
   if (!value || !exact(value, ["store", "replay"]) || typeof value.replay !== "boolean" ||
-    !store || !exact(store, ["id", "name", "relation", "published"]) ||
-    !publicId(store.id) || !validName(store.name) || [...store.name].length > 120 ||
-    !relation(store.relation) || typeof store.published !== "boolean") {
+    !validRegistrationStore(value.store)) {
     throw new DshPublicError(502, "OPERATION_RESULT_UNKNOWN");
   }
   return value as MerchantRegistrationResult;
 }
 
+export function validMerchantRegistrationOperationID(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9._-]{8,128}$/u.test(value);
+}
+
+export function parseMerchantRegistrationReceipt(body: unknown, operationId: string): MerchantRegistrationReceipt {
+  const value = record(body);
+  if (!validMerchantRegistrationOperationID(operationId) || !value ||
+    !exact(value, ["operationId", "store"]) || value.operationId !== operationId ||
+    !validRegistrationStore(value.store)) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return value as MerchantRegistrationReceipt;
+}
+
 export function validMerchantStoreRegistration(input: unknown): input is MerchantStoreRegistration {
   const v = record(input);
   return !!v && exact(v, requestKeys)
-    && typeof v.operationId === "string" && /^[A-Za-z0-9._-]{8,128}$/u.test(v.operationId)
+    && validMerchantRegistrationOperationID(v.operationId)
     && validName(v.name) && publicId(v.cityId) && publicId(v.verticalId)
     && relation(v.relation) && coordinate(v.latitude, 90) && coordinate(v.longitude, 180)
     && positiveVersion(v.policyVersion) && termsVersion(v.termsVersion) && v.acceptedTerms === true;
@@ -135,7 +158,7 @@ export function isMerchantRegistrationRejection(status: number, code: unknown): 
 
 async function ownerCall(
   origin: string, bearer: string, method: "GET" | "POST", path: string,
-  signal?: AbortSignal, input?: MerchantStoreRegistration,
+  signal?: AbortSignal, input?: MerchantStoreRegistration, receipt = false,
 ): Promise<{ body: unknown; status: number }> {
   if (typeof bearer !== "string" || !/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u.test(bearer)) {
     throw new DshPublicError(401, "UNAUTHENTICATED");
@@ -168,7 +191,7 @@ async function ownerCall(
         if (error && exact(error, ["code"]) && typeof error.code === "string") code = error.code;
       } catch { /* A malformed failure is not a definitive owner rejection. */ }
       current();
-      if (code && isMerchantRegistrationRejection(response.status, code)) {
+      if (code && (isMerchantRegistrationRejection(response.status, code) || (receipt && response.status === 404 && code === "REGISTRATION_RECEIPT_NOT_FOUND"))) {
         throw new DshPublicError(response.status, code);
       }
       throw new DshPublicError(response.status, writing ? "OPERATION_RESULT_UNKNOWN" :
@@ -178,7 +201,7 @@ async function ownerCall(
     if ((writing ? ![200, 201].includes(response.status) : response.status !== 200)) {
       throw invalid();
     }
-    const limit = writing ? receiptLimit : merchantRegistrationOptionsByteLimit;
+    const limit = writing || receipt ? receiptLimit : merchantRegistrationOptionsByteLimit;
     let body: unknown;
     try {
       body = await readBoundedOwnerJSON(response, limit, limit, signal, "private-json");
@@ -202,4 +225,13 @@ export async function registerMerchantStore(
   if (!validMerchantStoreRegistration(input)) throw new DshPublicError(400, "INVALID_STORE_REGISTRATION");
   const reply = await ownerCall(origin, bearer, "POST", dshOperations.registerMerchantStore.path, signal, input);
   return confirmMerchantRegistrationResult(reply.body, reply.status, input);
+}
+
+export async function readMerchantRegistrationReceipt(
+  origin: string, bearer: string, operationId: string, signal?: AbortSignal,
+): Promise<MerchantRegistrationReceipt> {
+  if (!validMerchantRegistrationOperationID(operationId)) throw new DshPublicError(400, "INVALID_STORE_REGISTRATION");
+  const path = dshOperations.getMerchantStoreRegistrationReceipt.path.replace("{operationID}", encodeURIComponent(operationId));
+  const reply = await ownerCall(origin, bearer, "GET", path, signal, undefined, true);
+  return parseMerchantRegistrationReceipt(reply.body, operationId);
 }

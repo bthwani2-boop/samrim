@@ -3,12 +3,16 @@ import {
   DshPublicError,
   isMerchantRegistrationRejection,
   type MerchantRegistrationOptions,
+  type MerchantRegistrationReceipt,
   type MerchantRegistrationResult,
   type MerchantStoreRegistration,
   merchantRegistrationOptionsByteLimit,
   parseMerchantRegistrationOptions,
+  parseMerchantRegistrationReceipt,
   readMerchantRegistrationOptions,
+  readMerchantRegistrationReceipt,
   registerMerchantStore,
+  validMerchantRegistrationOperationID,
   validMerchantStoreRegistration,
 } from "@bthwani/dsh";
 import { Platform } from "react-native";
@@ -61,4 +65,24 @@ export async function createMerchantStore(
     }
     throw new DshPublicError(error instanceof DshPublicError ? error.status : 0, "OPERATION_RESULT_UNKNOWN");
   }
+}
+
+/** Read a committed owner receipt even after the original policy disappears. */
+export async function readMerchantStoreRegistrationReceipt(
+  actorId: string, operationId: string, signal: AbortSignal,
+): Promise<MerchantRegistrationReceipt> {
+  if (!actorId || !validMerchantRegistrationOperationID(operationId)) {
+    throw new DshPublicError(400, "INVALID_STORE_REGISTRATION");
+  }
+  if (signal.aborted) throw new DshPublicError(0, "OWNER_RESPONSE_STALE");
+  if (Platform.OS !== "web") return withNativeMerchantSession(signal, (bearer, origin) =>
+    readMerchantRegistrationReceipt(origin, bearer, operationId, signal), actorId);
+  const { document } = await requestMerchantOwnerDocument({
+    query: new URLSearchParams({ registrationReceipt: operationId }),
+    actorId, method: "GET", signal,
+  });
+  if (Object.keys(document).length !== 1 || !Object.hasOwn(document, "receipt")) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return parseMerchantRegistrationReceipt(document.receipt, operationId);
 }

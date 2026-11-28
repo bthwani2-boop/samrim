@@ -34,8 +34,8 @@ export type { MerchantCatalogDraftChange, MerchantCatalogDraftEditChange, Mercha
 export { createMerchantCatalogDraft, listMerchantCatalog, parseMerchantCatalogDraftEditResult, parseMerchantCatalogDraftHistory, parseMerchantCatalogDraftResult, parseMerchantCatalogPage, parseMerchantInventorySummary, readMerchantCatalogDraftHistory, readMerchantInventorySummary, updateMerchantCatalogDraft, validMerchantCatalogDraft, validMerchantCatalogDraftEdit, validMerchantCatalogSearch, validMerchantCatalogStatus } from "./merchant-catalog.ts";
 export type { MerchantStoreProfile, MerchantStoreProfileChange, MerchantStoreProfileResult } from "./merchant-profile.ts";
 export { changeMerchantStoreProfile, confirmMerchantStoreProfileResult, getMerchantStoreProfile, parseMerchantStoreProfile, validMerchantStoreProfileChange } from "./merchant-profile.ts";
-export type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantRegistrationResult, MerchantStoreRegistration } from "./merchant-registration.ts";
-export { confirmMerchantRegistrationResult, isMerchantRegistrationRejection, merchantRegistrationOptionsByteLimit, parseMerchantRegistrationOptions, parseMerchantRegistrationResult, readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration } from "./merchant-registration.ts";
+export type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantRegistrationReceipt, MerchantRegistrationResult, MerchantStoreRegistration } from "./merchant-registration.ts";
+export { confirmMerchantRegistrationResult, isMerchantRegistrationRejection, merchantRegistrationOptionsByteLimit, parseMerchantRegistrationOptions, parseMerchantRegistrationReceipt, parseMerchantRegistrationResult, readMerchantRegistrationOptions, readMerchantRegistrationReceipt, registerMerchantStore, validMerchantRegistrationOperationID, validMerchantStoreRegistration } from "./merchant-registration.ts";
 // DSH-owned Merchant standing contract and transport.
 export type { MerchantDSHStanding, MerchantOwnedStore } from "./merchant-standing.ts";
 export { MerchantStandingError, readMerchantDSHStanding, standingFrom } from "./merchant-standing.ts";

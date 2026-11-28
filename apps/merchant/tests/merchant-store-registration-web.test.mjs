@@ -43,6 +43,12 @@ function ownerEnvironment(t, { role = "merchant", dshStatus = 200, replay = fals
       assert.equal(req.method, "GET");
       return ownerJSON(invalid ? { ...options, choices: [{ ...options.choices[0], termsText: "" }] } : options);
     }
+    if (target.pathname === "/v1/store-registration-receipts/" + input.operationId) {
+      assert.equal(req.method, "GET");
+      assert.equal(req.body, undefined);
+      if (dshStatus === 404) return ownerJSON({ code: "REGISTRATION_RECEIPT_NOT_FOUND" }, 404);
+      return ownerJSON({ operationId: input.operationId, store: { ...store, published: true } });
+    }
     assert.equal(target.pathname, "/v1/stores");
     assert.equal(req.method, "POST");
     assert.deepEqual(JSON.parse(req.body), input);
@@ -248,4 +254,45 @@ test("shared Web admission never trusts cached or contaminated refusal documents
   await assert.rejects(create(),{code:"OPERATION_RESULT_UNKNOWN"});
   reply=()=>ownerJSON({code:"STORE_REGISTRATION_CLOSED"},403);
   await assert.rejects(create(),{code:"STORE_REGISTRATION_CLOSED"});
+});
+
+test("Web receipt recovery requires exact Merchant context and only performs owner GET", async t => {
+  const calls = ownerEnvironment(t);
+  const query = "?registrationReceipt=" + input.operationId;
+  assert.equal((await GET(get(query))).status, 403);
+  assert.equal((await GET(get(query, bearer, { "X-Merchant-Context": "other" }))).status, 403);
+  const reply = await GET(get(query, bearer, { "X-Merchant-Context": "owner-a" }));
+  assert.equal(reply.status, 200);
+  assert.equal(reply.headers.get("Cache-Control"), "no-store");
+  assert.deepEqual(await reply.json(), { receipt: { operationId: input.operationId, store: { ...store, published: true } } });
+  assert.equal(calls.filter(c => c.pathname.startsWith("/v1/store-registration-receipts/")).length, 1);
+  assert.ok(calls.every(c => c.method === "GET"));
+  assert.equal((await GET(get(query + "&actorId=other", bearer))).status, 400);
+});
+
+test("Web receipt absence preserves the Merchant session and unknown outcome", async t => {
+  ownerEnvironment(t, { dshStatus: 404 });
+  const reply = await GET(get("?registrationReceipt=" + input.operationId, bearer, { "X-Merchant-Context": "owner-a" }));
+  assert.equal(reply.status, 404);
+  assert.deepEqual(await reply.json(), { code: "REGISTRATION_RECEIPT_NOT_FOUND" });
+  assert.equal(reply.headers.get("Set-Cookie"), null);
+});
+
+test("receipt transport validates exact operation and uses verified native session",async t=>{
+  const signal=new AbortController().signal;
+  const receipt={operationId:input.operationId,store};
+  const web=registrationTransport();
+  const invocations=[];
+  const native=registrationTransport("android",async(s,run,actor,writing)=>{
+    invocations.push([s,actor,writing]);return run(bearer,dsh);
+  });
+  let reply=()=>ownerJSON({receipt});
+  const calls=t.mock.method(globalThis,"fetch",async()=>reply());
+  assert.deepEqual(await web.readMerchantStoreRegistrationReceipt("owner-a",input.operationId,signal),receipt);
+  reply=()=>ownerJSON({receipt:{...receipt,operationId:"registration-other-001"}});
+  await assert.rejects(web.readMerchantStoreRegistrationReceipt("owner-a",input.operationId,signal),{code:"OWNER_RESPONSE_INVALID"});
+  reply=()=>ownerJSON(receipt);
+  assert.deepEqual(await native.readMerchantStoreRegistrationReceipt("owner-a",input.operationId,signal),receipt);
+  assert.deepEqual(invocations,[[signal,"owner-a",undefined]]);
+  assert.equal(calls.mock.callCount(),3);
 });

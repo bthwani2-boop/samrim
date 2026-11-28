@@ -20,9 +20,10 @@ import (
 )
 
 var (
-	ErrRegistrationInvalid       = errors.New("INVALID_STORE_REGISTRATION")
-	ErrRegistrationClosed        = errors.New("STORE_REGISTRATION_CLOSED")
-	ErrRegistrationPolicyChanged = errors.New("STORE_REGISTRATION_POLICY_CHANGED")
+	ErrRegistrationReceiptNotFound = errors.New("REGISTRATION_RECEIPT_NOT_FOUND")
+	ErrRegistrationInvalid         = errors.New("INVALID_STORE_REGISTRATION")
+	ErrRegistrationClosed          = errors.New("STORE_REGISTRATION_CLOSED")
+	ErrRegistrationPolicyChanged   = errors.New("STORE_REGISTRATION_POLICY_CHANGED")
 )
 var termsVersionRule = regexp.MustCompile(`^[a-z0-9._-]{3,80}$`)
 var registrationPublicID = regexp.MustCompile(`^[a-z0-9-]{1,64}$`)
@@ -54,6 +55,11 @@ type MerchantRegistrationOptions struct {
 type MerchantRegistrationResult struct {
 	Store  MerchantStore `json:"store"`
 	Replay bool          `json:"replay"`
+}
+
+type MerchantRegistrationReceipt struct {
+	OperationID string        `json:"operationId"`
+	Store       MerchantStore `json:"store"`
 }
 
 type MerchantStoreRegistrar struct {
@@ -298,6 +304,47 @@ func (s *MerchantStoreRegistrar) Register(ctx context.Context, token string, inp
 	}, Replay: false}, nil
 }
 
+// Receipt is a read-only lookup of the committed command under the current
+// Merchant and current Store ownership. Absence never proves a future or
+// in-flight command cannot commit; it does not release an idempotency key.
+func (s *MerchantStoreRegistrar) Receipt(ctx context.Context, token, operationID string) (MerchantRegistrationReceipt, error) {
+	actorID, err := s.actor(ctx, token)
+	if err != nil {
+		return MerchantRegistrationReceipt{}, err
+	}
+	if !operationIDRule.MatchString(operationID) {
+		return MerchantRegistrationReceipt{}, ErrRegistrationInvalid
+	}
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "store_registration_commands", "stores")
+	if err != nil {
+		return MerchantRegistrationReceipt{}, ErrStoreOwnerUnavailable
+	}
+	defer tx.Rollback()
+	result := MerchantRegistrationReceipt{OperationID: operationID}
+	err = tx.QueryRowContext(ctx, `SELECT s.id,s.name,s.relation,s.published
+		FROM store_registration_commands c JOIN stores s ON s.id=c.store_id
+		WHERE c.actor_id=$1 AND c.operation_id=$2 AND s.owner_actor_id=$1`,
+		actorID, operationID).Scan(&result.Store.ID, &result.Store.Name, &result.Store.Relation, &result.Store.Published)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return MerchantRegistrationReceipt{}, ErrStoreOwnerUnavailable
+	}
+	absent := errors.Is(err, sql.ErrNoRows)
+	if err = tx.Commit(); err != nil {
+		return MerchantRegistrationReceipt{}, ErrStoreOwnerUnavailable
+	}
+	current, err := s.actor(ctx, token)
+	if err != nil {
+		return MerchantRegistrationReceipt{}, err
+	}
+	if current != actorID {
+		return MerchantRegistrationReceipt{}, ErrForbidden
+	}
+	if absent {
+		return MerchantRegistrationReceipt{}, ErrRegistrationReceiptNotFound
+	}
+	return result, nil
+}
+
 // This handler is mounted only by the already-isolated DSH Merchant writer.
 func NewMerchantRegistrationHandler(service *MerchantStoreRegistrar) http.Handler {
 	mux := http.NewServeMux()
@@ -318,6 +365,24 @@ func NewMerchantRegistrationHandler(service *MerchantStoreRegistrar) http.Handle
 			return
 		}
 		writeJSON(w, http.StatusOK, options)
+	})
+	mux.HandleFunc("GET /v1/store-registration-receipts/{operationID}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if r.URL.RawQuery != "" {
+			writeRegistrationFailure(w, ErrRegistrationInvalid)
+			return
+		}
+		bearer, ok := bearerToken(r)
+		if !ok {
+			writeRegistrationFailure(w, ErrUnauthorized)
+			return
+		}
+		receipt, err := service.Receipt(r.Context(), bearer, r.PathValue("operationID"))
+		if err != nil {
+			writeRegistrationFailure(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, receipt)
 	})
 	mux.HandleFunc("POST /v1/stores", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
@@ -351,6 +416,10 @@ func NewMerchantRegistrationHandler(service *MerchantStoreRegistrar) http.Handle
 }
 func writeRegistrationFailure(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrRegistrationReceiptNotFound):
+		writeJSON(w, http.StatusNotFound, struct {
+			Code string `json:"code"`
+		}{Code: "REGISTRATION_RECEIPT_NOT_FOUND"})
 	case errors.Is(err, ErrRegistrationInvalid):
 		writeJSON(w, 400, struct {
 			Code string `json:"code"`

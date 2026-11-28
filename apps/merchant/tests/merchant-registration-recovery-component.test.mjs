@@ -46,7 +46,7 @@ function allNodes(node) {
   return [node, ...allNodes(node.props?.children)];
 }
 
-function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = false, platform = "web", registrationOptions = options, webLocks = true, operationId = "123e4567-e89b-42d3-a456-426614174000" }) {
+function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = false, platform = "web", registrationOptions = options, onReadReceipt, webLocks = true, operationId = "123e4567-e89b-42d3-a456-426614174000" }) {
   const hooks = [];
   let hookIndex = 0;
   const effects = [];
@@ -112,6 +112,11 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
     },
     "./store-registration-transport": {
       async readMerchantStoreRegistrationOptions() { return registrationOptions; },
+      async readMerchantStoreRegistrationReceipt(actor, operationId, signal) {
+        assert.equal(actor, actorId);
+        assert.equal(signal.aborted, false);
+        return onReadReceipt(operationId, DshPublicError);
+      },
       async createMerchantStore(actor, input, signal) {
         createCount++;
         assert.equal(actor, actorId);
@@ -512,4 +517,53 @@ for (const platform of ["web", "android"]) {
       } finally { form.close(); }
     });
   }
+}
+
+for (const platform of ["web", "android"]) {
+  test("closed policy cannot prevent committed registration receipt recovery on " + platform, async () => {
+    const storage = new Map();
+    const first = createHarness({ storage, platform, onCreate(_input, Err) { throw new Err(503, "OPERATION_RESULT_UNKNOWN"); } });
+    let recovered;
+    try {
+      await first.mount(); first.fill(); await first.submit();
+      const pending = JSON.parse([...storage.values()][0]);
+      recovered = createHarness({ storage, platform, registrationOptions: { choices: [], verticals: [] },
+        onCreate() { assert.fail("receipt recovery must never create a Store"); },
+        onReadReceipt(operationId) {
+          assert.equal(operationId, pending.operationId);
+          return { operationId, store: { id: "store-a", name: "متجر", relation: "MARKETPLACE", published: true } };
+        },
+      });
+      await recovered.mount();
+      const action = allNodes(recovered.render()).find(n => n.props?.accessibilityLabel === "التحقق من نتيجة التسجيل لدى DSH");
+      assert.ok(action && !action.props.disabled, "receipt recovery must be possible without registration choices");
+      action.props.onPress();
+      await settle();
+      assert.equal(recovered.createCount, 0);
+      assert.equal(recovered.created, 1);
+      assert.deepEqual(JSON.parse([...storage.values()][0]), { ...pending, settled: true });
+    } finally { recovered?.close(); first.close(); }
+  });
+}
+for (const platform of ["web", "android"]) {
+  test("absent registration receipt never retires a pending generation on " + platform, async () => {
+    const storage = new Map();
+    const first = createHarness({ storage, platform, onCreate(_input, Err) { throw new Err(503, "OPERATION_RESULT_UNKNOWN"); } });
+    let resumed;
+    try {
+      await first.mount(); first.fill(); await first.submit();
+      const pending = [...storage.values()][0];
+      resumed = createHarness({ storage, platform, registrationOptions: { choices: [], verticals: [] },
+        onCreate() { assert.fail("no replacement operation may dispatch"); },
+        onReadReceipt(_id, Err) { throw new Err(404, "REGISTRATION_RECEIPT_NOT_FOUND"); },
+      });
+      await resumed.mount();
+      const action = allNodes(resumed.render()).find(n => n.props?.accessibilityLabel === "التحقق من نتيجة التسجيل لدى DSH");
+      action.props.onPress();
+      await settle();
+      assert.equal(resumed.created, 0);
+      assert.equal(resumed.createCount, 0);
+      assert.equal([...storage.values()][0], pending);
+    } finally { resumed?.close(); first.close(); }
+  });
 }

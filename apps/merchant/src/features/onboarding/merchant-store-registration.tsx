@@ -11,7 +11,7 @@ import {
   type StoredMerchantRegistration,
   sameRegistrationGeneration,
 } from "./merchant-registration-attempt";
-import { createMerchantStore, readMerchantStoreRegistrationOptions } from "./store-registration-transport";
+import { createMerchantStore, readMerchantStoreRegistrationOptions, readMerchantStoreRegistrationReceipt } from "./store-registration-transport";
 import StoreRelationChoice from "./store-relation-choice";
 
 const optionKey = (choice: MerchantRegistrationChoice) => `${choice.cityId}:${choice.relation}`;
@@ -97,7 +97,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
       if (previous && !previous.settled) {
         setUnknown(true);
         setRestored(true);
-        setMessage("عُثر على عملية تسجيل غير مؤكدة. أدخل البيانات نفسها لإعادة المحاولة، أو حدّث قائمة متاجرك أولًا.");
+        setMessage("عُثر على عملية تسجيل غير مؤكدة. تحقق من إيصال التسجيل لدى DSH أو أعد البيانات نفسها إذا كانت السياسة الأصلية لا تزال متاحة.");
       }
       setAttemptReady(true);
     })().catch(() => {
@@ -155,6 +155,26 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
     </View>
   );
 
+  async function confirmRegistration(controller: AbortController, key: string, pending: PendingRegistration, replay: boolean) {
+    let settlementFailed = false;
+    try {
+      const settled = await settleStoredAttempt(key, pending);
+      if (!controller.signal.aborted) attempt.current = { actorId, revision: reload, key, record: settled };
+    } catch {
+      // A confirmed owner result must never erase another form's newer record.
+      settlementFailed = true;
+    }
+    if (controller.signal.aborted) return;
+    setDone(true);
+    setUnknown(false);
+    setMessage(settlementFailed
+      ? "أكد DSH تسجيل المتجر، وتعذر تحديث سجل الاسترداد. حدّث متاجرك قبل أي تسجيل جديد."
+      : replay
+        ? "تم تأكيد تسجيل المتجر السابق لدى DSH. جارٍ تحديث متاجرك."
+        : "حُفظ المتجر غير المنشور في DSH. جارٍ تحديث متاجرك.");
+    onCreated();
+  }
+
   function submit() {
     if (!openedAttempt || openedAttempt.actorId !== actorId || openedAttempt.revision !== reload || attempt.current !== openedAttempt || active.current || !attemptReady || busy || done || !choice || !verticalId ||
       !options?.verticals.includes(verticalId) || !name.trim() || !latitude.trim() || !longitude.trim() || !accepted) return;
@@ -204,7 +224,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
           return;
         }
         if (claim.status === "mismatch") {
-          setMessage("تختلف البيانات عن عملية التسجيل السابقة. تحقق من متاجرك قبل إرسال طلب مختلف.");
+          setMessage("تختلف البيانات عن عملية التسجيل السابقة. تحقق من إيصال التسجيل لدى DSH قبل إرسال طلب مختلف.");
           return;
         }
         const pending = claim.pending;
@@ -227,23 +247,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
           setMessage("الاستجابة تخالف شرط إنشاء متجر غير منشور. تحقق من DSH قبل المتابعة.");
           return;
         }
-        let settlementFailed = false;
-        try {
-          const settled = await settleStoredAttempt(key, pending);
-          if (!controller.signal.aborted) attempt.current = { actorId, revision: reload, key, record: settled };
-        } catch {
-          // A confirmed owner result must never erase another form's newer record.
-          settlementFailed = true;
-        }
-        if (controller.signal.aborted) return;
-        setDone(true);
-        setUnknown(false);
-        setMessage(settlementFailed
-          ? "أكد DSH تسجيل المتجر، وتعذر تحديث سجل الاسترداد. حدّث متاجرك قبل أي تسجيل جديد."
-          : result.replay
-            ? "تم تأكيد تسجيل المتجر السابق لدى DSH. جارٍ تحديث متاجرك."
-            : "حُفظ المتجر غير المنشور في DSH. جارٍ تحديث متاجرك.");
-        onCreated();
+        await confirmRegistration(controller, key, pending, result.replay);
       } catch (error) {
         if (controller.signal.aborted) return;
         if (!dispatched || !claimed) {
@@ -281,7 +285,45 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         // An interrupted response may have committed. Never mint another operation ID.
         setUnknown(true);
         setRestored(false);
-        setMessage("نتيجة إنشاء المتجر غير مؤكدة. احتُفظ بمعرّف العملية على هذا الجهاز؛ أعد نفس العملية أو تحقق من متاجرك.");
+        setMessage("نتيجة إنشاء المتجر غير مؤكدة. احتُفظ بمعرّف العملية على هذا الجهاز؛ أعد نفس العملية أو تحقق من إيصال التسجيل لدى DSH.");
+      } finally {
+        if (active.current === controller) {
+          active.current = null;
+          setBusy(false);
+        }
+      }
+    })();
+  }
+
+  function recoverReceipt() {
+    if (!openedAttempt || openedAttempt.actorId !== actorId || openedAttempt.revision !== reload ||
+      attempt.current !== openedAttempt || active.current || !attemptReady || busy || done ||
+      !openedAttempt.record || openedAttempt.record.settled) return;
+    const pending = openedAttempt.record;
+    const { key } = openedAttempt;
+    const controller = new AbortController();
+    active.current = controller;
+    setBusy(true);
+    setMessage("");
+    void (async () => {
+      try {
+        const current = await readStoredAttempt(key);
+        controller.signal.throwIfAborted();
+        if (!sameRegistrationGeneration(current, pending)) {
+          setAttemptReady(false);
+          setMessage("تغيّر سجل التسجيل في نموذج آخر. أعد قراءة سجل الاسترداد قبل المتابعة.");
+          return;
+        }
+        const receipt = await readMerchantStoreRegistrationReceipt(actorId, pending.operationId, controller.signal);
+        controller.signal.throwIfAborted();
+        if (receipt.operationId !== pending.operationId) throw new Error("REGISTRATION_GENERATION_CHANGED");
+        await confirmRegistration(controller, key, pending, true);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setUnknown(true);
+        setMessage(error instanceof DshPublicError && error.status === 404 && error.code === "REGISTRATION_RECEIPT_NOT_FOUND"
+          ? "لا يوجد إيصال تسجيل مؤكد متاح حاليًا. لا تزال النتيجة غير محسومة؛ احتُفظ بمعرّف العملية."
+          : "تعذّر التحقق من إيصال التسجيل. احتُفظ بمعرّف العملية دون إرسال طلب جديد.");
       } finally {
         if (active.current === controller) {
           active.current = null;
@@ -356,7 +398,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         </>
       ) : null}
       {!attemptReady && !loading ? button("إعادة قراءة سجل الاسترداد", () => setReload(n => n + 1), busy) : null}
-      {unknown ? button("تحديث قائمة متاجري للتحقق من النتيجة", onCreated, busy) : null}
+      {unknown ? button("التحقق من نتيجة التسجيل لدى DSH", recoverReceipt, busy || !attemptReady) : null}
       {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
     </View>
   );

@@ -59,6 +59,7 @@ const retainedOperations = {
     ["getCurrentCustomerCaptainEligibility", "GET", "/v1/actors/me/captain-eligibility"],
     ["getCurrentCustomerCart", "GET", "/v1/carts/{storeID}"],
     ["getMerchantStoreRegistrationOptions", "GET", "/v1/stores/registration-options"],
+    ["getMerchantStoreRegistrationReceipt", "GET", "/v1/store-registration-receipts/{operationID}"],
     ["getOperatorCaptainStanding", "GET", "/v1/operators/captains/{actorId}/standing"],
     ["getOperatorStoreRegistrationPolicy", "GET", "/v1/operators/cities/{cityID}/store-registration-policy/{relation}"],
     ["getPublicStore", "GET", "/v1/public/stores/{id}"],

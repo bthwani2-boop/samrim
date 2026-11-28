@@ -1,4 +1,4 @@
-import { DshPublicError, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, getMerchantStoreProfile, getStoreOperationalAvailability, isCompanyEmployeeId, listMerchantCatalog, listMerchantEmployees, readMerchantCatalogDraftHistory, readMerchantInventorySummary, readMerchantRegistrationOptions, validEmployeeEndState, validMerchantCatalogSearch, validMerchantCatalogStatus } from "@bthwani/dsh";
+import { DshPublicError, getMerchantEmployee, getMerchantEmployeeRegistrationAudit, getMerchantStoreProfile, getStoreOperationalAvailability, isCompanyEmployeeId, listMerchantCatalog, listMerchantEmployees, readMerchantCatalogDraftHistory, readMerchantInventorySummary, readMerchantRegistrationOptions, readMerchantRegistrationReceipt, validEmployeeEndState, validMerchantCatalogSearch, validMerchantCatalogStatus, validMerchantRegistrationOperationID } from "@bthwani/dsh";
 import { IdentityClientError, readVerifiedIdentitySession, rotatePersistentIdentitySession } from "@bthwani/identity";
 import { readOwnedMerchantCommercialAgreementReview, WltReadError } from "@bthwani/wlt";
 import {
@@ -38,6 +38,8 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
   const query = new URL(request.url).searchParams;
   const stores = query.size === 1 && query.get("stores") === "mine";
   const registration = query.size === 1 && query.get("registration") === "options";
+  const registrationOperation = query.size === 1 ? query.get("registrationReceipt") : null;
+  const registrationReceipt = validMerchantRegistrationOperationID(registrationOperation);
   const storeId = query.size === 1 ? query.get("availability") : null;
   const availability = storeId !== null && /^[a-z0-9-]{1,64}$/.test(storeId);
   const catalogId = query.get("catalog");
@@ -81,7 +83,7 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
   const profile = profileId !== null && /^[a-z0-9-]{1,64}$/.test(profileId);
   const agreementId = query.size === 1 ? query.get("agreement") : null;
   const agreement = agreementId !== null && /^[a-z0-9-]{1,64}$/.test(agreementId);
-  const protectedRead = stores || availability || registration || catalog || inventory ||
+  const protectedRead = stores || availability || registration || registrationReceipt || catalog || inventory ||
     draftHistory || employees || agreement || profile;
   if (query.size > 0 && !protectedRead) {
     return response({ code: "INVALID_REQUEST" }, 400);
@@ -120,6 +122,13 @@ async function merchantGet(request: Request, alreadyRotated: boolean): Promise<R
           }
           return response({ code: "OWNER_UNAVAILABLE" }, 503);
         }
+      }
+      if (registrationReceipt) {
+        const actorId = request.headers.get("X-Merchant-Context");
+        if (!actorId || actorId !== session.actorId) return response({ code: "MERCHANT_CONTEXT_CHANGED" }, 403);
+        const receipt = await readMerchantRegistrationReceipt(standingOrigin(origin), bearer, registrationOperation, signal);
+        signal.throwIfAborted();
+        return response({ receipt });
       }
       if (registration) {
         const actorId = request.headers.get("X-Merchant-Context");
