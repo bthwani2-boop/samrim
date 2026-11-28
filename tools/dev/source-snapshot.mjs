@@ -75,12 +75,11 @@ export function inspectSourceFiles(checkout, tracked, untracked, objectFormat = 
 }
 
 export function captureSourceSnapshot(checkout, { requireBranch = false, requireCommitted = false } = {}) {
-  const root = resolve(checkout);
-  const git = openRepositoryReader(root);
+  const git = openRepositoryReader(checkout);
+  const root = git.checkout;
   const gitText = (...args) => git(...args).toString("utf8").trim();
   function identity() {
-    const actual = gitText("rev-parse", "--show-toplevel").replaceAll("\\", "/");
-    if (!samePath(actual, root.replaceAll("\\", "/"))) throw new Error("BLOCKED: command must run against its own local checkout");
+    git.assertCheckout();
     const branch = gitText("rev-parse", "--abbrev-ref", "HEAD");
     if (branch.startsWith("archive/") || (requireBranch && branch === "HEAD")) throw new Error("BLOCKED: source branch is not admitted");
     return { branch, head: gitText("rev-parse", "HEAD") };

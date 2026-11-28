@@ -197,3 +197,43 @@ test("canonical Git index and repository cannot be substituted by caller environ
     assert.match(result.stderr, /likely secret marker in staged bytes/);
   }
 }));
+
+test("native Git checkout admission uses physical identity without admitting redirected or nested roots", async () => {
+  const { openRepositoryReader } = await import("./verify-secrets.mjs");
+  const { captureSourceSnapshot } = await import("../dev/source-snapshot.mjs");
+  const { realpathSync, symlinkSync } = await import("node:fs");
+  fixture(({ dir }) => {
+    git(dir, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+      "-c", "commit.gpgsign=false", "-c", "core.hooksPath=" + dir, "commit", "-qm", "fixture");
+    const root = realpathSync.native(dir);
+    const canonical = captureSourceSnapshot(root);
+    assert.equal(openRepositoryReader(root)("rev-parse", "HEAD").toString("utf8").trim(), canonical.head);
+    if (process.platform === "win32") {
+      const result = spawnSync("C:\\Windows\\System32\\cmd.exe",
+        ["/d", "/c", 'for %I in ("' + root + '") do @echo %~sI'],
+        { encoding: "utf8", windowsHide: true, windowsVerbatimArguments: true, timeout: 10000 });
+      assert.equal(result.status, 0, result.stderr);
+      const alias = result.stdout.trim();
+      assert.ok(alias);
+      assert.equal(realpathSync.native(alias).toLowerCase(), root.toLowerCase());
+      assert.equal(openRepositoryReader(alias)("rev-parse", "HEAD").toString("utf8").trim(), canonical.head);
+      assert.deepEqual(captureSourceSnapshot(alias), canonical);
+    }
+    const child = join(root, "tools");
+    assert.throws(() => openRepositoryReader(child), /Wrong checkout/);
+    const link = join(root, "redirected-root");
+    symlinkSync(root, link, process.platform === "win32" ? "junction" : "dir");
+    try {
+      assert.throws(() => openRepositoryReader(link), /Wrong checkout/);
+      assert.throws(() => captureSourceSnapshot(link), /Wrong checkout/);
+    } finally {
+      rmSync(link, { force: true });
+    }
+    const foreign = join(root, "foreign-worktree");
+    mkdirSync(foreign);
+    git(root, "config", "--local", "core.worktree", foreign);
+    assert.throws(() => openRepositoryReader(root), /Wrong checkout/);
+    git(root, "config", "--local", "--unset", "core.worktree");
+    assert.equal(openRepositoryReader(root)("rev-parse", "HEAD").toString("utf8").trim(), canonical.head);
+  });
+});

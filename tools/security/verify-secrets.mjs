@@ -99,13 +99,28 @@ export function canonicalGitEnvironment() {
     GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0" };
 }
 
+// Reject redirected ancestors before expanding a legitimate Windows short
+// name. Compare the physical directory and its identity, not Git's spelling.
+function checkoutIdentity(directory) {
+  const spelling = resolve(directory);
+  const stat = lstatSync(spelling, { bigint: true });
+  assert.ok(stat.isDirectory() && !stat.isSymbolicLink() &&
+    samePath(realpathSync(spelling), spelling), "Wrong checkout");
+  return { path: realpathSync.native(spelling), dev: stat.dev, ino: stat.ino };
+}
+
+function sameCheckout(left, right) {
+  return samePath(left.path, right.path) && left.dev === right.dev && left.ino === right.ino;
+}
+
 export function openRepositoryReader(checkout) {
-  const base = resolve(checkout);
+  const requested = resolve(checkout);
+  const initial = checkoutIdentity(requested);
   const env = canonicalGitEnvironment();
   const execute = (args, input) => {
     try {
       return execFileSync(gitExecutable, ["--no-replace-objects", "--no-optional-locks", ...args], {
-        cwd: base, env, maxBuffer: maxBytes, timeout: 30000, input,
+        cwd: initial.path, env, maxBuffer: maxBytes, timeout: 30000, input,
         windowsHide: true, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
       });
     } catch {
@@ -113,8 +128,13 @@ export function openRepositoryReader(checkout) {
     }
   };
   const read = (...args) => execute(args);
-  const actual = read("rev-parse", "--show-toplevel").toString("utf8").trim();
-  assert.ok(samePath(resolve(actual), base), "Wrong checkout");
+  read.checkout = initial.path;
+  read.assertCheckout = () => {
+    const actual = read("rev-parse", "--show-toplevel").toString("utf8").replace(/\r?\n$/, "");
+    assert.ok(sameCheckout(checkoutIdentity(requested), initial) &&
+      sameCheckout(checkoutIdentity(actual), initial), "Wrong checkout");
+  };
+  read.assertCheckout();
   read.batchBlobs = ids => {
     assert.ok(Array.isArray(ids) && ids.length > 0 && ids.every(id =>
       typeof id === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(id)), "Invalid Git blob identities");
