@@ -1,13 +1,8 @@
 import { identityOperations } from "@bthwani/identity";
 import { NextResponse } from "next/server";
-import {
-  boundedResponseJSON,
-  isEmptyRequestBody,
-  isTrustedOperatorRequest,
-  operatorIdentityRequest,
-  parsePasskeyOptions,
-  resolveIsolatedOperatorConfig,
-} from "../../../../../src/server/operator-passkey-bff";
+import { isTrustedOperatorRequest, resolveIsolatedOperatorConfig } from "../../../../../src/server/operator-passkey-config";
+import { boundedResponseJSON, isEmptyRequestBody, operatorIdentityRequest } from "../../../../../src/server/operator-passkey-transport";
+import { parsePasskeyOptions } from "../../../../../src/server/operator-passkey-validation";
 import { unavailableSessionResponse } from "../../../../../src/server/request-security";
 
 export const runtime = "nodejs";

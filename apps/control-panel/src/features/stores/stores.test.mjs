@@ -58,7 +58,9 @@ test("publication review opens an exact Store, preserves its page, and fails clo
         return {cityId: city, relation, items};
       }},
       "current-operator-access": { currentOperatorAccess: async () => ({ grants }) },
-      "operator-passkey-bff": { OPERATOR_COOKIE: "operator" },
+      "operator-passkey-config": {
+        OPERATOR_COOKIE: "operator",
+      },
       "public-store-query": { isolatedPublicDshOrigin: origin => origin },
       "operator-shell.module.css": { __esModule: true, default: {} },
       "workspace-unavailable": { __esModule: true, default: "Unavailable" },
@@ -77,7 +79,7 @@ test("publication review opens an exact Store, preserves its page, and fails clo
       "../features/stores/public-store-query": mocks["public-store-query"],
       "../features/stores/publication-review-query": query.exports,
       "./current-operator-access": mocks["current-operator-access"],
-      "./operator-passkey-bff": mocks["operator-passkey-bff"],
+      "./operator-passkey-config": mocks["operator-passkey-config"],
     });
     loadedModules.push(review);
     function load(source, prefix) {

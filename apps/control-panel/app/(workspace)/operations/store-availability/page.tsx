@@ -6,7 +6,7 @@ import styles from "../../../../src/features/operator-shell/operator-shell.modul
 import WorkspaceUnavailable from "../../../../src/features/operator-shell/workspace-unavailable";
 import { isolatedPublicDshOrigin } from "../../../../src/features/stores/public-store-query";
 import { currentOperatorAccess } from "../../../../src/server/current-operator-access";
-import { OPERATOR_COOKIE } from "../../../../src/server/operator-passkey-bff";
+import { OPERATOR_COOKIE } from "../../../../src/server/operator-passkey-config";
 
 export const dynamic = "force-dynamic";
 

@@ -1,18 +1,8 @@
 import { establishPersistentIdentitySession, identityOperations, revokeVerifiedIdentitySession } from "@bthwani/identity";
 import { NextResponse } from "next/server";
-import {
-  boundedRequestBody,
-  boundedResponseJSON,
-  cookieLifetimeSeconds,
-  isTrustedOperatorRequest,
-  OPERATOR_COOKIE,
-  OPERATOR_REFRESH_COOKIE,
-  operatorIdentityRequest,
-  parseIssuedOperatorToken,
-  parseVerifiedOperatorPrincipal,
-  resolveIsolatedOperatorConfig,
-  validAssertion,
-} from "../../../../../src/server/operator-passkey-bff";
+import { isTrustedOperatorRequest, OPERATOR_COOKIE, OPERATOR_REFRESH_COOKIE, resolveIsolatedOperatorConfig } from "../../../../../src/server/operator-passkey-config";
+import { boundedRequestBody, boundedResponseJSON, operatorIdentityRequest } from "../../../../../src/server/operator-passkey-transport";
+import { cookieLifetimeSeconds, parseIssuedOperatorToken, parseVerifiedOperatorPrincipal, validAssertion } from "../../../../../src/server/operator-passkey-validation";
 import { unavailableSessionResponse } from "../../../../../src/server/request-security";
 
 export const runtime = "nodejs";

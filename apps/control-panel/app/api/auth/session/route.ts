@@ -7,18 +7,10 @@ import {
   rotatePersistentIdentitySession,
 } from "@bthwani/identity";
 import { type NextRequest, NextResponse } from "next/server";
-import {
-  cookieLifetimeSeconds,
-  isEmptyRequestBody,
-  isTrustedOperatorLoopbackTarget,
-  isTrustedOperatorRequest,
-  OPERATOR_COOKIE,
-  OPERATOR_REFRESH_COOKIE,
-  type OperatorPasskeyConfig,
-  operatorIdentityRequest,
-  readOperatorAccessState,
-  resolveIsolatedOperatorConfig,
-} from "../../../../src/server/operator-passkey-bff";
+import { readOperatorAccessState } from "../../../../src/server/operator-passkey-access";
+import { isTrustedOperatorLoopbackTarget, isTrustedOperatorRequest, OPERATOR_COOKIE, OPERATOR_REFRESH_COOKIE, type OperatorPasskeyConfig, resolveIsolatedOperatorConfig } from "../../../../src/server/operator-passkey-config";
+import { isEmptyRequestBody, operatorIdentityRequest } from "../../../../src/server/operator-passkey-transport";
+import { cookieLifetimeSeconds } from "../../../../src/server/operator-passkey-validation";
 import { unavailableSessionResponse } from "../../../../src/server/request-security";
 
 export const runtime = "nodejs";

@@ -1,13 +1,7 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { currentOperatorAccessState } from "../../server/current-operator-access";
-import {
-  canonicalOperatorEntryRedirect,
-  OPERATOR_REFRESH_COOKIE,
-  resolveInitialOperatorBootstrapConfig,
-  resolveIsolatedOperatorConfig,
-  resolveOperatorRecoveryConfig,
-} from "../../server/operator-passkey-bff";
+import { canonicalOperatorEntryRedirect, OPERATOR_REFRESH_COOKIE, resolveInitialOperatorBootstrapConfig, resolveIsolatedOperatorConfig, resolveOperatorRecoveryConfig } from "../../server/operator-passkey-config";
 import styles from "../operator-shell/operator-shell.module.css";
 import OperatorBootstrapForm from "./operator-bootstrap-form";
 import OperatorPasskeyForm from "./operator-passkey-form";

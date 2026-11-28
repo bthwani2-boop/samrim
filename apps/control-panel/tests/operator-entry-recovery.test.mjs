@@ -35,7 +35,7 @@ async function entry({ refresh, status = "signed-out" }) {
     },
     "next/navigation": { redirect: url => { throw new Error(`redirect ${url}`); } },
     "../../server/current-operator-access": { currentOperatorAccessState: async () => ({ status }) },
-    "../../server/operator-passkey-bff": {
+    "../../server/operator-passkey-config": {
       OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
       canonicalOperatorEntryRedirect: () => null,
       resolveInitialOperatorBootstrapConfig: () => ({}),
@@ -156,20 +156,24 @@ test("Operator passkey admission requires a persistent family before setting eit
         async revokeVerifiedIdentitySession(_origin, bearer) { revoked.push(bearer); },
       },
       "next/server": requirePanel("next/server"),
-      "../../../../../src/server/operator-passkey-bff": {
+      "../../../../../src/server/operator-passkey-transport": {
         boundedRequestBody: async () => JSON.stringify({ ceremonyId: "synthetic" }),
         boundedResponseJSON: response => response.json(),
-        cookieLifetimeSeconds: () => 300,
-        isTrustedOperatorRequest: () => true,
-        OPERATOR_COOKIE: "bthwani_operator_session",
-        OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
         operatorIdentityRequest: async (_config, operation) => Response.json(operation === "finish"
           ? { accessToken: token, sessionExpiresAt: expires }
           : { actorId: "operator-synthetic", role: "operator", sessionExpiresAt: expires }),
+      },
+      "../../../../../src/server/operator-passkey-validation": {
+        cookieLifetimeSeconds: () => 300,
         parseIssuedOperatorToken: value => value,
         parseVerifiedOperatorPrincipal: value => value,
-        resolveIsolatedOperatorConfig: () => ({ identityOrigin: "http://127.0.0.1:3201" }),
         validAssertion: () => true,
+      },
+      "../../../../../src/server/operator-passkey-config": {
+        isTrustedOperatorRequest: () => true,
+        OPERATOR_COOKIE: "bthwani_operator_session",
+        OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
+        resolveIsolatedOperatorConfig: () => ({ identityOrigin: "http://127.0.0.1:3201" }),
       },
       "../../../../../src/server/request-security": { unavailableSessionResponse: () => Response.json({}, { status: 503 }) },
     }, {}, "POST");
@@ -213,8 +217,10 @@ test("protected direct entry exposes recovery only for a signed-out session with
       "../../src/server/current-operator-access": { currentOperatorAccessState: async () => status === "verified"
         ? { status, access: { actorId: "operator-a", grants: [] } } : { status },
         currentOriginalOperatorPermissions: async () => null },
-      "../../src/server/operator-passkey-bff": { OPERATOR_REFRESH_COOKIE: "refresh",
-        resolveIsolatedOperatorConfig: () => ({ browserOrigin: "http://localhost:13000" }) },
+      "../../src/server/operator-passkey-config": {
+        OPERATOR_REFRESH_COOKIE: "refresh",
+        resolveIsolatedOperatorConfig: () => ({ browserOrigin: "http://localhost:13000" }),
+      },
       "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
     });
     const gate = await layout({ children: "private" });
@@ -282,11 +288,20 @@ test("Operator session route renews before expiry with same-actor proof and curr
         revokePersistentIdentitySession: async () => {},
       },
       "next/server": requirePanel("next/server"),
-      "../../../../src/server/operator-passkey-bff": {
+      "../../../../src/server/operator-passkey-transport": {
+        isEmptyRequestBody: () => assert.fail("GET must not read a logout body"),
+        operatorIdentityRequest: () => assert.fail("GET must not invoke logout transport"),
+      },
+      "../../../../src/server/operator-passkey-validation": {
         cookieLifetimeSeconds: date => Math.max(0, Math.min(1800, Math.floor((Date.parse(date) - Date.now()) / 1000))),
+      },
+      "../../../../src/server/operator-passkey-config": {
         isTrustedOperatorLoopbackTarget: () => true,
-        OPERATOR_COOKIE: "bthwani_operator_session", OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
+        OPERATOR_COOKIE: "bthwani_operator_session",
+        OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
         resolveIsolatedOperatorConfig: () => ({ identityOrigin: "http://127.0.0.1:3201", browserOrigin: "http://localhost:13000" }),
+      },
+      "../../../../src/server/operator-passkey-access": {
         async readOperatorAccessState(_config, bearer) {
           if (bearer === token) return { status: "verified", access: { actorId: "operator-a", grants: ["operations"], sessionExpiresAt: oldExpiry } };
           assert.equal(bearer, newAccess);
@@ -351,11 +366,20 @@ test("Operator rejects a rotated credential before admission and revokes the rec
         reviewOriginalOperatorPermissions: async () => assert.fail("rejected family must not acquire grants"),
       },
       "next/server": requirePanel("next/server"),
-      "../../../../src/server/operator-passkey-bff": {
+      "../../../../src/server/operator-passkey-transport": {
+        isEmptyRequestBody: () => assert.fail("GET must not read a logout body"),
+        operatorIdentityRequest: () => assert.fail("GET must not invoke logout transport"),
+      },
+      "../../../../src/server/operator-passkey-validation": {
         cookieLifetimeSeconds: date => Math.floor((Date.parse(date)-Date.now())/1000),
+      },
+      "../../../../src/server/operator-passkey-config": {
         isTrustedOperatorLoopbackTarget: () => true,
-        OPERATOR_COOKIE: "bthwani_operator_session", OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
+        OPERATOR_COOKIE: "bthwani_operator_session",
+        OPERATOR_REFRESH_COOKIE: "bthwani_operator_refresh",
         resolveIsolatedOperatorConfig: () => ({identityOrigin:"http://127.0.0.1:3201",browserOrigin:"http://localhost:13000"}),
+      },
+      "../../../../src/server/operator-passkey-access": {
         async readOperatorAccessState() { permissionReads++; return {status:"signed-out"}; },
       },
       "../../../../src/server/request-security": {unavailableSessionResponse:()=>Response.json({}, {status:503})},
@@ -389,11 +413,20 @@ test("Operator logout preserves retry credentials until family revocation is ack
         },
       },
       "next/server": requirePanel("next/server"),
-      "../../../../src/server/operator-passkey-bff": {
+      "../../../../src/server/operator-passkey-config": {
         resolveIsolatedOperatorConfig:()=>({identityOrigin:"http://127.0.0.1:3201"}),
         isTrustedOperatorRequest:()=>mode!=="untrusted",
+        OPERATOR_COOKIE:"bthwani_operator_session",
+        OPERATOR_REFRESH_COOKIE:"bthwani_operator_refresh",
+      },
+      "../../../../src/server/operator-passkey-validation": {
+        cookieLifetimeSeconds: () => assert.fail("logout must not renew cookies"),
+      },
+      "../../../../src/server/operator-passkey-access": {
+        readOperatorAccessState: () => assert.fail("logout must not admit a workspace"),
+      },
+      "../../../../src/server/operator-passkey-transport": {
         isEmptyRequestBody:async()=>mode!=="body",
-        OPERATOR_COOKIE:"bthwani_operator_session", OPERATOR_REFRESH_COOKIE:"bthwani_operator_refresh",
         async operatorIdentityRequest(_config, operation, options) {
           assert.equal(operation.method,"DELETE");
           assert.equal(options.headers.Authorization,"Bearer "+bearer);

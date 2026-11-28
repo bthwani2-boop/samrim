@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import OperatorWorkspaceGate from "../../src/features/access/operator-workspace-gate";
 import { canEnterOperatorWorkspace } from "../../src/features/session/operator-permissions";
 import { currentOperatorAccessState, currentOriginalOperatorPermissions } from "../../src/server/current-operator-access";
-import { OPERATOR_REFRESH_COOKIE, resolveIsolatedOperatorConfig } from "../../src/server/operator-passkey-bff";
+import { OPERATOR_REFRESH_COOKIE, resolveIsolatedOperatorConfig } from "../../src/server/operator-passkey-config";
 
 // The proxy overwrites x-bthwani-route with the actual URL (not a client claim).
 // The session and each effective scope are read from Identity on every request.

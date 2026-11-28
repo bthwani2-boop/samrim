@@ -2,9 +2,8 @@ import { DshPublicError, type StoreOperationalChange, updateStoreOperationalAvai
 import { cookies } from "next/headers";
 import { isolatedPublicDshOrigin } from "../../../../../../src/features/stores/public-store-query";
 import { currentOperatorAccess } from "../../../../../../src/server/current-operator-access";
-import {
-  boundedRequestBody, isTrustedOperatorRequest, OPERATOR_COOKIE, resolveIsolatedOperatorConfig,
-} from "../../../../../../src/server/operator-passkey-bff";
+import { isTrustedOperatorRequest, OPERATOR_COOKIE, resolveIsolatedOperatorConfig } from "../../../../../../src/server/operator-passkey-config";
+import { boundedRequestBody } from "../../../../../../src/server/operator-passkey-transport";
 
 export const runtime = "nodejs";
 

@@ -82,15 +82,17 @@ function harness(t, cityRoute = false) {
     "../../../../../../../src/server/current-operator-access": {
       currentOperatorAccess: async () => state.access,
     },
-    "../../../../../../../src/server/operator-passkey-bff": {
+    "../../../../../../../src/server/operator-passkey-config": {
       OPERATOR_COOKIE: "bthwani_operator_session",
       isTrustedOperatorLoopbackTarget,
+      resolveIsolatedOperatorConfig: () => state.enabled ? { browserOrigin: browser } : null,
+    },
+    "../../../../../../../src/server/operator-passkey-transport": {
       boundedRequestBody: async (request, maxBytes = 8192) => {
         state.maxCommandBytes = maxBytes;
         const body = await request.text();
         return Buffer.byteLength(body, "utf8") <= maxBytes ? body : null;
       },
-      resolveIsolatedOperatorConfig: () => state.enabled ? { browserOrigin: browser } : null,
     },
     "../../../../../../../src/server/request-security": {
       unavailableSessionResponse: () => Response.json({ code: "OPERATOR_SESSION_UNAVAILABLE" }, { status: 503 }),

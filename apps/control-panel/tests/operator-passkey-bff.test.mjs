@@ -1,22 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  boundedRequestBody,
-  canonicalOperatorEntryRedirect,
-  cookieLifetimeSeconds,
-  isEmptyRequestBody,
-  isTrustedOperatorLoopbackTarget,
-  isTrustedOperatorRequest,
-  OPERATOR_COOKIE,
-  parseInitialOperatorOptions,
-  parseIssuedOperatorToken,
-  parsePasskeyOptions,
-  parseVerifiedOperatorPrincipal,
-  resolveInitialOperatorBootstrapConfig,
-  resolveIsolatedOperatorConfig,
-  validAssertion,
-  validInitialOperatorPayload,
-} from "../src/server/operator-passkey-bff.ts";
+import { canonicalOperatorEntryRedirect, isTrustedOperatorLoopbackTarget, isTrustedOperatorRequest, OPERATOR_COOKIE, resolveInitialOperatorBootstrapConfig, resolveIsolatedOperatorConfig } from "../src/server/operator-passkey-config.ts";
+import { boundedRequestBody, isEmptyRequestBody } from "../src/server/operator-passkey-transport.ts";
+import { cookieLifetimeSeconds, parseInitialOperatorOptions, parseIssuedOperatorToken, parsePasskeyOptions, parseVerifiedOperatorPrincipal, validAssertion, validInitialOperatorPayload } from "../src/server/operator-passkey-validation.ts";
 
 const goodEnv = {
   BTHWANI_ISOLATED_TEST_MODE: "true",
@@ -239,7 +225,7 @@ test("Operator assertion rejects additional keys and validates exact two-key sha
 });
 
 test("Operator workspace grants require fresh Identity session and seven owner permission decisions", async t => {
-  const { readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
+  const { readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-access.ts");
   const config = resolveIsolatedOperatorConfig(goodEnv);
   assert.ok(config);
   const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
@@ -264,7 +250,7 @@ test("Operator workspace grants require fresh Identity session and seven owner p
 });
 
 test("Operator workspace owner mismatch, role spoof, revoked session and outage all fail closed", async t => {
-  const { readOperatorAccessState, readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
+  const { readOperatorAccessState, readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-access.ts");
   const config = resolveIsolatedOperatorConfig(goodEnv);
   assert.ok(config);
   const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
@@ -510,7 +496,7 @@ test("all rejected body declarations cancel the source without consuming or reta
 });
 
 test("Operator permission outcome preserves authoritative session rejection across concurrent owner failures", async t => {
-  const { readOperatorAccessState, readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-bff.ts");
+  const { readOperatorAccessState, readVerifiedOperatorAccess } = await import("../src/server/operator-passkey-access.ts");
   const config = resolveIsolatedOperatorConfig(goodEnv);
   assert.ok(config);
   const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
@@ -549,7 +535,7 @@ test("Operator permission outcome preserves authoritative session rejection acro
 });
 
 test("Operator grant outcome rejects malformed principals and expiry during permission reads", async t => {
-  const { readOperatorAccessState } = await import("../src/server/operator-passkey-bff.ts");
+  const { readOperatorAccessState } = await import("../src/server/operator-passkey-access.ts");
   const config = resolveIsolatedOperatorConfig(goodEnv);
   assert.ok(config);
   const start = Date.now();
@@ -676,7 +662,7 @@ test("Operator response cleanup errors preserve authoritative rejection", async 
 });
 
 test("Operator session and permission admission rejects cacheable or non-JSON owner replies", async t => {
-  const { readOperatorAccessState } = await import("../src/server/operator-passkey-bff.ts");
+  const { readOperatorAccessState } = await import("../src/server/operator-passkey-access.ts");
   const config = resolveIsolatedOperatorConfig(goodEnv);
   const expiry = new Date(Date.now() + 15 * 60_000).toISOString();
   let badPath = "/v1/sessions/current";

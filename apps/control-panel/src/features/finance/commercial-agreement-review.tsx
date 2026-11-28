@@ -1,7 +1,7 @@
 import { type CommercialAgreementReview, readOperatorCommercialAgreementReview } from "@bthwani/wlt";
 import { cookies } from "next/headers";
 import { currentOperatorAccess } from "../../server/current-operator-access";
-import { OPERATOR_COOKIE } from "../../server/operator-passkey-bff";
+import { OPERATOR_COOKIE } from "../../server/operator-passkey-config";
 import styles from "../operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../operator-shell/workspace-unavailable";
 

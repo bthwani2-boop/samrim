@@ -268,10 +268,13 @@ test("Captain BFF rejects a missing or switched continuation binding before cont
     },
     "next/headers": { cookies: async () => ({ get: () => ({ value: "A".repeat(43) }) }) },
     "next/server": { NextResponse: { json: (body, options) => Response.json(body, options) } },
-    "../../server/operator-passkey-bff": {
-      isTrustedOperatorLoopbackTarget: () => true, OPERATOR_COOKIE: "operator",
-      readVerifiedOperatorAccess: async () => ({ actorId: "operator-a", grants: ["operations"] }),
+    "../../server/operator-passkey-config": {
+      isTrustedOperatorLoopbackTarget: () => true,
+      OPERATOR_COOKIE: "operator",
       resolveIsolatedOperatorConfig: () => ({ browserOrigin: "http://localhost" }),
+    },
+    "../../server/operator-passkey-access": {
+      readVerifiedOperatorAccess: async () => ({ actorId: "operator-a", grants: ["operations"] }),
     },
     "../stores/public-store-query": { isolatedPublicDshOrigin: () => "http://localhost" },
   };
@@ -312,10 +315,13 @@ function captainMutationFixture(t, { access = { actorId: "operator-a", grants: [
     "@bthwani/dsh": { ...captainSdk, DshPublicError },
     "next/headers": { cookies: async () => ({ get: () => bearer ? { value: bearer } : undefined }) },
     "next/server": { NextResponse: { json: (body, options) => Response.json(body, options) } },
-    "../../server/operator-passkey-bff": {
-      isTrustedOperatorLoopbackTarget, OPERATOR_COOKIE: "operator",
-      readVerifiedOperatorAccess: async () => access,
+    "../../server/operator-passkey-config": {
+      isTrustedOperatorLoopbackTarget,
+      OPERATOR_COOKIE: "operator",
       resolveIsolatedOperatorConfig: () => ({ browserOrigin }),
+    },
+    "../../server/operator-passkey-access": {
+      readVerifiedOperatorAccess: async () => access,
     },
     "../stores/public-store-query": { isolatedPublicDshOrigin: () => ownerOrigin },
   });
