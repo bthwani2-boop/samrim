@@ -1,8 +1,9 @@
 // Atomic owner-baseline transition builder shared by the guarded reconciler and disposable PostgreSQL proof.
-import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readSync } from "node:fs";
+import { readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { TextDecoder } from "node:util";
+import { openRepositoryReader, readVerifiedFile, readVerifiedGitBlob } from "../../security/verify-secrets.mjs";
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
@@ -35,50 +36,84 @@ export function transitionScope(owner, schema, archive) {
   return { ...d, archive };
 }
 
-export function readBaselineFile(file) {
-  const absolute = resolve(file);
-  const limit = 512 * 1024;
-  const fd = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
-  try {
-    const opened = fstatSync(fd, { bigint: true });
-    const same = (entry) => entry.isFile() && !entry.isSymbolicLink() &&
-      entry.dev === opened.dev && entry.ino === opened.ino && entry.nlink === 1n &&
-      entry.size === opened.size && entry.mtimeNs === opened.mtimeNs && entry.ctimeNs === opened.ctimeNs;
-    if (!opened.isFile() || opened.nlink !== 1n || opened.size > BigInt(limit) ||
-        !same(lstatSync(absolute, { bigint: true }))) throw new Error("Unexpected baseline entry");
-    const buffer = Buffer.alloc(Number(opened.size) + 1);
-    let count = 0;
-    while (count < buffer.length) {
-      const n = readSync(fd, buffer, count, buffer.length - count, null);
-      if (!n) break;
-      count += n;
-    }
-    if (BigInt(count) !== opened.size || !same(fstatSync(fd, { bigint: true })) ||
-        !same(lstatSync(absolute, { bigint: true }))) throw new Error("Unexpected baseline entry");
-    const source = utf8.decode(buffer.subarray(0, count));
-    if (!source.trim() || source.startsWith("\uFEFF") || source.includes("\0") || /^\s*\\/m.test(source)) {
-      throw new Error("Invalid baseline source");
-    }
-    return source;
-  } finally {
-    closeSync(fd);
+const maxBaselineBytes = 512 * 1024;
+const baselineName = /^[0-9]{2}_[a-z0-9_]+\.sql$/;
+
+function admitBaselineBytes(bytes, owner) {
+  if (!bytes.length || bytes.length > maxBaselineBytes) throw new Error("Invalid baseline source size");
+  let source;
+  try { source = utf8.decode(bytes); }
+  catch { throw new Error("Invalid baseline UTF-8 source"); }
+  if (!source.trim() || source.startsWith("\uFEFF") || source.includes("\0") || /^\s*\\/m.test(source) ||
+      (owner === "wlt" ? source.includes("__SCHEMA__") : !source.includes("__SCHEMA__"))) {
+    throw new Error("Invalid baseline source");
   }
+  if (source.includes("$bthwani_baseline$") || source.includes("$bthwani_bootstrap$"))
+    throw new Error("Reserved bootstrap delimiter in baseline source");
+  return source;
 }
 
+// Read only the exact committed owner tree, independently verify the actual
+// working names and bytes, and refuse an index or HEAD change. Neither an
+// ignored file nor an assume-unchanged path can become a transition input.
 function baselineSources(owner) {
-  return ["schema", ...(owner === "wlt" ? ["sandbox"] : [])].flatMap((directory) => {
-    const folder = resolve(root, "services", owner, "database", directory);
-    const info = lstatSync(folder, { bigint: true });
-    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error("Unexpected baseline directory");
-    const entries = readdirSync(folder, { withFileTypes: true }).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
-    if (!entries.length || entries.length > 64) throw new Error("Invalid baseline inventory");
-    return entries.map((entry) => {
-      if (!entry.isFile() || entry.isSymbolicLink() || !/^[0-9]{2}_[a-z0-9_]+\.sql$/.test(entry.name)) {
-        throw new Error("Unexpected baseline entry");
-      }
-      return readBaselineFile(resolve(folder, entry.name));
-    });
-  });
+  const git = openRepositoryReader(root);
+  const head = git("rev-parse", "HEAD").toString("ascii").trim();
+  const format = git("rev-parse", "--show-object-format").toString("ascii").trim();
+  if (!["sha1", "sha256"].includes(format) || !/^[a-f0-9]+$/.test(head) ||
+      head.length !== (format === "sha1" ? 40 : 64)) throw new Error("Invalid baseline revision");
+  const directories = ["schema", ...(owner === "wlt" ? ["sandbox"] : [])];
+  const scopes = directories.map(name => "services/" + owner + "/database/" + name);
+  const tree = () => git("ls-tree", "-r", "-z", "--full-tree", head, "--", ...scopes);
+  const inventory = tree();
+  const stagedChanges = () => git("diff", "--cached", "--name-only", "-z", head, "--", ...scopes);
+  if (stagedChanges().length) throw new Error("Baseline index changed");
+  const records = inventory.toString("utf8").split("\0").filter(Boolean);
+  if (!records.length || records.length > 64) throw new Error("Invalid baseline inventory");
+  const entries = new Map(scopes.map(scope => [scope, new Map()]));
+  for (const record of records) {
+    const match = /^100644 blob ([a-f0-9]+)\t(.+)$/.exec(record);
+    if (!match || match[1].length !== head.length) throw new Error("Unexpected baseline tree entry");
+    const [, oid, rel] = match;
+    const split = rel.lastIndexOf("/");
+    const folder = entries.get(rel.slice(0, split));
+    const name = rel.slice(split + 1);
+    if (!folder || !baselineName.test(name) || folder.has(name)) throw new Error("Unexpected baseline tree entry");
+    folder.set(name, oid);
+  }
+  const sources = [];
+  const actualNames = folder => {
+    const names = readdirSync(folder, { withFileTypes: true });
+    if (names.some(entry => !entry.isFile() || entry.isSymbolicLink() || !baselineName.test(entry.name)))
+      throw new Error("Unexpected baseline directory entry");
+    return names.map(entry => entry.name).sort();
+  };
+  const assertInventory = (folder, expected) => {
+    if (!expected.length || JSON.stringify(actualNames(folder)) !== JSON.stringify(expected))
+      throw new Error("Baseline directory inventory changed");
+  };
+  for (const [scope, files] of entries) {
+    const folder = resolve(root, scope);
+    const names = [...files.keys()].sort();
+    assertInventory(folder, names);
+    for (const name of names) {
+      const oid = files.get(name);
+      const size = Number(git("cat-file", "-s", oid).toString("ascii").trim());
+      if (!Number.isSafeInteger(size) || size <= 0 || size > maxBaselineBytes)
+        throw new Error("Invalid baseline blob size");
+      const bytes = readVerifiedGitBlob(git, oid, format);
+      let working;
+      try { working = readVerifiedFile(resolve(folder, name), maxBaselineBytes).bytes; }
+      catch { throw new Error("Unsafe or changed baseline file"); }
+      if (!working.equals(bytes)) throw new Error("Baseline working bytes differ from committed source");
+      sources.push(admitBaselineBytes(bytes, owner));
+    }
+    assertInventory(folder, names);
+  }
+  git.assertCheckout();
+  if (git("rev-parse", "HEAD").toString("ascii").trim() !== head || stagedChanges().length || !tree().equals(inventory))
+    throw new Error("Baseline source identity changed");
+  return sources;
 }
 
 // Missing means no writer exists. An existing command role must be NOLOGIN,
@@ -148,24 +183,13 @@ const wltCommandRoleFinalSQL = `(
   )
 )`;
 
-export function buildOwnerBaselineTransition(owner, schema, archive, sources) {
+export function buildOwnerBaselineTransition(owner, schema, archive) {
+  if (arguments.length !== 3) throw new Error("Invalid baseline source arguments");
   const d = transitionScope(owner, schema, archive);
-  const sourceList = sources ?? baselineSources(owner);
-  if (!Array.isArray(sourceList) || !sourceList.length || sourceList.length > 64 ||
-      sourceList.some((s) => typeof s !== "string" || !s.trim() || s.length > 512 * 1024 ||
-        s.includes("\0") || (owner !== "wlt" && !s.includes("__SCHEMA__")) ||
-        (owner === "wlt" && s.includes("__SCHEMA__")))) {
-    throw new Error("Invalid baseline source");
-  }
-
-  const baseline = sourceList.map((s) => {
-    const sql = owner === "wlt" ? s : s.replaceAll("__SCHEMA__", schema);
-    if (sql.includes("$bthwani_baseline$") || sql.includes("$bthwani_bootstrap$")) {
-      throw new Error("Reserved bootstrap delimiter");
-    }
+  const baseline = baselineSources(owner).map((source) => {
+    const sql = owner === "wlt" ? source : source.replaceAll("__SCHEMA__", schema);
     return "  EXECUTE $bthwani_baseline$" + sql + "$bthwani_baseline$;";
   }).join("\n");
-
   const roles = owner === "wlt" ? [d.runtime, d.sandbox, d.command] : [d.runtime];
   const parityRoles = owner === "wlt" ? [d.runtime, d.sandbox] : [d.runtime];
   const roleList = roles.map((r) => "'" + r + "'").join(",");

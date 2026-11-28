@@ -38,8 +38,9 @@ test("reconciler and isolated PostgreSQL proof consume the canonical native Go t
   assert.match(runner, /const outcome=admitNativeGoTests\(go.stdout\|\|""\)/);
   assert.doesNotMatch(runner, /readFileSync\(resolve\(root,"\.go-version"\)/);
   assert.match(runner, /spawnSync\(goExecutable,\["test"/);
-  assert.match(runner.match(/const guardedScope = \[[^\n]+/)[0], /tools\/dev\/check-go\.mjs/);
-  assert.match(runner.match(/const baselineProofScope=\[[^\n]+/)[0], /tools\/dev\/check-go\.mjs/);
+  const { guardedScope, baselineProofScope } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  assert.ok(guardedScope.includes("tools/dev/check-go.mjs"));
+  assert.ok(baselineProofScope.includes("tools/dev/check-go.mjs"));
   const sqlProof = readFileSync(new URL("./verify-isolated-postgres.ps1", import.meta.url), "utf8");
   assert.match(sqlProof, /resolvePinnedGo\(readFileSync\("\.go-version","utf8"\)\.trim\(\)\)/);
   assert.match(sqlProof, /& \$goExecutable test -c/);
@@ -255,7 +256,7 @@ test("baseline transition is owner-local, transactional and never disables trigg
   assert.match(sql,/REVOKE ALL ON SCHEMA bthwani_recovery_dsh_abcdef123456/);
   assert.doesNotMatch(sql,/DISABLE TRIGGER|session_replication_role|DROP SCHEMA/);
   assert.match(sql,/COMMIT;\nSELECT 'OWNER_BASELINE_TRANSITION_PASS';$/);
-  assert.throws(()=>buildOwnerBaselineTransition("dsh","dsh_test_agent01","bthwani_recovery_dsh_abcdef123456",["SELECT '__SCHEMA__'; $bthwani_baseline$"]),/Reserved/);
+  assert.throws(()=>buildOwnerBaselineTransition("dsh","dsh_test_agent01","bthwani_recovery_dsh_abcdef123456",["SELECT '__SCHEMA__'; $bthwani_baseline$"]),/Invalid baseline source arguments/);
 });
 
 test("WLT transition atomically provisions only the dormant command principal and exact command ACL",async()=>{
@@ -349,23 +350,111 @@ test("baseline owner and archive scope rejects inherited keys, coercion and wron
   assert.equal(transitionScope("wlt","wlt","bthwani_recovery_wlt_abcdef123456").runtime,"bthwani_wlt_reader");
 });
 
-test("baseline SQL read is bounded, regular and rejects hard links", async()=>{
-  const {readBaselineFile}=await import("../../tools/dev/docker/owner-baseline-transition.mjs");
-  const {mkdtempSync,writeFileSync,linkSync,rmSync}=await import("node:fs");
-  const {tmpdir}=await import("node:os");
-  const {join}=await import("node:path");
-  const dir=mkdtempSync(join(tmpdir(),"bthwani-baseline-read-"));
+test("baseline proof and guarded reconciliation include the same source reader and proof tools", async () => {
+  const { baselineProofScope, guardedScope, recoveryProofScope } = await import("../../tools/dev/docker/reconcile-owner-runtime.mjs");
+  const { dirtyPaths } = await import("../../tools/dev/docker/owner-preview-source.mjs");
+  const fs = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { execFileSync } = await import("node:child_process");
+  const dir = fs.mkdtempSync(join(tmpdir(), "bthwani-baseline-dependency-"));
+  const reader = "tools/security/verify-secrets.mjs";
   try {
-    const file=join(dir,"00_schema.sql"), alias=join(dir,"01_alias.sql");
-    writeFileSync(file,"SELECT 1;");
-    assert.equal(readBaselineFile(file),"SELECT 1;");
-    linkSync(file,alias);
-    assert.throws(()=>readBaselineFile(alias),/Unexpected baseline entry/);
-    rmSync(alias);
-    writeFileSync(file,Buffer.alloc(512*1024+1,65));
-    assert.throws(()=>readBaselineFile(file),/Unexpected baseline entry/);
-    assert.throws(()=>readBaselineFile(dir));
-  } finally {rmSync(dir,{recursive:true,force:true});}
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    fs.mkdirSync(join(dir, "tools", "security"), { recursive: true });
+    fs.writeFileSync(join(dir, reader), "// changed dependency");
+    assert.ok(Array.isArray(baselineProofScope) && baselineProofScope.includes(reader));
+    assert.ok(Array.isArray(guardedScope) && guardedScope.includes(reader));
+    assert.deepEqual(dirtyPaths(dir, baselineProofScope), [reader]);
+    assert.deepEqual(dirtyPaths(dir, guardedScope), [reader]);
+    assert.ok(Array.isArray(recoveryProofScope) && recoveryProofScope.includes(reader));
+    assert.deepEqual(dirtyPaths(dir, recoveryProofScope), [reader]);
+    for (const input of recoveryProofScope) assert.ok(guardedScope.includes(input), input);
+    for (const input of baselineProofScope) {
+      assert.ok(guardedScope.some(scope => input === scope || input.startsWith(scope + "/")), input);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("baseline SQL builder accepts only exact committed regular owner files", async () => {
+  const fs = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  const { execFileSync } = await import("node:child_process");
+  const dir = fs.mkdtempSync(join(tmpdir(), "bthwani-baseline-input-"));
+  const repo = join(dir, "repo");
+  const folder = join(repo, "services", "dsh", "database", "schema");
+  const file = join(folder, "00_fixture.sql");
+  const script = join(repo, "tools", "dev", "docker", "owner-baseline-transition.mjs");
+  const reader = join(repo, "tools", "security", "verify-secrets.mjs");
+  const git = (...args) => execFileSync("git", args, { cwd: repo, stdio: "pipe" });
+  const args = ["dsh", "dsh_test_agent01", "bthwani_recovery_dsh_abcdef123456"];
+  const good = "CREATE TABLE __SCHEMA__.fixture (id int);";
+  try {
+    fs.mkdirSync(folder, { recursive: true });
+    fs.mkdirSync(join(repo, "tools", "dev", "docker"), { recursive: true });
+    fs.mkdirSync(join(repo, "tools", "security"), { recursive: true });
+    fs.copyFileSync(new URL("../../tools/dev/docker/owner-baseline-transition.mjs", import.meta.url), script);
+    fs.copyFileSync(new URL("../../tools/security/verify-secrets.mjs", import.meta.url), reader);
+    fs.writeFileSync(file, good);
+    git("init", "-q");
+    git("config", "core.autocrlf", "false");
+    git("add", "services");
+    git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "baseline");
+    const { buildOwnerBaselineTransition: build } = await import(pathToFileURL(script).href);
+    assert.match(build(...args), /CREATE TABLE dsh_test_agent01\.fixture/);
+
+    // A raw caller-supplied SQL array is never an admitted source.
+    assert.throws(() => build(...args, ["SELECT '__SCHEMA__';"]));
+
+    git("update-index", "--assume-unchanged", "services/dsh/database/schema/00_fixture.sql");
+    fs.writeFileSync(file, good + "\nSELECT 2;");
+    assert.throws(() => build(...args), /baseline/i);
+    fs.writeFileSync(file, good);
+    git("update-index", "--no-assume-unchanged", "services/dsh/database/schema/00_fixture.sql");
+
+    // Reject a staged replacement even when the working bytes are restored.
+    fs.writeFileSync(file, good + "\nSELECT 3;");
+    git("add", "services");
+    fs.writeFileSync(file, good);
+    assert.throws(() => build(...args), /baseline/i);
+    git("add", "services");
+
+    const hardlink = join(dir, "hardlink.sql");
+    fs.linkSync(file, hardlink);
+    assert.throws(() => build(...args), /baseline/i);
+    fs.unlinkSync(hardlink);
+
+    const extra = join(folder, "01_extra.sql");
+    fs.writeFileSync(extra, good);
+    assert.throws(() => build(...args), /baseline/i);
+    fs.unlinkSync(extra);
+
+    // Redirect an ancestor rather than just the SQL file or schema folder.
+    const parent = join(repo, "services", "dsh", "database");
+    const outside = join(dir, "outside");
+    fs.renameSync(parent, outside);
+    fs.symlinkSync(outside, parent, process.platform === "win32" ? "junction" : "dir");
+    assert.throws(() => build(...args), /baseline/i);
+    fs.unlinkSync(parent);
+    fs.renameSync(outside, parent);
+
+    for (const invalid of [
+      "\uFEFF" + good, good + "\n\\echo rejected", good + "\0",
+      good + "\n$bthwani_baseline$", good + "\n$bthwani_bootstrap$",
+      "SELECT 1;", "", Buffer.from([0xff]), Buffer.alloc(512 * 1024 + 1, 65),
+    ]) {
+      fs.writeFileSync(file, invalid);
+      git("add", "services");
+      git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "invalid fixture");
+      assert.throws(() => build(...args), /baseline|delimiter|utf-8/i);
+    }
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("source host guard accepts only the actual Surface and canonical checkout", async () => {
