@@ -11,7 +11,7 @@ import { isMainThread, Worker } from "node:worker_threads";
 import { containsLikelySecretBytes, openRepositoryReader, readVerifiedFile } from "../security/verify-secrets.mjs";
 import { services } from "./check-go.mjs";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope, previewChangeKey } from "./docker/owner-preview-source.mjs";
-import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
+import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runRuntimeAudit, runtimeAttemptPhase, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const targetHost = "bthwani-docker";
@@ -713,28 +713,20 @@ function pollOwnerRuntime() {
     // Reuse the native owner's read-only CLI, not the mutation launcher or a
     // second watcher. No attempt receipt, lifecycle lock or transcript for idle audits.
     const head=readGit(["rev-parse","HEAD"]);
-    const child=spawn(process.execPath,[path.join(root,"tools","dev","docker","reconcile-owner-runtime.mjs"),"--check"],{
-      cwd:root,windowsHide:true,stdio:["ignore","pipe","pipe"],
+    runtimeChild=runRuntimeAudit(process.execPath,[path.join(root,"tools","dev","docker","reconcile-owner-runtime.mjs"),"--check"],{
+      cwd:root,
       env:{...process.env,Path:path.dirname(exe.ssh)+";"+process.env.Path}
-    });
-    runtimeChild=child;
-    let output="",settled=false;
-    child.stdout.on("data",chunk=>{output=(output+chunk.toString()).slice(-65536);});
-    child.stderr.resume();
-    const finish=(code,signal)=>{
-      if(settled)return;settled=true;runtimeChild=null;sourcePending=true;
+    },head,eligible,({outcome,status})=>{
+      runtimeChild=null;sourcePending=true;
       nextRuntimeAudit=Date.now()+60_000;
       try{
         const saved=runtimeState();
         if(saved?.key!==key||saved?.attempt!==last?.attempt||saved?.status!==last?.status)throw new Error("RUNTIME_ATTEMPT_MISMATCH");
-        const {outcome,status}=runtimeAuditResult(code,signal,output,head,eligible);
         if(saved.status!==status)persistAt(runtimeStateFile,{...saved,status});
         if(outcome==="apply")nextRuntimeAudit=0;
         runtimeLogOnce("RUNTIME_AUDIT_"+outcome.toUpperCase()+" key="+key.slice(0,12));
       }catch{runtimeLogOnce("RUNTIME_AUDIT_BLOCKED state changed");}
-    };
-    child.on("error",()=>finish(1,null));
-    child.on("close",finish);
+    });
     return;
   }
   const attempt=crypto.randomUUID();

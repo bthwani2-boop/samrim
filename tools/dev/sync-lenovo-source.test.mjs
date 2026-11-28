@@ -1085,7 +1085,7 @@ test("stable owner source audits without acquiring apply authority; drift requir
   assert.equal(runtimePollAction({...state,last:{key:"old",status:"uncertain"}}),null);
   assert.equal(runtimePollAction({...state,last:{key:"same",status:"blocked"}}),null);
   const result=(selected,terminal="PARTIAL",sha=head)=>"SELECTED="+selected+" HEAD="+sha+" CAPTAIN_ADMISSION=true\nRECONCILE_"+terminal+" HEAD="+sha+"\n";
-  const audit=(code,output,signal=null,eligible=["dsh","identity","wlt"])=>runtimeAuditResult(code,signal,output,head,eligible);
+  const audit=(code,output,signal=null,eligible=["dsh","identity","wlt"])=>runtimeAuditResult(code,signal,Buffer.from(output),head,eligible);
   assert.deepEqual(audit(0,result("NONE","PASS")),{outcome:"pass",status:"pass"});
   assert.deepEqual(audit(3,result("dsh")),{outcome:"apply",status:"retry"});
   assert.deepEqual(audit(3,result("dsh"),null,["wlt"]),{outcome:"review",status:"review"});
@@ -1099,10 +1099,52 @@ test("stable owner source audits without acquiring apply authority; drift requir
     audit(3,result("dsh")+result("NONE","PASS")),
     audit(1,"OWNER_APPLY_STARTED dsh\n"),
     audit(1,""),
+    audit(0,"RECONCILE_PASS HEAD="+head+"\nSELECTED=NONE HEAD="+head+" CAPTAIN_ADMISSION=false\n"),
+    audit(0,"SELECTED=invalid\n"+result("NONE","PASS")),
+    audit(0,"RECONCILE_PARTIAL HEAD=invalid\n"+result("NONE","PASS")),
+    audit(0,result("NONE","PASS")+"RECONCILE_FAIL unexpected\n"),
+    audit(0,result("NONE","PASS").trimEnd()),
+    audit(0,result("NONE","PASS").replace(/\n$/,"\r\r\n")),
+    audit(0,"OWNER_APPLY_STARTED dsh\n"+result("NONE","PASS")),
+    audit(0,result("NONE","PASS"),null,["dsh","dsh"]),
   ]){
     assert.deepEqual(failure,{outcome:"unverified",status:"review"});
     assert.equal(runtimePollAction({...state,last:{key:"same",status:failure.status}}),"audit");
   }
+});
+
+test("native runtime audit collects complete bounded bytes and rejects incomplete process outcomes", async () => {
+  const { runRuntimeAudit, runtimeAuditResult } = await import("./sync-lenovo-reconciliation.mjs");
+  const head = "a".repeat(40);
+  const eligible = ["dsh", "identity", "wlt"];
+  const selection = "SELECTED=NONE HEAD=" + head + " CAPTAIN_ADMISSION=false\n";
+  const terminal = "RECONCILE_PASS HEAD=" + head + "\n";
+  const complete = selection + terminal;
+  const pass = { outcome: "pass", status: "pass" };
+  const unverified = { outcome: "unverified", status: "review" };
+  const evaluate = (code, bytes) => runtimeAuditResult(code, null, bytes, head, eligible);
+  const native = program => new Promise(resolve => {
+    runRuntimeAudit(process.execPath, ["-e", program], { cwd: process.cwd(), env: process.env }, head, eligible, resolve);
+  });
+  const write = text => "process.stdout.write(" + JSON.stringify(text) + ");";
+  assert.deepEqual(evaluate(0, Buffer.from(complete.replaceAll("\n", "\r\n"))), pass);
+  assert.deepEqual(evaluate(0, Buffer.concat([Buffer.from([0xff]), Buffer.from(complete)])), unverified);
+  assert.deepEqual(evaluate(0, Buffer.from("x".repeat(65536) + "\n" + complete)), unverified);
+  assert.deepEqual(evaluate(0, complete), unverified);
+  assert.deepEqual(await native(write(complete)), pass);
+  const unicode = Buffer.from("diagnostic: مرحبا\n" + complete);
+  const split = unicode.indexOf(0xd9) + 1;
+  assert.ok(split > 0);
+  assert.deepEqual(await native(
+    "const b=Buffer.from(" + JSON.stringify(unicode.toString("hex")) + ",'hex');" +
+    "process.stdout.write(b.subarray(0," + split + "));setTimeout(()=>process.stdout.write(b.subarray(" + split + ")),20);"
+  ), pass);
+  assert.deepEqual(await native(write(selection.replace("NONE", "dsh") + terminal.replace("PASS", "PARTIAL")) + "process.exitCode=3;"), { outcome: "apply", status: "retry" });
+  assert.deepEqual(await native(write(complete) + "process.exitCode=1;"), unverified);
+  assert.deepEqual(await native(write(complete.trimEnd())), unverified);
+  assert.deepEqual(await native("process.stdout.write(Buffer.from([255]));" + write(complete)), unverified);
+  assert.deepEqual(await native("process.stdout.write('x'.repeat(65537)+'\\n');" + write(complete)), unverified);
+  assert.deepEqual(await native("process.stderr.write('x'.repeat(65537));" + write(complete)), unverified);
 });
 
 test("only a proven rollback can settle an interrupted serving mutation; ready failure requires read-only review",async()=>{

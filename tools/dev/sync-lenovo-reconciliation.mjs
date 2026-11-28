@@ -1,5 +1,6 @@
 // Source-mirror admission and reconciliation decisions. The existing watcher
 // owns scheduling; the guarded reconciler owns terminal receipts.
+import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { containsLikelySecret } from "../security/verify-secrets.mjs";
@@ -253,39 +254,56 @@ export function runtimePollAction({ enabled, dirty, active, key, last, now, next
 export function runtimeBaselineProofDue(key, last) {
   return Boolean(key && !pending(last) && (last?.key !== key || last.status === "retry"));
 }
-function oneRecord(records, pattern) {
-  const matches = records.map(line => pattern.exec(line)).filter(Boolean);
-  return matches.length === 1 ? matches[0] : null;
-}
-function terminalResult(records) {
-  const record = oneRecord(records, /^RECONCILE_(PASS|PARTIAL) HEAD=([a-f0-9]{40})$/);
-  return record ? { status: record[1], head: record[2] } : null;
-}
-function selectedOwners(records, head) {
-  const record = oneRecord(records, /^SELECTED=(NONE|[a-z,]+) HEAD=([a-f0-9]{40}) CAPTAIN_ADMISSION=(true|false)$/);
-  if (!record || record[2] !== head) return null;
-  const selected = record[1] === "NONE" ? [] : record[1].split(",");
-  return selected.every(owner => ownerSet.has(owner)) && new Set(selected).size === selected.length ? selected : null;
-}
+const runtimeAuditMaxBytes = 64 * 1024;
+const auditControlRecord = /^\s*(?:SELECTED|RECONCILE_|OWNER_APPLY_|RUNTIME_RECONCILE_BLOCKED)/;
 
-// The read-only owner audit returns one disposition, including the durable
-// scheduler status. Unverified evidence invalidates a previous pass without
-// authorizing an apply; only proven eligible drift can re-admit mutation.
+// The read-only audit protocol ends with exactly one selection followed by
+// exactly one complete terminal record. Earlier diagnostics cannot impersonate
+// either record or indicate that the read-only child performed a serving write.
 export function runtimeAuditResult(code, signal, stdout, head, eligible) {
   const unverified = { outcome: "unverified", status: "review" };
-  const records = lines(stdout);
-  if (signal || records.some(line => /^OWNER_APPLY_/.test(line))) return unverified;
-  const terminal = terminalResult(records);
-  const selected = selectedOwners(records, head);
-  if (!terminal || terminal.head !== head || selected === null) return unverified;
-  if (code === 0 && terminal.status === "PASS" && selected.length === 0)
+  if (signal !== null || ![0, 3].includes(code) || !Buffer.isBuffer(stdout) ||
+      stdout.length > runtimeAuditMaxBytes || typeof head !== "string" || !/^[a-f0-9]{40}$/.test(head) ||
+      !Array.isArray(eligible) || !eligible.every(owner => ownerSet.has(owner)) ||
+      new Set(eligible).size !== eligible.length) return unverified;
+  let output;
+  try {
+    output = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(stdout);
+  } catch { return unverified; }
+  if (!output.endsWith("\n")) return unverified;
+  const records = lines(output);
+  records.pop();
+  if (records.length < 2 || records.slice(0, -2).some(line => auditControlRecord.test(line))) return unverified;
+  const selection = /^SELECTED=(NONE|[a-z,]+) HEAD=([a-f0-9]{40}) CAPTAIN_ADMISSION=(true|false)$/.exec(records.at(-2));
+  const terminal = /^RECONCILE_(PASS|PARTIAL) HEAD=([a-f0-9]{40})$/.exec(records.at(-1));
+  if (!selection || !terminal || selection[0] !== records.at(-2) || terminal[0] !== records.at(-1) ||
+      selection[2] !== head || terminal[2] !== head) return unverified;
+  const selected = selection[1] === "NONE" ? [] : selection[1].split(",");
+  if (!selected.every(owner => ownerSet.has(owner)) || new Set(selected).size !== selected.length) return unverified;
+  if (code === 0 && terminal[1] === "PASS" && selected.length === 0)
     return { outcome: "pass", status: "pass" };
-  if (code === 3 && terminal.status === "PARTIAL") {
+  if (code === 3 && terminal[1] === "PARTIAL") {
     return selected.some(owner => eligible.includes(owner))
       ? { outcome: "apply", status: "retry" }
       : { outcome: "review", status: "review" };
   }
   return unverified;
+}
+
+// Native execFile owns bounded byte collection and process/pipe completion.
+// A spawn error, signal or buffer overflow can never admit an audit result.
+export function runRuntimeAudit(executable, args, options, head, eligible, done) {
+  return execFile(executable, args, {
+    cwd: options.cwd,
+    env: options.env,
+    windowsHide: true,
+    encoding: "buffer",
+    maxBuffer: runtimeAuditMaxBytes,
+  }, (error, stdout) => {
+    const code = error === null ? 0 :
+      error.code === 3 && error.signal === null && !error.killed ? 3 : null;
+    done(runtimeAuditResult(code, error?.signal ?? null, stdout, head, eligible));
+  });
 }
 export function watcherReloadAction({ loaded, current, dirty, busy }) {
   return loaded === current ? "current" : dirty ? "defer" : busy ? "drain" : "reload";
