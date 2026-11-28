@@ -9,6 +9,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
 import { containsLikelySecretBytes, openRepositoryReader, readVerifiedFile } from "../security/verify-secrets.mjs";
+import { services } from "./check-go.mjs";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope, previewChangeKey } from "./docker/owner-preview-source.mjs";
 import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
@@ -559,14 +560,35 @@ function reconcile() {
   }
   if (!deferred && dependencyChanges.length) logger("DEPENDENCY_INSTALL_REQUIRED paths=" + dependencyChanges.join(","));
 }
+// One reload inventory for the existing task-owned worker's local module
+// closure. A change to the transitive native Go owner registry also requires
+// reloading the worker, rather than certifying stale module state.
+export const watcherInputs = Object.freeze([
+  "tools/dev/sync-lenovo-source.mjs",
+  "tools/dev/sync-lenovo-reconciliation.mjs",
+  "tools/dev/docker/owner-preview-source.mjs",
+  "tools/dev/check-go.mjs",
+  "tools/security/verify-secrets.mjs",
+]);
+export function watcherInputDigest(checkout) {
+  return crypto.createHash("sha256")
+    .update(watcherInputs.map(rel => hash(path.join(checkout, rel))).join("\0")).digest("hex");
+}
+
 // Reuse the existing scheduled watcher; no second watcher or Docker daemon.
 // Backend source is built from Surface, not copied into the app-only mirror.
-const runtimeScope = [
-  ...new Set(["identity","dsh","wlt"].flatMap(ownerSourceScope)),
-  ...ownerComposeInputs, "tools/dev/docker/reconcile-owner-runtime.mjs", "tools/dev/docker/compose-runtime-transition.mjs", "tools/dev/docker/owner-baseline-transition.mjs", "tests/infra/verify-isolated-postgres.ps1", "tools/dev/provision-wlt-test-db.ps1",
-  "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
-  "tools/dev/check-go.mjs", "tools/dev/dev.ps1", "tools/dev/dev-resource-admission.ps1", "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs"
-];
+export const runtimeScope = Object.freeze([...new Set([
+  ...services.flatMap(owner => ownerSourceScope(owner)),
+  ...ownerComposeInputs,
+  "tools/dev/docker/reconcile-owner-runtime.mjs",
+  "tools/dev/docker/compose-runtime-transition.mjs",
+  "tools/dev/docker/owner-baseline-transition.mjs",
+  "tests/infra/verify-isolated-postgres.ps1",
+  "tools/dev/provision-wlt-test-db.ps1",
+  "tools/dev/dev.ps1",
+  "tools/dev/dev-resource-admission.ps1",
+  ...watcherInputs,
+])]);
 const runtimeOptIn = path.join(stateDir, "runtime-reconcile.enabled");
 const runtimeStateFile = path.join(stateDir, "runtime-reconcile.json");
 const runtimeReceiptFile = path.join(stateDir, "runtime-reconcile.receipt.json");
@@ -840,13 +862,7 @@ function main(command) {
   const cycle = () => reconcile();
     let active = false;
     let lastError = "";
-    const watcherInputs = [
-      "tools/dev/sync-lenovo-source.mjs", "tools/dev/sync-lenovo-reconciliation.mjs",
-      "tools/dev/docker/owner-preview-source.mjs", "tools/security/verify-secrets.mjs",
-    ];
-    const watcherDigest = () => crypto.createHash("sha256")
-      .update(watcherInputs.map(rel=>hash(path.join(root,rel))).join("\0")).digest("hex");
-    const loaded = watcherDigest();
+    const loaded = watcherInputDigest(root);
     let reloadNotice = "";
     let nextReloadAudit = 0;
     let reloadAction = "current";
@@ -858,7 +874,7 @@ function main(command) {
       if (Date.now()>=nextReloadAudit || reloadAction==="drain") {
         nextReloadAudit=Date.now()+5_000;
         try {
-          const current=watcherDigest();
+          const current=watcherInputDigest(root);
           reloadAction=watcherReloadAction({loaded,current,
             dirty:Boolean(readGit(["status","--porcelain","--",...watcherInputs])),
             busy:Boolean(runtimeChild||dependencyChild||graphChild)});

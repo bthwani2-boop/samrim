@@ -42,10 +42,16 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
       files: Object.fromEntries(mirrored.map(rel => [rel,
         createHash("sha256").update(readFileSync(path.join(root, rel))).digest("hex").toUpperCase()])),
     }));
-    const verify = (flag="--verify-manifest") => {
+    const invoke = (flag="--verify-manifest") => {
       const result = spawnSync(process.execPath, [entry, flag], {
         cwd: root, env: { ...process.env, LOCALAPPDATA: localAppData }, encoding: "utf8", timeout: 10000,
       });
+      assert.ifError(result.error);
+      assert.equal(result.signal, null, "fixture must exit normally");
+      return result;
+    };
+    const verify = (flag="--verify-manifest") => {
+      const result = invoke(flag);
       assert.equal(result.status, 0, result.stderr);
       return JSON.parse(result.stdout);
     };
@@ -79,23 +85,22 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
     assert.ok(Object.hasOwn(verify("--verify-dependency-inputs").files, manifestPath));
     const unsafe = path.join(packageRoot, "src", "unsafe.ts");
     writeFileSync(unsafe, "export const token = "+JSON.stringify("gh"+"p_"+"x".repeat(24)));
-    const reject = () => spawnSync(process.execPath,[entry,"--verify-manifest"],{
-      cwd:root,env:{...process.env,LOCALAPPDATA:localAppData},encoding:"utf8",timeout:10000,
-    });
+    const reject = () => {
+      const result = invoke();
+      assert.equal(result.status, 1, result.stderr);
+      return result;
+    };
     let rejected = reject();
-    assert.notEqual(rejected.status,0);
     assert.match(rejected.stderr,/MIRROR_SECRET_MARKER packages\/new-purpose\/src\/unsafe.ts/);
     assert.doesNotMatch(rejected.stderr,/x{24}/);
     for(const bytes of [Buffer.concat([Buffer.from([0]),Buffer.from("gh"+"p_"+"x".repeat(24))]),Buffer.from("gh"+"p_"+"x".repeat(24),"utf16le"),Buffer.from("gh"+"p_"+"x".repeat(24),"utf16le").swap16()]){
       writeFileSync(unsafe,bytes);
       rejected=reject();
-      assert.notEqual(rejected.status,0);
       assert.match(rejected.stderr,/MIRROR_SECRET_MARKER/);
     }
     rmSync(unsafe);
     rmSync(path.join(root,manifestPath));
     rejected=reject();
-    assert.notEqual(rejected.status,0);
     assert.match(rejected.stderr,/MIRROR_PACKAGE_MANIFEST_REQUIRED new-purpose/);
   } finally {
     rmSync(folder, { recursive: true, force: true });
@@ -1147,4 +1152,51 @@ test("mirror and dependency change inventories share ordinal path ordering", asy
   assert.deepEqual(dependencyInputChanges(previous, current), expected);
   assert.deepEqual(mirrorCandidatePaths([...expected].reverse()), expected);
   assert.deepEqual(dependencyInputChanges({ files: Object.fromEntries(current) }, current), []);
+});
+
+test("watcher reload fingerprint covers every local module dependency, including the native owner registry", async t => {
+  const { watcherInputs, watcherInputDigest } = await import("./sync-lenovo-source.mjs");
+  const { watcherReloadAction } = await import("./sync-lenovo-reconciliation.mjs");
+  // Explicit contract derived from the actual static local import closure.
+  assert.deepEqual([...watcherInputs].sort((a,b)=>a<b?-1:a>b?1:0), [
+    "tools/dev/check-go.mjs",
+    "tools/dev/docker/owner-preview-source.mjs",
+    "tools/dev/sync-lenovo-reconciliation.mjs",
+    "tools/dev/sync-lenovo-source.mjs",
+    "tools/security/verify-secrets.mjs",
+  ]);
+  const folder = mkdtempSync(path.join(tmpdir(), "bthwani-watcher-inputs-"));
+  t.after(() => rmSync(folder, { recursive: true, force: true }));
+  for (const rel of watcherInputs) {
+    const file=path.join(folder,rel);
+    mkdirSync(path.dirname(file),{recursive:true});
+    writeFileSync(file,"export const initial = 1;\n");
+  }
+  const loaded=watcherInputDigest(folder);
+  for (const rel of watcherInputs) {
+    const file=path.join(folder,rel);
+    writeFileSync(file,"export const updated = 2;\n");
+    const current=watcherInputDigest(folder);
+    assert.notEqual(current,loaded,rel);
+    assert.equal(watcherReloadAction({loaded,current,dirty:true,busy:false}),"defer");
+    assert.equal(watcherReloadAction({loaded,current,dirty:false,busy:true}),"drain");
+    assert.equal(watcherReloadAction({loaded,current,dirty:false,busy:false}),"reload");
+    writeFileSync(file,"export const initial = 1;\n");
+    assert.equal(watcherInputDigest(folder),loaded);
+  }
+  rmSync(path.join(folder,"tools/dev/check-go.mjs"));
+  assert.throws(()=>watcherInputDigest(folder));
+});
+
+test("runtime audit scope derives all owners and includes the entire reload inventory once", async () => {
+  const { runtimeScope, watcherInputs }=await import("./sync-lenovo-source.mjs");
+  const { services }=await import("./check-go.mjs");
+  const { ownerSourceScope, ownerComposeInputs }=await import("./docker/owner-preview-source.mjs");
+  assert.equal(runtimeScope.length,new Set(runtimeScope).size);
+  for(const owner of services) {
+    for(const rel of ownerSourceScope(owner))assert.ok(runtimeScope.includes(rel),rel);
+  }
+  for(const rel of [...watcherInputs,...ownerComposeInputs])assert.ok(runtimeScope.includes(rel),rel);
+  assert.deepEqual(runtimeScope.filter(rel=>rel.startsWith("services/")),services.map(owner=>"services/"+owner));
+  assert.equal(runtimeScope.filter(rel=>rel===".go-version").length,1);
 });
