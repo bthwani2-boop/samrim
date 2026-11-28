@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assertAssetResponse, assertHtmlDocument, assertPublicRedirect, documentAssets } from "./verify-expo-web-http.mjs";
+import { assertAssetResponse, assertPublicRedirect, documentAssets } from "./verify-expo-web-http.mjs";
+import { assertHtmlDocument } from "../dev/ssr-document.mjs";
 
 const page = { route: "merchant/", title: "بثواني — التاجر", body: "تسجيل الدخول أو الانضمام" };
 const document = (body, title = page.title, attrs = 'lang="ar" dir="rtl"') =>
