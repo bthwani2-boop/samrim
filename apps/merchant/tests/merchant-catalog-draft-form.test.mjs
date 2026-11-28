@@ -7,6 +7,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import { withMutationRecoveryLock } from "../src/features/mutation-recovery/recovery-lock.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const src = fileURLToPath(new URL("../src/features/catalog/merchant-catalog-draft-form.tsx", import.meta.url));
@@ -91,6 +92,7 @@ test("Merchant draft form retries the identical operation after unknown outcome 
         setItemAsync: async (key, value) => localStorage.setItem(key, value),
         deleteItemAsync: async key => localStorage.removeItem(key),
       },
+      "../mutation-recovery/recovery-lock": { withMutationRecoveryLock },
       "./catalog-transport": {
         submitMerchantCatalogDraft(storeId, actorId, change, signal) {
           const request = { storeId, actorId, change, signal };
@@ -146,6 +148,11 @@ test("Merchant draft form retries the identical operation after unknown outcome 
     const save = nodes(tree).find(n => n.type === "Pressable" && n.props.accessibilityLabel === "حفظ مسودة المنتج");
     assert.ok(save && !save.props.disabled);
     save.props.onPress();
+    await settle();
+    assert.equal(pending.length, 0, "without Web Locks no draft write may dispatch");
+    assert.equal(storage.size, 0, "without Web Locks no recovery identity may be stored");
+    window.navigator = { locks: { request: (_key, action) => action() } };
+    nodes(render()).find(n => n.props.accessibilityLabel === "حفظ مسودة المنتج").props.onPress();
     await settle();
     assert.equal(pending.length, 1);
     assert.equal(pending[0].change.priceYer, "1500");

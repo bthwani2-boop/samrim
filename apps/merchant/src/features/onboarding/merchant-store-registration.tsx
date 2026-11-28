@@ -1,16 +1,18 @@
 import type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantStoreRegistration } from "@bthwani/dsh";
-import { DshPublicError } from "@bthwani/dsh";
+import { DshPublicError, type PendingRegistration } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { createRadioGroup } from "@bthwani/tamagui-config/radio-group";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, TextInput, View } from "react-native";
+import { withMutationRecoveryLock } from "../mutation-recovery/recovery-lock";
 import {
-  matchingPendingMerchantRegistration,
-  type PendingMerchantRegistration,
-  parsePendingMerchantRegistration,
+  parseStoredMerchantRegistration,
+  type StoredMerchantRegistration,
+  sameRegistrationGeneration,
 } from "./merchant-registration-attempt";
-import { createMerchantStore, readMerchantStoreRegistrationOptions } from "./store-registration-transport";
+import { createMerchantStore, readMerchantStoreRegistrationOptions, readMerchantStoreRegistrationReceipt } from "./store-registration-transport";
 import StoreRelationChoice from "./store-relation-choice";
 
 const optionKey = (choice: MerchantRegistrationChoice) => `${choice.cityId}:${choice.relation}`;
@@ -33,24 +35,30 @@ async function attemptStorageKey(actorId: string) {
   const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, actorId);
   return attemptStoragePrefix + digest;
 }
-async function readStoredAttempt(actorId: string): Promise<PendingMerchantRegistration | null> {
-  const key = await attemptStorageKey(actorId);
+type RegistrationScope = Readonly<{ actorId: string; revision: number; key: string; record: StoredMerchantRegistration | null }>;
+
+async function readStoredAttempt(key: string): Promise<StoredMerchantRegistration | null> {
   const raw = Platform.OS === "web"
     ? window.localStorage.getItem(key)
     : await SecureStore.getItemAsync(key, secureOptions);
-  const parsed = parsePendingMerchantRegistration(raw);
-  if (raw && !parsed) throw new Error("Invalid pending registration metadata");
-  return parsed;
+  return parseStoredMerchantRegistration(raw);
 }
-async function writeStoredAttempt(actorId: string, pending: PendingMerchantRegistration | null) {
-  const key = await attemptStorageKey(actorId);
-  if (Platform.OS === "web") {
-    if (pending) window.localStorage.setItem(key, JSON.stringify(pending));
-    else window.localStorage.removeItem(key);
-    return;
-  }
-  if (pending) await SecureStore.setItemAsync(key, JSON.stringify(pending), secureOptions);
-  else await SecureStore.deleteItemAsync(key, secureOptions);
+
+async function writeStoredAttempt(key: string, record: StoredMerchantRegistration) {
+  const value = JSON.stringify(record);
+  if (Platform.OS === "web") window.localStorage.setItem(key, value);
+  else await SecureStore.setItemAsync(key, value, secureOptions);
+}
+
+async function settleStoredAttempt(key: string, pending: PendingRegistration): Promise<StoredMerchantRegistration> {
+  return withMutationRecoveryLock(Platform.OS, key, async () => {
+    const current = await readStoredAttempt(key);
+    const settled = { ...pending, settled: true as const };
+    if (sameRegistrationGeneration(current, settled)) return settled;
+    if (!sameRegistrationGeneration(current, pending)) throw new Error("REGISTRATION_GENERATION_CHANGED");
+    await writeStoredAttempt(key, settled);
+    return settled;
+  });
 }
 
 export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Readonly<{
@@ -74,7 +82,7 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
   const [message, setMessage] = useState("");
   const [done, setDone] = useState(false);
   const active = useRef<AbortController | null>(null);
-  const attempt = useRef<PendingMerchantRegistration | null>(null);
+  const attempt = useRef<RegistrationScope | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -82,20 +90,22 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
     setAttemptReady(false);
     setRestored(false);
     setUnknown(false);
-    void readStoredAttempt(actorId).then(previous => {
+    void (async () => {
+      const key = await attemptStorageKey(actorId);
+      const previous = await readStoredAttempt(key);
       if (!current) return;
-      attempt.current = previous;
-      if (previous) {
+      attempt.current = { actorId, revision: reload, key, record: previous };
+      if (previous && !previous.settled) {
         setUnknown(true);
         setRestored(true);
-        setMessage("عُثر على عملية تسجيل غير مؤكدة. أدخل البيانات نفسها لإعادة المحاولة، أو حدّث قائمة متاجرك أولًا.");
+        setMessage("عُثر على عملية تسجيل غير مؤكدة. تحقق من إيصال التسجيل لدى DSH أو أعد البيانات نفسها إذا كانت السياسة الأصلية لا تزال متاحة.");
       }
       setAttemptReady(true);
-    }).catch(() => {
+    })().catch(() => {
       if (current) setMessage("تعذّر قراءة سجل محاولة التسجيل السابقة بأمان. لن يُرسل طلب جديد.");
     });
     return () => { current = false; };
-  }, [actorId]);
+  }, [actorId, reload]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: The explicit reload revision requests a fresh DSH policy read.
   useEffect(() => {
@@ -119,8 +129,11 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
     };
   }, [actorId, reload]);
 
+  const openedAttempt = attempt.current;
   const choice = options?.choices.find(item => optionKey(item) === choiceKey);
   const locked = busy || (unknown && !restored) || done || !attemptReady;
+  const verticalRadio = createRadioGroup({ values: options?.verticals ?? [], selected: verticalId,
+    disabled: locked, web: Platform.OS === "web", onSelect: id => { setVerticalId(id); setMessage(""); } });
   const button = (text: string, action: () => void, disabled = false, selected = false) => (
     <Pressable key={text} accessibilityRole="button" accessibilityLabel={text}
       disabled={disabled} onPress={action} style={{
@@ -145,8 +158,28 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
     </View>
   );
 
+  async function confirmRegistration(controller: AbortController, key: string, pending: PendingRegistration, replay: boolean) {
+    let settlementFailed = false;
+    try {
+      const settled = await settleStoredAttempt(key, pending);
+      if (!controller.signal.aborted) attempt.current = { actorId, revision: reload, key, record: settled };
+    } catch {
+      // A confirmed owner result must never erase another form's newer record.
+      settlementFailed = true;
+    }
+    if (controller.signal.aborted) return;
+    setDone(true);
+    setUnknown(false);
+    setMessage(settlementFailed
+      ? "أكد DSH تسجيل المتجر، وتعذر تحديث سجل الاسترداد. حدّث متاجرك قبل أي تسجيل جديد."
+      : replay
+        ? "تم تأكيد تسجيل المتجر السابق لدى DSH. جارٍ تحديث متاجرك."
+        : "حُفظ المتجر غير المنشور في DSH. جارٍ تحديث متاجرك.");
+    onCreated();
+  }
+
   function submit() {
-    if (active.current || !attemptReady || busy || done || !choice || !verticalId ||
+    if (!openedAttempt || openedAttempt.actorId !== actorId || openedAttempt.revision !== reload || attempt.current !== openedAttempt || active.current || !attemptReady || busy || done || !choice || !verticalId ||
       !options?.verticals.includes(verticalId) || !name.trim() || !latitude.trim() || !longitude.trim() || !accepted) return;
     if ([...name.trim()].length > 120 || /\p{Cc}/u.test(name)) {
       setMessage("أدخل اسمًا تجاريًا صالحًا لا يتجاوز 120 حرفًا.");
@@ -166,21 +199,40 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
     setMessage("");
     void (async () => {
       let dispatched = false;
+      let claimed: PendingRegistration | null = null;
+      const { key } = openedAttempt;
       try {
         const fingerprint = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, signature);
         if (controller.signal.aborted) return;
-        if (!matchingPendingMerchantRegistration(attempt.current, fingerprint)) {
-          setMessage("تختلف البيانات عن عملية التسجيل السابقة. تحقق من متاجرك قبل إرسال طلب مختلف.");
+        const claim = await withMutationRecoveryLock(Platform.OS, key, async () => {
+          controller.signal.throwIfAborted();
+          const current = await readStoredAttempt(key);
+          controller.signal.throwIfAborted();
+          if (!sameRegistrationGeneration(current, openedAttempt.record)) return { status: "changed" as const };
+          const previous = current && !current.settled ? current : null;
+          if (previous && previous.fingerprint !== fingerprint) return { status: "mismatch" as const };
+          const pending = previous ?? { fingerprint, operationId: Crypto.randomUUID() };
+          if (!previous) {
+            // Persist the new opaque generation before any owner dispatch.
+            if (!parseStoredMerchantRegistration(JSON.stringify(pending))) throw new Error("Invalid registration identity");
+            await writeStoredAttempt(key, pending);
+          }
+          controller.signal.throwIfAborted();
+          return { status: "claimed" as const, pending };
+        });
+        controller.signal.throwIfAborted();
+        if (claim.status === "changed") {
+          setAttemptReady(false);
+          setMessage("تغيّر سجل التسجيل في نموذج آخر. أعد قراءة سجل الاسترداد قبل المتابعة.");
           return;
         }
-        let pending = attempt.current;
-        if (!pending) {
-          pending = { fingerprint, operationId: Crypto.randomUUID() };
-          // Persist BEFORE the HTTP write; a restart must reuse the same DSH operationId.
-          await writeStoredAttempt(actorId, pending);
-          if (controller.signal.aborted) return;
-          attempt.current = pending;
+        if (claim.status === "mismatch") {
+          setMessage("تختلف البيانات عن عملية التسجيل السابقة. تحقق من إيصال التسجيل لدى DSH قبل إرسال طلب مختلف.");
+          return;
         }
+        const pending = claim.pending;
+        claimed = pending;
+        attempt.current = { actorId, revision: reload, key, record: pending };
         const input: MerchantStoreRegistration = {
           operationId: pending.operationId, cityId: choice.cityId,
           verticalId, relation: choice.relation, name: name.trim(), latitude: lat,
@@ -198,28 +250,22 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
           setMessage("الاستجابة تخالف شرط إنشاء متجر غير منشور. تحقق من DSH قبل المتابعة.");
           return;
         }
-        setDone(true);
-        setUnknown(false);
-        await writeStoredAttempt(actorId, null).catch(() => {
-          // A leftover retry ID is safe: DSH will replay the confirmed command.
-        });
-        attempt.current = null;
-        if (controller.signal.aborted) return;
-        setMessage(result.replay
-          ? "تم تأكيد تسجيل المتجر السابق لدى DSH. جارٍ تحديث متاجرك."
-          : "حُفظ المتجر غير المنشور في DSH. جارٍ تحديث متاجرك.");
-        onCreated();
+        await confirmRegistration(controller, key, pending, result.replay);
       } catch (error) {
         if (controller.signal.aborted) return;
-        if (!dispatched) {
-          setMessage("تعذّر حفظ معرّف طلب التسجيل بأمان. لم يُرسل الطلب إلى DSH.");
+        if (!dispatched || !claimed) {
+          setMessage(error instanceof Error && error.message === "MUTATION_RECOVERY_LOCK_UNAVAILABLE"
+            ? "تعذر تأمين الاسترداد بين تبويبات المتصفح. استخدم متصفحًا يدعم Web Locks."
+            : "تعذّر حفظ معرّف طلب التسجيل بأمان. لم يُرسل الطلب إلى DSH.");
           return;
         }
         if (error instanceof DshPublicError &&
-          ["STORE_REGISTRATION_POLICY_CHANGED", "STORE_REGISTRATION_CLOSED"].includes(error.code)) {
+          ((error.status === 409 && error.code === "STORE_REGISTRATION_POLICY_CHANGED") ||
+           (error.status === 403 && error.code === "STORE_REGISTRATION_CLOSED"))) {
           // A definitive owner policy rejection has no committed Store to replay.
           try {
-            await writeStoredAttempt(actorId, null);
+            const settled = await settleStoredAttempt(key, claimed);
+            if (!controller.signal.aborted) attempt.current = { actorId, revision: reload, key, record: settled };
           } catch {
             if (controller.signal.aborted) return;
             // Never mint a replacement ID while the durable previous record remains.
@@ -229,7 +275,6 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
             return;
           }
           if (controller.signal.aborted) return;
-          attempt.current = null;
           setUnknown(false);
           setRestored(false);
           setOptions(null);
@@ -243,7 +288,45 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
         // An interrupted response may have committed. Never mint another operation ID.
         setUnknown(true);
         setRestored(false);
-        setMessage("نتيجة إنشاء المتجر غير مؤكدة. احتُفظ بمعرّف العملية على هذا الجهاز؛ أعد نفس العملية أو تحقق من متاجرك.");
+        setMessage("نتيجة إنشاء المتجر غير مؤكدة. احتُفظ بمعرّف العملية على هذا الجهاز؛ أعد نفس العملية أو تحقق من إيصال التسجيل لدى DSH.");
+      } finally {
+        if (active.current === controller) {
+          active.current = null;
+          setBusy(false);
+        }
+      }
+    })();
+  }
+
+  function recoverReceipt() {
+    if (!openedAttempt || openedAttempt.actorId !== actorId || openedAttempt.revision !== reload ||
+      attempt.current !== openedAttempt || active.current || !attemptReady || busy || done ||
+      !openedAttempt.record || openedAttempt.record.settled) return;
+    const pending = openedAttempt.record;
+    const { key } = openedAttempt;
+    const controller = new AbortController();
+    active.current = controller;
+    setBusy(true);
+    setMessage("");
+    void (async () => {
+      try {
+        const current = await readStoredAttempt(key);
+        controller.signal.throwIfAborted();
+        if (!sameRegistrationGeneration(current, pending)) {
+          setAttemptReady(false);
+          setMessage("تغيّر سجل التسجيل في نموذج آخر. أعد قراءة سجل الاسترداد قبل المتابعة.");
+          return;
+        }
+        const receipt = await readMerchantStoreRegistrationReceipt(actorId, pending.operationId, controller.signal);
+        controller.signal.throwIfAborted();
+        if (receipt.operationId !== pending.operationId) throw new Error("REGISTRATION_GENERATION_CHANGED");
+        await confirmRegistration(controller, key, pending, true);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setUnknown(true);
+        setMessage(error instanceof DshPublicError && error.status === 404 && error.code === "REGISTRATION_RECEIPT_NOT_FOUND"
+          ? "لا يوجد إيصال تسجيل مؤكد متاح حاليًا. لا تزال النتيجة غير محسومة؛ احتُفظ بمعرّف العملية."
+          : "تعذّر التحقق من إيصال التسجيل. احتُفظ بمعرّف العملية دون إرسال طلب جديد.");
       } finally {
         if (active.current === controller) {
           active.current = null;
@@ -285,14 +368,15 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
               setMessage("");
             }} />
           <Text style={{ color: theme.color, fontWeight: "700" }}>النشاط التجاري</Text>
+          <View accessibilityRole="radiogroup" accessibilityLabel="النشاط التجاري" style={{ gap: 8 }}>
           {options.verticals.map(id => (
-            <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: verticalId === id }}
-              disabled={locked} onPress={() => { setVerticalId(id); setMessage(""); }}
+            <Pressable key={id} {...verticalRadio(id)} accessibilityLabel={id}
               style={{ padding: 10, minHeight: 44, borderRadius: 8, borderWidth: 1,
                 borderColor: theme.borderColor, backgroundColor: id === verticalId ? theme.actionSoft : theme.surface }}>
               <Text style={{ color: theme.color }}>{id}</Text>
             </Pressable>
           ))}
+          </View>
           {field("الاسم التجاري للمتجر", name, setName)}
           {field("خط عرض موقع المتجر", latitude, setLatitude, "decimal-pad")}
           {field("خط طول موقع المتجر", longitude, setLongitude, "decimal-pad")}
@@ -317,7 +401,8 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
             !latitude.trim() || !longitude.trim() || !accepted)}
         </>
       ) : null}
-      {unknown ? button("تحديث قائمة متاجري للتحقق من النتيجة", onCreated, busy) : null}
+      {!attemptReady && !loading ? button("إعادة قراءة سجل الاسترداد", () => setReload(n => n + 1), busy) : null}
+      {unknown ? button("التحقق من نتيجة التسجيل لدى DSH", recoverReceipt, busy || !attemptReady) : null}
       {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
     </View>
   );

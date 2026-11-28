@@ -1,5 +1,5 @@
 /** DSH current standing is separate from the Identity Captain role. */
-import { consumeOwnerResponse, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
+import { consumeOwnerResponse, DshPublicError, endpoint, fetchOwnerHeaders, readBoundedOwnerJSON } from "./client-core.ts";
 import { dshOperations } from "./generated/dsh-operations.ts";
 export interface CaptainStanding {
   actorId: string;
@@ -29,21 +29,18 @@ export function captainStandingFrom(value: unknown, actorId: string): CaptainSta
   }
   return v as unknown as CaptainStanding;
 }
-function checkedOrigin(origin: string): URL {
-  let url: URL;
-  try { url = new URL(origin); } catch { throw new CaptainStandingError(0, "DSH_ENDPOINT_INVALID"); }
-  if (url.username || url.password || url.pathname !== "/" || url.hash || url.search ||
-    !(url.protocol === "https:" ||
-      (url.protocol === "http:" && ["localhost", "127.0.0.1", "10.0.2.2"].includes(url.hostname)))) {
-    throw new CaptainStandingError(0, "DSH_ENDPOINT_UNSAFE");
-  }
-  return url;
-}
 async function currentStanding(
   origin: string, bearer: string, path: string, method: "GET" | "POST",
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const url = new URL(path, checkedOrigin(origin));
+  let url: URL;
+  try {
+    url = endpoint(origin, path);
+  } catch (error) {
+    if (!(error instanceof DshPublicError)) throw error;
+    throw new CaptainStandingError(0, error.code === "DSH_ENDPOINT_NOT_CONFIGURED"
+      ? "DSH_ENDPOINT_INVALID" : error.code);
+  }
   if (!/^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/.test(bearer)) {
     throw new CaptainStandingError(401, "UNAUTHORIZED");
   }

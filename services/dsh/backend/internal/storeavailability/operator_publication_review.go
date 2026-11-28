@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http"
 	"net/url"
 	"strings"
@@ -55,7 +56,7 @@ func (g *PostgresStoreGrants) readPublicationReview(ctx context.Context, cityID,
 	if g == nil || g.db == nil {
 		return PublicationReviewPage{}, ErrStoreOwnerUnavailable
 	}
-	tx, err := beginScopedStoreTx(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, g.db, g.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "stores", "service_cities", "verticals", "store_registration_commands", "store_registration_terms", "store_operational_weekly_hours", "offers")
 	if err != nil {
 		return PublicationReviewPage{}, ErrStoreOwnerUnavailable
 	}

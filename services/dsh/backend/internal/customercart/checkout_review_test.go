@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/storeavailability"
 )
@@ -112,6 +113,18 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if review.ActorID != "customer-a" || review.StoreID != "store-a" || review.CartVersion != 1 || review.Merchandise.MerchandiseSubtotalYER != "1100" || review.CheckoutReady || review.Delivery != nil || len(review.Blockers) != 3 {
 		t.Fatalf("wrong pickup review: %s", body)
 	}
+	if review.CityFulfillment != (storeavailability.CityFulfillmentEvidence{StoreRelation: "MARKETPLACE", Status: "DENIED_BY_CITY_POLICY", Version: 1}) {
+		t.Fatalf("Direct channel must respect the actual Marketplace policy: %s", body)
+	}
+	owner, err := storeavailability.NewPostgresPolicySource(db, schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, replay, err := owner.ApplyCityFulfillmentPolicy(ctx, "synthetic-operator", "sanaa", "MARKETPLACE",
+		"checkout-mode-002", 1, []string{"CUSTOMER_PICKUP"}, "Synthetic checkout mode")
+	if err != nil || replay || policy.Version != 2 {
+		t.Fatalf("fixture policy successor: %+v %v %v", policy, replay, err)
+	}
 	// Both channels may review the same MARKETPLACE Store and the same cart.
 	for _, relation := range []string{"MARKETPLACE", "DIRECT"} {
 		if _, err := db.ExecContext(ctx, "UPDATE "+schema+".stores SET relation=$1 WHERE id='store-a'", relation); err != nil {
@@ -128,8 +141,14 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 				continue
 			}
 			assertCartStatus(t, status, 200, body)
-			var accepted map[string]any
-			if err := json.Unmarshal(body, &accepted); err != nil || accepted["salesChannel"] != channel || accepted["checkoutReady"] != false {
+			var accepted checkoutReviewResult
+			want := "DENIED_BY_CITY_POLICY"
+			if relation == "MARKETPLACE" {
+				want = "ALLOWED_BY_CITY_POLICY"
+			}
+			if err := json.Unmarshal(body, &accepted); err != nil || accepted.SalesChannel != channel || accepted.CheckoutReady ||
+				accepted.CityFulfillment != (storeavailability.CityFulfillmentEvidence{StoreRelation: relation, Status: want, Version: 2}) ||
+				strings.Contains(string(body), "Synthetic checkout mode") {
 				t.Fatalf("invalid channel evidence: %s (%v)", body, err)
 			}
 		}
@@ -141,13 +160,15 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	if review.StoreSchedule.Status != "UNAVAILABLE" || review.StoreSchedule.Version != 0 {
 		t.Fatalf("unconfigured schedule fabricated evidence: %s", body)
 	}
-	if _, err := db.ExecContext(ctx, "INSERT INTO "+schema+".store_operational_availability(store_id,store_timezone,paused_until,preparation_minutes,changed_by_actor,change_reason) VALUES ('store-a','UTC',transaction_timestamp()+interval '1 hour',15,'synthetic-operator','checkout test')"); err != nil {
+	var pauseEnd time.Time
+	if err := db.QueryRowContext(ctx, "INSERT INTO "+schema+".store_operational_availability(store_id,store_timezone,paused_until,preparation_minutes,changed_by_actor,change_reason) VALUES ('store-a','UTC',transaction_timestamp()+interval '1 hour',15,'synthetic-operator','checkout test') RETURNING paused_until").Scan(&pauseEnd); err != nil {
 		t.Fatal(err)
 	}
 	status, body = checkoutReviewRequest(t, h, "customer-a", pickup)
 	assertCartStatus(t, status, 200, body)
 	review = checkoutReviewResult{}
-	if err := json.Unmarshal(body, &review); err != nil || review.StoreSchedule.Status != "PAUSED" || review.StoreSchedule.Version != 1 || review.CheckoutReady {
+	if err := json.Unmarshal(body, &review); err != nil || review.StoreSchedule.Status != "PAUSED" || review.StoreSchedule.Version != 1 ||
+		review.StoreSchedule.PausedUntil == nil || !review.StoreSchedule.PausedUntil.Equal(pauseEnd) || review.CheckoutReady {
 		t.Fatalf("pause must be read from owner: %s %v", body, err)
 	}
 	// A Store cannot remain orderable after its vertical is disabled. The
@@ -181,10 +202,6 @@ func verifyCheckoutReviewOnPostgres(t *testing.T, ctx context.Context, db *sql.D
 	}
 	// The existing fixture has an address one latitude degree from the Store.
 	// Configure only this synthetic DSH owner row; never seed commercial prices.
-	owner, err := storeavailability.NewPostgresPolicySource(db, schema)
-	if err != nil {
-		t.Fatal(err)
-	}
 	bands, valid := storeavailability.DecodeDistanceBands([]byte(`[{"upToMeters":100000,"ratePerKmMinor":100},{"upToMeters":null,"ratePerKmMinor":200}]`))
 	if !valid {
 		t.Fatal("invalid fixture")

@@ -2,6 +2,7 @@ package session
 
 import (
 	"database/sql"
+	"errors"
 	"testing"
 )
 
@@ -11,32 +12,33 @@ func TestLocalFirstOwnerModeBoundToExistingDevelopmentOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer db.Close()
-	policy := OperatorPasskeyOriginPolicy{
-		RPID:    "localhost",
-		Origins: []string{"http://localhost:13000"},
-	}
+
 	for _, tc := range []struct {
-		name, schema, origin string
-		allowed              bool
+		name, schema, origin          string
+		originAdmitted, ownerAdmitted bool
 	}{
-		{"existing development schema and exact origin", "identity_test_docker_2e1e6ae0ba6b", "http://localhost:13000", true},
-		{"unknown isolated schema", "identity_test_different", "http://localhost:13000", false},
-		{"isolated first-owner sandbox", "identity_test_operator_s02", "http://localhost:13000", false},
-		{"different browser address", "identity_test_docker_2e1e6ae0ba6b", "http://localhost:23100", false},
+		{"canonical development owner", "identity_test_docker_2e1e6ae0ba6b", localOperatorOrigin, true, true},
+		{"unknown isolated schema", "identity_test_different", localOperatorOrigin, true, false},
+		{"retired first-owner sandbox", "identity_test_operator_s02", localOperatorOrigin, true, false},
+		{"retired browser origin", "identity_test_docker_2e1e6ae0ba6b", "http://localhost:23100", false, false},
+		{"retired tunnel target", "identity_test_docker_2e1e6ae0ba6b", "http://localhost:23010", false, false},
+		{"unadmitted local port", "identity_test_docker_2e1e6ae0ba6b", "http://localhost:3300", false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := policy
-			p.Origins = []string{tc.origin}
-			auth, err := NewOperatorPasskeyAuth(&PostgresReader{db: db, schema: tc.schema}, p, true)
-			if err != nil {
-				t.Fatal(err)
+			policy := OperatorPasskeyOriginPolicy{RPID: "localhost", Origins: []string{tc.origin}}
+			auth, err := NewOperatorPasskeyAuth(&PostgresReader{db: db, schema: tc.schema}, policy, true)
+			if !tc.originAdmitted {
+				if !errors.Is(err, ErrOperatorPasskeyOrigin) || auth != nil {
+					t.Fatalf("unadmitted origin created authentication owner: %v", err)
+				}
+				return
+			}
+			if err != nil || auth == nil {
+				t.Fatalf("canonical RP refused: %v", err)
 			}
 			err = auth.AllowLocalDevelopmentFirstOwner()
-			if (err == nil) != tc.allowed {
-				t.Fatalf("allowed=%v err=%v", tc.allowed, err)
-			}
-			if auth.allowExistingSyntheticOperators != tc.allowed {
-				t.Fatal("authorization mode does not match guard")
+			if (err == nil) != tc.ownerAdmitted || auth.allowExistingSyntheticOperators != tc.ownerAdmitted {
+				t.Fatalf("owner admission mismatch: %v", err)
 			}
 		})
 	}

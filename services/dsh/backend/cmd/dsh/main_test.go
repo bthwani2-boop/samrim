@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"errors"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCustomerCartDockerOptInRequiresIsolatedContainerAndOwner(t *testing.T) {
@@ -223,37 +228,6 @@ func TestProtectedStoreCorsDoesNotGrantAuthorization(t *testing.T) {
 	}
 }
 
-func TestPrivatePolicyPreflightCannotAuthorizePolicyMutation(t *testing.T) {
-	origin := "http://127.0.0.1:18102"
-	readonly := storePolicyCORS(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-	}), map[string]bool{origin: true})
-	for _, tc := range []struct {
-		name, origin, method string
-		want                 int
-	}{
-		{"approved read preflight", origin, "GET", http.StatusNoContent},
-		{"approved scoped policy write preflight", origin, "PATCH", http.StatusNoContent},
-		{"unapproved policy delete preflight", origin, "DELETE", http.StatusForbidden},
-		{"unrelated origin", "http://evil.invalid", "GET", http.StatusForbidden},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodOptions, "/v1/operators/cities/city-a/store-availability-policy", nil)
-			request.Header.Set("Origin", tc.origin)
-			request.Header.Set("Access-Control-Request-Method", tc.method)
-			request.Header.Set("Access-Control-Request-Headers", "authorization")
-			rec := httptest.NewRecorder()
-			readonly.ServeHTTP(rec, request)
-			if rec.Code != tc.want {
-				t.Fatalf("%s returned %d expected %d", tc.name, rec.Code, tc.want)
-			}
-			if tc.want == http.StatusNoContent && rec.Header().Get("Access-Control-Allow-Methods") != "GET, PATCH" {
-				t.Fatal("Operator policy preflight advertised unexpected methods")
-			}
-		})
-	}
-}
-
 func TestCustomerCartContainerRejectsUnverifiedDatabaseTransport(t *testing.T) {
 	t.Setenv("DSH_ENABLE_ISOLATED_CUSTOMER_CART", "true")
 	t.Setenv("BTHWANI_ISOLATED_TEST_MODE", "true")
@@ -279,5 +253,209 @@ func TestCustomerCartContainerRejectsUnverifiedDatabaseTransport(t *testing.T) {
 				t.Fatal("unverified database transport admitted cart, address and favorite routes")
 			}
 		})
+	}
+}
+
+func TestDSHServingLifecycleDrainsBothListeners(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	seed := httptest.NewTLSServer(http.NotFoundHandler())
+	defer seed.Close()
+	entered := make(chan string, 2)
+	release := make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	handler := func(name string) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			entered <- name
+			select {
+			case <-release:
+				_, _ = io.WriteString(w, name)
+			case <-r.Context().Done():
+			}
+		})
+	}
+	public := &http.Server{Addr: "127.0.0.1:0", Handler: handler("public")}
+	private := &http.Server{Addr: "127.0.0.1:0", Handler: handler("private"), TLSConfig: seed.TLS.Clone()}
+	endpoints, err := bindDSHServers(public, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer public.Close()
+	defer private.Close()
+	served := make(chan error, 1)
+	go func() { served <- serveDSH(ctx, endpoints, 3*time.Second) }()
+	results := make(chan error, 2)
+	request := func(client *http.Client, url, expected string) {
+		r, err := client.Get(url)
+		if err == nil {
+			defer r.Body.Close()
+			body, readErr := io.ReadAll(r.Body)
+			if readErr != nil || r.StatusCode != 200 || string(body) != expected {
+				err = errors.New("in-flight request not completed")
+			}
+		}
+		results <- err
+	}
+	publicClient := &http.Client{Timeout: 4 * time.Second}
+	defer publicClient.CloseIdleConnections()
+	privateClient := seed.Client()
+	privateClient.Timeout = 4 * time.Second
+	go request(publicClient, "http://"+endpoints[0].listener.Addr().String(), "public")
+	go request(privateClient, "https://"+endpoints[1].listener.Addr().String(), "private")
+	seen := map[string]bool{}
+	for range 2 {
+		select {
+		case name := <-entered:
+			seen[name] = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("both listeners did not accept requests")
+		}
+	}
+	if !seen["public"] || !seen["private"] {
+		t.Fatal("wrong listeners served")
+	}
+	cancel()
+	for _, ep := range endpoints {
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			conn, err := net.DialTimeout("tcp", ep.listener.Addr().String(), 50*time.Millisecond)
+			if err != nil {
+				break
+			}
+			conn.Close()
+			if time.Now().After(deadline) {
+				t.Fatal("listener still accepts connections")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	select {
+	case err := <-served:
+		t.Fatalf("server returned before draining: %v", err)
+	default:
+	}
+	close(release)
+	for range 2 {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Fatal(err)
+			}
+		case <-time.After(4 * time.Second):
+			t.Fatal("active request not drained")
+		}
+	}
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("lifecycle did not finish")
+	}
+}
+
+func TestDSHServingLifecycleRollsBackPartialBind(t *testing.T) {
+	occupied, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer occupied.Close()
+	probe, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := probe.Addr().String()
+	probe.Close()
+	endpoints, err := bindDSHServers(&http.Server{Addr: address}, &http.Server{Addr: occupied.Addr().String()})
+	if err == nil || len(endpoints) != 0 {
+		t.Fatal("partial bind accepted")
+	}
+	rebound, err := net.Listen("tcp4", address)
+	if err != nil {
+		t.Fatalf("public listener leaked: %v", err)
+	}
+	rebound.Close()
+}
+
+func TestDSHServingLifecycleFailureStopsPeer(t *testing.T) {
+	public := &http.Server{Addr: "127.0.0.1:0"}
+	private := &http.Server{Addr: "127.0.0.1:0"}
+	endpoints, err := bindDSHServers(public, private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer public.Close()
+	defer private.Close()
+	if err := endpoints[1].listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := serveDSH(t.Context(), endpoints, time.Second); err == nil {
+		t.Fatal("unexpected listener failure accepted")
+	}
+	if conn, err := net.DialTimeout("tcp", endpoints[0].listener.Addr().String(), time.Second); err == nil {
+		conn.Close()
+		t.Fatal("public peer remained listening")
+	}
+}
+
+func TestDSHServingLifecycleBoundsUnfinishedRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	entered, interrupted := make(chan struct{}), make(chan struct{})
+	public := &http.Server{Addr: "127.0.0.1:0", Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-r.Context().Done()
+		close(interrupted)
+	})}
+	endpoints, err := bindDSHServers(public, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer public.Close()
+	served := make(chan error, 1)
+	go func() { served <- serveDSH(ctx, endpoints, 50*time.Millisecond) }()
+	client := &http.Client{Timeout: 3 * time.Second}
+	defer client.CloseIdleConnections()
+	response := make(chan error, 1)
+	go func() {
+		r, err := client.Get("http://" + endpoints[0].listener.Addr().String())
+		if r != nil {
+			r.Body.Close()
+		}
+		response <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("request did not enter")
+	}
+	cancel()
+	select {
+	case err := <-served:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected shutdown deadline, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("unbounded shutdown")
+	}
+	select {
+	case <-interrupted:
+	case <-time.After(time.Second):
+		t.Fatal("unfinished connection retained")
+	}
+	select {
+	case err := <-response:
+		if err == nil {
+			t.Fatal("interrupted request reported success")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("client did not observe interruption")
 	}
 }

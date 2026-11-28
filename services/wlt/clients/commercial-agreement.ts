@@ -4,16 +4,17 @@ import { readOwner } from "./transport.ts";
 import { exactRecord, fundingIdValid } from "./validation.ts";
 
 const relations = ["MARKETPLACE", "DIRECT"] as const;
-const collectors = ["PLATFORM_MANAGED", "STORE_MANAGED"] as const;
+export const agreementCollectors = ["PLATFORM_MANAGED", "STORE_MANAGED"] as const;
 const states = ["AWAITING_MERCHANT_CONSENT", "AWAITING_FINANCE_REVIEW", "DECLINED",
   "FINANCE_REJECTED", "REVIEW_APPROVED_PENDING_ACTIVATION"] as const;
 const modes = ["BTHWANI_CAPTAIN", "PARTNER_CAPTAIN", "CUSTOMER_PICKUP"] as const;
-type FulfillmentMode = (typeof modes)[number];
+export type FulfillmentMode = (typeof modes)[number];
+export type AgreementCollector = (typeof agreementCollectors)[number];
 type Proposal = {
   version: number;
   operationId: string;
   storeRelation: (typeof relations)[number];
-  collector: (typeof collectors)[number];
+  collector: AgreementCollector;
   currency: "YER";
   fulfillmentModes: FulfillmentMode[];
   proposedEffectiveAt: string;
@@ -30,11 +31,11 @@ const proposalFields = [
   "fulfillmentModes", "proposedEffectiveAt", "reviewState",
 ] as const;
 
-function storeValid(value: unknown): value is string {
+export function agreementStoreValid(value: unknown): value is string {
   return typeof value === "string" && /^[a-z0-9-]{1,64}$/.test(value);
 }
 
-function member<T extends string>(value: unknown, list: readonly T[]): value is T {
+export function agreementMember<T extends string>(value: unknown, list: readonly T[]): value is T {
   return typeof value === "string" && list.some(item => item === value);
 }
 
@@ -51,14 +52,19 @@ function validDate(value: unknown): value is string {
   return !!stamp && Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 19) === stamp[1];
 }
 
-function fulfillmentFrom(value: unknown): FulfillmentMode[] {
+export function agreementFulfillmentFrom(value: unknown): FulfillmentMode[] {
   if (!Array.isArray(value) || value.length < 1 || value.length > modes.length) throw new WltReadError(502);
   const result: FulfillmentMode[] = [];
   for (const mode of value) {
-    if (!member(mode, modes) || result.includes(mode)) throw new WltReadError(502);
+    if (!agreementMember(mode, modes) || result.includes(mode)) throw new WltReadError(502);
     result.push(mode);
   }
   return result;
+}
+
+export function agreementSubscriptionAmountValid(value: unknown): value is string {
+  return typeof value === "string" && /^[1-9][0-9]{0,18}$/.test(value) &&
+    BigInt(value) <= 9223372036854775807n;
 }
 
 function proposalFrom(value: unknown): Proposal {
@@ -68,11 +74,11 @@ function proposalFrom(value: unknown): Proposal {
     fulfillmentModes, proposedEffectiveAt, reviewState,
   } = exactRecord(value, proposalFields);
   if (!integer(version, 1, Number.MAX_SAFE_INTEGER) || !fundingIdValid(operationId) ||
-    !member(storeRelation, relations) || !member(collector, collectors) || currency !== "YER" ||
-    !validDate(proposedEffectiveAt) || !member(reviewState, states)) throw new WltReadError(502);
+    !agreementMember(storeRelation, relations) || !agreementMember(collector, agreementCollectors) || currency !== "YER" ||
+    !validDate(proposedEffectiveAt) || !agreementMember(reviewState, states)) throw new WltReadError(502);
   const common = {
     version, operationId, storeRelation, collector, currency: "YER" as const,
-    fulfillmentModes: fulfillmentFrom(fulfillmentModes), proposedEffectiveAt, reviewState,
+    fulfillmentModes: agreementFulfillmentFrom(fulfillmentModes), proposedEffectiveAt, reviewState,
   };
   if (feeModel === "COMMISSION") {
     if (!integer(commissionBasisPoints, 0, 10000) || subscriptionAmountYer !== null ||
@@ -80,15 +86,14 @@ function proposalFrom(value: unknown): Proposal {
     return { ...common, feeModel, commissionBasisPoints, subscriptionAmountYer, subscriptionPeriodDays };
   }
   if (feeModel !== "SUBSCRIPTION" || commissionBasisPoints !== null ||
-    typeof subscriptionAmountYer !== "string" || !/^[1-9][0-9]{0,18}$/.test(subscriptionAmountYer) ||
-    BigInt(subscriptionAmountYer) > 9223372036854775807n ||
+    !agreementSubscriptionAmountValid(subscriptionAmountYer) ||
     !integer(subscriptionPeriodDays, 1, 2147483647)) throw new WltReadError(502);
   return { ...common, feeModel, commissionBasisPoints, subscriptionAmountYer, subscriptionPeriodDays };
 }
 
 export function parseCommercialAgreementReview(value: unknown, storeId: string): CommercialAgreementReview {
   const data = exactRecord(value, ["storeId", "proposal"]);
-  if (!storeValid(storeId) || data.storeId !== storeId) throw new WltReadError(502);
+  if (!agreementStoreValid(storeId) || data.storeId !== storeId) throw new WltReadError(502);
   return { storeId, proposal: data.proposal === null ? null : proposalFrom(data.proposal) };
 }
 
@@ -98,7 +103,7 @@ type AgreementOperation =
 
 async function readAgreement(operation: AgreementOperation, origin: string, bearer: string,
   storeId: string, signal: AbortSignal): Promise<CommercialAgreementReview> {
-  if (!storeValid(storeId)) throw new WltReadError(400);
+  if (!agreementStoreValid(storeId)) throw new WltReadError(400);
   const value = await readOwner(origin, bearer, operation.method, operation.path.replace("{storeID}", storeId), signal);
   return parseCommercialAgreementReview(value, storeId);
 }

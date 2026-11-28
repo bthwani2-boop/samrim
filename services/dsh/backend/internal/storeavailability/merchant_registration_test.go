@@ -85,6 +85,9 @@ func TestMerchantRegistrationHTTPRejectsMalformedAndForgedRequests(t *testing.T)
 	if got := invoke("GET", "/v1/stores/registration-options", "", nil); got != 401 {
 		t.Fatalf("anonymous GET = %d", got)
 	}
+	if got := invoke("GET", "/v1/store-registration-receipts/registration-merchant-a-001", "", nil); got != 401 {
+		t.Fatalf("anonymous receipt GET = %d", got)
+	}
 	if got := invoke("POST", "/v1/stores", "", nil); got != 401 {
 		t.Fatalf("anonymous POST = %d", got)
 	}
@@ -257,6 +260,42 @@ func TestMerchantStoreRegistrationIsolatedPostgresDurability(t *testing.T) {
 	if err != nil || !replay.Replay || replay.Store.ID != storeID {
 		t.Fatalf("same command must reconcile after policy close: %+v %v", replay, err)
 	}
+	readReceipt := func(registrar *MerchantStoreRegistrar, operation string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "/v1/store-registration-receipts/"+operation, nil)
+		r.Header.Set("Authorization", "Bearer synthetic")
+		w := httptest.NewRecorder()
+		NewMerchantRegistrationHandler(registrar).ServeHTTP(w, r)
+		if w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatal("receipt must not be cached")
+		}
+		return w
+	}
+	receiptResponse := readReceipt(first, input.OperationID)
+	var receipt MerchantRegistrationReceipt
+	if receiptResponse.Code != 200 || json.Unmarshal(receiptResponse.Body.Bytes(), &receipt) != nil ||
+		receipt.OperationID != input.OperationID || receipt.Store.ID != storeID {
+		t.Fatalf("committed receipt unavailable after policy close: %d %s", receiptResponse.Code, receiptResponse.Body.String())
+	}
+	revoked, err := NewMerchantStoreRegistrar(&changingMerchantIdentity{}, grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response := readReceipt(revoked, input.OperationID); response.Code != 401 || strings.Contains(response.Body.String(), storeID) {
+		t.Fatalf("revoked identity exposed receipt: %d", response.Code)
+	}
+	foreign, err := NewMerchantStoreRegistrar(fakeIdentity{actor: VerifiedActor{Subject: "merchant-b", Role: MerchantRole}}, grants)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absent := readReceipt(first, "registration-unknown-001")
+	wrongActor := readReceipt(foreign, input.OperationID)
+	if absent.Code != 404 || wrongActor.Code != 404 || absent.Body.String() != wrongActor.Body.String() ||
+		!strings.Contains(absent.Body.String(), `"REGISTRATION_RECEIPT_NOT_FOUND"`) {
+		t.Fatal("receipt absence and foreign actor must be indistinguishable")
+	}
+	if got := readReceipt(first, "bad"); got.Code != 400 {
+		t.Fatalf("invalid operation receipt selector = %d", got.Code)
+	}
 	newInput := input
 	newInput.OperationID = "registration-merchant-a-002"
 	if _, err = first.Register(ctx, "synthetic", newInput); !errors.Is(err, ErrRegistrationClosed) {
@@ -264,6 +303,9 @@ func TestMerchantStoreRegistrationIsolatedPostgresDurability(t *testing.T) {
 	}
 	if _, err = db.ExecContext(ctx, "UPDATE "+schema+".stores SET owner_actor_id='merchant-b' WHERE id=$1", storeID); err != nil {
 		t.Fatal(err)
+	}
+	if transferred := readReceipt(first, input.OperationID); transferred.Code != 404 || transferred.Body.String() != absent.Body.String() {
+		t.Fatal("former owner can enumerate transferred registration receipt")
 	}
 	if _, err = first.Register(ctx, "synthetic", input); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("former Store owner must not read transferred replay: %v", err)

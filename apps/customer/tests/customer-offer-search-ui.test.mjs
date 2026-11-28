@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import * as publicPage from "../src/features/discovery/public-page.ts";
 import * as serviceability from "../src/features/location/serviceability.ts";
 import * as loader from "../src/features/stores/store-detail-loader.ts";
 
@@ -36,6 +37,7 @@ function harness({ params = {}, id = "store-a" } = {}) {
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const read = (kind, storeId, options) => new Promise((resolve, reject) => requests.push({ kind, storeId, ...options, resolve, reject }));
   const modules = {
+    "../discovery/public-page": publicPage,
     "@bthwani/dsh": {
       getPublicStore: (_origin, storeId, signal) => read("store", storeId, { signal }),
       listPublicOffers: (_origin, storeId, options) => read("offers", storeId, options),
@@ -57,6 +59,7 @@ function harness({ params = {}, id = "store-a" } = {}) {
     "../location/serviceability": serviceability,
     "../discovery/favorite-stores": { __esModule: true, default: "FavoriteStores" },
     "../sharing/store-share": { publicStorefrontPath: storeId => `/s/${storeId}` },
+    "../sharing/store-share-button": { __esModule: true, default: "StoreShareButton" },
     "./orderability": { describeStoreOrderability: () => ({}) },
     "./public-store-origin": { resolvePublicStoreOrigin: () => "" },
     "./store-detail-loader": loader,
@@ -110,6 +113,19 @@ test("full storefront navigation preserves bounded directory context without fil
   assert.equal(initial.query, "");
   const link = find(app.render(), node => node.type === "Link" && node.props.children === "عرض موقع المتجر الكامل");
   assert.deepEqual(link.props.href, { pathname: "/s/store-a", params: { city: "aden", vertical: "grocery", q: "متجر" } });
+});
+
+test("Store sharing is available only for the currently verified public Store", async () => {
+  const app = harness();
+  assert.equal(find(app.render(), node => node.type === "StoreShareButton"), undefined);
+  app.read("store").resolve(store("store-a"));
+  app.read().resolve({ items: [], revision: 1 });
+  await settle();
+  const share = find(app.render(), node => node.type === "StoreShareButton");
+  assert.equal(share?.props.storeId, "store-a");
+  app.store("store-b");
+  assert.equal(find(app.render(), node => node.type === "StoreShareButton"), undefined);
+  app.unmount();
 });
 
 test("unscoped public storefront link remains canonical", async () => {
@@ -342,4 +358,21 @@ test("duplicate Offer continuation cannot cancel the current page or reuse its c
   const third = app.read(); assert.equal(third.cursor, "third-page");
   third.resolve({ items: [offer("third")], revision: 1 }); await current;
   assert.deepEqual(products(app.render()).map(item => item.id), ["first", "second", "third"]);
+});
+
+test("Offer search applies owner whitespace semantics and rejects malformed input without replacing the active result", async () => {
+  const app = harness();
+  await open(app);
+  submit(app, "\u0085دقيق\u0085");
+  app.read("store").resolve(store("store-a"));
+  const search = app.read();
+  assert.equal(search.query, "دقيق");
+  search.resolve({ items: [], revision: 1 });
+  await settle();
+  const rejected = submit(app, "\ud800");
+  assert.ok(byId(rejected, "offers-search-error"));
+  assert.equal(search.signal.aborted, false);
+  submit(app, "\ufeffدقيق");
+  app.read("store");
+  assert.equal(app.read().query, "\ufeffدقيق");
 });

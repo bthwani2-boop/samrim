@@ -1,7 +1,7 @@
 import type { PublicPage, PublicStore, PublicVertical } from "@bthwani/dsh";
 import { listPublicCities, listPublicStores, listPublicVerticals } from "@bthwani/dsh";
 import styles from "../operator-shell/operator-shell.module.css";
-import { parsePublicStoreBrowse, resolvePublicDshOrigin } from "../stores/public-store-query";
+import { isolatedPublicDshOrigin, parsePublicStoreBrowse } from "../stores/public-store-query";
 import { parseOperatorHomeCity } from "./operator-home-city";
 
 const orderabilityLabels: Record<PublicStore["orderabilityStatus"], string> = {
@@ -10,6 +10,68 @@ const orderabilityLabels: Record<PublicStore["orderabilityStatus"], string> = {
   PAUSED: "موقوف مؤقتًا",
   OPERATIONALLY_UNAVAILABLE: "غير متاح تشغيليًا",
 };
+
+type MarketReads = {
+  cities: PublicPage<string> | null;
+  stores: PublicPage<PublicStore> | null;
+  verticals: PublicPage<PublicVertical> | null;
+};
+
+/**
+ * Each Store has one DSH vertical. A complete vertical page contains the exact
+ * count of published MARKETPLACE Stores per active category, not all Stores.
+ * An empty page alone does not prove that the requested city is active.
+ */
+function publishedTotal(city: string, { cities, verticals }: MarketReads) {
+  if (!verticals) return { value: null, reason: "تعذّر تأكيد تصنيفات DSH." };
+  if (verticals.nextCursor) return { value: null, reason: "توجد تصنيفات خارج الصفحة؛ الإجمالي غير مؤكد." };
+  if (verticals.items.length === 0 &&
+      !(cities?.revision === verticals.revision && cities.items.includes(city))) {
+    return { value: null, reason: "لم تُؤكد مدينة نشطة في مراجعة التصنيفات نفسها؛ الصفر غير مؤكد." };
+  }
+  let value = 0;
+  for (const { storeCount } of verticals.items) {
+    value += storeCount;
+    if (!Number.isSafeInteger(value)) return { value: null, reason: "الإجمالي خارج مجال الأعداد الدقيقة المدعوم." };
+  }
+  return { value, reason: "جميع تصنيفات السوق المنشور في المدينة، وفق مراجعة DSH للتصنيفات." };
+}
+
+function marketFacts(city: string, reads: MarketReads) {
+  const { stores, verticals } = reads;
+  const total = publishedTotal(city, reads);
+  const page = stores ? {
+    size: stores.items.length,
+    revision: stores.revision,
+    partial: Boolean(stores.nextCursor),
+    counts: stores.items.reduce<Record<PublicStore["orderabilityStatus"], number>>((counts, item) => {
+      counts[item.orderabilityStatus]++;
+      return counts;
+    }, { OPEN_FOR_ORDERS: 0, CLOSED_BY_SCHEDULE: 0, PAUSED: 0, OPERATIONALLY_UNAVAILABLE: 0 }),
+  } : null;
+  return (
+    <section aria-label="مؤشرات السوق من DSH">
+      <h3>مؤشرات السوق المنشور</h3>
+      <dl>
+        <dt>إجمالي متاجر السوق المنشورة في المدينة</dt>
+        <dd data-testid="market-published-total">{total.value ?? "غير متاح"}</dd>
+      </dl>
+      <p>{total.reason}{verticals ? ` مراجعة DSH: ${verticals.revision}.` : ""}</p>
+      {page ? <>
+        <p data-testid="market-page-scope">حالات المتاجر في الصفحة المعروضة: {page.size} — مراجعة DSH: {page.revision}.
+          {page.partial ? " توجد صفحات أخرى." : " لا توجد صفحة تالية."} هذه الأعداد تخص نتائج الصفحة ولا تثبت أهلية إتمام الطلب.</p>
+        <dl>
+          <dt>متاح وفق حالة DSH</dt><dd data-testid="market-page-open">{page.counts.OPEN_FOR_ORDERS}</dd>
+          <dt>مغلق حسب الجدول</dt><dd>{page.counts.CLOSED_BY_SCHEDULE}</dd>
+          <dt>موقوف مؤقتًا</dt><dd data-testid="market-page-paused">{page.counts.PAUSED}</dd>
+          <dt>غير متاح تشغيليًا</dt><dd>{page.counts.OPERATIONALLY_UNAVAILABLE}</dd>
+        </dl>
+        {verticals && verticals.revision !== page.revision &&
+          <p role="status">مراجعتا قائمة المتاجر والتصنيفات مختلفتان؛ لا تُدمج القراءتان في نسبة أو نتيجة واحدة.</p>}
+      </> : <p>حالات متاجر الصفحة غير متاحة.</p>}
+    </section>
+  );
+}
 
 export default async function PublicMarketOverview({ searchParams, canVisitStores, canVisitCatalog, canViewPublicMarket = false, action = "/workspace" }: Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -33,10 +95,8 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
     if (cursor) query.set("storeCursor", cursor);
     return `${action}?${query.toString()}`;
   }
-  const origin = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
-  let cities: PublicPage<string> | null = null;
-  let stores: PublicPage<PublicStore> | null = null;
-  let verticals: PublicPage<PublicVertical> | null = null;
+  const origin = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
+  const reads: MarketReads = { cities: null, stores: null, verticals: null };
   let citiesError = "";
   let storesError = "";
   let verticalsError = "";
@@ -47,12 +107,13 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
     citiesError = "اتصال DSH المعزول غير مُهيأ. لا توجد بيانات مؤكدة.";
   } else if (!city) {
     try {
-      cities = await listPublicCities(origin, { limit: 50, signal: AbortSignal.timeout(5000) });
+      reads.cities = await listPublicCities(origin, { limit: 50, signal: AbortSignal.timeout(5000) });
     } catch {
       citiesError = "تعذّرت قراءة المدن المنشورة من DSH.";
     }
   } else {
-    // Independent public readings: one failed endpoint must not hide the other.
+    // Independent owner snapshots: preserve successful reads and their own
+    // revision even when another endpoint fails or changes.
     const results = await Promise.allSettled([
       listPublicCities(origin, { limit: 50, signal: AbortSignal.timeout(5000) }),
       listPublicStores(origin, city, {
@@ -63,18 +124,19 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
       }),
       products ? Promise.resolve(null) : listPublicVerticals(origin, city, { limit: 10, signal: AbortSignal.timeout(5000) }),
     ] as const);
-    if (results[0].status === "fulfilled") cities = results[0].value;
+    if (results[0].status === "fulfilled") reads.cities = results[0].value;
     else citiesError = "تعذّرت قراءة المدن المنشورة من DSH.";
-    if (results[1].status === "fulfilled") stores = results[1].value;
+    if (results[1].status === "fulfilled") reads.stores = results[1].value;
     else storesError = "تعذّر تأكيد المتاجر المنشورة من DSH.";
-    if (results[2].status === "fulfilled") verticals = results[2].value;
+    if (results[2].status === "fulfilled") reads.verticals = results[2].value;
     else verticalsError = "تعذّرت قراءة أنواع النشاط من DSH.";
   }
+  const { cities, stores, verticals } = reads;
 
   return (
     <section aria-labelledby="operator-public-market-heading">
       <h2 id="operator-public-market-heading">{products ? "اختيار متجر منشور" : "لمحة السوق المنشور"}</h2>
-      {!products && <p>بيانات عامة للقراءة فقط من DSH. الأعداد المعروضة تخص الصفحة المحدودة، وليست إجمالي الطلبات أو المتاجر أو الإيرادات.</p>}
+      {!products && <p>حقائق عامة للقراءة فقط من DSH. يوضح كل مؤشر نطاقه ومراجعته، دون احتساب الطلبات أو الإيرادات من صفحات المتاجر.</p>}
       <form method="get" action={action} style={{ display: "flex", flexWrap: "wrap", alignItems: "end", gap: "0.75rem" }}>
         <label style={{ display: "grid", gap: "0.25rem" }}>
           مدينة منشورة
@@ -101,6 +163,7 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
       {city && storesError && <p role="alert">{storesError}</p>}
       {city && storesError && products && productStores?.cursor && <a href={productStoresHref()}>أول صفحة</a>}
       {city && verticalsError && <p role="alert">{verticalsError}</p>}
+      {city && !products && marketFacts(city, reads)}
       {city && stores && (
         <div>
           <h3>{products ? "المتاجر المطابقة" : "المتاجر المنشورة — الصفحة الأولى"}</h3>
@@ -135,7 +198,8 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
                 <strong>{item.id}</strong>
                 <span>عدد المتاجر المنشورة بهذا النوع لدى DSH: {item.storeCount}</span>
               </li>)}
-            </ul>}
+            </ul>
+          }
           {verticals.nextCursor && <p>توجد أنواع نشاط أخرى خارج هذه الصفحة.</p>}
         </div>
       )}

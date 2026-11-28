@@ -1,89 +1,74 @@
-// Only the explicitly isolated Operator test BFF uses these helpers.
-// A bearer issued by Identity is never delivered to browser JavaScript.
-export const OPERATOR_REFRESH_COOKIE = "bthwani_operator_refresh";
+/** Server-side isolated Operator origin and cookie boundary. Identity owns credentials and grants. */
 export const OPERATOR_COOKIE = "bthwani_operator_session";
+export const OPERATOR_REFRESH_COOKIE = "bthwani_operator_refresh";
 
-export type OperatorPasskeyConfig = {
+export type OperatorPasskeyConfig = Readonly<{
   browserOrigin: string;
   identityOrigin: string;
-};
+}>;
 
 type Settings = Record<string, string | undefined>;
 
-const localHostnames = new Set(["localhost", "127.0.0.1"]);
+const canonicalBrowserOrigin = "http://localhost:13000";
+const retiredBrowserOrigins = new Set(["http://localhost:23010", "http://localhost:23100"]);
 
-function localOrigin(raw: string | undefined, allowedHosts: Set<string>): string | null {
-  if (!raw?.startsWith("http://")) return null;
+function explicitLoopback(raw: string | undefined, browser: boolean): URL | null {
+  if (typeof raw !== "string" || !raw.startsWith("http://")) return null;
   try {
-    const parsed = new URL(raw);
-    if (
-      parsed.protocol !== "http:" ||
-      !allowedHosts.has(parsed.hostname) ||
-      !parsed.port ||
-      parsed.username ||
-      parsed.password ||
-      parsed.pathname !== "/" ||
-      parsed.search ||
-      parsed.hash ||
-      parsed.origin !== raw
-    ) return null;
-    return parsed.origin;
+    const url = new URL(raw);
+    const allowedHost = url.hostname === "localhost" || (!browser && url.hostname === "127.0.0.1");
+    return allowedHost && url.protocol === "http:" && url.port &&
+      !url.username && !url.password && url.pathname === "/" &&
+      !url.search && !url.hash && raw === url.origin &&
+      (!browser || !retiredBrowserOrigins.has(url.origin)) ? url : null;
   } catch {
     return null;
   }
 }
 
-// WebAuthn RP ID is localhost; the 127.0.0.1 alias is not a valid login origin.
-// The only automatic redirect is between the two fixed loopback addresses.
+// A fixed UI entry redirect does not authorize an authentication request.
 export function canonicalOperatorEntryRedirect(host: string | null): string | null {
-  return host === "127.0.0.1:13000" ? "http://localhost:13000/" : null;
+  return host === "127.0.0.1:13000" ? canonicalBrowserOrigin + "/" : null;
 }
 
 export function resolveIsolatedOperatorConfig(env: Settings): OperatorPasskeyConfig | null {
   if (env.BTHWANI_ISOLATED_TEST_MODE !== "true" ||
       env.OPERATOR_ENABLE_ISOLATED_PASSKEY_BFF !== "true") return null;
-  const browserOrigin = localOrigin(
-    env.OPERATOR_PASSKEY_BROWSER_ORIGIN,
-    new Set(["localhost"]),
-  );
-  const identityOrigin = localOrigin(
-    env.OPERATOR_PASSKEY_IDENTITY_ORIGIN,
-    localHostnames,
-  );
-  return browserOrigin && browserOrigin !== "http://localhost:23100" && identityOrigin
-    ? { browserOrigin, identityOrigin } : null;
+  const browser = explicitLoopback(env.OPERATOR_PASSKEY_BROWSER_ORIGIN, true);
+  const identity = explicitLoopback(env.OPERATOR_PASSKEY_IDENTITY_ORIGIN, false);
+  return browser && identity ? { browserOrigin: browser.origin, identityOrigin: identity.origin } : null;
 }
 
-// Existing-account recovery is independently disabled until the canonical
-// Identity owner and the control panel both explicitly opt in. This never
-// enables first-Owner bootstrap or grants any new Operator permission.
 export function resolveOperatorRecoveryConfig(env: Settings): OperatorPasskeyConfig | null {
   return env.OPERATOR_ENABLE_ISOLATED_PASSKEY_RECOVERY_BFF === "true"
     ? resolveIsolatedOperatorConfig(env) : null;
 }
 
-// Next.js normalizes request.url to its own loopback listen origin when an
-// existing SSH TCP tunnel forwards localhost:13000 to the server's localhost:23010 URL.
-// Only the exact fixed tunnel may use that internal URL. The actual HTTP
-// Host, browser Origin (for mutations), and RP ID remain externally bound.
+export function resolveInitialOperatorBootstrapConfig(env: Settings): OperatorPasskeyConfig | null {
+  if (env.OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF !== "true") return null;
+  const config = resolveIsolatedOperatorConfig(env);
+  return config?.browserOrigin === canonicalBrowserOrigin ? config : null;
+}
+
 export function isTrustedOperatorLoopbackTarget(
   request: Request, browserOrigin: string, allowQuery = false,
 ): boolean {
-  const target = new URL(request.url);
-  const browserHost = new URL(browserOrigin).host;
-  const internalTunnel = browserOrigin === "http://localhost:13000" &&
-    target.origin === "http://localhost:23010";
-  if ((target.origin !== browserOrigin && !internalTunnel) ||
-      (!allowQuery && target.search !== "") || target.hash !== "" ||
-      request.headers.get("host") !== browserHost) return false;
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  if (forwardedHost && forwardedHost !== browserHost) return false;
-  const forwardedProto = request.headers.get("x-forwarded-proto");
-  if (forwardedProto && forwardedProto !== "http") return false;
-  for (const key of ["authorization", "x-actor-id", "x-operator-role", "x-role"]) {
-    if (request.headers.has(key)) return false;
+  const browser = explicitLoopback(browserOrigin, true);
+  if (!browser) return false;
+  try {
+    const target = new URL(request.url);
+    if (target.origin !== browser.origin || target.username || target.password ||
+        (!allowQuery && target.search) || target.hash ||
+        request.headers.get("host") !== browser.host) return false;
+    const forwardedHost = request.headers.get("x-forwarded-host");
+    const forwardedProto = request.headers.get("x-forwarded-proto");
+    if ((forwardedHost !== null && forwardedHost !== browser.host) ||
+        (forwardedProto !== null && forwardedProto !== "http")) return false;
+    return !["authorization", "x-actor-id", "x-operator-role", "x-role"]
+      .some(header => request.headers.has(header));
+  } catch {
+    return false;
   }
-  return true;
 }
 
 export function isTrustedOperatorRequest(
@@ -91,12 +76,6 @@ export function isTrustedOperatorRequest(
 ): boolean {
   return request.method === method &&
     request.headers.get("origin") === config.browserOrigin &&
+    request.headers.get("sec-fetch-site") !== "cross-site" &&
     isTrustedOperatorLoopbackTarget(request, config.browserOrigin);
-}
-
-/** Additional explicit opt-in: an isolated WebAuthn login flag NEVER enables Root creation. */
-export function resolveInitialOperatorBootstrapConfig(env: Settings): OperatorPasskeyConfig | null {
-  const config = resolveIsolatedOperatorConfig(env);
-  return config && env.OPERATOR_ENABLE_ISOLATED_ROOT_BOOTSTRAP_BFF === "true" &&
-    config.browserOrigin === "http://localhost:13000" ? config : null;
 }

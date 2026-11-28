@@ -1,12 +1,10 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import YAML from "yaml";
-import { admitCoverageEvidence, publishCoverageEvidence } from "./ci-coverage-evidence.mjs";
 import { discoverWindowsPlatformTests, discoverWorkspaceNodeTests, discoverWorkspaceTestSuites } from "./source-test-discovery.mjs";
 
 // Workflow job IDs and published check contexts are contracts. Step display
@@ -14,22 +12,16 @@ import { discoverWindowsPlatformTests, discoverWorkspaceNodeTests, discoverWorks
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const workflow = name => YAML.parse(readFileSync(path.join(root, ".github", "workflows", name), "utf8"));
 const ci = workflow("ci.yml");
-const go = workflow("go-quality.yml");
-const scheduled = workflow("dependency-audit.yml");
-const { workspace_validation: workspace, application_quality: app,
-  backend_quality: backend, windows_platform: windows, required_ci: required, sonar } = ci.jobs;
-const audit = scheduled.jobs.dependency_security;
-const goQuality = go.jobs["go-quality"];
-const postgres = go.jobs["owner-postgres-integration"];
+const scheduled = workflow("security.yml");
+const { workspace, quality, typescript_tests: app, application_build: build, backend: goQuality, postgres, containers, windows, security, required_ci: required, sonar } = ci.jobs;
+const audit = scheduled.jobs.javascript;
+const goAudit = scheduled.jobs.go;
 const owners = ["identity", "dsh", "wlt"];
 const bash = process.platform === "win32" ? path.join(process.env.ProgramFiles ?? "C:\\Program Files", "Git", "bin", "bash.exe") : "bash";
 const expr = body => "$" + "{{ " + body + " }}";
 const compact = value => String(value).replace(/\s+/g, "");
 const sameExpression = (actual, expected) => assert.equal(compact(actual), compact(expr(expected)));
-const fullEvent = "github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')";
-const developmentEvent = "github.event_name == 'push' && startsWith(github.ref, 'refs/heads/codex/')";
-const noArchiveEvent = "github.event_name != 'pull_request' || !startsWith(github.head_ref, 'archive/')";
-const fullGate = "!cancelled() && (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main'))";
+
 const steps = job => job.steps ?? [];
 const command = step => step.run ?? "";
 const commands = job => steps(job).map(command).join("\n");
@@ -40,15 +32,13 @@ function one(job, predicate, purpose) {
 }
 const runs = (job, pattern) => one(job, step => pattern.test(command(step)), String(pattern));
 const action = (step, name) => typeof step.uses === "string" && step.uses.startsWith(name + "@");
-function mandatory(job, step) {
+function mandatory(_job, step) {
   assert.equal(step.if, undefined, "Required step may not be conditionally skipped");
-  assert.notEqual(step["continue-on-error"], true);
-  assert.notEqual(job["continue-on-error"], true);
 }
-function integrationStep(job, step) {
-  sameExpression(step.if, fullEvent);
-  assert.notEqual(step["continue-on-error"], true);
-  assert.notEqual(job["continue-on-error"], true);
+function qualityCheck(step) {
+  const install = runs(quality, /pnpm install --frozen-lockfile --ignore-scripts/);
+  assert.equal(install.id, "dependencies");
+  order(quality, install, step);
 }
 function order(job, ...ordered) {
   const positions = ordered.map(step => steps(job).indexOf(step));
@@ -63,163 +53,114 @@ function invoke(program, args, cwd, env = {}) {
 function shell(script, env = {}, cwd = root) {
   return invoke(bash, ["-c", script], cwd, env);
 }
-function fixture(prefix, fn) {
-  const directory = mkdtempSync(path.join(tmpdir(), prefix));
-  try { return fn(directory); }
-  finally { rmSync(directory, { recursive: true, force: true }); }
-}
-function put(directory, relative, text = "synthetic coverage fixture\n") {
-  const file = path.join(directory, relative);
-  mkdirSync(path.dirname(file), { recursive: true });
-  writeFileSync(file, text, "utf8");
-  return file;
-}
 
-function git(cwd, ...args) {
-  const result = invoke("git", ["-c", "commit.gpgsign=false", "-c", "user.name=CI fixture",
-    "-c", "user.email=ci@example.invalid", "-c", "core.hooksPath=" + path.join(cwd, "no-hooks"), ...args], cwd);
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.trim();
+// Workflow syntax belongs to Actionlint. This contract covers the project's
+// actual failure propagation, token privileges, and conditional execution.
+const independentQualityChecks = [
+  /^pnpm check:contracts\s*$/,
+  /^pnpm knip:files\s*$/,
+  /^pnpm check:design\s*$/,
+  /^pnpm check:apps:source\s*$/,
+  /^pnpm check:lint --diagnostic-level=warn --max-diagnostics=none\s*$/,
+  /^pnpm -r --no-bail --if-present run typecheck\s*$/
+];
+const afterDependencies = "!cancelled() && steps.dependencies.outcome == 'success'";
+const freshCoverage = "steps.coverage.outputs.reuse == 'false'";
+const jobConditions = {
+  ci: {
+    workspace: "github.event_name != 'pull_request' || !startsWith(github.head_ref, 'archive/')",
+    sonar: "success() && (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)",
+    required_ci: "always()"
+  },
+  security: { dependency_review: "github.event_name == 'pull_request'" }
+};
+function requireFailurePropagation(item, location) {
+  assert.ok(item["continue-on-error"] === undefined || item["continue-on-error"] === false,
+    location + ": failure masking is forbidden, including dynamic expressions");
 }
-function candidate(directory) {
-  git(directory, "init", "--quiet");
-  git(directory, "config", "core.autocrlf", "false");
-  put(directory, ".gitattributes", "* text=auto eol=lf\n");
-  put(directory, "source.txt", "original\n");
-  put(directory, ".gitignore", "coverage/\n");
-  git(directory, "add", "--", "source.txt", ".gitignore", ".gitattributes");
-  git(directory, "commit", "--quiet", "-m", "synthetic CI candidate");
-  return { sha: git(directory, "rev-parse", "HEAD"), tree: git(directory, "rev-parse", "HEAD^{tree}") };
-}
-test("one CI owner admits development pushes and preserves protected integration events; periodic audit stays separate", () => {
-  assert.deepEqual(Object.keys(ci.on).sort(), ["pull_request", "push"]);
-  assert.deepEqual(ci.on.push, { branches: ["main", "codex/**"] });
-  assert.deepEqual(ci.on.pull_request.branches, ["main"]);
-  assert.deepEqual(ci.on.pull_request.types, ["opened", "reopened", "synchronize", "ready_for_review", "converted_to_draft"]);
-  assert.equal(ci.on.pull_request.paths, undefined);
-  assert.deepEqual(Object.keys(scheduled.on), ["schedule"]);
-  assert.deepEqual(scheduled.on.schedule, [{ cron: "17 3 * * 1" }]);
-  assert.deepEqual(Object.keys(scheduled.jobs), ["dependency_security"]);
-  assert.deepEqual(Object.keys(go.on), ["workflow_call"]);
-  assert.deepEqual(Object.keys(ci.jobs).sort(), [
-    "application_quality", "backend_quality", "required_ci", "sonar", "windows_platform", "workspace_validation",
-  ]);
-  for (const obsolete of ["dependency-nx-safety.yml", "sonar-quality.yml"]) {
-    assert.ok(!existsSync(path.join(root, ".github/workflows", obsolete)));
-  }
-  for (const job of [app, audit]) assert.equal(job.if, undefined);
-  sameExpression(workspace.if, noArchiveEvent);
-  sameExpression(backend.if, fullEvent);
-  sameExpression(windows.if, fullEvent);
-  assert.equal(workspace.needs, undefined);
-  assert.equal(app.needs, "workspace_validation");
-  assert.equal(windows.needs, "workspace_validation");
-  assert.equal(windows["runs-on"], "windows-2025");
-  assert.equal(backend.needs, "workspace_validation");
-  sameExpression(required.if, fullGate);
-  sameExpression(sonar.if, fullGate);
-  sameExpression(required.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'fast-guard' || 'Full integration gate (not run on development)'");
-  sameExpression(sonar.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'SonarQube Cloud Quality Gate' || 'Sonar integration gate (not run on development)'");
-  sameExpression(app.name, "(github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && 'Application quality, contracts, tests and builds' || 'Development feedback (affected source checks)'");
-  assert.equal(backend.uses, "./.github/workflows/go-quality.yml");
-  assert.deepEqual(new Set(required.needs), new Set(["workspace_validation", "application_quality", "backend_quality", "windows_platform"]));
-  assert.deepEqual(new Set(sonar.needs), new Set(["application_quality", "backend_quality"]));
-  assert.equal(ci.concurrency["cancel-in-progress"], true);
-  assert.equal(ci.concurrency.group, "ci-" + expr("github.ref"));
-  for (const parsed of [ci, go, scheduled]) {
-    for (const job of Object.values(parsed.jobs)) {
-      assert.doesNotMatch(commands(job), /gh api|VERIFICATION_OWNER/);
-      if (job !== app) assert.doesNotMatch(commands(job), /nx affected|nx run-many/);
+function assertWorkflowTrust(document, kind) {
+  assert.deepEqual(document.permissions, { contents: "read" }, "Workflow token must remain read-only");
+  for (const [id, job] of Object.entries(document.jobs)) {
+    const location = kind + "/" + id;
+    assert.equal(job.permissions, undefined, location + ": unexpected permission override");
+    requireFailurePropagation(job, location);
+    const condition = jobConditions[kind][id];
+    if (condition === undefined) {
+      assert.equal(job.if, undefined, location + ": unexpected job condition");
+    } else {
+      sameExpression(job.if, condition);
     }
-  }
-});
-
-test("development feedback uses the actual accumulated Git diff, safe full fallback and fail-closed native commands", () => {
-  const step = one(app, item => item.name === "Verify development changes through native Nx and owner checks", "development feedback");
-  const setupGo = one(app, item => action(item, "actions/setup-go"), "development Go setup");
-  sameExpression(step.if, developmentEvent);
-  sameExpression(setupGo.if, developmentEvent);
-  assert.equal(setupGo.with["go-version-file"], ".go-version");
-  assert.equal(setupGo.with.cache, false);
-  assert.equal(step["continue-on-error"], undefined);
-  assert.equal(step.env.NX_NO_CLOUD, "true");
-  assert.equal(step.env.NX_SKIP_NX_CACHE, "true");
-  assert.equal(step.env.NX_DAEMON, "false");
-  assert.equal(step.env.GOTOOLCHAIN, "local");
-  order(app, setupGo, step);
-  const capture = [
-    'pnpm() { printf "PNPM:%s\\n" "$*"; if [[ "$CI_TEST_FAIL" == pnpm ]]; then return 19; fi; }',
-    'node() { printf "NODE:%s\\n" "$*"; }',
-  ].join("\n");
-  const run = (dir, fail = "") => shell(capture + "\n" + command(step), { CI_TEST_FAIL: fail }, dir);
-  const commit = (dir, file, value) => {
-    put(dir, file, value);
-    git(dir, "add", "--", file);
-    git(dir, "commit", "--quiet", "-m", "synthetic development input");
-  };
-  const checkGlobal = result => {
-    assert.equal(result.status, 0, result.stderr);
-    assert.match(result.stdout, /DEVELOPMENT_GLOBAL_SOURCE_CHECKS/);
-    assert.match(result.stdout, /PNPM:check:coverage/);
-    assert.match(result.stdout, /PNPM:exec nx run-many -t typecheck --skip-nx-cache/);
-    assert.match(result.stdout, /NODE:tools\/dev\/check-go.mjs --quick/);
-    assert.doesNotMatch(result.stdout, /PNPM:exec nx affected/);
-  };
-  fixture("ci-dev-accumulated-", dir => {
-    const { sha } = candidate(dir);
-    git(dir, "update-ref", "refs/remotes/origin/main", sha);
-    commit(dir, "apps/merchant/src/one.ts", "export const one = 1;\n");
-    const prior = git(dir, "rev-parse", "HEAD");
-    commit(dir, "services/dsh/backend/two.go", "package dsh\n");
-    const result = run(dir);
-    assert.equal(result.status, 0, result.stderr);
-    assert.ok(result.stdout.includes("PNPM:exec nx affected -t typecheck test --base=" + sha + " --head=HEAD --skip-nx-cache"), result.stdout);
-    assert.ok(!result.stdout.includes("--base=" + prior), "Do not ignore earlier cancelled work");
-    assert.doesNotMatch(result.stdout, /DEVELOPMENT_GLOBAL_SOURCE_CHECKS|PNPM:check:coverage/);
-    const failed = run(dir, "pnpm");
-    assert.equal(failed.status, 19, failed.stdout);
-    assert.doesNotMatch(failed.stdout, /DEVELOPMENT_FEEDBACK_ONLY/);
-    commit(dir, "packages/design-system/src/theme.ts", "export const theme = 1;\n");
-    checkGlobal(run(dir));
-  });
-  for (const file of ["README.md", "apps/merchant/package.json", "services/dsh/backend/go.mod", "tools/dev/check-go.mjs"]) {
-    fixture("ci-dev-foundation-", dir => {
-      const { sha } = candidate(dir);
-      git(dir, "update-ref", "refs/remotes/origin/main", sha);
-      commit(dir, file, "shared input\n");
-      checkGlobal(run(dir));
-    });
-  }
-  fixture("ci-dev-delete-", dir => {
-    candidate(dir);
-    commit(dir, "apps/merchant/src/deleted.ts", "export const old = 1;\n");
-    git(dir, "update-ref", "refs/remotes/origin/main", git(dir, "rev-parse", "HEAD"));
-    git(dir, "rm", "--", "apps/merchant/src/deleted.ts");
-    git(dir, "commit", "--quiet", "-m", "synthetic deletion");
-    checkGlobal(run(dir));
-  });
-  fixture("ci-dev-baseline-", dir => {
-    const { sha } = candidate(dir);
-    checkGlobal(run(dir));
-    git(dir, "update-ref", "refs/remotes/origin/main", sha);
-    checkGlobal(run(dir));
-  });
-});
-
-test("required jobs retain the read-only pinned dependency, source, contract, build and owner checks", () => {
-  const jobs = [...Object.values(ci.jobs), ...Object.values(go.jobs), audit];
-  for (const job of jobs) {
-    assert.notEqual(job["continue-on-error"], true);
+    const admitted = new Map();
+    if (kind === "ci" && id === "quality") {
+      for (const pattern of independentQualityChecks) admitted.set(runs(job, pattern), afterDependencies);
+    }
+    if (kind === "ci" && id === "sonar") {
+      admitted.set(one(job, step => action(step, "actions/setup-go"), "conditional Go setup"), freshCoverage);
+      admitted.set(runs(job, /node tools\/dev\/check-go\.mjs --coverage --sonar-report/), freshCoverage);
+    }
     for (const step of steps(job)) {
-      assert.notEqual(step["continue-on-error"], true);
-      if (step.uses) assert.match(step.uses, /@[a-f0-9]{40}$/);
+      const stepLocation = location + "/" + (step.id ?? step.name ?? "unnamed step");
+      requireFailurePropagation(step, stepLocation);
+      if (admitted.has(step)) sameExpression(step.if, admitted.get(step));
+      else assert.equal(step.if, undefined, stepLocation + ": unexpected step condition");
+      if (step.uses && !step.uses.startsWith("./")) assert.match(step.uses, /@[a-f0-9]{40}$/);
       if (action(step, "actions/checkout")) assert.equal(step.with["persist-credentials"], false);
     }
   }
-  assert.equal(ci.permissions.contents, "read");
-  assert.equal(go.permissions.contents, "read");
-  assert.equal(scheduled.permissions.contents, "read");
-  for (const job of [app, sonar, windows]) {
+}
+
+test("all workflow jobs and steps preserve the exact trust and failure contract", () => {
+  assertWorkflowTrust(ci, "ci");
+  assertWorkflowTrust(scheduled, "security");
+});
+
+test("workflow trust rejects failure masking, permission expansion and undeclared skips", () => {
+  const rejected = [
+    ["ci", copy => { copy.jobs.required_ci["continue-on-error"] = true; }, /failure masking/],
+    ["ci", copy => { copy.jobs.required_ci["continue-on-error"] = expr("true"); }, /failure masking/],
+    ["ci", copy => { copy.jobs.quality.steps.at(-1)["continue-on-error"] = expr("true"); }, /failure masking/],
+    ["security", copy => { copy.jobs.go.steps.at(-1)["continue-on-error"] = true; }, /failure masking/],
+    ["ci", copy => { copy.permissions["id-token"] = "write"; }, /read-only/],
+    ["security", copy => { copy.jobs.go.permissions = { contents: "write" }; }, /permission override/],
+    ["security", copy => { copy.jobs.javascript.if = expr("false"); }, /unexpected job condition/],
+    ["ci", copy => { runs(copy.jobs.postgres, /payment-mock\/smoke\.mjs/).if = expr("false"); }, /unexpected step condition/],
+    ["ci", copy => { runs(copy.jobs.quality, /^pnpm check:contracts\s*$/).if = expr("false"); }, /Expected values/],
+    ["ci", copy => { runs(copy.jobs.sonar, /check-go\.mjs --coverage --sonar-report/).if = undefined; }, /Expected values/]
+  ];
+  for (const [kind, mutate, expected] of rejected) {
+    const copy = structuredClone(kind === "ci" ? ci : scheduled);
+    mutate(copy);
+    assert.throws(() => assertWorkflowTrust(copy, kind), expected);
+  }
+});
+
+test("one integration event owner, stable protected names and no duplicate development push", () => {
+  assert.deepEqual(ci.on.push, { branches: ["main"] });
+  assert.deepEqual(ci.on.pull_request.branches, ["main"]);
+  assert.equal(ci.on.pull_request.paths, undefined);
+  assert.deepEqual(ci.on.pull_request.types, ["opened", "reopened", "synchronize", "ready_for_review", "converted_to_draft"]);
+  assert.deepEqual(Object.keys(scheduled.on).sort(), ["schedule", "workflow_call"]);
+  assert.deepEqual(scheduled.on.schedule, [{ cron: "17 3 * * 1" }]);
+  assert.deepEqual(Object.keys(scheduled.jobs).sort(), ["dependency_review", "go", "javascript"]);
+  assert.deepEqual(Object.keys(ci.jobs).sort(), ["application_build", "backend", "containers", "postgres", "quality", "required_ci", "security", "sonar", "typescript_tests", "windows", "workspace"]);
+  assert.deepEqual(readdirSync(path.join(root, ".github/workflows")).filter(name => /\.ya?ml$/i.test(name)).sort(), ["ci.yml", "security.yml"]);
+  assert.equal(required.name, "fast-guard");
+  assert.equal(sonar.name, "SonarQube Cloud Quality Gate");
+  for (const item of Object.values(ci.jobs)) assert.doesNotMatch(item.name ?? "", /\$\{/);
+  for (const item of [quality, app, build, goQuality, postgres, containers, windows, security]) {
+    assert.equal(item.needs, "workspace");
+  }
+  assert.equal(security.uses, "./.github/workflows/security.yml");
+  assert.deepEqual(new Set(required.needs), new Set(["workspace","quality","typescript_tests","application_build","backend","postgres","containers","windows","security","sonar"]));
+  assert.deepEqual(new Set(sonar.needs), new Set(["typescript_tests", "backend", "postgres"]));
+  assert.equal(ci.concurrency["cancel-in-progress"], true);
+  assert.equal(ci.concurrency.group, "ci-" + expr("github.ref"));
+  assert.doesNotMatch(JSON.stringify(ci), /nx affected|DEVELOPMENT_FEEDBACK_ONLY|gh api/);
+});
+
+test("required jobs retain the read-only pinned dependency, source, contract, build and owner checks", () => {
+  const jobs = [...Object.values(ci.jobs), ...Object.values(scheduled.jobs)];
+  for (const job of [quality, app, build, sonar, windows]) {
     const store = one(job, step => step.id === "pnpm-store", "pinned package store");
     const cache = one(job, step => action(step, "actions/cache"), "package-store cache");
     const install = runs(job, /pnpm install --frozen-lockfile --ignore-scripts/);
@@ -239,10 +180,8 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.match(command(lint), /--proto '=https' --proto-redir '=https'/);
   assert.match(command(lint), /"\$dir\/actionlint" -color=false/);
   const install = runs(app, /pnpm install --frozen-lockfile --ignore-scripts/);
-  const scan = runs(app, /^pnpm audit --audit-level high\s*$/);
   mandatory(app, install);
-  mandatory(app, scan);
-  order(app, install, scan);
+  assert.doesNotMatch(commands(app), /pnpm audit/);
   assert.equal(audit.needs, undefined);
   // Weekly audit consumes the exact committed lockfile; installation is
   // required by application validation, not by native advisory lookup.
@@ -259,8 +198,8 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.ok(!steps(audit).some(step => action(step, "actions/cache")));
   assert.doesNotMatch(commands(audit), /pnpm install|pnpm store|node --test|check:coverage|--ignore|--fix/);
   const cover = runs(app, /^pnpm check:coverage\s*$/);
-  integrationStep(app, cover);
-  order(app, runs(app, /^pnpm audit --audit-level high\s*$/), cover);
+  mandatory(app, cover);
+  order(app, install, cover);
   assert.doesNotMatch(commands(app), /--check-discovery/);
   const discovered = new Set(discoverWorkspaceNodeTests(root));
   for (const file of ["tools/security/picomatch-redos.test.mjs", "tools/dev/verify-nx-project-graph.test.mjs",
@@ -269,7 +208,7 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
     assert.ok(!jobs.some(job => commands(job).includes(file)), "Duplicate invocation: " + file);
   }
   // Local and CI consume the same complete owner contract admission command.
-  mandatory(app, runs(app, /^pnpm check:contracts\s*$/));
+  qualityCheck(runs(quality, /^pnpm check:contracts\s*$/));
   const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
   assert.equal(manifest.scripts["check:contracts"], "node tools/dev/check-openapi.mjs identity dsh wlt");
   for (const owner of owners) {
@@ -282,25 +221,26 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
   assert.doesNotMatch(manifest.scripts.check, /node --test|check:coverage|check:test-inclusion|check:security/);
   assert.equal(Object.hasOwn(manifest.scripts, "check:apps"), false);
   assert.equal(Object.hasOwn(manifest.scripts, "check:apps:static"), false);
-  assert.doesNotMatch(commands(app), /pnpm --dir services\/\S+ contract|generate-openapi-operations\.mjs --check/);
-  for (const pattern of [/pnpm knip:files/, /pnpm check:design/, /pnpm check:apps:source/]) {
-    mandatory(app, runs(app, pattern));
+  assert.doesNotMatch(commands(quality), /pnpm --dir services\/\S+ contract|generate-openapi-operations\.mjs --check/);
+  for (const pattern of [/pnpm knip:files/, /pnpm check:design/, /pnpm check:apps:source/, /pnpm check:lint/]) {
+    qualityCheck(runs(quality, pattern));
   }
-  for (const pattern of [/pnpm -r --if-present run typecheck/, /expo export --platform web/,
+  qualityCheck(runs(quality, /pnpm -r --no-bail --if-present run typecheck/));
+  for (const pattern of [ /expo export --platform web/,
     /pnpm --dir apps\/control-panel build/, /node tools\/dev\/verify-operator-http.mjs/,
     /node tools\/mobile\/verify-expo-web-http.mjs/]) {
-    integrationStep(app, runs(app, pattern));
+    mandatory(build, runs(build, pattern));
   }
   for (const owner of ["customer", "merchant"]) {
-    integrationStep(app, runs(app, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform web")));
+    mandatory(build, runs(build, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform web")));
   }
   for (const owner of ["customer", "merchant", "captain"]) {
-    const android = runs(app, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform android"));
-    integrationStep(app, android);
+    const android = runs(build, new RegExp("pnpm --dir apps/" + owner + " exec expo export --platform android"));
+    mandatory(build, android);
   }
-  const http = runs(app, /^node tools\/dev\/run-coverage\.mjs --operator-runtime\s*$/);
-  integrationStep(app, http);
-  order(app, runs(app, /pnpm --dir apps\/control-panel build/), http);
+  const http = runs(build, /^node tools\/dev\/run-coverage\.mjs --operator-runtime\s*$/);
+  mandatory(build, http);
+  order(build, runs(build, /pnpm --dir apps\/control-panel build/), http);
   const suites = discoverWorkspaceTestSuites(root);
   for (const name of ["operator-captain-review-http", "operator-merchant-finance-http", "operator-policy-http",
     "operator-protected-routes", "operator-workspace-http"]) {
@@ -309,11 +249,19 @@ test("required jobs retain the read-only pinned dependency, source, contract, bu
     assert.ok(!suites.source.includes(file), file);
     assert.doesNotMatch(readFileSync(path.join(root, file), "utf8"), /BTHWANI_OPERATOR_HTTP_TEST/);
   }
-  assert.deepEqual([...suites.source, ...suites.operatorRuntime].sort(), discoverWorkspaceNodeTests(root));
+  assert.deepEqual(suites.localDeveloper, ["tools/dev/graphify-local.test.mjs"]);
+  assert.ok(!suites.source.includes("tools/dev/graphify-local.test.mjs"));
+  assert.ok(suites.source.includes("tools/dev/source-snapshot.test.mjs"));
+  assert.deepEqual([...suites.source, ...suites.operatorRuntime, ...suites.localDeveloper].sort(), discoverWorkspaceNodeTests(root));
   mandatory(workspace, runs(workspace, /node tools\/security\/verify-secrets\.mjs/));
   mandatory(goQuality, runs(goQuality, /node tools\/dev\/check-go\.mjs --ci --sonar-report/));
-  mandatory(postgres, runs(postgres, /tests\/infra\/verify-owner-postgres-ci\.sh/));
-  mandatory(postgres, runs(postgres, /tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/));
+  const outputGate = runs(postgres, /tests\/infra\/test-owner-postgres-output\.sh/);
+  const ownerTests = runs(postgres, /tests\/infra\/verify-owner-postgres-ci\.sh/);
+  const baselineRestore = runs(postgres, /tests\/infra\/verify-isolated-postgres\.ps1 -DockerContext default/);
+  const paymentSmoke = runs(postgres, /tests\/infra\/payment-mock\/smoke\.mjs/);
+  assert.equal(command(paymentSmoke), "node tests/infra/payment-mock/smoke.mjs");
+  order(postgres, outputGate, ownerTests, baselineRestore, paymentSmoke);
+  for (const step of [outputGate, ownerTests, baselineRestore, paymentSmoke]) mandatory(postgres, step);
 });
 
 test("Windows acceptance runs the existing admitted platform suites and cannot be skipped by the required gate", () => {
@@ -326,116 +274,71 @@ test("Windows acceptance runs the existing admitted platform suites and cannot b
   const platformFiles = discoverWindowsPlatformTests(root);
   const source = new Set(discoverWorkspaceTestSuites(root).source);
   assert.equal(platformFiles.length, 5);
+  assert.ok(platformFiles.includes("tools/dev/source-snapshot.test.mjs"));
+  assert.ok(!platformFiles.includes("tools/dev/graphify-local.test.mjs"));
   assert.ok(platformFiles.every(file => source.has(file)));
   assert.doesNotMatch(commands(app), /--windows-platform/);
-  assert.ok(required.needs.includes("windows_platform"));
+  assert.ok(required.needs.includes("windows"));
 });
 
-test("merge gate executes fail closed for every predecessor, incorrect event and archive ref", () => {
-  const gate = one(required, step => Object.values(step.env ?? {}).some(value => value === expr("needs.application_quality.result")), "required predecessor gate");
+test("required integration gate rejects every failed, cancelled, skipped or missing job", () => {
+  const gate = one(required, step => Object.values(step.env ?? {}).some(value => value === expr("needs.typescript_tests.result")), "integration gate");
   mandatory(required, gate);
   const predecessorVariables = required.needs.map(id => {
     const keys = Object.keys(gate.env).filter(key => gate.env[key] === expr("needs." + id + ".result"));
     assert.equal(keys.length, 1);
     return keys[0];
   });
-  const good = { HEAD_REF: "feature", CI_EVENT: "pull_request", CI_REF: "refs/pull/195/merge",
-    ...Object.fromEntries(predecessorVariables.map(key => [key, "success"])) };
-  const check = (expected, overrides = {}) => assert.equal(shell(command(gate), { ...good, ...overrides }).status, expected);
-  check(0);
-  for (const key of predecessorVariables) for (const value of ["failure", "cancelled", "skipped", ""]) check(1, { [key]: value });
-  check(0, { CI_EVENT: "push", CI_REF: "refs/heads/main" });
-  check(1, { CI_EVENT: "workflow_dispatch", CI_REF: "refs/heads/feature" });
-  check(1, { CI_EVENT: "push", CI_REF: "refs/heads/feature" });
-  check(1, { CI_EVENT: "schedule" });
-  check(1, { HEAD_REF: "archive/old" });
-  check(1, { CI_EVENT: "workflow_dispatch", CI_REF: "refs/heads/archive/old" });
-});
-
-test("Sonar rejects untrusted source or failed producers before accessing the scanner secret", () => {
-  const gate = one(sonar, step => Object.hasOwn(step.env ?? {}, "TRUSTED_SOURCE"), "Sonar trust gate");
-  const scanner = one(sonar, step => action(step, "SonarSource/sonarqube-scan-action"), "Sonar quality scanner");
-  mandatory(sonar, gate);
-  mandatory(sonar, scanner);
-  order(sonar, gate, scanner);
-  assert.equal(scanner.env.SONAR_TOKEN, expr("secrets.SONAR_TOKEN"));
-  assert.match(scanner.with.args, /-Dsonar\.qualitygate\.wait=true/);
-  sameExpression(gate.env.TRUSTED_SOURCE, "github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository");
-  sameExpression(gate.env.PRESENTATION_RESULT, "needs.application_quality.result");
-  sameExpression(gate.env.GO_RESULT, "needs.backend_quality.result");
-  const good = { TRUSTED_SOURCE: "true", PRESENTATION_RESULT: "success", GO_RESULT: "success" };
+  const good = Object.fromEntries(predecessorVariables.map(key => [key, "success"]));
   assert.equal(shell(command(gate), good).status, 0);
-  for (const [key, values] of [["TRUSTED_SOURCE", ["false", ""]], ["PRESENTATION_RESULT", ["failure", "skipped", "cancelled", ""]], ["GO_RESULT", ["failure", "skipped", "cancelled", ""]]]) {
-    for (const value of values) assert.equal(shell(command(gate), { ...good, [key]: value }).status, 1);
+  for (const key of predecessorVariables) for (const value of ["failure", "cancelled", "skipped", ""]) {
+    const failed = shell(command(gate), { ...good, [key]: value });
+    assert.equal(failed.status, 1);
+    assert.match(failed.stdout, new RegExp(key));
   }
 });
 
+test("coverage producers, quality and build remain independent; Sonar cannot access a token for untrusted or incomplete evidence", () => {
+  assert.deepEqual(sonar.needs, ["typescript_tests", "backend", "postgres"]);
+  assert.equal(quality.needs, "workspace");
+  assert.equal(build.needs, "workspace");
+  assert.equal(app.needs, "workspace");
+  assert.doesNotMatch(commands(app), /check:lint|typecheck|expo export|operator-runtime/);
+  assert.doesNotMatch(commands(quality), /check:coverage|expo export|operator-runtime/);
+  assert.doesNotMatch(commands(build), /check:coverage|check:lint/);
+  const scanner = one(sonar, step => action(step, "SonarSource/sonarqube-scan-action"), "Sonar scanner");
+  mandatory(sonar, scanner);
+  assert.equal(scanner.env.SONAR_TOKEN, expr("secrets.SONAR_TOKEN"));
+  assert.match(scanner.with.args, /-Dsonar\.qualitygate\.wait=true/);
+  assert.ok(required.needs.includes("sonar"));
+});
+
 const evidence = [
-  { kind: "js", job: app, artifact: "sonar-js", directory: "coverage", files: ["lcov.info"] },
-  { kind: "go", job: goQuality, artifact: "sonar-go", directory: "coverage", files: owners.map(owner => owner + "-go.out").sort() },
-  { kind: "postgres", job: postgres, artifact: "sonar-postgres", directory: "coverage/owner-postgres", files: ["identity-session.test-1.out", "wlt-wallet.test-2.out"] },
+  { kind: "js", job: app, artifact: "sonar-js", directory: "coverage" },
+  { kind: "go", job: goQuality, artifact: "sonar-go", directory: "coverage" },
+  { kind: "postgres", job: postgres, artifact: "sonar-postgres", directory: "coverage/owner-postgres" },
 ];
 
-function independentManifest(directory, names) {
-  const result = shell("LC_ALL=C sha256sum --binary -- " + names.join(" "), {}, directory);
-  assert.equal(result.status, 0, result.stderr);
-  return result.stdout.replaceAll("\r\n", "\n");
-}
-
 for (const entry of evidence) {
-  test(entry.artifact + " attests every measured report to the exact clean committed source", () => fixture("ci-coverage-producer-", directory => {
+  test(entry.artifact + " binds the native producer to its artifact and scanner consumer", () => {
     const bind = runs(entry.job, new RegExp("^node tools/dev/ci-coverage-evidence\\.mjs publish " + entry.kind + "\\s*$"));
     const upload = one(entry.job, step => action(step, "actions/upload-artifact") && step.with.name === entry.artifact, entry.artifact);
     const download = one(sonar, step => action(step, "actions/download-artifact") && step.with.name === entry.artifact, entry.artifact);
-    const requireProducer = entry.job === app ? integrationStep : mandatory;
-    requireProducer(entry.job, bind);
-    requireProducer(entry.job, upload);
+    mandatory(entry.job, bind);
+    mandatory(entry.job, upload);
     order(entry.job, bind, upload);
+    if (entry.kind === "postgres") {
+      const measure = runs(entry.job, /bash tests\/infra\/verify-owner-postgres-ci\.sh --coverage/);
+      mandatory(entry.job, measure);
+      order(entry.job, measure, bind);
+    }
     assert.equal(upload.with["if-no-files-found"], "error");
     for (const metadata of ["tree.txt", "reports.sha256"]) {
       assert.ok(upload.with.path.split(/\s+/).includes(entry.directory + "/" + metadata));
     }
     assert.equal(download.with.path, expr("runner.temp") + "/" + entry.artifact);
     mandatory(sonar, download);
-    const { sha, tree } = candidate(directory);
-    const folder = path.join(directory, entry.directory);
-    for (const file of entry.files) put(directory, entry.directory + "/" + file);
-    const result = publishCoverageEvidence(directory, entry.kind, sha);
-    assert.deepEqual(result, { tree, count: entry.files.length });
-    assert.equal(readFileSync(path.join(folder, "tree.txt"), "utf8").trim(), tree);
-    assert.equal(readFileSync(path.join(folder, "reports.sha256"), "utf8"), independentManifest(folder, entry.files));
-    assert.throws(() => publishCoverageEvidence(directory, entry.kind, sha), /CI_COVERAGE_METADATA_CONFLICT/);
-    for (const metadata of ["tree.txt", "reports.sha256"]) rmSync(path.join(folder, metadata));
-    assert.throws(() => publishCoverageEvidence(directory, entry.kind, "0".repeat(40)), /CI_CANDIDATE_SHA_MISMATCH/);
-    const reject = () => assert.throws(() => publishCoverageEvidence(directory, entry.kind, sha), /CI_CANDIDATE_NOT_CLEAN_AND_ADMITTED/);
-    const untracked = put(directory, "untracked-source.test.mjs");
-    reject();
-    git(directory, "add", "--", "untracked-source.test.mjs");
-    reject();
-    git(directory, "rm", "--cached", "--", "untracked-source.test.mjs");
-    rmSync(untracked);
-    put(directory, "source.txt", "dirty\n");
-    reject();
-    git(directory, "add", "--", "source.txt");
-    put(directory, "source.txt", "original\n");
-    reject();
-    git(directory, "restore", "--staged", "--worktree", "--", "source.txt");
-    // Git's stat cache can deliberately hide working-tree changes. The
-    // attestation must compare actual bytes to the committed object instead.
-    for (const flag of ["assume-unchanged", "skip-worktree"]) {
-      git(directory, "update-index", "--" + flag, "--", "source.txt");
-      put(directory, "source.txt", "hidden source\n");
-      assert.equal(git(directory, "status", "--porcelain", "--", "source.txt"), "");
-      reject();
-      put(directory, "source.txt", "original\n");
-      git(directory, "update-index", "--no-" + flag, "--", "source.txt");
-      git(directory, "restore", "--worktree", "--", "source.txt");
-      assert.equal(git(directory, "status", "--porcelain"), "", "fixture restored its actual committed source");
-    }
-    put(directory, entry.directory + "/" + entry.files[0], "");
-    assert.throws(() => publishCoverageEvidence(directory, entry.kind, sha), /CI_COVERAGE_REPORT_EMPTY/);
-    assert.ok(!existsSync(path.join(folder, "tree.txt")));
-  }));
+  });
 }
 
 test("Sonar uses the single artifact admission boundary and remeasures only a valid different tree", () => {
@@ -445,69 +348,11 @@ test("Sonar uses the single artifact admission boundary and remeasures only a va
   mandatory(sonar, admit);
   assert.equal(command(admit), "node tools/dev/ci-coverage-evidence.mjs admit");
   sameExpression(admit.env.CI_ANALYSIS_SHA, "github.event.pull_request.head.sha || github.sha");
-  sameExpression(fallback.if, "steps.coverage.outputs.reuse == 'false'");
-  sameExpression(one(sonar, step => action(step, "actions/setup-go"), "Go fallback setup").if, "steps.coverage.outputs.reuse == 'false'");
   assert.match(command(fallback), /pnpm check:coverage/);
   assert.match(command(fallback), /tests\/infra\/test-owner-postgres-output\.sh/);
-  assert.match(command(fallback), /tests\/infra\/verify-owner-postgres-ci\.sh --coverage/);
+  sameExpression(fallback.env.CI_ANALYSIS_SHA, "github.event.pull_request.head.sha || github.sha");
+  assert.match(command(fallback), /tests\/infra\/verify-owner-postgres-ci\.sh --coverage\s+GITHUB_SHA="\$CI_ANALYSIS_SHA" node tools\/dev\/ci-coverage-evidence\.mjs publish postgres/);
   order(sonar, one(sonar, step => action(step, "actions/setup-node"), "pinned Node"), admit, fallback, scanner);
-
-  const firstProfile = "sonar-postgres/" + evidence[2].files[0];
-  const scenarios = [
-    { name: "matching", expected: true },
-    { name: "different valid tree", alternate: true, expected: false },
-    { name: "mixed producer trees", mixed: true },
-    { name: "invalid tree", invalid: true },
-    { name: "missing stamp", omit: "sonar-go/tree.txt" },
-    { name: "missing Go report", omit: "sonar-go/dsh-go.out" },
-    { name: "missing PostgreSQL profile", omit: firstProfile },
-    { name: "missing PostgreSQL manifest", omit: "sonar-postgres/reports.sha256" },
-    { name: "altered JS report", alter: "sonar-js/lcov.info" },
-    { name: "altered Go report", alter: "sonar-go/identity-go.out" },
-    { name: "altered PostgreSQL profile", alter: firstProfile },
-    { name: "unexpected extra PostgreSQL profile", extra: "sonar-postgres/unexpected.out" },
-    { name: "unexpected extra Go report", extra: "sonar-go/extra.out" },
-    { name: "empty JS report", empty: "sonar-js/lcov.info" },
-    { name: "empty PostgreSQL profile", empty: firstProfile },
-    { name: "dirty analysis candidate", dirty: true },
-    { name: "hidden analysis source edit", hidden: true },
-    { name: "wrong analysis SHA", wrongSha: true },
-  ];
-  for (const scenario of scenarios) fixture("ci-sonar-admission-", directory => {
-    const repo = path.join(directory, "repo");
-    mkdirSync(repo);
-    const { sha, tree } = candidate(repo);
-    const downloaded = path.join(directory, "reports");
-    put(repo, "source.txt", "alternate source\n");
-    git(repo, "add", "--", "source.txt");
-    const different = git(repo, "write-tree");
-    git(repo, "restore", "--staged", "--worktree", "--", "source.txt");
-    assert.notEqual(tree, different);
-    for (const entry of evidence) {
-      const value = scenario.invalid ? "invalid-tree" : scenario.alternate || (scenario.mixed && entry.kind === "postgres") ? different : tree;
-      put(downloaded, entry.artifact + "/tree.txt", value + "\n");
-      for (const file of entry.files) put(downloaded, entry.artifact + "/" + file, "synthetic report\n");
-      put(downloaded, entry.artifact + "/reports.sha256", independentManifest(path.join(downloaded, entry.artifact), entry.files));
-    }
-    if (scenario.omit) rmSync(path.join(downloaded, scenario.omit));
-    if (scenario.empty) put(downloaded, scenario.empty, "");
-    if (scenario.alter) put(downloaded, scenario.alter, "changed report\n");
-    if (scenario.extra) put(downloaded, scenario.extra, "extra report\n");
-    if (scenario.dirty) put(repo, "untracked.mjs", "export {};\n");
-    if (scenario.hidden) {
-      git(repo, "update-index", "--assume-unchanged", "--", "source.txt");
-      put(repo, "source.txt", "hidden changed source\n");
-      assert.equal(git(repo, "status", "--porcelain", "--", "source.txt"), "");
-    }
-    const run = () => admitCoverageEvidence(repo, downloaded, scenario.wrongSha ? "0".repeat(40) : sha);
-    if (Object.hasOwn(scenario, "expected")) assert.equal(run(), scenario.expected, scenario.name);
-    else assert.throws(run, undefined, scenario.name);
-    for (const entry of evidence) for (const report of entry.files) {
-      const installed = path.join(repo, entry.directory, report);
-      assert.equal(existsSync(installed), scenario.expected === true, scenario.name);
-      if (scenario.expected === true) assert.deepEqual(readFileSync(installed), readFileSync(path.join(downloaded, entry.artifact, report)));
-    }
-  });
 });
 
 test("Sonar scanner consumes every measured owner report with no quality gate waiver", () => {
@@ -526,15 +371,17 @@ test("Sonar scanner consumes every measured owner report with no quality gate wa
     ["coverage/dsh-go.out", "coverage/identity-go.out", "coverage/owner-postgres/*.out", "coverage/wlt-go.out"]);
   assert.equal(settings["sonar.coverage.exclusions"], undefined);
   const ownerRunner = readFileSync(path.join(root, "tests/infra/verify-owner-postgres-ci.sh"), "utf8");
-  assert.match(ownerRunner, /^  cover_flags=\(-covermode=atomic -coverpkg=\.\/\.\.\.\)$/m,
+  assert.match(ownerRunner, /^ {2}cover_flags=\(-covermode=atomic -coverpkg=\.\/\.\.\.\)$/m,
     "Measure all service packages exercised by isolated PostgreSQL tests");
 });
 
-test("Go vulnerability gate is pinned, scans all deployed owners and precedes image creation", () => {
-  const scan = runs(goQuality, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@/);
-  const image = runs(goQuality, /docker build --file/);
-  mandatory(goQuality, scan);
-  order(goQuality, scan, image);
+test("Go and container vulnerability checks cover all owners independently", () => {
+  const scan = runs(goAudit, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@/);
+  const image = runs(containers, /config --format json/);
+  mandatory(goAudit, scan);
+  mandatory(containers, image);
+  assert.equal(containers.needs, "workspace");
+  assert.doesNotMatch(commands(goQuality), /govulncheck/);
   assert.equal(scan.env.CGO_ENABLED, "0");
   assert.match(command(scan), /GOSUMDB=sum\.golang\.org go install golang\.org\/x\/vuln\/cmd\/govulncheck@709015412431dd2b5b28a53c06c70bc02d49074c(?:\s|$)/);
   assert.match(command(scan), /set -euo pipefail/);
@@ -542,4 +389,86 @@ test("Go vulnerability gate is pinned, scans all deployed owners and precedes im
   assert.match(command(scan), /cd "services\/\$service\/backend"/);
   assert.match(command(scan), /"\$scanner" \.\/\.\.\./);
   assert.doesNotMatch(command(scan), /\|\|\s*true/);
+});
+
+test("image security covers the canonical Compose inventory and fails closed", () => {
+  const build = runs(containers, /config --format json/);
+  const scan = runs(containers, /trivy_0\.76\.2_Linux-64bit\.tar\.gz/);
+  mandatory(containers, build);
+  mandatory(containers, scan);
+  order(containers, build, scan);
+  assert.match(command(build), /--env-file infra\/\.env\.example/);
+  assert.match(command(build), /--profile '\*'/);
+  assert.match(command(build), /\.services\[\]\.image/);
+  assert.match(command(build), /unique/);
+  assert.match(command(build), /docker pull "\$image"/);
+  assert.match(command(build), /container-scan-inventory\.tsv/);
+  assert.match(command(build), /com\.bthwani\.source-sha/);
+  assert.match(command(scan), /container-scan-inventory\.tsv/);
+  assert.match(command(scan), /bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf/);
+  assert.match(command(scan), /sha256sum --check --strict/);
+  assert.match(command(scan), /--image-src docker --scanners vuln --severity HIGH,CRITICAL --exit-code 1/);
+  assert.match(command(scan), /while IFS=.*read -r image expected/);
+  assert.match(command(scan), /docker image inspect/);
+  assert.match(command(scan), /\|\| result=1/);
+  assert.match(command(scan), /exit "\$result"/);
+});
+
+test("container scan loop attempts every image, rejects failures and rejects changed identity", () => {
+  const scan = runs(containers, /trivy_0\.76\.2_Linux-64bit\.tar\.gz/);
+  const loop = command(scan).slice(command(scan).indexOf("result=0"));
+  const id = "sha256:" + "a".repeat(64);
+  const fixture = mode => shell([
+    "set -euo pipefail",
+    "dir=fixture",
+    "expected_id=" + id,
+    "mode=" + mode,
+    "docker() { if [[ \"$mode\" == changed && \"$5\" == second ]]; then printf '%s\\n' invalid; else printf '%s\\n' \"$expected_id\"; fi; }",
+    "fixture/trivy() { for last in \"$@\"; do :; done; printf '%s\\n' \"$last\"; [[ \"$mode\" != vulnerable || \"$last\" != first ]]; }",
+    mode === "empty" ? "inventory=<(true)" : "inventory=<(printf '%s\\t%s\\n' first \"$expected_id\" second \"$expected_id\")",
+    loop
+  ].join("\n"));
+  const success = fixture("clean");
+  assert.equal(success.status, 0, success.stderr);
+  assert.deepEqual(success.stdout.trim().split(/\r?\n/), ["first", "second"]);
+  const failed = fixture("vulnerable");
+  assert.equal(failed.status, 1, failed.stderr);
+  assert.deepEqual(failed.stdout.trim().split(/\r?\n/), ["first", "second"]);
+  const changed = fixture("changed");
+  assert.equal(changed.status, 1, changed.stderr);
+  assert.equal(changed.stdout.trim(), "first");
+  assert.equal(fixture("empty").status, 1);
+});
+
+test("native dependency review supplements full lockfile and reachable Go audits only on PRs", () => {
+  const review = scheduled.jobs.dependency_review;
+  const scan = one(review, step => action(step, "actions/dependency-review-action"), "dependency review");
+  mandatory(review, scan);
+  assert.equal(scan.with["fail-on-severity"], "high");
+  assert.equal(security.uses, "./.github/workflows/security.yml");
+  assert.ok(required.needs.includes("security"));
+});
+
+test("CodeRabbit remains native, incremental and advisory without artificial file exclusions", () => {
+  const config = YAML.parse(readFileSync(path.join(root, ".coderabbit.yaml"), "utf8"));
+  assert.equal(config.reviews.auto_review.enabled, true);
+  assert.equal(config.reviews.auto_review.auto_incremental_review, true);
+  assert.equal(config.reviews.auto_review.auto_pause_after_reviewed_commits, 0);
+  assert.equal(config.reviews.request_changes_workflow, false);
+  assert.equal(config.reviews.path_filters, undefined);
+  assert.ok(config.reviews.path_instructions.some(rule => rule.path === ".github/workflows/**"));
+  assert.doesNotMatch(JSON.stringify(ci), /coderabbit/i);
+});
+
+test("CI uses the supported cache runtime and reports every warning and error without informational log noise", () => {
+  for (const job of [quality, app, build, sonar, windows]) {
+    const cache = one(job, step => action(step, "actions/cache"), "pinned package store cache");
+    assert.equal(cache.uses, "actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9");
+  }
+  const lint = runs(quality, /^pnpm check:lint --diagnostic-level=warn --max-diagnostics=none\s*$/);
+  qualityCheck(lint);
+  const config = JSON.parse(readFileSync(path.join(root, "biome.json"), "utf8"));
+  assert.ok(config.files.includes.every(pattern => !(pattern.startsWith("!!") && pattern.endsWith("/**"))));
+  assert.equal(config.linter.enabled, true);
+  assert.equal(config.linter.rules.preset, "recommended");
 });

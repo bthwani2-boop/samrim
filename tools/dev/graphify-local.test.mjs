@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { evaluateIndex } from "./graphify-local.mjs";
-import { inspectSourceFiles } from "./source-snapshot.mjs";
 
 const current = {
   repository: "d:/samrim",
@@ -58,58 +57,43 @@ for (const kind of ["modified", "staged", "untracked"]) {
   });
 }
 
-test("a graph changed by a post-commit hook remains queryable with unverified revision", () => {
-  const result = evaluateIndex(indexed, current, "hook-rewritten-graph");
-  assert.equal(result.queryable, true);
-  assert.equal(result.status, "INVALIDATED");
+test("unverified graph bytes are blocked even if the checkout identity is unchanged", () => {
+  const result = evaluateIndex(indexed, current, "foreign-graph");
+  assert.equal(result.queryable, false);
+  assert.equal(result.status, "BLOCKED");
   assert.match(result.reason, /graph changed/);
+  assert.equal(evaluateIndex(indexed, current, null).queryable, false);
 });
 
-test("combined source and graph changes preserve all coverage warnings", () => {
-  const result = evaluateIndex(indexed, { ...current, head: "next-commit", worktree: "dirty" }, "other-digest");
+test("source drift retains a verified graph but never admits a mismatched graph digest", () => {
+  const changed = { ...current, head: "next-commit", worktree: "dirty" };
+  const result = evaluateIndex(indexed, changed, "indexed-graph");
   assert.equal(result.queryable, true);
-  assert.match(result.reason, /graph changed/);
   assert.match(result.reason, /HEAD/);
   assert.match(result.reason, /local tracked/);
+  assert.equal(evaluateIndex(indexed, changed, "other-digest").queryable, false);
 });
 
-test("tracked and untracked source bytes are admitted through one real-file boundary", async () => {
-  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, linkSync, rmSync } = await import("node:fs");
+test("ambiguous native interruption retains ownership until reviewed recovery", async () => {
+  const runner = await import("./graphify-local.mjs");
+  const { mkdtempSync, existsSync, readFileSync, rmSync, readdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const dir = mkdtempSync(join(tmpdir(), "graphify-admission-"));
-  const entry = name => "100644 "+"a".repeat(40)+" 0\t"+name;
+  const dir = mkdtempSync(join(tmpdir(), "graphify-ambiguous-native-"));
+  const lock = join(dir, "refresh.lock");
   try {
-    mkdirSync(join(dir,"apps"));
-    const file = join(dir,"apps","new.ts");
-    writeFileSync(file,"export const n=1;");
-    const tracked = [entry("apps/new.ts")];
-    const first = inspectSourceFiles(dir, tracked, []);
-    assert.deepEqual(first.unsafeTracked, []);
-    assert.deepEqual(first.unsafeUntracked, []);
-    writeFileSync(file,"export const n=2;");
-    assert.notEqual(inspectSourceFiles(dir,tracked,[]).digest,first.digest);
-    assert.notEqual(inspectSourceFiles(dir,[],["apps/new.ts"]).digest,first.digest);
-    writeFileSync(join(dir,"apps",".env"),"SYNTHETIC=1");
-    assert.deepEqual(inspectSourceFiles(dir,[entry("apps/.env")],[]).unsafeTracked,["apps/.env"]);
-    assert.deepEqual(inspectSourceFiles(dir,[],["apps/.env"]).unsafeUntracked,["apps/.env"]);
-    writeFileSync(file,"const key = 'sk_"+"live_"+"A".repeat(16)+"';");
-    assert.deepEqual(inspectSourceFiles(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
-    writeFileSync(file,"export const n=3;");
-    linkSync(file,join(dir,"apps","alias.ts"));
-    assert.deepEqual(inspectSourceFiles(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
-    rmSync(join(dir,"apps","alias.ts"));
-    symlinkSync(dir,join(dir,"apps","linked"),process.platform==="win32"?"junction":"dir");
-    assert.deepEqual(inspectSourceFiles(dir,[entry("apps/linked/apps/new.ts")],[]).unsafeTracked,["apps/linked/apps/new.ts"]);
-    assert.deepEqual(inspectSourceFiles(dir,[],["../outside.ts"]).unsafeUntracked,["../outside.ts"]);
-    assert.deepEqual(inspectSourceFiles(dir,["120000 "+"a".repeat(40)+" 0\tapps/new.ts"],[]).unsafeTracked,["apps/new.ts"]);
-    rmSync(file);
-    const removed=inspectSourceFiles(dir,tracked,[]);
-    assert.deepEqual(removed.unsafeTracked,[]);
-    assert.notEqual(removed.digest,first.digest);
-  } finally {rmSync(dir,{recursive:true,force:true});}
+    const interruption = Object.assign(new Error("native timeout"), { preserveRefreshLock: true });
+    assert.throws(() => runner.withRefreshLock(lock, () => { throw interruption; }), /native timeout/);
+    assert.equal(existsSync(lock), true);
+    const bytes = readFileSync(lock);
+    assert.equal(JSON.parse(bytes).pid, process.pid);
+    assert.throws(() => runner.withScheduledRefreshLock(lock, () => assert.fail("second writer"), () => assert.fail("live owner must block")), /BLOCKED.*owner/);
+    assert.deepEqual(readFileSync(lock), bytes);
+    assert.deepEqual(readdirSync(dir), ["refresh.lock"]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
-
 test("automatic sync refreshes safe dirty and clean known checkouts and handles same-HEAD branch changes", async () => {
   const runner = await import("./graphify-local.mjs");
   assert.equal(typeof runner.planSync, "function");
@@ -177,7 +161,7 @@ test("reviewed lock recovery preserves evidence and refuses a live or changed lo
 
 test("a terminated lock owner leaves durable recovery evidence, without authorizing a concurrent writer", { timeout: 15000 }, async () => {
   const runner = await import("./graphify-local.mjs");
-  const { mkdtempSync, readFileSync, existsSync, rmSync } = await import("node:fs");
+  const { mkdtempSync, readFileSync, existsSync, rmSync, readdirSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { createHash } = await import("node:crypto");
@@ -200,9 +184,12 @@ test("a terminated lock owner leaves durable recovery evidence, without authoriz
     child.kill("SIGKILL");
     await closed;
     assert.equal(existsSync(lock), true);
-    const saved = runner.recoverRefreshLock(lock, hash, () => {});
-    assert.deepEqual(readFileSync(saved), bytes);
-    assert.equal(runner.withRefreshLock(lock, () => "recovered"), "recovered");
+    assert.throws(() => runner.withScheduledRefreshLock(lock, () => assert.fail("unverified native writer"), () => { throw new Error("BLOCKED: native writer"); }), /native writer/);
+    assert.deepEqual(readFileSync(lock), bytes);
+    assert.equal(runner.withScheduledRefreshLock(lock, () => "recovered", () => assert.ok(child.exitCode !== null || child.signalCode !== null)), "recovered");
+    assert.equal(existsSync(lock), false);
+    const saved = readdirSync(dir).find(name => name.startsWith("refresh.lock.recovered-"));
+    assert.deepEqual(readFileSync(join(dir, saved)), bytes);
   } finally {
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGKILL");
@@ -212,21 +199,7 @@ test("a terminated lock owner leaves durable recovery evidence, without authoriz
   }
 });
 
-test("existing Graphify hooks are replaceable but unrelated or mixed hooks are protected", async () => {
-  const runner = await import("./graphify-local.mjs");
-  assert.equal(typeof runner.canReplaceHook, "function");
-  assert.equal(runner.canReplaceHook(null, "post-commit"), true);
-  assert.equal(runner.canReplaceHook("#!/bin/sh\n# graphify-hook-start\nold\n# graphify-hook-end\n", "post-commit"), true);
-  assert.equal(runner.canReplaceHook("#!/bin/sh\n# graphify-checkout-hook-start\nold\n# graphify-checkout-hook-end\n", "post-checkout"), true);
-  assert.equal(runner.canReplaceHook("#!/bin/sh\n# graphify-hook-start\nold\n# graphify-hook-end\nother-command\n", "post-commit"), false);
-  assert.equal(runner.canReplaceHook("#!/bin/sh\nother-command\n", "post-merge"), false);
-  const hook = runner.hookSource("post-checkout");
-  assert.equal(runner.canReplaceHook(hook, "post-checkout"), true);
-  assert.match(hook, /graphify-local\.mjs sync/);
-  assert.doesNotMatch(hook, /PREV_HEAD|NEW_HEAD/);
-});
-
-test("real Git events synchronize a local Graphify index in an isolated repository", {
+test("Git events never write the local index; the sole sync path reconciles changes", {
   skip: process.env.BTHWANI_GRAPHIFY_INTEGRATION !== "1",
   timeout: 240000,
 }, async () => {
@@ -272,6 +245,24 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     git("commit", "-m", "fixture initial");
     cli(["refresh"]);
     const first = proof();
+    const previousIndex = process.env.GIT_INDEX_FILE;
+    try {
+      process.env.GIT_INDEX_FILE = join(dir, ".git", "alternate-index");
+      assert.equal(JSON.parse(cli(["status"])).status, "PASS");
+      assert.equal(JSON.parse(cli(["coverage", "example.ts"])).coverage, "PASS");
+    } finally {
+      if (previousIndex === undefined) delete process.env.GIT_INDEX_FILE;
+      else process.env.GIT_INDEX_FILE = previousIndex;
+    }
+    const publishedGraph = join(dir, "graphify-out", "graph.json");
+    const originalGraph = JSON.parse(readFileSync(publishedGraph, "utf8"));
+    originalGraph.nodes.push({ id: "foreignGraphFixture", label: "foreignGraphFixture", source_file: "foreign.ts" });
+    writeFileSync(publishedGraph, JSON.stringify(originalGraph));
+    assert.equal(JSON.parse(cli(["status"], 2)).status, "BLOCKED");
+    cli(["query", "foreignGraphFixture"], 2);
+    cli(["sync"]);
+    assert.ok(!JSON.parse(readFileSync(publishedGraph, "utf8")).nodes.some(n => n.id === "foreignGraphFixture"));
+    proof();
     const measured = JSON.parse(cli(["coverage", "example.ts"]));
     assert.equal(measured.coverage, "PASS");
     assert.equal(measured.coverageKind, "FILE_NODE_MEMBERSHIP_ONLY");
@@ -282,17 +273,11 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     assert.match(measured.sourceFingerprint, /^[a-f0-9]{64}$/);
     assert.deepEqual(JSON.parse(cli(["coverage", "missing.ts"], 2)).unadmitted, ["missing.ts"]);
     cli(["coverage", "../outside.ts"], 2);
-    // A hard link to another file is not an admitted existing hook.
-    const hookPath = join(dir, ".git", "hooks", "post-commit");
-    const outsideHook = join(dir, "graphify-out", "unrelated-hook");
-    writeFileSync(outsideHook, "#!/bin/sh\n# graphify-hook-start\nold\n# graphify-hook-end\n");
     const { linkSync } = await import("node:fs");
-    linkSync(outsideHook, hookPath);
     cli(["install-hooks"], 2);
-    assert.equal(readFileSync(hookPath, "utf8"), readFileSync(outsideHook, "utf8"));
-    rmSync(hookPath);
-    cli(["install-hooks"]);
     git("switch", "-c", "fixture-b");
+    assert.equal(JSON.parse(cli(["status"], 2)).status, "BLOCKED");
+    cli(["sync"]);
     assert.equal(proof().head, first.head);
     writeFileSync(join(dir, "example.ts"), "export function example() { return 2; }\n");
     const seedPath = join(dir, "graphify-out", ".candidate", "graph.json");
@@ -331,7 +316,11 @@ test("real Git events synchronize a local Graphify index in an isolated reposito
     assert.ok(!JSON.parse(readFileSync(join(dir,"graphify-out","graph.json"),"utf8")).nodes.some(n=>String(n.label).includes("changedNewGraphFixture")));
     assert.deepEqual(JSON.parse(cli(["coverage", "apps/new.ts"], 2)).unadmitted, ["apps/new.ts"]);
     git("add", "example.ts");
+    const beforeCommit = readFileSync(stamp, "utf8");
     git("commit", "-m", "fixture update");
+    assert.equal(readFileSync(stamp, "utf8"), beforeCommit);
+    assert.equal(JSON.parse(cli(["status"])).status, "INVALIDATED");
+    cli(["sync"]);
     assert.notEqual(proof().head, first.head);
     cli(["query", "example"]);
     const verified = readFileSync(stamp, "utf8");

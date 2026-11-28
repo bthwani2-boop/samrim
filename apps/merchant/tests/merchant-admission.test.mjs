@@ -108,7 +108,6 @@ function transportHarness() {
   let verifyCalls = 0;
   const dependencies = {
     "./merchant-admission-web.ts": merchantAdmissionWeb,
-    "@bthwani/dsh": { DshPublicError },
     "@bthwani/identity": {
       IdentityClientError,
       async establishPersistentIdentitySession(_origin, bearer) {
@@ -134,7 +133,7 @@ function transportHarness() {
       async verifyMerchantAdmission() { verifyCalls++; return { session: state, bearer: merchantBearer }; },
       async revokeUndeliveredAdmissionSession(_origin, bearer) { revoked.push(bearer); },
     },
-    "./dsh-standing": {
+    "@bthwani/dsh": { DshPublicError,
       MerchantStandingError,
       standingFrom(value) { return value; },
       async readMerchantDSHStanding(_origin, bearer) { assert.equal(bearer, merchantBearer); return { stores: [] }; },

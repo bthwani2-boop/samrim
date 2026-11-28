@@ -2,8 +2,8 @@ package storeavailability
 
 import (
 	"bytes"
-	"encoding/json"
-	"io"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"math"
 	"strconv"
 )
@@ -17,16 +17,11 @@ type DistanceBand struct {
 // DecodeDistanceBands is the shared validation boundary for stored tariffs,
 // checkout and operator previews. An explicit null denotes the final open tier.
 func DecodeDistanceBands(raw []byte) ([]DistanceBand, bool) {
-	if rejectDuplicateJSONMembers(raw) != nil {
-		return nil, false
-	}
 	var rows []struct {
-		UpToMeters     json.RawMessage `json:"upToMeters"`
-		RatePerKmMinor int64           `json:"ratePerKmMinor"`
+		UpToMeters     jsontext.Value `json:"upToMeters"`
+		RatePerKmMinor int64          `json:"ratePerKmMinor"`
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if decoder.Decode(&rows) != nil || decoder.Decode(new(any)) != io.EOF || len(rows) < 1 || len(rows) > 30 {
+	if json.Unmarshal(raw, &rows, json.RejectUnknownMembers(true)) != nil || len(rows) < 1 || len(rows) > 30 {
 		return nil, false
 	}
 	bands := make([]DistanceBand, 0, len(rows))

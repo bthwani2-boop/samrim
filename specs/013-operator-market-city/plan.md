@@ -1,0 +1,2 @@
+# Plan
+Reuse PublicMarketOverview and the existing typed listPublicCities/listPublicStores/listPublicVerticals client. Existing text+datalist supports bounded incomplete options and manual owner-validated city IDs. Add city read to selected-city concurrent Promise.allSettled group; preserve the no-city branch, invalid scope and product-only Store read. No dependency, persistence or API change. Existing five-second deadlines; no sequential latency. Test four view routes through shared component and permission guards. No claim of publication or orderability.

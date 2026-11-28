@@ -1,7 +1,7 @@
 import { listPublicCities, listPublicVerticals, type PublicPage, type PublicVertical } from "@bthwani/dsh";
 import styles from "../../../../src/features/operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../../../../src/features/operator-shell/workspace-unavailable";
-import { parsePublicStoreBrowse, resolvePublicDshOrigin } from "../../../../src/features/stores/public-store-query";
+import { isolatedPublicDshOrigin, parsePublicStoreBrowse } from "../../../../src/features/stores/public-store-query";
 import { currentOperatorAccess } from "../../../../src/server/current-operator-access";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ export default async function Page({ searchParams }: Readonly<{
   const params = await searchParams;
   const scope = Object.keys(params).every(key => key === "city" || key === "cursor")
     ? parsePublicStoreBrowse(params) : null;
-  const owner = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
+  const owner = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
   let cities: PublicPage<string> | null = null;
   let verticals: PublicPage<PublicVertical> | null = null;
   let error = "";

@@ -21,6 +21,46 @@ paths:
           $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+  /v1/store-registration-receipts/{operationID}:
+    get:
+      operationId: getMerchantStoreRegistrationReceipt
+      summary: Read a committed Store registration receipt without replaying its private payload
+      description: Requires current Merchant Identity and current DSH Store ownership. Independent of current registration policy. Absence is not proof that an in-flight command cannot commit and never authorizes a replacement operation. Foreign, unknown and transferred receipts are indistinguishable.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - in: path
+          name: operationID
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9._-]{8,128}$' }
+      responses:
+        '200':
+          description: Exact committed operation and current owned Store
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/MerchantStoreRegistrationReceipt' }
+        '400':
+          description: Invalid operation selector
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '404':
+          description: No currently owned committed receipt visible; outcome remains unresolved
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '../dsh.openapi.yaml#/components/schemas/StoreRegistrationError' }
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
   /v1/stores:
     post:
       operationId: registerMerchantStore

@@ -145,8 +145,10 @@ export default function CartScreen() {
       if (code === "OPERATION_RESULT_UNKNOWN" || code === "CART_PENDING_RECONCILIATION") {
         setError("لم تتأكد نتيجة التعديل. أعد تأكيد نفس العملية قبل إجراء تعديل جديد.");
       } else {
-        if (code === "UNAUTHORIZED") {
-          currentView.current = { kind: "signed-out" };
+        if (code === "UNAUTHORIZED" || code === "CART_VERSION_OR_OPERATION_CONFLICT" ||
+          code === "STORE_OR_OFFER_NOT_AVAILABLE") {
+          // A definitive rejection withdraws the old snapshot's command authority.
+          currentView.current = { kind: code === "UNAUTHORIZED" ? "signed-out" : "unavailable" };
           setView(currentView.current);
         }
         setError(code === "CART_VERSION_OR_OPERATION_CONFLICT"

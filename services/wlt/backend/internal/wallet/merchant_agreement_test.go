@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -13,23 +14,41 @@ import (
 func TestMerchantAgreementStoreAuthority(t *testing.T) {
 	for _, tc := range []struct {
 		name, role, standing, second, relation string
+		changeAfter                            int32
+		change                                 string
 		want, reads                            int
 	}{
-		{"owner", "merchant", "DIRECT", "DIRECT", "DIRECT", 200, 1},
-		{"foreign store", "merchant", "", "", "DIRECT", 403, 0},
-		{"customer", "customer", "DIRECT", "DIRECT", "DIRECT", 403, 0},
-		{"revoked scope", "merchant", "DIRECT", "", "DIRECT", 403, 1},
-		{"changed relation", "merchant", "DIRECT", "MARKETPLACE", "DIRECT", 403, 1},
-		{"wrong proposal relation", "merchant", "DIRECT", "DIRECT", "MARKETPLACE", 503, 1},
-		{"wrong actor", "merchant", "wrong-actor", "DIRECT", "DIRECT", 503, 0},
+		{name: "owner", role: "merchant", standing: "DIRECT", second: "DIRECT", relation: "DIRECT", want: 200, reads: 1},
+		{name: "foreign store", role: "merchant", relation: "DIRECT", want: 403},
+		{name: "customer", role: "customer", standing: "DIRECT", second: "DIRECT", relation: "DIRECT", want: 403},
+		{name: "revoked scope", role: "merchant", standing: "DIRECT", relation: "DIRECT", want: 403, reads: 1},
+		{name: "changed relation", role: "merchant", standing: "DIRECT", second: "MARKETPLACE", relation: "DIRECT", want: 403, reads: 1},
+		{name: "wrong proposal relation", role: "merchant", standing: "DIRECT", second: "DIRECT", relation: "MARKETPLACE", want: 503, reads: 1},
+		{name: "wrong standing actor", role: "merchant", standing: "wrong-actor", second: "DIRECT", relation: "DIRECT", want: 503},
+		{name: "revoked during initial standing", role: "merchant", standing: "DIRECT", second: "DIRECT", relation: "DIRECT", changeAfter: 1, change: "revoked", want: 401},
+		{name: "revoked during final standing", role: "merchant", standing: "DIRECT", second: "DIRECT", relation: "DIRECT", changeAfter: 2, change: "revoked", want: 401, reads: 1},
+		{name: "actor changed during final standing", role: "merchant", standing: "DIRECT", second: "DIRECT", relation: "DIRECT", changeAfter: 2, change: "actor", want: 401, reads: 1},
+		{name: "role changed during final standing", role: "merchant", standing: "DIRECT", second: "DIRECT", relation: "DIRECT", changeAfter: 2, change: "role", want: 403, reads: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			checks := 0
+			var checks atomic.Int32
 			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.Header().Set("Cache-Control", "no-store")
 				if r.URL.Path == "/v1/sessions/current" {
-					_ = json.NewEncoder(w).Encode(principal{ActorID: "merchant-one", Role: tc.role, Expires: time.Now().Add(time.Hour)})
+					actor, role := "merchant-one", tc.role
+					if tc.changeAfter > 0 && checks.Load() >= tc.changeAfter {
+						switch tc.change {
+						case "revoked":
+							w.WriteHeader(http.StatusUnauthorized)
+							return
+						case "actor":
+							actor = "merchant-two"
+						case "role":
+							role = "customer"
+						}
+					}
+					_ = json.NewEncoder(w).Encode(principal{ActorID: actor, Role: role, Expires: time.Now().Add(time.Hour)})
 					return
 				}
 				if r.URL.Path != "/v1/stores/mine" {
@@ -37,9 +56,8 @@ func TestMerchantAgreementStoreAuthority(t *testing.T) {
 					w.WriteHeader(404)
 					return
 				}
-				checks++
 				rel := tc.standing
-				if checks > 1 {
+				if checks.Add(1) > 1 {
 					rel = tc.second
 				}
 				actor := "merchant-one"
@@ -69,8 +87,17 @@ func TestMerchantAgreementStoreAuthority(t *testing.T) {
 			if rec.Code != tc.want || reads != tc.reads {
 				t.Fatalf("status=%d reads=%d body=%s", rec.Code, reads, rec.Body.String())
 			}
-			if tc.want != 200 && rec.Header().Get("Cache-Control") != "no-store" {
-				t.Fatal("denial must not be cached")
+			if rec.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("owner read and denial must not be cached")
+			}
+			if tc.want != 200 {
+				var body map[string]any
+				if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || len(body) != 1 || body["error"] == nil {
+					t.Fatalf("denial must contain only the public error: %s", rec.Body.String())
+				}
+			}
+			if tc.role != "merchant" && checks.Load() != 0 {
+				t.Fatal("non-Merchant session reached DSH")
 			}
 		})
 	}

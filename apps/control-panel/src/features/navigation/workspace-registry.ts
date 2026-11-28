@@ -43,7 +43,7 @@ export type WorkspaceSubsection = Readonly<{ parent: string; href: string; label
 // Existing pages only. Every subsection inherits the parent route's Identity gate;
 // this is navigation metadata and never grants authorization by itself.
 export const workspaceSubsections: readonly WorkspaceSubsection[] = [
-  { parent: "/merchants", href: "/merchants/joining", label: "طلبات انضمام التجار" },
+  { parent: "/merchants", href: "/merchants/joining", label: "مراجعة المتاجر غير المنشورة" },
   { parent: "/merchants", href: "/merchants/new", label: "إضافة تاجر" },
   { parent: "/merchants", href: "/merchants/store-access", label: "صلاحيات المتاجر" },
   { parent: "/merchants", href: "/merchants/public-stores", label: "متاجر السوق" },

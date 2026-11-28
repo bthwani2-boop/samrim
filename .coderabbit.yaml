@@ -1,9 +1,22 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
-# Automatic review assists engineering; it never replaces owner-backed proof,
-# protected integration checks, financial/security review or production approval.
+# Native PR review supplements deterministic CI and does not replace its evidence.
 inheritance: true
+tone_instructions: "Report material, actionable correctness, security, architecture and test gaps. Explain the failure mode and affected consumer; avoid style-only or duplicated CI findings."
 reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  changed_files_summary: false
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  poem: false
   auto_review:
     enabled: true
     drafts: true
     auto_incremental_review: true
+    auto_pause_after_reviewed_commits: 0
+  path_instructions:
+    - path: "**"
+      instructions: "Read AGENTS.md and the applicable canonical governance. Review actual behavior, ownership, contracts, authorization, data integrity, failure and recovery tests. Flag unnecessary duplication and incomplete replacement; do not repeat deterministic lint findings."
+    - path: ".github/workflows/**"
+      instructions: "Review trust boundaries, least privilege, immutable action pins, exact candidate and artifact provenance, skipped or cancelled required jobs, missing tests, and unnecessary execution dependencies. Never suggest weakening a gate merely to obtain green checks."

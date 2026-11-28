@@ -2,10 +2,11 @@
 // Pre-install source admission. Native pnpm, Go, tests and runtime acceptance
 // remain separate; these static checks do not certify their execution.
 import assert from "node:assert/strict";
-import { lstatSync, realpathSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
+import { openRepositoryReader, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
 import { resolvePinnedGo, services } from "./check-go.mjs";
 import { serviceSourcePlacementIssues } from "./check-service-placement.mjs";
 
@@ -15,7 +16,7 @@ const projects = ["apps/customer", "apps/merchant", "apps/captain", "apps/contro
   "packages/design-system", "packages/tamagui-config"];
 const requiredSources = ["knip.jsonc", ".editorconfig", ".gitattributes",
   "tools/mobile/define-bthwani-expo-app.cjs", "tools/mobile/verify-app-identity.mjs",
-  "patches/@rc-component__util@1.14.0.patch", "docs/README.md"];
+  "docs/README.md"];
 const retiredSources = ["docs/journeys", "docs/reference/README.md", "contracts", "go.work",
   "apps/app-client", "apps/app-partner", "apps/app-captain", "tools/mobile/create-bthwani-metro-config.cjs"];
 
@@ -112,11 +113,78 @@ function verifyLock(document, manifest, pnpm, toolchain) {
   return dependency;
 }
 
-function verifyWorkspaceSettings(workspace, nx) {
-  for (const glob of ["apps/*", "services/*", "packages/*"]) {
-    assert.match(workspace, new RegExp('^  - "' + RegExp.escape(glob) + '"$', "m"),
-      "Missing canonical workspace path: " + glob);
+// The native pinned manager owns workspace and patch resolution. Do not load
+// installed dependencies or resolve a shell-selected pnpm executable here.
+function nativePnpmJson(checkout, pnpm, args) {
+  const nodeBin = path.dirname(process.execPath);
+  const entry = process.platform === "win32"
+    ? path.join(nodeBin, "node_modules", "corepack", "dist", "corepack.js")
+    : path.join(nodeBin, "corepack");
+  const result = spawnSync(process.execPath, [entry, "pnpm@" + pnpm, ...args], {
+    cwd: checkout, encoding: "utf8", windowsHide: true, timeout: 60000,
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  assert.equal(result.status, 0, "Native pnpm " + args[0] + " failed");
+  return JSON.parse(result.stdout);
+}
+
+// The flat patch directory is the exact source inventory resolved by pnpm.
+// Frozen install remains the sole authority for lock digests and application.
+function verifyPatchInputs(checkout, source, pnpm) {
+  const configured = nativePnpmJson(checkout, pnpm, ["config", "get", "patchedDependencies", "--json"]);
+  assert.ok(configured && typeof configured === "object" && !Array.isArray(configured),
+    "Native patch configuration must be a mapping");
+  source.directory("patches");
+  const directory = path.join(checkout, "patches");
+  const expected = new Set();
+  for (const file of Object.values(configured)) {
+    assert.ok(typeof file === "string" && path.isAbsolute(file), "Native patch path must be absolute");
+    const name = path.relative(directory, file);
+    assert.match(name, /^[^/\\:]+\.patch$/, "Native patch input must be an owned flat patch path");
+    expected.add(name);
   }
+  const observed = new Set(readdirSync(directory));
+  assert.deepEqual(observed, expected, "Native patch input inventory differs from the owned patch directory");
+  for (const name of expected) {
+    assert.ok(source.read("patches/" + name).trim(), "Native patch input is empty: " + name);
+  }
+}
+// pnpm owns package selection, including negation and YAML semantics. Compare
+// its native inventory with authored direct project manifests before admission.
+// The explicit Corepack version uses the same pinned manager as installation;
+// it does not require an installed dependency graph.
+function verifyWorkspaceMembership(checkout, source, manifest, pnpm) {
+  function authoredProjects() {
+    const expected = new Map([["", manifest.name]]);
+    for (const scope of ["apps", "services", "packages"]) {
+      source.directory(scope);
+      for (const entry of readdirSync(path.join(checkout, scope), { withFileTypes: true })) {
+        const project = scope + "/" + entry.name;
+        assert.ok(!entry.isSymbolicLink(), "Workspace project scope contains a linked entry: " + project);
+        if (!entry.isDirectory()) continue;
+        if (!lstatSync(path.join(checkout, project, "package.json"), { throwIfNoEntry: false })) continue;
+        source.directory(project);
+        expected.set(project, source.json(project + "/package.json").name);
+      }
+    }
+    return expected;
+  }
+  const expected = authoredProjects();
+  const rows = nativePnpmJson(checkout, pnpm, ["list", "-r", "--depth", "-1", "--json"]);
+  assert.ok(Array.isArray(rows), "Native pnpm workspace inventory must be an array");
+  const observed = new Map();
+  for (const row of rows) {
+    const rel = path.relative(checkout, row.path).split(path.sep).join("/");
+    assert.ok(expected.has(rel) && samePath(realpathSync.native(row.path), path.resolve(checkout, rel)),
+      "Native pnpm workspace contains unexpected project: " + rel);
+    assert.ok(!observed.has(rel), "Native pnpm workspace contains duplicate project: " + rel);
+    observed.set(rel, row.name);
+  }
+  assert.deepEqual(observed, expected, "Native pnpm workspace membership differs from authored project manifests");
+  assert.deepEqual(authoredProjects(), expected, "Authored projects changed during native pnpm inventory");
+}
+
+function verifyWorkspaceSettings(workspace, nx) {
   for (const [key, value] of Object.entries({
     autoInstallPeers: "false", engineStrict: "true", frozenLockfile: "true",
     nodeLinker: "isolated", saveExact: "true", sharedWorkspaceLockfile: "true",
@@ -127,7 +195,6 @@ function verifyWorkspaceSettings(workspace, nx) {
   }
   assert.doesNotMatch(workspace, /^\s*nxCloud(?:Id|AccessToken|Url):/m,
     "Nx configuration belongs in nx.json, not pnpm");
-  assert.match(workspace, /^  '@rc-component\/util@1\.14\.0': patches\/@rc-component__util@1\.14\.0\.patch$/m);
   assert.equal(nx.defaultBase, "main");
   for (const target of ["typecheck", "theme:check", "theme:verify"]) {
     assert.equal(nx.targetDefaults?.[target]?.cache, true, "Missing declared cache target: " + target);
@@ -165,6 +232,72 @@ function verifyOwner(source, dependency, owner, go, ts) {
   locked(importer(dependency, project), "typescript", ts);
 }
 
+// Git owns effective exclusion semantics. Verify all indexed paths, then
+// exercise representative future paths that cannot be enumerated in the index.
+// Reject unowned rule provenance and a changing inventory without inventing
+// a second ignore matcher or requiring unrelated working files to be clean.
+function verifyGitIgnore(checkout, source) {
+  const git = openRepositoryReader(checkout);
+  const inventory = git("ls-files", "--cached", "-z");
+  const names = inventory.toString("utf8").split("\0").filter(Boolean);
+  const trackedRules = names.filter(name => name === ".gitignore" || name.endsWith("/.gitignore"));
+  assert.ok(trackedRules.includes(".gitignore"), "Git ignore admission requires tracked root rules");
+  const rules = new Map([...new Set(trackedRules)].map(name => [name,
+    lstatSync(path.join(checkout, name), { throwIfNoEntry: false }) ? source.read(name) : null,
+  ]));
+  assert.ok(rules.get(".gitignore") !== null, "Git ignore admission missing root rules");
+  const ignored = () => git("ls-files", "--cached", "--ignored", "--exclude-standard", "-z");
+  assert.equal(ignored().length, 0, "Git ignore admission rejects ignored tracked paths");
+  const excluded = [
+    "node_modules/fixture.js", "apps/customer/node_modules/fixture.js",
+    "apps/control-panel/next-env.d.ts", "apps/merchant/.tmp/export/fixture.js",
+    "coverage/lcov.info", "graphify-out/graph.json", ".bthwani-local/fixture.json",
+    ".specify/feature.json", ".specify/workflows/runs/fixture.json",
+    ".env", "infra/.env", "apps/customer/.env.local", "services/dsh/.env.test",
+    "secrets.local.json", "infra/secrets.local.json", "infra/fixture.local.secret.json",
+    "apps/customer/credentials.json", "apps/merchant/google-services.json",
+    "apps/captain/GoogleService-Info.plist", "apps/customer/fixture.jks",
+    "apps/customer/fixture.keystore", "infra/fixture.p12", "infra/fixture.p8",
+    "infra/fixture.pem", "infra/fixture.key",
+  ];
+  const included = [
+    ".env.example", "infra/.env.example", "package.json", "pnpm-lock.yaml",
+    "pnpm-workspace.yaml", ".github/workflows/ci.yml", "governance/engineering.md",
+    "apps/customer/src/fixture.ts", "apps/merchant/src/fixture.ts",
+    "apps/captain/src/fixture.ts", "apps/control-panel/src/fixture.ts",
+    "apps/customer/tests/fixture.test.mjs", "apps/merchant/tests/fixture.test.mjs",
+    "apps/captain/tests/fixture.test.mjs", "apps/control-panel/tests/fixture.test.mjs",
+    "packages/design-system/src/fixture.ts", "services/dsh/backend/internal/discovery/fixture.go",
+    "services/identity/database/schema/00_fixture.sql", "services/wlt/contracts/openapi/paths/fixture.yaml",
+    "tools/dev/fixture.test.mjs", "tests/infra/fixture.test.mjs",
+  ];
+  const probes = new Map([...excluded.map(name => [name, true]), ...included.map(name => [name, false])]);
+  const output = git("check-ignore", "--verbose", "--non-matching", "--no-index", "--", ...probes.keys())
+    .toString("utf8").trimEnd().split(/\r?\n/);
+  assert.equal(output.length, probes.size, "Git ignore admission incomplete native inventory");
+  for (const line of output) {
+    // Fixed ASCII probe names, native source:line:pattern TAB pathname records.
+    const record = /^([^:\t]*):([0-9]*):([^\t]*)\t([^\t]+)$/.exec(line);
+    assert.ok(record && probes.has(record[4]), "Git ignore admission invalid native record");
+    const [, origin, lineNumber, pattern, name] = record;
+    const expected = probes.get(name);
+    probes.delete(name);
+    if (origin || lineNumber || pattern) {
+      assert.ok(rules.has(origin) && rules.get(origin) !== null && /^[1-9][0-9]*$/.test(lineNumber) && pattern,
+        "Git ignore admission unowned rule: " + name);
+    }
+    assert.equal(Boolean(pattern) && !pattern.startsWith("!"), expected,
+      "Git ignore admission unexpected visibility: " + name);
+  }
+  for (const [name, original] of rules) {
+    const current = lstatSync(path.join(checkout, name), { throwIfNoEntry: false }) ? source.read(name) : null;
+    assert.equal(current, original, "Git ignore admission source changed: " + name);
+  }
+  assert.ok(inventory.equals(git("ls-files", "--cached", "-z")), "Git ignore admission tracked inventory changed");
+  assert.equal(ignored().length, 0, "Git ignore admission rejects ignored tracked paths");
+  git.assertCheckout();
+}
+
 export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   const issues = serviceSourcePlacementIssues(checkout);
   assert.equal(issues.length, 0, "Service source placement violations:\n" + issues.join("\n"));
@@ -185,7 +318,8 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   // separate upstream TypeScript 6 programmatic API, not a compiler downgrade.
   const toolchain = rootToolchain(manifest);
 
-  verifyWorkspaceSettings(source.read("pnpm-workspace.yaml"), source.json("nx.json"));
+  const workspace = source.read("pnpm-workspace.yaml");
+  verifyWorkspaceSettings(workspace, source.json("nx.json"));
   const dependency = verifyLock(source.read("pnpm-lock.yaml"), manifest, pnpm, toolchain);
   for (const project of projects) {
     source.directory(project);
@@ -203,10 +337,10 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   assert.equal(biome.formatter?.enabled, false);
   const ts = toolchain.native;
   for (const owner of services) verifyOwner(source, dependency, owner, go, ts);
-  const ignores = source.read(".gitignore");
-  for (const entry of ["node_modules/", ".env", "secrets.local.", "apps/control-panel/next-env.d.ts"]) {
-    assert.ok(ignores.includes(entry), "Missing local dependency or secret ignore: " + entry);
-  }
+  verifyGitIgnore(checkout, source);
+  verifyWorkspaceMembership(checkout, source, manifest, pnpm);
+  verifyPatchInputs(checkout, source, pnpm);
+  assert.equal(source.read("pnpm-workspace.yaml"), workspace, "Workspace settings changed during native pnpm admission");
 
   if (strict) resolvePinnedGo(go);
   return { node, go, pnpm, typescript: ts, typescriptApi: toolchain.api, biome: manifest.devDependencies["@biomejs/biome"],

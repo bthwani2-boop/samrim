@@ -27,13 +27,13 @@ function fixture(fn) {
     const file = join(dir, "sample.txt");
     writeFileSync(file, safe);
     git(dir, "add", "--", "sample.txt");
-    const run = (withoutPath = false) => {
+    const run = (withoutPath = false, overrides = {}) => {
       const env = { ...process.env };
       for (const key of Object.keys(env)) {
-        if (key.startsWith("GIT_") || (withoutPath && key.toLowerCase() === "path")) delete env[key];
+        if (key.toUpperCase().startsWith("GIT_") || (withoutPath && key.toLowerCase() === "path")) delete env[key];
       }
       if (withoutPath) env.PATH = "/untrusted-no-git";
-      const result = spawnSync(process.execPath, [target], { cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 10000 });
+      const result = spawnSync(process.execPath, [target], { cwd: dir, env: { ...env, ...overrides }, encoding: "utf8", windowsHide: true, timeout: 10000 });
       assert.equal(result.error, undefined);
       assert.ok(!(result.stdout + result.stderr).includes(marker), "secret value must not enter logs");
       return result;
@@ -88,7 +88,7 @@ test("deleted working file still requires safe staged content", () => fixture(({
 }));
 test("NUL-bearing and UTF-16 encoded marker cannot bypass the guard", () => fixture(({ file, stage, run }) => {
   for (const bytes of [Buffer.concat([Buffer.from([0]), Buffer.from(marker)]),
-    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(marker, "utf16le")])]) {
+    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(marker, "utf16le")]), Buffer.from(marker, "utf16le"), Buffer.from(marker, "utf16le").swap16()]) {
     writeFileSync(file, bytes);
     stage();
     writeFileSync(file, safe);
@@ -173,5 +173,67 @@ test("verified descriptor rejects hard links and redirected ancestors", async ()
     } finally {
       rmSync(alias, { force: true });
     }
+  });
+});
+
+test("canonical Git index and repository cannot be substituted by caller environment", () => fixture(({ dir, file, stage, run }) => {
+  const alternate = join(dir, ".git", "alternate-index");
+  const foreign = join(dir, ".git", "foreign");
+  git(dir, "init", "--quiet", foreign);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith("GIT_")));
+  const empty = spawnSync(gitExecutable, ["read-tree", "--empty"], {
+    cwd: dir, env: { ...env, GIT_INDEX_FILE: alternate }, encoding: "utf8", windowsHide: true,
+  });
+  assert.equal(empty.status, 0, empty.stderr);
+  for (const overrides of [{ GIT_INDEX_FILE: alternate }, { GIT_DIR: join(foreign, ".git"), GIT_WORK_TREE: dir }]) {
+    assert.match(run(false, overrides).stdout, /TRACKED_SECRET_MARKERS_PASS files=1/);
+  }
+  writeFileSync(file, marker);
+  stage();
+  writeFileSync(file, safe);
+  for (const overrides of [{ GIT_INDEX_FILE: alternate }, { GIT_DIR: join(foreign, ".git"), GIT_WORK_TREE: dir }]) {
+    const result = run(false, overrides);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /likely secret marker in staged bytes/);
+  }
+}));
+
+test("native Git checkout admission uses physical identity without admitting redirected or nested roots", async () => {
+  const { openRepositoryReader } = await import("./verify-secrets.mjs");
+  const { captureSourceSnapshot } = await import("../dev/source-snapshot.mjs");
+  const { realpathSync, symlinkSync } = await import("node:fs");
+  fixture(({ dir }) => {
+    git(dir, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid",
+      "-c", "commit.gpgsign=false", "-c", "core.hooksPath=" + dir, "commit", "-qm", "fixture");
+    const root = realpathSync.native(dir);
+    const canonical = captureSourceSnapshot(root);
+    assert.equal(openRepositoryReader(root)("rev-parse", "HEAD").toString("utf8").trim(), canonical.head);
+    if (process.platform === "win32") {
+      const result = spawnSync("C:\\Windows\\System32\\cmd.exe",
+        ["/d", "/c", 'for %I in ("' + root + '") do @echo %~sI'],
+        { encoding: "utf8", windowsHide: true, windowsVerbatimArguments: true, timeout: 10000 });
+      assert.equal(result.status, 0, result.stderr);
+      const alias = result.stdout.trim();
+      assert.ok(alias);
+      assert.equal(realpathSync.native(alias).toLowerCase(), root.toLowerCase());
+      assert.equal(openRepositoryReader(alias)("rev-parse", "HEAD").toString("utf8").trim(), canonical.head);
+      assert.deepEqual(captureSourceSnapshot(alias), canonical);
+    }
+    const child = join(root, "tools");
+    assert.throws(() => openRepositoryReader(child), /Wrong checkout/);
+    const link = join(root, "redirected-root");
+    symlinkSync(root, link, process.platform === "win32" ? "junction" : "dir");
+    try {
+      assert.throws(() => openRepositoryReader(link), /Wrong checkout/);
+      assert.throws(() => captureSourceSnapshot(link), /Wrong checkout/);
+    } finally {
+      rmSync(link, { force: true });
+    }
+    const foreign = join(root, "foreign-worktree");
+    mkdirSync(foreign);
+    git(root, "config", "--local", "core.worktree", foreign);
+    assert.throws(() => openRepositoryReader(root), /Wrong checkout/);
+    git(root, "config", "--local", "--unset", "core.worktree");
+    assert.equal(openRepositoryReader(root)("rev-parse", "HEAD").toString("utf8").trim(), canonical.head);
   });
 });

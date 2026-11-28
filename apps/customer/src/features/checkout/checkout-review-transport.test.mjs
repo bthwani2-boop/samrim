@@ -31,7 +31,7 @@ const review = {
   merchandise: { actorId: actor, storeId: store, cartVersion: 4, lines: [
     { offerId: "offer-a", variantId: "variant-a", quantity: 2, unitYer: "550", lineTotalYer: "1100" }],
     merchandiseSubtotalYer: "1100", checkoutReady: false },
-  storeSchedule: { status: "OPEN_BY_SCHEDULE", version: 3 }, checkoutReady: false,
+  storeSchedule: { status: "PAUSED", version: 3, pausedUntil: "2026-11-27T20:00:00.123456Z" }, checkoutReady: false,
   blockers: ["FULFILLMENT_MODE_NOT_ADMITTED", "PAYABLE_QUOTE_NOT_AVAILABLE", "PAYMENT_ALLOCATION_NOT_AVAILABLE"],
 };
 const json = (body, status = 200, cache = "no-store") => Response.json(body, { status, headers: { "Cache-Control": cache } });

@@ -82,15 +82,17 @@ function harness(t, cityRoute = false) {
     "../../../../../../../src/server/current-operator-access": {
       currentOperatorAccess: async () => state.access,
     },
-    "../../../../../../../src/server/operator-passkey-bff": {
+    "../../../../../../../src/server/operator-passkey-config": {
       OPERATOR_COOKIE: "bthwani_operator_session",
       isTrustedOperatorLoopbackTarget,
+      resolveIsolatedOperatorConfig: () => state.enabled ? { browserOrigin: browser } : null,
+    },
+    "../../../../../../../src/server/operator-passkey-transport": {
       boundedRequestBody: async (request, maxBytes = 8192) => {
         state.maxCommandBytes = maxBytes;
         const body = await request.text();
         return Buffer.byteLength(body, "utf8") <= maxBytes ? body : null;
       },
-      resolveIsolatedOperatorConfig: () => state.enabled ? { browserOrigin: browser } : null,
     },
     "../../../../../../../src/server/request-security": {
       unavailableSessionResponse: () => Response.json({ code: "OPERATOR_SESSION_UNAVAILABLE" }, { status: 503 }),
@@ -234,9 +236,9 @@ test("Operator BFF history rejects unauthorized query selectors and does not fab
   assert.equal((await h.GET(build("?history=1&limit=10"), h.context)).status, 503);
 });
 
-test("Operator policy routes accept only the canonical normalized SSH tunnel target", async t => {
+test("Operator policy routes accept only the canonical browser origin", async t => {
   const h = harness(t);
-  const target = url.replace("localhost:13000", "localhost:23010");
+  const target = url;
   assert.equal((await h.GET(h.request("GET", {}, undefined, target), h.context)).status, 200);
   assert.equal((await h.PATCH(h.request("PATCH", {}, command, target), h.context)).status, 200);
   assert.equal((await h.GET(h.request("GET", {}, undefined, target + "?history=1&limit=10"), h.context)).status, 200);
@@ -248,16 +250,16 @@ test("Operator policy routes accept only the canonical normalized SSH tunnel tar
     ["GET", { "Sec-Fetch-Site": "cross-site" }, target],
     ["PATCH", { Origin: "http://localhost:23010" }, target],
     ["PATCH", {}, target + "?history=1"],
-    ["GET", {}, target.replace("23010", "23011")],
+    ["GET", {}, target.replace("13000", "23010")],
     ["GET", {}, target + "?history=1&limit=10&limit=11"],
   ]) {
     assert.equal((await h[method](h.request(method, headers, method === "PATCH" ? command : undefined, candidate), h.context)).status, 400);
   }
   assert.equal(h.state.dshCalls.length, validCalls);
 });
-test("City policy BFF honors the same exact tunnel and rejects cross-site or invalid history", async t => {
+test("City policy BFF uses the canonical browser origin and rejects cross-site or invalid history", async t => {
   const h = harness(t, true);
-  const target = browser.replace("13000", "23010") + "/api/policies/cities/sanaa";
+  const target = browser + "/api/policies/cities/sanaa";
   assert.equal((await h.GET(h.request("GET", {}, undefined, target), h.context)).status, 200);
   assert.equal((await h.PATCH(h.request("PATCH", {}, { operationId: "city-change-001", expectedVersion: 1, maxPauseSeconds: 1800, maxPreparationMinutes: 20, reason: "Test policy" }, target), h.context)).status, 200);
   assert.equal((await h.GET(h.request("GET", {}, undefined, target + "?history=1&limit=10"), h.context)).status, 200);
@@ -269,7 +271,7 @@ test("City policy BFF honors the same exact tunnel and rejects cross-site or inv
     [{ Authorization: "Bearer forged" }, target],
     [{}, target + "?history=1&limit=11"],
     [{}, target + "?history=1&limit=10&beforeVersion=0"],
-    [{}, target.replace("23010", "23011")],
+    [{}, target.replace("13000", "23010")],
   ]) {
     assert.equal((await h.GET(h.request("GET", headers, undefined, candidate), h.context)).status, 400);
   }

@@ -1,8 +1,8 @@
-import { type MerchantCatalogOffer, type MerchantCatalogPage, type MerchantCatalogStatus, validMerchantCatalogSearch } from "@bthwani/dsh";
+import { type MerchantCatalogOffer, type MerchantCatalogPage, type MerchantCatalogStatus, type MerchantDSHStanding, validMerchantCatalogSearch } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, Pressable, Text, TextInput, View } from "react-native";
-import type { MerchantDSHStanding } from "../access/dsh-standing";
+import CatalogDraftHistory from "./catalog-draft-history";
 import CatalogExport from "./catalog-export";
 import CatalogImport from "./catalog-import";
 import { readMerchantCatalogPage } from "./catalog-transport";
@@ -33,21 +33,25 @@ function canEditDraft(offer: MerchantCatalogOffer) {
     /^of-[a-f0-9]{32}$/.test(offer.id);
 }
 
-export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "", initialPriceStockOnly = false, inventoryOnly = false }: Readonly<{
+export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId = "", initialPriceStockOnly = false, inventoryOnly = false, initialStatus }: Readonly<{
   actorId: string;
   stores: MerchantDSHStanding["stores"];
   initialStoreId?: string | undefined;
   initialPriceStockOnly?: boolean;
   inventoryOnly?: boolean;
+  initialStatus?: MerchantCatalogStatus | undefined;
 }>) {
   const { theme } = useMobileAppearance();
   const [selectedId, setSelectedId] = useState(initialStoreId);
   const [search, setSearch] = useState({ scope: "", draft: "", query: "" });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [history, setHistory] = useState<{ scope: string; offerId: string } | null>(null);
   const [priceScope, setPriceScope] = useState<string | null>(
     initialPriceStockOnly && initialStoreId ? JSON.stringify([actorId, initialStoreId]) : null,
   );
-  const [filter, setFilter] = useState<{ scope: string; status: MerchantCatalogStatus | undefined }>({ scope: "", status: undefined });
+  const [filter, setFilter] = useState<{ scope: string; status: MerchantCatalogStatus | undefined }>({
+    scope: initialStoreId ? JSON.stringify([actorId, initialStoreId]) : "", status: initialStatus,
+  });
   const [retry, setRetry] = useState(0);
   const [verifiedStoreScope, setVerifiedStoreScope] = useState<string | null>(null);
   const [state, setState] = useState<CatalogState>({
@@ -64,12 +68,13 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
   useEffect(() => {
     setPriceScope(previous => previous === storeScope ? previous : null);
     setVerifiedStoreScope(previous => previous === storeScope ? previous : null);
-    setFilter({ scope: "", status: undefined });
+    setFilter(previous => previous.scope === storeScope ? previous : { scope: "", status: undefined });
   }, [storeScope]);
   const draftSearch = search.scope === storeScope ? search.draft : "";
   const searchQuery = search.scope === storeScope ? search.query : "";
   const status = filter.scope === storeScope ? filter.status : undefined;
   const scope = JSON.stringify([actorId, storeId, searchQuery, status]);
+  const historyScope = JSON.stringify([scope, retry]);
   useEffect(() => {
     const reload = () => setRetry(value => value + 1);
     if (Platform.OS === "web") {
@@ -86,6 +91,7 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
     const epoch = ++generation.current;
     active.current?.abort();
     setEditingId(null);
+    setHistory(null);
     if (!actorId || !storeId) {
       setState({ scope, loading: false, more: false, items: [] });
       return;
@@ -202,10 +208,11 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
       </Pressable>)}
     </View> : null}
     {catalogVerified ? <InventorySummary key={JSON.stringify([actorId, storeId, retry])}
-      actorId={actorId} storeId={storeId} onShowStockout={() => {
+      actorId={actorId} storeId={storeId} onShowStatus={nextStatus => {
+        if (renderedGeneration !== generation.current) return;
         setSearch({ scope: storeScope, draft: "", query: "" });
-        setFilter({ scope: storeScope, status: "stockout" });
-        if (status === "stockout" && !searchQuery) setRetry(value => value + 1);
+        setFilter({ scope: storeScope, status: nextStatus });
+        if (status === nextStatus && !searchQuery) setRetry(value => value + 1);
       }} /> : null}
     {catalogVerified ? <CatalogExport actorId={actorId} storeId={storeId} query={searchQuery} status={status} /> : null}
     {catalogVerified ? <CatalogImport actorId={actorId} storeId={storeId} onChanged={() => setRetry(value => value + 1)} /> : null}
@@ -242,6 +249,23 @@ export default function MerchantPrivateCatalog({ actorId, stores, initialStoreId
         <MerchantCatalogDraftForm key={`${storeScope}:${offer.id}:${offer.draftVersion}:${priceStockOnly}`}
           actorId={actorId} storeId={storeId} draft={offer} priceStockOnly={priceStockOnly}
           onCreated={() => { setEditingId(null); setRetry(value => value + 1); }} /> : null}
+      {catalogVerified && !visible.loading && canEditDraft(offer) ? <>
+        <Pressable accessibilityRole="button"
+          accessibilityLabel={`عرض سجل تعديلات ${offer.name}`}
+          accessibilityState={{ expanded: history?.scope === historyScope && history.offerId === offer.id }}
+          style={button} onPress={() => {
+            if (renderedGeneration !== generation.current) return;
+            setHistory(previous => previous?.scope === historyScope && previous.offerId === offer.id
+              ? null : { scope: historyScope, offerId: offer.id });
+          }}>
+          <Text style={{ color: theme.interactiveText }}>
+            {history?.scope === historyScope && history.offerId === offer.id ? "إغلاق السجل" : "عرض تعديلات المسودة"}
+          </Text>
+        </Pressable>
+        {history?.scope === historyScope && history.offerId === offer.id ?
+          <CatalogDraftHistory key={JSON.stringify([historyScope, offer.id])}
+            actorId={actorId} storeId={storeId} offerId={offer.id} /> : null}
+      </> : null}
       {!offer.productActive || !offer.variantSellable || !offer.requiredAttributesValid ?
         <Text style={{ color: theme.dangerText }}>المنتج أو الصنف غير مؤهل للبيع حاليًا.</Text> : null}
     </View>)}

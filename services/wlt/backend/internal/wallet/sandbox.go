@@ -72,7 +72,7 @@ func writeSandboxFunding(ctx context.Context, db *sql.DB, origin, token, referen
 	if !sandboxReference.MatchString(reference) || !validBearer(auth) {
 		return "", errors.New("invalid sandbox funding input")
 	}
-	identity, err := newIdentityReader(origin)
+	identity, err := newIdentityReader(origin, false)
 	if err != nil {
 		return "", err
 	}

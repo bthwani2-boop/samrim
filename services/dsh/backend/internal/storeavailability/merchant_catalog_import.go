@@ -6,9 +6,10 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/json/jsontext"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -16,8 +17,6 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
-
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 const catalogImportMaxRows = 5000
@@ -40,6 +39,45 @@ type MerchantCatalogImportRow struct {
 type MerchantCatalogImportChange struct {
 	SourceSHA256 string                     `json:"sourceSha256"`
 	Rows         []MerchantCatalogImportRow `json:"rows"`
+}
+
+// The same wire admission protects HTTP input and stored manifest readback.
+// Keep the domain command and its original serialized fingerprint unchanged.
+type catalogImportWire struct {
+	SourceSHA256 string `json:"sourceSha256"`
+	Rows         []struct {
+		Row             int            `json:"row"`
+		Name            *string        `json:"name"`
+		PriceYER        *string        `json:"priceYer"`
+		StockUnits      *string        `json:"stockUnits"`
+		OfferID         jsontext.Value `json:"offerId"`
+		ExpectedVersion jsontext.Value `json:"expectedVersion"`
+		SourceIssue     jsontext.Value `json:"sourceIssue"`
+	} `json:"rows"`
+}
+
+func (wire catalogImportWire) command() (MerchantCatalogImportChange, error) {
+	if len(wire.Rows) < 1 || len(wire.Rows) > catalogImportMaxRows {
+		return MerchantCatalogImportChange{}, ErrRegistrationInvalid
+	}
+	change := MerchantCatalogImportChange{SourceSHA256: wire.SourceSHA256, Rows: make([]MerchantCatalogImportRow, 0, len(wire.Rows))}
+	for _, row := range wire.Rows {
+		if row.Name == nil || row.PriceYER == nil || row.StockUnits == nil {
+			return MerchantCatalogImportChange{}, ErrRegistrationInvalid
+		}
+		item := MerchantCatalogImportRow{Row: row.Row, Name: *row.Name, PriceYER: *row.PriceYER, StockUnits: *row.StockUnits}
+		if len(row.OfferID) != 0 && (jsonv2.Unmarshal(row.OfferID, &item.OfferID) != nil || !registrationPublicID.MatchString(item.OfferID)) {
+			return MerchantCatalogImportChange{}, ErrRegistrationInvalid
+		}
+		if len(row.ExpectedVersion) != 0 && (jsonv2.Unmarshal(row.ExpectedVersion, &item.ExpectedVersion) != nil || item.ExpectedVersion < 1 || item.ExpectedVersion >= 9007199254740991) {
+			return MerchantCatalogImportChange{}, ErrRegistrationInvalid
+		}
+		if len(row.SourceIssue) != 0 && (jsonv2.Unmarshal(row.SourceIssue, &item.SourceIssue) != nil || item.SourceIssue != "INVALID_ROW") {
+			return MerchantCatalogImportChange{}, ErrRegistrationInvalid
+		}
+		change.Rows = append(change.Rows, item)
+	}
+	return change, nil
 }
 
 type MerchantCatalogImportOutcome struct {
@@ -100,8 +138,12 @@ func encodeCatalogImportManifest(runID string, change MerchantCatalogImportChang
 }
 
 func decodeCatalogImportManifest(runID, digest string, stored []byte) (MerchantCatalogImportChange, error) {
-	var change MerchantCatalogImportChange
-	if len(stored) > 16*1024*1024 || json.Unmarshal(stored, &change) != nil {
+	var wire catalogImportWire
+	if len(stored) > 16*1024*1024 || jsonv2.Unmarshal(stored, &wire, jsonv2.RejectUnknownMembers(true)) != nil {
+		return MerchantCatalogImportChange{}, ErrStoreOwnerUnavailable
+	}
+	change, err := wire.command()
+	if err != nil {
 		return MerchantCatalogImportChange{}, ErrStoreOwnerUnavailable
 	}
 	_, actual, err := encodeCatalogImportManifest(runID, change)
@@ -134,14 +176,11 @@ func (s *MerchantStoreRegistrar) CatalogImport(ctx context.Context, token, store
 			return MerchantCatalogImportResult{}, err
 		}
 	}
-	tx, err := s.beginCatalogEdit(ctx, actor, storeID)
+	tx, err := s.beginCatalogCommand(ctx, actor, storeID, "catalog_draft_edit_commands", "catalog_import_runs", "catalog_import_outcomes")
 	if err != nil {
 		return MerchantCatalogImportResult{}, err
 	}
 	defer tx.Rollback()
-	if err = dbscope.Bind(ctx, tx, s.grants.schema, "catalog_import_runs", "catalog_import_outcomes", "stores", "offers", "products", "variants", "catalog_draft_commands", "catalog_draft_edit_commands"); err != nil {
-		return MerchantCatalogImportResult{}, ErrStoreOwnerUnavailable
-	}
 	var storedStore, storedDigest string
 	var storedManifest []byte
 	err = tx.QueryRowContext(ctx, `SELECT store_id,request_hash,manifest FROM catalog_import_runs
@@ -229,14 +268,8 @@ func (s *MerchantStoreRegistrar) CatalogImport(ctx context.Context, token, store
 			result.Outcomes = append(result.Outcomes, out)
 		}
 	}
-	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
-		return MerchantCatalogImportResult{}, ErrUnknownResult
-	}
-	if err = tx.Commit(); err != nil {
-		return MerchantCatalogImportResult{}, ErrUnknownResult
-	}
-	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
-		return MerchantCatalogImportResult{}, ErrUnknownResult
+	if err = s.commitCatalogCommand(ctx, tx, token, actor); err != nil {
+		return MerchantCatalogImportResult{}, err
 	}
 	result.Processed = len(result.Outcomes)
 	if offset > result.Processed {
@@ -348,16 +381,17 @@ func NewMerchantCatalogImportHandler(service *MerchantStoreRegistrar) (http.Hand
 		}
 		var start *MerchantCatalogImportChange
 		if r.Method == http.MethodPut {
-			media, _, e := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if e != nil || media != "application/json" {
+			var wire catalogImportWire
+			if decodeUniqueJSON(w, r, 8*1024*1024, &wire) != nil {
 				writeRegistrationFailure(w, ErrRegistrationInvalid)
 				return
 			}
-			start = &MerchantCatalogImportChange{}
-			if decodeUniqueJSON(w, r, 8*1024*1024, start) != nil {
+			command, err := wire.command()
+			if err != nil {
 				writeRegistrationFailure(w, ErrRegistrationInvalid)
 				return
 			}
+			start = &command
 		} else {
 			body, e := io.ReadAll(io.LimitReader(r.Body, 1))
 			if e != nil || len(body) != 0 {

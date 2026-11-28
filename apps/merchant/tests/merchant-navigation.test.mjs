@@ -20,3 +20,23 @@ test("private routes remain behind existing fail-closed Identity gate", () => {
   assert.equal(existsSync(resolve(root,"app/(app)")),false);
   assert.equal(existsSync(resolve(root,"app/(workspace)")),false);
 });
+
+test("routed unavailable capabilities remain fail-closed without owner implementation", () => {
+  const routed = [
+    ["app/products/[id].tsx", "catalog/product-editor.tsx"],
+    ["app/products/quick-prices.tsx", "catalog/quick-prices.tsx"],
+    ["app/promotions/index.tsx", "marketing/promotions-screen.tsx"],
+    ["app/notifications.tsx", "notifications/notifications-inbox.tsx"],
+    ["app/orders/[id].tsx", "orders/order-detail-screen.tsx"],
+    ["app/store/index.tsx", "stores/store-overview.tsx"],
+    ["app/store/team.tsx", "stores/store-access.tsx"],
+    ["app/store/captains.tsx", "stores/captain-memberships.tsx"],
+  ];
+  for (const [route, feature] of routed) {
+    const entry = readFileSync(resolve(root, route), "utf8");
+    assert.ok(entry.includes(`/src/features/${feature.replace(/\.tsx$/, "")}`), route);
+    const source = readFileSync(resolve(root, "src/features", feature), "utf8");
+    assert.match(source, /MerchantCapabilityScreen/, feature);
+    assert.doesNotMatch(source, /\bfetch\s*\(|\bsetItem\s*\(|\bmutate\s*\(/, feature);
+  }
+});

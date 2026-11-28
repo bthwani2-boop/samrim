@@ -82,21 +82,65 @@ export function containsLikelySecret(text) {
     /AKIA[0-9A-Z]{16}/.test(text);
 }
 
-function hasMarker(bytes) {
+export function containsLikelySecretBytes(bytes) {
   if (containsLikelySecret(bytes.toString("latin1"))) return true;
-  if (bytes[0] === 0xff && bytes[1] === 0xfe)
-    return containsLikelySecret(bytes.toString("utf16le", 2));
-  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
-    const end = bytes.length - bytes.length % 2;
-    return containsLikelySecret(Buffer.from(bytes.subarray(2, end)).swap16().toString("utf16le"));
-  }
-  return false;
+  if (!bytes.includes(0)) return false;
+  const aligned = bytes.subarray(0, bytes.length - bytes.length % 2);
+  return containsLikelySecret(aligned.toString("utf16le")) ||
+    containsLikelySecret(Buffer.from(aligned).swap16().toString("utf16le"));
 }
 
-function git(...args) {
-  return execFileSync(gitExecutable, args, {
-    cwd: root, maxBuffer: maxBytes, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
-  });
+export function canonicalGitEnvironment() {
+  // The caller may not choose another repository, index, object database,
+  // replacement ref namespace or injected Git configuration for source proof.
+  const env = Object.fromEntries(Object.entries(process.env)
+    .filter(([key]) => !key.toUpperCase().startsWith("GIT_")));
+  return { ...env, GIT_NO_REPLACE_OBJECTS: "1", GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0" };
+}
+
+// Reject redirected ancestors before expanding a legitimate Windows short
+// name. Compare the physical directory and its identity, not Git's spelling.
+function checkoutIdentity(directory) {
+  const spelling = resolve(directory);
+  const stat = lstatSync(spelling, { bigint: true });
+  assert.ok(stat.isDirectory() && !stat.isSymbolicLink() &&
+    samePath(realpathSync(spelling), spelling), "Wrong checkout");
+  return { path: realpathSync.native(spelling), dev: stat.dev, ino: stat.ino };
+}
+
+function sameCheckout(left, right) {
+  return samePath(left.path, right.path) && left.dev === right.dev && left.ino === right.ino;
+}
+
+export function openRepositoryReader(checkout) {
+  const requested = resolve(checkout);
+  const initial = checkoutIdentity(requested);
+  const env = canonicalGitEnvironment();
+  const execute = (args, input) => {
+    try {
+      return execFileSync(gitExecutable, ["--no-replace-objects", "--no-optional-locks", ...args], {
+        cwd: initial.path, env, maxBuffer: maxBytes, timeout: 30000, input,
+        windowsHide: true, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+      });
+    } catch {
+      throw new Error("Canonical Git read failed: " + args[0]);
+    }
+  };
+  const read = (...args) => execute(args);
+  read.checkout = initial.path;
+  read.assertCheckout = () => {
+    const actual = read("rev-parse", "--show-toplevel").toString("utf8").replace(/\r?\n$/, "");
+    assert.ok(sameCheckout(checkoutIdentity(requested), initial) &&
+      sameCheckout(checkoutIdentity(actual), initial), "Wrong checkout");
+  };
+  read.assertCheckout();
+  read.batchBlobs = ids => {
+    assert.ok(Array.isArray(ids) && ids.length > 0 && ids.every(id =>
+      typeof id === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(id)), "Invalid Git blob identities");
+    return execute(["cat-file", "--batch"], ids.join("\n") + "\n");
+  };
+  return read;
 }
 
 function parseIndex(inventory, format) {
@@ -116,13 +160,18 @@ function parseIndex(inventory, format) {
   return entries.values();
 }
 
-function blobIdentity(bytes, format) {
+export function gitBlobIdentity(bytes, format) {
   return createHash(format).update("blob " + bytes.length + "\0").update(bytes).digest("hex");
 }
 
+export function readVerifiedGitBlob(git, oid, format) {
+  const bytes = git("cat-file", "blob", oid);
+  assert.equal(gitBlobIdentity(bytes, format), oid, "Index object identity mismatch");
+  return bytes;
+}
+
 function verifyTrackedSecrets() {
-  const checkout = git("rev-parse", "--show-toplevel").toString("utf8").trim();
-  assert.ok(samePath(resolve(checkout), root), "Wrong checkout");
+  const git = openRepositoryReader(root);
   const format = git("rev-parse", "--show-object-format").toString("ascii").trim();
   assert.ok(["sha1", "sha256"].includes(format), "Unsupported Git object format");
   const inventory = git("ls-files", "--stage", "-z");
@@ -145,14 +194,13 @@ function verifyTrackedSecrets() {
     }
     if (actual) {
       working++;
-      if (hasMarker(actual.bytes)) violations.push(label + ": likely secret marker in working bytes (value redacted)");
+      if (containsLikelySecretBytes(actual.bytes)) violations.push(label + ": likely secret marker in working bytes (value redacted)");
     }
     // Exact blob identity allows one read to cover both versions; otherwise
     // inspect the immutable staged object even if the working file is absent.
-    if (!actual || blobIdentity(actual.bytes, format) !== oid) {
-      const indexed = git("cat-file", "blob", oid);
-      assert.equal(blobIdentity(indexed, format), oid, "Index object identity mismatch");
-      if (hasMarker(indexed)) violations.push(label + ": likely secret marker in staged bytes (value redacted)");
+    if (!actual || gitBlobIdentity(actual.bytes, format) !== oid) {
+      const indexed = readVerifiedGitBlob(git, oid, format);
+      if (containsLikelySecretBytes(indexed)) violations.push(label + ": likely secret marker in staged bytes (value redacted)");
     }
     staged++;
   }

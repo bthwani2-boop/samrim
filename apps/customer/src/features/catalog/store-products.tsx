@@ -14,8 +14,7 @@ export default function StoreProducts({ offers, store, session }: Readonly<{
   store: PublicStore;
   session: StoreCart;
 }>) {
-  // A verified draft Cart can be edited even while checkout is unavailable.
-  // A known pause or closed schedule still disables additions on this surface.
+  // A verified draft can be edited even while checkout is unavailable.
   const canAdjust = session.cart !== null &&
     store.orderabilityStatus !== "PAUSED" && store.orderabilityStatus !== "CLOSED_BY_SCHEDULE";
   const linesByOffer = new Map(session.cart?.lines.map(line => [line.offerId, line]));
@@ -32,12 +31,22 @@ export default function StoreProducts({ offers, store, session }: Readonly<{
 
 export function StoreCartBar({ storeId, session }: Readonly<{ storeId: string; session: StoreCart }>) {
   const { theme } = useMobileAppearance();
-  const { cart, confirm, busy, message } = session;
-  if (!(cart?.lines.length || confirm || message)) return null;
+  const { status, cart, confirm, busy, message, retry } = session;
+  if (status === "idle" || (status === "ready" && !(cart?.lines.length || confirm || message))) return null;
   const summary = cart && summarizeCartPreview(cart.lines);
   return <View testID="store-cart-bar" style={{ paddingHorizontal: 18, paddingVertical: 10, borderTopWidth: 1,
     borderColor: theme.borderColor, backgroundColor: theme.surface, gap: 8 }}>
     {message ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{message}</Text> : null}
+    {status === "loading" ? <Text accessibilityLiveRegion="polite" style={{ color: theme.colorSecondary }}>جارٍ التحقق من السلة.</Text> : null}
+    {status === "signed-out" ? <Link href="/account" style={{ color: theme.interactiveText, minHeight: 44 }}>
+      تسجيل الدخول لإضافة المنتجات إلى السلة
+    </Link> : null}
+    {status === "unavailable" ? <View style={{ gap: 8 }}>
+      <Text accessibilityRole="alert" style={{ color: theme.dangerText }}>تعذّر التحقق من سلة المتجر.</Text>
+      <Pressable accessibilityRole="button" onPress={retry} style={{ minHeight: 44, justifyContent: "center" }}>
+        <Text style={{ color: theme.interactiveText }}>إعادة المحاولة</Text>
+      </Pressable>
+    </View> : null}
     {confirm ? <Pressable accessibilityRole="button" disabled={busy} onPress={confirm}
       style={{ minHeight: 44, justifyContent: "center" }}>
       <Text style={{ color: theme.interactiveText }}>{busy ? "جارٍ التحقق…" : "تحقق من آخر تعديل"}</Text>

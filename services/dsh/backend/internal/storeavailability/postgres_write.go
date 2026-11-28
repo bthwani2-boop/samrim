@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"time"
 )
 
@@ -28,7 +29,7 @@ func (r *PostgresRepository) ReplayAuthorized(ctx context.Context, c AuthorizedC
 		(c.AuthoritySource != "MERCHANT_STORE_GRANT" && c.AuthoritySource != "OPERATOR_OPERATIONS") {
 		return Snapshot{}, false, ErrForbidden
 	}
-	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, err := dbscope.Begin(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "stores", "store_operational_commands", "store_operational_audit")
 	if err != nil {
 		return Snapshot{}, false, err
 	}
@@ -189,7 +190,7 @@ func (r *PostgresRepository) applyOnce(ctx context.Context, c AuthorizedChange, 
 	if err := ValidateSchedule(c.Weekly); err != nil {
 		return Snapshot{}, false, err
 	}
-	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	tx, err := dbscope.Begin(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelSerializable}, "stores", "service_cities", "store_operational_limits", "store_operational_availability", "store_operational_weekly_hours", "store_operational_commands", "store_operational_audit")
 	if err != nil {
 		return Snapshot{}, false, err
 	}

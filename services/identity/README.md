@@ -30,14 +30,14 @@ The Go process requires BTHWANI_ISOLATED_TEST_MODE=true, an admitted identity_te
 | Captain | IDENTITY_ENABLE_ISOLATED_CAPTAIN_ADMISSION; verified DSH standing endpoint and container TLS trust |
 | Operator permissions | IDENTITY_ENABLE_ISOLATED_OPERATOR_PERMISSION_ADMIN; current original-Operator authority |
 | Operator Passkey | IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_AUTH; matching RP ID and permitted origins |
-| Initial Operator | IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP; exact disposable database or separately authorized local-first-Owner mode |
-| Existing Operator recovery | IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY; exact disposable WebAuthn database and approved origin |
+| Initial Operator | IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP; exact verified development owner and separately authorized local-first-Owner mode |
+| Existing Operator recovery | IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY; exact verified development owner and approved origin |
 
 These are source gates, not instructions to enable them or proof of activation. Synthetic phone proof is not real provider or legal identity proof. Never expose credentials in URLs, logs, Git, screenshots or chat.
 
 ### Original Operator and recovery
 
-The offline issue-synthetic-root-ticket command is restricted to the dedicated disposable WebAuthn database. The separate issue-local-dev-root-ticket command additionally requires isolated container mode, IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR and the exact existing development database/schema with verified owner ACLs. Both require directly supervised human authorization, approved localhost RP/origin and absence of an original Owner. The local variant admits only its known synthetic fixture boundary. Neither command runs as part of startup, CI or ordinary app launch.
+The offline issue-local-dev-root-ticket command requires isolated container mode, IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR, the exact existing development database/schema with verified owner ACLs, approved localhost RP/origin, directly supervised human authorization and absence of an original Owner. It admits only its known synthetic fixture boundary. It never runs as part of startup, CI or ordinary app launch. Cryptographic and SQL tests use their own network-isolated disposable fixture; it is not an alternate serving environment.
 
 Existing-actor recovery consumes independently authorized short-lived actor-bound proof. The HTTP API cannot issue it, select an arbitrary actor or create a second Owner. Recovery registers a replacement credential, revokes old credentials/sessions and preserves the actor, grants, original-Owner marker and audit. The source does not establish a production proof-issuance procedure. A human must complete genuine user-verified WebAuthn and authenticate separately.
 

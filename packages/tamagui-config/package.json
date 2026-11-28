@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./appearance": "./src/appearance.tsx",
     "./navigation": "./src/navigation.tsx",
-    "./appearance-preferences": "./src/appearance-preferences.tsx"
+    "./appearance-preferences": "./src/appearance-preferences.tsx",
+    "./radio-group": "./src/radio-group.ts"
   },
   "dependencies": {
     "@bthwani/design-system": "workspace:*",

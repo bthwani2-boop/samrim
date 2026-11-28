@@ -257,16 +257,26 @@ test("unavailable distance fee and schedule remain read-only; stale review canno
     nodes(h.render()).find(n => n.props?.testID === "checkout-sales-channel-DIRECT").props.onPress();
     find("FulfillmentChoice").props.onChange("PARTNER_CAPTAIN");
     find("DeliveryAddressReview").props.onSelectionChange({ id: "addr-00000000000000000000000000000001", version: 2 });
-    for (const status of ["PAUSED", "CLOSED_BY_SCHEDULE", "UNAVAILABLE"]) {
+    const pausedUntil = "2026-11-27T20:00:00.123456Z";
+    const localExpiry = new Date("2026-11-27T20:00:00.000Z").toLocaleString("ar-YE", { dateStyle: "medium", timeStyle: "medium" });
+    for (const [storeSchedule, policyStatus, message, hoursMessage] of [
+      [{ status: "PAUSED", version: 4, pausedUntil }, "DENIED_BY_CITY_POLICY", "سياسة المدينة تمنع الطريقة المختارة لهذا المتجر.", `الإيقاف المؤقت حتى ${localExpiry} بتوقيت جهازك.`],
+      [{ status: "PAUSED", version: 4 }, "DENIED_BY_CITY_POLICY", "سياسة المدينة تمنع الطريقة المختارة لهذا المتجر.", "المتجر متوقف مؤقتًا."],
+      [{ status: "CLOSED_BY_SCHEDULE", version: 4 }, "ALLOWED_BY_CITY_POLICY", "سياسة المدينة تسمح بالطريقة المختارة.", "المتجر خارج ساعات العمل."],
+      [{ status: "UNAVAILABLE" }, "UNCONFIGURED", "لم تُضبط سياسة المدينة لطرق التنفيذ لهذا المتجر.", "لم تتوفر أدلة كافية على ساعات عمل المتجر."],
+    ]) {
       find("Pressable").props.onPress();
       h.reads.at(-1).resolve({ kind: "ready", review: {
         actorId: "customer-a", storeId: "store-a", cartVersion: 4, salesChannel: "DIRECT",
         fulfillmentMode: "PARTNER_CAPTAIN", merchandise: { merchandiseSubtotalYer: "1100" },
-        delivery: { status: "UNSERVICEABLE" }, storeSchedule: { status }, checkoutReady: false,
+        delivery: { status: "UNSERVICEABLE" }, storeSchedule, checkoutReady: false,
+        cityFulfillmentPolicy: { status: policyStatus, storeRelation: "DIRECT" },
       } });
       await settle();
       assert.ok(result());
       assert.ok(nodes(result()).some(n => n.props?.testID === "checkout-distance-fee-unavailable"));
+      assert.ok(flatten(result()).includes(message));
+      assert.ok(flatten(result()).includes(hoursMessage));
       assert.ok(flatten(result()).includes("لا يمكن تأكيد الطلب"));
     }
     find("Pressable").props.onPress();

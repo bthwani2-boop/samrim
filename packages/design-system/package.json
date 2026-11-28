@@ -17,8 +17,8 @@
   "scripts": {
     "test": "pnpm run theme:check && pnpm run theme:verify",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "theme:check": "node --loader ./tools/ts-resolver.mjs tools/generate-theme-css.mjs --check",
-    "theme:verify": "node --loader ./tools/ts-resolver.mjs tools/verify-theme-authority.mjs"
+    "theme:check": "node --import ./tools/ts-resolver.mjs tools/generate-theme-css.mjs --check",
+    "theme:verify": "node --import ./tools/ts-resolver.mjs tools/verify-theme-authority.mjs"
   },
   "devDependencies": {
     "typescript": "7.0.2"

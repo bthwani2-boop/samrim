@@ -24,7 +24,7 @@ test("DSH cart preview rejects amounts beyond the owner int64 YER bound", () => 
   };
   assert.throws(() => parseCustomerCart(cart, "store-a", "customer-a"),
     error => error instanceof DshCartError && error.code === "OWNER_RESPONSE_INVALID");
-  assert.throws(() => parseCustomerCartResult({ cart, replay: false }, "store-a", "customer-a", 0),
+  assert.throws(() => parseCustomerCartResult({ cart, replay: false }, "store-a", "customer-a", { operationId: "test-cart-operation", expectedVersion: 0, lines: [{ offerId: "offer-a", quantity: 1 }] }),
     error => error instanceof DshCartError && error.code === "OWNER_RESPONSE_INVALID");
   const boundary = { ...cart, lines: [{ ...cart.lines[0], previewUnitYer: "9223372036854775807" }] };
   assert.deepEqual(parseCustomerCart(boundary, "store-a", "customer-a"), boundary);

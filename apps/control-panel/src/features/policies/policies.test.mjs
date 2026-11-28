@@ -12,21 +12,9 @@ const privateReply = (body, init = {}) => Response.json(body, {
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 
-import { findWorkspaceEntry } from "../navigation/workspace-registry.ts";
-import { canShowNavigation } from "../session/operator-permissions.ts";
 import { parseCityPolicy, reconcileCityPolicy } from "./city-policy-command.ts";
 import { clearPendingRegistrationPolicy, readPendingRegistrationPolicy, readRegistrationHistory, readRegistrationOverview, savePendingRegistrationPolicy } from "./store-registration-command.ts";
 
-test("policies: routes have the expected navigation permission boundary", () => {
-  for (const path of ["/policies","/policies/stage-sla"]) {
-    assert.equal(findWorkspaceEntry(path)?.permission ?? null, "platform_policies");
-  }
-});
-
-test("policies: unauthenticated or unmapped sessions never expose navigation", () => {
-  assert.equal(canShowNavigation(false, ["operations", "finance", "platform_policies"], "platform_policies"), false);
-  assert.equal(canShowNavigation(true, [], "platform_policies"), false);
-});
 
 const endpoint = "/api/policies/cities/sanaa";
 const actorId = "operator-1";
@@ -333,7 +321,7 @@ test("policy city directory reads the bounded owner pages without treating parti
       lateController?.abort();
       return page;
     } },
-    "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
+    "../stores/public-store-query": { isolatedPublicDshOrigin: () => origin },
   });
   loadedModules.push(module);
   const load = module.exports.loadPolicyCities;

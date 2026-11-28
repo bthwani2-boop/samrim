@@ -7,6 +7,7 @@ import { mock, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
 import { formatExactYer } from "../src/components/format-exact-yer.ts";
+import * as walletLifecycle from "../src/features/wallet/wallet-lifecycle.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const entry = fileURLToPath(new URL("../src/features/wallet/wallet-screen.tsx", import.meta.url));
@@ -83,6 +84,7 @@ function harness() {
     ]),
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "../../components/format-exact-yer": { formatExactYer },
+    "./wallet-lifecycle": walletLifecycle,
     "./wallet-read": {
       readNativeWallet(signal) {
         return new Promise((resolve, reject) => requests.push({ kind: "wallet", signal, resolve, reject }));

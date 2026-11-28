@@ -158,3 +158,15 @@ func TestSandboxProviderFundingRejectsBeforeDatabase(t *testing.T) {
 		})
 	}
 }
+
+func TestSandboxProviderRejectsUnrecognizedEncoding(t *testing.T) {
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Encoding", "unknown")
+		_, _ = fmt.Fprint(w, `{"reference":"cash-in-accepted-01","actorId":"wallet-one","amountYer":"17","currency":"YER","status":"SUCCEEDED"}`)
+	}))
+	defer provider.Close()
+	if err := verifySandboxProviderEvidence(t.Context(), provider.URL, "cash-in-accepted-01", "wallet-one", 17); err == nil {
+		t.Fatal("provider admitted an unsupported content representation")
+	}
+}

@@ -7,13 +7,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"mime"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 )
 
 var ErrCatalogDraftVersionConflict = errors.New("CATALOG_DRAFT_VERSION_CONFLICT")
@@ -53,7 +50,7 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 	if _, _, err := validateMerchantCatalogEdit(change); err != nil {
 		return MerchantCatalogDraftEditResult{}, err
 	}
-	tx, err := s.beginCatalogEdit(ctx, actor, storeID)
+	tx, err := s.beginCatalogCommand(ctx, actor, storeID, "catalog_draft_edit_commands")
 	if err != nil {
 		return MerchantCatalogDraftEditResult{}, err
 	}
@@ -62,46 +59,10 @@ func (s *MerchantStoreRegistrar) EditCatalogDraft(
 	if err != nil {
 		return MerchantCatalogDraftEditResult{}, err
 	}
-	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
-	}
-	if err = tx.Commit(); err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
-	}
-	if err = s.confirmCatalogActor(ctx, token, actor); err != nil {
-		return MerchantCatalogDraftEditResult{}, ErrUnknownResult
+	if err = s.commitCatalogCommand(ctx, tx, token, actor); err != nil {
+		return MerchantCatalogDraftEditResult{}, err
 	}
 	return result, nil
-}
-
-// Both individual edits and import rows share this transaction and scope lock.
-func (s *MerchantStoreRegistrar) beginCatalogEdit(ctx context.Context, actor, storeID string) (*sql.Tx, error) {
-	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "stores", "offers", "products", "variants", "catalog_draft_commands", "catalog_draft_edit_commands")
-	if err != nil {
-		return nil, ErrStoreOwnerUnavailable
-	}
-	ready := false
-	defer func() {
-		if !ready {
-			_ = tx.Rollback()
-		}
-	}()
-	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(84932,hashtext($1))", actor); err != nil {
-		return nil, ErrStoreOwnerUnavailable
-	}
-	var owner string
-	err = tx.QueryRowContext(ctx, "SELECT owner_actor_id FROM stores WHERE id=$1 FOR SHARE", storeID).Scan(&owner)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrForbidden
-	}
-	if err != nil {
-		return nil, ErrStoreOwnerUnavailable
-	}
-	if owner != actor {
-		return nil, ErrForbidden
-	}
-	ready = true
-	return tx, nil
 }
 
 func editCatalogDraftTx(ctx context.Context, tx *sql.Tx, actor, storeID, offerID string, change MerchantCatalogDraftEditChange, keepName bool) (MerchantCatalogDraftEditResult, error) {
@@ -242,16 +203,18 @@ func NewMerchantCatalogEditHandler(service *MerchantStoreRegistrar) (http.Handle
 			writeRegistrationFailure(w, ErrUnauthorized)
 			return
 		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
+		var wire struct {
+			OperationID     string `json:"operationId"`
+			ExpectedVersion *int64 `json:"expectedVersion"`
+			Name            string `json:"name"`
+			PriceYER        string `json:"priceYer"`
+			StockUnits      *int64 `json:"stockUnits"`
+		}
+		if decodeUniqueJSON(w, r, 8192, &wire) != nil || wire.ExpectedVersion == nil || wire.StockUnits == nil {
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
-		var change MerchantCatalogDraftEditChange
-		if decodeUniqueJSON(w, r, 8192, &change) != nil {
-			writeRegistrationFailure(w, ErrRegistrationInvalid)
-			return
-		}
+		change := MerchantCatalogDraftEditChange{OperationID: wire.OperationID, ExpectedVersion: *wire.ExpectedVersion, Name: wire.Name, PriceYER: wire.PriceYER, StockUnits: *wire.StockUnits}
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		result, err := service.EditCatalogDraft(ctx, token, r.PathValue("storeID"), r.PathValue("offerID"), change)

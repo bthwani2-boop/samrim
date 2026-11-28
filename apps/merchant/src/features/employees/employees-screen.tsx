@@ -1,5 +1,6 @@
 import { claimEmployeeRegistration, type EmployeeEndState, type EmployeeRecord, type EmployeeRegistration, type EmployeeRegistrationRecovery, type EmployeeRegistrationRecoveryPort, employeeRegistrationErrorOutcome, normalizeEmployeeRegistrationDraft, openEmployeeRegistrationRecovery, settleEmployeeRegistration, validEmployeeRegistration } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { createRadioGroup } from "@bthwani/tamagui-config/radio-group";
 import { CryptoDigestAlgorithm, digestStringAsync, randomUUID } from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -168,6 +169,9 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
   }
   const button={minHeight:44,justifyContent:"center" as const,paddingHorizontal:12,borderWidth:1,borderRadius:10,borderColor:theme.borderColor};
   const input={...button,color:theme.color,backgroundColor:theme.surface};
+  const filters=[[undefined,"كل السجلات"],["NO_END_DATE","دون تاريخ انتهاء"],["HAS_END_DATE","بتاريخ انتهاء"]] as const;
+  const filterRadio=createRadioGroup({values:filters.map(([value])=>value),selected:endState,disabled:busy||!ready,
+    web:Platform.OS==="web",canSelect:()=>renderedEpoch===actionEpoch.current&&ready&&!active.current&&scope.current?.signal.aborted===false,onSelect:chooseEndState});
   const labels=[["displayName","اسم الموظف",120],["department","القسم",80],["jobTitle","المسمى الوظيفي",80],["startDate","بداية العمل (YYYY-MM-DD)",10]] as const;
   return <View testID="merchant-employees-directory" style={{gap:12,padding:16,borderWidth:1,borderColor:theme.borderColor,borderRadius:14,backgroundColor:theme.surface}}>
     <Text accessibilityRole="header" style={{color:theme.color,fontSize:20,fontWeight:"700"}}>موظفو التاجر</Text>
@@ -176,14 +180,13 @@ function MerchantEmployees({actorId,storeId}:Readonly<{actorId:string;storeId:st
       <Text style={{color:theme.interactiveText}}>{busy?"جارٍ الاتصال بـ DSH…":"تحديث سجل الموظفين"}</Text>
     </Pressable>
     {message?<Text accessibilityRole="alert" style={{color:theme.warningText}}>{message}</Text>:null}
-    {ready?<View style={{gap:10}}>
-      <View accessibilityRole="radiogroup" accessibilityLabel="تصفية سجلات الموظفين" style={{gap:6}}>
-        {([[undefined,"كل السجلات"],["NO_END_DATE","دون تاريخ انتهاء"],["HAS_END_DATE","بتاريخ انتهاء"]] as const).map(([value,label])=>
-          <Pressable key={value??"ALL"} testID={"employee-end-filter-"+(value??"ALL")} accessibilityRole="radio"
-            accessibilityState={{checked:endState===value,disabled:busy}} disabled={busy} onPress={()=>chooseEndState(value)} style={button}>
+    {(ready||busy)?<View accessibilityRole="radiogroup" accessibilityLabel="تصفية سجلات الموظفين" style={{gap:6}}>
+        {filters.map(([value,label])=>
+          <Pressable key={value??"ALL"} testID={"employee-end-filter-"+(value??"ALL")} {...filterRadio(value)} accessibilityLabel={label} style={button}>
             <Text style={{color:theme.interactiveText}}>{label}</Text>
           </Pressable>)}
-      </View>
+      </View>:null}
+    {ready?<View style={{gap:10}}>
       {items.length===0?<Text style={{color:theme.colorSecondary}}>{endState?"لا توجد سجلات مطابقة للتصفية.":"لا توجد سجلات موظفين."}</Text>:null}
       {items.map(item=><View key={item.id} style={{gap:4,padding:10,borderWidth:1,borderRadius:8,borderColor:theme.borderColor}}>
         <Text style={{color:theme.color,fontWeight:"700"}}>{item.displayName}</Text>

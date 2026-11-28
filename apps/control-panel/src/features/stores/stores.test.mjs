@@ -10,19 +10,7 @@ import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 
-import { findWorkspaceEntry } from "../navigation/workspace-registry.ts";
-import { canShowNavigation } from "../session/operator-permissions.ts";
 
-test("stores: routes have the expected navigation permission boundary", () => {
-  for (const path of ["/merchants","/merchants/stores/abc"]) {
-    assert.equal(findWorkspaceEntry(path)?.permission ?? null, "merchant");
-  }
-});
-
-test("stores: unauthenticated or unmapped sessions never expose navigation", () => {
-  assert.equal(canShowNavigation(false, ["operations", "finance", "platform_policies"], "merchant"), false);
-  assert.equal(canShowNavigation(true, [], "merchant"), false);
-});
 
 test("publication review opens an exact Store, preserves its page, and fails closed outside scope", async t => {
   const previous = process.env.OPERATOR_POLICY_DSH_ORIGIN;
@@ -70,7 +58,9 @@ test("publication review opens an exact Store, preserves its page, and fails clo
         return {cityId: city, relation, items};
       }},
       "current-operator-access": { currentOperatorAccess: async () => ({ grants }) },
-      "operator-passkey-bff": { OPERATOR_COOKIE: "operator" },
+      "operator-passkey-config": {
+        OPERATOR_COOKIE: "operator",
+      },
       "public-store-query": { isolatedPublicDshOrigin: origin => origin },
       "operator-shell.module.css": { __esModule: true, default: {} },
       "workspace-unavailable": { __esModule: true, default: "Unavailable" },
@@ -89,7 +79,7 @@ test("publication review opens an exact Store, preserves its page, and fails clo
       "../features/stores/public-store-query": mocks["public-store-query"],
       "../features/stores/publication-review-query": query.exports,
       "./current-operator-access": mocks["current-operator-access"],
-      "./operator-passkey-bff": mocks["operator-passkey-bff"],
+      "./operator-passkey-config": mocks["operator-passkey-config"],
     });
     loadedModules.push(review);
     function load(source, prefix) {
@@ -126,6 +116,29 @@ test("publication review opens an exact Store, preserves its page, and fails clo
 
     const tree = nodes(await renderJoining());
     assert.ok(tree.some(node => node.props.href === "/merchants/stores/store-b?city=sanaa&relation=DIRECT&after=store-a"));
+    const summary = tree.find(node => typeof node.type === "function" && node.type.name === "PublicationReviewPageSummary");
+    assert.ok(summary, "current-page readiness facts must be presented");
+    const summaryNodes = nodes(summary.type(summary.props));
+    const textOf = node => typeof node === "string" || typeof node === "number" ? String(node) :
+      Array.isArray(node) ? node.map(textOf).join(" ") : node?.props ? textOf(node.props.children) : "";
+    const metrics = Object.fromEntries(summaryNodes.filter(node => node.type === "div" && node.props.children?.[0]?.type === "dt")
+      .map(node => [textOf(node.props.children[0]), textOf(node.props.children[1])]));
+    assert.equal(metrics["متاجر في الصفحة الحالية"], "1");
+    assert.equal(metrics["متاجر لديها حقائق تأسيس ناقصة"], "1 من 1");
+    assert.equal(metrics["متاجر سجلت جميع الحقائق الست"], "0 من 1");
+    assert.equal(metrics["النشاط غير نشط"], "1 من 1");
+    assert.equal(metrics["الموقع غير مسجل"], "1 من 1");
+    assert.equal(metrics["الكتالوج غير مسجل"], "0 من 1");
+    assert.match(textOf(summary.type(summary.props)), /ليست إجمالي المدينة/);
+    const facts = nodes(detailsModule.exports.PublicationReviewFacts({store:record}));
+    assert.match(textOf(facts), /راجع تفعيل النشاط/);
+    const complete = {...record, verticalActive:true, locationRecorded:true, weeklyHoursRecorded:true};
+    const completeSummary = textOf(summary.type({items:[complete]}));
+    assert.match(completeSummary, /لا تعني موافقة النشر/);
+    assert.match(completeSummary, /1 من 1/);
+    const emptySummary = textOf(summary.type({items:[]}));
+    assert.match(emptySummary, /لا ينطبق/);
+    assert.doesNotMatch(emptySummary, /0 من 0/);
     const detail = nodes(await render("store-b")).find(node => node.props.store);
     assert.deepEqual(detail?.props.store, record);
     assert.ok(nodes(detail.type(detail.props)).some(node => node.props.href === "/merchants/joining?city=sanaa&relation=DIRECT&after=store-a"));

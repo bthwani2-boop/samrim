@@ -341,3 +341,37 @@ test("Web blur and visibility both conceal the page; an unfocused visible docume
   assert.equal(links(h.render()).length, 0);
   assert.equal(h.reads[1].signal.aborted, true);
 });
+
+test("directory BFF denies expired initial identity without reading the directory", async t => {
+  const calls = [];
+  t.mock.method(globalThis, "fetch", async url => {
+    calls.push(String(url));
+    return String(url).includes(":3201") ? json(session(actor, Date.now() - 1000)) : json(page);
+  });
+  const response = await handleCustomerCartDirectory(request());
+  assert.equal(response.status, 503); // Identity rejects an already-expired owner projection.
+  assert.equal(calls.length, 1);
+  assert.equal((await response.json()).carts, undefined);
+});
+
+test("directory BFF denies expiry during the owner read despite a renewed proof", async t => {
+  const start = Date.now();
+  let now = start;
+  let identityReads = 0;
+  t.mock.method(Date, "now", () => now);
+  t.mock.method(globalThis, "fetch", async url => {
+    if (String(url).includes(":3201")) return json(session(actor, ++identityReads === 1 ? start + 1000 : start + 60000));
+    now = start + 1001;
+    return json(page);
+  });
+  const response = await handleCustomerCartDirectory(request());
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).carts, undefined);
+});
+
+test("directory BFF rejects the bare query delimiter without owner dispatch", async t => {
+  const mock = t.mock.method(globalThis, "fetch", async () => { throw Error("unexpected dispatch"); });
+  const response = await handleCustomerCartDirectory(request("?"));
+  assert.equal(response.status, 400);
+  assert.equal(mock.mock.callCount(), 0);
+});

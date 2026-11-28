@@ -2,6 +2,7 @@ package discovery
 
 import (
 	"context"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http/httptest"
 	"net/url"
 	"testing"
@@ -21,7 +22,7 @@ func TestOwnerBackedActiveCityDirectory(t *testing.T) {
 	owner, server := setupIntegratedOwner(t)
 	ctx := context.Background()
 	setActive := func(active bool) error {
-		tx, err := owner.beginScopedTx(ctx, nil)
+		tx, err := dbscope.Begin(ctx, owner.DB, owner.Schema, nil, "service_cities", "public_revision")
 		if err != nil {
 			return err
 		}

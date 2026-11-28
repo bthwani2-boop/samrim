@@ -72,16 +72,6 @@ func OpenFromEnvironment() (*sql.DB, error) {
 	return sql.Open("postgres", u.String())
 }
 
-// beginScopedTx resolves all unqualified DSH table names against one validated
-// schema for the lifetime of a transaction. Connection-pool reuse cannot leak
-// search_path state across callers, and pg_temp comes last to prevent shadowing.
-func (o *Owner) beginScopedTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error) {
-	if o == nil || o.DB == nil || !identifier.MatchString(o.Schema) {
-		return nil, errors.New("invalid DSH owner schema")
-	}
-	return dbscope.Begin(ctx, o.DB, o.Schema, opts)
-}
-
 func (o *Owner) revision(ctx context.Context, tx *sql.Tx) (int64, error) {
 	var v int64
 	err := tx.QueryRowContext(ctx, "SELECT revision FROM public_revision WHERE singleton=true").Scan(&v)
@@ -98,7 +88,7 @@ func (o *Owner) ImportSynthetic(ctx context.Context) error {
 	if !o.isIsolatedTestOwner() {
 		return errors.New("synthetic import disabled outside isolated DSH test schema")
 	}
-	tx, err := o.beginScopedTx(ctx, nil)
+	tx, err := dbscope.Begin(ctx, o.DB, o.Schema, nil, "public_revision", "service_cities", "verticals", "stores", "products", "variants", "offers")
 	if err != nil {
 		return err
 	}
@@ -191,7 +181,7 @@ func (o *Owner) ImportSyntheticDemo(ctx context.Context) error {
 	if !o.isIsolatedTestOwner() || !strings.HasPrefix(o.Schema, "dsh_test_demo_") || len(o.Schema) <= len("dsh_test_demo_") {
 		return errors.New("demo import requires a dedicated isolated dsh_test_demo_* schema")
 	}
-	tx, err := o.beginScopedTx(ctx, nil)
+	tx, err := dbscope.Begin(ctx, o.DB, o.Schema, nil, "public_revision", "service_cities", "verticals", "stores", "products", "variants", "offers")
 	if err != nil {
 		return err
 	}

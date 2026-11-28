@@ -2,8 +2,10 @@ package wallet
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/base64"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -15,23 +17,44 @@ import (
 	"time"
 )
 
-func TestContainerIdentityRequiresExplicitTrustedService(t *testing.T) {
-	if _, err := newIdentityReader("http://identity:3302"); err == nil {
-		t.Fatal("local reader trusted container hostname")
-	}
-	if reader, err := newIdentityReader("http://identity:3302", true); err != nil ||
-		reader.endpoint != "http://identity:3302/v1/sessions/current" {
-		t.Fatalf("explicit container service origin denied: %v", err)
-	}
-	for _, candidate := range []string{
-		"http://identity:3303", "https://identity:3302",
-		"http://identity:3302/elsewhere", "http://identity.evil:3302",
-		"http://user@identity:3302", "http://identity:3302?redirect=1",
-		"http://127.0.0.1:3302",
+func TestIdentityReaderAdmitsExactlyOneOriginMode(t *testing.T) {
+	for _, tc := range []struct {
+		name, origin    string
+		container, want bool
+	}{
+		{"local", "http://127.0.0.1:3302", false, true},
+		{"local other port", "http://127.0.0.1:49231", false, true},
+		{"container", "http://identity:3302", true, true},
+		{"container loopback", "http://127.0.0.1:3302", true, false},
+		{"local container", "http://identity:3302", false, false},
+		{"container wrong port", "http://identity:3303", true, false},
+		{"container TLS mismatch", "https://identity:3302", true, false},
+		{"container path", "http://identity:3302/elsewhere", true, false},
+		{"container other host", "http://identity.evil:3302", true, false},
+		{"container userinfo", "http://user@identity:3302", true, false},
+		{"container query", "http://identity:3302?redirect=1", true, false},
+		{"local zero port", "http://127.0.0.1:0", false, false},
+		{"local overflow port", "http://127.0.0.1:65536", false, false},
+		{"local path", "http://127.0.0.1:3302/", false, false},
+		{"local userinfo", "http://user@127.0.0.1:3302", false, false},
+		{"local query", "http://127.0.0.1:3302?", false, false},
+		{"local fragment", "http://127.0.0.1:3302#other", false, false},
+		{"local foreign", "http://example.invalid:3302", false, false},
+		{"empty local", "", false, false},
+		{"empty container", "", true, false},
 	} {
-		if _, err := newIdentityReader(candidate, true); err == nil && candidate != "http://127.0.0.1:3302" {
-			t.Fatalf("unexpected container trust: %s", candidate)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			reader, err := newIdentityReader(tc.origin, tc.container)
+			if (err == nil) != tc.want {
+				t.Fatalf("origin %q container=%t admitted=%t want=%t", tc.origin, tc.container, err == nil, tc.want)
+			}
+			if tc.want && reader.endpoint != tc.origin+sessionPath {
+				t.Fatalf("unexpected endpoint %q", reader.endpoint)
+			}
+			if !tc.want && reader.endpoint != "" {
+				t.Fatal("rejected origin retained endpoint")
+			}
+		})
 	}
 }
 
@@ -362,7 +385,7 @@ func TestFinanceRejectsAmbiguousGrantBeforeRead(t *testing.T) {
 				_, _ = w.Write([]byte(body))
 			}))
 			defer owner.Close()
-			reader, err := newIdentityReader(owner.URL)
+			reader, err := newIdentityReader(owner.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -387,7 +410,7 @@ func TestMerchantStandingRejectsAmbiguousOwnerWire(t *testing.T) {
 				_, _ = w.Write([]byte(body))
 			}))
 			defer owner.Close()
-			reader, err := newIdentityReader(owner.URL)
+			reader, err := newIdentityReader(owner.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -429,7 +452,7 @@ func TestFinanceOwnerDecisionAndRecovery(t *testing.T) {
 				_, _ = w.Write([]byte(tc.grant))
 			}))
 			defer owner.Close()
-			reader, err := newIdentityReader(owner.URL)
+			reader, err := newIdentityReader(owner.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -449,7 +472,7 @@ func TestOwnerReadRejectsInvalidTransportInputs(t *testing.T) {
 	if _, status := (identityReader{}).read(t.Context(), "invalid"); status != 401 {
 		t.Fatal(status)
 	}
-	reader, err := newIdentityReader("http://127.0.0.1:1")
+	reader, err := newIdentityReader("http://127.0.0.1:1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -475,12 +498,244 @@ func TestOwnerReadRejectsInvalidTransportInputs(t *testing.T) {
 				_, _ = w.Write([]byte(tc.body))
 			}))
 			defer owner.Close()
-			reader, err := newIdentityReader(owner.URL)
+			reader, err := newIdentityReader(owner.URL, false)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if actor, status := reader.read(t.Context(), token); status != 503 || actor.ActorID != "" {
 				t.Fatalf("invalid response admitted %v %d", actor, status)
+			}
+		})
+	}
+}
+
+func TestOwnerJSONWireAdmission(t *testing.T) {
+	const body = `{"actorId":"wallet-one","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	for _, encoding := range []string{"", "identity", "unknown", "gzip", "identity, unknown"} {
+		t.Run("encoding="+encoding, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Cache-Control", "no-store")
+				if encoding != "" {
+					w.Header().Set("Content-Encoding", encoding)
+				}
+				_, _ = w.Write([]byte(body))
+			}))
+			defer server.Close()
+			reader, err := newIdentityReader(server.URL, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, status := reader.read(t.Context(), token)
+			want := http.StatusServiceUnavailable
+			if encoding == "" || encoding == "identity" {
+				want = http.StatusOK
+			}
+			if status != want {
+				t.Fatalf("encoding %q: status=%d want=%d", encoding, status, want)
+			}
+		})
+	}
+}
+
+func TestOwnerJSONNormalizedFrame(t *testing.T) {
+	const body = "{}"
+	for _, tc := range []struct {
+		name, payload string
+		length        int64
+		transfer      []string
+		uncompressed  bool
+		want          bool
+	}{
+		{"exact", body, 2, nil, false, true},
+		{"unknown", body, -1, nil, false, true},
+		{"chunked", body, -1, []string{"chunked"}, false, true},
+		{"zero", body, 0, nil, false, false},
+		{"short", body, 1, nil, false, false},
+		{"long", body, 3, nil, false, false},
+		{"contradictory", body, 2, []string{"chunked"}, false, false},
+		{"unsupported transfer", body, -1, []string{"gzip"}, false, false},
+		{"decoded", body, -1, nil, true, false},
+		{"null", "null", 4, nil, false, false},
+		{"array", "[]", 2, nil, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := &http.Response{
+				Header:        http.Header{"Content-Type": []string{"application/json"}},
+				Body:          io.NopCloser(strings.NewReader(tc.payload)),
+				ContentLength: tc.length, TransferEncoding: tc.transfer, Uncompressed: tc.uncompressed,
+			}
+			defer response.Body.Close()
+			var dst struct{}
+			if err := decodeBoundedOwnerReply(response, &dst, 8); (err == nil) != tc.want {
+				t.Fatalf("frame acceptance=%t want=%t err=%v", err == nil, tc.want, err)
+			}
+		})
+	}
+}
+
+func TestOwnerJSONRejectsActualCompressedHTTPAndRecovers(t *testing.T) {
+	const body = `{"actorId":"wallet-one","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept-Encoding") != "identity" || r.Header.Get("Cache-Control") != "no-store" || r.Header.Get("Authorization") != token {
+			t.Error("unexpected authority transport metadata")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		if calls.Add(1) == 1 {
+			w.Header().Set("Content-Encoding", "gzip")
+			writer := gzip.NewWriter(w)
+			_, _ = writer.Write([]byte(body))
+			_ = writer.Close()
+			return
+		}
+		_, _ = w.Write([]byte(body))
+	}))
+	defer server.Close()
+	reader, err := newIdentityReader(server.URL, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, status := reader.read(t.Context(), token); status != http.StatusServiceUnavailable {
+		t.Fatalf("compressed owner accepted: %d", status)
+	}
+	if actor, status := reader.read(t.Context(), token); status != http.StatusOK || actor.ActorID != "wallet-one" {
+		t.Fatalf("plain recovery failed: %d", status)
+	}
+}
+
+func TestFinanceObservationRejectsSessionChangeDuringGrant(t *testing.T) {
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	for _, tc := range []struct {
+		name, successor string
+		status, want    int
+	}{
+		{"revoked", "", 401, 401},
+		{"different actor", `{"actorId":"operator-b","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200, 401},
+		{"different role", `{"actorId":"operator-a","role":"customer","sessionExpiresAt":"2099-01-01T00:00:00Z"}`, 200, 403},
+		{"expired", `{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2000-01-01T00:00:00Z"}`, 200, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var grants atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case sessionPath:
+					if grants.Load() > 0 {
+						w.WriteHeader(tc.status)
+						_, _ = w.Write([]byte(tc.successor))
+						return
+					}
+					_, _ = w.Write([]byte(`{"actorId":"operator-a","role":"operator","sessionExpiresAt":"2099-01-01T00:00:00Z"}`))
+				case financePermissionPath:
+					grants.Add(1)
+					_, _ = w.Write([]byte(`{"actorId":"operator-a","permission":"finance"}`))
+				default:
+					t.Errorf("unexpected path %s", r.URL.Path)
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+			reader, err := newIdentityReader(server.URL, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actor, status := reader.finance(t.Context(), token)
+			if status != tc.want || actor.ActorID != "" {
+				t.Errorf("stale finance proof admitted: status=%d actor=%q", status, actor.ActorID)
+			}
+		})
+	}
+}
+
+func TestOwnerRepresentationTrailers(t *testing.T) {
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	for _, tc := range []struct {
+		name, field, value string
+		announced, reject  bool
+	}{
+		{"no trailers", "", "", false, false},
+		{"optional metrics", "Server-Timing", "db;dur=1", true, false},
+		{"announced media", "Content-Type", "text/plain", true, true},
+		{"announced cache", "Cache-Control", "public", true, true},
+		{"announced encoding", "Content-Encoding", "gzip", true, true},
+		{"unannounced media", "Content-Type", "text/plain", false, true},
+		{"unannounced cache", "Cache-Control", "public", false, true},
+		{"unannounced encoding", "Content-Encoding", "gzip", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Exercise each boundary independently. In particular, a malformed
+			// grant must fail even when both session observations are valid.
+			for _, target := range []string{sessionPath, financePermissionPath, "/health", "/sandbox/v1/funding/cash-in-accepted-01"} {
+				t.Run(target, func(t *testing.T) {
+					owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						w.Header().Set("Cache-Control", "no-store")
+						w.Header().Set("Content-Type", "application/json")
+						hasTrailer := r.URL.Path == target && tc.field != ""
+						if hasTrailer && tc.announced {
+							w.Header().Set("Trailer", tc.field)
+						}
+						var body string
+						switch r.URL.Path {
+						case sessionPath:
+							body = "{\"actorId\":\"wallet-one\",\"role\":\"operator\",\"sessionExpiresAt\":\"2099-01-01T00:00:00Z\"}"
+						case financePermissionPath:
+							body = "{\"actorId\":\"wallet-one\",\"permission\":\"finance\"}"
+						case "/health":
+							body = "{\"status\":\"ok\"}"
+						case "/sandbox/v1/funding/cash-in-accepted-01":
+							body = "{\"reference\":\"cash-in-accepted-01\",\"actorId\":\"wallet-one\",\"amountYer\":\"17\",\"currency\":\"YER\",\"status\":\"SUCCEEDED\"}"
+						default:
+							t.Errorf("unexpected route %s", r.URL.Path)
+							w.WriteHeader(404)
+							return
+						}
+						if hasTrailer {
+							w.(http.Flusher).Flush()
+						}
+						_, _ = w.Write([]byte(body))
+						if hasTrailer {
+							field := tc.field
+							if !tc.announced {
+								field = http.TrailerPrefix + field
+							}
+							w.Header().Set(field, tc.value)
+						}
+					}))
+					defer owner.Close()
+					reader, err := newIdentityReader(owner.URL, false)
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantStatus := http.StatusOK
+					if tc.reject {
+						wantStatus = http.StatusServiceUnavailable
+					}
+					switch target {
+					case sessionPath:
+						actor, status := reader.readRole(t.Context(), token, "operator")
+						if status != wantStatus || (tc.reject && actor.ActorID != "") || (!tc.reject && actor.ActorID != "wallet-one") {
+							t.Fatalf("session status=%d actor=%+v", status, actor)
+						}
+					case financePermissionPath:
+						actor, status := reader.finance(t.Context(), token)
+						if status != wantStatus || (tc.reject && actor.ActorID != "") || (!tc.reject && actor.ActorID != "wallet-one") {
+							t.Fatalf("grant status=%d actor=%+v", status, actor)
+						}
+					case "/health":
+						if err := CheckDevelopmentIdentityHealth(t.Context(), owner.URL); (err != nil) != tc.reject {
+							t.Fatalf("health rejection=%t err=%v", tc.reject, err)
+						}
+					default:
+						if err := verifySandboxProviderEvidence(t.Context(), owner.URL, "cash-in-accepted-01", "wallet-one", 17); (err != nil) != tc.reject {
+							t.Fatalf("provider rejection=%t err=%v", tc.reject, err)
+						}
+					}
+				})
 			}
 		})
 	}

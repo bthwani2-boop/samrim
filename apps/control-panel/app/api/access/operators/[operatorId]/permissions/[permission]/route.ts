@@ -2,9 +2,8 @@ import { changeOriginalOperatorPermission, IdentityClientError, isOperatorActorI
 import { cookies } from "next/headers";
 import { isOperatorPermission } from "../../../../../../../src/features/session/operator-permissions";
 import { currentOriginalOperatorPermissions } from "../../../../../../../src/server/current-operator-access";
-import {
-  boundedRequestBody, isTrustedOperatorRequest, OPERATOR_COOKIE, resolveIsolatedOperatorConfig,
-} from "../../../../../../../src/server/operator-passkey-bff";
+import { isTrustedOperatorRequest, OPERATOR_COOKIE, resolveIsolatedOperatorConfig } from "../../../../../../../src/server/operator-passkey-config";
+import { boundedRequestBody } from "../../../../../../../src/server/operator-passkey-transport";
 
 export const runtime = "nodejs";
 

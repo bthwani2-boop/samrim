@@ -95,7 +95,7 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
     const secondRead=select(1);
     await tick();
     ownerReads[1].resolve({});
-    await until(() => ownerReads.length === 3 || states[2] === false);
+    await until(() => ownerReads.length === 3 || states[2] === null);
     assert.equal(ownerReads.length, 3, "preview must read the verified catalog after parsing");
     assert.deepEqual(ownerReads[2].options,{limit:50});
     const ownerPage = (items, nextCursor) => ({actorId:"merchant-a",storeId:"store-a",items,...(nextCursor ? {nextCursor} : {})});
@@ -104,7 +104,7 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
     await until(() => ownerReads.length === 4);
     assert.deepEqual(ownerReads[3].options,{limit:50,cursor:"of-a49"});
     ownerReads[3].resolve(ownerPage([offer("of-b","قهوة")]));
-    await until(() => states[2] === false);
+    await until(() => states[2] === null);
     assert.equal(secondRead(),1);
     assert.ok(JSON.stringify(screen()).includes("قهوة"));
     assert.ok(JSON.stringify(screen()).includes("اسم موجود في كتالوج المتجر"));
@@ -137,13 +137,21 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
       ...offer("of-draft", "قهوة"), published:false, available:false, productActive:false,
       variantSellable:false, requiredAttributesValid:false, draftVersion:7, productId:"pr-draft", variantId:"va-draft",
     }]));
-    await until(() => states[2] === false);
+    await until(() => states[2] === null);
     assert.equal(nativeRead(),1);
     assert.ok(JSON.stringify(screen()).includes("قهوة"));
     assert.ok(!nodes(screen()).some(n=>n.type==="DraftForm"), "no implicit save or selection");
     const resolve = nodes(screen()).find(n=>n.props?.accessibilityLabel==="مراجعة تعديل المسودة للسجل 2");
     assert.ok(resolve, "a unique editable draft can be explicitly reviewed");
+    const runDuringPreview = nodes(screen()).find(n=>n.type==="BulkRun").props;
+    const releaseRun = runDuringPreview.beginRun();
     resolve.props.onPress();
+    assert.ok(!nodes(screen()).some(n=>n.type==="DraftForm"),"stale draft callback cannot start while bulk holds the interaction");
+    releaseRun();
+    resolve.props.onPress();
+    const runDuringDraft = nodes(screen()).find(n=>n.type==="BulkRun").props;
+    assert.equal(runDuringDraft.blocked,true);
+    assert.equal(runDuringDraft.beginRun(),null);
     const form = nodes(screen()).find(n=>n.type==="DraftForm");
     assert.equal(form.props.actorId,"merchant-a");
     assert.equal(form.props.storeId,"store-a");
@@ -157,6 +165,9 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
     assert.ok(JSON.stringify(screen()).includes("أكد DSH حفظ تعديل المسودة"));
     assert.ok(!nodes(screen()).some(n=>n.type==="DraftForm"));
     assert.ok(!JSON.stringify(screen()).includes("of-draft"));
+    resolve.props.onPress();
+    assert.ok(!nodes(screen()).some(n=>n.type==="DraftForm"),"discarded preview callback must not reopen a draft");
+    assert.equal(button().props.disabled,false,"discarded preview cannot strand the interaction");
     platform.OS="web";
     const cancelButton=()=>nodes(screen()).find(n=>n.props?.accessibilityLabel==="إلغاء مراجعة الملف");
     button().props.onPress();
@@ -179,12 +190,34 @@ test("CSV preview is owner-scoped and drops the selected file on revocation or a
     await tick();
     assert.equal(canceledRead(),0);
     assert.equal(button().props.disabled,true,"late canceled read must not clear the retry");
+    const blockedRun = nodes(screen()).find(n=>n.type==="BulkRun").props;
+    assert.equal(blockedRun.blocked,true,"a pending file review must block all bulk owner operations");
+    assert.equal(blockedRun.beginRun(),null,"stale bulk callback must not acquire an active file review");
     ownerReads[8].resolve({});
     await until(()=>ownerReads.length===10);
     ownerReads[9].resolve(ownerPage([offer("of-new","قهوة")]));
-    await until(()=>states[2]===false);
+    await until(()=>states[2]===null);
     assert.equal(retryRead(),1);
     assert.equal(cancelButton(),undefined);
     assert.ok(nodes(screen()).find(n=>n.type==="BulkRun").props.rows.length>0);
+    const stalePicker = button().props.onPress;
+    const bulk = nodes(screen()).find(n=>n.type==="BulkRun").props;
+    const release = bulk.beginRun();
+    assert.equal(typeof release,"function","bulk owns the shared interaction until completion");
+    assert.equal(button().props.disabled,true);
+    stalePicker();
+    assert.equal(picks.length,6,"stale file picker cannot erase a preview during a bulk operation");
+    assert.equal(bulk.beginRun(),null,"duplicate bulk acquisition must fail immediately");
+    const clear = nodes(screen()).find(n=>n.type==="Pressable"&&nodes(n.props.children).some(x=>x.props?.children==="مسح المعاينة"));
+    assert.equal(clear.props.disabled,true);
+    clear.props.onPress();
+    assert.ok(nodes(screen()).find(n=>n.type==="BulkRun").props.rows.length>0,"stale clear cannot erase active preview");
+    release();
+    assert.equal(button().props.disabled,false);
+    const secondLease = bulk.beginRun();
+    release();
+    assert.equal(button().props.disabled,true,"late release cannot unlock a newer operation");
+    secondLease();
+    assert.equal(button().props.disabled,false);
   } finally {rmSync(tmp,{recursive:true,force:true});}
 });

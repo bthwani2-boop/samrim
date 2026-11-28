@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -66,8 +67,8 @@ func (s *MerchantStoreRegistrar) ReadRegistrationPolicyHistory(
 		limit < 1 || limit > 50 || before < 0 {
 		return StoreRegistrationPolicyHistoryPage{}, ErrRegistrationInvalid
 	}
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema,
-		&sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema,
+		&sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "store_registration_policy_commands")
 	if err != nil {
 		return StoreRegistrationPolicyHistoryPage{}, ErrStoreOwnerUnavailable
 	}

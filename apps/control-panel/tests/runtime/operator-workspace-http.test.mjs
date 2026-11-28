@@ -40,46 +40,79 @@ test("production Operator UI rechecks isolated Identity grants on every document
   const refreshToken = Buffer.alloc(32, 8).toString("base64url");
   const nextRefreshToken = Buffer.alloc(32, 9).toString("base64url");
   let dshAvailable = true;
+  let verticalPageIncomplete = false;
+  let verticalRevision = 3;
   const publicReads = [];
   const calls = [];
+
+  // The DSH fixture represents twelve published Marketplace Stores in the
+  // same city. The ten-store overview page cannot stand in for that total.
+  const marketStores = Array.from({ length: 12 }, (_, index) => ({
+    id: index === 0 ? "market-sanaa" : "market-sanaa-" + String(index + 1),
+    name: index === 0 ? "متجر الاختبار المنشور" : "متجر اختبار " + String(index + 1),
+    cityId: "sanaa",
+    verticalId: index < 8 ? "grocery" : "pharmacy",
+    orderabilityStatus: index < 6 ? "OPEN_FOR_ORDERS" :
+      index < 10 ? "PAUSED" : "CLOSED_BY_SCHEDULE",
+    orderingAvailable: false,
+  }));
+  const marketVerticals = [
+    { id: "grocery", storeCount: 8 },
+    { id: "pharmacy", storeCount: 4 },
+  ];
+
+  function publicMarketResponse(route, requestUrl, send) {
+    publicReads.push(route);
+    if (!dshAvailable) return send(503, { error: "DSH_UNAVAILABLE" });
+    if (route === "/v1/public/cities") {
+      return send(200, { items: ["sanaa"], revision: 3 });
+    }
+    if (route === "/v1/public/stores/market-sanaa") {
+      return send(200, marketStores[0]);
+    }
+    if (route === "/v1/public/stores/market-sanaa/offers") {
+      if (requestUrl.searchParams.get("q") !== "دقيق" || requestUrl.searchParams.get("limit") !== "20") {
+        return send(400, { error: "INVALID_QUERY" });
+      }
+      return send(200, { items: [{
+        id: "offer-flour", storeId: "market-sanaa", variantId: "flour-sack",
+        name: "دقيق الاختبار", priceYer: 1350, available: true,
+      }], revision: 3 });
+    }
+    if (requestUrl.searchParams.get("city_id") !== "sanaa") {
+      return send(400, { error: "INVALID_CITY" });
+    }
+    if (route === "/v1/public/stores") {
+      const limit = Number(requestUrl.searchParams.get("limit") ?? "20");
+      const cursor = requestUrl.searchParams.get("cursor");
+      const start = cursor === "fixture-market-next" ? 10 : 0;
+      if (cursor && cursor !== "fixture-market-next") return send(400, { error: "INVALID_CURSOR" });
+      const items = marketStores.slice(start, start + limit);
+      return send(200, {
+        items, revision: 3,
+        ...(start + items.length < marketStores.length ? { nextCursor: "fixture-market-next" } : {}),
+      });
+    }
+    if (route === "/v1/public/verticals") {
+      return send(200, {
+        items: verticalPageIncomplete ? marketVerticals.slice(0, 1) : marketVerticals,
+        revision: verticalRevision,
+        ...(verticalPageIncomplete ? { nextCursor: "fixture-vertical-next" } : {}),
+      });
+    }
+    return send(404, { error: "NOT_FOUND" });
+  }
+
   const owner = createServer((request, response) => {
-    const route = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+    const requestUrl = new URL(request.url ?? "/", "http://127.0.0.1");
+    const route = requestUrl.pathname;
     calls.push(route);
     response.setHeader("Content-Type", "application/json");
     response.setHeader("Cache-Control", "no-store");
     const send = (status, data) => { response.writeHead(status); response.end(JSON.stringify(data)); };
     if (!ownerAvailable) return send(503, { error: "OWNER_UNAVAILABLE" });
     if (request.method === "GET" && route.startsWith("/v1/public/")) {
-      publicReads.push(route);
-      if (!dshAvailable) return send(503, { error: "DSH_UNAVAILABLE" });
-      const requestUrl = new URL(request.url, "http://127.0.0.1");
-      if (route === "/v1/public/cities") {
-        return send(200, { items: ["sanaa"], revision: 3 });
-      }
-      if (route === "/v1/public/stores/market-sanaa") {
-        return send(200, { id: "market-sanaa", name: "متجر الاختبار المنشور", cityId: "sanaa",
-          verticalId: "grocery", orderabilityStatus: "OPEN_FOR_ORDERS", orderingAvailable: false });
-      }
-      if (route === "/v1/public/stores/market-sanaa/offers") {
-        if (requestUrl.searchParams.get("q") !== "دقيق" || requestUrl.searchParams.get("limit") !== "20") {
-          return send(400, { error: "INVALID_QUERY" });
-        }
-        return send(200, { items: [{ id: "offer-flour", storeId: "market-sanaa", variantId: "flour-sack",
-          name: "دقيق الاختبار", priceYer: 1350, available: true }], revision: 3 });
-      }
-      if (requestUrl.searchParams.get("city_id") !== "sanaa") {
-        return send(400, { error: "INVALID_CITY" });
-      }
-      if (route === "/v1/public/stores") {
-        return send(200, { items: [{
-          id: "market-sanaa", name: "متجر الاختبار المنشور", cityId: "sanaa",
-          verticalId: "grocery", orderabilityStatus: "OPEN_FOR_ORDERS", orderingAvailable: false,
-        }], revision: 3 });
-      }
-      if (route === "/v1/public/verticals") {
-        return send(200, { items: [{ id: "grocery", storeCount: 1 }], revision: 3 });
-      }
-      return send(404, { error: "NOT_FOUND" });
+      return publicMarketResponse(route, requestUrl, send);
     }
     if (route === "/v1/operators/passkey/authentication/options" && request.method === "POST") {
       optionsCalls++;
@@ -305,23 +338,56 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.match(html, /href="\/captains"/);
     assert.doesNotMatch(html, /href="\/(?:finance|access|policies)"/);
 
-    const noMarket = await read("/workspace?city=sanaa");
+    // The same real document requests exercise admission, the owner's
+    // complete category total, bounded page counts and independent revisions.
+    const marketRoute = "/workspace?city=sanaa";
+    const noMarket = await read(marketRoute);
     assert.doesNotMatch(noMarket, /لمحة السوق المنشور/);
     assert.equal(publicReads.length, 0, "operations grant must not trigger market reads");
+
+    const assertPageCounts = page => {
+      assert.match(page, /<dd data-testid="market-page-open">6<\/dd>/);
+      assert.match(page, /<dd data-testid="market-page-paused">4<\/dd>/);
+      assert.match(page, /<p data-testid="market-page-scope">حالات المتاجر في الصفحة المعروضة:/);
+      assert.match(page, /توجد صفحات أخرى/);
+      assert.match(page, /هذه الأعداد تخص نتائج الصفحة ولا تثبت أهلية إتمام الطلب/);
+    };
+    const assertTotal = (page, value) => {
+      assert.ok(page.includes('<dd data-testid="market-published-total">' + value + "</dd>"),
+        "rendered total must match the complete owner category snapshot");
+    };
 
     allowed.add("merchant");
     const merchantHtml = await read("/merchants");
     assert.match(merchantHtml, /aria-label="تبويبات الوظائف"/);
     assert.ok(merchantHtml.includes('href="/merchants/public-stores"'));
     assert.ok(!merchantHtml.includes('href="/finance"'));
-    const marketHtml = await read("/workspace?city=sanaa");
+
+    const marketHtml = await read(marketRoute);
     assert.match(marketHtml, /لمحة السوق المنشور/);
     assert.match(marketHtml, /متجر الاختبار المنشور/);
     assert.match(marketHtml, /عدد النتائج/);
     assert.ok(marketHtml.includes('href="/merchants/public-stores?city=sanaa"'));
-    assert.match(marketHtml, /الأعداد المعروضة تخص الصفحة المحدودة/);
+    assertTotal(marketHtml, "12");
+    assertPageCounts(marketHtml);
+    assert.match(marketHtml, /جميع تصنيفات السوق المنشور في المدينة/);
     assert.ok(publicReads.includes("/v1/public/stores"));
     assert.ok(publicReads.includes("/v1/public/verticals"));
+
+    verticalPageIncomplete = true;
+    const incompleteMarket = await read(marketRoute);
+    assertTotal(incompleteMarket, "غير متاح");
+    assertPageCounts(incompleteMarket);
+    assert.match(incompleteMarket, /الإجمالي غير مؤكد/);
+    verticalPageIncomplete = false;
+
+    verticalRevision = 4;
+    const mismatchedMarket = await read(marketRoute);
+    assertTotal(mismatchedMarket, "12");
+    assertPageCounts(mismatchedMarket);
+    assert.match(mismatchedMarket, /مراجعتا قائمة المتاجر والتصنيفات مختلفتان/);
+    assert.match(mismatchedMarket, /لا تُدمج القراءتان في نسبة أو نتيجة واحدة/);
+    verticalRevision = 3;
 
     const successfulMarketReads = publicReads.length;
     const invalidMarket = await read("/workspace?city=..%2Faccess");
@@ -329,16 +395,20 @@ test("production Operator UI rechecks isolated Identity grants on every document
     assert.equal(publicReads.length, successfulMarketReads, "invalid city must not reach DSH");
 
     dshAvailable = false;
-    const unavailableMarket = await read("/workspace?city=sanaa");
+    const unavailableMarket = await read(marketRoute);
     assert.match(unavailableMarket, /تعذّر تأكيد المتاجر المنشورة من DSH/);
     assert.doesNotMatch(unavailableMarket, /متجر الاختبار المنشور/);
+    assertTotal(unavailableMarket, "غير متاح");
+    assert.doesNotMatch(unavailableMarket, /data-testid="market-page-open"/);
     dshAvailable = true;
 
     allowed.delete("merchant");
     allowed.add("catalog");
-    const catalogOnlyMarket = await read("/workspace?city=sanaa");
+    const catalogOnlyMarket = await read(marketRoute);
     assert.ok(catalogOnlyMarket.includes('href="/catalog/categories?city=sanaa"'));
     assert.ok(!catalogOnlyMarket.includes('href="/merchants/public-stores?city=sanaa"'));
+    assertTotal(catalogOnlyMarket, "12");
+    assertPageCounts(catalogOnlyMarket);
 
     const products = await read("/catalog/products");
     assert.match(products, /اختيار متجر منشور/);

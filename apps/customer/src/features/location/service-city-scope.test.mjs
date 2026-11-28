@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { DshPublicError } from "@bthwani/dsh";
+import * as radioGroup from "@bthwani/tamagui-config/radio-group";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
+import * as publicPage from "../discovery/public-page.ts";
 import { serviceCityLabel } from "./serviceability.ts";
 
 const root = path.resolve(import.meta.dirname, "../../../../..");
@@ -41,6 +43,7 @@ function harness(disabled = false) {
     });
   };
   const modules = {
+    "../discovery/public-page": publicPage,
     "@bthwani/dsh": { DshPublicError, listPublicCities(origin, options) {
       return new Promise((resolve, reject) => requests.push({ origin, ...options, resolve, reject }));
     } },
@@ -64,7 +67,8 @@ function harness(disabled = false) {
       useLayoutEffect: queueEffect,
     },
     "react/jsx-runtime": { jsx, jsxs: jsx },
-    "react-native": { ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", Text: "Text", View: "View" },
+    "react-native": { Platform: { OS: "web" }, ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", Text: "Text", View: "View" },
+    "@bthwani/tamagui-config/radio-group": radioGroup,
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "./serviceability": { serviceCityLabel },
   };
@@ -289,4 +293,39 @@ test("empty and unavailable city directories never claim a selected choice", asy
   const empty = h.render();
   assert.equal(find(empty, node => node.props?.accessibilityRole === "radio"), undefined);
   assert.ok(find(empty, node => node.props?.children === "لا توجد مدن متاحة للتسوّق حاليًا."));
+});
+
+test("a nontransient owner rejection withdraws all prior city choices and restarts from page one", async () => {
+  for (const [status, code] of [[404, "NOT_FOUND"], [0, "OWNER_RESPONSE_STALE"], [500, "OWNER_READ_FAILED"]]) {
+    const h = harness();
+    h.render();
+    h.requests[0].resolve({ items: ["sanaa"], revision: 1, nextCursor: "page2" });
+    await settle();
+    button(h.render(), "عرض المزيد من المدن").props.onPress();
+    h.requests[1].reject(new DshPublicError(status, code));
+    await settle();
+    assert.equal(button(h.render(), "صنعاء"), undefined, code);
+    button(h.render(), "إعادة المحاولة").props.onPress();
+    assert.equal(h.requests[2].cursor, undefined, code);
+    h.unmount();
+  }
+});
+
+test("Web city radios expose one tab stop and arrows use the same current owner selection", async () => {
+  const h = harness();
+  h.render();
+  h.requests[0].resolve({ items: ["aden", "sanaa"], revision: 1 });
+  await settle();
+  const view = h.render();
+  const radios = [button(view, "عدن"), button(view, "صنعاء")];
+  assert.deepEqual(radios.map(radio => radio.props.tabIndex), [-1, 0]);
+  let focused = -1, prevented = false;
+  radios.forEach((radio, i) => { radio.props.ref({ focus() { focused = i; } }); });
+  radios[1].props.onKeyDown({nativeEvent:{key:"ArrowRight"},preventDefault(){prevented=true;}});
+  assert.equal(prevented,true);
+  assert.equal(focused,0);
+  assert.deepEqual(h.selected,["aden"]);
+  h.render("test",true);
+  radios[1].props.onKeyDown({nativeEvent:{key:"ArrowLeft"},preventDefault(){}});
+  assert.deepEqual(h.selected,["aden"],"stale owner view cannot select");
 });

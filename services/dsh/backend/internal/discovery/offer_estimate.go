@@ -34,7 +34,7 @@ func (s *Server) estimateOffer(ctx context.Context, w http.ResponseWriter, r *ht
 		errorJSON(w, http.StatusBadRequest, "INVALID_REQUEST")
 		return
 	}
-	tx, err := s.Owner.viewTx(ctx)
+	tx, err := s.storeViewTx(ctx, "offers", "products", "variants")
 	if err != nil {
 		errorJSON(w, http.StatusServiceUnavailable, "OWNER_UNAVAILABLE")
 		return

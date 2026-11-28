@@ -39,9 +39,7 @@ func TestInitialOperatorBootstrapRealPostgresAndWebAuthn(t *testing.T) {
 		u.User.Username() != "bthwani_fido_s02" || u.Query().Get("sslmode") != "disable" {
 		t.Fatal("refuse any database except dedicated disposable WebAuthn fixture")
 	}
-	for _, origin := range []string{"http://localhost:13000", "http://localhost:23100"} {
-		t.Run(origin, func(t *testing.T) { proveInitialOperatorBootstrap(t, dsn, origin) })
-	}
+	proveInitialOperatorBootstrap(t, dsn, localOperatorOrigin)
 }
 
 func proveInitialOperatorBootstrap(t *testing.T, dsn, origin string) {

@@ -67,7 +67,12 @@ paths:
         - name: q
           in: query
           required: false
-          description: Optional literal case-insensitive Store name substring. The wire value is limited to 80 Unicode code points including surrounding whitespace, then trimmed before matching. Empty means all Stores. Cursors are bound to city and trimmed search; changing either requires a fresh page.
+          description: >-
+            Optional literal case-insensitive Store name substring. Matching normalizes Unicode to NFC, folds
+            Arabic Alef variants and ignores common Arabic vowel marks and tatweel. The wire value is limited
+            to 80 Unicode code points including surrounding whitespace, then trimmed. Empty means all eligible
+            Stores. A nonempty query made only of ignored marks returns no matches. Cursors are bound to city,
+            optional vertical, trimmed search and matching rules.
           schema: { type: string, maxLength: 80 }
         - name: city_id
           in: query

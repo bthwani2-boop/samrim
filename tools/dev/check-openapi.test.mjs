@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { validate } from "./check-openapi.mjs";
+import { operationRows } from "./generate-openapi-operations.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -57,10 +58,22 @@ test("all current owner OpenAPI 3.1 documents parse with their admitted operatio
   for (const owner of ["identity", "dsh", "wlt"]) {
     const result = validate(owner);
     assert.deepEqual(result.errors, [], `${owner} has invalid OpenAPI`);
+    assert.ok(result.operations > 0, `${owner} has no admitted operations`);
+    assert.equal(result.operations, operationRows(owner).length,
+      `${owner} validated and generated operation inventories differ`);
   }
-  assert.equal(validate("wlt").operations, 6);
-  assert.ok(validate("identity").operations > 0);
-  assert.ok(validate("dsh").operations > 0);
+});
+
+test("DSH cart versions reserve room for one exact increment on replacement", async () => {
+  const { default: YAML } = await import("yaml");
+  const filename = path.join(root, "services/dsh/contracts/openapi/dsh.openapi.yaml");
+  const { schemas } = YAML.parse(readFileSync(filename, "utf8")).components;
+  assert.deepEqual(schemas.CustomerCart.properties.version, {
+    type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER,
+  });
+  assert.deepEqual(schemas.CustomerCartChange.properties.expectedVersion, {
+    type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER - 1,
+  });
 });
 
 test("owner contract tree contains only populated modules, not reserved or legacy Customer placeholders", async () => {

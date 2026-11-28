@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { importSpecifiers, scanPresentationBoundaries, sourceBoundaryIssues, workspaceOwnerIssues } from "./verify-application-boundaries.mjs";
 
 const root = resolve("C:/safe/bthwani");
@@ -129,7 +130,7 @@ test("keeps Expo and Operator renderers separate", () => {
 test("semantic design source cannot depend on presentation or native renderers", () => {
   const design = resolve(root, "packages/design-system/src/semantics/themes.ts");
   for (const spec of ["@bthwani/tamagui-config", "expo-location", "next/navigation", "antd"]) {
-    assert.match(sourceBoundaryIssues(design, 'import X from "' + spec + '";', root).join(" "), /Semantic design source/);
+    assert.match(sourceBoundaryIssues(design, `import X from "${spec}";`, root).join(" "), /Semantic design source/);
   }
   assert.deepEqual(sourceBoundaryIssues(design, 'import { brandRoots } from "../brand/colors";', root), []);
 });
@@ -349,31 +350,20 @@ test("actual new feature folders pass owner boundaries and cross-owner imports f
   }
 });
 
-test("retained Merchant placeholder exemptions are explicit and cannot hide implemented features", () => {
+test("Knip checks authored feature modules without retired placeholder exemptions", () => {
   const repo = fileURLToPath(new URL("../..", import.meta.url));
-  const config = readFileSync(join(repo, "knip.jsonc"), "utf8");
-  const start = config.indexOf("// BEGIN RETAINED MERCHANT PRESENTATION PLACEHOLDERS");
-  const end = config.indexOf("// END RETAINED MERCHANT PRESENTATION PLACEHOLDERS");
-  assert.ok(start >= 0 && end > start, "missing explicit preserved-placeholder Knip boundary");
-  const block = config.slice(start, end);
-  const retained = [...block.matchAll(/"([^"]+\.tsx)"/g)].map((match) => match[1]);
-  assert.equal(retained.length, 15, "preserve the remaining unconnected Merchant placeholders");
-  assert.ok(!retained.includes("apps/merchant/src/features/finance/wallet-screen.tsx"),
-    "the owner-backed Merchant finance workspace must be checked as live source");
-  assert.ok(!retained.includes("apps/merchant/src/features/catalog/inventory-summary.tsx"),
-    "the owner-backed inventory summary must be checked as live source");
-  assert.equal(new Set(retained).size, retained.length, "duplicate Knip exclusion");
-  assert.ok(!retained.includes("apps/merchant/src/features/navigation/merchant-workspace.tsx"),
-    "the owner-backed Merchant workspace must be checked as live source");
-  for (const path of retained) {
-    assert.match(path, /^apps\/merchant\/src\/features\/[a-z-]+\/[a-z-]+\.tsx$/, "no broad directory wildcard exclusion");
-    const full = join(repo, ...path.split("/"));
-    assert.ok(existsSync(full), "retained placeholder must still exist: " + path);
-    const source = readFileSync(full, "utf8");
-    assert.match(source, /MerchantCapabilityScreen/, "only explicit presentation-only placeholder may be excluded: " + path);
-    assert.match(source, /Presentation only|Protected workspace presentation/, "remove exemption when a real feature is implemented: " + path);
-    assert.doesNotMatch(source, /\bfetch\s*\(|\buseMutation\s*\(|\bcreateOrder\s*\(|\bdeleteStore\s*\(/, "no owner mutation in an exempt file: " + path);
+  const config = ts.parseConfigFileTextToJson("knip.jsonc", readFileSync(join(repo, "knip.jsonc"), "utf8"));
+  assert.equal(config.error, undefined);
+  assert.deepEqual(config.config.ignore, [
+    "apps/{captain,customer,merchant}/fingerprint.config.js",
+    "tools/mobile/define-bthwani-expo-app.d.cts",
+    "packages/tamagui-config/src/animations.{native,web}.ts",
+  ]);
+  for (const workspace of Object.values(config.config.workspaces ?? {})) {
+    assert.equal(workspace.ignore, undefined);
+    assert.equal(workspace.ignoreFiles, undefined);
   }
+  assert.equal(config.config.ignoreFiles, undefined);
 });
 
 test("a genuine multi-owner neutral package is discovered, scanned and subject to its actual exports", () => {

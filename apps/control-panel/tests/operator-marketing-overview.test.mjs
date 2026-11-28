@@ -95,7 +95,7 @@ test("Marketing market view uses DSH public owner responses and fails closed on 
       },
     },
     "../operator-shell/operator-shell.module.css": { sectionGrid: "grid", sectionCard: "card" },
-    "../stores/public-store-query": { resolvePublicDshOrigin: () => "http://127.0.0.1:23202" },
+    "../stores/public-store-query": { isolatedPublicDshOrigin: () => "http://127.0.0.1:23202" },
     "./operator-home-city": { parseOperatorHomeCity },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   });
@@ -115,4 +115,59 @@ test("Marketing market view uses DSH public owner responses and fails closed on 
   const invalid = await render(input("INVALID!"));
   assert.equal(calls.length, before);
   assert.ok(find(invalid, node => node.props.role === "alert"));
+});
+
+test("market metrics distinguish complete owner category totals, page coverage and unproven zero", async () => {
+  const snapshot = {
+    cities: { items: ["sanaa"], revision: 7 },
+    stores: { items: [
+      { id: "s1", name: "One", verticalId: "grocery", orderabilityStatus: "OPEN_FOR_ORDERS" },
+      { id: "s2", name: "Two", verticalId: "grocery", orderabilityStatus: "PAUSED" },
+    ], revision: 7, nextCursor: "more" },
+    verticals: { items: [{ id: "grocery", storeCount: 8 }, { id: "pharmacy", storeCount: 4 }], revision: 7 },
+  };
+  const render = compile("src/features/workspace/public-market-overview.tsx", {
+    "@bthwani/dsh": {
+      async listPublicCities() { return snapshot.cities; },
+      async listPublicStores() { return snapshot.stores; },
+      async listPublicVerticals() {
+        if (!snapshot.verticals) throw new Error("unavailable");
+        return snapshot.verticals;
+      },
+    },
+    "../operator-shell/operator-shell.module.css": { sectionGrid: "grid", sectionCard: "card" },
+    "../stores/public-store-query": { isolatedPublicDshOrigin: () => "http://127.0.0.1:23202" },
+    "./operator-home-city": { parseOperatorHomeCity },
+    "react/jsx-runtime": { jsx, jsxs: jsx },
+  });
+  const view = () => render({ searchParams: Promise.resolve({ city: "sanaa" }),
+    canVisitStores: false, canVisitCatalog: false, canViewPublicMarket: true, action: "/marketing" });
+  const fact = (tree, id) => find(tree, node => node.props["data-testid"] === id);
+  const content = node => Array.isArray(node) ? node.map(content).join("") :
+    typeof node === "object" && node !== null ? content(node.props?.children) : String(node ?? "");
+  let tree = await view();
+  assert.equal(content(fact(tree, "market-published-total")), "12");
+  assert.equal(content(fact(tree, "market-page-open")), "1");
+  assert.equal(content(fact(tree, "market-page-paused")), "1");
+  assert.match(content(fact(tree, "market-page-scope")), /2/);
+  snapshot.verticals.nextCursor = "next";
+  tree = await view();
+  assert.equal(content(fact(tree, "market-published-total")), "غير متاح");
+  delete snapshot.verticals.nextCursor;
+  snapshot.verticals.items = [{ id: "grocery", storeCount: Number.MAX_SAFE_INTEGER }, { id: "pharmacy", storeCount: 1 }];
+  tree = await view();
+  assert.equal(content(fact(tree, "market-published-total")), "غير متاح");
+  snapshot.stores = { items: [], revision: 7 };
+  snapshot.verticals = { items: [], revision: 7 };
+  tree = await view();
+  assert.equal(content(fact(tree, "market-published-total")), "0");
+  snapshot.cities = { items: [], revision: 7, nextCursor: "later" };
+  tree = await view();
+  assert.equal(content(fact(tree, "market-published-total")), "غير متاح");
+  snapshot.cities = { items: ["sanaa"], revision: 6 };
+  tree = await view();
+  assert.equal(content(fact(tree, "market-published-total")), "غير متاح");
+  snapshot.verticals = null;
+  tree = await view();
+  assert.equal(content(fact(tree, "market-published-total")), "غير متاح");
 });

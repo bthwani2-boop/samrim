@@ -239,3 +239,32 @@ test("complete inventory summary verifies owner scope and counter invariants", a
   };
   assert.deepEqual(await readMerchantInventorySummary("http://127.0.0.1:3202","store-a","merchant-a","synthetic-bearer"),summary);
 });
+
+test("draft history is scoped, paginated, exact and bound to the original owner request", async () => {
+  const { readMerchantCatalogDraftHistory, parseMerchantCatalogDraftHistory } = await import("./merchant-catalog.ts");
+  assert.equal(typeof readMerchantCatalogDraftHistory, "function");
+  const entry = { version:3, previousPriceYer:"9223372036854775807", priceYer:"3000",
+    previousStockUnits:7, stockUnits:2, committedAt:"2026-11-27T09:00:00.123456Z" };
+  const history = { actorId:"merchant-a", storeId:"store-a", offerId:"of-a", entries:[entry], nextBeforeVersion:"3" };
+  assert.deepEqual(parseMerchantCatalogDraftHistory(history,"merchant-a","store-a","of-a",1),history);
+  for (const bad of [{...history, actorId:"merchant-b"}, {...history, storeId:"store-b"},
+    {...history, offerId:"of-b"}, {...history, nextBeforeVersion:"2"},
+    {...history, entries:[{...entry, priceYer:"9223372036854775808"}]},
+    {...history, entries:[{...entry, committedAt:"2026-02-30T09:00:00Z"}]},
+    {...history, entries:[{...entry, previousStockUnits:-1}]},
+    {...history, entries:[entry,entry]}, {...history, extra:true}]) {
+    assert.throws(()=>parseMerchantCatalogDraftHistory(bad,"merchant-a","store-a","of-a",1),{code:"OWNER_RESPONSE_INVALID"});
+  }
+  let calls=0;
+  globalThis.fetch=async(url,init)=>{
+    calls++;
+    assert.equal(url,"http://127.0.0.1:3202/v1/stores/store-a/catalog/of-a/draft-history?limit=1&beforeVersion=4");
+    assert.equal(init.method,"GET");
+    assert.equal(init.headers.Authorization,"Bearer synthetic-bearer");
+    return Response.json(history,{headers:{"Cache-Control":"no-store"}});
+  };
+  assert.deepEqual(await readMerchantCatalogDraftHistory("http://127.0.0.1:3202","store-a","of-a","merchant-a","synthetic-bearer",{limit:1,beforeVersion:"4"}),history);
+  await assert.rejects(()=>readMerchantCatalogDraftHistory("http://127.0.0.1:3202","store-a","../bad","merchant-a","synthetic-bearer"),{code:"INVALID_REQUEST"});
+  assert.equal(calls,1);
+  assert.throws(()=>parseMerchantCatalogDraftHistory(history,"merchant-a","store-a","of-a",1,"3"),{code:"OWNER_RESPONSE_INVALID"});
+});

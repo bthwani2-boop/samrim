@@ -7,8 +7,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useStoreCart } from "../cart/use-store-cart";
 import StoreProducts, { StoreCartBar } from "../catalog/store-products";
 import FavoriteStores from "../discovery/favorite-stores";
-import { readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
+import { mergePublicPage, publicFailureCode } from "../discovery/public-page";
+import { capturePublicSearchDraft, INVALID_PUBLIC_SEARCH_MESSAGE, readPublicSearch, readStoreBrowseScope, serviceCityLabel } from "../location/serviceability";
 import { publicStorefrontPath } from "../sharing/store-share";
+import StoreShareButton from "../sharing/store-share-button";
 import { describeStoreOrderability } from "./orderability";
 import { resolvePublicStoreOrigin } from "./public-store-origin";
 import { type PublicStoreDetailState, recoverPublicStoreDetail, resolvePublicStoreDetail } from "./store-detail-loader";
@@ -25,7 +27,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
   const [search, setSearch] = React.useState({ storeId: id, draft: "", query: "" });
   const query = search.storeId === id ? search.query : "";
   const draft = search.storeId === id ? search.draft : "";
-  const scope = JSON.stringify([id, query]);
+  const scope = JSON.stringify([api, id, query]);
   React.useEffect(() => { setSearch({ storeId: id, draft: "", query: "" }); }, [id]);
   const [retry, setRetry] = React.useState(0);
   const [state, setState] = React.useState<PublicStoreDetailState>({ scope: "", loading: true, offers: [] });
@@ -46,7 +48,7 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         setState({ scope, loading: false, store, offers, cursor: nextCursor, offersRevision, offersError });
     }).catch((error: unknown) => {
         if (!abort.signal.aborted && revision.current === current)
-          setState({ scope, loading: false, offers: [], error: error instanceof Error ? error.message : "UNKNOWN" });
+          setState({ scope, loading: false, offers: [], error: publicFailureCode(error) });
       });
     return () => { revision.current++; pending.current?.abort(); };
   }, [api, id, query, scope, retry]);
@@ -68,14 +70,11 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
       if (!abort.signal.aborted && revision.current === current) {
         setState((v) => {
           if (v.scope !== scope) return v;
-          const ids = new Set(v.offers.map(item => item.id));
-          if (page.revision !== v.offersRevision ||
-            (page.nextCursor !== undefined && page.nextCursor === visible.cursor) ||
-            page.items.some(item => ids.has(item.id)) ||
-            new Set(page.items.map(item => item.id)).size !== page.items.length) {
+          const offers = mergePublicPage(v.offers, v.offersRevision, visible.cursor, page, item => item.id);
+          if (offers === null) {
             return recoverPublicStoreDetail(v, new Error("STALE_CURSOR"));
           }
-          return { ...v, more: false, offers: [...v.offers, ...page.items],
+          return { ...v, more: false, offers,
             cursor: page.nextCursor, offersRevision: page.revision, offersError: undefined };
         });
       }
@@ -84,10 +83,11 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
         setState((v) => v.scope !== scope ? v : recoverPublicStoreDetail(v, error));
     }
   };
+  const admittedDraft = readPublicSearch(draft);
   const submitSearch = () => {
-    const next = draft.trim();
-    setSearch({ storeId: id, draft, query: next });
-    if (next === query) setRetry(value => value + 1);
+    if (admittedDraft === null) return;
+    setSearch({ storeId: id, draft, query: admittedDraft });
+    if (admittedDraft === query) setRetry(value => value + 1);
   };
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.background }}>
@@ -96,12 +96,13 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
           style={{ color: theme.interactiveText }}>العودة للمتاجر</Link>
         {!visible.error ? <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap" }}>
           <TextInput testID="offers-search" accessibilityLabel="البحث في عروض المتجر" placeholder="ابحث في عروض هذا المتجر"
-            placeholderTextColor={theme.colorSecondary} value={draft} returnKeyType="search" maxLength={160}
-            onChangeText={value => setSearch({ storeId: id, draft: Array.from(value).slice(0, 80).join(""), query })}
+            placeholderTextColor={theme.colorSecondary} value={draft} returnKeyType="search"
+            onChangeText={value => setSearch({ storeId: id, draft: capturePublicSearchDraft(value), query })}
             onSubmitEditing={submitSearch}
             style={{ ...textStyle, flexGrow: 1, minWidth: 160, minHeight: 44, padding: 10,
               borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }} />
           <Pressable accessibilityRole="button" accessibilityLabel="تنفيذ البحث في عروض المتجر" onPress={submitSearch}
+            disabled={admittedDraft === null} accessibilityState={{ disabled: admittedDraft === null }}
             style={{ minHeight: 44, padding: 12, borderWidth: 1, borderColor: theme.borderColor, borderRadius: 10 }}>
             <Text style={{ color: theme.interactiveText }}>بحث</Text>
           </Pressable>
@@ -111,10 +112,13 @@ export default function PublicStoreDetail({ storeID, fullPage = false }: Props) 
             <Text style={{ color: theme.interactiveText }}>مسح البحث</Text>
           </Pressable> : null}
         </View> : null}
+        {!visible.error && admittedDraft === null ? <Text testID="offers-search-error" accessibilityRole="alert"
+          style={{ ...textStyle, color: theme.dangerText }}>{INVALID_PUBLIC_SEARCH_MESSAGE}</Text> : null}
         {visible.loading ? <ActivityIndicator accessibilityLabel="جارٍ تحميل المتجر" color={theme.actionBackground} /> : null}
         {visible.store ? <>
           <Text accessibilityRole="header" testID="store-title" style={{ ...textStyle, fontSize: 26, fontWeight: "700" }}>{visible.store.name}</Text>
           <FavoriteStores key={visible.store.id} storeId={visible.store.id} />
+          <StoreShareButton key={JSON.stringify([visible.store.id, api])} storeId={visible.store.id} ownerOrigin={api} />
           {!fullPage ? (
             <Link href={(browse.city ? { pathname: publicStorefrontPath(id), params: browse } : publicStorefrontPath(id)) as Href}
               style={{ color: theme.interactiveText }}>

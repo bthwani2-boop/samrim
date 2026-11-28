@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import YAML from "yaml";
 import { generatedOperationSource, generatedOperationsPath, operationRows } from "./generate-openapi-operations.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -58,6 +59,7 @@ const retainedOperations = {
     ["getCurrentCustomerCaptainEligibility", "GET", "/v1/actors/me/captain-eligibility"],
     ["getCurrentCustomerCart", "GET", "/v1/carts/{storeID}"],
     ["getMerchantStoreRegistrationOptions", "GET", "/v1/stores/registration-options"],
+    ["getMerchantStoreRegistrationReceipt", "GET", "/v1/store-registration-receipts/{operationID}"],
     ["getOperatorCaptainStanding", "GET", "/v1/operators/captains/{actorId}/standing"],
     ["getOperatorStoreRegistrationPolicy", "GET", "/v1/operators/cities/{cityID}/store-registration-policy/{relation}"],
     ["getPublicStore", "GET", "/v1/public/stores/{id}"],
@@ -74,6 +76,8 @@ const retainedOperations = {
     ["listPublicStores", "GET", "/v1/public/stores"],
     ["listPublicVerticals", "GET", "/v1/public/verticals"],
     ["markOperatorCaptainInterestContacted", "PATCH", "/v1/operators/captain-interest/{id}/contact"],
+    ["readCurrentMerchantCatalogDraftHistory", "GET", "/v1/stores/{storeID}/catalog/{offerID}/draft-history"],
+    ["readCurrentMerchantInventorySummary", "GET", "/v1/stores/{storeID}/inventory-summary"],
     ["registerCompanyEmployee", "POST", "/v1/operators/employees"],
     ["registerMerchantStore", "POST", "/v1/stores"],
     ["replaceCityStoreOperationalPolicy", "PATCH", "/v1/operators/cities/{cityID}/store-availability-policy"],
@@ -83,8 +87,15 @@ const retainedOperations = {
     ["updateStoreOperationalAvailability", "PATCH", "/v1/stores/{storeID}/availability"],
   ],
   wlt: [
+    ["getCurrentCustomerOrderPaymentAllocation", "GET", "/v1/wallets/me/order-payment-allocations/{checkoutID}"],
     ["getCurrentCustomerWalletBalance", "GET", "/v1/wallets/me"],
+    ["getOperatorCommercialAgreementReview", "GET", "/v1/operators/stores/{storeID}/commercial-agreement"],
+    ["getOwnedMerchantCommercialAgreementReview", "GET", "/v1/merchants/stores/{storeID}/commercial-agreement"],
+    ["getWltDevelopmentHealth", "GET", "/health"],
     ["listCurrentCustomerWalletTransactions", "GET", "/v1/wallets/me/transactions"],
+    ["recordIsolatedFinanceAgreementDecision", "POST", "/v1/operators/stores/{storeID}/commercial-agreement/decisions"],
+    ["recordIsolatedFinanceAgreementProposal", "POST", "/v1/operators/stores/{storeID}/commercial-agreement/proposals"],
+    ["recordIsolatedMerchantAgreementDecision", "POST", "/v1/merchants/stores/{storeID}/commercial-agreement/decisions"],
   ],
 };
 const samplePaths = { identity: "/v1/sessions/current:", dsh: "/v1/stores/mine:", wlt: "/v1/wallets/me:" };
@@ -165,4 +176,38 @@ test("fingerprints ignore YAML comments and mapping order", t => {
   assert.notEqual(changed, source);
   writeFileSync(filename, "# comment outside the parsed contract\n" + changed);
   assert.equal(generatedOperationSource("wlt", base), baseline);
+});
+
+test("WLT agreement proposal and projection share the exact positive int64 text limit", () => {
+  const filename = path.join(root, "services", "wlt", "contracts", "openapi", "wlt.openapi.yaml");
+  const { schemas } = YAML.parse(readFileSync(filename, "utf8")).components;
+  for (const name of ["AgreementProposalInput", "CommercialAgreementProposalReview"]) {
+    assert.equal(schemas[name].properties.subscriptionAmountYer.$ref, "#/components/schemas/AgreementSubscriptionAmountYer");
+  }
+  const pattern = new RegExp(schemas.AgreementSubscriptionAmountYer.pattern);
+  const limit = 9223372036854775807n;
+  const candidates = [1n, 9007199254740993n, 10n ** 18n, limit - 1n, limit, limit + 1n, 10n ** 19n - 1n];
+  // Cross the ceiling's decimal place boundaries, including prefixes that end in zero.
+  for (let place = 10n; place <= 10n ** 18n; place *= 10n) {
+    const prefix = limit / place * place;
+    candidates.push(prefix - 1n, prefix, prefix + place - 1n, prefix + place);
+  }
+  for (const amount of candidates) assert.equal(pattern.test(String(amount)), amount <= limit, String(amount));
+  for (const malformed of ["", "0", "01", "-1", "+1", "1.0", "1e3", "1\n"]) {
+    assert.equal(pattern.test(malformed), false, JSON.stringify(malformed));
+  }
+});
+
+test("WLT proposal contract admits only time text exact at microsecond precision", () => {
+  const filename = path.join(root, "services", "wlt", "contracts", "openapi", "wlt.openapi.yaml");
+  const { proposedEffectiveAt } = YAML.parse(readFileSync(filename, "utf8")).components.schemas.AgreementProposalInput.properties;
+  assert.equal(proposedEffectiveAt.format, "date-time");
+  const pattern = new RegExp(proposedEffectiveAt.pattern);
+  const instant = "2027-01-01T10:00:00";
+  for (const suffix of ["Z", ".1Z", ".000001+03:00", ".0000010000+03:00"]) {
+    assert.match(instant + suffix, pattern);
+  }
+  for (const suffix of [".0000001Z", ".0000010001+03:00", ",000001Z", "+02:60", "+24:00"]) {
+    assert.doesNotMatch(instant + suffix, pattern);
+  }
 });

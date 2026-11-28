@@ -6,9 +6,11 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import * as radioGroup from "@bthwani/tamagui-config/radio-group";
+import { withMutationRecoveryLock } from "../src/features/mutation-recovery/recovery-lock.ts";
 import {
-  matchingPendingMerchantRegistration,
-  parsePendingMerchantRegistration,
+  parseStoredMerchantRegistration,
+  sameRegistrationGeneration,
 } from "../src/features/onboarding/merchant-registration-attempt.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -45,7 +47,7 @@ function allNodes(node) {
   return [node, ...allNodes(node.props?.children)];
 }
 
-function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = false, platform = "web", registrationOptions = options }) {
+function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = false, platform = "web", registrationOptions = options, onReadReceipt, webLocks = true, operationId = "123e4567-e89b-42d3-a456-426614174000" }) {
   const hooks = [];
   let hookIndex = 0;
   const effects = [];
@@ -77,7 +79,7 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
     removeItem: key => storage.delete(key),
   };
   const previousWindow = globalThis.window;
-  globalThis.window = { localStorage };
+  globalThis.window = { localStorage, navigator: webLocks ? { locks: { request: (_key, action) => action() } } : {} };
   class DshPublicError extends Error {
     constructor(status, code) { super(code); this.status = status; this.code = code; }
   }
@@ -85,10 +87,11 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
     CryptoDigestAlgorithm: { SHA256: "SHA256" },
     digestStringAsync: async (_alg, value) =>
       createHash("sha256").update(value).digest("hex"),
-    randomUUID: () => "123e4567-e89b-42d3-a456-426614174000",
+    randomUUID: () => operationId,
   };
   const mocks = {
     "@bthwani/dsh": { DshPublicError },
+    "@bthwani/tamagui-config/radio-group": radioGroup,
     "@bthwani/tamagui-config/appearance": {
       useMobileAppearance: () => ({ theme: {
         surface: "white", background: "white", color: "black",
@@ -111,6 +114,11 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
     },
     "./store-registration-transport": {
       async readMerchantStoreRegistrationOptions() { return registrationOptions; },
+      async readMerchantStoreRegistrationReceipt(actor, operationId, signal) {
+        assert.equal(actor, actorId);
+        assert.equal(signal.aborted, false);
+        return onReadReceipt(operationId, DshPublicError);
+      },
       async createMerchantStore(actor, input, signal) {
         createCount++;
         assert.equal(actor, actorId);
@@ -118,10 +126,8 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
         return onCreate(input, DshPublicError, createCount);
       },
     },
-    "./merchant-registration-attempt": {
-      parsePendingMerchantRegistration,
-      matchingPendingMerchantRegistration,
-    },
+    "./merchant-registration-attempt": { parseStoredMerchantRegistration, sameRegistrationGeneration },
+    "../mutation-recovery/recovery-lock": { withMutationRecoveryLock },
   };
   const relationModule = { exports: {} };
   new Function("require", "module", "exports", relationCode)(
@@ -237,7 +243,7 @@ test("real Web component recovers the same DSH operation ID after a failed reque
   assert.equal(second.createCount, 1);
   assert.equal(submitted[1].operationId, submitted[0].operationId);
   assert.equal(second.created, 1);
-  assert.equal(storage.size, 0);
+  assert.equal(JSON.parse([...storage.values()][0]).settled, true);
 });
 
 test("Web storage failure prevents sending any Store registration write", async t => {
@@ -278,7 +284,7 @@ test("Android SecureStore recovery reuses the original command without a second 
   assert.equal(restarted.createCount, 1);
   assert.equal(submitted[0].operationId, submitted[1].operationId);
   assert.equal(restarted.created, 1);
-  assert.equal(storage.size, 0);
+  assert.equal(JSON.parse([...storage.values()][0]).settled, true);
 });
 
 test("changed Store details cannot replay an ambiguous prior write under its ID", async t => {
@@ -327,7 +333,7 @@ for (const platform of ["web", "android"]) {
     assert.equal(submitted.length, 2);
     assert.deepEqual(submitted[1], submitted[0]);
     assert.equal(restarted.created, 1);
-    assert.equal(storage.size, 0);
+    assert.equal(JSON.parse([...storage.values()][0]).settled, true);
   });
 }
 
@@ -354,7 +360,7 @@ test("Arabic coordinates use the same owner payload and retry fingerprint as ASC
   await restarted.submit();
   assert.deepEqual(submitted[1], submitted[0]);
   assert.equal(restarted.created, 1);
-  assert.equal(storage.size, 0);
+  assert.equal(JSON.parse([...storage.values()][0]).settled, true);
 });
 
 test("fresh published registration remains uncertain", async t => {
@@ -416,3 +422,150 @@ test("Store relation choices express shared private sales and additional marketp
     } finally { h.close(); }
   }
 });
+
+for (const platform of ["web", "android"]) {
+  test("a stale registration form cannot replace a newer attempt on "+platform, async () => {
+    const storage = new Map();
+    const first = createHarness({ storage, platform, onCreate(_input, Err) { throw new Err(503, "OPERATION_RESULT_UNKNOWN"); } });
+    const second = createHarness({ storage, platform, operationId: "123e4567-e89b-42d3-a456-426614174001",
+      onCreate() { return { store: { id: "store-duplicate", published: false }, replay: false }; } });
+    try {
+      await first.mount(); await second.mount();
+      first.fill(); second.fill("متجر آخر");
+      await first.submit();
+      assert.equal(first.createCount, 1);
+      const original = [...storage.values()][0];
+      await second.submit();
+      assert.equal(second.createCount, 0, "stale opened form must not send a new operation");
+      assert.equal([...storage.values()][0], original, "newer uncertain attempt must survive");
+    } finally { second.close(); first.close(); }
+  });
+
+  test("a stale form cannot mint a new registration after another form confirms on "+platform, async () => {
+    const storage = new Map();
+    const create = () => ({ store: { id: "store-a", published: false }, replay: false });
+    const first = createHarness({ storage, platform, onCreate: create });
+    const second = createHarness({ storage, platform, operationId: "123e4567-e89b-42d3-a456-426614174001", onCreate: create });
+    try {
+      await first.mount(); await second.mount();
+      first.fill(); second.fill();
+      await first.submit();
+      assert.equal(first.created, 1);
+      await second.submit();
+      assert.equal(second.createCount, 0, "old form must not create a second Store after settlement");
+    } finally { second.close(); first.close(); }
+  });
+}
+
+test("Store registration refuses a Web write without cross-tab exclusion", async () => {
+  const storage = new Map();
+  const form = createHarness({ storage, webLocks: false, onCreate: () => ({ store: { id: "store-a", published: false }, replay: false }) });
+  try {
+    await form.mount(); form.fill(); await form.submit();
+    assert.equal(form.createCount, 0, "no native lock, no owner dispatch");
+    assert.equal(storage.size, 0);
+  } finally { form.close(); }
+});
+
+test("fresh registration after settlement can create a distinct intentional Store", async () => {
+  const storage = new Map();
+  const create = () => ({ store: { id: "store-a", published: false }, replay: false });
+  const first = createHarness({ storage, onCreate: create });
+  const nextId = "123e4567-e89b-42d3-a456-426614174002";
+  let next;
+  try {
+    await first.mount(); first.fill(); await first.submit();
+    const settled = JSON.parse([...storage.values()][0]);
+    assert.equal(settled.settled, true);
+    next = createHarness({ storage, operationId: nextId, onCreate(input) {
+      assert.equal(input.operationId, nextId);
+      return { store: { id: "store-b", published: false }, replay: false };
+    } });
+    await next.mount(); next.fill("متجر جديد"); await next.submit();
+    assert.equal(next.created, 1);
+    assert.deepEqual(Object.keys(JSON.parse([...storage.values()][0])).sort(), ["fingerprint", "operationId", "settled"]);
+  } finally { next?.close(); first.close(); }
+});
+for (const platform of ["web", "android"]) {
+  test("late owner acknowledgement cannot settle a newer generation on "+platform, async () => {
+    const storage = new Map();
+    const newer = { fingerprint: "b".repeat(64), operationId: "123e4567-e89b-42d3-a456-426614174099" };
+    const form = createHarness({ storage, platform, onCreate() {
+      storage.set([...storage.keys()][0], JSON.stringify(newer));
+      return { store: { id: "store-a", published: false }, replay: false };
+    } });
+    try {
+      await form.mount(); form.fill(); await form.submit();
+      assert.equal(form.created, 1);
+      assert.deepEqual(JSON.parse([...storage.values()][0]), newer);
+    } finally { form.close(); }
+  });
+
+  for (const [status, code, definitive] of [
+    [403, "STORE_REGISTRATION_CLOSED", true],
+    [409, "STORE_REGISTRATION_POLICY_CHANGED", true],
+    [503, "STORE_REGISTRATION_CLOSED", false],
+    [400, "STORE_REGISTRATION_POLICY_CHANGED", false],
+  ]) {
+    test("registration retains uncertainty unless owner rejection is definitive: "+platform+" "+status+" "+code, async () => {
+      const storage = new Map();
+      const form = createHarness({ storage, platform, onCreate(_input, Err) { throw new Err(status, code); } });
+      try {
+        await form.mount(); form.fill(); await form.submit();
+        assert.equal(form.created, 0);
+        assert.equal(form.createCount, 1);
+        const record = JSON.parse([...storage.values()][0]);
+        assert.equal(record.settled === true, definitive);
+      } finally { form.close(); }
+    });
+  }
+}
+
+for (const platform of ["web", "android"]) {
+  test("closed policy cannot prevent committed registration receipt recovery on " + platform, async () => {
+    const storage = new Map();
+    const first = createHarness({ storage, platform, onCreate(_input, Err) { throw new Err(503, "OPERATION_RESULT_UNKNOWN"); } });
+    let recovered;
+    try {
+      await first.mount(); first.fill(); await first.submit();
+      const pending = JSON.parse([...storage.values()][0]);
+      recovered = createHarness({ storage, platform, registrationOptions: { choices: [], verticals: [] },
+        onCreate() { assert.fail("receipt recovery must never create a Store"); },
+        onReadReceipt(operationId) {
+          assert.equal(operationId, pending.operationId);
+          return { operationId, store: { id: "store-a", name: "متجر", relation: "MARKETPLACE", published: true } };
+        },
+      });
+      await recovered.mount();
+      const action = allNodes(recovered.render()).find(n => n.props?.accessibilityLabel === "التحقق من نتيجة التسجيل لدى DSH");
+      assert.ok(action && !action.props.disabled, "receipt recovery must be possible without registration choices");
+      action.props.onPress();
+      await settle();
+      assert.equal(recovered.createCount, 0);
+      assert.equal(recovered.created, 1);
+      assert.deepEqual(JSON.parse([...storage.values()][0]), { ...pending, settled: true });
+    } finally { recovered?.close(); first.close(); }
+  });
+}
+for (const platform of ["web", "android"]) {
+  test("absent registration receipt never retires a pending generation on " + platform, async () => {
+    const storage = new Map();
+    const first = createHarness({ storage, platform, onCreate(_input, Err) { throw new Err(503, "OPERATION_RESULT_UNKNOWN"); } });
+    let resumed;
+    try {
+      await first.mount(); first.fill(); await first.submit();
+      const pending = [...storage.values()][0];
+      resumed = createHarness({ storage, platform, registrationOptions: { choices: [], verticals: [] },
+        onCreate() { assert.fail("no replacement operation may dispatch"); },
+        onReadReceipt(_id, Err) { throw new Err(404, "REGISTRATION_RECEIPT_NOT_FOUND"); },
+      });
+      await resumed.mount();
+      const action = allNodes(resumed.render()).find(n => n.props?.accessibilityLabel === "التحقق من نتيجة التسجيل لدى DSH");
+      action.props.onPress();
+      await settle();
+      assert.equal(resumed.created, 0);
+      assert.equal(resumed.createCount, 0);
+      assert.equal([...storage.values()][0], pending);
+    } finally { resumed?.close(); first.close(); }
+  });
+}

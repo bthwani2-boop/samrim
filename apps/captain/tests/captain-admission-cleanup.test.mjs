@@ -28,7 +28,7 @@ test("Identity-only Captain entry cannot read stored credentials or consume phon
       getItemAsync: async () => { storedReads++; return "old-bearer"; },
     },
     "react-native": { Platform: { OS: "android" } },
-    "./captain-standing": {},
+    "@bthwani/dsh": {},
   };
   const mod = { exports: {} };
   new Function("require", "module", "exports", "process", compiled)(
@@ -36,7 +36,7 @@ test("Identity-only Captain entry cannot read stored credentials or consume phon
       assert.ok(Object.hasOwn(mocks, name), `unexpected import: ${name}`);
       return mocks[name];
     }, mod, mod.exports, {
-      env: { EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201" },
+      env: { EXPO_PUBLIC_BTHWANI_ISOLATED_IDENTITY_ORIGIN: "http://127.0.0.1:3201" },
     },
   );
   const state = await mod.exports.readCaptainAdmission(new AbortController().signal);
@@ -68,7 +68,7 @@ test("Captain post-verification cleanup revokes using a fresh bounded signal", a
     },
     "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY:"device", getItemAsync: async () => null },
     "react-native": { Platform: {OS:"android"} },
-    "./captain-standing": {
+    "@bthwani/dsh": {
       CaptainStandingError: OwnerError,
       async readApprovedCaptainStanding() { throw new OwnerError(403,"CAPTAIN_NOT_ELIGIBLE"); },
       async requestCaptainApplication() { return "PENDING"; },
@@ -81,8 +81,8 @@ test("Captain post-verification cleanup revokes using a fresh bounded signal", a
       return mocks[key];
     },mod,mod.exports,{
       env:{
-        EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN:"http://127.0.0.1:3201",
-        EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN:"http://127.0.0.1:3202",
+        EXPO_PUBLIC_BTHWANI_ISOLATED_IDENTITY_ORIGIN:"http://127.0.0.1:3201",
+        EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN:"http://127.0.0.1:3202",
       },
     },(fn,ms)=>{
       assert.equal(ms,2000);
@@ -121,7 +121,7 @@ test("consumed Captain phone proof requires a fresh ticket while incorrect code 
       },
       "expo-secure-store":{ WHEN_UNLOCKED_THIS_DEVICE_ONLY:"device", getItemAsync: async () => null },
       "react-native":{ Platform:{OS:"android"} },
-      "./captain-standing":{
+      "@bthwani/dsh":{
         CaptainStandingError:OwnerError,
         async readApprovedCaptainStanding(){
           throw new OwnerError(503,"OWNER_UNAVAILABLE");
@@ -133,8 +133,8 @@ test("consumed Captain phone proof requires a fresh ticket while incorrect code 
     new Function("require","module","exports","process",compiled)(
       key=>deps[key],mod,mod.exports,{
         env:{
-          EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN:"http://127.0.0.1:3201",
-          EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN:"http://127.0.0.1:3202",
+          EXPO_PUBLIC_BTHWANI_ISOLATED_IDENTITY_ORIGIN:"http://127.0.0.1:3201",
+          EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN:"http://127.0.0.1:3202",
         }
       }
     );
@@ -163,7 +163,7 @@ test("definitive DSH suspension is reported as ineligible, not an incorrect phon
     },
     "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device", getItemAsync: async () => null },
     "react-native": { Platform: { OS: "android" } },
-    "./captain-standing": {
+    "@bthwani/dsh": {
       CaptainStandingError: StandingError,
       async readApprovedCaptainStanding() { throw new StandingError(403, "CAPTAIN_NOT_ELIGIBLE"); },
       async requestCaptainApplication() { throw new StandingError(403, "CAPTAIN_NOT_ELIGIBLE"); },
@@ -177,8 +177,8 @@ test("definitive DSH suspension is reported as ineligible, not an incorrect phon
     },
     mod, mod.exports,
     { env: {
-      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
-      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+      EXPO_PUBLIC_BTHWANI_ISOLATED_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN: "http://127.0.0.1:3202",
     } },
     setTimeout, clearTimeout,
   );
@@ -208,7 +208,7 @@ test("Captain admission preserves uncertain DSH POST result after consumed phone
     },
     "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device", getItemAsync: async () => null },
     "react-native": { Platform: { OS: "android" } },
-    "./captain-standing": {
+    "@bthwani/dsh": {
       CaptainStandingError: StandingError,
       async readApprovedCaptainStanding() { throw new StandingError(403, "CAPTAIN_NOT_ELIGIBLE"); },
       async requestCaptainApplication() {
@@ -228,8 +228,8 @@ test("Captain admission preserves uncertain DSH POST result after consumed phone
       return deps[name];
     }, mod, mod.exports,
     { env: {
-      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
-      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+      EXPO_PUBLIC_BTHWANI_ISOLATED_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN: "http://127.0.0.1:3202",
     } },
   );
   await assert.rejects(
@@ -260,7 +260,7 @@ test("Captain admission uses one DSH owner GET to recover a committed pending ap
     },
     "expo-secure-store": { WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device", getItemAsync: async () => null },
     "react-native": { Platform: { OS: "android" } },
-    "./captain-standing": {
+    "@bthwani/dsh": {
       CaptainStandingError: StandingError,
       async readApprovedCaptainStanding() { throw new StandingError(403, "CAPTAIN_NOT_ELIGIBLE"); },
       async requestCaptainApplication() {
@@ -283,8 +283,8 @@ test("Captain admission uses one DSH owner GET to recover a committed pending ap
       return deps[name];
     }, mod, mod.exports,
     { env: {
-      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
-      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+      EXPO_PUBLIC_BTHWANI_ISOLATED_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN: "http://127.0.0.1:3202",
     } },
   );
   const outcome = await mod.exports.verifyCaptainCode("ticket", "123456", new AbortController().signal);
@@ -292,4 +292,39 @@ test("Captain admission uses one DSH owner GET to recover a committed pending ap
   assert.equal(posts, 1, "no blind repeat of a possibly committed POST");
   assert.equal(readbacks, 1, "single owner GET reconciles the uncertain outcome");
   assert.deepEqual(revoked, ["temporary-customer"], "no temporary Identity token retained");
+});
+
+test("retired Captain device variables cannot enable admission or inspect credentials", async () => {
+  let reads = 0;
+  let calls = 0;
+  class OwnerError extends Error {
+    constructor(status, code) { super(code); this.status = status; this.code = code; }
+  }
+  const mocks = {
+    "@bthwani/identity": {
+      IdentityClientError: OwnerError,
+      async issueCustomerPhoneChallenge() { calls++; return "ticket"; },
+    },
+    "expo-secure-store": {
+      WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device",
+      async getItemAsync() { reads++; return "previous-credential"; },
+    },
+    "react-native": { Platform: { OS: "android" } },
+    "@bthwani/dsh": {},
+  };
+  const mod = { exports: {} };
+  new Function("require", "module", "exports", "process", compiled)(
+    key => mocks[key], mod, mod.exports, { env: {
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+      EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: "1",
+    } },
+  );
+  const signal = new AbortController().signal;
+  assert.deepEqual(await mod.exports.readCaptainAdmission(signal),
+    { enabled: false, standingReady: false, session: null });
+  await assert.rejects(mod.exports.requestCaptainPhoneCode("+967770000001", signal),
+    { status: 503, code: "OWNER_UNAVAILABLE" });
+  assert.equal(reads, 0);
+  assert.equal(calls, 0);
 });

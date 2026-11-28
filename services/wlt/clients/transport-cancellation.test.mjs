@@ -276,3 +276,121 @@ test("WLT invalid origins, malformed cursor and broken header bridge never admit
   globalThis.fetch.mock.mockImplementation(async () => Response.json(agreement, opts));
   assert.deepEqual(await readAgreement(signal), agreement);
 });
+test("WLT refuses contradictory framing and declared-length mismatch before publishing a financial reply", async t => {
+  const payload = JSON.stringify(agreement);
+  const exact = String(Buffer.byteLength(payload));
+  const cases = [
+    { "Content-Length": "0" },
+    { "Content-Length": String(Number(exact) - 1) },
+    { "Content-Length": String(Number(exact) + 1) },
+    { "Content-Length": exact, "Transfer-Encoding": "chunked" },
+    { "Transfer-Encoding": "gzip, chunked" },
+    { "Content-Encoding": "gzip" },
+  ];
+  let next;
+  t.mock.method(globalThis, "fetch", async () => next);
+  for (const extra of cases) {
+    next = new Response(payload, { headers: {...opts.headers, ...extra} });
+    await assert.rejects(() => readAgreement(new AbortController().signal), {status:502}, JSON.stringify(extra));
+    assert.equal(next.body.locked, false);
+  }
+  for (const extra of cases) {
+    next = {status:200, headers:new Headers({...opts.headers, ...extra}), body:null, text:async()=>payload};
+    await assert.rejects(() => readAgreement(new AbortController().signal), {status:502}, JSON.stringify(extra));
+  }
+  for (const extra of [{"Content-Length":exact}, {"Transfer-Encoding":"chunked"}, {}]) {
+    next = new Response(payload, {headers:{...opts.headers,...extra}});
+    assert.deepEqual(await readAgreement(new AbortController().signal), agreement);
+    next = {status:200, headers:new Headers({...opts.headers,...extra}), body:null, text:async()=>payload};
+    assert.deepEqual(await readAgreement(new AbortController().signal), agreement);
+  }
+});
+
+test("WLT verifies declared UTF-8 length rather than JavaScript string length", async t => {
+  const {readCurrentCustomerWallet} = await import("./wallet-balance.ts");
+  const reply = {actorId:"عميل-أ",currency:"YER",balanceYer:"17",availableYer:"17"};
+  const payload = JSON.stringify(reply);
+  let response;
+  t.mock.method(globalThis,"fetch",async()=>response);
+  for (const length of [payload.length, Buffer.byteLength(payload)]) {
+    response = {status:200,headers:new Headers({...opts.headers,"Content-Length":String(length)}),body:null,text:async()=>payload};
+    const read = () => readCurrentCustomerWallet(origin,token,new AbortController().signal);
+    if (length === payload.length) await assert.rejects(read,{status:502});
+    else assert.deepEqual(await read(),reply);
+  }
+});
+
+test("every WLT owner read rejects ambiguous JSON member identities on both response paths", async t => {
+  const { readOwner } = await import("./transport.ts");
+  const paths = [
+    "/v1/wallets/me",
+    "/v1/wallets/me/transactions",
+    "/v1/wallets/me/order-payment-allocations/checkout-0001",
+    "/v1/merchants/stores/store-a/commercial-agreement",
+    "/v1/operators/stores/store-a/commercial-agreement",
+  ];
+  const bad = [
+    '{"actorId":"wallet-other","actorId":"wallet-one"}',
+    '{"actorId":"wallet-one","\\u0061ctorId":"wallet-one"}',
+    '{"allocation":{"totalYer":"999","totalYer":"12"}}',
+    '{"items":[{"fundingId":"one","fundingId":"two"}]}',
+    '{"nested":{"a\\\"b":1,"a\\u0022b":2}}',
+    '{"nested":{"😀":1,"\\ud83d\\ude00":2}}',
+    '{"__proto__":1,"__proto__":2}',
+    '\uFEFF{"actorId":"wallet-one"}',
+    '{"invalid":}',
+    '[{"actorId":"wallet-one"}]',
+    'null',
+  ];
+  const good = {
+    actorId: "wallet-one",
+    items: [{ fundingId: "one" }, { fundingId: "two" }],
+    nested: { 'a"b': "string with { [ \" : }", other: { 'a"b': 2 } },
+  };
+  let raw;
+  let native = false;
+  let last;
+  t.mock.method(globalThis, "fetch", async () => {
+    last = native
+      ? { status: 200, headers: new Headers(opts.headers), body: null, text: async () => raw }
+      : new Response(raw, opts);
+    return last;
+  });
+  const signal = new AbortController().signal;
+  for (const path of paths) {
+    for (const isNative of [false, true]) {
+      native = isNative;
+      for (raw of bad) {
+        await assert.rejects(() => readOwner(origin, token, "GET", path, signal), { status: 502 }, raw);
+        if (!native) assert.equal(last.body.locked, false);
+        assert.equal(getEventListeners(signal, "abort").length, 0);
+      }
+      raw = JSON.stringify(good);
+      assert.deepEqual(await readOwner(origin, token, "GET", path, signal), good);
+    }
+  }
+});
+
+test("actual loopback WLT read rejects contradictory financial evidence and recovers", async () => {
+  const { readCurrentCustomerWallet } = await import("./wallet-balance.ts");
+  const valid = { actorId: "wallet-one", currency: "YER", balanceYer: "12", availableYer: "12" };
+  const raw = '{"actorId":"wallet-other","actorId":"wallet-one","currency":"YER","balanceYer":"999","balanceYer":"12","availableYer":"12"}';
+  let requests = 0;
+  const server = createServer((req, res) => {
+    assert.equal(req.url, "/v1/wallets/me");
+    assert.equal(req.headers.authorization, "Bearer " + token);
+    const payload = ++requests === 1 ? raw : JSON.stringify(valid);
+    res.writeHead(200, { ...opts.headers, "Content-Length": String(Buffer.byteLength(payload)) });
+    res.end(payload);
+  });
+  await new Promise((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
+  const url = "http://127.0.0.1:" + server.address().port;
+  try {
+    await assert.rejects(() => readCurrentCustomerWallet(url, token, AbortSignal.timeout(2000)), { status: 502 });
+    assert.deepEqual(await readCurrentCustomerWallet(url, token, AbortSignal.timeout(2000)), valid);
+    assert.equal(requests, 2);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { test } from "node:test";
 import * as dsh from "@bthwani/dsh";
+import * as radioGroup from "@bthwani/tamagui-config/radio-group";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import { GET, POST } from "../../../app/api/admission+api.ts";
 import * as merchantOwnerWeb from "../access/merchant-owner-web.ts";
@@ -236,7 +237,7 @@ test("Employee screen loads current scope and retains the original operation thr
       useRef(initial){const i=ri++;refs[i]??={current:initial};return refs[i];},
       useLayoutEffect(fn){if(!mounted){mounted=true;cleanup=fn();}}};
     const jsx=(type,props,key)=>({type,props:props??{},key});
-    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},
+    const mocks={"@bthwani/tamagui-config/radio-group":radioGroup,"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},
       "expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(algorithm,value)=>createHash(algorithm).update(value).digest("hex")},
       "expo-secure-store":{getItemAsync:async key=>get(key),setItemAsync:async(key,value)=>set(key,value),deleteItemAsync:async key=>remove(key)},
       react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,AppState:{addEventListener(type,listener){assert.equal(type,"change");nativeListener=listener;return {remove(){nativeListener=undefined;}};}},View:"View",Text:"Text",TextInput:"TextInput",Pressable:"Pressable"},

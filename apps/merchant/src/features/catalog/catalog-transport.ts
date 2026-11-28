@@ -5,14 +5,17 @@ import {
   type MerchantCatalogDraftChange,
   type MerchantCatalogDraftEditChange,
   type MerchantCatalogDraftEditResult,
+  type MerchantCatalogDraftHistoryPage,
   type MerchantCatalogDraftResult,
   type MerchantCatalogPage,
   type MerchantCatalogStatus,
   type MerchantInventorySummary,
   parseMerchantCatalogDraftEditResult,
+  parseMerchantCatalogDraftHistory,
   parseMerchantCatalogDraftResult,
   parseMerchantCatalogPage,
   parseMerchantInventorySummary,
+  readMerchantCatalogDraftHistory as readOwnerDraftHistory,
   readMerchantInventorySummary as readOwnerInventorySummary,
   updateMerchantCatalogDraft,
   validMerchantCatalogSearch,
@@ -103,4 +106,23 @@ export async function readMerchantInventorySummary(
     query: new URLSearchParams({ inventory: storeId }), actorId, method: "GET", signal,
   });
   return parseMerchantInventorySummary(document.inventory, actorId, storeId);
+}
+
+export async function readMerchantCatalogDraftHistory(
+  storeId: string, offerId: string, actorId: string, signal: AbortSignal, beforeVersion?: string,
+): Promise<MerchantCatalogDraftHistoryPage> {
+  if (!storeKey.test(storeId) || !storeKey.test(offerId) || !actorId || signal.aborted) {
+    throw new DshPublicError(400, "INVALID_REQUEST");
+  }
+  const limit = 20;
+  if (Platform.OS !== "web") {
+    return withNativeMerchantSession(signal, (bearer, origin) =>
+      readOwnerDraftHistory(origin, storeId, offerId, actorId, bearer, {
+        limit, ...(beforeVersion !== undefined ? { beforeVersion } : {}), signal,
+      }), actorId);
+  }
+  const query = new URLSearchParams({ draftHistory: storeId, offer: offerId, limit: String(limit) });
+  if (beforeVersion !== undefined) query.set("beforeVersion", beforeVersion);
+  const { document } = await requestMerchantOwnerDocument({ query, actorId, method: "GET", signal });
+  return parseMerchantCatalogDraftHistory(document.draftHistory, actorId, storeId, offerId, limit, beforeVersion);
 }

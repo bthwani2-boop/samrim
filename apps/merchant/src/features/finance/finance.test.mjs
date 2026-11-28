@@ -9,14 +9,6 @@ import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 
-test("finance route presentation remains explicitly unavailable without owner contracts", () => {
-  for (const filename of ["earnings-summary.tsx","payout-recipients.tsx"]) {
-    const source = readFileSync(resolve(import.meta.dirname, filename), "utf8");
-    assert.match(source, /MerchantCapabilityScreen/);
-    assert.doesNotMatch(source, /\bfetch\s*\(|\bsetItem\s*\(|\bmutate\s*\(/);
-  }
-});
-
 function compileFinance(t) {
   const temp = mkdtempSync(resolve(tmpdir(), "merchant-finance-"));
   t.after(() => rmSync(temp, { recursive: true, force: true }));

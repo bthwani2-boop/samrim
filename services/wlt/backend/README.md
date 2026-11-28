@@ -16,9 +16,17 @@ database, an admitted session principal and READ COMMITTED.
 The current HTTP runtime remains read-only. If the command role is absent,
 the guarded owner-baseline transaction creates it atomically with that exact
 dormant ACL. An existing active, privileged, connected or membership-linked
-command role is rejected before WLT is stopped. This does not activate command
-credentials, authenticated transport or any serving HTTP write route; those
-still require separate acceptance.
+command role is rejected before WLT is stopped. This does not activate command credentials or any serving HTTP write route.
+The disposable owner integration fixture hosts the isolated agreement command
+handler. Finance can record proposed terms, the Merchant can record consent or
+refusal, and Finance can approve or reject the same proposal. The read-only
+serving binary excludes these routes. Activation and application write consumers
+require separate acceptance.
+
+WLT compares bounded Identity and DSH observations around each Store-locked
+transaction. A drift it observes rolls the command back. DSH and WLT commit
+independently, so a proposal records the Store relation observed by the command.
+Subsequent decision commands compare that relation to current DSH standing.
 
 ## Runtime configuration
 
@@ -41,7 +49,10 @@ loopback port 3203, runs as UID 65532 with the owner-owned pinned image,
 and does not grant a financial command or migration authority.
 The [environment owner](../../../infra/README.md) describes provisioning,
 native image build and guarded reconciliation. WLT is a default serving
-service, not a separate application profile. Never restart or replace an
+service, not a separate application profile. Its development health check
+uses the shared bounded direct owner HTTP transport and requires Identity's
+exact uncached JSON readiness document in container mode. It does not attest
+sessions, permissions or financial readiness. Never restart or replace an
 existing service outside the authorized lifecycle.
 
 Customer Web uses the configured same-origin preview adapter and existing

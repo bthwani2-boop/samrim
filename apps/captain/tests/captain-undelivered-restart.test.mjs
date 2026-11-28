@@ -54,6 +54,7 @@ function harness() {
   let ownerAdmissions = 0;
   let customerProofs = 0;
   let captainRevocationAttempts = 0;
+  let refreshRevocationAttempts = 0;
   let enroll = async () => ({ refreshToken: tokens.refresh, refreshExpiresAt: new Date(Date.now() + 60000).toISOString() });
   let readStanding = async () => ({ status: "APPROVED" });
   let readIdentity = async (_origin, bearer) => ({
@@ -68,6 +69,7 @@ function harness() {
     WHEN_UNLOCKED_THIS_DEVICE_ONLY: "device",
     async getItemAsync(key) { return stored.get(key) ?? null; },
     async setItemAsync(key, value) {
+      if (writeFailure === "refresh-before" && key.endsWith(".refresh.v1")) throw new Error("refresh write failed before persistence");
       stored.set(key, value);
       if (key.endsWith(".pending.v1")) return;
       if (writeFailure === "after") throw new Error("bearer write persisted, then acknowledgment failed");
@@ -106,7 +108,7 @@ function harness() {
         if (session.role !== role) throw new OwnerError(403, "FORBIDDEN");
         return { session, bearer };
       },
-      async revokePersistentIdentitySession(_origin, token) { assert.equal(token, tokens.refresh); },
+      async revokePersistentIdentitySession(_origin, token) { refreshRevocationAttempts++; assert.equal(token, tokens.refresh); },
       async admitCurrentCustomerAsCaptain() { ownerAdmissions++; return { accessToken: tokens.captain }; },
       async revokeVerifiedIdentitySession(_origin, bearer) {
         if (bearer === tokens.captain) {
@@ -117,7 +119,7 @@ function harness() {
     },
     "expo-secure-store": secureStore,
     "react-native": { Platform: { OS: "android" } },
-    "./captain-standing": {
+    "@bthwani/dsh": {
       CaptainStandingError: OwnerError,
       async readApprovedCaptainStanding(...args) { return readStanding(...args); },
       async requestCaptainApplication() { return "PENDING"; },
@@ -125,8 +127,8 @@ function harness() {
   };
   const reload = ({ legacySetting = false } = {}) => {
     return loadAdmissionFixture(dependencies, {
-      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
-      EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+      EXPO_PUBLIC_BTHWANI_ISOLATED_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+      EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN: "http://127.0.0.1:3202",
       EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: legacySetting ? "1" : "0",
     });
   };
@@ -145,6 +147,7 @@ function harness() {
     get ownerReads() { return ownerReads; },
     get ownerAdmissions() { return ownerAdmissions; },
     get captainRevocationAttempts() { return captainRevocationAttempts; },
+    get refreshRevocationAttempts() { return refreshRevocationAttempts; },
     get customerProofs() { return customerProofs; },
     readToken() { return [...stored].find(([key]) => !key.endsWith(".pending.v1") && !key.endsWith(".refresh.v1"))?.[1] ?? null; },
     pending() { return [...stored].find(([key]) => key.endsWith(".pending.v1"))?.[1] ?? null; },
@@ -153,8 +156,8 @@ function harness() {
 
 test("mapped admission fixture restores worker environment on success and failure", () => {
   const env = {
-    EXPO_PUBLIC_CAPTAIN_SYNTHETIC_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
-    EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN: "http://127.0.0.1:3202",
+    EXPO_PUBLIC_BTHWANI_ISOLATED_IDENTITY_ORIGIN: "http://127.0.0.1:3201",
+    EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN: "http://127.0.0.1:3202",
     EXPO_PUBLIC_BTHWANI_SURFACE_PREVIEW: "1",
   };
   const snapshot = () => Object.keys(env).map(key => process.env[key]);
@@ -428,4 +431,53 @@ test("Captain failed persistent enrollment cannot accept an access-only login", 
   assert.equal(h.readToken(), null);
   assert.equal(h.currentRefresh(), null);
   assert.equal(h.captainRevocationAttempts, 1);
+});
+
+test("unconfirmed Identity 401 cannot discard Captain credentials", async () => {
+  const h = harness();
+  const instance = h.reload();
+  await instance.verifyCaptainCode("ticket", "123456", new AbortController().signal);
+  h.setIdentityRead(async () => { throw h.ownerError(401, "OWNER_REQUEST_FAILED"); });
+  await assert.rejects(instance.readCaptainAdmission(new AbortController().signal),
+    { status: 401, code: "OWNER_REQUEST_FAILED" });
+  assert.equal(h.readToken(), h.tokens.captain);
+  assert.equal(h.currentRefresh(), h.tokens.refresh);
+  assert.equal(h.pending(), null);
+  assert.equal(h.captainRevocationAttempts, 0);
+});
+
+test("a quarantined access write retains the refresh receipt for recovery", async () => {
+  const h = harness();
+  h.setWriteFailure("after");
+  h.setDeleteBearerFails(true);
+  await assert.rejects(h.reload().verifyCaptainCode("ticket", "123456", new AbortController().signal),
+    { code: "PHONE_CHALLENGE_CONSUMED" });
+  assert.equal(h.currentRefresh(), h.tokens.refresh);
+  assert.equal(h.readToken(), h.tokens.captain);
+  assert.ok(h.pending());
+  h.setWriteFailure(null);
+  h.setDeleteBearerFails(false);
+  h.setRevokeCaptainFails(false);
+  assert.deepEqual(await h.reload().readCaptainAdmission(new AbortController().signal),
+    { enabled: true, standingReady: true, session: null });
+  assert.equal(h.currentRefresh(), null);
+  assert.equal(h.readToken(), null);
+  assert.equal(h.pending(), null);
+});
+
+test("an unpersisted but received refresh receipt is explicitly revoked before releasing quarantine", async () => {
+  const h = harness();
+  h.setWriteFailure("refresh-before");
+  await assert.rejects(h.reload().verifyCaptainCode("ticket", "123456", new AbortController().signal),
+    { code: "PHONE_CHALLENGE_CONSUMED" });
+  assert.equal(h.currentRefresh(), null);
+  assert.equal(h.refreshRevocationAttempts, 1, "known receipt must not be lost because storage failed");
+  assert.equal(h.readToken(), h.tokens.captain);
+  assert.ok(h.pending());
+  h.setWriteFailure(null);
+  h.setRevokeCaptainFails(false);
+  assert.deepEqual(await h.reload().readCaptainAdmission(new AbortController().signal),
+    { enabled: true, standingReady: true, session: null });
+  assert.equal(h.readToken(), null);
+  assert.equal(h.pending(), null);
 });

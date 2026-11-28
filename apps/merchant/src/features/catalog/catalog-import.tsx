@@ -9,41 +9,97 @@ import CatalogImportRun from "./catalog-import-run";
 import { readMerchantCatalogPage } from "./catalog-transport";
 import MerchantCatalogDraftForm from "./merchant-catalog-draft-form";
 
+type Interaction = "review" | "run" | "draft";
+type Lease = { isCurrent: () => boolean; release: () => void };
+type ReviewAttempt = { controller: AbortController; lease: Lease };
+type PreviewRow = ReturnType<typeof previewCatalogCsv>[number];
+type DraftSelection = { row: PreviewRow; lease: Lease };
+
 function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorId: string; storeId: string; onChanged?: (() => void) | undefined }>) {
   const { theme } = useMobileAppearance();
   const [rows, setRows] = useState<ReturnType<typeof previewCatalogCsv>>([]);
   const [page, setPage] = useState(0);
-  const [busy, setBusy] = useState(false);
+  const [activity, setActivity] = useState<Interaction | null>(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<"all" | "existing-store-name" | "owner-review" | "invalid" | "duplicate-name">("all");
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<DraftSelection | null>(null);
   const [notice, setNotice] = useState("");
   const [sourceSha256,setSourceSha256]=useState("");
   const [reviewController, setReviewController] = useState<AbortController | null>(null);
-  const active = useRef<AbortController | null>(null);
-  useLayoutEffect(() => () => { active.current?.abort(); active.current = null; }, []);
+  const reviewedRows = useRef<readonly PreviewRow[]>([]);
+  const active = useRef<ReviewAttempt | null>(null);
+  const interaction = useRef<Lease | null>(null);
+  const mounted = useRef(false);
+  const busy = activity === "review";
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      interaction.current = null;
+      active.current?.controller.abort();
+      active.current = null;
+    };
+  }, []);
 
-  function cancelReview() {
-    if (!reviewController || active.current !== reviewController) return;
-    active.current = null;
-    reviewController.abort();
-    setReviewController(null);
-    setBusy(false);
-    setNotice("أُلغيت مراجعة الملف. يمكنك إعادة المحاولة.");
+  // One synchronous admission owner for the three competing interactions.
+  // React state projects that owner for rendering; stale callbacks cannot
+  // acquire or release another operation's lease.
+  function begin(kind: Interaction): Lease | null {
+    if (!mounted.current || interaction.current !== null) return null;
+    const lease: Lease = {
+      isCurrent: () => mounted.current && interaction.current === lease,
+      release: () => {
+        if (!lease.isCurrent()) return;
+        interaction.current = null;
+        setActivity(null);
+      },
+    };
+    interaction.current = lease;
+    setActivity(kind);
+    return lease;
   }
 
-  async function choose() {
-    if (active.current || selected !== null) return;
-    const controller = new AbortController();
-    active.current = controller;
-    const { signal } = controller;
-    setBusy(true);
-    setError("");
-    setNotice("");
+  function clearPreview() {
+    reviewedRows.current = [];
     setRows([]);
     setSourceSha256("");
     setPage(0);
     setFilter("all");
+  }
+
+  function cancelReview() {
+    const attempt = active.current;
+    if (!reviewController || attempt?.controller !== reviewController || !attempt.lease.isCurrent()) return;
+    active.current = null;
+    attempt.controller.abort();
+    setReviewController(null);
+    attempt.lease.release();
+    setNotice("أُلغيت مراجعة الملف. يمكنك إعادة المحاولة.");
+  }
+
+  function openDraft(row: PreviewRow) {
+    if (!row.editableDraft || !reviewedRows.current.includes(row)) return;
+    const lease = begin("draft");
+    if (lease) setSelected({ row, lease });
+  }
+
+  function closeDraft(selection: DraftSelection, changed = false) {
+    if (!selection.lease.isCurrent()) return;
+    setSelected(null);
+    if (changed) clearPreview();
+    selection.lease.release();
+  }
+
+  async function choose() {
+    const lease = begin("review");
+    if (!lease) return;
+    const controller = new AbortController();
+    const attempt = { controller, lease };
+    active.current = attempt;
+    const { signal } = controller;
+    setError("");
+    setNotice("");
+    clearPreview();
     let webUri: string | undefined;
     let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -73,10 +129,11 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
       signal.throwIfAborted();
       const reviewed = await reviewCatalogImportRows(previewCatalogCsv(source), actorId, storeId, signal, readMerchantCatalogPage);
       signal.throwIfAborted();
+      reviewedRows.current = reviewed;
       setSourceSha256(sourceDigest);
       setRows(reviewed);
     } catch (cause) {
-      if (active.current !== controller) return;
+      if (active.current !== attempt || !lease.isCurrent()) return;
       if (signal.aborted) { setError("انتهت مهلة فحص الكتالوج؛ لم تُعرض نتائج جزئية. أعد المحاولة."); return; }
       const code = cause instanceof Error ? cause.message : "";
       setError(code === "CSV_LIMIT" ? "يتجاوز الملف حد المعاينة المحلية: 8 ميغابايت أو 5000 سجل، أو تعذّر التحقق من حجمه."
@@ -85,11 +142,14 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
         : "تعذّرت قراءة الملف أو التحقق من صلاحية المتجر لدى DSH.");
     } finally {
       if (timeout !== undefined) clearTimeout(timeout);
-      if (webUri) URL.revokeObjectURL(webUri);
-      if (active.current === controller) {
-        active.current = null;
-        setReviewController(null);
-        setBusy(false);
+      try {
+        if (webUri) URL.revokeObjectURL(webUri);
+      } finally {
+        if (active.current === attempt && lease.isCurrent()) {
+          active.current = null;
+          setReviewController(null);
+          lease.release();
+        }
       }
     }
   }
@@ -112,7 +172,7 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
       المعاينة محلية؛ عند اعتماد الدفعة تُرسل بيانات الصفوف إلى DSH، ولا يُنشأ أي منتج. يمكنك مراجعة سعر ومخزون مسودة مطابقة واحدة وحفظ تعديلها لدى DSH بشكل صريح؛ تبقى المسودات غير منشورة. يمكن اعتماد دفعة لتعديل المسودات المطابقة فقط؛ إنشاء المنتجات الجماعي وحل الهويات الملتبسة غير متاحين بعد.
     </Text>
     <Pressable accessibilityRole="button" accessibilityLabel="معاينة ملف المنتجات CSV"
-      accessibilityState={{ busy, disabled: busy || selected !== null }} disabled={busy || selected !== null} onPress={() => void choose()} style={button}>
+      accessibilityState={{ busy, disabled: activity !== null }} disabled={activity !== null} onPress={() => void choose()} style={button}>
       <Text style={{ color: theme.interactiveText }}>{busy ? "جارٍ فحص الملف…" : "اختيار ملف CSV وفحصه"}</Text>
     </Pressable>
     {reviewController ? <Pressable accessibilityRole="button" accessibilityLabel="إلغاء مراجعة الملف"
@@ -122,10 +182,12 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
     {error ? <Text accessibilityRole="alert" style={{ color: theme.warningText }}>{error}</Text> : null}
     {notice ? <Text accessibilityLiveRegion="polite" style={{ color: theme.successText }}>{notice}</Text> : null}
     <CatalogImportRun key={JSON.stringify([actorId,storeId])} actorId={actorId} storeId={storeId}
-      rows={selected!==null||busy?[]:rows} sourceSha256={sourceSha256}
-      onChanged={() => { setRows([]); setSourceSha256(""); setPage(0); setFilter("all"); onChanged?.(); }} />
+      rows={rows} sourceSha256={sourceSha256}
+      blocked={activity === "review" || activity === "draft"} running={activity === "run"}
+      beginRun={() => begin("run")?.release ?? null}
+      onChanged={() => { clearPreview(); onChanged?.(); }} />
     {selected !== null ? (() => {
-      const row = rows.find(r => r.row === selected);
+      const row = selected.row;
       if (!row?.editableDraft) return null;
       return <View style={{ gap: 8 }}>
         <Text style={{ color: theme.color }}>السجل {row.row} · مراجعة العرض {row.editableDraft.id}</Text>
@@ -133,9 +195,9 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
         <MerchantCatalogDraftForm key={JSON.stringify([actorId, storeId, row.editableDraft.id, row.editableDraft.draftVersion])}
           actorId={actorId} storeId={storeId} draft={row.editableDraft} priceStockOnly
           initialPriceStock={{ priceYer: row.priceYer, stockUnits: Number(row.stockUnits) }}
-          onSaved={() => { setNotice("أكد DSH حفظ تعديل المسودة غير المنشورة. افحص الملف مجددًا لقراءة أحدث بيانات المتجر."); onChanged?.(); }}
-          onCreated={() => { setSelected(null); setRows([]); setPage(0); setFilter("all"); }} />
-        <Pressable accessibilityRole="button" onPress={() => setSelected(null)} style={button}>
+          onSaved={() => { if (selected.lease.isCurrent()) { setNotice("أكد DSH حفظ تعديل المسودة غير المنشورة. افحص الملف مجددًا لقراءة أحدث بيانات المتجر."); onChanged?.(); } }}
+          onCreated={() => closeDraft(selected, true)} />
+        <Pressable accessibilityRole="button" onPress={() => closeDraft(selected)} style={button}>
           <Text style={{ color: theme.interactiveText }}>العودة إلى المعاينة</Text>
         </Pressable>
       </View>;
@@ -163,7 +225,7 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
             `توجد ${row.match.count} عروض بالاسم نفسه؛ لم يُحدد أي عرض تلقائيًا.`}
         </Text> : null}
         {row.editableDraft ? <Pressable accessibilityRole="button" accessibilityLabel={`مراجعة تعديل المسودة للسجل ${row.row}`}
-          onPress={() => setSelected(row.row)} style={button}>
+          disabled={activity !== null} accessibilityState={{ disabled: activity !== null }} onPress={() => openDraft(row)} style={button}>
           <Text style={{ color: theme.interactiveText }}>مراجعة تعديل المسودة الحالية</Text>
         </Pressable> : null}
       </View>)}
@@ -177,7 +239,7 @@ function CatalogImportPreview({ actorId, storeId, onChanged }: Readonly<{ actorI
           onPress={() => setPage(p => Math.min(Math.max(0, Math.ceil(visible.length/25)-1), p+1))} style={button}>
           <Text style={{ color: theme.interactiveText }}>التالي</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={() => { setRows([]); setSourceSha256(""); setPage(0); setFilter("all"); }} style={button}>
+        <Pressable accessibilityRole="button" disabled={activity !== null} accessibilityState={{ disabled: activity !== null }} onPress={() => { if (!interaction.current && mounted.current && reviewedRows.current === rows) clearPreview(); }} style={button}>
           <Text style={{ color: theme.interactiveText }}>مسح المعاينة</Text>
         </Pressable>
       </View>

@@ -7,9 +7,8 @@ import {
 import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { currentOperatorAccess } from "../../../../../../../src/server/current-operator-access";
-import {
-  boundedRequestBody, isTrustedOperatorLoopbackTarget, OPERATOR_COOKIE, resolveIsolatedOperatorConfig,
-} from "../../../../../../../src/server/operator-passkey-bff";
+import { isTrustedOperatorLoopbackTarget, OPERATOR_COOKIE, resolveIsolatedOperatorConfig } from "../../../../../../../src/server/operator-passkey-config";
+import { boundedRequestBody } from "../../../../../../../src/server/operator-passkey-transport";
 import { unavailableSessionResponse } from "../../../../../../../src/server/request-security";
 
 export const runtime = "nodejs";

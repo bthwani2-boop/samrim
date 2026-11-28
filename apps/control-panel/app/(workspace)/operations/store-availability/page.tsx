@@ -4,9 +4,9 @@ import { parseStoreAvailabilityQuery } from "../../../../src/features/operations
 import StorePauseForm from "../../../../src/features/operations/store-pause-form";
 import styles from "../../../../src/features/operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../../../../src/features/operator-shell/workspace-unavailable";
-import { resolvePublicDshOrigin } from "../../../../src/features/stores/public-store-query";
+import { isolatedPublicDshOrigin } from "../../../../src/features/stores/public-store-query";
 import { currentOperatorAccess } from "../../../../src/server/current-operator-access";
-import { OPERATOR_COOKIE } from "../../../../src/server/operator-passkey-bff";
+import { OPERATOR_COOKIE } from "../../../../src/server/operator-passkey-config";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +23,7 @@ export default async function StoreOperationalInspector({
   }
 
   const storeId = parseStoreAvailabilityQuery(await searchParams);
-  const owner = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
+  const owner = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
   let snapshot: StoreOperationalAvailability | null = null;
   let message = "";
   if (storeId === null) {

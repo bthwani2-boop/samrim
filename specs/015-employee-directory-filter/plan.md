@@ -1,0 +1,3 @@
+# Plan — Recorded employment end-date filter
+
+Reuse DSH list handler/directory and both GET contracts. Bounded optional selector, parameterized SQL and exact response validation; existing SDK and Operator/Merchant consumers. No schema, permission, lifecycle event, owner or financial mutation. Future recorded end date is not inactive status. Avoid new status engine; deny conflicting selectors; preserve filter across paging/refresh, reset cursor on change. Verify current owner directory, actor/employer and isolated PostgreSQL boundary; actual UI, denial and recovery. Apply HR/safety and technical risk proof; no blanket separate-review or journey acceptance claim.

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import * as radioGroup from "@bthwani/tamagui-config/radio-group";
 import { validCaptainInterest } from "../../../services/dsh/clients/captain-interest.ts";
 import { DshPublicError } from "../../../services/dsh/clients/client-core.ts";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
@@ -37,6 +38,7 @@ function renderable(source, dependencies = {}) {
     "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable" },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "expo-router": { Link: "Link" },
+    "@bthwani/tamagui-config/radio-group": radioGroup,
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     ...dependencies,
   };
@@ -111,14 +113,14 @@ test("Captain account admits only its verified workspace, delegates appearance a
 // validator and error type. Transport outcomes are explicitly controlled here;
 // these tests do not claim a real HTTP receipt or Android journey.
 function guestIntake(origin = "https://dsh.example") {
-  const previous = process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
+  const previous = process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN;
   const hooks = [];
   const requests = [];
   let nextHook = 0;
   let cleanup;
   let writes = 0;
-  if (origin === null) delete process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
-  else process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = origin;
+  if (origin === null) delete process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN;
+  else process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN = origin;
   let screen;
   try {
     screen = renderable("src/features/join/captain-interest-screen", {
@@ -135,7 +137,7 @@ function guestIntake(origin = "https://dsh.example") {
         },
         useEffect(effect) { cleanup ??= effect(); },
       },
-      "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable", TextInput: "TextInput" },
+      "react-native": { Platform: { OS: "android" }, Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable", TextInput: "TextInput" },
       "@bthwani/dsh": {
         DshPublicError,
         validCaptainInterest,
@@ -145,8 +147,8 @@ function guestIntake(origin = "https://dsh.example") {
       },
     });
   } finally {
-    if (previous === undefined) delete process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN;
-    else process.env.EXPO_PUBLIC_CAPTAIN_SYNTHETIC_DSH_ORIGIN = previous;
+    if (previous === undefined) delete process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN;
+    else process.env.EXPO_PUBLIC_BTHWANI_ISOLATED_DSH_ORIGIN = previous;
   }
   const render = () => { nextHook = 0; return nodes(screen()); };
   const field = label => render().find(node => node.type === "TextInput" && node.props.accessibilityLabel === label);

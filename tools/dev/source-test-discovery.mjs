@@ -1,5 +1,5 @@
-// Discover authored Node tests once per requested scope; reject unadmitted
-// paths and unsupported test formats before partitioning for native runners.
+// Enumerate authored Node tests once, then route each admitted file to its
+// execution owner. Local developer-tool tests are not CI inputs.
 import { lstatSync, readdirSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 
@@ -10,34 +10,35 @@ const generated = new Set([
 ]);
 const testCandidate = /\.(?:test|spec)\.(?:mjs|cjs|js|jsx|ts|tsx|mts|cts)$/i;
 const operatorRuntimeRoot = "apps/control-panel/tests/runtime/";
+const localDeveloperTests = new Set(["tools/dev/graphify-local.test.mjs"]);
+
+// Windows integration remains fail-closed while the required runtime suites
+// are reconstructed. Shared source safety belongs to source-snapshot, not
+// the Graphify index. Never silently drop a missing Windows obligation.
 const windowsPlatformOwners = Object.freeze([
   "apps/customer/tests/customer-cart-docker-web.test.mjs",
   "tools/dev/Start-App-memory.test.mjs",
   "tools/dev/dev-powershell.test.mjs",
-  "tools/dev/graphify-local.test.mjs",
+  "tools/dev/source-snapshot.test.mjs",
   "tools/dev/sync-lenovo-source.test.mjs",
 ]);
 
-// Ordinal order is independent of locale and filesystem enumeration order.
-const comparePaths = (left, right) => left < right ? -1 : left > right ? 1 : 0;
-
 function relativeSource(root, file) {
-  const rel = relative(root, file);
-  if (isAbsolute(rel) || rel === ".." || rel.startsWith(".." + sep)) {
+  const name = relative(root, file);
+  if (isAbsolute(name) || name === ".." || name.startsWith(".." + sep)) {
     throw new Error("SOURCE_SCOPE_OUTSIDE_CHECKOUT");
   }
-  return rel.replaceAll("\\", "/");
+  return name.replaceAll("\\", "/");
 }
 
 function discover(checkout, folders) {
   const root = resolve(checkout);
-  // Check lexical scope before any filesystem access.
   const scopes = folders.map(folder => relativeSource(root, resolve(folder)));
   const rootStat = lstatSync(root);
   if (rootStat.isSymbolicLink()) throw new Error("UNSCANNED_SOURCE_LINK .");
   if (!rootStat.isDirectory()) throw new Error("UNSCANNED_SOURCE_ENTRY .");
   const physicalRoot = realpathSync.native(root);
-  const files = [];
+  const files = new Set();
 
   function inspect(file, optional = false) {
     const name = relativeSource(root, file);
@@ -68,14 +69,15 @@ function discover(checkout, folders) {
       if (entry.isDirectory()) {
         directory(file);
         walk(file);
-      } else if (testCandidate.test(entry.name)) {
-        if (!entry.name.endsWith(".test.mjs")) {
-          throw new Error("UNSUPPORTED_SOURCE_TEST_FORMAT " + name +
-            " — configure its real runner before admitting this file");
-        }
-        if (!inspect(file).isFile()) throw new Error("UNSCANNED_SOURCE_ENTRY " + name);
-        files.push(name);
+        continue;
       }
+      if (!testCandidate.test(entry.name)) continue;
+      if (!entry.name.endsWith(".test.mjs")) {
+        throw new Error("UNSUPPORTED_SOURCE_TEST_FORMAT " + name +
+          " — configure its real runner before admitting this file");
+      }
+      if (!inspect(file).isFile()) throw new Error("UNSCANNED_SOURCE_ENTRY " + name);
+      files.add(name);
     }
   }
 
@@ -91,16 +93,18 @@ function discover(checkout, folders) {
     }
     if (present) walk(folder);
   }
-  return files.sort(comparePaths);
+  // Default JavaScript ordering is ordinal, not locale-dependent.
+  return [...files].sort();
 }
 
 function partitionTests(files) {
-  const source = [];
-  const operatorRuntime = [];
+  const suites = { source: [], operatorRuntime: [], localDeveloper: [] };
   for (const file of files) {
-    (file.startsWith(operatorRuntimeRoot) ? operatorRuntime : source).push(file);
+    if (localDeveloperTests.has(file)) suites.localDeveloper.push(file);
+    else if (file.startsWith(operatorRuntimeRoot)) suites.operatorRuntime.push(file);
+    else suites.source.push(file);
   }
-  return { source, operatorRuntime };
+  return suites;
 }
 
 export function discoverNodeSourceTests(root, folder) {
@@ -115,8 +119,6 @@ export function discoverWorkspaceTestSuites(root) {
   return partitionTests(discoverWorkspaceNodeTests(root));
 }
 
-// These suites exercise native Windows semantics in addition to portable
-// source coverage; their registered owner paths must actually exist.
 export function discoverWindowsPlatformTests(root) {
   const source = new Set(discoverWorkspaceTestSuites(root).source);
   for (const file of windowsPlatformOwners) {

@@ -7,6 +7,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { DshPublicError } from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import * as publicPage from "../src/features/discovery/public-page.ts";
 import * as serviceability from "../src/features/location/serviceability.ts";
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
@@ -38,6 +39,7 @@ function harness({ variant = "directory", params = {} } = {}) {
   const cleanups = new Map();
   const jsx = (type, props) => ({ type, props: props ?? {} });
   const imports = {
+    "../discovery/public-page": publicPage,
     "@bthwani/dsh": {
       DshPublicError,
       listPublicStores(_url, cityId, options) {
@@ -556,4 +558,69 @@ test("refresh supersedes both active continuations and ignores their late respon
   assert.ok(byId(view, "vertical-option-restaurant"));
   assert.equal(byId(view, "store-late"), undefined);
   assert.equal(byId(view, "vertical-option-pharmacy"), undefined);
+});
+
+test("Store search uses owner whitespace semantics and rejects malformed draft without dispatch", async () => {
+  const app = harness();
+  app.render();
+  const initial = app.read();
+  initial.resolve({ items: [], revision: 1 });
+  await settle();
+  byId(app.render(), "stores-search").props.onChangeText("\u0085مخبز\u0085");
+  byId(app.render(), "stores-search").props.onSubmitEditing();
+  app.render();
+  const search = app.read();
+  assert.equal(search.query, "مخبز");
+  search.resolve({ items: [], revision: 1 });
+  await settle();
+  byId(app.render(), "stores-search").props.onChangeText("bad\u0000query");
+  byId(app.render(), "stores-search").props.onSubmitEditing();
+  const rejected = app.render();
+  assert.ok(byId(rejected, "stores-search-error"));
+  assert.equal(search.signal.aborted, false);
+  byId(app.render(), "stores-search").props.onChangeText("\ufeffمخبز");
+  byId(app.render(), "stores-search").props.onSubmitEditing();
+  app.render();
+  assert.equal(app.read().query, "\ufeffمخبز");
+});
+
+test("only a transient continuation failure preserves the verified Store and vertical snapshots", async () => {
+  for (const [status, code] of [[502, "OWNER_RESPONSE_INVALID"], [404, "NOT_FOUND"], [0, "OWNER_RESPONSE_STALE"], [500, "OWNER_READ_FAILED"]]) {
+    const app = harness();
+    app.render();
+    app.read().resolve({ items: [store("prior")], nextCursor: "store-next", revision: 1 });
+    app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 1 }], nextCursor: "category-next", revision: 1 });
+    await settle();
+    const view = app.render();
+    const stores = button(view, "عرض المزيد").props.onPress();
+    const categories = byId(view, "vertical-options-more").props.onPress();
+    app.read().reject(new DshPublicError(status, code));
+    app.readCategory().reject(new DshPublicError(status, code));
+    await Promise.all([stores, categories]);
+    const failed = app.render();
+    assert.equal(byId(failed, "store-prior"), undefined, code);
+    assert.equal(byId(failed, "vertical-option-grocery"), undefined, code);
+    assert.equal(byId(failed, "stores-empty"), undefined, code);
+    assert.ok(byId(failed, "stores-error"), code);
+    assert.ok(byId(failed, "vertical-options-retry"), code);
+    button(failed, "إعادة المحاولة").props.onPress();
+    byId(failed, "vertical-options-retry").props.onPress();
+    app.render();
+    assert.equal(app.read().cursor, undefined, code);
+    assert.equal(app.readCategory().cursor, undefined, code);
+    app.unmount();
+  }
+});
+
+test("route city replacement withdraws previous vertical choices in its first rendered view", async () => {
+  const app = harness({ params: { city: "sanaa" } });
+  app.render();
+  app.read().resolve({ items: [], revision: 1 });
+  app.readCategory().resolve({ items: [{ id: "grocery", storeCount: 1 }], revision: 1 });
+  await settle();
+  assert.ok(byId(app.render(), "vertical-option-grocery"));
+  app.setParams({ city: "aden" });
+  const changing = app.render();
+  assert.equal(byId(changing, "vertical-option-grocery"), undefined);
+  app.unmount();
 });

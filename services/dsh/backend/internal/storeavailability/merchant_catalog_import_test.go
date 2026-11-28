@@ -307,3 +307,28 @@ func TestMerchantCatalogImportRealPostgresOwnerReadback(t *testing.T) {
 		t.Fatal("mutable run")
 	}
 }
+
+func TestCatalogImportStoredManifestRequiresExactRepresentation(t *testing.T) {
+	change := MerchantCatalogImportChange{SourceSHA256: strings.Repeat("a", 64), Rows: []MerchantCatalogImportRow{{Row: 2, Name: "", PriceYER: "", StockUnits: ""}}}
+	manifest, digest, err := encodeCatalogImportManifest("import-0001", change)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, bad := range []string{
+		strings.Replace(string(manifest), `"name":"",`, "", 1),
+		strings.Replace(string(manifest), `"name":""`, `"name":null`, 1),
+		strings.Replace(string(manifest), `"name":""`, `"Name":""`, 1),
+		strings.Replace(string(manifest), `"name":""`, `"name":"other","name":""`, 1),
+		strings.Replace(string(manifest), `"name":""`, `"name":"","unknown":true`, 1),
+		strings.Replace(string(manifest), `"name":""`, `"name":"","offerId":null`, 1),
+		strings.Replace(string(manifest), `"name":""`, `"name":"","expectedVersion":0`, 1),
+		strings.Replace(string(manifest), `"name":""`, `"name":"","sourceIssue":""`, 1),
+	} {
+		if _, err := decodeCatalogImportManifest("import-0001", digest, []byte(bad)); !errors.Is(err, ErrStoreOwnerUnavailable) {
+			t.Errorf("ambiguous manifest admitted: %s", bad)
+		}
+	}
+	if _, err := decodeCatalogImportManifest("import-0001", digest, manifest); err != nil {
+		t.Fatal(err)
+	}
+}

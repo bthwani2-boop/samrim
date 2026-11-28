@@ -1,11 +1,7 @@
 package captainstanding
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"io"
-	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -65,60 +61,6 @@ type interestHTTPHandler struct {
 func NewInterestHTTPHandler(service *InterestService) http.Handler {
 	return &interestHTTPHandler{service: service}
 }
-func interestUniqueMembers(raw []byte, allowed []string, required []string) bool {
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	first, err := decoder.Token()
-	if err != nil || first != json.Delim('{') {
-		return false
-	}
-	seen := map[string]bool{}
-	for decoder.More() {
-		token, err := decoder.Token()
-		name, ok := token.(string)
-		if err != nil || !ok || seen[name] {
-			return false
-		}
-		found := false
-		for _, expected := range allowed {
-			if name == expected {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-		seen[name] = true
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return false
-		}
-	}
-	last, err := decoder.Token()
-	if err != nil || last != json.Delim('}') {
-		return false
-	}
-	if _, err = decoder.Token(); err != io.EOF {
-		return false
-	}
-	for _, name := range required {
-		if !seen[name] {
-			return false
-		}
-	}
-	return true
-}
-func interestBearer(request *http.Request) (string, error) {
-	values := request.Header.Values("Authorization")
-	if len(values) != 1 || !strings.HasPrefix(values[0], "Bearer ") {
-		return "", ErrUnauthorized
-	}
-	bearer := strings.TrimPrefix(values[0], "Bearer ")
-	if bearer == "" || strings.ContainsAny(bearer, " \r\n\t") {
-		return "", ErrUnauthorized
-	}
-	return bearer, nil
-}
 func interestFilter(raw string) (InterestFilter, error) {
 	result := InterestFilter{Limit: 20}
 	if len(raw) > 512 {
@@ -158,6 +100,39 @@ func interestFilter(raw string) (InterestFilter, error) {
 	}
 	return result, nil
 }
+
+type interestRoute struct {
+	method       string
+	submit, list bool
+	contactID    int64
+}
+
+// Resolve exact owner paths without performing any lookup or mutation.
+func resolveInterestRoute(path string) (interestRoute, bool) {
+	switch path {
+	case CaptainInterestPath:
+		return interestRoute{method: http.MethodPost, submit: true}, true
+	case OperatorCaptainInterestPath:
+		return interestRoute{method: http.MethodGet, list: true}, true
+	default:
+		if !strings.HasPrefix(path, OperatorCaptainInterestPath+"/") || !strings.HasSuffix(path, "/contact") {
+			return interestRoute{}, false
+		}
+		value := strings.TrimSuffix(strings.TrimPrefix(path, OperatorCaptainInterestPath+"/"), "/contact")
+		id, err := strconv.ParseInt(value, 10, 64)
+		if err != nil || id < 1 || strconv.FormatInt(id, 10) != value {
+			id = 0
+		}
+		return interestRoute{method: http.MethodPatch, contactID: id}, true
+	}
+}
+
+func (h *interestHTTPHandler) AllowsMethod(r *http.Request, method string) bool {
+	route, ok := resolveInterestRoute(r.URL.Path)
+	return h != nil && h.service != nil && ok && route.method == method &&
+		(route.submit || route.list || route.contactID > 0)
+}
+
 func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -166,27 +141,18 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		errorReply(w, ErrOwnerUnavailable)
 		return
 	}
-	isSubmit := r.URL.Path == CaptainInterestPath
-	isList := r.URL.Path == OperatorCaptainInterestPath
-	isContact := strings.HasPrefix(r.URL.Path, OperatorCaptainInterestPath+"/") &&
-		strings.HasSuffix(r.URL.Path, "/contact")
-	expected := http.MethodPost
-	if isList {
-		expected = http.MethodGet
-	}
-	if isContact {
-		expected = http.MethodPatch
-	}
-	if !isSubmit && !isList && !isContact {
+	route, ok := resolveInterestRoute(r.URL.Path)
+	if !ok {
 		reply(w, http.StatusNotFound, map[string]string{"error": "NOT_FOUND"})
 		return
 	}
+	isSubmit, isList, expected := route.submit, route.list, route.method
 	w.Header().Set("Allow", expected)
 	if r.Method != expected {
 		reply(w, http.StatusMethodNotAllowed, map[string]string{"error": "METHOD_NOT_ALLOWED"})
 		return
 	}
-	if !isList && r.URL.RawQuery != "" || isList && (r.ContentLength != 0 || len(r.TransferEncoding) > 0) {
+	if (!isList && (r.URL.RawQuery != "" || r.URL.ForceQuery)) || (isList && !captainBodyless(r)) {
 		errorReply(w, ErrInvalidChange)
 		return
 	}
@@ -197,26 +163,13 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 			reply(w, http.StatusTooManyRequests, map[string]string{"error": "RATE_LIMITED"})
 			return
 		}
-		typ, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || typ != "application/json" {
-			errorReply(w, ErrInvalidChange)
-			return
-		}
-		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 2048))
-		allowed := []string{"name", "phone", "city", "district", "vehicleType", "plateRegistered", "phoneType", "experienced", "experienceDetails"}
-		required := []string{"name", "phone", "city", "district", "vehicleType", "phoneType", "experienced"}
-		if err != nil || !interestUniqueMembers(raw, allowed, required) {
-			errorReply(w, ErrInvalidChange)
-			return
-		}
 		var in InterestSubmission
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.DisallowUnknownFields()
-		if decoder.Decode(&in) != nil {
-			errorReply(w, ErrInvalidChange)
+		if err := decodeCaptainCommand(w, r, 2048, &in,
+			"name", "phone", "city", "district", "vehicleType", "phoneType", "experienced"); err != nil {
+			errorReply(w, err)
 			return
 		}
-		if err = h.service.Submit(ctx, in); err != nil {
+		if err := h.service.Submit(ctx, in); err != nil {
 			errorReply(w, err)
 			return
 		}
@@ -225,7 +178,7 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		reply(w, http.StatusAccepted, map[string]bool{"received": true})
 		return
 	}
-	bearer, err := interestBearer(r)
+	bearer, err := captainBearer(r)
 	if err != nil {
 		errorReply(w, err)
 		return
@@ -244,26 +197,15 @@ func (h *interestHTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		reply(w, http.StatusOK, page)
 		return
 	}
-	value := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, OperatorCaptainInterestPath+"/"), "/contact")
-	id, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || id < 1 || strconv.FormatInt(id, 10) != value {
-		errorReply(w, ErrInvalidChange)
-		return
-	}
-	typ, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || typ != "application/json" {
-		errorReply(w, ErrInvalidChange)
-		return
-	}
-	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 64))
-	if err != nil || !interestUniqueMembers(raw, []string{"contacted"}, []string{"contacted"}) {
+	id := route.contactID
+	if id == 0 {
 		errorReply(w, ErrInvalidChange)
 		return
 	}
 	var change struct {
 		Contacted bool `json:"contacted"`
 	}
-	if json.Unmarshal(raw, &change) != nil || !change.Contacted {
+	if err := decodeCaptainCommand(w, r, 64, &change, "contacted"); err != nil || !change.Contacted {
 		errorReply(w, ErrInvalidChange)
 		return
 	}

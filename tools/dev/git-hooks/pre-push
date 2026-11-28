@@ -1,0 +1,21 @@
+#!/bin/sh
+# Native Git's pre-push protocol supplies immutable local and remote objects.
+# This local guard checks existing branch fast-forwards, not product acceptance.
+set -eu
+reject() {
+  printf '%s\n' "PRE_PUSH_REJECT: $1" >&2
+  exit 1
+}
+while read -r local_ref local_oid remote_ref remote_oid; do
+  case "$remote_ref" in refs/heads/*) ;; *) reject 'unsupported ref; separate authorized validation required' ;; esac
+  case "$local_oid:$remote_oid" in *[!0123456789abcdef:]*) reject 'invalid object identities' ;; esac
+  case "$local_oid" in *[!0]*) ;; *) reject 'ref deletion is outside this guard' ;; esac
+  case "$remote_oid" in *[!0]*) ;; *) reject 'new ref is outside this guard' ;; esac
+  git --no-replace-objects cat-file -e "$local_oid^{commit}" || reject 'missing local commit'
+  git --no-replace-objects cat-file -e "$remote_oid^{commit}" || reject 'missing remote commit'
+  git --no-replace-objects merge-base --is-ancestor "$remote_oid" "$local_oid" || reject 'not a proven fast-forward'
+  commits=$(git --no-replace-objects rev-list "$remote_oid..$local_oid") || reject 'cannot enumerate outgoing commits'
+  for commit in $commits; do
+    git --no-replace-objects diff-tree --check --root -r -m "$commit" -- || reject "invalid outgoing diff $commit"
+  done
+done

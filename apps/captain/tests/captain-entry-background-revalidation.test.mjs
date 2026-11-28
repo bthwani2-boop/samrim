@@ -75,7 +75,7 @@ function harness() {
     "./captain-session": {
       hasActiveCaptainSession(session) { return session?.role === "captain"; },
     },
-    "./captain-standing": { CaptainStandingError: class extends Error {} },
+    "@bthwani/dsh": { CaptainStandingError: class extends Error {} },
   };
   const module = { exports: {} };
   new Function("require", "module", "exports", "__DEV__", "setTimeout", "clearTimeout", compiled)(

@@ -32,3 +32,42 @@ test("client binds generated operation and exact manifest, keeps same run on rea
     assert.equal(calls.length,3);
   }finally{globalThis.fetch=original;}
 });
+
+
+test("import admission rejects sparse manifests and non-string receipt reasons",()=>{
+  assert.equal(validMerchantCatalogImportChange({...change,rows:new Array(2)}),false);
+  assert.throws(()=>parseMerchantCatalogImportResult({...complete,outcomes:new Array(2)},actor,store,run),{code:"OWNER_RESPONSE_INVALID"});
+  assert.throws(()=>parseMerchantCatalogImportResult({...complete,outcomes:[complete.outcomes[0],{...complete.outcomes[1],reason:["INVALID_VALUES"]}]},actor,store,run),{code:"OWNER_RESPONSE_INVALID"});
+});
+test("import acknowledgement binds the manifest actually sent, not mutable caller state",async t=>{
+  const input=structuredClone(change);
+  const original=input.sourceSha256;
+  t.mock.method(globalThis,"fetch",async(_url,init)=>{
+    assert.equal(JSON.parse(init.body).sourceSha256,original);
+    input.sourceSha256="b".repeat(64);
+    input.rows.push({row:4,name:"Later",priceYer:"1",stockUnits:"0"});
+    return Response.json(initial,{headers:{"Cache-Control":"no-store"}});
+  });
+  assert.deepEqual(await merchantCatalogImport("http://127.0.0.1:3202",actor,store,run,"synthetic","PUT",new AbortController().signal,input),initial);
+});
+test("an invalid runtime method cannot dispatch an advance",async t=>{
+  t.mock.method(globalThis,"fetch",()=>assert.fail("must not dispatch"));
+  await assert.rejects(merchantCatalogImport("http://127.0.0.1:3202",actor,store,run,"synthetic","DELETE",new AbortController().signal),{code:"INVALID_REQUEST"});
+});
+
+
+test("a replayed start receipt must identify the exact selected draft and next version",async t=>{
+  let reply=complete;
+  t.mock.method(globalThis,"fetch",async()=>Response.json(reply,{headers:{"Cache-Control":"no-store"}}));
+  const invoke=()=>merchantCatalogImport("http://127.0.0.1:3202",actor,store,run,"synthetic","PUT",new AbortController().signal,change);
+  assert.deepEqual(await invoke(),complete);
+  for(const wrong of [
+    {...complete,outcomes:[{...complete.outcomes[0],offerId:"of-foreign"},complete.outcomes[1]]},
+    {...complete,outcomes:[{...complete.outcomes[0],resultVersion:6},complete.outcomes[1]]},
+    {...complete,outcomes:[complete.outcomes[0],{row:3,status:"ACCEPTED",reason:"UPDATED",offerId:"of-new",resultVersion:2}]},
+    {...complete,offset:1,outcomes:[complete.outcomes[1]]},
+  ]) {
+    reply=wrong;
+    await assert.rejects(invoke(),{code:"OPERATION_RESULT_UNKNOWN"});
+  }
+});

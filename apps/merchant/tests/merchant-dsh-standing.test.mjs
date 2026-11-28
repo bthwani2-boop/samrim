@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { readMerchantDSHStanding } from "../src/features/access/dsh-standing.ts";
+import { readMerchantDSHStanding } from "@bthwani/dsh";
 
 const bearer = Buffer.alloc(32, 7).toString("base64url");
 const origin = "https://dsh.test";

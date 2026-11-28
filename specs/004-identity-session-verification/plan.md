@@ -1,39 +1,34 @@
-# Plan — Identity current-session and effective Operator grant read
+# Plan — Identity verified sessions, role admission and Operator access
 
-STATUS: DEVELOPMENT_IN_PROGRESS
+ARTIFACT_CLASS: DERIVED_SPEC_KIT_PLAN
 CAPABILITY_ID: IDENTITY_ACTIVATION_SESSIONS
-JOURNEY: MANAGED_PARTICIPANT_ADMISSION — prerequisite only, not full journey
 
-## Constitution and authority
+Use [spec.md](spec.md) for the feature criteria and [AGENTS.md](../../AGENTS.md), [Identity governance](../../governance/identity.md), [engineering law](../../governance/engineering.md), [safety](../../governance/safety.md), and [repository structure](../../REPOSITORY-STRUCTURE.md) for owner and execution decisions. These documents confer no additional permission. Apply the native Spec Kit phases that fit the affected scope; do not create a new branch or work source.
 
-Use `AGENTS.md`, `REPOSITORY-STRUCTURE.md`, `governance/README.md`, `governance/identity.md` and the existing Codex/Spec Kit derived adapter. Never use the spec as a second permission law. Use the currently authorized active development branch only; historical archive branches remain read-only. The single Git-turn lock belongs to its current owner; no parallel Git writes.
+## Canonical implementation boundaries
 
-## Current owner implementation
+| Responsibility | Existing owner source and consumers |
+| --- | --- |
+| Session read/logout and permission read | [Identity session domain](../../services/identity/backend/internal/session/), current-session and internal-administration OpenAPI paths; [public Identity client](../../services/identity/clients/); DSH verified session and explicit scope consumers. |
+| Phone and eligible role admission/re-entry | Identity phone, Merchant and Captain owner files in the session domain, owner contract/client; DSH standing and Store grants remain independent. |
+| Persistent families | Identity persistent session owner, session OpenAPI and client; app-specific Web cookie and Android session/persistence consumers. |
+| Operator credentials and grants | Identity bootstrap, authentication, recovery and permission-management owners; Control Panel presentation/BFF. Separate owner permission checks at every DSH/WLT effect. |
+| Data | [Identity ordered fresh baseline](../../services/identity/database/schema/): 00_identity.sql, 10_verification.sql, 20_sessions.sql, 30_operator_permissions.sql, 40_operator_passkeys.sql. No separate migration history for experimental fresh installs. |
 
-Identity `services/identity/backend/internal/session` has one SHA-256 bearer parser, Postgres `READ ONLY REPEATABLE READ` canonical actor/session/role lookup, and a second strictly scoped read of explicit Operator permission in **the same transaction**. A `403` signals a verified session without effective grant; `401` signals an invalid session; `503` means owner verification failed and no permission is granted. The finite set is operations, merchant, catalog, marketing, finance, hr and platform_policies. Historical partners is never admitted as a new grant; a grant is never created by a role or HTTP header. Existing SQL migrations 002 and 005 retain historical bytes; additive migration 007 performs an audited, transaction-safe name cutover and role-session invalidation. Source publication does not authorize migration against an existing protected namespace.
+The [Identity owner guide](../../services/identity/README.md) routes the actual isolated runtime configuration, capabilities and contract. The [OpenAPI entrypoint](../../services/identity/contracts/openapi/identity.openapi.yaml) references its canonical paths and generated clients. Do not duplicate this inventory in another executable contract. Retired experimental SQL remains historical Git evidence only; preserve actual applied history and use the separately authorized retained-data epoch rather than replaying the fresh baseline. [Infrastructure](../../infra/README.md) owns the Compose/runtime lifecycle and isolated trust material.
 
-`DELETE /v1/sessions/current` now conditionally revokes only the presented active session digest via an owner-atomic PostgreSQL write. Replays, suspension and stale auth versions fail closed; it does not issue credentials or revoke a session family. New additive `services/identity/database/migrations/002_operator_permission_read.sql` is limited to isolated `identity_test_*` schemas. Original migration 001 remains unchanged. Real grant/revoke and audited original-Operator administration require a separately approved implementation. Dev runtime is loopback only and requires explicit isolated env; no protected services or data are reused.
+## Implementation and evidence route
 
-## Contracts and consumers
+1. Establish live authority, exact repository/source and actual affected writer/consumers, applicable versioned engineering references, owner contract, schema, data and runtime. Use native Specify; determine local Graphify applicability under AGENTS.md and verify exact freshness and supported membership when applicable. Inspect actual source and unsupported formats directly. Evaluate all affected files/units under DELETE / REFOUND / KEEP before any remediation.
+2. Prove the relevant trigger at the actual owner, retain positive rights/behavior and rejection, and use the canonical Go/SQL/HTTP transaction boundary; never introduce another Identity engine, new actor identity or client-driven grant. Use current owner API/SDK operations and existing consumers, including late response and cross-account/Store isolation. Separate command outcomes from display state.
+3. Verify owner tests (positive, malformed, negative, replay, races, denial and durable readback); use pinned Go, native contract/client checks and isolated PostgreSQL. For changes in protected factors, sessions, grants, recovery or schema, document the executor adversarial security assessment and test actual authorization and recovery; do not substitute optional reviewer staffing for mandatory evidence.
+4. Verify actual scoped Web/Android behavior, current admitted synthetic runtime identity and separate owner SQL readback where affected. Neither synthetic OTP nor cryptographic fixtures establish production or protected real identity. Protected Root enrollment, retained-data upgrade, permission/credential changes and service activation keep their specific authorization.
+5. Deliver each complete tested owned foundation immediately under AGENTS.md. Verify exact published source and applicable CI. Reconcile evidence at the existing authorized issue and owner, with remaining criteria open. No duplicate progress register, peer delivery reservation or global prerequisite for independent safe work.
 
-`services/identity/contracts/openapi/identity.openapi.yaml`: `GET /v1/sessions/current`, `DELETE /v1/sessions/current`, and `GET /v1/operators/me/permissions/{permission}`. No public credential issuance, admin bootstrap or production server. Notify session02 that `RequireOperatorPermission(ctx,bearer,operations)` can use the effective permission **read** after it has authenticated the caller; DSH owns the actual Store grant, mutation and its authorization tests. Session03 must not edit session02 DSH files while they are claimed.
+## Proof sources (select affected cases)
 
-## Evidence
+- Native Go unit/negative checks and existing real PostgreSQL/HTTP tests in the [session domain](../../services/identity/backend/internal/session/): current session readback, scoped logout/race, role admission and expiry, persistent families, phone TLS/verification, Captain standing, Operator bootstrap and signed WebAuthn, permission management, recovery refusal and credential bounds. A named test file is not a claim that every criterion already ran or passed.
+- [Isolated owner integration](../../tests/infra/verify-owner-postgres-ci.sh) and [fresh baseline/restore proof](../../tests/infra/verify-isolated-postgres.ps1) provide distinct owner database evidence. Do not point fixtures at retained data or manufacture a successful result through manual SQL.
+- Native OpenAPI/SDK parity, affected source and regression checks, exact candidate CI/security results, owner-backed integration, browser and actual device checks. Use [tasks.md](tasks.md) to select verification scope. Read actual test and runtime evidence, not a historical SHA or a healthy container.
 
-1. Go unit/negative/owner failures, no actor-header impersonation, no token leaks or cross-origin CORS.
-2. Native Linux Go integration inside isolated Docker network against PostgreSQL, synthetic distinct Operators and active/revoked grants; separate readback connection proves durable session and permission revocation, plus 12 simultaneous session logouts and stale principal denial. No protected account/data changes.
-3. Strict OpenAPI parser and structural security guard, Go vet, formatting, exact toolchain and security checks, affected regression only.
-4. Documented executor critical security risk assessment under [AGENTS.md](../../AGENTS.md), full real identity-issued session, DSH Merchant/Operator permission path and real Web/Android acceptance are required **before** full journey CLOSED. CI/Sonar gates classified independently.
-
-Spec Kit 1.3.0 official CLI + existing project workflow/codex integration are inspected; full remote Codex SDD remains reserved to the shared-worktree Spec Kit coordinator while it holds Git turn. Never start a duplicate workflow, falsely claim Fast delivery, or bypass human review gates.
-
-## Session-03 verified Customer → Merchant role (progressive isolated slice)
-The existing Customer bearer and canonical verified_at actor proof are necessary preconditions, never caller-supplied actor headers or the presence of a Merchant Store. A new additive 003 migration makes synthetic actors unverified by default; no public verification mutation is introduced. One Identity transaction locks actor/role/session, refuses existing roles even if disabled, creates Merchant standing, issues a single random 256-bit bearer digest-only with a short lifetime, and returns token only on success. Actual verified first-factor login and real Operator Passkey remain out of scope and cannot be certified by synthetic test data.
-
-### Open technical gates
-1. Real Identity verification factor/phone/passkey initial issuer, guest-to-verified admission, secure refresh/role re-entry after unknown response and recovery; avoid treating seeded synthetic verified_at as a real identity proof.
-2. Independent DSH protected Store grant and Merchant/Operator/Customer app integration with exact final code, persistent readbacks, IDOR, revocation and account isolation.
-3. Exact final CI/Sonar and documented executor critical security/architecture assessment under [AGENTS.md](../../AGENTS.md) before full journey CLOSED.
-
-## Session-03 logout handoff (delivered)
-Identity canonical owner now writes the current session revoked_at atomically and proves 204→401 from a separate PostgreSQL connection in a local isolated native Linux container. The 12-way race commits once, and stale/suspended/forged requests do not revoke another actor. This is not a credential issuer, WebAuthn flow, session-family replay/recovery engine, or complete participation journey. Delivered Commit c9a8b4fb1406cabb28eafd40edb9a5f9801c5898. Sonar Vortex request was 403 and CodeRabbit local review authentication failed; full independent critical review remains blocked. Runtime apps are not updated by the Git push.
+Historical phase plans, migrations and delivery records are preserved at the [prior immutable feature tree](https://github.com/bthwani2-boop/samrim/tree/e7c7513c385650e79adaecbb486090902620c5ed/specs/004-identity-session-verification). Use them for provenance and unresolved obligations, not present commands, gates or acceptance. This derived plan does not certify a completed implementation, operational transition, original-Owner continuity, full journey or production.

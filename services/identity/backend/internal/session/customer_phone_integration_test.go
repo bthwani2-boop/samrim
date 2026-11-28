@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -138,7 +139,8 @@ func verifyPhoneAdmissionIntegration(t *testing.T, ctx context.Context, independ
 	deliveryTarget := listener.Addr().String()
 	_ = listener.Close()
 	const unavailablePhone = "+967770000034"
-	handler, err := NewCustomerPhoneHandler(owner, hex.EncodeToString(key), deliveryTarget, false, unavailablePhone)
+	ca, _ := phoneTestTrust(t, "127.0.0.1")
+	handler, err := NewCustomerPhoneHandler(owner, hex.EncodeToString(key), deliveryTarget, false, unavailablePhone, ca)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,5 +180,109 @@ func verifyPhoneAdmissionIntegration(t *testing.T, ctx context.Context, independ
 	if _, _, err = owner.issuePhoneChallenge(ctx, key, unavailablePhone); err != nil {
 		t.Fatal("failed HTTP delivery prevented prompt retry:", err)
 	}
+	// Exercise the actual HTTP boundary over a trusted TLS session. The
+	// verification code is recovered only from the captured SMTP message;
+	// neither the test nor the HTTP caller reads it from the database.
+	const deliveredPhone = "+967770000036"
+	trustedCA, peer := phoneTestTrust(t, "127.0.0.1")
+	trustedListener := phoneSMTPListener(t)
+	captured := capturePhoneSMTP(trustedListener, peer)
+	trustedHandler, err := NewCustomerPhoneHandler(owner, hex.EncodeToString(key), trustedListener.Addr().String(), false, deliveredPhone, trustedCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invoke := func(handler http.Handler, path, payload string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec
+	}
+	response := invoke(trustedHandler, PhoneChallengePath, `{"phone":"`+deliveredPhone+`"}`)
+	var delivered struct {
+		Ticket string `json:"ticket"`
+	}
+	if response.Code != http.StatusCreated || json.Unmarshal(response.Body.Bytes(), &delivered) != nil ||
+		!phoneTicket.MatchString(delivered.Ticket) {
+		t.Fatalf("trusted SMTP challenge was not issued: status=%d", response.Code)
+	}
+	var wireCode string
+	select {
+	case message := <-captured:
+		if message.err != nil || !strings.Contains(message.body, "\r\nPhone: "+deliveredPhone+"\r\n") {
+			t.Fatal("trusted SMTP delivery was not captured")
+		}
+		_, suffix, found := strings.Cut(message.body, "\r\nCode: ")
+		if !found {
+			t.Fatal("trusted SMTP delivery omitted the code")
+		}
+		wireCode = strings.TrimSuffix(suffix, "\r\n")
+	case <-ctx.Done():
+		t.Fatal("trusted SMTP delivery did not complete")
+	}
+	if !phoneCode.MatchString(wireCode) {
+		t.Fatal("invalid delivered verification code")
+	}
+	verifyPayload := `{"ticket":"` + delivered.Ticket + `","code":"` + wireCode + `"}`
+	verified := invoke(trustedHandler, PhoneVerifyPath, verifyPayload)
+	var credential struct {
+		AccessToken string `json:"accessToken"`
+	}
+	if verified.Code != http.StatusOK || json.Unmarshal(verified.Body.Bytes(), &credential) != nil || credential.AccessToken == "" {
+		t.Fatalf("trusted SMTP proof was not verified: status=%d", verified.Code)
+	}
+	verifiedPrincipal, err := NewVerifier(reader).Verify(ctx, "Bearer "+credential.AccessToken)
+	if err != nil || verifiedPrincipal.Role != "customer" {
+		t.Fatal("delivered proof did not issue a valid Customer session")
+	}
+	var persistedActor string
+	var persistedSessions int
+	var persistedConsumed bool
+	if err = independent.QueryRowContext(ctx, "SELECT id FROM "+schema+".actors WHERE verified_phone=$1 AND verified_at IS NOT NULL", deliveredPhone).Scan(&persistedActor); err != nil || persistedActor != verifiedPrincipal.ActorID {
+		t.Fatal("trusted SMTP proof lacks independent actor readback")
+	}
+	if err = independent.QueryRowContext(ctx, "SELECT count(*) FROM "+schema+".auth_sessions WHERE actor_id=$1 AND role='customer'", persistedActor).Scan(&persistedSessions); err != nil || persistedSessions != 1 {
+		t.Fatal("trusted SMTP proof lacks a unique durable session")
+	}
+	if err = independent.QueryRowContext(ctx, "SELECT consumed FROM "+schema+".customer_phone_challenges WHERE phone=$1", deliveredPhone).Scan(&persistedConsumed); err != nil || !persistedConsumed {
+		t.Fatal("trusted SMTP proof was not durably consumed")
+	}
+	if replay := invoke(trustedHandler, PhoneVerifyPath, verifyPayload); replay.Code != http.StatusUnauthorized {
+		t.Fatalf("trusted SMTP proof was reusable: status=%d", replay.Code)
+	}
+	t.Log("IDENTITY_PHONE_TLS_HTTP_DURABLE_PASS")
+
+	// A wrong trust anchor must fail at TLS, compensate the committed
+	// challenge, retain the send counter and disclose neither code nor ticket.
+	const untrustedPhone = "+967770000037"
+	untrustedListener := phoneSMTPListener(t)
+	untrustedCapture := capturePhoneSMTP(untrustedListener, peer)
+	wrongCA, _ := phoneTestTrust(t, "127.0.0.1")
+	untrustedHandler, err := NewCustomerPhoneHandler(owner, hex.EncodeToString(key), untrustedListener.Addr().String(), false, untrustedPhone, wrongCA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refused := invoke(untrustedHandler, PhoneChallengePath, `{"phone":"`+untrustedPhone+`"}`)
+	if refused.Code != http.StatusServiceUnavailable || strings.Contains(refused.Body.String(), "ticket") {
+		t.Fatalf("untrusted SMTP did not fail closed: status=%d", refused.Code)
+	}
+	select {
+	case message := <-untrustedCapture:
+		if message.err == nil || message.body != "" {
+			t.Fatal("untrusted peer received SMTP data")
+		}
+	case <-ctx.Done():
+		t.Fatal("untrusted connection did not finish")
+	}
+	var refusedConsumed bool
+	var refusedSends int
+	if err = independent.QueryRowContext(ctx, "SELECT consumed,sends FROM "+schema+".customer_phone_challenges WHERE phone=$1", untrustedPhone).Scan(&refusedConsumed, &refusedSends); err != nil || !refusedConsumed || refusedSends != 1 {
+		t.Fatal("TLS failure was not compensated durably")
+	}
+	if _, _, err = owner.issuePhoneChallenge(ctx, key, untrustedPhone); err != nil {
+		t.Fatal("TLS rejection prevented prompt bounded retry")
+	}
+	t.Log("IDENTITY_PHONE_TLS_DENIAL_COMPENSATION_PASS")
 	t.Log("IDENTITY_PHONE_ADMISSION_DURABLE_RACE_PASS")
 }

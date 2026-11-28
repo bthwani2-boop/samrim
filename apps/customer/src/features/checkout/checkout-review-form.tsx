@@ -12,10 +12,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Pressable, Text, View } from "react-native";
 import { formatExactYer } from "../../components/format-exact-yer";
 import { verifyAddressSession } from "../addresses/address-transport";
+import { readCheckoutReview } from "./checkout-review-transport";
 import DeliveryAddressReview from "./delivery-address-review";
 import FulfillmentChoice from "./fulfillment-choice";
 import RecipientForm from "./recipient-form";
-import { readCheckoutReview } from "./checkout-review-transport";
 
 type Recipient = { purpose: "SELF" | "OTHER"; name: string; phone: string; instructions: string };
 type AddressSelection = Pick<CustomerAddress, "id" | "version">;
@@ -224,6 +224,10 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
 
   const error = state.kind === "failed" ? state.message : "";
   const result = state.kind === "ready" ? state.result : null;
+  const pauseEnd = result?.storeSchedule.status === "PAUSED" && result.storeSchedule.pausedUntil
+    ? new Date(`${result.storeSchedule.pausedUntil.slice(0, 19)}.000Z`).toLocaleString("ar-YE", {
+      dateStyle: "medium", timeStyle: "medium",
+    }) : undefined;
   if (!admitted) return <Text style={{ color: theme.colorSecondary }}>{error || "جارٍ التحقق من جلسة العميل للمراجعة."}</Text>;
 
   return (
@@ -269,11 +273,19 @@ export default function CheckoutReviewForm({ actorId, storeId, cartVersion, init
             : <Text testID="checkout-distance-fee-unavailable" style={{ color: theme.colorSecondary }}>تقدير رسوم المسافة غير متاح من DSH.</Text>)}
           <Text style={{ color: theme.colorSecondary }}>
             {result.storeSchedule.status === "OPEN_BY_SCHEDULE" ? "المتجر ضمن ساعات العمل، دون اعتماد طريقة التنفيذ."
-              : result.storeSchedule.status === "PAUSED" ? "المتجر متوقف مؤقتًا."
+              : result.storeSchedule.status === "PAUSED" ? (pauseEnd
+                ? `الإيقاف المؤقت حتى ${pauseEnd} بتوقيت جهازك.`
+                : "المتجر متوقف مؤقتًا.")
               : result.storeSchedule.status === "CLOSED_BY_SCHEDULE" ? "المتجر خارج ساعات العمل."
               : "لم تتوفر أدلة كافية على ساعات عمل المتجر."}
           </Text>
-          <Text accessibilityRole="alert" style={{ color: theme.warningText }}>لم تُعتمد طريقة التنفيذ أو رسومها أو تخصيص الدفع. لا يمكن تأكيد الطلب.</Text>
+          {result.cityFulfillmentPolicy ? <Text testID="checkout-city-fulfillment-policy"
+            style={{ color: result.cityFulfillmentPolicy.status === "DENIED_BY_CITY_POLICY" ? theme.warningText : theme.colorSecondary }}>
+            {result.cityFulfillmentPolicy.status === "ALLOWED_BY_CITY_POLICY" ? "سياسة المدينة تسمح بالطريقة المختارة."
+              : result.cityFulfillmentPolicy.status === "DENIED_BY_CITY_POLICY" ? "سياسة المدينة تمنع الطريقة المختارة لهذا المتجر."
+              : "لم تُضبط سياسة المدينة لطرق التنفيذ لهذا المتجر."}
+          </Text> : null}
+          <Text accessibilityRole="alert" style={{ color: theme.warningText }}>لا يمكن تأكيد الطلب قبل اعتماد طريقة التنفيذ والرسوم وتخصيص الدفع.</Text>
         </View>
       ) : null}
     </View>

@@ -3,18 +3,13 @@ package customercart
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"time"
 )
 
 const favoritePageLimit = 20
-const publicFavoriteJoin = " JOIN stores s ON s.id=f.store_id JOIN service_cities c ON c.id=s.city_id JOIN verticals v ON v.id=s.vertical_id "
-const publicFavoriteWhere = " AND s.published AND c.active AND v.active "
 
 type favoriteState struct {
 	ActorID  string `json:"actorId"`
@@ -28,28 +23,13 @@ type favoritePage struct {
 }
 
 func decodeFavorite(w http.ResponseWriter, r *http.Request) (bool, bool) {
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" || r.Header.Get("Content-Encoding") != "" || r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+	var input struct {
+		Favorite *bool `json:"favorite"`
+	}
+	if !decodeCustomerCommand(w, r, 256, &input) || input.Favorite == nil {
 		return false, false
 	}
-	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 256))
-	start, err := d.Token()
-	if err != nil || start != json.Delim('{') {
-		return false, false
-	}
-	key, err := d.Token()
-	if err != nil || key != "favorite" {
-		return false, false
-	}
-	var value *bool
-	if d.Decode(&value) != nil || value == nil {
-		return false, false
-	}
-	end, err := d.Token()
-	if err != nil || end != json.Delim('}') || d.Decode(new(any)) != io.EOF {
-		return false, false
-	}
-	return *value, true
+	return *input.Favorite, true
 }
 
 // The existing isolated Customer transport verifies the purchasing actor.
@@ -102,7 +82,7 @@ func (h *Handler) favorites(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case list:
 		page := favoritePage{ActorID: actor, StoreIDs: []string{}}
-		rows, e := tx.QueryContext(ctx, "SELECT f.store_id FROM customer_favorite_stores f"+publicFavoriteJoin+"WHERE f.actor_id=$1 AND f.store_id COLLATE \"C\">$2"+publicFavoriteWhere+"ORDER BY f.store_id COLLATE \"C\" LIMIT $3", actor, after, favoritePageLimit+1)
+		rows, e := tx.QueryContext(ctx, "SELECT f.store_id FROM customer_favorite_stores f JOIN stores s ON s.id=f.store_id JOIN service_cities c ON c.id=s.city_id JOIN verticals v ON v.id=s.vertical_id WHERE f.actor_id=$1 AND f.store_id COLLATE \"C\">$2 AND s.published AND c.active AND v.active ORDER BY f.store_id COLLATE \"C\" LIMIT $3", actor, after, favoritePageLimit+1)
 		if e != nil {
 			fail(w, 503, "OWNER_UNAVAILABLE")
 			return
@@ -151,7 +131,7 @@ func (h *Handler) favorites(w http.ResponseWriter, r *http.Request) {
 		result = favoriteState{actor, store, desired}
 	default:
 		var favorite bool
-		err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM customer_favorite_stores f"+publicFavoriteJoin+"WHERE f.actor_id=$1 AND f.store_id=$2"+publicFavoriteWhere+")", actor, store).Scan(&favorite)
+		err = tx.QueryRowContext(ctx, "SELECT EXISTS(SELECT 1 FROM customer_favorite_stores f JOIN stores s ON s.id=f.store_id JOIN service_cities c ON c.id=s.city_id JOIN verticals v ON v.id=s.vertical_id WHERE f.actor_id=$1 AND f.store_id=$2 AND s.published AND c.active AND v.active)", actor, store).Scan(&favorite)
 		if err != nil {
 			fail(w, 503, "OWNER_UNAVAILABLE")
 			return

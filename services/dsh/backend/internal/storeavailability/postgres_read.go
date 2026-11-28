@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"strings"
 	"time"
 )
@@ -12,7 +13,7 @@ func (r *PostgresRepository) Read(ctx context.Context, storeID string) (Snapshot
 	if strings.TrimSpace(storeID) == "" {
 		return Snapshot{}, ErrStoreMissing
 	}
-	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+	tx, err := dbscope.Begin(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}, "stores", "service_cities", "store_operational_availability", "store_operational_weekly_hours")
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -43,7 +44,7 @@ func (r *PostgresRepository) ReadAuthorized(ctx context.Context, storeID, actorI
 		(authoritySource != "MERCHANT_STORE_GRANT" && authoritySource != "OPERATOR_OPERATIONS") {
 		return Snapshot{}, ErrForbidden
 	}
-	tx, err := beginScopedStoreTx(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, err := dbscope.Begin(ctx, r.db, r.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "stores", "service_cities", "store_operational_availability", "store_operational_weekly_hours")
 	if err != nil {
 		return Snapshot{}, err
 	}

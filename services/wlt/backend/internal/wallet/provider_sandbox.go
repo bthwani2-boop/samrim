@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net"
 	"net/http"
 	"strconv"
 	"time"
@@ -17,7 +16,7 @@ func VerifySandboxProviderFunding(ctx context.Context, db *sql.DB, identityOrigi
 	if amount < 1 || !sandboxReference.MatchString(reference) || !validBearer("Bearer "+token) {
 		return "", errors.New("invalid sandbox provider funding input")
 	}
-	reader, err := newIdentityReader(identityOrigin)
+	reader, err := newIdentityReader(identityOrigin, false)
 	if err != nil {
 		return "", err
 	}
@@ -40,34 +39,16 @@ type sandboxProviderEvidence struct {
 	Status    string `json:"status"`
 }
 
+var sandboxProviderClient = ownerHTTPClient(500*time.Millisecond, 1500*time.Millisecond, false)
+
 func verifySandboxProviderEvidence(ctx context.Context, origin, reference, actor string, amount int64) error {
 	if !validLoopbackOwnerOrigin(origin) || !sandboxReference.MatchString(reference) {
 		return errors.New("sandbox provider requires explicit isolated loopback configuration")
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, origin+"/sandbox/v1/funding/"+reference, nil)
-	if err != nil {
-		return errors.New("invalid sandbox provider request")
-	}
-	client := &http.Client{
-		Timeout: 1500 * time.Millisecond,
-		Transport: &http.Transport{
-			Proxy:             nil,
-			DialContext:       (&net.Dialer{Timeout: 500 * time.Millisecond}).DialContext,
-			DisableKeepAlives: true,
-		},
-		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return errors.New("sandbox provider response unconfirmed; reconcile same reference")
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK || response.ContentLength > 1024 {
-		return errors.New("sandbox provider response unconfirmed; reconcile same reference")
-	}
 	var evidence sandboxProviderEvidence
-	if err := decodeBoundedOwnerReply(response, &evidence, 1024); err != nil {
-		return errors.New("invalid sandbox provider evidence")
+	status, err := requestOwnerDocument(ctx, sandboxProviderClient, origin+"/sandbox/v1/funding/"+reference, "", &evidence, 1024, false)
+	if err != nil || status != http.StatusOK {
+		return errors.New("sandbox provider response unconfirmed; reconcile same reference")
 	}
 	if evidence.Reference != reference || evidence.ActorID != actor ||
 		evidence.AmountYer != strconv.FormatInt(amount, 10) || evidence.Currency != "YER" {

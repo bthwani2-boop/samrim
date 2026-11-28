@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -168,9 +168,9 @@ test("cohesion review reports authored candidates without failing short routes o
   x.file("apps/merchant/src/features/orders/misc/client.ts", "export const misplaced = true;\n");
   const candidates = reviewCandidates(inventory(x.root));
   assert.ok(candidates.some(x => x.kind === "cohesion-review" &&
-    x.path === "services/dsh/clients/discovery.ts" && x.severity === "investigate"));
+    x.path === "services/dsh/clients/discovery.ts" && x.lines === 501));
   assert.ok(candidates.some(x => x.kind === "cohesion-review" &&
-    x.path.endsWith("/discovery/http.go") && x.severity === "exception-required"));
+    x.path.endsWith("/discovery/http.go") && x.lines === 701));
   assert.ok(candidates.some(x => x.kind === "feature-naming-review" &&
     x.path.includes("/Orders/")));
   assert.ok(candidates.some(x => x.kind === "generic-directory-review" &&
@@ -226,5 +226,156 @@ test("source enumeration does not execute Git from the caller PATH", t => {
   } finally {
     if (previous === undefined) delete process.env.PATH;
     else process.env.PATH = previous;
+  }
+});
+
+test("canonical Git inventory retains tracked and missing source despite an alternate index", t => {
+  const x = fixture(t);
+  const name = "services/dsh/clients/index.ts";
+  x.file(name, "export const owner = 1;\n");
+  x.stage(name);
+  const previous = process.env.GIT_INDEX_FILE;
+  try {
+    process.env.GIT_INDEX_FILE = path.join(x.root, ".git", "alternate-index");
+    assert.equal(inventory(x.root).find(row => row.path === name)?.tracked, true);
+    rmSync(path.join(x.root, name));
+    const row = inventory(x.root).find(row => row.path === name);
+    assert.equal(row?.tracked, true);
+    assert.equal(row?.state, "missing-or-linked");
+  } finally {
+    if (previous === undefined) delete process.env.GIT_INDEX_FILE;
+    else process.env.GIT_INDEX_FILE = previous;
+  }
+});
+
+test("inventory never follows a hard-linked source into the consumer census", t => {
+  const x = fixture(t);
+  const original = x.file("apps/customer/src/source.ts", "import './private.ts';\n");
+  linkSync(original, path.join(x.root, "apps/customer/src/alias.ts"));
+  for (const row of inventory(x.root)) {
+    assert.notEqual(row.state, "file");
+    assert.equal(row.lines, null);
+    assert.deepEqual(row.imports, []);
+  }
+});
+
+test("inventory refuses sensitive or non-text source before publishing imports", t => {
+  const x = fixture(t);
+  const marker = "ghp_" + "a".repeat(30);
+  x.file("apps/customer/src/sensitive.ts", "import '" + marker + "';\n");
+  x.file("apps/customer/src/binary.ts", Buffer.from([0, 255, 254, 1]));
+  x.file("apps/customer/credentials.json", '{"name":"synthetic"}');
+  const rows = inventory(x.root);
+  assert.equal(rows.length, 3);
+  for (const row of rows) {
+    assert.equal(row.state, "blocked");
+    assert.equal(row.lines, null);
+    assert.deepEqual(row.imports, []);
+  }
+  assert.ok(!JSON.stringify(rows).includes(marker));
+});
+
+test("inventory fails closed without echoing a sensitive filename", t => {
+  const x = fixture(t);
+  const marker = "ghp_" + "a".repeat(30);
+  x.file("apps/customer/src/" + marker + ".ts", "export const ordinary = 1;\n");
+  assert.throws(() => inventory(x.root), error =>
+    /sensitive source path/i.test(error.message) && !error.message.includes(marker));
+});
+
+test("inventory classifies complete metadata without opening binary assets, rejects invalid text and reports replaced paths", t => {
+  const x = fixture(t);
+  x.file("governance/engineering.md", "# Owner\n");
+  x.file("infra/compose.yaml", "services: {}\n");
+  x.file("tools/dev/empty.mjs", "");
+  x.file("apps/customer/assets/logo.png", Buffer.from([0, 255, 1, 2]));
+  x.file("apps/customer/src/invalid.ts", Buffer.from([0xff, 0xfe]));
+  x.file("apps/customer/src/oversized.ts", Buffer.alloc(4 * 1024 * 1024 + 1, 65));
+  const replaced = x.file("apps/customer/src/replaced.ts", "export const data = 1;\n");
+  x.stage("apps/customer/src/replaced.ts");
+  rmSync(replaced);
+  mkdirSync(replaced);
+  const rows = inventory(x.root);
+  const lookup = new Map(rows.map(row => [row.path, row]));
+  assert.equal(lookup.get("governance/engineering.md").owner, "governance");
+  assert.equal(lookup.get("governance/engineering.md").kind, "documentation");
+  assert.equal(lookup.get("infra/compose.yaml").owner, "infrastructure");
+  assert.equal(lookup.get("tools/dev/empty.mjs").owner, "developer-tooling");
+  assert.equal(lookup.get("tools/dev/empty.mjs").lines, 0);
+  assert.equal(lookup.get("apps/customer/assets/logo.png").kind, "asset");
+  assert.equal(lookup.get("apps/customer/assets/logo.png").bytes, 4);
+  assert.equal(lookup.get("apps/customer/assets/logo.png").lines, null);
+  assert.equal(lookup.get("apps/customer/src/invalid.ts").state, "blocked");
+  assert.equal(lookup.get("apps/customer/src/oversized.ts").state, "blocked");
+  assert.equal(lookup.get("apps/customer/src/replaced.ts").state, "non-file");
+  assert.equal(summary(rows).linkedOrMissing, 3);
+  assert.deepEqual(reviewCandidates(rows), []);
+});
+
+test("literal package exports, subpaths and unsupported mappings remain accurately bounded", t => {
+  const x = fixture(t);
+  x.file("packages/direct/package.json", '{"name":"@synthetic/direct","exports":"./index.ts"}');
+  x.file("packages/direct/index.ts", "export const direct = true;\n");
+  x.file("packages/sub/package.json", '{"name":"@synthetic/sub","exports":{"./value":"./value.ts","./*":"./other.ts","./missing":"./missing.ts"}}');
+  x.file("packages/sub/value.ts", "export const value = true;\n");
+  x.file("packages/sub/other.ts", "export const other = true;\n");
+  x.file("packages/malformed/package.json", "{ malformed");
+  x.file("packages/private/package.json", '{"name":"@synthetic/private"}');
+  const consumer = "apps/customer/src/use.ts";
+  x.file(consumer, [
+    'import "@synthetic/sub/unknown";',
+    'import "@synthetic/sub/value";',
+    'import "@synthetic/direct";',
+    'import "@synthetic/sub/missing";',
+    'import "../../../../outside.ts";',
+    'import "@synthetic/private";',
+  ].join("\n"));
+  const lookup = new Map(inventory(x.root).map(row => [row.path, row]));
+  assert.deepEqual(lookup.get("packages/direct/index.ts").importedBy, [consumer]);
+  assert.deepEqual(lookup.get("packages/sub/value.ts").importedBy, [consumer]);
+  assert.deepEqual(lookup.get("packages/sub/other.ts").importedBy, []);
+  assert.equal(lookup.get(consumer).imports.length, 6);
+});
+
+test("review candidates retain line counts and exclude missing authored files", t => {
+  const x = fixture(t);
+  x.file("apps/merchant/src/features/Upper/misc/screen.ts", "export const value = 1;\n".repeat(351));
+  const missing = x.file("tools/dev/deleted.mjs", "export const value = 1;\n".repeat(701));
+  x.stage("tools/dev/deleted.mjs");
+  rmSync(missing);
+  const candidates = reviewCandidates(inventory(x.root));
+  assert.equal(candidates.length, 3);
+  assert.equal(candidates.find(row => row.kind === "cohesion-review").lines, 351);
+  assert.ok(candidates.every(row => row.path.endsWith("screen.ts")));
+});
+
+test("SQL inventory distinguishes owner baselines, synthetic WLT scripts and other SQL", t => {
+  const x = fixture(t);
+  const cases = new Map([
+    ["services/dsh/database/schema/00_marketplace.sql", "schema-baseline"],
+    ["services/identity/database/schema/10_verification.sql", "schema-baseline"],
+    ["services/wlt/database/schema/00_ledger.sql", "schema-baseline"],
+    ["services/wlt/database/sandbox/10_test_funding.sql", "sandbox-sql"],
+    ["services/dsh/database/migrations/001_old.sql", "migration"],
+    ["services/dsh/database/sandbox/10_wrong.sql", "other-sql"],
+    ["services/identity/backend/internal/sql/query.sql", "other-sql"],
+    ["services/wlt/database/schema/nested/10_wrong.sql", "other-sql"],
+    ["tests/infra/fixture.sql", "other-sql"],
+  ]);
+  for (const file of cases.keys()) x.file(file, "SELECT 1;\n");
+  const rows = inventory(x.root);
+  assert.deepEqual(new Map(rows.map(row => [row.path, row.kind])), cases);
+  assert.ok(rows.every(row => row.lines === 1));
+});
+
+test("cohesion suggestions never require a placement exception solely from size", t => {
+  const x = fixture(t);
+  for (const n of [351, 501, 701]) x.file("tools/dev/size-" + n + ".mjs", "// comment\n".repeat(n));
+  const candidates = reviewCandidates(inventory(x.root));
+  assert.equal(candidates.length, 3);
+  for (const candidate of candidates) {
+    assert.equal(candidate.kind, "cohesion-review");
+    assert.equal(Object.hasOwn(candidate, "severity"), false);
+    assert.equal(candidate.lines, Number(candidate.path.match(/size-(\d+)/)[1]));
   }
 });

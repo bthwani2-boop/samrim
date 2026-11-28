@@ -9,46 +9,80 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/wallet"
 	_ "github.com/lib/pq"
 )
 
-func validIsolation(mode, address, databaseURL string) bool {
-	host, port, err := net.SplitHostPort(address)
-	if mode != "true" || err != nil || host != "127.0.0.1" || !validPort(port) {
-		return false
-	}
-	return isolatedDatabaseURL(databaseURL, "bthwani_wlt_reader")
+type servingConfiguration struct {
+	address, databaseURL, identityOrigin, dshOrigin string
+	containerMode                                   bool
 }
 
+// Resolve one mode before accepting any database or peer configuration.
+// A local preview cannot satisfy the container admission, or vice versa.
+func admitServingConfiguration(getenv func(string) string) (servingConfiguration, error) {
+	c := servingConfiguration{
+		address:        getenv("WLT_DEV_LISTEN_ADDR"),
+		databaseURL:    getenv("WLT_TEST_DATABASE_URL"),
+		identityOrigin: getenv("WLT_TEST_IDENTITY_ORIGIN"),
+		dshOrigin:      getenv("WLT_TEST_DSH_ORIGIN"),
+	}
+	denied := errors.New("WLT requires an explicit isolated local or container configuration")
+	if getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
+		return servingConfiguration{}, denied
+	}
+	switch getenv("BTHWANI_ISOLATED_CONTAINER_MODE") {
+	case "", "false":
+		host, port, err := net.SplitHostPort(c.address)
+		if err != nil || host != "127.0.0.1" || !validPort(port) ||
+			!isolatedDatabaseURL(c.databaseURL, "bthwani_wlt_reader") {
+			return servingConfiguration{}, denied
+		}
+	case "true":
+		c.containerMode = true
+		u := parseIsolatedDatabaseURL(c.databaseURL, "bthwani_wlt_reader")
+		if c.address != "0.0.0.0:8080" || u == nil || u.Host != "postgres:5432" {
+			return servingConfiguration{}, denied
+		}
+	default:
+		return servingConfiguration{}, denied
+	}
+	return c, nil
+}
+
+func parseIsolatedDatabaseURL(databaseURL, role string) *url.URL {
+	u, err := url.Parse(databaseURL)
+	if err != nil || u.Scheme != "postgres" || u.User == nil || u.User.Username() != role ||
+		u.Path != "/bthwani_wlt_test" || u.RawQuery != "sslmode=disable" ||
+		u.Fragment != "" || u.Opaque != "" || u.String() != databaseURL {
+		return nil
+	}
+	return u
+}
+
+// The separate sandbox command also uses this exact loopback boundary.
 func isolatedDatabaseURL(databaseURL, role string) bool {
-	u, err := url.Parse(databaseURL)
-	return err == nil && u.Scheme == "postgres" && u.Hostname() == "127.0.0.1" &&
-		validPort(u.Port()) && u.User != nil && u.User.Username() == role &&
-		u.Path == "/bthwani_wlt_test" && u.RawQuery == "sslmode=disable" &&
-		u.Fragment == "" && u.String() == databaseURL
-}
-
-// Container mode is a separate explicit development admission. Local preview
-// still requires loopback and never accepts a Docker host by implication.
-func validContainerIsolation(mode, containerMode, address, databaseURL, identityOrigin string) bool {
-	if mode != "true" || containerMode != "true" || address != "0.0.0.0:8080" ||
-		identityOrigin != "http://identity:3302" {
-		return false
-	}
-	u, err := url.Parse(databaseURL)
-	return err == nil && u.Scheme == "postgres" && u.Host == "postgres:5432" &&
-		u.User != nil && u.User.Username() == "bthwani_wlt_reader" &&
-		u.Path == "/bthwani_wlt_test" && u.RawQuery == "sslmode=disable" &&
-		u.Fragment == "" && u.Opaque == "" && u.String() == databaseURL
+	u := parseIsolatedDatabaseURL(databaseURL, role)
+	return u != nil && u.Hostname() == "127.0.0.1" && validPort(u.Port())
 }
 
 func validPort(port string) bool {
 	value, err := strconv.ParseUint(port, 10, 16)
 	return err == nil && value > 0
+}
+
+// Both canonical constructors validate their peer origins without I/O.
+// Construct the handler before querying the database admission contract.
+func (c servingConfiguration) handler(db *sql.DB) (http.Handler, error) {
+	if c.containerMode {
+		return wallet.NewContainerHandler(db, c.identityOrigin, c.dshOrigin)
+	}
+	return wallet.NewHandler(db, c.identityOrigin, c.dshOrigin)
 }
 
 // Required owner objects and actual effective grants are distinct invariants.
@@ -138,44 +172,107 @@ func checkDatabase(ctx context.Context, db *sql.DB) error {
 
 func developmentHealth(db *sql.DB, identityOrigin string, containerMode bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", "GET")
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
-		pingCtx, cancel := context.WithTimeout(r.Context(), time.Second)
+		// One shared deadline bounds both dependency observations.
+		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
 		defer cancel()
-		if err := db.PingContext(pingCtx); err != nil {
+		if db == nil || db.PingContext(ctx) != nil ||
+			(containerMode && wallet.CheckDevelopmentIdentityHealth(ctx, identityOrigin) != nil) || ctx.Err() != nil {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			return
 		}
-		if containerMode {
-			check, err := http.NewRequestWithContext(pingCtx, http.MethodGet, identityOrigin+"/health", nil)
-			if err != nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			client := &http.Client{
-				Timeout:       time.Second,
-				CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
-			}
-			response, err := client.Do(check)
-			if err != nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-			_ = response.Body.Close()
-			if response.StatusCode != http.StatusOK {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-		}
-		w.Header().Set("Cache-Control", "no-store")
 		w.WriteHeader(http.StatusOK)
 	}
 }
 
+// The Compose default stop grace is ten seconds. Leave two seconds for
+// process cleanup after the bounded HTTP drain.
+const servingDrainTimeout = 8 * time.Second
+
+// Own the entire listener lifetime. A stop closes admission first, lets
+// in-flight HTTP requests finish, and closes unfinished connections only
+// after the drain deadline. A listener failure also drains other requests
+// before returning its error to the process owner.
+func serveDevelopment(ctx context.Context, server *http.Server, listener net.Listener, grace time.Duration) error {
+	if ctx.Err() != nil {
+		return listener.Close()
+	}
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
+
+	var serveErr error
+	stopping := false
+	select {
+	case <-ctx.Done():
+		stopping = true
+	case serveErr = <-served:
+	}
+
+	// The signal context is already cancelled; it must not be the drain
+	// context. Existing request contexts remain live during graceful shutdown.
+	drain, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	drainErr := server.Shutdown(drain)
+	if drainErr != nil {
+		drainErr = errors.Join(drainErr, server.Close())
+	}
+	if stopping {
+		serveErr = <-served
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+	}
+	return errors.Join(serveErr, drainErr)
+}
+
+func runDevelopment(ctx context.Context, getenv func(string) string) error {
+	config, err := admitServingConfiguration(getenv)
+	if err != nil {
+		return err
+	}
+	// sql.Open creates a lazy pool; the first database operation is below.
+	db, err := sql.Open("postgres", config.databaseURL)
+	if err != nil {
+		return errors.New("WLT database connection rejected")
+	}
+	defer db.Close()
+	handler, err := config.handler(db)
+	if err != nil {
+		return err
+	}
+	db.SetMaxOpenConns(6)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	admission, cancel := context.WithTimeout(ctx, 4*time.Second)
+	err = checkDatabase(admission, db)
+	cancel()
+	if err != nil {
+		return err
+	}
+	if ctx.Err() != nil {
+		return nil
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/v1/", handler)
+	mux.HandleFunc("/health", developmentHealth(db, config.identityOrigin, config.containerMode))
+	server := &http.Server{
+		Addr: config.address, Handler: mux, ReadHeaderTimeout: 3 * time.Second,
+		ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second,
+		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
+	}
+	listener, err := net.Listen("tcp", config.address)
+	if err != nil {
+		return errors.New("WLT development listener unavailable")
+	}
+	return serveDevelopment(ctx, server, listener, servingDrainTimeout)
+}
+
 func main() {
+	// Sandbox commands keep their separately bounded, one-shot lifecycle.
 	if len(os.Args) > 1 {
 		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 		err := runSandboxFunding(ctx, os.Args[1], os.Args[2:], os.Stdin, os.Stdout, os.Getenv)
@@ -185,45 +282,10 @@ func main() {
 		}
 		return
 	}
-	address := os.Getenv("WLT_DEV_LISTEN_ADDR")
-	dsn := os.Getenv("WLT_TEST_DATABASE_URL")
-	containerMode := os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true"
-	identityOrigin := os.Getenv("WLT_TEST_IDENTITY_ORIGIN")
-	dshOrigin := os.Getenv("WLT_TEST_DSH_ORIGIN")
-	if !validIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), address, dsn) &&
-		!validContainerIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"),
-			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), address, dsn, identityOrigin) {
-		log.Fatal("WLT requires an explicit isolated local or container configuration")
-	}
-	db, err := sql.Open("postgres", dsn)
-	if err != nil {
-		log.Fatal("WLT database connection rejected")
-	}
-	defer db.Close()
-	db.SetMaxOpenConns(6)
-	db.SetConnMaxLifetime(5 * time.Minute)
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-	err = checkDatabase(ctx, db)
-	cancel()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := runDevelopment(ctx, os.Getenv)
+	stop()
 	if err != nil {
 		log.Fatal(err)
 	}
-	var handler http.Handler
-	if containerMode {
-		handler, err = wallet.NewContainerHandler(db, identityOrigin, dshOrigin)
-	} else {
-		handler, err = wallet.NewHandler(db, identityOrigin, dshOrigin)
-	}
-	if err != nil {
-		log.Fatal(err)
-	}
-	mux := http.NewServeMux()
-	mux.Handle("/v1/", handler)
-	mux.HandleFunc("/health", developmentHealth(db, identityOrigin, containerMode))
-	server := &http.Server{
-		Addr: address, Handler: mux, ReadHeaderTimeout: 3 * time.Second,
-		ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second,
-		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
-	}
-	log.Fatal(server.ListenAndServe())
 }

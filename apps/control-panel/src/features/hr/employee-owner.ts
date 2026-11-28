@@ -1,7 +1,7 @@
 import "server-only";
 import { cookies } from "next/headers";
 import { currentOperatorAccess } from "../../server/current-operator-access";
-import { OPERATOR_COOKIE } from "../../server/operator-passkey-bff";
+import { OPERATOR_COOKIE } from "../../server/operator-passkey-config";
 import { isolatedPublicDshOrigin } from "../stores/public-store-query";
 
 export async function employeeOwner() {

@@ -1,0 +1,6 @@
+# Merchant finance — owned Store proposal read (BTH-12)
+Authority: governance/finance.md STORE_COMMERCIAL_AGREEMENT; governance/platform.md and stores.md. Derived development spec, not a parallel policy.
+- AC1: verified Merchant opens Finance on Web or Android, selects a currently DSH-owned Store, sees latest WLT proposal, exact version, relation, commission basis points or exact decimal YER subscription amount/period, collector, fulfillment modes, proposed UTC effective time and review state. Absence is explicit; no inferred active agreement or money.
+- AC2: owner read only through existing SDK. Native uses verified current Merchant session guard; Web uses same-origin admission API and HttpOnly bearer, mandatory matching actor context and bound store response. No arbitrary origin, bearer leak, redirects, caching, or Store selector from arbitrary text.
+- AC3: wrong actor, store, role, revoked session, owner error, invalid response, absent configuration, timeout/late reply and store switch fail closed and allow retry. No stale proposal displayed on scope change.
+- AC4: direct unscoped route stays unavailable; existing Store/Catalog/staff/account flows remain unchanged. No new grants, consent, activation, balances, payouts or SQL writes. Real authenticated UI and WLT owner proof remain required.

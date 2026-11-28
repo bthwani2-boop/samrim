@@ -3,6 +3,7 @@ package storeavailability
 import (
 	"bytes"
 	"encoding/json"
+	jsonv2 "encoding/json/v2"
 	"errors"
 	"io"
 	"mime"
@@ -42,27 +43,34 @@ func NewHandler(service *Service) (http.Handler, error) {
 			writeFailure(w, ErrUnauthorized)
 			return
 		}
-		mediaType, _, parseErr := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if parseErr != nil || mediaType != "application/json" {
-			writeFailure(w, ErrInvalidChange)
-			return
-		}
 		// Even if the caller is authenticated, prevent oversized/unknown input.
 		var input struct {
-			OperationID        string          `json:"operationId"`
-			ExpectedVersion    int64           `json:"expectedVersion"`
-			Weekly             *[]WeeklyWindow `json:"weekly"`
-			PausedUntil        *time.Time      `json:"pausedUntil"`
-			PreparationMinutes *int            `json:"preparationMinutes"`
-			Reason             string          `json:"reason"`
+			OperationID     string `json:"operationId"`
+			ExpectedVersion *int64 `json:"expectedVersion"`
+			Weekly          *[]struct {
+				Weekday *time.Weekday `json:"weekday"`
+				Opens   *int          `json:"opens"`
+				Closes  *int          `json:"closes"`
+			} `json:"weekly"`
+			PausedUntil        *time.Time `json:"pausedUntil"`
+			PreparationMinutes *int       `json:"preparationMinutes"`
+			Reason             string     `json:"reason"`
 		}
 		if decodeUniqueJSON(w, r, 16*1024, &input) != nil {
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
-		if input.Weekly == nil || input.PreparationMinutes == nil {
+		if input.ExpectedVersion == nil || input.Weekly == nil || input.PreparationMinutes == nil {
 			writeFailure(w, ErrInvalidChange)
 			return
+		}
+		weekly := make([]WeeklyWindow, 0, len(*input.Weekly))
+		for _, slot := range *input.Weekly {
+			if slot.Weekday == nil || slot.Opens == nil || slot.Closes == nil {
+				writeFailure(w, ErrInvalidChange)
+				return
+			}
+			weekly = append(weekly, WeeklyWindow{Weekday: *slot.Weekday, Opens: *slot.Opens, Closes: *slot.Closes})
 		}
 		var pausedUntil *time.Time
 		if input.PausedUntil != nil {
@@ -71,8 +79,8 @@ func NewHandler(service *Service) (http.Handler, error) {
 		}
 		snapshot, replay, err := service.Change(r.Context(), token, Change{
 			StoreID: r.PathValue("storeID"), OperationID: input.OperationID,
-			ExpectedVersion: input.ExpectedVersion,
-			Weekly:          *input.Weekly, PausedUntil: pausedUntil,
+			ExpectedVersion: *input.ExpectedVersion,
+			Weekly:          weekly, PausedUntil: pausedUntil,
 			PreparationMinutes: *input.PreparationMinutes, Reason: input.Reason,
 		})
 		if err != nil {
@@ -105,73 +113,25 @@ func NewMerchantStandingHandler(identity IdentitySessions, reader MerchantStoreL
 	})
 }
 
-// Decode one bounded JSON message and reject duplicate keys before any domain effect.
+// Decode a single bounded JSON object using the native strict decoder.
 func decodeUniqueJSON(w http.ResponseWriter, r *http.Request, limit int64, target any) error {
-	r.Body = http.MaxBytesReader(w, r.Body, limit)
-	body, err := io.ReadAll(r.Body)
-	if err != nil || rejectDuplicateJSONMembers(body) != nil {
+	values := r.Header.Values("Content-Type")
+	if len(values) != 1 || len(r.Header.Values("Content-Encoding")) != 0 || r.URL.RawQuery != "" || r.URL.ForceQuery || r.Body == nil || r.ContentLength > limit {
 		return ErrInvalidChange
 	}
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(target); err != nil {
+	media, params, err := mime.ParseMediaType(values[0])
+	if err != nil || media != "application/json" {
 		return ErrInvalidChange
 	}
-	if err := decoder.Decode(new(any)); err != io.EOF {
-		return ErrInvalidChange
-	}
-	return nil
-}
-
-// Reject ambiguous JSON object members before the typed decoder selects one
-// value. encoding/json otherwise accepts duplicate names, including aliases
-// differing only by case, in operation IDs and nested weekly-hour selectors.
-func rejectDuplicateJSONMembers(body []byte) error {
-	decoder := json.NewDecoder(bytes.NewReader(body))
-	var value func() error
-	value = func() error {
-		token, err := decoder.Token()
-		if err != nil {
+	for key, value := range params {
+		if key != "charset" || !strings.EqualFold(value, "utf-8") {
 			return ErrInvalidChange
 		}
-		switch token {
-		case json.Delim('{'):
-			seen := make(map[string]bool)
-			for decoder.More() {
-				field, err := decoder.Token()
-				if err != nil {
-					return ErrInvalidChange
-				}
-				name, ok := field.(string)
-				if !ok || seen[strings.ToLower(name)] {
-					return ErrInvalidChange
-				}
-				seen[strings.ToLower(name)] = true
-				if err := value(); err != nil {
-					return err
-				}
-			}
-			end, err := decoder.Token()
-			if err != nil || end != json.Delim('}') {
-				return ErrInvalidChange
-			}
-		case json.Delim('['):
-			for decoder.More() {
-				if err := value(); err != nil {
-					return err
-				}
-			}
-			end, err := decoder.Token()
-			if err != nil || end != json.Delim(']') {
-				return ErrInvalidChange
-			}
-		}
-		return nil
 	}
-	if err := value(); err != nil {
-		return err
-	}
-	if _, err := decoder.Token(); err != io.EOF {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	body, err := io.ReadAll(r.Body)
+	body = bytes.Trim(body, " \t\r\n")
+	if err != nil || len(body) == 0 || body[0] != '{' || jsonv2.Unmarshal(body, target, jsonv2.RejectUnknownMembers(true)) != nil {
 		return ErrInvalidChange
 	}
 	return nil

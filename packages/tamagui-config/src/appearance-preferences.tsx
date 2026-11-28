@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import { useMobileAppearance } from "./appearance";
+import { createRadioGroup, type RadioKeyboardSelection } from "./radio-group";
 
 const choices = [
   ["system", "حسب النظام"],
@@ -8,15 +9,17 @@ const choices = [
   ["dark", "داكن"],
 ] as const;
 
-// Native Pressable preserves explicit Web and Android radio semantics.
+// One preference writer; Web adds the APG radio keyboard interaction to native semantics.
 export default function AppearancePreferences() {
   const { preference, setPreference, theme, ready } = useMobileAppearance();
   const saving = useRef(false);
   const [pending, setPending] = useState(false);
   const [failed, setFailed] = useState(false);
+  const disabled = !ready || pending;
+  const web = Platform.OS === "web";
 
-  async function change(next: typeof preference) {
-    if (!ready || saving.current) return;
+  async function change(next: typeof preference, keyboard?: RadioKeyboardSelection) {
+    if (!ready || saving.current || next === preference) return;
     saving.current = true;
     setPending(true);
     setFailed(false);
@@ -24,13 +27,19 @@ export default function AppearancePreferences() {
       await setPreference(next);
     } catch {
       setFailed(true);
+      const document = keyboard?.target.ownerDocument;
+      if (document && "activeElement" in document && document.activeElement === keyboard?.target) {
+        keyboard.previous?.focus();
+      }
     } finally {
       saving.current = false;
       setPending(false);
     }
   }
 
-  const disabled = !ready || pending;
+  const radio = createRadioGroup({ values: choices.map(([value]) => value), selected: preference, disabled, web,
+    canSelect: () => !saving.current, onSelect: change });
+
   return (
     <View style={{ backgroundColor: theme.surface, borderWidth: 1, borderColor: theme.borderColor,
       borderRadius: 12, padding: 16, gap: 10 }}>
@@ -41,9 +50,7 @@ export default function AppearancePreferences() {
         {choices.map(([value, label]) => {
           const selected = value === preference;
           return (
-            <Pressable key={value} accessibilityRole="radio" accessibilityLabel={label}
-              aria-checked={selected} accessibilityState={{ checked: selected, disabled }}
-              disabled={disabled} onPress={() => change(value)} style={{
+            <Pressable key={value} {...radio(value)} accessibilityLabel={label} style={{
                 backgroundColor: selected ? theme.actionSoft : theme.surface,
                 borderWidth: 1, borderColor: selected ? theme.interactiveText : theme.borderColor,
                 borderRadius: 10, minHeight: 48, paddingHorizontal: 14, justifyContent: "center",

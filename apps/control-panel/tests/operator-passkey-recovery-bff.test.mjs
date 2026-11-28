@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import {
-  isTrustedOperatorRequest,
-  resolveOperatorRecoveryConfig,
-  validInitialOperatorPayload,
-} from "../src/server/operator-passkey-bff.ts";
+import { isTrustedOperatorRequest, resolveOperatorRecoveryConfig } from "../src/server/operator-passkey-config.ts";
+import { validInitialOperatorPayload } from "../src/server/operator-passkey-validation.ts";
 
 const env = {
   BTHWANI_ISOLATED_TEST_MODE: "true",

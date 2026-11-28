@@ -1,8 +1,7 @@
 #!/usr/bin/env node
-// The single CI coverage attestation and admission boundary. Native test
-// runners own measurements; this module never constructs coverage counters.
+// Native runners own measurements; CI admits only a complete, exact-tree
+// artifact set into a fresh scanner destination. No coverage is fabricated.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { appendFileSync, lstatSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -13,15 +12,22 @@ const specifications = Object.freeze({
   go: { directory: "coverage", artifact: "sonar-go", files: ["dsh-go.out", "identity-go.out", "wlt-go.out"] },
   postgres: { directory: "coverage/owner-postgres", artifact: "sonar-postgres" },
 });
-const commitPattern = /^[0-9a-f]{40}$/;
-const profilePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*\.out$/;
+const metadata = ["tree.txt", "reports.sha256"];
+const objectId = /^[0-9a-f]{40}$/;
+const profileName = /^[A-Za-z0-9][A-Za-z0-9._-]*\.out$/;
 const maxReportBytes = 128 * 1024 * 1024;
+const exists = path => Boolean(lstatSync(path, { throwIfNoEntry: false }));
 
-function directory(path, create = false) {
-  if (create && !lstatSync(path, { throwIfNoEntry: false })) mkdirSync(path);
-  const info = lstatSync(path);
-  assert.ok(info.isDirectory() && !info.isSymbolicLink() &&
+function requireDirectory(path) {
+  const entry = lstatSync(path);
+  assert.ok(entry.isDirectory() && !entry.isSymbolicLink() &&
     samePath(realpathSync.native(path), resolve(path)), "CI_COVERAGE_DIRECTORY_UNSAFE");
+}
+
+function exactInventory(folder, names, error) {
+  const expected = new Set(names);
+  const actual = readdirSync(folder);
+  assert.ok(actual.length === expected.size && actual.every(name => expected.has(name)), error);
 }
 
 function reportBytes(path) {
@@ -30,15 +36,15 @@ function reportBytes(path) {
   return bytes;
 }
 
-// Report filenames are canonical ASCII identifiers, not locale-sensitive
-// presentation labels. Exact set equality rejects missing and extra artifacts.
-const compareName = (left, right) => left < right ? -1 : left > right ? 1 : 0;
-function reports(spec, folder) {
-  directory(folder);
+function readReports(spec, folder) {
+  requireDirectory(folder);
   const names = spec.files ?? readdirSync(folder).filter(name => name.endsWith(".out"));
-  assert.ok(names.length > 0 && names.every(name => spec.files || profilePattern.test(name)),
+  assert.ok(names.length > 0 && names.every(name => spec.files || profileName.test(name)),
     "CI_COVERAGE_REPORT_INVENTORY_INVALID");
-  return new Map([...names].sort(compareName).map(name => [name, reportBytes(join(folder, name))]));
+  // Native PostgreSQL receipts use LC_ALL=C. Admitted names are ASCII;
+  // ordinal comparison defines the same locale-independent byte order.
+  const ordered = [...names].sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  return new Map(ordered.map(name => [name, reportBytes(join(folder, name))]));
 }
 
 function manifest(files) {
@@ -46,19 +52,16 @@ function manifest(files) {
 }
 
 function committedTree(checkout, expectedSha) {
-  assert.match(expectedSha ?? "", commitPattern, "CI_CANDIDATE_SHA_INVALID");
+  assert.match(expectedSha ?? "", objectId, "CI_CANDIDATE_SHA_INVALID");
   const snapshot = captureSourceSnapshot(checkout, { requireCommitted: true });
   assert.equal(snapshot.head, expectedSha, "CI_CANDIDATE_SHA_MISMATCH");
-  const tree = execFileSync(process.platform === "win32" ? "git.exe" : "git",
-    ["rev-parse", expectedSha + "^{tree}"], {
-      cwd: checkout, encoding: "utf8", timeout: 10000, windowsHide: true,
-    }).trim();
-  assert.match(tree, commitPattern, "CI_CANDIDATE_TREE_INVALID");
+  const tree = snapshot.tree;
+  assert.match(tree, objectId, "CI_CANDIDATE_TREE_INVALID");
   return { tree, fingerprint: snapshot.worktree };
 }
 
-function writeNew(path, contents) {
-  writeFileSync(path, contents, { flag: "wx" });
+function writeNew(path, bytes) {
+  writeFileSync(path, bytes, { flag: "wx" });
 }
 
 export function publishCoverageEvidence(checkout, kind, expectedSha) {
@@ -66,54 +69,88 @@ export function publishCoverageEvidence(checkout, kind, expectedSha) {
   assert.ok(spec, "CI_COVERAGE_PRODUCER_UNKNOWN");
   const root = resolve(checkout);
   const candidate = committedTree(root, expectedSha);
-  const { tree } = candidate;
   const folder = join(root, spec.directory);
-  const files = reports(spec, folder);
-  for (const name of ["tree.txt", "reports.sha256"]) {
-    assert.ok(!lstatSync(join(folder, name), { throwIfNoEntry: false }), "CI_COVERAGE_METADATA_CONFLICT");
+  const files = readReports(spec, folder);
+  assert.ok(!exists(join(folder, "tree.txt")), "CI_COVERAGE_METADATA_CONFLICT");
+  const receipt = join(folder, "reports.sha256");
+  const expectedManifest = manifest(files);
+  // Fixed producers have a declared inventory. The native PostgreSQL runner
+  // owns its dynamic inventory and seals it at collection, before handoff.
+  if (spec.files) {
+    assert.ok(!exists(receipt), "CI_COVERAGE_METADATA_CONFLICT");
+  } else {
+    exactInventory(folder, [...files.keys(), "reports.sha256"], "CI_COVERAGE_REPORT_INVENTORY_INVALID");
+    assert.ok(reportBytes(receipt).equals(expectedManifest), "CI_COVERAGE_PRODUCER_HASH_MISMATCH");
   }
   assert.deepEqual(committedTree(root, expectedSha), candidate, "CI_COVERAGE_SOURCE_CHANGED");
-  writeNew(join(folder, "tree.txt"), tree + "\n");
-  writeNew(join(folder, "reports.sha256"), manifest(files));
-  return { tree, count: files.size };
+  if (spec.files) writeNew(receipt, expectedManifest);
+  writeNew(join(folder, "tree.txt"), candidate.tree + "\n");
+  return { tree: candidate.tree, count: files.size };
 }
 
 function readArtifact(temp, spec) {
   const folder = join(temp, spec.artifact);
-  const files = reports(spec, folder);
-  const expected = new Set([...files.keys(), "reports.sha256", "tree.txt"]);
-  const actual = readdirSync(folder);
-  assert.ok(actual.length === expected.size && actual.every(name => expected.has(name)), "CI_COVERAGE_ARTIFACT_INVENTORY_MISMATCH");
+  const files = readReports(spec, folder);
+  exactInventory(folder, [...files.keys(), ...metadata], "CI_COVERAGE_ARTIFACT_INVENTORY_MISMATCH");
   const tree = reportBytes(join(folder, "tree.txt")).toString("utf8").trim();
-  assert.match(tree, commitPattern, "CI_COVERAGE_ARTIFACT_TREE_INVALID");
+  assert.match(tree, objectId, "CI_COVERAGE_ARTIFACT_TREE_INVALID");
   assert.ok(reportBytes(join(folder, "reports.sha256")).equals(manifest(files)),
     "CI_COVERAGE_ARTIFACT_HASH_MISMATCH");
-  return { tree, files };
+  return { spec, tree, files };
+}
+
+// The scanner reads fixed JS/Go filenames and a PostgreSQL wildcard. Checking
+// only the incoming filenames is insufficient: an old extra *.out would
+// otherwise enter the scanner. The native fresh-coverage fallback likewise
+// requires a new PostgreSQL directory. Never remove or reuse existing inputs.
+function requireFreshDestination(root) {
+  const coverage = join(root, "coverage");
+  if (exists(coverage)) requireDirectory(coverage);
+  for (const spec of [specifications.js, specifications.go]) {
+    for (const name of spec.files) {
+      assert.ok(!exists(join(root, spec.directory, name)), "CI_COVERAGE_DESTINATION_CONFLICT");
+    }
+  }
+  assert.ok(!exists(join(root, specifications.postgres.directory)), "CI_COVERAGE_DESTINATION_CONFLICT");
+}
+
+function installEvidence(root, evidence) {
+  const coverage = join(root, "coverage");
+  if (!exists(coverage)) mkdirSync(coverage);
+  requireDirectory(coverage);
+  // Exclusive creation ensures the wildcard directory cannot contain a
+  // previous writer's reports. These paths belong to the isolated CI runner.
+  const postgres = join(root, specifications.postgres.directory);
+  mkdirSync(postgres);
+  requireDirectory(postgres);
+  for (const { spec, files } of evidence) {
+    const folder = join(root, spec.directory);
+    for (const [name, bytes] of files) writeNew(join(folder, name), bytes);
+  }
+  for (const { spec, files } of evidence) {
+    const folder = join(root, spec.directory);
+    requireDirectory(folder);
+    if (!spec.files) exactInventory(folder, files.keys(), "CI_COVERAGE_DESTINATION_INVENTORY_MISMATCH");
+    for (const [name, bytes] of files) {
+      assert.ok(reportBytes(join(folder, name)).equals(bytes), "CI_COVERAGE_DESTINATION_HASH_MISMATCH");
+    }
+  }
 }
 
 export function admitCoverageEvidence(checkout, runnerTemp, expectedSha) {
   const root = resolve(checkout);
   const temp = resolve(runnerTemp);
-  directory(temp);
+  requireDirectory(temp);
   const candidate = committedTree(root, expectedSha);
-  // Validate every report before admitting any. A real different PR tree is
-  // not corruption: remeasure it through the existing native runners.
-  const evidence = Object.values(specifications).map(spec => ({ spec, ...readArtifact(temp, spec) }));
+  const evidence = Object.values(specifications).map(spec => readArtifact(temp, spec));
   const tree = evidence[0].tree;
   assert.ok(evidence.every(entry => entry.tree === tree), "CI_COVERAGE_MIXED_CANDIDATES");
+  // Reject existing scanner inputs before either reuse or fresh measurement.
+  // Non-scanner output in the coverage root is not a conflict.
+  requireFreshDestination(root);
   if (tree !== candidate.tree) return false;
-  directory(join(root, "coverage"), true);
-  directory(join(root, "coverage", "owner-postgres"), true);
-  for (const { spec, files } of evidence) {
-    const folder = join(root, spec.directory);
-    for (const name of files.keys()) {
-      assert.ok(!lstatSync(join(folder, name), { throwIfNoEntry: false }), "CI_COVERAGE_DESTINATION_CONFLICT");
-    }
-  }
   assert.deepEqual(committedTree(root, expectedSha), candidate, "CI_COVERAGE_SOURCE_CHANGED");
-  for (const { spec, files } of evidence) {
-    for (const [name, bytes] of files) writeNew(join(root, spec.directory, name), bytes);
-  }
+  installEvidence(root, evidence);
   return true;
 }
 

@@ -3,6 +3,7 @@ package storeavailability
 import (
 	"context"
 	"database/sql"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http"
 	"strconv"
 )
@@ -26,7 +27,7 @@ func (source *PostgresPolicySource) ReadCityPolicyHistory(ctx context.Context, c
 	if source == nil || source.db == nil {
 		return CityPolicyHistoryPage{}, ErrPolicyUnavailable
 	}
-	tx, err := beginScopedStoreTx(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "store_operational_limits_audit")
 	if err != nil {
 		return CityPolicyHistoryPage{}, ErrPolicyUnavailable
 	}

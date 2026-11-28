@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import Module from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,6 +24,97 @@ function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
+
+test("Draft history renders exact changes, moves across owner pages and discards a detached reply", async () => {
+  const component = fileURLToPath(new URL("../src/features/catalog/catalog-draft-history.tsx", import.meta.url));
+  const temp = mkdtempSync(path.join(tmpdir(), "bthwani-draft-history-"));
+  try {
+    const compiled = spawnSync(process.execPath, [
+      path.join(root, "node_modules/@typescript/native/bin/tsc"), component, "--ignoreConfig", "--noResolve",
+      "--noCheck", "--target", "es2022", "--module", "commonjs", "--jsx", "react-jsx",
+      "--inlineSourceMap", "--inlineSources", "--outDir", temp,
+    ], { cwd: root, encoding: "utf8", timeout: 20000, windowsHide: true });
+    assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
+    const states = [], requests = [];
+    let position, prior, effect;
+    const jsx = (type, props) => ({ type, props });
+    const mod = loadMappedRenderFixture(readFileSync(path.join(temp, "catalog-draft-history.js"), "utf8"), component, {
+      "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
+      react: {
+        useState(initial) {
+          const slot = position++;
+          if (!(slot in states)) states[slot] = initial;
+          return [states[slot], change => {
+            states[slot] = typeof change === "function" ? change(states[slot]) : change;
+          }];
+        },
+        useEffect(run, deps) {
+          if (!prior || deps.some((value, i) => value !== prior.deps[i])) {
+            effect = () => {
+              prior?.stop();
+              prior = { deps, stop: run() };
+            };
+          }
+        },
+      },
+      "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "Fragment" },
+      "react-native": { ActivityIndicator: "ActivityIndicator", Pressable: "Pressable", Text: "Text", View: "View" },
+      "./catalog-transport": {
+        readMerchantCatalogDraftHistory(storeId, offerId, actorId, signal, beforeVersion) {
+          return new Promise((resolve, reject) =>
+            requests.push({ storeId, offerId, actorId, signal, beforeVersion, resolve, reject }));
+        },
+      },
+    });
+    loadedInventoryModules.push(mod);
+    const render = (actorId = "merchant-a") => {
+      position = 0;
+      effect = undefined;
+      const elements = nodes(mod.exports.default({ actorId, storeId: "store-a", offerId: "of-draft" }));
+      effect?.();
+      return elements;
+    };
+    const text = elements => elements.filter(node => node.type === "Text")
+      .flatMap(node => node.props.children).join(" ");
+    const press = (elements, label) => elements.find(node => node.type === "Pressable" &&
+      text(nodes(node)) === label).props.onPress();
+    assert.ok(render().some(node => node.type === "ActivityIndicator"));
+    const exactPrice = 9007199254740993n;
+    requests[0].resolve({ nextBeforeVersion: "12", entries: [{
+      version: 12, previousPriceYer: "1100", priceYer: String(exactPrice),
+      previousStockUnits: 1, stockUnits: 2, committedAt: "2026-11-27T10:00:00Z",
+    }] });
+    await Promise.resolve();
+    let ready = render();
+    assert.ok(text(ready).includes(exactPrice.toLocaleString("ar-YE")));
+    assert.ok(text(ready).includes("2026-11-27T10:00:00Z"));
+    press(ready, "التعديلات الأقدم");
+    assert.ok(!text(render()).includes(exactPrice.toLocaleString("ar-YE")));
+    assert.equal(requests[1].beforeVersion, "12");
+    requests[1].reject(new Error("DSH unavailable"));
+    await Promise.resolve();
+    await Promise.resolve();
+    ready = render();
+    assert.ok(ready.some(node => node.props?.accessibilityRole === "alert"));
+    press(ready, "إعادة محاولة قراءة السجل");
+    press(render(), "العودة إلى الأحدث");
+    render();
+    assert.equal(requests[2].signal.aborted, true);
+    assert.equal(requests[3].beforeVersion, undefined);
+    render("merchant-b");
+    requests[3].resolve({ entries: [{ version: 12, previousPriceYer: "1", priceYer: String(exactPrice),
+      previousStockUnits: 0, stockUnits: 2, committedAt: "2026-11-27T10:00:00Z" }] });
+    await Promise.resolve();
+    assert.ok(!text(render("merchant-b")).includes(exactPrice.toLocaleString("ar-YE")));
+    assert.equal(requests[4].actorId, "merchant-b");
+    requests[4].resolve({ entries: [] });
+    await Promise.resolve();
+    assert.ok(text(render("merchant-b")).includes("لا توجد تعديلات مسجلة"));
+    prior.stop();
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+});
 test("Merchant private catalog never reuses a previous actor/Store response, and ends pagination", async () => {
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-catalog-test-"));
   try {
@@ -83,6 +174,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         } }),
       },
       "./merchant-catalog-draft-form": { __esModule: true, default: "DraftForm" },
+      "./catalog-draft-history": { __esModule: true, default: "DraftHistory" },
       "./catalog-export": { __esModule: true, default: "CatalogExport" },
       "./catalog-import": { __esModule: true, default: "CatalogImport" },
       "./inventory-summary": { __esModule: true, default: "InventorySummary" },
@@ -112,10 +204,10 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
         return mocks[name];
       };
       mod._compile(source, filename);
-      function render(actorId, stores, initialStoreId, initialPriceStockOnly = false, inventoryOnly = false) {
+      function render(actorId, stores, initialStoreId, initialPriceStockOnly = false, inventoryOnly = false, initialStatus) {
         index = 0;
         scheduled = [];
-        const tree = mod.exports.default({ actorId, stores, initialStoreId, initialPriceStockOnly, inventoryOnly });
+        const tree = mod.exports.default({ actorId, stores, initialStoreId, initialPriceStockOnly, inventoryOnly, initialStatus });
         for (const effect of scheduled) effect();
         return tree;
       }
@@ -204,6 +296,15 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       await Promise.resolve(); await Promise.resolve();
       tree = render("merchant-b", stores);
       assert.equal(nodes(tree).find(n => n.type === "InventorySummary")?.props.actorId, "merchant-b");
+      const historyButton = nodes(tree).find(n => n.props?.accessibilityLabel === "عرض سجل تعديلات مسودة للسعر");
+      assert.ok(historyButton);
+      assert.ok(!nodes(tree).some(n => n.props?.accessibilityLabel === "عرض سجل تعديلات عرض منشور"));
+      historyButton.props.onPress();
+      tree = render("merchant-b", stores);
+      const history = nodes(tree).find(n => n.type === "DraftHistory");
+      assert.equal(history.props.actorId, "merchant-b");
+      assert.equal(history.props.storeId, "store-b");
+      assert.equal(history.props.offerId, draftId);
       const quickMode = nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات");
       assert.ok(quickMode, "Merchant can open focused draft price editing");
       quickMode.props.onPress();
@@ -220,9 +321,12 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(edit.props.draft.id, draftId);
       tree = render("merchant-c", stores);
       assert.ok(!nodes(tree).some(n => n.type === "DraftForm" && n.props.draft));
+      assert.ok(!nodes(tree).some(n => n.type === "DraftHistory"));
+      historyButton.props.onPress();
       assert.equal(nodes(tree).find(n => n.props?.accessibilityLabel === "الأسعار والمخزون للمسودات").props.accessibilityState.selected, false);
       tree = render("merchant-b", stores);
       assert.ok(!nodes(tree).some(privateControls), "returning to the previous actor still requires fresh verification");
+      assert.ok(!nodes(tree).some(n => n.type === "DraftHistory"));
 
       // Remount via the directory with a second Store selected, then revoke that Store.
       for (const effect of effects) effect?.cleanup?.();
@@ -301,7 +405,7 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       requests[9].resolve({ actorId: "merchant-a", storeId: "store-a", items: [] });
       await Promise.resolve(); await Promise.resolve();
       const summary = nodes(render("merchant-a", stores.slice(0, 1), "store-b")).find(n => n.type === "InventorySummary");
-      summary.props.onShowStockout();
+      summary.props.onShowStatus("stockout");
       render("merchant-a", stores.slice(0, 1), "store-b");
       assert.equal(requests[10].storeId, "store-a");
       assert.equal(requests[10].options.status, "stockout");
@@ -364,6 +468,27 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       assert.equal(typeof focus, "function");
       for (const effect of effects) effect?.cleanup?.();
       assert.equal(focus, undefined);
+      hooks.length = 0;
+      effects.length = 0;
+      requests.length = 0;
+      // The surviving catalog must revalidate on Web focus and cancel stale reads.
+      tree = render("merchant-a", stores);
+      assert.equal(requests.length, 1);
+      assert.equal(typeof focus, "function");
+      assert.ok(!nodes(tree).some(n => n.props?.children === "تحديث المنتجات"), "no permanent refresh button");
+      const beforeFocus = requests[0];
+      focus();
+      tree = render("merchant-a", stores);
+      assert.equal(requests.length, 2, "browser focus must request current owner catalog");
+      assert.equal(beforeFocus.signal.aborted, true);
+      assert.equal(requests[1].storeId, "store-a");
+      beforeFocus.resolve({ actorId: "merchant-a", storeId: "store-a", items: [{ ...draft, name: "stale focus reply" }] });
+      await Promise.resolve(); await Promise.resolve();
+      assert.ok(!nodes(render("merchant-a", stores)).some(n => n.props?.children === "stale focus reply"));
+      tree = render("merchant-b", []);
+      assert.equal(requests.length, 2, "no request without current Store authority");
+      assert.ok(!nodes(tree).some(privateControls));
+      for (const effect of effects) effect?.cleanup?.();
       hooks.length = 0;
       effects.length = 0;
       requests.length = 0;
@@ -459,20 +584,35 @@ test("Merchant private catalog never reuses a previous actor/Store response, and
       press(tree, "إعادة المحاولة").props.onPress();
       native();
       tree = await answer([]);
-      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStockout();
+      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStatus("stockout");
       native();
       assert.equal(requests.at(-1).options.status, "stockout");
       tree = await answer([]);
       const beforeStockout = requests.length;
-      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStockout();
+      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStatus("stockout");
       native();
       assert.equal(requests.length, beforeStockout + 1, "same stockout shortcut must read fresh owner state");
+      tree = await answer([]);
+      const priorSummary = nodes(tree).find(n => n.type === "InventorySummary").props;
+      priorSummary.onShowStatus("unpublished");
+      native();
+      assert.equal(requests.at(-1).options.status, "unpublished");
+      const afterFilter = requests.length;
+      priorSummary.onShowStatus("available");
+      native();
+      assert.equal(requests.length, afterFilter, "obsolete summary action must not replace current scope");
+      assert.equal(requests.at(-1).options.query, undefined);
+      tree = await answer([]);
+      nodes(tree).find(n => n.type === "InventorySummary").props.onShowStatus(undefined);
+      native();
+      assert.equal(requests.at(-1).options.status, undefined);
       for (const effect of effects) effect?.cleanup?.();
       assert.equal(nativeRemoved, 1);
       // Dedicated Android Inventory uses the same owner-scoped import recovery and refresh.
       hooks.length = 0; effects.length = 0; requests.length = 0;
-      const nativeInventory = () => render("merchant-a", stores, "store-a", false, true);
+      const nativeInventory = () => render("merchant-a", stores, "store-a", false, true, "stockout");
       tree = nativeInventory();
+      assert.equal(requests[0].options.status, "stockout", "report filter must reach the first owner read");
       assert.ok(!nodes(tree).some(privateControls));
       requests[0].resolve({actorId:"merchant-a",storeId:"store-a",items:[nativeRows[0]]});
       await flush();
@@ -537,22 +677,37 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     };
     const mod = loadMappedRenderFixture(readFileSync(path.join(tmp, "inventory-summary.js"), "utf8"), inventorySrc, mocks);
     loadedInventoryModules.push(mod);
-    let stockoutClicks = 0;
-    const stockoutButton = tree => tree.find(n => n.type === "Pressable" && n.props?.children?.props?.children === "عرض العروض النافدة");
+    const selectedStatuses = [];
+    const statusButton = (tree, label) => tree.find(n => n.type === "Pressable" && n.props?.accessibilityLabel === label);
+    const stockoutButton = tree => statusButton(tree, "عرض العروض النافدة");
     function render(actorId,storeId,showStockout = true) {
       index=0; scheduled=[];
-      const tree=mod.exports.default({actorId,storeId,onShowStockout: showStockout ? () => { stockoutClicks++; } : undefined});
+      const tree=mod.exports.default({actorId,storeId,onShowStatus: showStockout ? status => { selectedStatuses.push(status); } : undefined});
       for(const effect of scheduled) effect();
       return nodes(tree);
     }
     const counts = (actorId,storeId,totalOffers)=>({actorId,storeId,totalOffers,publishedOffers:0,availableOffers:0,unavailableOffers:0,stockoutOffers:0});
     const hasCount=(tree,n)=>tree.some(node=>node.props?.children===n.toLocaleString("ar-YE"));
     assert.ok(render("merchant-a","store-a").some(n=>n.type==="ActivityIndicator"));
-    requests[0].resolve({ ...counts("merchant-a","store-a",132), stockoutOffers: 3 });
+    requests[0].resolve({ ...counts("merchant-a","store-a",132), publishedOffers: 100, availableOffers: 90, unavailableOffers: 10, stockoutOffers: 3 });
     await Promise.resolve();
     assert.ok(hasCount(render("merchant-a","store-a"),132));
     stockoutButton(render("merchant-a","store-a")).props.onPress();
-    assert.equal(stockoutClicks, 1);
+    assert.deepEqual(selectedStatuses, ["stockout"]);
+    const report = render("merchant-a","store-a");
+    assert.ok(hasCount(report,32), "unpublished offers = total minus published");
+    assert.ok(hasCount(report,7), "other unavailable offers exclude stockout");
+    const percent = new Intl.NumberFormat("ar-YE", { style:"percent", maximumFractionDigits:1 });
+    for (const [label, numerator, denominator] of [["نسبة النشر",100,132],["نسبة التوافر ضمن المنشورة",90,100]]) {
+      const metric = report.find(n=>n.props?.accessibilityLabel===label);
+      assert.ok(metric);
+      assert.ok(nodes(metric).some(n=>n.props?.children===percent.format(numerator/denominator)));
+    }
+
+    for (const [label,status] of [["عرض العروض غير المنشورة","unpublished"],["عرض العروض المنشورة","published"],["عرض العروض المتاحة","available"],["عرض العروض غير المتاحة","unavailable"],["عرض جميع العروض",undefined]]) {
+      statusButton(report,label).props.onPress();
+      assert.equal(selectedStatuses.at(-1),status);
+    }
     assert.equal(stockoutButton(render("merchant-a","store-a",false)), undefined, "embedded summary must not show a stockout action without a handler");
     const switchedStore = render("merchant-a","store-b");
     assert.ok(!hasCount(switchedStore,132));
@@ -573,5 +728,34 @@ test("inventory summary displays owner counts and never leaks a stale Store afte
     const empty = render("merchant-b","store-b");
     assert.ok(hasCount(empty,0));
     assert.equal(stockoutButton(empty), undefined);
+    assert.equal(empty.filter(n=>n.props?.children==="لا ينطبق").length, 2, "zero denominator must not be reported as zero percent");
+    render("merchant-b","store-c");
+    requests[4].resolve(counts("merchant-b","store-c",42));
+    await Promise.resolve();
+    const unpublished = render("merchant-b","store-c");
+    assert.equal(unpublished.filter(n=>n.props?.children==="لا ينطبق").length, 1);
+    assert.ok(unpublished.some(n=>n.props?.children===percent.format(0)));
+    assert.equal(statusButton(unpublished,"عرض العروض المنشورة"), undefined);
   } finally { rmSync(tmp,{recursive:true,force:true}); }
+});
+
+test("verified Merchant products section renders private owner-scoped DSH catalog, not public-only data", () => {
+  const merchantRoot = path.resolve(root, "apps/merchant");
+  const workspace = readFileSync(path.resolve(merchantRoot, "src/features/navigation/merchant-workspace.tsx"), "utf8");
+  const privateComponent = path.resolve(merchantRoot, "src/features/catalog/merchant-private-catalog.tsx");
+  assert.equal(existsSync(path.resolve(merchantRoot, "src/features/catalog/merchant-published-offers.tsx")), false, "superseded public-only screen must stay removed");
+  assert.ok(existsSync(privateComponent), "private Store Catalog reader must be implemented");
+  assert.match(workspace, /section === "products"\s*\?\s*\(?.*MerchantPrivateCatalog/s);
+  const catalogInvocation = workspace.match(/<MerchantPrivateCatalog\b[^>]*\/>/s)?.[0] ?? "";
+  assert.match(catalogInvocation, /\bkey=\{actorId\}/, "account switch must remount the private catalog");
+  assert.match(catalogInvocation, /\bactorId=\{actorId\}/);
+  assert.match(catalogInvocation, /\bstores=\{stores\}/);
+  assert.match(catalogInvocation, /\binitialStoreId=\{catalogStoreId\}/, "store details must preserve the selected owner store");
+  const code = readFileSync(privateComponent, "utf8");
+  assert.match(code, /readMerchantCatalogPage\(/, "private owner catalog transport is required");
+  assert.match(code, /actorId/, "visible read must be scoped to the current verified actor");
+  assert.match(code, /AbortController/, "switching Stores or account must cancel pending read");
+  assert.match(code, /page\.nextCursor/, "pagination must use owner-issued keyset");
+  assert.doesNotMatch(code, /listPublicOffers\(/, "public discovery excludes Store drafts");
+  assert.doesNotMatch(code, /localStorage|AsyncStorage|SecureStore/, "no duplicate local catalogue");
 });

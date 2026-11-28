@@ -7,11 +7,9 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { parse } from "parse5";
+import { assertHtmlDocument, attr, elements, htmlElement, javascriptMimes, mimeEssence, parseDocument, requestSsr, scriptKind } from "../dev/ssr-document.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
-const htmlNamespace = "http://www.w3.org/1999/xhtml";
-const excludedText = new Set(["script", "style", "template", "noscript", "textarea"]);
 const timeout = 15000;
 const retiredRoutes = ["/lab", "/foundation", "/health", "/not-a-real-application-route"];
 const hosts = [
@@ -35,90 +33,74 @@ const hosts = [
   },
 ];
 
-const parseDocument = html => parse(html, { sourceCodeLocationInfo: true, scriptingEnabled: true });
-const htmlElement = (node, tag) => node.namespaceURI === htmlNamespace && node.tagName === tag;
-const child = (node, tag) => node.childNodes?.find(item => htmlElement(item, tag));
-const attr = (node, name) => node.attrs?.find(item => item.name === name && !item.namespace)?.value;
-
-function* elements(node) {
-  if (node.tagName && node.namespaceURI !== htmlNamespace) return;
-  if (htmlElement(node, "template") || htmlElement(node, "noscript")) return;
-  if (node.tagName) yield node;
-  for (const item of node.childNodes ?? []) yield* elements(item);
-}
-
-function bodyText(node) {
-  if (node.nodeName === "#text") return node.value;
-  if (node.tagName && (node.namespaceURI !== htmlNamespace ||
-    excludedText.has(node.tagName) || attr(node, "hidden") !== undefined)) return "";
-  return (node.childNodes ?? []).map(bodyText).join(" ");
-}
-
-export function assertHtmlDocument(html, { body, title, route }) {
-  const doc = child(parseDocument(html), "html");
-  assert.ok(doc?.sourceCodeLocation?.startTag && attr(doc, "lang")?.toLowerCase() === "ar",
-    route + ": missing Arabic document");
-  assert.equal(attr(doc, "dir")?.toLowerCase(), "rtl", route + ": missing RTL document");
-  const head = child(doc, "head");
-  const rendered = child(doc, "body");
-  assert.ok(rendered?.sourceCodeLocation?.startTag, route + ": missing rendered body");
-  assert.ok(bodyText(rendered).includes(body), route + ": required product body text missing");
-  if (title) {
-    const titleNode = head && child(head, "title");
-    assert.equal(titleNode?.childNodes?.map(item => item.value ?? "").join(""), title,
-      route + ": wrong document title");
-  }
-  assert.doesNotMatch(html, /Requiring unknown module|EXPO_UNKNOWN_MODULE/i,
-    route + ": Metro module error in document");
+function sameOriginUrl(reference, base, origin, label) {
+  const url = new URL(reference, base);
+  assert.equal(url.origin, origin, label + ": external origin");
+  assert.ok(!url.username && !url.password, label + ": credentials in URL");
+  return url;
 }
 
 export function assertPublicRedirect(location, origin, route) {
   assert.ok(location, route + ": redirect location missing");
-  assert.equal(new URL(location, origin).href, new URL("/", origin).href,
+  const requestUrl = sameOriginUrl(route, origin, origin, route);
+  assert.equal(sameOriginUrl(location, requestUrl, origin, route).href, new URL("/", origin).href,
     route + ": only same-origin public gate allowed");
 }
 
 function assetReference(element) {
   if (htmlElement(element, "script")) {
     const src = attr(element, "src");
-    return src === undefined ? null : { ref: src, type: "script" };
+    if (src === undefined) return null;
+    const kind = scriptKind(element);
+    assert.ok(kind, "Nonexecutable script has an external src: " + src);
+    // Generated Expo documents do not use obsolete event-bound script execution.
+    assert.ok(attr(element, "for") === undefined && attr(element, "event") === undefined,
+      "Legacy event-bound script is not an Expo entry: " + src);
+    return { ref: src, type: "script", entry: kind === "module" || attr(element, "nomodule") === undefined };
   }
   if (!htmlElement(element, "link")) return null;
   const rel = new Set((attr(element, "rel") ?? "").toLowerCase().split(/\s+/));
   const as = attr(element, "as")?.toLowerCase();
   if (rel.has("modulepreload") || (rel.has("preload") && as === "script"))
-    return { ref: attr(element, "href"), type: "script" };
+    return { ref: attr(element, "href"), type: "script", entry: false };
   if (rel.has("stylesheet") || (rel.has("preload") && as === "style"))
-    return { ref: attr(element, "href"), type: "style" };
+    return { ref: attr(element, "href"), type: "style", entry: false };
   return null;
 }
 
-export function documentAssets(html, origin) {
+export function documentAssets(html, origin, route = "/") {
+  const documentUrl = sameOriginUrl(route, origin, origin, route);
   const assets = new Map();
+  let hasExecutableEntry = false;
   for (const element of elements(parseDocument(html))) {
+    // Expo's export does not use a base override. Refuse altered URL resolution
+    // instead of pretending a root-relative fetch proves what the browser sees.
+    if (htmlElement(element, "base") && attr(element, "href") !== undefined) {
+      assert.equal(sameOriginUrl(attr(element, "href"), documentUrl, origin, "Document base").href,
+        documentUrl.href, "Unexpected document base override");
+    }
     const reference = assetReference(element);
     if (!reference) continue;
-    const { ref, type } = reference;
-    assert.ok(ref, "Missing executable asset URL");
-    const url = new URL(ref, origin);
-    assert.equal(url.origin, origin, "External executable asset: " + ref);
-    assert.equal(url.search + url.hash, "", "Unexpected asset query or fragment: " + ref);
+    const { ref, type, entry } = reference;
+    assert.ok(ref?.trim(), "Missing executable asset URL");
+    const url = sameOriginUrl(ref, documentUrl, origin, "Asset " + ref);
+    assert.equal(url.href, origin + url.pathname, "Unexpected asset query or fragment: " + ref);
     const pathname = decodeURIComponent(url.pathname);
     assert.match(pathname, /^\/_expo\/static\/[a-zA-Z0-9_./@()[\]-]+$/, "Unexpected executable asset path: " + ref);
     assert.ok(pathname.split("/").every(part => part !== "." && part !== ".."), "Invalid asset path");
     assert.ok(pathname.endsWith(type === "script" ? ".js" : ".css"), "Asset type/path mismatch: " + ref);
     assert.ok(!assets.has(url.pathname) || assets.get(url.pathname).type === type, "Conflicting asset types: " + ref);
     assets.set(url.pathname, { url: url.pathname, file: pathname.slice(1), type });
+    hasExecutableEntry ||= entry;
   }
-  assert.ok([...assets.values()].some(asset => asset.type === "script"), "No executable JavaScript referenced by SSR");
+  assert.ok(hasExecutableEntry, "No executable JavaScript entry referenced by SSR");
   return [...assets.values()];
 }
 
 export async function assertAssetResponse(response, expected, asset) {
   assert.equal(response.status, 200, asset.url + ": asset HTTP status");
-  const mime = response.headers.get("content-type") ?? "";
-  const expectedMime = asset.type === "script" ? /^(application|text)\/(javascript|ecmascript)\b/i : /^text\/css\b/i;
-  assert.match(mime, expectedMime, asset.url + ": asset MIME type");
+  const mime = mimeEssence(response);
+  assert.ok(asset.type === "script" ? javascriptMimes.has(mime) : mime === "text/css", asset.url + ": asset MIME type");
   assert.ok(expected.length > 0, asset.url + ": empty exported asset");
   assert.ok(Buffer.from(await response.arrayBuffer()).equals(expected), asset.url + ": served bytes differ from export");
 }
@@ -176,15 +158,15 @@ async function verifyHost({ name, pages, protectedRoutes = [] }) {
   await withLoopback(path.join(root, "apps", name), async (origin, client) => {
     const assets = new Map();
     const request = (route, method = "GET") =>
-      fetch(origin + route, { method, signal: AbortSignal.timeout(timeout), redirect: "manual" });
+      requestSsr(origin + route, { method, signal: AbortSignal.timeout(timeout) });
     let routes = 0;
     for (const page of pages) {
       const response = await request(page.route);
       assert.equal(response.status, 200, name + page.route + ": HTTP status");
-      assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
+      assert.equal(mimeEssence(response), "text/html");
       const html = await response.text();
       assertHtmlDocument(html, { ...page, route: name + page.route });
-      for (const asset of documentAssets(html, origin)) assets.set(asset.url, asset);
+      for (const asset of documentAssets(html, origin, page.route)) assets.set(asset.url, asset);
       routes++;
     }
     for (const asset of assets.values()) {
@@ -194,21 +176,26 @@ async function verifyHost({ name, pages, protectedRoutes = [] }) {
     for (const route of [...retiredRoutes, "/_expo/server/render.js", "/_expo/static/missing-client-chunk.js"]) {
       const response = await request(route);
       assert.equal(response.status, 404, name + route + ": retired/unknown or private export path must not render");
-      if (retiredRoutes.includes(route)) assert.match(response.headers.get("content-type") ?? "", /text\/html/i);
+      if (retiredRoutes.includes(route)) assert.equal(mimeEssence(response), "text/html");
       await response.arrayBuffer();
       routes++;
     }
+    const malformedAsset = await request("/_expo/static/%00.js");
+    assert.equal(malformedAsset.status, 400, "Malformed asset path must be rejected");
+    await malformedAsset.arrayBuffer();
+    routes++;
     if (name === "customer") {
       const wallet = await request("/api/customer-auth/wallet");
       assert.equal(wallet.status, 503, "wallet read requires the isolated preview");
       assert.equal(wallet.headers.get("cache-control"), "no-store");
+      assert.equal(mimeEssence(wallet), "application/json");
       assert.deepEqual(await wallet.json(), { error: "OWNER_UNAVAILABLE" });
       routes++;
     }
     for (const route of protectedRoutes) {
       const response = await request(route);
       assert.equal(response.status, 302, name + route + ": protected route must redirect");
-      assertPublicRedirect(response.headers.get("location"), origin, name + route);
+      assertPublicRedirect(response.headers.get("location"), origin, route);
       await response.arrayBuffer();
       routes++;
     }

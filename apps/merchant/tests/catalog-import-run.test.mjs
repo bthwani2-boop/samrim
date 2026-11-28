@@ -10,6 +10,7 @@ import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixtur
 import {GET,PATCH, PUT} from "../app/api/admission+api.ts";
 import * as merchantOwnerWeb from "../src/features/access/merchant-owner-web.ts";
 import { buildImportManifest } from "../src/features/catalog/catalog-import-data.ts";
+import { withMutationRecoveryLock } from "../src/features/mutation-recovery/recovery-lock.ts";
 
 const actorId="merchant-a",storeId="store-a",runId="run-0001",sourceSha256="a".repeat(64);
 const manifest={sourceSha256,rows:[{row:2,name:"Milk",priceYer:"100",stockUnits:"2",offerId:"of-a",expectedVersion:1}]};
@@ -179,11 +180,11 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
     const storage=new Map(),calls=[];let states=[],refs=[],effects=[],si=0,ri=0,ei=0;
     const platform={OS:os};
     let digestGate=null,storageGate=null,storageWaiting=false,writeGate=null,writeWaiting=false;
-    let ownerRun=null,ownerProcessed=0,refreshes=0,props={actorId,storeId,sourceSha256,onChanged(){refreshes++;},rows:[{row:2,name:"Milk",priceYer:"100",stockUnits:"2",reason:"existing-store-name",editableDraft:{id:"of-a",draftVersion:1}}]};
+    let activity=null;let ownerRun=null,ownerProcessed=0,refreshes=0,props={actorId,storeId,sourceSha256,onChanged(){refreshes++;},rows:[{row:2,name:"Milk",priceYer:"100",stockUnits:"2",reason:"existing-store-name",editableDraft:{id:"of-a",draftVersion:1}}]};
     const react={useState(initial){const i=si++;if(!(i in states))states[i]=initial;return [states[i],next=>{states[i]=typeof next==="function"?next(states[i]):next;}];},useRef(initial){const i=ri++;refs[i]??={current:initial};return refs[i];},useLayoutEffect(fn,deps){const i=ei++;const old=effects[i];if(!old||!deps||deps.some((v,j)=>v!==old.deps[j])){old?.cleanup?.();effects[i]={deps,cleanup:fn()};}}};
     const jsx=(type,props,key)=>({type,props:props??{},key});
     const get=k=>storage.get(k)??null,set=(k,v)=>storage.set(k,v),remove=k=>storage.delete(k);
-    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},"expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(alg,v)=>{if(digestGate&&v.startsWith("{"))await digestGate;return createHash(alg).update(v).digest("hex");}},"expo-secure-store":{WHEN_UNLOCKED_THIS_DEVICE_ONLY:1,getItemAsync:async k=>{if(storageGate){storageWaiting=true;await storageGate;}return get(k);},setItemAsync:async(k,v)=>{if(writeGate){writeWaiting=true;await writeGate;}set(k,v);},deleteItemAsync:async k=>remove(k)},react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},"./catalog-import-data":{buildImportManifest},"./catalog-import-transport":{async requestCatalogImport(a,s,r,m,signal,change){
+    const mocks={"@bthwani/dsh":dsh,"@bthwani/tamagui-config/appearance":{useMobileAppearance:()=>({theme:{}})},"expo-crypto":{randomUUID,CryptoDigestAlgorithm:{SHA256:"sha256"},digestStringAsync:async(alg,v)=>{if(digestGate&&v.startsWith("{"))await digestGate;return createHash(alg).update(v).digest("hex");}},"expo-secure-store":{WHEN_UNLOCKED_THIS_DEVICE_ONLY:1,getItemAsync:async k=>{if(storageGate){storageWaiting=true;await storageGate;}return get(k);},setItemAsync:async(k,v)=>{if(writeGate){writeWaiting=true;await writeGate;}set(k,v);},deleteItemAsync:async k=>remove(k)},react,"react/jsx-runtime":{jsx,jsxs:jsx,Fragment:"Fragment"},"react-native":{Platform:platform,Pressable:"Pressable",Text:"Text",View:"View"},"./catalog-import-data":{buildImportManifest},"../mutation-recovery/recovery-lock":{withMutationRecoveryLock},"./catalog-import-transport":{async requestCatalogImport(a,s,r,m,signal,change){
       signal.throwIfAborted();assert.equal(a,actorId);assert.equal(s,storeId);calls.push({r,m,change});
       if(m==="PUT"){assert.equal(storage.size,1);assert.deepEqual(change,manifest);ownerRun=r;throw Error("lost start ack");}
       assert.equal(r,ownerRun);
@@ -212,7 +213,8 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
     assert.equal(mixed.rows[2].sourceIssue,"INVALID_ROW");
     assert.ok(mixed.rows.slice(1).every(r=>r.offerId===undefined&&r.expectedVersion===undefined));
     assert.equal(mixed.rows[2].name,"Extra columns");
-    const render=()=>{si=ri=ei=0;return mod.exports.default(props);};
+    const beginRun=()=>{if(activity!==null)return null;const token={};activity=token;return ()=>{if(activity===token)activity=null;};};
+    const render=()=>{si=ri=ei=0;return mod.exports.default({...props,blocked:activity==="review",running:activity!==null&&activity!=="review",beginRun});};
     const button=label=>nodes(render()).find(n=>n.type==="Pressable"&&nodes(n.props.children).some(x=>x.props?.children===label));
     const click=label=>{const b=button(label);assert.ok(b,label);assert.equal(Boolean(b.props.disabled),false,label);b.props.onPress();};
     const remount=()=>{for(const e of effects)e.cleanup?.();states=[];refs=[];effects=[];};
@@ -276,16 +278,56 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
       assert.equal(calls.length,0,"preview replacement during durable write must not dispatch");
       assert.equal(storage.size,0,"undispatched attempt must not strand recovery");
     }
-    rowChoice().props.onPress();click("اعتماد وتسجيل الدفعة المحددة");
+    rowChoice().props.onPress();
+    const staleOwnerAction=button("اعتماد وتسجيل الدفعة المحددة").props.onPress;
+    activity="review";
+    assert.equal(button("اعتماد وتسجيل الدفعة المحددة").props.disabled,true);
+    staleOwnerAction();
+    await tick();
+    assert.equal(calls.length,0,"stale owner callback cannot start during a new file review");
+    assert.equal(storage.size,0);
+    activity=null;
+    if(os==="web"){
+      const browserLocks=window.navigator.locks;
+      delete window.navigator.locks;
+      click("اعتماد وتسجيل الدفعة المحددة");
+      await until(()=>!button("تحديد جميع المسودات المطابقة").props.disabled);
+      assert.equal(calls.length,0,"without cross-tab exclusion no run may be dispatched");
+      assert.equal(storage.size,0,"without cross-tab exclusion no run identity may be persisted");
+      window.navigator.locks=browserLocks;
+    }
+    click("اعتماد وتسجيل الدفعة المحددة");
     await until(()=>calls.length===1&&button("قراءة حالة الدفعة")&&!button("قراءة حالة الدفعة").props.disabled);
     const original=ownerRun;assert.equal(storage.size,1);
     remount();props={...props,rows:[],sourceSha256:""};render();
     await until(()=>button("قراءة حالة الدفعة")&&!button("قراءة حالة الدفعة").props.disabled);
     click("قراءة حالة الدفعة");await until(()=>button("تنفيذ أو استكمال الدفعة")&&!button("تنفيذ أو استكمال الدفعة").props.disabled);
+    if(os==="web"){
+      const locks=window.navigator.locks;
+      delete window.navigator.locks;
+      const before=calls.length;
+      click("تنفيذ أو استكمال الدفعة");
+      await until(()=>!button("قراءة حالة الدفعة").props.disabled);
+      assert.equal(calls.length,before,"unlocked progress cannot dispatch");
+      assert.equal(storage.size,1);
+      click("قراءة حالة الدفعة");
+      await until(()=>calls.length===before+1&&!button("قراءة حالة الدفعة").props.disabled);
+      window.navigator.locks=locks;
+    }
     click("تنفيذ أو استكمال الدفعة");await until(()=>calls.some(c=>c.m==="PATCH")&&!button("قراءة حالة الدفعة").props.disabled);
     assert.equal(ownerProcessed,1);assert.equal(storage.size,1);
     click("قراءة حالة الدفعة");await until(()=>button("إنهاء متابعة الدفعة")&&!button("إنهاء متابعة الدفعة").props.disabled);
     assert.equal(button("تنفيذ أو استكمال الدفعة").props.disabled,true);
+    if(os==="web"){
+      const locks=window.navigator.locks;
+      delete window.navigator.locks;
+      const before=calls.length;
+      click("إنهاء متابعة الدفعة");
+      await until(()=>!button("قراءة حالة الدفعة").props.disabled);
+      assert.equal(calls.length,before,"unlocked retirement must not dispatch");
+      assert.equal(storage.size,1,"unlocked retirement must retain the original run");
+      window.navigator.locks=locks;
+    }
     click("إنهاء متابعة الدفعة");await until(()=>storage.size===0&&refreshes===1);
     assert.ok(calls.every(c=>c.r===original));assert.equal(calls.filter(c=>c.m==="PUT").length,1);assert.equal(calls.filter(c=>c.m==="PATCH").length,1);
     remount();
@@ -342,4 +384,38 @@ test("Web import transport never treats missing or stale acknowledgement as a co
   assert.equal(pending.locked, false);
   respond = async () => json({ catalogImport: complete });
   assert.deepEqual(await request(actorId, storeId, runId, "GET", signal), complete);
+});
+
+
+for(const platform of ["web","android"])test("import transport binds original manifest across "+platform+" asynchronous boundaries",async t=>{
+  const input=structuredClone(manifest);
+  const mutate=()=>{input.sourceSha256="b".repeat(64);input.rows.push({row:3,name:"Later",priceYer:"1",stockUnits:"0"});};
+  const request=importTransport(platform,async(_signal,invoke)=>{mutate();return invoke("synthetic","http://127.0.0.1:13311");});
+  t.mock.method(globalThis,"fetch",async(_url,options)=>{
+    assert.deepEqual(JSON.parse(options.body),manifest);
+    if(platform==="web")mutate();
+    return json(platform==="web"?{catalogImport:initial}:initial);
+  });
+  assert.deepEqual(await request(actorId,storeId,runId,"PUT",new AbortController().signal,input),initial);
+});
+
+test("native catalog recovery serializes one key, permits independent keys and recovers rejected claims", async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const events = [];
+  const first = withMutationRecoveryLock("android", "same", async () => {
+    events.push("first");
+    await gate;
+    throw new Error("owner unavailable");
+  });
+  const rejected = assert.rejects(first, /owner unavailable/);
+  const second = withMutationRecoveryLock("android", "same", async () => { events.push("second"); return 2; });
+  const other = withMutationRecoveryLock("android", "other", async () => { events.push("other"); return 3; });
+  assert.equal(await other, 3);
+  assert.deepEqual(events, ["first", "other"]);
+  release();
+  await rejected;
+  assert.equal(await second, 2);
+  assert.deepEqual(events, ["first", "other", "second"]);
+  assert.equal(await withMutationRecoveryLock("android", "same", async () => 4), 4);
 });

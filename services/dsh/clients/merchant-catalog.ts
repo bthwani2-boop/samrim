@@ -258,3 +258,82 @@ export async function readMerchantInventorySummary(
   return parseMerchantInventorySummary(
     await privateOwnerRequest(origin, path, bearer, "GET", undefined, signal), actorId, storeId);
 }
+
+/** Recorded draft edits only: never a published price or stock movement history. */
+export type MerchantCatalogDraftHistoryEntry = Readonly<{
+  version: number;
+  previousPriceYer: string;
+  priceYer: string;
+  previousStockUnits: number;
+  stockUnits: number;
+  committedAt: string;
+}>;
+export type MerchantCatalogDraftHistoryPage = Readonly<{
+  actorId: string;
+  storeId: string;
+  offerId: string;
+  entries: MerchantCatalogDraftHistoryEntry[];
+  nextBeforeVersion?: string;
+}>;
+
+function validHistoryVersion(value: unknown): value is string {
+  return typeof value === "string" && /^[1-9][0-9]{0,15}$/.test(value) &&
+    BigInt(value) <= BigInt(Number.MAX_SAFE_INTEGER);
+}
+function validHistoryMoney(value: unknown, positive: boolean): boolean {
+  return typeof value === "string" && money.test(value) && BigInt(value) <= 9223372036854775807n &&
+    (!positive || value !== "0");
+}
+function validHistoryStock(value: unknown): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 2147483647;
+}
+function validHistoryTime(value: unknown): boolean {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) return false;
+  const stamp = Date.parse(value);
+  return Number.isFinite(stamp) && new Date(stamp).toISOString().slice(0, 19) === value.slice(0, 19);
+}
+function validHistoryEntry(value: unknown): value is MerchantCatalogDraftHistoryEntry {
+  const v = object(value);
+  return !!v && exactKeys(v, ["version", "previousPriceYer", "priceYer", "previousStockUnits", "stockUnits", "committedAt"]) &&
+    typeof v.version === "number" && Number.isSafeInteger(v.version) && v.version >= 2 &&
+    validHistoryMoney(v.previousPriceYer, false) && validHistoryMoney(v.priceYer, true) &&
+    validHistoryStock(v.previousStockUnits) && validHistoryStock(v.stockUnits) && validHistoryTime(v.committedAt);
+}
+function validHistoryScope(actorId: string, storeId: string, offerId: string, limit: number, beforeVersion?: string): boolean {
+  return typeof actorId === "string" && actorRule.test(actorId) && typeof storeId === "string" && key.test(storeId) &&
+    typeof offerId === "string" && key.test(offerId) && Number.isInteger(limit) && limit >= 1 && limit <= 50 &&
+    (beforeVersion === undefined || validHistoryVersion(beforeVersion));
+}
+export function parseMerchantCatalogDraftHistory(
+  payload: unknown, actorId: string, storeId: string, offerId: string, limit = 20, beforeVersion?: string,
+): MerchantCatalogDraftHistoryPage {
+  const v = object(payload);
+  const entries = v?.entries;
+  if (!validHistoryScope(actorId, storeId, offerId, limit, beforeVersion) || !v ||
+    !exactKeys(v, v.nextBeforeVersion === undefined ? ["actorId", "storeId", "offerId", "entries"] :
+      ["actorId", "storeId", "offerId", "entries", "nextBeforeVersion"]) ||
+    v.actorId !== actorId || v.storeId !== storeId || v.offerId !== offerId ||
+    !Array.isArray(entries) || entries.length > limit || !entries.every(validHistoryEntry) ||
+    entries.some((entry, i) => (beforeVersion !== undefined && entry.version >= Number(beforeVersion)) ||
+      (i > 0 && entry.version >= (entries[i - 1]?.version ?? 0))) ||
+    (v.nextBeforeVersion !== undefined && (!validHistoryVersion(v.nextBeforeVersion) || entries.length !== limit ||
+      v.nextBeforeVersion !== String(entries.at(-1)?.version)))) {
+    throw new DshPublicError(502, "OWNER_RESPONSE_INVALID");
+  }
+  return v as MerchantCatalogDraftHistoryPage;
+}
+export async function readMerchantCatalogDraftHistory(
+  origin: string, storeId: string, offerId: string, actorId: string, bearer: string,
+  options: { limit?: number; beforeVersion?: string; signal?: AbortSignal } = {},
+): Promise<MerchantCatalogDraftHistoryPage> {
+  const limit = options.limit ?? 20;
+  const before = options.beforeVersion;
+  if (!validHistoryScope(actorId, storeId, offerId, limit, before)) {
+    throw new DshPublicError(400, "INVALID_REQUEST");
+  }
+  const path = dshOperations.readCurrentMerchantCatalogDraftHistory.path.replace("{storeID}", storeId).replace("{offerID}", offerId);
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (before !== undefined) query.set("beforeVersion", before);
+  const payload = await privateOwnerRequest(origin, path + "?" + query.toString(), bearer, "GET", undefined, options.signal);
+  return parseMerchantCatalogDraftHistory(payload, actorId, storeId, offerId, limit, before);
+}

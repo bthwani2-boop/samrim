@@ -1,14 +1,10 @@
 package customercart
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"io"
 	"math"
-	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -68,59 +64,15 @@ func validAddressChange(v *AddressChange) bool {
 		v.ExpectedVersion != nil && *v.ExpectedVersion >= 0 && *v.ExpectedVersion < maxJSONSafeInteger
 }
 
-// Decode a single bounded object with exact unique field names. No caller actor, arbitrary city override or derived serviceability.
+// All address fields are required by the owner. The shared command boundary
+// rejects ambiguous names and malformed Unicode before domain validation.
 func decodeAddressChange(w http.ResponseWriter, r *http.Request) (AddressChange, bool) {
 	var v AddressChange
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" || r.Header.Get("Content-Encoding") != "" {
-		return v, false
-	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 4096))
-	if err != nil || !utf8.Valid(body) {
-		return v, false
-	}
-	d := json.NewDecoder(bytes.NewReader(body))
-	token, err := d.Token()
-	if err != nil || token != json.Delim('{') {
-		return v, false
-	}
-	seen := map[string]bool{}
-	for d.More() {
-		t, e := d.Token()
-		key, ok := t.(string)
-		if e != nil || !ok || seen[key] {
-			return v, false
-		}
-		seen[key] = true
-		var field any
-		switch key {
-		case "cityId":
-			field = &v.CityID
-		case "label":
-			field = &v.Label
-		case "details":
-			field = &v.Details
-		case "latitude":
-			field = &v.Latitude
-		case "longitude":
-			field = &v.Longitude
-		case "expectedVersion":
-			field = &v.ExpectedVersion
-		default:
-			return v, false
-		}
-		if d.Decode(field) != nil {
-			return v, false
-		}
-	}
-	end, e := d.Token()
-	if e != nil || end != json.Delim('}') || d.Decode(new(any)) != io.EOF || len(seen) != 6 || !validAddressChange(&v) {
-		return v, false
+	if !decodeCustomerCommand(w, r, 4096, &v) || !validAddressChange(&v) {
+		return AddressChange{}, false
 	}
 	return v, true
 }
-
-const addressFields = "id,city_id,label,details,latitude,longitude,version"
 
 func scanAddress(row interface{ Scan(...any) error }) (Address, error) {
 	var a Address
@@ -150,7 +102,7 @@ func (h *Handler) listAddresses(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	rows, err := tx.QueryContext(ctx, "SELECT "+addressFields+" FROM customer_addresses WHERE actor_id=$1 AND id COLLATE \"C\" > $2 ORDER BY id COLLATE \"C\" LIMIT $3", actor, after, addressPageLimit+1)
+	rows, err := tx.QueryContext(ctx, "SELECT id,city_id,label,details,latitude,longitude,version FROM customer_addresses WHERE actor_id=$1 AND id COLLATE \"C\" > $2 ORDER BY id COLLATE \"C\" LIMIT $3", actor, after, addressPageLimit+1)
 	if err != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
 		return
@@ -201,7 +153,7 @@ func (h *Handler) getAddress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback()
-	address, err := scanAddress(tx.QueryRowContext(ctx, "SELECT "+addressFields+" FROM customer_addresses WHERE actor_id=$1 AND id=$2", actor, id))
+	address, err := scanAddress(tx.QueryRowContext(ctx, "SELECT id,city_id,label,details,latitude,longitude,version FROM customer_addresses WHERE actor_id=$1 AND id=$2", actor, id))
 	missing := errors.Is(err, sql.ErrNoRows)
 	if (err != nil && !missing) || tx.Commit() != nil {
 		fail(w, 503, "OWNER_UNAVAILABLE")
@@ -267,7 +219,7 @@ func (h *Handler) writeAddress(ctx context.Context, actor, token, id string, c A
 	if _, err = tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(84933,hashtext($1))", actor+":"+id); err != nil {
 		return AddressResult{}, 503
 	}
-	old, err := scanAddress(tx.QueryRowContext(ctx, "SELECT "+addressFields+" FROM customer_addresses WHERE actor_id=$1 AND id=$2 FOR UPDATE", actor, id))
+	old, err := scanAddress(tx.QueryRowContext(ctx, "SELECT id,city_id,label,details,latitude,longitude,version FROM customer_addresses WHERE actor_id=$1 AND id=$2 FOR UPDATE", actor, id))
 	exists := err == nil
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return AddressResult{}, 503

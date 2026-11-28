@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"math"
-	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -67,9 +67,9 @@ func (s *MerchantStoreRegistrar) ReadRegistrationPolicy(
 	if !registrationPublicID.MatchString(cityID) || !validRegistrationRelation(relation) {
 		return StoreRegistrationPolicy{}, ErrRegistrationInvalid
 	}
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
 		ReadOnly: true, Isolation: sql.LevelRepeatableRead,
-	})
+	}, "store_registration_policies", "store_registration_terms")
 	if err != nil {
 		return StoreRegistrationPolicy{}, ErrStoreOwnerUnavailable
 	}
@@ -105,9 +105,9 @@ func (s *MerchantStoreRegistrar) ApplyRegistrationPolicy(
 	if !identityaccess.ValidActorID(actorID) || !validStoreRegistrationPolicyChange(change) {
 		return StoreRegistrationPolicyResult{}, ErrRegistrationInvalid
 	}
-	tx, err := beginScopedStoreTx(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
+	tx, err := dbscope.Begin(ctx, s.grants.db, s.grants.schema, &sql.TxOptions{
 		Isolation: sql.LevelReadCommitted,
-	})
+	}, "store_registration_policy_commands", "store_registration_terms", "service_cities", "store_registration_policies")
 	if err != nil {
 		return StoreRegistrationPolicyResult{}, ErrStoreOwnerUnavailable
 	}
@@ -267,19 +267,20 @@ func NewStoreRegistrationPolicyHandler(s *MerchantStoreRegistrar) (http.Handler,
 			writeFailure(w, ErrForbidden)
 			return
 		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
-			writeRegistrationFailure(w, ErrRegistrationInvalid)
-			return
-		}
 		// Match the bounded Web adapter; 4,000 UTF-8 terms characters may exceed 8 KiB.
-		var input StoreRegistrationPolicyChange
-		if decodeUniqueJSON(w, r, 24576, &input) != nil {
+		var wire struct {
+			OperationID     string `json:"operationId"`
+			ExpectedVersion *int64 `json:"expectedVersion"`
+			Enabled         *bool  `json:"enabled"`
+			TermsVersion    string `json:"termsVersion"`
+			TermsText       string `json:"termsText"`
+			Reason          string `json:"reason"`
+		}
+		if decodeUniqueJSON(w, r, 24576, &wire) != nil || wire.ExpectedVersion == nil || wire.Enabled == nil {
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
-		input.CityID = r.PathValue("cityID")
-		input.Relation = r.PathValue("relation")
+		input := StoreRegistrationPolicyChange{CityID: r.PathValue("cityID"), Relation: r.PathValue("relation"), OperationID: wire.OperationID, ExpectedVersion: *wire.ExpectedVersion, Enabled: *wire.Enabled, TermsVersion: wire.TermsVersion, TermsText: wire.TermsText, Reason: wire.Reason}
 		result, err := s.ApplyRegistrationPolicy(r.Context(), actor, input)
 		if err != nil {
 			if errors.Is(err, ErrRegistrationInvalid) {

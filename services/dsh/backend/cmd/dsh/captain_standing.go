@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"strings"
 
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/captainstanding"
 )
@@ -38,7 +37,7 @@ func isolatedCaptainStandingHandler(db *sql.DB, schema string, next http.Handler
 		return nil, err
 	}
 	handler := captainstanding.NewHTTPHandler(captainstanding.NewService(identity, repo))
-	private := captainStandingCORS(handler, origins)
+	private := privateOwnerCORS(handler, origins)
 	mux := http.NewServeMux()
 	// One-way public intake is an independent, explicit isolated opt-in.
 	// Existing authenticated Captain standing must not expose it implicitly.
@@ -47,7 +46,7 @@ func isolatedCaptainStandingHandler(db *sql.DB, schema string, next http.Handler
 		if err != nil {
 			return nil, err
 		}
-		interest := captainStandingCORS(
+		interest := privateOwnerCORS(
 			captainstanding.NewInterestHTTPHandler(captainstanding.NewInterestService(identity, interestRepo)), origins)
 		mux.Handle(captainstanding.CaptainInterestPath, interest)
 		mux.Handle(captainstanding.OperatorCaptainInterestPath, interest)
@@ -60,42 +59,4 @@ func isolatedCaptainStandingHandler(db *sql.DB, schema string, next http.Handler
 	mux.Handle("/v1/operators/captains/", private)
 	mux.Handle("/", next)
 	return mux, nil
-}
-
-// No wildcard CORS or cookie credentials: every request uses an Identity
-// bearer and gets authorization checked again inside the current DSH owner.
-func captainStandingCORS(next http.Handler, origins map[string]bool) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
-		origin := r.Header.Get("Origin")
-		if origin == "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if origin == "null" || !origins[origin] {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		if r.Method != http.MethodOptions {
-			next.ServeHTTP(w, r)
-			return
-		}
-		method := r.Header.Get("Access-Control-Request-Method")
-		if method != http.MethodGet && method != http.MethodPost && method != http.MethodPatch {
-			w.WriteHeader(http.StatusForbidden)
-			return
-		}
-		for _, key := range strings.Split(r.Header.Get("Access-Control-Request-Headers"), ",") {
-			normalized := strings.ToLower(strings.TrimSpace(key))
-			if normalized != "" && normalized != "authorization" && normalized != "content-type" {
-				w.WriteHeader(http.StatusForbidden)
-				return
-			}
-		}
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH")
-		w.WriteHeader(http.StatusNoContent)
-	})
 }

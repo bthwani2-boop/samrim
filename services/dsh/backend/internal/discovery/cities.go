@@ -29,7 +29,7 @@ func (s *Server) listCities(ctx context.Context, w http.ResponseWriter, r *http.
 		errorJSON(w, 400, "INVALID_LIMIT")
 		return
 	}
-	tx, err := s.Owner.viewTx(ctx)
+	tx, err := s.Owner.viewTx(ctx, "public_revision", "service_cities")
 	if err != nil {
 		errorJSON(w, 503, "OWNER_UNAVAILABLE")
 		return

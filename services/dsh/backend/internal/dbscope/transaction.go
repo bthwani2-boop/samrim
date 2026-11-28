@@ -1,5 +1,5 @@
-// Package dbscope binds owner-local PostgreSQL relations to a transaction.
-// It does not own any domain facts or grant database privileges.
+// Package dbscope binds every transaction to explicitly declared owner relations.
+// It owns transaction scope, not business facts or database privileges.
 package dbscope
 
 import (
@@ -11,12 +11,26 @@ import (
 
 var schemaName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
 
-// Bind uses a bound identifier and transaction-local search_path. Required
-// relations are checked against their qualified identity, so an absent owner
-// relation cannot silently resolve to a temporary table.
-func Bind(ctx context.Context, tx *sql.Tx, schema string, requiredRelations ...string) error {
-	if tx == nil || !schemaName.MatchString(schema) {
+func validateScope(schema string, relations []string) error {
+	if !schemaName.MatchString(schema) || len(relations) == 0 {
 		return errors.New("invalid owner transaction scope")
+	}
+	for _, relation := range relations {
+		if !schemaName.MatchString(relation) {
+			return errors.New("invalid owner relation identifier")
+		}
+	}
+	return nil
+}
+
+// Bind installs a transaction-local path and proves every declared relation
+// resolves to the qualified owner object, not a temporary fallback.
+func Bind(ctx context.Context, tx *sql.Tx, schema string, requiredRelations ...string) error {
+	if tx == nil {
+		return errors.New("invalid owner transaction scope")
+	}
+	if err := validateScope(schema, requiredRelations); err != nil {
+		return err
 	}
 	if _, err := tx.ExecContext(ctx,
 		"SELECT pg_catalog.set_config('search_path', 'pg_catalog,' || pg_catalog.quote_ident($1) || ',pg_temp', true)", schema); err != nil {
@@ -24,9 +38,10 @@ func Bind(ctx context.Context, tx *sql.Tx, schema string, requiredRelations ...s
 	}
 	for _, relation := range requiredRelations {
 		var exact bool
-		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(
-			pg_catalog.to_regclass($1) = pg_catalog.to_regclass(pg_catalog.format('%I.%I',$2::text,$1::text)), false)`,
-			relation, schema).Scan(&exact); err != nil {
+		err := tx.QueryRowContext(ctx, `SELECT COALESCE(
+ pg_catalog.to_regclass($1) = pg_catalog.to_regclass(pg_catalog.format('%I.%I',$2::text,$1::text)), false)`,
+			relation, schema).Scan(&exact)
+		if err != nil {
 			return err
 		}
 		if !exact {
@@ -36,16 +51,20 @@ func Bind(ctx context.Context, tx *sql.Tx, schema string, requiredRelations ...s
 	return nil
 }
 
-// Begin returns a scoped transaction or rolls it back before returning an error.
+// Begin refuses undeclared scopes before opening a transaction and rolls
+// back failed bindings before returning control to the caller.
 func Begin(ctx context.Context, db *sql.DB, schema string, options *sql.TxOptions, requiredRelations ...string) (*sql.Tx, error) {
-	if db == nil || !schemaName.MatchString(schema) {
+	if db == nil {
 		return nil, errors.New("invalid owner transaction scope")
+	}
+	if err := validateScope(schema, requiredRelations); err != nil {
+		return nil, err
 	}
 	tx, err := db.BeginTx(ctx, options)
 	if err != nil {
 		return nil, err
 	}
-	if err = Bind(ctx, tx, schema, requiredRelations...); err != nil {
+	if err := Bind(ctx, tx, schema, requiredRelations...); err != nil {
 		_ = tx.Rollback()
 		return nil, err
 	}

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   parseMerchantRegistrationOptions, parseMerchantRegistrationResult,
-  readMerchantRegistrationOptions, registerMerchantStore, validMerchantStoreRegistration,
+  readMerchantRegistrationOptions, readMerchantRegistrationReceipt, registerMerchantStore, validMerchantStoreRegistration,
 } from "./merchant-registration.ts";
 
 const bearer = Buffer.alloc(32, 7).toString("base64url");
@@ -186,4 +186,24 @@ test("an owner read outage and late cancellation do not expose stale data",async
   const abort=new AbortController();
   t.mock.method(globalThis,"fetch",async()=>{abort.abort();return response(opts);});
   await assert.rejects(readMerchantRegistrationOptions(dsh,bearer,abort.signal),{code:"OWNER_RESPONSE_STALE"});
+});
+
+test("receipt is a bounded private GET bound to the exact operation and current owner", async t => {
+  const operationId = request.operationId;
+  let reply = response({ operationId, store: { ...store, published: true } });
+  const fetch = t.mock.method(globalThis, "fetch", async (url, init) => {
+    assert.equal(String(url), dsh + "/v1/store-registration-receipts/" + operationId);
+    assert.equal(init.method, "GET");
+    assert.equal(init.headers.Authorization, "Bearer " + bearer);
+    assert.equal(init.body, undefined);
+    return reply;
+  });
+  assert.deepEqual(await readMerchantRegistrationReceipt(dsh, bearer, operationId), { operationId, store: { ...store, published: true } });
+  reply = response({ operationId: "other-operation", store });
+  await assert.rejects(readMerchantRegistrationReceipt(dsh, bearer, operationId), { code: "OWNER_RESPONSE_INVALID" });
+  reply = response({ code: "REGISTRATION_RECEIPT_NOT_FOUND" }, 404);
+  await assert.rejects(readMerchantRegistrationReceipt(dsh, bearer, operationId), { status: 404, code: "REGISTRATION_RECEIPT_NOT_FOUND" });
+  const count = fetch.mock.callCount();
+  await assert.rejects(readMerchantRegistrationReceipt(dsh, bearer, "../other"), { code: "INVALID_STORE_REGISTRATION" });
+  assert.equal(fetch.mock.callCount(), count);
 });

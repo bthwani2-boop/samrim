@@ -2,9 +2,8 @@ import "server-only";
 import { IdentityClientError, reviewOriginalOperatorPermissions } from "@bthwani/identity";
 import { cookies } from "next/headers";
 import { cache } from "react";
-import {
-  OPERATOR_COOKIE, type OperatorAccessState, readOperatorAccessState, resolveIsolatedOperatorConfig,
-} from "./operator-passkey-bff";
+import { type OperatorAccessState, readOperatorAccessState } from "./operator-passkey-access";
+import { OPERATOR_COOKIE, resolveIsolatedOperatorConfig } from "./operator-passkey-config";
 
 // React cache is scoped to one server render/request, not a shared actor cache.
 // Every new navigation rechecks the Identity owner; missing service fails closed.

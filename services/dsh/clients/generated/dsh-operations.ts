@@ -1,6 +1,6 @@
 // GENERATED - do not edit. Run: node tools/dev/generate-openapi-operations.mjs
 // Owner contract is services/dsh/contracts/openapi/dsh.openapi.yaml.
-// Normalized OpenAPI SHA-256: ecf036037b899eae7269fb825c59a83560988e18d97fa6a26ea827216c54a2f5
+// Normalized OpenAPI SHA-256: c583f50ada7eae662847cadc2482be50fefc94ebd1c74e937f5c85274b1ae270
 // DTO and runtime validation remain the owner's responsibility.
 export const dshOperations = {
   advanceMerchantCatalogImport: { method: "PATCH", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
@@ -28,6 +28,7 @@ export const dshOperations = {
   getMerchantEmployeeRegistrationAudit: { method: "GET", path: "/v1/stores/{storeID}/employees/{id}/registration-audit" },
   getMerchantStoreProfile: { method: "GET", path: "/v1/stores/{storeID}/profile" },
   getMerchantStoreRegistrationOptions: { method: "GET", path: "/v1/stores/registration-options" },
+  getMerchantStoreRegistrationReceipt: { method: "GET", path: "/v1/store-registration-receipts/{operationID}" },
   getOperatorCaptainStanding: { method: "GET", path: "/v1/operators/captains/{actorId}/standing" },
   getOperatorStoreFinancialStanding: { method: "GET", path: "/v1/operators/stores/{storeID}/financial-standing" },
   getOperatorStoreRegistrationPolicy: { method: "GET", path: "/v1/operators/cities/{cityID}/store-registration-policy/{relation}" },
@@ -51,6 +52,7 @@ export const dshOperations = {
   listPublicVerticals: { method: "GET", path: "/v1/public/verticals" },
   markOperatorCaptainInterestContacted: { method: "PATCH", path: "/v1/operators/captain-interest/{id}/contact" },
   previewCityDeliveryPolicy: { method: "POST", path: "/v1/operators/cities/{cityID}/delivery-policy/preview" },
+  readCurrentMerchantCatalogDraftHistory: { method: "GET", path: "/v1/stores/{storeID}/catalog/{offerID}/draft-history" },
   readCurrentMerchantInventorySummary: { method: "GET", path: "/v1/stores/{storeID}/inventory-summary" },
   readMerchantCatalogImport: { method: "GET", path: "/v1/stores/{storeID}/catalog-imports/{runID}" },
   registerCompanyEmployee: { method: "POST", path: "/v1/operators/employees" },

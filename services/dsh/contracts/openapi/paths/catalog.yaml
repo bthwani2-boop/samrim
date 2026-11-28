@@ -133,6 +133,74 @@ paths:
         '503':
           $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
 
+  /v1/stores/{storeID}/catalog/{offerID}/draft-history:
+    get:
+      operationId: readCurrentMerchantCatalogDraftHistory
+      summary: Read the immutable committed draft edit history for one owned Store Offer
+      description: >
+        Current Merchant session and DSH Store ownership are required. Returns only
+        committed draft edit transitions, not published-price history, stock movements,
+        orderability, or a reconstructed creation record. Missing or foreign Offers
+        are denied. Descending result version is the exclusive keyset; the next
+        page uses nextBeforeVersion. Times are the DSH commit timestamps in UTC.
+      security:
+        - OpaqueSession: []
+      parameters:
+        - name: storeID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: offerID
+          in: path
+          required: true
+          schema: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 50, default: 20 }
+        - name: beforeVersion
+          in: query
+          description: Exclusive result version cursor; canonical positive decimal, at most 9007199254740991.
+          schema: { type: string, pattern: '^[1-9][0-9]{0,15}$' }
+      responses:
+        '200':
+          description: Scoped page of recorded draft transitions; empty means none recorded for this selector.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [actorId, storeId, offerId, entries]
+                properties:
+                  actorId: { type: string, minLength: 1, maxLength: 128 }
+                  storeId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+                  offerId: { $ref: '../dsh.openapi.yaml#/components/schemas/PublicId' }
+                  nextBeforeVersion: { type: string, pattern: '^[1-9][0-9]{0,15}$' }
+                  entries:
+                    type: array
+                    maxItems: 50
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required: [version, previousPriceYer, priceYer, previousStockUnits, stockUnits, committedAt]
+                      properties:
+                        version: { type: integer, minimum: 2, maximum: 9007199254740991 }
+                        previousPriceYer: { type: string, pattern: '^(0|[1-9][0-9]{0,18})$', description: Exact nonnegative signed-int64 YER amount. }
+                        priceYer: { type: string, pattern: '^[1-9][0-9]{0,18}$', description: Exact positive signed-int64 YER amount. }
+                        previousStockUnits: { type: integer, minimum: 0, maximum: 2147483647 }
+                        stockUnits: { type: integer, minimum: 0, maximum: 2147483647 }
+                        committedAt: { type: string, format: date-time, description: Actual recorded UTC commit timestamp. }
+        '400':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreInvalidChange'
+        '401':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreUnauthorized'
+        '403':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreForbidden'
+        '503':
+          $ref: '../dsh.openapi.yaml#/components/responses/StoreOperationalUnavailable'
+
   /v1/stores/{storeID}/inventory-summary:
     get:
       operationId: readCurrentMerchantInventorySummary

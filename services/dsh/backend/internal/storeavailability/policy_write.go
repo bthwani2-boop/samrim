@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"strings"
 	"unicode/utf8"
 )
@@ -119,7 +120,7 @@ func readCommittedPolicy(ctx context.Context, tx *sql.Tx, cityID, operationID, h
 func (source *PostgresPolicySource) committedCityPolicy(
 	ctx context.Context, cityID, operationID, hash string,
 ) (CityPolicy, bool, error) {
-	tx, err := beginScopedStoreTx(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true})
+	tx, err := dbscope.Begin(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true}, "store_operational_policy_commands", "store_operational_limits_audit")
 	if err != nil {
 		return CityPolicy{}, false, err
 	}
@@ -137,7 +138,7 @@ func (source *PostgresPolicySource) committedCityPolicy(
 func (source *PostgresPolicySource) applyCityPolicyOnce(
 	ctx context.Context, actorID string, change CityPolicyChange, hash string,
 ) (CityPolicy, bool, error) {
-	tx, err := beginScopedStoreTx(ctx, source.db, source.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	tx, err := dbscope.Begin(ctx, source.db, source.schema, &sql.TxOptions{Isolation: sql.LevelReadCommitted}, "service_cities", "store_operational_limits", "store_operational_policy_commands", "store_operational_limits_audit")
 	if err != nil {
 		return CityPolicy{}, false, ErrPolicyUnavailable
 	}

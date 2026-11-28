@@ -48,7 +48,7 @@ function harness({ permitted = true, failCity = false, failVertical = false,
     },
     "../../../../src/features/operator-shell/workspace-unavailable": () => null,
     "../../../../src/features/stores/public-store-query": {
-      parsePublicStoreBrowse, resolvePublicDshOrigin: () => origin,
+      parsePublicStoreBrowse, isolatedPublicDshOrigin: () => origin,
     },
     "../../../../src/server/current-operator-access": {
       currentOperatorAccess: async () => permitted ? { grants: ["catalog"] } : { grants: ["merchant"] },

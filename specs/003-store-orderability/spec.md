@@ -1,50 +1,19 @@
-# Feature Specification: Store Orderability — Merchant / Operator / Customer
+# Store orderability — Merchant, Operator and Customer
 
-**Existing branch**: `refoundation/clean-house-20261112` (no new branch)
-**Date**: 2026-11-14
-**State**: IN_PROGRESS; requires runtime and cross-owner evidence
-**Canonical journey**: `STORE_ORDERABILITY` in `governance/journeys.md`
-**Capability ID**: `STORE_OPERATIONAL_AVAILABILITY` in `governance/product.md` and `governance/stores.md`
+CAPABILITY_ID: STORE_OPERATIONAL_AVAILABILITY
+JOURNEY: STORE_ORDERABILITY
+ARTIFACT_CLASS: DERIVED_SPEC_KIT_REQUIREMENTS
 
-## User stories
+[Stores](../../governance/stores.md), [fulfillment](../../governance/fulfillment.md), [commerce](../../governance/commerce.md), [Identity](../../governance/identity.md) and [finance](../../governance/finance.md) own policy. DSH owns operational Store and city policy facts; no availability operation changes publication, accepted WLT terms, custody, prior Orders or grants.
 
-1. Merchant with a currently verified Identity session and a current DSH `store_operations` grant views and changes the operational schedule and a temporary pause. A simultaneous change must conflict, not silently win. The DSH readback persists and attributes actor, reason, version and idempotency key.
-2. Operator with a verified Identity session and actual `operations` permission may intervene on Store availability, but not change contractual mode admissions. Other operators, strangers, stale sessions and merchants from another Store fail closed.
-3. Customer sees the one current DSH Store/mode orderability decision, distinct from publication and public discovery; the actual DSH checkout confirmation recomputes eligibility and rejects newly closed/paused/unserviceable methods without changing the method or price.
-4. Failure, retry, account/Store switch, invalid schedule, overnight opening interval, unknown outcome and revoke must not produce permissive fallback, duplicate audit or cross-account state.
+- AC-01: Merchant with current authorized Store operations and Operator with specifically permitted operations scope use one DSH owner for versioned weekly schedule, one-off closure, temporary pause and admitted-method availability, with reason, exact version, operation identity, attributable audit and current readback. Reject other Store/role, revoked session/grant and conflicting writes.
+- AC-02: Derive OPEN_FOR_ORDERS, CLOSED_BY_SCHEDULE, PAUSED and OPERATIONALLY_UNAVAILABLE from actual facts; no independently editable status. Use explicit valid IANA Store timezone (not host Local), deterministic overnight/overlap validation and expiry behavior. Explicit complete replacement requires weekly and preparation fields; empty schedule closes, zero preparation is explicit. Missing city policy, invalid/missing timezone, stale policy or invalid bounds fail closed. Persist and independently read version, actor, reason, UTC and policy version, including restart/recovery.
+- AC-03: Keep publication, visibility, city/vertical, Offer eligibility, serviceability, admitted method and operational readiness distinct. A published closed/paused Store may remain visible. At checkout the DSH owner recomputes actual selected-method eligibility; stale client selection/quote, newly paused/closed Store or unavailable method cannot silently substitute price/method or create Order/WLT effect.
+- AC-04: One expected-version transaction and stable operation ID produce at most one durable change and audit; differing payload reuse fails. Unknown outcome reconciles through same operation. Concurrent update, stale policy and foreign Store fail. Real Identity and DSH scope enforcement and durable owner readback are mandatory.
+- AC-05: Authorized platform_policies Operator can review same-city immutable older operational-limit versions against a verified newer current version and copy pause/preparation limits to an unsubmitted draft. No write, reason inheritance, implicit save or new permission. Reject foreign city, same/newer version, missing evidence, pending/uncertain command and required reread. Clear reason; current version and explicit new reason are required for actual change. History paging in either direction and retry perform fresh same-city read; failure withdraws rows and draft action.
+- AC-06: Authorized Operator can replace city radius and cumulative distance tariff together via the existing DSH policy owner; verify active city, expected version, stable operation ID, reason, exact immutable snapshot and attributable audit. Version zero is explicitly unconfigured; no guessed default. Preserve actor/city-scoped pending command and explicit same-key recovery after reload; reconcile actual readback, conflict, changed replay and malformed tariff. Geographic/checkout estimate uses current policy version, not a payable WLT quote.
+- AC-07: City/relation method policy is one versioned explicit permitted subset of the actual admitted fulfillment method vocabulary (existing wire names verified against the owner). Version zero admits none; explicit empty subset denies all. Reject duplicate/unknown modes, invalid city, unauthorized actor, stale version, changed replay and racing writes. The policy is a ceiling, not per-Store method admission, WLT terms, dispatch readiness, publication or Order authority.
+- AC-08: Merchant, Operator and Customer surfaces show current owner evidence with Arabic RTL, accessible inputs, light/dark, errors/retry, safe Store/actor switch and pending-response rejection. Test affected actual Web and Android.
+- AC-09: Real isolated PostgreSQL, owner HTTP, current Identity authorization and separate readback prove fresh baseline, applicable restore, static bound SQL, transaction-local schema/role isolation, temporary-relation shadow refusal, pool state reset, stale/invalid input, rejection, idempotent replay, races and recovery. Protected retained-data upgrade, production and unrun iOS remain separate.
 
-## Rules / invariants
-
-- Identity is the only session/role/permission owner; DSH owns Store, schedule, operational pause, approved fulfillment mode, orderability, mutation/audit and confirmation. WLT agreement or custody is never altered by availability.
-- Derived states: `OPEN_FOR_ORDERS`, `CLOSED_BY_SCHEDULE`, `PAUSED`, `OPERATIONALLY_UNAVAILABLE`. No client-editable derived state or fabricated round-the-clock schedule.
-- Store publication, city/vertical, eligible Offer, selected fulfillment method admission, method operational readiness and fulfillment serviceability remain independent checks; an unavailable method cannot be replaced silently.
-- Weekly hours use an explicit IANA Store timezone and validated local time; overnight and overlapping intervals are handled deterministically. Invalid/missing information fails closed.
-- Policy-owned pause and preparation bounds are provided by DSH Operator Policies at operation time; they are not hardcoded business defaults.
-- Cross-store authorization and stale-session rejection happen at the owner boundary, not just by disabling the UI. Expected version and stable operation ID make retries safe.
-- No donor data, Root Owner, finance state, shared volumes or production connection is used.
-
-## Testable acceptance
-
-- **SC-01** Real Identity session and DSH Store-scope authorization: correct Merchant and Operator allowed; other Store/role/revoked session denied.
-- **SC-02** DSH persistent Store schedule, pause and method status readback retains version, actor, reason, UTC and selected Store timezone across restart.
-- **SC-03** Derived orderability for published/open eligible Store, closed schedule, pause, blocked method/city/Offer, overnight boundaries and invalid timezone; public published Store remains visible while not orderable.
-- **SC-04** Transactional expected-version concurrency and repeated operation ID produce exactly one durable mutation/audit; reused operation ID with different payload fails.
-- **SC-05** Checkout confirmation uses fresh DSH decision; stale client offer/quote fails and does not create an Order or WLT effect.
-- **SC-06** Merchant, Operator and Customer UI show authoritative data, Arabic RTL with light/dark, accessible inputs, loading/empty/denied/error/retry, and safe account/Store context switching on Web and affected Android.
-- **SC-07** Isolated PostgreSQL fresh baseline, appropriate upgrade/restore proof and owner-scoped permissions, errors and contract/client compatibility pass.
-- **SC-08** Positive, negative, interruption/recovery, security and applicable executor engineering/business evidence review under [AGENTS.md](../../AGENTS.md), required human approvals, plus final Git revision/Push SHA evidence are complete.
-
-**No closure claim** until every applicable SC has actual owner-backed proof on the final revision, including Android when claimed. iOS and production are separately not authorized/tested.
-
-
-## Increment: review and reuse historical city operational limits (2026-11-24)
-
-Trace: BTH-11; STORE_OPERATIONAL_AVAILABILITY; SC-04/SC-06; governance/stores.md and governance/engineering.md. On the active development checkout, an authorized operator can compare an immutable DSH historical version against the currently verified city policy and copy its pause/preparation limits into the existing edit form as an unsubmitted draft. No new policy writer, new scope, historical mutation, implicit reason, automatic save or bypass of current version/identity verification. The draft action is unavailable for another city, the current or a newer version, missing current evidence, a pending/uncertain command or a required reread. The operator must enter a new reason and use the existing versioned DSH command for any actual change. Historical data is not an active policy. Acceptance: correct current/history values, scope isolation, no write on draft, reason cleared and existing expected-version/reconciliation semantics retained; owner/API and browser proof remain separate.
-
-## BTH-15 increment — city delivery policy replacement
-An authorized Operator can replace the current DSH city radius and cumulative distance tariff together using the existing policy owner, an expected current version, a stable operation ID and a reason. Immutable commands attribute actor and retain the resulting snapshot; conflicts, inactive cities, missing evidence and malformed tariffs fail closed. Independent readback must agree or be newer; future geographic/advisory checkout reads use the same version, not a payable WLT quote. No production activation or changed tariff formula.
-
-**SC-HISTORY-PAGING (BTH-11).** An Operator can revisit a newer history page or retry the same page after a failed read. Each action reads the same city through the existing scoped DSH contract. A failed read clears displayed audit rows and draft actions until fresh readback confirms the page.
-
-## BTH-15 / BTH-17 prerequisite — explicit permitted fulfillment mode policy
-An active city has one immutable version stream per Store relation. An authorized Operator with current platform_policies permission explicitly replaces the permitted subset of BTHWANI_CAPTAIN, PARTNER_CAPTAIN and CUSTOMER_PICKUP using expected version, stable operation ID and reason. Version zero means unconfigured with no allowed modes; an explicit empty subset denies all. The relation does not imply a mode, collector or fee. City policy is a ceiling, not per-Store/WLT admission, dispatch readiness, a quote or an Order. No financial or publication state changes. Reject unknown/duplicate modes, stale versions, changed replays, inactive cities, unverified actors and concurrent conflicting writes. Full Store mode admission, accepted WLT terms, checkout confirmation and operator journey remain distinct acceptance criteria.
+Historical original requirements, incremental implementation and exact prior evidence: [immutable feature tree](https://github.com/bthwani2-boop/samrim/tree/f0934d9c73acfbef042c818a600d4e4b32ccf0ac/specs/003-store-orderability). No historical result establishes current acceptance.

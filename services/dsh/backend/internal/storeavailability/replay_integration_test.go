@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -172,7 +173,7 @@ func assertReplayFallbackRechecksOwnership(t *testing.T, ctx context.Context, db
 	t.Helper()
 	// Hold availability so Apply has acquired Store authority but cannot yet
 	// discover its stale expectedVersion. Queue a transfer behind its Store lock.
-	blocker, err := beginScopedStoreTx(ctx, db, schema, nil)
+	blocker, err := dbscope.Begin(ctx, db, schema, nil, "store_operational_availability")
 	if err != nil {
 		t.Fatal(err)
 	}

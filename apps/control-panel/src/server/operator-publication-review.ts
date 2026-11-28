@@ -4,7 +4,7 @@ import { cookies } from "next/headers";
 import { isolatedPublicDshOrigin } from "../features/stores/public-store-query";
 import { isReviewStoreInScope, parsePublicationReviewScope } from "../features/stores/publication-review-query";
 import { currentOperatorAccess } from "./current-operator-access";
-import { OPERATOR_COOKIE } from "./operator-passkey-bff";
+import { OPERATOR_COOKIE } from "./operator-passkey-config";
 
 export async function readOperatorPublicationReview(
   input: Record<string, string | string[] | undefined>, storeId?: string,

@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"mime"
+	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"net/http"
 	"time"
 )
@@ -29,7 +29,7 @@ func (source *PostgresPolicySource) ReadCityDeliveryPolicy(ctx context.Context, 
 	if source == nil || source.db == nil {
 		return CityDeliveryPolicy{}, ErrPolicyUnavailable
 	}
-	tx, err := beginScopedStoreTx(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead})
+	tx, err := dbscope.Begin(ctx, source.db, source.schema, &sql.TxOptions{ReadOnly: true, Isolation: sql.LevelRepeatableRead}, "service_cities", "service_city_delivery_policies")
 	if err != nil {
 		return CityDeliveryPolicy{}, ErrPolicyUnavailable
 	}
@@ -120,11 +120,6 @@ func cityDeliveryPolicyPreviewHandler(identity IdentitySessions, reader CityDeli
 		w.Header().Set("Cache-Control", "no-store")
 		actor, ok := authorizeCityPolicyOperator(w, r, identity)
 		if !ok {
-			return
-		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
-			writeFailure(w, ErrInvalidChange)
 			return
 		}
 		var input struct {
