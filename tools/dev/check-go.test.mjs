@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { admitNativeGoCoverage, admitNativeGoTests, checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, requireModeEnvironment, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
+import { admitNativeGoCoverage, admitNativeGoTests, checkOwners, discoverModules, listGoFiles, parseArgs, parseVersion, prepareSourceGo, requireModeEnvironment, resolvePinnedGo, services, sourceEnvironment, verifyOwnerPhases } from "./check-go.mjs";
 
 test("Go CLI selects only an unambiguous admitted mode and owner", () => {
   assert.deepEqual(parseArgs([]), { mode: "quick", moduleName: undefined, sonarReport: false });
@@ -100,10 +100,30 @@ test("source checks exclude inherited owner data and test selectors, preserve na
   const inherited = { PATH: "tools", GOCACHE: "cache", GOPROXY: "proxy", GOFLAGS: "-run=^Missing$",
     GOENV: "user-config", GOOS: "other", GOARCH: "other", BTHWANI_ISOLATED_TEST_MODE: "true",
     WLT_SANDBOX_DATABASE_URL: "protected", BTHWANI_MERCHANT_TEST_DATABASE_URL: "protected",
-    DSH_DB_HOST: "protected", PGHOST: "protected", IDENTITY_TEST_DATABASE_URL: "protected" };
-  assert.deepEqual(sourceEnvironment(inherited), { PATH: "tools", GOCACHE: "cache", GOPROXY: "proxy",
+    DSH_DB_HOST: "protected", PGHOST: "protected", IDENTITY_TEST_DATABASE_URL: "protected", REF_IDENTITY_ENABLE_CAPTAIN_ADMISSION: "protected", ref_dsh_image_tag: "protected", GOROOT: "other", GOAMD64: "v4", GOCACHEPROG: "external-cache", CGO_ENABLED: "1", GOWORK: "other", GOTOOLCHAIN: "auto", DATABASE_URL: "protected", BTHWANI_CAPTAIN_TEST_DATABASE_URL: "protected", REF_POSTGRES_PASSWORD: "protected" };
+  assert.deepEqual(sourceEnvironment(inherited), { PATH: "tools", GOCACHE: "cache", GOPROXY: "proxy", CGO_ENABLED: "1",
     GOTOOLCHAIN: "local", GOWORK: "off", GOENV: "off", GOFLAGS: "" });
   assert.equal(inherited.GOFLAGS, "-run=^Missing$");
+});
+
+test("source toolchain reads only configured native caches and refuses incomplete cache evidence", () => {
+  const calls = [];
+  const inherited = { PATH: "tools", GOENV: "fixture-config", GOFLAGS: "-run=^OnlyOne$", REF_IDENTITY_ENABLE_CAPTAIN_ADMISSION: "fixture" };
+  const spawn = (executable, args, options) => {
+    calls.push({ executable, args, env: options.env });
+    if (executable === "where.exe") return { status: 0, stdout: "C:\\go\\bin\\go.exe" };
+    if (args[0] === "version") return { status: 0, stdout: "go version go1.27.4 windows/amd64" };
+    return { status: 0, stdout: JSON.stringify({ GOCACHE: "native-build-cache", GOMODCACHE: "native-module-cache" }) };
+  };
+  const { executable, env } = prepareSourceGo("1.27.4", "fixture-root", inherited, spawn, "win32");
+  assert.equal(executable, "C:\\go\\bin\\go.exe");
+  assert.deepEqual(calls.map(call => call.args), [["go"], ["version"], ["env", "-json", "GOCACHE", "GOMODCACHE"]]);
+  assert.equal(calls[2].env.GOENV, "fixture-config");
+  assert.equal(calls[2].env.GOFLAGS, "-mod=readonly");
+  assert.ok(calls.every(call => !Object.hasOwn(call.env, "REF_IDENTITY_ENABLE_CAPTAIN_ADMISSION")));
+  assert.deepEqual(env, { PATH: "tools", GOTOOLCHAIN: "local", GOWORK: "off", GOENV: "off", GOFLAGS: "", GOCACHE: "native-build-cache", GOMODCACHE: "native-module-cache" });
+  assert.throws(() => prepareSourceGo("1.27.4", "fixture-root", inherited, (binary, args, options) =>
+    args[0] === "env" ? { status: 0, stdout: "{}" } : spawn(binary, args, options), "win32"), /Incomplete native Go cache configuration/);
 });
 
 test("owner stages expose independent failures but never execute against failed dependency integrity", () => {
@@ -123,9 +143,9 @@ test("owner stages expose independent failures but never execute against failed 
 
 test("the actual child process receives no inherited Go test selector or owner configuration", () => {
   const result = spawnSync(process.execPath, ["-e",
-    'console.log(JSON.stringify({flags:process.env.GOFLAGS,config:process.env.GOENV,owner:process.env.WLT_SANDBOX_DATABASE_URL,cache:process.env.GOCACHE}))'], {
+    'console.log(JSON.stringify({flags:process.env.GOFLAGS,config:process.env.GOENV,owner:process.env.WLT_SANDBOX_DATABASE_URL,activation:process.env.REF_IDENTITY_ENABLE_CAPTAIN_ADMISSION,cache:process.env.GOCACHE}))'], {
     env: sourceEnvironment({ ...process.env, GOFLAGS: "-run=^TestDoesNotExist$",
-      WLT_SANDBOX_DATABASE_URL: "protected-fixture", GOCACHE: "fixture-cache" }),
+      WLT_SANDBOX_DATABASE_URL: "protected-fixture", REF_IDENTITY_ENABLE_CAPTAIN_ADMISSION: "fixture", GOCACHE: "fixture-cache" }),
     encoding: "utf8", timeout: 10000,
   });
   if (result.error) throw result.error;

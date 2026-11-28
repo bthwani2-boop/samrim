@@ -75,7 +75,7 @@ export function resolvePinnedGo(expected, env = process.env, spawn = spawnSync, 
 export function sourceEnvironment(inherited = process.env) {
   const env = {};
   for (const [key, value] of Object.entries(inherited)) {
-    if (/^(?:BTHWANI_|IDENTITY_|DSH_|WLT_|REF_POSTGRES_|PG[A-Z]|DATABASE_URL$|GOFLAGS$|GOENV$|GOOS$|GOARCH$|GOEXPERIMENT$|GOTOOLCHAIN$|GOWORK$)/i.test(key)) continue;
+    if (/^(?:BTHWANI_|IDENTITY_|DSH_|WLT_|REF_|PG[A-Z]|DATABASE_URL$|GOFLAGS$|GOENV$|GOOS$|GOARCH$|GOEXPERIMENT$|GOTOOLCHAIN$|GOWORK$|GOROOT$|GOCACHEPROG$|GOAMD64$|GO386$|GOARM$|GOARM64$|GOMIPS(?:64)?$|GOPPC64$|GORISCV64$|GOWASM$)/i.test(key)) continue;
     env[key] = value;
   }
   return { ...env, GOTOOLCHAIN: "local", GOWORK: "off", GOENV: "off", GOFLAGS: "" };
@@ -277,9 +277,14 @@ function publishReports(directory, results) {
 
 // Preserve only the installed toolchain's effective cache directories from
 // its existing configuration, not flags, selectors or owner credentials.
-function configuredCaches(executable, root) {
-  const result = spawnSync(executable, ["env", "-json", "GOCACHE", "GOMODCACHE"], {
-    cwd: root, env: { ...process.env, GOTOOLCHAIN: "local", GOWORK: "off", GOFLAGS: "-mod=readonly" },
+function configuredCaches(executable, root, inherited, spawn) {
+  const env = sourceEnvironment(inherited);
+  delete env.GOENV;
+  // Consult native configuration only to resolve the two cache paths.
+  const configured = Object.entries(inherited).find(([key]) => key.toUpperCase() === "GOENV");
+  if (configured) env.GOENV = configured[1];
+  const result = spawn(executable, ["env", "-json", "GOCACHE", "GOMODCACHE"], {
+    cwd: root, env: { ...env, GOFLAGS: "-mod=readonly" },
     encoding: "utf8", windowsHide: true, timeout: 20000,
   });
   if (result.error) throw result.error;
@@ -292,12 +297,17 @@ function configuredCaches(executable, root) {
   return { GOCACHE: caches.GOCACHE, GOMODCACHE: caches.GOMODCACHE };
 }
 
+export function prepareSourceGo(expected, root, inherited = process.env, spawn = spawnSync, platform = process.platform) {
+  const env = sourceEnvironment(inherited);
+  const executable = resolvePinnedGo(expected, env, spawn, platform);
+  return { executable, env: { ...env, ...configuredCaches(executable, root, inherited, spawn) } };
+}
+
 export function main(argv = process.argv.slice(2), root = resolve(fileURLToPath(new URL("../..", import.meta.url)))) {
   const { mode, moduleName, sonarReport } = parseArgs(argv);
   requireModeEnvironment(mode);
   const expected = readFileSync(join(root, ".go-version"), "utf8").trim();
-  const executable = resolvePinnedGo(expected, sourceEnvironment());
-  const env = { ...sourceEnvironment(), ...configuredCaches(executable, root) };
+  const { executable, env } = prepareSourceGo(expected, root);
   if (parseVersion(run(executable, ["version"], root, env, 20000)) !== expected) {
     throw new Error("Go toolchain changed");
   }

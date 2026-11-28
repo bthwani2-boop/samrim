@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sourceIdentity } from "../../tools/dev/docker/owner-preview-source.mjs";
-import { assertSameHashes, differingKeys, isolatedTestEnv, selectOwners } from "../../tools/dev/docker/reconcile-owner-runtime.mjs";
+import { assertSameHashes, differingKeys, selectOwners } from "../../tools/dev/docker/reconcile-owner-runtime.mjs";
 
 test("runtime reconciliation never rebuilds unaffected owners", () => {
   assert.deepEqual(selectOwners({ candidates: [], activateCaptain: false, currentCaptain: true }), []);
@@ -29,12 +29,13 @@ test("configuration comparison refuses drift without leaking values or retrying 
   });
 });
 
-test("reconciler reuses the pinned Go resolver and guards its source", async () => {
+test("reconciler consumes the single native Go test environment and guards its source", async () => {
   const { readFileSync } = await import("node:fs");
   const runner = readFileSync(new URL("../../tools/dev/docker/reconcile-owner-runtime.mjs", import.meta.url), "utf8");
   const watcher = readFileSync(new URL("../../tools/dev/sync-lenovo-source.mjs", import.meta.url), "utf8");
-  assert.match(runner, /import \{ admitNativeGoTests, resolvePinnedGo \} from "\.\.\/check-go\.mjs"/);
-  assert.match(runner, /const goExecutable=resolvePinnedGo\(pin,testEnv\)/);
+  assert.match(runner, /import \{ admitNativeGoTests, prepareSourceGo \} from "\.\.\/check-go\.mjs"/);
+  assert.match(runner, /const \{executable:goExecutable,env:testEnv\}=prepareSourceGo\(pin,root\)/);
+  assert.doesNotMatch(runner, /isolatedTestEnv|GOFLAGS|GOENV|GOWORK/);
   assert.match(runner, /const outcome=admitNativeGoTests\(go.stdout\|\|""\)/);
   assert.doesNotMatch(runner, /readFileSync\(resolve\(root,"\.go-version"\)/);
   assert.match(runner, /spawnSync\(goExecutable,\["test"/);
@@ -44,10 +45,6 @@ test("reconciler reuses the pinned Go resolver and guards its source", async () 
   const sqlProof = readFileSync(new URL("./verify-isolated-postgres.ps1", import.meta.url), "utf8");
   assert.match(sqlProof, /resolvePinnedGo\(readFileSync\("\.go-version","utf8"\)\.trim\(\)\)/);
   assert.match(sqlProof, /& \$goExecutable test -c/);
-});
-
-test("owner tests cannot inherit live database or synthetic activation configuration", () => {
-  assert.deepEqual(isolatedTestEnv({ PATH:"toolchain", BTHWANI_ISOLATED_TEST_MODE:"true", BTHWANI_CAPTAIN_TEST_DATABASE_URL:"private", REF_POSTGRES_PASSWORD:"private", PGHOST:"private", DATABASE_URL:"private", GOTOOLCHAIN:"auto" }), {PATH:"toolchain",GOTOOLCHAIN:"local"});
 });
 
 test("preview provenance is distinct from an accepted Git source SHA",()=>{

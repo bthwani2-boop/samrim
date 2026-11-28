@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { admitNativeGoTests, resolvePinnedGo } from "../check-go.mjs";
+import { admitNativeGoTests, prepareSourceGo } from "../check-go.mjs";
 import { acknowledgeRuntimeAttempt, acknowledgeRuntimeRecovery, recordRuntimePhase, runtimeAttemptPhase, runtimeFailureStatus, runtimeReceiptStatus, runtimeTerminalStatus, VerifiedRuntimeRollback } from "../sync-lenovo-reconciliation.mjs";
 import { reconcileComposeConfiguration } from "./compose-runtime-transition.mjs";
 import { buildOwnerBaselineTransition, ownerDatabaseScope, transitionScope, wltCommandRoleInactiveSQL } from "./owner-baseline-transition.mjs";
@@ -192,9 +192,7 @@ function validateVolumeFiles(headTag) {
     docker(["run","--rm","--pull","never","--network","none","--read-only","--cap-drop","ALL","--security-opt","no-new-privileges:true","--user","65532:65532","--mount","type=volume,src="+volume+",dst=/proof,readonly","--entrypoint","/bin/sh","bthwani-refoundation-dsh:"+headTag,"-c",paths.map(p=>"test -s "+p+" && test -r "+p).join(" && ")]);
   }
 }
-export function isolatedTestEnv(env) {
-  return {...Object.fromEntries(Object.entries(env).filter(([k]) => !/^(BTHWANI_|DSH_|IDENTITY_|WLT_|REF_|PG[A-Z]|DATABASE_URL$)/i.test(k))), GOTOOLCHAIN:"local"};
-}
+
 // This is a preparation proof only, not permission to switch a retained
 // namespace. Reuse the existing network-disabled PostgreSQL rehearsal.
 export function baselineProofOwners({apply,prepare,blocked,dirtyInputs}) {
@@ -618,8 +616,7 @@ function main() {
       const service=staged.dir;
       verifyMaterializedOwner(service,snapshot);
       const pin=snapshotGoVersion(snapshot);
-      const testEnv={...isolatedTestEnv(process.env),GOWORK:"off"};
-      const goExecutable=resolvePinnedGo(pin,testEnv);
+      const {executable:goExecutable,env:testEnv}=prepareSourceGo(pin,root);
       const go=spawnSync(goExecutable,["test","-json","-count=1","./..."],{cwd:resolve(service,"backend"),encoding:"utf8",windowsHide:true,timeout:120000,maxBuffer:16*1024*1024,env:testEnv});
       if(go.error||go.signal||go.status!==0){
         const names=[];
