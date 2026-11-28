@@ -452,41 +452,64 @@ function Get-AppHttpTargets {
     @{A='customer';Kind='expo-web';U="http://127.0.0.1:$($developmentPorts.apps.customer.surface)/stores"},
     @{A='merchant';Kind='expo-web';U="http://127.0.0.1:$($developmentPorts.apps.merchant.surface)/"},
     @{A='captain-metro';Kind='metro';U="http://127.0.0.1:$($developmentPorts.apps.captain.surface)/status"},
-    @{A='control-panel';Kind='web';U="http://127.0.0.1:$($developmentPorts.apps.'control-panel'.surface)/"}
+    @{A='control-panel';Kind='web';U="http://localhost:$($developmentPorts.apps.'control-panel'.surface)/"}
   )
 }
 function Test-AppHttpTarget {
-  param([hashtable]$Target,[int]$TimeoutSec=7,[int]$MaxAttempts=1,[int]$RetryDelayMs=250)
-  # A successful exchange is not necessarily the expected application protocol.
+  param([hashtable]$Target,[ValidateRange(1,45)][int]$TimeoutSec=7,[ValidateRange(1,10)][int]$MaxAttempts=1,[ValidateRange(0,5000)][int]$RetryDelayMs=250)
   if($Target.Kind -cnotin @('metro','expo-web','web')){throw 'APP_PROBE_KIND_INVALID'}
+  $uri=$null
+  if(-not [Uri]::TryCreate([string]$Target.U,[UriKind]::Absolute,[ref]$uri) -or
+    $uri.Scheme -cne 'http' -or $uri.Host -cnotin @('127.0.0.1','localhost') -or
+    $uri.IsDefaultPort -or $uri.Port -lt 1 -or $uri.UserInfo -or $uri.Query -or $uri.Fragment){
+    throw 'APP_PROBE_TARGET_INVALID'
+  }
   $timer=[Diagnostics.Stopwatch]::StartNew()
   $lastFailure='UNKNOWN'
   for($attempt=1;$attempt -le $MaxAttempts;$attempt++){
     try {
-      $response=Invoke-WebRequest -UseBasicParsing -Uri $Target.U -TimeoutSec $TimeoutSec -SkipHttpErrorCheck -ErrorAction Stop
-      # Metro's status response may lack Content-Type; PowerShell then returns bytes.
+      # Observe the selected local application directly: neither proxy nor redirect is readiness.
+      $response=Invoke-WebRequest -UseBasicParsing -Uri $uri.AbsoluteUri -TimeoutSec $TimeoutSec -SkipHttpErrorCheck -MaximumRedirection 0 -NoProxy -ErrorAction Stop
       $body=if($response.Content -is [byte[]]){[Text.Encoding]::UTF8.GetString($response.Content)}else{[string]$response.Content}
-      # Preserve the known SSR failure even if a later response could recover.
-      if($Target.Kind -ceq 'expo-web' -and
-        $body -match 'Requiring unknown module' -and
+      if($Target.Kind -ceq 'expo-web' -and $body -match 'Requiring unknown module' -and
         $body -match 'unknownModuleError|Server Error|metroRequire'){
         return @{Success=$false;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error='EXPO_UNKNOWN_MODULE'}
       }
       if($response.StatusCode -eq 200){
-        if($Target.Kind -ceq 'metro'){
-          if($body -cne 'packager-status:running'){
-            return @{Success=$false;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error='METRO_STATUS_MISMATCH'}
+        # HTTP Content-Type is a singleton. Parse the native field rather than matching a prefix.
+        $types=@($response.Headers['Content-Type'] | Where-Object {$null -ne $_})
+        $media=$null
+        $validType=$types.Count -eq 1 -and [Net.Http.Headers.MediaTypeHeaderValue]::TryParse([string]$types[0],[ref]$media)
+        if($validType){
+          $parameterNames=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+          foreach($parameter in $media.Parameters){
+            if([string]::IsNullOrEmpty($parameter.Value) -or !$parameterNames.Add($parameter.Name)){
+              $validType=$false
+              break
+            }
           }
-        } elseif(([string]$response.Headers['Content-Type']) -notmatch '^text/html(?:\s*;|$)' -or [string]::IsNullOrWhiteSpace($body)){
-          return @{Success=$false;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error='WEB_DOCUMENT_MISMATCH'}
         }
-        return @{Success=$true;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=''}
+        $failure=''
+        if($Target.Kind -ceq 'metro'){
+          if($body -cne 'packager-status:running' -or ($types.Count -ne 0 -and
+            (-not $validType -or $media.MediaType -ine 'text/plain'))){$failure='METRO_STATUS_MISMATCH'}
+        } elseif(-not $validType -or $media.MediaType -ine 'text/html' -or [string]::IsNullOrWhiteSpace($body)){
+          $failure='WEB_DOCUMENT_MISMATCH'
+        }
+        return @{Success=($failure -eq '');Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error=$failure}
       }
-      $lastFailure='HTTP_'+$response.StatusCode
+      $lastFailure='HTTP_'+[int]$response.StatusCode
     } catch {
       $exception=$_.Exception
-      $lastFailure=if($exception -is [Threading.Tasks.TaskCanceledException] -or
-        $exception.InnerException -is [Threading.Tasks.TaskCanceledException]){'TIMEOUT'}else{$exception.GetType().Name}
+      $responseProperty=$exception.PSObject.Properties['Response']
+      if($_.FullyQualifiedErrorId -ceq 'MaximumRedirectExceeded,Microsoft.PowerShell.Commands.InvokeWebRequestCommand'){
+        $lastFailure='HTTP_REDIRECT'
+      } elseif($responseProperty -and $responseProperty.Value -and $responseProperty.Value.PSObject.Properties['StatusCode']){
+        $lastFailure='HTTP_'+[int]$responseProperty.Value.StatusCode
+      } else {
+        $lastFailure=if($exception -is [Threading.Tasks.TaskCanceledException] -or
+          $exception.InnerException -is [Threading.Tasks.TaskCanceledException]){'TIMEOUT'}else{$exception.GetType().Name}
+      }
     }
     if($attempt -lt $MaxAttempts -and $RetryDelayMs -gt 0){Start-Sleep -Milliseconds $RetryDelayMs}
   }
