@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/identity/backend/internal/session"
@@ -57,16 +59,22 @@ func main() {
 		}
 		log.Fatal("unknown Identity startup mode")
 	}
+	if err := runIdentity(verifyOnly); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func runIdentity(verifyOnly bool) error {
 	// Isolated development only. Direct Merchant admission still requires
 	// a verified Customer session.
 	schema := os.Getenv("IDENTITY_DB_SCHEMA")
 	if os.Getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" ||
 		!session.IsIsolatedTestSchema(schema) {
-		log.Fatal("Identity verifier denied outside isolated synthetic development")
+		return errors.New("Identity verifier denied outside isolated synthetic development")
 	}
 	databaseURL := os.Getenv("IDENTITY_TEST_DATABASE_URL")
 	if databaseURL == "" {
-		log.Fatal("Identity isolated database connection unavailable")
+		return errors.New("Identity isolated database connection unavailable")
 	}
 	address := os.Getenv("IDENTITY_DEV_LISTEN_ADDR")
 	if address == "" {
@@ -75,19 +83,19 @@ func main() {
 	if !allowedDevelopmentListen(address,
 		os.Getenv("BTHWANI_ISOLATED_TEST_MODE"),
 		os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), schema) {
-		log.Fatal("Identity development listener requires loopback or explicitly isolated Docker")
+		return errors.New("Identity development listener requires loopback or explicitly isolated Docker")
 	}
 	tlsConfig, err := isolatedVerifierTLS(
 		os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), schema,
 		os.Getenv("IDENTITY_ISOLATED_VERIFIER_TLS_CERT"), os.Getenv("IDENTITY_ISOLATED_VERIFIER_TLS_KEY"),
 	)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	db, err := sql.Open("postgres", databaseURL)
 	if err != nil {
-		log.Fatal("Identity database driver unavailable")
+		return errors.New("Identity database driver unavailable")
 	}
 	defer db.Close()
 	db.SetMaxOpenConns(6)
@@ -95,33 +103,33 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
 	defer cancel()
 	if err = db.PingContext(ctx); err != nil {
-		log.Fatal("Identity isolated database unreachable")
+		return errors.New("Identity isolated database unreachable")
 	}
 	if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true" || verifyOnly {
 		if err = session.VerifyDevelopmentRuntime(ctx, db, schema); err != nil {
-			log.Fatal(err)
+			return err
 		}
 	}
 	if verifyOnly {
 		fmt.Println("IDENTITY_DEVELOPMENT_DATABASE_PASS")
-		return
+		return nil
 	}
 	reader, err := session.NewPostgresReader(db, schema)
 	if err != nil {
-		log.Fatal("Identity scope invalid")
+		return errors.New("Identity scope invalid")
 	}
 	routes := http.NewServeMux()
 	routes.Handle("/health", isolatedHealthHandler(db))
 	if os.Getenv("IDENTITY_SYNTHETIC_PHONE_AUTH") == "true" {
 		ca, err := os.ReadFile(os.Getenv("IDENTITY_SYNTHETIC_PHONE_SMTP_CA"))
 		if err != nil {
-			log.Fatal("Identity synthetic phone SMTP trust unavailable")
+			return errors.New("Identity synthetic phone SMTP trust unavailable")
 		}
 		phone, err := session.NewCustomerPhoneHandler(reader,
 			os.Getenv("IDENTITY_SYNTHETIC_PHONE_HMAC_KEY"), os.Getenv("IDENTITY_SYNTHETIC_PHONE_SMTP"),
 			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true", os.Getenv("IDENTITY_SYNTHETIC_YEMEN_PHONES"), ca)
 		if err != nil {
-			log.Fatal("Identity synthetic phone verification misconfigured")
+			return errors.New("Identity synthetic phone verification misconfigured")
 		}
 		routes.Handle(session.PhoneChallengePath, phone)
 		routes.Handle(session.PhoneVerifyPath, phone)
@@ -135,7 +143,7 @@ func main() {
 			standing, err = session.NewCaptainStandingHTTP(os.Getenv("IDENTITY_DSH_CAPTAIN_STANDING_URL"))
 		}
 		if err != nil {
-			log.Fatal("Captain role admission requires a verified DSH standing owner: ", err)
+			return fmt.Errorf("Captain role admission requires a verified DSH standing owner: %w", err)
 		}
 		captain := session.NewCaptainHandler(session.NewCaptainAdmission(reader, standing))
 		routes.Handle(session.CaptainAdmitPath, captain)
@@ -157,7 +165,7 @@ func main() {
 		policy := operatorPasskeyOriginPolicy()
 		auth, err := session.NewOperatorPasskeyAuth(reader, policy, true)
 		if err != nil {
-			log.Fatal("Operator WebAuthn isolated relying-party configuration rejected")
+			return errors.New("Operator WebAuthn isolated relying-party configuration rejected")
 		}
 		handler := session.NewOperatorPasskeyHandler(auth)
 		routes.Handle(session.OperatorPasskeyOptionsPath, handler)
@@ -167,18 +175,18 @@ func main() {
 		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" {
 			localDevelopment := os.Getenv("IDENTITY_ENABLE_LOCAL_DEV_FIRST_OPERATOR") == "true"
 			if !policy.AllowsInitialOperatorBootstrap() {
-				log.Fatal("initial Operator bootstrap requires one approved WebAuthn origin")
+				return errors.New("initial Operator bootstrap requires one approved WebAuthn origin")
 			}
 			if localDevelopment {
 				if os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") != "true" ||
 					!isLocalDevelopmentFirstOperatorDatabase(ctx, db, schema) {
-					log.Fatal("local First Operator requires exact authorized development database and schema")
+					return errors.New("local First Operator requires exact authorized development database and schema")
 				}
 				if err := auth.AllowLocalDevelopmentFirstOwner(); err != nil {
-					log.Fatal("local First Operator guard refused")
+					return errors.New("local First Operator guard refused")
 				}
 			} else if !isInitialOperatorDatabase(ctx, db) {
-				log.Fatal("initial Operator bootstrap requires the disposable WebAuthn database")
+				return errors.New("initial Operator bootstrap requires the disposable WebAuthn database")
 			}
 			initial := session.NewOperatorInitialRegistrationHandler(auth)
 			routes.Handle(session.OperatorInitialRegistrationOptionsPath, initial)
@@ -189,7 +197,7 @@ func main() {
 		// it has no issuer, role creation, grant or session-issuance capability.
 		if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY") == "true" {
 			if !policy.AllowsInitialOperatorBootstrap() || !isInitialOperatorDatabase(ctx, db) {
-				log.Fatal("Operator recovery requires the exact isolated localhost WebAuthn origin and disposable database")
+				return errors.New("Operator recovery requires the exact isolated localhost WebAuthn origin and disposable database")
 			}
 			recovery := session.NewOperatorPasskeyRecoveryHandler(auth)
 			routes.Handle(session.OperatorPasskeyRecoveryOptionsPath, recovery)
@@ -197,7 +205,7 @@ func main() {
 		}
 	} else if os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_BOOTSTRAP") == "true" ||
 		os.Getenv("IDENTITY_ENABLE_ISOLATED_OPERATOR_PASSKEY_RECOVERY") == "true" {
-		log.Fatal("Operator bootstrap/recovery requires the isolated WebAuthn owner")
+		return errors.New("Operator bootstrap/recovery requires the isolated WebAuthn owner")
 	}
 	// Persistent device sessions are issued and rotated only by canonical Identity.
 	persistent := session.NewPersistentSessionHandler(reader)
@@ -205,29 +213,96 @@ func main() {
 	routes.Handle(session.PersistentRefreshPath, persistent)
 	verifier := session.NewHandler(session.NewVerifier(reader))
 	routes.Handle("/", verifier)
-	if tlsConfig != nil {
-		// DSH verifies sessions and effective Operator scopes over private TLS.
-		secureRoutes := http.NewServeMux()
-		secureRoutes.Handle("GET /v1/sessions/current", verifier)
-		secureRoutes.Handle("GET /v1/operators/me/permissions/{permission}", verifier)
-		secureServer := &http.Server{
-			Handler: secureRoutes, TLSConfig: tlsConfig,
-			ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second, WriteTimeout: 6 * time.Second,
-			IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
-		}
-		listener, err := net.Listen("tcp", "0.0.0.0:3343")
-		if err != nil {
-			log.Fatal("Identity isolated TLS listener unavailable")
-		}
-		go func() {
-			log.Fatal(secureServer.ServeTLS(listener, "", ""))
-		}()
-	}
 	server := &http.Server{
 		Addr: address, Handler: routes,
 		ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second, WriteTimeout: 6 * time.Second,
 		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
 	}
+	servers := []*http.Server{server}
+	if tlsConfig != nil {
+		// The private TLS listener exposes only the two existing verifier reads.
+		secureRoutes := http.NewServeMux()
+		secureRoutes.Handle("GET /v1/sessions/current", verifier)
+		secureRoutes.Handle("GET /v1/operators/me/permissions/{permission}", verifier)
+		servers = append(servers, &http.Server{
+			Addr: "0.0.0.0:3343", Handler: secureRoutes, TLSConfig: tlsConfig,
+			ReadHeaderTimeout: 4 * time.Second, ReadTimeout: 6 * time.Second, WriteTimeout: 6 * time.Second,
+			IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
+		})
+	}
+	// A single process owns both listeners and retains the database until
+	// both have drained. Compose's default stop deadline is ten seconds.
+	lifetime, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	endpoints, err := bindIdentityListeners(lifetime, servers)
+	if err != nil {
+		return err
+	}
 	log.Printf("Identity isolated session verifier listening (no production admission)")
-	log.Fatal(server.ListenAndServe())
+	return serveIdentityListeners(lifetime, endpoints, 8*time.Second)
+}
+
+type identityListener struct {
+	server *http.Server
+	socket net.Listener
+}
+
+// All sockets must bind before any serving goroutine is started.
+func bindIdentityListeners(ctx context.Context, servers []*http.Server) ([]identityListener, error) {
+	endpoints := make([]identityListener, 0, len(servers))
+	var lc net.ListenConfig
+	for _, server := range servers {
+		socket, err := lc.Listen(ctx, "tcp", server.Addr)
+		if err != nil {
+			for _, endpoint := range endpoints {
+				_ = endpoint.socket.Close()
+			}
+			return nil, fmt.Errorf("Identity listener unavailable: %w", err)
+		}
+		endpoints = append(endpoints, identityListener{server: server, socket: socket})
+	}
+	return endpoints, nil
+}
+
+func serveIdentityListeners(ctx context.Context, endpoints []identityListener, grace time.Duration) error {
+	results := make(chan error, len(endpoints))
+	for _, endpoint := range endpoints {
+		go func() {
+			if endpoint.server.TLSConfig != nil {
+				results <- endpoint.server.ServeTLS(endpoint.socket, "", "")
+			} else {
+				results <- endpoint.server.Serve(endpoint.socket)
+			}
+		}()
+	}
+	remaining := len(endpoints)
+	var failure error
+	select {
+	case <-ctx.Done():
+	case err := <-results:
+		remaining--
+		// No shutdown has been requested by this owner yet.
+		failure = fmt.Errorf("Identity listener exited unexpectedly: %w", err)
+	}
+	drain, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	shutdown := make(chan error, len(endpoints))
+	for _, endpoint := range endpoints {
+		go func() {
+			err := endpoint.server.Shutdown(drain)
+			if err != nil {
+				err = errors.Join(err, endpoint.server.Close())
+			}
+			shutdown <- err
+		}()
+	}
+	for range endpoints {
+		failure = errors.Join(failure, <-shutdown)
+	}
+	for range remaining {
+		if err := <-results; !errors.Is(err, http.ErrServerClosed) {
+			failure = errors.Join(failure, err)
+		}
+	}
+	return failure
 }

@@ -1,6 +1,15 @@
 package main
 
-import "testing"
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+)
 
 func TestIsolatedVerifierTLSRequiresExplicitFilesAndScope(t *testing.T) {
 	if cfg, err := isolatedVerifierTLS("", "", "", "", ""); err != nil || cfg != nil {
@@ -44,5 +53,177 @@ func TestIsolatedDevelopmentListenerGate(t *testing.T) {
 				t.Fatalf("listener gate got %t want %t", actual, tc.allowed)
 			}
 		})
+	}
+}
+
+func awaitIdentityTest[T any](t *testing.T, ch <-chan T) T {
+	t.Helper()
+	select {
+	case value := <-ch:
+		return value
+	case <-time.After(5 * time.Second):
+		t.Fatal("listener lifecycle timed out")
+		var zero T
+		return zero
+	}
+}
+
+func TestIdentityListenersDrainHTTPAndTLS(t *testing.T) {
+	template := httptest.NewTLSServer(http.NotFoundHandler())
+	client := template.Client()
+	client.Timeout = 5 * time.Second
+	tlsConfig := template.TLS.Clone()
+	template.Close()
+	defer client.CloseIdleConnections()
+	entered := make(chan struct{}, 2)
+	draining := make(chan struct{}, 2)
+	release := make(chan struct{})
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		entered <- struct{}{}
+		select {
+		case <-release:
+			_, _ = io.WriteString(w, "completed")
+		case <-r.Context().Done():
+		}
+	})
+	servers := []*http.Server{
+		{Addr: "127.0.0.1:0", Handler: handler},
+		{Addr: "127.0.0.1:0", Handler: handler, TLSConfig: tlsConfig},
+	}
+	for _, server := range servers {
+		server.RegisterOnShutdown(func() { draining <- struct{}{} })
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	endpoints, err := bindIdentityListeners(ctx, servers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- serveIdentityListeners(ctx, endpoints, 3*time.Second) }()
+	type reply struct {
+		body string
+		err  error
+	}
+	replies := make(chan reply, 2)
+	for i, endpoint := range endpoints {
+		scheme := "http://"
+		if i == 1 {
+			scheme = "https://"
+		}
+		go func() {
+			response, err := client.Get(scheme + endpoint.socket.Addr().String())
+			if err != nil {
+				replies <- reply{err: err}
+				return
+			}
+			defer response.Body.Close()
+			body, err := io.ReadAll(response.Body)
+			replies <- reply{body: string(body), err: err}
+		}()
+	}
+	awaitIdentityTest(t, entered)
+	awaitIdentityTest(t, entered)
+	cancel()
+	awaitIdentityTest(t, draining)
+	awaitIdentityTest(t, draining)
+	for _, endpoint := range endpoints {
+		conn, err := net.DialTimeout("tcp", endpoint.socket.Addr().String(), time.Second)
+		if err == nil {
+			conn.Close()
+			t.Fatal("new connection admitted during shutdown")
+		}
+	}
+	select {
+	case err := <-done:
+		t.Fatalf("returned before active requests finished: %v", err)
+	default:
+	}
+	close(release)
+	for range endpoints {
+		got := awaitIdentityTest(t, replies)
+		if got.err != nil || got.body != "completed" {
+			t.Fatalf("active request was interrupted: %+v", got)
+		}
+	}
+	if err := awaitIdentityTest(t, done); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestIdentityListenerBindFailureReleasesPriorSocket(t *testing.T) {
+	reserved, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := reserved.Addr().String()
+	reserved.Close()
+	servers := []*http.Server{{Addr: address}, {Addr: address}}
+	if endpoints, err := bindIdentityListeners(context.Background(), servers); err == nil || endpoints != nil {
+		t.Fatal("partial listener bind admitted")
+	}
+	socket, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatal("first listener leaked after second bind failed:", err)
+	}
+	socket.Close()
+}
+
+func TestIdentityListenerDeadlineClosesActiveConnection(t *testing.T) {
+	entered := make(chan struct{})
+	cancelled := make(chan struct{})
+	server := &http.Server{Addr: "127.0.0.1:0", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-r.Context().Done()
+		close(cancelled)
+	})}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	endpoints, err := bindIdentityListeners(ctx, []*http.Server{server})
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- serveIdentityListeners(ctx, endpoints, 100*time.Millisecond) }()
+	client := &http.Client{Timeout: 5 * time.Second}
+	defer client.CloseIdleConnections()
+	reply := make(chan error, 1)
+	go func() {
+		response, err := client.Get("http://" + endpoints[0].socket.Addr().String())
+		if response != nil {
+			response.Body.Close()
+		}
+		reply <- err
+	}()
+	awaitIdentityTest(t, entered)
+	cancel()
+	if err := awaitIdentityTest(t, done); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("deadline failure was not reported: %v", err)
+	}
+	awaitIdentityTest(t, cancelled)
+	if err := awaitIdentityTest(t, reply); err == nil {
+		t.Fatal("connection remained open beyond the deadline")
+	}
+}
+
+func TestIdentityListenerUnexpectedExitClosesPeer(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	endpoints, err := bindIdentityListeners(ctx, []*http.Server{{Addr: "127.0.0.1:0"}, {Addr: "127.0.0.1:0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoints[1].socket.Close()
+	done := make(chan error, 1)
+	go func() { done <- serveIdentityListeners(ctx, endpoints, time.Second) }()
+	if err := awaitIdentityTest(t, done); err == nil {
+		t.Fatal("unexpected listener failure accepted")
+	}
+	for _, endpoint := range endpoints {
+		conn, err := net.DialTimeout("tcp", endpoint.socket.Addr().String(), time.Second)
+		if err == nil {
+			conn.Close()
+			t.Fatal("peer listener leaked after failure")
+		}
 	}
 }
