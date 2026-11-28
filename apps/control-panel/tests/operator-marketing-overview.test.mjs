@@ -95,7 +95,7 @@ test("Marketing market view uses DSH public owner responses and fails closed on 
       },
     },
     "../operator-shell/operator-shell.module.css": { sectionGrid: "grid", sectionCard: "card" },
-    "../stores/public-store-query": { resolvePublicDshOrigin: () => "http://127.0.0.1:23202" },
+    "../stores/public-store-query": { isolatedPublicDshOrigin: () => "http://127.0.0.1:23202" },
     "./operator-home-city": { parseOperatorHomeCity },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   });
@@ -136,7 +136,7 @@ test("market metrics distinguish complete owner category totals, page coverage a
       },
     },
     "../operator-shell/operator-shell.module.css": { sectionGrid: "grid", sectionCard: "card" },
-    "../stores/public-store-query": { resolvePublicDshOrigin: () => "http://127.0.0.1:23202" },
+    "../stores/public-store-query": { isolatedPublicDshOrigin: () => "http://127.0.0.1:23202" },
     "./operator-home-city": { parseOperatorHomeCity },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   });

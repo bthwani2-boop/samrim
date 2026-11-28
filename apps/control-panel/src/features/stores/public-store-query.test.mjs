@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { isolatedPublicDshOrigin, parsePublicStoreBrowse, publicStorePageHref, resolvePublicDshOrigin } from "./public-store-query.ts";
+import { isolatedPublicDshOrigin, parsePublicStoreBrowse, publicStorePageHref } from "./public-store-query.ts";
 
 test("Operator ID fields enforce the owner format with the browser's Unicode Sets syntax", () => {
   for (const route of [
@@ -69,11 +69,11 @@ test("DSH public-read origin is restricted to an explicitly configured local hos
   }
 });
 
-test("only development may use the fixed isolated DSH loopback fallback", () => {
-  assert.equal(resolvePublicDshOrigin(undefined, "development"), "http://127.0.0.1:3202");
-  assert.equal(resolvePublicDshOrigin(undefined, "production"), null);
-  assert.equal(resolvePublicDshOrigin("http://evil.example:3202", "development"), null);
-  assert.equal(resolvePublicDshOrigin("http://127.0.0.1:3202", "production"), "http://127.0.0.1:3202");
+test("a missing or invalid DSH origin fails closed without a development fallback", () => {
+  for (const value of [undefined, "", "http://evil.example:3202", "http://127.0.0.1:3202/", "http://127.1:3202"]) {
+    assert.equal(isolatedPublicDshOrigin(value), null);
+  }
+  assert.equal(isolatedPublicDshOrigin("http://127.0.0.1:3202"), "http://127.0.0.1:3202");
 });
 
 test("public directory and catalog preserve the DSH Unicode search scope and reject non-own parameters", async () => {

@@ -3,8 +3,8 @@ import {
 } from "@bthwani/dsh";
 import styles from "../../../../../src/features/operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../../../../../src/features/operator-shell/workspace-unavailable";
-import {
-  parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref, resolvePublicDshOrigin,
+import {isolatedPublicDshOrigin,
+  parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref,
 } from "../../../../../src/features/stores/public-store-query";
 import { currentOperatorAccess } from "../../../../../src/server/current-operator-access";
 
@@ -30,7 +30,7 @@ export default async function PublicStoreOffers({
 
   const { storeId } = await params;
   const scope = parsePublicStoreDetail(storeId, await searchParams);
-  const owner = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
+  const owner = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
   let store: PublicStore | null = null;
   let offers: PublicPage<PublicOffer> | null = null;
   let error = "";

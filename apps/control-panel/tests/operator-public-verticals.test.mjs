@@ -49,7 +49,7 @@ function harness({ permitted = true, failVertical = false, failStores = false } 
     "../../../../src/features/operator-shell/operator-shell.module.css": { workspace: "workspace" },
     "../../../../src/features/operator-shell/workspace-unavailable": () => null,
     "../../../../src/features/stores/public-store-query": {
-      ...query, resolvePublicDshOrigin: () => "http://127.0.0.1:3202",
+      ...query, isolatedPublicDshOrigin: () => "http://127.0.0.1:3202",
     },
     "../../../../src/server/current-operator-access": {
       currentOperatorAccess: async () => permitted ? { grants: ["merchant"] } : null,

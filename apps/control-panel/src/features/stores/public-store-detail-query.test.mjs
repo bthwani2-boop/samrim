@@ -10,7 +10,7 @@ import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 
-import { parsePublicStoreBrowse, parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref, resolvePublicDshOrigin } from "./public-store-query.ts";
+import { isolatedPublicDshOrigin, parsePublicStoreBrowse, parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref } from "./public-store-query.ts";
 
 test("store detail links preserve the scoped city and encoded search without an arbitrary destination", () => {
   const detail = parsePublicStoreDetail("market-sanaa", { city: "sanaa", q: " مخبز ", cursor: "Ab_20" });
@@ -82,7 +82,7 @@ test("Operator detail sends the Offer filter to DSH and keeps it in the next pag
       "../../../../../src/features/operator-shell/operator-shell.module.css": { __esModule: true, default: {} },
       "../../../../../src/features/operator-shell/workspace-unavailable": { __esModule: true, default: "Unavailable" },
       "../../../../../src/server/current-operator-access": { currentOperatorAccess: async () => ({ grants }) },
-      "../../../../../src/features/stores/public-store-query": { parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref, resolvePublicDshOrigin },
+      "../../../../../src/features/stores/public-store-query": { parsePublicStoreDetail, publicStoreDetailHref, publicStorePageHref, isolatedPublicDshOrigin },
       "@bthwani/dsh": {
         getPublicStore: async (_origin, id) => ({ id, name: "مخبز", cityId: "sanaa", verticalId: "grocery", orderabilityStatus: "OPEN_FOR_ORDERS" }),
         listPublicOffers: async (_origin, id, options) => { calls.push([id, options.query, options.cursor]);

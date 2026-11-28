@@ -1,7 +1,7 @@
 import type { PublicPage, PublicStore, PublicVertical } from "@bthwani/dsh";
 import { listPublicCities, listPublicStores, listPublicVerticals } from "@bthwani/dsh";
 import styles from "../operator-shell/operator-shell.module.css";
-import { parsePublicStoreBrowse, resolvePublicDshOrigin } from "../stores/public-store-query";
+import { isolatedPublicDshOrigin, parsePublicStoreBrowse } from "../stores/public-store-query";
 import { parseOperatorHomeCity } from "./operator-home-city";
 
 const orderabilityLabels: Record<PublicStore["orderabilityStatus"], string> = {
@@ -95,7 +95,7 @@ export default async function PublicMarketOverview({ searchParams, canVisitStore
     if (cursor) query.set("storeCursor", cursor);
     return `${action}?${query.toString()}`;
   }
-  const origin = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
+  const origin = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
   const reads: MarketReads = { cities: null, stores: null, verticals: null };
   let citiesError = "";
   let storesError = "";

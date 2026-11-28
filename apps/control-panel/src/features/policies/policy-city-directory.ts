@@ -1,5 +1,5 @@
 import { listPublicCities } from "@bthwani/dsh";
-import { resolvePublicDshOrigin } from "../stores/public-store-query";
+import { isolatedPublicDshOrigin } from "../stores/public-store-query";
 
 export type PolicyCityDirectory = Readonly<{
   cities: readonly { value: string; label: string }[];
@@ -13,7 +13,7 @@ const pageBudget = 10;
 // A directory is published only after a complete, live, single-revision read.
 export async function loadPolicyCities(): Promise<PolicyCityDirectory> {
   const unavailable: PolicyCityDirectory = { cities: [], status: "unavailable" };
-  const origin = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
+  const origin = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
   if (!origin) return unavailable;
 
   const signal = AbortSignal.timeout(5000);

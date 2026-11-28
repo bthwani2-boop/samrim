@@ -1,8 +1,8 @@
 import { listPublicStores, listPublicVerticals, type PublicPage, type PublicStore, type PublicVertical } from "@bthwani/dsh";
 import styles from "../../../../src/features/operator-shell/operator-shell.module.css";
 import WorkspaceUnavailable from "../../../../src/features/operator-shell/workspace-unavailable";
-import {
-  parsePublicStoreBrowse, publicStoreDetailHref, publicStorePageHref, resolvePublicDshOrigin,
+import {isolatedPublicDshOrigin,
+  parsePublicStoreBrowse, publicStoreDetailHref, publicStorePageHref,
 } from "../../../../src/features/stores/public-store-query";
 import { currentOperatorAccess } from "../../../../src/server/current-operator-access";
 
@@ -25,7 +25,7 @@ export default async function PublicStoresMonitor({
   }
 
   const scope = parsePublicStoreBrowse(await searchParams);
-  const owner = resolvePublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN, process.env.NODE_ENV);
+  const owner = isolatedPublicDshOrigin(process.env.OPERATOR_POLICY_DSH_ORIGIN);
   let page: PublicPage<PublicStore> | null = null;
   let verticals: PublicPage<PublicVertical> | null = null;
   let error = "";

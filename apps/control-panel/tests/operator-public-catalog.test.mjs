@@ -58,7 +58,7 @@ function harness({ permitted = true, origin = "http://127.0.0.1:3202", failStore
     "../operator-shell/operator-shell.module.css": { workspace: "workspace", sectionGrid: "sectionGrid", sectionCard: "sectionCard" },
     "./published-offers.module.css": { intro: "intro", eyebrow: "eyebrow", filters: "filters", results: "results", table: "table" },
     "../operator-shell/workspace-unavailable": () => null,
-    "../stores/public-store-query": { parsePublishedOfferQuery, publishedOfferHref, resolvePublicDshOrigin: () => origin },
+    "../stores/public-store-query": { parsePublishedOfferQuery, publishedOfferHref, isolatedPublicDshOrigin: () => origin },
     "../workspace/public-market-overview": { __esModule: true, default: "MarketOverview" },
     "../../server/current-operator-access": {
       currentOperatorAccess: async () => permitted ? { grants: ["catalog"] } : { grants: ["merchant"] },

@@ -321,7 +321,7 @@ test("policy city directory reads the bounded owner pages without treating parti
       lateController?.abort();
       return page;
     } },
-    "../stores/public-store-query": { resolvePublicDshOrigin: () => origin },
+    "../stores/public-store-query": { isolatedPublicDshOrigin: () => origin },
   });
   loadedModules.push(module);
   const load = module.exports.loadPolicyCities;

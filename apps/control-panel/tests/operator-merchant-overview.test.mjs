@@ -100,7 +100,7 @@ function marketHarness({ cityFailure = false, storeFailure = false, nextCursor, 
       },
     },
     "../operator-shell/operator-shell.module.css": { sectionGrid: "grid", sectionCard: "card" },
-    "../stores/public-store-query": { parsePublicStoreBrowse, resolvePublicDshOrigin: () => "http://127.0.0.1:23202" },
+    "../stores/public-store-query": { parsePublicStoreBrowse, isolatedPublicDshOrigin: () => "http://127.0.0.1:23202" },
     "./operator-home-city": { parseOperatorHomeCity },
     "react/jsx-runtime": { jsx, jsxs: jsx },
   });
