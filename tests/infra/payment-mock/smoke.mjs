@@ -46,7 +46,9 @@ export async function requestFunding(port, reference, timeout = 6000) {
           reject(new Error("PAYMENT_RESPONSE_INCOMPLETE"));
           return;
         }
-        resolve({ status: response.statusCode, headers: response.headers,
+        // IncomingMessage.headers discards duplicate singleton fields. Preserve
+        // every occurrence so the fixture oracle cannot accept an ambiguous reply.
+        resolve({ status: response.statusCode, headers: response.headersDistinct,
           body: Buffer.concat(chunks).toString("utf8"), elapsed: performance.now() - started });
       });
     });
@@ -82,10 +84,13 @@ function fixtureCases() {
 
 function verifyResponse(actual, expected, reference) {
   assert.equal(actual.status, expected.status, "PAYMENT_STATUS " + reference);
-  for (const [key, value] of Object.entries(expected.headers)) {
-    assert.equal(actual.headers[key.toLowerCase()], value, "PAYMENT_HEADER " + reference + " " + key);
+  const fields = new Map(Object.entries(expected.headers).map(([key, value]) => [key.toLowerCase(), value]));
+  for (const [key, value] of fields) {
+    assert.deepEqual(actual.headers[key], [value], "PAYMENT_HEADER " + reference + " " + key);
   }
-  assert.equal(actual.headers.location, expected.headers.Location, "PAYMENT_REDIRECT " + reference);
+  if (!fields.has("location")) {
+    assert.equal(actual.headers.location, undefined, "PAYMENT_REDIRECT " + reference);
+  }
   assert.deepEqual(JSON.parse(actual.body), expected.jsonBody, "PAYMENT_BODY " + reference);
   if (expected.fixedDelayMilliseconds) {
     assert.ok(actual.elapsed >= expected.fixedDelayMilliseconds - 100, "PAYMENT_DELAY " + reference);
@@ -113,7 +118,9 @@ export async function verifyProvider(port) {
   for (const [reference, expected] of cases) {
     if (reference !== accepted) verifyResponse(await requestFunding(port, reference), expected, reference);
   }
-  assert.equal((await requestFunding(port, "cash-in-not-configured")).status, 404, "PAYMENT_MISSING_STATUS");
+  const missing = await requestFunding(port, "cash-in-not-configured");
+  assert.equal(missing.status, 404, "PAYMENT_MISSING_STATUS");
+  assert.equal(missing.headers.location, undefined, "PAYMENT_MISSING_REDIRECT");
   await assert.rejects(requestFunding(port, delayed, 1000), { code: "PAYMENT_CONNECTED_TIMEOUT" });
   verifyResponse(await requestFunding(port, accepted), cases.get(accepted), accepted);
 }

@@ -24,10 +24,10 @@ const fixtures = new Map(readdirSync(directory).filter(file => file.endsWith(".j
   return [mapping.request.url, mapping.response];
 }));
 
-function serveFixtures(transform = response => response) {
+function serveFixtures(transform = response => response, missingHeaders = {}) {
   return async (req, res) => {
     const source = fixtures.get(req.url);
-    if (!source) { res.writeHead(404).end(); return; }
+    if (!source) { res.writeHead(404, missingHeaders).end(); return; }
     const response = transform(structuredClone(source));
     if (response.fixedDelayMilliseconds) await sleep(response.fixedDelayMilliseconds);
     if (res.destroyed) return;
@@ -73,4 +73,37 @@ test("adverse fixture responses reject status, identity, money, headers, redirec
     const port = await localServer(t, serveFixtures(transform));
     await assert.rejects(verifyProvider(port), /PAYMENT_/);
   }
+});
+
+test("wire-level field occurrences cannot be hidden by normalized HTTP headers", async t => {
+  const cases = [
+    ["cash-in-accepted-01", "Content-Type", "text/html"],
+    ["cash-in-accepted-01", "Content-Type", "application/json"],
+    ["cash-in-accepted-01", "Cache-Control", "public"],
+    ["cash-in-redirect-01", "Location", "http://example.invalid/wrong"],
+    ["cash-in-redirect-01", "Location", "http://example.invalid/never-follow"]
+  ];
+  for (const [reference, field, extra] of cases) {
+    await t.test(reference + " duplicate " + field + " " + extra, async sub => {
+      const port = await localServer(sub, serveFixtures(response => {
+        if (response.jsonBody.reference === reference) {
+          response.headers[field] = [response.headers[field], extra];
+        }
+        return response;
+      }));
+      await assert.rejects(verifyProvider(port), /PAYMENT_HEADER/);
+    });
+  }
+});
+
+test("nonredirect and missing fixtures cannot advertise a redirect destination", async t => {
+  const port = await localServer(t, serveFixtures(response => {
+    if (response.jsonBody.reference === "cash-in-accepted-01") {
+      response.headers.Location = "http://example.invalid/wrong";
+    }
+    return response;
+  }));
+  await assert.rejects(verifyProvider(port), /PAYMENT_REDIRECT/);
+  const missing = await localServer(t, serveFixtures(undefined, { Location: "http://example.invalid/wrong" }));
+  await assert.rejects(verifyProvider(missing), /PAYMENT_MISSING_REDIRECT/);
 });
