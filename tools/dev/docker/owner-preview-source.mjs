@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { containsLikelySecret, forbiddenName, gitBlobIdentity, openRepositoryReader } from "../../security/verify-secrets.mjs";
+import { containsLikelySecret, containsLikelySecretBytes, forbiddenName, gitBlobIdentity, openRepositoryReader, readVerifiedFile } from "../../security/verify-secrets.mjs";
 
 const owners=Object.freeze(["dsh","identity","wlt"]);
 const goFile=/^backend\/(?:cmd|internal)\/(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.go$/;
@@ -113,9 +113,18 @@ export function dirtyPaths(root,scope) {
 }
 function pathParts(rel) {
   const parts=rel.split("/");
-  if(parts.some(part=>!part||part==="."||part===".."||!/^[A-Za-z0-9_.-]+$/.test(part))||forbiddenName(rel))
+  if(parts.some(part=>!part||part==="."||part===".."||!/^[A-Za-z0-9_.-]+$/.test(part))||forbiddenName(rel)||containsLikelySecret(rel))
     throw new Error("PREVIEW_PATH_INVALID");
   return parts;
+}
+const maxPreviewBytes = 4 * 1024 * 1024;
+function admitPreviewBytes(bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length > maxPreviewBytes ||
+      bytes.includes(0) || containsLikelySecretBytes(bytes))
+    throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
+  try { new TextDecoder("utf-8",{fatal:true}).decode(bytes); }
+  catch { throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED"); }
+  return bytes;
 }
 function safeRead(root,rel,missing=false) {
   const parts=pathParts(rel);
@@ -126,25 +135,10 @@ function safeRead(root,rel,missing=false) {
     try{stat=fs.lstatSync(file);}catch(e){if(missing&&e.code==="ENOENT")return null;throw e;}
     if(stat.isSymbolicLink()||(i===parts.length-1?!stat.isFile():!stat.isDirectory()))throw new Error("PREVIEW_UNSAFE_PATH");
   }
-  const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW??0)|(fs.constants.O_NONBLOCK??0));
-  try{
-    const opened=fs.fstatSync(fd,{bigint:true});
-    const matches=stat=>stat.isFile()&&!stat.isSymbolicLink()&&stat.nlink===1n&&
-      ["dev","ino","size","mtimeNs","ctimeNs"].every(key=>stat[key]===opened[key]);
-    if(opened.size>4194304n||!matches(opened)||!matches(fs.lstatSync(file,{bigint:true})))throw new Error("PREVIEW_UNSAFE_FILE");
-    const buffer=Buffer.alloc(Number(opened.size)+1);
-    let count=0;
-    while(count<buffer.length){
-      const n=fs.readSync(fd,buffer,count,buffer.length-count,null);
-      if(!n)break;
-      count+=n;
-    }
-    if(BigInt(count)!==opened.size||!matches(fs.fstatSync(fd,{bigint:true}))||!matches(fs.lstatSync(file,{bigint:true})))throw new Error("PREVIEW_UNSAFE_FILE");
-    const bytes=buffer.subarray(0,count);
-    if(bytes.includes(0)||containsLikelySecret(bytes.toString("utf8")))throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
-    return bytes;
-  }finally{fs.closeSync(fd);}
+  const result=readVerifiedFile(file,maxPreviewBytes,{allowMissing:missing});
+  return result===null?null:admitPreviewBytes(result.bytes);
 }
+
 export function digestEntries(entries) {
   const hash=createHash("sha256");
   for(const [rel,bytes] of [...entries].sort(([a],[b])=>compare(a,b))){
@@ -210,6 +204,7 @@ function snapshotRootEntries(snapshot) {
   const files=[[ownerToolchainInput,snapshot.pin],...entries.map(([rel,bytes])=>[prefix+rel,bytes]),...peers];
   if(new Set(files.map(([rel])=>rel.toLowerCase())).size!==files.length)
     throw new Error("PREVIEW_PATH_COLLISION");
+  for(const [,bytes] of files)admitPreviewBytes(bytes);
   return files;
 }
 function assemble(owner,entries,peers,pin,revision=null) {
@@ -266,7 +261,7 @@ export function captureCommittedOwner(root,owner,revision) {
       throw new Error("COMMITTED_BLOB_SIZE_INVALID");
     const bytes=raw.subarray(end+1,end+1+size);
     if(gitBlobIdentity(bytes,"sha1")!==oid)throw new Error("COMMITTED_BLOB_IDENTITY_INVALID");
-    if(bytes.includes(0)||containsLikelySecret(bytes.toString("utf8")))throw new Error("PREVIEW_SECRET_OR_BINARY_BLOCKED");
+    admitPreviewBytes(bytes);
     if(kind==="pin")pin=Buffer.from(bytes);
     else (kind==="peer"?peers:entries).push([file,Buffer.from(bytes)]);
     cursor=end+2+size;

@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { isMainThread, Worker } from "node:worker_threads";
-import { containsLikelySecret, openRepositoryReader } from "../security/verify-secrets.mjs";
+import { containsLikelySecretBytes, openRepositoryReader, readVerifiedFile } from "../security/verify-secrets.mjs";
 import { dirtyPaths, isPreviewGoPath, isSharedRuntimeInput, ownerComposeInputs, ownerReconcilePlan, ownerSourceScope, previewChangeKey } from "./docker/owner-preview-source.mjs";
 import { mirrorPathAllowed as allowed, assertCompatibleBranchTransition, assertMirrorPackageManifest, beginRuntimeAttempt, dependencyInputChanges, graphifyPollDue, isDependencyInput, isUnchanged, mirrorCandidatePaths, mirrorPackageName, mirrorSourceRoots, needsReconcile, parseRemoteHashes, remoteAuditDue, remoteConflict, runtimeAttemptPhase, runtimeAuditResult, runtimeBaselineProofDue, runtimeInterruptedStatus, runtimePollAction, runtimeReceiptStatus, sourceChangeEvent, sourceCycleDue, watcherReloadAction } from "./sync-lenovo-reconciliation.mjs";
 
@@ -27,24 +27,10 @@ const logFile = path.join(stateDir, "sync.log");
 const sshOptions = ["-o", "BatchMode=yes", "-o", "StrictHostKeyChecking=yes", "-o", "ConnectTimeout=6"];
 const quote = v => "'" + v.replaceAll("'", "''") + "'";
 const destination = rel => path.win32.join(targetRoot, ...rel.split("/"));
-function readVerifiedFile(file) {
-  // One descriptor, with identity readback; do not follow a substituted leaf.
-  const fd=fs.openSync(file,fs.constants.O_RDONLY|(fs.constants.O_NOFOLLOW??0));
-  try{
-    const opened=fs.fstatSync(fd,{bigint:true});
-    let entry;
-    try{entry=fs.lstatSync(file,{bigint:true});}
-    catch(error){
-      if(error.code==="ENOENT")throw new Error("UNSAFE_SOURCE_FILE "+path.relative(root,file));
-      throw error;
-    }
-    if(!opened.isFile()||!entry.isFile()||entry.isSymbolicLink()||
-      opened.dev!==entry.dev||opened.ino!==entry.ino)throw new Error("UNSAFE_SOURCE_FILE "+path.relative(root,file));
-    return fs.readFileSync(fd);
-  }finally{fs.closeSync(fd);}
-}
+const maxMirrorBytes = 64 * 1024 * 1024;
+
 function digestBytes(bytes){return crypto.createHash("sha256").update(bytes).digest("hex").toUpperCase();}
-function hash(file){return digestBytes(readVerifiedFile(file));}
+function hash(file){return digestBytes(readVerifiedFile(file,maxMirrorBytes).bytes);}
 function mirrorFile(rel) {
   if(!allowed(rel))throw new Error("MIRROR_PATH_INVALID");
   const parts=rel.split("/");
@@ -57,8 +43,8 @@ function mirrorFile(rel) {
     const info=fs.lstatSync(parent);
     if(!info.isDirectory()||info.isSymbolicLink())throw new Error("UNSAFE_SOURCE_DIRECTORY "+path.relative(root,parent));
   }
-  const bytes=readVerifiedFile(full);
-  if(!bytes.includes(0)&&containsLikelySecret(bytes.toString("utf8")))throw new Error("MIRROR_SECRET_MARKER "+rel);
+  const bytes=readVerifiedFile(full,maxMirrorBytes).bytes;
+  if(containsLikelySecretBytes(bytes))throw new Error("MIRROR_SECRET_MARKER "+rel);
   return {bytes,digest:digestBytes(bytes)};
 }
 function failureDetail(result) {

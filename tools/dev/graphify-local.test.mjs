@@ -117,6 +117,13 @@ test("tracked and untracked source bytes are admitted through one real-file boun
     assert.deepEqual(inspectSourceFiles(dir,[],["apps/.env"]).unsafeUntracked,["apps/.env"]);
     writeFileSync(file,"const key = 'sk_"+"live_"+"A".repeat(16)+"';");
     assert.deepEqual(inspectSourceFiles(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
+    const marker = "ghp_"+"a".repeat(30);
+    for (const bytes of [Buffer.concat([Buffer.from([0]),Buffer.from(marker)]),Buffer.from(marker,"utf16le"),Buffer.from(marker,"utf16le").swap16()]) {
+      writeFileSync(file,bytes);
+      assert.deepEqual(inspectSourceFiles(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
+    }
+    writeFileSync(file,Buffer.from([0,1,2,3]));
+    assert.deepEqual(inspectSourceFiles(dir,tracked,[]).unsafeTracked,[]);
     writeFileSync(file,"export const n=3;");
     linkSync(file,join(dir,"apps","alias.ts"));
     assert.deepEqual(inspectSourceFiles(dir,tracked,[]).unsafeTracked,["apps/new.ts"]);
@@ -490,4 +497,32 @@ test("Graphify recovery admits verified Surface identity without environment met
     { checkout: "D:\\samrim-copy" },
     { checkout: "C:\\samrim" },
   ]) assert.throws(() => assertRecoverySource({ ...base, ...foreign }), /authorized Surface/);
+});
+
+
+test("source snapshot rejects sensitive staged bytes even after working bytes are repaired or removed", async () => {
+  const { captureSourceSnapshot } = await import("./source-snapshot.mjs");
+  const { execFileSync } = await import("node:child_process");
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir=mkdtempSync(join(tmpdir(),"source-stage-admission-"));
+  const exe=process.platform==="win32"?"C:\\Program Files\\Git\\cmd\\git.exe":"/usr/bin/git";
+  const git=(...args)=>execFileSync(exe,args,{cwd:dir,stdio:"pipe"});
+  try {
+    git("init","-q");
+    const file=join(dir,"sample.ts");
+    writeFileSync(file,"export const n=1;\n");
+    git("add","sample.ts");
+    git("-c","user.name=Fixture","-c","user.email=fixture@example.invalid","-c","commit.gpgsign=false","-c","core.hooksPath="+dir,"commit","-qm","initial");
+    writeFileSync(file,Buffer.from("ghp_"+"a".repeat(30),"utf16le"));
+    git("add","sample.ts");
+    writeFileSync(file,"export const n=1;\n");
+    assert.equal(captureSourceSnapshot(dir).unsafeTracked,1);
+    rmSync(file);
+    assert.equal(captureSourceSnapshot(dir).unsafeTracked,1);
+    writeFileSync(file,"export const n=2;\n");
+    git("add","sample.ts");
+    assert.equal(captureSourceSnapshot(dir).unsafeTracked,0);
+  } finally { rmSync(dir,{recursive:true,force:true}); }
 });

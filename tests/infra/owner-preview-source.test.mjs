@@ -67,6 +67,15 @@ test("preview excludes ignored secrets and refuses changed schema, credentials a
   assert.equal(isPreviewGoPath("services/wlt/database/schema/a.go"),false);
   assert.notEqual(digestEntries([["a",Buffer.from("one")]]),digestEntries([["b",Buffer.from("one")]]));
 });
+test("preview rejects malformed UTF-8 from working and committed source before materialization",t=>{
+  const {dir,git,write,base}=fixture(t);
+  const rel=base+"backend/cmd/dsh/main.go";
+  write(rel,Buffer.from([0x61,0xff,0x62]));
+  assert.throws(()=>captureOwner(dir,"dsh"),/PREVIEW_SECRET_OR_BINARY_BLOCKED/);
+  git("add",rel);
+  git("-c","user.name=Fixture","-c","user.email=fixture@example.invalid","-c","commit.gpgsign=false","-c","core.hooksPath="+dir,"commit","-qm","invalid bytes");
+  assert.throws(()=>captureCommittedOwner(dir,"dsh",git("rev-parse","HEAD").toString().trim()),/PREVIEW_SECRET_OR_BINARY_BLOCKED/);
+});
 test("a snapshot cannot materialize path traversal",()=>{
   const entries=[["../outside",Buffer.from("x")]];
   assert.throws(()=>materializeOwner({owner:"dsh",entries,digest:digestEntries(entries)}),/PREVIEW_PATH_INVALID/);

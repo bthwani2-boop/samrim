@@ -82,15 +82,12 @@ export function containsLikelySecret(text) {
     /AKIA[0-9A-Z]{16}/.test(text);
 }
 
-function hasMarker(bytes) {
+export function containsLikelySecretBytes(bytes) {
   if (containsLikelySecret(bytes.toString("latin1"))) return true;
-  if (bytes[0] === 0xff && bytes[1] === 0xfe)
-    return containsLikelySecret(bytes.toString("utf16le", 2));
-  if (bytes[0] === 0xfe && bytes[1] === 0xff) {
-    const end = bytes.length - bytes.length % 2;
-    return containsLikelySecret(Buffer.from(bytes.subarray(2, end)).swap16().toString("utf16le"));
-  }
-  return false;
+  if (!bytes.includes(0)) return false;
+  const aligned = bytes.subarray(0, bytes.length - bytes.length % 2);
+  return containsLikelySecret(aligned.toString("utf16le")) ||
+    containsLikelySecret(Buffer.from(aligned).swap16().toString("utf16le"));
 }
 
 export function canonicalGitEnvironment() {
@@ -147,6 +144,12 @@ export function gitBlobIdentity(bytes, format) {
   return createHash(format).update("blob " + bytes.length + "\0").update(bytes).digest("hex");
 }
 
+export function readVerifiedGitBlob(git, oid, format) {
+  const bytes = git("cat-file", "blob", oid);
+  assert.equal(gitBlobIdentity(bytes, format), oid, "Index object identity mismatch");
+  return bytes;
+}
+
 function verifyTrackedSecrets() {
   const git = openRepositoryReader(root);
   const format = git("rev-parse", "--show-object-format").toString("ascii").trim();
@@ -171,14 +174,13 @@ function verifyTrackedSecrets() {
     }
     if (actual) {
       working++;
-      if (hasMarker(actual.bytes)) violations.push(label + ": likely secret marker in working bytes (value redacted)");
+      if (containsLikelySecretBytes(actual.bytes)) violations.push(label + ": likely secret marker in working bytes (value redacted)");
     }
     // Exact blob identity allows one read to cover both versions; otherwise
     // inspect the immutable staged object even if the working file is absent.
     if (!actual || gitBlobIdentity(actual.bytes, format) !== oid) {
-      const indexed = git("cat-file", "blob", oid);
-      assert.equal(gitBlobIdentity(indexed, format), oid, "Index object identity mismatch");
-      if (hasMarker(indexed)) violations.push(label + ": likely secret marker in staged bytes (value redacted)");
+      const indexed = readVerifiedGitBlob(git, oid, format);
+      if (containsLikelySecretBytes(indexed)) violations.push(label + ": likely secret marker in staged bytes (value redacted)");
     }
     staged++;
   }

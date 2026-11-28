@@ -3,7 +3,7 @@
 import { lstatSync, realpathSync } from "node:fs";
 import { extname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { containsLikelySecret, forbiddenName, openRepositoryReader, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
+import { containsLikelySecret, containsLikelySecretBytes, forbiddenName, openRepositoryReader, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sourceExt = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".go"]);
@@ -42,9 +42,8 @@ function inspectEntry(checkout, pathname, readText) {
     if (stat.nlink !== 1) return { state: "missing-or-linked" };
     if (!readText) return { state: "file", bytes: stat.size };
     const verified = readVerifiedFile(current, maxSourceBytes);
-    if (verified.bytes.includes(0)) return { state: "blocked" };
+    if (verified.bytes.includes(0) || containsLikelySecretBytes(verified.bytes)) return { state: "blocked" };
     const text = textDecoder.decode(verified.bytes);
-    if (containsLikelySecret(text)) return { state: "blocked" };
     return { state: "file", bytes: verified.bytes.length, text };
   } catch (error) {
     return { state: error.code === "ENOENT" ? "missing-or-linked" : "blocked" };

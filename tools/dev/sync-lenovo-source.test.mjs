@@ -86,6 +86,12 @@ test("manifest verification rejects an edit before HEAD changes and recovers aft
     assert.notEqual(rejected.status,0);
     assert.match(rejected.stderr,/MIRROR_SECRET_MARKER packages\/new-purpose\/src\/unsafe.ts/);
     assert.doesNotMatch(rejected.stderr,/x{24}/);
+    for(const bytes of [Buffer.concat([Buffer.from([0]),Buffer.from("gh"+"p_"+"x".repeat(24))]),Buffer.from("gh"+"p_"+"x".repeat(24),"utf16le"),Buffer.from("gh"+"p_"+"x".repeat(24),"utf16le").swap16()]){
+      writeFileSync(unsafe,bytes);
+      rejected=reject();
+      assert.notEqual(rejected.status,0);
+      assert.match(rejected.stderr,/MIRROR_SECRET_MARKER/);
+    }
     rmSync(unsafe);
     rmSync(path.join(root,manifestPath));
     rejected=reject();
@@ -144,7 +150,7 @@ test("source digest rejects symbolic links instead of following them", (t) => {
       throw error;
     }
     assert.throws(() => hash(link), (error) =>
-      error.code === "ELOOP" || error.message.includes("UNSAFE_SOURCE_FILE"));
+      error.code === "ELOOP" || error.message.includes("unsafe file path"));
   } finally {
     rmSync(folder, { recursive: true, force: true });
   }

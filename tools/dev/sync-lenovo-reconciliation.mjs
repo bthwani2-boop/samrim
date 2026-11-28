@@ -2,6 +2,7 @@
 // owns scheduling; the guarded reconciler owns terminal receipts.
 import { createHash, randomUUID } from "node:crypto";
 import { readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { containsLikelySecret } from "../security/verify-secrets.mjs";
 import { services } from "./check-go.mjs";
 
 const surfaces = ["customer", "merchant", "captain", "control-panel"];
@@ -39,7 +40,7 @@ function safeSegment(part) {
 // Lexical admission applies to both the live inventory and prior manifest
 // entries so removed packages can be reconciled without admitting secrets.
 export function mirrorPathAllowed(rel) {
-  if (typeof rel !== "string" || !rel || rel.includes("\\")) return false;
+  if (typeof rel !== "string" || !rel || rel.includes("\\") || containsLikelySecret(rel)) return false;
   const parts = rel.split("/");
   if (!parts.every(safeSegment)) return false;
   if (parts.length === 1) return rootInputs.includes(rel);

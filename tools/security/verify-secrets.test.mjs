@@ -88,7 +88,7 @@ test("deleted working file still requires safe staged content", () => fixture(({
 }));
 test("NUL-bearing and UTF-16 encoded marker cannot bypass the guard", () => fixture(({ file, stage, run }) => {
   for (const bytes of [Buffer.concat([Buffer.from([0]), Buffer.from(marker)]),
-    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(marker, "utf16le")])]) {
+    Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(marker, "utf16le")]), Buffer.from(marker, "utf16le"), Buffer.from(marker, "utf16le").swap16()]) {
     writeFileSync(file, bytes);
     stage();
     writeFileSync(file, safe);
