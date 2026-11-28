@@ -16,39 +16,71 @@ import (
 	_ "github.com/lib/pq"
 )
 
-func validIsolation(mode, address, databaseURL string) bool {
-	host, port, err := net.SplitHostPort(address)
-	if mode != "true" || err != nil || host != "127.0.0.1" || !validPort(port) {
-		return false
-	}
-	return isolatedDatabaseURL(databaseURL, "bthwani_wlt_reader")
+type servingConfiguration struct {
+	address, databaseURL, identityOrigin, dshOrigin string
+	containerMode                                   bool
 }
 
+// Resolve one mode before accepting any database or peer configuration.
+// A local preview cannot satisfy the container admission, or vice versa.
+func admitServingConfiguration(getenv func(string) string) (servingConfiguration, error) {
+	c := servingConfiguration{
+		address:        getenv("WLT_DEV_LISTEN_ADDR"),
+		databaseURL:    getenv("WLT_TEST_DATABASE_URL"),
+		identityOrigin: getenv("WLT_TEST_IDENTITY_ORIGIN"),
+		dshOrigin:      getenv("WLT_TEST_DSH_ORIGIN"),
+	}
+	denied := errors.New("WLT requires an explicit isolated local or container configuration")
+	if getenv("BTHWANI_ISOLATED_TEST_MODE") != "true" {
+		return servingConfiguration{}, denied
+	}
+	switch getenv("BTHWANI_ISOLATED_CONTAINER_MODE") {
+	case "", "false":
+		host, port, err := net.SplitHostPort(c.address)
+		if err != nil || host != "127.0.0.1" || !validPort(port) ||
+			!isolatedDatabaseURL(c.databaseURL, "bthwani_wlt_reader") {
+			return servingConfiguration{}, denied
+		}
+	case "true":
+		c.containerMode = true
+		u := parseIsolatedDatabaseURL(c.databaseURL, "bthwani_wlt_reader")
+		if c.address != "0.0.0.0:8080" || u == nil || u.Host != "postgres:5432" {
+			return servingConfiguration{}, denied
+		}
+	default:
+		return servingConfiguration{}, denied
+	}
+	return c, nil
+}
+
+func parseIsolatedDatabaseURL(databaseURL, role string) *url.URL {
+	u, err := url.Parse(databaseURL)
+	if err != nil || u.Scheme != "postgres" || u.User == nil || u.User.Username() != role ||
+		u.Path != "/bthwani_wlt_test" || u.RawQuery != "sslmode=disable" ||
+		u.Fragment != "" || u.Opaque != "" || u.String() != databaseURL {
+		return nil
+	}
+	return u
+}
+
+// The separate sandbox command also uses this exact loopback boundary.
 func isolatedDatabaseURL(databaseURL, role string) bool {
-	u, err := url.Parse(databaseURL)
-	return err == nil && u.Scheme == "postgres" && u.Hostname() == "127.0.0.1" &&
-		validPort(u.Port()) && u.User != nil && u.User.Username() == role &&
-		u.Path == "/bthwani_wlt_test" && u.RawQuery == "sslmode=disable" &&
-		u.Fragment == "" && u.String() == databaseURL
-}
-
-// Container mode is a separate explicit development admission. Local preview
-// still requires loopback and never accepts a Docker host by implication.
-func validContainerIsolation(mode, containerMode, address, databaseURL, identityOrigin string) bool {
-	if mode != "true" || containerMode != "true" || address != "0.0.0.0:8080" ||
-		identityOrigin != "http://identity:3302" {
-		return false
-	}
-	u, err := url.Parse(databaseURL)
-	return err == nil && u.Scheme == "postgres" && u.Host == "postgres:5432" &&
-		u.User != nil && u.User.Username() == "bthwani_wlt_reader" &&
-		u.Path == "/bthwani_wlt_test" && u.RawQuery == "sslmode=disable" &&
-		u.Fragment == "" && u.Opaque == "" && u.String() == databaseURL
+	u := parseIsolatedDatabaseURL(databaseURL, role)
+	return u != nil && u.Hostname() == "127.0.0.1" && validPort(u.Port())
 }
 
 func validPort(port string) bool {
 	value, err := strconv.ParseUint(port, 10, 16)
 	return err == nil && value > 0
+}
+
+// Both canonical constructors validate their peer origins without I/O.
+// Construct the handler before querying the database admission contract.
+func (c servingConfiguration) handler(db *sql.DB) (http.Handler, error) {
+	if c.containerMode {
+		return wallet.NewContainerHandler(db, c.identityOrigin, c.dshOrigin)
+	}
+	return wallet.NewHandler(db, c.identityOrigin, c.dshOrigin)
 }
 
 // Required owner objects and actual effective grants are distinct invariants.
@@ -166,21 +198,20 @@ func main() {
 		}
 		return
 	}
-	address := os.Getenv("WLT_DEV_LISTEN_ADDR")
-	dsn := os.Getenv("WLT_TEST_DATABASE_URL")
-	containerMode := os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE") == "true"
-	identityOrigin := os.Getenv("WLT_TEST_IDENTITY_ORIGIN")
-	dshOrigin := os.Getenv("WLT_TEST_DSH_ORIGIN")
-	if !validIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"), address, dsn) &&
-		!validContainerIsolation(os.Getenv("BTHWANI_ISOLATED_TEST_MODE"),
-			os.Getenv("BTHWANI_ISOLATED_CONTAINER_MODE"), address, dsn, identityOrigin) {
-		log.Fatal("WLT requires an explicit isolated local or container configuration")
+	config, err := admitServingConfiguration(os.Getenv)
+	if err != nil {
+		log.Fatal(err)
 	}
-	db, err := sql.Open("postgres", dsn)
+	// sql.Open creates a lazy pool; the first database operation is below.
+	db, err := sql.Open("postgres", config.databaseURL)
 	if err != nil {
 		log.Fatal("WLT database connection rejected")
 	}
 	defer db.Close()
+	handler, err := config.handler(db)
+	if err != nil {
+		log.Fatal(err)
+	}
 	db.SetMaxOpenConns(6)
 	db.SetConnMaxLifetime(5 * time.Minute)
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
@@ -189,20 +220,11 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var handler http.Handler
-	if containerMode {
-		handler, err = wallet.NewContainerHandler(db, identityOrigin, dshOrigin)
-	} else {
-		handler, err = wallet.NewHandler(db, identityOrigin, dshOrigin)
-	}
-	if err != nil {
-		log.Fatal(err)
-	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", handler)
-	mux.HandleFunc("/health", developmentHealth(db, identityOrigin, containerMode))
+	mux.HandleFunc("/health", developmentHealth(db, config.identityOrigin, config.containerMode))
 	server := &http.Server{
-		Addr: address, Handler: mux, ReadHeaderTimeout: 3 * time.Second,
+		Addr: config.address, Handler: mux, ReadHeaderTimeout: 3 * time.Second,
 		ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second,
 		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
 	}

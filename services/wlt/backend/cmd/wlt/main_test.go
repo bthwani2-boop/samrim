@@ -6,11 +6,15 @@ import (
 	"database/sql/driver"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestDevelopmentHealthRejectsClosedDatabaseAndWrongMethod(t *testing.T) {
@@ -60,49 +64,62 @@ func TestSandboxCommandRejectsNonIsolatedDatabaseBeforeReadingSession(t *testing
 	}
 }
 
-func TestWalletContainerRuntimeRequiresExplicitIsolatedOwner(t *testing.T) {
-	const dsn = "postgres://bthwani_wlt_reader:synthetic-only@postgres:5432/bthwani_wlt_test?sslmode=disable"
+func TestWalletRuntimeAdmission(t *testing.T) {
+	const local = "postgres://bthwani_wlt_reader:synthetic-only@127.0.0.1:5432/bthwani_wlt_test?sslmode=disable"
+	const container = "postgres://bthwani_wlt_reader:synthetic-only@postgres:5432/bthwani_wlt_test?sslmode=disable"
 	for _, tc := range []struct {
-		name, mode, container, address, database, identity string
-		want                                               bool
+		name, mode, containerFlag, address, database, identity, dsh string
+		want                                                        bool
 	}{
-		{"valid", "true", "true", "0.0.0.0:8080", dsn, "http://identity:3302", true},
-		{"no opt in", "", "true", "0.0.0.0:8080", dsn, "http://identity:3302", false},
-		{"no container opt in", "true", "", "0.0.0.0:8080", dsn, "http://identity:3302", false},
-		{"external bind", "true", "true", "0.0.0.0:8081", dsn, "http://identity:3302", false},
-		{"admin writer", "true", "true", "0.0.0.0:8080", strings.Replace(dsn, "bthwani_wlt_reader", "postgres", 1), "http://identity:3302", false},
-		{"alternate database", "true", "true", "0.0.0.0:8080", strings.Replace(dsn, "bthwani_wlt_test", "bthwani_refoundation", 1), "http://identity:3302", false},
-		{"external db", "true", "true", "0.0.0.0:8080", strings.Replace(dsn, "postgres:5432", "example.com:5432", 1), "http://identity:3302", false},
-		{"local db", "true", "true", "0.0.0.0:8080", strings.Replace(dsn, "postgres:5432", "127.0.0.1:5432", 1), "http://identity:3302", false},
-		{"dsn override", "true", "true", "0.0.0.0:8080", dsn + "&host=other", "http://identity:3302", false},
-		{"foreign identity", "true", "true", "0.0.0.0:8080", dsn, "http://example.com:3302", false},
-		{"loopback identity", "true", "true", "0.0.0.0:8080", dsn, "http://127.0.0.1:3302", false},
+		{"local", "true", "", "127.0.0.1:23203", local, "http://127.0.0.1:3302", "", true},
+		{"explicit local", "true", "false", "127.0.0.1:23203", local, "http://127.0.0.1:3302", "http://127.0.0.1:8080", true},
+		{"container", "true", "true", "0.0.0.0:8080", container, "http://identity:3302", "http://dsh:8080", true},
+		{"container optional DSH", "true", "true", "0.0.0.0:8080", container, "http://identity:3302", "", true},
+		{"local not opted in", "", "", "127.0.0.1:23203", local, "http://127.0.0.1:3302", "", false},
+		{"container not opted in", "", "true", "0.0.0.0:8080", container, "http://identity:3302", "", false},
+		{"container missing flag", "true", "", "0.0.0.0:8080", container, "http://identity:3302", "", false},
+		{"mixed local configuration", "true", "true", "127.0.0.1:23203", local, "http://identity:3302", "", false},
+		{"unknown mode", "true", "unknown", "127.0.0.1:23203", local, "http://127.0.0.1:3302", "", false},
+		{"local wildcard", "true", "", "0.0.0.0:23203", local, "http://127.0.0.1:3302", "", false},
+		{"invalid local port", "true", "", "127.0.0.1:0", local, "http://127.0.0.1:3302", "", false},
+		{"container wrong bind", "true", "true", "0.0.0.0:8081", container, "http://identity:3302", "", false},
+		{"local admin", "true", "", "127.0.0.1:23203", strings.Replace(local, "bthwani_wlt_reader", "postgres", 1), "http://127.0.0.1:3302", "", false},
+		{"container admin", "true", "true", "0.0.0.0:8080", strings.Replace(container, "bthwani_wlt_reader", "postgres", 1), "http://identity:3302", "", false},
+		{"local wrong database", "true", "", "127.0.0.1:23203", strings.Replace(local, "bthwani_wlt_test", "samrim", 1), "http://127.0.0.1:3302", "", false},
+		{"container wrong database", "true", "true", "0.0.0.0:8080", strings.Replace(container, "bthwani_wlt_test", "bthwani_refoundation", 1), "http://identity:3302", "", false},
+		{"foreign database", "true", "true", "0.0.0.0:8080", strings.Replace(container, "postgres:5432", "example.invalid:5432", 1), "http://identity:3302", "", false},
+		{"container loopback database", "true", "true", "0.0.0.0:8080", local, "http://identity:3302", "", false},
+		{"local foreign database", "true", "", "127.0.0.1:23203", container, "http://127.0.0.1:3302", "", false},
+		{"local query override", "true", "", "127.0.0.1:23203", local + "&host=other", "http://127.0.0.1:3302", "", false},
+		{"container query override", "true", "true", "0.0.0.0:8080", container + "&host=other", "http://identity:3302", "", false},
+		{"foreign container Identity", "true", "true", "0.0.0.0:8080", container, "http://example.invalid:3302", "", false},
+		{"loopback container Identity", "true", "true", "0.0.0.0:8080", container, "http://127.0.0.1:3302", "", false},
+		{"foreign local Identity", "true", "", "127.0.0.1:23203", local, "http://example.invalid:3302", "", false},
+		{"foreign local DSH", "true", "", "127.0.0.1:23203", local, "http://127.0.0.1:3302", "http://example.invalid:8080", false},
+		{"loopback container DSH", "true", "true", "0.0.0.0:8080", container, "http://identity:3302", "http://127.0.0.1:8080", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := validContainerIsolation(tc.mode, tc.container, tc.address, tc.database, tc.identity)
-			if got != tc.want {
-				t.Fatalf("container isolation=%t want=%t", got, tc.want)
+			config, err := admitServingConfiguration(func(key string) string {
+				return map[string]string{
+					"BTHWANI_ISOLATED_TEST_MODE":      tc.mode,
+					"BTHWANI_ISOLATED_CONTAINER_MODE": tc.containerFlag,
+					"WLT_DEV_LISTEN_ADDR":             tc.address,
+					"WLT_TEST_DATABASE_URL":           tc.database,
+					"WLT_TEST_IDENTITY_ORIGIN":        tc.identity,
+					"WLT_TEST_DSH_ORIGIN":             tc.dsh,
+				}[key]
+			})
+			if err == nil {
+				if config.containerMode != (tc.containerFlag == "true") {
+					t.Fatal("admitted a different runtime mode")
+				}
+				// The connector refuses any actual SQL operation; handler construction is pure.
+				db := sql.OpenDB(healthTestDriver{errors.New("unexpected database access")})
+				defer db.Close()
+				_, err = config.handler(db)
 			}
-		})
-	}
-}
-
-func TestWalletRuntimeRequiresIsolatedReader(t *testing.T) {
-	const dsn = "postgres://bthwani_wlt_reader:synthetic-only@127.0.0.1:5432/bthwani_wlt_test?sslmode=disable"
-	for _, test := range []struct {
-		name, mode, address, database string
-		want                          bool
-	}{
-		{"isolated", "true", "127.0.0.1:23203", dsn, true},
-		{"no opt-in", "", "127.0.0.1:23203", dsn, false},
-		{"wildcard", "true", "0.0.0.0:23203", dsn, false},
-		{"non-reader", "true", "127.0.0.1:23203", "postgres://postgres@127.0.0.1:5432/bthwani_wlt_test?sslmode=disable", false},
-		{"other database", "true", "127.0.0.1:23203", "postgres://bthwani_wlt_reader@127.0.0.1:5432/samrim?sslmode=disable", false},
-		{"query override", "true", "127.0.0.1:23203", dsn + "&host=other", false},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if got := validIsolation(test.mode, test.address, test.database); got != test.want {
-				t.Errorf("isolation=%t want=%t", got, test.want)
+			if (err == nil) != tc.want {
+				t.Fatalf("runtime admission=%t want=%t", err == nil, tc.want)
 			}
 		})
 	}
@@ -226,5 +243,69 @@ func TestDevelopmentHealthShortCircuitsAndRecovers(t *testing.T) {
 	probe(healthy, t.Context(), http.MethodGet, owner.URL, true, 200)
 	if calls.Load() != 1 {
 		t.Fatal("recovery did not verify the peer")
+	}
+}
+
+func TestWLTStartupChild(t *testing.T) {
+	if os.Getenv("BTHWANI_WLT_STARTUP_TEST_CHILD") != "1" {
+		return
+	}
+	os.Args = []string{"wlt"}
+	main()
+	t.Fatal("invalid startup returned without rejection")
+}
+
+func TestWLTStartupRejectsBeforeDatabaseConnection(t *testing.T) {
+	for _, tc := range []struct {
+		name, mode, identity, dsh string
+	}{
+		{"mixed container and loopback", "true", "http://identity:3302", "http://dsh:8080"},
+		{"unknown mode", "unknown", "http://127.0.0.1:3302", ""},
+		{"foreign Identity", "", "http://example.invalid:3302", ""},
+		{"foreign DSH", "", "http://127.0.0.1:3302", "http://example.invalid:8080"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			listener, err := net.Listen("tcp4", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var connections atomic.Int32
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				for {
+					conn, err := listener.Accept()
+					if err != nil {
+						return
+					}
+					connections.Add(1)
+					conn.Close()
+				}
+			}()
+			defer func() { listener.Close(); <-done }()
+			exe, err := os.Executable()
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, exe, "-test.run=^TestWLTStartupChild$")
+			cmd.Env = append(os.Environ(),
+				"BTHWANI_WLT_STARTUP_TEST_CHILD=1",
+				"BTHWANI_ISOLATED_TEST_MODE=true",
+				"BTHWANI_ISOLATED_CONTAINER_MODE="+tc.mode,
+				"WLT_DEV_LISTEN_ADDR=127.0.0.1:23203",
+				"WLT_TEST_DATABASE_URL=postgres://bthwani_wlt_reader:synthetic-only@"+listener.Addr().String()+"/bthwani_wlt_test?sslmode=disable",
+				"WLT_TEST_IDENTITY_ORIGIN="+tc.identity,
+				"WLT_TEST_DSH_ORIGIN="+tc.dsh,
+			)
+			out, err := cmd.CombinedOutput()
+			if err == nil || ctx.Err() != nil || connections.Load() != 0 {
+				t.Fatalf("expected immediate startup denial with zero database connections, got connections=%d error=%v output=%s", connections.Load(), err, out)
+			}
+			if strings.Contains(string(out), "complete owner baseline") {
+				t.Fatalf("configuration reached database admission: %s", out)
+			}
+		})
 	}
 }
