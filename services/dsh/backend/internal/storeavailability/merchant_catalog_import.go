@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -337,11 +336,6 @@ func NewMerchantCatalogImportHandler(service *MerchantStoreRegistrar) (http.Hand
 		}
 		var start *MerchantCatalogImportChange
 		if r.Method == http.MethodPut {
-			media, _, e := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if e != nil || media != "application/json" {
-				writeRegistrationFailure(w, ErrRegistrationInvalid)
-				return
-			}
 			start = &MerchantCatalogImportChange{}
 			if decodeUniqueJSON(w, r, 8*1024*1024, start) != nil {
 				writeRegistrationFailure(w, ErrRegistrationInvalid)

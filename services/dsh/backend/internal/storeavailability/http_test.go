@@ -81,6 +81,7 @@ func TestDecodeUniqueJSONRejectsAmbiguousAndOversizeChanges(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPatch, "/v1/stores/store-one/availability", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
 			res := httptest.NewRecorder()
 			var input struct {
 				OperationID     string `json:"operationId"`
@@ -229,5 +230,51 @@ func TestHTTPRejectsImplicitReplacementDefaults(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("implicit replacement mutated the Store %d times", count)
+	}
+}
+
+func TestCanonicalJSONRepresentation(t *testing.T) {
+	for _, c := range []struct {
+		name, body, media, encoding, query string
+		valid                              bool
+	}{
+		{"valid", "{\"name\":\"abc\"}", "application/json", "", "", true},
+		{"alias", "{\"Name\":\"abc\"}", "application/json", "", "", false},
+		{"invalid unicode", "{\"name\":\"\\ud800\"}", "application/json", "", "", false},
+		{"null", "null", "application/json", "", "", false},
+		{"non-JSON whitespace", "\u00a0{\"name\":\"abc\"}", "application/json", "", "", false},
+		{"charset", "{\"name\":\"abc\"}", "application/json; charset=latin1", "", "", false},
+		{"encoded", "{\"name\":\"abc\"}", "application/json", "gzip", "", false},
+		{"query", "{\"name\":\"abc\"}", "application/json", "", "?unexpected=1", false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest("POST", "/fixture"+c.query, strings.NewReader(c.body))
+			r.Header.Set("Content-Type", c.media)
+			if c.encoding != "" {
+				r.Header.Set("Content-Encoding", c.encoding)
+			}
+			var out struct {
+				Name string `json:"name"`
+			}
+			err := decodeUniqueJSON(httptest.NewRecorder(), r, 1024, &out)
+			if (err == nil) != c.valid {
+				t.Fatalf("valid=%v error=%v", c.valid, err)
+			}
+		})
+	}
+}
+func TestCanonicalDistanceBandRepresentation(t *testing.T) {
+	for _, c := range []struct {
+		raw   string
+		valid bool
+	}{
+		{"[{\"upToMeters\":null,\"ratePerKmMinor\":1000}]", true},
+		{"[{\"UpToMeters\":null,\"ratePerKmMinor\":1000}]", false},
+		{"[{\"upToMeters\":null,\"RatePerKmMinor\":1000}]", false},
+		{"[{\"ratePerKmMinor\":1000}]", false},
+	} {
+		if _, ok := DecodeDistanceBands([]byte(c.raw)); ok != c.valid {
+			t.Errorf("valid=%v input=%s", c.valid, c.raw)
+		}
 	}
 }

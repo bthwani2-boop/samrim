@@ -2,7 +2,6 @@ package storeavailability
 
 import (
 	"errors"
-	"mime"
 	"net/http"
 	"strings"
 )
@@ -65,11 +64,6 @@ func NewCityPolicyHandler(identity IdentitySessions, policies CityPolicyReader, 
 			w.Header().Set("Cache-Control", "no-store")
 			actorID, ok := authorizeCityPolicyOperator(w, r, identity)
 			if !ok {
-				return
-			}
-			media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-			if err != nil || media != "application/json" {
-				writeFailure(w, ErrInvalidChange)
 				return
 			}
 			var input struct {

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
-	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -32,11 +31,6 @@ func cityDeliveryPolicyWriteHandler(identity IdentitySessions, writer CityDelive
 		w.Header().Set("Cache-Control", "no-store")
 		actor, ok := authorizeCityPolicyOperator(w, r, identity)
 		if !ok {
-			return
-		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" || r.URL.ForceQuery {
-			writeFailure(w, ErrInvalidChange)
 			return
 		}
 		var input struct {

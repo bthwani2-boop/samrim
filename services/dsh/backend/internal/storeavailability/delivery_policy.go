@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
-	"mime"
 	"net/http"
 	"time"
 )
@@ -121,11 +120,6 @@ func cityDeliveryPolicyPreviewHandler(identity IdentitySessions, reader CityDeli
 		w.Header().Set("Cache-Control", "no-store")
 		actor, ok := authorizeCityPolicyOperator(w, r, identity)
 		if !ok {
-			return
-		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
-			writeFailure(w, ErrInvalidChange)
 			return
 		}
 		var input struct {

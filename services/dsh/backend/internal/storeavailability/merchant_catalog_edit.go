@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -202,11 +201,6 @@ func NewMerchantCatalogEditHandler(service *MerchantStoreRegistrar) (http.Handle
 		token, ok := bearerToken(r)
 		if !ok {
 			writeRegistrationFailure(w, ErrUnauthorized)
-			return
-		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
-			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
 		var change MerchantCatalogDraftEditChange

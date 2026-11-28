@@ -9,7 +9,6 @@ import (
 	"errors"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"math"
-	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -266,11 +265,6 @@ func NewStoreRegistrationPolicyHandler(s *MerchantStoreRegistrar) (http.Handler,
 		}
 		if r.Header.Get("Origin") != "" || r.Header.Get("Sec-Fetch-Site") == "cross-site" {
 			writeFailure(w, ErrForbidden)
-			return
-		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
-			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
 		// Match the bounded Web adapter; 4,000 UTF-8 terms characters may exceed 8 KiB.

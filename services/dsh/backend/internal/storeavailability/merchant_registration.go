@@ -10,7 +10,6 @@ import (
 	"errors"
 	"github.com/bthwani2-boop/samrim/services/dsh/backend/internal/dbscope"
 	"math"
-	"mime"
 	"net/http"
 	"regexp"
 	"strings"
@@ -330,11 +329,6 @@ func NewMerchantRegistrationHandler(service *MerchantStoreRegistrar) http.Handle
 		bearer, ok := bearerToken(r)
 		if !ok {
 			writeRegistrationFailure(w, ErrUnauthorized)
-			return
-		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
-			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
 		var request MerchantRegistrationRequest

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"mime"
 	"net/http"
 	"slices"
 	"strings"
@@ -246,11 +245,6 @@ func cityFulfillmentPolicyHandler(identity IdentitySessions, owner cityFulfillme
 			return
 		}
 
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" || r.Header.Get("Content-Encoding") != "" {
-			writeFailure(w, ErrInvalidChange)
-			return
-		}
 		var input struct {
 			OperationID     string    `json:"operationId"`
 			ExpectedVersion *int64    `json:"expectedVersion"`

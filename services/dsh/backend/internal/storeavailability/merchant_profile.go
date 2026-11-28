@@ -3,10 +3,7 @@ package storeavailability
 import (
 	"context"
 	"database/sql"
-	"encoding/json/v2"
 	"errors"
-	"io"
-	"mime"
 	"net/http"
 	"strings"
 	"time"
@@ -186,19 +183,13 @@ func NewMerchantStoreProfileHandler(service *MerchantStoreRegistrar) http.Handle
 			writeJSON(w, 200, profile)
 			return
 		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" || r.Header.Get("Content-Encoding") != "" {
-			writeJSON(w, 400, map[string]string{"code": "INVALID_STORE_PROFILE"})
-			return
-		}
-		raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16*1024))
 		var input struct {
 			OperationID     *string `json:"operationId"`
 			ExpectedVersion *int64  `json:"expectedVersion"`
 			Name            *string `json:"name"`
 			Description     *string `json:"description"`
 		}
-		if err != nil || json.Unmarshal(raw, &input, json.RejectUnknownMembers(true)) != nil || input.OperationID == nil || input.ExpectedVersion == nil || input.Name == nil || input.Description == nil {
+		if decodeUniqueJSON(w, r, 16*1024, &input) != nil || input.OperationID == nil || input.ExpectedVersion == nil || input.Name == nil || input.Description == nil {
 			writeJSON(w, 400, map[string]string{"code": "INVALID_STORE_PROFILE"})
 			return
 		}

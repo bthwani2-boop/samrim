@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"math"
-	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -228,11 +227,6 @@ func NewMerchantCatalogDraftHandler(registrar *MerchantStoreRegistrar) (http.Han
 		token, ok := bearerToken(r)
 		if !ok {
 			writeRegistrationFailure(w, ErrUnauthorized)
-			return
-		}
-		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-		if err != nil || media != "application/json" {
-			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
 		var command MerchantCatalogDraftChange
