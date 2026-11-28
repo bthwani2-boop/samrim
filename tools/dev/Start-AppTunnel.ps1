@@ -6,9 +6,10 @@ param([switch]$ValidateOnly, [switch]$VerifyOnly)
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
+. (Join-Path $PSScriptRoot 'port-layout.ps1')
 function Get-TunnelPlan {
   param([string]$LayoutPath, [string]$SshPath)
-  $layout = Get-Content -LiteralPath $LayoutPath -Raw | ConvertFrom-Json
+  $layout = Read-DevelopmentPortLayout $LayoutPath
   $forwards = @(
     foreach ($app in $layout.apps.PSObject.Properties) {
       @{ Name = $app.Name; Local = $app.Value.surface; Remote = $app.Value.lenovo }
@@ -17,16 +18,6 @@ function Get-TunnelPlan {
       @{ Name = $owner.Name; Local = $owner.Value; Remote = $owner.Value }
     }
   )
-  if (!$forwards.Count -or @($forwards.Local | Sort-Object -Unique).Count -ne $forwards.Count) {
-    throw 'APP_TUNNEL_PORT_COLLISION'
-  }
-  foreach ($f in $forwards) {
-    foreach ($port in @($f.Local, $f.Remote)) {
-      if (($port -isnot [int] -and $port -isnot [long]) -or $port -lt 1024 -or $port -gt 65535) {
-        throw 'APP_TUNNEL_INVALID_PORT_CONFIG'
-      }
-    }
-  }
   if (!(Test-Path -LiteralPath $SshPath -PathType Leaf)) { throw 'APP_TUNNEL_SSH_MISSING' }
   $target = 'bthwani-docker'
   $argsList = @('-N','-T','-o','BatchMode=yes','-o','StrictHostKeyChecking=yes','-o','ExitOnForwardFailure=yes','-o','ConnectTimeout=8','-o','ConnectionAttempts=1','-o','ServerAliveInterval=15','-o','ServerAliveCountMax=3')

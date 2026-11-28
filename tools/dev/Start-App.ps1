@@ -167,7 +167,8 @@ function Assert-OwnerEndpoint([string]$Uri, [int]$ExpectedStatus) {
   }
 }
 
-$developmentPorts=Get-Content -LiteralPath (Join-Path $PSScriptRoot 'ports.json') -Raw | ConvertFrom-Json
+. (Join-Path $PSScriptRoot 'port-layout.ps1')
+$developmentPorts = Read-DevelopmentPortLayout (Join-Path $PSScriptRoot 'ports.json')
 $ports=@{}
 foreach($entry in $developmentPorts.apps.PSObject.Properties){$ports[$entry.Name]=[int]$entry.Value.lenovo}
 $runner='C:\Users\bthwa\BThwaniAppRunner'

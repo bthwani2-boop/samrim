@@ -876,3 +876,20 @@ test("development registration seed requires explicit application and uses the e
   const source = readFileSync(scriptPath, "utf8");
   assert.match(source, /'seed'\s*\{\s*Invoke-DevelopmentRegistrationSeed\s*\}/);
 });
+
+
+test("all development launchers share strict native port-layout admission", {skip:process.platform!=="win32"},()=>{
+  const folder=path.dirname(scriptPath);
+  for(const file of ["Start-App.ps1","Start-AppTunnel.ps1","dev.ps1"]){
+    const source=readFileSync(path.join(folder,file),"utf8");
+    assert.match(source,/port-layout\.ps1/);
+    assert.match(source,/Read-DevelopmentPortLayout/);
+    assert.doesNotMatch(source,/ports\.json[^\n]*ConvertFrom-Json/);
+  }
+  const helper=path.join(folder,"port-layout.ps1").replaceAll("'","''");
+  const layout=path.join(folder,"ports.json").replaceAll("'","''");
+  const ps=["$ErrorActionPreference='Stop';Set-StrictMode -Version Latest", ". '"+helper+"'", "$raw=Get-Content -LiteralPath '"+layout+"' -Raw", "$positive=Read-DevelopmentPortLayout '"+layout+"'", "if(@($positive.apps.PSObject.Properties).Count -ne 4 -or @($positive.ownerForwards.PSObject.Properties).Count -ne 2){throw 'BASELINE_INVALID'}", "$cases=@('missing-owner','unexpected-owner','remote-collision','wrong-fixed-owner-port','missing-app','unknown-app','local-collision','wrong-task','wrong-cli','string-port','fraction-port','duplicate-property','case-property','unknown-root','wrong-fixed-origin','non-object','invalid-json','wlt-destination','mailpit-local','media-destination','payment-destination','wrong-merchant-origin','duplicate-root')\nforeach($case in $cases){\n  $v=$raw|ConvertFrom-Json -AsHashtable\n  switch($case){\n    'missing-owner'{$v.ownerForwards.Remove('identity')}\n    'unexpected-owner'{$v.ownerForwards.wlt=3203}\n    'remote-collision'{$v.apps.customer.lenovo=$v.apps.merchant.lenovo}\n    'wrong-fixed-owner-port'{$v.ownerForwards.identity=3209}\n    'missing-app'{$v.apps.Remove('captain')}\n    'unknown-app'{$v.apps.extra=@{surface=18109;lenovo=28119;task='Extra';cli='expo'}}\n    'local-collision'{$v.apps.captain.surface=$v.apps.merchant.surface}\n    'wrong-task'{$v.apps.merchant.task='Foreign'}\n    'wrong-cli'{$v.apps.captain.cli='next'}\n    'string-port'{$v.apps.captain.surface='18103'}\n    'fraction-port'{$v.apps.captain.surface=18103.5}\n    'case-property'{$v.apps.customer.Remove('surface');$v.apps.customer['Surface']=18101}\n    'unknown-root'{$v.extra=$true}\n    'wrong-fixed-origin'{$v.apps.'control-panel'.lenovo=23011}\n    'wlt-destination'{$v.apps.captain.lenovo=3203}\n    'mailpit-local'{$v.apps.captain.surface=3226}\n    'media-destination'{$v.apps.captain.lenovo=3233}\n    'payment-destination'{$v.apps.captain.lenovo=3290}\n    'wrong-merchant-origin'{$v.apps.merchant.surface=18109}\n  }\n  $json=$v|ConvertTo-Json -Depth 8\n  if($case -eq 'duplicate-property'){$json=$raw.Replace('\"surface\": 18101','\"surface\": 18101,\"surface\":18101')}\n  if($case -eq 'duplicate-root'){$json='{\"apps\":{},'+$raw.Substring(1)}\n  if($case -eq 'non-object'){$json='[]'}\n  if($case -eq 'invalid-json'){$json='{\"apps\":'}\n  $blocked=$false\n  try{$null=ConvertFrom-DevelopmentPortLayout $json}catch{$blocked=$_.Exception.Message -clike 'APP_PORT_LAYOUT_*'}\n  if(!$blocked){throw ('FALSE_ACCEPT '+$case)}\n  'REJECTED '+$case\n}\n'PORT_LAYOUT_NEGATIVE_PASS='+$cases.Count"].join("; ");
+  const result=spawnSync("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{encoding:"utf8",windowsHide:true,timeout:20000});
+  assert.equal(result.status,0,result.stderr||result.stdout);
+  assert.match(result.stdout,/PORT_LAYOUT_NEGATIVE_PASS=23/);
+});

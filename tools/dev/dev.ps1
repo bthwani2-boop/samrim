@@ -44,7 +44,8 @@ $expectedLenovo = 'BTHWANI-DOCKER'
 $project = 'bthwani-refoundation'
 $baseEnv = Join-Path $repo 'infra\.env'
 $baseCompose = Join-Path $repo 'infra\compose.yaml'
-$developmentPorts = Get-Content -LiteralPath (Join-Path $repo 'tools\dev\ports.json') -Raw | ConvertFrom-Json
+. (Join-Path $PSScriptRoot 'port-layout.ps1')
+$developmentPorts = Read-DevelopmentPortLayout (Join-Path $PSScriptRoot 'ports.json')
 . (Join-Path $PSScriptRoot 'task-ownership.ps1')
 . (Join-Path $PSScriptRoot 'dev-resource-admission.ps1')
 $ownerTasks = @(
