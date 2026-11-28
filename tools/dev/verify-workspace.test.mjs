@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { canonicalGitEnvironment } from "../security/verify-secrets.mjs";
 
 const verifier = new URL('./verify-workspace.mjs', import.meta.url);
 
@@ -300,8 +301,44 @@ function sourceFixture(t) {
     mkdirSync(path.dirname(target), { recursive: true });
     copyFileSync(path.join(source, rel), target);
   }
+  const init = spawnSync("git", ["init", "--quiet", "--template="], { cwd: dir, env: canonicalGitEnvironment(), encoding: "utf8" });
+  assert.equal(init.status, 0, init.stderr);
   return dir;
 }
+
+test("native Git ignore admission rejects negation, missing rules and hidden authored paths", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const file = path.join(dir, ".gitignore");
+  const original = readFileSync(file, "utf8");
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  for (const [change, probe] of [
+    [original + "\n!infra/.env\n", "infra/.env"],
+    [original + "\napps/customer/src/\n", "apps/customer/src/"],
+    [original.replace(/^\.env$/m, "# .env"), ".env"],
+    [original + "\n.env.example\n", ".env.example"],
+    [original + "\n!apps/control-panel/next-env.d.ts\n", "apps/control-panel/next-env.d.ts"],
+  ]) {
+    writeFileSync(file, change);
+    assert.throws(() => verifyWorkspace(dir), error => error.message.includes("Git ignore admission") && error.message.includes(probe));
+  }
+  writeFileSync(file, original);
+  writeFileSync(path.join(dir, "apps/customer/.gitignore"), "src/\n");
+  assert.throws(() => verifyWorkspace(dir), /Git ignore admission.*apps\/customer\/src\//);
+  const nested = path.join(dir, "apps/customer/.gitignore");
+  writeFileSync(nested, ".env.local\n");
+  const add = spawnSync("git", ["add", "--", "apps/customer/.gitignore"], { cwd: dir, env: canonicalGitEnvironment(), encoding: "utf8" });
+  assert.equal(add.status, 0, add.stderr);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  rmSync(nested);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  writeFileSync(file, original.replace(/^\.env$/m, "# .env"));
+  mkdirSync(path.join(dir, ".git/info"), { recursive: true });
+  writeFileSync(path.join(dir, ".git/info/exclude"), ".env\n");
+  assert.throws(() => verifyWorkspace(dir), /Git ignore admission unowned rule: \.env/);
+  writeFileSync(file, original);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+});
 
 test('source admission follows actual owners, not README status or imaginary Nx cache execution', async t => {
   const { verifyWorkspace } = await import('./verify-workspace.mjs');
@@ -498,4 +535,38 @@ test("source admission distinguishes the native compiler, API alias and Nx peer-
   app.devDependencies.typescript=valid.typescriptApi;
   writeFileSync(customer,JSON.stringify(app));
   assert.throws(() => verifyWorkspace(dir), /Project native TypeScript compiler differs/);
+});
+
+test("workspace admission rejects incomplete authored configuration rather than defaulting to acceptance", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const cases = [
+    ["package.json", x => { delete x.devDependencies; }],
+    ["package.json", x => { delete x.packageManager; }],
+    ["package.json", x => { x.packageManager = "other@1.0.0"; }],
+    ["package.json", x => { delete x.engines; }],
+    ["package.json", x => { x.devDependencies["@typescript/native"] = "7.0.2"; }],
+    ["nx.json", x => { delete x.targetDefaults; }],
+    ["nx.json", x => { delete x.targetDefaults.typecheck.inputs; }],
+    ["nx.json", x => { delete x.namedInputs; }],
+    ["nx.json", x => { delete x.namedInputs.nodeToolchain; }],
+    ["nx.json", x => { delete x.nxCloudId; }],
+    ["services/dsh/package.json", x => { delete x.scripts; }],
+    ["services/dsh/package.json", x => { delete x.devDependencies; }],
+    ["services/dsh/tsconfig.json", x => { delete x.compilerOptions; }],
+    ["services/dsh/tsconfig.json", x => { delete x.include; }],
+    ["tsconfig.base.json", x => { delete x.compilerOptions; }],
+    ["biome.json", x => { delete x.linter; }],
+    ["biome.json", x => { delete x.formatter; }],
+  ];
+  for (const [rel, change] of cases) {
+    const target = path.join(dir, rel);
+    const original = readFileSync(target, "utf8");
+    const changed = JSON.parse(original);
+    change(changed);
+    writeFileSync(target, JSON.stringify(changed));
+    assert.throws(() => verifyWorkspace(dir), { name: "AssertionError" }, rel);
+    writeFileSync(target, original);
+  }
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
 });

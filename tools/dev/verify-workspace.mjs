@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { lstatSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
+import { openRepositoryReader, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
 import { resolvePinnedGo, services } from "./check-go.mjs";
 import { serviceSourcePlacementIssues } from "./check-service-placement.mjs";
 
@@ -165,6 +165,65 @@ function verifyOwner(source, dependency, owner, go, ts) {
   locked(importer(dependency, project), "typescript", ts);
 }
 
+// Git owns ignore matching (including rule precedence and negation). Probe the
+// actual worktree, not textual pattern presence or a second glob implementation.
+// Only verified repository ignore files may establish the exclusion evidence.
+function verifyGitIgnore(checkout, source) {
+  const excluded = [
+    "node_modules/fixture.js", "apps/customer/node_modules/fixture.js",
+    "apps/control-panel/next-env.d.ts", "apps/merchant/.tmp/export/fixture.js",
+    "coverage/lcov.info", "graphify-out/graph.json", ".bthwani-local/fixture.json",
+    ".specify/feature.json", ".specify/workflows/runs/fixture.json",
+    ".env", "infra/.env", "apps/customer/.env.local", "services/dsh/.env.test",
+    "secrets.local.json", "infra/secrets.local.json", "infra/fixture.local.secret.json",
+    "apps/customer/credentials.json", "apps/merchant/google-services.json",
+    "apps/captain/GoogleService-Info.plist", "apps/customer/fixture.jks",
+    "apps/customer/fixture.keystore", "infra/fixture.p12", "infra/fixture.p8",
+    "infra/fixture.pem", "infra/fixture.key",
+  ];
+  const included = [
+    ".env.example", "infra/.env.example", "package.json", "pnpm-lock.yaml",
+    "pnpm-workspace.yaml", ".github/workflows/ci.yml", "governance/engineering.md",
+    "apps/customer/src/fixture.ts", "apps/merchant/src/fixture.ts",
+    "apps/captain/src/fixture.ts", "apps/control-panel/src/fixture.ts",
+    "apps/customer/tests/fixture.test.mjs", "apps/merchant/tests/fixture.test.mjs",
+    "apps/captain/tests/fixture.test.mjs", "apps/control-panel/tests/fixture.test.mjs",
+    "packages/design-system/src/fixture.ts", "services/dsh/backend/internal/discovery/fixture.go",
+    "services/identity/database/schema/00_fixture.sql", "services/wlt/contracts/openapi/paths/fixture.yaml",
+    "tools/dev/fixture.test.mjs", "tests/infra/fixture.test.mjs",
+  ];
+  const probes = new Map([...excluded.map(name => [name, true]), ...included.map(name => [name, false])]);
+  const git = openRepositoryReader(checkout);
+  const tracked = git("ls-files", "--cached", "-z", "--", ".gitignore", ":(glob)**/.gitignore")
+    .toString("utf8").split("\0").filter(Boolean);
+  const rules = new Map([...new Set([".gitignore", ...tracked])].map(name => [
+    name, name === ".gitignore" || lstatSync(path.join(checkout, name), { throwIfNoEntry: false })
+      ? source.read(name) : null,
+  ]));
+  const output = git("check-ignore", "--verbose", "--non-matching", "--no-index", "--", ...probes.keys())
+    .toString("utf8").trimEnd().split(/\r?\n/);
+  assert.equal(output.length, probes.size, "Git ignore admission incomplete native inventory");
+  for (const line of output) {
+    // All probe names are fixed ASCII paths. The native verbose record is
+    // source:line:pattern TAB pathname, or :: TAB pathname for no match.
+    const record = /^([^:\t]*):([0-9]*):([^\t]*)\t([^\t]+)$/.exec(line);
+    assert.ok(record && probes.has(record[4]), "Git ignore admission invalid native record");
+    const [, origin, lineNumber, pattern, name] = record;
+    const expected = probes.get(name);
+    probes.delete(name);
+    if (origin || lineNumber || pattern) {
+      assert.ok(rules.has(origin) && rules.get(origin) !== null && /^[1-9][0-9]*$/.test(lineNumber) && pattern,
+        "Git ignore admission unowned rule: " + name);
+    }
+    assert.equal(Boolean(pattern) && !pattern.startsWith("!"), expected,
+      "Git ignore admission unexpected visibility: " + name);
+  }
+  for (const [name, original] of rules) {
+    const current = lstatSync(path.join(checkout, name), { throwIfNoEntry: false }) ? source.read(name) : null;
+    assert.equal(current, original, "Git ignore admission source changed: " + name);
+  }
+}
+
 export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   const issues = serviceSourcePlacementIssues(checkout);
   assert.equal(issues.length, 0, "Service source placement violations:\n" + issues.join("\n"));
@@ -203,10 +262,7 @@ export function verifyWorkspace(checkout = root, { strict = false } = {}) {
   assert.equal(biome.formatter?.enabled, false);
   const ts = toolchain.native;
   for (const owner of services) verifyOwner(source, dependency, owner, go, ts);
-  const ignores = source.read(".gitignore");
-  for (const entry of ["node_modules/", ".env", "secrets.local.", "apps/control-panel/next-env.d.ts"]) {
-    assert.ok(ignores.includes(entry), "Missing local dependency or secret ignore: " + entry);
-  }
+  verifyGitIgnore(checkout, source);
 
   if (strict) resolvePinnedGo(go);
   return { node, go, pnpm, typescript: ts, typescriptApi: toolchain.api, biome: manifest.devDependencies["@biomejs/biome"],
