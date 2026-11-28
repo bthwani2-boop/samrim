@@ -5,9 +5,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { publicStorefrontUrl } from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
-import { publicStorefrontPath } from "../../customer/src/features/sharing/store-share.ts";
-import { publicStorefrontLink } from "../src/features/stores/public-storefront-link.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const retainedFixtures = [];
@@ -19,26 +18,6 @@ function nodes(tree) {
   if (Array.isArray(tree)) return tree.flatMap(nodes);
   return [tree, ...nodes(tree.props?.children)];
 }
-
-test("Merchant link uses Customer's canonical public path and rejects forged origins", () => {
-  for (const id of ["market-sanaa", "shop-42", "store-1", "a", "a".repeat(64)]) {
-    assert.equal(publicStorefrontLink(id), null, "relative Merchant links are not Customer share URLs");
-    assert.equal(new URL(publicStorefrontLink(id, "https://customer.example")).pathname, publicStorefrontPath(id));
-    assert.equal(publicStorefrontLink(id, "https://customer.example"), `https://customer.example/storefront/${id}`);
-    assert.equal(publicStorefrontLink(id, "http://127.0.0.1:18101"), `http://127.0.0.1:18101/storefront/${id}`);
-  }
-  for (const id of ["", "../danger", "UPPER", " a", "%2F", "a/b", "a".repeat(65)]) {
-    assert.equal(publicStorefrontLink(id, "https://customer.example"), null);
-    assert.equal(publicStorefrontPath(id), "/stores");
-    assert.equal(publicStorefrontLink(id), null);
-  }
-  for (const origin of [
-    "http://customer.example", "https://customer.example.evil/path",
-    "https://customer.example/?redirect=https://evil.example",
-    "https://user:password@customer.example", "https://customer.example#h",
-    "javascript:alert(1)", "//customer.example",
-  ]) assert.equal(publicStorefrontLink("shop-42", origin), null, origin);
-});
 
 test("Merchant copies only after fresh DSH publication proof; actor/Store switch cancels stale copy", async () => {
   const tmp = mkdtempSync(path.join(tmpdir(), "bthwani-merchant-share-"));
@@ -90,7 +69,7 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
     };
     const jsx = (type, props) => ({ type, props: props ?? {} });
     const mocks = {
-      "@bthwani/dsh": { getPublicStore(origin, id, signal) {
+      "@bthwani/dsh": { publicStorefrontUrl, getPublicStore(origin, id, signal) {
         const request = { origin, id, signal };
         requests.push(request);
         return new Promise((resolve, reject) => { request.resolve = resolve; request.reject = reject; });
@@ -104,7 +83,6 @@ test("Merchant copies only after fresh DSH publication proof; actor/Store switch
         if (clipboardSucceeds) copied.push(value);
         return clipboardSucceeds;
       } },
-      "./public-storefront-link": { publicStorefrontLink },
       react,
       "react/jsx-runtime": { jsx, jsxs: jsx },
       "react-native": { Platform: { OS: "web" }, Share: { sharedAction: "sharedAction", dismissedAction: "dismissedAction", share: async value => { shared.push(value); if (shareFailure) throw Error("native share unavailable"); if (sharePending) return sharePending; return { action: shareOutcome }; } }, Pressable: "Pressable", Text: "Text", View: "View" },

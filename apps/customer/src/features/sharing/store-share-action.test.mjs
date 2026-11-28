@@ -5,18 +5,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { publicStorefrontUrl } from "@bthwani/dsh";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import * as sharing from "./store-share.ts";
-
-test("public share destination is canonical and excludes query and private context", () => {
-  assert.equal(typeof sharing.publicStorefrontShareUrl, "function");
-  assert.equal(sharing.publicStorefrontShareUrl("store-a", "https://customer.example"), "https://customer.example/storefront/store-a");
-  assert.equal(sharing.publicStorefrontShareUrl("store-a", "http://localhost:18101"), "http://localhost:18101/storefront/store-a");
-  for (const origin of ["", "javascript:alert(1)", "http://customer.example", "https://user:password@customer.example", "https://customer.example/private", "https://customer.example/?actorId=secret", "https://customer.example/#private"]) {
-    assert.equal(sharing.publicStorefrontShareUrl("store-a", origin), null);
-  }
-  assert.equal(sharing.publicStorefrontShareUrl("../private", "https://customer.example"), null);
-});
 
 test("sharing rechecks exact current public Store and never returns a private or wrong-Store destination", async () => {
   assert.equal(typeof sharing.verifyStorefrontShare, "function");
@@ -75,7 +66,7 @@ test("Web clipboard and Android share receive only a freshly verified canonical 
     let index = 0, cleanup;
     const jsx = (type, props) => ({ type, props });
     const mod = loadMappedRenderFixture(code, source, {
-      "@bthwani/dsh": { getPublicStore: (origin, id, signal) => new Promise((resolve, reject) => requests.push({ origin, id, signal, resolve, reject })) },
+      "@bthwani/dsh": { publicStorefrontUrl, getPublicStore: (origin, id, signal) => new Promise((resolve, reject) => requests.push({ origin, id, signal, resolve, reject })) },
       "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
       "./store-share": sharing,
       "react/jsx-runtime": { jsx, jsxs: jsx },

@@ -2,9 +2,46 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readBoundedOwnerJSON } from "./client-core.ts";
 import {
-  changeOperatorCaptainStanding, DshPublicError, estimatePublicOffer, getPublicStore, listPublicOffers, listPublicStores, listPublicVerticals,
-  replaceCityStoreOperationalPolicy,
+  changeOperatorCaptainStanding, DshPublicError, estimatePublicOffer, getPublicStore,
+  isPublicId, listPublicOffers, listPublicStores, listPublicVerticals,publicStorefrontPath, publicStorefrontUrl, replaceCityStoreOperationalPolicy,
 } from "./index.ts";
+
+test("canonical public Store path and URL use the owner string contract without private context", () => {
+  for (const id of ["market-sanaa", "shop-42", "store-1", "a", "-", "a".repeat(64)]) {
+    assert.equal(isPublicId(id), true);
+    assert.equal(publicStorefrontPath(id), `/storefront/${id}`);
+    assert.equal(publicStorefrontUrl(id), null);
+    for (const origin of ["https://customer.example", "http://localhost:18101", "http://127.0.0.1:18101"]) {
+      assert.equal(publicStorefrontUrl(id, origin), `${origin}/storefront/${id}`);
+    }
+  }
+  for (const id of ["", "../danger", "UPPER", " a", "%2F", "a/b", "a\b", "a".repeat(65)]) {
+    assert.equal(isPublicId(id), false);
+    assert.equal(publicStorefrontPath(id), null);
+    assert.equal(publicStorefrontUrl(id, "https://customer.example"), null);
+  }
+  for (const origin of [
+    "", "http://customer.example", "https://customer.example.evil/path",
+    "https://customer.example/?redirect=https://evil.example",
+    "https://user:password@customer.example", "https://customer.example#h",
+    "javascript:alert(1)", "//customer.example", "https://customer.example/?",
+    "https://customer.example/#",
+  ]) assert.equal(publicStorefrontUrl("shop-42", origin), null, origin);
+});
+
+test("public storefront admission never coerces malformed identifiers or origins", () => {
+  let coercions = 0;
+  const object = { toString() { coercions++; return "store-a"; } };
+  for (const id of [null, undefined, 123, true, ["store-a"], object, Symbol("store-a")]) {
+    assert.equal(isPublicId(id), false);
+    assert.equal(publicStorefrontPath(id), null);
+    assert.equal(publicStorefrontUrl(id, "https://customer.example"), null);
+  }
+  for (const origin of [["https://customer.example"], new URL("https://customer.example"), {
+    toString() { coercions++; return "https://customer.example"; },
+  }]) assert.equal(publicStorefrontUrl("store-a", origin), null);
+  assert.equal(coercions, 0);
+});
 
 const base = "http://127.0.0.1:3202";
 const store = Object.freeze({

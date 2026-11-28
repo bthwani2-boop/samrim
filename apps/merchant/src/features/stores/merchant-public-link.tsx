@@ -1,9 +1,8 @@
-import { getPublicStore } from "@bthwani/dsh";
+import { getPublicStore, publicStorefrontUrl } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Share, Text, View } from "react-native";
-import { publicStorefrontLink } from "./public-storefront-link";
 
 type SharingAction = "copy" | "share";
 type SharingContext = {
@@ -51,7 +50,7 @@ export default function MerchantPublicLink({ actorId, storeId, published }: Read
   published: boolean;
 }>) {
   const { theme } = useMobileAppearance();
-  const link = publicStorefrontLink(storeId, process.env.EXPO_PUBLIC_BTHWANI_CUSTOMER_WEB_ORIGIN);
+  const link = publicStorefrontUrl(storeId, process.env.EXPO_PUBLIC_BTHWANI_CUSTOMER_WEB_ORIGIN);
   const native = Platform.OS === "android" || Platform.OS === "ios";
   const [view, setView] = useState<SharingView>(idle);
   const latest = useRef<SharingContext | null>(null);

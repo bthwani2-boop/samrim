@@ -1,3 +1,5 @@
+import { isPublicId } from "@bthwani/dsh";
+
 /** A city scope is not evidence that delivery or checkout is available. */
 export function normalizeServiceCityId(value: string): string {
   const normalized = value.trim().toLowerCase();
@@ -6,7 +8,7 @@ export function normalizeServiceCityId(value: string): string {
 
 /** Store route identifiers follow DSH's PublicId contract; never coerce an alias. */
 export function readPublicStoreId(value: unknown): string | null {
-  return typeof value === "string" && /^[a-z0-9-]{1,64}$/.test(value) ? value : null;
+  return isPublicId(value) ? value : null;
 }
 
 const STORE_SEARCH_LIMIT = 80;

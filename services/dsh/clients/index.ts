@@ -55,8 +55,8 @@ export type { OperatorStoreRegistrationPolicyHistoryEntry, OperatorStoreRegistra
 export { isStoreRegistrationPolicyHistoryPage, listOperatorStoreRegistrationPolicyHistory } from "./operator-store-registration-policy-history.ts";
 export type { PublicOffer, PublicOfferEstimate, PublicPage, PublicStore, PublicVertical } from "./public-discovery.ts";
 export {
-  DshPublicError, estimatePublicOffer, getPublicStore, isPublicOfferPriceYer, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,
-  parseOfferEstimateQuantity,
+  DshPublicError, estimatePublicOffer, getPublicStore,
+  isPublicId, isPublicOfferPriceYer, listPublicCities, listPublicOffers, listPublicStores, listPublicVerticals,parseOfferEstimateQuantity, publicStorefrontPath, publicStorefrontUrl,
 } from "./public-discovery.ts";
 export { servePublicDiscovery } from "./public-discovery-web.ts";
 export type { PendingRegistration } from "./registration-attempt.ts";

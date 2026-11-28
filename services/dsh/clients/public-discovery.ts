@@ -60,8 +60,28 @@ function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : null;
 }
-function isPublicId(value: unknown): value is string {
+export function isPublicId(value: unknown): value is string {
   return typeof value === "string" && publicId.test(value);
+}
+
+/** Stable public Customer route, not publication or checkout authority. */
+export function publicStorefrontPath(storeId: unknown): string | null {
+  return isPublicId(storeId) ? `/storefront/${storeId}` : null;
+}
+
+/** Build a share destination only from the configured Customer origin. */
+export function publicStorefrontUrl(storeId: unknown, origin?: unknown): string | null {
+  const pathname = publicStorefrontPath(storeId);
+  if (pathname === null || typeof origin !== "string" || origin.length === 0) return null;
+  try {
+    const root = new URL(origin);
+    const allowed = root.protocol === "https:" ||
+      (root.protocol === "http:" && ["localhost", "127.0.0.1"].includes(root.hostname));
+    if (!allowed || root.href !== `${root.origin}/`) return null;
+    return new URL(pathname, root).href;
+  } catch {
+    return null;
+  }
 }
 function boundedName(value: unknown, maximum: number): value is string {
   if (typeof value !== "string") return false;

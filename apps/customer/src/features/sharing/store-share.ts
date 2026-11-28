@@ -1,22 +1,8 @@
-import { readPublicStoreId } from "../location/serviceability.ts";
+import { publicStorefrontPath as canonicalPublicStorefrontPath, publicStorefrontUrl } from "@bthwani/dsh";
 
-/** Public links never confer Store ownership, access or checkout permissions. */
+/** Navigation recovers to the directory if the route identifier is invalid. */
 export function publicStorefrontPath(storeId: string): string {
-  const id = readPublicStoreId(storeId);
-  return id === null ? "/stores" : `/storefront/${id}`;
-}
-
-export function publicStorefrontShareUrl(storeId: string, origin: string): string | null {
-  if (readPublicStoreId(storeId) === null || !origin) return null;
-  try {
-    const root = new URL(origin);
-    if (root.username || root.password || root.pathname !== "/" || root.search || root.hash ||
-      !(root.protocol === "https:" ||
-        (root.protocol === "http:" && ["localhost", "127.0.0.1"].includes(root.hostname)))) return null;
-    return new URL(publicStorefrontPath(storeId), root).href;
-  } catch {
-    return null;
-  }
+  return canonicalPublicStorefrontPath(storeId) ?? "/stores";
 }
 
 /** A rendered Store is not enduring publication authority. Recheck immediately
@@ -28,7 +14,7 @@ export async function verifyStorefrontShare(
   signal: AbortSignal,
 ): Promise<string | null> {
   signal.throwIfAborted();
-  const url = publicStorefrontShareUrl(storeId, origin);
+  const url = publicStorefrontUrl(storeId, origin);
   if (!url) return null;
   const current = await read(storeId, signal);
   signal.throwIfAborted();

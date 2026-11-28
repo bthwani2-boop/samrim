@@ -1,8 +1,8 @@
-import { getPublicStore } from "@bthwani/dsh";
+import { getPublicStore, publicStorefrontUrl } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
 import { useEffect, useRef, useState } from "react";
 import { Platform, Pressable, Share, Text, View } from "react-native";
-import { publicStorefrontShareUrl, verifyStorefrontShare } from "./store-share";
+import { verifyStorefrontShare } from "./store-share";
 
 export default function StoreShareButton({ storeId, ownerOrigin }: Readonly<{
   storeId: string;
@@ -25,7 +25,7 @@ export default function StoreShareButton({ storeId, ownerOrigin }: Readonly<{
     };
   }, []);
 
-  const validUrl = publicStorefrontShareUrl(storeId, origin);
+  const validUrl = publicStorefrontUrl(storeId, origin);
   async function shareStore() {
     if (!active.current || pending.current || !validUrl) return;
     const request = new AbortController();
