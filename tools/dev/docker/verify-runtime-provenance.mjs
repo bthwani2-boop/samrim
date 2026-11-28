@@ -239,7 +239,7 @@ function admitRuntime(containers, images, expected, identities, source, execute,
     }
     // The owner image is admitted by immutable source identity, not a mutable
     // .env tag. Its resolved execution settings still must match.
-    try { verifyLiveDefinition(model, service, container, image); verifyServiceAttachments(service, container, identities); }
+    try { verifyLiveDefinition(model, service, container, image); verifyServiceAttachments(service, container, identities, model, [...containers.values()]); }
     catch (error) {
       errors.push(/^COMPOSE_[A-Z_]+(?: [A-Za-z0-9_-]+)*$/.test(error.message)
         ? error.message : "effective container definition unproven");

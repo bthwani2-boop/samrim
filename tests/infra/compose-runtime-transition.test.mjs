@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parseReconcileArgs } from "../../tools/dev/docker/reconcile-owner-runtime.mjs";
+import { nativeInspect, nativeNetwork } from "./runtime-inspect-fixture.mjs";
 
 const revision = "a".repeat(40);
 
@@ -110,6 +111,7 @@ test("interrupted transition cannot treat a current hash as proof of actual serv
   const { verifyLiveDefinition } = await import("../../tools/dev/docker/compose-runtime-transition.mjs");
   const model = { services: { dsh: { volumes: [{ type: "volume", source: "data", target: "/data", read_only: true }], networks: { isolated: {} }, ports: [{ target: 8080, protocol: "tcp", host_ip: "127.0.0.1", published: "8181" }], read_only: true, restart: "unless-stopped", cap_drop: ["ALL"], security_opt: ["no-new-privileges:true"], environment: { MODE: "synthetic" }, labels: { "com.bthwani.environment": "refoundation" } } }, volumes: { data: { name: "project-data" } }, networks: { isolated: { name: "project-isolated" } } };
   const record = { Image: "sha256:"+"b".repeat(64), Config: { Env: ["MODE=synthetic"], Labels: { "com.bthwani.environment": "refoundation" } }, HostConfig: { Privileged: false, ReadonlyRootfs: true, RestartPolicy: { Name: "unless-stopped" }, CapDrop: ["ALL"], SecurityOpt: ["no-new-privileges:true"], PortBindings: { "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: "8181" }] } }, Mounts: [{ Type: "volume", Driver: "local", Name: "project-data", Destination: "/data", RW: false }], NetworkSettings: { Networks: { "project-isolated": {} } } };
+  nativeInspect(record,model,"dsh");
   assert.doesNotThrow(() => verifyLiveDefinition(model, "dsh", record, { Id: record.Image, Config: {} }));
   for (const change of [
     value => { value.Mounts[0].Name = "other-data"; },
@@ -134,6 +136,7 @@ test("effective Compose attestation compares distinct textual paths ordinally an
   const policy = { mem_limit: 1024, pids_limit: 8, logging: { driver: "local", options: { "max-size": "10m", "max-file": "3" } } };
   const model = {services:{dsh:{...policy, restart:"unless-stopped", volumes:paths.map((target,i)=>({type:"volume",source:`v${i}`,target}))}},volumes:{v0:{name:"v0"},v1:{name:"v1"}},networks:{}};
   const record = { Id:"a".repeat(64),Image:`sha256:${"b".repeat(64)}`,Config:{Hostname:"a".repeat(12),Env:[],Labels:{}}, HostConfig:{Memory:1024,MemorySwap:2048,PidsLimit:8,LogConfig:{Type:"local",Config:{"max-size":"10m","max-file":"3"}},Privileged:false,ReadonlyRootfs:false,RestartPolicy:{Name:"unless-stopped"}},Mounts:paths.map((Destination,i)=>({Type:"volume",Driver:"local",Name:`v${i}`,Destination,RW:true})),NetworkSettings:{Networks:{}},State:{Running:true,Health:{Status:"healthy"}} };
+  nativeInspect(record,model,"dsh");
   const reordered=structuredClone(record);
   reordered.Mounts.reverse();
   assert.doesNotThrow(()=>verifyReplacement(record,reordered,policy));
@@ -165,12 +168,12 @@ async function transitionFixture({ stale = [], fault, mutate } = {}) {
   const hashes = current => Object.fromEntries(services.map(name=>[name,digest(name+String(current))]));
   const newRow = (name,current,serial=0) => {
     const Id=digest(name+serial);
-    return {Id,Name:`/${project}-${name}-1`,Image:`sha256:${digest(`${name}image`)}`,
+    return nativeInspect({Id,Name:`/${project}-${name}-1`,Image:`sha256:${digest(`${name}image`)}`,
       Config:{Image:oldModel.services[name].image,Hostname:Id.slice(0,12),Env:["A=1"],Labels:{...labels,"com.docker.compose.project":project,"com.docker.compose.service":name,"com.docker.compose.config-hash":hashes(current)[name],"com.docker.compose.project.config_files":current?compose:"historical"}},
       HostConfig:{Privileged:false,ReadonlyRootfs:false,RestartPolicy:{Name:"unless-stopped"},Memory:current?1024:0,MemorySwap:current?2048:0,PidsLimit:current?8:null,LogConfig:{Type:"local",Config:current?policy.logging.options:{}}},
       Mounts:[{Type:"volume",Driver:"local",Name:volume,Source:"/fixture/data",Destination:"/data",RW:true}],
       NetworkSettings:{Networks:{[network]:{NetworkID:digest(network)}}},
-      State:{Running:true,Health:{Status:"healthy"},StartedAt:String(serial)}};
+      State:{Running:true,Health:{Status:"healthy"},StartedAt:String(serial)}},current?newModel:oldModel,name);
   };
   const rows = Object.fromEntries(services.map(name=>[name,newRow(name,!stale.includes(name))]));
   const operations=[],readbacks=[];
@@ -179,8 +182,8 @@ async function transitionFixture({ stale = [], fault, mutate } = {}) {
     if(args[0]==="ps") return services.map(name=>rows[name].Name.slice(1)).reverse().join("\n");
     if(args[0]==="inspect") return JSON.stringify(Object.values(rows));
     if(args[0]==="image"&&args[1]==="inspect") return JSON.stringify([{Id:rows[services.find(name=>rows[name].Config.Image===args.at(-1))].Image,Config:{}}]);
-    if(args[0]==="volume"&&args[1]==="inspect") return JSON.stringify([{Name:volume,Driver:"local",CreatedAt:"fixture",Mountpoint:"/fixture/data"}]);
-    if(args[0]==="network"&&args[1]==="inspect") return JSON.stringify([{Name:network,Id:digest(network),Driver:"bridge",Internal:true}]);
+    if(args[0]==="volume"&&args[1]==="inspect") return JSON.stringify([{Name:volume,Driver:"local",Scope:"local",CreatedAt:"2026-11-26",Mountpoint:"/fixture/data",Labels:{"com.docker.compose.project":project,"com.docker.compose.volume":"data","com.docker.compose.config-hash":"a".repeat(64),"com.docker.compose.version":"5.6.1"}}]);
+    if(args[0]==="network"&&args[1]==="inspect") return JSON.stringify([nativeNetwork(newModel,network,digest(network),Object.values(rows))]);
     if(args[0]==="compose"){
       const current=input!=="old";
       if(args.includes("config")){
@@ -313,6 +316,7 @@ test("effective image and Compose process definition rejects six independent uns
   const image = { Id: "sha256:" + "b".repeat(64), Config: { Cmd: ["serve"], Entrypoint: ["/app"], User: "65532:65532", Env: ["PATH=/bin"], WorkingDir: "/app", Healthcheck: { Test: ["CMD", "/app", "health"], Interval: 15000000000 } } };
   const model = { services: { dsh: { command: ["serve"], entrypoint: ["/app"], user: "65532:65532", healthcheck: { test: ["CMD", "/app", "health"], interval: "15s" }, environment: { MODE: "synthetic" }, restart: "unless-stopped", read_only: true } }, volumes: {}, networks: {} };
   const row = { Image: image.Id, Config: { ...structuredClone(image.Config), Env: ["PATH=/bin", "MODE=synthetic"], Labels: {} }, HostConfig: { Privileged: false, ReadonlyRootfs: true, RestartPolicy: { Name: "unless-stopped" } }, Mounts: [], NetworkSettings: { Networks: {} } };
+  nativeInspect(row,model,"dsh");
   assert.doesNotThrow(() => verifyLiveDefinition(model, "dsh", row, image));
   for (const [name, mutate] of [
     ["Cmd", r => { r.Config.Cmd = ["other"]; }],

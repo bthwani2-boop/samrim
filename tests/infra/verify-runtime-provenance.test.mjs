@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { fileURLToPath } from 'node:url';
 import { main, verifyCandidate } from "../../tools/dev/docker/verify-runtime-provenance.mjs";
+import { nativeInspect, nativeNetwork } from "./runtime-inspect-fixture.mjs";
 
 const canonicalCompose = fileURLToPath(new URL('../../infra/compose.yaml', import.meta.url));
 
@@ -41,7 +42,7 @@ function fixture(options = {}) {
     return { Id: o.id, Config: { Env: [], Labels: labels, Cmd: null, Entrypoint: ["/fixture"],
       User: ownerNames.includes(owner) ? "65532:65532" : "", Healthcheck: { Test: ["CMD", "/fixture", "health"] } } };
   };
-  const containerFor = (owner, pass) => {
+  const containerFor = (owner, pass, mutate=true) => {
     const o = {
       id: String(allServices.indexOf(owner) + 1).repeat(64),
       name: "/" + name(owner), image: imageFor(owner), project: "bthwani-refoundation",
@@ -76,8 +77,11 @@ function fixture(options = {}) {
       Mounts: options.withVolume && owner === "media" ? [{Type:"volume",Driver:"local",Name:"fixture-media",Destination:"/data",Source:"/var/lib/docker/volumes/fixture-media/_data",RW:true}] : [], NetworkSettings: { Networks: networks },
       ...options.seedRecords?.[owner],
     };
-    options.actualMutations?.[owner]?.(row);
-    if (pass === 2) options.finalMutations?.[owner]?.(row);
+    nativeInspect(row,model,owner);
+    if (mutate) {
+      options.actualMutations?.[owner]?.(row);
+      if (pass === 2) options.finalMutations?.[owner]?.(row);
+    }
     return row;
   };
   const seedEnv = {
@@ -123,8 +127,12 @@ function fixture(options = {}) {
           options.badContainer === "duplicate" ? [...allServices.slice(0, -1), "dsh"] : allServices;
         return JSON.stringify(list.map(owner => containerFor(owner, containerReads)));
       }
-      if (a[2] === "volume" && a[3] === "inspect") return JSON.stringify(a.slice(4).map(Name => ({Name,Driver:"local",CreatedAt: containerReads === 2 && options.changedVolume ? "2026-11-27" : "2026-11-26",Mountpoint:"/var/lib/docker/volumes/fixture-media/_data"})));
-      if (a[2] === "network" && a[3] === "inspect") return JSON.stringify(a.slice(4).map(name => ({Name:name,Id:name.endsWith("_isolated")?"e".repeat(64):"f".repeat(64),Driver:"bridge",Internal:name.endsWith("_isolated")})));
+      if (a[2] === "volume" && a[3] === "inspect") return JSON.stringify(a.slice(4).map(Name => ({Name,Driver:"local",Scope:"local",Labels:{"com.docker.compose.project":"bthwani-refoundation","com.docker.compose.volume":"media","com.docker.compose.config-hash":"a".repeat(64),"com.docker.compose.version":"5.6.1"},CreatedAt: containerReads === 2 && options.changedVolume ? "2026-11-27" : "2026-11-26",Mountpoint:"/var/lib/docker/volumes/fixture-media/_data"})));
+      if (a[2] === "network" && a[3] === "inspect") return JSON.stringify(a.slice(4).map(name => {
+        const record=nativeNetwork(model,name,name.endsWith("_isolated")?"e".repeat(64):"f".repeat(64),allServices.map(service=>containerFor(service,containerReads,false)));
+        options.networkMutation?.(record);
+        return record;
+      }));
       if (a[2] === "image" && a[3] === "inspect") {
         if (a[5] === "{{.Id}}") return foundations.map(imageFor).join("\n");
         if (options.badImage === "malformed") return "bad";
@@ -490,4 +498,57 @@ test("canonical volume and network identities bind effective attachment admissio
   }
   rejectOwner({actualMutations:{dsh:row=>{row.NetworkSettings.Networks["bthwani-refoundation_isolated"].NetworkID="9".repeat(64);}}},"dsh","COMPOSE_NETWORK_IDENTITY_MISMATCH");
   assert.throws(()=>run({withVolume:true,changedVolume:true}),/candidate changed during runtime attestation/);
+});
+test("all native host, mount and endpoint deviations fail ordinary, startup and scoped seed admission",()=>{
+  const networkOf=row=>row.NetworkSettings.Networks["bthwani-refoundation_isolated"];
+  const mutations=[
+    row=>{row.HostConfig.CpuQuota=1000;},
+    row=>{row.HostConfig.CpusetCpus="0";},
+    row=>{row.HostConfig.Runtime="foreign";},
+    row=>{row.HostConfig.MaskedPaths=[];},
+    row=>{row.HostConfig.ReadonlyPaths=[];},
+    row=>{row.HostConfig.RestartPolicy.MaximumRetryCount=1;},
+    row=>{row.HostConfig.Binds=["foreign:/data:rw"];},
+    row=>{row.Config.ExposedPorts={"9999/tcp":{}};},
+    row=>{networkOf(row).Aliases.push("foreign");},
+    row=>{row.HostConfig.OomScoreAdj=100;},
+    row=>{row.HostConfig.CgroupParent="foreign";},
+    row=>{networkOf(row).DNSNames.pop();},
+    row=>{networkOf(row).IPAMConfig={IPv4Address:"172.18.0.50"};},
+    row=>{networkOf(row).Links=["foreign"];},
+    row=>{networkOf(row).DriverOpts={foreign:"true"};},
+    row=>{networkOf(row).GwPriority=1;},
+    row=>{delete row.HostConfig.Runtime;},
+    row=>{row.HostConfig.UnreviewedField=true;},
+    row=>{row.Config.AttachStdin=true;},
+    row=>{row.Config.Domainname="foreign";},
+    row=>{networkOf(row).EndpointID="9".repeat(64);},
+  ];
+  for(const mutate of mutations) {
+    for(const mode of [[],["--start-preflight"],["--seed-dsh-preflight"]]) {
+      const f=fixture({actualMutations:{dsh:mutate}});
+      const result=verifyCandidate([...args,...mode],f.execute,f.ancestor);
+      assert.equal(result.passed,false);
+      assert.equal(result.results.find(row=>row.owner==="dsh").passed,false);
+      assert.equal(result.seedTarget,undefined);
+    }
+  }
+  for(const mode of [[],["--start-preflight"],["--seed-dsh-preflight"]]) {
+    const f=fixture({networkMutation:record=>{
+      if(record.Name.endsWith("_isolated")) record.Containers["9".repeat(64)]={Name:"foreign"};
+    }});
+    const result=verifyCandidate([...args,...mode],f.execute,f.ancestor);
+    assert.equal(result.passed,false);
+    assert.equal(result.seedTarget,undefined);
+  }
+});
+
+test("unreviewed network options and IPAM configuration fail the native resource boundary",()=>{
+  for(const mutate of [
+    row=>{row.Options["com.docker.network.bridge.enable_icc"]="false";},
+    row=>{row.EnableIPv6=true;},
+    row=>{row.Attachable=true;},
+    row=>{row.IPAM.Config[0].AuxiliaryAddresses={foreign:"172.18.0.30"};},
+    row=>{row.Labels["com.docker.compose.project"]="foreign";},
+  ]) assert.throws(()=>run({networkMutation:mutate}),/COMPOSE_(?:NETWORK_(?:IDENTITY|POLICY)_UNPROVEN|RESOURCE_OWNER_UNPROVEN)/);
 });
