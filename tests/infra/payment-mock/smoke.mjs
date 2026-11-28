@@ -14,6 +14,25 @@ const root = fileURLToPath(new URL("./", import.meta.url));
 const funding = "/sandbox/v1/funding/";
 const accepted = "cash-in-accepted-01";
 const delayed = "cash-in-delayed-01";
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+const initialMetadata = ["content-type", "cache-control", "content-encoding", "location"];
+
+function receiveRepresentation(response, chunks, started) {
+  assert.ok(response.complete, "PAYMENT_RESPONSE_INCOMPLETE");
+  const headers = response.headersDistinct;
+  const trailers = response.trailersDistinct;
+  for (const name of initialMetadata) {
+    assert.equal(trailers[name], undefined, "PAYMENT_TRAILER " + name);
+  }
+  assert.equal(headers["content-encoding"], undefined, "PAYMENT_ENCODING");
+  let body;
+  try {
+    body = utf8.decode(Buffer.concat(chunks));
+  } catch (cause) {
+    throw new Error("PAYMENT_RESPONSE_UTF8", { cause });
+  }
+  return { status: response.statusCode, headers, body, elapsed: performance.now() - started };
+}
 
 export async function requestFunding(port, reference, timeout = 6000) {
   assert.ok(Number.isInteger(port) && port > 0 && port <= 65535, "PAYMENT_PORT_INVALID");
@@ -27,7 +46,10 @@ export async function requestFunding(port, reference, timeout = 6000) {
       clearTimeout(timer);
       reject(error);
     }
-    const request = get({ hostname: loopback, port, path: funding + reference, family: 4, agent: false }, response => {
+    const request = get({
+      hostname: loopback, port, path: funding + reference, family: 4, agent: false,
+      headers: { "Accept-Encoding": "identity" }
+    }, response => {
       receiving = true;
       const chunks = [];
       let length = 0;
@@ -42,14 +64,11 @@ export async function requestFunding(port, reference, timeout = 6000) {
       response.on("error", fail);
       response.on("end", () => {
         clearTimeout(timer);
-        if (!response.complete) {
-          reject(new Error("PAYMENT_RESPONSE_INCOMPLETE"));
-          return;
+        try {
+          resolve(receiveRepresentation(response, chunks, started));
+        } catch (error) {
+          reject(error);
         }
-        // IncomingMessage.headers discards duplicate singleton fields. Preserve
-        // every occurrence so the fixture oracle cannot accept an ambiguous reply.
-        resolve({ status: response.statusCode, headers: response.headersDistinct,
-          body: Buffer.concat(chunks).toString("utf8"), elapsed: performance.now() - started });
       });
     });
     request.on("socket", socket => {
@@ -82,6 +101,20 @@ function fixtureCases() {
   return result;
 }
 
+function verifyFixtureBody(body, expected, reference) {
+  // All fixture documents are flat records of strings. Native JSON.parse owns
+  // grammar and value interpretation, but discards earlier duplicate members.
+  // Once exact parsed equality proves the flat shape, counting structural
+  // member separators outside valid JSON strings proves no occurrence was lost.
+  assert.ok(Object.values(expected).every(value => typeof value === "string"), "PAYMENT_FIXTURE_SHAPE");
+  assert.deepEqual(JSON.parse(body), expected, "PAYMENT_BODY " + reference);
+  let members = 0;
+  for (const [token] of body.matchAll(/"(?:[^"\\]|\\.)*"|:/gu)) {
+    if (token === ":") members++;
+  }
+  assert.equal(members, Object.keys(expected).length, "PAYMENT_BODY_MEMBERS " + reference);
+}
+
 function verifyResponse(actual, expected, reference) {
   assert.equal(actual.status, expected.status, "PAYMENT_STATUS " + reference);
   const fields = new Map(Object.entries(expected.headers).map(([key, value]) => [key.toLowerCase(), value]));
@@ -91,7 +124,7 @@ function verifyResponse(actual, expected, reference) {
   if (!fields.has("location")) {
     assert.equal(actual.headers.location, undefined, "PAYMENT_REDIRECT " + reference);
   }
-  assert.deepEqual(JSON.parse(actual.body), expected.jsonBody, "PAYMENT_BODY " + reference);
+  verifyFixtureBody(actual.body, expected.jsonBody, reference);
   if (expected.fixedDelayMilliseconds) {
     assert.ok(actual.elapsed >= expected.fixedDelayMilliseconds - 100, "PAYMENT_DELAY " + reference);
   }
