@@ -45,13 +45,33 @@ test("reconciler and isolated PostgreSQL proof consume the canonical native Go t
   assert.match(sqlProof, /& \$goExecutable test -c/);
 });
 
-test("preview provenance is distinct from an accepted Git source SHA",()=>{
+test("image provenance admits exactly one complete committed or preview identity",()=>{
   const base="a".repeat(40), digest="b".repeat(64);
-  const labels={"org.opencontainers.image.revision":"worktree-"+digest,"com.bthwani.preview-base":base,"com.bthwani.preview-digest":digest};
-  assert.deepEqual(sourceIdentity(labels,"dsh"),{revision:base,digest});
-  assert.throws(()=>sourceIdentity({...labels,"com.bthwani.source-sha":base},"dsh"),/Invalid preview/);
-  assert.throws(()=>sourceIdentity({...labels,"com.bthwani.preview-digest":"c".repeat(64)},"dsh"),/Invalid preview/);
-  assert.deepEqual(sourceIdentity({"org.opencontainers.image.revision":base,"com.bthwani.source-sha":base},"dsh"),{revision:base,digest:null});
+  const revision="org.opencontainers.image.revision", source="com.bthwani.source-sha";
+  const previewBase="com.bthwani.preview-base", previewDigest="com.bthwani.preview-digest";
+  const committed={[revision]:base,[source]:base};
+  const preview={[revision]:"worktree-"+digest,[previewBase]:base,[previewDigest]:digest};
+  for(const owner of ["dsh","identity","wlt"]){
+    assert.deepEqual(sourceIdentity(committed,owner),{revision:base,digest:null});
+    assert.deepEqual(sourceIdentity({...committed,[previewBase]:"",[previewDigest]:""},owner),{revision:base,digest:null});
+    assert.deepEqual(sourceIdentity(preview,owner),{revision:base,digest});
+    assert.deepEqual(sourceIdentity({...preview,[source]:""},owner),{revision:base,digest});
+    for(const labels of [
+      {},{[revision]:base},{[source]:base},
+      {...committed,[source]:""},{...committed,[revision]:""},
+      {...committed,[source]:"c".repeat(40)},
+      {...committed,[revision]:base+"\n",[source]:base+"\n"},
+      {...committed,[revision]:base.toUpperCase(),[source]:base.toUpperCase()},
+      {...committed,[previewBase]:base},{...committed,[previewDigest]:digest},
+      {...preview,[source]:base},{...preview,[previewDigest]:"c".repeat(64)},
+      {...preview,[previewBase]:""},{...preview,[previewDigest]:""},
+      {...preview,[previewBase]:base+"\n"},{...preview,[revision]:"worktree-"+digest+"\n"},
+      null,[],{...committed,[previewBase]:false},{...preview,[source]:null},
+      {...committed,[source]:[base]},{...committed,[revision]:undefined},
+      Object.create(committed),
+    ])assert.throws(()=>sourceIdentity(labels,owner),/image source labels|source revision|preview provenance/);
+  }
+  assert.throws(()=>sourceIdentity(committed,"foreign"),/PREVIEW_UNKNOWN_OWNER/);
 });
 
 test("an unrelated WLT contract change does not block DSH or Identity", async () => {

@@ -45,19 +45,29 @@ export function isSharedRuntimeInput(rel) {
 export function isOwnerNonRuntimePath(rel) {
   return ["client","workspace","test"].includes(classify(rel).kind);
 }
+// The native Compose build emits a mutually exclusive committed or preview
+// identity. Unused label values may be absent or empty; neither is a fallback
+// for a required identity field.
 export function sourceIdentity(labels,owner) {
-  const revision=labels?.["org.opencontainers.image.revision"];
-  const source=labels?.["com.bthwani.source-sha"];
-  const base=labels?.["com.bthwani.preview-base"];
-  const digest=labels?.["com.bthwani.preview-digest"];
-  if(base||digest||revision?.startsWith("worktree-")){
-    if(source||!/^[0-9a-f]{40}$/.test(base||"")||!/^[0-9a-f]{64}$/.test(digest||"")||revision!=="worktree-"+digest)
+  if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
+  if(!labels||typeof labels!=="object"||Array.isArray(labels))
+    throw new Error("Invalid image source labels: "+owner);
+  const values=["org.opencontainers.image.revision","com.bthwani.source-sha","com.bthwani.preview-base","com.bthwani.preview-digest"].map(key=>{
+    if(!Object.hasOwn(labels,key))return "";
+    const value=labels[key];
+    if(typeof value!=="string")throw new Error("Invalid image source labels: "+owner);
+    return value;
+  });
+  const [revision,source,base,digest]=values;
+  const sha=(value,length)=>value.length===length&&/^[0-9a-f]+$/.test(value);
+  if(base||digest||revision.startsWith("worktree-")){
+    if(source!==""||!sha(base,40)||!sha(digest,64)||revision!=="worktree-"+digest)
       throw new Error("Invalid preview provenance: "+owner);
     return {revision:base,digest};
   }
-  if(revision&&source&&revision!==source)throw new Error("conflicting image source labels: "+owner);
-  if(!/^[0-9a-f]{40}$/.test(revision||source||""))throw new Error("source revision absent or invalid: "+owner);
-  return {revision:revision||source,digest:null};
+  if(!sha(revision,40)||!sha(source,40))throw new Error("source revision absent or invalid: "+owner);
+  if(revision!==source)throw new Error("conflicting image source labels: "+owner);
+  return {revision,digest:null};
 }
 export function ownerSourceState(owner,changed,committed) {
   if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");

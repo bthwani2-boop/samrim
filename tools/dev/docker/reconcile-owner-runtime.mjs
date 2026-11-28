@@ -167,9 +167,7 @@ function buildOwnerImage(owner, head, tag, service, snapshot) {
   const image = imageRecord(plan.image);
   const source = sourceIdentity(image.Config.Labels,owner);
   if (source.revision !== head || source.digest !== digest ||
-      !/^sha256:[0-9a-f]{64}$/.test(image.Id) ||
-      (!preview && image.Config.Labels["com.bthwani.source-sha"] !== head) ||
-      image.Config.Labels["org.opencontainers.image.revision"] !== plan.env.BTHWANI_BUILD_REVISION)
+      !/^sha256:[0-9a-f]{64}$/.test(image.Id))
     throw new Error("New image source mismatch: "+owner);
   return image;
 }
