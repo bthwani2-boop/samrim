@@ -1,6 +1,5 @@
 // Shared structural HTTP/SSR admission; this does not establish browser hydration.
 import assert from "node:assert/strict";
-import { MIMEType } from "node:util";
 import { parse } from "parse5";
 
 const htmlNamespace = "http://www.w3.org/1999/xhtml";
@@ -63,7 +62,14 @@ export function scriptKind(element) {
   return value.toLowerCase() === "module" ? "module" : null;
 }
 
+// RFC 9110 sections 5.6 and 8.3: Content-Type is one media type, not a list.
+// A forgiving MIME parser can silently accept a conflicting combined field.
+const mediaType = /^[\t ]*([!#$%&'*+.^_\x60|~0-9A-Za-z-]+\/[!#$%&'*+.^_\x60|~0-9A-Za-z-]+)(?:[\t ]*;[\t ]*(?:[!#$%&'*+.^_\x60|~0-9A-Za-z-]+=(?:[!#$%&'*+.^_\x60|~0-9A-Za-z-]+|"(?:[\t\x20\x21\x23-\x5B\x5D-\x7E\x80-\xFF]|\\[\t\x20-\x7E\x80-\xFF])*"))?)*[\t ]*$/;
+
 export function mimeEssence(response) {
   const header = response.headers.get("content-type");
-  return header ? new MIMEType(header).essence : "";
+  if (header === null) return "";
+  const match = mediaType.exec(header);
+  assert.ok(match, "Invalid or combined Content-Type (MIME)");
+  return match[1].toLowerCase();
 }

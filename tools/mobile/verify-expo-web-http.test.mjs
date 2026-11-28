@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 import { test } from "node:test";
-import { assertHtmlDocument } from "../dev/ssr-document.mjs";
+import { assertHtmlDocument, mimeEssence } from "../dev/ssr-document.mjs";
 import { assertAssetResponse, assertPublicRedirect, documentAssets } from "./verify-expo-web-http.mjs";
 
 const page = { route: "merchant/", title: "بثواني — التاجر", body: "تسجيل الدخول أو الانضمام" };
@@ -158,4 +159,55 @@ test("document admission rejects missing metadata and explicit rendered body", (
   assert.throws(() => assertHtmlDocument('<html lang="ar" dir="rtl"><head></head><body>' + page.body + '</body></html>', page), /wrong document title/);
   assert.throws(() => assertHtmlDocument('<html lang="ar" dir="rtl"><head><title>' + page.title + '</title></head>' + page.body + '</html>', page), /missing rendered body/);
   assert.throws(() => assertHtmlDocument(document(page.body, page.title, 'dir="rtl"'), page), /Arabic document/);
+});
+
+
+test("shared SSR media admission rejects malformed or combined Content-Type fields", () => {
+  for (const [header, essence] of [
+    ["text/html", "text/html"],
+    ["Text/HTML;Charset=\"utf-8\"", "text/html"],
+    ["application/javascript; charset=utf-8", "application/javascript"],
+    ["text/css; extension=\"a,b; c\"", "text/css"],
+    ["text/html; extension=\"a\\\"b\"", "text/html"],
+    ["text/html; ; charset=utf-8", "text/html"],
+  ]) assert.equal(mimeEssence(new Response(null, { headers: { "content-type": header } })), essence);
+  assert.equal(mimeEssence(new Response(null)), "");
+  for (const header of [
+    "text/html; charset=utf-8, application/json",
+    "text/html; charset=\"utf-8\", text/plain",
+    "text/html; charset=utf-8, text/html; charset=utf-8",
+    "text/html, text/html",
+    "text/html; charset",
+    "text/html; charset=",
+    "text/html; charset=\"utf-8",
+    "text/html; charset=\"utf-8\" trailing",
+    "text/html; charset =utf-8",
+    "text /html",
+  ]) assert.throws(() => mimeEssence(new Response(null, { headers: { "content-type": header } })), undefined, header);
+});
+
+test("actual HTTP duplicate representation headers cannot pass SSR asset admission", async () => {
+  const asset = { url: script, file: script.slice(1), type: "script" };
+  const bytes = Buffer.from("console.log('compiled');");
+  const server = createServer((request, response) => {
+    response.setHeader("Content-Type", request.url === "/valid"
+      ? "application/javascript; charset=utf-8"
+      : ["application/javascript; charset=utf-8", "text/html"]);
+    response.end(bytes);
+  });
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  try {
+    const base = "http://127.0.0.1:" + server.address().port;
+    await assert.doesNotReject(async () => assertAssetResponse(await fetch(base + "/valid"), bytes, asset));
+    const invalid = await fetch(base + "/invalid");
+    assert.equal(invalid.headers.get("content-type"), "application/javascript; charset=utf-8, text/html");
+    await assert.rejects(() => assertAssetResponse(invalid, bytes, asset), /MIME|Content-Type/);
+    await invalid.arrayBuffer();
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
 });
