@@ -76,7 +76,17 @@ function kind(pathname, ext) {
   if (parts[0] === "services" && parts.includes("contracts")) return "owner-contract";
   if (parts[0] === "services" && parts[2] === "clients" && sourceExt.has(ext)) return "owner-client";
   if (parts[0] === "services" && parts[2] === "backend" && sourceExt.has(ext)) return "owner-backend";
-  if (ext === ".sql") return "migration";
+  // Describe SQL by its actual owner and purpose, not by extension alone.
+  // Placement legality remains with the existing service placement guard.
+  if (ext === ".sql") {
+    const [area, service, database, scope] = parts;
+    if (area === "services" && ["identity", "dsh", "wlt"].includes(service) && database === "database") {
+      if (scope === "migrations") return "migration";
+      if (parts.length === 5 && scope === "schema") return "schema-baseline";
+      if (parts.length === 5 && service === "wlt" && scope === "sandbox") return "sandbox-sql";
+    }
+    return "other-sql";
+  }
   if ((parts[0] === "tools" && sourceExt.has(ext)) ||
     (["tools", "infra"].includes(parts[0]) && scriptExt.has(ext))) return "tooling";
   if (ext === ".md") return "documentation";
@@ -220,8 +230,7 @@ export function reviewCandidates(rows) {
     const authored = ["source", "owner-client", "owner-backend", "tooling"].includes(row.kind);
     if (authored && Number.isInteger(row.lines) && row.lines > 350) {
       candidates.push({
-        kind: "cohesion-review", severity: row.lines > 700 ? "exception-required" :
-          row.lines > 500 ? "investigate" : "review",
+        kind: "cohesion-review",
         path: row.path, owner: row.owner, lines: row.lines, consumers: row.importedBy.length,
       });
     }

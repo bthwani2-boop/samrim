@@ -168,9 +168,9 @@ test("cohesion review reports authored candidates without failing short routes o
   x.file("apps/merchant/src/features/orders/misc/client.ts", "export const misplaced = true;\n");
   const candidates = reviewCandidates(inventory(x.root));
   assert.ok(candidates.some(x => x.kind === "cohesion-review" &&
-    x.path === "services/dsh/clients/discovery.ts" && x.severity === "investigate"));
+    x.path === "services/dsh/clients/discovery.ts" && x.lines === 501));
   assert.ok(candidates.some(x => x.kind === "cohesion-review" &&
-    x.path.endsWith("/discovery/http.go") && x.severity === "exception-required"));
+    x.path.endsWith("/discovery/http.go") && x.lines === 701));
   assert.ok(candidates.some(x => x.kind === "feature-naming-review" &&
     x.path.includes("/Orders/")));
   assert.ok(candidates.some(x => x.kind === "generic-directory-review" &&
@@ -337,7 +337,7 @@ test("literal package exports, subpaths and unsupported mappings remain accurate
   assert.equal(lookup.get(consumer).imports.length, 6);
 });
 
-test("review candidates distinguish low severity and missing authored files", t => {
+test("review candidates retain line counts and exclude missing authored files", t => {
   const x = fixture(t);
   x.file("apps/merchant/src/features/Upper/misc/screen.ts", "export const value = 1;\n".repeat(351));
   const missing = x.file("tools/dev/deleted.mjs", "export const value = 1;\n".repeat(701));
@@ -345,6 +345,37 @@ test("review candidates distinguish low severity and missing authored files", t 
   rmSync(missing);
   const candidates = reviewCandidates(inventory(x.root));
   assert.equal(candidates.length, 3);
-  assert.equal(candidates.find(row => row.kind === "cohesion-review").severity, "review");
+  assert.equal(candidates.find(row => row.kind === "cohesion-review").lines, 351);
   assert.ok(candidates.every(row => row.path.endsWith("screen.ts")));
+});
+
+test("SQL inventory distinguishes owner baselines, synthetic WLT scripts and other SQL", t => {
+  const x = fixture(t);
+  const cases = new Map([
+    ["services/dsh/database/schema/00_marketplace.sql", "schema-baseline"],
+    ["services/identity/database/schema/10_verification.sql", "schema-baseline"],
+    ["services/wlt/database/schema/00_ledger.sql", "schema-baseline"],
+    ["services/wlt/database/sandbox/10_test_funding.sql", "sandbox-sql"],
+    ["services/dsh/database/migrations/001_old.sql", "migration"],
+    ["services/dsh/database/sandbox/10_wrong.sql", "other-sql"],
+    ["services/identity/backend/internal/sql/query.sql", "other-sql"],
+    ["services/wlt/database/schema/nested/10_wrong.sql", "other-sql"],
+    ["tests/infra/fixture.sql", "other-sql"],
+  ]);
+  for (const file of cases.keys()) x.file(file, "SELECT 1;\n");
+  const rows = inventory(x.root);
+  assert.deepEqual(new Map(rows.map(row => [row.path, row.kind])), cases);
+  assert.ok(rows.every(row => row.lines === 1));
+});
+
+test("cohesion suggestions never require a placement exception solely from size", t => {
+  const x = fixture(t);
+  for (const n of [351, 501, 701]) x.file("tools/dev/size-" + n + ".mjs", "// comment\n".repeat(n));
+  const candidates = reviewCandidates(inventory(x.root));
+  assert.equal(candidates.length, 3);
+  for (const candidate of candidates) {
+    assert.equal(candidate.kind, "cohesion-review");
+    assert.equal(Object.hasOwn(candidate, "severity"), false);
+    assert.equal(candidate.lines, Number(candidate.path.match(/size-(\d+)/)[1]));
+  }
 });
