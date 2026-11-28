@@ -303,6 +303,8 @@ function sourceFixture(t) {
   }
   const init = spawnSync("git", ["init", "--quiet", "--template="], { cwd: dir, env: canonicalGitEnvironment(), encoding: "utf8" });
   assert.equal(init.status, 0, init.stderr);
+  const add = spawnSync("git", ["add", "--", ".gitignore"], { cwd: dir, env: canonicalGitEnvironment(), encoding: "utf8" });
+  assert.equal(add.status, 0, add.stderr);
   return dir;
 }
 
@@ -337,6 +339,32 @@ test("native Git ignore admission rejects negation, missing rules and hidden aut
   writeFileSync(path.join(dir, ".git/info/exclude"), ".env\n");
   assert.throws(() => verifyWorkspace(dir), /Git ignore admission unowned rule: \.env/);
   writeFileSync(file, original);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+});
+
+test("native Git ignore admission includes every tracked path and requires owned root rules", async t => {
+  const { verifyWorkspace } = await import("./verify-workspace.mjs");
+  const dir = sourceFixture(t);
+  const git = (...args) => {
+    const result = spawnSync("git", args, { cwd: dir, env: canonicalGitEnvironment(), encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  };
+  const file = path.join(dir, ".gitignore");
+  const original = readFileSync(file, "utf8");
+  const authored = "apps/customer/src/actual-authored.ts";
+  mkdirSync(path.dirname(path.join(dir, authored)), { recursive: true });
+  writeFileSync(path.join(dir, authored), "export const fixture = 1;\n");
+  git("add", "--", authored);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  writeFileSync(file, original + "\n/" + authored + "\n");
+  assert.equal(git("ls-files", "--cached", "--ignored", "--exclude-standard", "-z"), authored + "\0");
+  assert.throws(() => verifyWorkspace(dir), /Git ignore admission.*tracked path/);
+  writeFileSync(file, original);
+  assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
+  git("rm", "--cached", "--", ".gitignore");
+  assert.throws(() => verifyWorkspace(dir), /Git ignore admission.*root rules/);
+  git("add", "--", ".gitignore");
   assert.equal(verifyWorkspace(dir).node, process.version.slice(1));
 });
 

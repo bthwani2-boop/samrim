@@ -165,10 +165,22 @@ function verifyOwner(source, dependency, owner, go, ts) {
   locked(importer(dependency, project), "typescript", ts);
 }
 
-// Git owns ignore matching (including rule precedence and negation). Probe the
-// actual worktree, not textual pattern presence or a second glob implementation.
-// Only verified repository ignore files may establish the exclusion evidence.
+// Git owns effective exclusion semantics. Verify all indexed paths, then
+// exercise representative future paths that cannot be enumerated in the index.
+// Reject unowned rule provenance and a changing inventory without inventing
+// a second ignore matcher or requiring unrelated working files to be clean.
 function verifyGitIgnore(checkout, source) {
+  const git = openRepositoryReader(checkout);
+  const inventory = git("ls-files", "--cached", "-z");
+  const names = inventory.toString("utf8").split("\0").filter(Boolean);
+  const trackedRules = names.filter(name => name === ".gitignore" || name.endsWith("/.gitignore"));
+  assert.ok(trackedRules.includes(".gitignore"), "Git ignore admission requires tracked root rules");
+  const rules = new Map([...new Set(trackedRules)].map(name => [name,
+    lstatSync(path.join(checkout, name), { throwIfNoEntry: false }) ? source.read(name) : null,
+  ]));
+  assert.ok(rules.get(".gitignore") !== null, "Git ignore admission missing root rules");
+  const ignored = () => git("ls-files", "--cached", "--ignored", "--exclude-standard", "-z");
+  assert.equal(ignored().length, 0, "Git ignore admission rejects ignored tracked paths");
   const excluded = [
     "node_modules/fixture.js", "apps/customer/node_modules/fixture.js",
     "apps/control-panel/next-env.d.ts", "apps/merchant/.tmp/export/fixture.js",
@@ -193,19 +205,11 @@ function verifyGitIgnore(checkout, source) {
     "tools/dev/fixture.test.mjs", "tests/infra/fixture.test.mjs",
   ];
   const probes = new Map([...excluded.map(name => [name, true]), ...included.map(name => [name, false])]);
-  const git = openRepositoryReader(checkout);
-  const tracked = git("ls-files", "--cached", "-z", "--", ".gitignore", ":(glob)**/.gitignore")
-    .toString("utf8").split("\0").filter(Boolean);
-  const rules = new Map([...new Set([".gitignore", ...tracked])].map(name => [
-    name, name === ".gitignore" || lstatSync(path.join(checkout, name), { throwIfNoEntry: false })
-      ? source.read(name) : null,
-  ]));
   const output = git("check-ignore", "--verbose", "--non-matching", "--no-index", "--", ...probes.keys())
     .toString("utf8").trimEnd().split(/\r?\n/);
   assert.equal(output.length, probes.size, "Git ignore admission incomplete native inventory");
   for (const line of output) {
-    // All probe names are fixed ASCII paths. The native verbose record is
-    // source:line:pattern TAB pathname, or :: TAB pathname for no match.
+    // Fixed ASCII probe names, native source:line:pattern TAB pathname records.
     const record = /^([^:\t]*):([0-9]*):([^\t]*)\t([^\t]+)$/.exec(line);
     assert.ok(record && probes.has(record[4]), "Git ignore admission invalid native record");
     const [, origin, lineNumber, pattern, name] = record;
@@ -222,6 +226,9 @@ function verifyGitIgnore(checkout, source) {
     const current = lstatSync(path.join(checkout, name), { throwIfNoEntry: false }) ? source.read(name) : null;
     assert.equal(current, original, "Git ignore admission source changed: " + name);
   }
+  assert.ok(inventory.equals(git("ls-files", "--cached", "-z")), "Git ignore admission tracked inventory changed");
+  assert.equal(ignored().length, 0, "Git ignore admission rejects ignored tracked paths");
+  git.assertCheckout();
 }
 
 export function verifyWorkspace(checkout = root, { strict = false } = {}) {
