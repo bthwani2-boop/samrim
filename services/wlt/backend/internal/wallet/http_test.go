@@ -651,3 +651,92 @@ func TestFinanceObservationRejectsSessionChangeDuringGrant(t *testing.T) {
 		})
 	}
 }
+
+func TestOwnerRepresentationTrailers(t *testing.T) {
+	token := "Bearer " + base64.RawURLEncoding.EncodeToString(bytes.Repeat([]byte{4}, 32))
+	for _, tc := range []struct {
+		name, field, value string
+		announced, reject  bool
+	}{
+		{"no trailers", "", "", false, false},
+		{"optional metrics", "Server-Timing", "db;dur=1", true, false},
+		{"announced media", "Content-Type", "text/plain", true, true},
+		{"announced cache", "Cache-Control", "public", true, true},
+		{"announced encoding", "Content-Encoding", "gzip", true, true},
+		{"unannounced media", "Content-Type", "text/plain", false, true},
+		{"unannounced cache", "Cache-Control", "public", false, true},
+		{"unannounced encoding", "Content-Encoding", "gzip", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Exercise each boundary independently. In particular, a malformed
+			// grant must fail even when both session observations are valid.
+			for _, target := range []string{sessionPath, financePermissionPath, "/health", "/sandbox/v1/funding/cash-in-accepted-01"} {
+				t.Run(target, func(t *testing.T) {
+					owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						w.Header().Set("Cache-Control", "no-store")
+						w.Header().Set("Content-Type", "application/json")
+						hasTrailer := r.URL.Path == target && tc.field != ""
+						if hasTrailer && tc.announced {
+							w.Header().Set("Trailer", tc.field)
+						}
+						var body string
+						switch r.URL.Path {
+						case sessionPath:
+							body = "{\"actorId\":\"wallet-one\",\"role\":\"operator\",\"sessionExpiresAt\":\"2099-01-01T00:00:00Z\"}"
+						case financePermissionPath:
+							body = "{\"actorId\":\"wallet-one\",\"permission\":\"finance\"}"
+						case "/health":
+							body = "{\"status\":\"ok\"}"
+						case "/sandbox/v1/funding/cash-in-accepted-01":
+							body = "{\"reference\":\"cash-in-accepted-01\",\"actorId\":\"wallet-one\",\"amountYer\":\"17\",\"currency\":\"YER\",\"status\":\"SUCCEEDED\"}"
+						default:
+							t.Errorf("unexpected route %s", r.URL.Path)
+							w.WriteHeader(404)
+							return
+						}
+						if hasTrailer {
+							w.(http.Flusher).Flush()
+						}
+						_, _ = w.Write([]byte(body))
+						if hasTrailer {
+							field := tc.field
+							if !tc.announced {
+								field = http.TrailerPrefix + field
+							}
+							w.Header().Set(field, tc.value)
+						}
+					}))
+					defer owner.Close()
+					reader, err := newIdentityReader(owner.URL, false)
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantStatus := http.StatusOK
+					if tc.reject {
+						wantStatus = http.StatusServiceUnavailable
+					}
+					switch target {
+					case sessionPath:
+						actor, status := reader.readRole(t.Context(), token, "operator")
+						if status != wantStatus || (tc.reject && actor.ActorID != "") || (!tc.reject && actor.ActorID != "wallet-one") {
+							t.Fatalf("session status=%d actor=%+v", status, actor)
+						}
+					case financePermissionPath:
+						actor, status := reader.finance(t.Context(), token)
+						if status != wantStatus || (tc.reject && actor.ActorID != "") || (!tc.reject && actor.ActorID != "wallet-one") {
+							t.Fatalf("grant status=%d actor=%+v", status, actor)
+						}
+					case "/health":
+						if err := CheckDevelopmentIdentityHealth(t.Context(), owner.URL); (err != nil) != tc.reject {
+							t.Fatalf("health rejection=%t err=%v", tc.reject, err)
+						}
+					default:
+						if err := verifySandboxProviderEvidence(t.Context(), owner.URL, "cash-in-accepted-01", "wallet-one", 17); (err != nil) != tc.reject {
+							t.Fatalf("provider rejection=%t err=%v", tc.reject, err)
+						}
+					}
+				})
+			}
+		})
+	}
+}

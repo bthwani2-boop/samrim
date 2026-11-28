@@ -220,14 +220,17 @@ func requestOwnerDocument(ctx context.Context, client *http.Client, endpoint, au
 	return http.StatusOK, nil
 }
 
-// net/http owns raw HTTP framing. Validate the representation it exposes,
-// not raw transfer metadata already consumed by the standard library.
+// net/http owns raw HTTP framing. Admit only the bounded, complete JSON
+// representation and its initial metadata. RFC 9110 §6.5.1 does not permit
+// late fields to redefine response controls or content format. Check trailers
+// after EOF, including fields not declared in advance.
 func decodeBoundedOwnerReply(response *http.Response, destination any, limit int64) error {
 	if response == nil || response.Body == nil || limit <= 0 || limit > maxOwnerReplyLimit {
 		return errors.New("invalid owner response bound")
 	}
 	length := response.ContentLength
 	encodings := response.Header.Values("Content-Encoding")
+	contentTypes := response.Header.Values("Content-Type")
 	if response.Uncompressed || len(encodings) > 1 ||
 		(len(encodings) == 1 && !strings.EqualFold(encodings[0], "identity")) ||
 		length < -1 || length == 0 || length > limit ||
@@ -235,7 +238,6 @@ func decodeBoundedOwnerReply(response *http.Response, destination any, limit int
 			(len(response.TransferEncoding) != 1 || response.TransferEncoding[0] != "chunked" || length != -1)) {
 		return errors.New("invalid owner response representation")
 	}
-	contentTypes := response.Header.Values("Content-Type")
 	if len(contentTypes) != 1 {
 		return errors.New("invalid owner response metadata")
 	}
@@ -250,6 +252,11 @@ func decodeBoundedOwnerReply(response *http.Response, destination any, limit int
 	body, err := io.ReadAll(io.LimitReader(response.Body, ceiling+1))
 	if err != nil || int64(len(body)) > ceiling || (length >= 0 && int64(len(body)) != length) {
 		return errors.New("invalid owner response size")
+	}
+	for _, field := range []string{"Cache-Control", "Content-Type", "Content-Encoding"} {
+		if _, present := response.Trailer[field]; present {
+			return errors.New("invalid owner response trailer")
+		}
 	}
 	trimmed := bytes.TrimSpace(body)
 	if len(trimmed) == 0 || trimmed[0] != '{' {
