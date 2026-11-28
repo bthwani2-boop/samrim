@@ -19,24 +19,33 @@ const policy = service => ({
   logging: { driver: "local", options: logOptions }, restart: "unless-stopped",
   read_only: ownerNames.includes(service), cap_drop: ownerNames.includes(service) ? ["ALL"] : [],
   security_opt: ownerNames.includes(service) ? ["no-new-privileges:true"] : [],
-  labels: { "com.bthwani.capability": capability(service) },
+  labels: { "com.bthwani.capability": capability(service), "com.bthwani.environment": "refoundation", "com.bthwani.worktree": "samrim-refoundation-clean-20261112" },
 });
 const hashFor = (service, historic = false) => String(foundations.indexOf(service) + (historic ? 5 : 1)).repeat(64);
 const imageRef = service => service === "payment-mock" ? "bthwani/payment-mock:local" : service + "@sha256:" + hashFor(service);
 const args = ["--context", "bthwani-docker"];
-const label = value => value || "<no value>";
 const name = owner => "bthwani-refoundation-" + owner + "-1";
 
 function fixture(options = {}) {
   const calls = [];
   let sourceReads = 0, containerReads = 0;
   const imageFor = owner => "sha256:" + String(allServices.indexOf(owner) + 1).repeat(64);
+  const imageForOwner = (owner, id = imageFor(owner)) => {
+    const o = { id, revision: head, source: head, previewBase: "", previewDigest: "", ...options.images?.[owner] };
+    const labels = ownerNames.includes(owner) ? Object.fromEntries(Object.entries({
+      "org.opencontainers.image.revision": o.revision,
+      "com.bthwani.source-sha": o.source,
+      "com.bthwani.preview-base": o.previewBase,
+      "com.bthwani.preview-digest": o.previewDigest,
+    }).filter(([,value]) => value)) : {};
+    return { Id: o.id, Config: { Env: [], Labels: labels, Cmd: null, Entrypoint: ["/fixture"],
+      User: ownerNames.includes(owner) ? "65532:65532" : "", Healthcheck: { Test: ["CMD", "/fixture", "health"] } } };
+  };
   const containerFor = (owner, pass) => {
     const o = {
       id: String(allServices.indexOf(owner) + 1).repeat(64),
       name: "/" + name(owner), image: imageFor(owner), project: "bthwani-refoundation",
-      service: owner, environment: "refoundation",
-      capability: capability(owner),
+      service: owner, environment: "refoundation", capability: capability(owner),
       running: "true", state: "running", health: "healthy",
       startedAt: "2026-11-26T02:00:00.123456789Z", restartCount: "0",
       configHash: foundations.includes(owner) ? hashFor(owner) : "a".repeat(64),
@@ -46,13 +55,30 @@ function fixture(options = {}) {
       security: ownerNames.includes(owner) ? ["no-new-privileges:true"] : null, capAdd: null, user: ownerNames.includes(owner) ? "65532:65532" : "",
       ...options.containers?.[owner], ...(pass === 2 ? options.finalContainers?.[owner] : {}),
     };
-    return [o.id, o.name, o.image, o.project, o.service, o.environment, label(o.capability),
-      o.running, o.state, o.health, o.startedAt, o.restartCount, o.configHash, label(o.worktree), o.configFiles, o.privileged, o.memory, o.pids, JSON.stringify(o.logging), o.restart, String(o.readOnly), JSON.stringify(o.capDrop), JSON.stringify(o.security), JSON.stringify(o.capAdd), o.user].join("|");
-  };
-  const imageForOwner = owner => {
-    const o = { id: imageFor(owner), revision: head, source: head, previewBase: "", previewDigest: "",
-      ...options.images?.[owner] };
-    return [o.id, label(o.revision), label(o.source), label(o.previewBase), label(o.previewDigest)].join("|");
+    const definition = model.services[owner], image = imageForOwner(owner, o.image);
+    const labels = { ...image.Config.Labels, ...definition.labels, "com.docker.compose.project": o.project,
+      "com.docker.compose.service": o.service, "com.docker.compose.config-hash": o.configHash,
+      "com.docker.compose.project.config_files": o.configFiles, "com.bthwani.environment": o.environment,
+      "com.bthwani.capability": o.capability, "com.bthwani.worktree": o.worktree };
+    if (!o.worktree) delete labels["com.bthwani.worktree"];
+    const env = { ...definition.environment, ...(owner === "dsh" ? options.seedEnvironment : {}) };
+    const networks = Object.fromEntries(Object.keys(definition.networks ?? {}).map(key => [
+      model.networks[key].name, { NetworkID: key === "isolated" ? (owner === "dsh" ? options.seedNetwork ?? "e".repeat(64) : "e".repeat(64)) : "f".repeat(64), Aliases: [owner] },
+    ]));
+    const row = {
+      Id: o.id, Name: o.name, Image: o.image, RestartCount: /^\d+$/.test(o.restartCount) ? Number(o.restartCount) : o.restartCount,
+      State: { Running: o.running === "true" ? true : o.running === "false" ? false : o.running,
+        Status: o.state, Health: { Status: o.health }, StartedAt: o.startedAt },
+      Config: { ...image.Config, User: o.user, Labels: labels, Env: Object.entries(env).map(([key,value]) => key+"="+value) },
+      HostConfig: { Memory: o.memory, MemorySwap: o.memory * 2, PidsLimit: o.pids, LogConfig: o.logging,
+        Privileged: o.privileged === "true", ReadonlyRootfs: o.readOnly, RestartPolicy: { Name: o.restart },
+        CapDrop: o.capDrop, CapAdd: o.capAdd, SecurityOpt: o.security, PortBindings: {} },
+      Mounts: options.withVolume && owner === "media" ? [{Type:"volume",Driver:"local",Name:"fixture-media",Destination:"/data",Source:"/var/lib/docker/volumes/fixture-media/_data",RW:true}] : [], NetworkSettings: { Networks: networks },
+      ...options.seedRecords?.[owner],
+    };
+    options.actualMutations?.[owner]?.(row);
+    if (pass === 2) options.finalMutations?.[owner]?.(row);
+    return row;
   };
   const seedEnv = {
     DSH_DB_HOST: "postgres", REF_POSTGRES_DB: "bthwani_dsh_dev",
@@ -62,31 +88,16 @@ function fixture(options = {}) {
   };
   const model = {
     name: "bthwani-refoundation",
-    networks: { isolated: { name: "bthwani-refoundation_isolated" }, loopback: { name: "bthwani-refoundation_loopback" } },
+    volumes: options.withVolume ? { media: { name:"fixture-media" } } : {},
+    networks: { isolated: { name: "bthwani-refoundation_isolated", driver:"bridge", internal:true }, loopback: { name: "bthwani-refoundation_loopback", driver:"bridge", internal:false } },
     services: Object.fromEntries(allServices.map(service => [service, {
       ...policy(service), image: imageRef(service),
+      ...(options.withVolume && service === "media" ? {volumes:[{type:"volume",source:"media",target:"/data"}]} : {}),
       ...(service === "dsh" ? { environment: seedEnv, networks: { isolated: {}, loopback: {} } } :
         service === "postgres" ? { networks: { isolated: {} } } : {}),
     }])),
   };
-  const seedRecord = service => {
-    const dsh = service === "dsh";
-    const definition = model.services[service];
-    const env = dsh ? { ...seedEnv, ...options.seedEnvironment } : {};
-    const networks = Object.fromEntries(Object.keys(definition.networks).map(key => [
-      model.networks[key].name, { NetworkID: key === "isolated" ? (dsh ? options.seedNetwork ?? "e".repeat(64) : "e".repeat(64)) : "f".repeat(64),
-        Aliases: [service] },
-    ]));
-    return {
-      Id: String(allServices.indexOf(service) + 1).repeat(64), Name: "/" + name(service), Image: imageFor(service),
-      State: { Running: true, Health: { Status: "healthy" }, StartedAt: "2026-11-26T02:00:00.123456789Z" }, RestartCount: 0,
-      Config: { Env: Object.entries(env).map(([key, value]) => key + "=" + value), Labels: definition.labels },
-      HostConfig: { Privileged: false, ReadonlyRootfs: definition.read_only, RestartPolicy: { Name: definition.restart },
-        CapDrop: definition.cap_drop, CapAdd: [], SecurityOpt: definition.security_opt, PortBindings: {} },
-      Mounts: [], NetworkSettings: { Networks: networks },
-      ...options.seedRecords?.[service],
-    };
-  };
+
   const execute = (command, a, input) => {
     calls.push([command, ...a]);
     if (command === "docker" && a[0] === "context") return options.context ?? "ssh://user@bthwani-docker";
@@ -106,22 +117,20 @@ function fixture(options = {}) {
         if (a.includes("--format")) return JSON.stringify(model);
       }
       if (a[2] === "inspect") {
-        if (!a.includes("--format")) {
-          assert.deepEqual(a.slice(3), ["1".repeat(64), "4".repeat(64)]);
-          return JSON.stringify(["dsh", "postgres"].map(seedRecord));
-        }
         containerReads++;
         if (options.badContainer === "malformed") return "bad";
         const list = options.badContainer === "missing" ? allServices.slice(0, -1) :
           options.badContainer === "duplicate" ? [...allServices.slice(0, -1), "dsh"] : allServices;
-        return list.map(owner => containerFor(owner, containerReads)).join("\r\n");
+        return JSON.stringify(list.map(owner => containerFor(owner, containerReads)));
       }
+      if (a[2] === "volume" && a[3] === "inspect") return JSON.stringify(a.slice(4).map(Name => ({Name,Driver:"local",CreatedAt: containerReads === 2 && options.changedVolume ? "2026-11-27" : "2026-11-26",Mountpoint:"/var/lib/docker/volumes/fixture-media/_data"})));
+      if (a[2] === "network" && a[3] === "inspect") return JSON.stringify(a.slice(4).map(name => ({Name:name,Id:name.endsWith("_isolated")?"e".repeat(64):"f".repeat(64),Driver:"bridge",Internal:name.endsWith("_isolated")})));
       if (a[2] === "image" && a[3] === "inspect") {
         if (a[5] === "{{.Id}}") return foundations.map(imageFor).join("\n");
         if (options.badImage === "malformed") return "bad";
-        const list = options.badImage === "missing" ? ownerNames.slice(0, 2) :
-          options.badImage === "duplicate" ? ["dsh", "identity", "dsh"] : ownerNames;
-        return list.map(imageForOwner).join("\r\n");
+        const list = options.badImage === "missing" ? allServices.slice(0, -1) :
+          options.badImage === "duplicate" ? [...allServices.slice(0, -1), "dsh"] : allServices;
+        return JSON.stringify(list.map(owner => imageForOwner(owner, options.containers?.[owner]?.image ?? imageFor(owner))));
       }
     }
     throw new Error("unexpected verification command");
@@ -159,12 +168,12 @@ test("one committed candidate checks all three actual owner names and rechecks t
   assert.equal(snapshots.length, 2);
   for (const snapshot of snapshots) {
     assert.deepEqual(snapshot.slice(-7), allServices.map(name));
-    assert.ok(snapshot.includes("--format"));
+    assert.ok(snapshot.includes("--type"));
     assert.ok(!snapshot.join(" ").includes(".Config.Env"));
   }
-  const images = calls.filter(c => c[0] === "docker" && c[3] === "image" && c[6] !== "{{.Id}}");
+  const images = calls.filter(c => c[0] === "docker" && c[3] === "image" && !c.includes("--format"));
   assert.equal(images.length, 1);
-  assert.equal(images[0].slice(-3).length, 3);
+  assert.equal(images[0].slice(5).length, 7);
   const statuses = calls.filter(c => c[0] === "git" && c[1] === "status");
   assert.equal(statuses.length, 2);
   for (const status of statuses) {
@@ -329,13 +338,13 @@ test("effective policy drift is rejected on all seven services even with matchin
       const result = run({ containers: { [service]: change } }).result;
       assert.equal(result.passed, false, service + JSON.stringify(change));
       const row = [...result.results, ...result.foundationResults].find(r => (r.owner ?? r.service) === service);
-      assert.ok(row.errors.some(e => e.includes("effective container policy mismatch")));
+      assert.ok(row.errors.some(e => e.includes("effective container policy mismatch") || e.includes("COMPOSE_SECURITY_POLICY_MISMATCH")));
     }
   }
   for (const owner of ownerNames) {
     rejectOwner({ containers: { [owner]: { user: "0:0" } } }, owner, "non-root owner user");
-    rejectOwner({ containers: { [owner]: { capDrop: [] } } }, owner, "effective container policy mismatch: capDrop");
-    rejectOwner({ containers: { [owner]: { security: [] } } }, owner, "effective container policy mismatch: security");
+    rejectOwner({ containers: { [owner]: { capDrop: [] } } }, owner, "COMPOSE_SECURITY_POLICY_MISMATCH");
+    rejectOwner({ containers: { [owner]: { security: [] } } }, owner, "COMPOSE_SECURITY_POLICY_MISMATCH");
   }
 });
 
@@ -411,4 +420,46 @@ test("seed preflight refuses foreign live database binding and network even if i
 });
 test("shared Go pin changes invalidate each serving owner",()=>{
   for(const owner of ownerNames)rejectOwner({changes:{[owner]:[".go-version"]}},owner,"owner source changed");
+});
+
+test("ordinary and startup admission reject every effective process drift even when hashes and provenance match", () => {
+  for (const preflight of [false, true]) {
+    for (const service of allServices) {
+      for (const mutate of [
+        row => { row.Config.Cmd = ["unexpected"]; },
+        row => { row.Config.User = "unexpected"; },
+        row => { row.Config.Entrypoint = ["/unexpected"]; },
+        row => { row.Config.Env.push("UNDECLARED=synthetic"); },
+        row => { row.Config.Healthcheck.Test = ["CMD", "true"]; },
+        row => { row.HostConfig.Devices = [{ PathOnHost: "/dev/null" }]; },
+      ]) {
+        const { result } = run({ actualMutations: { [service]: mutate } }, preflight);
+        assert.equal(result.passed, false);
+        const record = [...result.results, ...result.foundationResults].find(row => (row.owner ?? row.service) === service);
+        assert.equal(record.passed, false);
+        assert.ok(record.errors.some(error => error.startsWith("COMPOSE_")));
+      }
+    }
+  }
+});
+
+test("effective process drift during observation invalidates the attestation window", () => {
+  const f = fixture({ finalMutations: { wlt: row => { row.Config.Cmd = ["changed"]; } } });
+  assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
+});
+
+test("canonical volume and network identities bind effective attachment admission", () => {
+  assert.equal(run({withVolume:true}).result.passed,true);
+  for (const mutate of [
+    row => { row.Mounts[0].Source = "/foreign"; },
+    row => { row.Mounts[0].RW = false; },
+    row => { row.Mounts = []; },
+  ]) {
+    const {result}=run({withVolume:true,actualMutations:{media:mutate}});
+    assert.equal(result.passed,false);
+    assert.equal(result.foundationResults.find(row=>row.service==="media").passed,false);
+    assert.ok(result.results.every(row=>row.passed));
+  }
+  rejectOwner({actualMutations:{dsh:row=>{row.NetworkSettings.Networks["bthwani-refoundation_isolated"].NetworkID="9".repeat(64);}}},"dsh","COMPOSE_NETWORK_IDENTITY_MISMATCH");
+  assert.throws(()=>run({withVolume:true,changedVolume:true}),/candidate changed during runtime attestation/);
 });

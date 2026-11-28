@@ -109,8 +109,8 @@ test("Docker default representations do not obscure the protected effective conf
 test("interrupted transition cannot treat a current hash as proof of actual serving attachments", async () => {
   const { verifyLiveDefinition } = await import("../../tools/dev/docker/compose-runtime-transition.mjs");
   const model = { services: { dsh: { volumes: [{ type: "volume", source: "data", target: "/data", read_only: true }], networks: { isolated: {} }, ports: [{ target: 8080, protocol: "tcp", host_ip: "127.0.0.1", published: "8181" }], read_only: true, restart: "unless-stopped", cap_drop: ["ALL"], security_opt: ["no-new-privileges:true"], environment: { MODE: "synthetic" }, labels: { "com.bthwani.environment": "refoundation" } } }, volumes: { data: { name: "project-data" } }, networks: { isolated: { name: "project-isolated" } } };
-  const record = { Config: { Env: ["MODE=synthetic"], Labels: { "com.bthwani.environment": "refoundation" } }, HostConfig: { Privileged: false, ReadonlyRootfs: true, RestartPolicy: { Name: "unless-stopped" }, CapDrop: ["ALL"], SecurityOpt: ["no-new-privileges:true"], PortBindings: { "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: "8181" }] } }, Mounts: [{ Type: "volume", Driver: "local", Name: "project-data", Destination: "/data", RW: false }], NetworkSettings: { Networks: { "project-isolated": {} } } };
-  assert.doesNotThrow(() => verifyLiveDefinition(model, "dsh", record));
+  const record = { Image: "sha256:"+"b".repeat(64), Config: { Env: ["MODE=synthetic"], Labels: { "com.bthwani.environment": "refoundation" } }, HostConfig: { Privileged: false, ReadonlyRootfs: true, RestartPolicy: { Name: "unless-stopped" }, CapDrop: ["ALL"], SecurityOpt: ["no-new-privileges:true"], PortBindings: { "8080/tcp": [{ HostIp: "127.0.0.1", HostPort: "8181" }] } }, Mounts: [{ Type: "volume", Driver: "local", Name: "project-data", Destination: "/data", RW: false }], NetworkSettings: { Networks: { "project-isolated": {} } } };
+  assert.doesNotThrow(() => verifyLiveDefinition(model, "dsh", record, { Id: record.Image, Config: {} }));
   for (const change of [
     value => { value.Mounts[0].Name = "other-data"; },
     value => { value.Mounts[0].RW = true; },
@@ -124,7 +124,7 @@ test("interrupted transition cannot treat a current hash as proof of actual serv
   ]) {
     const candidate = structuredClone(record);
     change(candidate);
-    assert.throws(() => verifyLiveDefinition(model, "dsh", candidate));
+    assert.throws(() => verifyLiveDefinition(model, "dsh", candidate, { Id: candidate.Image, Config: {} }));
   }
 });
 
@@ -137,12 +137,12 @@ test("effective Compose attestation compares distinct textual paths ordinally an
   const reordered=structuredClone(record);
   reordered.Mounts.reverse();
   assert.doesNotThrow(()=>verifyReplacement(record,reordered,policy));
-  assert.doesNotThrow(()=>verifyLiveDefinition(model,"dsh",reordered));
+  assert.doesNotThrow(()=>verifyLiveDefinition(model,"dsh",reordered,{Id:reordered.Image,Config:{}}));
   const duplicate=structuredClone(record), duplicateModel=structuredClone(model);
   duplicate.Mounts[1].Destination=paths[0];
   duplicateModel.services.dsh.volumes[1].target=paths[0];
   assert.throws(()=>verifyReplacement(duplicate,duplicate,policy),/COMPOSE_MOUNT_TARGET/);
-  assert.throws(()=>verifyLiveDefinition(duplicateModel,"dsh",duplicate),/COMPOSE_MOUNT_TARGET/);
+  assert.throws(()=>verifyLiveDefinition(duplicateModel,"dsh",duplicate,{Id:duplicate.Image,Config:{}}),/COMPOSE_MOUNT_TARGET/);
 });
 
 /* Exercise the transition coordinator with a deterministic transport fixture.
@@ -178,7 +178,7 @@ async function transitionFixture({ stale = [], fault, mutate } = {}) {
   const docker=(args,_env,_timeout,input)=>{
     if(args[0]==="ps") return services.map(name=>rows[name].Name.slice(1)).reverse().join("\n");
     if(args[0]==="inspect") return JSON.stringify(Object.values(rows));
-    if(args[0]==="image"&&args[1]==="inspect") return rows[services.find(name=>rows[name].Config.Image===args.at(-1))].Image;
+    if(args[0]==="image"&&args[1]==="inspect") return JSON.stringify([{Id:rows[services.find(name=>rows[name].Config.Image===args.at(-1))].Image,Config:{}}]);
     if(args[0]==="volume"&&args[1]==="inspect") return JSON.stringify([{Name:volume,Driver:"local",CreatedAt:"fixture",Mountpoint:"/fixture/data"}]);
     if(args[0]==="network"&&args[1]==="inspect") return JSON.stringify([{Name:network,Id:digest(network),Driver:"bridge",Internal:true}]);
     if(args[0]==="compose"){
@@ -307,4 +307,23 @@ test("reviewed legacy recovery publishes only a retry and refuses changed or set
     recoverRuntimeAttempt({...base,safeOnly:true,verifyCurrent(){throw new Error("must not verify desired state");}});
     assert.equal(runtimeReceiptStatus(stateFile,receiptFile),"retry");
   }finally{rmSync(dir,{recursive:true,force:true});}
+});
+test("effective image and Compose process definition rejects six independent unsafe deviations", async () => {
+  const { verifyLiveDefinition } = await import("../../tools/dev/docker/compose-runtime-transition.mjs");
+  const image = { Id: "sha256:" + "b".repeat(64), Config: { Cmd: ["serve"], Entrypoint: ["/app"], User: "65532:65532", Env: ["PATH=/bin"], WorkingDir: "/app", Healthcheck: { Test: ["CMD", "/app", "health"], Interval: 15000000000 } } };
+  const model = { services: { dsh: { command: ["serve"], entrypoint: ["/app"], user: "65532:65532", healthcheck: { test: ["CMD", "/app", "health"], interval: "15s" }, environment: { MODE: "synthetic" }, restart: "unless-stopped", read_only: true } }, volumes: {}, networks: {} };
+  const row = { Image: image.Id, Config: { ...structuredClone(image.Config), Env: ["PATH=/bin", "MODE=synthetic"], Labels: {} }, HostConfig: { Privileged: false, ReadonlyRootfs: true, RestartPolicy: { Name: "unless-stopped" } }, Mounts: [], NetworkSettings: { Networks: {} } };
+  assert.doesNotThrow(() => verifyLiveDefinition(model, "dsh", row, image));
+  for (const [name, mutate] of [
+    ["Cmd", r => { r.Config.Cmd = ["other"]; }],
+    ["User", r => { r.Config.User = "0:0"; }],
+    ["Entrypoint", r => { r.Config.Entrypoint = ["/other"]; }],
+    ["Env", r => { r.Config.Env.push("UNDECLARED=1"); }],
+    ["Healthcheck", r => { r.Config.Healthcheck.Test = ["CMD", "true"]; }],
+    ["Devices", r => { r.HostConfig.Devices = [{ PathOnHost: "/dev/null", PathInContainer: "/dev/other", CgroupPermissions: "r" }]; }],
+  ]) {
+    const candidate = structuredClone(row);
+    mutate(candidate);
+    assert.throws(() => verifyLiveDefinition(model, "dsh", candidate, image), undefined, name);
+  }
 });

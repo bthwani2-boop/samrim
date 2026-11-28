@@ -60,13 +60,7 @@ function nonPolicy(model) {
 export function verifyPolicyTransition(previous, next) {
   requireProof(previous && next, "COMPOSE_POLICY_MODEL_MISSING");
   same(nonPolicy(previous), nonPolicy(next), "COMPOSE_NON_POLICY_CHANGE");
-  const policy = desiredPolicy(next);
-  requireProof(Number.isSafeInteger(policy.memory) && policy.memory > 0 &&
-    Number.isSafeInteger(policy.swap) && policy.swap >= policy.memory &&
-    Number.isSafeInteger(policy.pids) && policy.pids > 0 &&
-    policy.logging.Type === "local" &&
-    equal(policy.logging.Config, { "max-size": "10m", "max-file": "3" }),
-  "COMPOSE_POLICY_NOT_ADMITTED");
+  admittedPolicy(next);
   requireProof(!next.labels?.[legacyLabel] || next.labels[legacyLabel] === legacyValue,
     "COMPOSE_LABEL_NOT_ADMITTED");
 }
@@ -175,15 +169,94 @@ function assertHealthy(row) {
 
 export function verifyReplacement(before, after, desired) {
   assertProtected(before, after);
-  same(effectivePolicy(after), desiredPolicy(desired), "COMPOSE_EFFECTIVE_POLICY_MISMATCH");
+  verifyResourcePolicy(desired, after);
   assertHealthy(after);
 }
 
 
-// Independently establish actual model fields even when an interrupted
-// operation already converged. Do not rely on the native hash alone.
-export function verifyLiveDefinition(model, service, row) {
-  const definition = model.services[service], host = row.HostConfig;
+// Verify the resolved execution definition against the immutable image defaults.
+// Compose's resolved JSON escapes literal dollars for re-consumption by Compose.
+const composeText = value => String(value).replaceAll("$$", "$");
+const argv = value => {
+  requireProof(value == null || (Array.isArray(value) && value.every(item => typeof item === "string")), "COMPOSE_ARGUMENT_VECTOR_INVALID");
+  return value ?? [];
+};
+const configEnv = config => environment({ Config: { Env: config.Env ?? [] } });
+
+function duration(value) {
+  requireProof(typeof value === "string", "COMPOSE_HEALTH_DURATION_INVALID");
+  const parts = [...value.matchAll(/(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)/g)];
+  requireProof(parts.length && parts.map(part => part[0]).join("") === value, "COMPOSE_HEALTH_DURATION_INVALID");
+  const unit = { ns: 1, us: 1000, "µs": 1000, ms: 1000000, s: 1000000000, m: 60000000000, h: 3600000000000 };
+  const result = parts.reduce((total, part) => total + Number(part[1]) * unit[part[2]], 0);
+  requireProof(Number.isSafeInteger(result) && result >= 0, "COMPOSE_HEALTH_DURATION_INVALID");
+  return result;
+}
+
+const healthFields = { interval: "Interval", timeout: "Timeout", start_period: "StartPeriod", start_interval: "StartInterval", retries: "Retries" };
+function healthDefinition(config) {
+  const fields = ["Test", ...Object.values(healthFields)];
+  requireProof(Object.keys(config ?? {}).every(key => fields.includes(key)), "COMPOSE_HEALTH_FIELD_UNKNOWN");
+  const result = { Test: argv(config?.Test) };
+  for (const field of Object.values(healthFields)) {
+    const value = config?.[field] ?? 0;
+    requireProof(Number.isSafeInteger(value) && value >= 0, "COMPOSE_HEALTH_METADATA_INVALID");
+    result[field] = value;
+  }
+  return result;
+}
+function expectedHealth(definition, image) {
+  const health = healthDefinition(image.Healthcheck);
+  const override = definition.healthcheck ?? {};
+  requireProof(Object.keys(override).every(key => ["test", "disable", ...Object.keys(healthFields)].includes(key)), "COMPOSE_HEALTH_FIELD_UNKNOWN");
+  if (override.disable === true) health.Test = ["NONE"];
+  else if (override.test != null) health.Test = argv(override.test).map(composeText);
+  for (const [key, field] of Object.entries(healthFields)) {
+    if (override[key] != null) health[field] = key === "retries" ? Number(override[key]) : duration(override[key]);
+  }
+  return healthDefinition(health);
+}
+
+export function readImageDefinitions(docker, references) {
+  // Full image metadata stays private in process memory.
+  let rows;
+  try { rows = JSON.parse(docker(["image", "inspect", ...references])); }
+  catch { throw new Error("unexpected image metadata"); }
+  requireProof(Array.isArray(rows) && rows.length === references.length, "missing image metadata");
+  const result = new Map();
+  for (const row of rows) {
+    requireProof(imageId.test(row?.Id) && row.Config && !result.has(row.Id), "unexpected image metadata");
+    result.set(row.Id, row);
+  }
+  return result;
+}
+
+export function readImageDefinition(docker, reference) {
+  return readImageDefinitions(docker, [reference]).values().next().value;
+}
+
+function admittedPolicy(definition) {
+  const policy = desiredPolicy(definition);
+  requireProof(Number.isSafeInteger(policy.memory) && policy.memory > 0 &&
+    Number.isSafeInteger(policy.swap) && policy.swap >= policy.memory &&
+    Number.isSafeInteger(policy.pids) && policy.pids > 0 &&
+    policy.logging.Type === "local" &&
+    equal(policy.logging.Config, { "max-size": "10m", "max-file": "3" }),
+  "COMPOSE_POLICY_NOT_ADMITTED");
+  return policy;
+}
+
+export function verifyResourcePolicy(definition, row) {
+  same(effectivePolicy(row), admittedPolicy(definition), "COMPOSE_EFFECTIVE_POLICY_MISMATCH");
+}
+
+export function verifyLiveDefinition(model, service, row, image) {
+  const definition = model.services[service], host = row.HostConfig, config = row.Config;
+  requireProof(image?.Id === row.Image && imageId.test(image?.Id) && image.Config, "COMPOSE_IMAGE_DEFINITION_UNPROVEN");
+  const defaults = image.Config;
+  // Scope is the actual supported canonical project model, not arbitrary Docker options.
+  const admitted = new Set(["restart","cap_drop","cap_add","command","entrypoint","environment","image","labels","logging","mem_limit","memswap_limit","networks","pids_limit","read_only","security_opt","volumes","build","depends_on","healthcheck","ports","user","working_dir","stop_signal","hostname","privileged","devices","device_cgroup_rules","device_requests"]);
+  requireProof(Object.keys(definition).every(key => admitted.has(key)), "COMPOSE_UNSUPPORTED_DEFINITION_FIELD");
   const expectedMounts = (definition.volumes || []).map(volume => {
     requireProof(volume.type === "volume" && model.volumes[volume.source]?.name, "COMPOSE_VOLUME_NOT_ADMITTED");
     return [volume.target, model.volumes[volume.source].name, !volume.read_only];
@@ -193,26 +266,53 @@ export function verifyLiveDefinition(model, service, row) {
     return [mount.Destination, mount.Name, mount.RW];
   });
   const target = entry => entry[0];
-  same(orderedMounts(mounts, target), orderedMounts(expectedMounts, target), `COMPOSE_VOLUME_MISMATCH ${service}`);
+  same(orderedMounts(mounts, target), orderedMounts(expectedMounts, target), "COMPOSE_VOLUME_MISMATCH "+service);
   const networkNames = Object.keys(definition.networks || {}).map(key => model.networks[key]?.name);
-  same(orderedText(Object.keys(row.NetworkSettings.Networks || {})), orderedText(networkNames), `COMPOSE_NETWORK_MISMATCH ${service}`);
+  same(orderedText(Object.keys(row.NetworkSettings.Networks || {})), orderedText(networkNames), "COMPOSE_NETWORK_MISMATCH "+service);
+  if (host.NetworkMode != null && networkNames.length) requireProof(networkNames.includes(host.NetworkMode), "COMPOSE_NETWORK_MODE_MISMATCH "+service);
   const ports = Object.entries(host.PortBindings || {}).flatMap(([port, bindings]) => bindings.map(binding => [port, binding.HostIp, binding.HostPort].join("|")));
-  const expectedPorts = (definition.ports || []).map(port => [`${port.target}/${port.protocol}`, port.host_ip, port.published].join("|"));
-  same(orderedText(ports), orderedText(expectedPorts), `COMPOSE_PORT_MISMATCH ${service}`);
+  const expectedPorts = (definition.ports || []).map(port => [String(port.target)+"/"+port.protocol, port.host_ip, String(port.published)].join("|"));
+  same(orderedText(ports), orderedText(expectedPorts), "COMPOSE_PORT_MISMATCH "+service);
   requireProof(host.Privileged === Boolean(definition.privileged) &&
     host.ReadonlyRootfs === Boolean(definition.read_only) &&
     host.RestartPolicy.Name === definition.restart &&
     equal(orderedText(host.CapDrop || []), orderedText(definition.cap_drop || [])) &&
     equal(orderedText(host.CapAdd || []), orderedText(definition.cap_add || [])) &&
     equal(orderedText(host.SecurityOpt || []), orderedText(definition.security_opt || [])),
-  `COMPOSE_SECURITY_POLICY_MISMATCH ${service}`);
-  const actual = environment(row);
-  for (const [key, value] of Object.entries(definition.environment || {}))
-    requireProof(actual[key] === String(value), `COMPOSE_ENVIRONMENT_MISMATCH ${service}`);
-  for (const [key, value] of Object.entries(definition.labels || {}))
-    requireProof(row.Config.Labels[key] === value, `COMPOSE_LABEL_MISMATCH ${service}`);
-  requireProof(row.Config.Labels[legacyLabel] === definition.labels?.[legacyLabel], `COMPOSE_HISTORICAL_LABEL_MISMATCH ${service}`);
-  if (definition.hostname) requireProof(row.Config.Hostname === definition.hostname, `COMPOSE_HOSTNAME_MISMATCH ${service}`);
+  "COMPOSE_SECURITY_POLICY_MISMATCH "+service);
+
+  const expectedEnv = configEnv(defaults);
+  for (const [key, value] of Object.entries(definition.environment || {})) {
+    requireProof(typeof value === "string", "COMPOSE_ENVIRONMENT_VALUE_UNPROVEN");
+    Object.defineProperty(expectedEnv, key, { value: composeText(value), enumerable: true, configurable: true, writable: true });
+  }
+  same(configEnv(config), expectedEnv, "COMPOSE_ENVIRONMENT_MISMATCH "+service);
+  const entrypoint = definition.entrypoint == null ? argv(defaults.Entrypoint) : argv(definition.entrypoint).map(composeText);
+  const command = definition.command == null ? (definition.entrypoint == null ? argv(defaults.Cmd) : []) : argv(definition.command).map(composeText);
+  same(argv(config.Entrypoint), entrypoint, "COMPOSE_ENTRYPOINT_MISMATCH "+service);
+  same(argv(config.Cmd), command, "COMPOSE_COMMAND_MISMATCH "+service);
+  for (const [key, field] of [["user","User"],["working_dir","WorkingDir"],["stop_signal","StopSignal"]]) {
+    same(config[field] ?? "", definition[key] == null ? defaults[field] ?? "" : composeText(definition[key]), "COMPOSE_PROCESS_FIELD_MISMATCH "+service+" "+field);
+  }
+  same(healthDefinition(config.Healthcheck), expectedHealth(definition, defaults), "COMPOSE_HEALTHCHECK_MISMATCH "+service);
+  const expectedLabels = Object.fromEntries(Object.entries({ ...defaults.Labels, ...definition.labels }).filter(([key]) => !key.startsWith("com.docker.compose.")));
+  const labels = Object.fromEntries(Object.entries(config.Labels || {}).filter(([key]) => !key.startsWith("com.docker.compose.")));
+  same(labels, expectedLabels, "COMPOSE_LABEL_MISMATCH "+service);
+  if (definition.hostname != null) requireProof(config.Hostname === definition.hostname, "COMPOSE_HOSTNAME_MISMATCH "+service);
+  else if (row.Id && config.Hostname != null) requireProof(config.Hostname === row.Id.slice(0,12), "COMPOSE_HOSTNAME_MISMATCH "+service);
+  for (const [key, field] of [["devices","Devices"],["device_requests","DeviceRequests"],["device_cgroup_rules","DeviceCgroupRules"]]) {
+    requireProof((definition[key] ?? []).length === 0 && (host[field] ?? []).length === 0, "COMPOSE_DEVICE_NOT_ADMITTED "+service);
+  }
+  // This project's model permits no host namespace, extra host or device access.
+  for (const field of ["Dns","DnsOptions","DnsSearch","ExtraHosts","GroupAdd"]) {
+    requireProof((host[field] ?? []).length === 0, "COMPOSE_HOST_FIELD_NOT_ADMITTED "+service+" "+field);
+  }
+  for (const field of ["PidMode","UTSMode","UsernsMode"]) {
+    requireProof(!host[field], "COMPOSE_HOST_FIELD_NOT_ADMITTED "+service+" "+field);
+  }
+  requireProof((host.IpcMode == null || host.IpcMode === "private") && !host.PublishAllPorts && !host.Init && !host.OomKillDisable &&
+    !Object.keys(host.Tmpfs ?? {}).length && !Object.keys(host.Sysctls ?? {}).length && !config.Tty && !config.OpenStdin,
+  "COMPOSE_HOST_DEFAULT_MISMATCH "+service);
 }
 
 function inventory(docker) {
@@ -241,18 +341,26 @@ function healthyInventory(docker) {
 
 function verifyIdentity(docker, source, service, row) {
   requireProof(configHash(row) === source.hashes[service], `COMPOSE_CONFIG_HASH_MISMATCH ${service}`);
-  requireProof(docker(["image", "inspect", "--format", "{{.Id}}", source.model.services[service].image]) === row.Image,
-    `COMPOSE_IMAGE_REFERENCE_MISMATCH ${service}`);
-  verifyLiveDefinition(source.model, service, row);
+  const image = readImageDefinition(docker, source.model.services[service].image);
+  requireProof(image.Id === row.Image, `COMPOSE_IMAGE_REFERENCE_MISMATCH ${service}`);
+  verifyLiveDefinition(source.model, service, row, image);
 }
 
 // Named persistent volumes and networks must already exist. Compare their
 // identities before/after; Compose is never permitted to substitute storage.
-function resourceIdentities(docker, model) {
-  const volumes = Object.values(model.volumes).map(volume => volume.name);
-  const networks = Object.values(model.networks).map(network => network.name);
-  const volumeRecords = JSON.parse(docker(["volume", "inspect", ...volumes]));
-  const networkRecords = JSON.parse(docker(["network", "inspect", ...networks]));
+export function resourceIdentities(docker, model) {
+  const volumes = Object.values(model.volumes ?? {}).map(volume => volume.name);
+  const networks = Object.values(model.networks ?? {}).map(network => network.name);
+  const inspect = (kind, names) => {
+    if (!names.length) return [];
+    let records;
+    try { records = JSON.parse(docker([kind, "inspect", ...names])); }
+    catch { throw new Error("COMPOSE_RESOURCE_INSPECT_UNPROVEN"); }
+    requireProof(Array.isArray(records), "COMPOSE_RESOURCE_INVENTORY_MISMATCH");
+    return records;
+  };
+  const volumeRecords = inspect("volume", volumes);
+  const networkRecords = inspect("network", networks);
   requireProof(volumeRecords.length === volumes.length && networkRecords.length === networks.length, "COMPOSE_RESOURCE_INVENTORY_MISMATCH");
   const storage = Object.fromEntries(volumeRecords.map(volume => {
     requireProof(volumes.includes(volume.Name) && volume.Driver === "local" && volume.CreatedAt && volume.Mountpoint, "COMPOSE_VOLUME_IDENTITY_UNPROVEN");
@@ -267,13 +375,15 @@ function resourceIdentities(docker, model) {
   return { storage, network };
 }
 
+export function verifyServiceAttachments(service, row, identities) {
+  for (const [name, network] of Object.entries(row.NetworkSettings.Networks || {}))
+    requireProof(hash.test(network.NetworkID) && network.NetworkID === identities.network[name], "COMPOSE_NETWORK_IDENTITY_MISMATCH "+service);
+  for (const mount of row.Mounts || [])
+    requireProof(typeof mount.Source === "string" && mount.Source.length > 0 && mount.Source === identities.storage[mount.Name]?.[2], "COMPOSE_STORAGE_IDENTITY_MISMATCH "+service);
+}
+
 function verifyAttachments(rows, identities) {
-  for (const service of services) {
-    for (const [name, network] of Object.entries(rows[service].NetworkSettings.Networks || {}))
-      requireProof(network.NetworkID === identities.network[name], `COMPOSE_NETWORK_IDENTITY_MISMATCH ${service}`);
-    for (const mount of rows[service].Mounts || [])
-      requireProof(mount.Source === identities.storage[mount.Name]?.[2], `COMPOSE_STORAGE_IDENTITY_MISMATCH ${service}`);
-  }
+  for (const service of services) verifyServiceAttachments(service, rows[service], identities);
 }
 
 function verifyUnchanged(before, after, except) {
