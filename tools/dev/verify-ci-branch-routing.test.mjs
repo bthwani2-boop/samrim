@@ -372,7 +372,7 @@ test("Sonar scanner consumes every measured owner report with no quality gate wa
 
 test("Go and container vulnerability checks cover all owners independently", () => {
   const scan = runs(goAudit, /go install golang\.org\/x\/vuln\/cmd\/govulncheck@/);
-  const image = runs(containers, /docker build --file/);
+  const image = runs(containers, /config --format json/);
   mandatory(goAudit, scan);
   mandatory(containers, image);
   assert.equal(containers.needs, "workspace");
@@ -386,16 +386,53 @@ test("Go and container vulnerability checks cover all owners independently", () 
   assert.doesNotMatch(command(scan), /\|\|\s*true/);
 });
 
-test("image security scans built images and rejects vulnerabilities or scanner failures", () => {
+test("image security covers the canonical Compose inventory and fails closed", () => {
+  const build = runs(containers, /config --format json/);
   const scan = runs(containers, /trivy_0\.76\.2_Linux-64bit\.tar\.gz/);
+  mandatory(containers, build);
   mandatory(containers, scan);
-  order(containers, runs(containers, /docker build --file/), scan);
+  order(containers, build, scan);
+  assert.match(command(build), /--env-file infra\/\.env\.example/);
+  assert.match(command(build), /--profile '\*'/);
+  assert.match(command(build), /\.services\[\]\.image/);
+  assert.match(command(build), /unique/);
+  assert.match(command(build), /docker pull "\$image"/);
+  assert.match(command(build), /container-scan-inventory\.tsv/);
+  assert.match(command(build), /com\.bthwani\.source-sha/);
+  assert.match(command(scan), /container-scan-inventory\.tsv/);
   assert.match(command(scan), /bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf/);
   assert.match(command(scan), /sha256sum --check --strict/);
   assert.match(command(scan), /--image-src docker --scanners vuln --severity HIGH,CRITICAL --exit-code 1/);
-  assert.match(command(scan), /for service in identity dsh wlt; do/);
+  assert.match(command(scan), /while IFS=.*read -r image expected/);
+  assert.match(command(scan), /docker image inspect/);
   assert.match(command(scan), /\|\| result=1/);
   assert.match(command(scan), /exit "\$result"/);
+});
+
+test("container scan loop attempts every image, rejects failures and rejects changed identity", () => {
+  const scan = runs(containers, /trivy_0\.76\.2_Linux-64bit\.tar\.gz/);
+  const loop = command(scan).slice(command(scan).indexOf("result=0"));
+  const id = "sha256:" + "a".repeat(64);
+  const fixture = mode => shell([
+    "set -euo pipefail",
+    "dir=fixture",
+    "expected_id=" + id,
+    "mode=" + mode,
+    "docker() { if [[ \"$mode\" == changed && \"$5\" == second ]]; then printf '%s\\n' invalid; else printf '%s\\n' \"$expected_id\"; fi; }",
+    "fixture/trivy() { for last in \"$@\"; do :; done; printf '%s\\n' \"$last\"; [[ \"$mode\" != vulnerable || \"$last\" != first ]]; }",
+    mode === "empty" ? "inventory=<(true)" : "inventory=<(printf '%s\\t%s\\n' first \"$expected_id\" second \"$expected_id\")",
+    loop
+  ].join("\n"));
+  const success = fixture("clean");
+  assert.equal(success.status, 0, success.stderr);
+  assert.deepEqual(success.stdout.trim().split(/\r?\n/), ["first", "second"]);
+  const failed = fixture("vulnerable");
+  assert.equal(failed.status, 1, failed.stderr);
+  assert.deepEqual(failed.stdout.trim().split(/\r?\n/), ["first", "second"]);
+  const changed = fixture("changed");
+  assert.equal(changed.status, 1, changed.stderr);
+  assert.equal(changed.stdout.trim(), "first");
+  assert.equal(fixture("empty").status, 1);
 });
 
 test("native dependency review supplements full lockfile and reachable Go audits only on PRs", () => {
