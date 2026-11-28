@@ -153,26 +153,34 @@ function containerAdmission(service, actual, definition, preflight) {
   const labels = actual.Config.Labels;
   const capability = definition.labels?.["com.bthwani.capability"] ?? "";
   const serving = owners.includes(service);
-  if (labels["com.docker.compose.project"] !== project || labels["com.docker.compose.service"] !== service ||
-      labels["com.bthwani.environment"] !== "refoundation" || actual.HostConfig.Privileged !== false ||
+
+  // Every service belongs to the same canonical Compose project, including
+  // infrastructure and explicitly admitted historical foundation metadata.
+  // Owner-specific privileges and capabilities are additional requirements,
+  // not alternatives to the shared origin contract.
+  if (labels["com.docker.compose.project"] !== project ||
+      labels["com.docker.compose.service"] !== service ||
+      labels["com.bthwani.environment"] !== "refoundation" ||
+      actual.HostConfig.Privileged !== false ||
       (labels["com.bthwani.capability"] ?? "") !== capability ||
       (service === "wlt" && capability !== "customer-wallet-read-only")) {
     errors.push("not the expected isolated Compose project and owner");
   }
-  if (serving) {
-    try { composeFileNames(labels["com.docker.compose.project.config_files"], root); }
-    catch { errors.push("serving owner canonical Compose origin not proven"); }
-    if (!/^[1-9]\d*(?::[1-9]\d*)?$/.test(actual.Config.User ?? "")) errors.push("non-root owner user not proven");
+  try { composeFileNames(labels["com.docker.compose.project.config_files"], root); }
+  catch { errors.push("canonical Compose origin not proven"); }
+
+  if (serving && !/^[1-9]\d*(?::[1-9]\d*)?$/.test(actual.Config.User ?? "")) {
+    errors.push("non-root owner user not proven");
   }
-  const running = actual.State.Running && actual.State.Status === "running" && actual.State.Health.Status === "healthy";
-  const previouslyExited = preflight && !actual.State.Running && actual.State.Status === "exited" &&
-    ["healthy", "unhealthy", "starting"].includes(actual.State.Health.Status);
+  const { Running, Status, Health } = actual.State;
+  const running = Running && Status === "running" && Health.Status === "healthy";
+  const previouslyExited = preflight && !Running && Status === "exited" &&
+    ["healthy", "unhealthy", "starting"].includes(Health.Status);
   if (!running && !previouslyExited) errors.push("container state or health not proven");
   try { verifyResourcePolicy(definition, actual); }
   catch { errors.push("effective container policy mismatch: resource/logging"); }
   return errors;
 }
-
 function ownerSourceAdmission(owner, image, container, source, execute, isAncestor, preflight) {
   const errors = [];
   const scope = ownerScope(owner, preflight);

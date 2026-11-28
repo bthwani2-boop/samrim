@@ -364,22 +364,50 @@ test("native inventory is an exact unordered set, not a sorted sequence", () => 
   assert.throws(() => run({ inventory: [...allServices, "dsh"] }), /unexpected project container inventory/);
 });
 
-test('every serving owner requires exactly the canonical Compose origin in both admission modes', () => {
-  for (const owner of ownerNames) {
+test("every container requires the canonical Compose origin in both admission modes", () => {
+  const foreignOrigins = [
+    undefined, null, "", "<no value>", "D:/retired/infra/compose.yaml",
+    "D:/foreign/infra/compose.yaml", canonicalCompose + ",overlay.yaml",
+  ];
+  for (const service of allServices) {
     for (const preflight of [false, true]) {
-      for (const configFiles of ['', '<no value>', 'D:/foreign/infra/compose.yaml', canonicalCompose + ',overlay.yaml']) {
-        rejectOwner({ containers: { [owner]: { configFiles } } }, owner, 'canonical Compose origin', preflight);
+      for (const configFiles of foreignOrigins) {
+        const { result } = run({ containers: { [service]: { configFiles } } }, preflight);
+        const row = [...result.results, ...result.foundationResults].find(r => (r.owner ?? r.service) === service);
+        assert.equal(result.passed, false, service + ":" + String(configFiles));
+        assert.equal(row.passed, false);
+        assert.ok(row.errors.some(error => error.includes("canonical Compose origin")), row.errors.join("; "));
       }
-      assert.equal(run({ containers: { [owner]: { configFiles: canonicalCompose } } }, preflight).result.passed, true);
+      assert.equal(run({ containers: { [service]: { configFiles: canonicalCompose } } }, preflight).result.passed, true);
     }
   }
 });
 
-test('a changed Compose origin invalidates the observation window', () => {
-  const f = fixture({ finalContainers: { wlt: { configFiles: 'D:/foreign/infra/compose.yaml' } } });
-  assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
+test("historical foundation labels cannot authorize a foreign Compose origin", () => {
+  for (const service of foundations.filter(name => name !== "payment-mock")) {
+    const { result } = run({ containers: { [service]: {
+      configHash: hashFor(service, true), worktree: "", configFiles: "D:/retired/infra/compose.yaml",
+    } } });
+    assert.equal(result.passed, false);
+    assert.ok(result.foundationResults.find(row => row.service === service).errors.some(error => error.includes("canonical Compose origin")));
+  }
 });
 
+test("a changed Compose origin on any service invalidates the observation window", () => {
+  for (const service of allServices) {
+    const f = fixture({ finalContainers: { [service]: { configFiles: "D:/foreign/infra/compose.yaml" } } });
+    assert.throws(() => main(args, f.execute, f.ancestor), /candidate changed during runtime attestation/);
+  }
+});
+
+test("seed admission rejects foreign Compose origins for either required service", () => {
+  for (const service of ["dsh", "postgres"]) {
+    const f = fixture({ containers: { [service]: { configFiles: "D:/retired/infra/compose.yaml" } } });
+    const result = verifyCandidate([...args, "--seed-dsh-preflight"], f.execute, f.ancestor);
+    assert.equal(result.passed, false);
+    assert.equal(result.seedTarget, undefined);
+  }
+});
 test("explicit seed preflight selects only admitted DSH and PostgreSQL and freezes the container identity", () => {
   const seedArgs = [...args, "--seed-dsh-preflight"];
   const f = fixture({ changes: { wlt: ["services/wlt/backend/cmd/wlt/main.go"] }, containers: { identity: { health: "unhealthy" } } });
