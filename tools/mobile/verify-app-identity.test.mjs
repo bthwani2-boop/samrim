@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
 	copyFileSync,
+	linkSync,
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	renameSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -568,4 +571,32 @@ test("shared renderer and Operator ownership checks preserve retired-path absenc
 			/Retired presentation path/,
 		);
 	});
+});
+
+test("canonical descriptor admission rejects linked sources, redirected parents and invalid UTF-8", () => {
+	fixture((base, app) => {
+		linkSync(app("index.js"), join(base, "synthetic-linked.js"));
+		assert.throws(
+			() => verifyApplicationIdentities(["customer"], base),
+			/Missing or non-regular source/,
+		);
+	});
+	fixture((base, app) => {
+		const target = join(base, "synthetic-assets");
+		renameSync(app("assets"), target);
+		symlinkSync(target, app("assets"), "junction");
+		assert.throws(
+			() => verifyApplicationIdentities(["customer"], base),
+			/Missing or non-regular source/,
+		);
+	});
+	for (const path of ["index.js", "app/(tabs)/index.tsx", "app/(tabs)/_layout.tsx"])
+		fixture((base, app) => {
+			const target = app(path);
+			writeFileSync(target, Buffer.concat([readFileSync(target), Buffer.from("\n// "), Buffer.from([255]), Buffer.from("\n")]));
+			assert.throws(
+				() => verifyApplicationIdentities(["customer"], base),
+				/encoded data was not valid|invalid utf-8/i,
+			);
+		});
 });

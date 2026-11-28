@@ -2,10 +2,11 @@
 // Source admission only. Expo's evaluated config, the native archive/build tools,
 // and signed binaries own their distinct runtime and release evidence.
 import assert from "node:assert/strict";
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { parse } from "@babel/parser";
+import { readVerifiedFile } from "../dev/source-snapshot.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const registered = {
@@ -74,11 +75,15 @@ export function assertRegisteredIdentity(name, manifest) {
 function sourceReader(base) {
 	const entry = (path) =>
 		lstatSync(join(base, path), { throwIfNoEntry: false });
-	const file = (path) => {
-		assert.ok(entry(path)?.isFile(), "Missing or non-regular source: " + path);
-		return readFileSync(join(base, path));
+	const file = (path, message = "Missing or non-regular source: " + path) => {
+		try {
+			return readVerifiedFile(join(base, path), 4 * 1024 * 1024).bytes;
+		} catch (cause) {
+			throw new Error(message, { cause });
+		}
 	};
-	const text = (path) => file(path).toString("utf8");
+	const decoder = new TextDecoder("utf-8", { fatal: true });
+	const text = (path, message) => decoder.decode(file(path, message));
 	return { entry, file, text, json: (path) => JSON.parse(text(path)) };
 }
 
@@ -327,19 +332,13 @@ function verifyMobile(read, name) {
 	verifyRouter(read.text(base + "/index.js"), name);
 	verifyAppearance(read.text(base + "/app/_layout.tsx"), name);
 	const entry = name === "customer" ? "app/(tabs)/index.tsx" : "app/index.tsx";
-	assert.ok(
-		read.entry(base + "/" + entry)?.isFile(),
-		"Missing app entry: " + name,
-	);
+	read.text(base + "/" + entry, "Missing app entry: " + name);
 	if (name === "customer") {
 		assert.ok(
 			!read.entry(base + "/app/index.tsx"),
 			"Duplicated Customer / route",
 		);
-		assert.ok(
-			read.entry(base + "/app/(tabs)/_layout.tsx")?.isFile(),
-			"Customer Tabs missing",
-		);
+		read.text(base + "/app/(tabs)/_layout.tsx", "Customer Tabs missing");
 		assert.ok(
 			!read.entry(base + "/app/foundation.tsx"),
 			"Retired demo route must remain absent",
