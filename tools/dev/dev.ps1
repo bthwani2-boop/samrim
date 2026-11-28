@@ -457,25 +457,35 @@ function Get-AppHttpTargets {
 }
 function Test-AppHttpTarget {
   param([hashtable]$Target,[ValidateRange(1,45)][int]$TimeoutSec=7,[ValidateRange(1,10)][int]$MaxAttempts=1,[ValidateRange(0,5000)][int]$RetryDelayMs=250)
-  if($Target.Kind -cnotin @('metro','expo-web','web')){throw 'APP_PROBE_KIND_INVALID'}
+  if($Target.Kind -cnotin @('metro','expo-web','web','manifest','operator-session')){throw 'APP_PROBE_KIND_INVALID'}
   $uri=$null
   if(-not [Uri]::TryCreate([string]$Target.U,[UriKind]::Absolute,[ref]$uri) -or
     $uri.Scheme -cne 'http' -or $uri.Host -cnotin @('127.0.0.1','localhost') -or
     $uri.IsDefaultPort -or $uri.Port -lt 1 -or $uri.UserInfo -or $uri.Query -or $uri.Fragment){
     throw 'APP_PROBE_TARGET_INVALID'
   }
+  $headerArgs=@{}
+  $expectedStatus=200
+  if($Target.Kind -ceq 'manifest'){
+    if($Target.A -cnotin @('customer','merchant','captain') -or !$Target.Package -or $uri.AbsolutePath -cne '/'){throw 'APP_PROBE_TARGET_INVALID'}
+    $headerArgs.Headers=@{Accept='application/expo+json';'Expo-Platform'='android'}
+  } elseif($Target.Kind -ceq 'operator-session'){
+    if($uri.Host -cne 'localhost' -or $uri.AbsolutePath -cne '/api/auth/session'){throw 'APP_PROBE_TARGET_INVALID'}
+    $headerArgs.Headers=@{Accept='application/json'}
+    $expectedStatus=401
+  }
   $timer=[Diagnostics.Stopwatch]::StartNew()
   $lastFailure='UNKNOWN'
   for($attempt=1;$attempt -le $MaxAttempts;$attempt++){
     try {
       # Observe the selected local application directly: neither proxy nor redirect is readiness.
-      $response=Invoke-WebRequest -UseBasicParsing -Uri $uri.AbsoluteUri -TimeoutSec $TimeoutSec -SkipHttpErrorCheck -MaximumRedirection 0 -NoProxy -ErrorAction Stop
+      $response=Invoke-WebRequest -UseBasicParsing -Uri $uri.AbsoluteUri -TimeoutSec $TimeoutSec -SkipHttpErrorCheck -MaximumRedirection 0 -NoProxy -ErrorAction Stop @headerArgs
       $body=if($response.Content -is [byte[]]){[Text.Encoding]::UTF8.GetString($response.Content)}else{[string]$response.Content}
       if($Target.Kind -ceq 'expo-web' -and $body -match 'Requiring unknown module' -and
         $body -match 'unknownModuleError|Server Error|metroRequire'){
         return @{Success=$false;Attempts=$attempt;ElapsedMs=[int]$timer.ElapsedMilliseconds;Error='EXPO_UNKNOWN_MODULE'}
       }
-      if($response.StatusCode -eq 200){
+      if($response.StatusCode -eq $expectedStatus -or ($Target.Kind -ceq 'operator-session' -and $response.StatusCode -eq 503)){
         # HTTP Content-Type is a singleton. Parse the native field rather than matching a prefix.
         $types=@($response.Headers['Content-Type'] | Where-Object {$null -ne $_})
         $media=$null
@@ -493,6 +503,49 @@ function Test-AppHttpTarget {
         if($Target.Kind -ceq 'metro'){
           if($body -cne 'packager-status:running' -or ($types.Count -ne 0 -and
             (-not $validType -or $media.MediaType -ine 'text/plain'))){$failure='METRO_STATUS_MISMATCH'}
+        } elseif($Target.Kind -cin @('manifest','operator-session')){
+          $failure=if($Target.Kind -ceq 'manifest'){'NATIVE_MANIFEST_MISMATCH'}else{'OPERATOR_AUTH_MISMATCH'}
+          $mime=if($Target.Kind -ceq 'manifest'){'application/expo+json'}else{'application/json'}
+          if($validType -and $media.MediaType -ieq $mime){
+            $doc=$null
+            try {
+              $doc=[System.Text.Json.JsonDocument]::Parse($body)
+              $root=$doc.RootElement
+              $pending=[Collections.Generic.Stack[System.Text.Json.JsonElement]]::new()
+              $pending.Push($root)
+              while($pending.Count){
+                $element=$pending.Pop()
+                if($element.ValueKind -eq 'Object'){
+                  $names=[Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+                  foreach($property in $element.EnumerateObject()){
+                    if(!$names.Add($property.Name)){throw 'DUPLICATE_JSON_PROPERTY'}
+                    $pending.Push($property.Value)
+                  }
+                } elseif($element.ValueKind -eq 'Array'){
+                  foreach($item in $element.EnumerateArray()){$pending.Push($item)}
+                }
+              }
+              if($Target.Kind -ceq 'manifest'){
+                $asset=$root.GetProperty('launchAsset')
+                $bundle=[Uri]$asset.GetProperty('url').GetString()
+                $platforms=@([System.Web.HttpUtility]::ParseQueryString($bundle.Query).GetValues('platform'))
+                if($root.GetProperty('id').GetString() -and $root.GetProperty('runtimeVersion').GetString() -and
+                  $root.GetProperty('extra').GetProperty('expoClient').GetProperty('android').GetProperty('package').GetString() -ceq $Target.Package -and
+                  $asset.GetProperty('contentType').GetString() -ceq 'application/javascript' -and
+                  $bundle.IsAbsoluteUri -and !$bundle.UserInfo -and !$bundle.Fragment -and
+                  $bundle.GetLeftPart([UriPartial]::Authority) -ceq $uri.GetLeftPart([UriPartial]::Authority) -and
+                  $bundle.AbsolutePath -ceq ('/apps/'+$Target.A+'/index.bundle') -and
+                  $platforms.Count -eq 1 -and $platforms[0] -ceq 'android'){$failure=''}
+              } else {
+                $directives=@(($response.Headers['Cache-Control'] -join ',').Split(',') | ForEach-Object {$_.Trim()})
+                $code=if($response.StatusCode -eq 401){'UNAUTHORIZED'}else{'OWNER_UNAVAILABLE'}
+                if(@($root.EnumerateObject()).Count -eq 1 -and $root.GetProperty('code').GetString() -ceq $code -and
+                  $directives -icontains 'no-store' -and $directives -inotcontains 'public'){
+                  $failure=if($response.StatusCode -eq 401){''}else{'OPERATOR_AUTH_UNAVAILABLE'}
+                }
+              }
+            } catch {} finally {if($doc){$doc.Dispose()}}
+          }
         } elseif(-not $validType -or $media.MediaType -ine 'text/html' -or [string]::IsNullOrWhiteSpace($body)){
           $failure='WEB_DOCUMENT_MISMATCH'
         }
@@ -712,15 +765,6 @@ throw ('APP_LISTENER_NOT_READY '+$app)
   $httpProbe="function Test-AppHttpTarget {`n$((Get-Command Test-AppHttpTarget -CommandType Function).Definition)`n}`nfunction Test-AppRestartHealth {`n$((Get-Command Test-AppRestartHealth -CommandType Function).Definition)`n}"
   Invoke-Lenovo ($remoteAppSpecs + [Environment]::NewLine + $remoteAppProcessLifecycle + [Environment]::NewLine + $httpProbe + [Environment]::NewLine + $body)
 }
-function Probe-App([string]$url,[string]$accept='text/html',[string]$platform='',[ValidateRange(1,45)][int]$TimeoutSeconds=7) {
-  $curl=Join-Path $env:WINDIR 'System32\curl.exe'
-  Assert-Ok (Test-Path -LiteralPath $curl -PathType Leaf) 'WINDOWS_CURL_MISSING'
-  $platformHeader=if($platform){@('--header',('Expo-Platform: '+$platform))}else{@()}
-  $response=@(& $curl '--silent' '--max-time' ([string]$TimeoutSeconds) '--output' 'NUL' '--write-out' '%{http_code}|%{content_type}' '--header' ('Accept: '+$accept) @platformHeader $url 2>$null)
-  $exitCode=$LASTEXITCODE
-  $parts=($response -join '').Trim().Split('|')
-  return @{ Code=$(if($parts.Count){$parts[0]}else{'000'}); Mime=$(if($parts.Count -gt 1){$parts[1]}else{''}); Exit=$exitCode }
-}
 function Get-AppChromeWindow {
   Add-Type -AssemblyName UIAutomationClient
   Add-Type -AssemblyName UIAutomationTypes
@@ -826,10 +870,10 @@ function Open-Android {
     $name=[string]$entry.Name
     $port=[int]$entry.Port
     # Native development builds need Expo's manifest, not merely web HTML or /status.
-    $manifest=Probe-App ('http://127.0.0.1:'+$port+'/') 'application/expo+json' 'android' 45
-    if($manifest.Exit -ne 0 -or $manifest.Code -ne '200' -or $manifest.Mime -notmatch '^application/expo\+json'){
+    $manifest=Test-AppHttpTarget -Target @{A=$name;Kind='manifest';Package=$entry.Package;U=('http://127.0.0.1:'+$port+'/')} -TimeoutSec 45
+    if(!$manifest.Success){
       $blocked++
-      Say 'ANDROID_APP' ($name+' BLOCKED native_manifest status='+$manifest.Code+' content_type='+$manifest.Mime)
+      Say 'ANDROID_APP' ($name+' BLOCKED native_manifest reason='+$manifest.Error)
       continue
     }
     $uri=[string]$entry.Scheme+'://expo-development-client/?url=http%3A%2F%2F127.0.0.1%3A'+$port
@@ -859,15 +903,13 @@ function Open-Android {
 function Show-OperatorAuthReadiness {
   # A missing browser cookie should return 401 only when the isolated BFF is configured.
   # This check never enrolls a credential, creates a session or grants an Operator scope.
-  $state = Probe-App 'http://localhost:13000/api/auth/session' 'application/json'
-  if($state.Exit -ne 0) {
-    Say 'OPERATOR_AUTH' 'BLOCKED control-panel tunnel or server unavailable'
-  } elseif($state.Code -eq '503') {
-    Say 'OPERATOR_AUTH' 'BLOCKED Identity/Passkey runtime configuration or owner unavailable'
-  } elseif($state.Code -eq '401') {
+  $state=Test-AppHttpTarget -Target @{A='control-panel';Kind='operator-session';U='http://localhost:13000/api/auth/session'}
+  if($state.Success){
     Say 'OPERATOR_AUTH' 'BFF_READY; Identity ownership, enrollment and browser session NOT_VERIFIED'
+  } elseif($state.Error -ceq 'OPERATOR_AUTH_UNAVAILABLE'){
+    Say 'OPERATOR_AUTH' 'BLOCKED Identity/Passkey runtime configuration or owner unavailable'
   } else {
-    Say 'OPERATOR_AUTH' ('NOT_VERIFIED status='+$state.Code)
+    Say 'OPERATOR_AUTH' ('NOT_VERIFIED reason='+$state.Error)
   }
 }
 

@@ -19,37 +19,77 @@ test("opening Chrome and Android is owned by the single dev launcher", () => {
   assert.equal(existsSync(new URL("./open-dev-apps.ps1", import.meta.url)), false);
 });
 
-test("the Android Expo manifest check identifies the native platform", () => {
+test("native manifest and operator session use the direct readiness owner", () => {
   const opener = readFileSync(scriptPath, "utf8");
-  assert.match(opener, /'Expo-Platform: '\s*\+\s*\$platform/);
-  assert.match(opener, /\$manifest=Probe[^\r\n]*'application\/expo\+json'\s+'android'/);
-  assert.doesNotMatch(opener, /Start-Sleep -Seconds 3/);
+  assert.match(opener, /'Expo-Platform'='android'/);
+  assert.match(opener, /\$manifest=Test-AppHttpTarget[^\r\n]*Kind='manifest'/);
+  assert.match(opener, /\$state=Test-AppHttpTarget[^\r\n]*Kind='operator-session'/);
+  assert.doesNotMatch(opener, /function Probe-App|Start-Sleep -Seconds 3/);
 });
 
-test("native manifest probe tolerates a cold response beyond the generic HTTP timeout", {skip:process.platform!=="win32"}, async () => {
+test("native manifest and unauthenticated session admit only matching documents, including cold start", {skip:process.platform!=="win32"}, async () => {
   const {createServer}=await import("node:http");
   const {spawn}=await import("node:child_process");
-  const server=createServer((_req,res)=>setTimeout(()=>{
-    res.writeHead(200,{"Content-Type":"application/expo+json"});
-    res.end("{}");
-  },8500));
+  const manifestHits=[];
+  const authHits=[];
+  const server=createServer((req,res)=>{
+    const port=server.address().port;
+    const valid={id:"dev-id",runtimeVersion:"0.3.1",launchAsset:{url:"http://127.0.0.1:"+port+"/apps/customer/index.bundle?platform=android",contentType:"application/javascript"},extra:{expoClient:{android:{package:"com.bthwani.customer"}}}};
+    if(req.url==="/"){
+      manifestHits.push([req.headers.accept,req.headers["expo-platform"]]);
+      const cases=[
+        [JSON.stringify(valid),8500],
+        ["{}",0],
+        [JSON.stringify({...valid,extra:{expoClient:{android:{package:"com.bthwani.merchant"}}}}),0],
+        [JSON.stringify({...valid,launchAsset:{...valid.launchAsset,url:valid.launchAsset.url.replace("platform=android","platform=ios")}}),0],
+        [JSON.stringify({...valid,launchAsset:{...valid.launchAsset,url:valid.launchAsset.url+"&platform=android"}}),0],
+        [JSON.stringify({...valid,launchAsset:{...valid.launchAsset,url:valid.launchAsset.url.replace("127.0.0.1","localhost")}}),0],
+        [JSON.stringify(valid).replace('"id":"dev-id"','"id":"other","id":"dev-id"'),0],
+        ["{",0],
+      ];
+      const [body,delay]=cases[manifestHits.length-1];
+      setTimeout(()=>{res.writeHead(200,{"Content-Type":"application/expo+json"});res.end(body);},delay);
+    } else {
+      authHits.push([req.headers.accept,req.headers.cookie,req.headers.authorization]);
+      const cases=[
+        [401,"application/json","private, no-store",'{"code":"UNAUTHORIZED"}'],
+        [401,"text/html","no-store","unauthorized"],
+        [401,"application/json","no-store",'{"code":"OTHER"}'],
+        [401,"application/json","public",'{"code":"UNAUTHORIZED"}'],
+        [503,"application/json","no-store",'{"code":"OWNER_UNAVAILABLE"}'],
+        [503,"application/json","no-store",'{"code":"OTHER"}'],
+        [200,"application/json","no-store",'{"code":"UNAUTHORIZED"}'],
+      ];
+      const [status,mime,cache,body]=cases[authHits.length-1];
+      res.writeHead(status,{"Content-Type":mime,"Cache-Control":cache});res.end(body);
+    }
+  });
   await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve);});
   try {
     const quoted=scriptPath.replaceAll("'","''");
+    const port=server.address().port;
     const ps=[
-      "$ErrorActionPreference='Stop'",
+      "$ErrorActionPreference='Stop';Set-StrictMode -Version Latest",
       "$tokens=$null;$errors=$null",
-      `$ast=[Management.Automation.Language.Parser]::ParseFile('${quoted}',[ref]$tokens,[ref]$errors)`,
-      "foreach($name in @('Assert-Ok','Probe-App')){$n=$ast.Find({param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq $name},$true);if(!$n){throw 'FUNCTION_MISSING'};Invoke-Expression $n.Extent.Text}",
-      `$r=Probe-App 'http://127.0.0.1:${server.address().port}/' 'application/expo+json' 'android' 45`,
-      "if($r.Exit -ne 0 -or $r.Code -ne '200' -or $r.Mime -notmatch '^application/expo\\+json'){throw ('NATIVE_MANIFEST_TIMEOUT '+$r.Exit)}",
+      "$ast=[Management.Automation.Language.Parser]::ParseFile('"+quoted+"',[ref]$tokens,[ref]$errors)",
+      "$n=$ast.Find({param($x) $x -is [Management.Automation.Language.FunctionDefinitionAst] -and $x.Name -eq 'Test-AppHttpTarget'},$true);Invoke-Expression $n.Extent.Text",
+      "$target=@{A='customer';Kind='manifest';Package='com.bthwani.customer';U='http://127.0.0.1:"+port+"/'}",
+      "$r=Test-AppHttpTarget -Target $target -TimeoutSec 45;if(!$r.Success){throw ('NATIVE_MANIFEST_TIMEOUT '+$r.Error)}",
+      "for($i=0;$i -lt 7;$i++){$r=Test-AppHttpTarget -Target $target;if($r.Success -or $r.Error -cne 'NATIVE_MANIFEST_MISMATCH'){throw ('WRONG_MANIFEST '+$i+' '+$r.Error)}}",
+      "$target=@{A='control-panel';Kind='operator-session';U='http://localhost:"+port+"/api/auth/session'}",
+      "$expected=@('','OPERATOR_AUTH_MISMATCH','OPERATOR_AUTH_MISMATCH','OPERATOR_AUTH_MISMATCH','OPERATOR_AUTH_UNAVAILABLE','OPERATOR_AUTH_MISMATCH','HTTP_200')",
+      "foreach($e in $expected){$r=Test-AppHttpTarget -Target $target;if($r.Success -ne ($e -eq '') -or $r.Error -cne $e){throw ('WRONG_AUTH '+$e+' '+$r.Error)}}",
     ].join("; ");
     const result=await new Promise((resolve,reject)=>{
-      const p=spawn("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{windowsHide:true,timeout:20000});
-      let output=""; p.stdout.on("data",v=>output+=v);p.stderr.on("data",v=>output+=v);
+      const p=spawn("pwsh.exe",["-NoProfile","-NonInteractive","-Command",ps],{windowsHide:true,timeout:25000});
+      let output="";p.stdout.on("data",v=>output+=v);p.stderr.on("data",v=>output+=v);
       p.once("error",reject);p.once("close",code=>resolve({code,output}));
     });
     assert.equal(result.code,0,result.output);
+    assert.equal(manifestHits.length,8);
+    assert.ok(manifestHits.every(([accept,platform])=>accept==="application/expo+json"&&platform==="android"));
+    assert.equal(authHits.length,7);
+    assert.ok(authHits.every(([accept,cookie,auth])=>accept==="application/json"&&!cookie&&!auth));
   } finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
 });
 
@@ -287,7 +327,7 @@ test("browser, verify and restart use the same typed application readiness owner
   assert.match(browser,/A=\x27merchant\x27;Kind=\x27metro\x27/);
   assert.match(browser,/A=\x27control-panel\x27;Kind=\x27web\x27/);
   assert.match(browser,/Test-AppHttpTarget -Target \$target/);
-  assert.doesNotMatch(browser,/Probe-App|\$statusUrls/);
+  assert.doesNotMatch(browser,/\$statusUrls/);
   assert.match(launcher,/Kind=\$kind;U=/);
   assert.match(launcher,/Kind=\x27metro\x27;U="http:\/\/127\.0\.0\.1:\$\(\$developmentPorts\.apps\.captain\.surface\)\/status"/);
 });
