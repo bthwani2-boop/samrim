@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // Ephemeral source/consumer inventory. Owner labels are path-derived, not a permissions registry.
-import { lstatSync, readFileSync } from "node:fs";
+import { lstatSync, realpathSync } from "node:fs";
 import { extname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openRepositoryReader } from "../security/verify-secrets.mjs";
+import { containsLikelySecret, forbiddenName, openRepositoryReader, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 const sourceExt = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".go"]);
@@ -18,16 +18,37 @@ function listGitPaths(read, mode) {
   return read("ls-files", "-z", ...mode).toString("utf8").split("\0").filter(Boolean);
 }
 
-function safeFileInfo(checkout, pathname) {
-  let current = checkout;
-  for (const segment of pathname.split("/")) {
-    if (!segment || segment === "." || segment === "..") return undefined;
-    current = join(current, segment);
-    let st;
-    try { st = lstatSync(current); } catch { return undefined; }
-    if (st.isSymbolicLink()) return undefined;
+const maxSourceBytes = 4 * 1024 * 1024;
+const textDecoder = new TextDecoder("utf-8", { fatal: true });
+
+function inspectEntry(checkout, pathname, readText) {
+  if (containsLikelySecret(pathname)) throw new Error("Sensitive source path; inventory withheld");
+  if (forbiddenName(pathname)) return { state: "blocked" };
+  const parts = pathname.split("/");
+  if (parts.some(part => !part || part === "." || part === ".." ||
+      /[\\:]/.test(part) || [...part].some(char => char.charCodeAt(0) < 32))) {
+    return { state: "blocked" };
   }
-  try { return lstatSync(current); } catch { return undefined; }
+  let current = checkout;
+  let stat;
+  try {
+    for (const [index, segment] of parts.entries()) {
+      current = join(current, segment);
+      stat = lstatSync(current);
+      if (stat.isSymbolicLink() || !samePath(realpathSync(current), resolve(current)) ||
+          (index < parts.length - 1 && !stat.isDirectory())) return { state: "missing-or-linked" };
+    }
+    if (!stat.isFile()) return { state: "non-file" };
+    if (stat.nlink !== 1) return { state: "missing-or-linked" };
+    if (!readText) return { state: "file", bytes: stat.size };
+    const verified = readVerifiedFile(current, maxSourceBytes);
+    if (verified.bytes.includes(0)) return { state: "blocked" };
+    const text = textDecoder.decode(verified.bytes);
+    if (containsLikelySecret(text)) return { state: "blocked" };
+    return { state: "file", bytes: verified.bytes.length, text };
+  } catch (error) {
+    return { state: error.code === "ENOENT" ? "missing-or-linked" : "blocked" };
+  }
 }
 
 function owner(pathname) {
@@ -148,20 +169,18 @@ export function inventory(checkout = root) {
     const source = sourceExt.has(ext);
     const measure = source || ext === ".sql" || scriptExt.has(ext) ||
       (type === "owner-contract" && contractExt.has(ext));
-    const st = safeFileInfo(base, pathname);
-    const file = Boolean(st?.isFile());
+    const entry = inspectEntry(base, pathname, measure || ext === ".json");
     let lines = null;
     let modules = [];
-    if (file && (measure || ext === ".json")) {
-      const text = readFileSync(join(base, pathname), "utf8");
+    if (entry.text !== undefined) {
+      const text = entry.text;
       if (source || ext === ".json") contents.set(pathname, text);
       if (measure) lines = text.length === 0 ? 0 : text.split(/\r?\n/).length - Number(text.endsWith("\n"));
       if (source) modules = imports(pathname, text);
     }
     rows.push({
       path: pathname, owner: owner(pathname), kind: type,
-      extension: ext, tracked: tracked.has(pathname), state: !st ? "missing-or-linked" :
-        file ? "file" : "non-file", bytes: file ? st.size : null,
+      extension: ext, tracked: tracked.has(pathname), state: entry.state, bytes: entry.bytes ?? null,
       lines, imports: modules, importedBy: [],
     });
   }
