@@ -6,15 +6,12 @@ import { useLayoutEffect, useRef, useState } from "react";
 import { Platform, Pressable, Text, View } from "react-native";
 import { buildImportManifest, type previewCatalogCsv } from "./catalog-import-data";
 import { requestCatalogImport } from "./catalog-import-transport";
+import { withCatalogRecoveryLock } from "./catalog-recovery-lock";
 
 const digest=(value:string)=>digestStringAsync(CryptoDigestAlgorithm.SHA256,value);
 const options={keychainAccessible:SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY};
 type Attempt={runId:string;fingerprint:string};
-let queue=Promise.resolve();
-function locked<T>(key:string,fn:()=>Promise<T>):Promise<T>{
-  if(Platform.OS==="web"&&window.navigator?.locks)return window.navigator.locks.request(key,fn);
-  const result=queue.then(fn);queue=result.then(()=>undefined,()=>undefined);return result;
-}
+
 async function read(key:string):Promise<Attempt|null>{
   const raw=Platform.OS==="web"?window.localStorage.getItem(key):await SecureStore.getItemAsync(key,options);
   if(raw===null)return null;
@@ -82,7 +79,7 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
       if(action==="start"){
         const fingerprint=await digest(JSON.stringify(manifest));
         if(!currentStart())return;
-        const confirmed=await locked(key,async()=>{
+        const confirmed=await withCatalogRecoveryLock(Platform.OS,key,async()=>{
           signal.throwIfAborted();
           const previous=await read(key);
           signal.throwIfAborted();
@@ -110,40 +107,43 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
         signal.throwIfAborted();setResult(confirmed);
         setMessage("أكد DSH تسجيل الدفعة. اختر تنفيذ الصفوف المعتمدة.");
       }else if(attempt){
-        const stored=await read(key);
-        if(stored?.runId!==attempt.runId)throw new Error("RECOVERY_CHANGED");
-        if(action==="finish"){
-          const current=await requestCatalogImport(actorId,storeId,attempt.runId,"GET",signal);
-          if(current.processed!==current.total)throw new Error("INCOMPLETE");
-          await locked(key,async()=>{
-            const latest=await read(key);
-            if(latest?.runId!==attempt?.runId)throw new Error("RECOVERY_CHANGED");
-            await write(key,null);
-          });
-          signal.throwIfAborted();setRecovery({key,attempt:null});setResult(null);setSelected(new Set());
-          setMessage("تم إغلاق متابعة الدفعة المكتملة. اختر الملف من جديد قبل أي تعديل آخر.");onChanged?.();
-        }else if(action==="read"){
-          const current=await requestCatalogImport(actorId,storeId,attempt.runId,"GET",signal,undefined,offset);
-          signal.throwIfAborted();setResult(current);
-        }else{
-          // Re-read durable progress before resuming. Never infer a committed
-          // chunk from a lost acknowledgment or reuse a different run identity.
-          let current=await requestCatalogImport(actorId,storeId,attempt.runId,"GET",signal);
-          signal.throwIfAborted();setResult(current);
-          while(current.processed<current.total){
-            const next=await requestCatalogImport(actorId,storeId,attempt.runId,"PATCH",signal);
+        const recover=async()=>{
+          signal.throwIfAborted();
+          const stored=await read(key);
+          signal.throwIfAborted();
+          if(stored?.runId!==attempt.runId||stored.fingerprint!==attempt.fingerprint)throw new Error("RECOVERY_CHANGED");
+          if(action==="finish"){
+            const current=await requestCatalogImport(actorId,storeId,attempt.runId,"GET",signal);
             signal.throwIfAborted();
-            if(next.total!==current.total||next.sourceSha256!==current.sourceSha256||next.processed<=current.processed)throw new Error("PROGRESS_INVALID");
-            current=next;setResult(current);
+            if(current.processed!==current.total)throw new Error("INCOMPLETE");
+            await write(key,null);
+            signal.throwIfAborted();setRecovery({key,attempt:null});setResult(null);setSelected(new Set());
+            setMessage("تم إغلاق متابعة الدفعة المكتملة. اختر الملف من جديد قبل أي تعديل آخر.");onChanged?.();
+          }else if(action==="read"){
+            const current=await requestCatalogImport(actorId,storeId,attempt.runId,"GET",signal,undefined,offset);
+            signal.throwIfAborted();setResult(current);
+          }else{
+            // Hold the same recovery claim during resume and completion.
+            // A competing tab cannot retire the attempt between read and write.
+            let current=await requestCatalogImport(actorId,storeId,attempt.runId,"GET",signal);
+            signal.throwIfAborted();setResult(current);
+            while(current.processed<current.total){
+              const next=await requestCatalogImport(actorId,storeId,attempt.runId,"PATCH",signal);
+              signal.throwIfAborted();
+              if(next.total!==current.total||next.sourceSha256!==current.sourceSha256||next.processed<=current.processed)throw new Error("PROGRESS_INVALID");
+              current=next;setResult(current);
+            }
+            setMessage("اكتملت معالجة الدفعة لدى DSH. راجع النتائج؛ الصفوف المحجوزة لم تُعدّل.");onChanged?.();
           }
-          setMessage("اكتملت معالجة الدفعة لدى DSH. راجع النتائج؛ الصفوف المحجوزة لم تُعدّل.");onChanged?.();
-        }
+        };
+        if(action==="read")await recover();
+        else await withCatalogRecoveryLock(Platform.OS,key,recover);
       }
     }catch(error){
       if(signal.aborted)return;
-      setResult(null);
       const code=error instanceof Error?error.message:"";
-      setMessage(code==="MANIFEST_CHANGED"?"الملف أو الاختيارات لا تطابق المحاولة المحفوظة. أعد اختيار القيم نفسها أو اقرأ الدفعة الموجودة.":
+      if(code!=="CATALOG_RECOVERY_LOCK_UNAVAILABLE")setResult(null);
+      setMessage(code==="CATALOG_RECOVERY_LOCK_UNAVAILABLE"?"تعذر تأمين الاسترداد بين تبويبات المتصفح. استخدم متصفحًا يدعم Web Locks قبل تعديل الدفعة.":code==="MANIFEST_CHANGED"?"الملف أو الاختيارات لا تطابق المحاولة المحفوظة. أعد اختيار القيم نفسها أو اقرأ الدفعة الموجودة.":
         code==="SELECTION_CHANGED"?"تغيرت المعاينة أو الاختيارات. راجعها وأكد الدفعة الحالية.":
         code==="RECOVERY_CHANGED"?"تغيرت متابعة الدفعة في نافذة أخرى. أعد فتح الكتالوج.":
         "تعذر التأكيد لدى DSH. معرّف الدفعة محفوظ؛ اقرأ حالتها قبل إعادة التنفيذ.");
