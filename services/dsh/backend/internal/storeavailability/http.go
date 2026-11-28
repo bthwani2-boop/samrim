@@ -45,20 +45,32 @@ func NewHandler(service *Service) (http.Handler, error) {
 		}
 		// Even if the caller is authenticated, prevent oversized/unknown input.
 		var input struct {
-			OperationID        string          `json:"operationId"`
-			ExpectedVersion    int64           `json:"expectedVersion"`
-			Weekly             *[]WeeklyWindow `json:"weekly"`
-			PausedUntil        *time.Time      `json:"pausedUntil"`
-			PreparationMinutes *int            `json:"preparationMinutes"`
-			Reason             string          `json:"reason"`
+			OperationID     string `json:"operationId"`
+			ExpectedVersion *int64 `json:"expectedVersion"`
+			Weekly          *[]struct {
+				Weekday *time.Weekday `json:"weekday"`
+				Opens   *int          `json:"opens"`
+				Closes  *int          `json:"closes"`
+			} `json:"weekly"`
+			PausedUntil        *time.Time `json:"pausedUntil"`
+			PreparationMinutes *int       `json:"preparationMinutes"`
+			Reason             string     `json:"reason"`
 		}
 		if decodeUniqueJSON(w, r, 16*1024, &input) != nil {
 			writeFailure(w, ErrInvalidChange)
 			return
 		}
-		if input.Weekly == nil || input.PreparationMinutes == nil {
+		if input.ExpectedVersion == nil || input.Weekly == nil || input.PreparationMinutes == nil {
 			writeFailure(w, ErrInvalidChange)
 			return
+		}
+		weekly := make([]WeeklyWindow, 0, len(*input.Weekly))
+		for _, slot := range *input.Weekly {
+			if slot.Weekday == nil || slot.Opens == nil || slot.Closes == nil {
+				writeFailure(w, ErrInvalidChange)
+				return
+			}
+			weekly = append(weekly, WeeklyWindow{Weekday: *slot.Weekday, Opens: *slot.Opens, Closes: *slot.Closes})
 		}
 		var pausedUntil *time.Time
 		if input.PausedUntil != nil {
@@ -67,8 +79,8 @@ func NewHandler(service *Service) (http.Handler, error) {
 		}
 		snapshot, replay, err := service.Change(r.Context(), token, Change{
 			StoreID: r.PathValue("storeID"), OperationID: input.OperationID,
-			ExpectedVersion: input.ExpectedVersion,
-			Weekly:          *input.Weekly, PausedUntil: pausedUntil,
+			ExpectedVersion: *input.ExpectedVersion,
+			Weekly:          weekly, PausedUntil: pausedUntil,
 			PreparationMinutes: *input.PreparationMinutes, Reason: input.Reason,
 		})
 		if err != nil {

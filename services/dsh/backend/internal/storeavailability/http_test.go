@@ -2,6 +2,7 @@ package storeavailability
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -276,5 +277,62 @@ func TestCanonicalDistanceBandRepresentation(t *testing.T) {
 		if _, ok := DecodeDistanceBands([]byte(c.raw)); ok != c.valid {
 			t.Errorf("valid=%v input=%s", c.valid, c.raw)
 		}
+	}
+}
+
+func TestRequiredCommandFieldsBeforeOwner(t *testing.T) {
+	db, err := sql.Open("postgres", "postgres://synthetic@127.0.0.1:1/unused?sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	registrar := &MerchantStoreRegistrar{identity: fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, grants: &PostgresStoreGrants{db: db, schema: "dsh_test_presence"}}
+	draft, _ := NewMerchantCatalogDraftHandler(registrar)
+	edit, _ := NewMerchantCatalogEditHandler(registrar)
+	imports, _ := NewMerchantCatalogImportHandler(registrar)
+	policy, _ := NewStoreRegistrationPolicyHandler(&MerchantStoreRegistrar{identity: fakeIdentity{actor: VerifiedActor{Subject: "operator-a", Role: OperatorRole}}, grants: registrar.grants})
+	count := 0
+	service, _ := NewService(fakeIdentity{actor: VerifiedActor{Subject: "merchant-a", Role: MerchantRole}}, fakeGrant{}, fakePolicy{}, fakeRepo{&count})
+	availability, _ := NewHandler(service)
+	mux := http.NewServeMux()
+	mux.Handle("/draft/{storeID}", draft)
+	mux.Handle("/edit/{storeID}/{offerID}", edit)
+	mux.Handle("/imports/{storeID}/{runID}", imports)
+	mux.Handle("/v1/operators/", policy)
+	mux.Handle("/v1/stores/", availability)
+	for _, c := range []struct {
+		name, method, path, body string
+		want                     int
+	}{
+		{"draft missing stock", "POST", "/draft/store-a", `{"operationId":"draft-0001","name":"Item","priceYer":"100"}`, 400},
+		{"draft null stock", "POST", "/draft/store-a", `{"operationId":"draft-0001","name":"Item","priceYer":"100","stockUnits":null}`, 400},
+		{"draft zero stock", "POST", "/draft/store-a", `{"operationId":"draft-0001","name":"Item","priceYer":"100","stockUnits":0}`, 503},
+		{"edit missing stock", "PATCH", "/edit/store-a/offer-a", `{"operationId":"edit-0001","expectedVersion":1,"name":"Item","priceYer":"100"}`, 400},
+		{"edit null stock", "PATCH", "/edit/store-a/offer-a", `{"operationId":"edit-0001","expectedVersion":1,"name":"Item","priceYer":"100","stockUnits":null}`, 400},
+		{"edit zero stock", "PATCH", "/edit/store-a/offer-a", `{"operationId":"edit-0001","expectedVersion":1,"name":"Item","priceYer":"100","stockUnits":0}`, 503},
+		{"policy missing enabled", "PATCH", "/v1/operators/cities/sanaa/store-registration-policy/MARKETPLACE", `{"operationId":"policy-0001","expectedVersion":0,"termsVersion":"terms-v1","termsText":"Terms","reason":"Reason"}`, 400},
+		{"policy null enabled", "PATCH", "/v1/operators/cities/sanaa/store-registration-policy/MARKETPLACE", `{"operationId":"policy-0001","expectedVersion":0,"enabled":null,"termsVersion":"terms-v1","termsText":"Terms","reason":"Reason"}`, 400},
+		{"policy missing version", "PATCH", "/v1/operators/cities/sanaa/store-registration-policy/MARKETPLACE", `{"operationId":"policy-0001","enabled":false,"termsVersion":"terms-v1","termsText":"Terms","reason":"Reason"}`, 400},
+		{"policy explicit false zero", "PATCH", "/v1/operators/cities/sanaa/store-registration-policy/MARKETPLACE", `{"operationId":"policy-0001","expectedVersion":0,"enabled":false,"termsVersion":"terms-v1","termsText":"Terms","reason":"Reason"}`, 503},
+		{"schedule missing weekday", "PATCH", "/v1/stores/store-one/availability", `{"operationId":"merchant-0001","expectedVersion":1,"weekly":[{"opens":600,"closes":1200}],"preparationMinutes":25,"reason":"Schedule update"}`, 400},
+		{"schedule missing opens", "PATCH", "/v1/stores/store-one/availability", `{"operationId":"merchant-0001","expectedVersion":1,"weekly":[{"weekday":1,"closes":1200}],"preparationMinutes":25,"reason":"Schedule update"}`, 400},
+		{"schedule null weekday", "PATCH", "/v1/stores/store-one/availability", `{"operationId":"merchant-0001","expectedVersion":1,"weekly":[{"weekday":null,"opens":600,"closes":1200}],"preparationMinutes":25,"reason":"Schedule update"}`, 400},
+		{"import missing name", "PUT", "/imports/store-a/import-0001", `{"sourceSha256":"` + strings.Repeat("a", 64) + `","rows":[{"row":2,"priceYer":"","stockUnits":""}]}`, 400},
+		{"import null stock", "PUT", "/imports/store-a/import-0001", `{"sourceSha256":"` + strings.Repeat("a", 64) + `","rows":[{"row":2,"name":"","priceYer":"","stockUnits":null}]}`, 400},
+		{"import explicit empty", "PUT", "/imports/store-a/import-0001", `{"sourceSha256":"` + strings.Repeat("a", 64) + `","rows":[{"row":2,"name":"","priceYer":"","stockUnits":""}]}`, 503},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := httptest.NewRequest(c.method, c.path, strings.NewReader(c.body))
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("Authorization", "Bearer synthetic")
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, r)
+			if w.Code != c.want {
+				t.Fatalf("status=%d want=%d body=%s", w.Code, c.want, w.Body.String())
+			}
+		})
+	}
+	if count != 0 {
+		t.Fatalf("invalid schedule reached owner %d times", count)
 	}
 }

@@ -203,11 +203,18 @@ func NewMerchantCatalogEditHandler(service *MerchantStoreRegistrar) (http.Handle
 			writeRegistrationFailure(w, ErrUnauthorized)
 			return
 		}
-		var change MerchantCatalogDraftEditChange
-		if decodeUniqueJSON(w, r, 8192, &change) != nil {
+		var wire struct {
+			OperationID     string `json:"operationId"`
+			ExpectedVersion *int64 `json:"expectedVersion"`
+			Name            string `json:"name"`
+			PriceYER        string `json:"priceYer"`
+			StockUnits      *int64 `json:"stockUnits"`
+		}
+		if decodeUniqueJSON(w, r, 8192, &wire) != nil || wire.ExpectedVersion == nil || wire.StockUnits == nil {
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
+		change := MerchantCatalogDraftEditChange{OperationID: wire.OperationID, ExpectedVersion: *wire.ExpectedVersion, Name: wire.Name, PriceYER: wire.PriceYER, StockUnits: *wire.StockUnits}
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		result, err := service.EditCatalogDraft(ctx, token, r.PathValue("storeID"), r.PathValue("offerID"), change)

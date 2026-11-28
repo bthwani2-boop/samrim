@@ -229,11 +229,17 @@ func NewMerchantCatalogDraftHandler(registrar *MerchantStoreRegistrar) (http.Han
 			writeRegistrationFailure(w, ErrUnauthorized)
 			return
 		}
-		var command MerchantCatalogDraftChange
-		if decodeUniqueJSON(w, r, 8192, &command) != nil {
+		var wire struct {
+			OperationID string `json:"operationId"`
+			Name        string `json:"name"`
+			PriceYER    string `json:"priceYer"`
+			StockUnits  *int64 `json:"stockUnits"`
+		}
+		if decodeUniqueJSON(w, r, 8192, &wire) != nil || wire.StockUnits == nil {
 			writeRegistrationFailure(w, ErrRegistrationInvalid)
 			return
 		}
+		command := MerchantCatalogDraftChange{OperationID: wire.OperationID, Name: wire.Name, PriceYER: wire.PriceYER, StockUnits: *wire.StockUnits}
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		result, err := registrar.CreateCatalogDraft(ctx, token, r.PathValue("storeID"), command)
