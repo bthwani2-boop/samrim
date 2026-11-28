@@ -1,0 +1,3 @@
+#!/bin/sh
+# Native Git checks the actual commit index, including Git's temporary index.
+exec git --no-replace-objects diff --cached --check --

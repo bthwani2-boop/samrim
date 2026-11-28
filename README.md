@@ -25,6 +25,16 @@ If the Windows runner prepends its own Node, select the verified pinned installe
 
 Do not change global PATH, provider executables or runtime pins to conceal a mismatch. The [donor toolchain inventory](https://github.com/bthwani2-boop/samrim/blob/1a50fce55cc0eacca61152ac86b5621f344c92db/docs/reference/TOOLCHAIN-SOURCE-VERSIONS.md) records history, not current pins.
 
+## Native Git checks
+
+Use Git's original hook interface with the two tracked entrypoints in tools/dev/git-hooks. On each authorized checkout, inspect the effective hook path and preserve any existing hooks before activating these native checks:
+
+    git config --local core.hooksPath tools/dev/git-hooks
+    git hook run pre-commit
+    node --test tools/dev/git-hooks.test.mjs
+
+Pre-commit checks the actual commit index, including Git's alternate index for path-specific commits. Pre-push checks each outgoing commit's diff and admits existing-branch fast-forwards only; new refs, ref deletion and other publication flows require their separate authorized validation. Neither hook requires a globally clean checkout, uses Graphify or owns product acceptance. The existing exact-candidate source, security, contract, affected test/build and CI checks in AGENTS.md remain mandatory and must not be bypassed. These local hooks are early structural rejection, not independent authorization or a guarantee against all defects. A clone does not inherit local Git configuration. Do not use --no-verify to defeat the checks.
+
 ## Applications and design
 
 The [repository structure](REPOSITORY-STRUCTURE.md) owns renderer and application placement. The design system owns brand/semantic colors; Expo uses Tamagui and Operator uses Ant Design. Customer/Merchant use Expo Web SSR and native Android/iOS; Captain uses native Android/iOS; Operator uses Next.js Web. Customer/Merchant intentionally omit type: module for the CommonJS SSR renderer. Expo localization and Web document boundaries own Arabic RTL.
