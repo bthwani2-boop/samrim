@@ -121,6 +121,34 @@ test("workspace-only owner metadata is not a serving input or a snapshot depende
   assert.throws(()=>captureOwner(dir,"dsh"),/PREVIEW_ONLY_GO_SOURCE_ALLOWED/);
 });
 
+test("only owner build and schema-transition inputs select a runtime image",()=> {
+  for(const owner of ["dsh","identity","wlt"]){
+    const prefix="services/"+owner+"/";
+    const unrelated=[
+      prefix+"contracts/openapi/"+owner+".openapi.yaml",
+      prefix+"backend/README.md",
+      prefix+"docs/development.md",
+      prefix+"clients/index.ts",
+    ];
+    assert.deepEqual(ownerSourceState(owner,[],unrelated).imageChanges,[]);
+    const operational=[
+      prefix+"backend/cmd/"+owner+"/main.go",
+      prefix+"backend/internal/runtime/handler.go",
+      prefix+"backend/Dockerfile",
+      prefix+".dockerignore",
+      prefix+"backend/go.mod",
+      prefix+"database/schema/01_owner.sql",
+      ".go-version",
+    ];
+    assert.deepEqual(ownerSourceState(owner,[],operational).imageChanges,operational);
+    assert.deepEqual(
+      ownerSourceState(owner,[prefix+"contracts/openapi/"+owner+".openapi.yaml"],[]).previewChanges,
+      [prefix+"contracts/openapi/"+owner+".openapi.yaml"],
+      "uncommitted contracts still require review, not silent preview",
+    );
+  }
+});
+
 test("committed owner snapshot uses Git objects, never ignored or hidden working-tree inputs",t=>{
   const {dir,git,write,base}=fixture(t);
   const head=git("rev-parse","HEAD").toString().trim();

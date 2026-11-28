@@ -7,7 +7,7 @@ import { isDeepStrictEqual } from "node:util";
 import { openRepositoryReader } from "../../security/verify-secrets.mjs";
 import { readVerifiedFile } from "../source-snapshot.mjs";
 import { readImageDefinitions, resourceIdentities, verifyLiveDefinition, verifyResourcePolicy, verifyServiceAttachments } from './compose-runtime-transition.mjs';
-import { isOwnerNonRuntimePath, ownerComposeInputs, ownerSourceScope, sourceIdentity } from "./owner-preview-source.mjs";
+import { isOwnerReconciliationInput, ownerComposeInputs, ownerSourceScope, sourceIdentity } from "./owner-preview-source.mjs";
 import { assertOwnerDatabase, composeFileNames } from './reconcile-owner-runtime.mjs';
 
 const root = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
@@ -193,7 +193,7 @@ function ownerSourceAdmission(owner, image, container, source, execute, isAncest
     else if (!isAncestor(revision, source.head)) errors.push("source is not an ancestor of HEAD");
     else {
       const changes = execute("git", ["diff", "--name-only", "--no-renames", "-z", revision, source.head, "--", ...scope]).split("\0").filter(Boolean);
-      if (changes.some(path => !isOwnerNonRuntimePath(path))) errors.push("owner source changed since image build");
+      if (changes.some(path => isOwnerReconciliationInput(path) || (preflight && ownerComposeInputs.includes(path)))) errors.push("owner source changed since image build");
     }
   } catch (error) { errors.push(error.message); }
   if ([...source.dirty].some(path => inScope(path, scope))) errors.push("owner worktree is not clean");

@@ -69,11 +69,20 @@ export function sourceIdentity(labels,owner) {
   if(revision!==source)throw new Error("conflicting image source labels: "+owner);
   return {revision,digest:null};
 }
+// Image selection follows the authored Go/SQL build boundary, not every
+// tracked file beneath a service. Contracts, documentation and unknown files
+// remain subject to their own reviews; dirty non-Go changes still cannot
+// enter the Go preview path.
+export function isOwnerReconciliationInput(rel) {
+  if(rel===ownerToolchainInput)return true;
+  const {owner,file,kind}=classify(rel);
+  return Boolean(owner&&(kind==="go"||schemaFile.test(file)||buildFiles.has(file)));
+}
 export function ownerSourceState(owner,changed,committed) {
   if(!owners.includes(owner))throw new Error("PREVIEW_UNKNOWN_OWNER");
   const local=changed.filter(rel=>classify(rel).owner===owner);
   return {
-    imageChanges:committed.filter(rel=>!isOwnerNonRuntimePath(rel)),
+    imageChanges:committed.filter(isOwnerReconciliationInput),
     previewChanges:local.filter(rel=>!isOwnerNonRuntimePath(rel)),
     clientPending:[...local,...committed].some(rel=>classify(rel).kind==="client"),
   };

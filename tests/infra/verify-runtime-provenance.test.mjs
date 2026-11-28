@@ -221,7 +221,7 @@ test("replacement or restart of a serving container invalidates the entire snaps
   }
 });
 
-test("changed Go, SQL, contract and Docker inputs reject owner parity; committed non-runtime inputs do not", () => {
+test("changed Go, SQL and Docker inputs reject owner parity; non-image contract changes do not", () => {
   for (const owner of ownerNames) {
     const p = "services/" + owner + "/";
     const nonRuntime = [p + "backend/cmd/" + owner + "/main_test.go", p + "README.md",
@@ -229,9 +229,10 @@ test("changed Go, SQL, contract and Docker inputs reject owner parity; committed
     for (const preflight of [false, true]) {
       assert.equal(run({ changes: { [owner]: nonRuntime } }, preflight).result.passed, true);
       for (const path of [p + "backend/cmd/" + owner + "/main.go", p + "database/schema/00.sql",
-        p + "contracts/openapi/" + owner + ".openapi.yaml", p + ".dockerignore"]) {
+        p + ".dockerignore"]) {
         rejectOwner({ changes: { [owner]: [...nonRuntime, path] } }, owner, "owner source changed", preflight);
       }
+      assert.equal(run({ changes: { [owner]: [...nonRuntime, p + "contracts/openapi/" + owner + ".openapi.yaml"] } }, preflight).result.passed, true);
     }
   }
 });

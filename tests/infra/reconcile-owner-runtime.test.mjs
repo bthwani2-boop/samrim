@@ -184,10 +184,13 @@ test("owner Go test and README changes do not select a serving image rebuild", a
     const local=ownerSourceState(owner,nonRuntime,[]);
     assert.deepEqual(local.previewChanges,[]);
     assert.deepEqual(ownerReconcilePlan({changed:nonRuntime,committed:{},preview:false,captain:true}).blocked,{});
-    for(const runtime of [prefix+"backend/internal/example/example.go",prefix+"backend/go.mod",prefix+"backend/Dockerfile",prefix+".dockerignore",prefix+"database/schema/00.sql",prefix+"contracts/openapi/"+owner+".openapi.yaml"]){
+    for(const runtime of [prefix+"backend/internal/example/example.go",prefix+"backend/go.mod",prefix+"backend/Dockerfile",prefix+".dockerignore",prefix+"database/schema/00.sql"]){
       assert.deepEqual(ownerSourceState(owner,[],[...nonRuntime,runtime]).imageChanges,[runtime]);
       assert.deepEqual(ownerSourceState(owner,[...nonRuntime,runtime],[]).previewChanges,[runtime]);
     }
+    const contract=prefix+"contracts/openapi/"+owner+".openapi.yaml";
+    assert.deepEqual(ownerSourceState(owner,[],[...nonRuntime,contract]).imageChanges,[]);
+    assert.deepEqual(ownerSourceState(owner,[...nonRuntime,contract],[]).previewChanges,[contract]);
   }
 });
 
@@ -492,7 +495,7 @@ test("all owners classify workspace metadata consistently for committed and dirt
     assert.deepEqual(ownerReconcilePlan({changed:files,committed:{[owner]:files},preview:false,captain:true}).blocked,{});
     const unknown=base+"backend/internal/runtime.conf";
     assert.equal(isOwnerNonRuntimePath(unknown),false);
-    assert.deepEqual(ownerSourceState(owner,[],[...files,unknown]).imageChanges,[unknown]);
+    assert.deepEqual(ownerSourceState(owner,[],[...files,unknown]).imageChanges,[]);
     assert.equal(ownerReconcilePlan({changed:[...files,unknown],committed:{},preview:true,captain:true}).blocked[owner],"UNCOMMITTED_NON_GO");
   }
 });
