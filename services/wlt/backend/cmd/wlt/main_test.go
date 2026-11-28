@@ -309,3 +309,178 @@ func TestWLTStartupRejectsBeforeDatabaseConnection(t *testing.T) {
 		})
 	}
 }
+
+func TestServingLifecycleDrainsActiveRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	entered, release, completed := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	defer func() {
+		select {
+		case <-release:
+		default:
+			close(release)
+		}
+	}()
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(entered)
+		select {
+		case <-release:
+			_, _ = io.WriteString(w, "finished")
+			close(completed)
+		case <-r.Context().Done():
+		}
+	})}
+	defer server.Close()
+	served := make(chan error, 1)
+	go func() { served <- serveDevelopment(ctx, server, listener, 3*time.Second) }()
+	client := &http.Client{Timeout: 4 * time.Second, Transport: &http.Transport{DisableKeepAlives: true}}
+	defer client.CloseIdleConnections()
+	response := make(chan error, 1)
+	go func() {
+		r, err := client.Get("http://" + listener.Addr().String())
+		if err == nil {
+			defer r.Body.Close()
+			body, readErr := io.ReadAll(r.Body)
+			if readErr != nil || r.StatusCode != 200 || string(body) != "finished" {
+				err = errors.New("in-flight request not completed")
+			}
+		}
+		response <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("request did not enter")
+	}
+	cancel()
+	deadline := time.Now().Add(time.Second)
+	for {
+		conn, err := net.DialTimeout("tcp", listener.Addr().String(), 50*time.Millisecond)
+		if err != nil {
+			break
+		}
+		conn.Close()
+		if time.Now().After(deadline) {
+			t.Fatal("listener did not stop accepting connections")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	select {
+	case err := <-served:
+		t.Fatalf("server returned before drain: %v", err)
+	default:
+	}
+	close(release)
+	select {
+	case err := <-response:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("request did not finish")
+	}
+	select {
+	case <-completed:
+	default:
+		t.Fatal("handler did not complete")
+	}
+	select {
+	case err := <-served:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(4 * time.Second):
+		t.Fatal("server did not stop")
+	}
+}
+
+func TestServingLifecycleBoundsUnfinishedRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	entered, interrupted := make(chan struct{}), make(chan struct{})
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	server := &http.Server{Handler: http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		close(entered)
+		<-r.Context().Done()
+		close(interrupted)
+	})}
+	defer server.Close()
+	served := make(chan error, 1)
+	go func() { served <- serveDevelopment(ctx, server, listener, 50*time.Millisecond) }()
+	client := &http.Client{Timeout: 3 * time.Second}
+	response := make(chan error, 1)
+	go func() {
+		r, err := client.Get("http://" + listener.Addr().String())
+		if r != nil {
+			r.Body.Close()
+		}
+		response <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("request did not enter")
+	}
+	cancel()
+	select {
+	case err := <-served:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("expected bounded shutdown failure, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdown deadline not enforced")
+	}
+	select {
+	case <-interrupted:
+	case <-time.After(time.Second):
+		t.Fatal("unfinished connection not closed")
+	}
+	select {
+	case err := <-response:
+		if err == nil {
+			t.Fatal("interrupted request reported success")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("client did not observe interruption")
+	}
+}
+
+func TestServingLifecycleReportsUnexpectedListenerFailure(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server := &http.Server{}
+	if err := serveDevelopment(t.Context(), server, listener, time.Second); err == nil {
+		t.Fatal("unexpected listener failure was accepted")
+	}
+}
+
+func TestServingLifecycleCancelledBeforeStart(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if err := serveDevelopment(ctx, &http.Server{}, listener, time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second); err == nil {
+		conn.Close()
+		t.Fatal("cancelled server retained listener")
+	}
+}

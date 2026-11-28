@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/bthwani2-boop/samrim/services/wlt/backend/internal/wallet"
@@ -188,37 +190,71 @@ func developmentHealth(db *sql.DB, identityOrigin string, containerMode bool) ht
 	}
 }
 
-func main() {
-	if len(os.Args) > 1 {
-		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-		err := runSandboxFunding(ctx, os.Args[1], os.Args[2:], os.Stdin, os.Stdout, os.Getenv)
-		cancel()
-		if err != nil {
-			log.Fatal(err)
-		}
-		return
+// The Compose default stop grace is ten seconds. Leave two seconds for
+// process cleanup after the bounded HTTP drain.
+const servingDrainTimeout = 8 * time.Second
+
+// Own the entire listener lifetime. A stop closes admission first, lets
+// in-flight HTTP requests finish, and closes unfinished connections only
+// after the drain deadline. A listener failure also drains other requests
+// before returning its error to the process owner.
+func serveDevelopment(ctx context.Context, server *http.Server, listener net.Listener, grace time.Duration) error {
+	if ctx.Err() != nil {
+		return listener.Close()
 	}
-	config, err := admitServingConfiguration(os.Getenv)
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
+
+	var serveErr error
+	stopping := false
+	select {
+	case <-ctx.Done():
+		stopping = true
+	case serveErr = <-served:
+	}
+
+	// The signal context is already cancelled; it must not be the drain
+	// context. Existing request contexts remain live during graceful shutdown.
+	drain, cancel := context.WithTimeout(context.Background(), grace)
+	defer cancel()
+	drainErr := server.Shutdown(drain)
+	if drainErr != nil {
+		drainErr = errors.Join(drainErr, server.Close())
+	}
+	if stopping {
+		serveErr = <-served
+		if errors.Is(serveErr, http.ErrServerClosed) {
+			serveErr = nil
+		}
+	}
+	return errors.Join(serveErr, drainErr)
+}
+
+func runDevelopment(ctx context.Context, getenv func(string) string) error {
+	config, err := admitServingConfiguration(getenv)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	// sql.Open creates a lazy pool; the first database operation is below.
 	db, err := sql.Open("postgres", config.databaseURL)
 	if err != nil {
-		log.Fatal("WLT database connection rejected")
+		return errors.New("WLT database connection rejected")
 	}
 	defer db.Close()
 	handler, err := config.handler(db)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	db.SetMaxOpenConns(6)
 	db.SetConnMaxLifetime(5 * time.Minute)
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
-	err = checkDatabase(ctx, db)
+	admission, cancel := context.WithTimeout(ctx, 4*time.Second)
+	err = checkDatabase(admission, db)
 	cancel()
 	if err != nil {
-		log.Fatal(err)
+		return err
+	}
+	if ctx.Err() != nil {
+		return nil
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/v1/", handler)
@@ -228,5 +264,28 @@ func main() {
 		ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second,
 		IdleTimeout: 20 * time.Second, MaxHeaderBytes: 8192,
 	}
-	log.Fatal(server.ListenAndServe())
+	listener, err := net.Listen("tcp", config.address)
+	if err != nil {
+		return errors.New("WLT development listener unavailable")
+	}
+	return serveDevelopment(ctx, server, listener, servingDrainTimeout)
+}
+
+func main() {
+	// Sandbox commands keep their separately bounded, one-shot lifecycle.
+	if len(os.Args) > 1 {
+		ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+		err := runSandboxFunding(ctx, os.Args[1], os.Args[2:], os.Stdin, os.Stdout, os.Getenv)
+		cancel()
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := runDevelopment(ctx, os.Getenv)
+	stop()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
