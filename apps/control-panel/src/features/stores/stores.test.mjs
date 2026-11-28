@@ -10,19 +10,7 @@ import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-
 const loadedModules = [];
 process.once("exit", () => loadedModules.length);
 
-import { findWorkspaceEntry } from "../navigation/workspace-registry.ts";
-import { canShowNavigation } from "../session/operator-permissions.ts";
 
-test("stores: routes have the expected navigation permission boundary", () => {
-  for (const path of ["/merchants","/merchants/stores/abc"]) {
-    assert.equal(findWorkspaceEntry(path)?.permission ?? null, "merchant");
-  }
-});
-
-test("stores: unauthenticated or unmapped sessions never expose navigation", () => {
-  assert.equal(canShowNavigation(false, ["operations", "finance", "platform_policies"], "merchant"), false);
-  assert.equal(canShowNavigation(true, [], "merchant"), false);
-});
 
 test("publication review opens an exact Store, preserves its page, and fails closed outside scope", async t => {
   const previous = process.env.OPERATOR_POLICY_DSH_ORIGIN;

@@ -6,16 +6,36 @@ import { fileURLToPath } from "node:url";
 import { findWorkspaceEntry, workspaceGroupLabels, workspaceRegistry, workspaceSubsections } from "../navigation/workspace-registry.ts";
 import { canEnterOperatorWorkspace, canShowNavigation, visibleWorkspaceEntries } from "../session/operator-permissions.ts";
 
-test("access: routes have the expected navigation permission boundary", () => {
-  for (const path of ["/access","/access/operators/abc"]) {
-    assert.equal(findWorkspaceEntry(path)?.permission ?? null, null);
-  }
-});
+const allGrants = ["operations", "merchant", "catalog", "marketing", "finance", "hr", "platform_policies"];
+const permissionCases = [
+  [null, ["/access", "/access/operators/abc"]],
+  ["operations", ["/operations", "/operations/abc", "/captains"]],
+  ["merchant", ["/merchants", "/merchants/stores/abc"]],
+  ["catalog", ["/catalog", "/catalog/import"]],
+  ["marketing", ["/marketing", "/studio"]],
+  ["finance", ["/finance", "/finance/customer-withdrawals"]],
+  ["hr", ["/hr", "/hr/employees/abc"]],
+  ["platform_policies", ["/policies", "/policies/stage-sla"]],
+];
 
-test("access: unauthenticated or unmapped sessions never expose navigation", () => {
-  assert.equal(canShowNavigation(false, ["operations", "finance", "platform_policies"], null), false);
-  assert.equal(canShowNavigation(true, [], null), false);
-});
+for (const [permission, routes] of permissionCases) {
+  test("Operator navigation permission boundary: " + (permission ?? "original-operator"), () => {
+    for (const route of routes) {
+      assert.equal(findWorkspaceEntry(route)?.permission ?? null, permission, route);
+      assert.equal(canEnterOperatorWorkspace([], route), false, route);
+      if (permission !== null) {
+        assert.equal(canEnterOperatorWorkspace([permission], route), true, route);
+        for (const other of allGrants.filter(grant => grant !== permission)) {
+          assert.equal(canEnterOperatorWorkspace([other], route), false, route);
+        }
+      }
+    }
+    assert.equal(canShowNavigation(false, ["operations", "finance", "platform_policies"], permission), false);
+    assert.equal(canShowNavigation(false, allGrants, permission), false);
+    assert.equal(canShowNavigation(true, [], permission), false);
+    assert.equal(canShowNavigation(true, allGrants, permission), permission !== null);
+  });
+}
 
 test("access: only current effective Identity grants allow mapped Operator routes", () => {
   assert.equal(canEnterOperatorWorkspace([], "/workspace"), false);
