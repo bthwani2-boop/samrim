@@ -83,6 +83,7 @@ func (s *CaptainStandingHTTP) Approved(ctx context.Context, bearer, actorID stri
 	}
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Encoding", "identity")
 	req.Header.Set("Cache-Control", "no-store")
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -95,9 +96,13 @@ func (s *CaptainStandingHTTP) Approved(ctx context.Context, bearer, actorID stri
 		}
 		return ErrCaptainStandingOwnerUnavailable
 	}
+	const limit int64 = 4096
+	length := resp.ContentLength
 	media := resp.Header.Values("Content-Type")
 	cache := resp.Header.Values("Cache-Control")
-	if len(media) != 1 || len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") || len(resp.Header.Values("Content-Encoding")) != 0 {
+	if resp.Uncompressed || length < -1 || length == 0 || length > limit ||
+		(len(resp.TransferEncoding) != 0 && (len(resp.TransferEncoding) != 1 || resp.TransferEncoding[0] != "chunked" || length != -1)) ||
+		len(media) != 1 || len(cache) != 1 || !strings.EqualFold(strings.TrimSpace(cache[0]), "no-store") || len(resp.Header.Values("Content-Encoding")) != 0 {
 		return ErrCaptainStandingNotApproved
 	}
 	kind, params, err := mime.ParseMediaType(media[0])
@@ -109,13 +114,24 @@ func (s *CaptainStandingHTTP) Approved(ctx context.Context, bearer, actorID stri
 			return ErrCaptainStandingNotApproved
 		}
 	}
-	const limit = 4096
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	ceiling := limit
+	if length >= 0 {
+		ceiling = length
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, ceiling+1))
 	if err != nil || ctx.Err() != nil {
 		return ErrCaptainStandingOwnerUnavailable
 	}
-	if len(raw) > limit {
+	if int64(len(raw)) > ceiling || (length >= 0 && int64(len(raw)) != length) {
 		return ErrCaptainStandingNotApproved
+	}
+	// Read through EOF before admitting the response. RFC 9110 section 6.5.1
+	// forbids late fields from redefining the response controls or content
+	// format on which an authorization decision depends.
+	for _, field := range []string{"Cache-Control", "Content-Type", "Content-Encoding"} {
+		if _, present := resp.Trailer[field]; present {
+			return ErrCaptainStandingNotApproved
+		}
 	}
 	// Go JSON v2 rejects duplicate names, malformed Unicode, nonexact member
 	// spelling and trailing data. The contract's required nonzero values also

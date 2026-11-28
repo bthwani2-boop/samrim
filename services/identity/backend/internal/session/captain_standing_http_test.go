@@ -203,3 +203,85 @@ func TestCaptainStandingRestrictsLocalPeer(t *testing.T) {
 		}
 	}
 }
+
+func TestCaptainStandingRequiresCompleteRepresentationMetadata(t *testing.T) {
+	const body = `{"actorId":"verified-id","status":"APPROVED","version":1}`
+	for _, tc := range []struct {
+		name, field, value string
+		announced, allow   bool
+	}{
+		{"cache trailer", "Cache-Control", "public", true, false},
+		{"type trailer", "Content-Type", "text/html", true, false},
+		{"encoding trailer", "Content-Encoding", "gzip", true, false},
+		{"unannounced cache trailer", "Cache-Control", "public", false, false},
+		{"unannounced type trailer", "Content-Type", "text/html", false, false},
+		{"unannounced encoding trailer", "Content-Encoding", "gzip", false, false},
+		{"benign trailer", "X-Processing-Time", "1", true, true},
+		{"benign unannounced", "X-Processing-Time", "1", false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				if tc.announced {
+					w.Header().Set("Trailer", tc.field)
+				}
+				w.WriteHeader(http.StatusOK)
+				w.(http.Flusher).Flush()
+				fmt.Fprint(w, body)
+				key := tc.field
+				if !tc.announced {
+					key = http.TrailerPrefix + key
+				}
+				w.Header().Set(key, tc.value)
+			}))
+			defer server.Close()
+			v, err := NewCaptainStandingHTTP(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = v.Approved(t.Context(), "opaque-bearer", "verified-id")
+			if (err == nil) != tc.allow {
+				t.Fatalf("approval=%v want=%v", err == nil, tc.allow)
+			}
+		})
+	}
+}
+
+func TestCaptainStandingRejectsIncompleteOrAmbiguousInitialMetadata(t *testing.T) {
+	const body = `{"actorId":"verified-id","status":"APPROVED","version":1}`
+	for _, tc := range []struct {
+		name, header, value string
+		duplicate           bool
+		want                error
+	}{
+		{"duplicate type", "Content-Type", "application/json", true, ErrCaptainStandingNotApproved},
+		{"duplicate cache", "Cache-Control", "no-store", true, ErrCaptainStandingNotApproved},
+		{"declared oversize", "Content-Length", "4097", false, ErrCaptainStandingNotApproved},
+		{"truncated", "Content-Length", "100", false, ErrCaptainStandingOwnerUnavailable},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Header.Get("Accept-Encoding") != "identity" {
+					t.Error("missing explicit representation negotiation")
+				}
+				w.Header().Set("Cache-Control", "no-store")
+				w.Header().Set("Content-Type", "application/json")
+				if tc.duplicate {
+					w.Header().Add(tc.header, tc.value)
+				} else {
+					w.Header().Set(tc.header, tc.value)
+				}
+				fmt.Fprint(w, body)
+			}))
+			defer s.Close()
+			v, e := NewCaptainStandingHTTP(s.URL)
+			if e != nil {
+				t.Fatal(e)
+			}
+			if e = v.Approved(t.Context(), "opaque-bearer", "verified-id"); !errors.Is(e, tc.want) {
+				t.Fatalf("got %v want %v", e, tc.want)
+			}
+		})
+	}
+}
