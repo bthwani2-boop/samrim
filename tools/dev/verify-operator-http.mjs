@@ -24,22 +24,27 @@ async function freePort() {
 }
 
 // Independent exact contract for the currently admitted Operator proxy policy.
+// HTTP fields must be ASCII: Unicode trimming can admit a browser-ignored directive.
+function asciiField(value, message) {
+  assert.ok(value && !/[^\t\x20-\x7e]/u.test(value), message);
+  return value;
+}
+
 export function assertOperatorPolicy(response, route, development) {
-  const policy = response.headers.get("content-security-policy");
-  assert.ok(policy && !policy.includes(","), route + ": expected one enforced CSP");
+  const policy = asciiField(response.headers.get("content-security-policy"), route + ": expected ASCII CSP");
+  assert.ok(!policy.includes(","), route + ": expected one enforced CSP");
   assert.equal(response.headers.get("content-security-policy-report-only"), null, route + ": unexpected report-only CSP");
   const directives = new Map();
   for (const entry of policy.split(";")) {
-    const [rawName, ...values] = entry.trim().split(/[\t\n\f\r ]+/);
+    const [rawName, ...values] = entry.split(/[\t ]+/u).filter(Boolean);
     if (!rawName) continue;
     const name = rawName.toLowerCase();
     assert.ok(!directives.has(name), route + ": duplicate CSP directive " + name);
     directives.set(name, values);
   }
-  const script = directives.get("script-src") ?? [];
-  const nonceTokens = script.filter(value => value.startsWith("'nonce-"));
+  const nonceTokens = (directives.get("script-src") ?? []).filter(value => value.startsWith("'nonce-"));
   assert.equal(nonceTokens.length, 1, route + ": expected exactly one script nonce");
-  const nonce = /^'nonce-([A-Za-z0-9+/]+={0,2})'$/.exec(nonceTokens[0])?.[1];
+  const nonce = /^'nonce-([A-Za-z0-9+/]+={0,2})'$/u.exec(nonceTokens[0])?.[1];
   assert.ok(nonce && Buffer.from(nonce, "base64").length >= 16 &&
     Buffer.from(nonce, "base64").toString("base64") === nonce, route + ": malformed or short nonce");
   const expected = new Map([
@@ -58,13 +63,18 @@ export function assertOperatorPolicy(response, route, development) {
   ]);
   assert.equal(directives.size, expected.size, route + ": unexpected or missing CSP directives");
   for (const [name, values] of expected) {
-    assert.deepEqual(directives.get(name)?.slice().sort(), values.slice().sort(), route + ": CSP directive " + name);
+    const actual = directives.get(name);
+    const distinct = new Set(actual);
+    assert.ok(actual?.length === values.length && distinct.size === values.length &&
+      values.every(value => distinct.has(value)), route + ": CSP directive " + name);
   }
-  const cache = response.headers.get("cache-control")?.split(",").map(value => value.trim().toLowerCase()).sort();
-  // Next's dynamic 404 adds stricter revalidation directives; never admit a cache-enabling value.
+  // Next's dynamic 404 adds stricter revalidation directives.
+  const cache = asciiField(response.headers.get("cache-control"), route + ": expected ASCII Cache-Control")
+    .split(",").map(value => value.trim().toLowerCase());
+  const distinctCache = new Set(cache);
   const admitted = new Set(["no-store", "private", "max-age=0", "must-revalidate", "no-cache"]);
-  assert.ok(cache?.includes("no-store") && (development || cache.includes("private")) &&
-    new Set(cache).size === cache.length && cache.every(value => admitted.has(value)),
+  assert.ok(distinctCache.has("no-store") && (development || distinctCache.has("private")) &&
+    distinctCache.size === cache.length && cache.every(value => admitted.has(value)),
   route + ": nonce response must not be cached " + JSON.stringify(cache));
   return nonce;
 }

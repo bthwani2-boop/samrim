@@ -60,6 +60,22 @@ test("rejects weakened, duplicate, overriding and multiple CSP policies", () => 
   assert.throws(() => assertOperatorPolicy(new Response(null, { headers: { "content-security-policy": good } }), route, false));
 });
 
+test("rejects non-ASCII whitespace that changes the actual browser policy", () => {
+  const good = policy(false);
+  for (const space of ["\u00a0", "\u0085"]) {
+    assert.throws(() => assertOperatorPolicy(response(good.replace("; frame-ancestors", ";" + space + "frame-ancestors")), route, false));
+    assert.throws(() => assertOperatorPolicy(response(good.replace("frame-ancestors 'none'", "frame-ancestors 'none'" + space)), route, false));
+    assert.throws(() => assertOperatorPolicy(response(good, "private, " + space + "no-store"), route, false));
+  }
+});
+
+test("accepts ASCII HTTP whitespace and reordered sources without weakening the policy", () => {
+  const good = policy(false);
+  const reordered = good.replace("img-src 'self' data: blob:", "IMG-SRC blob:\tdata:  'self'").replaceAll("; ", ";\t");
+  assert.equal(assertOperatorPolicy(response(reordered, "NO-STORE,\tPRIVATE"), route, false), nonce);
+  assert.throws(() => assertOperatorPolicy(response(good.replace("data: blob:", "data: data:")), route, false));
+});
+
 const script = '<script nonce="' + nonce + '" src="/_next/static/chunk.js"></script>';
 const robots = '<meta name="robots" content="noindex,nofollow">';
 const html = (content, head = robots, attrs = 'lang="ar" dir="rtl"') =>
