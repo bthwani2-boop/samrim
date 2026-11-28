@@ -77,7 +77,7 @@ services:
       AWS_SECRET_ACCESS_KEY: ${REF_MEDIA_SECRET_KEY:?generate refoundation media credentials}
       S3_BUCKET: ${REF_MEDIA_BUCKET:-bthwani-refoundation-media}
     ports:
-      - 127.0.0.1:${REF_MEDIA_PORT:-3233}:8333
+      - 127.0.0.1:3233:8333
     volumes:
       - refoundation-media-data:/data
     networks:
@@ -104,7 +104,7 @@ services:
     volumes:
       - phone-mailpit-tls:/run/mailpit-smtp-tls:ro
     ports:
-      - 127.0.0.1:${REF_MAILPIT_PORT:-3226}:8025
+      - 127.0.0.1:3226:8025
     networks:
       - isolated
       - loopback
@@ -117,7 +117,7 @@ services:
       context: ../tests/infra/payment-mock
     image: bthwani/payment-mock:local
     ports:
-      - 127.0.0.1:${REF_PAYMENT_MOCK_PORT:-3290}:8080
+      - 127.0.0.1:3290:8080
     networks:
       - isolated
       - loopback
@@ -180,7 +180,7 @@ services:
       - merchant-identity-ca:/run/identity-ca:ro
       - captain-dsh-tls:/run/dsh-captain-tls:ro
     ports:
-      - 127.0.0.1:${REF_DSH_PORT:-3202}:8080
+      - 127.0.0.1:3202:8080
     healthcheck:
       test:
         - CMD-SHELL
@@ -226,7 +226,7 @@ services:
       - captain-dsh-ca:/run/dsh-captain-ca:ro
       - phone-mailpit-ca:/run/mailpit-smtp-ca:ro
     ports:
-      - 127.0.0.1:${REF_IDENTITY_VERIFIER_PORT:-3201}:3302
+      - 127.0.0.1:3201:3302
     healthcheck:
       test:
         - CMD-SHELL
@@ -253,7 +253,7 @@ services:
       WLT_TEST_IDENTITY_ORIGIN: http://identity:3302
       WLT_TEST_DSH_ORIGIN: http://dsh:8080
     ports:
-      - 127.0.0.1:${REF_WLT_PORT:-3203}:8080
+      - 127.0.0.1:3203:8080
     healthcheck:
       test:
         - CMD-SHELL

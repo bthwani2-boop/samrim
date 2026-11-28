@@ -143,8 +143,7 @@ Identity session/permission denial and revocation readback. The guarded native c
 After those independent prerequisites are **proved**, set the Identity-only
 values `REF_IDENTITY_TEST_SCHEMA`, `REF_IDENTITY_RUNTIME_DATABASE_URL` (pointing
 to isolated `postgres:5432` with a separately authorized limited database
-role, never admin/donor/production), and optionally `REF_IDENTITY_VERIFIER_PORT`
-in the single ignored `infra/.env`. Preserve all other owner settings and credentials. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
+role, never admin/donor/production) in the single ignored `infra/.env`. Preserve all other owner settings and credentials. `REF_IDENTITY_IMAGE_TAG` may select a tested revision
 image; default `:dev` remains compatible with existing development commands.
 Set `REF_IDENTITY_SYNTHETIC_PHONE_AUTH=true` only after applying the Identity
 phone verification baseline in a new synthetic schema (or confirming the compatible retained schema) and verifying the runtime role's scoped
@@ -326,6 +325,11 @@ Replace the placeholder with exactly the approved absent service; never run it l
 For native application processes and tunnel ports, use [Lenovo development](../tools/dev/README-Lenovo-Development.md).
 
 Mailpit 3226, SeaweedFS 3233, Payment Mock 3290. PostgreSQL is network-internal.
+Published ports are fixed loopback endpoints in compose.yaml, matching the existing
+application, SSH tunnel and Android transport contracts. They are not environment
+configuration inputs. Existing local environment files are preserved; retired port
+variables no longer affect the resolved model. Changing this contract requires
+coordinated consumer migration rather than a local environment override.
 All published service ports bind to 127.0.0.1 **on Lenovo**. They are not
 automatically reachable on Surface as localhost. Use separately verified SSH
 loopback forwards when genuinely needed, without changing donor tunnels.

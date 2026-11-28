@@ -259,3 +259,19 @@ test("canonical Compose roles share explicit log retention and bounded developme
   assert.equal(totalMiB, 6656);
   assert.ok(totalMiB < 8192, "leave VM headroom including optional bootstrap");
 });
+
+test("the published loopback contract cannot be overridden through environment variables", () => {
+  const model = compose("compose.yaml");
+  const ports = { identity: ["127.0.0.1:3201:3302"], dsh: ["127.0.0.1:3202:8080"],
+    wlt: ["127.0.0.1:3203:8080"], media: ["127.0.0.1:3233:8333"],
+    mailpit: ["127.0.0.1:3226:8025"], "payment-mock": ["127.0.0.1:3290:8080"] };
+  for (const [name, service] of Object.entries(model.services)) {
+    assert.deepEqual(service.ports ?? [], ports[name] ?? [], name);
+  }
+  const layout = JSON.parse(readFileSync(path.join(infra, "../tools/dev/ports.json"), "utf8"));
+  assert.deepEqual(layout.ownerForwards, { identity: 3201, dsh: 3202 });
+  const occupied = new Set(Object.values(ports).flat().map(port => Number(port.split(":")[1])));
+  for (const app of Object.values(layout.apps)) {
+    assert.ok(!occupied.has(app.surface) && !occupied.has(app.lenovo), "application port collides with owner contract");
+  }
+});

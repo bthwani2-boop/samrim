@@ -8,10 +8,6 @@ import { readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
 
 const infra = fileURLToPath(new URL("../../infra/", import.meta.url));
 const names = ["REF_POSTGRES_USER", "REF_POSTGRES_DB", "REF_MEDIA_BUCKET"];
-const ports = [
-  "REF_MAILPIT_PORT", "REF_MEDIA_PORT", "REF_PAYMENT_MOCK_PORT",
-  "REF_IDENTITY_VERIFIER_PORT", "REF_DSH_PORT", "REF_WLT_PORT",
-];
 const secrets = ["REF_POSTGRES_PASSWORD", "REF_MEDIA_ACCESS_KEY", "REF_MEDIA_SECRET_KEY"];
 
 function directoryIdentity(path) {
@@ -52,21 +48,12 @@ function baseConfiguration(template) {
   for (const key of names) {
     if (!/^[A-Za-z0-9_-]+$/.test(values.get(key) ?? "")) throw new Error(`Invalid template value for ${key}`);
   }
-  for (const key of ports) {
-    const value = values.get(key) ?? "";
-    if (!/^[1-9][0-9]{0,4}$/.test(value) || Number(value) > 65535) {
-      throw new Error(`Invalid template port for ${key}`);
-    }
-  }
-  if (new Set(ports.map(key => values.get(key))).size !== ports.length) {
-    throw new Error("Duplicate infrastructure port");
-  }
   for (const key of secrets) {
     if (values.get(key) !== "") throw new Error(`Template secret slot must be present and empty: ${key}`);
   }
   return [
     "# Randomized local-only refoundation secrets. NEVER commit or reuse old credentials.",
-    ...[...names, ...ports].map(key => `${key}=${values.get(key)}`),
+    ...names.map(key => `${key}=${values.get(key)}`),
     ...secrets.map(key => `${key}=${randomBytes(32).toString("hex")}`),
     "",
   ].join("\n");

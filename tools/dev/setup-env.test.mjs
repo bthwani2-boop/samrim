@@ -15,8 +15,6 @@ const templateSource = fileURLToPath(new URL("../../infra/.env.example", import.
 const secrets = ["REF_POSTGRES_PASSWORD", "REF_MEDIA_ACCESS_KEY", "REF_MEDIA_SECRET_KEY"];
 const baseKeys = [
   "REF_POSTGRES_USER", "REF_POSTGRES_DB", "REF_MEDIA_BUCKET",
-  "REF_MAILPIT_PORT", "REF_MEDIA_PORT", "REF_PAYMENT_MOCK_PORT",
-  "REF_IDENTITY_VERIFIER_PORT", "REF_DSH_PORT", "REF_WLT_PORT",
 ];
 
 function fixture(t) {
@@ -81,11 +79,10 @@ test("creates only base credentials and defaults from the tracked template", t =
   assertCreated(f, [result]);
 });
 
-test("a changed public port and bucket are reflected without a generator edit", t => {
+test("a changed bucket is reflected without publishing retired port settings", t => {
   const f = fixture(t);
   const source = readFileSync(f.template, "utf8");
-  writeFileSync(f.template, source.replace(/^REF_MEDIA_PORT=.*$/m, "REF_MEDIA_PORT=4321")
-    .replace(/^REF_MEDIA_BUCKET=.*$/m, "REF_MEDIA_BUCKET=fixture-bucket"));
+  writeFileSync(f.template, source.replace(/^REF_MEDIA_BUCKET=.*$/m, "REF_MEDIA_BUCKET=fixture-bucket") + "\nREF_MEDIA_PORT=4321\n");
   const result = run(f);
   assert.equal(result.status, 0, result.stderr);
   assertCreated(f, [result]);
@@ -94,12 +91,8 @@ test("a changed public port and bucket are reflected without a generator edit", 
 test("invalid template never publishes a new credential file", async t => {
   for (const [name, change] of [
     ["missing base key", s => s.replace(/^REF_POSTGRES_DB=.*\r?\n/m, "")],
-    ["duplicate port", s => `${s}\nREF_MEDIA_PORT=4321\n`],
+    ["duplicate base entry", s => s + "\nREF_MEDIA_BUCKET=fixture-bucket\n"],
     ["nonblank secret slot", s => s.replace(/^REF_MEDIA_SECRET_KEY=.*$/m, "REF_MEDIA_SECRET_KEY=not-a-secret")],
-    ["invalid port", s => s.replace(/^REF_MEDIA_PORT=.*$/m, "REF_MEDIA_PORT=65536")],
-    ["duplicate port value", s => s.replace(/^REF_MEDIA_PORT=.*$/m, "REF_MEDIA_PORT=3226")],
-    ["malformed port", s => s.replace(/^REF_MEDIA_PORT=.*$/m, "REF_MEDIA_PORT=abc")],
-    ["missing port", s => s.replace(/^REF_MEDIA_PORT=.*\r?\n/m, "")],
     ["malformed entry", s => s + "\nnot-an-assignment"],
   ]) await t.test(name, sub => {
     const f = fixture(sub);
