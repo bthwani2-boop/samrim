@@ -1,10 +1,9 @@
 // One checked-out source identity for native tests and local Graphify.
 // This binds evidence to actual bytes and Git inventory, not Git's stat cache.
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstatSync, realpathSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
-import { containsLikelySecret, forbiddenName, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
+import { containsLikelySecret, forbiddenName, gitBlobIdentity, openRepositoryReader, readVerifiedFile, samePath } from "../security/verify-secrets.mjs";
 
 export { readVerifiedFile, samePath };
 
@@ -42,10 +41,6 @@ export function admittedPath(checkout, name, untracked) {
 
 // Git object identity is distinct from the worktree fingerprint. A CI
 // attestation requires literal committed bytes; local Graphify may index edits.
-function blobIdentity(bytes, objectFormat) {
-  return createHash(objectFormat).update("blob " + bytes.length + "\0").update(bytes).digest("hex");
-}
-
 export function inspectSourceFiles(checkout, tracked, untracked, objectFormat = null) {
   const digest = createHash("sha256");
   const unsafeTracked = [], unsafeUntracked = [], files = [], differentFromIndex = [];
@@ -63,7 +58,7 @@ export function inspectSourceFiles(checkout, tracked, untracked, objectFormat = 
       const bytes = admittedPath(checkout, name, isNew);
       digest.update(sha256(bytes)).update("\0");
       files.push(name);
-      if (objectFormat && (isNew || blobIdentity(bytes, objectFormat) !== oid)) differentFromIndex.push(name);
+      if (objectFormat && (isNew || gitBlobIdentity(bytes, objectFormat) !== oid)) differentFromIndex.push(name);
     } catch (error) {
       if (!isNew && error.code === "ENOENT") {
         digest.update("deleted\0");
@@ -79,13 +74,7 @@ export function inspectSourceFiles(checkout, tracked, untracked, objectFormat = 
 
 export function captureSourceSnapshot(checkout, { requireBranch = false, requireCommitted = false } = {}) {
   const root = resolve(checkout);
-  function git(...args) {
-    const result = spawnSync(process.platform === "win32" ? "git.exe" : "git", args, {
-      cwd: root, encoding: "buffer", windowsHide: true, timeout: 30000, maxBuffer: 64 * 1024 * 1024,
-    });
-    if (result.error || result.status !== 0) throw new Error("SOURCE_SNAPSHOT_GIT_FAILED " + args[0]);
-    return result.stdout;
-  }
+  const git = openRepositoryReader(root);
   const gitText = (...args) => git(...args).toString("utf8").trim();
   function identity() {
     const actual = gitText("rev-parse", "--show-toplevel").replaceAll("\\", "/");
@@ -100,10 +89,12 @@ export function captureSourceSnapshot(checkout, { requireBranch = false, require
   const untracked = git("ls-files", "--others", "--exclude-standard", "-z");
   const tracked = index.toString("utf8").split("\0").filter(Boolean);
   let objectFormat = null;
+  let treeId = null;
   if (requireCommitted) {
     objectFormat = gitText("rev-parse", "--show-object-format");
     if (!["sha1", "sha256"].includes(objectFormat)) throw new Error("SOURCE_OBJECT_FORMAT_UNSUPPORTED");
-    const tree = git("ls-tree", "-r", "-z", before.head).toString("utf8").split("\0").filter(Boolean);
+    treeId = gitText("rev-parse", before.head + "^{tree}");
+    const tree = git("ls-tree", "-r", "-z", treeId).toString("utf8").split("\0").filter(Boolean);
     const expected = tree.map(entry => entry.replace(/^([0-7]{6}) blob ([0-9a-f]+)\t/, "$1 $2 0\t"));
     if (status.length || untracked.length || expected.length !== tracked.length ||
         expected.some((entry, i) => entry !== tracked[i])) {
@@ -124,7 +115,7 @@ export function captureSourceSnapshot(checkout, { requireBranch = false, require
   }
   return {
     repository: root.replaceAll("\\", "/").toLowerCase(),
-    ...before, worktree, dirty: status.length !== 0,
+    ...before, ...(requireCommitted ? { tree: treeId } : {}), worktree, dirty: status.length !== 0,
     unsafeTracked: admission.unsafeTracked.length,
     unsafeUntracked: admission.unsafeUntracked.length,
     files: admission.files,

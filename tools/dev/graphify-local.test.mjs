@@ -283,6 +283,15 @@ test("Git events never write the local index; the sole sync path reconciles chan
     git("commit", "-m", "fixture initial");
     cli(["refresh"]);
     const first = proof();
+    const previousIndex = process.env.GIT_INDEX_FILE;
+    try {
+      process.env.GIT_INDEX_FILE = join(dir, ".git", "alternate-index");
+      assert.equal(JSON.parse(cli(["status"])).status, "PASS");
+      assert.equal(JSON.parse(cli(["coverage", "example.ts"])).coverage, "PASS");
+    } finally {
+      if (previousIndex === undefined) delete process.env.GIT_INDEX_FILE;
+      else process.env.GIT_INDEX_FILE = previousIndex;
+    }
     const publishedGraph = join(dir, "graphify-out", "graph.json");
     const originalGraph = JSON.parse(readFileSync(publishedGraph, "utf8"));
     originalGraph.nodes.push({ id: "foreignGraphFixture", label: "foreignGraphFixture", source_file: "foreign.ts" });

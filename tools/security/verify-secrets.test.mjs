@@ -27,13 +27,13 @@ function fixture(fn) {
     const file = join(dir, "sample.txt");
     writeFileSync(file, safe);
     git(dir, "add", "--", "sample.txt");
-    const run = (withoutPath = false) => {
+    const run = (withoutPath = false, overrides = {}) => {
       const env = { ...process.env };
       for (const key of Object.keys(env)) {
-        if (key.startsWith("GIT_") || (withoutPath && key.toLowerCase() === "path")) delete env[key];
+        if (key.toUpperCase().startsWith("GIT_") || (withoutPath && key.toLowerCase() === "path")) delete env[key];
       }
       if (withoutPath) env.PATH = "/untrusted-no-git";
-      const result = spawnSync(process.execPath, [target], { cwd: dir, env, encoding: "utf8", windowsHide: true, timeout: 10000 });
+      const result = spawnSync(process.execPath, [target], { cwd: dir, env: { ...env, ...overrides }, encoding: "utf8", windowsHide: true, timeout: 10000 });
       assert.equal(result.error, undefined);
       assert.ok(!(result.stdout + result.stderr).includes(marker), "secret value must not enter logs");
       return result;
@@ -175,3 +175,25 @@ test("verified descriptor rejects hard links and redirected ancestors", async ()
     }
   });
 });
+
+test("canonical Git index and repository cannot be substituted by caller environment", () => fixture(({ dir, file, stage, run }) => {
+  const alternate = join(dir, ".git", "alternate-index");
+  const foreign = join(dir, ".git", "foreign");
+  git(dir, "init", "--quiet", foreign);
+  const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.toUpperCase().startsWith("GIT_")));
+  const empty = spawnSync(gitExecutable, ["read-tree", "--empty"], {
+    cwd: dir, env: { ...env, GIT_INDEX_FILE: alternate }, encoding: "utf8", windowsHide: true,
+  });
+  assert.equal(empty.status, 0, empty.stderr);
+  for (const overrides of [{ GIT_INDEX_FILE: alternate }, { GIT_DIR: join(foreign, ".git"), GIT_WORK_TREE: dir }]) {
+    assert.match(run(false, overrides).stdout, /TRACKED_SECRET_MARKERS_PASS files=1/);
+  }
+  writeFileSync(file, marker);
+  stage();
+  writeFileSync(file, safe);
+  for (const overrides of [{ GIT_INDEX_FILE: alternate }, { GIT_DIR: join(foreign, ".git"), GIT_WORK_TREE: dir }]) {
+    const result = run(false, overrides);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /likely secret marker in staged bytes/);
+  }
+}));

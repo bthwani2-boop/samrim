@@ -271,3 +271,28 @@ test("native receipt order is explicit ASCII byte order, independent of enumerat
   assert.equal(publishCoverageEvidence(repo, "postgres", sha).count, names.length);
   assert.equal(readFileSync(join(folder, "reports.sha256"), "utf8"), receipt);
 }));
+
+test("canonical Git coverage admission uses the actual index despite caller overrides", () => fixture(({ repo, tree, artifactsFor, admit }) => {
+  artifactsFor(tree);
+  const previous = process.env.GIT_INDEX_FILE;
+  try {
+    process.env.GIT_INDEX_FILE = join(repo, ".git", "alternate-index");
+    assert.equal(admit(), true);
+  } finally {
+    if (previous === undefined) delete process.env.GIT_INDEX_FILE;
+    else process.env.GIT_INDEX_FILE = previous;
+  }
+}));
+
+test("canonical Git coverage rejects replacement objects masquerading as the committed source", () => fixture(({ repo, git, sha, tree, artifactsFor, put, admit, assertMissing }) => {
+  put(join(repo, "source.txt"), "replacement source\n");
+  git("add", "--", "source.txt");
+  const replacementTree = git("write-tree");
+  assert.notEqual(tree, replacementTree);
+  const replacement = git("commit-tree", replacementTree, "-m", "replacement fixture");
+  git("replace", sha, replacement);
+  assert.equal(git("status", "--porcelain"), "");
+  artifactsFor(replacementTree);
+  assert.throws(admit, /CI_CANDIDATE_NOT_CLEAN_AND_ADMITTED/);
+  assertMissing();
+}));

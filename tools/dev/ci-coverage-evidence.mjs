@@ -2,7 +2,6 @@
 // Native runners own measurements; CI admits only a complete, exact-tree
 // artifact set into a fresh scanner destination. No coverage is fabricated.
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { appendFileSync, lstatSync, mkdirSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -56,10 +55,7 @@ function committedTree(checkout, expectedSha) {
   assert.match(expectedSha ?? "", objectId, "CI_CANDIDATE_SHA_INVALID");
   const snapshot = captureSourceSnapshot(checkout, { requireCommitted: true });
   assert.equal(snapshot.head, expectedSha, "CI_CANDIDATE_SHA_MISMATCH");
-  const tree = execFileSync(process.platform === "win32" ? "git.exe" : "git",
-    ["rev-parse", expectedSha + "^{tree}"], {
-      cwd: checkout, encoding: "utf8", timeout: 10000, windowsHide: true,
-    }).trim();
+  const tree = snapshot.tree;
   assert.match(tree, objectId, "CI_CANDIDATE_TREE_INVALID");
   return { tree, fingerprint: snapshot.worktree };
 }

@@ -6,8 +6,8 @@ import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, realp
 import { hostname } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { forbiddenName } from "../security/verify-secrets.mjs";
-import { admittedPath, captureSourceSnapshot, readVerifiedFile, samePath, sha256 } from "./source-snapshot.mjs";
+import { canonicalGitEnvironment, forbiddenName } from "../security/verify-secrets.mjs";
+import { captureSourceSnapshot, readVerifiedFile, samePath, sha256 } from "./source-snapshot.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const outputDir = join(root, "graphify-out");
@@ -16,7 +16,6 @@ const stamp = join(outputDir, "local-index-state.json");
 const lock = join(outputDir, ".local-refresh.lock");
 const candidate = join(outputDir, ".candidate");
 const candidateGraph = join(candidate, "graph.json");
-const gitExe = process.platform === "win32" ? "git.exe" : "git";
 const graphifyExe = process.platform === "win32" ? "graphify.exe" : "graphify";
 const graphLimit = 64 * 1024 * 1024;
 const busyCode = "GRAPHIFY_REFRESH_LOCK_EXISTS";
@@ -38,10 +37,6 @@ function execute(program, args, timeout = 30000, env = process.env) {
   return result.stdout;
 }
 
-function git(...args) {
-  return execute(gitExe, args);
-}
-
 export function evaluateIndex(stored, current, graphHash) {
   const blocked = (reason) => ({ status: "BLOCKED", queryable: false, reason });
   if (stored?.version !== 1) return blocked("unverified local Graphify index");
@@ -57,8 +52,7 @@ export function evaluateIndex(stored, current, graphHash) {
 }
 
 function currentState() {
-  const { files: _files, ...state } = captureSourceSnapshot(root, { requireBranch: true });
-  return state;
+  return captureSourceSnapshot(root, { requireBranch: true });
 }
 
 function readPublishedGraph() {
@@ -226,7 +220,7 @@ function refresh(automatic = false) {
     } else {
       try { unlinkSync(candidateGraph); } catch (error) { if (error.code !== "ENOENT") throw error; }
     }
-    const env = { ...process.env, GRAPHIFY_OUT: "graphify-out/.candidate" };
+    const env = { ...canonicalGitEnvironment(), GRAPHIFY_OUT: "graphify-out/.candidate" };
     delete env.GRAPHIFY_CHANGED;
     delete env.GRAPHIFY_FORCE;
     const output = execute(graphifyExe, ["update", ".", "--no-cluster"], 180000, env);
@@ -270,7 +264,7 @@ function query(question) {
   if (!before.assessment.queryable) throw new Error("BLOCKED: " + before.assessment.reason);
   let output;
   try {
-    output = execute(graphifyExe, ["query", question, "--graph", graph], 45000);
+    output = execute(graphifyExe, ["query", question, "--graph", graph], 45000, canonicalGitEnvironment());
   } catch (error) {
     throw new Error("BLOCKED: local Graphify CLI query failed: " + error.message);
   }
@@ -355,15 +349,7 @@ function coverage(paths) {
   if (!bytes || sha256(bytes) !== before.graphDigest) {
     return emit({ coverage: "INVALIDATED", requested: paths, reason: "graph changed during coverage measurement" });
   }
-  const authored = new Set(git("ls-files", "--cached", "--others", "--exclude-standard", "-z").toString("utf8").split("\0"));
-  const admitted = new Set(paths.filter(name => {
-    if (!authored.has(name)) return false;
-    const path = resolve(root, name);
-    try {
-      admittedPath(root, name, false);
-      return true;
-    } catch { return false; }
-  }));
+  const admitted = new Set(before.current.files);
   const result = measureFileCoverage(paths, admitted, JSON.parse(bytes.toString("utf8")).nodes, root);
   const after = validate();
   if (!after.assessment.queryable || JSON.stringify(before) !== JSON.stringify(after)) {

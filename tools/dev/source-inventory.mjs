@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 // Ephemeral source/consumer inventory. Owner labels are path-derived, not a permissions registry.
-import { spawnSync } from "node:child_process";
 import { lstatSync, readFileSync } from "node:fs";
 import { extname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { openRepositoryReader } from "../security/verify-secrets.mjs";
 
 const root = resolve(fileURLToPath(new URL("../..", import.meta.url)));
-// Match the repository secret scanner: never resolve executable Git from caller PATH.
-const gitExecutable = process.platform === "win32"
-  ? "C:\\Program Files\\Git\\cmd\\git.exe"
-  : "/usr/bin/git";
 const sourceExt = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".go"]);
 const scriptExt = new Set([".ps1", ".sh"]);
 const contractExt = new Set([".yaml", ".yml", ".json"]);
@@ -18,12 +14,8 @@ const expoRouteExt = new Set([".js", ".jsx", ".ts", ".tsx"]);
 const jsExt = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".json"];
 const generatedParts = new Set(["node_modules", ".git", ".next", ".expo", "dist", "build", "coverage", "generated"]);
 
-function listGitPaths(checkout, mode) {
-  const cmd = spawnSync(gitExecutable, ["-C", checkout, "ls-files", "-z", ...mode], {
-    encoding: "buffer", windowsHide: true, maxBuffer: 16 * 1024 * 1024,
-  });
-  if (cmd.status !== 0 || cmd.error) throw new Error("Git source enumeration failed");
-  return cmd.stdout.toString("utf8").split("\0").filter(Boolean).map(p => p.replaceAll("\\", "/"));
+function listGitPaths(read, mode) {
+  return read("ls-files", "-z", ...mode).toString("utf8").split("\0").filter(Boolean);
 }
 
 function safeFileInfo(checkout, pathname) {
@@ -145,8 +137,9 @@ function resolveConsumerImport(importer, specifier, available, exported) {
 
 export function inventory(checkout = root) {
   const base = resolve(checkout);
-  const tracked = new Set(listGitPaths(base, ["--cached"]));
-  const untracked = listGitPaths(base, ["--others", "--exclude-standard"]);
+  const read = openRepositoryReader(base);
+  const tracked = new Set(listGitPaths(read, ["--cached"]));
+  const untracked = listGitPaths(read, ["--others", "--exclude-standard"]);
   const rows = [];
   const contents = new Map();
   for (const pathname of new Set([...tracked, ...untracked])) {

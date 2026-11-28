@@ -93,10 +93,31 @@ function hasMarker(bytes) {
   return false;
 }
 
-function git(...args) {
-  return execFileSync(gitExecutable, args, {
-    cwd: root, maxBuffer: maxBytes, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
-  });
+export function canonicalGitEnvironment() {
+  // The caller may not choose another repository, index, object database,
+  // replacement ref namespace or injected Git configuration for source proof.
+  const env = Object.fromEntries(Object.entries(process.env)
+    .filter(([key]) => !key.toUpperCase().startsWith("GIT_")));
+  return { ...env, GIT_NO_REPLACE_OBJECTS: "1", GIT_OPTIONAL_LOCKS: "0",
+    GIT_NO_LAZY_FETCH: "1", GIT_TERMINAL_PROMPT: "0" };
+}
+
+export function openRepositoryReader(checkout) {
+  const base = resolve(checkout);
+  const env = canonicalGitEnvironment();
+  const read = (...args) => {
+    try {
+      return execFileSync(gitExecutable, ["--no-replace-objects", "--no-optional-locks", ...args], {
+        cwd: base, env, maxBuffer: maxBytes, timeout: 30000,
+        windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
+      });
+    } catch {
+      throw new Error("Canonical Git read failed: " + args[0]);
+    }
+  };
+  const actual = read("rev-parse", "--show-toplevel").toString("utf8").trim();
+  assert.ok(samePath(resolve(actual), base), "Wrong checkout");
+  return read;
 }
 
 function parseIndex(inventory, format) {
@@ -116,13 +137,12 @@ function parseIndex(inventory, format) {
   return entries.values();
 }
 
-function blobIdentity(bytes, format) {
+export function gitBlobIdentity(bytes, format) {
   return createHash(format).update("blob " + bytes.length + "\0").update(bytes).digest("hex");
 }
 
 function verifyTrackedSecrets() {
-  const checkout = git("rev-parse", "--show-toplevel").toString("utf8").trim();
-  assert.ok(samePath(resolve(checkout), root), "Wrong checkout");
+  const git = openRepositoryReader(root);
   const format = git("rev-parse", "--show-object-format").toString("ascii").trim();
   assert.ok(["sha1", "sha256"].includes(format), "Unsupported Git object format");
   const inventory = git("ls-files", "--stage", "-z");
@@ -149,9 +169,9 @@ function verifyTrackedSecrets() {
     }
     // Exact blob identity allows one read to cover both versions; otherwise
     // inspect the immutable staged object even if the working file is absent.
-    if (!actual || blobIdentity(actual.bytes, format) !== oid) {
+    if (!actual || gitBlobIdentity(actual.bytes, format) !== oid) {
       const indexed = git("cat-file", "blob", oid);
-      assert.equal(blobIdentity(indexed, format), oid, "Index object identity mismatch");
+      assert.equal(gitBlobIdentity(indexed, format), oid, "Index object identity mismatch");
       if (hasMarker(indexed)) violations.push(label + ": likely secret marker in staged bytes (value redacted)");
     }
     staged++;

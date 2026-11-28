@@ -228,3 +228,22 @@ test("source enumeration does not execute Git from the caller PATH", t => {
     else process.env.PATH = previous;
   }
 });
+
+test("canonical Git inventory retains tracked and missing source despite an alternate index", t => {
+  const x = fixture(t);
+  const name = "services/dsh/clients/index.ts";
+  x.file(name, "export const owner = 1;\n");
+  x.stage(name);
+  const previous = process.env.GIT_INDEX_FILE;
+  try {
+    process.env.GIT_INDEX_FILE = path.join(x.root, ".git", "alternate-index");
+    assert.equal(inventory(x.root).find(row => row.path === name)?.tracked, true);
+    rmSync(path.join(x.root, name));
+    const row = inventory(x.root).find(row => row.path === name);
+    assert.equal(row?.tracked, true);
+    assert.equal(row?.state, "missing-or-linked");
+  } finally {
+    if (previous === undefined) delete process.env.GIT_INDEX_FILE;
+    else process.env.GIT_INDEX_FILE = previous;
+  }
+});
