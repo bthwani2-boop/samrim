@@ -1,5 +1,6 @@
 // Shared structural HTTP/SSR admission; this does not establish browser hydration.
 import assert from "node:assert/strict";
+import { request as httpRequest } from "node:http";
 import { parse } from "parse5";
 
 const htmlNamespace = "http://www.w3.org/1999/xhtml";
@@ -72,4 +73,36 @@ export function mimeEssence(response) {
   const match = mediaType.exec(header);
   assert.ok(match, "Invalid or combined Content-Type (MIME)");
   return match[1].toLowerCase();
+}
+
+// Native HTTP keeps field occurrences before Fetch/Headers can combine them.
+// This transport is only for the disposable loopback SSR verification hosts.
+export async function requestSsr(reference, { method = "GET", headers, signal = AbortSignal.timeout(15000) } = {}) {
+  const url = new URL(reference);
+  assert.ok(url.protocol === "http:" && url.hostname === "127.0.0.1" && url.port &&
+    !url.username && !url.password && !url.hash, "SSR proof requires an explicit loopback HTTP endpoint");
+  const message = await new Promise((resolve, reject) => {
+    const request = httpRequest(url, { method, headers, signal, agent: false }, resolve);
+    request.once("error", reject);
+    request.end();
+  });
+  try {
+    const distinct = message.headersDistinct;
+    const normalized = new Headers();
+    for (const [name, values] of Object.entries(distinct)) {
+      assert.ok(!["content-type", "location"].includes(name) || values.length === 1,
+        "Multiple occurrences of HTTP singleton field: " + name);
+      for (const value of values) normalized.append(name, value);
+    }
+    const chunks = [];
+    for await (const chunk of message) chunks.push(chunk);
+    assert.ok(message.complete, "Incomplete SSR HTTP response");
+    const status = message.statusCode;
+    const body = method === "HEAD" || [204, 205, 304].includes(status) ? null : Buffer.concat(chunks);
+    const response = new Response(body, { status, headers: normalized });
+    mimeEssence(response);
+    return response;
+  } finally {
+    message.destroy();
+  }
 }

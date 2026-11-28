@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { test } from "node:test";
-import { assertHtmlDocument, mimeEssence } from "../dev/ssr-document.mjs";
+import { assertHtmlDocument, mimeEssence, requestSsr } from "../dev/ssr-document.mjs";
 import { assertAssetResponse, assertPublicRedirect, documentAssets } from "./verify-expo-web-http.mjs";
 
 const page = { route: "merchant/", title: "بثواني — التاجر", body: "تسجيل الدخول أو الانضمام" };
@@ -186,13 +186,48 @@ test("shared SSR media admission rejects malformed or combined Content-Type fiel
   ]) assert.throws(() => mimeEssence(new Response(null, { headers: { "content-type": header } })), undefined, header);
 });
 
-test("actual HTTP duplicate representation headers cannot pass SSR asset admission", async () => {
+test("native SSR transport rejects singleton duplicates before field normalization", async () => {
   const asset = { url: script, file: script.slice(1), type: "script" };
   const bytes = Buffer.from("console.log('compiled');");
   const server = createServer((request, response) => {
-    response.setHeader("Content-Type", request.url === "/valid"
-      ? "application/javascript; charset=utf-8"
-      : ["application/javascript; charset=utf-8", "text/html"]);
+    switch (request.url) {
+      case "/valid":
+        response.setHeader("Content-Type", "application/javascript; charset=utf-8");
+        break;
+      case "/quoted":
+        response.setHeader("Content-Type", 'application/javascript; extension="a, b"');
+        break;
+      case "/split":
+        response.setHeader("Content-Type", ['application/javascript; extension="a', 'b"']);
+        break;
+      case "/identical":
+        response.setHeader("Content-Type", ["application/javascript", "application/javascript"]);
+        break;
+      case "/combined":
+        response.setHeader("Content-Type", "application/javascript; charset=utf-8, text/html");
+        break;
+      case "/redirect":
+        response.writeHead(302, { Location: "/" });
+        response.end();
+        return;
+      case "/duplicate-location":
+        response.writeHead(302, { Location: ["/", "/"] });
+        response.end();
+        return;
+      case "/empty":
+        response.writeHead(204);
+        response.end();
+        return;
+      case "/interrupted":
+        response.writeHead(200, { "Content-Type": "application/javascript", "Content-Length": bytes.length + 100 });
+        response.write(bytes);
+        response.destroy();
+        return;
+      case "/hang":
+        return;
+      default:
+        response.setHeader("Content-Type", ["application/javascript; charset=utf-8", "text/html"]);
+    }
     response.end(bytes);
   });
   await new Promise((resolve, reject) => {
@@ -201,11 +236,31 @@ test("actual HTTP duplicate representation headers cannot pass SSR asset admissi
   });
   try {
     const base = "http://127.0.0.1:" + server.address().port;
-    await assert.doesNotReject(async () => assertAssetResponse(await fetch(base + "/valid"), bytes, asset));
-    const invalid = await fetch(base + "/invalid");
-    assert.equal(invalid.headers.get("content-type"), "application/javascript; charset=utf-8, text/html");
-    await assert.rejects(() => assertAssetResponse(invalid, bytes, asset), /MIME|Content-Type/);
-    await invalid.arrayBuffer();
+    for (const route of ["/valid", "/quoted"]) {
+      await assertAssetResponse(await requestSsr(base + route), bytes, asset);
+    }
+    for (const route of ["/invalid", "/split", "/identical", "/duplicate-location"]) {
+      await assert.rejects(() => requestSsr(base + route), /singleton field/);
+    }
+    await assert.rejects(() => requestSsr(base + "/combined"), /Content-Type/);
+    const redirect = await requestSsr(base + "/redirect");
+    assert.equal(redirect.status, 302);
+    assertPublicRedirect(redirect.headers.get("location"), base, "/redirect");
+    const empty = await requestSsr(base + "/empty");
+    assert.equal(empty.status, 204);
+    assert.equal((await empty.arrayBuffer()).byteLength, 0);
+    const head = await requestSsr(base + "/valid", { method: "HEAD" });
+    assert.equal(mimeEssence(head), "application/javascript");
+    assert.equal((await head.arrayBuffer()).byteLength, 0);
+    await assert.rejects(() => requestSsr(base + "/interrupted"));
+    await assert.rejects(() => requestSsr(base + "/hang", { signal: AbortSignal.timeout(50) }));
+    for (const invalid of [
+      "https://127.0.0.1:32123/",
+      "http://example.invalid:32123/",
+      "http://127.0.0.1/",
+      "http://user@127.0.0.1:32123/",
+      "http://127.0.0.1:32123/#fragment",
+    ]) await assert.rejects(() => requestSsr(invalid), /loopback HTTP endpoint/);
   } finally {
     server.closeAllConnections();
     await new Promise(resolve => server.close(resolve));

@@ -8,7 +8,7 @@ import { createServer } from "node:net";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { assertHtmlDocument, attr, bodyText, child, elements, htmlElement, mimeEssence, scriptKind } from "./ssr-document.mjs";
+import { assertHtmlDocument, attr, bodyText, child, elements, htmlElement, mimeEssence, requestSsr, scriptKind } from "./ssr-document.mjs";
 
 
 async function freePort() {
@@ -150,7 +150,7 @@ export async function withOperatorHost(executable, args, { cwd, env }, base, ver
         throw new Error("Operator host exited before readiness: " + (error?.message ?? output));
       }
       try {
-        const response = await fetch(base + "/", { signal: AbortSignal.timeout(2500), redirect: "manual" });
+        const response = await requestSsr(base + "/", { signal: AbortSignal.timeout(2500) });
         ready = response.status === 200;
         await response.arrayBuffer();
         if (ready) break;
@@ -183,14 +183,14 @@ async function main(args) {
     ];
     const seenNonces = new Set();
     for (const [route, expectedStatus, visibleText] of routes) {
-      await verifyResponse(await fetch(base + route, {
-        signal: AbortSignal.timeout(7000), redirect: "manual",
+      await verifyResponse(await requestSsr(base + route, {
+        signal: AbortSignal.timeout(7000),
       }), route, expectedStatus, visibleText, development, seenNonces);
     }
-    await verifyResponse(await fetch(base + "/", { signal: AbortSignal.timeout(7000), redirect: "manual" }),
+    await verifyResponse(await requestSsr(base + "/", { signal: AbortSignal.timeout(7000) }),
       "/ repeated", 200, routes[0][2], development, seenNonces);
-    const forged = await fetch(base + "/health", {
-      signal: AbortSignal.timeout(7000), redirect: "manual",
+    const forged = await requestSsr(base + "/health", {
+      signal: AbortSignal.timeout(7000),
       headers: { "x-nonce": "attacker-controlled", "Content-Security-Policy": "script-src 'unsafe-inline'" },
     });
     const forgedNonce = await verifyResponse(forged, "/health forged request", 200, routes[2][2], development, seenNonces);

@@ -7,7 +7,7 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { assertHtmlDocument, attr, elements, htmlElement, javascriptMimes, mimeEssence, parseDocument, scriptKind } from "../dev/ssr-document.mjs";
+import { assertHtmlDocument, attr, elements, htmlElement, javascriptMimes, mimeEssence, parseDocument, requestSsr, scriptKind } from "../dev/ssr-document.mjs";
 
 const root = path.resolve(import.meta.dirname, "../..");
 const timeout = 15000;
@@ -158,7 +158,7 @@ async function verifyHost({ name, pages, protectedRoutes = [] }) {
   await withLoopback(path.join(root, "apps", name), async (origin, client) => {
     const assets = new Map();
     const request = (route, method = "GET") =>
-      fetch(origin + route, { method, signal: AbortSignal.timeout(timeout), redirect: "manual" });
+      requestSsr(origin + route, { method, signal: AbortSignal.timeout(timeout) });
     let routes = 0;
     for (const page of pages) {
       const response = await request(page.route);
@@ -188,6 +188,7 @@ async function verifyHost({ name, pages, protectedRoutes = [] }) {
       const wallet = await request("/api/customer-auth/wallet");
       assert.equal(wallet.status, 503, "wallet read requires the isolated preview");
       assert.equal(wallet.headers.get("cache-control"), "no-store");
+      assert.equal(mimeEssence(wallet), "application/json");
       assert.deepEqual(await wallet.json(), { error: "OWNER_UNAVAILABLE" });
       routes++;
     }
