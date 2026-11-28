@@ -146,7 +146,7 @@ func (identity identityReader) readBoundedOwner(ctx context.Context, auth, endpo
 	if !validBearer(auth) {
 		return http.StatusUnauthorized
 	}
-	status, err := requestOwnerDocument(ctx, identity.client, endpoint, auth, destination, limit)
+	status, err := requestOwnerDocument(ctx, identity.client, endpoint, auth, destination, limit, true)
 	if err != nil {
 		return http.StatusServiceUnavailable
 	}
@@ -158,10 +158,27 @@ func (identity identityReader) readBoundedOwner(ctx context.Context, auth, endpo
 	}
 }
 
+// CheckDevelopmentIdentityHealth observes the exact isolated Identity
+// readiness document. It grants no session, financial or serving authority.
+func CheckDevelopmentIdentityHealth(ctx context.Context, origin string) error {
+	if origin != "http://identity:3302" && !validLoopbackOwnerOrigin(origin) {
+		return errors.New("invalid isolated Identity health origin")
+	}
+	var health struct {
+		Status string `json:"status"`
+	}
+	status, err := requestOwnerDocument(ctx, isolatedOwnerClient, origin+"/health", "", &health, identityReplyLimit, true)
+	if err != nil || status != http.StatusOK || health.Status != "ok" {
+		return errors.New("Identity development dependency unavailable")
+	}
+	return nil
+}
+
 // The caller admits the fixed destination before entering this common
-// transport. An empty auth is used only for the synthetic provider read;
-// authenticated Identity/DSH documents additionally require exact no-store.
-func requestOwnerDocument(ctx context.Context, client *http.Client, endpoint, auth string, destination any, limit int64) (int, error) {
+// transport. Bearer admission and required response cache policy are distinct:
+// private Identity/DSH documents and public Identity health require no-store;
+// the synthetic provider retains its own separately admitted contract.
+func requestOwnerDocument(ctx context.Context, client *http.Client, endpoint, auth string, destination any, limit int64, requireNoStore bool) (int, error) {
 	if client == nil || ctx.Err() != nil {
 		return 0, errors.New("owner request unavailable")
 	}
@@ -183,7 +200,7 @@ func requestOwnerDocument(ctx context.Context, client *http.Client, endpoint, au
 	if response.StatusCode != http.StatusOK {
 		return response.StatusCode, nil
 	}
-	if auth != "" {
+	if requireNoStore {
 		cache := response.Header.Values("Cache-Control")
 		if len(cache) != 1 || !strings.EqualFold(cache[0], "no-store") {
 			return 0, errors.New("invalid owner cache policy")

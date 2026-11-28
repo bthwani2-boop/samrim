@@ -46,7 +46,7 @@ func verifySandboxProviderEvidence(ctx context.Context, origin, reference, actor
 		return errors.New("sandbox provider requires explicit isolated loopback configuration")
 	}
 	var evidence sandboxProviderEvidence
-	status, err := requestOwnerDocument(ctx, sandboxProviderClient, origin+"/sandbox/v1/funding/"+reference, "", &evidence, 1024)
+	status, err := requestOwnerDocument(ctx, sandboxProviderClient, origin+"/sandbox/v1/funding/"+reference, "", &evidence, 1024, false)
 	if err != nil || status != http.StatusOK {
 		return errors.New("sandbox provider response unconfirmed; reconcile same reference")
 	}

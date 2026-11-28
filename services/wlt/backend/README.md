@@ -49,7 +49,10 @@ loopback port 3203, runs as UID 65532 with the owner-owned pinned image,
 and does not grant a financial command or migration authority.
 The [environment owner](../../../infra/README.md) describes provisioning,
 native image build and guarded reconciliation. WLT is a default serving
-service, not a separate application profile. Never restart or replace an
+service, not a separate application profile. Its development health check
+uses the shared bounded direct owner HTTP transport and requires Identity's
+exact uncached JSON readiness document in container mode. It does not attest
+sessions, permissions or financial readiness. Never restart or replace an
 existing service outside the authorized lifecycle.
 
 Customer Web uses the configured same-origin preview adapter and existing

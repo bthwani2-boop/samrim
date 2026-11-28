@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -101,5 +105,126 @@ func TestWalletRuntimeRequiresIsolatedReader(t *testing.T) {
 				t.Errorf("isolation=%t want=%t", got, test.want)
 			}
 		})
+	}
+}
+
+// Native database/sql ping seam; the peer is an actual loopback HTTP server.
+type healthTestDriver struct{ pingError error }
+
+func (d healthTestDriver) Open(string) (driver.Conn, error) { return healthTestConn{d.pingError}, nil }
+func (d healthTestDriver) Connect(ctx context.Context) (driver.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return d.Open("")
+}
+func (d healthTestDriver) Driver() driver.Driver { return d }
+
+type healthTestConn struct{ pingError error }
+
+func (c healthTestConn) Prepare(string) (driver.Stmt, error) {
+	return nil, errors.New("unexpected SQL")
+}
+func (c healthTestConn) Begin() (driver.Tx, error) { return nil, errors.New("unexpected transaction") }
+func (c healthTestConn) Close() error              { return nil }
+func (c healthTestConn) Ping(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return c.pingError
+}
+
+func TestDevelopmentHealthRequiresIdentityDocument(t *testing.T) {
+	const valid = `{"status":"ok"}`
+	for _, tc := range []struct {
+		name, body, media, cache, encoding string
+		code, want                         int
+	}{
+		{"ready", valid, "application/json", "no-store", "", 200, 200},
+		{"wrong service", "<html>not Identity</html>", "text/html", "no-store", "", 200, 503},
+		{"empty", "", "application/json", "no-store", "", 200, 503},
+		{"unavailable", `{"status":"unavailable"}`, "application/json", "no-store", "", 200, 503},
+		{"wrong case", `{"Status":"ok"}`, "application/json", "no-store", "", 200, 503},
+		{"unknown field", `{"status":"ok","other":true}`, "application/json", "no-store", "", 200, 503},
+		{"duplicate", `{"status":"unavailable","status":"ok"}`, "application/json", "no-store", "", 200, 503},
+		{"trailing", valid + "{}", "application/json", "no-store", "", 200, 503},
+		{"null", "null", "application/json", "no-store", "", 200, 503},
+		{"oversized", valid + strings.Repeat(" ", 5000), "application/json", "no-store", "", 200, 503},
+		{"cacheable", valid, "application/json", "max-age=3600", "", 200, 503},
+		{"no cache policy", valid, "application/json", "", "", 200, 503},
+		{"unsupported encoding", valid, "application/json", "no-store", "gzip", 200, 503},
+		{"redirect", valid, "application/json", "no-store", "", 302, 503},
+		{"dependency error", valid, "application/json", "no-store", "", 503, 503},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				if r.URL.Path != "/health" || r.Method != http.MethodGet || r.Header.Get("Authorization") != "" {
+					t.Error("unexpected readiness request")
+				}
+				w.Header().Set("Content-Type", tc.media)
+				if tc.cache != "" {
+					w.Header().Set("Cache-Control", tc.cache)
+				}
+				if tc.encoding != "" {
+					w.Header().Set("Content-Encoding", tc.encoding)
+				}
+				if tc.code == 302 {
+					w.Header().Set("Location", "/redirected")
+				}
+				w.WriteHeader(tc.code)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer owner.Close()
+			db := sql.OpenDB(healthTestDriver{})
+			defer db.Close()
+			response := httptest.NewRecorder()
+			developmentHealth(db, owner.URL, true).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health", nil))
+			if response.Code != tc.want || response.Body.Len() != 0 || calls.Load() != 1 {
+				t.Fatalf("status=%d want=%d body=%q calls=%d", response.Code, tc.want, response.Body.String(), calls.Load())
+			}
+			if response.Header().Get("Cache-Control") != "no-store" {
+				t.Fatal("readiness result must not be cached")
+			}
+		})
+	}
+}
+
+func TestDevelopmentHealthShortCircuitsAndRecovers(t *testing.T) {
+	var calls atomic.Int32
+	owner := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		_, _ = io.WriteString(w, `{"status":"ok"}`)
+	}))
+	defer owner.Close()
+	failed := sql.OpenDB(healthTestDriver{errors.New("private database failure")})
+	defer failed.Close()
+	healthy := sql.OpenDB(healthTestDriver{})
+	defer healthy.Close()
+	probe := func(db *sql.DB, ctx context.Context, method, origin string, containerMode bool, want int) {
+		t.Helper()
+		response := httptest.NewRecorder()
+		developmentHealth(db, origin, containerMode).ServeHTTP(response, httptest.NewRequestWithContext(ctx, method, "/health", nil))
+		if response.Code != want || response.Body.Len() != 0 || response.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("status=%d want=%d body=%q", response.Code, want, response.Body.String())
+		}
+	}
+	probe(failed, t.Context(), http.MethodGet, owner.URL, true, 503)
+	probe(nil, t.Context(), http.MethodGet, owner.URL, true, 503)
+	probe(healthy, t.Context(), http.MethodPost, owner.URL, true, 405)
+	probe(healthy, t.Context(), http.MethodGet, owner.URL, false, 200)
+	probe(healthy, t.Context(), http.MethodGet, strings.Replace(owner.URL, "127.0.0.1", "localhost", 1), true, 503)
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	probe(healthy, cancelled, http.MethodGet, owner.URL, true, 503)
+	if calls.Load() != 0 {
+		t.Fatal("peer reached after rejection or in local mode")
+	}
+	probe(healthy, t.Context(), http.MethodGet, owner.URL, true, 200)
+	if calls.Load() != 1 {
+		t.Fatal("recovery did not verify the peer")
 	}
 }
