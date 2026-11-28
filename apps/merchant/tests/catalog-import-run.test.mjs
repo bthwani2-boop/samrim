@@ -179,7 +179,7 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
     const storage=new Map(),calls=[];let states=[],refs=[],effects=[],si=0,ri=0,ei=0;
     const platform={OS:os};
     let digestGate=null,storageGate=null,storageWaiting=false,writeGate=null,writeWaiting=false;
-    let ownerRun=null,ownerProcessed=0,refreshes=0,props={actorId,storeId,sourceSha256,onChanged(){refreshes++;},rows:[{row:2,name:"Milk",priceYer:"100",stockUnits:"2",reason:"existing-store-name",editableDraft:{id:"of-a",draftVersion:1}}]};
+    let activity=null;let ownerRun=null,ownerProcessed=0,refreshes=0,props={actorId,storeId,sourceSha256,onChanged(){refreshes++;},rows:[{row:2,name:"Milk",priceYer:"100",stockUnits:"2",reason:"existing-store-name",editableDraft:{id:"of-a",draftVersion:1}}]};
     const react={useState(initial){const i=si++;if(!(i in states))states[i]=initial;return [states[i],next=>{states[i]=typeof next==="function"?next(states[i]):next;}];},useRef(initial){const i=ri++;refs[i]??={current:initial};return refs[i];},useLayoutEffect(fn,deps){const i=ei++;const old=effects[i];if(!old||!deps||deps.some((v,j)=>v!==old.deps[j])){old?.cleanup?.();effects[i]={deps,cleanup:fn()};}}};
     const jsx=(type,props,key)=>({type,props:props??{},key});
     const get=k=>storage.get(k)??null,set=(k,v)=>storage.set(k,v),remove=k=>storage.delete(k);
@@ -212,7 +212,8 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
     assert.equal(mixed.rows[2].sourceIssue,"INVALID_ROW");
     assert.ok(mixed.rows.slice(1).every(r=>r.offerId===undefined&&r.expectedVersion===undefined));
     assert.equal(mixed.rows[2].name,"Extra columns");
-    const render=()=>{si=ri=ei=0;return mod.exports.default(props);};
+    const beginRun=()=>{if(activity!==null)return null;const token={};activity=token;return ()=>{if(activity===token)activity=null;};};
+    const render=()=>{si=ri=ei=0;return mod.exports.default({...props,blocked:activity==="review",running:activity!==null&&activity!=="review",beginRun});};
     const button=label=>nodes(render()).find(n=>n.type==="Pressable"&&nodes(n.props.children).some(x=>x.props?.children===label));
     const click=label=>{const b=button(label);assert.ok(b,label);assert.equal(Boolean(b.props.disabled),false,label);b.props.onPress();};
     const remount=()=>{for(const e of effects)e.cleanup?.();states=[];refs=[];effects=[];};
@@ -276,7 +277,16 @@ for(const os of ["web","android"])test("bulk import requires explicit confirmati
       assert.equal(calls.length,0,"preview replacement during durable write must not dispatch");
       assert.equal(storage.size,0,"undispatched attempt must not strand recovery");
     }
-    rowChoice().props.onPress();click("اعتماد وتسجيل الدفعة المحددة");
+    rowChoice().props.onPress();
+    const staleOwnerAction=button("اعتماد وتسجيل الدفعة المحددة").props.onPress;
+    activity="review";
+    assert.equal(button("اعتماد وتسجيل الدفعة المحددة").props.disabled,true);
+    staleOwnerAction();
+    await tick();
+    assert.equal(calls.length,0,"stale owner callback cannot start during a new file review");
+    assert.equal(storage.size,0);
+    activity=null;
+    click("اعتماد وتسجيل الدفعة المحددة");
     await until(()=>calls.length===1&&button("قراءة حالة الدفعة")&&!button("قراءة حالة الدفعة").props.disabled);
     const original=ownerRun;assert.equal(storage.size,1);
     remount();props={...props,rows:[],sourceSha256:""};render();

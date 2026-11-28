@@ -30,14 +30,14 @@ async function write(key:string,a:Attempt|null){
 }
 type Rows=ReturnType<typeof previewCatalogCsv>;
 const reasons:Record<string,string>={UPDATED:"تم التعديل",UNSELECTED:"لم يُعتمد للتعديل",DUPLICATE:"مكرر",INVALID_VALUES:"قيم غير صالحة",AMBIGUOUS_OR_CHANGED:"مطابقة ملتبسة أو متغيرة",INELIGIBLE:"غير مؤهل",STALE_VERSION_OR_NAME:"تغيرت المسودة",OPERATION_CONFLICT:"تعارض العملية"};
-export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onChanged}:Readonly<{
-  actorId:string;storeId:string;rows:Rows;sourceSha256:string;onChanged?:(()=>void)|undefined;
+export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onChanged,blocked,running,beginRun}:Readonly<{
+  actorId:string;storeId:string;rows:Rows;sourceSha256:string;onChanged?:(()=>void)|undefined;blocked:boolean;running:boolean;beginRun:()=> (()=>void)|null;
 }>){
   const {theme}=useMobileAppearance();
   const [recovery,setRecovery]=useState<{key:string;attempt:Attempt|null}|null>(null);
   const [selected,setSelected]=useState<ReadonlySet<number>>(new Set());
   const [result,setResult]=useState<MerchantCatalogImportResult|null>(null);
-  const [busy,setBusy]=useState(false);
+  const disabled=blocked||running;
   const [message,setMessage]=useState("");
   const active=useRef<AbortController|null>(null);
   const scope=useRef<AbortController|null>(null);
@@ -70,9 +70,12 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
     selectionSource.current.rows===rows&&selectionSource.current.selected===selected;
   async function execute(action:"start"|"read"|"advance"|"finish",offset=0){
     if(!recovery||active.current||!scope.current||scope.current.signal.aborted||(action==="start"&&!currentStart()))return;
+    if(blocked)return;
+    const release=beginRun();
+    if(!release)return;
     const controller=new AbortController();active.current=controller;
     const signal=controller.signal;
-    setBusy(true);setMessage("");
+    setMessage("");
     try{
       const attempt=recovery.attempt;
       const key=recovery.key;
@@ -144,41 +147,41 @@ export default function CatalogImportRun({actorId,storeId,rows,sourceSha256,onCh
         code==="SELECTION_CHANGED"?"تغيرت المعاينة أو الاختيارات. راجعها وأكد الدفعة الحالية.":
         code==="RECOVERY_CHANGED"?"تغيرت متابعة الدفعة في نافذة أخرى. أعد فتح الكتالوج.":
         "تعذر التأكيد لدى DSH. معرّف الدفعة محفوظ؛ اقرأ حالتها قبل إعادة التنفيذ.");
-    }finally{if(active.current===controller){active.current=null;setBusy(false);}}
+    }finally{if(active.current===controller)active.current=null;release();}
   }
   const button={minHeight:44,borderWidth:1,borderColor:theme.borderColor,borderRadius:10,padding:10};
   return <View testID="merchant-catalog-import-run" style={{gap:8}}>
     <Text style={{color:theme.color,fontWeight:"700"}}>دفعة تعديل المسودات الحالية</Text>
     {rows.length>0&&!result?<View style={{gap:6}}>
       <Text style={{color:theme.colorSecondary}}>اعتماد {selectedCount} من {eligible.length} مسودة مطابقة. لا ينشئ هذا المسار منتجات جديدة، ولا ينشر العروض.</Text>
-      <Pressable accessibilityRole="button" disabled={busy||eligible.length===0} style={button} onPress={()=>setSelected(new Set(eligible.map(r=>r.row)))}><Text style={{color:theme.interactiveText}}>تحديد جميع المسودات المطابقة</Text></Pressable>
-      <Pressable accessibilityRole="button" disabled={busy} style={button} onPress={()=>setSelected(new Set())}><Text style={{color:theme.interactiveText}}>إلغاء تحديد الكل</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={disabled||eligible.length===0} style={button} onPress={()=>{if(!disabled&&!active.current)setSelected(new Set(eligible.map(r=>r.row)));}}><Text style={{color:theme.interactiveText}}>تحديد جميع المسودات المطابقة</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={disabled} style={button} onPress={()=>{if(!disabled&&!active.current)setSelected(new Set());}}><Text style={{color:theme.interactiveText}}>إلغاء تحديد الكل</Text></Pressable>
       {eligible.slice(selectionPage*25,(selectionPage+1)*25).map(row=>
         <Pressable key={row.row} accessibilityRole="checkbox" accessibilityLabel={`اعتماد السجل ${row.row}`}
-          accessibilityState={{checked:selected.has(row.row),disabled:busy}} disabled={busy} style={button}
-          onPress={()=>setSelected(previous=>{const next=new Set(previous);if(next.has(row.row))next.delete(row.row);else next.add(row.row);return next;})}>
+          accessibilityState={{checked:selected.has(row.row),disabled:disabled}} disabled={disabled} style={button}
+          onPress={()=>{if(!disabled&&!active.current)setSelected(previous=>{const next=new Set(previous);if(next.has(row.row))next.delete(row.row);else next.add(row.row);return next;});}}>
           <Text style={{color:theme.color}}>{selected.has(row.row)?"محدد":"غير محدد"} · {row.row} · {row.name}</Text>
           <Text style={{color:theme.colorSecondary}}>السعر: {row.editableDraft?.priceYer} ← {row.priceYer} · المخزون: {row.editableDraft?.stockUnits} ← {row.stockUnits}</Text>
         </Pressable>)}
       {eligible.length>25?<View style={{flexDirection:"row",gap:8,flexWrap:"wrap"}}>
-        <Pressable accessibilityRole="button" disabled={busy||selectionPage===0} onPress={()=>setSelectionPage(p=>Math.max(0,p-1))} style={button}><Text style={{color:theme.interactiveText}}>المسودات السابقة</Text></Pressable>
-        <Pressable accessibilityRole="button" disabled={busy||(selectionPage+1)*25>=eligible.length} onPress={()=>setSelectionPage(p=>p+1)} style={button}><Text style={{color:theme.interactiveText}}>المسودات التالية</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={disabled||selectionPage===0} onPress={()=>setSelectionPage(p=>Math.max(0,p-1))} style={button}><Text style={{color:theme.interactiveText}}>المسودات السابقة</Text></Pressable>
+        <Pressable accessibilityRole="button" disabled={disabled||(selectionPage+1)*25>=eligible.length} onPress={()=>setSelectionPage(p=>p+1)} style={button}><Text style={{color:theme.interactiveText}}>المسودات التالية</Text></Pressable>
       </View>:null}
-      <Pressable accessibilityRole="button" disabled={busy||!recovery||!canStart} style={button} onPress={()=>void execute("start")}><Text style={{color:theme.interactiveText}}>اعتماد وتسجيل الدفعة المحددة</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={disabled||!recovery||!canStart} style={button} onPress={()=>void execute("start")}><Text style={{color:theme.interactiveText}}>اعتماد وتسجيل الدفعة المحددة</Text></Pressable>
     </View>:null}
     {recovery?.attempt?<View style={{gap:6}}>
       <Text selectable style={{color:theme.colorSecondary}}>معرّف الدفعة: {recovery.attempt.runId}</Text>
-      <Pressable accessibilityRole="button" disabled={busy} style={button} onPress={()=>void execute("read")}><Text style={{color:theme.interactiveText}}>قراءة حالة الدفعة</Text></Pressable>
-      <Pressable accessibilityRole="button" disabled={busy||!result||result.processed===result.total} style={button} onPress={()=>void execute("advance")}><Text style={{color:theme.interactiveText}}>تنفيذ أو استكمال الدفعة</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={disabled} style={button} onPress={()=>void execute("read")}><Text style={{color:theme.interactiveText}}>قراءة حالة الدفعة</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={disabled||!result||result.processed===result.total} style={button} onPress={()=>void execute("advance")}><Text style={{color:theme.interactiveText}}>تنفيذ أو استكمال الدفعة</Text></Pressable>
     </View>:null}
     {result?<View style={{gap:6}}>
       <Text accessibilityLiveRegion="polite" style={{color:theme.color}}>تمت معالجة {result.processed} من {result.total}</Text>
       {result.outcomes.map(o=><Text key={o.row} style={{color:theme.colorSecondary}}>السجل {o.row}: {reasons[o.reason]??o.reason}{o.resultVersion?" · نسخة "+o.resultVersion:""}</Text>)}
-      <Pressable accessibilityRole="button" disabled={busy||result.offset===0} style={button} onPress={()=>void execute("read",Math.max(0,result.offset-25))}><Text style={{color:theme.interactiveText}}>نتائج سابقة</Text></Pressable>
-      <Pressable accessibilityRole="button" disabled={busy||result.offset+result.outcomes.length>=result.processed} style={button} onPress={()=>void execute("read",result.offset+result.outcomes.length)}><Text style={{color:theme.interactiveText}}>نتائج تالية</Text></Pressable>
-      <Pressable accessibilityRole="button" disabled={busy||result.processed!==result.total} style={button} onPress={()=>void execute("finish")}><Text style={{color:theme.interactiveText}}>إنهاء متابعة الدفعة</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={disabled||result.offset===0} style={button} onPress={()=>void execute("read",Math.max(0,result.offset-25))}><Text style={{color:theme.interactiveText}}>نتائج سابقة</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={disabled||result.offset+result.outcomes.length>=result.processed} style={button} onPress={()=>void execute("read",result.offset+result.outcomes.length)}><Text style={{color:theme.interactiveText}}>نتائج تالية</Text></Pressable>
+      <Pressable accessibilityRole="button" disabled={disabled||result.processed!==result.total} style={button} onPress={()=>void execute("finish")}><Text style={{color:theme.interactiveText}}>إنهاء متابعة الدفعة</Text></Pressable>
     </View>:null}
-    {busy?<Text accessibilityLiveRegion="polite" style={{color:theme.colorSecondary}}>جارٍ التأكيد لدى DSH...</Text>:null}
+    {running?<Text accessibilityLiveRegion="polite" style={{color:theme.colorSecondary}}>جارٍ التأكيد لدى DSH...</Text>:null}
     {message?<Text accessibilityRole="alert" style={{color:theme.colorSecondary}}>{message}</Text>:null}
   </View>;
 }
