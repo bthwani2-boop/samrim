@@ -7,9 +7,10 @@ import {
   validCaptainInterest,
 } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { createRadioGroup } from "@bthwani/tamagui-config/radio-group";
 import { Link } from "expo-router";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { Platform, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 type Choice<T> = Readonly<{ value: T; label: string }>;
@@ -76,6 +77,8 @@ export default function CaptainInterestScreen() {
     label: string, items: readonly Choice<T>[], current: T | null,
     choose: (value: T) => void, inline = false,
   ) {
+    const radio = createRadioGroup({ values: items.map(item => item.value), selected: current, disabled: busy,
+      web: Platform.OS === "web", canSelect: canEdit, onSelect: value => { if (value !== current) choose(value); } });
     return (
       <View style={{ gap: 5 }}>
         <Text style={labelStyle}>{label} *</Text>
@@ -84,10 +87,7 @@ export default function CaptainInterestScreen() {
           {items.map(item => {
             const checked = item.value === current;
             return (
-              <Pressable key={String(item.value)} accessibilityRole="radio"
-                accessibilityLabel={item.label} aria-checked={checked}
-                accessibilityState={{ checked, disabled: busy }} disabled={busy}
-                onPress={() => { if (canEdit() && !checked) choose(item.value); }}
+              <Pressable key={String(item.value)} {...radio(item.value)} accessibilityLabel={item.label}
                 style={{
                   ...(inline ? { flex: 1 } : {}),
                   minHeight: 44, justifyContent: "center", padding: 12,

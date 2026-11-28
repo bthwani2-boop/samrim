@@ -6,6 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
+import * as radioGroup from "../src/radio-group.ts";
 
 const root = fileURLToPath(new URL("../../..", import.meta.url));
 const source = fileURLToPath(new URL("../src/appearance-preferences.tsx", import.meta.url));
@@ -52,6 +53,7 @@ function harness({ ready = true, platform = "web", save = async () => {} } = {})
       },
     },
     "react-native": { Platform: { OS: platform }, Pressable: "Pressable", Text: "Text", View: "View" },
+    "./radio-group": radioGroup,
     "./appearance": {
       useMobileAppearance: () => ({
         theme: {}, ready, preference,

@@ -1,6 +1,7 @@
 import type { MerchantRegistrationChoice, MerchantRegistrationOptions, MerchantStoreRegistration } from "@bthwani/dsh";
 import { DshPublicError, type PendingRegistration } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { createRadioGroup } from "@bthwani/tamagui-config/radio-group";
 import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import { useEffect, useRef, useState } from "react";
@@ -131,6 +132,8 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
   const openedAttempt = attempt.current;
   const choice = options?.choices.find(item => optionKey(item) === choiceKey);
   const locked = busy || (unknown && !restored) || done || !attemptReady;
+  const verticalRadio = createRadioGroup({ values: options?.verticals ?? [], selected: verticalId,
+    disabled: locked, web: Platform.OS === "web", onSelect: id => { setVerticalId(id); setMessage(""); } });
   const button = (text: string, action: () => void, disabled = false, selected = false) => (
     <Pressable key={text} accessibilityRole="button" accessibilityLabel={text}
       disabled={disabled} onPress={action} style={{
@@ -365,14 +368,15 @@ export default function MerchantStoreRegistrationForm({ actorId, onCreated }: Re
               setMessage("");
             }} />
           <Text style={{ color: theme.color, fontWeight: "700" }}>النشاط التجاري</Text>
+          <View accessibilityRole="radiogroup" accessibilityLabel="النشاط التجاري" style={{ gap: 8 }}>
           {options.verticals.map(id => (
-            <Pressable key={id} accessibilityRole="radio" accessibilityState={{ checked: verticalId === id }}
-              disabled={locked} onPress={() => { setVerticalId(id); setMessage(""); }}
+            <Pressable key={id} {...verticalRadio(id)} accessibilityLabel={id}
               style={{ padding: 10, minHeight: 44, borderRadius: 8, borderWidth: 1,
                 borderColor: theme.borderColor, backgroundColor: id === verticalId ? theme.actionSoft : theme.surface }}>
               <Text style={{ color: theme.color }}>{id}</Text>
             </Pressable>
           ))}
+          </View>
           {field("الاسم التجاري للمتجر", name, setName)}
           {field("خط عرض موقع المتجر", latitude, setLatitude, "decimal-pad")}
           {field("خط طول موقع المتجر", longitude, setLongitude, "decimal-pad")}

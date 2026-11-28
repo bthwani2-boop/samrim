@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import * as radioGroup from "@bthwani/tamagui-config/radio-group";
 import { withMutationRecoveryLock } from "../src/features/mutation-recovery/recovery-lock.ts";
 import {
   parseStoredMerchantRegistration,
@@ -90,6 +91,7 @@ function createHarness({ storage, actorId = "actor-a", onCreate, failWrite = fal
   };
   const mocks = {
     "@bthwani/dsh": { DshPublicError },
+    "@bthwani/tamagui-config/radio-group": radioGroup,
     "@bthwani/tamagui-config/appearance": {
       useMobileAppearance: () => ({ theme: {
         surface: "white", background: "white", color: "black",

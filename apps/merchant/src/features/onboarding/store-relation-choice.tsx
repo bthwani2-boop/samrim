@@ -1,6 +1,7 @@
 import type { MerchantRegistrationChoice } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
-import { Pressable, Text, View } from "react-native";
+import { createRadioGroup } from "@bthwani/tamagui-config/radio-group";
+import { Platform, Pressable, Text, View } from "react-native";
 
 const descriptions = {
   DIRECT: {
@@ -20,6 +21,8 @@ export default function StoreRelationChoice({ choices, selectedKey, disabled, on
   onSelect: (key: string) => void;
 }>) {
   const { theme } = useMobileAppearance();
+  const radio = createRadioGroup({ values: choices.map(choice => choice.cityId + ":" + choice.relation),
+    selected: selectedKey, disabled, web: Platform.OS === "web", onSelect });
   return (
     <View style={{ gap: 10 }} testID="merchant-relation-choices">
       <Text accessibilityRole="header" style={{ color: theme.color, fontWeight: "700", fontSize: 18 }}>
@@ -28,16 +31,15 @@ export default function StoreRelationChoice({ choices, selectedKey, disabled, on
       <Text style={{ color: theme.colorSecondary }}>
         إدارة المتجر والمنتجات مشتركة بين الخيارين. أهلية سوق بثواني هي الفرق الأساسي. تحدد الاتفاقيات والسياسات العمولة والاشتراك والتحصيل والدفع والتوصيل.
       </Text>
+      <View accessibilityRole="radiogroup" accessibilityLabel="قنوات البيع" style={{ gap: 10 }}>
       {choices.map(choice => {
         const key = `${choice.cityId}:${choice.relation}`;
         const selected = key === selectedKey;
         const details = descriptions[choice.relation];
         return (
-          <Pressable key={key} accessibilityRole="radio"
+          <Pressable key={key} {...radio(key)}
             accessibilityLabel={`${details.title} — ${choice.cityId}`}
-            accessibilityState={{ checked: selected, disabled }}
             testID={`merchant-relation-${choice.relation}-${choice.cityId}`}
-            disabled={disabled} onPress={() => onSelect(key)}
             style={{
               minHeight: 80, padding: 14, borderWidth: selected ? 2 : 1,
               borderColor: selected ? theme.interactiveText : theme.borderColor,
@@ -57,6 +59,7 @@ export default function StoreRelationChoice({ choices, selectedKey, disabled, on
           </Pressable>
         );
       })}
+      </View>
     </View>
   );
 }

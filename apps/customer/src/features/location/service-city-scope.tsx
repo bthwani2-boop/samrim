@@ -1,7 +1,8 @@
 import { DshPublicError, listPublicCities } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { createRadioGroup } from "@bthwani/tamagui-config/radio-group";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Text, View } from "react-native";
 import { mergePublicPage, publicFailureCode, retainsPublicContinuation } from "../discovery/public-page";
 import { serviceCityLabel } from "./serviceability";
 
@@ -81,6 +82,9 @@ export default function ServiceCityScope({ origin, currentCity, onApply, disable
     borderRadius: 10, borderWidth: 1, borderColor: theme.borderColor,
   };
 
+  const radio = createRadioGroup({ values: directory.items, selected: currentCity, disabled, web: Platform.OS === "web",
+    canSelect: canAct, onSelect: onApply });
+
   return (
     <View style={{ gap: 8 }}>
       <View accessibilityRole="radiogroup" accessibilityLabel="المدينة"
@@ -89,9 +93,7 @@ export default function ServiceCityScope({ origin, currentCity, onApply, disable
           const checked = id === currentCity;
           const label = serviceCityLabel(id);
           return (
-            <Pressable key={id} accessibilityRole="radio" accessibilityLabel={label}
-              aria-checked={checked} accessibilityState={{ checked, disabled }}
-              disabled={disabled} onPress={() => { if (canAct()) onApply(id); }}
+            <Pressable key={id} {...radio(id)} accessibilityLabel={label}
               style={{ ...buttonStyle, backgroundColor: checked ? theme.actionSoft : "transparent" }}>
               <Text style={{ color: theme.interactiveText }}>{label}</Text>
             </Pressable>

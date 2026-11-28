@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import * as radioGroup from "@bthwani/tamagui-config/radio-group";
 import { validCaptainInterest } from "../../../services/dsh/clients/captain-interest.ts";
 import { DshPublicError } from "../../../services/dsh/clients/client-core.ts";
 import { loadMappedRenderFixture } from "../../../tools/dev/mapped-render-fixture.mjs";
@@ -37,6 +38,7 @@ function renderable(source, dependencies = {}) {
     "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable" },
     "react-native-safe-area-context": { SafeAreaView: "SafeAreaView" },
     "expo-router": { Link: "Link" },
+    "@bthwani/tamagui-config/radio-group": radioGroup,
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     ...dependencies,
   };
@@ -135,7 +137,7 @@ function guestIntake(origin = "https://dsh.example") {
         },
         useEffect(effect) { cleanup ??= effect(); },
       },
-      "react-native": { Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable", TextInput: "TextInput" },
+      "react-native": { Platform: { OS: "android" }, Text: "Text", View: "View", ScrollView: "ScrollView", Pressable: "Pressable", TextInput: "TextInput" },
       "@bthwani/dsh": {
         DshPublicError,
         validCaptainInterest,

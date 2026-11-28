@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
+import * as radioGroup from "@bthwani/tamagui-config/radio-group";
 import { loadMappedRenderFixture } from "../../../../../tools/dev/mapped-render-fixture.mjs";
 import { merchantNavigation } from "../navigation/merchant-workspace-model.ts";
 
@@ -64,7 +65,8 @@ function harness() {
         });
       },
     },
-    "react-native": { Pressable: "Pressable", Text: "Text", View: "View" },
+    "react-native": { Platform: { OS: "web" }, Pressable: "Pressable", Text: "Text", View: "View" },
+    "@bthwani/tamagui-config/radio-group": radioGroup,
     "@bthwani/tamagui-config/appearance": { useMobileAppearance: () => ({ theme: {} }) },
     "../../components/merchant-capability-screen": { __esModule: true, default: "Capability" },
     "../catalog/inventory-summary": { __esModule: true, default: "InventorySummary" },

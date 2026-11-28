@@ -1,7 +1,8 @@
 import type { MerchantCatalogStatus } from "@bthwani/dsh";
 import { useMobileAppearance } from "@bthwani/tamagui-config/appearance";
+import { createRadioGroup } from "@bthwani/tamagui-config/radio-group";
 import { useEffect, useRef, useState } from "react";
-import { Pressable, Text, View } from "react-native";
+import { Platform, Pressable, Text, View } from "react-native";
 import type { MerchantOwnedStore } from "../access/dsh-standing";
 import CatalogExport from "../catalog/catalog-export";
 import InventorySummary from "../catalog/inventory-summary";
@@ -31,6 +32,10 @@ export default function InsightsScreen({ actorId = "", stores = [], initialStore
     borderRadius: 10, borderColor: theme.borderColor, paddingHorizontal: 14, paddingVertical: 8,
   };
 
+  const radio = createRadioGroup({ values: stores.map(store => store.id), selected: selected?.id ?? null,
+    web: Platform.OS === "web", onSelect: storeId => setSelection(previous =>
+      previous?.actorId === actorId && previous.storeId === storeId ? previous : { actorId, storeId, revision: 0 }) });
+
   if (!actorId) return <Text accessibilityRole="alert" style={{ color: theme.warningText }}>
     افتح التقارير من مساحة التاجر الموثقة.
   </Text>;
@@ -50,11 +55,8 @@ export default function InsightsScreen({ actorId = "", stores = [], initialStore
         style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
         {stores.map(store => {
           const checked = selected?.id === store.id;
-          return <Pressable key={store.id} accessibilityRole="radio"
-            accessibilityLabel={`تقارير ${store.name}`} accessibilityState={{ checked }}
-            aria-checked={checked} style={{ ...button, backgroundColor: checked ? theme.actionSoft : theme.surface }}
-            onPress={() => setSelection(previous => previous?.actorId === actorId && previous.storeId === store.id
-              ? previous : { actorId, storeId: store.id, revision: 0 })}>
+          return <Pressable key={store.id} {...radio(store.id)}
+            accessibilityLabel={`تقارير ${store.name}`} style={{ ...button, backgroundColor: checked ? theme.actionSoft : theme.surface }}>
             <Text style={{ color: checked ? theme.interactiveText : theme.color }}>{store.name}</Text>
           </Pressable>;
         })}
